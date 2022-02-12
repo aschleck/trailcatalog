@@ -1,0 +1,5 @@
+{
+  "name": "s2_raw",
+  "main": "s2_raw.js",
+  "typings": "s2_raw.d.ts"
+}
