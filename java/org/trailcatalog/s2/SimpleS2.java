@@ -13,10 +13,10 @@ import jsinterop.annotations.JsType;
 public final class SimpleS2 {
 
   @JsMethod
-  public static ArrayList<S2CellId> cover() {
+  public static ArrayList<S2CellId> cover(S2LatLngRect viewport) {
     ArrayList<S2CellId> cells = new ArrayList<>();
-    S2LatLngRect viewport =
-        S2LatLngRect.fromPoint(S2LatLng.fromDegrees(37.424862, -122.154853)).expandedByDistance(S1Angle.degrees(0.01));
+    //S2LatLngRect viewport =
+    //    S2LatLngRect.fromPoint(S2LatLng.fromDegrees(37.424862, -122.154853)).expandedByDistance(S1Angle.degrees(0.01));
     ArrayList<S2CellId> atLevel = new ArrayList<>();
     for (int level = 14; level >= 0; --level) {
       S2RegionCoverer coverer =

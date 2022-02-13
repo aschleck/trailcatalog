@@ -41,7 +41,11 @@ java_binary(
 kt_jvm_library(
     name = "import_lib",
     srcs = ["Import.kt"],
+    data = [
+        "highways.pbf",
+    ],
     deps = [
+        "@bazel_tools//tools/java/runfiles",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:com_wolt_osm_parallelpbf",
         "@maven//:org_postgresql_postgresql",

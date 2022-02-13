@@ -125,17 +125,12 @@ rules_proto_dependencies()
 
 rules_proto_toolchains()
 
+rules_kotlin_version = "v1.5.0"
+
 http_archive(
-    name = "io_bazel_rules_kotlin_master",
-    strip_prefix = "rules_kotlin-35996519613f96236801c39d02e301d74df0a132",
-    urls = ["https://github.com/bazelbuild/rules_kotlin/archive/35996519613f96236801c39d02e301d74df0a132.zip"],
-)
-
-load("@io_bazel_rules_kotlin_master//src/main/starlark/release_archive:repository.bzl", "archive_repository")
-
-archive_repository(
     name = "io_bazel_rules_kotlin",
-    source_repository_name = "io_bazel_rules_kotlin_master",
+    sha256 = "12d22a3d9cbcf00f2e2d8f0683ba87d3823cb8c7f6837568dd7e48846e023307",
+    urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/%s/rules_kotlin_release.tgz" % rules_kotlin_version],
 )
 
 load("@io_bazel_rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories", "versions")
@@ -156,6 +151,7 @@ maven_install(
         "com.google.geometry:s2-geometry:2.0.0",
         "com.google.javascript:closure-compiler-unshaded:jar:v20220104",
         "com.wolt.osm:parallelpbf:0.3.1",
+        "com.zaxxer:HikariCP:5.0.1",
         "io.javalin:javalin:4.3.0",
         "org.apache.commons:commons-text:jar:1.9",
         "org.postgresql:postgresql:42.3.1",
@@ -171,16 +167,16 @@ local_repository(
     path = "../j2cl",
 )
 
+load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external", "setup_j2cl_workspace")
+
+setup_j2cl_workspace()
+
 http_archive(
     name = "com_google_elemental2",
     sha256 = "94874b320f5403e70c25645333ef62ace651ce913fcdb70a82c2efc3a33c6489",
     strip_prefix = "elemental2-44fc0478e5b4b20e317b2440f49fc8ca3746dc33",
     url = "https://github.com/google/elemental2/archive/44fc0478e5b4b20e317b2440f49fc8ca3746dc33.zip",
 )
-
-load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external", "setup_j2cl_workspace")
-
-setup_j2cl_workspace()
 
 load("@com_google_elemental2//build_defs:repository.bzl", "load_elemental2_repo_deps")
 
@@ -239,9 +235,4 @@ j2cl_maven_import_external(
 local_repository(
     name = "com_google_geometry_s2",
     path = "../s2-geometry-library-java",
-)
-
-local_repository(
-    name = "angular_clutz",
-    path = "../clutz",
 )

@@ -1,0 +1,32 @@
+[[actions]]
+type = "create_table"
+name = "ways"
+primary_key = ["id"]
+
+	[[actions.columns]]
+	name = "id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "type"
+  nullable = false
+	type = "INT"
+
+	[[actions.columns]]
+	name = "cell"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "points_bytes"
+  nullable = false
+	type = "BYTEA"
+
+[[actions]]
+type = "add_index"
+table = "ways"
+
+	[actions.index]
+	name = "cell_idx"
+	columns = ["cell"]
