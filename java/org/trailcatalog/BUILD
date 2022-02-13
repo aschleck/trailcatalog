@@ -26,6 +26,7 @@ kt_jvm_library(
     deps = [
         "@bazel_tools//tools/java/runfiles",
         "@maven//:com_google_geometry_s2_geometry",
+        "@maven//:com_zaxxer_HikariCP",
         "@maven//:io_javalin_javalin",
         "@maven//:org_postgresql_postgresql",
         "@maven//:org_slf4j_slf4j_simple",

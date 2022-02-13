@@ -2,13 +2,13 @@ package org.trailcatalog
 
 import com.google.common.geometry.S2CellId
 import com.google.devtools.build.runfiles.Runfiles
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import io.javalin.Javalin
 import io.javalin.http.Context
 import java.sql.DriverManager
 
-val connectionSource = HikariDataSource(HikariConfig() {
-
-})
+val connectionSource = HikariDataSource(HikariConfig())
 
 fun main(args: Array<String>) {
   val connection =

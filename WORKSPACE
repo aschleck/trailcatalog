@@ -3,12 +3,6 @@ workspace(name = "trailcatalog")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
-    name = "bazel_skylib",
-    sha256 = "97e70364e9249702246c0e9444bccdc4b847bed1eb03c5a3ece4f83dfe6abc44",
-    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/1.0.2/bazel-skylib-1.0.2.tar.gz"],
-)
-
-http_archive(
     name = "io_bazel_rules_go",
     sha256 = "d6b2513456fe2229811da7eb67a444be7785f5323c6708b38d851d2b51e54d83",
     urls = [
@@ -60,36 +54,12 @@ http_archive(
     ],
 )
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-http_archive(
-    name = "rules_android",
-    sha256 = "cd06d15dd8bb59926e4d65f9003bfc20f9da4b2519985c27e190cddc8b7a7806",
-    strip_prefix = "rules_android-0.1.1",
-    urls = ["https://github.com/bazelbuild/rules_android/archive/v0.1.1.zip"],
-)
-
 http_archive(
     name = "io_bazel_stardoc",
     sha256 = "c0b2f66b220e6741dffaaa49e709490026dbb5519d335628621f4f9266e79dd8",
     strip_prefix = "stardoc-0.5.0",
     url = "https://github.com/bazelbuild/stardoc/archive/refs/tags/0.5.0.zip",
 )
-
-http_archive(
-    name = "io_bazel_rules_closure",
-    sha256 = "486754baa3659663c96fd788b299946df9344bd86d43945710eaa649b68f48e6",
-    strip_prefix = "rules_closure-b5ca4055703da019b345a659a4f57a62c11c780a",
-    urls = ["https://github.com/bazelbuild/rules_closure/archive/b5ca4055703da019b345a659a4f57a62c11c780a.zip"],
-)
-
-load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies", "rules_closure_toolchains")
-
-rules_closure_dependencies(
-    omit_com_google_auto_common = True,
-)
-
-rules_closure_toolchains()
 
 RULES_JVM_EXTERNAL_TAG = "4.2"
 
@@ -112,6 +82,7 @@ rules_jvm_external_setup()
 
 http_archive(
     name = "rules_proto",
+    sha256 = "66bfdf8782796239d3875d37e7de19b1d94301e8972b3cbd2446b332429b4df1",
     strip_prefix = "rules_proto-4.0.0",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_proto/archive/refs/tags/4.0.0.tar.gz",
@@ -127,6 +98,8 @@ rules_proto_toolchains()
 
 rules_kotlin_version = "v1.5.0"
 
+load("@rules_jvm_external//:defs.bzl", "maven_install")
+
 http_archive(
     name = "io_bazel_rules_kotlin",
     sha256 = "12d22a3d9cbcf00f2e2d8f0683ba87d3823cb8c7f6837568dd7e48846e023307",
@@ -140,8 +113,6 @@ kotlin_repositories()
 load("@io_bazel_rules_kotlin//kotlin:core.bzl", "kt_register_toolchains")
 
 kt_register_toolchains()
-
-load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 maven_install(
     artifacts = [
@@ -162,10 +133,29 @@ maven_install(
     ],
 )
 
+http_archive(
+    name = "io_bazel_rules_closure",
+    sha256 = "486754baa3659663c96fd788b299946df9344bd86d43945710eaa649b68f48e6",
+    strip_prefix = "rules_closure-b5ca4055703da019b345a659a4f57a62c11c780a",
+    urls = ["https://github.com/bazelbuild/rules_closure/archive/b5ca4055703da019b345a659a4f57a62c11c780a.zip"],
+)
+
+load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies", "rules_closure_toolchains")
+
+rules_closure_dependencies(
+    omit_com_google_auto_common = True,
+)
+
+rules_closure_toolchains()
+
 local_repository(
     name = "com_google_j2cl",
     path = "../j2cl",
 )
+
+load("@com_google_j2cl//build_defs:repository.bzl", "load_j2cl_repo_deps")
+
+load_j2cl_repo_deps()
 
 load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external", "setup_j2cl_workspace")
 
