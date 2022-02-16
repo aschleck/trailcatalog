@@ -30,6 +30,6 @@ ts_project(
     tsconfig = "//:tsconfig",
     deps = [
         "//java/org/trailcatalog/s2",
+        "@npm//@luma.gl/shadertools",
     ],
 )
-

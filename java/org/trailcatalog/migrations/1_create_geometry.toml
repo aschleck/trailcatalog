@@ -1,6 +1,6 @@
 [[actions]]
 type = "create_table"
-name = "ways"
+name = "highways"
 primary_key = ["id"]
 
 	[[actions.columns]]
@@ -19,14 +19,59 @@ primary_key = ["id"]
 	type = "BIGINT"
 
 	[[actions.columns]]
-	name = "points_bytes"
+	name = "name"
+  nullable = true
+	type = "TEXT"
+
+	[[actions.columns]]
+	name = "routes"
+  nullable = false
+	type = "BIGINT[]"
+
+	[[actions.columns]]
+	name = "latlng_doubles"
+  nullable = false
+	type = "BYTEA"
+
+	[[actions.columns]]
+	name = "mercator_split_floats"
   nullable = false
 	type = "BYTEA"
 
 [[actions]]
 type = "add_index"
-table = "ways"
+table = "highways"
 
 	[actions.index]
 	name = "cell_idx"
 	columns = ["cell"]
+
+[[actions]]
+type = "create_table"
+name = "routes"
+primary_key = ["id"]
+
+	[[actions.columns]]
+	name = "id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "type"
+  nullable = false
+	type = "INT"
+
+	[[actions.columns]]
+	name = "cell"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "name"
+  nullable = false
+	type = "TEXT"
+
+	[[actions.columns]]
+	name = "highways"
+  nullable = false
+	type = "BIGINT[]"

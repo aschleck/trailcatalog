@@ -5,6 +5,7 @@
     "declaration": true,
     "preserveSymlinks": true,
     "target": "es2020",
+    "moduleResolution": "node",
 //    "traceResolution": true,
     "paths": {
       "*": [

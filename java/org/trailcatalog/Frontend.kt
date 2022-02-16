@@ -2,6 +2,7 @@ package org.trailcatalog
 
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLngRect
+import com.google.common.io.LittleEndianDataOutputStream
 import com.google.common.primitives.UnsignedLongs
 import com.google.devtools.build.runfiles.Runfiles
 import com.zaxxer.hikari.HikariConfig;
@@ -32,7 +33,7 @@ fun fetch_cell(ctx: Context) {
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
   val ways = ArrayList<WireWay>()
   connectionSource.connection.use {
-    val query = it.prepareStatement("SELECT id, type, points_bytes FROM ways WHERE cell = ?").apply {
+    val query = it.prepareStatement("SELECT id, type, mercator_split_floats FROM highways WHERE cell = ?").apply {
       setLong(1, cell.id())
     }
     val results = query.executeQuery()
@@ -46,7 +47,7 @@ fun fetch_cell(ctx: Context) {
   }
 
   val bytes = ByteArrayOutputStream()
-  val output = DataOutputStream(bytes)
+  val output = LittleEndianDataOutputStream(bytes)
   output.writeInt(ways.size)
   for (way in ways) {
     output.writeLong(way.id)

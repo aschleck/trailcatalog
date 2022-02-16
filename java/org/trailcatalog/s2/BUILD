@@ -7,7 +7,10 @@ load("@npm//@bazel/typescript:index.bzl", "ts_config", "ts_project")
 
 ts_project(
     name = "s2",
-    srcs = ["SimpleS2.ts"],
+    srcs = [
+        "SimpleS2.ts",
+        "index.ts",
+    ],
     allow_js = True,
     declaration = True,
     tsconfig = "//:tsconfig",

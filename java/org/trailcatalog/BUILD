@@ -44,6 +44,7 @@ kt_jvm_library(
     srcs = ["Import.kt"],
     data = [
         "highways.pbf",
+        "washington-latest.osm.pbf",
     ],
     deps = [
         "@bazel_tools//tools/java/runfiles",
