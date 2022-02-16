@@ -1,7 +1,7 @@
 // import {assembleShaders, fp64arithmetic} from '@luma.gl/shadertools';
 
 // import { S1Angle, S2LatLng, S2LatLngRect, SimpleS2 } from '../s2/SimpleS2';
-import { S1Angle, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S1Angle, S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
 type Vec2 = [number, number];
@@ -15,6 +15,8 @@ class Camera {
   constructor() {
     this.center = S2LatLng.fromDegrees(47.644209, -122.139532);
     this.zoom = 15;
+    //this.center = S2LatLng.fromDegrees(46.859369, -121.747888);
+    //this.zoom = 12;
     this.inverseWorldSize = 1 / this.worldSize;
   }
 
@@ -24,6 +26,13 @@ class Camera {
 
   get worldSize(): number {
     return 256 * Math.pow(2, this.zoom);
+  }
+
+  translate(pixels: Vec2): void {
+    const dLat = Math.asin(Math.tanh(pixels[1] * this.inverseWorldSize * 2));
+    const dLng = Math.PI * pixels[0] * this.inverseWorldSize * 2;
+    this.center = S2LatLng.fromRadians(
+        this.center.latRadians() + dLat, this.center.lngRadians() + dLng);
   }
 
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
@@ -121,80 +130,44 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
 }
 
 class Renderer {
-  private readonly camera: Camera;
-  private readonly gl: WebGL2RenderingContext;
+
   private readonly wayProgram: WayProgram;
+  private area: Vec2;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
-    this.camera = new Camera();
-    this.gl = this.canvas.getContext('webgl2');
-    window.addEventListener('resize', () => this.resize());
-
+  constructor(private readonly gl: WebGL2RenderingContext, area: Vec2) {
     this.wayProgram = createWayProgram(this.gl);
-    this.resize();
+    this.area = area;
   }
 
-  async render(): Promise<void> {
-    const viewport = this.camera.viewportBounds(this.canvas.width, this.canvas.height);
-    const cells = SimpleS2.cover(viewport);
-    const responses = [];
-    for (let i = 0; i < cells.size(); ++i) {
-      const cell = cells.getAtIndex(i);
-      responses.push(
-          fetch(`/api/fetch_cell/${cell.toToken()}`)
-              .then(response => response.arrayBuffer())
-              .then(buffer => [cell, buffer]));
-    }
-    const buffers = await Promise.all(responses);
-
-    const vertices = [];
-    let verticesOffset = 0;
+  render(lines: Array<{
+    splitVertices: ArrayBuffer;
+  }>, camera: Camera): void {
     const calls = [];
-    for (const [_, buffer] of buffers) {
-      const data = new DataView(buffer);
+    const vertices = [];
+    for (const line of lines) {
+      const doubles = new Float64Array(line.splitVertices);
+      calls.push({
+        offset: vertices.length / 2,
+        count: doubles.length, // this math is cheeky
+      });
 
-      const wayCount = data.getInt32(0, /* littleEndian= */ true);
-      if (wayCount == 0) {
-        continue;
-      }
-
-      const WAY_OFFSET = 4;
-      const WAY_STRIDE = 8 + 4 + 4;
-      let sourceVerticesOffset = 0;
-      for (let i = 0; i < wayCount; ++i) {
-        const id = data.getBigInt64(i * WAY_STRIDE + WAY_OFFSET + 0, /* littleEndian= */ true);
-        const type = data.getInt32(i * WAY_STRIDE + WAY_OFFSET + 8, /* littleEndian= */ true);
-        const wayVertexBytes =
-            data.getInt32(i * WAY_STRIDE + WAY_OFFSET + 12, /* littleEndian= */ true);
-        const wayVertexCount = wayVertexBytes / 16;
-        calls.push({
-          type,
-          offset: verticesOffset,
-          count: wayVertexCount * 2,
-        });
-
-        const vertexOffset = WAY_OFFSET + wayCount * WAY_STRIDE + sourceVerticesOffset;
-        for (let i = 0; i < wayVertexBytes; i += 16) {
-          const x = data.getFloat64(vertexOffset + i + 0, /* littleEndian= */ true);
-          const y = data.getFloat64(vertexOffset + i + 8, /* littleEndian= */ true);
-          vertices.push(x);
-          vertices.push(y);
-          vertices.push(x);
-          vertices.push(y);
-        }
-        sourceVerticesOffset += wayVertexBytes;
-        verticesOffset += wayVertexCount * 2;
-
-        // This is shady because we reverse the perpendiculars here. It would be safer to extend
-        // the line, but that takes work. This will likely break under culling.
-        const x = data.getFloat64(vertexOffset + wayVertexBytes - 32, /* littleEndian= */ true);
-        const y = data.getFloat64(vertexOffset + wayVertexBytes - 24, /* littleEndian= */ true);
+      for (let i = 0; i < doubles.length; i += 2) {
+        const x = doubles[i + 0];
+        const y = doubles[i + 1];
         vertices.push(x);
         vertices.push(y);
         vertices.push(x);
         vertices.push(y);
-        verticesOffset += 2;
       }
+
+      // This is shady because we reverse the perpendiculars here. It would be safer to extend the
+      // line, but that takes work. This will likely break under culling.
+      const x = doubles[doubles.length - 4];
+      const y = doubles[doubles.length - 3];
+      vertices.push(x);
+      vertices.push(y);
+      vertices.push(x);
+      vertices.push(y);
     }
 
     const gl = this.gl;
@@ -203,13 +176,11 @@ class Renderer {
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     gl.useProgram(this.wayProgram.id);
-    const center = splitVec2(this.camera.centerPixel);
+    const center = splitVec2(camera.centerPixel);
     gl.uniform4fv(this.wayProgram.uniforms.center, center);
     gl.uniform2f(
-        this.wayProgram.uniforms.halfViewportSize,
-        this.canvas.width / 2,
-        this.canvas.height / 2);
-    gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, this.camera.worldSize / 2);
+        this.wayProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
+    gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, camera.worldSize / 2);
 
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -239,11 +210,127 @@ class Renderer {
     gl.flush();
   }
 
+  resize(area: Vec2): void {
+    this.area = area;
+    this.gl.viewport(0, 0, area[0], area[1]);
+  }
+}
+
+class MapData {
+
+  private byCells: Map<string, ArrayBuffer>;
+
+  constructor() {
+    this.byCells = new Map();
+  }
+
+  async cellsInView(cells: S2CellId[]): Promise<void> {
+    const responses = [];
+    for (const cell of cells) {
+      const token = cell.toToken();
+      if (this.byCells.has(token)) {
+        continue;
+      }
+
+      responses.push(
+          fetch(`/api/fetch_cell/${cell.toToken()}`)
+              .then(response => response.arrayBuffer())
+              .then(buffer => {
+                this.byCells.set(token, buffer);
+              }));
+    }
+    await Promise.all(responses);
+  }
+
+  plan(cells: S2CellId[]): Array<{
+    splitVertices: ArrayBuffer;
+  }> {
+    const calls = [];
+    for (const cell of cells) {
+      const buffer = this.byCells.get(cell.toToken());
+      if (!buffer) {
+        continue;
+      }
+
+      const data = new DataView(buffer);
+
+      const wayCount = data.getInt32(0, /* littleEndian= */ true);
+      if (wayCount === 0) {
+        continue;
+      }
+
+      const WAY_OFFSET = 4;
+      const WAY_STRIDE = 8 + 4 + 4;
+      let vertexOffset = WAY_OFFSET + wayCount * WAY_STRIDE;
+      for (let i = 0; i < wayCount; ++i) {
+        const id = data.getBigInt64(i * WAY_STRIDE + WAY_OFFSET + 0, /* littleEndian= */ true);
+        const type = data.getInt32(i * WAY_STRIDE + WAY_OFFSET + 8, /* littleEndian= */ true);
+        const wayVertexBytes =
+            data.getInt32(i * WAY_STRIDE + WAY_OFFSET + 12, /* littleEndian= */ true);
+        const wayVertexCount = wayVertexBytes / 16;
+
+        calls.push({
+          splitVertices: buffer.slice(vertexOffset, vertexOffset + wayVertexBytes),
+        });
+        vertexOffset += wayVertexBytes;
+      }
+    }
+    return calls;
+  }
+}
+
+class Controller {
+
+  private readonly camera: Camera;
+  private readonly data: MapData;
+  private readonly renderer: Renderer;
+
+  private lastMousePosition: Vec2|undefined;
+
+  constructor(private readonly canvas: HTMLCanvasElement) {
+    this.camera = new Camera();
+    this.data = new MapData();
+    this.renderer = new Renderer(this.canvas.getContext('webgl2'), [-1, -1]);
+
+    window.addEventListener('resize', () => this.resize());
+    this.resize();
+
+    this.canvas.addEventListener('mousedown', e => {
+      this.lastMousePosition = [e.pageX, e.pageY];
+    });
+    this.canvas.addEventListener('mousemove', e => {
+      if (!this.lastMousePosition) {
+        return;
+      }
+      this.camera.translate([
+          this.lastMousePosition[0] - e.pageX,
+          -(this.lastMousePosition[1] - e.pageY),
+      ]);
+      this.lastMousePosition = [e.pageX, e.pageY];
+      this.render();
+    });
+    this.canvas.addEventListener('mouseup', e => {
+      this.lastMousePosition = undefined;
+    });
+
+  }
+
+  async render(): Promise<void> {
+    const viewport = this.camera.viewportBounds(this.canvas.width, this.canvas.height);
+    const cellsInArrayList = SimpleS2.cover(viewport);
+    const cells = [];
+    for (let i = 0; i < cellsInArrayList.size(); ++i) {
+      cells.push(cellsInArrayList.getAtIndex(i));
+    }
+    await this.data.cellsInView(cells);
+    this.renderer.render(this.data.plan(cells), this.camera);
+  }
+
   resize(): void {
     const area = this.canvas.getBoundingClientRect();
     this.canvas.width = area.width;
     this.canvas.height = area.height;
-    this.gl.viewport(0, 0, area.width, area.height);
+    this.renderer.resize([area.width, area.height]);
     this.render();
   }
 }
@@ -267,4 +354,6 @@ function splitVec2(v: Vec2): Vec4 {
   return [xF, x - xF, yF, y - yF];
 }
 
-new Renderer(document.getElementById('canvas') as HTMLCanvasElement);
+// TODO: assert little endian
+
+new Controller(document.getElementById('canvas') as HTMLCanvasElement).render();
