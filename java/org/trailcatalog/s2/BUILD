@@ -30,7 +30,11 @@ js_library(
 j2cl_application(
     name = "s2_raw",
     entry_points = ["org.trailcatalog.s2.externs"],
-    extra_production_args = ["--compilation_level=SIMPLE"],
+    extra_production_args = [
+        "--compilation_level=SIMPLE",
+        "--language_in=ECMASCRIPT_2020",
+        "--language_out=ECMASCRIPT_2020",
+    ],
     deps = [
         ":s2-j2cl",
     ],

@@ -30,6 +30,7 @@ data class WireWay(val id: Long, val type: Int, val vertices: ByteArray)
 
 fun fetch_cell(ctx: Context) {
   ctx.contentType("application/octet-stream")
+
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
   val ways = ArrayList<WireWay>()
   connectionSource.connection.use {

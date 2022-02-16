@@ -14,8 +14,8 @@ class Camera {
 
   constructor() {
     this.center = S2LatLng.fromDegrees(47.644209, -122.139532);
-    this.zoom = 17;
-    this.inverseWorldSize = 1 / (256 * Math.pow(2, this.zoom));
+    this.zoom = 15;
+    this.inverseWorldSize = 1 / this.worldSize;
   }
 
   get centerPixel(): Vec2 {
@@ -23,7 +23,7 @@ class Camera {
   }
 
   get worldSize(): number {
-    return Math.pow(2, 15);
+    return 256 * Math.pow(2, this.zoom);
   }
 
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
@@ -45,7 +45,8 @@ interface WayProgram {
 
   uniforms: {
     center: WebGLUniformLocation;
-    worldSize: WebGLUniformLocation;
+    halfViewportSize: WebGLUniformLocation;
+    halfWorldSize: WebGLUniformLocation;
   }
 }
 
@@ -53,9 +54,12 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
   const programId = gl.createProgram();
 
   const vs = `#version 300 es
+      // This is a Mercator coordinate ranging from -1 to 1 on both x and y
       uniform highp vec4 center;
-      uniform highp float worldSize;
+      uniform highp vec2 halfViewportSize;
+      uniform highp float halfWorldSize;
 
+      // These are Mercator coordinates ranging from -1 to 1 on both x and y
       in highp vec4 position;
       in highp vec4 next;
 
@@ -66,10 +70,11 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       void main() {
         vec2 direction = normalize(reduce(next - position));
         vec2 perp = vec2(-direction.y, direction.x);
-        vec2 push = perp * float((gl_VertexID % 2) * 2 - 1) * 0.001;
-        push = vec2(0.005, 0.005) * float((gl_VertexID % 2) * 2 - 1);
+        vec2 push = perp * float((gl_VertexID % 2) * 2 - 1) * 1.;
 
-        gl_Position = vec4(reduce((position - center) * worldSize) + push, 0, 1);
+        vec2 worldCoord = reduce((position - center) * halfWorldSize) + push;
+        gl_Position =
+            vec4(worldCoord.x / halfViewportSize.x, worldCoord.y / halfViewportSize.y, 0, 1);
       }
     `;
   const fs = `#version 300 es
@@ -109,7 +114,8 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
     },
     uniforms: {
       center: gl.getUniformLocation(programId, 'center'),
-      worldSize: gl.getUniformLocation(programId, 'worldSize'),
+      halfViewportSize: gl.getUniformLocation(programId, 'halfViewportSize'),
+      halfWorldSize: gl.getUniformLocation(programId, 'halfWorldSize'),
     },
   };
 }
@@ -131,7 +137,6 @@ class Renderer {
   async render(): Promise<void> {
     const viewport = this.camera.viewportBounds(this.canvas.width, this.canvas.height);
     const cells = SimpleS2.cover(viewport);
-    console.log(cells);
     const responses = [];
     for (let i = 0; i < cells.size(); ++i) {
       const cell = cells.getAtIndex(i);
@@ -143,7 +148,7 @@ class Renderer {
     const buffers = await Promise.all(responses);
 
     const vertices = [];
-    let vertexCount = 0;
+    let verticesOffset = 0;
     const calls = [];
     for (const [_, buffer] of buffers) {
       const data = new DataView(buffer);
@@ -155,7 +160,7 @@ class Renderer {
 
       const WAY_OFFSET = 4;
       const WAY_STRIDE = 8 + 4 + 4;
-      let bufferVertexCount = 0;
+      let sourceVerticesOffset = 0;
       for (let i = 0; i < wayCount; ++i) {
         const id = data.getBigInt64(i * WAY_STRIDE + WAY_OFFSET + 0, /* littleEndian= */ true);
         const type = data.getInt32(i * WAY_STRIDE + WAY_OFFSET + 8, /* littleEndian= */ true);
@@ -164,25 +169,32 @@ class Renderer {
         const wayVertexCount = wayVertexBytes / 16;
         calls.push({
           type,
-          offset: vertexCount + bufferVertexCount,
-          count: wayVertexCount,
+          offset: verticesOffset,
+          count: wayVertexCount * 2,
         });
-        bufferVertexCount += wayVertexCount * 2;
-      }
 
-      const VERTEX_OFFSET = WAY_OFFSET + wayCount * WAY_STRIDE;
-      for (let i = VERTEX_OFFSET; i < buffer.byteLength; i += 16) {
-        const x = data.getFloat64(i + 0, /* littleEndian= */ true);
-        const y = data.getFloat64(i + 8, /* littleEndian= */ true);
+        const vertexOffset = WAY_OFFSET + wayCount * WAY_STRIDE + sourceVerticesOffset;
+        for (let i = 0; i < wayVertexBytes; i += 16) {
+          const x = data.getFloat64(vertexOffset + i + 0, /* littleEndian= */ true);
+          const y = data.getFloat64(vertexOffset + i + 8, /* littleEndian= */ true);
+          vertices.push(x);
+          vertices.push(y);
+          vertices.push(x);
+          vertices.push(y);
+        }
+        sourceVerticesOffset += wayVertexBytes;
+        verticesOffset += wayVertexCount * 2;
+
+        // This is shady because we reverse the perpendiculars here. It would be safer to extend
+        // the line, but that takes work. This will likely break under culling.
+        const x = data.getFloat64(vertexOffset + wayVertexBytes - 32, /* littleEndian= */ true);
+        const y = data.getFloat64(vertexOffset + wayVertexBytes - 24, /* littleEndian= */ true);
         vertices.push(x);
         vertices.push(y);
         vertices.push(x);
         vertices.push(y);
-
-        vertexCount += 2;
+        verticesOffset += 2;
       }
-
-      // TODO: need to duplicate last vertex, but need to do it per way not here
     }
 
     const gl = this.gl;
@@ -193,7 +205,11 @@ class Renderer {
     gl.useProgram(this.wayProgram.id);
     const center = splitVec2(this.camera.centerPixel);
     gl.uniform4fv(this.wayProgram.uniforms.center, center);
-    gl.uniform1f(this.wayProgram.uniforms.worldSize, this.camera.worldSize / 2);
+    gl.uniform2f(
+        this.wayProgram.uniforms.halfViewportSize,
+        this.canvas.width / 2,
+        this.canvas.height / 2);
+    gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, this.camera.worldSize / 2);
 
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -214,7 +230,7 @@ class Renderer {
         gl.FLOAT,
         /* normalize= */ false,
         /* stride= */ 16,
-        /* offset= */ 16);
+        /* offset= */ 32);
 
     for (const call of calls) {
       gl.drawArrays(gl.TRIANGLE_STRIP, call.offset, call.count);

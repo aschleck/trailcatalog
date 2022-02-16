@@ -10,6 +10,7 @@ esbuild(
     entry_point = "app.ts",
     link_workspace_root = True,
     sourcemap = "both",
+    target = "es2020",
     deps = [
         ":ts",
         "@npm//esbuild",
