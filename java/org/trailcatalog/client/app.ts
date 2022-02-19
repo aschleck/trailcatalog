@@ -129,45 +129,56 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
   };
 }
 
+interface RenderPlan {
+}
+
 class Renderer {
 
+  private readonly geometryBuffer: string;
   private readonly wayProgram: WayProgram;
   private area: Vec2;
+  private plan: RenderPlan|undefined;
 
   constructor(private readonly gl: WebGL2RenderingContext, area: Vec2) {
+    this.geometryBuffer = gl.createBuffer();
     this.wayProgram = createWayProgram(this.gl);
     this.area = area;
+  }
+
+  render(): void {
   }
 
   render(lines: Array<{
     splitVertices: ArrayBuffer;
   }>, camera: Camera): void {
+    let vertexCount = 0;
+    for (const line of lines) {
+      vertexCount += line.splitVertices.byteLength / 16 * 2 + 2;
+    }
+
     const calls = [];
-    const vertices = [];
+    let vertexOffset = 0;
+    const vertices = new Float64Array(vertexCount * 2);
     for (const line of lines) {
       const doubles = new Float64Array(line.splitVertices);
       calls.push({
-        offset: vertices.length / 2,
+        offset: vertexOffset / 2,
         count: doubles.length, // this math is cheeky
       });
 
       for (let i = 0; i < doubles.length; i += 2) {
         const x = doubles[i + 0];
         const y = doubles[i + 1];
-        vertices.push(x);
-        vertices.push(y);
-        vertices.push(x);
-        vertices.push(y);
+        vertices.set([x, y, x, y], vertexOffset + i * 2);
       }
+      vertexOffset += doubles.length * 2;
 
       // This is shady because we reverse the perpendiculars here. It would be safer to extend the
       // line, but that takes work. This will likely break under culling.
       const x = doubles[doubles.length - 4];
       const y = doubles[doubles.length - 3];
-      vertices.push(x);
-      vertices.push(y);
-      vertices.push(x);
-      vertices.push(y);
+      vertices.set([x, y, x, y], vertexOffset);
+      vertexOffset += 4;
     }
 
     const gl = this.gl;
@@ -184,7 +195,7 @@ class Renderer {
 
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float64Array(vertices), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
     gl.enableVertexAttribArray(this.wayProgram.attributes.position);
     gl.vertexAttribPointer(
@@ -295,24 +306,28 @@ class Controller {
     window.addEventListener('resize', () => this.resize());
     this.resize();
 
-    this.canvas.addEventListener('mousedown', e => {
-      this.lastMousePosition = [e.pageX, e.pageY];
+    this.canvas.addEventListener('pointerdown', e => {
+      this.lastMousePosition = [e.clientX, e.clientY];
     });
-    this.canvas.addEventListener('mousemove', e => {
+    this.canvas.addEventListener('pointermove', e => {
       if (!this.lastMousePosition) {
         return;
       }
       this.camera.translate([
-          this.lastMousePosition[0] - e.pageX,
-          -(this.lastMousePosition[1] - e.pageY),
+          this.lastMousePosition[0] - e.clientX,
+          -(this.lastMousePosition[1] - e.clientY),
       ]);
-      this.lastMousePosition = [e.pageX, e.pageY];
-      this.render();
+      this.lastMousePosition = [e.clientX, e.clientY];
+      this.renderer.render(this.camera);
     });
-    this.canvas.addEventListener('mouseup', e => {
+    this.canvas.addEventListener('pointerup', e => {
       this.lastMousePosition = undefined;
     });
 
+    //const raf = () => {
+    //  requestAnimationFrame(raf);
+    //};
+    //raf();
   }
 
   async render(): Promise<void> {
