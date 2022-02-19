@@ -21,26 +21,30 @@ class Camera {
   }
 
   get centerPixel(): Vec2 {
-    return projectLatlng(this.center);
+    return projectLatLng(this.center);
   }
 
   get worldSize(): number {
     return 256 * Math.pow(2, this.zoom);
   }
 
-  translate(pixels: Vec2): void {
-    const dLat = Math.asin(Math.tanh(pixels[1] * this.inverseWorldSize * 2));
-    const dLng = Math.PI * pixels[0] * this.inverseWorldSize * 2;
-    this.center = S2LatLng.fromRadians(
-        this.center.latRadians() + dLat, this.center.lngRadians() + dLng);
+  translate(dPixels: Vec2): void {
+    const centerPixel = projectLatLng(this.center);
+    const worldYPixel = centerPixel[1] + dPixels[1] * this.inverseWorldSize * 2;
+    const newLat = Math.asin(Math.tanh(worldYPixel * Math.PI));
+    const dLng = Math.PI * dPixels[0] * this.inverseWorldSize * 2;
+    this.center = S2LatLng.fromRadians(newLat, this.center.lngRadians() + dLng);
   }
 
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
-    const dLat = Math.atan(Math.sinh(heightPx * this.inverseWorldSize));
+    const centerPixel = projectLatLng(this.center);
+    const dY = heightPx * this.inverseWorldSize;
+    const lowLat = Math.asin(Math.tanh((centerPixel[1] - dY) * Math.PI));
+    const highLat = Math.asin(Math.tanh((centerPixel[1] + dY) * Math.PI));
     const dLng = Math.PI * widthPx * this.inverseWorldSize;
     return S2LatLngRect.fromPointPair(
-        S2LatLng.fromRadians(this.center.latRadians() - dLat, this.center.lngRadians() - dLng),
-        S2LatLng.fromRadians(this.center.latRadians() + dLat, this.center.lngRadians() + dLng));
+        S2LatLng.fromRadians(lowLat, this.center.lngRadians() - dLng),
+        S2LatLng.fromRadians(highLat, this.center.lngRadians() + dLng));
   }
 }
 
@@ -54,13 +58,14 @@ interface WayProgram {
 
   uniforms: {
     center: WebGLUniformLocation;
+    color: WebGLUniformLocation;
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
   }
 }
 
 function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
-  const programId = gl.createProgram();
+  const programId = checkExists(gl.createProgram());
 
   const vs = `#version 300 es
       // This is a Mercator coordinate ranging from -1 to 1 on both x and y
@@ -87,14 +92,15 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       }
     `;
   const fs = `#version 300 es
+      uniform mediump vec4 color;
       out mediump vec4 fragColor;
 
       void main() {
-        fragColor = vec4(1, 0, 0, 1);
+        fragColor = color;
       }
   `;
 
-  const vertexId = gl.createShader(gl.VERTEX_SHADER);
+  const vertexId = checkExists(gl.createShader(gl.VERTEX_SHADER));
   gl.shaderSource(vertexId, vs);
   gl.compileShader(vertexId);
   if (!gl.getShaderParameter(vertexId, gl.COMPILE_STATUS)) {
@@ -102,7 +108,7 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
   }
   gl.attachShader(programId, vertexId);
 
-  const fragmentId = gl.createShader(gl.FRAGMENT_SHADER);
+  const fragmentId = checkExists(gl.createShader(gl.FRAGMENT_SHADER));
   gl.shaderSource(fragmentId, fs);
   gl.compileShader(fragmentId);
   if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
@@ -122,46 +128,51 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       next: gl.getAttribLocation(programId, 'next'),
     },
     uniforms: {
-      center: gl.getUniformLocation(programId, 'center'),
-      halfViewportSize: gl.getUniformLocation(programId, 'halfViewportSize'),
-      halfWorldSize: gl.getUniformLocation(programId, 'halfWorldSize'),
+      center: checkExists(gl.getUniformLocation(programId, 'center')),
+      color: checkExists(gl.getUniformLocation(programId, 'color')),
+      halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
+      halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
     },
   };
 }
 
 interface RenderPlan {
+  lines: Array<{
+    offset: number;
+    count: number;
+  }>;
 }
 
 class Renderer {
 
-  private readonly geometryBuffer: string;
+  private readonly geometryBuffer: WebGLBuffer;
   private readonly wayProgram: WayProgram;
   private area: Vec2;
-  private plan: RenderPlan|undefined;
+  private renderPlan: RenderPlan|undefined;
 
   constructor(private readonly gl: WebGL2RenderingContext, area: Vec2) {
-    this.geometryBuffer = gl.createBuffer();
+    this.geometryBuffer = checkExists(gl.createBuffer());
     this.wayProgram = createWayProgram(this.gl);
     this.area = area;
   }
 
-  render(): void {
-  }
-
-  render(lines: Array<{
+  plan(lines: Array<{
     splitVertices: ArrayBuffer;
-  }>, camera: Camera): void {
+  }>): void {
     let vertexCount = 0;
     for (const line of lines) {
       vertexCount += line.splitVertices.byteLength / 16 * 2 + 2;
     }
 
-    const calls = [];
-    let vertexOffset = 0;
+    this.renderPlan = {
+      lines: [],
+    };
+
     const vertices = new Float64Array(vertexCount * 2);
+    let vertexOffset = 0;
     for (const line of lines) {
       const doubles = new Float64Array(line.splitVertices);
-      calls.push({
+      this.renderPlan.lines.push({
         offset: vertexOffset / 2,
         count: doubles.length, // this math is cheeky
       });
@@ -182,20 +193,27 @@ class Renderer {
     }
 
     const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.geometryBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+  }
 
-    gl.clearColor(0.2, 0.2, 0.2, 1);
+  render(camera: Camera): void {
+    const gl = this.gl;
+
+    gl.clearColor(0.85, 0.85, 0.85, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
+
+    if (!this.renderPlan) {
+      return;
+    }
 
     gl.useProgram(this.wayProgram.id);
     const center = splitVec2(camera.centerPixel);
     gl.uniform4fv(this.wayProgram.uniforms.center, center);
+    gl.uniform4f(this.wayProgram.uniforms.color, 0.4, 0.2, 0.6, 1);
     gl.uniform2f(
         this.wayProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
     gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, camera.worldSize / 2);
-
-    const buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
     gl.enableVertexAttribArray(this.wayProgram.attributes.position);
     gl.vertexAttribPointer(
@@ -214,11 +232,9 @@ class Renderer {
         /* stride= */ 16,
         /* offset= */ 32);
 
-    for (const call of calls) {
-      gl.drawArrays(gl.TRIANGLE_STRIP, call.offset, call.count);
+    for (const line of this.renderPlan.lines) {
+      gl.drawArrays(gl.TRIANGLE_STRIP, line.offset, line.count);
     }
-
-    gl.flush();
   }
 
   resize(area: Vec2): void {
@@ -227,30 +243,36 @@ class Renderer {
   }
 }
 
+type S2CellToken = string & {brand: 'S2CellToken'};
+
 class MapData {
 
-  private byCells: Map<string, ArrayBuffer>;
+  private byCells: Map<S2CellToken, ArrayBuffer>;
+  private inFlight: Set<S2CellToken>;
 
   constructor() {
     this.byCells = new Map();
+    this.inFlight = new Set();
   }
 
-  async cellsInView(cells: S2CellId[]): Promise<void> {
-    const responses = [];
+  fetchCells(cells: S2CellId[], callback: () => void): void {
     for (const cell of cells) {
-      const token = cell.toToken();
-      if (this.byCells.has(token)) {
+      const token = cell.toToken() as S2CellToken;
+      if (this.inFlight.has(token) || this.byCells.has(token)) {
         continue;
       }
 
-      responses.push(
-          fetch(`/api/fetch_cell/${cell.toToken()}`)
-              .then(response => response.arrayBuffer())
-              .then(buffer => {
-                this.byCells.set(token, buffer);
-              }));
+      this.inFlight.add(token);
+      fetch(`/api/fetch_cell/${token}`)
+          .then(response => response.arrayBuffer())
+          .then(buffer => {
+            this.byCells.set(token, buffer);
+            callback();
+          })
+          .finally(() => {
+            this.inFlight.delete(token);
+          });
     }
-    await Promise.all(responses);
   }
 
   plan(cells: S2CellId[]): Array<{
@@ -258,7 +280,7 @@ class MapData {
   }> {
     const calls = [];
     for (const cell of cells) {
-      const buffer = this.byCells.get(cell.toToken());
+      const buffer = this.byCells.get(cell.toToken() as S2CellToken);
       if (!buffer) {
         continue;
       }
@@ -290,6 +312,12 @@ class MapData {
   }
 }
 
+enum RenderType {
+  NoChange = 1,
+  CameraChange = 2,
+  DataChange = 3,
+}
+
 class Controller {
 
   private readonly camera: Camera;
@@ -297,60 +325,86 @@ class Controller {
   private readonly renderer: Renderer;
 
   private lastMousePosition: Vec2|undefined;
+  private nextRender: RenderType;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.camera = new Camera();
     this.data = new MapData();
-    this.renderer = new Renderer(this.canvas.getContext('webgl2'), [-1, -1]);
+    this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
+    this.nextRender = RenderType.DataChange;
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
 
-    this.canvas.addEventListener('pointerdown', e => {
+    document.addEventListener('pointerdown', e => {
       this.lastMousePosition = [e.clientX, e.clientY];
     });
-    this.canvas.addEventListener('pointermove', e => {
+    document.addEventListener('pointermove', e => {
       if (!this.lastMousePosition) {
         return;
       }
+
       this.camera.translate([
           this.lastMousePosition[0] - e.clientX,
           -(this.lastMousePosition[1] - e.clientY),
       ]);
       this.lastMousePosition = [e.clientX, e.clientY];
-      this.renderer.render(this.camera);
+      this.nextRender = RenderType.CameraChange;
+
+      this.refetchData();
     });
-    this.canvas.addEventListener('pointerup', e => {
+    document.addEventListener('pointerup', e => {
       this.lastMousePosition = undefined;
     });
 
-    //const raf = () => {
-    //  requestAnimationFrame(raf);
-    //};
-    //raf();
+    const raf = () => {
+      if (this.nextRender >= RenderType.CameraChange) {
+        if (this.nextRender >= RenderType.DataChange) {
+          this.renderer.plan(this.data.plan(this.cellsInView()));
+        }
+        this.renderer.render(this.camera);
+      }
+      this.nextRender = RenderType.NoChange;
+      requestAnimationFrame(raf);
+    };
+    raf();
   }
 
-  async render(): Promise<void> {
+  private refetchData(): void {
+    this.data.fetchCells(this.cellsInView(), () => {
+      this.nextRender = RenderType.DataChange;
+    });
+  }
+
+  private resize(): void {
+    const area = this.canvas.getBoundingClientRect();
+    this.canvas.width = area.width;
+    this.canvas.height = area.height;
+    this.renderer.resize([area.width, area.height]);
+
+    this.nextRender = RenderType.DataChange;
+    this.refetchData();
+  }
+
+  private cellsInView(): S2CellId[] {
     const viewport = this.camera.viewportBounds(this.canvas.width, this.canvas.height);
     const cellsInArrayList = SimpleS2.cover(viewport);
     const cells = [];
     for (let i = 0; i < cellsInArrayList.size(); ++i) {
       cells.push(cellsInArrayList.getAtIndex(i));
     }
-    await this.data.cellsInView(cells);
-    this.renderer.render(this.data.plan(cells), this.camera);
-  }
-
-  resize(): void {
-    const area = this.canvas.getBoundingClientRect();
-    this.canvas.width = area.width;
-    this.canvas.height = area.height;
-    this.renderer.resize([area.width, area.height]);
-    this.render();
+    return cells;
   }
 }
 
-function projectLatlng(ll: S2LatLng): Vec2 {
+function checkExists<V>(v: V|null|undefined): V {
+  if (v === null || v === undefined) {
+    throw new Error(`Argument is ${v}`);
+  }
+  return v;
+}
+
+function projectLatLng(ll: S2LatLng): Vec2 {
   const x = ll.lngRadians() / Math.PI;
   const y = Math.log((1 + Math.sin(ll.latRadians())) / (1 - Math.sin(ll.latRadians()))) / (2 * Math.PI);
   return [x, y];
@@ -371,4 +425,4 @@ function splitVec2(v: Vec2): Vec4 {
 
 // TODO: assert little endian
 
-new Controller(document.getElementById('canvas') as HTMLCanvasElement).render();
+new Controller(document.getElementById('canvas') as HTMLCanvasElement);
