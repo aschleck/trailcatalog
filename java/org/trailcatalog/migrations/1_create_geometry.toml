@@ -34,7 +34,7 @@ primary_key = ["id"]
 	type = "BYTEA"
 
 	[[actions.columns]]
-	name = "mercator_split_floats"
+	name = "mercator_doubles"
   nullable = false
 	type = "BYTEA"
 

@@ -52,3 +52,12 @@ j2cl_library(
         "@com_google_j2cl//:jsinterop-annotations-j2cl",
     ],
 )
+
+java_library(
+    name = "s2-java",
+    srcs = glob(["*.java"]),
+    deps = [
+        "@com_google_j2cl//:jsinterop-annotations",
+        "@maven//:com_google_geometry_s2_geometry",
+    ],
+)

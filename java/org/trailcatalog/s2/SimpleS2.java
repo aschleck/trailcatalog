@@ -14,13 +14,15 @@ import jsinterop.annotations.JsType;
 @JsType
 public final class SimpleS2 {
 
+  public static final int HIGHEST_INDEX_LEVEL = 13;
+
   @JsMethod
   public static ArrayList<S2CellId> cover(S2LatLngRect viewport) {
     ArrayList<S2CellId> cells = new ArrayList<>();
     ArrayList<S2CellId> atLevel = new ArrayList<>();
     ArrayList<S2CellId> expanded = new ArrayList<>();
     Set<S2CellId> withNeighborsAtLevel = new HashSet<>();
-    for (int level = 14; level >= 0; --level) {
+    for (int level = HIGHEST_INDEX_LEVEL; level >= 0; --level) {
       S2RegionCoverer coverer =
           S2RegionCoverer.builder().setMaxCells(1000).setMinLevel(level).setMaxLevel(level).build();
       coverer.getCovering(viewport, atLevel);

@@ -47,6 +47,7 @@ kt_jvm_library(
         "washington-latest.osm.pbf",
     ],
     deps = [
+        "//java/org/trailcatalog/s2:s2-java",
         "@bazel_tools//tools/java/runfiles",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:com_wolt_osm_parallelpbf",

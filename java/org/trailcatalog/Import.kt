@@ -28,6 +28,7 @@ import java.util.Optional
 import java.util.zip.Inflater
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
+import org.trailcatalog.s2.SimpleS2
 
 private const val NANO = .000000001
 
@@ -336,7 +337,7 @@ fun loadWay(
   val latLngBytes = ByteBuffer.allocate(way.refsCount * 2 * 8).order(ByteOrder.LITTLE_ENDIAN)
   val latLngDoubles = latLngBytes.asDoubleBuffer()
   val mercatorBytes = ByteBuffer.allocate(way.refsCount * 2 * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
-  val mercatorFloats = mercatorBytes.asFloatBuffer()
+  val mercatorDoubles = mercatorBytes.asDoubleBuffer()
   var nodeId = 0L
   for (delta in way.refsList) {
     nodeId += delta
@@ -347,15 +348,17 @@ fun loadWay(
     latLngDoubles.put(point.lngRadians())
 
     val projected = project(point)
-    val xF = projected.first.toFloat()
-    mercatorFloats.put(xF)
-    mercatorFloats.put((projected.first - xF).toFloat())
-    val yF = projected.second.toFloat()
-    mercatorFloats.put(yF)
-    mercatorFloats.put((projected.second - yF).toFloat())
+    mercatorDoubles.put(projected.first)
+    mercatorDoubles.put(projected.second)
   }
-  val covering = S2RegionCoverer.builder().setMaxLevel(14).build().getCovering(bound)
-  var containedBy = S2CellId.fromLatLng(bound.center).parent(14)
+  val covering =
+      S2RegionCoverer.builder()
+          .setMaxLevel(SimpleS2.HIGHEST_INDEX_LEVEL)
+          .build()
+          .getCovering(bound)
+  var containedBy =
+      S2CellId.fromLatLng(bound.center)
+      .parent(SimpleS2.HIGHEST_INDEX_LEVEL)
   val neighbors = ArrayList<S2CellId>()
   val union = S2CellUnion()
   while (containedBy.level() > 0) {
@@ -371,7 +374,7 @@ fun loadWay(
   }
 
   connection.prepareStatement(
-      "INSERT INTO highways (id, type, cell, name, routes, latlng_doubles, mercator_split_floats) " +
+      "INSERT INTO highways (id, type, cell, name, routes, latlng_doubles, mercator_doubles) " +
           "VALUES (?, ?, ?, ?, ?, ?, ?) " +
           "ON CONFLICT (id) DO UPDATE SET " +
           "type = EXCLUDED.type, " +
@@ -379,7 +382,7 @@ fun loadWay(
           "name = EXCLUDED.name, " +
           "routes = EXCLUDED.routes, " +
           "latlng_doubles = EXCLUDED.latlng_doubles, " +
-          "mercator_split_floats = EXCLUDED.mercator_split_floats").apply {
+          "mercator_doubles = EXCLUDED.mercator_doubles").apply {
     setLong(1, way.id)
     setInt(2, category.id)
     setLong(3, containedBy.id())
