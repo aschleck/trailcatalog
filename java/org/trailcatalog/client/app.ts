@@ -13,13 +13,15 @@ class Controller {
   private readonly renderer: Renderer;
 
   private lastMousePosition: Vec2|undefined;
+  private lastRenderPlan: number;
   private nextRender: RenderType;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.camera = new Camera();
     this.data = new MapData();
     this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
-    this.nextRender = RenderType.DataChange;
+    this.lastRenderPlan = 0;
+    this.nextRender = RenderType.CameraChange;
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -43,12 +45,18 @@ class Controller {
     });
     document.addEventListener('pointerup', e => {
       this.lastMousePosition = undefined;
+      this.nextRender = RenderType.DataChange;
     });
 
     const raf = () => {
+      if (!this.lastMousePosition && this.data.hasDataNewerThan(this.lastRenderPlan)) {
+        this.nextRender = RenderType.DataChange;
+      }
+
       if (this.nextRender >= RenderType.CameraChange) {
         if (this.nextRender >= RenderType.DataChange) {
           this.renderer.plan(this.data.plan(this.cellsInView()));
+          this.lastRenderPlan = Date.now();
         }
         this.renderer.render(this.camera);
       }
@@ -59,9 +67,7 @@ class Controller {
   }
 
   private refetchData(): void {
-    this.data.fetchCells(this.cellsInView(), () => {
-      this.nextRender = RenderType.DataChange;
-    });
+    this.data.fetchCells(this.cellsInView());
   }
 
   private resize(): void {
@@ -69,13 +75,13 @@ class Controller {
     this.canvas.width = area.width;
     this.canvas.height = area.height;
     this.renderer.resize([area.width, area.height]);
-
-    this.nextRender = RenderType.DataChange;
     this.refetchData();
   }
 
   private cellsInView(): S2CellId[] {
-    const viewport = this.camera.viewportBounds(this.canvas.width, this.canvas.height);
+    const scale = 3; // 3 ensures no matter how the user pans, they wont run out of data
+    const viewport =
+        this.camera.viewportBounds(scale * this.canvas.width, scale * this.canvas.height);
     const cellsInArrayList = SimpleS2.cover(viewport);
     const cells = [];
     for (let i = 0; i < cellsInArrayList.size(); ++i) {

@@ -6,13 +6,19 @@ export class MapData {
 
   private byCells: Map<S2CellToken, ArrayBuffer>;
   private inFlight: Set<S2CellToken>;
+  private lastChange: number;
 
   constructor() {
     this.byCells = new Map();
     this.inFlight = new Set();
+    this.lastChange = Date.now();
   }
 
-  fetchCells(cells: S2CellId[], callback: () => void): void {
+  hasDataNewerThan(time: number): boolean {
+    return this.lastChange > time;
+  }
+
+  fetchCells(cells: S2CellId[]): void {
     for (const cell of cells) {
       const token = cell.toToken() as S2CellToken;
       if (this.inFlight.has(token) || this.byCells.has(token)) {
@@ -24,7 +30,7 @@ export class MapData {
           .then(response => response.arrayBuffer())
           .then(buffer => {
             this.byCells.set(token, buffer);
-            callback();
+            this.lastChange = Date.now();
           })
           .finally(() => {
             this.inFlight.delete(token);
