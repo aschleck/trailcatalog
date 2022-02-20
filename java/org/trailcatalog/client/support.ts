@@ -10,18 +10,24 @@ export function checkExists<V>(v: V|null|undefined): V {
 
 export class HashMap<K, V> {
 
+  private keys: Map<unknown, K>;
   private mapped: Map<unknown, V>;
 
   constructor(private readonly hashFn: (key: K) => unknown) {
+    this.keys = new Map();
     this.mapped = new Map();
   }
 
   set(key: K, value: V): void {
-    this.mapped.set(this.hashFn(key), value);
+    const hash = this.hashFn(key);
+    this.keys.set(hash, key);
+    this.mapped.set(hash, value);
   }
 
   delete(key: K): void {
-    this.mapped.delete(this.hashFn(key));
+    const hash = this.hashFn(key);
+    this.keys.delete(hash);
+    this.mapped.delete(hash);
   }
 
   get(key: K): V|undefined {
@@ -30,6 +36,27 @@ export class HashMap<K, V> {
 
   has(key: K): boolean {
     return this.mapped.has(this.hashFn(key));
+  }
+
+  [Symbol.iterator](): Iterator<[K, V]> {
+    const keyIterator = this.keys[Symbol.iterator]();
+    return {
+      next: () => {
+        const {value, done} = keyIterator.next();
+        if (done) {
+          return {
+            value: undefined,
+            done,
+          };
+        } else {
+          const [hash, key] = value;
+          return {
+            value: [key, checkExists(this.mapped.get(hash))],
+            done: false,
+          };
+        }
+      },
+    };
   }
 }
 
