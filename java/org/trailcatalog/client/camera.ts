@@ -1,17 +1,18 @@
-import { Vec2 } from 'java/org/trailcatalog/client/support';
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
+import { Vec2 } from './support';
+
 export class Camera {
   private center: S2LatLng;
-  private zoom: number;
+  private _zoom: number;
   private inverseWorldSize: number;
 
   constructor() {
-    //this.center = S2LatLng.fromDegrees(47.644209, -122.139532);
-    //this.zoom = 15;
-    this.center = S2LatLng.fromDegrees(46.859369, -121.747888);
-    this.zoom = 12;
+    this.center = S2LatLng.fromDegrees(47.644209, -122.139532);
+    this._zoom = 15;
+    //this.center = S2LatLng.fromDegrees(46.859369, -121.747888);
+    //this._zoom = 12;
     this.inverseWorldSize = 1 / this.worldSize;
   }
 
@@ -20,7 +21,11 @@ export class Camera {
   }
 
   get worldSize(): number {
-    return 256 * Math.pow(2, this.zoom);
+    return 256 * Math.pow(2, this._zoom);
+  }
+
+  get zoom(): number {
+    return this._zoom;
   }
 
   translate(dPixels: Vec2): void {

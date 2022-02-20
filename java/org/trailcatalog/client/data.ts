@@ -28,7 +28,13 @@ export class MapData {
 
       this.inFlight.add(token);
       fetch(`/api/fetch_cell/${token}`)
-          .then(response => response.arrayBuffer())
+          .then(response => {
+            if (response.ok) {
+              return response.arrayBuffer();
+            } else {
+              throw new Error(`Failed to download ${token}`);
+            }
+          })
           .then(buffer => {
             this.byCells.set(token, buffer);
             this.lastChange = Date.now();

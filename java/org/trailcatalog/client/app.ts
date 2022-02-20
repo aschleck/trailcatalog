@@ -1,11 +1,13 @@
 // import { S1Angle, S2LatLng, S2LatLngRect, SimpleS2 } from '../s2/SimpleS2';
-import { Camera } from 'java/org/trailcatalog/client/camera';
-import { MapData } from 'java/org/trailcatalog/client/data';
-import { MAX_GEOMETRY_BYTES, Renderer } from 'java/org/trailcatalog/client/renderer';
-import { RenderPlanner } from 'java/org/trailcatalog/client/render_planner';
-import { checkExists, Vec2 } from 'java/org/trailcatalog/client/support';
 import { S2CellId } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+
+import { Camera } from './camera';
+import { MapData } from './data';
+import { MAX_GEOMETRY_BYTES, Renderer } from './renderer';
+import { RenderPlanner } from './render_planner';
+import { checkExists, Vec2 } from './support';
+import { TileData } from './tiles';
 
 class Controller {
 
@@ -13,6 +15,7 @@ class Controller {
   private readonly data: MapData;
   private readonly geometry: ArrayBuffer;
   private readonly renderer: Renderer;
+  private readonly tiles: TileData;
 
   private lastMousePosition: Vec2|undefined;
   private lastRenderPlan: number;
@@ -23,6 +26,7 @@ class Controller {
     this.data = new MapData();
     this.geometry = new ArrayBuffer(MAX_GEOMETRY_BYTES);
     this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
+    this.tiles = new TileData(this.camera, this.renderer);
     this.lastRenderPlan = 0;
     this.nextRender = RenderType.CameraChange;
 
@@ -59,6 +63,7 @@ class Controller {
       if (this.nextRender >= RenderType.CameraChange) {
         if (this.nextRender >= RenderType.DataChange) {
           const planner = new RenderPlanner(this.geometry);
+          this.tiles.plan([this.canvas.width, this.canvas.height], planner);
           this.data.plan(this.cellsInView(), planner);
           this.renderer.apply(planner);
           this.lastRenderPlan = Date.now();

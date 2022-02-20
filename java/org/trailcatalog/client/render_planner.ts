@@ -3,7 +3,9 @@ import { checkExists, Vec2, Vec4 } from 'java/org/trailcatalog/client/support';
 
 export interface RenderPlan {
   billboards: Array<{
-    texture: string;
+    center: Vec4;
+    size: Vec2;
+    texture: WebGLTexture;
   }>;
   lines: Array<{
     offset: number;
@@ -25,6 +27,21 @@ export class RenderPlanner {
   }
 
   // TODO: z is currently implicit, terrible assumption
+
+  addBillboard(center: Vec2, size: Vec2, texture: WebGLTexture): void {
+    const x = center[0];
+    const xF = Math.fround(x);
+    const xR = x - xF;
+    const y = center[1];
+    const yF = Math.fround(y);
+    const yR = y - yF;
+
+    this.target.billboards.push({
+      center: [xF, xR, yF, yR],
+      size,
+      texture,
+    });
+  }
 
   addLines(lines: ArrayBuffer[]): void {
     const vertices = new Float32Array(this.geometry, this.geometryByteSize);
