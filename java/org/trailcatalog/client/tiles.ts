@@ -22,7 +22,7 @@ export class TileData {
   constructor(
       private readonly camera: Camera,
       private readonly renderer: Renderer) {
-    this.inFlight = new HashSet(id => `${id.x},${id.y},${id.z}`);
+    this.inFlight = createTileHashSet();
     this.pool = new TexturePool(renderer);
     this.tiles = new HashMap(id => `${id.x},${id.y},${id.z}`);
     this.tileset = new Landscape();
@@ -42,6 +42,7 @@ export class TileData {
       viewportSize[1] / halfSize,
     ];
 
+    const used = createTileHashSet();
     // We need to add 1 to y tiles because our coordinate system is flipped from the typical
     // coordinates.
     for (let y = Math.floor(centerInWorldPx[1] - halfViewportInWorldPx[1]) + 1;
@@ -55,6 +56,7 @@ export class TileData {
             y,
             z: tz,
           };
+          used.add(id);
           if (this.tiles.has(id) || this.inFlight.has(id)) {
             continue;
           }
@@ -88,6 +90,17 @@ export class TileData {
               .finally(() => {
                 this.inFlight.delete(id);
               });
+      }
+    }
+
+    for (const [id, texture] of this.tiles) {
+      if (used.has(id)) {
+        continue;
+      }
+
+      this.tiles.delete(id);
+      if (texture) {
+        this.pool.release(texture);
       }
     }
   }
@@ -135,4 +148,8 @@ class Landscape implements Tileset {
     return `https://tile.thunderforest.com/landscape/${id.z}/${id.x}/${id.y}.png?` +
         `apikey=d72e980f5f1849fbb9fb3a113a119a6f`;
   }
+}
+
+function createTileHashSet(): HashSet<TileId> {
+  return new HashSet(id => `${id.x},${id.y},${id.z}`);
 }
