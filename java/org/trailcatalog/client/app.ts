@@ -1,7 +1,8 @@
 // import { S1Angle, S2LatLng, S2LatLngRect, SimpleS2 } from '../s2/SimpleS2';
 import { Camera } from 'java/org/trailcatalog/client/camera';
 import { MapData } from 'java/org/trailcatalog/client/data';
-import { Renderer } from 'java/org/trailcatalog/client/renderer';
+import { MAX_GEOMETRY_BYTES, Renderer } from 'java/org/trailcatalog/client/renderer';
+import { RenderPlanner } from 'java/org/trailcatalog/client/render_planner';
 import { checkExists, Vec2 } from 'java/org/trailcatalog/client/support';
 import { S2CellId } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
@@ -10,6 +11,7 @@ class Controller {
 
   private readonly camera: Camera;
   private readonly data: MapData;
+  private readonly geometry: ArrayBuffer;
   private readonly renderer: Renderer;
 
   private lastMousePosition: Vec2|undefined;
@@ -19,6 +21,7 @@ class Controller {
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.camera = new Camera();
     this.data = new MapData();
+    this.geometry = new ArrayBuffer(MAX_GEOMETRY_BYTES);
     this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
     this.lastRenderPlan = 0;
     this.nextRender = RenderType.CameraChange;
@@ -55,7 +58,9 @@ class Controller {
 
       if (this.nextRender >= RenderType.CameraChange) {
         if (this.nextRender >= RenderType.DataChange) {
-          this.renderer.plan(this.data.plan(this.cellsInView()));
+          const planner = new RenderPlanner(this.geometry);
+          this.data.plan(this.cellsInView(), planner);
+          this.renderer.apply(planner);
           this.lastRenderPlan = Date.now();
         }
         this.renderer.render(this.camera);
@@ -63,7 +68,7 @@ class Controller {
       this.nextRender = RenderType.NoChange;
       requestAnimationFrame(raf);
     };
-    raf();
+    requestAnimationFrame(raf);
   }
 
   private refetchData(): void {
@@ -75,6 +80,7 @@ class Controller {
     this.canvas.width = area.width;
     this.canvas.height = area.height;
     this.renderer.resize([area.width, area.height]);
+    this.nextRender = RenderType.CameraChange;
     this.refetchData();
   }
 

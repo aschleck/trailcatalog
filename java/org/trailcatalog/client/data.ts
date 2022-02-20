@@ -1,3 +1,4 @@
+import { RenderPlanner } from 'java/org/trailcatalog/client/render_planner';
 import { S2CellId } from 'java/org/trailcatalog/s2';
 
 type S2CellToken = string & {brand: 'S2CellToken'};
@@ -38,9 +39,7 @@ export class MapData {
     }
   }
 
-  plan(cells: S2CellId[]): Array<{
-    splitVertices: ArrayBuffer;
-  }> {
+  plan(cells: S2CellId[], planner: RenderPlanner): void {
     const calls = [];
     for (const cell of cells) {
       const buffer = this.byCells.get(cell.toToken() as S2CellToken);
@@ -65,13 +64,11 @@ export class MapData {
             data.getInt32(i * WAY_STRIDE + WAY_OFFSET + 12, /* littleEndian= */ true);
         const wayVertexCount = wayVertexBytes / 16;
 
-        calls.push({
-          splitVertices: buffer.slice(vertexOffset, vertexOffset + wayVertexBytes),
-        });
+        calls.push(buffer.slice(vertexOffset, vertexOffset + wayVertexBytes));
         vertexOffset += wayVertexBytes;
       }
     }
-    return calls;
+    planner.addLines(calls);
   }
 }
 

@@ -1,58 +1,44 @@
 import { Camera } from 'java/org/trailcatalog/client/camera';
+import { RenderPlan, RenderPlanner } from 'java/org/trailcatalog/client/render_planner';
 import { checkExists, Vec2, Vec4 } from 'java/org/trailcatalog/client/support';
+
+export const MAX_GEOMETRY_BYTES = 28_000_000;
 
 export class Renderer {
 
   private readonly geometryBuffer: WebGLBuffer;
   private readonly wayProgram: WayProgram;
   private area: Vec2;
-  private renderPlan: RenderPlan|undefined;
+  private renderPlan: RenderPlan;
 
-  constructor(private readonly gl: WebGL2RenderingContext, area: Vec2) {
-    this.geometryBuffer = checkExists(gl.createBuffer());
+  constructor(
+      private readonly gl: WebGL2RenderingContext,
+      area: Vec2) {
+    this.geometryBuffer = this.createBuffer(MAX_GEOMETRY_BYTES);
     this.wayProgram = createWayProgram(this.gl);
     this.area = area;
-  }
-
-  plan(lines: Array<{
-    splitVertices: ArrayBuffer;
-  }>): void {
-    let vertexCount = 0;
-    for (const line of lines) {
-      vertexCount += line.splitVertices.byteLength / 16 * 2 + 2;
-    }
-
     this.renderPlan = {
+      billboards: [],
       lines: [],
     };
+  }
 
-    const vertices = new Float64Array(vertexCount * 2);
-    let vertexOffset = 0;
-    for (const line of lines) {
-      const doubles = new Float64Array(line.splitVertices);
-      this.renderPlan.lines.push({
-        offset: vertexOffset / 2,
-        count: doubles.length, // this math is cheeky
-      });
-
-      for (let i = 0; i < doubles.length; i += 2) {
-        const x = doubles[i + 0];
-        const y = doubles[i + 1];
-        vertices.set([x, y, x, y], vertexOffset + i * 2);
-      }
-      vertexOffset += doubles.length * 2;
-
-      // This is shady because we reverse the perpendiculars here. It would be safer to extend the
-      // line, but that takes work. This will likely break under culling.
-      const x = doubles[doubles.length - 4];
-      const y = doubles[doubles.length - 3];
-      vertices.set([x, y, x, y], vertexOffset);
-      vertexOffset += 4;
-    }
+  apply(planner: RenderPlanner): void {
+    this.renderPlan = planner.target;
 
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.geometryBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+    gl.bufferSubData(
+      gl.ARRAY_BUFFER, 0, new Uint8Array(planner.geometry), 0, planner.geometryByteSize);
+  }
+
+  createBuffer(byteSize: number): WebGLBuffer {
+    const gl = this.gl;
+    const buffer = checkExists(gl.createBuffer());
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, byteSize, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    return buffer;
   }
 
   render(camera: Camera): void {
@@ -61,9 +47,7 @@ export class Renderer {
     gl.clearColor(0.85, 0.85, 0.85, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    if (!this.renderPlan) {
-      return;
-    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.geometryBuffer);
 
     gl.useProgram(this.wayProgram.id);
     const center = splitVec2(camera.centerPixel);
@@ -93,6 +77,8 @@ export class Renderer {
     for (const line of this.renderPlan.lines) {
       gl.drawArrays(gl.TRIANGLE_STRIP, line.offset, line.count);
     }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
   resize(area: Vec2): void {
@@ -187,13 +173,6 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
     },
   };
-}
-
-interface RenderPlan {
-  lines: Array<{
-    offset: number;
-    count: number;
-  }>;
 }
 
 enum RenderType {
