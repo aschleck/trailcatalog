@@ -54,10 +54,18 @@ class Controller {
       this.lastMousePosition = undefined;
       this.nextRender = RenderType.DataChange;
     });
+    this.canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      this.camera.linearZoom(-0.01 * e.deltaY);
+      this.nextRender = RenderType.CameraChange;
+    });
 
     const raf = () => {
-      if (!this.lastMousePosition && this.data.hasDataNewerThan(this.lastRenderPlan)) {
-        this.nextRender = RenderType.DataChange;
+      if (!this.lastMousePosition) {
+        if (this.data.hasDataNewerThan(this.lastRenderPlan) ||
+            this.tiles.hasDataNewerThan(this.lastRenderPlan)) {
+          this.nextRender = RenderType.DataChange;
+        }
       }
 
       if (this.nextRender >= RenderType.CameraChange) {

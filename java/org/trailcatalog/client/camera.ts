@@ -28,6 +28,10 @@ export class Camera {
     return this._zoom;
   }
 
+  linearZoom(dZ: number): void {
+    this._zoom += dZ;
+  }
+
   translate(dPixels: Vec2): void {
     const centerPixel = projectLatLng(this.center);
     const worldYPixel = centerPixel[1] + dPixels[1] * this.inverseWorldSize * 2;

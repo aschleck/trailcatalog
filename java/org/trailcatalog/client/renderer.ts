@@ -107,7 +107,7 @@ export class Renderer {
 
     for (const billboard of this.renderPlan.billboards) {
       gl.uniform4fv(this.billboardProgram.uniforms.center, billboard.center);
-      gl.uniform2fv(this.billboardProgram.uniforms.size, billboard.size);
+      gl.uniform4fv(this.billboardProgram.uniforms.size, billboard.size);
       gl.bindTexture(gl.TEXTURE_2D, billboard.texture);
       gl.uniform1i(this.billboardProgram.uniforms.color, 0);
 
@@ -176,8 +176,8 @@ export class Renderer {
         bitmap);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 }
@@ -207,11 +207,11 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgram {
       // These are Mercator coordinates ranging from -1 to 1 on both x and y
       uniform highp vec4 cameraCenter;
       uniform highp vec4 center;
+      uniform highp vec4 size;
 
       // These are in pixels
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
-      uniform highp vec2 size;
 
       in highp vec2 position;
       in mediump vec2 colorPosition;
@@ -222,9 +222,10 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgram {
       }
 
       void main() {
-        vec2 worldCoord = reduce((center - cameraCenter) * halfWorldSize);
-        vec2 location = worldCoord + position * size;
-        gl_Position = vec4(location / halfViewportSize, 0, 1);
+        vec4 location =
+            center - cameraCenter + vec4(position.x * size.xy, position.y * size.zw);
+        vec4 worldCoord = location * halfWorldSize;
+        gl_Position = vec4(reduce(worldCoord) / halfViewportSize, 0, 1);
         fragColorPosition = colorPosition;
       }
     `;

@@ -1,4 +1,5 @@
 import { Camera } from './camera';
+import { Layer } from './layer';
 import { RenderPlanner } from './render_planner';
 import { Renderer } from './renderer';
 import { HashMap, HashSet, Vec2 } from './support';
@@ -11,9 +12,10 @@ interface TileId {
 
 const TILE_SIZE_PX = 256;
 
-export class TileData {
+export class TileData implements Layer {
 
   private readonly inFlight: HashSet<TileId>;
+  private lastChange: number;
   private readonly pool: TexturePool;
   // Some tilesets return 404 for ocean tile, so track those as undefined
   private readonly tiles: HashMap<TileId, WebGLTexture|undefined>;
@@ -23,9 +25,31 @@ export class TileData {
       private readonly camera: Camera,
       private readonly renderer: Renderer) {
     this.inFlight = createTileHashSet();
+    this.lastChange = Date.now();
     this.pool = new TexturePool(renderer);
     this.tiles = new HashMap(id => `${id.x},${id.y},${id.z}`);
     this.tileset = new Landscape();
+  }
+
+  hasDataNewerThan(time: number): boolean {
+    return this.lastChange > time;
+  }
+
+  plan(viewportSize: Vec2, planner: RenderPlanner): void {
+    this.fetchAndCull(viewportSize);
+
+    for (const [id, texture] of this.tiles) {
+      if (!texture) {
+        continue;
+      }
+
+      const halfWorldSize = Math.pow(2, id.z - 1);
+      const size = 1 / halfWorldSize;
+      planner.addBillboard([
+          (id.x + 0.5) / halfWorldSize,
+          (id.y - 0.5) / halfWorldSize,
+      ], [size, size], texture);
+    }
   }
 
   private fetchAndCull(viewportSize: Vec2): void {
@@ -77,6 +101,7 @@ export class TileData {
                         const texture = this.pool.acquire();
                         this.renderer.uploadTexture(bitmap, texture);
                         this.tiles.set(id, texture);
+                        this.lastChange = Date.now();
                       });
                 } else if (response.status === 404) {
                   this.tiles.set(id, undefined);
@@ -102,23 +127,6 @@ export class TileData {
       if (texture) {
         this.pool.release(texture);
       }
-    }
-  }
-
-  plan(viewportSize: Vec2, planner: RenderPlanner): void {
-    this.fetchAndCull(viewportSize);
-
-    for (const [id, texture] of this.tiles) {
-      if (!texture) {
-        continue;
-      }
-
-      const halfWorldSize = Math.pow(2, id.z - 1);
-      const size = TILE_SIZE_PX * Math.pow(2, this.camera.zoom - id.z);
-      planner.addBillboard([
-          (id.x + 0.5) / halfWorldSize,
-          (id.y - 0.5) / halfWorldSize,
-      ], [size, size], texture);
     }
   }
 }

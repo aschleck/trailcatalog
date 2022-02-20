@@ -4,7 +4,7 @@ import { checkExists, Vec2, Vec4 } from 'java/org/trailcatalog/client/support';
 export interface RenderPlan {
   billboards: Array<{
     center: Vec4;
-    size: Vec2;
+    size: Vec4;
     texture: WebGLTexture;
   }>;
   lines: Array<{
@@ -36,9 +36,16 @@ export class RenderPlanner {
     const yF = Math.fround(y);
     const yR = y - yF;
 
+    const w = size[0];
+    const wF = Math.fround(w);
+    const wR = w - wF;
+    const h = size[1];
+    const hF = Math.fround(h);
+    const hR = h - hF;
+
     this.target.billboards.push({
       center: [xF, xR, yF, yR],
-      size,
+      size: [wF, wR, hF, hR],
       texture,
     });
   }

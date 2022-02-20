@@ -1,9 +1,11 @@
-import { RenderPlanner } from 'java/org/trailcatalog/client/render_planner';
 import { S2CellId } from 'java/org/trailcatalog/s2';
+
+import { Layer } from './layer';
+import { RenderPlanner } from './render_planner';
 
 type S2CellToken = string & {brand: 'S2CellToken'};
 
-export class MapData {
+export class MapData implements Layer {
 
   private byCells: Map<S2CellToken, ArrayBuffer>;
   private inFlight: Set<S2CellToken>;
