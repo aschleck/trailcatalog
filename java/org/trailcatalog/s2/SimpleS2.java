@@ -14,7 +14,7 @@ import jsinterop.annotations.JsType;
 @JsType
 public final class SimpleS2 {
 
-  public static final int HIGHEST_INDEX_LEVEL = 14; // TODO
+  public static final int HIGHEST_INDEX_LEVEL = 13;
 
   @JsMethod
   public static ArrayList<S2CellId> cover(S2LatLngRect viewport) {

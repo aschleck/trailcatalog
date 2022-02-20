@@ -85,7 +85,7 @@ class Controller {
   }
 
   private cellsInView(): S2CellId[] {
-    const scale = 3; // 3 ensures no matter how the user pans, they wont run out of data
+    const scale = 1; // 3 ensures no matter how the user pans, they wont run out of data
     const viewport =
         this.camera.viewportBounds(scale * this.canvas.width, scale * this.canvas.height);
     const cellsInArrayList = SimpleS2.cover(viewport);

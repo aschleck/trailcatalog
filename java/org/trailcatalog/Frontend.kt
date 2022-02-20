@@ -34,7 +34,7 @@ fun fetch_cell(ctx: Context) {
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
   val ways = ArrayList<WireWay>()
   connectionSource.connection.use {
-    val query = it.prepareStatement("SELECT id, type, mercator_split_floats FROM highways WHERE cell = ?").apply {
+    val query = it.prepareStatement("SELECT id, type, mercator_doubles FROM highways WHERE cell = ?").apply {
       setLong(1, cell.id())
     }
     val results = query.executeQuery()
