@@ -3,7 +3,7 @@ import { S2CellId } from 'java/org/trailcatalog/s2';
 import { BoundsQuadtree, worldBounds } from './bounds_quadtree';
 import { Layer } from './layer';
 import { RenderPlanner } from './render_planner';
-import { PixelRect, reinterpretLong } from './support';
+import { PixelRect, reinterpretLong, Vec2 } from './support';
 
 type S2CellNumber = number & {brand: 'S2CellNumber'};
 
@@ -58,6 +58,12 @@ export class MapData implements Layer {
             this.inFlight.delete(id);
           });
     }
+  }
+
+  query(point: Vec2, radius: number): void {
+    const near: bigint[] = [];
+    this.bounds.query(point, radius, near);
+    console.log(near);
   }
 
   private loadMetadata(buffer: ArrayBuffer): void {

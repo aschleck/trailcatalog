@@ -40,6 +40,8 @@ export class Controller {
 
     document.addEventListener('pointerdown', e => {
       this.lastMousePosition = [e.clientX, e.clientY];
+
+      this.data.query(this.camera.centerPixel, 5 * this.camera.inverseWorldSize);
     });
     document.addEventListener('pointermove', e => {
       if (!this.lastMousePosition) {

@@ -5,19 +5,23 @@ import { Vec2 } from './support';
 
 export class Camera {
   private center: S2LatLng;
+  private _inverseWorldSize: number;
   private _zoom: number;
-  private inverseWorldSize: number;
 
   constructor() {
     //this.center = S2LatLng.fromDegrees(47.644209, -122.139532);
     //this._zoom = 15;
     this.center = S2LatLng.fromDegrees(46.859369, -121.747888);
     this._zoom = 12;
-    this.inverseWorldSize = 1 / this.worldSize;
+    this._inverseWorldSize = 1 / this.worldSize;
   }
 
   get centerPixel(): Vec2 {
     return projectLatLng(this.center);
+  }
+
+  get inverseWorldSize(): number {
+    return this._inverseWorldSize;
   }
 
   get worldSize(): number {
@@ -30,33 +34,33 @@ export class Camera {
 
   linearZoom(dZ: number, relativePixels: Vec2): void {
     this._zoom += dZ;
-    this.inverseWorldSize = 1 / this.worldSize;
+    this._inverseWorldSize = 1 / this.worldSize;
 
     const deltaScale = Math.pow(2, dZ);
     const dX = (deltaScale - 1) * relativePixels[0];
     const dY = (deltaScale - 1) * relativePixels[1];
 
     const centerPixel = projectLatLng(this.center);
-    const worldYPixel = centerPixel[1] + dY * this.inverseWorldSize * 2;
+    const worldYPixel = centerPixel[1] + dY * this._inverseWorldSize * 2;
     const newLat = Math.asin(Math.tanh(worldYPixel * Math.PI));
-    const dLng = Math.PI * dX * this.inverseWorldSize * 2;
+    const dLng = Math.PI * dX * this._inverseWorldSize * 2;
     this.center = S2LatLng.fromRadians(newLat, this.center.lngRadians() + dLng);
   }
 
   translate(dPixels: Vec2): void {
     const centerPixel = projectLatLng(this.center);
-    const worldYPixel = centerPixel[1] + dPixels[1] * this.inverseWorldSize * 2;
+    const worldYPixel = centerPixel[1] + dPixels[1] * this._inverseWorldSize * 2;
     const newLat = Math.asin(Math.tanh(worldYPixel * Math.PI));
-    const dLng = Math.PI * dPixels[0] * this.inverseWorldSize * 2;
+    const dLng = Math.PI * dPixels[0] * this._inverseWorldSize * 2;
     this.center = S2LatLng.fromRadians(newLat, this.center.lngRadians() + dLng);
   }
 
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
     const centerPixel = projectLatLng(this.center);
-    const dY = heightPx * this.inverseWorldSize;
+    const dY = heightPx * this._inverseWorldSize;
     const lowLat = Math.asin(Math.tanh((centerPixel[1] - dY) * Math.PI));
     const highLat = Math.asin(Math.tanh((centerPixel[1] + dY) * Math.PI));
-    const dLng = Math.PI * widthPx * this.inverseWorldSize;
+    const dLng = Math.PI * widthPx * this._inverseWorldSize;
     return S2LatLngRect.fromPointPair(
         S2LatLng.fromRadians(lowLat, this.center.lngRadians() - dLng),
         S2LatLng.fromRadians(highLat, this.center.lngRadians() + dLng));
