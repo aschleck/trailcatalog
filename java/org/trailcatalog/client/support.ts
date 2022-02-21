@@ -1,11 +1,26 @@
+import { $Long } from 'java/org/trailcatalog/s2';
+
 export type Vec2 = [number, number];
 export type Vec4 = [number, number, number, number];
+
+export interface PixelRect {
+  low: Vec2;
+  high: Vec2;
+};
 
 export function checkExists<V>(v: V|null|undefined): V {
   if (v === null || v === undefined) {
     throw new Error(`Argument is ${v}`);
   }
   return v;
+}
+
+const reinterpretLongBuffer = new ArrayBuffer(8);
+export function reinterpretLong(v: $Long): number {
+  const floats = new Int32Array(reinterpretLongBuffer);
+  floats[0] = v.getHighBits();
+  floats[1] = v.getLowBits();
+  return new Float64Array(reinterpretLongBuffer)[0];
 }
 
 export class HashMap<K, V> {
@@ -80,4 +95,3 @@ export class HashSet<V> {
     return this.mapped.has(this.hashFn(value));
   }
 }
-

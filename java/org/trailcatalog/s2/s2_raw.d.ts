@@ -1,9 +1,15 @@
 export declare namespace com.google.common.geometry {
+  class $Long {
+    getHighBits(): number;
+    getLowBits(): number;
+  }
+
   class S1Angle {
     static degrees(n: number): S1Angle;
   }
   
   class S2CellId {
+    id(): $Long;
     toToken(): string;
   }
 
