@@ -10,7 +10,7 @@ type S2CellNumber = number & {brand: 'S2CellNumber'};
 export class MapData implements Layer {
 
   private readonly bounds: BoundsQuadtree<bigint>;
-  private readonly byCells: Map<S2CellNumber, ArrayBuffer>;
+  private readonly byCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   private readonly inFlight: Set<S2CellNumber>;
   private lastChange: number;
 
@@ -45,9 +45,14 @@ export class MapData implements Layer {
             }
           })
           .then(buffer => {
-            this.byCells.set(id, buffer);
-            this.loadMetadata(buffer);
-            this.lastChange = Date.now();
+            // Check if the server wrote us a 1 byte response with 0 ways.
+            if (buffer.byteLength > 1) {
+              this.byCells.set(id, buffer);
+              this.loadMetadata(buffer);
+              this.lastChange = Date.now();
+            } else {
+              this.byCells.set(id, undefined);
+            }
           })
           .finally(() => {
             this.inFlight.delete(id);

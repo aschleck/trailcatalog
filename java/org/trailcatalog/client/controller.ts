@@ -59,7 +59,12 @@ export class Controller {
     });
     this.canvas.addEventListener('wheel', e => {
       e.preventDefault();
-      this.camera.linearZoom(-0.01 * e.deltaY);
+
+      const relativePixels: Vec2 = [
+        e.clientX - this.canvas.width / 2,
+        this.canvas.height / 2 - e.clientY,
+      ];
+      this.camera.linearZoom(-0.01 * e.deltaY, relativePixels);
       this.nextRender = RenderType.CameraChange;
       this.idleDebouncer.trigger();
     });

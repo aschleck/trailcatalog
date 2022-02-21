@@ -28,9 +28,19 @@ export class Camera {
     return this._zoom;
   }
 
-  linearZoom(dZ: number): void {
+  linearZoom(dZ: number, relativePixels: Vec2): void {
     this._zoom += dZ;
     this.inverseWorldSize = 1 / this.worldSize;
+
+    const deltaScale = Math.pow(2, dZ);
+    const dX = (deltaScale - 1) * relativePixels[0];
+    const dY = (deltaScale - 1) * relativePixels[1];
+
+    const centerPixel = projectLatLng(this.center);
+    const worldYPixel = centerPixel[1] + dY * this.inverseWorldSize * 2;
+    const newLat = Math.asin(Math.tanh(worldYPixel * Math.PI));
+    const dLng = Math.PI * dX * this.inverseWorldSize * 2;
+    this.center = S2LatLng.fromRadians(newLat, this.center.lngRadians() + dLng);
   }
 
   translate(dPixels: Vec2): void {
