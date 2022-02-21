@@ -1,4 +1,4 @@
-import { $Long } from 'java/org/trailcatalog/s2';
+import { Long } from 'java/org/trailcatalog/s2';
 
 export type Vec2 = [number, number];
 export type Vec4 = [number, number, number, number];
@@ -16,7 +16,7 @@ export function checkExists<V>(v: V|null|undefined): V {
 }
 
 const reinterpretLongBuffer = new ArrayBuffer(8);
-export function reinterpretLong(v: $Long): number {
+export function reinterpretLong(v: Long): number {
   const floats = new Int32Array(reinterpretLongBuffer);
   floats[0] = v.getHighBits();
   floats[1] = v.getLowBits();

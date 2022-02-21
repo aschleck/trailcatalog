@@ -31,7 +31,7 @@ j2cl_application(
     name = "s2_raw",
     entry_points = ["org.trailcatalog.s2.externs"],
     extra_production_args = [
-        "--compilation_level=SIMPLE",
+        "--compilation_level=ADVANCED",
         "--language_in=ECMASCRIPT_2020",
         "--language_out=ECMASCRIPT_2020",
     ],

@@ -1,15 +1,10 @@
 export declare namespace com.google.common.geometry {
-  class $Long {
-    getHighBits(): number;
-    getLowBits(): number;
-  }
-
   class S1Angle {
     static degrees(n: number): S1Angle;
   }
   
   class S2CellId {
-    id(): $Long;
+    id(): nativebootstrap.Long;
     toToken(): string;
   }
 
@@ -34,9 +29,17 @@ export declare namespace java.util {
   }
 }
 
+export declare namespace nativebootstrap {
+  class Long {
+    getHighBits(): number;
+    getLowBits(): number;
+  }
+}
+
 export declare namespace org.trailcatalog.s2 {
   class SimpleS2 {
     static cover(viewport: com.google.common.geometry.S2LatLngRect):
         java.util.ArrayList<com.google.common.geometry.S2CellId>;
   }
 }
+
