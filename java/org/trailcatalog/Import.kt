@@ -162,7 +162,10 @@ fun main(args: Array<String>) {
               "1_create_geometry",
           "postgres",
           "postgres")
+  loadPbf()
+}
 
+fun loadPbf() {
   val reader =
     BlobReader(
         FileInputStream(
@@ -399,4 +402,11 @@ fun project(ll: S2LatLng): Pair<Double, Double> {
   val x = ll.lngRadians() / Math.PI
   val y = Math.log((1 + Math.sin(ll.latRadians())) / (1 - Math.sin(ll.latRadians()))) / (2 * Math.PI)
   return Pair(x, y)
+}
+
+fun correctMemberships(connection: Connection) {
+  // update highways
+  // set routes = routes || subquery.rs
+  // from (select array_agg(r.id) as rs, h as h_id from routes r, unnest(r.highways) h group by h_id) as subquery
+  // where id = subquery.h_id;
 }
