@@ -105,29 +105,27 @@ function intersectAabbAabb(a: PixelRect, b: PixelRect): boolean {
 }
 
 function intersectCircleAabb(point: Vec2, radius: number, b: PixelRect): boolean {
-  const bHalfWidth = (b.high[0] - b.low[0]) / 2;
-  const bHalfHeight = (b.high[1] - b.low[1]) / 2;
-
-  // Test if they definitely don't overlap
-  const bOuterRadius = Math.max(bHalfWidth, bHalfHeight);
-  const rejectionRadius = radius + bOuterRadius;
-  const dx = (b.low[0] + bHalfWidth) - point[0];
-  const dy = (b.low[1] + bHalfHeight) - point[1];
-  const dz2 = dx * dx + dy * dy;
-  if (dz2 > rejectionRadius * rejectionRadius) {
-    return false;
-  }
-
-  // Test if they definitely do overlap
-  const bInnerRadius = Math.min(bHalfWidth, bHalfHeight);
-  const acceptanceRadius = radius + bInnerRadius;
-  if (dz2 < acceptanceRadius * acceptanceRadius) {
+  // Is the circle inside the rectangle?
+  if (b.low[0] <= point[0] && point[0] <= b.high[0]
+     && b.low[1] <= point[1] && point[1] <= b.high[1]) {
     return true;
   }
-
-  // Test if the closest point on the circle is in the AABB
-  const dz = Math.sqrt(dz2);
-  const tx = point[0] + radius * dx / dz;
-  const ty = point[1] + radius * dy / dz;
-  return b.low[0] <= tx && tx <= b.high[0] && b.low[1] <= ty && ty <= b.high[1];
+  // Find the center of the rectangle
+  const halfWidth = (b.high[0] - b.low[0]) / 2;
+  const halfHeight = (b.high[1] - b.low[1]) / 2;
+  // Find the vector to the circle
+  const dx = point[0] - (b.low[0] + halfWidth);
+  const dy = point[1] - (b.low[1] + halfHeight);
+  // Find the closest point to the circle
+  const cx = clamp(-halfWidth, dx, halfWidth);
+  const cy = clamp(-halfHeight, dy, halfHeight);
+  // Check if that closest point lies inside the circle
+  const dxPrime = point[0] - (b.low[0] + cx);
+  const dyPrime = point[1] - (b.low[1] + cy);
+  return dxPrime * dxPrime + dyPrime * dyPrime <= radius * radius;
 }
+
+function clamp(low: number, v: number, high: number): number {
+  return Math.min(Math.max(low, v), high);
+}
+

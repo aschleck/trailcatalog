@@ -84,7 +84,7 @@ export class Renderer {
     gl.uniform4fv(this.billboardProgram.uniforms.cameraCenter, cameraCenter);
     gl.uniform2f(
         this.billboardProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
-    gl.uniform1f(this.billboardProgram.uniforms.halfWorldSize, camera.worldSize / 2);
+    gl.uniform1f(this.billboardProgram.uniforms.halfWorldSize, camera.worldRadius);
 
     gl.enableVertexAttribArray(this.billboardProgram.attributes.position);
     gl.vertexAttribPointer(
@@ -130,7 +130,7 @@ export class Renderer {
     gl.uniform4f(this.wayProgram.uniforms.color, 0.4, 0.2, 0.6, 1);
     gl.uniform2f(
         this.wayProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
-    gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, camera.worldSize / 2);
+    gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, camera.worldRadius);
 
     gl.enableVertexAttribArray(this.wayProgram.attributes.position);
     gl.vertexAttribPointer(

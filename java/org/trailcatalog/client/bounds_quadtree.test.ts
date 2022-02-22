@@ -2,8 +2,6 @@ import { worldBounds } from './bounds_quadtree';
 import { PixelRect } from './support';
 
 test('finds intersecting bound', () => {
-  expect(2 + 2).toBe(4);
-
   const qt = worldBounds<string>();
   qt.insert('a bound', {
     low: [-0.676188353888889, 0.29574154468566277],

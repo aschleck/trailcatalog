@@ -42,10 +42,10 @@ export class Controller {
 
       const center = this.camera.centerPixel;
       const position: Vec2 = [
-        center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldSize,
-        center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldSize,
+        center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
+        center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
       ];
-      this.data.query(position, 5 * this.camera.inverseWorldSize);
+      this.data.query(position, 5 * this.camera.inverseWorldRadius);
     });
     document.addEventListener('pointermove', e => {
       if (!this.lastMousePosition) {
