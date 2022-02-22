@@ -1,6 +1,5 @@
-// import { S1Angle, S2LatLng, S2LatLngRect, SimpleS2 } from '../s2/SimpleS2';
-import { S2CellId } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { S2CellId } from '../s2';
+import { SimpleS2 } from '../s2/SimpleS2';
 
 import { Camera } from './camera';
 import { MapData } from './data';
@@ -41,7 +40,12 @@ export class Controller {
     document.addEventListener('pointerdown', e => {
       this.lastMousePosition = [e.clientX, e.clientY];
 
-      this.data.query(this.camera.centerPixel, 5 * this.camera.inverseWorldSize);
+      const center = this.camera.centerPixel;
+      const position: Vec2 = [
+        center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldSize,
+        center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldSize,
+      ];
+      this.data.query(position, 5 * this.camera.inverseWorldSize);
     });
     document.addEventListener('pointermove', e => {
       if (!this.lastMousePosition) {

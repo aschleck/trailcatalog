@@ -77,16 +77,17 @@ export class BoundsQuadtree<V> {
       if (point[0] - radius <= cx) {
         if (point[1] - radius <= cy) {
           this.children[3].query(point, radius, output);
-        } else {
+        }
+        if (point[1] + radius > cy) {
           this.children[2].query(point, radius, output);
         }
       }
-
-      if (cx < point[0] + radius) {
-        if (cy < point[1] + radius) {
-          this.children[0].query(point, radius, output);
-        } else {
+      if (point[0] + radius > cx) {
+        if (point[1] - radius <= cy) {
           this.children[1].query(point, radius, output);
+        }
+        if (point[1] + radius > cy) {
+          this.children[0].query(point, radius, output);
         }
       }
     }
@@ -112,19 +113,20 @@ function intersectCircleAabb(point: Vec2, radius: number, b: PixelRect): boolean
   const rejectionRadius = radius + bOuterRadius;
   const dx = (b.low[0] + bHalfWidth) - point[0];
   const dy = (b.low[1] + bHalfHeight) - point[1];
-  if (dx * dx + dy * dy > rejectionRadius * rejectionRadius) {
+  const dz2 = dx * dx + dy * dy;
+  if (dz2 > rejectionRadius * rejectionRadius) {
     return false;
   }
 
   // Test if they definitely do overlap
   const bInnerRadius = Math.min(bHalfWidth, bHalfHeight);
   const acceptanceRadius = radius + bInnerRadius;
-  if (dx * dx + dy * dy < acceptanceRadius * acceptanceRadius) {
+  if (dz2 < acceptanceRadius * acceptanceRadius) {
     return true;
   }
 
   // Test if the closest point on the circle is in the AABB
-  const dz = Math.sqrt(dx * dx + dy * dy);
+  const dz = Math.sqrt(dz2);
   const tx = point[0] + radius * dx / dz;
   const ty = point[1] + radius * dy / dz;
   return b.low[0] <= tx && tx <= b.high[0] && b.low[1] <= ty && ty <= b.high[1];

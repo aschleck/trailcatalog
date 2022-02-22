@@ -6,7 +6,6 @@
     "preserveSymlinks": true,
     "target": "es2020",
     "moduleResolution": "node",
-//    "traceResolution": true,
     "strict": true,
     "paths": {
       "*": [
@@ -19,7 +18,11 @@
         "bazel-out/darwin-fastbuild/bin/*",
         "bazel-out/darwin-dbg/bin/*"
       ]
-    }
+    },
+    "rootDirs": [
+      ".",
+      "bazel-out/k8-fastbuild/bin"
+    ]
   },
   "exclude": [
     "**/bin/external/**/*",

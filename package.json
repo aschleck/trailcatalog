@@ -3,11 +3,11 @@
     "@bazel/bazelisk": "^1.11.0",
     "@bazel/esbuild": "^5.1.0",
     "@bazel/typescript": "^5.1.0",
+    "@types/jest": "^27.4.0",
     "esbuild": "0.14.16",
+    "jest": "^27.5.1",
+    "jest-cli": "^27.5.1",
     "tsc": "^2.0.4",
     "typescript": "^4.5.5"
-  },
-  "dependencies": {
-    "@luma.gl/shadertools": "^8.5.10"
   }
 }
