@@ -52,11 +52,15 @@ jest_test(
     name = "jest",
     data = [
         ":tests",
+        "//:jest.config.js",
     ],
     args = [
+        "--node_options=--experimental-vm-modules",
         "--no-cache",
         "--no-watchman",
         "--ci",
         "--colors",
+        "--config",
+        "jest.config.js",
     ],
 )

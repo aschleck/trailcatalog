@@ -5,6 +5,7 @@
     "declaration": true,
     "preserveSymlinks": true,
     "target": "es2020",
+    "module": "CommonJS", // for Jest
     "moduleResolution": "node",
     "strict": true,
     "paths": {
@@ -21,7 +22,13 @@
     },
     "rootDirs": [
       ".",
-      "bazel-out/k8-fastbuild/bin"
+      "bazel-out/x64_windows-fastbuild/bin",
+      "bazel-out/x64_windows-dbg/bin",
+      "bazel-out/k8-fastbuild/bin",
+      "bazel-out/k8-dbg/bin",
+      "bazel-out/host/bin",
+      "bazel-out/darwin-fastbuild/bin",
+      "bazel-out/darwin-dbg/bin"
     ]
   },
   "exclude": [
