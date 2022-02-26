@@ -56,10 +56,13 @@ export class RenderPlanner {
     for (const line of lines) {
       const doubles = new Float64Array(line);
       this.target.lines.push({
-        offset: vertexOffset / 4,
+        offset: vertexOffset / 5,
         count: doubles.length, // this math is cheeky
       });
 
+      let distanceAlong = 0;
+      let lastX = doubles[0];
+      let lastY = doubles[1];
       for (let i = 0; i < doubles.length; i += 2) {
         const x = doubles[i + 0];
         const xF = Math.fround(x);
@@ -67,9 +70,19 @@ export class RenderPlanner {
         const y = doubles[i + 1];
         const yF = Math.fround(y);
         const yR = y - yF;
-        vertices.set([xF, xR, yF, yR, xF, xR, yF, yR], vertexOffset + i * 4);
+
+        const dx = x - lastX;
+        const dy = y - lastY;
+        distanceAlong += Math.sqrt(dx * dx + dy * dy);
+        lastX = x;
+        lastY = y;
+
+        vertices.set([
+          xF, xR, yF, yR, distanceAlong,
+          xF, xR, yF, yR, distanceAlong,
+        ], vertexOffset + i * 5);
       }
-      vertexOffset += doubles.length * 4;
+      vertexOffset += doubles.length * 5;
 
       // This is shady because we reverse the perpendiculars here. It would be safer to extend the
       // line, but that takes work. This will likely break under culling.
@@ -79,8 +92,11 @@ export class RenderPlanner {
       const y = doubles[doubles.length - 3];
       const yF = Math.fround(y);
       const yR = y - yF;
-      vertices.set([xF, xR, yF, yR, xF, xR, yF, yR], vertexOffset);
-      vertexOffset += 8;
+      vertices.set([
+        xF, xR, yF, yR, 0, // distanceAlong doesn't matter here
+        xF, xR, yF, yR, 0,
+      ], vertexOffset);
+      vertexOffset += 10;
     }
 
     this.geometryByteSize = 4 * vertexOffset;

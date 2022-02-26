@@ -24,14 +24,17 @@ export class Renderer {
                       0.5, -0.5, 1, 1,
                       0.5, 0.5, 1, 0,
                     ]));
-    this.billboardProgram = createBillboardProgram(this.gl);
+    this.billboardProgram = createBillboardProgram(gl);
     this.geometryBuffer = this.createBuffer(MAX_GEOMETRY_BYTES);
-    this.wayProgram = createWayProgram(this.gl);
+    this.wayProgram = createWayProgram(gl);
     this.area = area;
     this.renderPlan = {
       billboards: [],
       lines: [],
     };
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
 
   apply(planner: RenderPlanner): void {
@@ -127,7 +130,7 @@ export class Renderer {
 
     const cameraCenter = splitVec2(camera.centerPixel);
     gl.uniform4fv(this.wayProgram.uniforms.cameraCenter, cameraCenter);
-    gl.uniform4f(this.wayProgram.uniforms.color, 0.4, 0.2, 0.6, 1);
+    gl.uniform4f(this.wayProgram.uniforms.color, 0.1, 0.1, 0.1, 1);
     gl.uniform2f(
         this.wayProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
     gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, camera.worldRadius);
@@ -138,22 +141,31 @@ export class Renderer {
         4,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 16,
+        /* stride= */ 20,
         /* offset= */ 0);
+    gl.enableVertexAttribArray(this.wayProgram.attributes.distanceAlong);
+    gl.vertexAttribPointer(
+        this.wayProgram.attributes.distanceAlong,
+        4,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 20,
+        /* offset= */ 16);
     gl.enableVertexAttribArray(this.wayProgram.attributes.next);
     gl.vertexAttribPointer(
         this.wayProgram.attributes.next,
         4,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 16,
-        /* offset= */ 32);
+        /* stride= */ 20,
+        /* offset= */ 40);
 
     for (const line of this.renderPlan.lines) {
       gl.drawArrays(gl.TRIANGLE_STRIP, line.offset, line.count);
     }
 
     gl.disableVertexAttribArray(this.wayProgram.attributes.position);
+    gl.disableVertexAttribArray(this.wayProgram.attributes.distanceAlong);
     gl.disableVertexAttribArray(this.wayProgram.attributes.next);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
@@ -215,6 +227,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgram {
 
       in highp vec2 position;
       in mediump vec2 colorPosition;
+
       out mediump vec2 fragColorPosition;
 
       vec2 reduce(vec4 v) {
@@ -281,6 +294,7 @@ interface WayProgram {
   id: WebGLProgram;
 
   attributes: {
+    distanceAlong: number;
     position: number;
     next: number;
   }
@@ -305,6 +319,9 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       // These are Mercator coordinates ranging from -1 to 1 on both x and y
       in highp vec4 position;
       in highp vec4 next;
+      in highp float distanceAlong;
+
+      out highp float fragDistanceAlong;
 
       vec2 reduce(vec4 v) {
         return vec2(v.x + v.y, v.z + v.w);
@@ -317,14 +334,17 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
 
         vec2 worldCoord = reduce((position - cameraCenter) * halfWorldSize) + push;
         gl_Position = vec4(worldCoord / halfViewportSize, 0, 1);
+
+        fragDistanceAlong = distanceAlong * halfWorldSize;
       }
     `;
   const fs = `#version 300 es
       uniform mediump vec4 color;
+      in highp float fragDistanceAlong;
       out mediump vec4 fragColor;
 
       void main() {
-        fragColor = color;
+        fragColor = float(mod(fragDistanceAlong, 16.) > 8.) * color;
       }
   `;
 
@@ -340,7 +360,7 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
   gl.shaderSource(fragmentId, fs);
   gl.compileShader(fragmentId);
   if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile way fragment shader: ${gl.getShaderInfoLog(vertexId)}`);
+    throw new Error(`Unable to compile way fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
   }
   gl.attachShader(programId, fragmentId);
 
@@ -352,6 +372,7 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
   return {
     id: programId,
     attributes: {
+      distanceAlong: gl.getAttribLocation(programId, 'distanceAlong'),
       position: gl.getAttribLocation(programId, 'position'),
       next: gl.getAttribLocation(programId, 'next'),
     },
