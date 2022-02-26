@@ -23,18 +23,41 @@ val connectionSource = HikariDataSource(HikariConfig().apply {
 
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)
-  app.get("/api/fetch_cell/{token}", ::fetch_cell)
+  app.get("/api/fetch_cell/{token}", ::fetchCell)
 }
 
-data class WireWay(val id: Long, val type: Int, val vertices: ByteArray)
+data class WireRoute(val id: Long, val name: String, val type: Int, val highways: LongArray)
+data class WireWay(val id: Long, val type: Int, val routes: LongArray, val vertices: ByteArray)
 
-fun fetch_cell(ctx: Context) {
+fun fetchCell(ctx: Context) {
   ctx.contentType("application/octet-stream")
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
+  val routes = ArrayList<WireRoute>()
+  connectionSource.connection.use {
+    val query = it.prepareStatement("SELECT id, name, type, highways FROM routes WHERE cell = ?").apply {
+      setLong(1, cell.id())
+    }
+    val results = query.executeQuery()
+    while (results.next()) {
+      routes.add(WireRoute(
+          id = results.getLong(1),
+          name = results.getString(2),
+          type = results.getInt(3),
+          highways = results.getArray(4).resultSet.use {
+            val longs = ArrayList<Long>()
+            while (it.next()) {
+              longs.add(it.getLong(2))
+            }
+            longs.toLongArray()
+          },
+      ))
+    }
+  }
+
   val ways = ArrayList<WireWay>()
   connectionSource.connection.use {
-    val query = it.prepareStatement("SELECT id, type, mercator_doubles FROM highways WHERE cell = ?").apply {
+    val query = it.prepareStatement("SELECT id, type, routes, mercator_doubles FROM highways WHERE cell = ?").apply {
       setLong(1, cell.id())
     }
     val results = query.executeQuery()
@@ -42,7 +65,14 @@ fun fetch_cell(ctx: Context) {
       ways.add(WireWay(
           id = results.getLong(1),
           type = results.getInt(2),
-          vertices = results.getBytes(3),
+          routes = results.getArray(3).resultSet.use {
+            val longs = ArrayList<Long>()
+            while (it.next()) {
+              longs.add(it.getLong(2))
+            }
+            longs.toLongArray()
+          },
+          vertices = results.getBytes(4),
       ))
     }
   }
@@ -53,10 +83,24 @@ fun fetch_cell(ctx: Context) {
   for (way in ways) {
     output.writeLong(way.id)
     output.writeInt(way.type)
+    output.writeInt(way.routes.size)
+    for (route in way.routes) {
+      output.writeLong(route)
+    }
     output.writeInt(way.vertices.size)
-  }
-  for (way in ways) {
     output.write(way.vertices)
+  }
+  output.writeInt(routes.size)
+  for (route in routes) {
+    output.writeLong(route.id)
+    val asUtf8 = route.name.toByteArray(Charsets.UTF_8)
+    output.writeInt(asUtf8.size)
+    output.write(asUtf8)
+    output.writeInt(route.type)
+    output.writeInt(route.highways.size)
+    for (way in route.highways) {
+      output.writeLong(way)
+    }
   }
   ctx.result(bytes.toByteArray())
 }

@@ -1,4 +1,10 @@
 export declare namespace com.google.common.geometry {
+
+  class R1Interval {
+    lo(): number;
+    hi(): number;
+  }
+
   class S1Angle {
     static degrees(n: number): S1Angle;
   }
@@ -19,6 +25,8 @@ export declare namespace com.google.common.geometry {
     static fromPoint(point: S2LatLng): S2LatLngRect;
     static fromPointPair(p1: S2LatLng, p2: S2LatLng): S2LatLngRect;
     expandedByDistance(distance: S1Angle): S2LatLngRect;
+    lat(): R1Interval;
+    lng(): R1Interval;
   }
 }
 

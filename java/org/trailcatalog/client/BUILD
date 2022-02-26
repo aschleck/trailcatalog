@@ -25,7 +25,21 @@ esbuild_config(
 
 ts_project(
     name = "ts",
-    srcs = glob(["*.ts"], exclude=["*.test.ts"]),
+    srcs = glob(["*.ts"], exclude=["support.ts", "*.test.ts"]),
+    allow_js = True,
+    declaration = True,
+    link_workspace_root = True,
+    tsconfig = "//:tsconfig",
+    deps = [
+        ":support",
+        "//java/org/trailcatalog/client/workers:fetcher_ts",
+        "//java/org/trailcatalog/s2",
+    ],
+)
+
+ts_project(
+    name = "support",
+    srcs = ["support.ts"],
     allow_js = True,
     declaration = True,
     link_workspace_root = True,

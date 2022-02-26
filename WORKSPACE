@@ -117,14 +117,15 @@ kt_register_toolchains()
 maven_install(
     artifacts = [
         "args4j:args4j:2.33",
-        "com.google.guava:guava-gwt:31.0.1-jre",
         "com.google.code.gson:gson:2.8.9",
         "com.google.geometry:s2-geometry:2.0.0",
+        "com.google.guava:guava-gwt:31.0.1-jre",
         "com.google.javascript:closure-compiler-unshaded:jar:v20220104",
         "com.wolt.osm:parallelpbf:0.3.1",
         "com.zaxxer:HikariCP:5.0.1",
         "io.javalin:javalin:4.3.0",
         "org.apache.commons:commons-text:jar:1.9",
+        "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.6.10",
         "org.postgresql:postgresql:42.3.1",
         "org.slf4j:slf4j-simple:1.8.0-beta4",
     ],

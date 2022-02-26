@@ -29,6 +29,7 @@ import java.util.zip.Inflater
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 import org.trailcatalog.s2.SimpleS2
+import java.nio.DoubleBuffer
 
 private const val NANO = .000000001
 
@@ -162,10 +163,11 @@ fun main(args: Array<String>) {
               "1_create_geometry",
           "postgres",
           "postgres")
-  loadPbf()
+//  loadPbf(connection)
+  correctMemberships(connection)
 }
 
-fun loadPbf() {
+fun loadPbf(connection: Connection) {
   val reader =
     BlobReader(
         FileInputStream(
@@ -354,27 +356,7 @@ fun loadWay(
     mercatorDoubles.put(projected.first)
     mercatorDoubles.put(projected.second)
   }
-  val covering =
-      S2RegionCoverer.builder()
-          .setMaxLevel(SimpleS2.HIGHEST_INDEX_LEVEL)
-          .build()
-          .getCovering(bound)
-  var containedBy =
-      S2CellId.fromLatLng(bound.center)
-      .parent(SimpleS2.HIGHEST_INDEX_LEVEL)
-  val neighbors = ArrayList<S2CellId>()
-  val union = S2CellUnion()
-  while (containedBy.level() > 0) {
-    neighbors.clear()
-    neighbors.add(containedBy)
-    containedBy.getAllNeighbors(containedBy.level(), neighbors)
-    union.initFromCellIds(neighbors)
-    if (union.contains(covering)) {
-      break
-    } else {
-      containedBy = containedBy.parent()
-    }
-  }
+  var containedBy = boundToCell(bound.build())
 
   connection.prepareStatement(
       "INSERT INTO highways (id, type, cell, name, routes, latlng_doubles, mercator_doubles) " +
@@ -385,15 +367,15 @@ fun loadWay(
           "name = EXCLUDED.name, " +
           "routes = EXCLUDED.routes, " +
           "latlng_doubles = EXCLUDED.latlng_doubles, " +
-          "mercator_doubles = EXCLUDED.mercator_doubles").apply {
-    setLong(1, way.id)
-    setInt(2, category.id)
-    setLong(3, containedBy.id())
-    setString(4, name)
-    setArray(5, connection.createArrayOf("BIGINT", arrayOf<Long>()))
-    setBytes(6, latLngBytes.array())
-    setBytes(7, mercatorBytes.array())
-    execute()
+          "mercator_doubles = EXCLUDED.mercator_doubles").use {
+    it.setLong(1, way.id)
+    it.setInt(2, category.id)
+    it.setLong(3, containedBy.id())
+    it.setString(4, name)
+    it.setArray(5, connection.createArrayOf("BIGINT", arrayOf<Long>()))
+    it.setBytes(6, latLngBytes.array())
+    it.setBytes(7, mercatorBytes.array())
+    it.execute()
   }
 }
 
@@ -405,8 +387,71 @@ fun project(ll: S2LatLng): Pair<Double, Double> {
 }
 
 fun correctMemberships(connection: Connection) {
-  // update highways
-  // set routes = routes || subquery.rs
-  // from (select array_agg(r.id) as rs, h as h_id from routes r, unnest(r.highways) h group by h_id) as subquery
-  // where id = subquery.h_id;
+  connection.createStatement().use {
+    it.execute("""
+      UPDATE highways
+      SET routes = routes || subquery.rs
+      FROM (
+        SELECT ARRAY_AGG(r.id) as rs, h as h_id
+        FROM routes r, UNNEST(r.highways) h
+        GROUP BY h_id
+      ) AS subquery
+      WHERE id = subquery.h_id;
+    """);
+  }
+
+  val routeBounds = HashMap<Long, S2LatLngRect.Builder>()
+  connection.createStatement().use {
+    val results = it.executeQuery("""
+      SELECT r.id, h.latlng_doubles
+      FROM routes r, UNNEST(r.highways) rh
+      JOIN highways h ON rh = h.id
+    """)
+    while (results.next()) {
+      val routeId = results.getLong(1)
+      if (!routeBounds.containsKey(routeId)) {
+        routeBounds[routeId] = S2LatLngRect.empty().toBuilder()
+      }
+
+      val bound = routeBounds[routeId]!!
+      val bytes = results.getBytes(2)
+      val doubles = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
+      for (i in 0 until doubles.limit() step 2) {
+        bound.addPoint(S2LatLng.fromRadians(doubles[i], doubles[i + 1]))
+      }
+    }
+  }
+
+  for ((routeId, bound) in routeBounds) {
+    connection.prepareStatement( "UPDATE routes SET cell = ? WHERE id = ?").use {
+      it.setLong(1, boundToCell(bound.build()).id())
+      it.setLong(2, routeId)
+      it.execute()
+    }
+  }
+}
+
+fun boundToCell(bound: S2LatLngRect): S2CellId {
+  val covering =
+    S2RegionCoverer.builder()
+        .setMaxLevel(SimpleS2.HIGHEST_INDEX_LEVEL)
+        .build()
+        .getCovering(bound)
+  var containedBy =
+    S2CellId.fromLatLng(bound.center)
+        .parent(SimpleS2.HIGHEST_INDEX_LEVEL)
+  val neighbors = ArrayList<S2CellId>()
+  val union = S2CellUnion()
+  while (containedBy.level() > 0) {
+    neighbors.clear()
+    neighbors.add(containedBy)
+    containedBy.getAllNeighbors(containedBy.level(), neighbors)
+    union.initFromCellIds(neighbors)
+    if (union.contains(covering)) {
+      return containedBy
+    } else {
+      containedBy = containedBy.parent()
+    }
+  }
+  throw IllegalStateException("${bound} contained by any cell")
 }

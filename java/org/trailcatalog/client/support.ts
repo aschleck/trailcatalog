@@ -1,5 +1,7 @@
 import { Long } from 'java/org/trailcatalog/s2';
 
+export type S2CellNumber = number & {brand: 'S2CellNumber'};
+
 export type Vec2 = [number, number];
 export type Vec4 = [number, number, number, number];
 

@@ -2,8 +2,8 @@ import { S2CellId } from '../s2';
 import { SimpleS2 } from '../s2/SimpleS2';
 
 import { Camera } from './camera';
-import { MapData } from './data';
 import { Debouncer } from './debouncer';
+import { MapData } from './map_data';
 import { MAX_GEOMETRY_BYTES, Renderer } from './renderer';
 import { RenderPlanner } from './render_planner';
 import { checkExists, Vec2 } from './support';
@@ -45,7 +45,7 @@ export class Controller {
         center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
         center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
       ];
-      this.data.query(position, 10 * this.camera.inverseWorldRadius);
+      this.data.query(position, 7 * this.camera.inverseWorldRadius);
     });
     document.addEventListener('pointermove', e => {
       if (!this.lastMousePosition) {
@@ -84,7 +84,9 @@ export class Controller {
 
   private enterIdle(): void {
     this.nextRender = RenderType.DataChange;
-    this.data.fetchCells(this.cellsInView());
+    const bounds =
+        this.camera.viewportBounds(this.canvas.width, this.canvas.height);
+    this.data.viewportBoundsChanged(bounds);
   }
 
   private render(): void {
