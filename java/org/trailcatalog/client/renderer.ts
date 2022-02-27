@@ -9,6 +9,7 @@ export class Renderer {
   private readonly billboardBuffer: WebGLBuffer;
   private readonly billboardProgram: BillboardProgram;
   private readonly geometryBuffer: WebGLBuffer;
+  private readonly wayBuffer: WebGLBuffer;
   private readonly wayProgram: WayProgram;
   private area: Vec2;
   private renderPlan: RenderPlan;
@@ -26,6 +27,14 @@ export class Renderer {
                     ]));
     this.billboardProgram = createBillboardProgram(gl);
     this.geometryBuffer = this.createBuffer(MAX_GEOMETRY_BYTES);
+    this.wayBuffer =
+            this.createStaticBuffer(
+                    new Float32Array([
+                      0, -1,
+                      0, 1,
+                      1, -1,
+                      1, 1,
+                    ]));
     this.wayProgram = createWayProgram(gl);
     this.area = area;
     this.renderPlan = {
@@ -75,7 +84,7 @@ export class Renderer {
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     this.renderBillboards(camera);
-    this.renderWays(camera);
+    this.renderLines(camera);
   }
 
   private renderBillboards(camera: Camera): void {
@@ -123,10 +132,9 @@ export class Renderer {
     gl.useProgram(null);
   }
 
-  private renderWays(camera: Camera): void {
+  private renderLines(camera: Camera): void {
     const gl = this.gl;
     gl.useProgram(this.wayProgram.id);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.geometryBuffer);
 
     const cameraCenter = splitVec2(camera.centerPixel);
     gl.uniform4fv(this.wayProgram.uniforms.cameraCenter, cameraCenter);
@@ -136,48 +144,82 @@ export class Renderer {
         this.wayProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
     gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, camera.worldRadius);
 
-    gl.enableVertexAttribArray(this.wayProgram.attributes.distanceAlong);
-    gl.vertexAttribPointer(
-        this.wayProgram.attributes.distanceAlong,
-        1,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 20,
-        /* offset= */ 56);
-    gl.enableVertexAttribArray(this.wayProgram.attributes.previous);
-    gl.vertexAttribPointer(
-        this.wayProgram.attributes.previous,
-        4,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 20,
-        /* offset= */ 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.wayBuffer);
     gl.enableVertexAttribArray(this.wayProgram.attributes.position);
     gl.vertexAttribPointer(
         this.wayProgram.attributes.position,
-        4,
+        2,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 20,
-        /* offset= */ 40);
-    gl.enableVertexAttribArray(this.wayProgram.attributes.next);
-    gl.vertexAttribPointer(
-        this.wayProgram.attributes.next,
-        4,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 20,
-        /* offset= */ 80);
+        /* stride= */ 0,
+        /* offset= */ 0);
 
-    for (const line of this.renderPlan.lines) {
-      gl.uniform4fv(this.wayProgram.uniforms.colorFill, line.colorFill);
-      gl.drawArrays(gl.TRIANGLE_STRIP, line.offset, line.count);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.geometryBuffer);
+    gl.enableVertexAttribArray(this.wayProgram.attributes.previous);
+    gl.vertexAttribDivisor(this.wayProgram.attributes.previous, 1);
+    gl.enableVertexAttribArray(this.wayProgram.attributes.previousDistance);
+    gl.vertexAttribDivisor(this.wayProgram.attributes.previousDistance, 1);
+    //gl.enableVertexAttribArray(this.wayProgram.attributes.position);
+    //gl.vertexAttribDivisor(this.wayProgram.attributes.position, 1);
+    //gl.vertexAttribPointer(
+    //    this.wayProgram.attributes.position,
+    //    4,
+    //    gl.FLOAT,
+    //    /* normalize= */ false,
+    //    /* stride= */ 20,
+    //    /* offset= */ 20);
+    gl.enableVertexAttribArray(this.wayProgram.attributes.next);
+    gl.vertexAttribDivisor(this.wayProgram.attributes.next, 1);
+    gl.enableVertexAttribArray(this.wayProgram.attributes.nextDistance);
+    gl.vertexAttribDivisor(this.wayProgram.attributes.nextDistance, 1);
+
+    for (let line of this.renderPlan.lines) {
+      gl.vertexAttribPointer(
+          this.wayProgram.attributes.previous,
+          4,
+          gl.FLOAT,
+          /* normalize= */ false,
+          /* stride= */ 20,
+          /* offset= */ line.offset);
+      gl.vertexAttribPointer(
+          this.wayProgram.attributes.previousDistance,
+          1,
+          gl.FLOAT,
+          /* normalize= */ false,
+          /* stride= */ 20,
+          /* offset= */ line.offset + 16);
+      gl.vertexAttribPointer(
+          this.wayProgram.attributes.next,
+          4,
+          gl.FLOAT,
+          /* normalize= */ false,
+          /* stride= */ 20,
+          /* offset= */ line.offset + 20);
+      gl.vertexAttribPointer(
+          this.wayProgram.attributes.nextDistance,
+          1,
+          gl.FLOAT,
+          /* normalize= */ false,
+          /* stride= */ 20,
+          /* offset= */ line.offset + 36);
+
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, line.count);
     }
 
-    gl.disableVertexAttribArray(this.wayProgram.attributes.distanceAlong);
+    //for (const line of this.renderPlan.lines) {
+    //  gl.uniform4fv(this.wayProgram.uniforms.colorFill, line.colorFill);
+    //}
+
+    gl.vertexAttribDivisor(this.wayProgram.attributes.previous, 0);
     gl.disableVertexAttribArray(this.wayProgram.attributes.previous);
+    gl.vertexAttribDivisor(this.wayProgram.attributes.previousDistance, 0);
+    gl.disableVertexAttribArray(this.wayProgram.attributes.previousDistance);
+    //gl.vertexAttribDivisor(this.wayProgram.attributes.position, 0);
     gl.disableVertexAttribArray(this.wayProgram.attributes.position);
+    gl.vertexAttribDivisor(this.wayProgram.attributes.next, 0);
     gl.disableVertexAttribArray(this.wayProgram.attributes.next);
+    gl.vertexAttribDivisor(this.wayProgram.attributes.nextDistance, 0);
+    gl.disableVertexAttribArray(this.wayProgram.attributes.nextDistance);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
   }
@@ -305,10 +347,11 @@ interface WayProgram {
   id: WebGLProgram;
 
   attributes: {
-    distanceAlong: number;
     previous: number;
+    previousDistance: number;
     position: number;
     next: number;
+    nextDistance: number;
   }
 
   uniforms: {
@@ -329,36 +372,46 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
 
+      in highp vec2 position;
+
       // These are Mercator coordinates ranging from -1 to 1 on both x and y
       in highp vec4 previous;
-      in highp vec4 position;
+      in highp float previousDistance;
       in highp vec4 next;
-      in highp float distanceAlong;
+      in highp float nextDistance;
 
       out highp float fragDistanceAlong;
       out highp float fragDistanceOrtho;
 
-      vec2 reduce(vec4 v) {
+      vec4 divide2Into64(vec4 v, vec2 divisor) {
+        return vec4(v.xy / divisor.x, v.zw / divisor.y);
+      }
+
+      vec4 perpendicular64(vec4 v) {
+        return vec4(-v.zw, v.xy);
+      }
+
+      vec4 normalize64(vec4 v) {
+        float l2 =
+            v.x * v.x + 2. * v.x * v.y + v.y * v.y +
+            v.z * v.z + 2. * v.z * v.w + v.w * v.w;
+        return v / sqrt(l2);
+      }
+
+      vec2 reduce64(vec4 v) {
         return vec2(v.x + v.y, v.z + v.w);
       }
 
       void main() {
-        vec2 previousDir = normalize(reduce(position - previous));
-        vec2 nextDir = normalize(reduce(next - position));
-        vec2 tangent = normalize(previousDir + nextDir);
-        vec2 perp = vec2(-tangent.y, tangent.x);
+        vec4 direction = next - previous;
+        vec4 perpendicular = perpendicular64(normalize64(direction));
+        vec4 location = -cameraCenter + previous + direction * position.x;
+        vec4 worldCoord = location * halfWorldSize + perpendicular * 3. * position.y;
+        gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
 
-        highp float side = float((gl_VertexID % 2) * 2 - 1);
-        highp float length = 5. / dot(perp, vec2(-previousDir.y, previousDir.x));
-        vec2 push = perp * side * length;
-
-        vec2 worldCoord = reduce((position - cameraCenter) * halfWorldSize) + push;
-        gl_Position = vec4(worldCoord / halfViewportSize, 0, 1);
-
-        float end = float(((gl_VertexID / 4) % 2) * 2 - 1);
-        float pushAlong = end * dot(push, previousDir);
-        fragDistanceAlong = halfWorldSize * distanceAlong - pushAlong;
-        fragDistanceOrtho = side;
+        float dx = nextDistance - previousDistance;
+        fragDistanceAlong = (previousDistance + dx * position.x) * pow(2., 15.);
+        fragDistanceOrtho = position.y;
       }
     `;
   const fs = `#version 300 es
@@ -371,7 +424,9 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       void main() {
         //mediump vec4 stipple = float(abs(fragDistanceOrtho) < 0.5 && mod(fragDistanceAlong, 8.) > 4.) * colorStipple;
         mediump vec4 stipple = float(fragDistanceAlong / 100.) * colorStipple;
-        fragColor = (1. - stipple.w) * colorFill + stipple;
+        fragColor = vec4(1, 1, 1, 1) + (1. - stipple.w) * colorFill + stipple;
+        lowp float c = (sin(fragDistanceAlong) + 1.) / 2.;
+        fragColor = vec4(c, 1. - c, 0, 1);
       }
   `;
 
@@ -399,10 +454,11 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
   return {
     id: programId,
     attributes: {
-      distanceAlong: gl.getAttribLocation(programId, 'distanceAlong'),
       previous: gl.getAttribLocation(programId, 'previous'),
+      previousDistance: gl.getAttribLocation(programId, 'previousDistance'),
       position: gl.getAttribLocation(programId, 'position'),
       next: gl.getAttribLocation(programId, 'next'),
+      nextDistance: gl.getAttribLocation(programId, 'nextDistance'),
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),

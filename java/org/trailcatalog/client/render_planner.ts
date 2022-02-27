@@ -56,25 +56,12 @@ export class RenderPlanner {
     let vertexOffset = 0;
     for (const line of lines) {
       const doubles = new Float64Array(line);
-      this.target.lines.push({
-        offset: vertexOffset / 5,
-        count: doubles.length, // this math is cheeky
-        colorFill,
-      });
 
-      {
-        const x = 2 * doubles[0] - doubles[2];
-        const xF = Math.fround(x);
-        const xR = x - xF;
-        const y = 2 * doubles[1] - doubles[3];
-        const yF = Math.fround(y);
-        const yR = y - yF;
-        vertices.set([
-          xF, xR, yF, yR, 0, // distanceAlong doesn't matter here
-          xF, xR, yF, yR, 0,
-        ], vertexOffset);
-        vertexOffset += 10;
-      }
+      this.target.lines.push({
+        offset: this.geometryByteSize + 4 * vertexOffset,
+        count: doubles.length / 2 - 1,
+        colorFill: [1, 1, 1, 1],
+      });
 
       let distanceAlong = 0;
       let lastX = doubles[0];
@@ -95,29 +82,12 @@ export class RenderPlanner {
 
         vertices.set([
           xF, xR, yF, yR, distanceAlong,
-          xF, xR, yF, yR, distanceAlong,
-        ], vertexOffset + i * 5);
-      }
-      vertexOffset += doubles.length * 5;
-
-      // This is shady because we reverse the perpendiculars here. It would be safer to extend the
-      // line, but that takes work. This will likely break under culling.
-      {
-        const x = 2 * doubles[doubles.length - 2] - doubles[doubles.length - 4];
-        const xF = Math.fround(x);
-        const xR = x - xF;
-        const y = 2 * doubles[doubles.length - 1] - doubles[doubles.length - 3];
-        const yF = Math.fround(y);
-        const yR = y - yF;
-        vertices.set([
-          xF, xR, yF, yR, 0, // distanceAlong doesn't matter here
-          xF, xR, yF, yR, 0,
         ], vertexOffset);
-        vertexOffset += 10;
+        vertexOffset += 5;
       }
     }
 
-    this.geometryByteSize = 4 * vertexOffset;
+    this.geometryByteSize += 4 * vertexOffset;
   }
 }
 
