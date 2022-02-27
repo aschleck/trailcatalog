@@ -130,11 +130,28 @@ export class Renderer {
 
     const cameraCenter = splitVec2(camera.centerPixel);
     gl.uniform4fv(this.wayProgram.uniforms.cameraCenter, cameraCenter);
-    gl.uniform4f(this.wayProgram.uniforms.color, 0.1, 0.1, 0.1, 1);
+    gl.uniform4f(this.wayProgram.uniforms.colorStipple, 0.1, 0.1, 0.1, 1);
+    gl.uniform4f(this.wayProgram.uniforms.colorStipple, 1, 1, 1, 1);
     gl.uniform2f(
         this.wayProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
     gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, camera.worldRadius);
 
+    gl.enableVertexAttribArray(this.wayProgram.attributes.distanceAlong);
+    gl.vertexAttribPointer(
+        this.wayProgram.attributes.distanceAlong,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 20,
+        /* offset= */ 56);
+    gl.enableVertexAttribArray(this.wayProgram.attributes.previous);
+    gl.vertexAttribPointer(
+        this.wayProgram.attributes.previous,
+        4,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 20,
+        /* offset= */ 0);
     gl.enableVertexAttribArray(this.wayProgram.attributes.position);
     gl.vertexAttribPointer(
         this.wayProgram.attributes.position,
@@ -142,15 +159,7 @@ export class Renderer {
         gl.FLOAT,
         /* normalize= */ false,
         /* stride= */ 20,
-        /* offset= */ 0);
-    gl.enableVertexAttribArray(this.wayProgram.attributes.distanceAlong);
-    gl.vertexAttribPointer(
-        this.wayProgram.attributes.distanceAlong,
-        4,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 20,
-        /* offset= */ 16);
+        /* offset= */ 40);
     gl.enableVertexAttribArray(this.wayProgram.attributes.next);
     gl.vertexAttribPointer(
         this.wayProgram.attributes.next,
@@ -158,14 +167,16 @@ export class Renderer {
         gl.FLOAT,
         /* normalize= */ false,
         /* stride= */ 20,
-        /* offset= */ 40);
+        /* offset= */ 80);
 
     for (const line of this.renderPlan.lines) {
+      gl.uniform4fv(this.wayProgram.uniforms.colorFill, line.colorFill);
       gl.drawArrays(gl.TRIANGLE_STRIP, line.offset, line.count);
     }
 
-    gl.disableVertexAttribArray(this.wayProgram.attributes.position);
     gl.disableVertexAttribArray(this.wayProgram.attributes.distanceAlong);
+    gl.disableVertexAttribArray(this.wayProgram.attributes.previous);
+    gl.disableVertexAttribArray(this.wayProgram.attributes.position);
     gl.disableVertexAttribArray(this.wayProgram.attributes.next);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
@@ -295,13 +306,15 @@ interface WayProgram {
 
   attributes: {
     distanceAlong: number;
+    previous: number;
     position: number;
     next: number;
   }
 
   uniforms: {
     cameraCenter: WebGLUniformLocation;
-    color: WebGLUniformLocation;
+    colorFill: WebGLUniformLocation;
+    colorStipple: WebGLUniformLocation;
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
   }
@@ -317,34 +330,48 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       uniform highp float halfWorldSize;
 
       // These are Mercator coordinates ranging from -1 to 1 on both x and y
+      in highp vec4 previous;
       in highp vec4 position;
       in highp vec4 next;
       in highp float distanceAlong;
 
       out highp float fragDistanceAlong;
+      out highp float fragDistanceOrtho;
 
       vec2 reduce(vec4 v) {
         return vec2(v.x + v.y, v.z + v.w);
       }
 
       void main() {
-        vec2 direction = normalize(reduce(next - position));
-        vec2 perp = vec2(-direction.y, direction.x);
-        vec2 push = perp * float((gl_VertexID % 2) * 2 - 1) * 1.;
+        vec2 previousDir = normalize(reduce(position - previous));
+        vec2 nextDir = normalize(reduce(next - position));
+        vec2 tangent = normalize(previousDir + nextDir);
+        vec2 perp = vec2(-tangent.y, tangent.x);
+
+        highp float side = float((gl_VertexID % 2) * 2 - 1);
+        highp float length = 5. / dot(perp, vec2(-previousDir.y, previousDir.x));
+        vec2 push = perp * side * length;
 
         vec2 worldCoord = reduce((position - cameraCenter) * halfWorldSize) + push;
         gl_Position = vec4(worldCoord / halfViewportSize, 0, 1);
 
-        fragDistanceAlong = distanceAlong * halfWorldSize;
+        float end = float(((gl_VertexID / 4) % 2) * 2 - 1);
+        float pushAlong = end * dot(push, previousDir);
+        fragDistanceAlong = halfWorldSize * distanceAlong - pushAlong;
+        fragDistanceOrtho = side;
       }
     `;
   const fs = `#version 300 es
-      uniform mediump vec4 color;
+      uniform lowp vec4 colorFill;
+      uniform lowp vec4 colorStipple;
       in highp float fragDistanceAlong;
-      out mediump vec4 fragColor;
+      in highp float fragDistanceOrtho;
+      out lowp vec4 fragColor;
 
       void main() {
-        fragColor = float(mod(fragDistanceAlong, 16.) > 8.) * color;
+        //mediump vec4 stipple = float(abs(fragDistanceOrtho) < 0.5 && mod(fragDistanceAlong, 8.) > 4.) * colorStipple;
+        mediump vec4 stipple = float(fragDistanceAlong / 100.) * colorStipple;
+        fragColor = (1. - stipple.w) * colorFill + stipple;
       }
   `;
 
@@ -373,12 +400,14 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
     id: programId,
     attributes: {
       distanceAlong: gl.getAttribLocation(programId, 'distanceAlong'),
+      previous: gl.getAttribLocation(programId, 'previous'),
       position: gl.getAttribLocation(programId, 'position'),
       next: gl.getAttribLocation(programId, 'next'),
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
-      color: checkExists(gl.getUniformLocation(programId, 'color')),
+      colorFill: checkExists(gl.getUniformLocation(programId, 'colorFill')),
+      colorStipple: checkExists(gl.getUniformLocation(programId, 'colorStipple')),
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
     },

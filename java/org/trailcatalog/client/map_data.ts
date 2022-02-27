@@ -172,7 +172,8 @@ export class MapData implements Layer {
         calls.push(data.slice(wayVertexBytes));
       }
     }
-    planner.addLines(calls);
+    //planner.addLines(calls, [1, 0.918, 0, 1]);
+    planner.addLines(calls, [0, 0, 0, 1]);
   }
 
   private loadCell(id: S2CellNumber, buffer: ArrayBuffer): void {
