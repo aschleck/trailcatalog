@@ -1,22 +1,21 @@
-import { S2CellId } from '../s2';
-import { SimpleS2 } from '../s2/SimpleS2';
+import { checkExists } from './models/asserts';
+import { Vec2 } from './models/types';
 
 import { Camera } from './camera';
 import { Debouncer } from './debouncer';
 import { MapData } from './map_data';
 import { MAX_GEOMETRY_BYTES, Renderer } from './renderer';
 import { RenderPlanner } from './render_planner';
-import { checkExists, Vec2 } from './support';
-import { TileData } from './tiles';
+import { TileData } from './tile_data';
 
 export class Controller {
 
   private readonly camera: Camera;
-  private readonly data: MapData;
   private readonly geometry: ArrayBuffer;
   private readonly idleDebouncer: Debouncer;
+  private readonly mapData: MapData;
   private readonly renderer: Renderer;
-  private readonly tiles: TileData;
+  private readonly tileData: TileData;
 
   private lastMousePosition: Vec2|undefined;
   private lastRenderPlan: number;
@@ -24,13 +23,13 @@ export class Controller {
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.camera = new Camera();
-    this.data = new MapData();
     this.geometry = new ArrayBuffer(MAX_GEOMETRY_BYTES);
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.enterIdle();
     });
+    this.mapData = new MapData(this.camera);
     this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
-    this.tiles = new TileData(this.camera, this.renderer);
+    this.tileData = new TileData(this.camera, this.renderer);
     this.lastRenderPlan = 0;
     this.nextRender = RenderType.CameraChange;
 
@@ -45,7 +44,7 @@ export class Controller {
         center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
         center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
       ];
-      this.data.query(position, 7 * this.camera.inverseWorldRadius);
+      this.mapData.query(position, 7 * this.camera.inverseWorldRadius);
     });
     document.addEventListener('pointermove', e => {
       if (!this.lastMousePosition) {
@@ -84,15 +83,15 @@ export class Controller {
 
   private enterIdle(): void {
     this.nextRender = RenderType.DataChange;
-    const bounds =
-        this.camera.viewportBounds(this.canvas.width, this.canvas.height);
-    this.data.viewportBoundsChanged(bounds);
+    const size: Vec2 = [this.canvas.width, this.canvas.height];
+    this.mapData.viewportBoundsChanged(size);
+    this.tileData.viewportBoundsChanged(size);
   }
 
   private render(): void {
     if (!this.lastMousePosition) {
-      if (this.data.hasDataNewerThan(this.lastRenderPlan) ||
-          this.tiles.hasDataNewerThan(this.lastRenderPlan)) {
+      if (this.mapData.hasDataNewerThan(this.lastRenderPlan) ||
+          this.tileData.hasDataNewerThan(this.lastRenderPlan)) {
         this.nextRender = RenderType.DataChange;
       }
     }
@@ -100,8 +99,9 @@ export class Controller {
     if (this.nextRender >= RenderType.CameraChange) {
       if (this.nextRender >= RenderType.DataChange) {
         const planner = new RenderPlanner(this.geometry);
-        this.tiles.plan([this.canvas.width, this.canvas.height], planner);
-        this.data.plan(this.cellsInView(), planner);
+        const size: Vec2 = [this.canvas.width, this.canvas.height];
+        this.tileData.plan(size, planner);
+        this.mapData.plan(size, planner);
         this.renderer.apply(planner);
         this.lastRenderPlan = Date.now();
       }
@@ -117,18 +117,6 @@ export class Controller {
     this.renderer.resize([area.width, area.height]);
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
-  }
-
-  private cellsInView(): S2CellId[] {
-    const scale = 1; // 3 ensures no matter how the user pans, they wont run out of data
-    const viewport =
-        this.camera.viewportBounds(scale * this.canvas.width, scale * this.canvas.height);
-    const cellsInArrayList = SimpleS2.cover(viewport);
-    const cells = [];
-    for (let i = 0; i < cellsInArrayList.size(); ++i) {
-      cells.push(cellsInArrayList.getAtIndex(i));
-    }
-    return cells;
   }
 }
 

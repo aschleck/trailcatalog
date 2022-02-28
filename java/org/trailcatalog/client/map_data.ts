@@ -1,13 +1,14 @@
+import { reinterpretLong } from './models/math';
+import { PixelRect, S2CellNumber, Vec2 } from './models/types';
 import { S2CellId, S2LatLngRect } from '../s2';
-import { FetcherCommand } from './workers/fetcher';
+import { SimpleS2 } from '../s2/SimpleS2';
+import { FetcherCommand } from './workers/data_fetcher';
 
 import { BoundsQuadtree, worldBounds } from './bounds_quadtree';
+import { Camera } from './camera';
 import { Layer } from './layer';
 import { LittleEndianView } from './little_endian_view';
 import { RenderPlanner } from './render_planner';
-import { PixelRect, reinterpretLong, Vec2 } from './support';
-
-type S2CellNumber = number & {brand: 'S2CellNumber'};
 
 interface Entity {
   readonly id: bigint;
@@ -43,11 +44,13 @@ export class MapData implements Layer {
   private readonly fetcher: Worker;
   private lastChange: number;
 
-  constructor() {
+  constructor(
+      private readonly camera: Camera,
+  ) {
     this.bounds = worldBounds();
     this.byCells = new Map();
     this.entities = new Map();
-    this.fetcher = new Worker('static/fetcher_worker.js');
+    this.fetcher = new Worker('static/data_fetcher_worker.js');
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
       if (command.type === 'lcc') {
@@ -100,7 +103,8 @@ export class MapData implements Layer {
     console.log(bestDistance2);
   }
 
-  viewportBoundsChanged(bounds: S2LatLngRect): void {
+  viewportBoundsChanged(viewportSize: Vec2): void {
+    const bounds = this.camera.viewportBounds(viewportSize[0], viewportSize[1]);
     this.fetcher.postMessage({
       lat: [bounds.lat().lo(), bounds.lat().hi()],
       lng: [bounds.lng().lo(), bounds.lng().hi()],
@@ -115,11 +119,15 @@ export class MapData implements Layer {
       const id = data.getBigInt64();
       const type = data.getInt32();
       const wayRouteCount = data.getInt32();
-      const wayRoutes = [...new BigInt64Array(data.slice(wayRouteCount * 8))];
+      const wayRoutes = [];
+      for (let j = 0; j < wayRouteCount; ++j) {
+        wayRoutes.push(data.getBigInt64());
+      }
 
       const wayVertexBytes = data.getInt32();
       const wayVertexCount = wayVertexBytes / 16;
-      const points = new Float64Array(data.slice(wayVertexBytes));
+      data.align(8);
+      const points = data.sliceFloat64(wayVertexCount * 2);
       const bound: PixelRect = {
         low: [1, 1],
         high: [-1, -1],
@@ -141,16 +149,18 @@ export class MapData implements Layer {
     for (let i = 0; i < routeCount; ++i) {
       const id = data.getBigInt64();
       const nameLength = data.getInt32();
-      const name = TEXT_DECODER.decode(data.slice(nameLength));
+      const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
       const type = data.getInt32();
       const routeWayCount = data.getInt32();
-      const routeWays = [...new BigInt64Array(data.slice(routeWayCount * 8))];
+      data.align(8);
+      const routeWays = [...data.sliceBigInt64(routeWayCount)];
       const route = new Route(id, name, type, routeWays);
       this.entities.set(id, route);
     }
   }
 
-  plan(cells: S2CellId[], planner: RenderPlanner): void {
+  plan(viewportSize: Vec2, planner: RenderPlanner): void {
+    const cells = this.cellsInView(viewportSize);
     const calls = [];
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
@@ -169,11 +179,24 @@ export class MapData implements Layer {
         data.skip(routes * 8);
         const wayVertexBytes = data.getInt32();
         const wayVertexCount = wayVertexBytes / 16;
-        calls.push(data.slice(wayVertexBytes));
+        data.align(8);
+        calls.push(data.sliceFloat64(wayVertexCount * 2));
       }
     }
     //planner.addLines(calls, [1, 0.918, 0, 1]);
     planner.addLines(calls, [0, 0, 0, 1]);
+  }
+
+  private cellsInView(viewportSize: Vec2): S2CellId[] {
+    const scale = 1; // 3 ensures no matter how the user pans, they wont run out of mapData
+    const viewport =
+        this.camera.viewportBounds(scale * viewportSize[0], scale * viewportSize[1]);
+    const cellsInArrayList = SimpleS2.cover(viewport);
+    const cells = [];
+    for (let i = 0; i < cellsInArrayList.size(); ++i) {
+      cells.push(cellsInArrayList.getAtIndex(i));
+    }
+    return cells;
   }
 
   private loadCell(id: S2CellNumber, buffer: ArrayBuffer): void {

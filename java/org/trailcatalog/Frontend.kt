@@ -1,18 +1,12 @@
 package org.trailcatalog
 
 import com.google.common.geometry.S2CellId
-import com.google.common.geometry.S2LatLngRect
 import com.google.common.io.LittleEndianDataOutputStream
-import com.google.common.primitives.UnsignedLongs
-import com.google.devtools.build.runfiles.Runfiles
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariConfig
+import com.zaxxer.hikari.HikariDataSource
 import io.javalin.Javalin
-import io.javalin.core.util.Headers
 import io.javalin.http.Context
 import java.io.ByteArrayOutputStream
-import java.io.DataOutputStream
-import java.sql.DriverManager
 
 val connectionSource = HikariDataSource(HikariConfig().apply {
   jdbcUrl =
@@ -77,7 +71,7 @@ fun fetchCell(ctx: Context) {
     }
   }
 
-  val bytes = ByteArrayOutputStream()
+  val bytes = AlignableByteArrayOutputStream()
   val output = LittleEndianDataOutputStream(bytes)
   output.writeInt(ways.size)
   for (way in ways) {
@@ -88,6 +82,8 @@ fun fetchCell(ctx: Context) {
       output.writeLong(route)
     }
     output.writeInt(way.vertices.size)
+    output.flush()
+    bytes.align(8)
     output.write(way.vertices)
   }
   output.writeInt(routes.size)
@@ -98,9 +94,19 @@ fun fetchCell(ctx: Context) {
     output.write(asUtf8)
     output.writeInt(route.type)
     output.writeInt(route.highways.size)
+    output.flush()
+    bytes.align(8)
     for (way in route.highways) {
       output.writeLong(way)
     }
   }
   ctx.result(bytes.toByteArray())
+}
+
+class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
+
+  fun align(alignment: Int) {
+    count = (count + alignment - 1) / alignment * alignment
+    // No need to grow because the next write will catch up
+  }
 }

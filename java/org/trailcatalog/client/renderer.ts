@@ -1,6 +1,8 @@
-import { Camera } from 'java/org/trailcatalog/client/camera';
-import { RenderPlan, RenderPlanner } from 'java/org/trailcatalog/client/render_planner';
-import { checkExists, Vec2, Vec4 } from 'java/org/trailcatalog/client/support';
+import { checkExists } from './models/asserts';
+import { Vec2, Vec4 } from './models/types';
+
+import { Camera } from './camera';
+import { RenderPlan, RenderPlanner } from './render_planner';
 
 export const MAX_GEOMETRY_BYTES = 28_000_000;
 
@@ -9,8 +11,8 @@ export class Renderer {
   private readonly billboardBuffer: WebGLBuffer;
   private readonly billboardProgram: BillboardProgram;
   private readonly geometryBuffer: WebGLBuffer;
-  private readonly wayBuffer: WebGLBuffer;
-  private readonly wayProgram: WayProgram;
+  private readonly lineBuffer: WebGLBuffer;
+  private readonly lineProgram: LineProgram;
   private area: Vec2;
   private renderPlan: RenderPlan;
 
@@ -27,7 +29,7 @@ export class Renderer {
                     ]));
     this.billboardProgram = createBillboardProgram(gl);
     this.geometryBuffer = this.createBuffer(MAX_GEOMETRY_BYTES);
-    this.wayBuffer =
+    this.lineBuffer =
             this.createStaticBuffer(
                     new Float32Array([
                       0, -1,
@@ -35,7 +37,7 @@ export class Renderer {
                       1, -1,
                       1, 1,
                     ]));
-    this.wayProgram = createWayProgram(gl);
+    this.lineProgram = createLineProgram(gl);
     this.area = area;
     this.renderPlan = {
       billboards: [],
@@ -133,21 +135,27 @@ export class Renderer {
   }
 
   private renderLines(camera: Camera): void {
+    for (const line of this.renderPlan.lines) {
+      this.renderLine(line, camera);
+    }
+  }
+
+  private renderLine(line: {offset: number; count: number}, camera: Camera): void {
     const gl = this.gl;
-    gl.useProgram(this.wayProgram.id);
+    gl.useProgram(this.lineProgram.id);
 
     const cameraCenter = splitVec2(camera.centerPixel);
-    gl.uniform4fv(this.wayProgram.uniforms.cameraCenter, cameraCenter);
-    gl.uniform4f(this.wayProgram.uniforms.colorStipple, 0.1, 0.1, 0.1, 1);
-    gl.uniform4f(this.wayProgram.uniforms.colorStipple, 1, 1, 1, 1);
+    gl.uniform4fv(this.lineProgram.uniforms.cameraCenter, cameraCenter);
+    gl.uniform4f(this.lineProgram.uniforms.colorStipple, 0.1, 0.1, 0.1, 1);
+    gl.uniform4f(this.lineProgram.uniforms.colorStipple, 1, 1, 1, 1);
     gl.uniform2f(
-        this.wayProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
-    gl.uniform1f(this.wayProgram.uniforms.halfWorldSize, camera.worldRadius);
+        this.lineProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
+    gl.uniform1f(this.lineProgram.uniforms.halfWorldSize, camera.worldRadius);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.wayBuffer);
-    gl.enableVertexAttribArray(this.wayProgram.attributes.position);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
+    gl.enableVertexAttribArray(this.lineProgram.attributes.position);
     gl.vertexAttribPointer(
-        this.wayProgram.attributes.position,
+        this.lineProgram.attributes.position,
         2,
         gl.FLOAT,
         /* normalize= */ false,
@@ -155,71 +163,47 @@ export class Renderer {
         /* offset= */ 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.geometryBuffer);
-    gl.enableVertexAttribArray(this.wayProgram.attributes.previous);
-    gl.vertexAttribDivisor(this.wayProgram.attributes.previous, 1);
-    gl.enableVertexAttribArray(this.wayProgram.attributes.previousDistance);
-    gl.vertexAttribDivisor(this.wayProgram.attributes.previousDistance, 1);
-    //gl.enableVertexAttribArray(this.wayProgram.attributes.position);
-    //gl.vertexAttribDivisor(this.wayProgram.attributes.position, 1);
-    //gl.vertexAttribPointer(
-    //    this.wayProgram.attributes.position,
-    //    4,
-    //    gl.FLOAT,
-    //    /* normalize= */ false,
-    //    /* stride= */ 20,
-    //    /* offset= */ 20);
-    gl.enableVertexAttribArray(this.wayProgram.attributes.next);
-    gl.vertexAttribDivisor(this.wayProgram.attributes.next, 1);
-    gl.enableVertexAttribArray(this.wayProgram.attributes.nextDistance);
-    gl.vertexAttribDivisor(this.wayProgram.attributes.nextDistance, 1);
+    gl.enableVertexAttribArray(this.lineProgram.attributes.previous);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.previous, 1);
+    gl.vertexAttribPointer(
+        this.lineProgram.attributes.previous,
+        4,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 36,
+        /* offset= */ line.offset);
+    gl.enableVertexAttribArray(this.lineProgram.attributes.previousDistance);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.previousDistance, 1);
+    gl.vertexAttribPointer(
+        this.lineProgram.attributes.previousDistance,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 36,
+        /* offset= */ line.offset + 32);
+    gl.enableVertexAttribArray(this.lineProgram.attributes.next);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.next, 1);
+    gl.vertexAttribPointer(
+        this.lineProgram.attributes.next,
+        4,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 36,
+        /* offset= */ line.offset + 16);
 
-    for (let line of this.renderPlan.lines) {
-      gl.vertexAttribPointer(
-          this.wayProgram.attributes.previous,
-          4,
-          gl.FLOAT,
-          /* normalize= */ false,
-          /* stride= */ 20,
-          /* offset= */ line.offset);
-      gl.vertexAttribPointer(
-          this.wayProgram.attributes.previousDistance,
-          1,
-          gl.FLOAT,
-          /* normalize= */ false,
-          /* stride= */ 20,
-          /* offset= */ line.offset + 16);
-      gl.vertexAttribPointer(
-          this.wayProgram.attributes.next,
-          4,
-          gl.FLOAT,
-          /* normalize= */ false,
-          /* stride= */ 20,
-          /* offset= */ line.offset + 20);
-      gl.vertexAttribPointer(
-          this.wayProgram.attributes.nextDistance,
-          1,
-          gl.FLOAT,
-          /* normalize= */ false,
-          /* stride= */ 20,
-          /* offset= */ line.offset + 36);
-
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, line.count);
-    }
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, line.count);
 
     //for (const line of this.renderPlan.lines) {
-    //  gl.uniform4fv(this.wayProgram.uniforms.colorFill, line.colorFill);
+    //  gl.uniform4fv(this.lineProgram.uniforms.colorFill, line.colorFill);
     //}
 
-    gl.vertexAttribDivisor(this.wayProgram.attributes.previous, 0);
-    gl.disableVertexAttribArray(this.wayProgram.attributes.previous);
-    gl.vertexAttribDivisor(this.wayProgram.attributes.previousDistance, 0);
-    gl.disableVertexAttribArray(this.wayProgram.attributes.previousDistance);
-    //gl.vertexAttribDivisor(this.wayProgram.attributes.position, 0);
-    gl.disableVertexAttribArray(this.wayProgram.attributes.position);
-    gl.vertexAttribDivisor(this.wayProgram.attributes.next, 0);
-    gl.disableVertexAttribArray(this.wayProgram.attributes.next);
-    gl.vertexAttribDivisor(this.wayProgram.attributes.nextDistance, 0);
-    gl.disableVertexAttribArray(this.wayProgram.attributes.nextDistance);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.previous, 0);
+    gl.disableVertexAttribArray(this.lineProgram.attributes.previous);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.previousDistance, 0);
+    gl.disableVertexAttribArray(this.lineProgram.attributes.previousDistance);
+    gl.disableVertexAttribArray(this.lineProgram.attributes.position);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.next, 0);
+    gl.disableVertexAttribArray(this.lineProgram.attributes.next);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
   }
@@ -343,7 +327,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgram {
   };
 }
 
-interface WayProgram {
+interface LineProgram {
   id: WebGLProgram;
 
   attributes: {
@@ -351,7 +335,6 @@ interface WayProgram {
     previousDistance: number;
     position: number;
     next: number;
-    nextDistance: number;
   }
 
   uniforms: {
@@ -363,7 +346,7 @@ interface WayProgram {
   }
 }
 
-function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
+function createLineProgram(gl: WebGL2RenderingContext): LineProgram {
   const programId = checkExists(gl.createProgram());
 
   const vs = `#version 300 es
@@ -378,7 +361,6 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       in highp vec4 previous;
       in highp float previousDistance;
       in highp vec4 next;
-      in highp float nextDistance;
 
       out highp float fragDistanceAlong;
       out highp float fragDistanceOrtho;
@@ -391,11 +373,14 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
         return vec4(-v.zw, v.xy);
       }
 
-      vec4 normalize64(vec4 v) {
-        float l2 =
+      float magnitude64(vec4 v) {
+        return sqrt(
             v.x * v.x + 2. * v.x * v.y + v.y * v.y +
-            v.z * v.z + 2. * v.z * v.w + v.w * v.w;
-        return v / sqrt(l2);
+            v.z * v.z + 2. * v.z * v.w + v.w * v.w);
+      }
+
+      vec4 normalize64(vec4 v) {
+        return v / magnitude64(v);
       }
 
       vec2 reduce64(vec4 v) {
@@ -409,7 +394,7 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
         vec4 worldCoord = location * halfWorldSize + perpendicular * 3. * position.y;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
 
-        float dx = nextDistance - previousDistance;
+        float dx = magnitude64(direction) - previousDistance;
         fragDistanceAlong = (previousDistance + dx * position.x) * pow(2., 15.);
         fragDistanceOrtho = position.y;
       }
@@ -434,7 +419,7 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
   gl.shaderSource(vertexId, vs);
   gl.compileShader(vertexId);
   if (!gl.getShaderParameter(vertexId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile way vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
+    throw new Error(`Unable to compile line vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
   }
   gl.attachShader(programId, vertexId);
 
@@ -442,13 +427,13 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
   gl.shaderSource(fragmentId, fs);
   gl.compileShader(fragmentId);
   if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile way fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
+    throw new Error(`Unable to compile line fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
   }
   gl.attachShader(programId, fragmentId);
 
   gl.linkProgram(programId);
   if (!gl.getProgramParameter(programId, gl.LINK_STATUS)) {
-    throw new Error(`Unable to link way program: ${gl.getProgramInfoLog(programId)}`);
+    throw new Error(`Unable to link line program: ${gl.getProgramInfoLog(programId)}`);
   }
 
   return {
@@ -458,7 +443,6 @@ function createWayProgram(gl: WebGL2RenderingContext): WayProgram {
       previousDistance: gl.getAttribLocation(programId, 'previousDistance'),
       position: gl.getAttribLocation(programId, 'position'),
       next: gl.getAttribLocation(programId, 'next'),
-      nextDistance: gl.getAttribLocation(programId, 'nextDistance'),
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),

@@ -1,6 +1,9 @@
 import { S2CellId, S2LatLng, S2LatLngRect } from '../../s2';
 import { SimpleS2 } from '../../s2/SimpleS2';
-import { S2CellNumber, reinterpretLong } from '../support';
+import { reinterpretLong } from '../models/math';
+import { S2CellNumber } from '../models/types';
+
+import { FetchThrottler } from './fetch_throttler';
 
 export interface UpdateViewportRequest {
   lat: [number, number];
@@ -20,10 +23,7 @@ export interface UnloadCellsCommand {
 
 export type FetcherCommand = LoadCellCommand|UnloadCellsCommand;
 
-const ABORT_REASON = 'Aborted';
-const MAX_REQUESTS_IN_FLIGHT = 16;
-
-class Fetcher {
+class DataFetcher {
 
   private readonly cells: Map<S2CellNumber, ArrayBuffer>;
   private readonly inFlight: Map<S2CellNumber, AbortController>;
@@ -69,7 +69,7 @@ class Fetcher {
             }, [data]);
           })
           .catch(e => {
-            if (e.name !== 'AbortError' && e.message !== ABORT_REASON) {
+            if (e.name !== 'AbortError') {
               throw e;
             }
           })
@@ -102,54 +102,7 @@ class Fetcher {
   }
 }
 
-interface RequestInitWithSignal extends RequestInit {
-  signal: AbortSignal;
-}
-
-class FetchThrottler {
-
-  private active: number;
-  private queued: Array<() => void>;
-
-  constructor() {
-    this.active = 0;
-    this.queued = [];
-  }
-
-  fetch(input: RequestInfo, init: RequestInitWithSignal): Promise<Response> {
-    if (this.active < MAX_REQUESTS_IN_FLIGHT) {
-      return this.executeFetch(input, init);
-    } else {
-      return new Promise<void>((resolve, reject) => {
-        this.queued.push(resolve);
-      }).then(() => {
-        if (init.signal.aborted) {
-          this.maybeTriggerQueued();
-          throw new Error(ABORT_REASON);
-        } else {
-          return this.executeFetch(input, init);
-        }
-      });
-    }
-  }
-
-  private executeFetch(input: RequestInfo, init: RequestInitWithSignal): Promise<Response> {
-    this.active += 1;
-    return fetch(input, init).finally(() => {
-      this.active -= 1;
-      this.maybeTriggerQueued();
-    });
-  }
-
-  private maybeTriggerQueued(): void {
-    const trigger = this.queued.shift();
-    if (trigger) {
-      trigger();
-    }
-  }
-}
-
-const fetcher = new Fetcher((self as any).postMessage.bind(self));
+const fetcher = new DataFetcher((self as any).postMessage.bind(self));
 self.onmessage = e => {
   const request = e.data as UpdateViewportRequest;
   const low = S2LatLng.fromRadians(request.lat[0], request.lng[0]);

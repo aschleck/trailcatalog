@@ -2,7 +2,7 @@ package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 load("@npm//@bazel/esbuild:index.bzl", "esbuild", "esbuild_config")
 load("@npm//jest-cli:index.bzl", "jest_test")
-load("@npm//@bazel/typescript:index.bzl", "ts_config", "ts_project")
+load("@npm//@bazel/typescript:index.bzl", "ts_project")
 load("@build_bazel_rules_nodejs//packages/concatjs:index.bzl", "ts_library")
 
 esbuild(
@@ -25,26 +25,14 @@ esbuild_config(
 
 ts_project(
     name = "ts",
-    srcs = glob(["*.ts"], exclude=["support.ts", "*.test.ts"]),
+    srcs = glob(["*.ts"], exclude=["*.test.ts"]),
     allow_js = True,
     declaration = True,
     link_workspace_root = True,
     tsconfig = "//:tsconfig",
     deps = [
-        ":support",
-        "//java/org/trailcatalog/client/workers:fetcher_ts",
-        "//java/org/trailcatalog/s2",
-    ],
-)
-
-ts_project(
-    name = "support",
-    srcs = ["support.ts"],
-    allow_js = True,
-    declaration = True,
-    link_workspace_root = True,
-    tsconfig = "//:tsconfig",
-    deps = [
+        "//java/org/trailcatalog/client/models",
+        "//java/org/trailcatalog/client/workers:ts",
         "//java/org/trailcatalog/s2",
     ],
 )

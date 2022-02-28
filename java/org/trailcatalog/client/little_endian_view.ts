@@ -8,6 +8,10 @@ export class LittleEndianView {
     this.position = 0;
   }
 
+  align(alignment: number): void {
+    this.position = Math.trunc((this.position + alignment - 1) / alignment) * alignment;
+  }
+
   getBigInt64(): bigint {
     const r = this.view.getBigInt64(this.position, /* littleEndian= */ true);
     this.position += 8;
@@ -24,9 +28,21 @@ export class LittleEndianView {
     this.position += byteCount;
   }
 
-  slice(byteLength: number): ArrayBuffer {
-    const r = this.buffer.slice(this.position, this.position + byteLength);
-    this.position += byteLength;
+  sliceBigInt64(count: number): BigInt64Array {
+    const r = new BigInt64Array(this.buffer, this.position, count);
+    this.position += count * 8;
+    return r;
+  }
+
+  sliceFloat64(count: number): Float64Array {
+    const r = new Float64Array(this.buffer, this.position, count);
+    this.position += count * 8;
+    return r;
+  }
+
+  sliceInt8(count: number): Int8Array {
+    const r = new Int8Array(this.buffer, this.position, count);
+    this.position += count;
     return r;
   }
 }

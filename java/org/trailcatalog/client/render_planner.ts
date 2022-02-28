@@ -1,5 +1,7 @@
-import { Camera } from 'java/org/trailcatalog/client/camera';
-import { checkExists, Vec2, Vec4 } from 'java/org/trailcatalog/client/support';
+import { checkExists } from './models/asserts';
+import { Vec2, Vec4 } from './models/types';
+
+import { Camera } from './camera';
 
 export interface RenderPlan {
   billboards: Array<{
@@ -51,28 +53,27 @@ export class RenderPlanner {
     });
   }
 
-  addLines(lines: ArrayBuffer[], colorFill: Vec4): void {
+  addLines(lines: Float64Array[], colorFill: Vec4): void {
     const vertices = new Float32Array(this.geometry, this.geometryByteSize);
     let vertexOffset = 0;
-    for (const line of lines) {
-      const doubles = new Float64Array(line);
-
-      this.target.lines.push({
-        offset: this.geometryByteSize + 4 * vertexOffset,
-        count: doubles.length / 2 - 1,
-        colorFill: [1, 1, 1, 1],
-      });
-
+    for (const doubles of lines) {
       let distanceAlong = 0;
       let lastX = doubles[0];
       let lastY = doubles[1];
-      for (let i = 0; i < doubles.length; i += 2) {
+      for (let i = 0; i < doubles.length - 2; i += 2) {
         const x = doubles[i + 0];
+        const y = doubles[i + 1];
+        const xp = doubles[i + 2];
+        const yp = doubles[i + 3];
+
         const xF = Math.fround(x);
         const xR = x - xF;
-        const y = doubles[i + 1];
         const yF = Math.fround(y);
         const yR = y - yF;
+        const xpF = Math.fround(xp);
+        const xpR = xp - xpF;
+        const ypF = Math.fround(yp);
+        const ypR = yp - ypF;
 
         const dx = x - lastX;
         const dy = y - lastY;
@@ -81,12 +82,19 @@ export class RenderPlanner {
         lastY = y;
 
         vertices.set([
-          xF, xR, yF, yR, distanceAlong,
+          xF, xR, yF, yR,
+          xpF, xpR, ypF, ypR,
+          distanceAlong,
         ], vertexOffset);
-        vertexOffset += 5;
+        vertexOffset += 9;
       }
     }
 
+    this.target.lines.push({
+      offset: this.geometryByteSize,
+      count: vertexOffset / 9,
+      colorFill: [1, 1, 1, 1],
+    });
     this.geometryByteSize += 4 * vertexOffset;
   }
 }
