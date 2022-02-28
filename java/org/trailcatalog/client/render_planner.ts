@@ -3,6 +3,12 @@ import { Vec2, Vec4 } from './models/types';
 
 import { Camera } from './camera';
 
+export interface Line {
+  colorFill: Vec4;
+  colorStipple: Vec4;
+  vertices: Float64Array;
+}
+
 export interface RenderPlan {
   billboards: Array<{
     center: Vec4;
@@ -12,7 +18,6 @@ export interface RenderPlan {
   lines: Array<{
     offset: number;
     count: number;
-    colorFill: Vec4;
   }>;
 }
 
@@ -53,13 +58,13 @@ export class RenderPlanner {
     });
   }
 
-  addLines(lines: Float64Array[], colorFill: Vec4): void {
+  addLines(lines: Line[]): void {
+    const stride = 4 + 4 + 4 + 4 + 1 + 1;
     const vertices = new Float32Array(this.geometry, this.geometryByteSize);
     let vertexOffset = 0;
-    for (const doubles of lines) {
+    for (const line of lines) {
+      const doubles = line.vertices;
       let distanceAlong = 0;
-      let lastX = doubles[0];
-      let lastY = doubles[1];
       for (let i = 0; i < doubles.length - 2; i += 2) {
         const x = doubles[i + 0];
         const y = doubles[i + 1];
@@ -75,25 +80,25 @@ export class RenderPlanner {
         const ypF = Math.fround(yp);
         const ypR = yp - ypF;
 
-        const dx = x - lastX;
-        const dy = y - lastY;
-        distanceAlong += Math.sqrt(dx * dx + dy * dy);
-        lastX = x;
-        lastY = y;
-
         vertices.set([
           xF, xR, yF, yR,
           xpF, xpR, ypF, ypR,
+          ...line.colorFill,
+          ...line.colorStipple,
           distanceAlong,
+          3,
         ], vertexOffset);
-        vertexOffset += 9;
+
+        const dx = xp - x;
+        const dy = yp - y;
+        distanceAlong += Math.sqrt(dx * dx + dy * dy);
+        vertexOffset += stride;
       }
     }
 
     this.target.lines.push({
       offset: this.geometryByteSize,
-      count: vertexOffset / 9,
-      colorFill: [1, 1, 1, 1],
+      count: vertexOffset / stride,
     });
     this.geometryByteSize += 4 * vertexOffset;
   }

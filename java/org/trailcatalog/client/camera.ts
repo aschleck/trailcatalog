@@ -8,10 +8,10 @@ export class Camera {
   private _zoom: number;
 
   constructor() {
-    this.center = S2LatLng.fromDegrees(47.644209, -122.139532);
-    this._zoom = 15;
-    //this.center = S2LatLng.fromDegrees(46.859369, -121.747888);
-    //this._zoom = 12;
+    //this.center = S2LatLng.fromDegrees(47.644209, -122.139532);
+    //this._zoom = 15;
+    this.center = S2LatLng.fromDegrees(46.859369, -121.747888);
+    this._zoom = 12;
     this._inverseWorldRadius = 1 / this.worldRadius;
   }
 

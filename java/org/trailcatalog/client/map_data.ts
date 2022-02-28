@@ -1,5 +1,6 @@
+import { checkExhaustive } from './models/asserts';
 import { reinterpretLong } from './models/math';
-import { PixelRect, S2CellNumber, Vec2 } from './models/types';
+import { PixelRect, S2CellNumber, Vec2, Vec4 } from './models/types';
 import { S2CellId, S2LatLngRect } from '../s2';
 import { SimpleS2 } from '../s2/SimpleS2';
 import { FetcherCommand } from './workers/data_fetcher';
@@ -31,6 +32,7 @@ class Route implements Entity {
       readonly name: string,
       readonly type: number,
       readonly highways: bigint[],
+      readonly position: Vec2,
   ) {}
 }
 
@@ -42,6 +44,7 @@ export class MapData implements Layer {
   private readonly byCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   private readonly entities: Map<bigint, Entity>;
   private readonly fetcher: Worker;
+  private readonly selected: Set<bigint>;
   private lastChange: number;
 
   constructor(
@@ -55,12 +58,15 @@ export class MapData implements Layer {
       const command = e.data as FetcherCommand;
       if (command.type === 'lcc') {
         this.loadCell(command.cell, command.data);
+      } else if (command.type == 'ucc') {
+        // TODO: where is the part where we unload anything
+      } else {
+        checkExhaustive(command, 'Unknown type of command');
       }
     };
+    this.selected = new Set();
     this.lastChange = Date.now();
   }
-
-  // TODO: where is the part where we unload anything
 
   hasDataNewerThan(time: number): boolean {
     return this.lastChange > time;
@@ -99,8 +105,14 @@ export class MapData implements Layer {
       }
     }
 
-    console.log(best);
-    console.log(bestDistance2);
+    if (best) {
+      if (this.selected.has(best.id)) {
+        this.selected.delete(best.id);
+      } else {
+        this.selected.add(best.id);
+      }
+      this.lastChange = Date.now();
+    }
   }
 
   viewportBoundsChanged(viewportSize: Vec2): void {
@@ -154,6 +166,7 @@ export class MapData implements Layer {
       const routeWayCount = data.getInt32();
       data.align(8);
       const routeWays = [...data.sliceBigInt64(routeWayCount)];
+      const position = [data.getFloat64(), data.getFloat64()];
       const route = new Route(id, name, type, routeWays);
       this.entities.set(id, route);
     }
@@ -162,6 +175,10 @@ export class MapData implements Layer {
   plan(viewportSize: Vec2, planner: RenderPlanner): void {
     const cells = this.cellsInView(viewportSize);
     const calls = [];
+    const regularFill: Vec4 = [0, 0, 0, 0];
+    const selectedFill: Vec4 = [1, 0.918, 0, 1];
+    const stipple: Vec4 = [0.1, 0.1, 0.1, 1];
+
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
       const buffer = this.byCells.get(id);
@@ -180,11 +197,14 @@ export class MapData implements Layer {
         const wayVertexBytes = data.getInt32();
         const wayVertexCount = wayVertexBytes / 16;
         data.align(8);
-        calls.push(data.sliceFloat64(wayVertexCount * 2));
+        calls.push({
+          colorFill: this.selected.has(id) ? selectedFill : regularFill,
+          colorStipple: stipple,
+          vertices: data.sliceFloat64(wayVertexCount * 2),
+        });
       }
     }
-    //planner.addLines(calls, [1, 0.918, 0, 1]);
-    planner.addLines(calls, [0, 0, 0, 1]);
+    planner.addLines(calls);
   }
 
   private cellsInView(viewportSize: Vec2): S2CellId[] {

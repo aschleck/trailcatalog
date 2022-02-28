@@ -3,10 +3,13 @@ package org.trailcatalog
 import com.google.common.base.Joiner
 import com.google.common.collect.ArrayListMultimap
 import com.google.common.collect.ImmutableMap
+import com.google.common.collect.Lists
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2CellUnion
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
+import com.google.common.geometry.S2Point
+import com.google.common.geometry.S2Polyline
 import com.google.common.geometry.S2RegionCoverer
 import com.google.devtools.build.runfiles.Runfiles
 import com.google.protobuf.ByteString
@@ -160,11 +163,12 @@ fun main(args: Array<String>) {
   val connection =
       DriverManager.getConnection(
           "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=migration_" +
-              "1_create_geometry",
+              "2_add_route_point",
           "postgres",
           "postgres")
 //  loadPbf(connection)
-  correctMemberships(connection)
+//  correctMemberships(connection)
+  positionRoutes(connection)
 }
 
 fun loadPbf(connection: Connection) {
@@ -387,6 +391,7 @@ fun project(ll: S2LatLng): Pair<Double, Double> {
 }
 
 fun correctMemberships(connection: Connection) {
+  // Yikes!!!
   connection.createStatement().use {
     it.execute("""
       UPDATE highways
@@ -454,4 +459,55 @@ fun boundToCell(bound: S2LatLngRect): S2CellId {
     }
   }
   throw IllegalStateException("${bound} contained by any cell")
+}
+
+fun positionRoutes(connection: Connection) {
+  val routeMembers = ArrayListMultimap.create<Long, List<S2Point>>()
+  connection.createStatement().use {
+    val results = it.executeQuery("""
+      SELECT r.id, h.latlng_doubles
+      FROM routes r, UNNEST(r.highways) rh
+      JOIN highways h ON rh = h.id
+    """)
+    while (results.next()) {
+      val routeId = results.getLong(1)
+      val bytes = results.getBytes(2)
+      val doubles = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
+      val points = ArrayList<S2Point>()
+      for (i in 0 until doubles.limit() step 2) {
+        points.add(S2LatLng.fromRadians(doubles[i], doubles[i + 1]).toPoint())
+      }
+      routeMembers[routeId].add(points)
+    }
+  }
+
+  for (routeId in routeMembers.keys()) {
+    val merged = joinPolylines(routeMembers[routeId])
+    val center = merged.interpolate(0.5)
+    val projected = project(S2LatLng(center))
+    connection.prepareStatement(
+        "UPDATE routes SET x = ?, y = ? WHERE id = ?").use {
+      it.setDouble(1, projected.first)
+      it.setDouble(2, projected.second)
+      it.setLong(3, routeId)
+      it.execute()
+    }
+  }
+}
+
+/**
+ * It's very hard for us to handle routes that are sorted incorrectly or are non-linear, so we
+ * mostly don't. The exception is that we will try flipping polylines if they aren't contiguous.
+ */
+fun joinPolylines(polylines: List<List<S2Point>>): S2Polyline {
+  val points = ArrayList<S2Point>()
+  var lastPoint = S2Point.ORIGIN
+  for (polyline in polylines) {
+    if (polyline[0] != lastPoint && polyline[polyline.size - 1] == lastPoint) {
+      Lists.reverse(polyline)
+    }
+    points.addAll(polyline)
+    lastPoint = polyline[polyline.size - 1]
+  }
+  return S2Polyline(points)
 }

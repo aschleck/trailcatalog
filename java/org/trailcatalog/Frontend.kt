@@ -10,7 +10,7 @@ import java.io.ByteArrayOutputStream
 
 val connectionSource = HikariDataSource(HikariConfig().apply {
   jdbcUrl =
-    "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=migration_1_create_geometry"
+    "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=migration_2_add_route_point"
   username = "postgres"
   password = "postgres"
 })
@@ -20,7 +20,14 @@ fun main(args: Array<String>) {
   app.get("/api/fetch_cell/{token}", ::fetchCell)
 }
 
-data class WireRoute(val id: Long, val name: String, val type: Int, val highways: LongArray)
+data class WireRoute(
+  val id: Long,
+  val name: String,
+  val type: Int,
+  val highways: LongArray,
+  val x: Double,
+  val y: Double,
+)
 data class WireWay(val id: Long, val type: Int, val routes: LongArray, val vertices: ByteArray)
 
 fun fetchCell(ctx: Context) {
@@ -29,7 +36,7 @@ fun fetchCell(ctx: Context) {
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
   val routes = ArrayList<WireRoute>()
   connectionSource.connection.use {
-    val query = it.prepareStatement("SELECT id, name, type, highways FROM routes WHERE cell = ?").apply {
+    val query = it.prepareStatement("SELECT id, name, type, highways, x, y FROM routes WHERE cell = ?").apply {
       setLong(1, cell.id())
     }
     val results = query.executeQuery()
@@ -45,6 +52,8 @@ fun fetchCell(ctx: Context) {
             }
             longs.toLongArray()
           },
+          x = results.getDouble(5),
+          y = results.getDouble(6),
       ))
     }
   }
@@ -99,6 +108,8 @@ fun fetchCell(ctx: Context) {
     for (way in route.highways) {
       output.writeLong(way)
     }
+    output.writeDouble(route.x)
+    output.writeDouble(route.y)
   }
   ctx.result(bytes.toByteArray())
 }

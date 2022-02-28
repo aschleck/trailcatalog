@@ -1,3 +1,5 @@
+import opentype from 'opentype.js';
+
 import { checkExists } from './models/asserts';
 import { Vec2, Vec4 } from './models/types';
 
@@ -146,8 +148,6 @@ export class Renderer {
 
     const cameraCenter = splitVec2(camera.centerPixel);
     gl.uniform4fv(this.lineProgram.uniforms.cameraCenter, cameraCenter);
-    gl.uniform4f(this.lineProgram.uniforms.colorStipple, 0.1, 0.1, 0.1, 1);
-    gl.uniform4f(this.lineProgram.uniforms.colorStipple, 1, 1, 1, 1);
     gl.uniform2f(
         this.lineProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
     gl.uniform1f(this.lineProgram.uniforms.halfWorldSize, camera.worldRadius);
@@ -163,6 +163,33 @@ export class Renderer {
         /* offset= */ 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.geometryBuffer);
+    gl.enableVertexAttribArray(this.lineProgram.attributes.colorFill);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.colorFill, 1);
+    gl.vertexAttribPointer(
+        this.lineProgram.attributes.colorFill,
+        4,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 18 * 4,
+        /* offset= */ line.offset + 32);
+    gl.enableVertexAttribArray(this.lineProgram.attributes.colorStipple);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.colorStipple, 1);
+    gl.vertexAttribPointer(
+        this.lineProgram.attributes.colorStipple,
+        4,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 18 * 4,
+        /* offset= */ line.offset + 48);
+    gl.enableVertexAttribArray(this.lineProgram.attributes.distanceAlong);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.distanceAlong, 1);
+    gl.vertexAttribPointer(
+        this.lineProgram.attributes.distanceAlong,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 18 * 4,
+        /* offset= */ line.offset + 64);
     gl.enableVertexAttribArray(this.lineProgram.attributes.previous);
     gl.vertexAttribDivisor(this.lineProgram.attributes.previous, 1);
     gl.vertexAttribPointer(
@@ -170,17 +197,8 @@ export class Renderer {
         4,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 36,
-        /* offset= */ line.offset);
-    gl.enableVertexAttribArray(this.lineProgram.attributes.previousDistance);
-    gl.vertexAttribDivisor(this.lineProgram.attributes.previousDistance, 1);
-    gl.vertexAttribPointer(
-        this.lineProgram.attributes.previousDistance,
-        1,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 36,
-        /* offset= */ line.offset + 32);
+        /* stride= */ 18 * 4,
+        /* offset= */ line.offset + 0);
     gl.enableVertexAttribArray(this.lineProgram.attributes.next);
     gl.vertexAttribDivisor(this.lineProgram.attributes.next, 1);
     gl.vertexAttribPointer(
@@ -188,22 +206,34 @@ export class Renderer {
         4,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 36,
+        /* stride= */ 18 * 4,
         /* offset= */ line.offset + 16);
+    gl.enableVertexAttribArray(this.lineProgram.attributes.radius);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.radius, 1);
+    gl.vertexAttribPointer(
+        this.lineProgram.attributes.radius,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ 18 * 4,
+        /* offset= */ line.offset + 68);
 
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, line.count);
 
-    //for (const line of this.renderPlan.lines) {
-    //  gl.uniform4fv(this.lineProgram.uniforms.colorFill, line.colorFill);
-    //}
+    gl.disableVertexAttribArray(this.lineProgram.attributes.position);
 
+    gl.vertexAttribDivisor(this.lineProgram.attributes.colorFill, 0);
+    gl.disableVertexAttribArray(this.lineProgram.attributes.colorFill);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.colorStipple, 0);
+    gl.disableVertexAttribArray(this.lineProgram.attributes.colorStipple);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.distanceAlong, 0);
+    gl.disableVertexAttribArray(this.lineProgram.attributes.distanceAlong);
     gl.vertexAttribDivisor(this.lineProgram.attributes.previous, 0);
     gl.disableVertexAttribArray(this.lineProgram.attributes.previous);
-    gl.vertexAttribDivisor(this.lineProgram.attributes.previousDistance, 0);
-    gl.disableVertexAttribArray(this.lineProgram.attributes.previousDistance);
-    gl.disableVertexAttribArray(this.lineProgram.attributes.position);
     gl.vertexAttribDivisor(this.lineProgram.attributes.next, 0);
     gl.disableVertexAttribArray(this.lineProgram.attributes.next);
+    gl.vertexAttribDivisor(this.lineProgram.attributes.radius, 0);
+    gl.disableVertexAttribArray(this.lineProgram.attributes.radius);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
   }
@@ -331,16 +361,17 @@ interface LineProgram {
   id: WebGLProgram;
 
   attributes: {
-    previous: number;
-    previousDistance: number;
-    position: number;
+    colorFill: number;
+    colorStipple: number;
+    distanceAlong: number;
     next: number;
+    position: number;
+    previous: number;
+    radius: number;
   }
 
   uniforms: {
     cameraCenter: WebGLUniformLocation;
-    colorFill: WebGLUniformLocation;
-    colorStipple: WebGLUniformLocation;
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
   }
@@ -355,13 +386,21 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgram {
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
 
+      // x is either 0 or 1, y is either -0.5 or 0.5.
       in highp vec2 position;
 
       // These are Mercator coordinates ranging from -1 to 1 on both x and y
       in highp vec4 previous;
-      in highp float previousDistance;
+      in highp float distanceAlong;
       in highp vec4 next;
 
+      in lowp vec4 colorFill;
+      in lowp vec4 colorStipple;
+      // This is a radius in pixels
+      in highp float radius;
+
+      out lowp vec4 fragColorFill;
+      out lowp vec4 fragColorStipple;
       out highp float fragDistanceAlong;
       out highp float fragDistanceOrtho;
 
@@ -391,27 +430,33 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgram {
         vec4 direction = next - previous;
         vec4 perpendicular = perpendicular64(normalize64(direction));
         vec4 location = -cameraCenter + previous + direction * position.x;
-        vec4 worldCoord = location * halfWorldSize + perpendicular * 3. * position.y;
+        vec4 worldCoord = location * halfWorldSize + perpendicular * radius * position.y;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
 
-        float dx = magnitude64(direction) - previousDistance;
-        fragDistanceAlong = (previousDistance + dx * position.x) * pow(2., 15.);
-        fragDistanceOrtho = position.y;
+        float worldDistanceAlong = distanceAlong + magnitude64(direction) * position.x;
+        fragDistanceAlong = 256. * pow(2., 17.) * worldDistanceAlong;
+        fragDistanceAlong = halfWorldSize * worldDistanceAlong;
+
+        fragColorFill = colorFill;
+        fragColorStipple = colorStipple;
+        fragDistanceOrtho = position.y * radius;
       }
     `;
   const fs = `#version 300 es
-      uniform lowp vec4 colorFill;
-      uniform lowp vec4 colorStipple;
+      #define PI 3.14159265359
+
+      in lowp vec4 fragColorFill;
+      in lowp vec4 fragColorStipple;
       in highp float fragDistanceAlong;
       in highp float fragDistanceOrtho;
+
       out lowp vec4 fragColor;
 
       void main() {
-        //mediump vec4 stipple = float(abs(fragDistanceOrtho) < 0.5 && mod(fragDistanceAlong, 8.) > 4.) * colorStipple;
-        mediump vec4 stipple = float(fragDistanceAlong / 100.) * colorStipple;
-        fragColor = vec4(1, 1, 1, 1) + (1. - stipple.w) * colorFill + stipple;
-        lowp float c = (sin(fragDistanceAlong) + 1.) / 2.;
-        fragColor = vec4(c, 1. - c, 0, 1);
+        lowp float stippleX = float(mod(fragDistanceAlong, 8.) >= 3.);
+        lowp float stippleY = float(2. > abs(fragDistanceOrtho)) * (2. - abs(fragDistanceOrtho / 1.5));
+        lowp vec4 stipple = vec4(fragColorStipple.xyz, stippleX * stippleY * fragColorStipple.w);
+        fragColor = (1. - stipple.w) * fragColorFill + stipple.w * stipple;
       }
   `;
 
@@ -439,15 +484,16 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgram {
   return {
     id: programId,
     attributes: {
-      previous: gl.getAttribLocation(programId, 'previous'),
-      previousDistance: gl.getAttribLocation(programId, 'previousDistance'),
-      position: gl.getAttribLocation(programId, 'position'),
+      colorFill: checkExists(gl.getAttribLocation(programId, 'colorFill')),
+      colorStipple: checkExists(gl.getAttribLocation(programId, 'colorStipple')),
+      distanceAlong: gl.getAttribLocation(programId, 'distanceAlong'),
       next: gl.getAttribLocation(programId, 'next'),
+      position: gl.getAttribLocation(programId, 'position'),
+      previous: gl.getAttribLocation(programId, 'previous'),
+      radius: gl.getAttribLocation(programId, 'radius'),
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
-      colorFill: checkExists(gl.getUniformLocation(programId, 'colorFill')),
-      colorStipple: checkExists(gl.getUniformLocation(programId, 'colorStipple')),
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
     },
