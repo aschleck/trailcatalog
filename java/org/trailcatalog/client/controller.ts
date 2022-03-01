@@ -31,7 +31,7 @@ export class Controller {
     });
     this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
 
-    const textRenderer = new TextRenderer();
+    const textRenderer = new TextRenderer(this.renderer);
     this.mapData = new MapData(this.camera, textRenderer);
     this.tileData = new TileData(this.camera, this.renderer);
     this.lastRenderPlan = 0;

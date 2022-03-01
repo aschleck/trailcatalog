@@ -31,10 +31,6 @@ ts_project(
     link_workspace_root = True,
     tsconfig = "//:tsconfig",
     deps = [
-        "@npm//@types/earcut",
-        "@npm//@types/opentype.js",
-        "@npm//earcut",
-        "@npm//opentype.js",
         "//java/org/trailcatalog/client/models",
         "//java/org/trailcatalog/client/workers:ts",
         "//java/org/trailcatalog/s2",

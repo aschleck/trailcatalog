@@ -9,24 +9,16 @@ export interface Line {
   vertices: Float64Array;
 }
 
-export interface ScreenSpaceTriangles {
-  indices: number[];
-  vertices: number[];
-}
-
 export interface RenderPlan {
   billboards: Array<{
     center: Vec4;
     size: Vec4;
+    sizeIsPixels: boolean;
     texture: WebGLTexture;
   }>;
   lines: Array<{
     offset: number;
     count: number;
-  }>;
-  screenSpaceTriangless: Array<{
-    offset: number;
-    indices: number[];
   }>;
 }
 
@@ -40,7 +32,6 @@ export class RenderPlanner {
     this.target = {
       billboards: [],
       lines: [],
-      screenSpaceTriangless: [],
     };
   }
 
@@ -64,6 +55,7 @@ export class RenderPlanner {
     this.target.billboards.push({
       center: [xF, xR, yF, yR],
       size: [wF, wR, hF, hR],
+      sizeIsPixels: size[0] >= 1, // well this is sketchy
       texture,
     });
   }
@@ -111,17 +103,6 @@ export class RenderPlanner {
       count: vertexOffset / stride,
     });
     this.geometryByteSize += 4 * vertexOffset;
-  }
-
-  addScreenSpaceTriangles(triangles: ScreenSpaceTriangles): void {
-    const vertices = new Float32Array(this.geometry, this.geometryByteSize);
-    vertices.set(triangles.vertices);
-
-    this.target.screenSpaceTriangless.push({
-      offset: this.geometryByteSize,
-      indices: triangles.indices,
-    });
-    this.geometryByteSize += 4 * triangles.vertices.length;
   }
 }
 

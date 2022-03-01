@@ -1,4 +1,4 @@
-import { checkExhaustive } from './models/asserts';
+import { checkExhaustive, checkExists } from './models/asserts';
 import { reinterpretLong } from './models/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from './models/types';
 import { S2CellId, S2LatLngRect } from '../s2';
@@ -15,6 +15,7 @@ import { TextRenderer } from './text_renderer';
 interface Entity {
   readonly id: bigint;
   readonly line?: Float64Array;
+  readonly position?: Vec2;
 }
 
 class Highway implements Entity {
@@ -81,37 +82,40 @@ export class MapData implements Layer {
     let best = undefined;
     let bestDistance2 = radius * radius;
     for (const entity of near) {
-      const line = entity.line;
-      if (!line) {
+      let d2;
+      if (entity.line) {
+        d2 = distanceCheckLine(point, entity.line);
+      } else if (entity.position) {
+        const p = entity.position;
+        const dx = p[0] - point[0];
+        const dy = p[0] - point[0];
+        const bias = 10 * 10;
+        d2 = (dx * dx + dy * dy) / bias;
+      } else {
         continue;
       }
 
-      for (let i = 0; i < line.length - 2; i += 2) {
-        const x1 = line[i + 0];
-        const y1 = line[i + 1];
-        const x2 = line[i + 2];
-        const y2 = line[i + 3];
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        const dotted = (point[0] - x1) * dx + (point[1] - y1) * dy;
-        const length2 = dx * dx + dy * dy;
-        const t = Math.max(0, Math.min(1, dotted / length2));
-        const px = x1 + t * dx - point[0];
-        const py = y1 + t * dy - point[1];
-        const d2 = px * px + py * py;
-
-        if (d2 < bestDistance2) {
-          best = entity;
-          bestDistance2 = d2;
-        }
+      if (d2 < bestDistance2) {
+        best = entity;
+        bestDistance2 = d2;
       }
     }
-
     if (best) {
-      if (this.selected.has(best.id)) {
-        this.selected.delete(best.id);
+      const ids = [];
+      if (best instanceof Highway) {
+        ids.push(best.id);
+      } else if (best instanceof Route) {
+        ids.push(...best.highways);
+      }
+
+      if (this.selected.has(ids[0])) {
+        for (const id of ids) {
+          this.selected.delete(id);
+        }
       } else {
-        this.selected.add(best.id);
+        for (const id of ids) {
+          this.selected.add(id);
+        }
       }
       this.lastChange = Date.now();
     }
@@ -170,6 +174,11 @@ export class MapData implements Layer {
       const routeWays = [...data.sliceBigInt64(routeWayCount)];
       const position: Vec2 = [data.getFloat64(), data.getFloat64()];
       const route = new Route(id, name, type, routeWays, position);
+      const epsilon = 1e-5; // we really struggle bounds checking routes
+      this.bounds.insert(route, {
+        low: [position[0] - epsilon, position[1] - epsilon],
+        high: [position[0] + epsilon, position[1] + epsilon],
+      });
       this.entities.set(id, route);
     }
   }
@@ -205,10 +214,25 @@ export class MapData implements Layer {
           vertices: data.sliceFloat64(wayVertexCount * 2),
         });
       }
-    }
-    planner.addLines(calls);
 
-    this.textRenderer.plan(planner);
+      const routeCount = data.getInt32();
+      for (let i = 0; i < routeCount; ++i) {
+        const id = data.getBigInt64();
+        const nameLength = data.getInt32();
+        data.skip(nameLength);
+        const type = data.getInt32();
+        const routeWayCount = data.getInt32();
+        data.align(8);
+        data.skip(routeWayCount * 8 + 16);
+        const route = checkExists(this.entities.get(id)) as Route;
+        this.textRenderer.plan({
+          text: route.name,
+          fontSize: 18,
+        }, route.position, planner);
+      }
+    }
+
+    planner.addLines(calls);
   }
 
   private cellsInView(viewportSize: Vec2): S2CellId[] {
@@ -235,3 +259,25 @@ export class MapData implements Layer {
   }
 }
 
+function distanceCheckLine(point: Vec2, line: Float64Array): number {
+  let bestDistance2 = Number.MAX_VALUE;
+  for (let i = 0; i < line.length - 2; i += 2) {
+    const x1 = line[i + 0];
+    const y1 = line[i + 1];
+    const x2 = line[i + 2];
+    const y2 = line[i + 3];
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dotted = (point[0] - x1) * dx + (point[1] - y1) * dy;
+    const length2 = dx * dx + dy * dy;
+    const t = Math.max(0, Math.min(1, dotted / length2));
+    const px = x1 + t * dx - point[0];
+    const py = y1 + t * dy - point[1];
+    const d2 = px * px + py * py;
+
+    if (d2 < bestDistance2) {
+      bestDistance2 = d2;
+    }
+  }
+  return bestDistance2;
+}

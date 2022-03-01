@@ -7,6 +7,7 @@ import { Camera } from './camera';
 import { Layer } from './layer';
 import { RenderPlanner } from './render_planner';
 import { Renderer } from './renderer';
+import { TexturePool } from './texture_pool';
 
 export class TileData implements Layer {
 
@@ -76,22 +77,6 @@ export class TileData implements Layer {
         this.pool.release(texture);
       }
     }
-  }
-}
-
-class TexturePool {
-  private readonly free: WebGLTexture[];
-
-  constructor(private readonly renderer: Renderer) {
-    this.free = [];
-  }
-
-  acquire(): WebGLTexture {
-    return this.free.pop() ?? this.renderer.createTexture();
-  }
-
-  release(texture: WebGLTexture): void {
-    this.free.push(texture);
   }
 }
 
