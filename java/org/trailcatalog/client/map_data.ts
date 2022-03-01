@@ -10,6 +10,7 @@ import { Camera } from './camera';
 import { Layer } from './layer';
 import { LittleEndianView } from './little_endian_view';
 import { RenderPlanner } from './render_planner';
+import { TextRenderer } from './text_renderer';
 
 interface Entity {
   readonly id: bigint;
@@ -49,6 +50,7 @@ export class MapData implements Layer {
 
   constructor(
       private readonly camera: Camera,
+      private readonly textRenderer: TextRenderer,
   ) {
     this.bounds = worldBounds();
     this.byCells = new Map();
@@ -166,8 +168,8 @@ export class MapData implements Layer {
       const routeWayCount = data.getInt32();
       data.align(8);
       const routeWays = [...data.sliceBigInt64(routeWayCount)];
-      const position = [data.getFloat64(), data.getFloat64()];
-      const route = new Route(id, name, type, routeWays);
+      const position: Vec2 = [data.getFloat64(), data.getFloat64()];
+      const route = new Route(id, name, type, routeWays, position);
       this.entities.set(id, route);
     }
   }
@@ -205,6 +207,8 @@ export class MapData implements Layer {
       }
     }
     planner.addLines(calls);
+
+    this.textRenderer.plan(planner);
   }
 
   private cellsInView(viewportSize: Vec2): S2CellId[] {

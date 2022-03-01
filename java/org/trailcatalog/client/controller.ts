@@ -6,6 +6,7 @@ import { Debouncer } from './debouncer';
 import { MapData } from './map_data';
 import { MAX_GEOMETRY_BYTES, Renderer } from './renderer';
 import { RenderPlanner } from './render_planner';
+import { TextRenderer } from './text_renderer';
 import { TileData } from './tile_data';
 
 export class Controller {
@@ -13,8 +14,9 @@ export class Controller {
   private readonly camera: Camera;
   private readonly geometry: ArrayBuffer;
   private readonly idleDebouncer: Debouncer;
-  private readonly mapData: MapData;
   private readonly renderer: Renderer;
+
+  private readonly mapData: MapData;
   private readonly tileData: TileData;
 
   private lastMousePosition: Vec2|undefined;
@@ -27,8 +29,10 @@ export class Controller {
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.enterIdle();
     });
-    this.mapData = new MapData(this.camera);
     this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
+
+    const textRenderer = new TextRenderer();
+    this.mapData = new MapData(this.camera, textRenderer);
     this.tileData = new TileData(this.camera, this.renderer);
     this.lastRenderPlan = 0;
     this.nextRender = RenderType.CameraChange;

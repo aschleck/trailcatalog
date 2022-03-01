@@ -1,5 +1,3 @@
-import opentype from 'opentype.js';
-
 import { checkExists } from './models/asserts';
 import { Vec2, Vec4 } from './models/types';
 
@@ -15,6 +13,8 @@ export class Renderer {
   private readonly geometryBuffer: WebGLBuffer;
   private readonly lineBuffer: WebGLBuffer;
   private readonly lineProgram: LineProgram;
+  private readonly indexBuffer: WebGLBuffer;
+  private readonly screenSpaceProgram: ScreenSpaceProgram;
   private area: Vec2;
   private renderPlan: RenderPlan;
 
@@ -40,10 +40,14 @@ export class Renderer {
                       1, 1,
                     ]));
     this.lineProgram = createLineProgram(gl);
+    this.indexBuffer = this.createIndexBuffer(0);
+    this.screenSpaceProgram = createScreenSpaceProgram(gl);
+
     this.area = area;
     this.renderPlan = {
       billboards: [],
       lines: [],
+      screenSpaceTriangless: [],
     };
 
     gl.enable(gl.BLEND);
@@ -68,6 +72,15 @@ export class Renderer {
     return buffer;
   }
 
+  createIndexBuffer(byteSize: number): WebGLBuffer {
+    const gl = this.gl;
+    const buffer = checkExists(gl.createBuffer());
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, byteSize, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    return buffer;
+  }
+
   createStaticBuffer(data: Float32Array): WebGLBuffer {
     const gl = this.gl;
     const buffer = checkExists(gl.createBuffer());
@@ -89,6 +102,7 @@ export class Renderer {
 
     this.renderBillboards(camera);
     this.renderLines(camera);
+    this.renderScreenSpaceTriangles();
   }
 
   private renderBillboards(camera: Camera): void {
@@ -235,6 +249,37 @@ export class Renderer {
     gl.vertexAttribDivisor(this.lineProgram.attributes.radius, 0);
     gl.disableVertexAttribArray(this.lineProgram.attributes.radius);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.useProgram(null);
+  }
+
+  private renderScreenSpaceTriangles(): void {
+    const gl = this.gl;
+    gl.useProgram(this.screenSpaceProgram.id);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.geometryBuffer);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+
+    gl.uniform2f(
+        this.screenSpaceProgram.uniforms.halfViewportSize, this.area[0] / 2, this.area[1] / 2);
+
+    gl.enableVertexAttribArray(this.screenSpaceProgram.attributes.position);
+
+    for (const triangles of this.renderPlan.screenSpaceTriangless) {
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(triangles.indices), gl.DYNAMIC_DRAW);
+      gl.vertexAttribPointer(
+          this.screenSpaceProgram.attributes.position,
+          2,
+          gl.FLOAT,
+          /* normalize= */ false,
+          /* stride= */ 0,
+          /* offset= */ triangles.offset);
+
+      gl.drawElements(gl.TRIANGLES, triangles.indices.length, gl.UNSIGNED_INT, 0);
+    }
+
+    gl.disableVertexAttribArray(this.screenSpaceProgram.attributes.position);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     gl.useProgram(null);
   }
 
@@ -496,6 +541,70 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgram {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+    },
+  };
+}
+
+interface ScreenSpaceProgram {
+  id: WebGLProgram;
+
+  attributes: {
+    position: number;
+  }
+
+  uniforms: {
+    halfViewportSize: WebGLUniformLocation;
+  }
+}
+
+function createScreenSpaceProgram(gl: WebGL2RenderingContext): ScreenSpaceProgram {
+  const programId = checkExists(gl.createProgram());
+
+  const vs = `#version 300 es
+      // These are in pixels
+      uniform highp vec2 halfViewportSize;
+      in highp vec2 position;
+
+      void main() {
+        gl_Position = vec4(vec2(position.x, -position.y) / halfViewportSize, 0, 1);
+      }
+    `;
+  const fs = `#version 300 es
+      out mediump vec4 fragColor;
+
+      void main() {
+        fragColor = vec4(0, 0, 0, 1);
+      }
+  `;
+
+  const vertexId = checkExists(gl.createShader(gl.VERTEX_SHADER));
+  gl.shaderSource(vertexId, vs);
+  gl.compileShader(vertexId);
+  if (!gl.getShaderParameter(vertexId, gl.COMPILE_STATUS)) {
+    throw new Error(`Unable to compile screen space vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
+  }
+  gl.attachShader(programId, vertexId);
+
+  const fragmentId = checkExists(gl.createShader(gl.FRAGMENT_SHADER));
+  gl.shaderSource(fragmentId, fs);
+  gl.compileShader(fragmentId);
+  if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
+    throw new Error(`Unable to compile screen space fragment shader: ${gl.getShaderInfoLog(vertexId)}`);
+  }
+  gl.attachShader(programId, fragmentId);
+
+  gl.linkProgram(programId);
+  if (!gl.getProgramParameter(programId, gl.LINK_STATUS)) {
+    throw new Error(`Unable to link screen space program: ${gl.getProgramInfoLog(programId)}`);
+  }
+
+  return {
+    id: programId,
+    attributes: {
+      position: gl.getAttribLocation(programId, 'position'),
+    },
+    uniforms: {
+      halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
     },
   };
 }
