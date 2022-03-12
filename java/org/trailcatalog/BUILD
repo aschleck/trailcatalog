@@ -1,5 +1,6 @@
 package(default_visibility = [":internal"])
 
+load("@build_bazel_rules_nodejs//:index.bzl", "copy_to_bin")
 load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary")
 
@@ -31,6 +32,11 @@ kt_jvm_library(
         "@maven//:org_postgresql_postgresql",
         "@maven//:org_slf4j_slf4j_simple",
     ],
+)
+
+copy_to_bin(
+    name = "assets",
+    srcs = glob(["*.html"]),
 )
 
 java_binary(

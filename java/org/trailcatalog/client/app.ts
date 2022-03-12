@@ -1,3 +1,4 @@
+import './app.css';
 import { Controller } from './controller';
 
 // TODO: assert little endian

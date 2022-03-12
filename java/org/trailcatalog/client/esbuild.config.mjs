@@ -1,5 +1,9 @@
+import postCssPlugin from '@deanc/esbuild-plugin-postcss';
 import * as fs from 'fs';
 import * as path from 'path';
+
+import * as postCssConfig from './postcss.config.mjs';
+console.error(postCssConfig);
 
 const bazelResolve = {
   name: 'bazel',
@@ -11,18 +15,21 @@ const bazelResolve = {
       const suffixless = path.join(root, args.path);
       console.error(root);
       let candidate = undefined;
-      fs.readdirSync(root + "/java/org/trailcatalog/s2").forEach(file => {
+      fs.readdirSync(root + '/java/org/trailcatalog/s2').forEach(file => {
         console.error(file);
       });
 
       return undefined;
       return {
-        path: path.join("/home/april/work/trailcatalog", args.path + ".js"),
+        path: path.join('/home/april/work/trailcatalog', args.path + '.js'),
       };
     });
   },
 };
 
 export default {
-  plugins: [bazelResolve],
-}
+  plugins: [
+    bazelResolve,
+    postCssPlugin(postCssConfig),
+  ],
+};

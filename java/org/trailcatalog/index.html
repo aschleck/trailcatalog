@@ -1,21 +1,18 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="utf-8"/>
     <title>Trailcatalog</title>
-    <style>
-        html, body {
-          box-sizing: border-box;
-          margin: 0;
-        }
-        #canvas {
-          display: block;
-          height: 100vh;
-          width: 100vw;
-        }
-      </style>
+    <link rel="stylesheet" type="text/css" href="/static/client.css" />
   </head>
   <body>
-    <canvas id="canvas"></canvas>
-    <script type="text/javascript" src="/static/client.js"></script>
+    <div class="relative">
+      <canvas id="canvas" class="h-screen w-screen"></canvas>
+      <div class="absolute bg-white-translucent bottom-0 p-0.5 right-0 text-slate-700 text-sm">
+        Maps © <a href="https://www.thunderforest.com">Thunderforest</a>,
+        Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>
+      </div>
+    </div>
+    <script src="/static/client.js"></script>
   </body>
 </html>

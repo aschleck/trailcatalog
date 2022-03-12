@@ -15,6 +15,7 @@ genrule(
         "//java/org/trailcatalog/client/workers:tile_fetcher_worker",
     ],
     outs = [
+        "client.css",
         "client.js",
         "client.js.map",
         "data_fetcher_worker.js",
