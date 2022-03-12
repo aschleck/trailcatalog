@@ -33,6 +33,7 @@ class Route implements Entity {
       readonly id: bigint,
       readonly name: string,
       readonly type: number,
+      readonly bound: PixelRect,
       readonly highways: bigint[],
       readonly position: Vec2,
   ) {}
@@ -44,7 +45,8 @@ export class MapData implements Layer {
 
   private readonly bounds: BoundsQuadtree<Entity>;
   private readonly byCells: Map<S2CellNumber, ArrayBuffer|undefined>;
-  private readonly entities: Map<bigint, Entity>;
+  private readonly highways: Map<bigint, Highway>;
+  private readonly routes: Map<bigint, Route>;
   private readonly fetcher: Worker;
   private readonly selected: Set<bigint>;
   private lastChange: number;
@@ -55,14 +57,17 @@ export class MapData implements Layer {
   ) {
     this.bounds = worldBounds();
     this.byCells = new Map();
-    this.entities = new Map();
+    this.highways = new Map();
+    this.routes = new Map();
     this.fetcher = new Worker('static/data_fetcher_worker.js');
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
       if (command.type === 'lcc') {
         this.loadCell(command.cell, command.data);
       } else if (command.type == 'ucc') {
-        // TODO: where is the part where we unload anything
+        for (const cell of command.cells) {
+          this.unloadCell(cell);
+        }
       } else {
         checkExhaustive(command, 'Unknown type of command');
       }
@@ -129,60 +134,6 @@ export class MapData implements Layer {
     });
   }
 
-  private loadMetadata(buffer: ArrayBuffer): void {
-    const data = new LittleEndianView(buffer);
-
-    const wayCount = data.getInt32();
-    for (let i = 0; i < wayCount; ++i) {
-      const id = data.getBigInt64();
-      const type = data.getInt32();
-      const wayRouteCount = data.getInt32();
-      const wayRoutes = [];
-      for (let j = 0; j < wayRouteCount; ++j) {
-        wayRoutes.push(data.getBigInt64());
-      }
-
-      const wayVertexBytes = data.getInt32();
-      const wayVertexCount = wayVertexBytes / 16;
-      data.align(8);
-      const points = data.sliceFloat64(wayVertexCount * 2);
-      const bound: PixelRect = {
-        low: [1, 1],
-        high: [-1, -1],
-      };
-      for (let i = 0; i < wayVertexCount; ++i) {
-        const x = points[i * 2 + 0];
-        const y = points[i * 2 + 1];
-        bound.low[0] = Math.min(bound.low[0], x);
-        bound.low[1] = Math.min(bound.low[1], y);
-        bound.high[0] = Math.max(bound.high[0], x);
-        bound.high[1] = Math.max(bound.high[1], y);
-      }
-      const built = new Highway(id, type, bound, wayRoutes, points);
-      this.bounds.insert(built, bound);
-      this.entities.set(id, built);
-    }
-
-    const routeCount = data.getInt32();
-    for (let i = 0; i < routeCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
-      const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
-      const type = data.getInt32();
-      const routeWayCount = data.getInt32();
-      data.align(8);
-      const routeWays = [...data.sliceBigInt64(routeWayCount)];
-      const position: Vec2 = [data.getFloat64(), data.getFloat64()];
-      const route = new Route(id, name, type, routeWays, position);
-      const epsilon = 1e-5; // we really struggle bounds checking routes
-      this.bounds.insert(route, {
-        low: [position[0] - epsilon, position[1] - epsilon],
-        high: [position[0] + epsilon, position[1] + epsilon],
-      });
-      this.entities.set(id, route);
-    }
-  }
-
   plan(viewportSize: Vec2, planner: RenderPlanner): void {
     const cells = this.cellsInView(viewportSize);
     const calls = [];
@@ -224,7 +175,7 @@ export class MapData implements Layer {
         const routeWayCount = data.getInt32();
         data.align(8);
         data.skip(routeWayCount * 8 + 16);
-        const route = checkExists(this.entities.get(id)) as Route;
+        const route = checkExists(this.routes.get(id)) as Route;
         this.textRenderer.plan({
           text: route.name,
           fontSize: 18,
@@ -255,6 +206,104 @@ export class MapData implements Layer {
       this.lastChange = Date.now();
     } else {
       this.byCells.set(id, undefined);
+    }
+  }
+
+  private loadMetadata(buffer: ArrayBuffer): void {
+    const data = new LittleEndianView(buffer);
+
+    const wayCount = data.getInt32();
+    for (let i = 0; i < wayCount; ++i) {
+      const id = data.getBigInt64();
+      const type = data.getInt32();
+      const wayRouteCount = data.getInt32();
+      const wayRoutes = [];
+      for (let j = 0; j < wayRouteCount; ++j) {
+        wayRoutes.push(data.getBigInt64());
+      }
+
+      const wayVertexBytes = data.getInt32();
+      const wayVertexCount = wayVertexBytes / 16;
+      data.align(8);
+      const points = data.sliceFloat64(wayVertexCount * 2);
+      const bound: PixelRect = {
+        low: [1, 1],
+        high: [-1, -1],
+      };
+      for (let i = 0; i < wayVertexCount; ++i) {
+        const x = points[i * 2 + 0];
+        const y = points[i * 2 + 1];
+        bound.low[0] = Math.min(bound.low[0], x);
+        bound.low[1] = Math.min(bound.low[1], y);
+        bound.high[0] = Math.max(bound.high[0], x);
+        bound.high[1] = Math.max(bound.high[1], y);
+      }
+      const built = new Highway(id, type, bound, wayRoutes, points);
+      this.bounds.insert(built, bound);
+      this.highways.set(id, built);
+    }
+
+    const routeCount = data.getInt32();
+    for (let i = 0; i < routeCount; ++i) {
+      const id = data.getBigInt64();
+      const nameLength = data.getInt32();
+      const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
+      const type = data.getInt32();
+      const routeWayCount = data.getInt32();
+      data.align(8);
+      const routeWays = [...data.sliceBigInt64(routeWayCount)];
+      const position: Vec2 = [data.getFloat64(), data.getFloat64()];
+      const epsilon = 1e-5; // we really struggle bounds checking routes
+      const bound: PixelRect = {
+        low: [position[0] - epsilon, position[1] - epsilon],
+        high: [position[0] + epsilon, position[1] + epsilon],
+      };
+      const route = new Route(id, name, type, bound, routeWays, position);
+      this.bounds.insert(route, bound);
+      this.routes.set(id, route);
+    }
+  }
+
+  private unloadCell(id: S2CellNumber): void {
+    const buffer = this.byCells.get(id);
+    this.byCells.delete(id);
+    if (!buffer) {
+      return;
+    }
+
+    const data = new LittleEndianView(buffer);
+
+    const wayCount = data.getInt32();
+    for (let i = 0; i < wayCount; ++i) {
+      const id = data.getBigInt64();
+      data.skip(4);
+      const wayRouteCount = data.getInt32();
+      data.skip(wayRouteCount * 8);
+
+      const wayVertexBytes = data.getInt32();
+      data.align(8);
+      data.skip(wayVertexBytes);
+      const entity = this.highways.get(id);
+      if (entity) {
+        this.bounds.delete(entity, entity.bound);
+        this.highways.delete(id);
+      }
+    }
+
+    const routeCount = data.getInt32();
+    for (let i = 0; i < routeCount; ++i) {
+      const id = data.getBigInt64();
+      const nameLength = data.getInt32();
+      data.skip(nameLength + 4);
+      const routeWayCount = data.getInt32();
+      data.align(8);
+      data.skip(routeWayCount * 8 + 16);
+
+      const entity = this.routes.get(id);
+      if (entity) {
+        this.bounds.delete(entity, entity.bound);
+        this.routes.delete(id);
+      }
     }
   }
 }

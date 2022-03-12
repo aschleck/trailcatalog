@@ -15,12 +15,57 @@ export class BoundsQuadtree<V> {
     BoundsQuadtree<V>,
     BoundsQuadtree<V>,
   ]|undefined;
+  private valueCount: number;
 
   constructor(private readonly center: Vec2, private readonly halfRadius: number) {
     this.values = [];
+    this.valueCount = 0;
+  }
+
+  delete(value: V, bound: PixelRect): boolean {
+    if ((bound.low[0] <= this.center[0] && this.center[0] <= bound.high[0]) ||
+        (bound.low[1] <= this.center[1] && this.center[1] <= bound.high[1])) {
+      for (let i = 0; i < this.values.length; ++i) {
+        if (this.values[i][0] === value) {
+          this.values.splice(i, 1);
+          this.valueCount -= 1;
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (this.children) {
+      // We know that the bound is fully contained by a child, so we can just test any point.
+      const xi = (bound.low[0] <= this.center[0]) as unknown as number;
+      const yi = (bound.low[1] <= this.center[1]) as unknown as number;
+      const child = this.children[(xi << 1) + yi];
+      const deleted = child.delete(value, bound);
+      if (deleted) {
+        this.valueCount -= 1;
+      }
+
+      if (this.valueCount < SPLIT_THRESHOLD) {
+        this.pushAllValuesInto(this.values);
+        this.children = undefined;
+      }
+
+      return deleted;
+    } else {
+      for (let i = 0; i < this.values.length; ++i) {
+        if (this.values[i][0] === value) {
+          this.values.splice(i, 1);
+          this.valueCount -= 1;
+          return true;
+        }
+      }
+      return false;
+    }
   }
 
   insert(value: V, bound: PixelRect): void {
+    this.valueCount += 1;
+
     if ((bound.low[0] <= this.center[0] && this.center[0] <= bound.high[0]) ||
         (bound.low[1] <= this.center[1] && this.center[1] <= bound.high[1])) {
       this.values.push([value, bound]);
@@ -90,6 +135,16 @@ export class BoundsQuadtree<V> {
           this.children[0].query(point, radius, output);
         }
       }
+    }
+  }
+
+  private pushAllValuesInto(output: Array<[V, PixelRect]>): void {
+    output.push(...this.values);
+    if (this.children) {
+      this.children[0].pushAllValuesInto(output);
+      this.children[1].pushAllValuesInto(output);
+      this.children[2].pushAllValuesInto(output);
+      this.children[3].pushAllValuesInto(output);
     }
   }
 }

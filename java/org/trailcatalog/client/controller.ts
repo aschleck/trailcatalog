@@ -79,8 +79,8 @@ export class Controller {
     });
 
     const raf = () => {
-      this.render();
       requestAnimationFrame(raf);
+      this.render();
     };
     requestAnimationFrame(raf);
   }

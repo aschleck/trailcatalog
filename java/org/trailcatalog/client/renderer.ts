@@ -6,6 +6,35 @@ import { RenderPlan, RenderPlanner } from './render_planner';
 
 export const MAX_GEOMETRY_BYTES = 28_000_000;
 
+const FP64_OPERATIONS = `
+    vec4 add64(vec4 a, vec4 b) {
+      return a + b;
+    }
+
+    vec4 divide2Into64(vec4 v, vec2 divisor) {
+      return vec4(v.xy / divisor.x, v.zw / divisor.y);
+    }
+
+    vec4 perpendicular64(vec4 v) {
+      return vec4(-v.zw, v.xy);
+    }
+
+    float magnitude64(vec4 v) {
+      return sqrt(
+          v.x * v.x + 2. * v.x * v.y + v.y * v.y +
+          v.z * v.z + 2. * v.z * v.w + v.w * v.w);
+    }
+
+    vec4 normalize64(vec4 v) {
+      return v / magnitude64(v);
+    }
+
+    vec2 reduce64(vec4 v) {
+      return vec2(v.x + v.y, v.z + v.w);
+    }
+`;
+
+
 export class Renderer {
 
   private readonly billboardBuffer: WebGLBuffer;
@@ -311,9 +340,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgram {
 
       out mediump vec2 fragColorPosition;
 
-      vec2 reduce(vec4 v) {
-        return vec2(v.x + v.y, v.z + v.w);
-      }
+      ${FP64_OPERATIONS}
 
       void main() {
         vec4 relativeCenter = center - cameraCenter;
@@ -322,7 +349,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgram {
             sizeIsPixels
                 ? relativeCenter * halfWorldSize + extents
                 : (relativeCenter + extents) * halfWorldSize;
-        gl_Position = vec4(reduce(worldCoord) / halfViewportSize, 0, 1);
+        gl_Position = vec4(reduce64(worldCoord) / halfViewportSize, 0, 1);
         fragColorPosition = colorPosition;
       }
     `;
@@ -422,27 +449,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgram {
       out highp float fragDistanceAlong;
       out highp float fragDistanceOrtho;
 
-      vec4 divide2Into64(vec4 v, vec2 divisor) {
-        return vec4(v.xy / divisor.x, v.zw / divisor.y);
-      }
-
-      vec4 perpendicular64(vec4 v) {
-        return vec4(-v.zw, v.xy);
-      }
-
-      float magnitude64(vec4 v) {
-        return sqrt(
-            v.x * v.x + 2. * v.x * v.y + v.y * v.y +
-            v.z * v.z + 2. * v.z * v.w + v.w * v.w);
-      }
-
-      vec4 normalize64(vec4 v) {
-        return v / magnitude64(v);
-      }
-
-      vec2 reduce64(vec4 v) {
-        return vec2(v.x + v.y, v.z + v.w);
-      }
+      ${FP64_OPERATIONS}
 
       void main() {
         vec4 direction = next - previous;
