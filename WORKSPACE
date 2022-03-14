@@ -118,8 +118,10 @@ maven_install(
     artifacts = [
         "args4j:args4j:2.33",
         "com.google.code.gson:gson:2.8.9",
+        "org.apache.commons:commons-text:1.9",
         "com.google.geometry:s2-geometry:2.0.0",
-        "com.google.guava:guava-gwt:31.0.1-jre",
+        "com.google.guava:guava:31.1-jre",
+        "com.google.guava:guava-gwt:31.1-jre",
         "com.google.javascript:closure-compiler-unshaded:jar:v20220104",
         "com.wolt.osm:parallelpbf:0.3.1",
         "com.zaxxer:HikariCP:5.0.1",

@@ -40,19 +40,28 @@ copy_to_bin(
 )
 
 java_binary(
-    name = "import",
-    main_class = "org.trailcatalog.ImportKt",
+    name = "import_osm",
+    main_class = "org.trailcatalog.ImportOsmKt",
+    runtime_deps = [":import_lib"],
+)
+
+java_binary(
+    name = "seed_trails",
+    main_class = "org.trailcatalog.SeedTrailsFromOsmKt",
     runtime_deps = [":import_lib"],
 )
 
 kt_jvm_library(
     name = "import_lib",
-    srcs = ["Import.kt"],
+    srcs = [
+        "ImportOsm.kt",
+        "SeedTrailsFromOsm.kt",
+    ],
     data = [
-        "highways.pbf",
         "washington-latest.osm.pbf",
     ],
     deps = [
+        "//java/org/trailcatalog/pbf",
         "//java/org/trailcatalog/s2:s2-java",
         "@bazel_tools//tools/java/runfiles",
         "@maven//:com_google_geometry_s2_geometry",

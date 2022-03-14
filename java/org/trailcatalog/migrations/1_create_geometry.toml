@@ -1,6 +1,33 @@
+# Create some tables for storing OSM data (mostly) raw.
+#
+# * The exception is that we calculate types of highways and routes, -1
+#   otherwise.
+# * We store latlngs in degrees, so we can do exact comparisons with node
+#   positions.
+
 [[actions]]
 type = "create_table"
-name = "highways"
+name = "nodes"
+primary_key = ["id"]
+
+	[[actions.columns]]
+	name = "id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "lat_degrees"
+  nullable = false
+	type = "DOUBLE PRECISION"
+
+	[[actions.columns]]
+	name = "lng_degrees"
+  nullable = false
+	type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "create_table"
+name = "relations"
 primary_key = ["id"]
 
 	[[actions.columns]]
@@ -12,43 +39,110 @@ primary_key = ["id"]
 	name = "type"
   nullable = false
 	type = "INT"
-
-	[[actions.columns]]
-	name = "cell"
-  nullable = false
-	type = "BIGINT"
 
 	[[actions.columns]]
 	name = "name"
   nullable = true
 	type = "TEXT"
 
-	[[actions.columns]]
-	name = "routes"
-  nullable = false
-	type = "BIGINT[]"
-
-	[[actions.columns]]
-	name = "latlng_doubles"
-  nullable = false
-	type = "BYTEA"
-
-	[[actions.columns]]
-	name = "mercator_doubles"
-  nullable = false
-	type = "BYTEA"
-
 [[actions]]
-type = "add_index"
-table = "highways"
+type = "create_table"
+name = "ways"
+primary_key = ["id"]
 
-	[actions.index]
-	name = "cell_idx"
-	columns = ["cell"]
+	[[actions.columns]]
+	name = "id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "type"
+  nullable = false
+	type = "INT"
+
+	[[actions.columns]]
+	name = "name"
+  nullable = true
+	type = "TEXT"
 
 [[actions]]
 type = "create_table"
-name = "routes"
+name = "nodes_in_ways"
+primary_key = ["node_id", "way_id"]
+
+	[[actions.columns]]
+	name = "node_id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "way_id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.foreign_key]]
+	columns = ["node_id"]
+	referenced_table = "nodes"
+	referenced_columns = ["id"]
+
+	[[actions.foreign_key]]
+	columns = ["way_id"]
+	referenced_table = "ways"
+	referenced_columns = ["id"]
+
+[[actions]]
+type = "create_table"
+name = "ways_in_relations"
+primary_key = ["relation_id", "way_id"]
+
+	[[actions.columns]]
+	name = "relation_id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "way_id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.foreign_key]]
+	columns = ["relation_id"]
+	referenced_table = "relations"
+	referenced_columns = ["id"]
+
+	[[actions.foreign_key]]
+	columns = ["way_id"]
+	referenced_table = "ways"
+	referenced_columns = ["id"]
+
+[[actions]]
+type = "create_table"
+name = "relations_in_relations"
+primary_key = ["child_id", "parent_id"]
+
+	[[actions.columns]]
+	name = "child_id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "parent_id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.foreign_key]]
+	columns = ["child_id"]
+	referenced_table = "relations"
+	referenced_columns = ["id"]
+
+	[[actions.foreign_key]]
+	columns = ["parent_id"]
+	referenced_table = "relations"
+	referenced_columns = ["id"]
+
+[[actions]]
+type = "create_table"
+name = "boundaries"
 primary_key = ["id"]
 
 	[[actions.columns]]
@@ -72,6 +166,194 @@ primary_key = ["id"]
 	type = "TEXT"
 
 	[[actions.columns]]
-	name = "highways"
+	name = "lat_lng_degrees"
   nullable = false
-	type = "BIGINT[]"
+	type = "BYTEA"
+
+	[[actions.columns]]
+	name = "node_ids"
+  nullable = false
+	type = "BYTEA"
+
+	[[actions.columns]]
+	name = "source_relation"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.foreign_key]]
+	columns = ["source_relation"]
+	referenced_table = "relations"
+	referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "boundaries"
+
+  [actions.index]
+  name = "boundaries_by_cell_idx"
+  columns = ["cell"]
+
+[[actions]]
+type = "add_index"
+table = "boundaries"
+
+  [actions.index]
+  name = "boundaries_by_source_relation_idx"
+  columns = ["source_relation"]
+
+[[actions]]
+type = "create_table"
+name = "paths"
+primary_key = ["id"]
+
+	[[actions.columns]]
+	name = "id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "type"
+  nullable = false
+	type = "INT"
+
+	[[actions.columns]]
+	name = "cell"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "lat_lng_degrees"
+  nullable = false
+	type = "BYTEA"
+
+	[[actions.columns]]
+	name = "node_ids"
+  nullable = false
+	type = "BYTEA"
+
+	[[actions.columns]]
+	name = "source_way"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.foreign_key]]
+	columns = ["source_way"]
+	referenced_table = "ways"
+	referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "paths"
+
+  [actions.index]
+  name = "paths_by_cell_idx"
+  columns = ["cell"]
+
+[[actions]]
+type = "add_index"
+table = "paths"
+
+  [actions.index]
+  name = "paths_by_source_way_idx"
+  columns = ["source_way"]
+
+[[actions]]
+type = "create_table"
+name = "trails"
+primary_key = ["id"]
+
+	[[actions.columns]]
+	name = "id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "type"
+  nullable = false
+	type = "INT"
+
+	[[actions.columns]]
+	name = "cell"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "name"
+  nullable = false
+	type = "TEXT"
+
+	[[actions.columns]]
+	name = "elevation_delta_meters"
+  nullable = false
+	type = "REAL"
+
+	[[actions.columns]]
+	name = "length_meters"
+  nullable = false
+	type = "REAL"
+
+	[[actions.columns]]
+	name = "source_relation"
+  nullable = true
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "source_way"
+  nullable = true
+	type = "BIGINT"
+
+	[[actions.foreign_key]]
+	columns = ["source_relation"]
+	referenced_table = "relations"
+	referenced_columns = ["id"]
+
+	[[actions.foreign_key]]
+	columns = ["source_way"]
+	referenced_table = "ways"
+	referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "trails"
+
+  [actions.index]
+  name = "trails_by_cell_idx"
+  columns = ["cell"]
+
+[[actions]]
+type = "add_index"
+table = "trails"
+
+  [actions.index]
+  name = "trails_by_source_relation_idx"
+  columns = ["source_relation"]
+
+[[actions]]
+type = "add_index"
+table = "trails"
+
+  [actions.index]
+  name = "trails_by_source_way_idx"
+  columns = ["source_way"]
+
+[[actions]]
+type = "create_table"
+name = "paths_in_trails"
+primary_key = ["path_id", "trail_id"]
+
+	[[actions.columns]]
+	name = "path_id"
+  nullable = false
+	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "trail_id"
+  nullable = false
+	type = "BIGINT"
+
+	# An FK from path_id to paths is omitted because we don't create backpaths.
+
+	[[actions.foreign_key]]
+	columns = ["trail_id"]
+	referenced_table = "trails"
+	referenced_columns = ["id"]
