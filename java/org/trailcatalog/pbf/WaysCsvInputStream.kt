@@ -39,9 +39,20 @@ fun getWayData(way: Way, stringTable: StringTable): WayData {
   for (i in 0 until way.keysCount) {
     when (stringTable.getS(way.getKeys(i))) {
       HIGHWAY_BS ->
-        category = category.coerceAtLeast(HIGHWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+        category =
+            category
+                .coerceAtLeast(WayCategory.HIGHWAY)
+                .coerceAtLeast(HIGHWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
       NAME_BS ->
         name = stringTable.getS(way.getVals(i)).toStringUtf8()
+      PISTE_TYPE_BS ->
+        // Prefer road categories to pistes
+        if (!WayCategory.ROAD.isParentOf(category)) {
+          category =
+              category
+                  .coerceAtLeast(WayCategory.PISTE)
+                  .coerceAtLeast(PISTE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+        }
     }
   }
   return WayData(type = category, name = name)

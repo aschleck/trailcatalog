@@ -28,7 +28,7 @@ class PathsCsvInputStream(
 
       ways[way.id] = nodeBytes.array()
 
-      if (!WayCategory.HIGHWAY.isParentOf(data.type)) {
+      if (!WayCategory.HIGHWAY.isParentOf(data.type) && !WayCategory.PISTE.isParentOf(data.type)) {
         continue
       }
       csv.append(way.id * 2)

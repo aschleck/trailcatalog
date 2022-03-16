@@ -104,6 +104,17 @@ enum class WayCategory(val id: Int) {
         PATH_BRIDLEWAY(PATH.id * ENUM_SIZE + 2),
         PATH_STEPS(PATH.id * ENUM_SIZE + 3),
         PATH_CORRIDOR(PATH.id * ENUM_SIZE + 4),
+
+    PISTE(ANY.id * ENUM_SIZE + 2),
+      PISTE_DOWNHILL(PISTE.id * ENUM_SIZE + 1),
+      PISTE_NORDIC(PISTE.id * ENUM_SIZE + 2),
+      PISTE_SKITOUR(PISTE.id * ENUM_SIZE + 3),
+      PISTE_SLED(PISTE.id * ENUM_SIZE + 4),
+      PISTE_HIKE(PISTE.id * ENUM_SIZE + 5),
+      PISTE_SLEIGH(PISTE.id * ENUM_SIZE + 6),
+      PISTE_ICE_SKATE(PISTE.id * ENUM_SIZE + 7),
+      PISTE_SKI_JUMP(PISTE.id * ENUM_SIZE + 8),
+      PISTE_CONNECTION(PISTE.id * ENUM_SIZE + 9),
   ;
 
   fun coerceAtLeast(minimumValue: WayCategory?): WayCategory {

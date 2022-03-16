@@ -41,7 +41,7 @@ class TrailsCsvInputStream(
       } else {
         val copied = ByteBuffer.allocate(ways.size).order(ByteOrder.LITTLE_ENDIAN)
         copied.put(ways)
-        copied.asLongBuffer().let {
+        copied.rewind().asLongBuffer().let {
           for (i in 0 until it.capacity()) {
             it.put(i, 2 * it.get(i))
           }

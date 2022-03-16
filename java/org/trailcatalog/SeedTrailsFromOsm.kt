@@ -82,6 +82,7 @@ private fun fillInBoundaries(connection: Connection) {
     )
 
   val results = getBoundaries.executeQuery()
+  var batchSize = 0
   while (results.next()) {
     val boundaryId = results.getLong(1)
     val nodeBytes = results.getBytes(2)
@@ -117,9 +118,17 @@ private fun fillInBoundaries(connection: Connection) {
       setLong(1, boundToCell(bound.build()).id())
       setBytes(2, latLngs.array())
       setLong(3, boundaryId)
-      executeUpdate()
+      addBatch()
+      batchSize += 1
+    }
+
+    if (batchSize >= 100) {
+      updateBoundary.executeBatch()
+      batchSize = 0
     }
   }
+
+  updateBoundary.execute()
 }
 
 private fun fillInPaths(connection: Connection) {
@@ -135,6 +144,7 @@ private fun fillInPaths(connection: Connection) {
     )
 
   val results = getPaths.executeQuery()
+  var batchSize = 0
   while (results.next()) {
     val boundaryId = results.getLong(1)
     val nodeBytes = results.getBytes(2)
@@ -170,9 +180,17 @@ private fun fillInPaths(connection: Connection) {
       setLong(1, boundToCell(bound.build()).id())
       setBytes(2, latLngs.array())
       setLong(3, boundaryId)
-      executeUpdate()
+      addBatch()
+      batchSize += 1
+    }
+
+    if (batchSize >= 100) {
+      updatePath.executeBatch()
+      batchSize = 0
     }
   }
+
+  updatePath.executeBatch()
 }
 
 private fun fillInTrails(connection: Connection) {
@@ -191,30 +209,43 @@ private fun fillInTrails(connection: Connection) {
   while (results.next()) {
     val trailId = results.getLong(1)
     val pathBytes = results.getBytes(2)
-    val pathIds = ByteBuffer.wrap(pathBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
-    val pathArray = arrayOfNulls<Long>(pathBytes.size / 8)
-    var pathArrayI = 0
-    while (pathIds.hasRemaining()) {
-      pathArray[pathArrayI] = (pathIds.get() / 2) * 2 // make sure we get the forward direction
-      pathArrayI += 1
+    val originalPathIds = ByteBuffer.wrap(pathBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+    val pathArray = ArrayList<Long>(pathBytes.size / 8)
+    while (originalPathIds.hasRemaining()) {
+      pathArray.add((originalPathIds.get() / 2) * 2) // make sure we get the forward direction
     }
 
     val pathResults = getPaths.apply {
-      setArray(1, connection.createArrayOf("bigint", pathArray))
+      setArray(1, connection.createArrayOf("bigint", pathArray.toArray()))
     }.executeQuery()
     val pathPolylines = HashMap<Long, ByteArray>()
     while (pathResults.next()) {
       pathPolylines[pathResults.getLong(1)] = pathResults.getBytes(2)
     }
+    val pathArrayIter = pathArray.iterator()
+    var present = true
+    while (pathArrayIter.hasNext()) {
+      val pathId = pathArrayIter.next()
+
+      if (!pathPolylines.containsKey(pathId)) {
+        println("Missing path ${pathId} from ${trailId}, skipping")
+        present = false
+//        pathArrayIter.remove()
+      }
+    }
+
+    if (!present || pathArray.size == 0) {
+      continue
+    }
 
     val orientedPathIdBytes =
-        ByteBuffer.allocate(pathIds.capacity() * 8).order(ByteOrder.LITTLE_ENDIAN)
+        ByteBuffer.allocate(pathArray.size * 8).order(ByteOrder.LITTLE_ENDIAN)
     val orientedPathIds = orientedPathIdBytes.asLongBuffer()
-    if (pathIds.capacity() > 2) {
-      for (i in 1 until pathIds.capacity() - 1) {
-        val previousId = (pathIds.get(i - 1) / 2) * 2
-        val id = (pathIds.get(i) / 2) * 2
-        val nextId = (pathIds.get(i + 1) / 2) * 2
+    if (pathArray.size > 2) {
+      for (i in 1 until pathArray.size - 1) {
+        val previousId = (pathArray[i - 1] / 2) * 2
+        val id = (pathArray[i] / 2) * 2
+        val nextId = (pathArray[i + 1] / 2) * 2
         val previous =
             ByteBuffer.wrap(pathPolylines[previousId]!!)
                 .order(ByteOrder.LITTLE_ENDIAN)
@@ -260,9 +291,9 @@ private fun fillInTrails(connection: Connection) {
           }
         }
       }
-    } else if (pathIds.capacity() == 2) {
-      val previousId = (pathIds.get(0) / 2) * 2
-      val nextId = (pathIds.get(1) / 2) * 2
+    } else if (pathArray.size == 2) {
+      val previousId = (pathArray[0] / 2) * 2
+      val nextId = (pathArray[1] / 2) * 2
       val previous =
           ByteBuffer.wrap(pathPolylines[previousId]!!)
               .order(ByteOrder.LITTLE_ENDIAN)
@@ -287,7 +318,7 @@ private fun fillInTrails(connection: Connection) {
         }
       }
     } else {
-      orientedPathIds.put(0, pathIds.get(0))
+      orientedPathIds.put(0, pathArray[0])
     }
 
     val polyline = ArrayList<S2Point>()

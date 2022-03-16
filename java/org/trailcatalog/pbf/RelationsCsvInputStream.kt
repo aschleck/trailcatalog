@@ -42,19 +42,31 @@ fun getRelationData(relation: Relation, stringTable: StringTable): RelationData 
     val key = relation.getKeys(i)
     when (stringTable.getS(key)) {
       ADMIN_LEVEL_BS ->
-        category = category.coerceAtLeast(ADMINISTRATIVE_LEVEL_NAMES[stringTable.getS(relation.getVals(i))])
+        category =
+            category
+                .coerceAtLeast(RelationCategory.BOUNDARY_ADMINISTRATIVE)
+                .coerceAtLeast(ADMINISTRATIVE_LEVEL_NAMES[stringTable.getS(relation.getVals(i))])
       BOUNDARY_BS ->
-        category = category.coerceAtLeast(BOUNDARY_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
+        category =
+            category
+                .coerceAtLeast(RelationCategory.BOUNDARY)
+                .coerceAtLeast(BOUNDARY_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
       NAME_BS ->
         name = stringTable.getS(relation.getVals(i)).toStringUtf8()
       NETWORK_BS ->
         network = stringTable.getS(relation.getVals(i)).toStringUtf8()
       PROTECT_CLASS_BS ->
-        category = category.coerceAtLeast(PROTECT_CLASS_NAMES[stringTable.getS(relation.getVals(i))])
+        category =
+            category
+                .coerceAtLeast(RelationCategory.BOUNDARY_PROTECTED_AREA)
+                .coerceAtLeast(PROTECT_CLASS_NAMES[stringTable.getS(relation.getVals(i))])
       REF_BS ->
         ref = stringTable.getS(relation.getVals(i)).toStringUtf8()
       ROUTE_BS ->
-        category = category.coerceAtLeast(ROUTE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
+        category =
+            category
+                .coerceAtLeast(RelationCategory.ROUTE)
+                .coerceAtLeast(ROUTE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
     }
   }
   if (name == null && network != null && ref != null) {
