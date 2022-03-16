@@ -1,6 +1,7 @@
 package org.trailcatalog
 
 import com.google.common.geometry.S2CellId
+import com.google.common.geometry.S2LatLng
 import com.google.common.io.LittleEndianDataOutputStream
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
@@ -121,3 +122,11 @@ class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
     // No need to grow because the next write will catch up
   }
 }
+
+/** Projects into Mercator space from -1 to 1. */
+private fun project(ll: S2LatLng): Pair<Double, Double> {
+  val x = ll.lngRadians() / Math.PI
+  val y = Math.log((1 + Math.sin(ll.latRadians())) / (1 - Math.sin(ll.latRadians()))) / (2 * Math.PI)
+  return Pair(x, y)
+}
+

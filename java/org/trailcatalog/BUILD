@@ -8,6 +8,7 @@ package_group(
     name = "internal",
     packages = [
         "//java/org/trailcatalog/...",
+        "//javatests/org/trailcatalog/...",
     ],
 )
 

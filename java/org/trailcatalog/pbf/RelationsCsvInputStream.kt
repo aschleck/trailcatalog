@@ -6,6 +6,7 @@ import crosby.binary.Osmformat.Relation
 import crosby.binary.Osmformat.StringTable
 import java.nio.charset.StandardCharsets
 import org.apache.commons.text.StringEscapeUtils.escapeCsv
+import org.trailcatalog.models.RelationCategory
 
 class RelationsCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
     block,

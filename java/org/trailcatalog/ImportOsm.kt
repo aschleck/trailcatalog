@@ -40,9 +40,9 @@ fun importOsmFromPbf(connection: Connection) {
     copier.copyIn("COPY nodes_in_ways FROM STDIN WITH CSV HEADER", WaysMembersCsvInputStream(block))
     copier.copyIn(
         "COPY relations_in_relations FROM STDIN WITH CSV HEADER",
-        RelationsMembersCsvInputStream("parent_id", "child_id", MemberType.RELATION, block))
+        RelationsMembersCsvInputStream(MemberType.RELATION, block))
     copier.copyIn(
         "COPY ways_in_relations FROM STDIN WITH CSV HEADER",
-        RelationsMembersCsvInputStream("relation_id", "way_id", MemberType.WAY, block))
+        RelationsMembersCsvInputStream(MemberType.WAY, block))
   }
 }

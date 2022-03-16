@@ -2,13 +2,14 @@ package org.trailcatalog.pbf
 
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
+import org.trailcatalog.models.RelationCategory
 import java.nio.charset.StandardCharsets
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class PathsInTrailsCsvInputStream(
 
-  private val relationWays: MutableMap<Long, ByteArray>,
+  private val relationWays: Map<Long, ByteArray>,
   block: PrimitiveBlock)
   : PbfEntityInputStream(
     block,
@@ -25,10 +26,17 @@ class PathsInTrailsCsvInputStream(
         continue
       }
 
-      val allWayIds =
-          ByteBuffer.wrap(relationWays[relation.id]).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+      val ways = relationWays[relation.id] ?: continue
+
+      val allWayIds = ByteBuffer.wrap(ways).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+      val seen = HashSet<Long>()
       while (allWayIds.hasRemaining()) {
-        csv.append(allWayIds.get() * 2)
+        val id = allWayIds.get()
+        if (seen.contains(id)) {
+          continue
+        }
+        seen.add(id)
+        csv.append(id * 2)
         csv.append(",")
         csv.append(TRAIL_FROM_RELATION_OFFSET + relation.id)
         csv.append("\n")

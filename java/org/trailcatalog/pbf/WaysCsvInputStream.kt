@@ -6,6 +6,7 @@ import crosby.binary.Osmformat.StringTable
 import crosby.binary.Osmformat.Way
 import java.nio.charset.StandardCharsets
 import org.apache.commons.text.StringEscapeUtils.escapeCsv
+import org.trailcatalog.models.WayCategory
 
 class WaysCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
     block,

@@ -1,24 +1,21 @@
 package org.trailcatalog.pbf
 
-import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
 import java.nio.charset.StandardCharsets
 import org.apache.commons.text.StringEscapeUtils.escapeCsv
-import org.trailcatalog.s2.boundToCell
+import org.trailcatalog.models.RelationCategory
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class TrailsCsvInputStream(
 
-  private val nodes: Map<Long, Pair<Double, Double>>,
-  private val relations: Map<Long, ByteArray>,
+  private val relationWays: Map<Long, ByteArray>,
   block: PrimitiveBlock)
   : PbfEntityInputStream(
     block,
-    "id,type,cell,name,elevation_delta_meters,length_meters,source_relation,source_way\n".toByteArray(StandardCharsets.UTF_8),
+    "id,type,cell,name,path_ids,elevation_delta_meters,length_meters,source_relation,source_way\n".toByteArray(StandardCharsets.UTF_8),
 ) {
 
   override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
@@ -31,27 +28,27 @@ class TrailsCsvInputStream(
         continue
       }
 
-      val allNodeIds =
-          ByteBuffer.wrap(relations[relation.id]).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
-      val points = ArrayList<S2Point>()
-      while (allNodeIds.hasRemaining()) {
-        val point = nodes[allNodeIds.get()]!!
-        points.add(S2LatLng.fromDegrees(point.first, point.second).toPoint())
-      }
-      val polyline = S2Polyline(points)
+      val ways = relationWays[relation.id]
 
       csv.append(TRAIL_FROM_RELATION_OFFSET + relation.id)
       csv.append(",")
-      csv.append(data.type)
-      csv.append(",")
-      csv.append(boundToCell(polyline.rectBound))
-      csv.append(",")
+      csv.append(data.type.id)
+      csv.append(",-1,")
       csv.append(escapeCsv(data.name))
       csv.append(",")
-      csv.append(0)
-      csv.append(",")
-      csv.append(polylineToMeters(polyline))
-      csv.append(",")
+      if (ways == null) {
+        csv.append("\\x")
+      } else {
+        val copied = ByteBuffer.allocate(ways.size).order(ByteOrder.LITTLE_ENDIAN)
+        copied.put(ways)
+        copied.asLongBuffer().let {
+          for (i in 0 until it.capacity()) {
+            it.put(i, 2 * it.get(i))
+          }
+        }
+        appendByteArray(copied.array(), csv)
+      }
+      csv.append(",0,0,")
       csv.append(relation.id)
       csv.append(",")
       csv.append("\n")
@@ -63,28 +60,17 @@ class TrailsCsvInputStream(
         continue
       }
       val asRelationType = PATHS_TO_TRAILS[data.type] ?: continue
-
-      val points = ArrayList<S2Point>()
-      var nodeId = 0L
-      for (delta in way.refsList) {
-        nodeId += delta
-        val point = nodes[nodeId]!!
-        points.add(S2LatLng.fromDegrees(point.first, point.second).toPoint())
-      }
-      val polyline = S2Polyline(points)
+      val bytes = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+      bytes.asLongBuffer().put(way.id * 2)
 
       csv.append(TRAIL_FROM_WAY_OFFSET + way.id)
       csv.append(",")
-      csv.append(asRelationType)
-      csv.append(",")
-      csv.append(boundToCell(polyline.rectBound))
-      csv.append(",")
+      csv.append(asRelationType.id)
+      csv.append(",-1,")
       csv.append(escapeCsv(data.name))
       csv.append(",")
-      csv.append(0)
-      csv.append(",")
-      csv.append(polylineToMeters(polyline))
-      csv.append(",")
+      appendByteArray(bytes.array(), csv)
+      csv.append(",0,0,")
       csv.append(",")
       csv.append(way.id)
       csv.append("\n")

@@ -118,25 +118,25 @@ primary_key = ["relation_id", "way_id"]
 [[actions]]
 type = "create_table"
 name = "relations_in_relations"
-primary_key = ["child_id", "parent_id"]
-
-	[[actions.columns]]
-	name = "child_id"
-  nullable = false
-	type = "BIGINT"
+primary_key = ["parent_id", "child_id"]
 
 	[[actions.columns]]
 	name = "parent_id"
   nullable = false
 	type = "BIGINT"
 
+	[[actions.columns]]
+	name = "child_id"
+  nullable = false
+	type = "BIGINT"
+
 	[[actions.foreign_key]]
-	columns = ["child_id"]
+	columns = ["parent_id"]
 	referenced_table = "relations"
 	referenced_columns = ["id"]
 
 	[[actions.foreign_key]]
-	columns = ["parent_id"]
+	columns = ["child_id"]
 	referenced_table = "relations"
 	referenced_columns = ["id"]
 
@@ -281,6 +281,11 @@ primary_key = ["id"]
 	name = "name"
   nullable = false
 	type = "TEXT"
+
+	[[actions.columns]]
+	name = "path_ids"
+  nullable = false
+	type = "BYTEA"
 
 	[[actions.columns]]
 	name = "elevation_delta_meters"

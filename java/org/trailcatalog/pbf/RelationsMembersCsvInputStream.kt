@@ -6,13 +6,11 @@ import crosby.binary.Osmformat.Relation.MemberType
 import java.nio.charset.StandardCharsets
 
 class RelationsMembersCsvInputStream(
-    parentColumn: String,
-    childColumn: String,
     private val type: MemberType,
     block: PrimitiveBlock,
 ) : PbfEntityInputStream(
     block,
-    "${parentColumn},${childColumn}\n".toByteArray(StandardCharsets.UTF_8),
+    "parent,child\n".toByteArray(StandardCharsets.UTF_8),
 ) {
 
   override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {

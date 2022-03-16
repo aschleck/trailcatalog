@@ -6,6 +6,7 @@ kt_jvm_library(
     name = "pbf",
     srcs = glob(["*.kt"]),
     deps = [
+        "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
         "//java/org/trailcatalog/s2:s2-kt",
         "@maven//:com_google_guava_guava",
