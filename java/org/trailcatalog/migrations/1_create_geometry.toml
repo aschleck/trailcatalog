@@ -288,6 +288,16 @@ primary_key = ["id"]
 	type = "BYTEA"
 
 	[[actions.columns]]
+	name = "center_lat_degrees"
+  nullable = false
+	type = "DOUBLE PRECISION"
+
+	[[actions.columns]]
+	name = "center_lng_degrees"
+  nullable = false
+	type = "DOUBLE PRECISION"
+
+	[[actions.columns]]
 	name = "elevation_delta_meters"
   nullable = false
 	type = "REAL"

@@ -15,7 +15,7 @@ class TrailsCsvInputStream(
   block: PrimitiveBlock)
   : PbfEntityInputStream(
     block,
-    "id,type,cell,name,path_ids,elevation_delta_meters,length_meters,source_relation,source_way\n".toByteArray(StandardCharsets.UTF_8),
+    "id,type,cell,name,path_ids,center_lat_degrees,center_lng_degrees,elevation_delta_meters,length_meters,source_relation,source_way\n".toByteArray(StandardCharsets.UTF_8),
 ) {
 
   override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
@@ -48,7 +48,7 @@ class TrailsCsvInputStream(
         }
         appendByteArray(copied.array(), csv)
       }
-      csv.append(",0,0,")
+      csv.append(",0,0,0,0,")
       csv.append(relation.id)
       csv.append(",")
       csv.append("\n")
@@ -70,7 +70,7 @@ class TrailsCsvInputStream(
       csv.append(escapeCsv(data.name))
       csv.append(",")
       appendByteArray(bytes.array(), csv)
-      csv.append(",0,0,")
+      csv.append(",0,0,0,0,")
       csv.append(",")
       csv.append(way.id)
       csv.append("\n")

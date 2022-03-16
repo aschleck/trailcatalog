@@ -202,7 +202,8 @@ private fun fillInTrails(connection: Connection) {
     connection.prepareStatement("SELECT id, lat_lng_degrees FROM paths WHERE id = ANY (?)")
   val updateTrail =
     connection.prepareStatement(
-        "UPDATE trails SET cell = ?, length_meters = ?, path_ids = ? WHERE id = ?"
+        "UPDATE trails SET cell = ?, center_lat_degrees = ?, center_lng_degrees = ?, "
+                + "length_meters = ?, path_ids = ? WHERE id = ?"
     )
 
   val results = getTrails.executeQuery()
@@ -341,11 +342,14 @@ private fun fillInTrails(connection: Connection) {
     }
 
     val s2Polyline = S2Polyline(polyline)
+    val center = S2LatLng(s2Polyline.interpolate(0.5))
     updateTrail.apply {
       setLong(1, boundToCell(s2Polyline.rectBound).id())
-      setDouble(2, s2Polyline.arclengthAngle.earthMeters())
-      setBytes(3, orientedPathIdBytes.array())
-      setLong(4, trailId)
+      setDouble(2, center.latDegrees())
+      setDouble(3, center.lngDegrees())
+      setDouble(4, s2Polyline.arclengthAngle.earthMeters())
+      setBytes(5, orientedPathIdBytes.array())
+      setLong(6, trailId)
       executeUpdate()
     }
   }
