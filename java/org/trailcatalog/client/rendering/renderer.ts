@@ -1,7 +1,7 @@
-import { checkExists } from './models/asserts';
-import { Vec2, Vec4 } from './models/types';
+import { checkExists } from '../models/asserts';
+import { Camera } from '../models/camera';
+import { Vec2, Vec4 } from '../models/types';
 
-import { Camera } from './camera';
 import { RenderPlan, RenderPlanner } from './render_planner';
 
 export const MAX_GEOMETRY_BYTES = 28_000_000;
@@ -19,6 +19,12 @@ const FP64_OPERATIONS = `
       return vec4(-v.zw, v.xy);
     }
 
+    float inverseMagnitude64(vec4 v) {
+      return inversesqrt(
+          v.x * v.x + 2. * v.x * v.y + v.y * v.y +
+          v.z * v.z + 2. * v.z * v.w + v.w * v.w);
+    }
+
     float magnitude64(vec4 v) {
       return sqrt(
           v.x * v.x + 2. * v.x * v.y + v.y * v.y +
@@ -26,7 +32,7 @@ const FP64_OPERATIONS = `
     }
 
     vec4 normalize64(vec4 v) {
-      return v / magnitude64(v);
+      return v * inverseMagnitude64(v);
     }
 
     vec2 reduce64(vec4 v) {
@@ -34,6 +40,10 @@ const FP64_OPERATIONS = `
     }
 `;
 
+interface Program {
+  activate(gl: WebGL2RenderingContext): void;
+  deactivate(gl: WebGL2RenderingContext): void;
+}
 
 export class Renderer {
 

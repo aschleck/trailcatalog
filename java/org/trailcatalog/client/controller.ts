@@ -1,12 +1,12 @@
 import { checkExists } from './models/asserts';
+import { Camera } from './models/camera';
 import { Vec2 } from './models/types';
+import { MAX_GEOMETRY_BYTES, Renderer } from './rendering/renderer';
+import { RenderPlanner } from './rendering/render_planner';
+import { TextRenderer } from './rendering/text_renderer';
 
-import { Camera } from './camera';
 import { Debouncer } from './debouncer';
 import { MapData } from './map_data';
-import { MAX_GEOMETRY_BYTES, Renderer } from './renderer';
-import { RenderPlanner } from './render_planner';
-import { TextRenderer } from './text_renderer';
 import { TileData } from './tile_data';
 
 export class Controller {
@@ -17,6 +17,7 @@ export class Controller {
   private readonly renderer: Renderer;
 
   private readonly mapData: MapData;
+  private readonly textRenderer: TextRenderer;
   private readonly tileData: TileData;
 
   private lastMousePosition: Vec2|undefined;
@@ -31,8 +32,8 @@ export class Controller {
     });
     this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
 
-    const textRenderer = new TextRenderer(this.renderer);
-    this.mapData = new MapData(this.camera, textRenderer);
+    this.textRenderer = new TextRenderer(this.renderer);
+    this.mapData = new MapData(this.camera, this.textRenderer);
     this.tileData = new TileData(this.camera, this.renderer);
     this.lastRenderPlan = 0;
     this.nextRender = RenderType.CameraChange;
@@ -40,49 +41,58 @@ export class Controller {
     window.addEventListener('resize', () => this.resize());
     this.resize();
 
-    document.addEventListener('pointerdown', e => {
-      this.lastMousePosition = [e.clientX, e.clientY];
-
-      const center = this.camera.centerPixel;
-      const position: Vec2 = [
-        center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
-        center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
-      ];
-      this.mapData.query(position, 7 * this.camera.inverseWorldRadius);
-    });
-    document.addEventListener('pointermove', e => {
-      if (!this.lastMousePosition) {
-        return;
-      }
-
-      this.camera.translate([
-          this.lastMousePosition[0] - e.clientX,
-          -(this.lastMousePosition[1] - e.clientY),
-      ]);
-      this.lastMousePosition = [e.clientX, e.clientY];
-      this.nextRender = RenderType.CameraChange;
-    });
-    document.addEventListener('pointerup', e => {
-      this.lastMousePosition = undefined;
-      this.idleDebouncer.trigger();
-    });
-    this.canvas.addEventListener('wheel', e => {
-      e.preventDefault();
-
-      const relativePixels: Vec2 = [
-        e.clientX - this.canvas.width / 2,
-        this.canvas.height / 2 - e.clientY,
-      ];
-      this.camera.linearZoom(-0.01 * e.deltaY, relativePixels);
-      this.nextRender = RenderType.CameraChange;
-      this.idleDebouncer.trigger();
-    });
+    document.addEventListener('pointerdown', e => { this.mouseDown(e); });
+    //document.addEventListener('touchstart', e => { this.mouseDown(e); });
+    document.addEventListener('pointermove', e => { this.mouseMove(e); });
+    document.addEventListener('pointerup', e => { this.mouseUp(e); });
+    this.canvas.addEventListener('wheel', e => { this.wheel(e); });
 
     const raf = () => {
       requestAnimationFrame(raf);
       this.render();
     };
     requestAnimationFrame(raf);
+  }
+
+  private mouseDown(e: MouseEvent): void {
+    this.lastMousePosition = [e.clientX, e.clientY];
+
+    const center = this.camera.centerPixel;
+    const position: Vec2 = [
+      center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
+      center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
+    ];
+    this.mapData.query(position, 7 * this.camera.inverseWorldRadius);
+  }
+
+  private mouseMove(e: MouseEvent): void {
+    if (!this.lastMousePosition) {
+      return;
+    }
+
+    this.camera.translate([
+        this.lastMousePosition[0] - e.clientX,
+        -(this.lastMousePosition[1] - e.clientY),
+    ]);
+    this.lastMousePosition = [e.clientX, e.clientY];
+    this.nextRender = RenderType.CameraChange;
+  }
+
+  private mouseUp(e: MouseEvent): void {
+    this.lastMousePosition = undefined;
+    this.idleDebouncer.trigger();
+  }
+
+  private wheel(e: WheelEvent): void {
+    e.preventDefault();
+
+    const relativePixels: Vec2 = [
+      e.clientX - this.canvas.width / 2,
+      this.canvas.height / 2 - e.clientY,
+    ];
+    this.camera.linearZoom(-0.01 * e.deltaY, relativePixels);
+    this.nextRender = RenderType.CameraChange;
+    this.idleDebouncer.trigger();
   }
 
   private enterIdle(): void {
@@ -102,11 +112,14 @@ export class Controller {
 
     if (this.nextRender >= RenderType.CameraChange) {
       if (this.nextRender >= RenderType.DataChange) {
+        this.textRenderer.mark();
         const planner = new RenderPlanner(this.geometry);
         const size: Vec2 = [this.canvas.width, this.canvas.height];
+        const zoom = this.camera.zoom;
         this.tileData.plan(size, planner);
-        this.mapData.plan(size, planner);
+        this.mapData.plan(size, zoom, planner);
         this.renderer.apply(planner);
+        this.textRenderer.sweep();
         this.lastRenderPlan = Date.now();
       }
       this.renderer.render(this.camera);

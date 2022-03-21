@@ -1,7 +1,6 @@
-import { checkExists } from './models/asserts';
-import { Vec2, Vec4 } from './models/types';
-
-import { Camera } from './camera';
+import { checkExists } from '../models/asserts';
+import { Camera } from '../models/camera';
+import { Vec2, Vec4 } from '../models/types';
 
 export interface Line {
   colorFill: Vec4;
@@ -15,6 +14,7 @@ export interface RenderPlan {
     size: Vec4;
     sizeIsPixels: boolean;
     texture: WebGLTexture;
+    z: number,
   }>;
   lines: Array<{
     offset: number;
@@ -35,9 +35,9 @@ export class RenderPlanner {
     };
   }
 
-  // TODO: z is currently implicit, terrible assumption
+  // TODO: z is currently implicit for lines, terrible assumption
 
-  addBillboard(center: Vec2, size: Vec2, texture: WebGLTexture): void {
+  addBillboard(center: Vec2, size: Vec2, texture: WebGLTexture, z: number): void {
     const x = center[0];
     const xF = Math.fround(x);
     const xR = x - xF;
@@ -57,6 +57,7 @@ export class RenderPlanner {
       size: [wF, wR, hF, hR],
       sizeIsPixels: size[0] >= 1, // well this is sketchy
       texture,
+      z,
     });
   }
 

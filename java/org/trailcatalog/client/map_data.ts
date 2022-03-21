@@ -1,16 +1,16 @@
 import { checkExhaustive, checkExists } from './models/asserts';
+import { Camera } from './models/camera';
 import { reinterpretLong } from './models/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from './models/types';
+import { Line, RenderPlanner } from './rendering/render_planner';
+import { TextRenderer } from './rendering/text_renderer';
 import { S2CellId, S2LatLngRect } from '../s2';
 import { SimpleS2 } from '../s2/SimpleS2';
 import { FetcherCommand } from './workers/data_fetcher';
 
 import { BoundsQuadtree, worldBounds } from './bounds_quadtree';
-import { Camera } from './camera';
 import { Layer } from './layer';
 import { LittleEndianView } from './little_endian_view';
-import { RenderPlanner } from './render_planner';
-import { TextRenderer } from './text_renderer';
 
 interface Entity {
   readonly id: bigint;
@@ -18,24 +18,25 @@ interface Entity {
   readonly position?: Vec2;
 }
 
-class Highway implements Entity {
+class Path implements Entity {
   constructor(
       readonly id: bigint,
       readonly type: number,
       readonly bound: PixelRect,
-      readonly routes: bigint[],
+      readonly trails: bigint[],
       readonly line: Float64Array,
   ) {}
 }
 
-class Route implements Entity {
+class Trail implements Entity {
   constructor(
       readonly id: bigint,
       readonly name: string,
       readonly type: number,
       readonly bound: PixelRect,
-      readonly highways: bigint[],
+      readonly paths: bigint[],
       readonly position: Vec2,
+      readonly lengthMeters: number,
   ) {}
 }
 
@@ -45,8 +46,8 @@ export class MapData implements Layer {
 
   private readonly bounds: BoundsQuadtree<Entity>;
   private readonly byCells: Map<S2CellNumber, ArrayBuffer|undefined>;
-  private readonly highways: Map<bigint, Highway>;
-  private readonly routes: Map<bigint, Route>;
+  private readonly paths: Map<bigint, Path>;
+  private readonly trails: Map<bigint, Trail>;
   private readonly fetcher: Worker;
   private readonly selected: Set<bigint>;
   private lastChange: number;
@@ -57,8 +58,8 @@ export class MapData implements Layer {
   ) {
     this.bounds = worldBounds();
     this.byCells = new Map();
-    this.highways = new Map();
-    this.routes = new Map();
+    this.paths = new Map();
+    this.trails = new Map();
     this.fetcher = new Worker('static/data_fetcher_worker.js');
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
@@ -107,19 +108,19 @@ export class MapData implements Layer {
     }
     if (best) {
       const ids = [];
-      if (best instanceof Highway) {
+      if (best instanceof Path) {
         ids.push(best.id);
-      } else if (best instanceof Route) {
-        ids.push(...best.highways);
+      } else if (best instanceof Trail) {
+        ids.push(...best.paths);
       }
 
       if (this.selected.has(ids[0])) {
         for (const id of ids) {
-          this.selected.delete(id);
+          this.selected.delete(id & ~1n);
         }
       } else {
         for (const id of ids) {
-          this.selected.add(id);
+          this.selected.add(id & ~1n);
         }
       }
       this.lastChange = Date.now();
@@ -134,9 +135,9 @@ export class MapData implements Layer {
     });
   }
 
-  plan(viewportSize: Vec2, planner: RenderPlanner): void {
+  plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     const cells = this.cellsInView(viewportSize);
-    const calls = [];
+    const lines: Line[] = [];
     const regularFill: Vec4 = [0, 0, 0, 0];
     const selectedFill: Vec4 = [1, 0.918, 0, 1];
     const stipple: Vec4 = [0.1, 0.1, 0.1, 1];
@@ -150,40 +151,57 @@ export class MapData implements Layer {
 
       const data = new LittleEndianView(buffer);
 
-      const wayCount = data.getInt32();
-      for (let i = 0; i < wayCount; ++i) {
-        const id = data.getBigInt64();
-        const type = data.getInt32();
-        const routes = data.getInt32();
-        data.skip(routes * 8);
-        const wayVertexBytes = data.getInt32();
-        const wayVertexCount = wayVertexBytes / 16;
-        data.align(8);
-        calls.push({
-          colorFill: this.selected.has(id) ? selectedFill : regularFill,
-          colorStipple: stipple,
-          vertices: data.sliceFloat64(wayVertexCount * 2),
-        });
+      const pathCount = data.getInt32();
+      if (zoom > 13) {
+        for (let i = 0; i < pathCount; ++i) {
+          const id = data.getBigInt64();
+          const type = data.getInt32();
+          const trailCount = data.getInt32();
+          data.skip(trailCount * 8);
+          const pathVertexBytes = data.getInt32();
+          const pathVertexCount = pathVertexBytes / 16;
+          data.align(8);
+          lines.push({
+            colorFill: this.selected.has(id) ? selectedFill : regularFill,
+            colorStipple: stipple,
+            vertices: data.sliceFloat64(pathVertexCount * 2),
+          });
+        }
+      } else {
+        for (let i = 0; i < pathCount; ++i) {
+          data.skip(12);
+          const trailCount = data.getInt32();
+          data.skip(trailCount * 8);
+          const pathVertexBytes = data.getInt32();
+          data.align(8);
+          data.skip(pathVertexBytes);
+        }
       }
 
-      const routeCount = data.getInt32();
-      for (let i = 0; i < routeCount; ++i) {
+      const trailCount = data.getInt32();
+      for (let i = 0; i < trailCount; ++i) {
         const id = data.getBigInt64();
         const nameLength = data.getInt32();
         data.skip(nameLength);
         const type = data.getInt32();
-        const routeWayCount = data.getInt32();
+        const trailWayCount = data.getInt32();
         data.align(8);
-        data.skip(routeWayCount * 8 + 16);
-        const route = checkExists(this.routes.get(id)) as Route;
+        data.skip(trailWayCount * 8 + 16);
+        const lengthMeters = data.getFloat64();
+        const trail = checkExists(this.trails.get(id)) as Trail;
         this.textRenderer.plan({
-          text: route.name,
-          fontSize: 18,
-        }, route.position, planner);
+          text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
+          backgroundColor: 'black',
+          borderRadius: 3,
+          fillColor: 'white',
+          fontSize: 14,
+          paddingX: 6,
+          paddingY: 6,
+        }, trail.position, /* z= */ 1, planner);
       }
     }
 
-    planner.addLines(calls);
+    planner.addLines(lines);
   }
 
   private cellsInView(viewportSize: Vec2): S2CellId[] {
@@ -199,7 +217,7 @@ export class MapData implements Layer {
   }
 
   private loadCell(id: S2CellNumber, buffer: ArrayBuffer): void {
-    // Check if the server wrote us a 1 byte response with 0 routes and highways.
+    // Check if the server wrote us a 1 byte response with 0 trails and paths.
     if (buffer.byteLength > 8) {
       this.byCells.set(id, buffer);
       this.loadMetadata(buffer);
@@ -212,25 +230,25 @@ export class MapData implements Layer {
   private loadMetadata(buffer: ArrayBuffer): void {
     const data = new LittleEndianView(buffer);
 
-    const wayCount = data.getInt32();
-    for (let i = 0; i < wayCount; ++i) {
+    const pathCount = data.getInt32();
+    for (let i = 0; i < pathCount; ++i) {
       const id = data.getBigInt64();
       const type = data.getInt32();
-      const wayRouteCount = data.getInt32();
-      const wayRoutes = [];
-      for (let j = 0; j < wayRouteCount; ++j) {
-        wayRoutes.push(data.getBigInt64());
+      const pathTrailCount = data.getInt32();
+      const pathTrails = [];
+      for (let j = 0; j < pathTrailCount; ++j) {
+        pathTrails.push(data.getBigInt64());
       }
 
-      const wayVertexBytes = data.getInt32();
-      const wayVertexCount = wayVertexBytes / 16;
+      const pathVertexBytes = data.getInt32();
+      const pathVertexCount = pathVertexBytes / 16;
       data.align(8);
-      const points = data.sliceFloat64(wayVertexCount * 2);
+      const points = data.sliceFloat64(pathVertexCount * 2);
       const bound: PixelRect = {
         low: [1, 1],
         high: [-1, -1],
       };
-      for (let i = 0; i < wayVertexCount; ++i) {
+      for (let i = 0; i < pathVertexCount; ++i) {
         const x = points[i * 2 + 0];
         const y = points[i * 2 + 1];
         bound.low[0] = Math.min(bound.low[0], x);
@@ -238,29 +256,30 @@ export class MapData implements Layer {
         bound.high[0] = Math.max(bound.high[0], x);
         bound.high[1] = Math.max(bound.high[1], y);
       }
-      const built = new Highway(id, type, bound, wayRoutes, points);
+      const built = new Path(id, type, bound, pathTrails, points);
       this.bounds.insert(built, bound);
-      this.highways.set(id, built);
+      this.paths.set(id, built);
     }
 
-    const routeCount = data.getInt32();
-    for (let i = 0; i < routeCount; ++i) {
+    const trailCount = data.getInt32();
+    for (let i = 0; i < trailCount; ++i) {
       const id = data.getBigInt64();
       const nameLength = data.getInt32();
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
       const type = data.getInt32();
-      const routeWayCount = data.getInt32();
+      const trailWayCount = data.getInt32();
       data.align(8);
-      const routeWays = [...data.sliceBigInt64(routeWayCount)];
+      const trailWays = [...data.sliceBigInt64(trailWayCount)];
       const position: Vec2 = [data.getFloat64(), data.getFloat64()];
-      const epsilon = 1e-5; // we really struggle bounds checking routes
+      const epsilon = 1e-5; // we really struggle bounds checking trails
       const bound: PixelRect = {
         low: [position[0] - epsilon, position[1] - epsilon],
         high: [position[0] + epsilon, position[1] + epsilon],
       };
-      const route = new Route(id, name, type, bound, routeWays, position);
-      this.bounds.insert(route, bound);
-      this.routes.set(id, route);
+      const lengthMeters = data.getFloat64();
+      const trail = new Trail(id, name, type, bound, trailWays, position, lengthMeters);
+      this.bounds.insert(trail, bound);
+      this.trails.set(id, trail);
     }
   }
 
@@ -273,36 +292,36 @@ export class MapData implements Layer {
 
     const data = new LittleEndianView(buffer);
 
-    const wayCount = data.getInt32();
-    for (let i = 0; i < wayCount; ++i) {
+    const pathCount = data.getInt32();
+    for (let i = 0; i < pathCount; ++i) {
       const id = data.getBigInt64();
       data.skip(4);
-      const wayRouteCount = data.getInt32();
-      data.skip(wayRouteCount * 8);
+      const pathTrailCount = data.getInt32();
+      data.skip(pathTrailCount * 8);
 
-      const wayVertexBytes = data.getInt32();
+      const pathVertexBytes = data.getInt32();
       data.align(8);
-      data.skip(wayVertexBytes);
-      const entity = this.highways.get(id);
+      data.skip(pathVertexBytes);
+      const entity = this.paths.get(id);
       if (entity) {
         this.bounds.delete(entity, entity.bound);
-        this.highways.delete(id);
+        this.paths.delete(id);
       }
     }
 
-    const routeCount = data.getInt32();
-    for (let i = 0; i < routeCount; ++i) {
+    const trailCount = data.getInt32();
+    for (let i = 0; i < trailCount; ++i) {
       const id = data.getBigInt64();
       const nameLength = data.getInt32();
       data.skip(nameLength + 4);
-      const routeWayCount = data.getInt32();
+      const trailWayCount = data.getInt32();
       data.align(8);
-      data.skip(routeWayCount * 8 + 16);
+      data.skip(trailWayCount * 8 + 16 + 8);
 
-      const entity = this.routes.get(id);
+      const entity = this.trails.get(id);
       if (entity) {
         this.bounds.delete(entity, entity.bound);
-        this.routes.delete(id);
+        this.trails.delete(id);
       }
     }
   }
@@ -329,4 +348,8 @@ function distanceCheckLine(point: Vec2, line: Float64Array): number {
     }
   }
   return bestDistance2;
+}
+
+function metersToMiles(meters: number): number {
+  return meters * 0.00062137119224;
 }

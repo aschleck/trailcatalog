@@ -26,6 +26,7 @@ kt_jvm_library(
         "//java/org/trailcatalog/static",
     ],
     deps = [
+        "//java/org/trailcatalog/models",
         "@bazel_tools//tools/java/runfiles",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:com_zaxxer_HikariCP",
@@ -62,6 +63,7 @@ kt_jvm_library(
         "washington-latest.osm.pbf",
     ],
     deps = [
+        "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/pbf",
         "//java/org/trailcatalog/s2:s2-java",
         "@bazel_tools//tools/java/runfiles",

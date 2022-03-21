@@ -1,22 +1,24 @@
 package org.trailcatalog
 
 import com.google.common.collect.ArrayListMultimap
+import com.google.common.collect.ImmutableMap.toImmutableMap
 import com.google.common.geometry.S2CellId
-import com.google.common.geometry.S2LatLng
 import com.google.common.io.LittleEndianDataOutputStream
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import io.javalin.Javalin
 import io.javalin.http.Context
+import org.trailcatalog.models.TrailVisibility
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Arrays
 import kotlin.math.ln
 import kotlin.math.sin
 
 val connectionSource = HikariDataSource(HikariConfig().apply {
   jdbcUrl =
-    "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=migration_1_create_geometry"
+    "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=migration_3_dont_use_enum"
   username = "postgres"
   password = "postgres"
 })
@@ -35,37 +37,19 @@ data class WireTrail(
   val y: Double,
   val lengthMeters: Double,
 )
-data class WirePath(val id: Long, val type: Int, val trails: List<Long>, val vertices: ByteArray)
+data class WirePath(val id: Long, val type: Int, val trails: MutableList<Long>, val vertices: ByteArray)
 
 fun fetchCell(ctx: Context) {
   ctx.contentType("application/octet-stream")
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
 
-  val pathsToTrails = ArrayListMultimap.create<Long, Long>()
-  connectionSource.connection.use {
-    val query =
-      it.prepareStatement(
-          "SELECT pit.path_id, pit.trail_id "
-              + "FROM paths p "
-              + "JOIN paths_in_trails pit ON pit.path_id = p.id "
-              + "WHERE p.cell = ?").apply {
-        setLong(1, cell.id())
-      }
-    val results = query.executeQuery()
-    while (results.next()) {
-      val pathId = results.getLong(1)
-      val trailId = results.getLong(2)
-      pathsToTrails.put(pathId, trailId)
-    }
-  }
-
   val trails = ArrayList<WireTrail>()
   connectionSource.connection.use {
     val query = it.prepareStatement(
         "SELECT id, name, type, path_ids, center_lat_degrees, center_lng_degrees, length_meters "
             + "FROM trails "
-            + "WHERE cell = ?").apply {
+            + "WHERE cell = ? AND visibility = ${TrailVisibility.VISIBLE.id}").apply {
       setLong(1, cell.id())
     }
     val results = query.executeQuery()
@@ -84,28 +68,35 @@ fun fetchCell(ctx: Context) {
     }
   }
 
-  val ways = ArrayList<WirePath>()
+  val ways = HashMap<Long, WirePath>()
   connectionSource.connection.use {
     val query = it.prepareStatement(
-        "SELECT id, type, lat_lng_degrees FROM paths WHERE cell = ?").apply {
+        "SELECT p.id, p.type, p.lat_lng_degrees, pit.trail_id "
+            + "FROM paths p "
+            + "JOIN paths_in_trails pit ON p.id = pit.path_id "
+            + "JOIN trails t ON pit.trail_id = t.id "
+            + "WHERE p.cell = ? AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
       setLong(1, cell.id())
     }
     val results = query.executeQuery()
     while (results.next()) {
       val id = results.getLong(1)
-      ways.add(WirePath(
-          id = id,
-          type = results.getInt(2),
-          trails = pathsToTrails.get(id),
-          vertices = project(results.getBytes(3)),
-      ))
+      if (!ways.containsKey(id)) {
+        ways[id] = WirePath(
+            id = id,
+            type = results.getInt(2),
+            trails = ArrayList(),
+            vertices = project(results.getBytes(3)),
+        )
+      }
+      ways[id]!!.trails.add(results.getLong(4))
     }
   }
 
   val bytes = AlignableByteArrayOutputStream()
   val output = LittleEndianDataOutputStream(bytes)
   output.writeInt(ways.size)
-  for (way in ways) {
+  for (way in ways.values) {
     output.writeLong(way.id)
     output.writeInt(way.type)
     output.writeInt(way.trails.size)
@@ -130,6 +121,7 @@ fun fetchCell(ctx: Context) {
     output.write(trail.pathIds)
     output.writeDouble(trail.x)
     output.writeDouble(trail.y)
+    output.writeDouble(trail.lengthMeters)
   }
   ctx.result(bytes.toByteArray())
 }

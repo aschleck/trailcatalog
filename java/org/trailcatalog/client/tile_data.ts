@@ -1,13 +1,13 @@
 import { checkExhaustive } from './models/asserts';
+import { Camera } from './models/camera';
 import { HashMap } from './models/collections';
 import { TileId, Vec2 } from './models/types';
+import { RenderPlanner } from './rendering/render_planner';
+import { Renderer } from './rendering/renderer';
+import { TexturePool } from './rendering/texture_pool';
 import { FetcherCommand } from './workers/tile_fetcher';
 
-import { Camera } from './camera';
 import { Layer } from './layer';
-import { RenderPlanner } from './render_planner';
-import { Renderer } from './renderer';
-import { TexturePool } from './texture_pool';
 
 export class TileData implements Layer {
 
@@ -50,7 +50,7 @@ export class TileData implements Layer {
       planner.addBillboard([
           (id.x + 0.5) / halfWorldSize,
           (id.y - 0.5) / halfWorldSize,
-      ], [size, size], texture);
+      ], [size, size], texture, /* z= */ -1);
     }
   }
 

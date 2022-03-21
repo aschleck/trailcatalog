@@ -1,6 +1,6 @@
-import { S2LatLng, S2LatLngRect } from '../s2';
-import { SimpleS2 } from '../s2/SimpleS2';
-import { Vec2 } from './models/types';
+import { S2LatLng, S2LatLngRect } from '../../s2';
+import { SimpleS2 } from '../../s2/SimpleS2';
+import { Vec2 } from '../models/types';
 
 export class Camera {
   private center: S2LatLng;

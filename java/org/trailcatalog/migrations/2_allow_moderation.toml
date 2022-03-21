@@ -1,0 +1,15 @@
+[[actions]]
+type = "create_enum"
+name = "trail_visibility"
+values = ["visible", "hidden_automatically", "hidden_manually"]
+
+[[actions]]
+type = "add_column"
+table = "trails"
+
+up = "'visible'"
+
+	[actions.column]
+	name = "visibility"
+	type = "trail_visibility"
+	nullable = false

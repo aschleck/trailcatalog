@@ -46,6 +46,7 @@ ts_project(
     ],
     deps = [
         "//java/org/trailcatalog/client/models",
+        "//java/org/trailcatalog/client/rendering",
         "//java/org/trailcatalog/client/workers:ts",
         "//java/org/trailcatalog/s2",
     ],

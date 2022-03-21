@@ -10,6 +10,11 @@ export class HashMap<K, V> {
     this.mapped = new Map();
   }
 
+  clear(): void {
+    this.keys.clear();
+    this.mapped.clear();
+  }
+
   set(key: K, value: V): void {
     const hash = this.hashFn(key);
     this.keys.set(hash, key);
@@ -66,6 +71,11 @@ export class HashSet<V> {
     const hash = this.hashFn(value);
     this.mapped.add(hash);
     this.values.set(hash, value)
+  }
+
+  clear(): void {
+    this.mapped.clear();
+    this.values.clear();
   }
 
   delete(value: V): void {

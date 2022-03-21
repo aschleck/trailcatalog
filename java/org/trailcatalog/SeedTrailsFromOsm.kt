@@ -8,6 +8,7 @@ import com.google.devtools.build.runfiles.Runfiles
 import crosby.binary.Osmformat.PrimitiveBlock
 import org.postgresql.copy.CopyManager
 import org.postgresql.core.BaseConnection
+import org.trailcatalog.models.TrailVisibility
 import org.trailcatalog.pbf.BoundariesCsvInputStream
 import org.trailcatalog.pbf.PathsCsvInputStream
 import org.trailcatalog.pbf.PathsInTrailsCsvInputStream
@@ -30,8 +31,9 @@ fun main(args: Array<String>) {
           "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=public",
           "postgres",
           "postgres")
-  seedFromPbf(connection)
-  fillInGeometry(connection)
+//  seedFromPbf(connection)
+//  fillInGeometry(connection)
+  deduplicateTrails(connection)
 }
 
 private fun seedFromPbf(connection: Connection) {
@@ -392,4 +394,22 @@ fun checkAligned(
       Pair(secondVertices.get(0), secondVertices.get(1))
     }
   return firstLast == secondFirst
+}
+
+private fun deduplicateTrails(connection: Connection) {
+  connection.createStatement().execute(
+      "UPDATE trails SET visibility = ${TrailVisibility.HIDDEN_AUTOMATICALLY.id}\n" +
+          "WHERE id in (\n" +
+          "  SELECT t2.id\n" +
+          "  FROM paths p\n" +
+          "  JOIN paths_in_trails pit ON pit.path_id = p.id\n" +
+          "  JOIN trails t2 ON p.source_way = t2.source_way\n" +
+          "  JOIN trails t ON pit.trail_id = t.id\n" +
+          "  WHERE\n" +
+          "    t2.visibility = ${TrailVisibility.VISIBLE.id}\n" +
+          "    AND t.visibility = ${TrailVisibility.VISIBLE.id}\n" +
+          "    AND t2.id != t.id\n" +
+          "    AND t2.name = t.name\n" +
+          ")"
+  )
 }
