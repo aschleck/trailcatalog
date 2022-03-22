@@ -9,6 +9,8 @@ import { FetcherCommand } from './workers/tile_fetcher';
 
 import { Layer } from './layer';
 
+const NO_OFFSET: Vec2 = [0, 0];
+
 export class TileData implements Layer {
 
   private readonly fetcher: Worker;
@@ -50,7 +52,7 @@ export class TileData implements Layer {
       planner.addBillboard([
           (id.x + 0.5) / halfWorldSize,
           (id.y - 0.5) / halfWorldSize,
-      ], [size, size], texture, /* z= */ -1);
+      ], NO_OFFSET, [size, size], texture, /* z= */ -1);
     }
   }
 

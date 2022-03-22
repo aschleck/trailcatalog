@@ -6,19 +6,9 @@ import { RenderPlanner } from './render_planner';
 import { Renderer } from './renderer';
 import { TexturePool } from './texture_pool';
 
-interface RenderableText {
-  text: string;
-  backgroundColor: string,
-  borderRadius: number,
-  fillColor: string,
-  fontSize: number;
-  paddingX: number;
-  paddingY: number;
-}
-
-interface RenderedText {
-  size: Vec2;
-  texture: WebGLTexture;
+export enum Iconography {
+  NONE = 0,
+  PIN = 1,
 }
 
 export class TextRenderer {
@@ -63,7 +53,7 @@ export class TextRenderer {
     this.textInUse.add(text);
     const cached = this.cache.get(text);
     if (cached) {
-      planner.addBillboard(position, cached.size, cached.texture, z);
+      planner.addBillboard(position, cached.offset, cached.size, cached.texture, z);
       return;
     }
 
@@ -75,37 +65,94 @@ export class TextRenderer {
       Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
       Math.ceil(Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
     ];
+    let extraY;
+    if (text.iconography === Iconography.PIN) {
+      extraY = textSize[1];
+    } else {
+      extraY = 0;
+    }
     const width = textSize[0] + 2 * text.paddingX;
-    const height = textSize[1] + 2 * text.paddingY;
+    const height = textSize[1] + 2 * text.paddingY + extraY;
     const fullSize: Vec2 = [width, height];
     this.canvas.width = width;
     this.canvas.height = height;
 
-    ctx.fillStyle = text.backgroundColor;
-    ctx.fillRect(0, 0, width, height);
-
     ctx.lineWidth = 2;
+    ctx.fillStyle = text.backgroundColor;
     ctx.strokeStyle = text.fillColor;
+
+    if (text.iconography === Iconography.PIN) {
+      const radius = extraY * 0.75;
+      const center = [width / 2, height - radius];
+      ctx.beginPath();
+      ctx.moveTo(center[0], center[1] + radius);
+      ctx.arcTo(
+          center[0] - radius,
+          center[1],
+          center[0],
+          center[1] - radius,
+          text.borderRadius);
+      ctx.arcTo(
+          center[0],
+          center[1] - radius,
+          center[0] + radius,
+          center[1],
+          text.borderRadius);
+      ctx.arcTo(
+          center[0] + radius,
+          center[1],
+          center[0],
+          center[1] + radius,
+          text.borderRadius);
+      ctx.arcTo(
+          center[0],
+          center[1] + radius,
+          center[0] - radius,
+          center[1],
+          text.borderRadius);
+      ctx.fill();
+      ctx.stroke();
+    }
+
     ctx.beginPath();
-    ctx.moveTo(width, height);
-    ctx.arcTo(0, height, 0, 0, text.borderRadius);
+    ctx.moveTo(width, height - extraY);
+    ctx.arcTo(0, height - extraY, 0, 0, text.borderRadius);
     ctx.arcTo(0, 0, width, 0, text.borderRadius);
-    ctx.arcTo(width, 0, width, height, text.borderRadius);
-    ctx.arcTo(width, height, 0, height, text.borderRadius);
+    ctx.arcTo(width, 0, width, height - extraY, text.borderRadius);
+    ctx.arcTo(width, height - extraY, 0, height - extraY, text.borderRadius);
+    ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = text.fillColor;
     ctx.font = font;
     ctx.textBaseline = 'middle';
-    ctx.fillText(text.text, text.paddingX, Math.floor(height / 2));
+    ctx.fillText(text.text, text.paddingX, (height - extraY) / 2);
     
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(this.canvas, texture);
+    const offset: Vec2 = [0, height / 2];
     this.cache.set(text, {
+      offset,
       size: fullSize,
       texture,
     });
-    planner.addBillboard(position, fullSize, texture, z);
+    planner.addBillboard(position, offset, fullSize, texture, z);
   }
 }
 
+interface RenderableText {
+  text: string;
+  backgroundColor: string,
+  borderRadius: number,
+  fillColor: string,
+  fontSize: number;
+  iconography: Iconography;
+  paddingX: number;
+  paddingY: number;
+}
+
+interface RenderedText {
+  offset: Vec2;
+  size: Vec2;
+  texture: WebGLTexture;
+}

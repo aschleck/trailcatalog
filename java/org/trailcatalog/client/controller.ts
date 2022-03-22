@@ -1,7 +1,7 @@
 import { checkExists } from './models/asserts';
 import { Camera } from './models/camera';
 import { Vec2 } from './models/types';
-import { MAX_GEOMETRY_BYTES, Renderer } from './rendering/renderer';
+import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
@@ -12,9 +12,9 @@ import { TileData } from './tile_data';
 export class Controller {
 
   private readonly camera: Camera;
-  private readonly geometry: ArrayBuffer;
   private readonly idleDebouncer: Debouncer;
   private readonly renderer: Renderer;
+  private readonly renderPlanner: RenderPlanner;
 
   private readonly mapData: MapData;
   private readonly textRenderer: TextRenderer;
@@ -26,11 +26,11 @@ export class Controller {
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.camera = new Camera();
-    this.geometry = new ArrayBuffer(MAX_GEOMETRY_BYTES);
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.enterIdle();
     });
-    this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')), [-1, -1]);
+    this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')));
+    this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
     this.mapData = new MapData(this.camera, this.textRenderer);
@@ -112,17 +112,18 @@ export class Controller {
 
     if (this.nextRender >= RenderType.CameraChange) {
       if (this.nextRender >= RenderType.DataChange) {
+        this.renderPlanner.clear();
         this.textRenderer.mark();
-        const planner = new RenderPlanner(this.geometry);
+
         const size: Vec2 = [this.canvas.width, this.canvas.height];
         const zoom = this.camera.zoom;
-        this.tileData.plan(size, planner);
-        this.mapData.plan(size, zoom, planner);
-        this.renderer.apply(planner);
+        this.tileData.plan(size, this.renderPlanner);
+        this.mapData.plan(size, zoom, this.renderPlanner);
+        this.renderPlanner.save();
         this.textRenderer.sweep();
         this.lastRenderPlan = Date.now();
       }
-      this.renderer.render(this.camera);
+      this.renderPlanner.render(this.camera);
     }
     this.nextRender = RenderType.NoChange;
   }
@@ -131,6 +132,7 @@ export class Controller {
     const area = this.canvas.getBoundingClientRect();
     this.canvas.width = area.width;
     this.canvas.height = area.height;
+    this.renderPlanner.resize([area.width, area.height]);
     this.renderer.resize([area.width, area.height]);
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();

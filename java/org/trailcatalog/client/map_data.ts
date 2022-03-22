@@ -3,7 +3,7 @@ import { Camera } from './models/camera';
 import { reinterpretLong } from './models/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from './models/types';
 import { Line, RenderPlanner } from './rendering/render_planner';
-import { TextRenderer } from './rendering/text_renderer';
+import { Iconography, TextRenderer } from './rendering/text_renderer';
 import { S2CellId, S2LatLngRect } from '../s2';
 import { SimpleS2 } from '../s2/SimpleS2';
 import { FetcherCommand } from './workers/data_fetcher';
@@ -114,7 +114,7 @@ export class MapData implements Layer {
         ids.push(...best.paths);
       }
 
-      if (this.selected.has(ids[0])) {
+      if (this.selected.has(ids[0] & ~1n)) {
         for (const id of ids) {
           this.selected.delete(id & ~1n);
         }
@@ -152,9 +152,11 @@ export class MapData implements Layer {
       const data = new LittleEndianView(buffer);
 
       const pathCount = data.getInt32();
-      if (zoom > 13) {
-        for (let i = 0; i < pathCount; ++i) {
-          const id = data.getBigInt64();
+      for (let i = 0; i < pathCount; ++i) {
+        const id = data.getBigInt64();
+        const selected = this.selected.has(id);
+
+        if (selected || zoom > 13) {
           const type = data.getInt32();
           const trailCount = data.getInt32();
           data.skip(trailCount * 8);
@@ -166,10 +168,8 @@ export class MapData implements Layer {
             colorStipple: stipple,
             vertices: data.sliceFloat64(pathVertexCount * 2),
           });
-        }
-      } else {
-        for (let i = 0; i < pathCount; ++i) {
-          data.skip(12);
+        } else {
+          data.skip(4);
           const trailCount = data.getInt32();
           data.skip(trailCount * 8);
           const pathVertexBytes = data.getInt32();
@@ -195,13 +195,16 @@ export class MapData implements Layer {
           borderRadius: 3,
           fillColor: 'white',
           fontSize: 14,
+          iconography: Iconography.PIN,
           paddingX: 6,
           paddingY: 6,
         }, trail.position, /* z= */ 1, planner);
       }
     }
 
-    planner.addLines(lines);
+    if (lines.length > 0) {
+      planner.addLines(lines, 0);
+    }
   }
 
   private cellsInView(viewportSize: Vec2): S2CellId[] {
