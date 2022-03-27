@@ -1,16 +1,17 @@
-import { checkExhaustive, checkExists } from './models/asserts';
-import { Camera } from './models/camera';
-import { reinterpretLong } from './models/math';
-import { PixelRect, S2CellNumber, Vec2, Vec4 } from './models/types';
-import { Line, RenderPlanner } from './rendering/render_planner';
-import { Iconography, RenderableText, TextRenderer } from './rendering/text_renderer';
-import { S2CellId, S2LatLngRect } from '../s2';
-import { SimpleS2 } from '../s2/SimpleS2';
-import { FetcherCommand } from './workers/data_fetcher';
+import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
-import { BoundsQuadtree, worldBounds } from './bounds_quadtree';
+import { checkExhaustive, checkExists } from '../../common/asserts';
+import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
+import { LittleEndianView } from '../../common/little_endian_view';
+import { reinterpretLong } from '../../common/math';
+import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
+import { FetcherCommand } from '../../workers/data_fetcher';
+import { Camera } from '../models/camera';
+import { Line, RenderPlanner } from '../rendering/render_planner';
+import { Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
+
 import { Layer } from './layer';
-import { LittleEndianView } from './little_endian_view';
 
 interface Entity {
   readonly id: bigint;

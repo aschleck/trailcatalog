@@ -1,13 +1,13 @@
-import { checkExists } from './models/asserts';
+import { checkExists } from '../common/asserts';
+import { Vec2 } from '../common/types';
+import { MapData } from './layers/map_data';
+import { TileData } from './layers/tile_data';
 import { Camera } from './models/camera';
-import { Vec2 } from './models/types';
 import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
-import { MapData } from './map_data';
-import { TileData } from './tile_data';
 
 export class Controller {
 

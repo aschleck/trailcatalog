@@ -1,6 +1,7 @@
-import { SimpleS2 } from '../../s2/SimpleS2';
-import { HashSet } from '../models/collections';
-import { TileId, Vec2 } from '../models/types';
+import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+
+import { HashSet } from '../common/collections';
+import { TileId, Vec2 } from '../common/types';
 
 import { FetchThrottler } from './fetch_throttler';
 

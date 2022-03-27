@@ -1,7 +1,7 @@
-import { checkExists } from '../models/asserts';
+import { checkExists } from '../../common/asserts';
+import { splitVec2 } from '../../common/math';
+import { Vec2, Vec4 } from '../../common/types';
 import { Camera } from '../models/camera';
-import { splitVec2 } from '../models/math';
-import { Vec2, Vec4 } from '../models/types';
 
 export interface Drawable {
   readonly buffer: WebGLBuffer;

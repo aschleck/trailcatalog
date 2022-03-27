@@ -1,4 +1,4 @@
-import { PixelRect, Vec2 } from './models/types';
+import { PixelRect, Vec2 } from './types';
 
 export function worldBounds<V>(): BoundsQuadtree<V> {
   return new BoundsQuadtree([0, 0], 0.5);

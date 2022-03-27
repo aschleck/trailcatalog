@@ -1,5 +1,5 @@
-import { checkExists } from '../models/asserts';
-import { Vec2, Vec4 } from '../models/types';
+import { checkExists } from '../../common/asserts';
+import { Vec2, Vec4 } from '../../common/types';
 
 export class Renderer {
 

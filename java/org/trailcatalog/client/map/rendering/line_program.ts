@@ -1,5 +1,5 @@
-import { checkExists } from '../models/asserts';
-import { splitVec2 } from '../models/math';
+import { checkExists } from '../../common/asserts';
+import { splitVec2 } from '../../common/math';
 
 import { FP64_OPERATIONS, Program, ProgramData } from './program';
 

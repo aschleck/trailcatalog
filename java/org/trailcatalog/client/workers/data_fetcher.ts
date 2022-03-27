@@ -1,7 +1,8 @@
-import { S2CellId, S2LatLng, S2LatLngRect } from '../../s2';
-import { SimpleS2 } from '../../s2/SimpleS2';
-import { reinterpretLong } from '../models/math';
-import { S2CellNumber } from '../models/types';
+import { S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+
+import { reinterpretLong } from '../common/math';
+import { S2CellNumber } from '../common/types';
 
 import { FetchThrottler } from './fetch_throttler';
 
