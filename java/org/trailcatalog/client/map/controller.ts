@@ -8,8 +8,9 @@ import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
+import { Disposable } from './disposable';
 
-export class Controller {
+export class Controller extends Disposable {
 
   private readonly camera: Camera;
   private readonly idleDebouncer: Debouncer;
@@ -25,6 +26,7 @@ export class Controller {
   private nextRender: RenderType;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
+    super();
     this.camera = new Camera();
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.enterIdle();
@@ -38,16 +40,20 @@ export class Controller {
     this.lastRenderPlan = 0;
     this.nextRender = RenderType.CameraChange;
 
-    window.addEventListener('resize', () => this.resize());
+    this.registerListener(window, 'resize', () => this.resize());
     this.resize();
 
-    document.addEventListener('pointerdown', e => { this.mouseDown(e); });
+    this.registerListener(document, 'pointerdown', e => { this.mouseDown(e); });
+    this.registerListener(document, 'pointermove', e => { this.mouseMove(e); });
+    this.registerListener(document, 'pointerup', e => { this.mouseUp(e); });
+    this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
     //document.addEventListener('touchstart', e => { this.mouseDown(e); });
-    document.addEventListener('pointermove', e => { this.mouseMove(e); });
-    document.addEventListener('pointerup', e => { this.mouseUp(e); });
-    this.canvas.addEventListener('wheel', e => { this.wheel(e); });
 
     const raf = () => {
+      if (this.isDisposed) {
+        return;
+      }
+
       requestAnimationFrame(raf);
       this.render();
     };
