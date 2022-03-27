@@ -11,6 +11,17 @@ export enum Iconography {
   PIN = 1,
 }
 
+export interface RenderableText {
+  text: string;
+  backgroundColor: string,
+  borderRadius: number,
+  fillColor: string,
+  fontSize: number;
+  iconography: Iconography;
+  paddingX: number;
+  paddingY: number;
+}
+
 export class TextRenderer {
 
   private readonly cache: HashMap<RenderableText, RenderedText>;
@@ -49,6 +60,26 @@ export class TextRenderer {
     }
   }
 
+  measure(text: RenderableText): Vec2 {
+    const font = `bold ${text.fontSize}px Roboto,sans-serif`;
+    const ctx = this.context;
+    ctx.font = font;
+    const metrics = ctx.measureText(text.text);
+    const textSize: Vec2 = [
+      Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
+      Math.ceil(Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
+    ];
+    let extraY;
+    if (text.iconography === Iconography.PIN) {
+      extraY = textSize[1];
+    } else {
+      extraY = 0;
+    }
+    const width = textSize[0] + 2 * text.paddingX;
+    const height = textSize[1] + 2 * text.paddingY + extraY;
+    return [width, height];
+  }
+
   plan(text: RenderableText, position: Vec2, z: number, planner: RenderPlanner): void {
     this.textInUse.add(text);
     const cached = this.cache.get(text);
@@ -77,7 +108,7 @@ export class TextRenderer {
     this.canvas.width = width;
     this.canvas.height = height;
 
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
     ctx.fillStyle = text.backgroundColor;
     ctx.strokeStyle = text.fillColor;
 
@@ -116,10 +147,10 @@ export class TextRenderer {
 
     ctx.beginPath();
     ctx.moveTo(width, height - extraY);
-    ctx.arcTo(0, height - extraY, 0, 0, text.borderRadius);
-    ctx.arcTo(0, 0, width, 0, text.borderRadius);
-    ctx.arcTo(width, 0, width, height - extraY, text.borderRadius);
-    ctx.arcTo(width, height - extraY, 0, height - extraY, text.borderRadius);
+    ctx.arcTo(1, height - extraY, 1, 1, text.borderRadius);
+    ctx.arcTo(1, 1, width - 1, 1, text.borderRadius);
+    ctx.arcTo(width - 1, 1, width - 1, height - extraY, text.borderRadius);
+    ctx.arcTo(width - 1, height - extraY, 1, height - extraY, text.borderRadius);
     ctx.fill();
     ctx.stroke();
 
@@ -138,17 +169,6 @@ export class TextRenderer {
     });
     planner.addBillboard(position, offset, fullSize, texture, z);
   }
-}
-
-interface RenderableText {
-  text: string;
-  backgroundColor: string,
-  borderRadius: number,
-  fillColor: string,
-  fontSize: number;
-  iconography: Iconography;
-  paddingX: number;
-  paddingY: number;
 }
 
 interface RenderedText {

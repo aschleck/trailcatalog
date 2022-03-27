@@ -3,7 +3,7 @@ import { Camera } from './models/camera';
 import { reinterpretLong } from './models/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from './models/types';
 import { Line, RenderPlanner } from './rendering/render_planner';
-import { Iconography, TextRenderer } from './rendering/text_renderer';
+import { Iconography, RenderableText, TextRenderer } from './rendering/text_renderer';
 import { S2CellId, S2LatLngRect } from '../s2';
 import { SimpleS2 } from '../s2/SimpleS2';
 import { FetcherCommand } from './workers/data_fetcher';
@@ -16,6 +16,7 @@ interface Entity {
   readonly id: bigint;
   readonly line?: Float64Array;
   readonly position?: Vec2;
+  readonly screenPixelBound?: Vec4;
 }
 
 class Path implements Entity {
@@ -36,6 +37,7 @@ class Trail implements Entity {
       readonly bound: PixelRect,
       readonly paths: bigint[],
       readonly position: Vec2,
+      readonly screenPixelBound: Vec4,
       readonly lengthMeters: number,
   ) {}
 }
@@ -81,21 +83,41 @@ export class MapData implements Layer {
     return this.lastChange > time;
   }
 
-  query(point: Vec2, radius: number): void {
+  query(point: Vec2): void {
     const near: Entity[] = [];
+    // 35px is a larger than the full height of a trail marker (full not half
+    // because they are not centered vertically.)
+    const screenToWorldPx = this.camera.inverseWorldRadius;
+    const radius = 35 * screenToWorldPx;
     this.bounds.query(point, radius, near);
 
     let best = undefined;
-    let bestDistance2 = radius * radius;
+    let bestDistance2 = (7 * screenToWorldPx) * (7 * screenToWorldPx);
     for (const entity of near) {
-      let d2;
+      let d2 = Number.MAX_VALUE;
       if (entity.line) {
         d2 = distanceCheckLine(point, entity.line);
+      } else if (entity.position && entity.screenPixelBound) {
+        const p = entity.position;
+        const lowX = p[0] + entity.screenPixelBound[0] * screenToWorldPx;
+        const lowY = p[1] + entity.screenPixelBound[1] * screenToWorldPx;
+        const highX = p[0] + entity.screenPixelBound[2] * screenToWorldPx;
+        const highY = p[1] + entity.screenPixelBound[3] * screenToWorldPx;
+        if (lowX <= point[0]
+            && point[0] <= highX
+            && lowY <= point[1]
+            && point[1] <= highY) {
+          // Labels can overlap each other, so we pick the one most centered
+          const dx = highX / 2 + lowX / 2 - point[0];
+          const dy = highY / 2 + lowY / 2 - point[1];
+          const bias = 10 * 10;
+          d2 = (dx * dx + dy * dy) / bias;
+        }
       } else if (entity.position) {
         const p = entity.position;
         const dx = p[0] - point[0];
         const dy = p[0] - point[0];
-        const bias = 10 * 10;
+        const bias = 10 * 10; // we bias towards picking points over lines
         d2 = (dx * dx + dy * dy) / bias;
       } else {
         continue;
@@ -189,16 +211,8 @@ export class MapData implements Layer {
         data.skip(trailWayCount * 8 + 16);
         const lengthMeters = data.getFloat64();
         const trail = checkExists(this.trails.get(id)) as Trail;
-        this.textRenderer.plan({
-          text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
-          backgroundColor: 'black',
-          borderRadius: 3,
-          fillColor: 'white',
-          fontSize: 14,
-          iconography: Iconography.PIN,
-          paddingX: 6,
-          paddingY: 6,
-        }, trail.position, /* z= */ 1, planner);
+        this.textRenderer.plan(
+            renderableTrailPin(lengthMeters), trail.position, /* z= */ 1, planner);
       }
     }
 
@@ -274,13 +288,28 @@ export class MapData implements Layer {
       data.align(8);
       const trailWays = [...data.sliceBigInt64(trailWayCount)];
       const position: Vec2 = [data.getFloat64(), data.getFloat64()];
-      const epsilon = 1e-5; // we really struggle bounds checking trails
+      // We really struggle bounds checking trails, but on the plus side we
+      // calculate a radius on click queries. So as long as our query radius
+      // includes this point we can do fine-grained checks to determine what is
+      // *actually* being clicked.
+      const epsilon = 1e-5;
       const bound: PixelRect = {
         low: [position[0] - epsilon, position[1] - epsilon],
         high: [position[0] + epsilon, position[1] + epsilon],
       };
       const lengthMeters = data.getFloat64();
-      const trail = new Trail(id, name, type, bound, trailWays, position, lengthMeters);
+      const screenPixelSize = this.textRenderer.measure(renderableTrailPin(lengthMeters));
+      const halfWidth = screenPixelSize[0] / 2;
+      const trail =
+          new Trail(
+              id,
+              name,
+              type,
+              bound,
+              trailWays,
+              position,
+              [-halfWidth, 0, halfWidth, screenPixelSize[1]],
+              lengthMeters);
       this.bounds.insert(trail, bound);
       this.trails.set(id, trail);
     }
@@ -355,4 +384,17 @@ function distanceCheckLine(point: Vec2, line: Float64Array): number {
 
 function metersToMiles(meters: number): number {
   return meters * 0.00062137119224;
+}
+
+function renderableTrailPin(lengthMeters: number): RenderableText {
+  return {
+    text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
+    backgroundColor: 'black',
+    borderRadius: 3,
+    fillColor: 'white',
+    fontSize: 14,
+    iconography: Iconography.PIN,
+    paddingX: 6,
+    paddingY: 6,
+  };
 }

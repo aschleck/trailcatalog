@@ -62,7 +62,7 @@ export class Controller {
       center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
       center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
     ];
-    this.mapData.query(position, 7 * this.camera.inverseWorldRadius);
+    this.mapData.query(position);
   }
 
   private mouseMove(e: MouseEvent): void {
