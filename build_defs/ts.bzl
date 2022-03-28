@@ -3,12 +3,16 @@ load("@npm//@bazel/esbuild:index.bzl", "esbuild")
 load("@npm//@bazel/typescript:index.bzl", "ts_project")
 load("@npm//jest-cli:index.bzl", "jest_test")
 
-def esbuild_binary(name, entry_point, deps):
+def esbuild_binary(
+        name,
+        entry_point = None,
+        deps = None):
     has_css = native.glob(["*.css"]) != []
     esbuild(
         name = name,
         config = "//build_defs:esbuild_config",
         entry_point = entry_point,
+        external = ["..."],
         link_workspace_root = True,
         output_css = "%s.css" % name if has_css else None,
         sourcemap = "both",
@@ -22,15 +26,14 @@ def esbuild_binary(name, entry_point, deps):
 def tc_ts_project(name, srcs = None, data = None, deps = None):
     ts_project(
         name = name,
-        srcs = srcs or native.glob(["*.ts"], exclude=["*.test.ts"]),
+        srcs = srcs or native.glob(["*.ts", "*.tsx"], exclude=["*.test.ts"]),
         allow_js = True,
         declaration = True,
         link_workspace_root = True,
+        preserve_jsx = True,
         tsconfig = "//:tsconfig",
-        data = (data or []) + [
-            ":css",
-        ],
-        deps = deps,
+        data = data or [],
+        deps = deps or [],
     )
 
     if native.glob(["*.css"]):

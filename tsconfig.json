@@ -3,6 +3,9 @@
     "allowJs": true,
     "baseUrl": ".",
     "declaration": true,
+    "jsx": "preserve",
+    "jsxFactory": "corgi.createElement",
+    "jsxFragmentFactory": "corgi.Fragment",
     "preserveSymlinks": true,
     "module": "CommonJS", // for Jest
     "moduleResolution": "node",

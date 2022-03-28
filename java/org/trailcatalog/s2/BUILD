@@ -14,6 +14,7 @@ ts_project(
     ],
     allow_js = True,
     declaration = True,
+    preserve_jsx = True,
     tsconfig = "//:tsconfig",
     deps = [
         ":s2_typed",

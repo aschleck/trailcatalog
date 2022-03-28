@@ -1,11 +1,12 @@
-console.log(`${process.env['RUNFILES_DIR']}/**/*.{html,ts}`);
-
 module.exports = {
-  content: [`${process.env['RUNFILES_DIR']}/**/*.{html,ts}`],
+  content: [
+    `bazel-out/k8-fastbuild/bin/{java,js}/**/*.{js,ts,jsx,tsx}`,
+    `{java,js}/**/*.{js,ts,jsx,tsx}`,
+  ],
   theme: {
     extend: {
       colors: {
-        "white-translucent": "#ffffffa0",
+        'white-translucent': '#ffffffa0',
       },
     },
   },

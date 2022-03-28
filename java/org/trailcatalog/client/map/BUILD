@@ -11,6 +11,7 @@ tc_ts_project(
         "//java/org/trailcatalog/client/map/rendering",
         "//java/org/trailcatalog/client/workers:ts",
         "//java/org/trailcatalog/s2",
+        "//js/corgi",
     ],
 )
 

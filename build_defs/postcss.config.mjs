@@ -5,6 +5,6 @@ import {fileURLToPath} from 'url';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 export const plugins = [
-  tailwindcss(path.join(directory, "tailwind.config.js")),
+  tailwindcss(path.join(directory, 'tailwind.config.js')),
   autoprefixer,
 ];

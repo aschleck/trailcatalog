@@ -1,3 +1,6 @@
+import { Controller as CorgiController } from 'js/corgi/controller';
+import { HistoryService } from 'js/corgi/services/history_service';
+
 import { checkExists } from '../common/asserts';
 import { Vec2 } from '../common/types';
 import { MapData } from './layers/map_data';
@@ -8,9 +11,14 @@ import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
-import { Disposable } from './disposable';
 
-export class Controller extends Disposable {
+export class Controller extends CorgiController<HTMLCanvasElement> {
+
+  static deps() {
+    return {
+      services: { history: HistoryService },
+    };
+  }
 
   private readonly camera: Camera;
   private readonly idleDebouncer: Debouncer;
@@ -25,13 +33,13 @@ export class Controller extends Disposable {
   private lastRenderPlan: number;
   private nextRender: RenderType;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
-    super();
+  constructor(root: HTMLCanvasElement) {
+    super(root);
     this.camera = new Camera();
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.enterIdle();
     });
-    this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')));
+    this.renderer = new Renderer(checkExists(this.root.getContext('webgl2')));
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
@@ -46,7 +54,7 @@ export class Controller extends Disposable {
     this.registerListener(document, 'pointerdown', e => { this.mouseDown(e); });
     this.registerListener(document, 'pointermove', e => { this.mouseMove(e); });
     this.registerListener(document, 'pointerup', e => { this.mouseUp(e); });
-    this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
+    this.registerListener(this.root, 'wheel', e => { this.wheel(e); });
     //document.addEventListener('touchstart', e => { this.mouseDown(e); });
 
     const raf = () => {
@@ -65,8 +73,8 @@ export class Controller extends Disposable {
 
     const center = this.camera.centerPixel;
     const position: Vec2 = [
-      center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
-      center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
+      center[0] + (e.clientX - this.root.width / 2) * this.camera.inverseWorldRadius,
+      center[1] + (this.root.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
     ];
     this.mapData.query(position);
   }
@@ -93,8 +101,8 @@ export class Controller extends Disposable {
     e.preventDefault();
 
     const relativePixels: Vec2 = [
-      e.clientX - this.canvas.width / 2,
-      this.canvas.height / 2 - e.clientY,
+      e.clientX - this.root.width / 2,
+      this.root.height / 2 - e.clientY,
     ];
     this.camera.linearZoom(-0.01 * e.deltaY, relativePixels);
     this.nextRender = RenderType.CameraChange;
@@ -103,7 +111,7 @@ export class Controller extends Disposable {
 
   private enterIdle(): void {
     this.nextRender = RenderType.DataChange;
-    const size: Vec2 = [this.canvas.width, this.canvas.height];
+    const size: Vec2 = [this.root.width, this.root.height];
     this.mapData.viewportBoundsChanged(size);
     this.tileData.viewportBoundsChanged(size);
   }
@@ -121,7 +129,7 @@ export class Controller extends Disposable {
         this.renderPlanner.clear();
         this.textRenderer.mark();
 
-        const size: Vec2 = [this.canvas.width, this.canvas.height];
+        const size: Vec2 = [this.root.width, this.root.height];
         const zoom = this.camera.zoom;
         this.tileData.plan(size, this.renderPlanner);
         this.mapData.plan(size, zoom, this.renderPlanner);
@@ -135,9 +143,9 @@ export class Controller extends Disposable {
   }
 
   private resize(): void {
-    const area = this.canvas.getBoundingClientRect();
-    this.canvas.width = area.width;
-    this.canvas.height = area.height;
+    const area = this.root.getBoundingClientRect();
+    this.root.width = area.width;
+    this.root.height = area.height;
     this.renderPlanner.resize([area.width, area.height]);
     this.renderer.resize([area.width, area.height]);
     this.nextRender = RenderType.CameraChange;
