@@ -1,5 +1,4 @@
-import { Controller as CorgiController } from 'js/corgi/controller';
-import { HistoryService } from 'js/corgi/services/history_service';
+import { Controller, ControllerResponse } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
 import { Vec2 } from '../common/types';
@@ -12,15 +11,28 @@ import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
 
-export class Controller extends CorgiController<HTMLCanvasElement> {
+interface Response extends ControllerResponse<HTMLDivElement> {
+  args: {
+    lat: number,
+    lng: number,
+    zoom: number,
+  },
+}
+
+export class MapController extends Controller<HTMLDivElement, Response> {
 
   static deps() {
     return {
-      services: { history: HistoryService },
+      args: {
+        lat: Number,
+        lng: Number,
+        zoom: Number,
+      },
     };
   }
 
   private readonly camera: Camera;
+  private readonly canvas: HTMLCanvasElement;
   private readonly idleDebouncer: Debouncer;
   private readonly renderer: Renderer;
   private readonly renderPlanner: RenderPlanner;
@@ -33,13 +45,14 @@ export class Controller extends CorgiController<HTMLCanvasElement> {
   private lastRenderPlan: number;
   private nextRender: RenderType;
 
-  constructor(root: HTMLCanvasElement) {
-    super(root);
-    this.camera = new Camera();
+  constructor(response: Response) {
+    super(response);
+    this.camera = new Camera(response.args.lat, response.args.lng, response.args.zoom);
+    this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.enterIdle();
     });
-    this.renderer = new Renderer(checkExists(this.root.getContext('webgl2')));
+    this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')));
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
@@ -54,7 +67,7 @@ export class Controller extends CorgiController<HTMLCanvasElement> {
     this.registerListener(document, 'pointerdown', e => { this.mouseDown(e); });
     this.registerListener(document, 'pointermove', e => { this.mouseMove(e); });
     this.registerListener(document, 'pointerup', e => { this.mouseUp(e); });
-    this.registerListener(this.root, 'wheel', e => { this.wheel(e); });
+    this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
     //document.addEventListener('touchstart', e => { this.mouseDown(e); });
 
     const raf = () => {
@@ -73,8 +86,8 @@ export class Controller extends CorgiController<HTMLCanvasElement> {
 
     const center = this.camera.centerPixel;
     const position: Vec2 = [
-      center[0] + (e.clientX - this.root.width / 2) * this.camera.inverseWorldRadius,
-      center[1] + (this.root.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
+      center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
+      center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
     ];
     this.mapData.query(position);
   }
@@ -101,8 +114,8 @@ export class Controller extends CorgiController<HTMLCanvasElement> {
     e.preventDefault();
 
     const relativePixels: Vec2 = [
-      e.clientX - this.root.width / 2,
-      this.root.height / 2 - e.clientY,
+      e.clientX - this.canvas.width / 2,
+      this.canvas.height / 2 - e.clientY,
     ];
     this.camera.linearZoom(-0.01 * e.deltaY, relativePixels);
     this.nextRender = RenderType.CameraChange;
@@ -111,7 +124,7 @@ export class Controller extends CorgiController<HTMLCanvasElement> {
 
   private enterIdle(): void {
     this.nextRender = RenderType.DataChange;
-    const size: Vec2 = [this.root.width, this.root.height];
+    const size: Vec2 = [this.canvas.width, this.canvas.height];
     this.mapData.viewportBoundsChanged(size);
     this.tileData.viewportBoundsChanged(size);
   }
@@ -129,7 +142,7 @@ export class Controller extends CorgiController<HTMLCanvasElement> {
         this.renderPlanner.clear();
         this.textRenderer.mark();
 
-        const size: Vec2 = [this.root.width, this.root.height];
+        const size: Vec2 = [this.canvas.width, this.canvas.height];
         const zoom = this.camera.zoom;
         this.tileData.plan(size, this.renderPlanner);
         this.mapData.plan(size, zoom, this.renderPlanner);
@@ -143,9 +156,9 @@ export class Controller extends CorgiController<HTMLCanvasElement> {
   }
 
   private resize(): void {
-    const area = this.root.getBoundingClientRect();
-    this.root.width = area.width;
-    this.root.height = area.height;
+    const area = this.canvas.getBoundingClientRect();
+    this.canvas.width = area.width;
+    this.canvas.height = area.height;
     this.renderPlanner.resize([area.width, area.height]);
     this.renderer.resize([area.width, area.height]);
     this.nextRender = RenderType.CameraChange;

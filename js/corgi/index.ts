@@ -1,13 +1,18 @@
-import { Controller } from './controller';
+import { Controller, ControllerResponse } from './controller';
 
 export const Fragment = Symbol();
 
-interface Properties<ET extends HTMLElement> {
-  jscontroller?: new (root: ET) => Controller<ET>;
+type ControllerCtor<ET extends HTMLElement, R extends ControllerResponse<ET>> =
+    new (response: R) => Controller<ET, R>;
+
+interface Properties<ET extends HTMLElement, R extends ControllerResponse<ET>> {
+  args?: object;
+  jscontroller?: ControllerCtor<ET, R>;
+  onRender?: () => void;
   className?: string;
 }
 
-interface AnchorProperties extends Properties<HTMLAnchorElement> {
+interface AnchorProperties extends Properties<HTMLAnchorElement, ControllerResponse<HTMLAnchorElement>> {
   href?: string;
 }
 
@@ -18,18 +23,30 @@ class CorgiElement {
   ) {}
 }
 
+interface VElement {
+  element:
+      keyof HTMLElementTagNameMap
+          |(typeof Fragment)
+          |((
+               props: Properties<HTMLElement, ControllerResponse<HTMLElement>>|null,
+               ...children: Array<CorgiElement|string>
+           ) => CorgiElement);
+  props: Properties<HTMLElement, ControllerResponse<HTMLElement>>|null;
+  children: Array<CorgiElement|number|string>;
+}
+
 export function createElement(
     element:
         keyof HTMLElementTagNameMap
             |(typeof Fragment)
             |((
-                 props: Properties<HTMLElement>|null,
-                 children: Array<CorgiElement|string>
+                 props: Properties<HTMLElement, ControllerResponse<HTMLElement>>|null,
+                 ...children: Array<CorgiElement|string>
              ) => CorgiElement),
-    props: Properties<HTMLElement>|null,
+    props: Properties<HTMLElement, ControllerResponse<HTMLElement>>|null,
     ...children: Array<CorgiElement|string>): CorgiElement|string {
   if (typeof element === 'function') {
-    throw new Error('wtf');
+    return element(props, ...children);
   } else if (element === Fragment) {
     if (children.length === 1) {
       return children[0];
@@ -45,23 +62,26 @@ export function createElement(
     };
     for (const [key, value] of Object.entries(props ?? {})) {
       if (key === 'jscontroller') {
-        const ctor = value as new (root: HTMLElement) => Controller<HTMLElement>;
+        const ctor = value as ControllerCtor<HTMLElement, ControllerResponse<HTMLElement>>;
         initialize = () => {
           children.filter(isCorgiElement).forEach(c => {
             c.initialize();
           });
-          new ctor(created);
+          new ctor({
+            root: created,
+            args: props?.args,
+          });
         };
       } else if (key === 'className') {
         const classes = (value as string).split(' ');
         created.classList.add(...classes);
       }
-      for (const child of children) {
-        if (typeof child === 'string') {
-          created.append(child);
-        } else {
-          created.append(child.element);
-        }
+    }
+    for (const child of children) {
+      if (child instanceof CorgiElement) {
+        created.append(child.element);
+      } else {
+        created.append(child);
       }
     }
     return new CorgiElement(
@@ -72,11 +92,11 @@ export function createElement(
 }
 
 export function appendElement(parent: HTMLElement, child: CorgiElement|string): void {
-  if (typeof child === 'string') {
-    parent.append(child);
-  } else {
+  if (child instanceof CorgiElement) {
     parent.append(child.element);
     child.initialize();
+  } else {
+    parent.append(child);
   }
 }
 
@@ -84,8 +104,8 @@ declare global {
   namespace JSX {
     interface IntrinsicElements {
       a: AnchorProperties;
-      canvas: Properties<HTMLCanvasElement>;
-      div: Properties<HTMLDivElement>;
+      canvas: Properties<HTMLCanvasElement, ControllerResponse<HTMLCanvasElement>>;
+      div: Properties<HTMLDivElement, ControllerResponse<HTMLDivElement>>;
     }
   }
 }

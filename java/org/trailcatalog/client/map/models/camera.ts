@@ -8,11 +8,11 @@ export class Camera {
   private _inverseWorldRadius: number;
   private _zoom: number;
 
-  constructor() {
+  constructor(lat: number, lng: number, zoom: number) {
     //this.center = S2LatLng.fromDegrees(47.644209, -122.139532);
     //this._zoom = 15;
-    this.center = S2LatLng.fromDegrees(46.859369, -121.747888);
-    this._zoom = 12;
+    this.center = S2LatLng.fromDegrees(lat, lng);
+    this._zoom = zoom;
     this._inverseWorldRadius = 1 / this.worldRadius;
   }
 
