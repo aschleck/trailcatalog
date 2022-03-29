@@ -4,7 +4,7 @@
     "baseUrl": ".",
     "declaration": true,
     "jsx": "preserve",
-    "jsxFactory": "corgi.createElement",
+    "jsxFactory": "corgi.createVirtualElement",
     "jsxFragmentFactory": "corgi.Fragment",
     "preserveSymlinks": true,
     "module": "CommonJS", // for Jest

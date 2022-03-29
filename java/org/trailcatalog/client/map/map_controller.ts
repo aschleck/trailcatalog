@@ -10,6 +10,7 @@ import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
+import { MAP_MOVED } from './events';
 
 interface Response extends ControllerResponse<HTMLDivElement> {
   args: {
@@ -41,6 +42,7 @@ export class MapController extends Controller<HTMLDivElement, Response> {
   private readonly textRenderer: TextRenderer;
   private readonly tileData: TileData;
 
+  private screenArea: DOMRect;
   private lastMousePosition: Vec2|undefined;
   private lastRenderPlan: number;
   private nextRender: RenderType;
@@ -58,13 +60,23 @@ export class MapController extends Controller<HTMLDivElement, Response> {
     this.textRenderer = new TextRenderer(this.renderer);
     this.mapData = new MapData(this.camera, this.textRenderer);
     this.tileData = new TileData(this.camera, this.renderer);
+
+    this.screenArea = new DOMRect();
     this.lastRenderPlan = 0;
     this.nextRender = RenderType.CameraChange;
 
     this.registerListener(window, 'resize', () => this.resize());
     this.resize();
 
-    this.registerListener(document, 'pointerdown', e => { this.mouseDown(e); });
+    // We track pointer events on document because it allows us to drag the mouse off-screen while
+    // panning.
+    this.registerListener(document, 'pointerdown', e => {
+      if (e.target === this.canvas) {
+        this.mouseDown(e);
+      }
+    });
+    // If we started a pan and drag the pointer outside the canvas the target will change, so we
+    // don't check it.
     this.registerListener(document, 'pointermove', e => { this.mouseMove(e); });
     this.registerListener(document, 'pointerup', e => { this.mouseUp(e); });
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
@@ -85,9 +97,10 @@ export class MapController extends Controller<HTMLDivElement, Response> {
     this.lastMousePosition = [e.clientX, e.clientY];
 
     const center = this.camera.centerPixel;
+    const client = this.screenToRelativeCoord(e);
     const position: Vec2 = [
-      center[0] + (e.clientX - this.canvas.width / 2) * this.camera.inverseWorldRadius,
-      center[1] + (this.canvas.height / 2 - e.clientY) * this.camera.inverseWorldRadius,
+      center[0] + client[0] * this.camera.inverseWorldRadius,
+      center[1] + client[1] * this.camera.inverseWorldRadius,
     ];
     this.mapData.query(position);
   }
@@ -113,11 +126,7 @@ export class MapController extends Controller<HTMLDivElement, Response> {
   private wheel(e: WheelEvent): void {
     e.preventDefault();
 
-    const relativePixels: Vec2 = [
-      e.clientX - this.canvas.width / 2,
-      this.canvas.height / 2 - e.clientY,
-    ];
-    this.camera.linearZoom(-0.01 * e.deltaY, relativePixels);
+    this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(e));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }
@@ -127,6 +136,17 @@ export class MapController extends Controller<HTMLDivElement, Response> {
     const size: Vec2 = [this.canvas.width, this.canvas.height];
     this.mapData.viewportBoundsChanged(size);
     this.tileData.viewportBoundsChanged(size);
+
+    this.trigger(MAP_MOVED, {
+      center: this.camera.center,
+      zoom: this.camera.zoom,
+    });
+  }
+
+  private screenToRelativeCoord(e: MouseEvent): Vec2 {
+    const x = e.clientX - this.screenArea.x - this.screenArea.width / 2;
+    const y = this.screenArea.y + this.screenArea.height / 2 - e.clientY;
+    return [x, y];
   }
 
   private render(): void {
@@ -156,11 +176,11 @@ export class MapController extends Controller<HTMLDivElement, Response> {
   }
 
   private resize(): void {
-    const area = this.canvas.getBoundingClientRect();
-    this.canvas.width = area.width;
-    this.canvas.height = area.height;
-    this.renderPlanner.resize([area.width, area.height]);
-    this.renderer.resize([area.width, area.height]);
+    this.screenArea = this.canvas.getBoundingClientRect();
+    this.canvas.width = this.screenArea.width;
+    this.canvas.height = this.screenArea.height;
+    this.renderPlanner.resize([this.screenArea.width, this.screenArea.height]);
+    this.renderer.resize([this.screenArea.width, this.screenArea.height]);
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }

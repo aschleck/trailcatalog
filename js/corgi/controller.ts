@@ -1,4 +1,5 @@
 import { Disposable } from './disposable';
+import { EventSpec, qualifiedName } from './events';
 
 export interface ControllerResponse<ET extends HTMLElement> {
   root: ET;
@@ -15,6 +16,14 @@ export class Controller<
   constructor(private response: R) {
     super();
     this.root = response.root;
+  }
+
+  protected trigger<S>(spec: EventSpec<S>, detail: S): void {
+    this.root.dispatchEvent(new CustomEvent(qualifiedName(spec), {
+      bubbles: true,
+      cancelable: true,
+      detail,
+    }));
   }
 
   wakeup(): void {}
