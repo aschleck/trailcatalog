@@ -17,6 +17,8 @@ export declare namespace com.google.common.geometry {
   class S2LatLng {
     static fromDegrees(lat: number, lon: number): S2LatLng;
     static fromRadians(lat: number, lon: number): S2LatLng;
+    latDegrees(): number;
+    lngDegrees(): number;
     latRadians(): number;
     lngRadians(): number;
   }

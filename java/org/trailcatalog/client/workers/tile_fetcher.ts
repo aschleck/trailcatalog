@@ -48,16 +48,16 @@ class TileFetcher {
     const halfWorldSize = Math.pow(2, tz - 1); // - 1 gives us the half
     const center = request.cameraPosition;
     const centerInWorldPx = [center[0] * halfWorldSize, center[1] * halfWorldSize];
-    const halfSize = TILE_SIZE_PX * Math.pow(2, request.cameraZoom - tz + 1);
+    const doubleSize = TILE_SIZE_PX * Math.pow(2, request.cameraZoom - tz + 1);
     const halfViewportInWorldPx = [
-      request.viewportSize[0] / halfSize,
-      request.viewportSize[1] / halfSize,
+      request.viewportSize[0] / doubleSize,
+      request.viewportSize[1] / doubleSize,
     ];
 
     const used = createTileHashSet();
     // We need to add 1 to y tiles because our coordinate system is flipped from the typical
     // coordinates.
-    for (let y = Math.floor(centerInWorldPx[1] - halfViewportInWorldPx[1]) + 1;
+    for (let y = Math.floor(centerInWorldPx[1] - halfViewportInWorldPx[1]);
          y < centerInWorldPx[1] + halfViewportInWorldPx[1] + 1;
          ++y) {
        for (let x = Math.floor(centerInWorldPx[0] - halfViewportInWorldPx[0]);

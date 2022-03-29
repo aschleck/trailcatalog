@@ -134,8 +134,9 @@ export class MapController extends Controller<HTMLDivElement, Response> {
   private enterIdle(): void {
     this.nextRender = RenderType.DataChange;
     const size: Vec2 = [this.canvas.width, this.canvas.height];
-    this.mapData.viewportBoundsChanged(size);
-    this.tileData.viewportBoundsChanged(size);
+    for (const layer of [this.mapData, this.tileData]) {
+      layer.viewportBoundsChanged(size);
+    }
 
     this.trigger(MAP_MOVED, {
       center: this.camera.center,
@@ -151,8 +152,9 @@ export class MapController extends Controller<HTMLDivElement, Response> {
 
   private render(): void {
     if (!this.lastMousePosition) {
-      if (this.mapData.hasDataNewerThan(this.lastRenderPlan) ||
-          this.tileData.hasDataNewerThan(this.lastRenderPlan)) {
+      const hasNewData =
+          [this.mapData, this.tileData].filter(l => l.hasDataNewerThan(this.lastRenderPlan));
+      if (hasNewData.length > 0) {
         this.nextRender = RenderType.DataChange;
       }
     }
@@ -164,8 +166,9 @@ export class MapController extends Controller<HTMLDivElement, Response> {
 
         const size: Vec2 = [this.canvas.width, this.canvas.height];
         const zoom = this.camera.zoom;
-        this.tileData.plan(size, this.renderPlanner);
-        this.mapData.plan(size, zoom, this.renderPlanner);
+        for (const layer of [this.mapData, this.tileData]) {
+          layer.plan(size, zoom, this.renderPlanner);
+        }
         this.renderPlanner.save();
         this.textRenderer.sweep();
         this.lastRenderPlan = Date.now();

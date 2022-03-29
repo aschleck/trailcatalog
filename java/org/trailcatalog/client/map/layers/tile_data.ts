@@ -41,7 +41,7 @@ export class TileData implements Layer {
     return this.lastChange > time;
   }
 
-  plan(viewportSize: Vec2, planner: RenderPlanner): void {
+  plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     for (const [id, texture] of this.tiles) {
       if (!texture) {
         continue;

@@ -13,7 +13,12 @@ export class OverviewController extends Controller<HTMLDivElement, Response> {
   }
 
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
-    console.log(e.detail);
+    const {center, zoom} = e.detail;
+    const url = new URL(window.location.href);
+    url.searchParams.set('lat', center.latDegrees().toFixed(7));
+    url.searchParams.set('lng', center.lngDegrees().toFixed(7));
+    url.searchParams.set('zoom', zoom.toFixed(3));
+    window.history.replaceState(null, '', url);
   }
 }
 
