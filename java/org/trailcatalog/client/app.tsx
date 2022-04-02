@@ -10,6 +10,8 @@ import './app.css';
 
 //new Controller(document.getElementById('canvas') as HTMLCanvasElement);
 
-corgi.appendElement(
-    checkExists(document.getElementById('root')),
-    OverviewElement());
+function App() {
+  return <OverviewElement />;
+}
+
+corgi.appendElement(checkExists(document.getElementById('root')), <App />);

@@ -12,15 +12,16 @@ import { TextRenderer } from './rendering/text_renderer';
 import { Debouncer } from './debouncer';
 import { MAP_MOVED } from './events';
 
-interface Response extends ControllerResponse<HTMLDivElement> {
-  args: {
-    lat: number,
-    lng: number,
-    zoom: number,
-  },
+interface Args {
+  lat: number;
+  lng: number;
+  zoom: number;
 }
 
-export class MapController extends Controller<HTMLDivElement, Response> {
+interface Response extends ControllerResponse<Args, HTMLDivElement, undefined> {
+}
+
+export class MapController extends Controller<Args, HTMLDivElement, undefined, Response> {
 
   static deps() {
     return {

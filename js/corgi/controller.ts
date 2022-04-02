@@ -1,17 +1,20 @@
 import { Disposable } from './disposable';
 import { EventSpec, qualifiedName } from './events';
 
-export interface ControllerResponse<ET extends HTMLElement> {
-  root: ET;
-  args: any;
+export interface ControllerResponse<A, E extends HTMLElement, S> {
+  root: E;
+  args: A;
+  state: S extends undefined ? undefined : [S, (newState: S) => void];
 }
 
 export class Controller<
-    ET extends HTMLElement,
-    R extends ControllerResponse<ET>,
+    A,
+    E extends HTMLElement,
+    S,
+    R extends ControllerResponse<A, E, S>,
 > extends Disposable {
 
-  protected readonly root: ET;
+  protected readonly root: E;
 
   constructor(private response: R) {
     super();

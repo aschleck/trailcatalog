@@ -2,16 +2,25 @@ import * as corgi from 'js/corgi';
 
 import { MapController } from './map_controller';
 
+class X {
+wakeup() {}
+}
+
 export const MapElement = ({lat, lng, zoom}: {lat: number, lng: number, zoom: number}) => {
   return <>
     <div
-        jscontroller={MapController}
-        onRender={MapController.prototype.wakeup}
-        args={{
-          lat,
-          lng,
-          zoom,
-        }}
+        js={corgi.bind({
+          controller: MapController,
+          args: {
+            lat,
+            lng,
+            zoom,
+          },
+          events: {
+            render: 'wakeup',
+          },
+          state: undefined,
+        })}
         className="h-full relative w-full">
       <canvas className="h-full w-full" />
       <div className="

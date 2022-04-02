@@ -12,10 +12,9 @@ def esbuild_binary(
         name = name,
         config = "//build_defs:esbuild_config",
         entry_point = entry_point,
-        external = ["..."],
         link_workspace_root = True,
         output_css = "%s.css" % name if has_css else None,
-        sourcemap = "both",
+        sources_content = True,
         target = "es2020",
         deps = deps + [
             "@npm//esbuild",
@@ -24,9 +23,11 @@ def esbuild_binary(
 
 
 def tc_ts_project(name, srcs = None, data = None, deps = None):
+    srcs = srcs or native.glob(["*.ts", "*.tsx"], exclude=["*.test.ts"])
+
     ts_project(
         name = name,
-        srcs = srcs or native.glob(["*.ts", "*.tsx"], exclude=["*.test.ts"]),
+        srcs = srcs,
         allow_js = True,
         declaration = True,
         link_workspace_root = True,
@@ -75,3 +76,4 @@ def tc_ts_project(name, srcs = None, data = None, deps = None):
             "jest.config.js",
         ],
     )
+
