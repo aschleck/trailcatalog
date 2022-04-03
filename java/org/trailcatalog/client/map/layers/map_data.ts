@@ -7,7 +7,7 @@ import { LittleEndianView } from '../../common/little_endian_view';
 import { reinterpretLong } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { FetcherCommand } from '../../workers/data_fetcher';
-import { Camera } from '../models/camera';
+import { Camera, projectLatLngRect } from '../models/camera';
 import { Line, RenderPlanner } from '../rendering/render_planner';
 import { Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
 
@@ -20,7 +20,7 @@ interface Entity {
   readonly screenPixelBound?: Vec4;
 }
 
-class Path implements Entity {
+export class Path implements Entity {
   constructor(
       readonly id: bigint,
       readonly type: number,
@@ -30,7 +30,7 @@ class Path implements Entity {
   ) {}
 }
 
-class Trail implements Entity {
+export class Trail implements Entity {
   constructor(
       readonly id: bigint,
       readonly name: string,
@@ -84,13 +84,19 @@ export class MapData implements Layer {
     return this.lastChange > time;
   }
 
-  query(point: Vec2): void {
+  queryInBounds(bounds: S2LatLngRect): Array<Path|Trail> {
+    const near: Array<Path|Trail> = [];
+    this.bounds.queryRect(projectLatLngRect(bounds), near);
+    return near;
+  }
+
+  selectClosest(point: Vec2): void {
     const near: Entity[] = [];
     // 35px is a larger than the full height of a trail marker (full not half
     // because they are not centered vertically.)
     const screenToWorldPx = this.camera.inverseWorldRadius;
     const radius = 35 * screenToWorldPx;
-    this.bounds.query(point, radius, near);
+    this.bounds.queryCircle(point, radius, near);
 
     let best = undefined;
     let bestDistance2 = (7 * screenToWorldPx) * (7 * screenToWorldPx);

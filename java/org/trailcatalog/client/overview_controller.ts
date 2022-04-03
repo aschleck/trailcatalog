@@ -1,10 +1,10 @@
 import { Controller, ControllerResponse } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
-import { MAP_MOVED } from './map/events';
+import { MAP_MOVED, Trail } from './map/events';
 
 export interface State {
-  count: number;
+  trails: Trail[];
 }
 
 interface Response extends ControllerResponse<undefined, HTMLDivElement, State> {
@@ -23,15 +23,14 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
   }
 
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
-    const {center, zoom} = e.detail;
+    const {center, controller, zoom} = e.detail;
     const url = new URL(window.location.href);
     url.searchParams.set('lat', center.latDegrees().toFixed(7));
     url.searchParams.set('lng', center.lngDegrees().toFixed(7));
     url.searchParams.set('zoom', zoom.toFixed(3));
     window.history.replaceState(null, '', url);
 
-    this.state.count += 1;
-    this.updateState({count: this.state.count});
+    this.updateState({trails: controller.listTrailsInViewport()});
   }
 }
 

@@ -1,7 +1,7 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
-import { Vec2 } from '../../common/types';
+import { PixelRect, Vec2 } from '../../common/types';
 
 export class Camera {
   private _center: S2LatLng;
@@ -77,3 +77,9 @@ function projectLatLng(ll: S2LatLng): Vec2 {
   return [x, y];
 }
 
+export function projectLatLngRect(rect: S2LatLngRect): PixelRect {
+  return {
+    low: projectLatLng(rect.lo()),
+    high: projectLatLng(rect.hi()),
+  };
+}

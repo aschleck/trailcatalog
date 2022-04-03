@@ -2,7 +2,7 @@ import { Controller, ControllerResponse } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
 import { Vec2 } from '../common/types';
-import { MapData } from './layers/map_data';
+import { MapData, Path, Trail } from './layers/map_data';
 import { TileData } from './layers/tile_data';
 import { Camera } from './models/camera';
 import { Renderer } from './rendering/renderer';
@@ -94,6 +94,13 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     requestAnimationFrame(raf);
   }
 
+  listTrailsInViewport(): Trail[] {
+    return this.mapData
+        .queryInBounds(
+            this.camera.viewportBounds(this.screenArea.width, this.screenArea.height))
+        .filter(isTrail);
+  }
+
   private mouseDown(e: MouseEvent): void {
     this.lastMousePosition = [e.clientX, e.clientY];
 
@@ -103,7 +110,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
       center[0] + client[0] * this.camera.inverseWorldRadius,
       center[1] + client[1] * this.camera.inverseWorldRadius,
     ];
-    this.mapData.query(position);
+    this.mapData.selectClosest(position);
   }
 
   private mouseMove(e: MouseEvent): void {
@@ -140,6 +147,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     }
 
     this.trigger(MAP_MOVED, {
+      controller: this,
       center: this.camera.center,
       zoom: this.camera.zoom,
     });
@@ -196,4 +204,6 @@ enum RenderType {
   DataChange = 3,
 }
 
-// TODO: assert little endian
+function isTrail(e: Path|Trail): e is Trail {
+  return e instanceof Trail;
+}

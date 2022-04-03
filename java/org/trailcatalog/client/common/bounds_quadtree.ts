@@ -109,7 +109,7 @@ export class BoundsQuadtree<V> {
     }
   }
 
-  query(point: Vec2, radius: number, output: V[]): void {
+  queryCircle(point: Vec2, radius: number, output: V[]): void {
     for (const [value, bound] of this.values) {
       if (intersectCircleAabb(point, radius, bound)) {
         output.push(value);
@@ -121,18 +121,47 @@ export class BoundsQuadtree<V> {
       const cy = this.center[1];
       if (point[0] - radius <= cx) {
         if (point[1] - radius <= cy) {
-          this.children[3].query(point, radius, output);
+          this.children[3].queryCircle(point, radius, output);
         }
         if (point[1] + radius > cy) {
-          this.children[2].query(point, radius, output);
+          this.children[2].queryCircle(point, radius, output);
         }
       }
       if (point[0] + radius > cx) {
         if (point[1] - radius <= cy) {
-          this.children[1].query(point, radius, output);
+          this.children[1].queryCircle(point, radius, output);
         }
         if (point[1] + radius > cy) {
-          this.children[0].query(point, radius, output);
+          this.children[0].queryCircle(point, radius, output);
+        }
+      }
+    }
+  }
+
+  queryRect(rect: PixelRect, output: V[]): void {
+    for (const [value, bound] of this.values) {
+      if (intersectAabbAabb(rect, bound)) {
+        output.push(value);
+      }
+    }
+
+    if (this.children) {
+      const cx = this.center[0];
+      const cy = this.center[1];
+      if (rect.low[0] <= cx) {
+        if (rect.low[1] <= cy) {
+          this.children[3].queryRect(rect, output);
+        }
+        if (rect.high[1] > cy) {
+          this.children[2].queryRect(rect, output);
+        }
+      }
+      if (rect.high[0] > cx) {
+        if (rect.low[1] <= cy) {
+          this.children[1].queryRect(rect, output);
+        }
+        if (rect.high[1] > cy) {
+          this.children[0].queryRect(rect, output);
         }
       }
     }

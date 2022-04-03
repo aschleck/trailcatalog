@@ -79,8 +79,6 @@ export class RenderPlanner {
         this.area, camera, this.drawables.slice(drawStartIndex, this.drawables.length));
   }
 
-  // TODO: z is currently implicit for lines, terrible assumption
-
   addBillboard(center: Vec2, offsetPx: Vec2, size: Vec2, texture: WebGLTexture, z: number): void {
     const x = center[0];
     const xF = Math.fround(x);
@@ -113,8 +111,12 @@ export class RenderPlanner {
       /* size= */ wF, wR, hF, hR,
     ]);
     this.geometryByteSize += 4 * 4 + 4 * 4 + 4 * 4;
-    new Uint8Array(this.geometry, this.geometryByteSize)[0] =
-        /* sizeIsPixels= */ size[0] >= 1 ? 1 : 0; // well this is sketchy
+    new Uint8Array(this.geometry, this.geometryByteSize).set([
+        /* sizeIsPixels= */ size[0] >= 1 ? 1 : 0, // well this is sketchy
+        0, // pad this bool out so that it doesn't get corrupted by old data
+        0,
+        0,
+    ]);
     this.geometryByteSize += 1;
     this.align(256);
   }

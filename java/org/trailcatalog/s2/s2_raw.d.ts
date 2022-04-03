@@ -27,6 +27,8 @@ export declare namespace com.google.common.geometry {
     static fromPoint(point: S2LatLng): S2LatLngRect;
     static fromPointPair(p1: S2LatLng, p2: S2LatLng): S2LatLngRect;
     expandedByDistance(distance: S1Angle): S2LatLngRect;
+    lo(): S2LatLng;
+    hi(): S2LatLng;
     lat(): R1Interval;
     lng(): R1Interval;
   }

@@ -33,6 +33,8 @@ goog.exportSymbol('com.google.common.geometry.S2LatLngRect', S2LatLngRect);
 goog.exportProperty(S2LatLngRect, 'fromPoint', S2LatLngRect.fromPoint);
 goog.exportProperty(S2LatLngRect, 'fromPointPair', S2LatLngRect.fromPointPair);
 goog.exportProperty(S2LatLngRect.prototype, 'expandedByDistance', S2LatLngRect.prototype.expandedByDistance);
+goog.exportProperty(S2LatLngRect.prototype, 'lo', S2LatLngRect.prototype.lo);
+goog.exportProperty(S2LatLngRect.prototype, 'hi', S2LatLngRect.prototype.hi);
 goog.exportProperty(S2LatLngRect.prototype, 'lat', S2LatLngRect.prototype.lat);
 goog.exportProperty(S2LatLngRect.prototype, 'lng', S2LatLngRect.prototype.lng);
 

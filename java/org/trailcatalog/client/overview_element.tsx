@@ -7,7 +7,7 @@ import { OverviewController, State } from './overview_controller';
 
 export function OverviewElement(props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    state = {count: 1};
+    state = {trails: []};
   }
 
   const url = new URL(window.location.href);
@@ -29,8 +29,8 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
         })}
         className="flex h-screen w-screen"
     >
-      <div className="w-48">
-        Sidebar {state.count}
+      <div className="overflow-scroll w-96">
+        {state.trails.map(trail => <div>{trail.name}</div>)}
       </div>
       <MapElement lat={lat} lng={lng} zoom={zoom} />
     </div>

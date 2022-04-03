@@ -109,13 +109,22 @@ const vHandlesToElements = new WeakMap<VHandle, VElement>();
 export function createVirtualElement(
     element: keyof HTMLElementTagNameMap|ElementFactory|(typeof Fragment),
     props: Properties<HTMLElement>|null,
-    ...children: VElementOrPrimitive[]): VElementOrPrimitive {
+    ...children: Array<VElementOrPrimitive|VElementOrPrimitive[]>): VElementOrPrimitive {
+  const expandChildren = [];
+  for (const c of children) {
+    if (c instanceof Array) {
+      expandChildren.push(...c);
+    } else {
+      expandChildren.push(c);
+    }
+  }
+
   props = props ?? {};
 
   if (typeof element === 'function') {
     // Don't let the TSX method corrupt our props
     const propClone = Object.assign({}, props);
-    propClone.children = children;
+    propClone.children = expandChildren;
 
     let previousElement;
     if (vElementPath.length > 0) {
@@ -178,20 +187,20 @@ export function createVirtualElement(
 
     return v;
   } else if (element === Fragment) {
-    if (children.length === 1) {
-      return children[0];
+    if (expandChildren.length === 1) {
+      return expandChildren[0];
     } else {
       return {
         element: 'div',
         props,
-        children,
+        children: expandChildren,
       };
     }
   } else {
     return {
       element,
       props,
-      children,
+      children: expandChildren,
     };
   }
 }
@@ -268,6 +277,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
     }
   }
 
+  const oldChildren = [...node.childNodes];
   for (let i = 0; i < to.children.length; ++i) {
     const was = from.children[i];
     const is = to.children[i];
@@ -278,7 +288,11 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
 
     if (typeof was !== 'object' || typeof is !== 'object') {
       const childResult = createElement(is);
-      node.replaceChild(childResult.root, node.childNodes[i]);
+      if (i < oldChildren.length) {
+        node.replaceChild(childResult.root, node.childNodes[i]);
+      } else {
+        node.appendChild(childResult.root);
+      }
       result.sideEffects.push(...childResult.sideEffects);
       continue;
     }

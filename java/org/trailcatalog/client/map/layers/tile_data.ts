@@ -49,6 +49,10 @@ export class TileData implements Layer {
 
       const halfWorldSize = Math.pow(2, id.zoom - 1);
       const size = 1 / halfWorldSize;
+      console.log([
+          (id.x + 0.5) / halfWorldSize,
+          (id.y - 0.5) / halfWorldSize,
+      ]);
       planner.addBillboard([
           (id.x + 0.5) / halfWorldSize,
           (id.y - 0.5) / halfWorldSize,
