@@ -4,7 +4,7 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from '../../common/asserts';
 import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
 import { LittleEndianView } from '../../common/little_endian_view';
-import { reinterpretLong } from '../../common/math';
+import { metersToMiles, reinterpretLong } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { FetcherCommand } from '../../workers/data_fetcher';
 import { Camera, projectLatLngRect } from '../models/camera';
@@ -387,10 +387,6 @@ function distanceCheckLine(point: Vec2, line: Float64Array): number {
     }
   }
   return bestDistance2;
-}
-
-function metersToMiles(meters: number): number {
-  return meters * 0.00062137119224;
 }
 
 function renderableTrailPin(lengthMeters: number): RenderableText {

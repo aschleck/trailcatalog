@@ -16,7 +16,7 @@ export class Controller<
 
   protected readonly root: E;
 
-  constructor(private response: R) {
+  constructor(response: R) {
     super();
     this.root = response.root;
   }

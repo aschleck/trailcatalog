@@ -2,6 +2,10 @@ import { Long } from 'java/org/trailcatalog/s2';
 
 import { Vec2, Vec4 } from './types';
 
+export function metersToMiles(meters: number): number {
+  return meters * 0.00062137119224;
+}
+
 const reinterpretLongBuffer = new ArrayBuffer(8);
 
 /** Reads a float using the bits of a Closure Long. */

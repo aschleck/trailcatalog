@@ -30,7 +30,10 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
     url.searchParams.set('zoom', zoom.toFixed(3));
     window.history.replaceState(null, '', url);
 
-    this.updateState({trails: controller.listTrailsInViewport()});
+    this.updateState({
+      trails: controller.listTrailsInViewport()
+          .sort((a, b) => b.lengthMeters - a.lengthMeters),
+    });
   }
 }
 

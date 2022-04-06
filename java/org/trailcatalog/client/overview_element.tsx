@@ -1,6 +1,7 @@
 import * as corgi from 'js/corgi';
 
-import { MAP_MOVED } from './map/events';
+import { metersToMiles } from './common/math';
+import { MAP_MOVED, Trail } from './map/events';
 import { MapElement } from './map/map_element';
 
 import { OverviewController, State } from './overview_controller';
@@ -29,13 +30,32 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
         })}
         className="flex h-screen w-screen"
     >
-      <div className="overflow-scroll w-96">
-        {state.trails.map(trail => <div>{trail.name}</div>)}
+      <div className="overflow-scroll p-4 w-96">
+        <header className="flex gap-2 uppercase">
+          <div className="basis-3/5">Name</div>
+          <div className="basis-2/5">Distance</div>
+        </header>
+        {state.trails.map(trail => <TrailElement trail={trail} />)}
       </div>
       <MapElement lat={lat} lng={lng} zoom={zoom} />
     </div>
   </>;
-};
+}
+
+function TrailElement({ trail }: { trail: Trail }) {
+  return <div>
+    <header className="border-b flex gap-2 py-2">
+      <div className="basis-3/5 font-lg font-semibold">{trail.name}</div>
+      <div className="basis-2/5">
+        <span className="font-bold font-lg">
+          {metersToMiles(trail.lengthMeters).toFixed(1)}
+        </span>
+        {' '}
+        <span className="font-xs text-slate-400">miles</span>
+      </div>
+    </header>
+  </div>;
+}
 
 function floatCoalesce(...numbers: Array<string|number|null>): number {
   for (const x of numbers) {

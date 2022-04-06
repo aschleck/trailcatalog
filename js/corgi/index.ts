@@ -413,6 +413,10 @@ declare global {
       a: AnchorProperties;
       canvas: Properties<HTMLCanvasElement>;
       div: Properties<HTMLDivElement>;
+      footer: Properties<HTMLElement>;
+      header: Properties<HTMLElement>;
+      section: Properties<HTMLElement>;
+      span: Properties<HTMLSpanElement>;
     }
   }
 }
