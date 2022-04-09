@@ -1,7 +1,8 @@
 import { Controller, ControllerResponse } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
-import { MAP_MOVED, Trail } from './map/events';
+import { checkExists } from './common/asserts';
+import { MAP_MOVED, MapController, Trail } from './map/events';
 
 export interface State {
   trails: Trail[];
@@ -15,6 +16,7 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
 
   private readonly state: State;
   private readonly updateState: (newState: State) => void;
+  private mapController: MapController|undefined;
 
   constructor(response: Response) {
     super(response);
@@ -23,6 +25,9 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
   }
 
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
+    // TODO(april): it'd be nice if this was a constructor arg or something
+    this.mapController = e.detail.controller;
+
     const {center, controller, zoom} = e.detail;
     const url = new URL(window.location.href);
     url.searchParams.set('lat', center.latDegrees().toFixed(7));
@@ -34,6 +39,25 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
       trails: controller.listTrailsInViewport()
           .sort((a, b) => b.lengthMeters - a.lengthMeters),
     });
+  }
+
+  selectTrail(e: MouseEvent): void {
+    this.setSelected(e, true);
+  }
+
+  unselectTrail(e: MouseEvent): void {
+    this.setSelected(e, false);
+  }
+
+  private setSelected(e: MouseEvent, selected: boolean): void {
+    if (!this.mapController) {
+      return;
+    }
+    const id = (checkExists(e.currentTarget) as HTMLElement).dataset['trailId'];
+    if (!id) {
+      return;
+    }
+    this.mapController.setTrailSelected(BigInt(id), selected);
   }
 }
 

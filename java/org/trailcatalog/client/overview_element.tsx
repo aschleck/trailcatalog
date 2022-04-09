@@ -44,7 +44,13 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
 
 function TrailElement({ trail }: { trail: Trail }) {
   return <div>
-    <header className="border-b flex gap-2 py-2">
+    <header
+        className="border-b cursor-pointer flex gap-2 py-2"
+        data-trail-id={trail.id}
+        unboundEvents={{
+          mouseover: 'selectTrail',
+          mouseout: 'unselectTrail',
+        }}>
       <div className="basis-3/5 font-lg font-semibold">{trail.name}</div>
       <div className="basis-2/5">
         <span className="font-bold font-lg">

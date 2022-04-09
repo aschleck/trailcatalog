@@ -101,6 +101,10 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
         .filter(isTrail);
   }
 
+  setTrailSelected(trail: bigint, selected: boolean): void {
+    return this.mapData.setTrailSelected(trail, selected);
+  }
+
   private mouseDown(e: MouseEvent): void {
     this.lastMousePosition = [e.clientX, e.clientY];
 

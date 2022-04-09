@@ -90,6 +90,21 @@ export class MapData implements Layer {
     return near;
   }
 
+  setTrailSelected(id: bigint, selected: boolean): void {
+    const trail = checkExists(this.trails.get(id));
+    const ids = trail.paths;
+    if (selected) {
+      for (const id of ids) {
+        this.selected.add(id & ~1n);
+      }
+    } else {
+      for (const id of ids) {
+        this.selected.delete(id & ~1n);
+      }
+    }
+    this.lastChange = Date.now();
+  }
+
   selectClosest(point: Vec2): void {
     const near: Entity[] = [];
     // 35px is a larger than the full height of a trail marker (full not half

@@ -10,10 +10,13 @@ type IsMethodWithParameters<T, K extends keyof T, P extends unknown[]> = HasPara
 type AMethodOnWithParameters<T, P extends unknown[]> = keyof {[K in keyof T as IsMethodWithParameters<T, K, P>]: 'valid'};
 
 interface PropertyKeyToHandlerMap<C> {
+  click: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   corgi: Array<[
     EventSpec<unknown>,
     AMethodOnWithParameters<C, [CustomEvent<unknown>]>,
   ]>;
+  mouseover: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
+  mouseout: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   render: AMethodOnWithParameters<C, []>,
 }
 
@@ -35,6 +38,9 @@ interface BoundController<
 
 interface AnyBoundController<E extends HTMLElement>
     extends BoundController<any, E, any, any, any> {}
+
+type UnboundEvents =
+    Partial<{[k in keyof PropertyKeyToHandlerMap<AnyBoundController<HTMLElement>>]: string}>;
 
 const elementsToControllerSpecs = new Map<HTMLElement, AnyBoundController<HTMLElement>>();
 
@@ -61,7 +67,8 @@ export function bind<
 interface Properties<E extends HTMLElement> {
   children?: VElementOrPrimitive[];
   className?: string;
-  js?: AnyBoundController<E>;
+  js?: AnyBoundController<E>|UnboundEvents;
+  unboundEvents?: UnboundEvents;
 }
 
 interface AnchorProperties extends Properties<HTMLAnchorElement> {
@@ -237,7 +244,7 @@ function updateToState(element: VElement, newState: object): void {
 
   Object.assign(element, newElement);
   vElementsToNodes.set(element, node);
-  result.sideEffects.forEach(e => { e(); });
+  applyInstantiationResult(result);
 }
 
 function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResult {
@@ -254,12 +261,13 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   const result: InstantiationResult = {
     root: node,
     sideEffects: [],
+    unboundEventss: [],
   };
 
   const oldPropKeys = Object.keys(from.props) as Array<keyof Properties<HTMLElement>>;
   const newPropKeys = Object.keys(to.props) as Array<keyof Properties<HTMLElement>>;
   for (const key of newPropKeys) {
-    if (key === 'children' || key === 'js') {
+    if (key === 'children' || key === 'js' || key == 'unboundEvents') {
       continue;
     }
 
@@ -294,6 +302,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
         node.appendChild(childResult.root);
       }
       result.sideEffects.push(...childResult.sideEffects);
+      result.unboundEventss.push(...childResult.unboundEventss);
       continue;
     }
 
@@ -305,6 +314,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
       oldNode.replaceChild(childResult.root, oldNode);
     }
     result.sideEffects.push(...childResult.sideEffects);
+    result.unboundEventss.push(...childResult.unboundEventss);
   }
   for (let i = to.children.length; i < from.children.length; ++i) {
     node.lastChild!!.remove();
@@ -332,6 +342,7 @@ function maybeInstantiateAndCall<E extends HTMLElement>(
 interface InstantiationResult {
   root: Node;
   sideEffects: Array<() => void>;
+  unboundEventss: Array<[HTMLElement, UnboundEvents]>;
 }
 
 function createElement(element: VElementOrPrimitive): InstantiationResult {
@@ -339,18 +350,21 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
     return {
       root: new Text(String(element)),
       sideEffects: [],
+      unboundEventss: [],
     };
   }
 
   const root = document.createElement(element.element);
   vElementsToNodes.set(element, root);
   let maybeSpec: AnyBoundController<HTMLElement>|undefined;
+  let unboundEventss: Array<[HTMLElement, UnboundEvents]> = [];
 
-  const children = element.children;
   const props = element.props;
   for (const [key, value] of Object.entries(props)) {
     if (key === 'js') {
       maybeSpec = value;
+    } else if (key === 'unboundEvents') {
+      unboundEventss.push([root, value]);
     } else if (key === 'className') {
       root.className = value;
     } else {
@@ -358,12 +372,17 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
     }
   }
 
+  if (maybeSpec && unboundEventss.length > 0) {
+    throw new Error('Cannot specify both js and unboundEvents');
+  }
+
   const sideEffects = [];
 
-  for (const child of children) {
+  for (const child of element.children) {
     const childResult = createElement(child);
     root.append(childResult.root);
     sideEffects.push(...childResult.sideEffects);
+    unboundEventss.push(...childResult.unboundEventss);
   }
 
   if (maybeSpec) {
@@ -376,10 +395,25 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
           e => {
             maybeInstantiateAndCall(root, spec, (controller: any) => {
               const method = controller[handler] as (e: CustomEvent<any>) => unknown;
-              method.apply(controller, [e as CustomEvent<unknown>]);
+              method.call(controller, e as CustomEvent<unknown>);
             });
           });
     }
+
+    for (const [element, events] of unboundEventss) {
+      for (const [event, handler] of Object.entries(events)) {
+        element.addEventListener(
+            event,
+            (e: any) => {
+              maybeInstantiateAndCall(root, spec, (controller: any) => {
+                const method = controller[handler] as (e: any) => unknown;
+                method.call(controller, e);
+              });
+            });
+      }
+    }
+    unboundEventss.length = 0;
+
     if (spec.events.render) {
       const handler = spec.events.render;
       sideEffects.push(() => {
@@ -394,6 +428,7 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
   return {
     root,
     sideEffects,
+    unboundEventss,
   };
 }
 
@@ -401,9 +436,45 @@ export function appendElement(parent: HTMLElement, child: VElementOrPrimitive): 
   if (typeof child === 'object') {
     const result = createElement(child);
     parent.append(result.root);
-    result.sideEffects.forEach(e => { e(); });
+    applyInstantiationResult(result);
   } else {
     parent.append(String(child));
+  }
+}
+
+function applyInstantiationResult(result: InstantiationResult): void {
+  result.sideEffects.forEach(e => { e(); });
+
+  for (const [element, events] of result.unboundEventss) {
+    let cursor: HTMLElement|null = element;
+    while (cursor !== null && !elementsToControllerSpecs.has(cursor)) {
+      cursor = cursor.parentElement;
+    }
+
+    if (cursor === null) {
+      console.error('Event spec was unbound:');
+      console.error(result.unboundEventss);
+      continue;
+    }
+
+    const root = cursor;
+    const spec = checkExists(elementsToControllerSpecs.get(root));
+
+    for (const [event, handler] of Object.entries(events)) {
+      if (!(handler in spec.controller.prototype)) {
+        console.error(`Unable to bind ${event} to ${handler}, method doesn't exist`);
+        continue;
+      }
+
+      element.addEventListener(
+          event,
+          (e: any) => {
+            maybeInstantiateAndCall(root, spec, (controller: any) => {
+              const method = controller[handler] as (e: any) => unknown;
+              method.call(controller, e);
+            });
+          });
+    }
   }
 }
 

@@ -1,8 +1,9 @@
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { declareEvent } from 'js/corgi/events';
 
-interface MapController {
+export interface MapController {
   listTrailsInViewport(): Trail[];
+  setTrailSelected(trail: bigint, selected: boolean): void;
 }
 
 export interface Trail {
