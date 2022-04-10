@@ -56,10 +56,10 @@ export class TileData implements Layer {
     }
   }
 
-  viewportBoundsChanged(viewportSize: Vec2): void {
+  viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
     this.fetcher.postMessage({
       cameraPosition: this.camera.centerPixel,
-      cameraZoom: this.camera.zoom,
+      cameraZoom: zoom,
       viewportSize,
     });
   }

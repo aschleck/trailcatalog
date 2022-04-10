@@ -27,6 +27,7 @@ kt_jvm_library(
     ],
     deps = [
         "//java/org/trailcatalog/models",
+        "//java/org/trailcatalog/s2:s2-java",
         "@bazel_tools//tools/java/runfiles",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:com_zaxxer_HikariCP",

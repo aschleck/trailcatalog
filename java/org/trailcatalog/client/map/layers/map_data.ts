@@ -6,10 +6,10 @@ import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
 import { LittleEndianView } from '../../common/little_endian_view';
 import { metersToMiles, reinterpretLong } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
-import { FetcherCommand } from '../../workers/data_fetcher';
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Line, RenderPlanner } from '../rendering/render_planner';
 import { Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
+import { DETAIL_ZOOM_THRESHOLD, FetcherCommand } from '../../workers/data_fetcher';
 
 import { Layer } from './layer';
 
@@ -48,7 +48,8 @@ const TEXT_DECODER = new TextDecoder();
 export class MapData implements Layer {
 
   private readonly bounds: BoundsQuadtree<Entity>;
-  private readonly byCells: Map<S2CellNumber, ArrayBuffer|undefined>;
+  private readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
+  private readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   private readonly paths: Map<bigint, Path>;
   private readonly trails: Map<bigint, Trail>;
   private readonly fetcher: Worker;
@@ -60,14 +61,17 @@ export class MapData implements Layer {
       private readonly textRenderer: TextRenderer,
   ) {
     this.bounds = worldBounds();
-    this.byCells = new Map();
+    this.metadataCells = new Map();
+    this.detailCells = new Map();
     this.paths = new Map();
     this.trails = new Map();
     this.fetcher = new Worker('static/data_fetcher_worker.js');
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
-      if (command.type === 'lcc') {
-        this.loadCell(command.cell, command.data);
+      if (command.type === 'lcm') {
+        this.loadMetadata(command.cell, command.data);
+      } else if (command.type === 'lcd') {
+        this.loadDetail(command.cell, command.data);
       } else if (command.type == 'ucc') {
         for (const cell of command.cells) {
           this.unloadCell(cell);
@@ -171,16 +175,25 @@ export class MapData implements Layer {
     }
   }
 
-  viewportBoundsChanged(viewportSize: Vec2): void {
+  viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
     const bounds = this.camera.viewportBounds(viewportSize[0], viewportSize[1]);
     this.fetcher.postMessage({
       lat: [bounds.lat().lo(), bounds.lat().hi()],
       lng: [bounds.lng().lo(), bounds.lng().hi()],
+      zoom,
     });
   }
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
-    const cells = this.cellsInView(viewportSize);
+    if (zoom >= DETAIL_ZOOM_THRESHOLD) {
+      this.planDetailed(viewportSize, zoom, planner);
+    } else {
+      this.planSparse(viewportSize, planner);
+    }
+  }
+
+  private planDetailed(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+    const cells = this.detailCellsInView(viewportSize);
     const lines: Line[] = [];
     const regularFill: Vec4 = [0, 0, 0, 0];
     const selectedFill: Vec4 = [1, 0.918, 0, 1];
@@ -188,7 +201,7 @@ export class MapData implements Layer {
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
-      const buffer = this.byCells.get(id);
+      const buffer = this.detailCells.get(id);
       if (!buffer) {
         continue;
       }
@@ -200,7 +213,7 @@ export class MapData implements Layer {
         const id = data.getBigInt64();
         const selected = this.selected.has(id);
 
-        if (selected || zoom > 13) {
+        if (selected || zoom >= 14) {
           const type = data.getInt32();
           const trailCount = data.getInt32();
           data.skip(trailCount * 8);
@@ -243,11 +256,44 @@ export class MapData implements Layer {
     }
   }
 
-  private cellsInView(viewportSize: Vec2): S2CellId[] {
+  private planSparse(viewportSize: Vec2, planner: RenderPlanner): void {
+    const cells = this.metadataCellsInView(viewportSize);
+
+    for (const cell of cells) {
+      const id = reinterpretLong(cell.id()) as S2CellNumber;
+      const buffer = this.metadataCells.get(id);
+      if (!buffer) {
+        continue;
+      }
+
+      const data = new LittleEndianView(buffer);
+
+      const trailCount = data.getInt32();
+      for (let i = 0; i < trailCount; ++i) {
+        const id = data.getBigInt64();
+        const nameLength = data.getInt32();
+        data.skip(nameLength);
+        const type = data.getInt32();
+        const position: Vec2 = [data.getFloat64(), data.getFloat64()];
+        const lengthMeters = data.getFloat64();
+        this.textRenderer.plan(renderableShield(), position, /* z= */ 1, planner);
+      }
+    }
+  }
+
+  private detailCellsInView(viewportSize: Vec2): S2CellId[] {
+    return this.cellsInView(viewportSize, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL);
+  }
+
+  private metadataCellsInView(viewportSize: Vec2): S2CellId[] {
+    return this.cellsInView(viewportSize, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
+  }
+
+  private cellsInView(viewportSize: Vec2, deepest: number): S2CellId[] {
     const scale = 1; // 3 ensures no matter how the user pans, they wont run out of mapData
     const viewport =
         this.camera.viewportBounds(scale * viewportSize[0], scale * viewportSize[1]);
-    const cellsInArrayList = SimpleS2.cover(viewport);
+    const cellsInArrayList = SimpleS2.cover(viewport, deepest);
     const cells = [];
     for (let i = 0; i < cellsInArrayList.size(); ++i) {
       cells.push(cellsInArrayList.getAtIndex(i));
@@ -255,18 +301,27 @@ export class MapData implements Layer {
     return cells;
   }
 
-  private loadCell(id: S2CellNumber, buffer: ArrayBuffer): void {
+  private loadMetadata(id: S2CellNumber, buffer: ArrayBuffer): void {
     // Check if the server wrote us a 1 byte response with 0 trails and paths.
-    if (buffer.byteLength > 8) {
-      this.byCells.set(id, buffer);
-      this.loadMetadata(buffer);
-      this.lastChange = Date.now();
-    } else {
-      this.byCells.set(id, undefined);
+    if (buffer.byteLength <= 8) {
+      this.detailCells.set(id, undefined);
+      return;
     }
+
+    this.metadataCells.set(id, buffer);
+    this.lastChange = Date.now();
   }
 
-  private loadMetadata(buffer: ArrayBuffer): void {
+  private loadDetail(id: S2CellNumber, buffer: ArrayBuffer): void {
+    // Check if the server wrote us a 1 byte response with 0 trails and paths.
+    if (buffer.byteLength <= 8) {
+      this.detailCells.set(id, undefined);
+      return;
+    }
+
+    this.detailCells.set(id, buffer);
+    this.lastChange = Date.now();
+
     const data = new LittleEndianView(buffer);
 
     const pathCount = data.getInt32();
@@ -338,8 +393,9 @@ export class MapData implements Layer {
   }
 
   private unloadCell(id: S2CellNumber): void {
-    const buffer = this.byCells.get(id);
-    this.byCells.delete(id);
+    const buffer = this.detailCells.get(id);
+    this.metadataCells.delete(id);
+    this.detailCells.delete(id);
     if (!buffer) {
       return;
     }
@@ -407,6 +463,19 @@ function distanceCheckLine(point: Vec2, line: Float64Array): number {
 function renderableTrailPin(lengthMeters: number): RenderableText {
   return {
     text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
+    backgroundColor: 'black',
+    borderRadius: 3,
+    fillColor: 'white',
+    fontSize: 14,
+    iconography: Iconography.PIN,
+    paddingX: 6,
+    paddingY: 6,
+  };
+}
+
+function renderableShield(): RenderableText {
+  return {
+    text: '',
     backgroundColor: 'black',
     borderRadius: 3,
     fillColor: 'white',

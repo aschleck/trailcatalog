@@ -147,7 +147,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     this.nextRender = RenderType.DataChange;
     const size: Vec2 = [this.canvas.width, this.canvas.height];
     for (const layer of [this.mapData, this.tileData]) {
-      layer.viewportBoundsChanged(size);
+      layer.viewportBoundsChanged(size, this.camera.zoom);
     }
 
     this.trigger(MAP_MOVED, {

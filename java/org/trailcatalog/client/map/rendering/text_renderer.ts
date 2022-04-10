@@ -94,7 +94,9 @@ export class TextRenderer {
     const metrics = ctx.measureText(text.text);
     const textSize: Vec2 = [
       Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
-      Math.ceil(Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
+      Math.max(
+          text.fontSize,
+          Math.ceil(Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent))),
     ];
     let extraY;
     if (text.iconography === Iconography.PIN) {
@@ -109,10 +111,11 @@ export class TextRenderer {
     this.canvas.height = height;
 
     ctx.lineWidth = 1;
-    ctx.fillStyle = text.backgroundColor;
     ctx.strokeStyle = text.fillColor;
 
     if (text.iconography === Iconography.PIN) {
+      ctx.fillStyle = '#3a3a3aff';
+
       const radius = extraY * 0.75;
       const center = [width / 2, height - radius];
       ctx.beginPath();
@@ -145,19 +148,22 @@ export class TextRenderer {
       ctx.stroke();
     }
 
-    ctx.beginPath();
-    ctx.moveTo(width, height - extraY);
-    ctx.arcTo(1, height - extraY, 1, 1, text.borderRadius);
-    ctx.arcTo(1, 1, width - 1, 1, text.borderRadius);
-    ctx.arcTo(width - 1, 1, width - 1, height - extraY, text.borderRadius);
-    ctx.arcTo(width - 1, height - extraY, 1, height - extraY, text.borderRadius);
-    ctx.fill();
-    ctx.stroke();
+    if (text.text) {
+      ctx.fillStyle = text.backgroundColor;
+      ctx.beginPath();
+      ctx.moveTo(width, height - extraY);
+      ctx.arcTo(1, height - extraY, 1, 1, text.borderRadius);
+      ctx.arcTo(1, 1, width - 1, 1, text.borderRadius);
+      ctx.arcTo(width - 1, 1, width - 1, height - extraY, text.borderRadius);
+      ctx.arcTo(width - 1, height - extraY, 1, height - extraY, text.borderRadius);
+      ctx.fill();
+      ctx.stroke();
 
-    ctx.fillStyle = text.fillColor;
-    ctx.font = font;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text.text, text.paddingX, (height - extraY) / 2);
+      ctx.fillStyle = text.fillColor;
+      ctx.font = font;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text.text, text.paddingX, (height - extraY) / 2);
+    }
     
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(this.canvas, texture);

@@ -9,10 +9,17 @@ import { FetchThrottler } from './fetch_throttler';
 export interface UpdateViewportRequest {
   lat: [number, number];
   lng: [number, number];
+  zoom: number;
 }
 
-export interface LoadCellCommand {
-  type: 'lcc';
+export interface LoadCellDetailCommand {
+  type: 'lcd';
+  cell: S2CellNumber;
+  data: ArrayBuffer;
+}
+
+export interface LoadCellMetadataCommand {
+  type: 'lcm';
   cell: S2CellNumber;
   data: ArrayBuffer;
 }
@@ -22,49 +29,57 @@ export interface UnloadCellsCommand {
   cells: S2CellNumber[];
 }
 
-export type FetcherCommand = LoadCellCommand|UnloadCellsCommand;
+export type FetcherCommand = LoadCellDetailCommand|LoadCellMetadataCommand|UnloadCellsCommand;
+
+export const DETAIL_ZOOM_THRESHOLD = 11;
 
 class DataFetcher {
 
-  private readonly cells: Map<S2CellNumber, ArrayBuffer>;
-  private readonly inFlight: Map<S2CellNumber, AbortController>;
+  private readonly metadata: Set<S2CellNumber>;
+  private readonly metadataInFlight: Map<S2CellNumber, AbortController>;
+  private readonly detail: Set<S2CellNumber>;
+  private readonly detailInFlight: Map<S2CellNumber, AbortController>;
   private readonly throttler: FetchThrottler;
 
   constructor(
       private readonly mail:
           (response: FetcherCommand, transfer: Transferable[]) => void) {
-    this.cells = new Map();
-    this.inFlight = new Map();
+    this.metadata = new Set();
+    this.metadataInFlight = new Map();
+    this.detail = new Set();
+    this.detailInFlight = new Map();
     this.throttler = new FetchThrottler();
   }
 
-  updateViewport(bounds: S2LatLngRect): void {
-    const cellsInArrayList = SimpleS2.cover(bounds);
+  updateViewport(bounds: S2LatLngRect, zoom: number): void {
     const used = new Set();
-    for (let i = 0; i < cellsInArrayList.size(); ++i) {
-      const cell = cellsInArrayList.getAtIndex(i);
+
+    const metadataCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
+    for (let i = 0; i < metadataCellsInBound.size(); ++i) {
+      const cell = metadataCellsInBound.getAtIndex(i);
       const id = reinterpretLong(cell.id()) as S2CellNumber;
       used.add(id);
 
-      if (this.cells.has(id) || this.inFlight.has(id)) {
+      if (this.metadata.has(id) || this.metadataInFlight.has(id)) {
         continue;
       }
 
       const token = cell.toToken();
       const abort = new AbortController();
-      this.inFlight.set(id, abort);
-      this.throttler.fetch(`/api/fetch_cell/${token}`, { signal: abort.signal })
+      this.metadataInFlight.set(id, abort);
+
+      this.throttler.fetch(`/api/fetch_metadata/${token}`, { signal: abort.signal })
           .then(response => {
             if (response.ok) {
               return response.arrayBuffer();
             } else {
-              throw new Error(`Failed to download ${token}`);
+              throw new Error(`Failed to download metadata for ${token}`);
             }
           })
           .then(data => {
-            this.cells.set(id, data);
+            this.metadata.add(id);
             this.mail({
-              type: 'lcc',
+              type: 'lcm',
               cell: id,
               data,
             }, [data]);
@@ -75,21 +90,76 @@ class DataFetcher {
             }
           })
           .finally(() => {
-            this.inFlight.delete(id);
+            this.metadataInFlight.delete(id);
           });
     }
 
-    for (const [id, abort] of this.inFlight) {
-      if (!used.has(id)) {
-        abort.abort();
-        this.inFlight.delete(id);
+    if (zoom >= DETAIL_ZOOM_THRESHOLD) {
+      const detailCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL);
+      for (let i = 0; i < detailCellsInBound.size(); ++i) {
+        const cell = detailCellsInBound.getAtIndex(i);
+        const id = reinterpretLong(cell.id()) as S2CellNumber;
+        used.add(id);
+
+        if (this.detail.has(id) || this.detailInFlight.has(id)) {
+          continue;
+        }
+
+        const token = cell.toToken();
+        const abort = new AbortController();
+        this.detailInFlight.set(id, abort);
+
+        this.throttler.fetch(`/api/fetch_detail/${token}`, { signal: abort.signal })
+            .then(response => {
+              if (response.ok) {
+                return response.arrayBuffer();
+              } else {
+                throw new Error(`Failed to download detail for ${token}`);
+              }
+            })
+            .then(data => {
+              this.detail.add(id);
+              this.mail({
+                type: 'lcd',
+                cell: id,
+                data,
+              }, [data]);
+            })
+            .catch(e => {
+              if (e.name !== 'AbortError') {
+                throw e;
+              }
+            })
+            .finally(() => {
+              this.detailInFlight.delete(id);
+            });
       }
     }
 
-    const unload = [];
-    for (const id of this.cells.keys()) {
+    for (const [id, abort] of this.metadataInFlight) {
       if (!used.has(id)) {
-        this.cells.delete(id);
+        abort.abort();
+        this.metadataInFlight.delete(id);
+      }
+    }
+
+    for (const [id, abort] of this.detailInFlight) {
+      if (!used.has(id)) {
+        abort.abort();
+        this.detailInFlight.delete(id);
+      }
+    }
+
+		// Rough approximation: only consider unloading if zoomed in.
+		if (zoom < DETAIL_ZOOM_THRESHOLD) {
+			return;
+		}
+
+    const unload = [];
+    for (const id of this.detail) {
+      if (!used.has(id)) {
+        this.metadata.delete(id);
+        this.detail.delete(id);
         unload.push(id);
       }
     }
@@ -109,5 +179,5 @@ self.onmessage = e => {
   const low = S2LatLng.fromRadians(request.lat[0], request.lng[0]);
   const high = S2LatLng.fromRadians(request.lat[1], request.lng[1]);
   const bounds = S2LatLngRect.fromPointPair(low, high);
-  fetcher.updateViewport(bounds);
+  fetcher.updateViewport(bounds, request.zoom);
 };

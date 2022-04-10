@@ -11,6 +11,7 @@ export declare namespace com.google.common.geometry {
   
   class S2CellId {
     id(): nativebootstrap.Long;
+    level(): number;
     toToken(): string;
   }
 
@@ -50,8 +51,11 @@ export declare namespace nativebootstrap {
 
 export declare namespace org.trailcatalog.s2 {
   class SimpleS2 {
-    static cover(viewport: com.google.common.geometry.S2LatLngRect):
+    static HIGHEST_METADATA_INDEX_LEVEL: number;
+    static HIGHEST_DETAIL_INDEX_LEVEL: number;
+    static cover(viewport: com.google.common.geometry.S2LatLngRect, deepest: number):
         java.util.ArrayList<com.google.common.geometry.S2CellId>;
+    static cellLevel(id: nativebootstrap.Long): number;
   }
 }
 

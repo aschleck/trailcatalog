@@ -12,6 +12,7 @@ goog.exportProperty(S1Angle, 'degrees', S1Angle.degrees);
 const S2CellId = goog.require('com.google.common.geometry.S2CellId');
 goog.exportSymbol('com.google.common.geometry.S2CellId', S2CellId);
 goog.exportProperty(S2CellId.prototype, 'id', S2CellId.prototype.id);
+goog.exportProperty(S2CellId.prototype, 'level', S2CellId.prototype.level);
 goog.exportProperty(S2CellId.prototype, 'toToken', S2CellId.prototype.toToken);
 
 const S1Interval = goog.require('com.google.common.geometry.S1Interval');
@@ -50,5 +51,7 @@ goog.exportProperty(Long.prototype, 'getLowBits', Long.prototype.getLowBits);
 
 const SimpleS2 = goog.require('org.trailcatalog.s2.SimpleS2');
 goog.exportSymbol('org.trailcatalog.s2.SimpleS2', SimpleS2);
+goog.exportProperty(SimpleS2, 'HIGHEST_METADATA_INDEX_LEVEL', SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
+goog.exportProperty(SimpleS2, 'HIGHEST_DETAIL_INDEX_LEVEL', SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL);
 goog.exportProperty(SimpleS2, 'cover', SimpleS2.cover);
-
+goog.exportProperty(SimpleS2, 'cellLevel', SimpleS2.cellLevel);
