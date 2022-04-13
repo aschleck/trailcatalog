@@ -11,6 +11,9 @@ export enum Iconography {
   PIN = 1,
 }
 
+const PIN_RADIUS_PX = 8;
+const PIN_Y_UNCOVERED = 2;
+
 export interface RenderableText {
   text: string;
   backgroundColor: string,
@@ -94,80 +97,58 @@ export class TextRenderer {
     const metrics = ctx.measureText(text.text);
     const textSize: Vec2 = [
       Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
-      Math.max(
-          text.fontSize,
-          Math.ceil(Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent))),
+      Math.ceil(
+          Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
     ];
-    let extraY;
-    if (text.iconography === Iconography.PIN) {
-      extraY = textSize[1];
-    } else {
-      extraY = 0;
-    }
-    const width = textSize[0] + 2 * text.paddingX;
-    const height = textSize[1] + 2 * text.paddingY + extraY;
-    const fullSize: Vec2 = [width, height];
-    this.canvas.width = width;
-    this.canvas.height = height;
 
-    ctx.lineWidth = 1;
+    const textWidth = textSize[0] + 2 * text.paddingX;
+    const textHeight = textSize[1] + 2 * text.paddingY;
+
+    let width, height;
+    if (text.iconography === Iconography.PIN) {
+      if (text.text) {
+        width = Math.max(textWidth, 2 * PIN_RADIUS_PX + 2);
+        height = textHeight + PIN_Y_UNCOVERED + PIN_RADIUS_PX;
+      } else {
+        width = 2 * PIN_RADIUS_PX + 2;
+        height = 2 * PIN_RADIUS_PX;
+      }
+    } else {
+      width = textWidth;
+      height = textHeight;
+    }
+
+    const fullSize: Vec2 = [width + 2, height + 2];
+    this.canvas.width = fullSize[0];
+    this.canvas.height = fullSize[1];
+
+    ctx.lineWidth = 2;
     ctx.strokeStyle = text.fillColor;
 
     if (text.iconography === Iconography.PIN) {
-      ctx.fillStyle = '#3a3a3aff';
-
-      const radius = extraY * 0.75;
-      const center = [width / 2, height - radius];
-      ctx.beginPath();
-      ctx.moveTo(center[0], center[1] + radius);
-      ctx.arcTo(
-          center[0] - radius,
-          center[1],
-          center[0],
-          center[1] - radius,
-          text.borderRadius);
-      ctx.arcTo(
-          center[0],
-          center[1] - radius,
-          center[0] + radius,
-          center[1],
-          text.borderRadius);
-      ctx.arcTo(
-          center[0] + radius,
-          center[1],
-          center[0],
-          center[1] + radius,
-          text.borderRadius);
-      ctx.arcTo(
-          center[0],
-          center[1] + radius,
-          center[0] - radius,
-          center[1],
-          text.borderRadius);
-      ctx.fill();
-      ctx.stroke();
+      renderPin(width / 2 + 1, height - PIN_RADIUS_PX + 1, PIN_RADIUS_PX, text.borderRadius, ctx);
     }
 
     if (text.text) {
       ctx.fillStyle = text.backgroundColor;
       ctx.beginPath();
-      ctx.moveTo(width, height - extraY);
-      ctx.arcTo(1, height - extraY, 1, 1, text.borderRadius);
-      ctx.arcTo(1, 1, width - 1, 1, text.borderRadius);
-      ctx.arcTo(width - 1, 1, width - 1, height - extraY, text.borderRadius);
-      ctx.arcTo(width - 1, height - extraY, 1, height - extraY, text.borderRadius);
+      ctx.moveTo(textWidth, textHeight);
+      ctx.arcTo(1, textHeight, 1, 1, text.borderRadius);
+      ctx.arcTo(1, 1, textWidth - 1, 1, text.borderRadius);
+      ctx.arcTo(textWidth - 1, 1, textWidth - 1, textHeight, text.borderRadius);
+      ctx.arcTo(textWidth - 1, textHeight, 1, textHeight, text.borderRadius);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = text.fillColor;
       ctx.font = font;
       ctx.textBaseline = 'middle';
-      ctx.fillText(text.text, text.paddingX, (height - extraY) / 2);
+      ctx.fillText(text.text, 1 + text.paddingX, textHeight / 2 + 1);
     }
     
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(this.canvas, texture);
-    const offset: Vec2 = [0, height / 2];
+    const offset: Vec2 = [0, fullSize[1] / 2];
     this.cache.set(text, {
       offset,
       size: fullSize,
@@ -181,4 +162,24 @@ interface RenderedText {
   offset: Vec2;
   size: Vec2;
   texture: WebGLTexture;
+}
+
+function renderPin(
+    x: number,
+    y: number,
+    radius: number,
+    borderRadius: number,
+    ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = '#3a3a3aff';
+
+  ctx.beginPath();
+  ctx.moveTo(x, y - radius);
+  ctx.arcTo(x + radius, y - radius, x + radius, y, borderRadius);
+  ctx.lineTo(x + radius, y);
+  ctx.arcTo(x, y + radius, x - radius, y, borderRadius);
+  ctx.lineTo(x - radius, y);
+  ctx.arcTo(x - radius, y - radius, x, y - radius, borderRadius);
+  ctx.lineTo(x, y - radius);
+  ctx.fill();
+  ctx.stroke();
 }

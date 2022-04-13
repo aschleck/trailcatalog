@@ -2,8 +2,6 @@ package org.trailcatalog
 
 import com.google.common.geometry.S2CellId
 import com.google.common.io.LittleEndianDataOutputStream
-import com.zaxxer.hikari.HikariConfig
-import com.zaxxer.hikari.HikariDataSource
 import io.javalin.Javalin
 import io.javalin.http.Context
 import org.trailcatalog.models.TrailVisibility
@@ -14,12 +12,7 @@ import java.nio.ByteOrder
 import kotlin.math.ln
 import kotlin.math.sin
 
-val connectionSource = HikariDataSource(HikariConfig().apply {
-  jdbcUrl =
-    "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=migration_3_dont_use_enum"
-  username = "postgres"
-  password = "postgres"
-})
+val connectionSource = createConnectionSource()
 
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)

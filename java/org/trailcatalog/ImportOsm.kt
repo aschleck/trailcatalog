@@ -1,9 +1,8 @@
 package org.trailcatalog
 
-import com.google.devtools.build.runfiles.Runfiles
 import crosby.binary.Osmformat.Relation.MemberType
 import org.postgresql.copy.CopyManager
-import org.postgresql.core.BaseConnection
+import org.postgresql.jdbc.PgConnection
 import org.trailcatalog.pbf.NodesCsvInputStream
 import org.trailcatalog.pbf.PbfBlockReader
 import org.trailcatalog.pbf.RelationsCsvInputStream
@@ -11,38 +10,86 @@ import org.trailcatalog.pbf.RelationsMembersCsvInputStream
 import org.trailcatalog.pbf.WaysCsvInputStream
 import org.trailcatalog.pbf.WaysMembersCsvInputStream
 import java.io.FileInputStream
-import java.sql.Connection
-import java.sql.DriverManager
 
 fun main(args: Array<String>) {
-  val connection =
-      DriverManager.getConnection(
-          "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=public",
-          "postgres",
-          "postgres")
-  importOsmFromPbf(connection)
+  createConnectionSource().connection.use {
+    importOsmFromPbf(it.unwrap(PgConnection::class.java), args[0])
+  }
 }
 
-fun importOsmFromPbf(connection: Connection) {
-  if (!(connection is BaseConnection)) {
-    throw RuntimeException("Connection is not a Postgres BaseConnection")
+fun importOsmFromPbf(connection: PgConnection, pbf: String) {
+  for (table in listOf(
+      "boundaries",
+      "nodes",
+      "nodes_in_ways",
+      "paths",
+      "paths_in_trails",
+      "relations",
+      "relations_in_relations",
+      "trails",
+      "ways",
+      "ways_in_relations",
+  )) {
+    connection.createStatement().execute(
+        "CREATE TEMP TABLE tmp_${table} (LIKE ${table} INCLUDING DEFAULTS)")
   }
 
-  val reader = PbfBlockReader(
-      FileInputStream(
-          Runfiles.create().rlocation("trailcatalog/java/org/trailcatalog/washington-latest.osm.pbf")))
   val copier = CopyManager(connection)
 
-  for (block in reader.readBlocks()) {
-    copier.copyIn("COPY nodes FROM STDIN WITH CSV HEADER", NodesCsvInputStream(block))
-    copier.copyIn("COPY ways FROM STDIN WITH CSV HEADER", WaysCsvInputStream(block))
-    copier.copyIn("COPY relations FROM STDIN WITH CSV HEADER", RelationsCsvInputStream(block))
-    copier.copyIn("COPY nodes_in_ways FROM STDIN WITH CSV HEADER", WaysMembersCsvInputStream(block))
-    copier.copyIn(
-        "COPY relations_in_relations FROM STDIN WITH CSV HEADER",
-        RelationsMembersCsvInputStream(MemberType.RELATION, block))
-    copier.copyIn(
-        "COPY ways_in_relations FROM STDIN WITH CSV HEADER",
-        RelationsMembersCsvInputStream(MemberType.WAY, block))
+  FileInputStream(pbf).use {
+    for (block in PbfBlockReader(it).readBlocks()) {
+      copier.copyIn("COPY tmp_nodes FROM STDIN WITH CSV HEADER", NodesCsvInputStream(block))
+    }
   }
+
+  println("Copied nodes")
+
+  FileInputStream(pbf).use {
+    for (block in PbfBlockReader(it).readBlocks()) {
+      copier.copyIn("COPY tmp_ways FROM STDIN WITH CSV HEADER", WaysCsvInputStream(block))
+    }
+  }
+
+  println("Copied ways")
+
+  FileInputStream(pbf).use {
+    for (block in PbfBlockReader(it).readBlocks()) {
+      copier.copyIn(
+          "COPY tmp_nodes_in_ways FROM STDIN WITH CSV HEADER", WaysMembersCsvInputStream(block))
+    }
+  }
+
+  println("Copied nodes_in_ways")
+
+  FileInputStream(pbf).use {
+    for (block in PbfBlockReader(it).readBlocks()) {
+      copier.copyIn("COPY tmp_relations FROM STDIN WITH CSV HEADER", RelationsCsvInputStream(block))
+      copier.copyIn(
+          "COPY tmp_relations_in_relations FROM STDIN WITH CSV HEADER",
+          RelationsMembersCsvInputStream(MemberType.RELATION, block))
+      copier.copyIn(
+          "COPY tmp_ways_in_relations FROM STDIN WITH CSV HEADER",
+          RelationsMembersCsvInputStream(MemberType.WAY, block))
+    }
+  }
+
+  println("Copied relations, relations_in_relations, and ways_in_relations")
+
+  for (table in listOf(
+      "boundaries",
+      "nodes",
+      "nodes_in_ways",
+      "paths",
+      "paths_in_trails",
+      "relations",
+      "relations_in_relations",
+      "trails",
+      "ways",
+      "ways_in_relations",
+  )) {
+    connection.createStatement().execute(
+        "INSERT INTO ${table} SELECT * FROM tmp_${table} ON CONFLICT DO NOTHING")
+  }
+
+  println("Copied temp tables")
 }

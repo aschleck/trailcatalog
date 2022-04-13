@@ -47,8 +47,9 @@ const TEXT_DECODER = new TextDecoder();
 
 export class MapData implements Layer {
 
-  private readonly bounds: BoundsQuadtree<Entity>;
+  private readonly metadataBounds: BoundsQuadtree<Entity>;
   private readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
+  private readonly detailBounds: BoundsQuadtree<Entity>;
   private readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   private readonly paths: Map<bigint, Path>;
   private readonly trails: Map<bigint, Trail>;
@@ -60,8 +61,9 @@ export class MapData implements Layer {
       private readonly camera: Camera,
       private readonly textRenderer: TextRenderer,
   ) {
-    this.bounds = worldBounds();
+    this.metadataBounds = worldBounds();
     this.metadataCells = new Map();
+    this.detailBounds = worldBounds();
     this.detailCells = new Map();
     this.paths = new Map();
     this.trails = new Map();
@@ -90,7 +92,7 @@ export class MapData implements Layer {
 
   queryInBounds(bounds: S2LatLngRect): Array<Path|Trail> {
     const near: Array<Path|Trail> = [];
-    this.bounds.queryRect(projectLatLngRect(bounds), near);
+    this.getActiveBounds().queryRect(projectLatLngRect(bounds), near);
     return near;
   }
 
@@ -115,7 +117,7 @@ export class MapData implements Layer {
     // because they are not centered vertically.)
     const screenToWorldPx = this.camera.inverseWorldRadius;
     const radius = 35 * screenToWorldPx;
-    this.bounds.queryCircle(point, radius, near);
+    this.getActiveBounds().queryCircle(point, radius, near);
 
     let best = undefined;
     let bestDistance2 = (7 * screenToWorldPx) * (7 * screenToWorldPx);
@@ -185,7 +187,7 @@ export class MapData implements Layer {
   }
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
-    if (zoom >= DETAIL_ZOOM_THRESHOLD) {
+    if (this.showDetail(zoom)) {
       this.planDetailed(viewportSize, zoom, planner);
     } else {
       this.planSparse(viewportSize, planner);
@@ -308,6 +310,43 @@ export class MapData implements Layer {
       return;
     }
 
+    const data = new LittleEndianView(buffer);
+
+    const trailCount = data.getInt32();
+    for (let i = 0; i < trailCount; ++i) {
+      const id = data.getBigInt64();
+      const nameLength = data.getInt32();
+      const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
+      const type = data.getInt32();
+      const position: Vec2 = [data.getFloat64(), data.getFloat64()];
+      // We really struggle bounds checking trails, but on the plus side we
+      // calculate a radius on click queries. So as long as our query radius
+      // includes this point we can do fine-grained checks to determine what is
+      // *actually* being clicked.
+      const epsilon = 1e-5;
+      const bound: PixelRect = {
+        low: [position[0] - epsilon, position[1] - epsilon],
+        high: [position[0] + epsilon, position[1] + epsilon],
+      };
+      const lengthMeters = data.getFloat64();
+      const screenPixelSize = this.textRenderer.measure(renderableShield());
+      const halfWidth = screenPixelSize[0] / 2;
+      const trail =
+          new Trail(
+              id,
+              name,
+              type,
+              bound,
+              [],
+              position,
+              [-halfWidth, 0, halfWidth, screenPixelSize[1]],
+              lengthMeters);
+      this.metadataBounds.insert(trail, bound);
+      if (!this.trails.has(id)) {
+        this.trails.set(id, trail);
+      }
+    }
+
     this.metadataCells.set(id, buffer);
     this.lastChange = Date.now();
   }
@@ -351,7 +390,7 @@ export class MapData implements Layer {
         bound.high[1] = Math.max(bound.high[1], y);
       }
       const built = new Path(id, type, bound, pathTrails, points);
-      this.bounds.insert(built, bound);
+      this.detailBounds.insert(built, bound);
       this.paths.set(id, built);
     }
 
@@ -377,18 +416,27 @@ export class MapData implements Layer {
       const lengthMeters = data.getFloat64();
       const screenPixelSize = this.textRenderer.measure(renderableTrailPin(lengthMeters));
       const halfWidth = screenPixelSize[0] / 2;
-      const trail =
-          new Trail(
-              id,
-              name,
-              type,
-              bound,
-              trailWays,
-              position,
-              [-halfWidth, 0, halfWidth, screenPixelSize[1]],
-              lengthMeters);
-      this.bounds.insert(trail, bound);
-      this.trails.set(id, trail);
+      const existing = this.trails.get(id);
+      let trail;
+      if (existing) {
+        trail = existing;
+        if (trail.paths.length === 0) {
+          trail.paths.push(...trailWays);
+        }
+      } else {
+        trail =
+            new Trail(
+                id,
+                name,
+                type,
+                bound,
+                trailWays,
+                position,
+                [-halfWidth, 0, halfWidth, screenPixelSize[1]],
+                lengthMeters);
+        this.trails.set(id, trail);
+      }
+      this.detailBounds.insert(trail, bound);
     }
   }
 
@@ -414,7 +462,7 @@ export class MapData implements Layer {
       data.skip(pathVertexBytes);
       const entity = this.paths.get(id);
       if (entity) {
-        this.bounds.delete(entity, entity.bound);
+        this.detailBounds.delete(entity, entity.bound);
         this.paths.delete(id);
       }
     }
@@ -430,10 +478,22 @@ export class MapData implements Layer {
 
       const entity = this.trails.get(id);
       if (entity) {
-        this.bounds.delete(entity, entity.bound);
+        this.detailBounds.delete(entity, entity.bound);
         this.trails.delete(id);
       }
     }
+  }
+
+  private getActiveBounds(): BoundsQuadtree<Entity> {
+    if (this.showDetail(this.camera.zoom)) {
+      return this.detailBounds;
+    } else {
+      return this.metadataBounds;
+    }
+  }
+
+  private showDetail(zoom: number): boolean {
+    return zoom >= DETAIL_ZOOM_THRESHOLD;
   }
 }
 
@@ -481,7 +541,7 @@ function renderableShield(): RenderableText {
     fillColor: 'white',
     fontSize: 14,
     iconography: Iconography.PIN,
-    paddingX: 6,
-    paddingY: 6,
+    paddingX: 0,
+    paddingY: 0,
   };
 }

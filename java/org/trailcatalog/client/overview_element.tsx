@@ -6,6 +6,8 @@ import { MapElement } from './map/map_element';
 
 import { OverviewController, State } from './overview_controller';
 
+const TRAIL_COUNT_MAX = 100;
+
 export function OverviewElement(props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = {trails: []};
@@ -15,6 +17,16 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
   const lat = floatCoalesce(url.searchParams.get('lat'), 46.859369);
   const lng = floatCoalesce(url.searchParams.get('lng'), -121.747888);
   const zoom = floatCoalesce(url.searchParams.get('zoom'), 12);
+
+  let filteredTrails;
+  let hiddenTrailCount;
+  if (state.trails.length > TRAIL_COUNT_MAX) {
+    filteredTrails = state.trails.slice(0, TRAIL_COUNT_MAX);
+    hiddenTrailCount = state.trails.length - TRAIL_COUNT_MAX;
+  } else {
+    filteredTrails = state.trails;
+    hiddenTrailCount = 0;
+  }
 
   return <>
     <div
@@ -30,12 +42,13 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
         })}
         className="flex h-screen w-screen"
     >
-      <div className="overflow-scroll p-4 w-96">
+      <div className="overflow-y-scroll p-4 w-96">
         <header className="flex gap-2 uppercase">
           <div className="basis-3/5">Name</div>
           <div className="basis-2/5">Distance</div>
         </header>
-        {state.trails.map(trail => <TrailElement trail={trail} />)}
+        {filteredTrails.map(trail => <TrailElement trail={trail} />)}
+        {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
       </div>
       <MapElement lat={lat} lng={lng} zoom={zoom} />
     </div>

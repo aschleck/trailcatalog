@@ -180,6 +180,11 @@ primary_key = ["id"]
   nullable = false
 	type = "BIGINT"
 
+	[[actions.columns]]
+	name = "address"
+  nullable = true
+	type = "TEXT"
+
 	[[actions.foreign_key]]
 	columns = ["source_relation"]
 	referenced_table = "relations"
@@ -316,6 +321,11 @@ primary_key = ["id"]
 	name = "source_way"
   nullable = true
 	type = "BIGINT"
+
+	[[actions.columns]]
+	name = "visibility"
+  nullable = false
+	type = "INT"
 
 	[[actions.foreign_key]]
 	columns = ["source_relation"]

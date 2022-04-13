@@ -4,10 +4,9 @@ import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
-import com.google.devtools.build.runfiles.Runfiles
 import crosby.binary.Osmformat.PrimitiveBlock
 import org.postgresql.copy.CopyManager
-import org.postgresql.core.BaseConnection
+import org.postgresql.jdbc.PgConnection
 import org.trailcatalog.models.TrailVisibility
 import org.trailcatalog.pbf.BoundariesCsvInputStream
 import org.trailcatalog.pbf.PathsCsvInputStream
@@ -18,7 +17,6 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.sql.Connection
-import java.sql.DriverManager
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 import org.trailcatalog.s2.boundToCell
@@ -26,24 +24,32 @@ import org.trailcatalog.s2.earthMeters
 import java.nio.DoubleBuffer
 
 fun main(args: Array<String>) {
-  val connection =
-      DriverManager.getConnection(
-          "jdbc:postgresql://10.110.231.203:5432/trailcatalog?currentSchema=public",
-          "postgres",
-          "postgres")
-//  seedFromPbf(connection)
-//  fillInGeometry(connection)
-  deduplicateTrails(connection)
+  createConnectionSource().connection.use {
+    val pg = it.unwrap(PgConnection::class.java)
+    seedFromPbf(pg, args[0])
+    fillInGeometry(pg)
+    deduplicateTrails(pg)
+  }
 }
 
-private fun seedFromPbf(connection: Connection) {
-  if (connection !is BaseConnection) {
-    throw RuntimeException("Connection is not a Postgres BaseConnection")
+private fun seedFromPbf(connection: PgConnection, pbf: String) {
+  for (table in listOf(
+      "boundaries",
+      "nodes",
+      "nodes_in_ways",
+      "paths",
+      "paths_in_trails",
+      "relations",
+      "relations_in_relations",
+      "trails",
+      "ways",
+      "ways_in_relations",
+  )) {
+    connection.createStatement().execute(
+        "CREATE TEMP TABLE tmp_${table} (LIKE ${table} INCLUDING DEFAULTS)")
   }
 
-  val reader = PbfBlockReader(
-      FileInputStream(
-          Runfiles.create().rlocation("trailcatalog/java/org/trailcatalog/washington-latest.osm.pbf")))
+  val reader = PbfBlockReader(FileInputStream(pbf))
   val copier = CopyManager(connection)
   val nodes = HashSet<Long>()
   val relations = HashMap<Long, ByteArray>()
@@ -53,16 +59,36 @@ private fun seedFromPbf(connection: Connection) {
   for (block in reader.readBlocks()) {
     gatherNodes(block, nodes)
     copier.copyIn(
-        "COPY paths FROM STDIN WITH CSV HEADER", PathsCsvInputStream(ways, block))
+        "COPY tmp_paths FROM STDIN WITH CSV HEADER", PathsCsvInputStream(ways, block))
     copier.copyIn(
-        "COPY boundaries FROM STDIN WITH CSV HEADER",
+        "COPY tmp_boundaries FROM STDIN WITH CSV HEADER",
         BoundariesCsvInputStream(nodes, relations, relationWays, ways, block))
     copier.copyIn(
-        "COPY trails FROM STDIN WITH CSV HEADER", TrailsCsvInputStream(relationWays, block))
+        "COPY tmp_trails FROM STDIN WITH CSV HEADER", TrailsCsvInputStream(relationWays, block))
     copier.copyIn(
-        "COPY paths_in_trails FROM STDIN WITH CSV HEADER",
+        "COPY tmp_paths_in_trails FROM STDIN WITH CSV HEADER",
         PathsInTrailsCsvInputStream(relationWays, block))
   }
+
+  println("Copied everything from the pbf")
+
+  for (table in listOf(
+      "boundaries",
+      "nodes",
+      "nodes_in_ways",
+      "paths",
+      "paths_in_trails",
+      "relations",
+      "relations_in_relations",
+      "trails",
+      "ways",
+      "ways_in_relations",
+  )) {
+    connection.createStatement().execute(
+        "INSERT INTO ${table} SELECT * FROM tmp_${table} ON CONFLICT DO NOTHING")
+  }
+
+  println("Copied temp tables")
 }
 
 private fun fillInGeometry(connection: Connection) {
