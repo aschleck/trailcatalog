@@ -42,7 +42,8 @@ export class TileData implements Layer {
   }
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
-    for (const [id, texture] of this.tiles) {
+    const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
+    for (const [id, texture] of sorted) {
       if (!texture) {
         continue;
       }
@@ -79,6 +80,7 @@ export class TileData implements Layer {
         this.pool.release(texture);
       }
     }
+    this.lastChange = Date.now();
   }
 }
 

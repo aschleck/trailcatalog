@@ -31,6 +31,7 @@ class TileFetcher {
   private readonly inFlight: HashSet<TileId>;
   private readonly loaded: HashSet<TileId>;
   private readonly throttler: FetchThrottler;
+  private lastUsed: HashSet<TileId>;
 
   constructor(
       private readonly mail:
@@ -38,6 +39,7 @@ class TileFetcher {
     this.inFlight = createTileHashSet();
     this.loaded = createTileHashSet();
     this.throttler = new FetchThrottler();
+    this.lastUsed = createTileHashSet();
   }
 
   updateViewport(request: UpdateViewportRequest): void {
@@ -104,13 +106,30 @@ class TileFetcher {
               })
               .finally(() => {
                 this.inFlight.delete(id);
+                this.cull(this.lastUsed);
               });
       }
     }
 
+    this.lastUsed = used;
+    this.cull(used);
+  }
+
+  private cull(used: HashSet<TileId>): void {
     const unloadIds = [];
     for (const id of this.loaded) {
       if (used.has(id)) {
+        continue;
+      }
+
+      let useful = false;
+      for (const missing of this.inFlight) {
+        if (tilesIntersect(id, missing)) {
+          useful = true;
+          break;
+        }
+      }
+      if (useful) {
         continue;
       }
 
@@ -132,6 +151,18 @@ self.onmessage = e => {
 
 function createTileHashSet(): HashSet<TileId> {
   return new HashSet(id => `${id.x},${id.y},${id.zoom}`);
+}
+
+function tilesIntersect(a: TileId, b: TileId): boolean {
+  if (a.zoom > b.zoom) {
+    return tilesIntersect(b, a);
+  }
+
+  const dz = a.zoom - b.zoom;
+  const p2 = Math.pow(2, dz);
+  const bx = Math.floor(b.x * p2);
+  const by = Math.ceil(b.y * p2);
+  return a.x === bx && a.y === by;
 }
 
 function urlFor(id: TileId): string {
