@@ -48,32 +48,9 @@ class TrailsCsvInputStream(
         }
         appendByteArray(copied.array(), csv)
       }
-      csv.append(",0,0,0,0,")
+      csv.append(",0,0,0,0,,")
       csv.append(relation.id)
       csv.append(",,1")
-      csv.append("\n")
-    }
-
-    for (way in group.waysList) {
-      val data = getWayData(way, block.stringtable)
-      if (data.name == null) {
-        continue
-      }
-      val asRelationType = PATHS_TO_TRAILS[data.type] ?: continue
-      val bytes = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-      bytes.asLongBuffer().put(way.id * 2)
-
-      csv.append(TRAIL_FROM_WAY_OFFSET + way.id)
-      csv.append(",")
-      csv.append(asRelationType.id)
-      csv.append(",-1,")
-      csv.append(escapeCsv(data.name))
-      csv.append(",")
-      appendByteArray(bytes.array(), csv)
-      csv.append(",0,0,0,0,")
-      csv.append(",")
-      csv.append(way.id)
-      csv.append(",1")
       csv.append("\n")
     }
   }

@@ -48,7 +48,7 @@ kt_jvm_library(
         "//java/org/trailcatalog/static",
     ],
     deps = [
-        ":connections",
+        ":pg_support",
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
         "@bazel_tools//tools/java/runfiles",
@@ -59,8 +59,8 @@ kt_jvm_library(
 )
 
 kt_jvm_library(
-    name = "connections",
-    srcs = ["connections.kt"],
+    name = "pg_support",
+    srcs = ["PgSupport.kt"],
     runtime_deps = [
         "@maven//:org_postgresql_postgresql",
     ],
@@ -96,7 +96,7 @@ kt_jvm_library(
         "washington-latest.osm.pbf",
     ],
     deps = [
-        ":connections",
+        ":pg_support",
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/pbf",
         "//java/org/trailcatalog/s2:s2-java",

@@ -1,4 +1,5 @@
 .ijwb
 bazel-*
 *.pbf
+full_pkg.tar
 node_modules

@@ -1,5 +1,6 @@
 package org.trailcatalog
 
+import com.google.common.collect.ImmutableList
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Point
@@ -26,29 +27,16 @@ import java.nio.DoubleBuffer
 fun main(args: Array<String>) {
   createConnectionSource().connection.use {
     val pg = it.unwrap(PgConnection::class.java)
+    pg.autoCommit = false
     seedFromPbf(pg, args[0])
+
+    pg.autoCommit = true
     fillInGeometry(pg)
     deduplicateTrails(pg)
   }
 }
 
 private fun seedFromPbf(connection: PgConnection, pbf: String) {
-  for (table in listOf(
-      "boundaries",
-      "nodes",
-      "nodes_in_ways",
-      "paths",
-      "paths_in_trails",
-      "relations",
-      "relations_in_relations",
-      "trails",
-      "ways",
-      "ways_in_relations",
-  )) {
-    connection.createStatement().execute(
-        "CREATE TEMP TABLE tmp_${table} (LIKE ${table} INCLUDING DEFAULTS)")
-  }
-
   val reader = PbfBlockReader(FileInputStream(pbf))
   val copier = CopyManager(connection)
   val nodes = HashSet<Long>()
@@ -58,37 +46,44 @@ private fun seedFromPbf(connection: PgConnection, pbf: String) {
 
   for (block in reader.readBlocks()) {
     gatherNodes(block, nodes)
-    copier.copyIn(
-        "COPY tmp_paths FROM STDIN WITH CSV HEADER", PathsCsvInputStream(ways, block))
-    copier.copyIn(
-        "COPY tmp_boundaries FROM STDIN WITH CSV HEADER",
-        BoundariesCsvInputStream(nodes, relations, relationWays, ways, block))
-    copier.copyIn(
-        "COPY tmp_trails FROM STDIN WITH CSV HEADER", TrailsCsvInputStream(relationWays, block))
-    copier.copyIn(
-        "COPY tmp_paths_in_trails FROM STDIN WITH CSV HEADER",
-        PathsInTrailsCsvInputStream(relationWays, block))
   }
 
-  println("Copied everything from the pbf")
-
-  for (table in listOf(
-      "boundaries",
-      "nodes",
-      "nodes_in_ways",
-      "paths",
-      "paths_in_trails",
-      "relations",
-      "relations_in_relations",
-      "trails",
-      "ways",
-      "ways_in_relations",
-  )) {
-    connection.createStatement().execute(
-        "INSERT INTO ${table} SELECT * FROM tmp_${table} ON CONFLICT DO NOTHING")
+  withTempTables(ImmutableList.of("paths"), connection) {
+    for (block in reader.readBlocks()) {
+      copier.copyIn("COPY tmp_paths FROM STDIN WITH CSV HEADER", PathsCsvInputStream(ways, block))
+    }
   }
 
-  println("Copied temp tables")
+  println("Copied paths")
+
+  withTempTables(ImmutableList.of("boundaries"), connection) {
+    for (block in reader.readBlocks()) {
+      copier.copyIn(
+          "COPY tmp_boundaries FROM STDIN WITH CSV HEADER",
+          BoundariesCsvInputStream(nodes, relations, relationWays, ways, block))
+    }
+  }
+
+  println("Copied boundaries")
+
+  withTempTables(ImmutableList.of("trails"), connection) {
+    for (block in reader.readBlocks()) {
+      copier.copyIn(
+          "COPY tmp_trails FROM STDIN WITH CSV HEADER", TrailsCsvInputStream(relationWays, block))
+    }
+  }
+
+  println("Copied trails")
+
+  withTempTables(ImmutableList.of("paths_in_trails"), connection) {
+    for (block in reader.readBlocks()) {
+      copier.copyIn(
+          "COPY tmp_paths_in_trails FROM STDIN WITH CSV HEADER",
+          PathsInTrailsCsvInputStream(relationWays, block))
+    }
+  }
+
+  println("Copied paths_in_trails")
 }
 
 private fun fillInGeometry(connection: Connection) {

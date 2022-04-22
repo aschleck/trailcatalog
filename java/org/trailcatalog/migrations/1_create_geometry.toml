@@ -313,6 +313,11 @@ primary_key = ["id"]
 	type = "REAL"
 
 	[[actions.columns]]
+	name = "representative_boundary"
+	nullable = true
+	type = "BIGINT"
+
+	[[actions.columns]]
 	name = "source_relation"
   nullable = true
 	type = "BIGINT"
@@ -326,6 +331,11 @@ primary_key = ["id"]
 	name = "visibility"
   nullable = false
 	type = "INT"
+
+	[[actions.foreign_key]]
+	columns = ["representative_boundary"]
+	referenced_table = "boundaries"
+	referenced_columns = ["id"]
 
 	[[actions.foreign_key]]
 	columns = ["source_relation"]

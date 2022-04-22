@@ -19,7 +19,7 @@ class BoundariesCsvInputStream(
   block: PrimitiveBlock)
   : PbfEntityInputStream(
       block,
-      "id,type,cell,name,lat_lng_degrees,node_ids,source_relation,address\n".toByteArray(StandardCharsets.UTF_8),
+      "id,type,cell,name,lat_lng_degrees,node_ids,representative_boundary,source_relation,address\n".toByteArray(StandardCharsets.UTF_8),
   ) {
 
   override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
