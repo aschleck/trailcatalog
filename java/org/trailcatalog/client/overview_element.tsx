@@ -1,7 +1,7 @@
 import * as corgi from 'js/corgi';
 
 import { metersToMiles } from './common/math';
-import { MAP_MOVED, Trail } from './map/events';
+import { MAP_MOVED, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
 import { MapElement } from './map/map_element';
 
 import { OverviewController, State } from './overview_controller';
@@ -36,6 +36,8 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
           events: {
             corgi: [
               [MAP_MOVED, 'onMove'],
+              [PATH_SELECTED, 'onPathSelected'],
+              [TRAIL_SELECTED, 'onTrailSelected'],
             ],
           },
           state: [state, updateState],

@@ -22,11 +22,11 @@ export class BoundsQuadtree<V> {
     this.valueCount = 0;
   }
 
-  delete(value: V, bound: PixelRect): boolean {
+  delete(bound: PixelRect): boolean {
     if ((bound.low[0] <= this.center[0] && this.center[0] <= bound.high[0]) ||
         (bound.low[1] <= this.center[1] && this.center[1] <= bound.high[1])) {
       for (let i = 0; i < this.values.length; ++i) {
-        if (this.values[i][0] === value) {
+        if (this.values[i][1] === bound) {
           this.values.splice(i, 1);
           this.valueCount -= 1;
           return true;
@@ -40,7 +40,7 @@ export class BoundsQuadtree<V> {
       const xi = (bound.low[0] <= this.center[0]) as unknown as number;
       const yi = (bound.low[1] <= this.center[1]) as unknown as number;
       const child = this.children[(xi << 1) + yi];
-      const deleted = child.delete(value, bound);
+      const deleted = child.delete(bound);
       if (deleted) {
         this.valueCount -= 1;
       }
@@ -53,7 +53,7 @@ export class BoundsQuadtree<V> {
       return deleted;
     } else {
       for (let i = 0; i < this.values.length; ++i) {
-        if (this.values[i][0] === value) {
+        if (this.values[i][1] === bound) {
           this.values.splice(i, 1);
           this.valueCount -= 1;
           return true;

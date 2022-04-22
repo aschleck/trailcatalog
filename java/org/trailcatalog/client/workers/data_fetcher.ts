@@ -31,7 +31,7 @@ export interface UnloadCellsCommand {
 
 export type FetcherCommand = LoadCellDetailCommand|LoadCellMetadataCommand|UnloadCellsCommand;
 
-export const DETAIL_ZOOM_THRESHOLD = 11;
+export const DETAIL_ZOOM_THRESHOLD = 11.5;
 
 class DataFetcher {
 

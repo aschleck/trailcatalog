@@ -2,7 +2,7 @@ import { Controller, ControllerResponse } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
-import { MAP_MOVED, MapController, Trail } from './map/events';
+import { MAP_MOVED, MapController, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
 
 export interface State {
   trails: Trail[];
@@ -41,15 +41,23 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
     });
   }
 
+  onPathSelected(e: CorgiEvent<typeof PATH_SELECTED>): void {
+    console.log(e);
+  }
+
+  onTrailSelected(e: CorgiEvent<typeof TRAIL_SELECTED>): void {
+    console.log(e);
+  }
+
   selectTrail(e: MouseEvent): void {
-    this.setSelected(e, true);
+    this.setTrailHighlighted(e, true);
   }
 
   unselectTrail(e: MouseEvent): void {
-    this.setSelected(e, false);
+    this.setTrailHighlighted(e, false);
   }
 
-  private setSelected(e: MouseEvent, selected: boolean): void {
+  private setTrailHighlighted(e: MouseEvent, selected: boolean): void {
     if (!this.mapController) {
       return;
     }
@@ -57,7 +65,7 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
     if (!id) {
       return;
     }
-    this.mapController.setTrailSelected(BigInt(id), selected);
+    this.mapController.setTrailHighlighted(BigInt(id), selected);
   }
 }
 

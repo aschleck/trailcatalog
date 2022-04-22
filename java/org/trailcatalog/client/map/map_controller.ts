@@ -10,7 +10,7 @@ import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
-import { MAP_MOVED } from './events';
+import { MAP_MOVED, PATH_SELECTED, TRAIL_SELECTED } from './events';
 
 interface Args {
   lat: number;
@@ -59,7 +59,14 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
-    this.mapData = new MapData(this.camera, this.textRenderer);
+    this.mapData = new MapData(this.camera, {
+      selectedPath: (path: Path) => {
+        this.trigger(PATH_SELECTED, {controller: this, path});
+      },
+      selectedTrail: (trail: Trail) => {
+        this.trigger(TRAIL_SELECTED, {controller: this, trail});
+      },
+    }, this.textRenderer);
     this.tileData = new TileData(this.camera, this.renderer);
 
     this.screenArea = new DOMRect();
@@ -101,8 +108,8 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
         .filter(isTrail);
   }
 
-  setTrailSelected(trail: bigint, selected: boolean): void {
-    return this.mapData.setTrailSelected(trail, selected);
+  setTrailHighlighted(trail: bigint, highlighted: boolean): void {
+    return this.mapData.setTrailHighlighted(trail, highlighted);
   }
 
   private mouseDown(e: MouseEvent): void {

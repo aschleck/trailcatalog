@@ -17,7 +17,6 @@ interface Entity {
   readonly id: bigint;
   readonly line?: Float64Array;
   readonly position?: Vec2;
-  readonly screenPixelBound?: Vec4;
 }
 
 export class Path implements Entity {
@@ -38,27 +37,40 @@ export class Trail implements Entity {
       readonly bound: PixelRect,
       readonly paths: bigint[],
       readonly position: Vec2,
-      readonly screenPixelBound: Vec4,
       readonly lengthMeters: number,
   ) {}
 }
 
+interface Handle {
+  readonly entity: Path|Trail;
+  readonly line?: Float64Array;
+  readonly position?: Vec2;
+  readonly screenPixelBound?: Vec4;
+}
+
+interface MapDataListener {
+  selectedPath(path: Path): void;
+  selectedTrail(trail: Trail): void;
+}
+
+const RENDER_PATHS_ZOOM_THRESHOLD = 14;
 const TEXT_DECODER = new TextDecoder();
 
 export class MapData implements Layer {
 
-  private readonly metadataBounds: BoundsQuadtree<Entity>;
+  private readonly metadataBounds: BoundsQuadtree<Handle>;
   private readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
-  private readonly detailBounds: BoundsQuadtree<Entity>;
+  private readonly detailBounds: BoundsQuadtree<Handle>;
   private readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   private readonly paths: Map<bigint, Path>;
   private readonly trails: Map<bigint, Trail>;
   private readonly fetcher: Worker;
-  private readonly selected: Set<bigint>;
+  private readonly highlighted: Set<bigint>;
   private lastChange: number;
 
   constructor(
       private readonly camera: Camera,
+      private readonly listener: MapDataListener,
       private readonly textRenderer: TextRenderer,
   ) {
     this.metadataBounds = worldBounds();
@@ -82,7 +94,7 @@ export class MapData implements Layer {
         checkExhaustive(command, 'Unknown type of command');
       }
     };
-    this.selected = new Set();
+    this.highlighted = new Set();
     this.lastChange = Date.now();
   }
 
@@ -91,28 +103,28 @@ export class MapData implements Layer {
   }
 
   queryInBounds(bounds: S2LatLngRect): Array<Path|Trail> {
-    const near: Array<Path|Trail> = [];
+    const near: Handle[] = [];
     this.getActiveBounds().queryRect(projectLatLngRect(bounds), near);
-    return near;
+    return near.map(h => h.entity);
   }
 
-  setTrailSelected(id: bigint, selected: boolean): void {
+  setTrailHighlighted(id: bigint, highlighted: boolean): void {
     const trail = checkExists(this.trails.get(id));
     const ids = trail.paths;
-    if (selected) {
+    if (highlighted) {
       for (const id of ids) {
-        this.selected.add(id & ~1n);
+        this.highlighted.add(id & ~1n);
       }
     } else {
       for (const id of ids) {
-        this.selected.delete(id & ~1n);
+        this.highlighted.delete(id & ~1n);
       }
     }
     this.lastChange = Date.now();
   }
 
   selectClosest(point: Vec2): void {
-    const near: Entity[] = [];
+    const near: Handle[] = [];
     // 35px is a larger than the full height of a trail marker (full not half
     // because they are not centered vertically.)
     const screenToWorldPx = this.camera.inverseWorldRadius;
@@ -123,30 +135,32 @@ export class MapData implements Layer {
     let bestDistance2 = (7 * screenToWorldPx) * (7 * screenToWorldPx);
     for (const entity of near) {
       let d2 = Number.MAX_VALUE;
-      if (entity.line) {
+      if (entity.line && this.camera.zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
         d2 = distanceCheckLine(point, entity.line);
-      } else if (entity.position && entity.screenPixelBound) {
-        const p = entity.position;
-        const lowX = p[0] + entity.screenPixelBound[0] * screenToWorldPx;
-        const lowY = p[1] + entity.screenPixelBound[1] * screenToWorldPx;
-        const highX = p[0] + entity.screenPixelBound[2] * screenToWorldPx;
-        const highY = p[1] + entity.screenPixelBound[3] * screenToWorldPx;
-        if (lowX <= point[0]
-            && point[0] <= highX
-            && lowY <= point[1]
-            && point[1] <= highY) {
-          // Labels can overlap each other, so we pick the one most centered
-          const dx = highX / 2 + lowX / 2 - point[0];
-          const dy = highY / 2 + lowY / 2 - point[1];
-          const bias = 10 * 10;
-          d2 = (dx * dx + dy * dy) / bias;
-        }
       } else if (entity.position) {
         const p = entity.position;
-        const dx = p[0] - point[0];
-        const dy = p[0] - point[0];
-        const bias = 10 * 10; // we bias towards picking points over lines
-        d2 = (dx * dx + dy * dy) / bias;
+        const bound = entity.screenPixelBound;
+        if (bound) {
+          const lowX = p[0] + bound[0] * screenToWorldPx;
+          const lowY = p[1] + bound[1] * screenToWorldPx;
+          const highX = p[0] + bound[2] * screenToWorldPx;
+          const highY = p[1] + bound[3] * screenToWorldPx;
+          if (lowX <= point[0]
+              && point[0] <= highX
+              && lowY <= point[1]
+              && point[1] <= highY) {
+            // Labels can overlap each other, so we pick the one most centered
+            const dx = highX / 2 + lowX / 2 - point[0];
+            const dy = highY / 2 + lowY / 2 - point[1];
+            const bias = 10 * 10;
+            d2 = (dx * dx + dy * dy) / bias;
+          }
+        } else {
+          const dx = p[0] - point[0];
+          const dy = p[0] - point[0];
+          const bias = 10 * 10; // we bias towards picking points over lines
+          d2 = (dx * dx + dy * dy) / bias;
+        }
       } else {
         continue;
       }
@@ -156,24 +170,14 @@ export class MapData implements Layer {
         bestDistance2 = d2;
       }
     }
-    if (best) {
-      const ids = [];
-      if (best instanceof Path) {
-        ids.push(best.id);
-      } else if (best instanceof Trail) {
-        ids.push(...best.paths);
-      }
 
-      if (this.selected.has(ids[0] & ~1n)) {
-        for (const id of ids) {
-          this.selected.delete(id & ~1n);
-        }
-      } else {
-        for (const id of ids) {
-          this.selected.add(id & ~1n);
-        }
+    if (best) {
+      const entity = best.entity;
+      if (entity instanceof Path) {
+        this.listener.selectedPath(entity);
+      } else if (entity instanceof Trail) {
+        this.listener.selectedTrail(entity);
       }
-      this.lastChange = Date.now();
     }
   }
 
@@ -198,7 +202,7 @@ export class MapData implements Layer {
     const cells = this.detailCellsInView(viewportSize);
     const lines: Line[] = [];
     const regularFill: Vec4 = [0, 0, 0, 0];
-    const selectedFill: Vec4 = [1, 0.918, 0, 1];
+    const highlightedFill: Vec4 = [1, 0.918, 0, 1];
     const stipple: Vec4 = [0.1, 0.1, 0.1, 1];
 
     for (const cell of cells) {
@@ -213,9 +217,9 @@ export class MapData implements Layer {
       const pathCount = data.getInt32();
       for (let i = 0; i < pathCount; ++i) {
         const id = data.getBigInt64();
-        const selected = this.selected.has(id);
+        const highlighted = this.highlighted.has(id);
 
-        if (selected || zoom >= 14) {
+        if (highlighted || zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
           const type = data.getInt32();
           const trailCount = data.getInt32();
           data.skip(trailCount * 8);
@@ -223,7 +227,7 @@ export class MapData implements Layer {
           const pathVertexCount = pathVertexBytes / 16;
           data.align(8);
           lines.push({
-            colorFill: this.selected.has(id) ? selectedFill : regularFill,
+            colorFill: this.highlighted.has(id) ? highlightedFill : regularFill,
             colorStipple: stipple,
             vertices: data.sliceFloat64(pathVertexCount * 2),
           });
@@ -329,8 +333,8 @@ export class MapData implements Layer {
         high: [position[0] + epsilon, position[1] + epsilon],
       };
       const lengthMeters = data.getFloat64();
-      const screenPixelSize = this.textRenderer.measure(renderableShield());
-      const halfWidth = screenPixelSize[0] / 2;
+      const sparseScreenPixelSize = this.textRenderer.measure(renderableShield());
+      const halfSparseWidth = sparseScreenPixelSize[0] / 2;
       const trail =
           new Trail(
               id,
@@ -339,9 +343,12 @@ export class MapData implements Layer {
               bound,
               [],
               position,
-              [-halfWidth, 0, halfWidth, screenPixelSize[1]],
               lengthMeters);
-      this.metadataBounds.insert(trail, bound);
+      this.metadataBounds.insert({
+        entity: trail,
+        position,
+        screenPixelBound: [-halfSparseWidth, 0, halfSparseWidth, sparseScreenPixelSize[1]],
+      }, bound);
       if (!this.trails.has(id)) {
         this.trails.set(id, trail);
       }
@@ -390,7 +397,10 @@ export class MapData implements Layer {
         bound.high[1] = Math.max(bound.high[1], y);
       }
       const built = new Path(id, type, bound, pathTrails, points);
-      this.detailBounds.insert(built, bound);
+      this.detailBounds.insert({
+        entity: built,
+        line: points,
+      }, bound);
       this.paths.set(id, built);
     }
 
@@ -414,8 +424,10 @@ export class MapData implements Layer {
         high: [position[0] + epsilon, position[1] + epsilon],
       };
       const lengthMeters = data.getFloat64();
-      const screenPixelSize = this.textRenderer.measure(renderableTrailPin(lengthMeters));
-      const halfWidth = screenPixelSize[0] / 2;
+      const detailScreenPixelSize = this.textRenderer.measure(renderableTrailPin(lengthMeters));
+      const halfDetailWidth = detailScreenPixelSize[0] / 2;
+      const sparseScreenPixelSize = this.textRenderer.measure(renderableShield());
+      const halfSparseWidth = sparseScreenPixelSize[0] / 2;
       const existing = this.trails.get(id);
       let trail;
       if (existing) {
@@ -432,11 +444,14 @@ export class MapData implements Layer {
                 bound,
                 trailWays,
                 position,
-                [-halfWidth, 0, halfWidth, screenPixelSize[1]],
                 lengthMeters);
         this.trails.set(id, trail);
       }
-      this.detailBounds.insert(trail, bound);
+      this.detailBounds.insert({
+        entity: trail,
+        position,
+        screenPixelBound: [-halfDetailWidth, 0, halfDetailWidth, detailScreenPixelSize[1]],
+      }, bound);
     }
   }
 
@@ -462,7 +477,7 @@ export class MapData implements Layer {
       data.skip(pathVertexBytes);
       const entity = this.paths.get(id);
       if (entity) {
-        this.detailBounds.delete(entity, entity.bound);
+        this.detailBounds.delete(entity.bound);
         this.paths.delete(id);
       }
     }
@@ -478,13 +493,14 @@ export class MapData implements Layer {
 
       const entity = this.trails.get(id);
       if (entity) {
-        this.detailBounds.delete(entity, entity.bound);
+        this.detailBounds.delete(entity.bound);
+        this.metadataBounds.delete(entity.bound);
         this.trails.delete(id);
       }
     }
   }
 
-  private getActiveBounds(): BoundsQuadtree<Entity> {
+  private getActiveBounds(): BoundsQuadtree<Handle> {
     if (this.showDetail(this.camera.zoom)) {
       return this.detailBounds;
     } else {

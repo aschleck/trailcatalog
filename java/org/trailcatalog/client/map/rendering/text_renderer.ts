@@ -70,17 +70,28 @@ export class TextRenderer {
     const metrics = ctx.measureText(text.text);
     const textSize: Vec2 = [
       Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
-      Math.ceil(Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
+      Math.ceil(
+          Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
     ];
-    let extraY;
+
+    const textWidth = textSize[0] + 2 * text.paddingX;
+    const textHeight = textSize[1] + 2 * text.paddingY;
+
+    let width, height;
     if (text.iconography === Iconography.PIN) {
-      extraY = textSize[1];
+      if (text.text) {
+        width = Math.max(textWidth, 2 * PIN_RADIUS_PX + 2);
+        height = textHeight + PIN_Y_UNCOVERED + PIN_RADIUS_PX;
+      } else {
+        width = 2 * PIN_RADIUS_PX + 2;
+        height = 2 * PIN_RADIUS_PX;
+      }
     } else {
-      extraY = 0;
+      width = textWidth;
+      height = textHeight;
     }
-    const width = textSize[0] + 2 * text.paddingX;
-    const height = textSize[1] + 2 * text.paddingY + extraY;
-    return [width, height];
+
+    return [width + 2, height + 2];
   }
 
   plan(text: RenderableText, position: Vec2, z: number, planner: RenderPlanner): void {
