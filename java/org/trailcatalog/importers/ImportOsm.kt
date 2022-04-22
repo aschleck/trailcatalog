@@ -5,18 +5,17 @@ import crosby.binary.Osmformat.Relation.MemberType.RELATION
 import crosby.binary.Osmformat.Relation.MemberType.WAY
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
-import org.trailcatalog.importers.withTempTables
+import org.trailcatalog.importers.blockedOperation
 import org.trailcatalog.pbf.NodesCsvInputStream
-import org.trailcatalog.pbf.PbfBlockReader
 import org.trailcatalog.pbf.RelationsCsvInputStream
 import org.trailcatalog.pbf.RelationsMembersCsvInputStream
 import org.trailcatalog.pbf.WaysCsvInputStream
 import org.trailcatalog.pbf.WaysMembersCsvInputStream
-import java.io.FileInputStream
 
 fun main(args: Array<String>) {
   createConnectionSource().connection.use {
     it.autoCommit = false
+    it.createStatement().execute("SET SESSION synchronous_commit TO OFF")
     importOsmFromPbf(it.unwrap(PgConnection::class.java), args[0])
   }
 }
@@ -24,57 +23,30 @@ fun main(args: Array<String>) {
 fun importOsmFromPbf(connection: PgConnection, pbf: String) {
   val copier = CopyManager(connection)
 
-  withTempTables(ImmutableList.of("nodes"), connection) {
-    FileInputStream(pbf).use {
-      for (block in PbfBlockReader(it).readBlocks()) {
-        copier.copyIn("COPY tmp_nodes FROM STDIN WITH CSV HEADER", NodesCsvInputStream(block))
-      }
-    }
+  blockedOperation("copying nodes", pbf, ImmutableList.of("nodes"), connection) {
+    copier.copyIn("COPY tmp_nodes FROM STDIN WITH CSV HEADER", NodesCsvInputStream(it))
   }
 
-  println("Copied nodes")
-
-  withTempTables(ImmutableList.of("ways"), connection) {
-    FileInputStream(pbf).use {
-      for (block in PbfBlockReader(it).readBlocks()) {
-        copier.copyIn("COPY tmp_ways FROM STDIN WITH CSV HEADER", WaysCsvInputStream(block))
-      }
-    }
+  blockedOperation("copying ways", pbf, ImmutableList.of("ways"), connection) {
+    copier.copyIn("COPY tmp_ways FROM STDIN WITH CSV HEADER", WaysCsvInputStream(it))
   }
 
-  println("Copied ways")
-
-  withTempTables(ImmutableList.of("nodes_in_ways"), connection) {
-    FileInputStream(pbf).use {
-      for (block in PbfBlockReader(it).readBlocks()) {
-        copier.copyIn(
-            "COPY tmp_nodes_in_ways FROM STDIN WITH CSV HEADER", WaysMembersCsvInputStream(block)
-        )
-      }
-    }
+  blockedOperation("copying nodes_in_ways", pbf, ImmutableList.of("nodes_in_ways"), connection) {
+    copier.copyIn(
+        "COPY tmp_nodes_in_ways FROM STDIN WITH CSV HEADER", WaysMembersCsvInputStream(it))
   }
 
-  println("Copied nodes_in_ways")
-
-  withTempTables(
-      ImmutableList.of("relations", "relations_in_relations", "ways_in_relations"), connection) {
-    FileInputStream(pbf).use {
-      for (block in PbfBlockReader(it).readBlocks()) {
-        copier.copyIn(
-            "COPY tmp_relations FROM STDIN WITH CSV HEADER",
-            RelationsCsvInputStream(block)
-        )
-        copier.copyIn(
-            "COPY tmp_relations_in_relations FROM STDIN WITH CSV HEADER",
-            RelationsMembersCsvInputStream(RELATION, block)
-        )
-        copier.copyIn(
-            "COPY tmp_ways_in_relations FROM STDIN WITH CSV HEADER",
-            RelationsMembersCsvInputStream(WAY, block)
-        )
-      }
-    }
+  blockedOperation(
+      "copying remainder",
+      pbf,
+      ImmutableList.of("relations", "relations_in_relations", "ways_in_relations"),
+      connection) {
+    copier.copyIn("COPY tmp_relations FROM STDIN WITH CSV HEADER", RelationsCsvInputStream(it))
+    copier.copyIn(
+        "COPY tmp_relations_in_relations FROM STDIN WITH CSV HEADER",
+        RelationsMembersCsvInputStream(RELATION, it))
+    copier.copyIn(
+        "COPY tmp_ways_in_relations FROM STDIN WITH CSV HEADER",
+        RelationsMembersCsvInputStream(WAY, it))
   }
-
-  println("Copied relations, relations_in_relations, and ways_in_relations")
 }

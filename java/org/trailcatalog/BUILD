@@ -60,8 +60,8 @@ kt_jvm_library(
 pkg_files(
     name = "importers_pkg",
     srcs = [
-        "//java/org/trailcatalog/importers:import_osm",
-        "//java/org/trailcatalog/importers:seed_trails",
+        "//java/org/trailcatalog/importers:import_osm_deploy.jar",
+        "//java/org/trailcatalog/importers:seed_trails_deploy.jar",
     ],
     prefix = "importers",
 )
