@@ -42,7 +42,7 @@ interface AnyBoundController<E extends HTMLElement>
 type UnboundEvents =
     Partial<{[k in keyof PropertyKeyToHandlerMap<AnyBoundController<HTMLElement>>]: string}>;
 
-const elementsToControllerSpecs = new Map<HTMLElement, AnyBoundController<HTMLElement>>();
+const elementsToControllerSpecs = new WeakMap<HTMLElement, AnyBoundController<HTMLElement>>();
 
 export function bind<
     A,
@@ -297,7 +297,9 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
     if (typeof was !== 'object' || typeof is !== 'object') {
       const childResult = createElement(is);
       if (i < oldChildren.length) {
-        node.replaceChild(childResult.root, node.childNodes[i]);
+        const old = node.childNodes[i];
+        node.replaceChild(childResult.root, old);
+        result.sideEffects.push(() => { disposeControllersIn(old); });
       } else {
         node.appendChild(childResult.root);
       }
@@ -312,12 +314,15 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
       node.appendChild(childResult.root);
     } else if (oldNode !== childResult.root) {
       oldNode.replaceChild(childResult.root, oldNode);
+      result.sideEffects.push(() => { disposeControllersIn(oldNode); });
     }
     result.sideEffects.push(...childResult.sideEffects);
     result.unboundEventss.push(...childResult.unboundEventss);
   }
   for (let i = to.children.length; i < from.children.length; ++i) {
-    node.lastChild!!.remove();
+    const old = checkExists(node.lastChild);
+    old.remove();
+    result.sideEffects.push(() => { disposeControllersIn(old); });
   }
 
   vElementsToNodes.set(to, result.root);
@@ -334,6 +339,7 @@ function maybeInstantiateAndCall<E extends HTMLElement>(
       args: spec.args,
       state: spec.state,
     });
+    root.setAttribute('js', '');
   }
 
   fn(spec.instance);
@@ -519,10 +525,21 @@ function shallowEqual(a: object, b: object): boolean {
   return true;
 }
 
-export function checkExists<V>(v: V|null|undefined): V {
+function checkExists<V>(v: V|null|undefined): V {
   if (v === null || v === undefined) {
     throw new Error(`Argument is ${v}`);
   }
   return v;
 }
 
+function disposeControllersIn(node: Node): void {
+  if (!(node instanceof HTMLElement)) {
+    return;
+  }
+  for (const root of [node, ...node.querySelectorAll('[js]')]) {
+    const spec = elementsToControllerSpecs.get(root as HTMLElement);
+    if (spec?.instance) {
+      spec.instance.dispose();
+    }
+  }
+}
