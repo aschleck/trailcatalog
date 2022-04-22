@@ -19,8 +19,7 @@ pkg_tar(
     srcs = [
         ":frontend_data",
         ":frontend_deploy.jar",
-        ":import_osm_deploy.jar",
-        ":seed_trails_deploy.jar",
+        ":importers_pkg",
     ],
     stamp = 1,
 )
@@ -58,6 +57,15 @@ kt_jvm_library(
     ],
 )
 
+pkg_files(
+    name = "importers_pkg",
+    srcs = [
+        "//java/org/trailcatalog/importers:import_osm",
+        "//java/org/trailcatalog/importers:seed_trails",
+    ],
+    prefix = "importers",
+)
+
 kt_jvm_library(
     name = "pg_support",
     srcs = ["PgSupport.kt"],
@@ -72,38 +80,4 @@ kt_jvm_library(
 copy_to_bin(
     name = "assets",
     srcs = glob(["*.html"]),
-)
-
-java_binary(
-    name = "import_osm",
-    main_class = "org.trailcatalog.ImportOsmKt",
-    runtime_deps = [":import_lib"],
-)
-
-java_binary(
-    name = "seed_trails",
-    main_class = "org.trailcatalog.SeedTrailsFromOsmKt",
-    runtime_deps = [":import_lib"],
-)
-
-kt_jvm_library(
-    name = "import_lib",
-    srcs = [
-        "ImportOsm.kt",
-        "SeedTrailsFromOsm.kt",
-    ],
-    data = [
-        "washington-latest.osm.pbf",
-    ],
-    deps = [
-        ":pg_support",
-        "//java/org/trailcatalog/models",
-        "//java/org/trailcatalog/pbf",
-        "//java/org/trailcatalog/s2:s2-java",
-        "@bazel_tools//tools/java/runfiles",
-        "@maven//:com_google_geometry_s2_geometry",
-        "@maven//:com_wolt_osm_parallelpbf",
-        "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk7",
-        "@maven//:org_postgresql_postgresql",
-    ],
 )

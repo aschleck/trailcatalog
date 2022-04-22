@@ -8,6 +8,7 @@ import com.google.common.geometry.S2Polyline
 import crosby.binary.Osmformat.PrimitiveBlock
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
+import org.trailcatalog.importers.withTempTables
 import org.trailcatalog.models.TrailVisibility
 import org.trailcatalog.pbf.BoundariesCsvInputStream
 import org.trailcatalog.pbf.PathsCsvInputStream

@@ -1,9 +1,11 @@
 package org.trailcatalog
 
 import com.google.common.collect.ImmutableList
-import crosby.binary.Osmformat.Relation.MemberType
+import crosby.binary.Osmformat.Relation.MemberType.RELATION
+import crosby.binary.Osmformat.Relation.MemberType.WAY
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
+import org.trailcatalog.importers.withTempTables
 import org.trailcatalog.pbf.NodesCsvInputStream
 import org.trailcatalog.pbf.PbfBlockReader
 import org.trailcatalog.pbf.RelationsCsvInputStream
@@ -64,11 +66,11 @@ fun importOsmFromPbf(connection: PgConnection, pbf: String) {
         )
         copier.copyIn(
             "COPY tmp_relations_in_relations FROM STDIN WITH CSV HEADER",
-            RelationsMembersCsvInputStream(MemberType.RELATION, block)
+            RelationsMembersCsvInputStream(RELATION, block)
         )
         copier.copyIn(
             "COPY tmp_ways_in_relations FROM STDIN WITH CSV HEADER",
-            RelationsMembersCsvInputStream(MemberType.WAY, block)
+            RelationsMembersCsvInputStream(WAY, block)
         )
       }
     }
