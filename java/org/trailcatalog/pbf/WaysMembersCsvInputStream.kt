@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets
 
 class WaysMembersCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
     block,
-    "node_id,way_id\n".toByteArray(StandardCharsets.UTF_8),
+    "way_id,node_id\n".toByteArray(StandardCharsets.UTF_8),
 ) {
 
   override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
@@ -22,9 +22,9 @@ class WaysMembersCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
           seen.add(nodeId)
         }
 
-        csv.append(nodeId)
-        csv.append(",")
         csv.append(way.id)
+        csv.append(",")
+        csv.append(nodeId)
         csv.append("\n")
       }
     }

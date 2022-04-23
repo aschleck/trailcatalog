@@ -6,13 +6,17 @@ import crosby.binary.Osmformat.PrimitiveGroup
 import java.nio.charset.StandardCharsets
 import org.apache.commons.text.StringEscapeUtils.escapeCsv
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.proto.RelationSkeleton
+import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.NODE_ID
+import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.RELATION_ID
+import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.WAY_ID
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class TrailsCsvInputStream(
 
-  private val relationWays: Map<Long, ByteArray>,
-  block: PrimitiveBlock)
+    private val relations: Map<Long, RelationSkeleton>,
+    block: PrimitiveBlock)
   : PbfEntityInputStream(
     block,
     "id,type,cell,name,path_ids,center_lat_degrees,center_lng_degrees,elevation_delta_meters,length_meters,source_relation,source_way,visibility\n".toByteArray(StandardCharsets.UTF_8),
@@ -28,7 +32,10 @@ class TrailsCsvInputStream(
         continue
       }
 
-      val ways = relationWays[relation.id]
+      val ways = ArrayList<Long>()
+      if (!flattenToWays(relation.id, relations, ways)) {
+        ways.clear()
+      }
 
       csv.append(TRAIL_FROM_RELATION_OFFSET + relation.id)
       csv.append(",")
@@ -36,24 +43,33 @@ class TrailsCsvInputStream(
       csv.append(",-1,")
       csv.append(escapeCsv(data.name))
       csv.append(",")
-      if (ways == null) {
-        csv.append("\\x")
-      } else {
-        val copied = ByteBuffer.allocate(ways.size).order(ByteOrder.LITTLE_ENDIAN)
-        copied.put(ways)
-        copied.rewind().asLongBuffer().let {
-          for (i in 0 until it.capacity()) {
-            it.put(i, 2 * it.get(i))
-          }
-        }
-        appendByteArray(copied.array(), csv)
-      }
+
+      val copied = ByteBuffer.allocate(ways.size * 8).order(ByteOrder.LITTLE_ENDIAN)
+      ways.forEach { copied.putLong(2 * it) }
+      appendByteArray(copied.array(), csv)
+
       csv.append(",0,0,0,0,,")
       csv.append(relation.id)
       csv.append(",,1")
       csv.append("\n")
     }
   }
+}
+
+fun flattenToWays(id: Long, relations: Map<Long, RelationSkeleton>, ways: MutableList<Long>): Boolean {
+  for (member in (relations[id] ?: return false).membersList) {
+    when (member.valueCase) {
+      NODE_ID -> return false
+      RELATION_ID -> {
+        if (!flattenToWays(member.relationId, relations, ways)) {
+          return false
+        }
+      }
+      WAY_ID -> ways.add(member.wayId)
+      else -> throw AssertionError()
+    }
+  }
+  return true
 }
 
 fun polylineToMeters(polyline: S2Polyline): Double {

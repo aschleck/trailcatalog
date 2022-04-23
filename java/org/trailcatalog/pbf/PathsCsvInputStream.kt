@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class PathsCsvInputStream(
-  private val ways: MutableMap<Long, ByteArray>,
+  private val ways: MutableMap<Long, LongArray>,
   block: PrimitiveBlock)
   : PbfEntityInputStream(
       block,
@@ -19,14 +19,16 @@ class PathsCsvInputStream(
     for (way in group.waysList) {
       val data = getWayData(way, block.stringtable)
 
+      val nodes = LongArray(way.refsCount)
       val nodeBytes = ByteBuffer.allocate(way.refsCount * 8).order(ByteOrder.LITTLE_ENDIAN)
       var nodeId = 0L
-      for (delta in way.refsList) {
-        nodeId += delta
+      for (i in 0 until way.refsCount) {
+        nodeId += way.getRefs(i)
+        nodes[i] = nodeId
         nodeBytes.putLong(nodeId)
       }
 
-      ways[way.id] = nodeBytes.array()
+      ways[way.id] = nodes
 
       if (!WayCategory.HIGHWAY.isParentOf(data.type) && !WayCategory.PISTE.isParentOf(data.type)) {
         continue

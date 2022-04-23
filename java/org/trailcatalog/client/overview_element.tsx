@@ -80,9 +80,9 @@ function TrailDetailElement({ trail }: { trail: Trail }) {
           -translate-y-1/2
       "
   >
-    <section className="flex">
+    <section className="flex space-x-2">
       <header className="font-bold font-lg grow text-tc-700">{trail.name}</header>
-      <aside unboundEvents={{click: 'unselectTrail'}}>✕</aside>
+      <aside className="cursor-pointer" unboundEvents={{click: 'unselectTrail'}}>✕</aside>
     </section>
     <section className="flex">
       <section>
@@ -90,7 +90,7 @@ function TrailDetailElement({ trail }: { trail: Trail }) {
           Distance
         </header>
         <section>
-          {trail.lengthMeters}
+          {metersToMiles(trail.lengthMeters).toFixed(1)} miles
         </section>
       </section>
     </section>

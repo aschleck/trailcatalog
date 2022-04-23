@@ -1,54 +1,52 @@
-package org.trailcatalog
+package org.trailcatalog.importers
 
 import com.google.common.collect.ImmutableList
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Point
+import com.google.common.geometry.S2Polygon
+import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2Polyline
+import com.google.protobuf.ByteString
 import crosby.binary.Osmformat.PrimitiveBlock
+import crosby.binary.Osmformat.Relation.MemberType.NODE
+import crosby.binary.Osmformat.Relation.MemberType.RELATION
+import crosby.binary.Osmformat.Relation.MemberType.WAY
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
-import org.trailcatalog.importers.ProgressBar
-import org.trailcatalog.importers.blockedOperation
+import org.trailcatalog.createConnectionSource
 import org.trailcatalog.pbf.BoundariesCsvInputStream
 import org.trailcatalog.pbf.PathsCsvInputStream
 import org.trailcatalog.pbf.PathsInTrailsCsvInputStream
 import org.trailcatalog.pbf.PbfBlockReader
 import org.trailcatalog.pbf.TrailsCsvInputStream
+import org.trailcatalog.proto.RelationGeometry
+import org.trailcatalog.proto.RelationMemberFunction.INNER
+import org.trailcatalog.proto.RelationMemberFunction.OUTER
+import org.trailcatalog.proto.RelationSkeleton
+import org.trailcatalog.proto.RelationSkeletonMember
+import org.trailcatalog.s2.boundToCell
+import org.trailcatalog.s2.earthMeters
+import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.sql.Connection
-import kotlin.collections.ArrayList
-import kotlin.collections.HashMap
-import org.trailcatalog.s2.boundToCell
-import org.trailcatalog.s2.earthMeters
 import java.nio.DoubleBuffer
+import java.sql.Connection
 
-fun main(args: Array<String>) {
-  createConnectionSource().connection.use {
-    val pg = it.unwrap(PgConnection::class.java)
-    pg.createStatement().execute("SET SESSION synchronous_commit TO OFF")
-
-    pg.autoCommit = false
-    seedFromPbf(pg, args[0])
-
-    pg.autoCommit = true
-    fillInGeometry(pg)
-  }
-}
-
-private fun seedFromPbf(connection: PgConnection, pbf: String) {
+fun seedFromPbf(connection: PgConnection, pbf: String) {
   val reader = PbfBlockReader(FileInputStream(pbf))
-  val copier = CopyManager(connection)
-  val nodes = HashSet<Long>()
-  val relations = HashMap<Long, ByteArray>()
-  val relationWays = HashMap<Long, ByteArray>()
-  val ways = HashMap<Long, ByteArray>()
+  val relations = HashMap<Long, RelationSkeleton>()
 
-  for (block in reader.readBlocks()) {
-    gatherNodes(block, nodes)
+  ProgressBar("gathering relations", "blocks").use {
+    for (block in reader.readBlocks()) {
+      gatherRelationSkeletons(block, relations)
+      it.increment()
+    }
   }
+
+  val copier = CopyManager(connection)
+  val ways = HashMap<Long, LongArray>()
 
   blockedOperation("copying paths", pbf, ImmutableList.of("paths"), connection) {
     copier.copyIn("COPY tmp_paths FROM STDIN WITH CSV HEADER", PathsCsvInputStream(ways, it))
@@ -57,22 +55,22 @@ private fun seedFromPbf(connection: PgConnection, pbf: String) {
   blockedOperation("copying boundaries", pbf, ImmutableList.of("boundaries"), connection) {
     copier.copyIn(
         "COPY tmp_boundaries FROM STDIN WITH CSV HEADER",
-        BoundariesCsvInputStream(nodes, relations, relationWays, ways, it))
+        BoundariesCsvInputStream(relations, ways, it))
   }
 
   blockedOperation("copying trails", pbf, ImmutableList.of("trails"), connection) {
     copier.copyIn(
-        "COPY tmp_trails FROM STDIN WITH CSV HEADER", TrailsCsvInputStream(relationWays, it))
+        "COPY tmp_trails FROM STDIN WITH CSV HEADER", TrailsCsvInputStream(relations, it))
   }
 
   blockedOperation("copying paths_in_trails", pbf, ImmutableList.of("paths_in_trails"), connection) {
     copier.copyIn(
         "COPY tmp_paths_in_trails FROM STDIN WITH CSV HEADER",
-        PathsInTrailsCsvInputStream(relationWays, it))
+        PathsInTrailsCsvInputStream(relations, it))
   }
 }
 
-private fun fillInGeometry(connection: Connection) {
+fun fillInGeometry(connection: Connection) {
   fillInBoundaries(connection)
   fillInPaths(connection)
   fillInTrails(connection)
@@ -81,13 +79,13 @@ private fun fillInGeometry(connection: Connection) {
 private fun fillInBoundaries(connection: Connection) {
   val getBoundaries =
     connection.prepareStatement(
-        "SELECT id, node_ids FROM boundaries WHERE cell = -1 AND length(node_ids) > 0"
+        "SELECT id, relation_geometry FROM boundaries WHERE cell = -1 AND length(relation_geometry) > 0"
     )
   val getNodes =
     connection.prepareStatement("SELECT id, lat_degrees, lng_degrees FROM nodes WHERE id = ANY (?)")
   val updateBoundary =
     connection.prepareStatement(
-        "UPDATE boundaries SET cell = ?, lat_lng_degrees = ? WHERE id = ?"
+        "UPDATE boundaries SET cell = ?, s2_polygon = ? WHERE id = ?"
     )
 
   val results = getBoundaries.executeQuery()
@@ -96,18 +94,12 @@ private fun fillInBoundaries(connection: Connection) {
     var batchSize = 0
     while (results.next()) {
       val boundaryId = results.getLong(1)
-      val nodeBytes = results.getBytes(2)
-      val nodeIds = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
-      val nodeArray = arrayOfNulls<Long>(nodeBytes.size / 8)
-      var nodeArrayI = 0
-      while (nodeIds.hasRemaining()) {
-        nodeArray[nodeArrayI] = nodeIds.get()
-        nodeArrayI += 1
-      }
-      nodeIds.rewind()
+      val geometry = RelationGeometry.parseFrom(results.getBytes(2))
 
       val nodeResults = getNodes.apply {
-        setArray(1, connection.createArrayOf("bigint", nodeArray))
+        val nodes = ArrayList<Long>()
+        flattenNodesInto(geometry, nodes)
+        setArray(1, connection.createArrayOf("bigint", nodes.toArray()))
       }.executeQuery()
       val nodePositions = HashMap<Long, Pair<Double, Double>>()
       while (nodeResults.next()) {
@@ -115,19 +107,18 @@ private fun fillInBoundaries(connection: Connection) {
           Pair(nodeResults.getDouble(2), nodeResults.getDouble(3))
       }
 
-      val latLngs = ByteBuffer.allocate(2 * nodeBytes.size).order(ByteOrder.LITTLE_ENDIAN)
-      val bound = S2LatLngRect.empty().toBuilder()
-      while (nodeIds.hasRemaining()) {
-        val nodeId = nodeIds.get()
-        val position = nodePositions[nodeId]!!
-        latLngs.putDouble(position.first)
-        latLngs.putDouble(position.second)
-        bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
+      val polygon = geometryToPolygon(geometry, nodePositions)
+      val polygonBytes = ByteArrayOutputStream()
+      polygon.encode(polygonBytes)
+      val bound = polygon.rectBound
+      if (bound.isEmpty || bound.isFull) {
+        println("Boundary ${boundaryId} has a fubar bound")
+        continue
       }
 
       updateBoundary.apply {
-        setLong(1, boundToCell(bound.build()).id())
-        setBytes(2, latLngs.array())
+        setLong(1, boundToCell(bound).id())
+        setBytes(2, polygonBytes.toByteArray())
         setLong(3, boundaryId)
         addBatch()
         batchSize += 1
@@ -212,21 +203,22 @@ private fun fillInPaths(connection: Connection) {
 
 private fun fillInTrails(connection: Connection) {
   val getTrails =
-    connection.prepareStatement(
-        "SELECT id, path_ids FROM trails WHERE cell = -1 AND length(path_ids) > 0"
-    )
+      connection.prepareStatement(
+          "SELECT id, path_ids FROM trails WHERE cell = -1 AND length(path_ids) > 0")
   val getPaths =
-    connection.prepareStatement("SELECT id, lat_lng_degrees FROM paths WHERE id = ANY (?)")
+      connection.prepareStatement("SELECT id, lat_lng_degrees FROM paths WHERE id = ANY (?)")
   val updateTrail =
-    connection.prepareStatement(
-        "UPDATE trails SET cell = ?, center_lat_degrees = ?, center_lng_degrees = ?, "
-                + "length_meters = ?, path_ids = ? WHERE id = ?"
-    )
+      connection.prepareStatement(
+          "UPDATE trails SET cell = ?, center_lat_degrees = ?, center_lng_degrees = ?, "
+                  + "length_meters = ?, path_ids = ? WHERE id = ?")
 
   val results = getTrails.executeQuery()
 
   ProgressBar("filling in trails", "trails").use { progress ->
+    var batchSize = 0
     while (results.next()) {
+      progress.increment()
+
       val trailId = results.getLong(1)
       val pathBytes = results.getBytes(2)
       val originalPathIds = ByteBuffer.wrap(pathBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
@@ -369,23 +361,51 @@ private fun fillInTrails(connection: Connection) {
         setDouble(4, s2Polyline.arclengthAngle.earthMeters())
         setBytes(5, orientedPathIdBytes.array())
         setLong(6, trailId)
-        executeUpdate()
-        progress.increment()
+        addBatch()
+        batchSize += 1
+      }
+
+      if (batchSize >= 1000) {
+        updateTrail.executeBatch()
+        batchSize = 0
       }
     }
   }
 }
 
-fun gatherNodes(block: PrimitiveBlock, nodes: MutableSet<Long>) {
-  for (group in block.primitivegroupList) {
-    for (node in group.nodesList) {
-      nodes.add(node.id)
-    }
+private val BS_INNER = ByteString.copyFromUtf8("inner")
 
-    var denseId = 0L
-    for (index in 0 until group.dense.idCount) {
-      denseId += group.dense.idList[index]
-      nodes.add(denseId)
+private fun gatherRelationSkeletons(
+    block: PrimitiveBlock,
+    relations: HashMap<Long, RelationSkeleton>) {
+  for (group in block.primitivegroupList) {
+    for (relation in group.relationsList) {
+      var memberId = 0L
+      val skeleton = RelationSkeleton.newBuilder()
+      for (i in 0 until relation.memidsCount) {
+        memberId += relation.getMemids(i)
+        val inner = block.stringtable.getS(relation.getRolesSid(i)) == BS_INNER
+
+        when (relation.getTypes(i)) {
+          NODE -> {
+            // these are things like trailheads and labels (r237599), so ignore them
+          }
+          RELATION -> {
+            skeleton.addMembers(
+                RelationSkeletonMember.newBuilder()
+                    .setFunction(if (inner) INNER else OUTER)
+                    .setRelationId(memberId))
+          }
+          WAY -> {
+            skeleton.addMembers(
+                RelationSkeletonMember.newBuilder()
+                    .setFunction(if (inner) INNER else OUTER)
+                    .setWayId(memberId))
+          }
+          null -> {}
+        }
+      }
+      relations[relation.id] = skeleton.build()
     }
   }
 }
@@ -413,4 +433,51 @@ fun checkAligned(
       Pair(secondVertices.get(0), secondVertices.get(1))
     }
   return firstLast == secondFirst
+}
+
+fun flattenNodesInto(geometry: RelationGeometry, out: MutableList<Long>) {
+  for (member in geometry.membersList) {
+    if (member.hasNodeId()) {
+      out.add(member.nodeId)
+    } else if (member.hasRelation()) {
+      flattenNodesInto(member.relation, out)
+    } else if (member.hasWay()) {
+      out.addAll(member.way.nodeIdsList)
+    }
+  }
+}
+
+fun geometryToPolygon(
+    geometry: RelationGeometry, nodePositions: Map<Long, Pair<Double, Double>>): S2Polygon {
+  val polygon = S2PolygonBuilder(S2PolygonBuilder.Options.UNDIRECTED_XOR)
+  for (member in geometry.membersList) {
+    val multiplier = when (member.function) {
+      INNER -> -1
+      OUTER -> 1
+      else -> throw AssertionError("Bad function")
+    }
+
+    if (member.hasRelation()) {
+      val child = geometryToPolygon(member.relation, nodePositions)
+      child.loops.forEach {
+        addLoopWithSign(it.vertices(), multiplier, polygon)
+      }
+    } else if (member.hasWay()) {
+      val points = ArrayList<S2Point>()
+      member.way.nodeIdsList.forEach {
+        val position = nodePositions[it]!!
+        points.add(S2LatLng.fromDegrees(position.first, position.second).toPoint())
+      }
+      addLoopWithSign(points, multiplier, polygon)
+    }
+  }
+
+  return polygon.assemblePolygon()
+}
+
+fun addLoopWithSign(points: List<S2Point>, sign: Int, polygon: S2PolygonBuilder) {
+  // TODO: check sign?
+  for (i in 0 until points.size - 1) {
+    polygon.addEdge(points[i], points[i + 1])
+  }
 }

@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package trailcatalog;
+
+option java_multiple_files = true;
+option java_package = "org.trailcatalog.proto";
+
+message RelationSkeleton {
+  repeated RelationSkeletonMember members = 1;
+}
+
+message RelationSkeletonMember {
+  RelationMemberFunction function = 1;
+
+  oneof value {
+    uint64 node_id = 2;
+    uint64 relation_id = 3;
+    uint64 way_id = 4;
+  }
+}
+
+message RelationGeometry {
+  repeated RelationMember members = 1;
+}
+
+message RelationMember {
+  RelationMemberFunction function = 1;
+
+  oneof value {
+    uint64 node_id = 2;
+    RelationGeometry relation = 3;
+    WayGeometry way = 4;
+  }
+}
+
+message WayGeometry {
+  repeated uint64 node_ids = 1;
+}
+
+enum RelationMemberFunction {
+  RELATION_MEMBER_FUNCTION_UNKNOWN = 0;
+  INNER = 1;
+  OUTER = 2;
+}

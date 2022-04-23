@@ -68,26 +68,26 @@ primary_key = ["id"]
 [[actions]]
 type = "create_table"
 name = "nodes_in_ways"
-primary_key = ["node_id", "way_id"]
-
-  [[actions.columns]]
-  name = "node_id"
-  nullable = false
-  type = "BIGINT"
+primary_key = ["way_id", "node_id"]
 
   [[actions.columns]]
   name = "way_id"
   nullable = false
   type = "BIGINT"
 
-  [[actions.foreign_key]]
-  columns = ["node_id"]
-  referenced_table = "nodes"
-  referenced_columns = ["id"]
+  [[actions.columns]]
+  name = "node_id"
+  nullable = false
+  type = "BIGINT"
 
   [[actions.foreign_key]]
   columns = ["way_id"]
   referenced_table = "ways"
+  referenced_columns = ["id"]
+
+  [[actions.foreign_key]]
+  columns = ["node_id"]
+  referenced_table = "nodes"
   referenced_columns = ["id"]
 
 [[actions]]
@@ -166,12 +166,12 @@ primary_key = ["id"]
   type = "TEXT"
 
   [[actions.columns]]
-  name = "lat_lng_degrees"
+  name = "relation_geometry"
   nullable = false
   type = "BYTEA"
 
   [[actions.columns]]
-  name = "node_ids"
+  name = "s2_polygon"
   nullable = false
   type = "BYTEA"
 

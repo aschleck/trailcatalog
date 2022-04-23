@@ -2,7 +2,10 @@ package org.trailcatalog.importers
 
 import java.io.Closeable
 
-class ProgressBar(private val action: String, private val units: String) : Closeable {
+class ProgressBar(
+  private val action: String,
+  private val units: String,
+  private val limit: Long = -1) : Closeable {
 
   private var active = true
   private var count = 0
@@ -39,7 +42,8 @@ class ProgressBar(private val action: String, private val units: String) : Close
 
   private fun message(): String {
     synchronized (count) {
-      return "${action}: ${count} ${units} " +
+      val progress = if (limit >= 0) "${count}/${limit}" else count.toString()
+      return "${action}: ${progress} ${units} " +
           "(%.2f ${units}/second)".format(count * 1000.0 / (System.currentTimeMillis() - start))
     }
   }

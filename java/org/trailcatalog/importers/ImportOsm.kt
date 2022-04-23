@@ -1,24 +1,18 @@
-package org.trailcatalog
+package org.trailcatalog.importers
 
 import com.google.common.collect.ImmutableList
+import crosby.binary.Osmformat.PrimitiveBlock
+import crosby.binary.Osmformat.PrimitiveGroup
 import crosby.binary.Osmformat.Relation.MemberType.RELATION
 import crosby.binary.Osmformat.Relation.MemberType.WAY
+import crosby.binary.Osmformat.Way
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
-import org.trailcatalog.importers.blockedOperation
 import org.trailcatalog.pbf.NodesCsvInputStream
 import org.trailcatalog.pbf.RelationsCsvInputStream
 import org.trailcatalog.pbf.RelationsMembersCsvInputStream
 import org.trailcatalog.pbf.WaysCsvInputStream
 import org.trailcatalog.pbf.WaysMembersCsvInputStream
-
-fun main(args: Array<String>) {
-  createConnectionSource().connection.use {
-    it.autoCommit = false
-    it.createStatement().execute("SET SESSION synchronous_commit TO OFF")
-    importOsmFromPbf(it.unwrap(PgConnection::class.java), args[0])
-  }
-}
 
 fun importOsmFromPbf(connection: PgConnection, pbf: String) {
   val copier = CopyManager(connection)
@@ -31,9 +25,27 @@ fun importOsmFromPbf(connection: PgConnection, pbf: String) {
     copier.copyIn("COPY tmp_ways FROM STDIN WITH CSV HEADER", WaysCsvInputStream(it))
   }
 
-  blockedOperation("copying nodes_in_ways", pbf, ImmutableList.of("nodes_in_ways"), connection) {
-    copier.copyIn(
-        "COPY tmp_nodes_in_ways FROM STDIN WITH CSV HEADER", WaysMembersCsvInputStream(it))
+  val nodesInWays = ArrayList<Pair<Long, Way>>()
+  blockedOperation("reading nodes_in_ways", pbf, ImmutableList.of(), connection) {
+    for (group in it.primitivegroupList) {
+      for (way in group.waysList) {
+        nodesInWays.add(Pair(way.id, way))
+      }
+    }
+  }
+  nodesInWays.sortBy { it.first }
+  val chunkSize = 100000
+  ProgressBar("inserting nodes_in_ways", "chunks", (nodesInWays.size / chunkSize).toLong()).use {
+    for (ways in nodesInWays.map { it.second }.chunked(chunkSize)) {
+      val block = PrimitiveBlock.newBuilder()
+      block.addPrimitivegroup(PrimitiveGroup.newBuilder().addAllWays(ways))
+      withTempTables(ImmutableList.of("nodes_in_ways"), connection) {
+        copier.copyIn(
+            "COPY tmp_nodes_in_ways FROM STDIN WITH CSV HEADER",
+            WaysMembersCsvInputStream(block.buildPartial()))
+      }
+      it.increment()
+    }
   }
 
   blockedOperation(

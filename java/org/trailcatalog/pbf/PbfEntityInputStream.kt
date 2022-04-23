@@ -63,5 +63,5 @@ abstract class PbfEntityInputStream(
     }
   }
 
-  protected abstract fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder);
+  protected abstract fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder)
 }

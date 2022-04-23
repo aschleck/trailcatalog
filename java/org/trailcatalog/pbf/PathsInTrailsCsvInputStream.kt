@@ -3,14 +3,13 @@ package org.trailcatalog.pbf
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.proto.RelationSkeleton
 import java.nio.charset.StandardCharsets
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 class PathsInTrailsCsvInputStream(
 
-  private val relationWays: Map<Long, ByteArray>,
-  block: PrimitiveBlock)
+    private val relations: Map<Long, RelationSkeleton>,
+    block: PrimitiveBlock)
   : PbfEntityInputStream(
     block,
     "path_id,trail_id\n".toByteArray(StandardCharsets.UTF_8),
@@ -26,12 +25,13 @@ class PathsInTrailsCsvInputStream(
         continue
       }
 
-      val ways = relationWays[relation.id] ?: continue
+      val ways = ArrayList<Long>()
+      if (!flattenToWays(relation.id, relations, ways)) {
+        continue
+      }
 
-      val allWayIds = ByteBuffer.wrap(ways).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
       val seen = HashSet<Long>()
-      while (allWayIds.hasRemaining()) {
-        val id = allWayIds.get()
+      for (id in ways) {
         if (seen.contains(id)) {
           continue
         }
@@ -43,6 +43,7 @@ class PathsInTrailsCsvInputStream(
       }
     }
 
+    // This inserts members for when we seed trails from paths
     for (way in group.waysList) {
       val data = getWayData(way, block.stringtable)
       if (data.name == null) {

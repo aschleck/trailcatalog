@@ -2,87 +2,37 @@ package org.trailcatalog.pbf
 
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
-import crosby.binary.Osmformat.Relation.MemberType.NODE
-import crosby.binary.Osmformat.Relation.MemberType.RELATION
-import crosby.binary.Osmformat.Relation.MemberType.WAY
 import java.nio.charset.StandardCharsets
 import org.apache.commons.text.StringEscapeUtils.escapeCsv
 import org.trailcatalog.models.RelationCategory
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import org.trailcatalog.proto.RelationGeometry
+import org.trailcatalog.proto.RelationMember
+import org.trailcatalog.proto.RelationSkeleton
+import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.NODE_ID
+import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.RELATION_ID
+import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.WAY_ID
+import org.trailcatalog.proto.WayGeometry
 
 class BoundariesCsvInputStream(
-  private val nodes: Set<Long>,
-  private val relations: MutableMap<Long, ByteArray>,
-  private val relationWays: MutableMap<Long, ByteArray>,
-  private val ways: Map<Long, ByteArray>,
-  block: PrimitiveBlock)
+    private val relations: MutableMap<Long, RelationSkeleton>,
+    private val ways: Map<Long, LongArray>,
+    block: PrimitiveBlock)
   : PbfEntityInputStream(
       block,
-      "id,type,cell,name,lat_lng_degrees,node_ids,representative_boundary,source_relation,address\n".toByteArray(StandardCharsets.UTF_8),
+      "id,type,cell,name,relation_geometry,s2_polygon,representative_boundary,source_relation,address\n".toByteArray(StandardCharsets.UTF_8),
   ) {
 
   override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
     for (relation in group.relationsList) {
       val data = getRelationData(relation, block.stringtable)
-
-      val nodeComponents = ArrayList<ByteArray>()
-      val wayComponents = ArrayList<ByteArray>()
-      var memberId = 0L
-      var valid = true
-      for (i in 0 until relation.memidsCount) {
-        memberId += relation.getMemids(i)
-        when (relation.getTypes(i)) {
-          NODE -> {
-            if (nodes.contains(memberId)) {
-              val bytes = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-              bytes.putLong(memberId)
-              nodeComponents.add(bytes.array())
-            } else {
-              valid = false
-              break
-            }
-          }
-          RELATION -> {
-            val child = relations[memberId]
-            if (child == null) {
-              valid = false
-              break
-            }
-            nodeComponents.add(child)
-            wayComponents.add(relationWays[memberId]!!)
-          }
-          WAY -> {
-            val way = ways[memberId]
-            if (way == null) {
-              valid = false
-              break
-            }
-            nodeComponents.add(way)
-            val bytes = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-            bytes.putLong(memberId)
-            wayComponents.add(bytes.array())
-          }
-          null -> {}
-        }
-      }
-
-      val nodeBytes = ByteBuffer.allocate(nodeComponents.sumOf { it.size }).order(ByteOrder.LITTLE_ENDIAN)
-      val wayBytes = ByteBuffer.allocate(wayComponents.sumOf { it.size }).order(ByteOrder.LITTLE_ENDIAN)
-
-      if (valid) {
-        nodeComponents.forEach { nodeBytes.put(it) }
-        relations[relation.id] = nodeBytes.array()
-        wayComponents.forEach { wayBytes.put(it) }
-        relationWays[relation.id] = wayBytes.array()
-      }
-
       if (data.name == null) {
         continue
       }
       if (!RelationCategory.BOUNDARY.isParentOf(data.type)) {
         continue
       }
+
+      val geometry = inflate(relation.id, relations, HashSet(), ways)
 
       csv.append(relation.id)
       csv.append(",")
@@ -92,18 +42,49 @@ class BoundariesCsvInputStream(
       csv.append(",")
       csv.append(escapeCsv(data.name))
       csv.append(",")
-      appendByteArray(byteArrayOf(), csv)
-      csv.append(",")
-      if (valid) {
-        appendByteArray(nodeBytes.array(), csv)
-      } else {
+      if (geometry == null) {
         csv.append("\\x")
+      } else {
+        appendByteArray(geometry.toByteArray(), csv)
       }
+      csv.append(",")
+      appendByteArray(byteArrayOf(), csv)
       csv.append(",")
       csv.append(relation.id)
       csv.append(",")
       csv.append("\n")
     }
+  }
+
+  private fun inflate(
+      id: Long,
+      relations: Map<Long, RelationSkeleton>,
+      used: MutableSet<Long>,
+      ways: Map<Long, LongArray>): RelationGeometry? {
+    if (used.contains(id)) {
+      println("relation ${id} was has a cyclic usage")
+      return null
+    }
+
+    used.add(id)
+    val geometry = RelationGeometry.newBuilder()
+    for (member in (relations[id] ?: return null).membersList) {
+      when (member.valueCase) {
+        NODE_ID -> {}
+        RELATION_ID ->
+          geometry.addMembers(
+              RelationMember.newBuilder()
+                  .setFunction(member.function)
+                  .setRelation(inflate(member.relationId, relations, used, ways) ?: return null))
+        WAY_ID -> {
+          val way = WayGeometry.newBuilder()
+          (ways[member.wayId] ?: return null).forEach { way.addNodeIds(it) }
+          geometry.addMembers(RelationMember.newBuilder().setFunction(member.function).setWay(way))
+        }
+        else -> throw AssertionError()
+      }
+    }
+    return geometry.build()
   }
 }
 
