@@ -20,7 +20,7 @@ interface PropertyKeyToHandlerMap<C> {
   render: AMethodOnWithParameters<C, []>,
 }
 
-type StateTuple<S> = S extends undefined ? undefined : [S, (newState: S) => void];
+type StateTuple<S> = [S, (newState: S) => void];
 
 interface BoundController<
         A,
@@ -54,20 +54,19 @@ export function bind<
   args: A,
   controller: new (response: R) => C,
   events?: Partial<PropertyKeyToHandlerMap<C>>,
-  state: StateTuple<S>,
-}): BoundController<A, E, S, R, C> {
+} & (S extends undefined ? {state?: never} : {state: StateTuple<S>})): BoundController<A, E, S, R, C> {
   return {
     args,
     controller,
     events: events ?? {},
-    state,
+    state: state ?? [undefined, () => {}] as any,
   };
 }
 
 interface Properties<E extends HTMLElement> {
   children?: VElementOrPrimitive[];
   className?: string;
-  js?: AnyBoundController<E>|UnboundEvents;
+  js?: AnyBoundController<E>;
   unboundEvents?: UnboundEvents;
 }
 
@@ -110,6 +109,7 @@ interface VContext {
 }
 
 const vElementPath: VContext[] = [];
+const vElements = new WeakSet<VElement>();
 const vElementsToNodes = new WeakMap<VElement, Node>();
 const vHandlesToElements = new WeakMap<VHandle, VElement>();
 
@@ -139,7 +139,6 @@ export function createVirtualElement(
       if (top.liveChildren.length > top.reconstructed) {
         const candidate = top.liveChildren[top.reconstructed];
         if (typeof candidate == 'object' && candidate.factory === element) {
-
           previousElement = candidate;
         }
       }
@@ -186,11 +185,18 @@ export function createVirtualElement(
       vElementPath.pop();
     }
 
-    v.factory = element;
-    v.factoryProps = props;
-    v.handle = handle;
-    v.state = [state, updateState];
-    vHandlesToElements.set(handle, v);
+    if (vElements.has(v)) {
+      // there is a gnarly bug to be careful about: if a <A /> is defined as A = <B /> then A will
+      // return the result of B directly. We therefore need to make sure we don't create a v element
+      // for the result of B tied to A, because A is irrelevant.
+    } else {
+      v.factory = element;
+      v.factoryProps = props;
+      v.handle = handle;
+      v.state = [state, updateState];
+      vElements.add(v);
+      vHandlesToElements.set(handle, v);
+    }
 
     return v;
   } else if (element === Fragment) {
@@ -248,7 +254,9 @@ function updateToState(element: VElement, newState: object): void {
 }
 
 function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResult {
-  if (!from || from.element !== to.element) {
+  if (!from
+      || from.element !== to.element
+      || from.props.js?.controller !== to.props.js?.controller) {
     const element = createElement(to);
     vElementsToNodes.set(to, element.root);
     return element;
@@ -281,7 +289,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   }
   for (const key of oldPropKeys) {
     if (!to.props.hasOwnProperty(key)) {
-      node.removeAttribute(key);
+      node.removeAttribute(key === 'className' ? 'class' : key);
     }
   }
 
@@ -488,6 +496,7 @@ declare global {
   namespace JSX {
     interface IntrinsicElements {
       a: AnchorProperties;
+      aside: Properties<HTMLElement>;
       canvas: Properties<HTMLCanvasElement>;
       div: Properties<HTMLDivElement>;
       footer: Properties<HTMLElement>;

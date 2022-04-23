@@ -8,6 +8,10 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        'tc': {
+          300: '#3a3a3a',
+          500: '#737a80',
+        },
         'white-translucent': '#ffffffa0',
       },
       fontFamily: {

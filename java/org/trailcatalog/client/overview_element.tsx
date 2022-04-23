@@ -10,13 +10,20 @@ const TRAIL_COUNT_MAX = 100;
 
 export function OverviewElement(props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    state = {trails: []};
+    state = {selectedTrail: undefined, trails: []};
   }
 
   const url = new URL(window.location.href);
   const lat = floatCoalesce(url.searchParams.get('lat'), 46.859369);
   const lng = floatCoalesce(url.searchParams.get('lng'), -121.747888);
   const zoom = floatCoalesce(url.searchParams.get('zoom'), 12);
+
+  let trailDetails;
+  if (state.selectedTrail) {
+    trailDetails = <TrailDetailElement trail={state.selectedTrail} />;
+  } else {
+    trailDetails = <></>;
+  }
 
   let filteredTrails;
   let hiddenTrailCount;
@@ -49,22 +56,55 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
           <div className="basis-3/5">Name</div>
           <div className="basis-2/5">Distance</div>
         </header>
-        {filteredTrails.map(trail => <TrailElement trail={trail} />)}
+        {filteredTrails.map(trail => <TrailListElement trail={trail} />)}
         {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
       </div>
-      <MapElement lat={lat} lng={lng} zoom={zoom} />
+      <div className="relative">
+        <MapElement lat={lat} lng={lng} zoom={zoom} />
+        {trailDetails}
+      </div>
     </div>
   </>;
 }
 
-function TrailElement({ trail }: { trail: Trail }) {
+function TrailDetailElement({ trail }: { trail: Trail }) {
+  return <div
+      className="
+          absolute
+          bg-white
+          left-1/2
+          p-4
+          rounded
+          top-1/2
+          -translate-x-1/2
+          -translate-y-1/2
+      "
+  >
+    <section className="flex">
+      <header className="font-bold font-lg grow text-tc-700">{trail.name}</header>
+      <aside unboundEvents={{click: 'unselectTrail'}}>✕</aside>
+    </section>
+    <section className="flex">
+      <section>
+        <header className="font-medium text-tc-500 uppercase">
+          Distance
+        </header>
+        <section>
+          {trail.lengthMeters}
+        </section>
+      </section>
+    </section>
+  </div>;
+}
+
+function TrailListElement({ trail }: { trail: Trail }) {
   return <div>
     <header
         className="border-b cursor-pointer flex gap-2 py-2"
         data-trail-id={trail.id}
         unboundEvents={{
-          mouseover: 'selectTrail',
-          mouseout: 'unselectTrail',
+          mouseover: 'highlightTrail',
+          mouseout: 'unhighlightTrail',
         }}>
       <div className="basis-3/5 font-lg font-semibold">{trail.name}</div>
       <div className="basis-2/5">

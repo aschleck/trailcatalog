@@ -4,7 +4,7 @@ import { EventSpec, qualifiedName } from './events';
 export interface ControllerResponse<A, E extends HTMLElement, S> {
   root: E;
   args: A;
-  state: S extends undefined ? undefined : [S, (newState: S) => void];
+  state: [S, (newState: S) => void];
 }
 
 export class Controller<
@@ -15,18 +15,27 @@ export class Controller<
 > extends Disposable {
 
   protected readonly root: E;
+  protected state: S;
+  private readonly stateUpdater: (newState: S) => void;
 
   constructor(response: R) {
     super();
     this.root = response.root;
+    this.state = response.state[0];
+    this.stateUpdater = response.state[1];
   }
 
-  protected trigger<S>(spec: EventSpec<S>, detail: S): void {
+  protected trigger<D>(spec: EventSpec<D>, detail: D): void {
     this.root.dispatchEvent(new CustomEvent(qualifiedName(spec), {
       bubbles: true,
       cancelable: true,
       detail,
     }));
+  }
+
+  protected updateState(newState: S): void {
+    this.stateUpdater(newState);
+    this.state = newState;
   }
 
   wakeup(): void {}

@@ -19,7 +19,6 @@ export const MapElement = ({lat, lng, zoom}: {lat: number, lng: number, zoom: nu
           events: {
             render: 'wakeup',
           },
-          state: undefined,
         })}
         className="h-full relative w-full">
       <canvas className="h-full w-full" />
@@ -30,6 +29,7 @@ export const MapElement = ({lat, lng, zoom}: {lat: number, lng: number, zoom: nu
           p-0.5
           pointer-events-none
           right-0
+          select-none
           text-slate-700
           text-xs
       ">

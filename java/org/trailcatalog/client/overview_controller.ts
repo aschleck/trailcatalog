@@ -5,6 +5,7 @@ import { checkExists } from './common/asserts';
 import { MAP_MOVED, MapController, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
 
 export interface State {
+  selectedTrail: Trail|undefined;
   trails: Trail[];
 }
 
@@ -14,14 +15,10 @@ interface Response extends ControllerResponse<undefined, HTMLDivElement, State> 
 
 export class OverviewController extends Controller<undefined, HTMLDivElement, State, Response> {
 
-  private readonly state: State;
-  private readonly updateState: (newState: State) => void;
   private mapController: MapController|undefined;
 
   constructor(response: Response) {
     super(response);
-    this.state = response.state[0];
-    this.updateState = response.state[1];
   }
 
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
@@ -36,6 +33,7 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
     window.history.replaceState(null, '', url);
 
     this.updateState({
+      ...this.state,
       trails: controller.listTrailsInViewport()
           .sort((a, b) => b.lengthMeters - a.lengthMeters),
     });
@@ -46,15 +44,25 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
   }
 
   onTrailSelected(e: CorgiEvent<typeof TRAIL_SELECTED>): void {
-    console.log(e);
+    this.updateState({
+      ...this.state,
+      selectedTrail: e.detail.trail,
+    });
   }
 
-  selectTrail(e: MouseEvent): void {
+  highlightTrail(e: MouseEvent): void {
     this.setTrailHighlighted(e, true);
   }
 
-  unselectTrail(e: MouseEvent): void {
+  unhighlightTrail(e: MouseEvent): void {
     this.setTrailHighlighted(e, false);
+  }
+
+  unselectTrail(e: MouseEvent): void {
+    this.updateState({
+      ...this.state,
+      selectedTrail: undefined,
+    });
   }
 
   private setTrailHighlighted(e: MouseEvent, selected: boolean): void {
