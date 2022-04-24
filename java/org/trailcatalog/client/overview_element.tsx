@@ -65,10 +65,10 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
             unboundEvents={{click: 'toggleTrailsList'}}
         />
       </div>
-      <div className="flex grow relative">
+      <div className="flex grow overflow-hidden relative">
         <div className={
             (state.showTrailsList ? "" : "hidden md:block ")
-                + "absolute bg-white inset-0 overflow-y-scroll p-4 z-10 md:relative md:w-96"
+                + "absolute bg-white inset-0 max-h-full overflow-y-scroll p-4 z-10 md:relative md:w-96"
         }>
           <header className="flex gap-2 uppercase">
             <div className="basis-3/5">Name</div>
@@ -77,7 +77,7 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
           {filteredTrails.map(trail => <TrailListElement trail={trail} />)}
           {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
         </div>
-        <div className="h-full relative">
+        <div className="grow h-full relative">
           <MapElement lat={lat} lng={lng} zoom={zoom} />
           {trailDetails}
         </div>

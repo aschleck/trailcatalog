@@ -195,7 +195,10 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
   }
 
   private resize(): void {
-    this.screenArea = this.canvas.getBoundingClientRect();
+    // We reset the size first or else it will taint the BoundingClientRect call.
+    this.canvas.width = 0;
+    this.canvas.height = 0;
+    this.screenArea = checkExists(this.canvas.parentElement).getBoundingClientRect();
     const width = this.screenArea.width * DPI;
     const height = this.screenArea.height * DPI;
     this.canvas.width = width;
