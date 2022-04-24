@@ -17,7 +17,7 @@ import jsinterop.annotations.JsType;
 @JsType
 public final class SimpleS2 {
 
-  public static final int HIGHEST_METADATA_INDEX_LEVEL = 8;
+  public static final int HIGHEST_METADATA_INDEX_LEVEL = 5;
   public static final int HIGHEST_DETAIL_INDEX_LEVEL = 13;
   public static final int HIGHEST_INDEX_LEVEL =
       max(HIGHEST_METADATA_INDEX_LEVEL, HIGHEST_DETAIL_INDEX_LEVEL);
