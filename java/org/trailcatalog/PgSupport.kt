@@ -3,7 +3,7 @@ package org.trailcatalog
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 
-fun createConnectionSource(): HikariDataSource {
+fun createConnectionSource(maxSize: Int = -1, syncCommit: Boolean = true): HikariDataSource {
   return HikariDataSource(HikariConfig().apply {
     val envUrl = System.getenv("DATABASE_URL")
     jdbcUrl = when (envUrl) {
@@ -18,6 +18,14 @@ fun createConnectionSource(): HikariDataSource {
       val split = envUser.split(':', limit = 2)
       username = split[0]
       password = split[1]
+    }
+
+    if (maxSize > 0) {
+      maximumPoolSize = maxSize
+    }
+
+    if (!syncCommit) {
+      connectionInitSql = "SET SESSION synchronous_commit TO OFF"
     }
   })
 }

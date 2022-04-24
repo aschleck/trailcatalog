@@ -23,23 +23,24 @@ fun main(args: Array<String>) {
     throw IllegalArgumentException("Must specify --pbf")
   }
 
-  createConnectionSource().connection.use {
-    val pg = it.unwrap(PgConnection::class.java)
-    pg.createStatement().execute("SET SESSION synchronous_commit TO OFF")
-
-    if (importOsmFeatures) {
+  createConnectionSource(maxSize = 64, syncCommit = false).use { hikari ->
+    hikari.connection.use {
+      val pg = it.unwrap(PgConnection::class.java)
       pg.autoCommit = false
-      importOsmFromPbf(pg, pbf)
-    }
 
-    if (importTcFeatures) {
-      pg.autoCommit = false
-      seedFromPbf(pg, pbf)
+      if (importOsmFeatures) {
+        importOsmFromPbf(pg, pbf)
+      }
+
+      if (importTcFeatures) {
+        seedFromPbf(pg, pbf)
+      }
+
+      pg.autoCommit = true
     }
 
     if (fillInGeometry) {
-      pg.autoCommit = true
-      fillInGeometry(pg)
+      fillInGeometry(hikari)
     }
   }
 }

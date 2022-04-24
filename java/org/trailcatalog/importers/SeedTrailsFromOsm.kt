@@ -8,6 +8,7 @@ import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2Polyline
 import com.google.protobuf.ByteString
+import com.zaxxer.hikari.HikariDataSource
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.Relation.MemberType.NODE
 import crosby.binary.Osmformat.Relation.MemberType.RELATION
@@ -15,6 +16,7 @@ import crosby.binary.Osmformat.Relation.MemberType.WAY
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
@@ -73,10 +75,14 @@ fun seedFromPbf(connection: PgConnection, pbf: String) {
   }
 }
 
-fun fillInGeometry(connection: Connection) {
-  fillInBoundaries(connection)
-  fillInPaths(connection)
-  fillInTrails(connection)
+fun fillInGeometry(hikari: HikariDataSource) {
+  hikari.connection.use {
+    fillInBoundaries(it)
+  }
+  fillInPaths(hikari)
+  hikari.connection.use {
+    fillInTrails(it)
+  }
 }
 
 private fun fillInBoundaries(connection: Connection) {
@@ -138,95 +144,136 @@ private fun fillInBoundaries(connection: Connection) {
   }
 }
 
-private fun fillInPaths(connection: Connection) {
-  val getPaths =
-      connection.prepareStatement(
-          "SELECT id, node_ids FROM paths WHERE cell = -1 AND length(node_ids) > 0")
-  val getNodes =
-      connection.prepareStatement(
-          "SELECT id, lat_degrees, lng_degrees FROM nodes WHERE id = ANY (?)")
-  val updatePath =
-      connection.prepareStatement("UPDATE paths SET cell = ?, lat_lng_degrees = ? WHERE id = ?")
-
-  val results = getPaths.executeQuery()
-  val scope = CoroutineScope(Dispatchers.Default)
+private fun fillInPaths(hikari: HikariDataSource) {
+  val scope = CoroutineScope(Dispatchers.IO)
 
   ProgressBar("filling in paths", "paths").use { progress ->
-    if (!results.isBeforeFirst) {
-      return
+    val batches = Channel<List<Pair<Long, ByteArray>>>(10)
+    val fetchData = scope.async {
+      hikari.connection.use { connection ->
+        connection.autoCommit = false
+        val getPaths =
+          connection.prepareStatement(
+              "SELECT id, node_ids FROM paths WHERE cell = -1 AND length(node_ids) > 0").also {
+            it.fetchSize = 10000
+          }
+
+        val results = getPaths.executeQuery()
+
+        if (!results.isBeforeFirst) {
+          batches.close()
+          connection.autoCommit = true
+          return@async
+        }
+
+        while (!results.isAfterLast) {
+          val start = System.currentTimeMillis()
+          val batch = ArrayList<Pair<Long, ByteArray>>()
+          var i = 0
+          while (i < 1000 && results.next()) {
+            val pathId = results.getLong(1)
+            val nodeBytes = results.getBytes(2)
+            batch.add(Pair(pathId, nodeBytes))
+            i += 1
+          }
+          println("getting a batch took ${(System.currentTimeMillis() - start) / 1000.0}s")
+
+          batches.send(batch)
+        }
+        batches.close()
+        connection.autoCommit = true
+      }
     }
 
-    val batch = ArrayList<Pair<Long, ByteArray>>()
-    val toLookup = HashSet<Long>()
-    val nodePositions = HashMap<Long, Pair<Double, Double>>()
+    val workers = (0 until 4).map {
+      scope.async {
+        val toLookup = HashSet<Long>()
+        val nodePositions = HashMap<Long, Pair<Double, Double>>()
+        hikari.connection.use { connection ->
+          connection.autoCommit = false
 
-    while (!results.isAfterLast) {
-      batch.clear()
-      toLookup.clear()
-      nodePositions.clear()
+          val getNodes =
+            connection.prepareStatement(
+                "SELECT id, lat_degrees, lng_degrees FROM nodes WHERE id = ANY (?)").also {
+              it.fetchSize = 20000
+            }
+          val updatePath =
+            connection.prepareStatement("UPDATE paths SET cell = ?, lat_lng_degrees = ? WHERE id = ?")
 
-      var i = 0
-      while (i < 1000 && results.next()) {
-        val pathId = results.getLong(1)
-        val nodeBytes = results.getBytes(2)
+          while (true) {
+            val result = batches.receiveCatching()
+            if (result.isClosed || result.isFailure) {
+              break
+            }
 
-        val nodeIds = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
-        while (nodeIds.hasRemaining()) {
-          toLookup.add(nodeIds.get())
-        }
+            val batch = result.getOrNull()!!
+            toLookup.clear()
+            nodePositions.clear()
 
-        batch.add(Pair(pathId, nodeBytes))
-        i += 1
-      }
+            for ((_, nodeBytes) in batch) {
+              val nodeIds = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+              while (nodeIds.hasRemaining()) {
+                toLookup.add(nodeIds.get())
+              }
+            }
 
-      getNodes.apply {
-        setArray(1, connection.createArrayOf("bigint", toLookup.toArray()))
-      }.executeQuery().use {
-        while (it.next()) {
-          nodePositions[it.getLong(1)] = Pair(it.getDouble(2), it.getDouble(3))
-        }
-      }
+            val start = System.currentTimeMillis()
+            getNodes.apply {
+              setArray(1, connection.createArrayOf("bigint", toLookup.toArray()))
+            }.executeQuery().use {
+              while (it.next()) {
+                nodePositions[it.getLong(1)] = Pair(it.getDouble(2), it.getDouble(3))
+              }
+            }
+            println("fetching nodes took ${(System.currentTimeMillis() - start) / 1000.0}s")
 
-      runBlocking {
-        batch.map { (id, nodeBytes) ->
-          scope.async {
-            val nodes = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+            val startProcess = System.currentTimeMillis()
+            for ((id, nodeBytes) in batch) {
+              val nodes = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
 
-            val latLngs = ByteBuffer.allocate(2 * nodeBytes.size).order(ByteOrder.LITTLE_ENDIAN)
-            val bound = S2LatLngRect.empty().toBuilder()
-            var valid = true
-            while (nodes.hasRemaining()) {
-              val nodeId = nodes.get()
-              val position = nodePositions[nodeId]
-              if (position == null) {
-                valid = false
-                break
+              val latLngs = ByteBuffer.allocate(2 * nodeBytes.size).order(ByteOrder.LITTLE_ENDIAN)
+              val bound = S2LatLngRect.empty().toBuilder()
+              var valid = true
+              while (nodes.hasRemaining()) {
+                val nodeId = nodes.get()
+                val position = nodePositions[nodeId]
+                if (position == null) {
+                  valid = false
+                  break
+                }
+
+                latLngs.putDouble(position.first)
+                latLngs.putDouble(position.second)
+                bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
               }
 
-              latLngs.putDouble(position.first)
-              latLngs.putDouble(position.second)
-              bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
-            }
+              if (!valid) {
+                continue
+              }
 
-            if (!valid) {
-              return@async
-            }
-
-            synchronized (updatePath) {
               updatePath.apply {
                 setLong(1, boundToCell(bound.build()).id())
                 setBytes(2, latLngs.array())
                 setLong(3, id)
                 addBatch()
               }
+
+              progress.increment()
             }
 
-            progress.increment()
+            updatePath.executeBatch()
+            connection.commit()
+            println("commit paths took ${(System.currentTimeMillis() - startProcess) / 1000.0}s")
           }
-        }.forEach { it.await() }
-      }
 
-      updatePath.executeBatch()
+          connection.autoCommit = true
+        }
+      }
+    }
+
+    runBlocking {
+      fetchData.await()
+      workers.forEach { it.await() }
     }
   }
 }
