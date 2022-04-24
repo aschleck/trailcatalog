@@ -37,7 +37,7 @@ export class Camera {
   }
 
   linearZoom(dZ: number, relativePixels: Vec2): void {
-    this._zoom += dZ;
+    this._zoom = clamp(this._zoom + dZ, 2, 19);
     this._inverseWorldRadius = 1 / this.worldRadius;
 
     const deltaScale = Math.pow(2, dZ);
@@ -68,6 +68,16 @@ export class Camera {
     return S2LatLngRect.fromPointPair(
         S2LatLng.fromRadians(lowLat, this._center.lngRadians() - dLng),
         S2LatLng.fromRadians(highLat, this._center.lngRadians() + dLng));
+  }
+}
+
+function clamp(x: number, min: number, max: number): number {
+  if (x < min) {
+    return min;
+  } else if (x > max) {
+    return max;
+  } else {
+    return x;
   }
 }
 

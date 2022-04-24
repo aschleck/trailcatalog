@@ -1,6 +1,7 @@
 import { Controller, ControllerResponse } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
+import { DPI } from '../common/dpi';
 import { Vec2 } from '../common/types';
 import { MapData, Path, Trail } from './layers/map_data';
 import { TileData } from './layers/tile_data';
@@ -20,11 +21,6 @@ interface Args {
 
 interface Response extends ControllerResponse<Args, HTMLDivElement, undefined> {
 }
-
-const DPI =
-    new URLSearchParams(window.location.search).get('dpi') === 'true'
-    ? window.devicePixelRatio ?? 1
-    : 1;
 
 export class MapController extends Controller<Args, HTMLDivElement, undefined, Response> {
 

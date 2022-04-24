@@ -3,6 +3,7 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
 import { checkExhaustive, checkExists } from '../../common/asserts';
 import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
+import { DPI } from '../../common/dpi';
 import { LittleEndianView } from '../../common/little_endian_view';
 import { metersToMiles, reinterpretLong } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
@@ -53,8 +54,13 @@ interface MapDataListener {
   selectedTrail(trail: Trail): void;
 }
 
+const DATA_ZOOM_THRESHOLD = 7;
 const RENDER_PATHS_ZOOM_THRESHOLD = 14;
 const TEXT_DECODER = new TextDecoder();
+
+// 35px is a larger than the full height of a trail marker (full not half
+// because they are not centered vertically.)
+const CLICK_RADIUS_PX = 35 * DPI;
 
 export class MapData implements Layer {
 
@@ -125,10 +131,8 @@ export class MapData implements Layer {
 
   selectClosest(point: Vec2): void {
     const near: Handle[] = [];
-    // 35px is a larger than the full height of a trail marker (full not half
-    // because they are not centered vertically.)
     const screenToWorldPx = this.camera.inverseWorldRadius;
-    const radius = 35 * screenToWorldPx;
+    const radius = CLICK_RADIUS_PX * screenToWorldPx;
     this.getActiveBounds().queryCircle(point, radius, near);
 
     let best = undefined;
@@ -182,6 +186,10 @@ export class MapData implements Layer {
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
+    if (zoom < DATA_ZOOM_THRESHOLD) {
+      return;
+    }
+
     const bounds = this.camera.viewportBounds(viewportSize[0], viewportSize[1]);
     this.fetcher.postMessage({
       lat: [bounds.lat().lo(), bounds.lat().hi()],

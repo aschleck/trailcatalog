@@ -53,6 +53,7 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
           },
           state: [state, updateState],
         })}
+        className="flex flex-col h-full"
     >
       <div className="align-middle bg-tc-200 leading-none">
         <FabricIcon
@@ -64,7 +65,7 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
             unboundEvents={{click: 'toggleTrailsList'}}
         />
       </div>
-      <div className="flex h-screen w-screen relative">
+      <div className="flex grow relative">
         <div className={
             (state.showTrailsList ? "" : "hidden md:block ")
                 + "absolute bg-white inset-0 overflow-y-scroll p-4 z-10 md:relative md:w-96"
@@ -76,7 +77,7 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
           {filteredTrails.map(trail => <TrailListElement trail={trail} />)}
           {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
         </div>
-        <div className="relative">
+        <div className="h-full relative">
           <MapElement lat={lat} lng={lng} zoom={zoom} />
           {trailDetails}
         </div>
