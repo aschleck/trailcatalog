@@ -129,7 +129,8 @@ maven_install(
         "com.zaxxer:HikariCP:5.0.1",
         "io.javalin:javalin:4.3.0",
         "org.apache.commons:commons-text:jar:1.9",
-        "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.6.10",
+        "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.6.21",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.6.1",
         "org.junit.jupiter:junit-jupiter:5.8.2",
         "org.postgresql:postgresql:42.3.1",
         "org.slf4j:slf4j-simple:1.8.0-beta4",
@@ -235,11 +236,13 @@ local_repository(
 
 http_archive(
     name = "rules_pkg",
+    sha256 = "8a298e832762eda1830597d64fe7db58178aa84cd5926d76d5b744d6558941c2",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
         "https://github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
     ],
-    sha256 = "8a298e832762eda1830597d64fe7db58178aa84cd5926d76d5b744d6558941c2",
 )
+
 load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
+
 rules_pkg_dependencies()

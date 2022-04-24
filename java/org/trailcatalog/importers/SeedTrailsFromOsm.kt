@@ -12,9 +12,12 @@ import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.Relation.MemberType.NODE
 import crosby.binary.Osmformat.Relation.MemberType.RELATION
 import crosby.binary.Osmformat.Relation.MemberType.WAY
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
-import org.trailcatalog.createConnectionSource
 import org.trailcatalog.pbf.BoundariesCsvInputStream
 import org.trailcatalog.pbf.PathsCsvInputStream
 import org.trailcatalog.pbf.PathsInTrailsCsvInputStream
@@ -137,67 +140,84 @@ private fun fillInBoundaries(connection: Connection) {
 
 private fun fillInPaths(connection: Connection) {
   val getPaths =
-    connection.prepareStatement(
-        "SELECT id, node_ids FROM paths WHERE cell = -1 AND length(node_ids) > 0"
-    )
+      connection.prepareStatement(
+          "SELECT id, node_ids FROM paths WHERE cell = -1 AND length(node_ids) > 0")
   val getNodes =
-    connection.prepareStatement("SELECT id, lat_degrees, lng_degrees FROM nodes WHERE id = ANY (?)")
+      connection.prepareStatement(
+          "SELECT id, lat_degrees, lng_degrees FROM nodes WHERE id = ANY (?)")
   val updatePath =
-    connection.prepareStatement(
-        "UPDATE paths SET cell = ?, lat_lng_degrees = ? WHERE id = ?"
-    )
+      connection.prepareStatement("UPDATE paths SET cell = ?, lat_lng_degrees = ? WHERE id = ?")
 
   val results = getPaths.executeQuery()
+  val scope = CoroutineScope(Dispatchers.Default)
 
   ProgressBar("filling in paths", "paths").use { progress ->
-    var batchSize = 0
-    while (results.next()) {
-      val boundaryId = results.getLong(1)
-      val nodeBytes = results.getBytes(2)
-      val nodeIds = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
-      val nodeArray = arrayOfNulls<Long>(nodeBytes.size / 8)
-      var nodeArrayI = 0
-      while (nodeIds.hasRemaining()) {
-        nodeArray[nodeArrayI] = nodeIds.get()
-        nodeArrayI += 1
-      }
-      nodeIds.rewind()
+    val batch = ArrayList<Pair<Long, ByteArray>>()
+    val toLookup = HashSet<Long>()
+    val nodePositions = HashMap<Long, Pair<Double, Double>>()
 
-      val nodeResults = getNodes.apply {
-        setArray(1, connection.createArrayOf("bigint", nodeArray))
-      }.executeQuery()
-      val nodePositions = HashMap<Long, Pair<Double, Double>>()
-      while (nodeResults.next()) {
-        nodePositions[nodeResults.getLong(1)] =
-          Pair(nodeResults.getDouble(2), nodeResults.getDouble(3))
-      }
+    while (!results.isLast) {
+      batch.clear()
+      toLookup.clear()
+      nodePositions.clear()
 
-      val latLngs = ByteBuffer.allocate(2 * nodeBytes.size).order(ByteOrder.LITTLE_ENDIAN)
-      val bound = S2LatLngRect.empty().toBuilder()
-      while (nodeIds.hasRemaining()) {
-        val nodeId = nodeIds.get()
-        val position = nodePositions[nodeId]!!
-        latLngs.putDouble(position.first)
-        latLngs.putDouble(position.second)
-        bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
+      var i = 0
+      while (i < 1000 && results.next()) {
+        val pathId = results.getLong(1)
+        val nodeBytes = results.getBytes(2)
+
+        if (nodeBytes.isEmpty()) {
+          continue
+        }
+
+        val nodeIds = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+        while (nodeIds.hasRemaining()) {
+          toLookup.add(nodeIds.get())
+        }
+
+        batch.add(Pair(pathId, nodeBytes))
+        i += 1
       }
 
-      updatePath.apply {
-        setLong(1, boundToCell(bound.build()).id())
-        setBytes(2, latLngs.array())
-        setLong(3, boundaryId)
-        addBatch()
-        batchSize += 1
-        progress.increment()
+      getNodes.apply {
+        setArray(1, connection.createArrayOf("bigint", toLookup.toArray()))
+      }.executeQuery().use {
+        while (it.next()) {
+          nodePositions[it.getLong(1)] = Pair(it.getDouble(2), it.getDouble(3))
+        }
       }
 
-      if (batchSize >= 1000) {
-        updatePath.executeBatch()
-        batchSize = 0
+      runBlocking {
+        batch.map { (id, nodeBytes) ->
+          scope.async {
+            val nodes = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+
+            val latLngs = ByteBuffer.allocate(2 * nodeBytes.size).order(ByteOrder.LITTLE_ENDIAN)
+            val bound = S2LatLngRect.empty().toBuilder()
+            while (nodes.hasRemaining()) {
+              val nodeId = nodes.get()
+              val position = nodePositions[nodeId]!!
+              latLngs.putDouble(position.first)
+              latLngs.putDouble(position.second)
+              bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
+            }
+
+            synchronized (updatePath) {
+              updatePath.apply {
+                setLong(1, boundToCell(bound.build()).id())
+                setBytes(2, latLngs.array())
+                setLong(3, id)
+                addBatch()
+              }
+            }
+
+            progress.increment()
+          }
+        }.forEach { it.join() }
       }
+
+      updatePath.executeBatch()
     }
-
-    updatePath.executeBatch()
   }
 }
 
@@ -213,164 +233,200 @@ private fun fillInTrails(connection: Connection) {
                   + "length_meters = ?, path_ids = ? WHERE id = ?")
 
   val results = getTrails.executeQuery()
+  val scope = CoroutineScope(Dispatchers.Default)
 
   ProgressBar("filling in trails", "trails").use { progress ->
-    var batchSize = 0
-    while (results.next()) {
-      progress.increment()
+    val batch = ArrayList<Pair<Long, ByteArray>>()
+    val toLookup = HashSet<Long>()
+    val pathPolylines = HashMap<Long, ByteArray>()
 
-      val trailId = results.getLong(1)
-      val pathBytes = results.getBytes(2)
-      val originalPathIds = ByteBuffer.wrap(pathBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
-      val pathArray = ArrayList<Long>(pathBytes.size / 8)
-      while (originalPathIds.hasRemaining()) {
-        pathArray.add((originalPathIds.get() / 2) * 2) // make sure we get the forward direction
+    while (!results.isLast) {
+      batch.clear()
+      toLookup.clear()
+      pathPolylines.clear()
+
+      var i = 0
+      while (i < 1000 && results.next()) {
+        val trailId = results.getLong(1)
+        val pathBytes = results.getBytes(2)
+
+        if (pathBytes.isEmpty()) {
+          continue
+        }
+
+        val originalPathIds = ByteBuffer.wrap(pathBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+        while (originalPathIds.hasRemaining()) {
+          toLookup.add((originalPathIds.get() / 2) * 2) // make sure we get the forward direction
+        }
+
+        batch.add(Pair(trailId, pathBytes))
+        i += 1
       }
 
-      val pathResults = getPaths.apply {
-        setArray(1, connection.createArrayOf("bigint", pathArray.toArray()))
-      }.executeQuery()
-      val pathPolylines = HashMap<Long, ByteArray>()
-      while (pathResults.next()) {
-        pathPolylines[pathResults.getLong(1)] = pathResults.getBytes(2)
-      }
-      val pathArrayIter = pathArray.iterator()
-      var present = true
-      while (pathArrayIter.hasNext()) {
-        val pathId = pathArrayIter.next()
-
-        if (!pathPolylines.containsKey(pathId)) {
-//          println("Missing path ${pathId} from ${trailId}, skipping")
-          present = false
-          break
+      getPaths.apply {
+        setArray(1, connection.createArrayOf("bigint", toLookup.toArray()))
+      }.executeQuery().use {
+        while (it.next()) {
+          pathPolylines[it.getLong(1)] = it.getBytes(2)
         }
       }
 
-      if (!present || pathArray.size == 0) {
-        continue
+      runBlocking {
+        batch.map { (id, pathBytes) ->
+          scope.async {
+            val paths = ByteBuffer.wrap(pathBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+
+            var present = true
+            while (paths.hasRemaining()) {
+              if (pathPolylines.containsKey((paths.get() / 2) * 2)) {
+                present = false
+                break
+              }
+            }
+            if (!present) {
+              return@async
+            }
+            paths.rewind()
+
+            val orientedPathIdBytes = orientPaths(paths.array(), pathPolylines)
+            val s2Polyline = pathsToPolyline(orientedPathIdBytes, pathPolylines)
+            orientedPathIdBytes.rewind()
+            val center = S2LatLng(s2Polyline.interpolate(0.5))
+
+            synchronized (updateTrail) {
+              updateTrail.apply {
+                setLong(1, boundToCell(s2Polyline.rectBound).id())
+                setDouble(2, center.latDegrees())
+                setDouble(3, center.lngDegrees())
+                setDouble(4, s2Polyline.arclengthAngle.earthMeters())
+                setBytes(5, orientedPathIdBytes.array())
+                setLong(6, id)
+                addBatch()
+              }
+            }
+
+            progress.increment()
+          }
+        }.forEach { it.join() }
       }
 
-      val orientedPathIdBytes =
-          ByteBuffer.allocate(pathArray.size * 8).order(ByteOrder.LITTLE_ENDIAN)
-      val orientedPathIds = orientedPathIdBytes.asLongBuffer()
-      if (pathArray.size > 2) {
-        for (i in 1 until pathArray.size - 1) {
-          val previousId = (pathArray[i - 1] / 2) * 2
-          val id = (pathArray[i] / 2) * 2
-          val nextId = (pathArray[i + 1] / 2) * 2
-          val previous =
-              ByteBuffer.wrap(pathPolylines[previousId]!!)
-                  .order(ByteOrder.LITTLE_ENDIAN)
-                  .asDoubleBuffer()
-          val current =
-              ByteBuffer.wrap(pathPolylines[id]!!).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
-          val next =
-            ByteBuffer.wrap(pathPolylines[nextId]!!).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
-          val forwardIsPreviousForwardAligned =
-            checkAligned(previous, false, current, false)
-          val forwardIsPreviousReversedAligned =
-            checkAligned(previous, true, current, false)
-          val forwardIsPreviousAligned =
-            forwardIsPreviousForwardAligned || forwardIsPreviousReversedAligned
-          val forwardIsNextForwardAligned =
-            checkAligned(current, false, next, false)
-          val forwardIsNextReversedAligned =
-            checkAligned(current, false, next, true)
-          val forwardIsNextAligned = forwardIsNextForwardAligned || forwardIsNextReversedAligned
-          if (forwardIsPreviousAligned && forwardIsNextAligned) {
-            if (forwardIsPreviousForwardAligned) {
-              orientedPathIds.put(i - 1, previousId)
-            } else {
-              orientedPathIds.put(i - 1, previousId + 1)
-            }
-            orientedPathIds.put(i, id)
-            if (forwardIsNextForwardAligned) {
-              orientedPathIds.put(i + 1, nextId)
-            } else {
-              orientedPathIds.put(i + 1, nextId + 1)
-            }
-          } else {
-            if (checkAligned(previous, false, current, true)) {
-              orientedPathIds.put(i - 1, previousId)
-            } else {
-              orientedPathIds.put(i - 1, previousId + 1)
-            }
-            orientedPathIds.put(i, id + 1)
-            if (checkAligned(current, true, next, false)) {
-              orientedPathIds.put(i + 1, nextId)
-            } else {
-              orientedPathIds.put(i + 1, nextId + 1)
-            }
-          }
-        }
-      } else if (pathArray.size == 2) {
-        val previousId = (pathArray[0] / 2) * 2
-        val nextId = (pathArray[1] / 2) * 2
-        val previous =
-            ByteBuffer.wrap(pathPolylines[previousId]!!)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .asDoubleBuffer()
-        val next =
-            ByteBuffer.wrap(pathPolylines[nextId]!!).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
-        val forwardIsNextForwardAligned = checkAligned(previous, false, next, false)
-        val forwardIsNextReverseAligned = checkAligned(previous, false, next, true)
-        if (forwardIsNextForwardAligned || forwardIsNextReverseAligned) {
-          orientedPathIds.put(0, previousId)
-          if (forwardIsNextForwardAligned) {
-            orientedPathIds.put(1, nextId)
-          } else {
-            orientedPathIds.put(1, nextId + 1)
-          }
-        } else {
-          orientedPathIds.put(0, previousId + 1)
-          if (checkAligned(previous, true, next, false)) {
-            orientedPathIds.put(1, nextId)
-          } else {
-            orientedPathIds.put(1, nextId + 1)
-          }
-        }
-      } else {
-        orientedPathIds.put(0, pathArray[0])
-      }
+      updateTrail.executeBatch()
+    }
+  }
+}
 
-      val polyline = ArrayList<S2Point>()
-      orientedPathIds.rewind()
-      while (orientedPathIds.hasRemaining()) {
-        val pathId = orientedPathIds.get()
-        val path =
-            ByteBuffer.wrap(pathPolylines[(pathId / 2) * 2]!!)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .asDoubleBuffer()
-        if (pathId % 2 == 0L) {
-          for (i in (0 until path.capacity()).step(2)) {
-            polyline.add(S2LatLng.fromDegrees(path[i], path[i + 1]).toPoint())
-          }
-        } else {
-          for (i in ((path.capacity() - 2) downTo 0).step(2)) {
-            polyline.add(S2LatLng.fromDegrees(path[i], path[i + 1]).toPoint())
-          }
-        }
+private fun pathsToPolyline(
+    orientedPathIdBytes: ByteBuffer,
+    pathPolylines: HashMap<Long, ByteArray>): S2Polyline {
+  val polyline = ArrayList<S2Point>()
+  while (orientedPathIdBytes.hasRemaining()) {
+    val pathId = orientedPathIdBytes.getLong()
+    val path =
+      ByteBuffer.wrap(pathPolylines[(pathId / 2) * 2]!!)
+          .order(ByteOrder.LITTLE_ENDIAN)
+          .asDoubleBuffer()
+    if (pathId % 2 == 0L) {
+      for (i in (0 until path.capacity()).step(2)) {
+        polyline.add(S2LatLng.fromDegrees(path[i], path[i + 1]).toPoint())
       }
-
-      val s2Polyline = S2Polyline(polyline)
-      val center = S2LatLng(s2Polyline.interpolate(0.5))
-      updateTrail.apply {
-        setLong(1, boundToCell(s2Polyline.rectBound).id())
-        setDouble(2, center.latDegrees())
-        setDouble(3, center.lngDegrees())
-        setDouble(4, s2Polyline.arclengthAngle.earthMeters())
-        setBytes(5, orientedPathIdBytes.array())
-        setLong(6, trailId)
-        addBatch()
-        batchSize += 1
-      }
-
-      if (batchSize >= 1000) {
-        updateTrail.executeBatch()
-        batchSize = 0
+    } else {
+      for (i in ((path.capacity() - 2) downTo 0).step(2)) {
+        polyline.add(S2LatLng.fromDegrees(path[i], path[i + 1]).toPoint())
       }
     }
   }
+  val s2Polyline = S2Polyline(polyline)
+  return s2Polyline
+}
+
+private fun orientPaths(
+    pathArray: LongArray,
+    pathPolylines: HashMap<Long, ByteArray>): ByteBuffer {
+  val orientedPathIdBytes =
+    ByteBuffer.allocate(pathArray.size * 8).order(ByteOrder.LITTLE_ENDIAN)
+  val orientedPathIds = orientedPathIdBytes.asLongBuffer()
+  if (pathArray.size > 2) {
+    for (i in 1 until pathArray.size - 1) {
+      val previousId = (pathArray[i - 1] / 2) * 2
+      val id = (pathArray[i] / 2) * 2
+      val nextId = (pathArray[i + 1] / 2) * 2
+      val previous =
+        ByteBuffer.wrap(pathPolylines[previousId]!!)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .asDoubleBuffer()
+      val current =
+        ByteBuffer.wrap(pathPolylines[id]!!).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
+      val next =
+        ByteBuffer.wrap(pathPolylines[nextId]!!).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
+      val forwardIsPreviousForwardAligned =
+        checkAligned(previous, false, current, false)
+      val forwardIsPreviousReversedAligned =
+        checkAligned(previous, true, current, false)
+      val forwardIsPreviousAligned =
+        forwardIsPreviousForwardAligned || forwardIsPreviousReversedAligned
+      val forwardIsNextForwardAligned =
+        checkAligned(current, false, next, false)
+      val forwardIsNextReversedAligned =
+        checkAligned(current, false, next, true)
+      val forwardIsNextAligned = forwardIsNextForwardAligned || forwardIsNextReversedAligned
+      if (forwardIsPreviousAligned && forwardIsNextAligned) {
+        if (forwardIsPreviousForwardAligned) {
+          orientedPathIds.put(i - 1, previousId)
+        } else {
+          orientedPathIds.put(i - 1, previousId + 1)
+        }
+        orientedPathIds.put(i, id)
+        if (forwardIsNextForwardAligned) {
+          orientedPathIds.put(i + 1, nextId)
+        } else {
+          orientedPathIds.put(i + 1, nextId + 1)
+        }
+      } else {
+        if (checkAligned(previous, false, current, true)) {
+          orientedPathIds.put(i - 1, previousId)
+        } else {
+          orientedPathIds.put(i - 1, previousId + 1)
+        }
+        orientedPathIds.put(i, id + 1)
+        if (checkAligned(current, true, next, false)) {
+          orientedPathIds.put(i + 1, nextId)
+        } else {
+          orientedPathIds.put(i + 1, nextId + 1)
+        }
+      }
+    }
+  } else if (pathArray.size == 2) {
+    val previousId = (pathArray[0] / 2) * 2
+    val nextId = (pathArray[1] / 2) * 2
+    val previous =
+      ByteBuffer.wrap(pathPolylines[previousId]!!)
+          .order(ByteOrder.LITTLE_ENDIAN)
+          .asDoubleBuffer()
+    val next =
+      ByteBuffer.wrap(pathPolylines[nextId]!!).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
+    val forwardIsNextForwardAligned = checkAligned(previous, false, next, false)
+    val forwardIsNextReverseAligned = checkAligned(previous, false, next, true)
+    if (forwardIsNextForwardAligned || forwardIsNextReverseAligned) {
+      orientedPathIds.put(0, previousId)
+      if (forwardIsNextForwardAligned) {
+        orientedPathIds.put(1, nextId)
+      } else {
+        orientedPathIds.put(1, nextId + 1)
+      }
+    } else {
+      orientedPathIds.put(0, previousId + 1)
+      if (checkAligned(previous, true, next, false)) {
+        orientedPathIds.put(1, nextId)
+      } else {
+        orientedPathIds.put(1, nextId + 1)
+      }
+    }
+  } else {
+    orientedPathIds.put(0, pathArray[0])
+  }
+
+  orientedPathIdBytes.rewind()
+  return orientedPathIdBytes
 }
 
 private val BS_INNER = ByteString.copyFromUtf8("inner")

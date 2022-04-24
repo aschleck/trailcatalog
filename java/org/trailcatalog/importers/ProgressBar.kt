@@ -8,7 +8,7 @@ class ProgressBar(
   private val limit: Long = -1) : Closeable {
 
   private var active = true
-  private var count = 0
+  @Volatile private var count = 0
   private val start = System.currentTimeMillis() - 1
 
   init {
@@ -37,7 +37,9 @@ class ProgressBar(
   }
 
   fun increment() {
-    count += 1
+    synchronized (count) {
+      count += 1
+    }
   }
 
   private fun message(): String {
