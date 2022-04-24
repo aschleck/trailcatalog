@@ -6,6 +6,7 @@ import { MAP_MOVED, MapController, PATH_SELECTED, Trail, TRAIL_SELECTED } from '
 
 export interface State {
   selectedTrail: Trail|undefined;
+  showTrailsList: boolean;
   trails: Trail[];
 }
 
@@ -47,6 +48,13 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
     this.updateState({
       ...this.state,
       selectedTrail: e.detail.trail,
+    });
+  }
+
+  toggleTrailsList(): void {
+    this.updateState({
+      ...this.state,
+      showTrailsList: !this.state.showTrailsList,
     });
   }
 

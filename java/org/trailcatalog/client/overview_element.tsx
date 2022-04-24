@@ -10,7 +10,11 @@ const TRAIL_COUNT_MAX = 100;
 
 export function OverviewElement(props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    state = {selectedTrail: undefined, trails: []};
+    state = {
+      selectedTrail: undefined,
+      showTrailsList: false,
+      trails: [],
+    };
   }
 
   const url = new URL(window.location.href);
@@ -49,19 +53,33 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
           },
           state: [state, updateState],
         })}
-        className="flex h-screen w-screen"
     >
-      <div className="overflow-y-scroll p-4 w-96">
-        <header className="flex gap-2 uppercase">
-          <div className="basis-3/5">Name</div>
-          <div className="basis-2/5">Distance</div>
-        </header>
-        {filteredTrails.map(trail => <TrailListElement trail={trail} />)}
-        {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
+      <div className="align-middle bg-tc-200 leading-none">
+        <FabricIcon
+            name="List"
+            className={
+                (state.showTrailsList ? "bg-white" : "text-white")
+                    + " p-2 text-3xl md:hidden"
+            }
+            unboundEvents={{click: 'toggleTrailsList'}}
+        />
       </div>
-      <div className="relative">
-        <MapElement lat={lat} lng={lng} zoom={zoom} />
-        {trailDetails}
+      <div className="flex h-screen w-screen relative">
+        <div className={
+            (state.showTrailsList ? "" : "hidden md:block ")
+                + "absolute bg-white inset-0 overflow-y-scroll p-4 z-10 md:relative md:w-96"
+        }>
+          <header className="flex gap-2 uppercase">
+            <div className="basis-3/5">Name</div>
+            <div className="basis-2/5">Distance</div>
+          </header>
+          {filteredTrails.map(trail => <TrailListElement trail={trail} />)}
+          {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
+        </div>
+        <div className="relative">
+          <MapElement lat={lat} lng={lng} zoom={zoom} />
+          {trailDetails}
+        </div>
       </div>
     </div>
   </>;
@@ -129,4 +147,14 @@ function floatCoalesce(...numbers: Array<string|number|null>): number {
     }
   }
   throw new Error('No valid floats');
+}
+
+type FabricIconName = 'List';
+
+function FabricIcon({
+  name,
+  className,
+  ...props
+}: {name: FabricIconName} & corgi.Properties<HTMLElement>) {
+  return <i className={`ms-Icon ms-Icon--${name} ${className}`} {...props} />;
 }

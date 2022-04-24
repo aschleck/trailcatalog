@@ -20,7 +20,7 @@ export const MapElement = ({lat, lng, zoom}: {lat: number, lng: number, zoom: nu
             render: 'wakeup',
           },
         })}
-        className="h-full relative w-full">
+        className="h-full relative select-none touch-none w-full">
       <canvas className="h-full w-full" />
       <div className="
           absolute

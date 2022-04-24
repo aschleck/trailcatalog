@@ -9,6 +9,7 @@ module.exports = {
     extend: {
       colors: {
         'tc': {
+          200: '#2c2c2c',
           300: '#3a3a3a',
           500: '#737a80',
         },

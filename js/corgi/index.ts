@@ -63,7 +63,7 @@ export function bind<
   };
 }
 
-interface Properties<E extends HTMLElement> {
+export interface Properties<E extends HTMLElement> {
   children?: VElementOrPrimitive[];
   className?: string;
   js?: AnyBoundController<E>;
@@ -501,6 +501,7 @@ declare global {
       div: Properties<HTMLDivElement>;
       footer: Properties<HTMLElement>;
       header: Properties<HTMLElement>;
+      i: Properties<HTMLElement>;
       section: Properties<HTMLElement>;
       span: Properties<HTMLSpanElement>;
     }

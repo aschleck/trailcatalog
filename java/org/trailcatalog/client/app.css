@@ -1,5 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Roboto:wght@700&display=swap');
 
+/**
+ * The trailing slash on the next url prevents esbuild-plugin-postcss from trying to download this
+ * file.
+ */
+@import url('https://static2.sharepointonline.com/files/fabric/office-ui-fabric-core/11.0.0/css/fabric.min.css#');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

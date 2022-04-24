@@ -21,6 +21,11 @@ interface Args {
 interface Response extends ControllerResponse<Args, HTMLDivElement, undefined> {
 }
 
+const DPI =
+    new URLSearchParams(window.location.search).get('dpi') === 'true'
+    ? window.devicePixelRatio ?? 1
+    : 1;
+
 export class MapController extends Controller<Args, HTMLDivElement, undefined, Response> {
 
   static deps() {
@@ -78,17 +83,17 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
 
     // We track pointer events on document because it allows us to drag the mouse off-screen while
     // panning.
+    const interpreter = new PointerInterpreter(this);
     this.registerListener(document, 'pointerdown', e => {
       if (e.target === this.canvas) {
-        this.mouseDown(e);
+        interpreter.pointerDown(e);
       }
     });
     // If we started a pan and drag the pointer outside the canvas the target will change, so we
     // don't check it.
-    this.registerListener(document, 'pointermove', e => { this.mouseMove(e); });
-    this.registerListener(document, 'pointerup', e => { this.mouseUp(e); });
+    this.registerListener(document, 'pointermove', e => { interpreter.pointerMove(e); });
+    this.registerListener(document, 'pointerup', e => { interpreter.pointerUp(e); });
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
-    //document.addEventListener('touchstart', e => { this.mouseDown(e); });
 
     const raf = () => {
       if (this.isDisposed) {
@@ -112,11 +117,9 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     return this.mapData.setTrailHighlighted(trail, highlighted);
   }
 
-  private mouseDown(e: MouseEvent): void {
-    this.lastMousePosition = [e.clientX, e.clientY];
-
+  click(clientX: number, clientY: number): void {
     const center = this.camera.centerPixel;
-    const client = this.screenToRelativeCoord(e);
+    const client = this.screenToRelativeCoord(clientX, clientY);
     const position: Vec2 = [
       center[0] + client[0] * this.camera.inverseWorldRadius,
       center[1] + client[1] * this.camera.inverseWorldRadius,
@@ -124,28 +127,25 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     this.mapData.selectClosest(position);
   }
 
-  private mouseMove(e: MouseEvent): void {
-    if (!this.lastMousePosition) {
-      return;
-    }
+  idle(): void {
+    this.idleDebouncer.trigger();
+  }
 
-    this.camera.translate([
-        this.lastMousePosition[0] - e.clientX,
-        -(this.lastMousePosition[1] - e.clientY),
-    ]);
-    this.lastMousePosition = [e.clientX, e.clientY];
+  pan(dx: number, dy: number): void {
+    this.camera.translate([dx, dy]);
     this.nextRender = RenderType.CameraChange;
   }
 
-  private mouseUp(e: MouseEvent): void {
-    this.lastMousePosition = undefined;
+  zoom(amount: number, clientX: number, clientY: number): void {
+    this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(clientX, clientY));
+    this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }
 
   private wheel(e: WheelEvent): void {
     e.preventDefault();
 
-    this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(e));
+    this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(e.clientX, e.clientY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }
@@ -164,9 +164,9 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     });
   }
 
-  private screenToRelativeCoord(e: MouseEvent): Vec2 {
-    const x = e.clientX - this.screenArea.x - this.screenArea.width / 2;
-    const y = this.screenArea.y + this.screenArea.height / 2 - e.clientY;
+  private screenToRelativeCoord(clientX: number, clientY: number): Vec2 {
+    const x = clientX - this.screenArea.x - this.screenArea.width / 2;
+    const y = this.screenArea.y + this.screenArea.height / 2 - clientY;
     return [x, y];
   }
 
@@ -200,10 +200,12 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
 
   private resize(): void {
     this.screenArea = this.canvas.getBoundingClientRect();
-    this.canvas.width = this.screenArea.width;
-    this.canvas.height = this.screenArea.height;
-    this.renderPlanner.resize([this.screenArea.width, this.screenArea.height]);
-    this.renderer.resize([this.screenArea.width, this.screenArea.height]);
+    const width = this.screenArea.width * DPI;
+    const height = this.screenArea.height * DPI;
+    this.canvas.width = width;
+    this.canvas.height = height;
+    this.renderPlanner.resize([width, height]);
+    this.renderer.resize([width, height]);
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }
@@ -217,4 +219,96 @@ enum RenderType {
 
 function isTrail(e: Path|Trail): e is Trail {
   return e instanceof Trail;
+}
+
+interface PointerListener {
+  click(clientX: number, clientY: number): void;
+  idle(): void;
+  pan(dx: number, dy: number): void;
+  zoom(amount: number, clientX: number, clientY: number): void;
+}
+
+class PointerInterpreter {
+
+  private readonly pointers: Map<number, PointerEvent>;
+  private maybeClickStart: PointerEvent|undefined;
+
+  constructor(private readonly listener: PointerListener) {
+    this.pointers = new Map();
+    this.maybeClickStart = undefined;
+  }
+
+  pointerDown(e: PointerEvent): void {
+    e.preventDefault();
+    this.pointers.set(e.pointerId, e);
+
+    if (this.pointers.size === 1) {
+      this.maybeClickStart = e;
+    } else {
+      this.maybeClickStart = undefined;
+    }
+  }
+
+  pointerMove(e: PointerEvent): void {
+    if (!this.pointers.has(e.pointerId)) {
+      return;
+    }
+
+    e.preventDefault();
+
+    if (this.pointers.size === 1) {
+      const [last] = this.pointers.values();
+      this.listener.pan(last.clientX - e.clientX, -(last.clientY - e.clientY));
+
+      if (this.maybeClickStart) {
+        const d2 = distance2(this.maybeClickStart, e);
+        if (d2 > 3 * 3) {
+          this.maybeClickStart = undefined;
+        }
+      }
+    } else if (this.pointers.size === 2) {
+      const [a, b] = this.pointers.values();
+      let pivot, handle;
+      if (a.pointerId === e.pointerId) {
+        pivot = b;
+        handle = a;
+      } else {
+        pivot = a;
+        handle = b;
+      }
+
+      const was = distance2(pivot, handle);
+      const is = distance2(pivot, e);
+      this.listener.zoom(
+          Math.sqrt(is / was),
+          (pivot.clientX + e.clientX) / 2,
+          (pivot.clientY + e.clientY) / 2);
+    }
+
+    this.pointers.set(e.pointerId, e);
+  }
+
+  pointerUp(e: PointerEvent): void {
+    if (!this.pointers.has(e.pointerId)) {
+      return;
+    }
+
+    e.preventDefault();
+    this.pointers.delete(e.pointerId);
+
+    if (this.pointers.size === 0) {
+      this.listener.idle();
+
+      if (this.maybeClickStart) {
+        this.listener.click(this.maybeClickStart.clientX, this.maybeClickStart.clientY);
+        this.maybeClickStart = undefined;
+      }
+    }
+  }
+}
+
+function distance2(a: PointerEvent, b: PointerEvent): number {
+  const x = a.clientX - b.clientX;
+  const y = a.clientY - b.clientY;
+  return x * x + y * y;
 }
