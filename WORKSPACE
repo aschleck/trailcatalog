@@ -19,9 +19,9 @@ go_register_toolchains(version = "1.17.6")
 
 http_archive(
     name = "build_bazel_rules_nodejs",
-    sha256 = "b474bbf688f8019d76c1f4701960329a09fb6d5efeb42862118f8f16d1c7718b",
-    strip_prefix = "rules_nodejs-af6266e9fb489386e766c57a0bc485ca976ca4f4",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/archive/af6266e9fb489386e766c57a0bc485ca976ca4f4.zip"],
+    sha256 = "2ef61a8d4a80ea244ddc8ef82641ea111f8e7d37acbf9e5af9d23aeb21f32e6f",
+    strip_prefix = "rules_nodejs-1074231da3bd390a3ae600f8892da05bef3b6939",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/archive/1074231da3bd390a3ae600f8892da05bef3b6939.zip"],
 )
 
 load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
