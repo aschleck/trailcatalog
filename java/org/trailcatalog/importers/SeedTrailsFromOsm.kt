@@ -152,11 +152,15 @@ private fun fillInPaths(connection: Connection) {
   val scope = CoroutineScope(Dispatchers.Default)
 
   ProgressBar("filling in paths", "paths").use { progress ->
+    if (!results.isBeforeFirst) {
+      return
+    }
+
     val batch = ArrayList<Pair<Long, ByteArray>>()
     val toLookup = HashSet<Long>()
     val nodePositions = HashMap<Long, Pair<Double, Double>>()
 
-    while (!results.isLast) {
+    while (!results.isAfterLast) {
       batch.clear()
       toLookup.clear()
       nodePositions.clear()
@@ -165,10 +169,6 @@ private fun fillInPaths(connection: Connection) {
       while (i < 1000 && results.next()) {
         val pathId = results.getLong(1)
         val nodeBytes = results.getBytes(2)
-
-        if (nodeBytes.isEmpty()) {
-          continue
-        }
 
         val nodeIds = ByteBuffer.wrap(nodeBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
         while (nodeIds.hasRemaining()) {
@@ -194,12 +194,22 @@ private fun fillInPaths(connection: Connection) {
 
             val latLngs = ByteBuffer.allocate(2 * nodeBytes.size).order(ByteOrder.LITTLE_ENDIAN)
             val bound = S2LatLngRect.empty().toBuilder()
+            var valid = true
             while (nodes.hasRemaining()) {
               val nodeId = nodes.get()
-              val position = nodePositions[nodeId]!!
+              val position = nodePositions[nodeId]
+              if (position == null) {
+                valid = false
+                break
+              }
+
               latLngs.putDouble(position.first)
               latLngs.putDouble(position.second)
               bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
+            }
+
+            if (!valid) {
+              return@async
             }
 
             synchronized (updatePath) {
@@ -213,7 +223,7 @@ private fun fillInPaths(connection: Connection) {
 
             progress.increment()
           }
-        }.forEach { it.join() }
+        }.forEach { it.await() }
       }
 
       updatePath.executeBatch()
@@ -236,11 +246,15 @@ private fun fillInTrails(connection: Connection) {
   val scope = CoroutineScope(Dispatchers.Default)
 
   ProgressBar("filling in trails", "trails").use { progress ->
+    if (!results.isBeforeFirst) {
+      return
+    }
+
     val batch = ArrayList<Pair<Long, ByteArray>>()
     val toLookup = HashSet<Long>()
     val pathPolylines = HashMap<Long, ByteArray>()
 
-    while (!results.isLast) {
+    while (!results.isAfterLast) {
       batch.clear()
       toLookup.clear()
       pathPolylines.clear()
@@ -249,10 +263,6 @@ private fun fillInTrails(connection: Connection) {
       while (i < 1000 && results.next()) {
         val trailId = results.getLong(1)
         val pathBytes = results.getBytes(2)
-
-        if (pathBytes.isEmpty()) {
-          continue
-        }
 
         val originalPathIds = ByteBuffer.wrap(pathBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
         while (originalPathIds.hasRemaining()) {
@@ -275,20 +285,25 @@ private fun fillInTrails(connection: Connection) {
         batch.map { (id, pathBytes) ->
           scope.async {
             val paths = ByteBuffer.wrap(pathBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer()
+            val pathIds = LongArray(pathBytes.size / 8)
 
             var present = true
+            var count = 0
             while (paths.hasRemaining()) {
-              if (pathPolylines.containsKey((paths.get() / 2) * 2)) {
+              val pathId = paths.get()
+              if (!pathPolylines.containsKey((pathId / 2) * 2)) {
                 present = false
                 break
               }
+              pathIds[count] = pathId
+              count += 1
             }
             if (!present) {
               return@async
             }
             paths.rewind()
 
-            val orientedPathIdBytes = orientPaths(paths.array(), pathPolylines)
+            val orientedPathIdBytes = orientPaths(pathIds, pathPolylines)
             val s2Polyline = pathsToPolyline(orientedPathIdBytes, pathPolylines)
             orientedPathIdBytes.rewind()
             val center = S2LatLng(s2Polyline.interpolate(0.5))
@@ -307,7 +322,7 @@ private fun fillInTrails(connection: Connection) {
 
             progress.increment()
           }
-        }.forEach { it.join() }
+        }.forEach { it.await() }
       }
 
       updateTrail.executeBatch()

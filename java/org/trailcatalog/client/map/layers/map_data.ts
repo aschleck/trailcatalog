@@ -54,7 +54,7 @@ interface MapDataListener {
   selectedTrail(trail: Trail): void;
 }
 
-const DATA_ZOOM_THRESHOLD = 7;
+const DATA_ZOOM_THRESHOLD = 4;
 const RENDER_PATHS_ZOOM_THRESHOLD = 14;
 const TEXT_DECODER = new TextDecoder();
 
