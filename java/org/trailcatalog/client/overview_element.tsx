@@ -68,11 +68,11 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
       <div className="flex grow overflow-hidden relative">
         <div className={
             (state.showTrailsList ? "" : "hidden md:block ")
-                + "absolute bg-white inset-0 max-h-full overflow-y-scroll p-4 z-10 md:relative md:w-96"
+                + "absolute bg-white inset-0 max-h-full overflow-y-scroll p-4 z-10 md:relative md:w-80"
         }>
           <header className="flex gap-2 uppercase">
-            <div className="basis-3/5">Name</div>
-            <div className="basis-2/5">Distance</div>
+            <div className="grow">Name</div>
+            <div className="shrink-0 w-24">Distance</div>
           </header>
           {filteredTrails.map(trail => <TrailListElement trail={trail} />)}
           {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
@@ -125,8 +125,8 @@ function TrailListElement({ trail }: { trail: Trail }) {
           mouseover: 'highlightTrail',
           mouseout: 'unhighlightTrail',
         }}>
-      <div className="basis-3/5 font-lg font-semibold">{trail.name}</div>
-      <div className="basis-2/5">
+      <div className="font-lg font-semibold grow">{trail.name}</div>
+      <div className="shrink-0 w-24">
         <span className="font-bold font-lg">
           {metersToMiles(trail.lengthMeters).toFixed(1)}
         </span>

@@ -36,6 +36,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
 
   private readonly camera: Camera;
   private readonly canvas: HTMLCanvasElement;
+  private readonly dataChangedDebouncer: Debouncer;
   private readonly idleDebouncer: Debouncer;
   private readonly renderer: Renderer;
   private readonly renderPlanner: RenderPlanner;
@@ -53,6 +54,9 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     super(response);
     this.camera = new Camera(response.args.lat, response.args.lng, response.args.zoom);
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
+    this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
+      this.notifyDataChanged();
+    });
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.enterIdle();
     });
@@ -153,6 +157,10 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
       layer.viewportBoundsChanged(size, this.camera.zoom);
     }
 
+    this.notifyDataChanged();
+  }
+
+  private notifyDataChanged(): void {
     this.trigger(MAP_MOVED, {
       controller: this,
       center: this.camera.center,
@@ -171,6 +179,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
       const hasNewData =
           [this.mapData, this.tileData].filter(l => l.hasDataNewerThan(this.lastRenderPlan));
       if (hasNewData.length > 0) {
+        this.dataChangedDebouncer.trigger();
         this.nextRender = RenderType.DataChange;
       }
     }
