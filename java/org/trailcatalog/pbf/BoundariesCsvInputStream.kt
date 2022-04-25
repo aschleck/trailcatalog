@@ -14,7 +14,7 @@ import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.WAY_ID
 import org.trailcatalog.proto.WayGeometry
 
 class BoundariesCsvInputStream(
-    private val relations: MutableMap<Long, RelationSkeleton>,
+    private val relations: Map<Long, RelationSkeleton>,
     private val ways: Map<Long, LongArray>,
     block: PrimitiveBlock)
   : PbfEntityInputStream(

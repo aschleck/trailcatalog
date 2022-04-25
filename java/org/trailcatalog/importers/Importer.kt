@@ -6,16 +6,21 @@ import java.lang.IllegalArgumentException
 
 fun main(args: Array<String>) {
   var pbf = ""
+  var immediatelyBucketPaths = true
   var importOsmFeatures = true
   var importTcFeatures = true
+  var fillTcRelations = true
   var fillInGeometry = true
+
   for (arg in args) {
     val (option, value) = arg.split("=")
     when (option) {
       "--pbf" -> pbf = value
+      "--fill_in_geometry" -> fillInGeometry = value.toBooleanStrict()
+      "--fill_tc_relations" -> fillTcRelations = value.toBooleanStrict()
+      "--immediately_bucket_paths" -> immediatelyBucketPaths = value.toBooleanStrict()
       "--import_osm" -> importOsmFeatures = value.toBooleanStrict()
       "--import_tc" -> importTcFeatures = value.toBooleanStrict()
-      "--fill_in_geometry" -> fillInGeometry = value.toBooleanStrict()
     }
   }
 
@@ -23,7 +28,7 @@ fun main(args: Array<String>) {
     throw IllegalArgumentException("Must specify --pbf")
   }
 
-  createConnectionSource(maxSize = 64, syncCommit = false).use { hikari ->
+  createConnectionSource(syncCommit = false).use { hikari ->
     hikari.connection.use {
       val pg = it.unwrap(PgConnection::class.java)
       pg.autoCommit = false
@@ -33,7 +38,7 @@ fun main(args: Array<String>) {
       }
 
       if (importTcFeatures) {
-        seedFromPbf(pg, pbf)
+        seedFromPbf(pg, immediatelyBucketPaths, fillTcRelations, pbf)
       }
 
       pg.autoCommit = true

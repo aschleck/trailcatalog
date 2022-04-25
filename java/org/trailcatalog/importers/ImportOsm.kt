@@ -35,7 +35,10 @@ fun importOsmFromPbf(connection: PgConnection, pbf: String) {
   }
   nodesInWays.sortBy { it.first }
   val chunkSize = 100000
-  ProgressBar("inserting nodes_in_ways", "chunks", (nodesInWays.size / chunkSize).toLong()).use {
+  ProgressBar(
+      "inserting nodes_in_ways",
+      "chunks",
+      ((nodesInWays.size + chunkSize - 1) / chunkSize).toLong()).use {
     for (ways in nodesInWays.map { it.second }.chunked(chunkSize)) {
       val block = PrimitiveBlock.newBuilder()
       block.addPrimitivegroup(PrimitiveGroup.newBuilder().addAllWays(ways))

@@ -1,15 +1,19 @@
 package org.trailcatalog.pbf
 
+import com.google.common.geometry.S2LatLng
+import com.google.common.geometry.S2LatLngRect
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
 import org.trailcatalog.models.WayCategory
+import org.trailcatalog.s2.boundToCell
 import java.nio.charset.StandardCharsets
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class PathsCsvInputStream(
-  private val ways: MutableMap<Long, LongArray>,
-  block: PrimitiveBlock)
+    private val nodes: Map<Long, Pair<Double, Double>>?,
+    private val ways: MutableMap<Long, LongArray>,
+    block: PrimitiveBlock)
   : PbfEntityInputStream(
       block,
       "id,type,cell,lat_lng_degrees,node_ids,source_way\n".toByteArray(StandardCharsets.UTF_8),
@@ -28,6 +32,32 @@ class PathsCsvInputStream(
         nodeBytes.putLong(nodeId)
       }
 
+      val (cell, latLngs) =
+          if (this.nodes == null) {
+            Pair(-1, byteArrayOf())
+          } else {
+            val bound = S2LatLngRect.empty().toBuilder()
+            val latLngs = ByteBuffer.allocate(2 * way.refsCount * 8).order(ByteOrder.LITTLE_ENDIAN)
+            var valid = true
+            for (nodeId in nodes) {
+              val position = this.nodes[nodeId]
+              if (position == null) {
+                valid = false
+                break
+              }
+
+              latLngs.putDouble(position.first)
+              latLngs.putDouble(position.second)
+              bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
+            }
+
+            if (valid) {
+              Pair(boundToCell(bound.build()).id(), latLngs.array())
+            } else {
+              Pair(-1, byteArrayOf())
+            }
+          }
+
       ways[way.id] = nodes
 
       if (!WayCategory.HIGHWAY.isParentOf(data.type) && !WayCategory.PISTE.isParentOf(data.type)) {
@@ -37,8 +67,10 @@ class PathsCsvInputStream(
       csv.append(",")
       csv.append(data.type.id)
       csv.append(",")
-      csv.append(-1)
-      csv.append(",\\x,")
+      csv.append(cell)
+      csv.append(",")
+      appendByteArray(latLngs, csv)
+      csv.append(",")
       appendByteArray(nodeBytes.array(), csv)
       csv.append(",")
       csv.append(way.id)
