@@ -21,6 +21,7 @@ fun main(args: Array<String>) {
       "--immediately_bucket_paths" -> immediatelyBucketPaths = value.toBooleanStrict()
       "--import_osm" -> importOsmFeatures = value.toBooleanStrict()
       "--import_tc" -> importTcFeatures = value.toBooleanStrict()
+      else -> throw IllegalArgumentException("Unknown argument ${option}")
     }
   }
 
