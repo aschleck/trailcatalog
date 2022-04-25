@@ -146,13 +146,31 @@ fun fetchDetail(ctx: Context) {
 
   val paths = HashMap<Long, WirePath>()
   connectionSource.connection.use {
-    val query = it.prepareStatement(
-        "SELECT p.id, p.type, p.lat_lng_degrees, pit.trail_id "
-            + "FROM paths p "
-            + "JOIN paths_in_trails pit ON p.id = pit.path_id "
-            + "JOIN trails t ON pit.trail_id = t.id "
-            + "WHERE p.cell = ? AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
-      setLong(1, cell.id())
+    val query = if (cell.level() >= SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL) {
+      it.prepareStatement(
+          "SELECT p.id, p.type, p.lat_lng_degrees, pit.trail_id "
+              + "FROM paths p "
+              + "JOIN paths_in_trails pit ON p.id = pit.path_id "
+              + "JOIN trails t ON pit.trail_id = t.id "
+              + "WHERE "
+              + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?)) "
+              + "AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
+        val min = cell.rangeMin()
+        val max = cell.rangeMax()
+        setLong(1, min.id())
+        setLong(2, max.id())
+        setLong(3, min.id() + Long.MIN_VALUE)
+        setLong(4, max.id() + Long.MIN_VALUE)
+      }
+    } else {
+      it.prepareStatement(
+          "SELECT p.id, p.type, p.lat_lng_degrees, pit.trail_id "
+              + "FROM paths p "
+              + "JOIN paths_in_trails pit ON p.id = pit.path_id "
+              + "JOIN trails t ON pit.trail_id = t.id "
+              + "WHERE p.cell = ? AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
+        setLong(1, cell.id())
+      }
     }
     val results = query.executeQuery()
     while (results.next()) {
@@ -171,12 +189,28 @@ fun fetchDetail(ctx: Context) {
 
   val trails = ArrayList<WireTrail>()
   connectionSource.connection.use {
-    val query = it.prepareStatement(
-        "SELECT id, name, type, path_ids, center_lat_degrees, center_lng_degrees, length_meters "
-            + "FROM trails "
-            + "WHERE "
-            + "cell = ? AND visibility = ${TrailVisibility.VISIBLE.id}").apply {
-      setLong(1, cell.id())
+    val query = if (cell.level() >= SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL) {
+      it.prepareStatement(
+          "SELECT id, name, type, path_ids, center_lat_degrees, center_lng_degrees, length_meters "
+              + "FROM trails "
+              + "WHERE "
+              + "((cell >= ? AND cell <= ?) OR (cell >= ? AND cell <= ?)) "
+              + "AND visibility = ${TrailVisibility.VISIBLE.id}").apply {
+        val min = cell.rangeMin()
+        val max = cell.rangeMax()
+        setLong(1, min.id())
+        setLong(2, max.id())
+        setLong(3, min.id() + Long.MIN_VALUE)
+        setLong(4, max.id() + Long.MIN_VALUE)
+      }
+    } else {
+      it.prepareStatement(
+          "SELECT id, name, type, path_ids, center_lat_degrees, center_lng_degrees, length_meters "
+              + "FROM trails "
+              + "WHERE "
+              + "cell = ? AND visibility = ${TrailVisibility.VISIBLE.id}").apply {
+        setLong(1, cell.id())
+      }
     }
     val results = query.executeQuery()
     while (results.next()) {
