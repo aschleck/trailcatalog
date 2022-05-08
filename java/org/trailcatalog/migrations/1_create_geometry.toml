@@ -7,6 +7,21 @@
 
 [[actions]]
 type = "create_table"
+name = "geofabrik_sources"
+primary_key = ["path", "current_sequence_number"]
+
+  [[actions.columns]]
+  name = "path"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "current_sequence_number"
+  nullable = false
+  type = "INT"
+
+[[actions]]
+type = "create_table"
 name = "nodes"
 primary_key = ["id"]
 
@@ -392,3 +407,29 @@ primary_key = ["path_id", "trail_id"]
   columns = ["trail_id"]
   referenced_table = "trails"
   referenced_columns = ["id"]
+
+[[actions]]
+type = "create_table"
+name = "trails_in_boundaries"
+primary_key = ["boundary_id", "trail_id"]
+
+  [[actions.columns]]
+  name = "boundary_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "trail_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.foreign_key]]
+  columns = ["boundary_id"]
+  referenced_table = "boundaries"
+  referenced_columns = ["id"]
+
+  [[actions.foreign_key]]
+  columns = ["trail_id"]
+  referenced_table = "trails"
+  referenced_columns = ["id"]
+

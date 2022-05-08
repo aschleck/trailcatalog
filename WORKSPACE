@@ -125,6 +125,7 @@ maven_install(
         "com.google.javascript:closure-compiler-unshaded:jar:v20220104",
         "com.google.truth:truth:1.1.3",
         "com.google.truth.extensions:truth-java8-extension:1.1.3",
+        "com.squareup.okhttp3:okhttp:4.9.0",
         "com.wolt.osm:parallelpbf:0.3.1",
         "com.zaxxer:HikariCP:5.0.1",
         "io.javalin:javalin:4.3.0",

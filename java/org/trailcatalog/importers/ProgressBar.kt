@@ -5,10 +5,10 @@ import java.io.Closeable
 class ProgressBar(
   private val action: String,
   private val units: String,
-  private val limit: Long = -1) : Closeable {
+  private val limit: Number = -1.0) : Closeable {
 
   private var active = true
-  @Volatile private var count = 0
+  @Volatile private var count = 0.0
   private val start = System.currentTimeMillis() - 1
 
   init {
@@ -37,14 +37,19 @@ class ProgressBar(
   }
 
   fun increment() {
+    incrementBy(1)
+  }
+
+  fun incrementBy(amount: Number) {
     synchronized (count) {
-      count += 1
+      count = count.plus(amount.toDouble())
     }
   }
 
   private fun message(): String {
     synchronized (count) {
-      val progress = if (limit >= 0) "${count}/${limit}" else count.toString()
+      val roundCount = "%.2f".format(count)
+      val progress = if (limit.toDouble() >= 0) "${roundCount}/${limit}" else roundCount
       return "${action}: ${progress} ${units} " +
           "(%.2f ${units}/second)".format(count * 1000.0 / (System.currentTimeMillis() - start))
     }
