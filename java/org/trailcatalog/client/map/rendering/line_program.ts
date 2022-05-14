@@ -36,8 +36,8 @@ export class LineProgram extends Program<LineProgramData> {
 
     gl.enableVertexAttribArray(this.program.attributes.colorFill);
     gl.vertexAttribDivisor(this.program.attributes.colorFill, 1);
-    gl.enableVertexAttribArray(this.program.attributes.colorStipple);
-    gl.vertexAttribDivisor(this.program.attributes.colorStipple, 1);
+    gl.enableVertexAttribArray(this.program.attributes.colorStroke);
+    gl.vertexAttribDivisor(this.program.attributes.colorStroke, 1);
     gl.enableVertexAttribArray(this.program.attributes.distanceAlong);
     gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 1);
     gl.enableVertexAttribArray(this.program.attributes.previous);
@@ -59,7 +59,7 @@ export class LineProgram extends Program<LineProgramData> {
         /* stride= */ 18 * 4,
         /* offset= */ offset + 32);
     gl.vertexAttribPointer(
-        this.program.attributes.colorStipple,
+        this.program.attributes.colorStroke,
         4,
         gl.FLOAT,
         /* normalize= */ false,
@@ -102,8 +102,8 @@ export class LineProgram extends Program<LineProgramData> {
 
     gl.vertexAttribDivisor(this.program.attributes.colorFill, 0);
     gl.disableVertexAttribArray(this.program.attributes.colorFill);
-    gl.vertexAttribDivisor(this.program.attributes.colorStipple, 0);
-    gl.disableVertexAttribArray(this.program.attributes.colorStipple);
+    gl.vertexAttribDivisor(this.program.attributes.colorStroke, 0);
+    gl.disableVertexAttribArray(this.program.attributes.colorStroke);
     gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 0);
     gl.disableVertexAttribArray(this.program.attributes.distanceAlong);
     gl.vertexAttribDivisor(this.program.attributes.previous, 0);
@@ -120,7 +120,7 @@ export class LineProgram extends Program<LineProgramData> {
 interface LineProgramData extends ProgramData {
   attributes: {
     colorFill: number;
-    colorStipple: number;
+    colorStroke: number;
     distanceAlong: number;
     next: number;
     position: number;
@@ -147,12 +147,12 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in highp vec4 next;
 
       in lowp vec4 colorFill;
-      in lowp vec4 colorStipple;
+      in lowp vec4 colorStroke;
       // This is a radius in pixels
       in highp float radius;
 
       out lowp vec4 fragColorFill;
-      out lowp vec4 fragColorStipple;
+      out lowp vec4 fragColorStroke;
       out highp float fragDistanceAlong;
       out highp float fragDistanceOrtho;
 
@@ -170,7 +170,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         fragDistanceAlong = halfWorldSize * worldDistanceAlong;
 
         fragColorFill = colorFill;
-        fragColorStipple = colorStipple;
+        fragColorStroke = colorStroke;
         fragDistanceOrtho = position.y * radius;
       }
     `;
@@ -178,17 +178,14 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       #define PI 3.14159265359
 
       in lowp vec4 fragColorFill;
-      in lowp vec4 fragColorStipple;
+      in lowp vec4 fragColorStroke;
       in highp float fragDistanceAlong;
       in highp float fragDistanceOrtho;
 
       out lowp vec4 fragColor;
 
       void main() {
-        lowp float stippleX = float(mod(fragDistanceAlong, 8.) >= 3.);
-        lowp float stippleY = float(2. > abs(fragDistanceOrtho)) * (2. - abs(fragDistanceOrtho / 1.5));
-        lowp vec4 stipple = vec4(fragColorStipple.xyz, stippleX * stippleY * fragColorStipple.w);
-        fragColor = (1. - stipple.w) * fragColorFill + stipple.w * stipple;
+        fragColor = fragColorFill;
       }
   `;
 
@@ -219,7 +216,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
     vertexCount: 4,
     attributes: {
       colorFill: checkExists(gl.getAttribLocation(programId, 'colorFill')),
-      colorStipple: checkExists(gl.getAttribLocation(programId, 'colorStipple')),
+      colorStroke: checkExists(gl.getAttribLocation(programId, 'colorStroke')),
       distanceAlong: gl.getAttribLocation(programId, 'distanceAlong'),
       next: gl.getAttribLocation(programId, 'next'),
       position: gl.getAttribLocation(programId, 'position'),

@@ -9,7 +9,7 @@ import { Renderer } from './renderer';
 
 export interface Line {
   colorFill: Vec4;
-  colorStipple: Vec4;
+  colorStroke: Vec4;
   vertices: Float64Array;
 }
 
@@ -147,7 +147,7 @@ export class RenderPlanner {
           xF, xR, yF, yR,
           xpF, xpR, ypF, ypR,
           ...line.colorFill,
-          ...line.colorStipple,
+          ...line.colorStroke,
           distanceAlong,
           3,
         ], vertexOffset);

@@ -9,7 +9,7 @@ import { metersToMiles, reinterpretLong } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Line, RenderPlanner } from '../rendering/render_planner';
-import { Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
+import { DIAMOND_RADIUS_PX, Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
 import { DETAIL_ZOOM_THRESHOLD, FetcherCommand } from '../../workers/data_fetcher';
 
 import { Layer } from './layer';
@@ -59,8 +59,10 @@ interface MapDataListener {
 }
 
 const DATA_ZOOM_THRESHOLD = 4;
+const HIGHLIGHT_PATH_COLOR = '#ffe600';
+const HIGHLIGHT_TRAIL_COLOR = '#f2f2f2';
 const RENDER_PATHS_ZOOM_THRESHOLD = 10;
-const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 13.5;
+const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 const TEXT_DECODER = new TextDecoder();
 
 // 35px is a larger than the full height of a trail marker (full not half
@@ -135,7 +137,8 @@ export class MapData implements Layer {
     for (const entity of near) {
       let d2 = Number.MAX_VALUE;
       if (entity.line && this.camera.zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
-        d2 = distanceCheckLine(point, entity.line);
+        const antibias = 1; // this makes us always prefer trails
+        d2 = distanceCheckLine(point, entity.line) + antibias;
       } else if (entity.position) {
         const p = entity.position;
         const bound = entity.screenPixelBound;
@@ -179,6 +182,7 @@ export class MapData implements Layer {
       ids = [entity.id];
     } else if (entity instanceof Trail) {
       ids = entity.paths.map(id => id & ~1n);
+      ids.push(entity.id); // what are the odds that a path and its trail will collide?
     } else {
       throw checkExhaustive(entity);
     }
@@ -237,9 +241,8 @@ export class MapData implements Layer {
   private planDetailed(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     const cells = this.detailCellsInView(viewportSize);
     const lines: Line[] = [];
-    const regularFill: Vec4 = [0, 0, 0, 0];
+    const regularFill: Vec4 = [0, 0, 0, 1];
     const highlightedFill: Vec4 = [1, 0.918, 0, 1];
-    const stipple: Vec4 = [0.1, 0.1, 0.1, 1];
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
@@ -262,9 +265,10 @@ export class MapData implements Layer {
           const pathVertexBytes = data.getInt32();
           const pathVertexCount = pathVertexBytes / 16;
           data.align(8);
+          const color = this.highlighted.has(id) ? highlightedFill : regularFill;
           lines.push({
-            colorFill: this.highlighted.has(id) ? highlightedFill : regularFill,
-            colorStipple: stipple,
+            colorFill: color,
+            colorStroke: color,
             vertices: data.sliceFloat64(pathVertexCount * 2),
           });
         } else {
@@ -289,10 +293,11 @@ export class MapData implements Layer {
         const lengthMeters = data.getFloat64();
         const trail = checkExists(this.trails.get(id)) as Trail;
         let text;
+        const highlighted = this.highlighted.has(id);
         if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
-          text = renderableTrailPin(lengthMeters);
+          text = renderableTrailPin(lengthMeters, highlighted);
         } else {
-          text = renderableShield();
+          text = renderableDiamond(highlighted);
         }
         this.textRenderer.plan(text, trail.position, /* z= */ 1, planner);
       }
@@ -323,7 +328,9 @@ export class MapData implements Layer {
         const type = data.getInt32();
         const position: Vec2 = [data.getFloat64(), data.getFloat64()];
         const lengthMeters = data.getFloat64();
-        this.textRenderer.plan(renderableShield(), position, /* z= */ 1, planner);
+        const highlighted = this.highlighted.has(id);
+        this.textRenderer.plan(
+            renderableDiamond(highlighted), position, /* z= */ 1, planner);
       }
     }
   }
@@ -374,8 +381,10 @@ export class MapData implements Layer {
         high: [position[0] + epsilon, position[1] + epsilon],
       };
       const lengthMeters = data.getFloat64();
-      const sparseScreenPixelSize = this.textRenderer.measure(renderableShield());
+      const sparseScreenPixelSize =
+          this.textRenderer.measure(renderableDiamond(false));
       const halfSparseWidth = sparseScreenPixelSize[0] / 2;
+      const halfSparseHeight = sparseScreenPixelSize[1] / 2;
       const trail =
           new Trail(
               id,
@@ -388,7 +397,12 @@ export class MapData implements Layer {
       this.metadataBounds.insert({
         entity: trail,
         position,
-        screenPixelBound: [-halfSparseWidth, 0, halfSparseWidth, sparseScreenPixelSize[1]],
+        screenPixelBound: [
+          -halfSparseWidth,
+          -halfSparseHeight,
+          halfSparseWidth,
+          halfSparseHeight,
+        ],
       }, bound);
       if (!this.trails.has(id)) {
         this.trails.set(id, trail);
@@ -465,10 +479,9 @@ export class MapData implements Layer {
         high: [position[0] + epsilon, position[1] + epsilon],
       };
       const lengthMeters = data.getFloat64();
-      const detailScreenPixelSize = this.textRenderer.measure(renderableTrailPin(lengthMeters));
+      const detailScreenPixelSize =
+          this.textRenderer.measure(renderableTrailPin(lengthMeters, false));
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
-      const sparseScreenPixelSize = this.textRenderer.measure(renderableShield());
-      const halfSparseWidth = sparseScreenPixelSize[0] / 2;
       const existing = this.trails.get(id);
       let trail;
       if (existing) {
@@ -491,7 +504,12 @@ export class MapData implements Layer {
       this.detailBounds.insert({
         entity: trail,
         position,
-        screenPixelBound: [-halfDetailWidth, 0, halfDetailWidth, detailScreenPixelSize[1]],
+        screenPixelBound: [
+          -halfDetailWidth,
+          -detailScreenPixelSize[1] + DIAMOND_RADIUS_PX,
+          halfDetailWidth,
+          DIAMOND_RADIUS_PX,
+        ],
       }, bound);
     }
   }
@@ -577,27 +595,22 @@ function distanceCheckLine(point: Vec2, line: Float64Array): number {
   return bestDistance2;
 }
 
-function renderableTrailPin(lengthMeters: number): RenderableText {
+function renderableTrailPin(lengthMeters: number, highlighted: boolean): RenderableText {
   return {
+    ...renderableDiamond(highlighted),
     text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
-    backgroundColor: 'black',
-    borderRadius: 3,
-    fillColor: 'white',
-    fontSize: 14,
-    iconography: Iconography.PIN,
     paddingX: 6,
     paddingY: 6,
   };
 }
 
-function renderableShield(): RenderableText {
+function renderableDiamond(highlighted: boolean): RenderableText {
   return {
     text: '',
-    backgroundColor: 'black',
-    borderRadius: 3,
-    fillColor: 'white',
+    backgroundColor: highlighted ? HIGHLIGHT_TRAIL_COLOR : 'black',
+    fillColor: highlighted ? 'black' : 'white',
     fontSize: 14,
-    iconography: Iconography.PIN,
+    iconography: Iconography.DIAMOND,
     paddingX: 0,
     paddingY: 0,
   };
