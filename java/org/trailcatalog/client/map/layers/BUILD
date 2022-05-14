@@ -7,6 +7,7 @@ tc_ts_project(
     deps = [
         "//java/org/trailcatalog/client/map/models",
         "//java/org/trailcatalog/client/map/rendering",
+        "//java/org/trailcatalog/client/models",
         "//java/org/trailcatalog/client/workers:ts",
     ],
 )

@@ -2,7 +2,8 @@ import { Controller, ControllerResponse } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
-import { DATA_CHANGED, MAP_MOVED, MapController, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
+import { DATA_CHANGED, MAP_MOVED, MapController, SELECTION_CHANGED } from './map/events';
+import { Path, Trail } from './models/types';
 
 export interface State {
   selectedTrails: Trail[];
@@ -43,23 +44,25 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
 
     this.updateState({
       ...this.state,
-      selectedTrails: [],
       trails: controller.listTrailsInViewport()
           .sort((a, b) => b.lengthMeters - a.lengthMeters),
     });
   }
 
-  onPathSelected(e: CorgiEvent<typeof PATH_SELECTED>): void {
-    this.updateState({
-      ...this.state,
-      selectedTrails: e.detail.controller.listTrailsOnPath(e.detail.path),
-    });
-  }
+  onSelectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {
+    const {controller, selected} = e.detail;
+    let trails: Trail[];
+    if (selected instanceof Path) {
+      trails = controller.listTrailsOnPath(selected);
+    } else if (selected instanceof Trail) {
+      trails = [selected];
+    } else {
+      trails = [];
+    }
 
-  onTrailSelected(e: CorgiEvent<typeof TRAIL_SELECTED>): void {
     this.updateState({
       ...this.state,
-      selectedTrails: [e.detail.trail],
+      selectedTrails: trails,
     });
   }
 
@@ -83,6 +86,10 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
       ...this.state,
       selectedTrails: [],
     });
+  }
+
+  viewTrail(e: MouseEvent): void {
+    console.log(e);
   }
 
   private setTrailHighlighted(e: MouseEvent, selected: boolean): void {

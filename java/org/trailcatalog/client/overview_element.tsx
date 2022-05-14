@@ -1,8 +1,9 @@
 import * as corgi from 'js/corgi';
 
 import { metersToMiles } from './common/math';
-import { DATA_CHANGED, MAP_MOVED, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
+import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
+import { Trail } from './models/types';
 
 import { OverviewController, State } from './overview_controller';
 
@@ -60,8 +61,7 @@ export function OverviewElement({boundary}: {
             corgi: [
               [DATA_CHANGED, 'onDataChange'],
               [MAP_MOVED, 'onMove'],
-              [PATH_SELECTED, 'onPathSelected'],
-              [TRAIL_SELECTED, 'onTrailSelected'],
+              [SELECTION_CHANGED, 'onSelectionChanged'],
             ],
           },
           state: [state, updateState],
@@ -101,10 +101,6 @@ export function OverviewElement({boundary}: {
 
 function SelectedTrailsElement({ trails }: { trails: Trail[] }) {
   return <div
-      className="absolute inset-0"
-      unboundEvents={{click: 'unselectTrails'}}
-  >
-    <div
       className="
           absolute
           bg-white
@@ -115,22 +111,27 @@ function SelectedTrailsElement({ trails }: { trails: Trail[] }) {
           -translate-y-1/2
       "
   >
-      {trails.map(trail =>
-        <section className="m-4">
-          <header className="font-bold font-lg grow text-tc-700">
-            {trail.name}
-          </header>
-          <section>
-            <span className="text-tc-500">
-              Distance:
-            </span>
-            <span>
-              {metersToMiles(trail.lengthMeters).toFixed(1)} miles
-            </span>
-          </section>
+    {trails.map(trail =>
+      <section
+          className="p-2 hover:bg-tc-700"
+          data-trail-id={trail.id}
+          unboundEvents={{
+            click: 'viewTrail',
+          }}
+      >
+        <header className="font-bold font-lg grow">
+          {trail.name}
+        </header>
+        <section>
+          <span className="text-tc-500">
+            Distance:
+          </span>
+          <span>
+            {metersToMiles(trail.lengthMeters).toFixed(1)} miles
+          </span>
         </section>
-      )}
-    </div>
+      </section>
+    )}
   </div>;
 }
 

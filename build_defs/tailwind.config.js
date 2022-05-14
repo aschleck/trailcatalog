@@ -12,6 +12,7 @@ module.exports = {
           200: '#2c2c2c',
           300: '#3a3a3a',
           500: '#737a80',
+          700: '#f3f3f3',
         },
         'white-translucent': '#ffffffa0',
       },

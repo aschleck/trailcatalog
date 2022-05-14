@@ -3,7 +3,8 @@ import { Controller, ControllerResponse } from 'js/corgi/controller';
 import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
 import { Vec2 } from '../common/types';
-import { MapData, Path, Trail } from './layers/map_data';
+import { Path, Trail } from '../models/types';
+import { MapData } from './layers/map_data';
 import { TileData } from './layers/tile_data';
 import { Camera } from './models/camera';
 import { Renderer } from './rendering/renderer';
@@ -11,7 +12,7 @@ import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
-import { DATA_CHANGED, MAP_MOVED, PATH_SELECTED, TRAIL_SELECTED } from './events';
+import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
 
 interface Args {
   camera: {
@@ -72,11 +73,8 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
 
     this.textRenderer = new TextRenderer(this.renderer);
     this.mapData = new MapData(this.camera, response.args.filter, {
-      selectedPath: (path: Path) => {
-        this.trigger(PATH_SELECTED, {controller: this, path});
-      },
-      selectedTrail: (trail: Trail) => {
-        this.trigger(TRAIL_SELECTED, {controller: this, trail});
+      selectionChanged: (selected: Path|Trail|undefined) => {
+        this.trigger(SELECTION_CHANGED, {controller: this, selected});
       },
     }, this.textRenderer);
     this.tileData = new TileData(this.camera, this.renderer);
@@ -93,6 +91,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     const interpreter = new PointerInterpreter(this);
     this.registerListener(document, 'pointerdown', e => {
       if (e.target === this.canvas) {
+        this.trigger(SELECTION_CHANGED, {controller: this, selected: undefined});
         interpreter.pointerDown(e);
       }
     });

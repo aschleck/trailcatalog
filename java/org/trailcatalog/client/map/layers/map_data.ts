@@ -7,6 +7,7 @@ import { DPI } from '../../common/dpi';
 import { LittleEndianView } from '../../common/little_endian_view';
 import { metersToMiles, reinterpretLong } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
+import { Path, Trail } from '../../models/types';
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
@@ -19,34 +20,6 @@ const Z_PATH = 1;
 const Z_RAISED_PATH = 2;
 const Z_TRAIL_MARKER = 3;
 const Z_RAISED_TRAIL_MARKER = 4;
-
-interface Entity {
-  readonly id: bigint;
-  readonly line?: Float32Array|Float64Array;
-  readonly position?: Vec2;
-}
-
-export class Path implements Entity {
-  constructor(
-      readonly id: bigint,
-      readonly type: number,
-      readonly bound: PixelRect,
-      readonly trails: bigint[],
-      readonly line: Float32Array|Float64Array,
-  ) {}
-}
-
-export class Trail implements Entity {
-  constructor(
-      readonly id: bigint,
-      readonly name: string,
-      readonly type: number,
-      readonly bound: PixelRect,
-      readonly paths: bigint[],
-      readonly position: Vec2,
-      readonly lengthMeters: number,
-  ) {}
-}
 
 interface Filter {
   boundary?: number;
@@ -66,8 +39,7 @@ interface TrailHandle {
 type Handle = PathHandle|TrailHandle;
 
 interface MapDataListener {
-  selectedPath(path: Path): void;
-  selectedTrail(trail: Trail): void;
+  selectionChanged(selected: Path|Trail|undefined): void;
 }
 
 const DATA_ZOOM_THRESHOLD = 4;
@@ -237,14 +209,7 @@ export class MapData implements Layer {
 
   selectClosest(point: Vec2): void {
     const entity = this.queryClosest(point);
-
-    if (entity) {
-      if (entity instanceof Path) {
-        this.listener.selectedPath(entity);
-      } else if (entity instanceof Trail) {
-        this.listener.selectedTrail(entity);
-      }
-    }
+    this.listener.selectionChanged(entity);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
