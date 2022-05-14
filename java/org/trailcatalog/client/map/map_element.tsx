@@ -2,20 +2,15 @@ import * as corgi from 'js/corgi';
 
 import { MapController } from './map_controller';
 
-class X {
-wakeup() {}
-}
-
-export const MapElement = ({lat, lng, zoom}: {lat: number, lng: number, zoom: number}) => {
+export const MapElement = ({camera, filter}: {
+  camera: {lat: number; lng: number; zoom: number;};
+  filter: {boundary?: number};
+}) => {
   return <>
     <div
         js={corgi.bind({
           controller: MapController,
-          args: {
-            lat,
-            lng,
-            zoom,
-          },
+          args: {camera, filter},
           events: {
             render: 'wakeup',
           },

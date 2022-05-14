@@ -60,6 +60,11 @@ primary_key = ["id"]
   nullable = true
   type = "TEXT"
 
+  [[actions.columns]]
+  name = "relation_skeleton"
+  nullable = false
+  type = "BYTEA"
+
 [[actions]]
 type = "create_table"
 name = "ways"
@@ -220,6 +225,31 @@ table = "boundaries"
   [actions.index]
   name = "boundaries_by_source_relation_idx"
   columns = ["source_relation"]
+
+[[actions]]
+type = "create_table"
+name = "boundaries_in_boundaries"
+primary_key = ["parent_id", "child_id"]
+
+  [[actions.columns]]
+  name = "parent_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "child_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.foreign_key]]
+  columns = ["parent_id"]
+  referenced_table = "boundaries"
+  referenced_columns = ["id"]
+
+  [[actions.foreign_key]]
+  columns = ["child_id"]
+  referenced_table = "boundaries"
+  referenced_columns = ["id"]
 
 [[actions]]
 type = "create_table"
@@ -433,3 +463,10 @@ primary_key = ["boundary_id", "trail_id"]
   referenced_table = "trails"
   referenced_columns = ["id"]
 
+[[actions]]
+type = "add_index"
+table = "trails_in_boundaries"
+
+  [actions.index]
+  name = "trails_in_boundaries_by_boundary_idx"
+  columns = ["boundary_id"]

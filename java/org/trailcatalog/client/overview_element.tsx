@@ -8,13 +8,25 @@ import { OverviewController, State } from './overview_controller';
 
 const TRAIL_COUNT_MAX = 100;
 
-export function OverviewElement(props: {}, state: State|undefined, updateState: (newState: State) => void) {
+export function OverviewElement({boundary}: {
+  boundary?: string;
+}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = {
       selectedTrail: undefined,
       showTrailsList: false,
       trails: [],
     };
+  }
+
+  let parsedBoundary;
+  if (boundary) {
+    const parsed = Number.parseInt(boundary);
+    if (isNaN(parsed)) {
+      throw new Error(`Boundary ${boundary} is invalid`);
+    } else {
+      parsedBoundary = parsed;
+    }
   }
 
   const url = new URL(window.location.href);
@@ -78,7 +90,7 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
           {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
         </div>
         <div className="grow h-full relative">
-          <MapElement lat={lat} lng={lng} zoom={zoom} />
+          <MapElement camera={{lat, lng, zoom}} filter={{boundary: parsedBoundary}} />
           {trailDetails}
         </div>
       </div>

@@ -1,19 +1,10 @@
 package org.trailcatalog.importers
 
-import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.ResponseBody
 import org.postgresql.jdbc.PgConnection
 import org.trailcatalog.createConnectionSource
 import java.lang.IllegalArgumentException
-import java.lang.RuntimeException
-import java.nio.charset.StandardCharsets
 import java.nio.file.Path
-import kotlin.io.path.name
-import kotlin.io.path.outputStream
 
 fun main(args: Array<String>) {
   // path is like north-america/us/washington
@@ -22,12 +13,14 @@ fun main(args: Array<String>) {
   var importOsmFeatures = true
   var importTcFeatures = true
   var fillTcRelations = true
+  var fillInContainment = true
   var fillInGeometry = true
 
   for (arg in args) {
     val (option, value) = arg.split("=")
     when (option) {
       "--geofabrik_path" -> geofabrikPath = value
+      "--fill_in_containment" -> fillInContainment = value.toBooleanStrict()
       "--fill_in_geometry" -> fillInGeometry = value.toBooleanStrict()
       "--fill_tc_relations" -> fillTcRelations = value.toBooleanStrict()
       "--immediately_bucket_paths" -> immediatelyBucketPaths = value.toBooleanStrict()
@@ -76,6 +69,13 @@ fun main(args: Array<String>) {
 
     if (fillInGeometry) {
       fillInGeometry(hikari)
+    }
+
+    if (fillInContainment) {
+      hikari.connection.use {
+        fillBoundaryContainments(it)
+        fillTrailContainments(it)
+      }
     }
   }
 }

@@ -14,9 +14,14 @@ import { Debouncer } from './debouncer';
 import { MAP_MOVED, PATH_SELECTED, TRAIL_SELECTED } from './events';
 
 interface Args {
-  lat: number;
-  lng: number;
-  zoom: number;
+  camera: {
+    lat: number;
+    lng: number;
+    zoom: number;
+  };
+  filter: {
+    boundary?: number;
+  };
 }
 
 interface Response extends ControllerResponse<Args, HTMLDivElement, undefined> {
@@ -52,7 +57,8 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
 
   constructor(response: Response) {
     super(response);
-    this.camera = new Camera(response.args.lat, response.args.lng, response.args.zoom);
+    const cameraArgs = response.args.camera;
+    this.camera = new Camera(cameraArgs.lat, cameraArgs.lng, cameraArgs.zoom);
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.notifyDataChanged();
@@ -64,7 +70,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
-    this.mapData = new MapData(this.camera, {
+    this.mapData = new MapData(this.camera, response.args.filter, {
       selectedPath: (path: Path) => {
         this.trigger(PATH_SELECTED, {controller: this, path});
       },

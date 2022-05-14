@@ -38,92 +38,17 @@ fun fetchMeta(ctx: Context) {
   ctx.contentType("application/octet-stream")
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
-
-//  val boundaries = ArrayList<WireBoundary>()
-//  connectionSource.connection.use {
-//    val query = if (cell.level() >= 12) {
-//      it.prepareStatement(
-//          "SELECT id, name, type "
-//              + "FROM boundaries "
-//              + "WHERE "
-//              + "((cell >= ? AND cell <= ?) OR (cell >= ? AND cell <= ?))").apply {
-//        val min = cell.rangeMin()
-//        val max = cell.rangeMax()
-//        setLong(1, min.id())
-//        setLong(2, max.id())
-//        setLong(3, min.id() + Long.MIN_VALUE)
-//        setLong(4, max.id() + Long.MIN_VALUE)
-//      }
-//    } else {
-//      it.prepareStatement(
-//          "SELECT id, name, type "
-//              + "FROM boundaries "
-//              + "WHERE "
-//              + "cell = ?").apply {
-//        setLong(1, cell.id())
-//      }
-//    }
-//    val results = query.executeQuery()
-//    while (results.next()) {
-//      boundaries.add(WireBoundary(
-//          id = results.getLong(1),
-//          name = results.getString(2),
-//          type = results.getInt(3),
-//      ))
-//    }
-//  }
-
-  val trails = ArrayList<WireTrail>()
-  connectionSource.connection.use {
-    val query = if (cell.level() >= SimpleS2.HIGHEST_METADATA_INDEX_LEVEL) {
-      it.prepareStatement(
-          "SELECT id, name, type, center_lat_degrees, center_lng_degrees, length_meters "
-              + "FROM trails "
-              + "WHERE "
-              + "((cell >= ? AND cell <= ?) OR (cell >= ? AND cell <= ?)) "
-              + "AND visibility = ${TrailVisibility.VISIBLE.id}").apply {
-        val min = cell.rangeMin()
-        val max = cell.rangeMax()
-        setLong(1, min.id())
-        setLong(2, max.id())
-        setLong(3, min.id() + Long.MIN_VALUE)
-        setLong(4, max.id() + Long.MIN_VALUE)
-      }
-    } else {
-      it.prepareStatement(
-          "SELECT id, name, type, center_lat_degrees, center_lng_degrees, length_meters "
-              + "FROM trails "
-              + "WHERE "
-              + "cell = ? AND visibility = ${TrailVisibility.VISIBLE.id}").apply {
-        setLong(1, cell.id())
-      }
-    }
-    val results = query.executeQuery()
-    while (results.next()) {
-      val projected = project(results.getDouble(4), results.getDouble(5))
-
-      trails.add(WireTrail(
-          id = results.getLong(1),
-          name = results.getString(2),
-          type = results.getInt(3),
-          pathIds = byteArrayOf(),
-          x = projected.first,
-          y = projected.second,
-          lengthMeters = results.getDouble(6),
-      ))
-    }
+  val boundary = try {
+    ctx.queryParam("boundary")?.toLong()
+  } catch (e: NumberFormatException) {
+    throw IllegalArgumentException("Invalid boundary")
   }
 
+  val trails =
+      fetchTrails(
+          cell, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL, /* includePaths= */ false, boundary)
   val bytes = AlignableByteArrayOutputStream()
   val output = LittleEndianDataOutputStream(bytes)
-//  output.writeInt(boundaries.size)
-//  for (boundary in boundaries) {
-//    output.writeLong(boundary.id)
-//    output.writeInt(boundary.type)
-//    val asUtf8 = boundary.name.toByteArray(Charsets.UTF_8)
-//    output.writeInt(asUtf8.size)
-//    output.write(asUtf8)
-//  }
 
   output.writeInt(trails.size)
   for (trail in trails) {
@@ -143,6 +68,11 @@ fun fetchDetail(ctx: Context) {
   ctx.contentType("application/octet-stream")
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
+  val boundary = try {
+    ctx.queryParam("boundary")?.toLong()
+  } catch (e: NumberFormatException) {
+    throw IllegalArgumentException("Invalid boundary")
+  }
 
   val paths = HashMap<Long, WirePath>()
   connectionSource.connection.use {
@@ -187,47 +117,7 @@ fun fetchDetail(ctx: Context) {
     }
   }
 
-  val trails = ArrayList<WireTrail>()
-  connectionSource.connection.use {
-    val query = if (cell.level() >= SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL) {
-      it.prepareStatement(
-          "SELECT id, name, type, path_ids, center_lat_degrees, center_lng_degrees, length_meters "
-              + "FROM trails "
-              + "WHERE "
-              + "((cell >= ? AND cell <= ?) OR (cell >= ? AND cell <= ?)) "
-              + "AND visibility = ${TrailVisibility.VISIBLE.id}").apply {
-        val min = cell.rangeMin()
-        val max = cell.rangeMax()
-        setLong(1, min.id())
-        setLong(2, max.id())
-        setLong(3, min.id() + Long.MIN_VALUE)
-        setLong(4, max.id() + Long.MIN_VALUE)
-      }
-    } else {
-      it.prepareStatement(
-          "SELECT id, name, type, path_ids, center_lat_degrees, center_lng_degrees, length_meters "
-              + "FROM trails "
-              + "WHERE "
-              + "cell = ? AND visibility = ${TrailVisibility.VISIBLE.id}").apply {
-        setLong(1, cell.id())
-      }
-    }
-    val results = query.executeQuery()
-    while (results.next()) {
-      val projected = project(results.getDouble(5), results.getDouble(6))
-
-      trails.add(WireTrail(
-          id = results.getLong(1),
-          name = results.getString(2),
-          type = results.getInt(3),
-          pathIds = results.getBytes(4),
-          x = projected.first,
-          y = projected.second,
-          lengthMeters = results.getDouble(7),
-      ))
-    }
-  }
-
+  val trails = fetchTrails(cell, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL, /* includePaths= */ true, boundary)
   val bytes = AlignableByteArrayOutputStream()
   val output = LittleEndianDataOutputStream(bytes)
 
@@ -264,6 +154,76 @@ fun fetchDetail(ctx: Context) {
   ctx.result(bytes.toByteArray())
 }
 
+private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boundary: Long?): List<WireTrail> {
+  val trails = ArrayList<WireTrail>()
+  connectionSource.connection.use {
+    val query = if (cell.level() >= bottom) {
+      it.prepareStatement(
+          "SELECT "
+              + "id, "
+              + "name, "
+              + "type, "
+              + (if (includePaths) "path_ids, " else "")
+              + "center_lat_degrees, "
+              + "center_lng_degrees, "
+              + "length_meters "
+              + "FROM trails t "
+              + (if (boundary != null) "JOIN trails_in_boundaries tib ON t.id = tib.trail_id " else "")
+              + "WHERE "
+              + "((cell >= ? AND cell <= ?) OR (cell >= ? AND cell <= ?)) "
+              + "AND visibility = ${TrailVisibility.VISIBLE.id} "
+              + (if (boundary != null) "AND tib.boundary_id = ?" else "")).apply {
+        val min = cell.rangeMin()
+        val max = cell.rangeMax()
+        setLong(1, min.id())
+        setLong(2, max.id())
+        setLong(3, min.id() + Long.MIN_VALUE)
+        setLong(4, max.id() + Long.MIN_VALUE)
+        if (boundary != null) {
+          setLong(5, boundary)
+        }
+      }
+    } else {
+      it.prepareStatement(
+          "SELECT "
+              + "id, "
+              + "name, "
+              + "type, "
+              + (if (includePaths) "path_ids, " else "")
+              + "center_lat_degrees, "
+              + "center_lng_degrees, "
+              + "length_meters "
+              + "FROM trails t "
+              + (if (boundary != null) "JOIN trails_in_boundaries tib ON t.id = tib.trail_id " else "")
+              + "WHERE "
+              + "cell = ? AND visibility = ${TrailVisibility.VISIBLE.id} "
+              + (if (boundary != null) "AND tib.boundary_id = ?" else "")).apply {
+        setLong(1, cell.id())
+        if (boundary != null) {
+          setLong(2, boundary)
+        }
+      }
+    }
+    val results = query.executeQuery()
+    while (results.next()) {
+      val pathOffset = if (includePaths) 1 else 0
+      val projected = project(results.getDouble(4 + pathOffset), results.getDouble(5 + pathOffset))
+
+      trails.add(
+          WireTrail(
+              id = results.getLong(1),
+              name = results.getString(2),
+              type = results.getInt(3),
+              pathIds = if (includePaths) results.getBytes(4) else byteArrayOf(),
+              x = projected.first,
+              y = projected.second,
+              lengthMeters = results.getDouble(6 + pathOffset),
+          ))
+    }
+  }
+  return trails
+}
+
 class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
 
   fun align(alignment: Int) {
@@ -292,4 +252,3 @@ private fun project(latDegrees: Double, lngDegrees: Double): Pair<Double, Double
   val y = ln((1 + sin(latRadians)) / (1 - sin(latRadians))) / (2 * Math.PI)
   return Pair(x, y)
 }
-

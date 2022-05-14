@@ -42,6 +42,10 @@ export class Trail implements Entity {
   ) {}
 }
 
+interface Filter {
+  boundary?: number;
+}
+
 interface Handle {
   readonly entity: Path|Trail;
   readonly line?: Float64Array;
@@ -76,6 +80,7 @@ export class MapData implements Layer {
 
   constructor(
       private readonly camera: Camera,
+      filter: Filter,
       private readonly listener: MapDataListener,
       private readonly textRenderer: TextRenderer,
   ) {
@@ -85,7 +90,11 @@ export class MapData implements Layer {
     this.detailCells = new Map();
     this.paths = new Map();
     this.trails = new Map();
-    this.fetcher = new Worker('static/data_fetcher_worker.js');
+    this.fetcher = new Worker('/static/data_fetcher_worker.js');
+    this.fetcher.postMessage({
+      ...filter,
+      kind: 'sfr',
+    });
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
       if (command.type === 'lcm') {
@@ -192,6 +201,7 @@ export class MapData implements Layer {
 
     const bounds = this.camera.viewportBounds(viewportSize[0], viewportSize[1]);
     this.fetcher.postMessage({
+      kind: 'uvr',
       lat: [bounds.lat().lo(), bounds.lat().hi()],
       lng: [bounds.lng().lo(), bounds.lng().hi()],
       zoom,

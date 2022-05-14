@@ -14,6 +14,7 @@ import org.trailcatalog.pbf.PathsCsvInputStream
 import org.trailcatalog.pbf.PathsInTrailsCsvInputStream
 import org.trailcatalog.pbf.PbfBlockReader
 import org.trailcatalog.pbf.TrailsCsvInputStream
+import org.trailcatalog.pbf.relationToSkeleton
 import org.trailcatalog.proto.RelationMemberFunction.INNER
 import org.trailcatalog.proto.RelationMemberFunction.OUTER
 import org.trailcatalog.proto.RelationSkeleton
@@ -74,8 +75,6 @@ fun seedFromPbf(
   }
 }
 
-private val BS_INNER = ByteString.copyFromUtf8("inner")
-
 private fun gatherNodes(
     block: PrimitiveBlock,
     nodes: HashMap<Long, Pair<Double, Double>>) {
@@ -106,32 +105,7 @@ private fun gatherRelationSkeletons(
     relations: HashMap<Long, RelationSkeleton>) {
   for (group in block.primitivegroupList) {
     for (relation in group.relationsList) {
-      var memberId = 0L
-      val skeleton = RelationSkeleton.newBuilder()
-      for (i in 0 until relation.memidsCount) {
-        memberId += relation.getMemids(i)
-        val inner = block.stringtable.getS(relation.getRolesSid(i)) == BS_INNER
-
-        when (relation.getTypes(i)) {
-          NODE -> {
-            // these are things like trailheads and labels (r237599), so ignore them
-          }
-          RELATION -> {
-            skeleton.addMembers(
-                RelationSkeletonMember.newBuilder()
-                    .setFunction(if (inner) INNER else OUTER)
-                    .setRelationId(memberId))
-          }
-          WAY -> {
-            skeleton.addMembers(
-                RelationSkeletonMember.newBuilder()
-                    .setFunction(if (inner) INNER else OUTER)
-                    .setWayId(memberId))
-          }
-          null -> {}
-        }
-      }
-      relations[relation.id] = skeleton.build()
+      relations[relation.id] = relationToSkeleton(relation, block.stringtable)
     }
   }
 }

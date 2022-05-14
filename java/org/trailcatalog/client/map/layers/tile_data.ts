@@ -21,7 +21,7 @@ export class TileData implements Layer {
   constructor(
       private readonly camera: Camera,
       private readonly renderer: Renderer) {
-    this.fetcher = new Worker('static/tile_fetcher_worker.js');
+    this.fetcher = new Worker('/static/tile_fetcher_worker.js');
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
       if (command.type === 'ltc') {

@@ -1,16 +1,24 @@
 package org.trailcatalog.pbf
 
+import com.google.protobuf.ByteString
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
 import crosby.binary.Osmformat.Relation
+import crosby.binary.Osmformat.Relation.MemberType.NODE
+import crosby.binary.Osmformat.Relation.MemberType.RELATION
+import crosby.binary.Osmformat.Relation.MemberType.WAY
 import crosby.binary.Osmformat.StringTable
 import java.nio.charset.StandardCharsets
 import org.apache.commons.text.StringEscapeUtils.escapeCsv
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.proto.RelationMemberFunction.INNER
+import org.trailcatalog.proto.RelationMemberFunction.OUTER
+import org.trailcatalog.proto.RelationSkeleton
+import org.trailcatalog.proto.RelationSkeletonMember
 
 class RelationsCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
     block,
-    "id,type,name\n".toByteArray(StandardCharsets.UTF_8),
+    "id,type,name,relation_skeleton\n".toByteArray(StandardCharsets.UTF_8),
 ) {
 
   override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
@@ -23,6 +31,8 @@ class RelationsCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
       if (data.name != null) {
         csv.append(escapeCsv(data.name))
       }
+      csv.append(",")
+      appendByteArray(relationToSkeleton(relation, block.stringtable).toByteArray(), csv)
       csv.append("\n")
     }
   }
@@ -73,4 +83,35 @@ fun getRelationData(relation: Relation, stringTable: StringTable): RelationData 
     name = "${network} ${ref}"
   }
   return RelationData(type = category, name = name)
+}
+
+private val BS_INNER = ByteString.copyFromUtf8("inner")
+
+fun relationToSkeleton(relation: Relation, stringTable: StringTable): RelationSkeleton {
+  var memberId = 0L
+  val skeleton = RelationSkeleton.newBuilder()
+  for (i in 0 until relation.memidsCount) {
+    memberId += relation.getMemids(i)
+    val inner = stringTable.getS(relation.getRolesSid(i)) == BS_INNER
+
+    when (relation.getTypes(i)) {
+      NODE -> {
+        // these are things like trailheads and labels (r237599), so ignore them
+      }
+      RELATION -> {
+        skeleton.addMembers(
+            RelationSkeletonMember.newBuilder()
+                .setFunction(if (inner) INNER else OUTER)
+                .setRelationId(memberId))
+      }
+      WAY -> {
+        skeleton.addMembers(
+            RelationSkeletonMember.newBuilder()
+                .setFunction(if (inner) INNER else OUTER)
+                .setWayId(memberId))
+      }
+      null -> {}
+    }
+  }
+  return skeleton.build()
 }
