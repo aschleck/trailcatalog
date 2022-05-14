@@ -15,7 +15,10 @@ import { DETAIL_ZOOM_THRESHOLD, FetcherCommand } from '../../workers/data_fetche
 
 import { Layer } from './layer';
 
-const TRAIL_MARKER_Z = 3;
+const Z_PATH = 1;
+const Z_RAISED_PATH = 2;
+const Z_TRAIL_MARKER = 3;
+const Z_RAISED_TRAIL_MARKER = 4;
 
 interface Entity {
   readonly id: bigint;
@@ -49,12 +52,18 @@ interface Filter {
   boundary?: number;
 }
 
-interface Handle {
-  readonly entity: Path|Trail;
-  readonly line?: Float64Array;
-  readonly position?: Vec2;
-  readonly screenPixelBound?: Vec4;
+interface PathHandle {
+  readonly entity: Path;
+  readonly line: Float64Array;
 }
+
+interface TrailHandle {
+  readonly entity: Trail;
+  readonly position: Vec2;
+  readonly screenPixelBound: Vec4;
+}
+
+type Handle = PathHandle|TrailHandle;
 
 interface MapDataListener {
   selectedPath(path: Path): void;
@@ -67,6 +76,9 @@ const HIGHLIGHT_TRAIL_COLOR = '#f2f2f2';
 const RENDER_PATHS_ZOOM_THRESHOLD = 10;
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 const TEXT_DECODER = new TextDecoder();
+
+const TRAIL_DIAMOND_REGULAR = renderableDiamond(false);
+const TRAIL_DIAMOND_HIGHLIGHTED = renderableDiamond(true);
 
 // 35px is a larger than the full height of a trail marker (full not half
 // because they are not centered vertically.)
@@ -82,6 +94,7 @@ export class MapData implements Layer {
   private readonly trails: Map<bigint, Trail>;
   private readonly fetcher: Worker;
   private readonly highlighted: Set<bigint>;
+  private readonly diamondPixelBounds: Vec4;
   private lastChange: number;
 
   constructor(
@@ -116,6 +129,15 @@ export class MapData implements Layer {
       }
     };
     this.highlighted = new Set();
+    const diamondPixelSize = this.textRenderer.measure(renderableDiamond(false));
+    const halfDiamondWidth = diamondPixelSize[0] / 2;
+    const halfDiamondHeight = diamondPixelSize[1] / 2;
+    this.diamondPixelBounds = [
+      -halfDiamondWidth,
+      -halfDiamondHeight,
+      halfDiamondWidth,
+      halfDiamondHeight,
+    ];
     this.lastChange = Date.now();
   }
 
@@ -130,6 +152,9 @@ export class MapData implements Layer {
   }
 
   queryClosest(point: Vec2): Path|Trail|undefined {
+    // This method is kind of funny because it tries to be abstract about the types it's processing,
+    // but it ends up being type specific implicitly.
+
     const near: Handle[] = [];
     const screenToWorldPx = this.camera.inverseWorldRadius;
     const radius = CLICK_RADIUS_PX * screenToWorldPx;
@@ -137,33 +162,30 @@ export class MapData implements Layer {
 
     let best = undefined;
     let bestDistance2 = (7 * screenToWorldPx) * (7 * screenToWorldPx);
-    for (const entity of near) {
+    for (const handle of near) {
       let d2 = Number.MAX_VALUE;
-      if (entity.line && this.camera.zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
+      if (handle.entity instanceof Path && this.camera.zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
+        const pathHandle = handle as PathHandle;
         const antibias = 1; // this makes us always prefer trails
-        d2 = distanceCheckLine(point, entity.line) + antibias;
-      } else if (entity.position) {
-        const p = entity.position;
-        const bound = entity.screenPixelBound;
-        if (bound) {
-          const lowX = p[0] + bound[0] * screenToWorldPx;
-          const lowY = p[1] + bound[1] * screenToWorldPx;
-          const highX = p[0] + bound[2] * screenToWorldPx;
-          const highY = p[1] + bound[3] * screenToWorldPx;
-          if (lowX <= point[0]
-              && point[0] <= highX
-              && lowY <= point[1]
-              && point[1] <= highY) {
-            // Labels can overlap each other, so we pick the one most centered
-            const dx = highX / 2 + lowX / 2 - point[0];
-            const dy = highY / 2 + lowY / 2 - point[1];
-            const bias = 10 * 10;
-            d2 = (dx * dx + dy * dy) / bias;
-          }
-        } else {
-          const dx = p[0] - point[0];
-          const dy = p[0] - point[0];
-          const bias = 10 * 10; // we bias towards picking points over lines
+        d2 = distanceCheckLine(point, pathHandle.line) + antibias;
+      } else if (handle.entity instanceof Trail) {
+        const trailHandle = handle as TrailHandle;
+        const p = trailHandle.position;
+        const bound =
+            this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD
+                ? trailHandle.screenPixelBound : this.diamondPixelBounds;
+        const lowX = p[0] + bound[0] * screenToWorldPx;
+        const lowY = p[1] + bound[1] * screenToWorldPx;
+        const highX = p[0] + bound[2] * screenToWorldPx;
+        const highY = p[1] + bound[3] * screenToWorldPx;
+        if (lowX <= point[0]
+            && point[0] <= highX
+            && lowY <= point[1]
+            && point[1] <= highY) {
+          // Labels can overlap each other, so we pick the one most centered
+          const dx = highX / 2 + lowX / 2 - point[0];
+          const dy = highY / 2 + lowY / 2 - point[1];
+          const bias = 10 * 10;
           d2 = (dx * dx + dy * dy) / bias;
         }
       } else {
@@ -171,12 +193,12 @@ export class MapData implements Layer {
       }
 
       if (d2 < bestDistance2) {
-        best = entity;
+        best = handle.entity;
         bestDistance2 = d2;
       }
     }
 
-    return best?.entity;
+    return best;
   }
 
   setHighlighted(entity: Path|Trail, highlighted: boolean): void {
@@ -311,13 +333,19 @@ export class MapData implements Layer {
         const lengthMeters = data.getFloat64();
         const trail = checkExists(this.trails.get(id)) as Trail;
         let text;
+        let z;
         const highlighted = this.highlighted.has(id);
         if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
           text = renderableTrailPin(lengthMeters, highlighted);
+          z = highlighted ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
+        } else if (highlighted) {
+          text = TRAIL_DIAMOND_HIGHLIGHTED;
+          z = Z_RAISED_TRAIL_MARKER;
         } else {
-          text = renderableDiamond(highlighted);
+          text = TRAIL_DIAMOND_REGULAR;
+          z = Z_TRAIL_MARKER;
         }
-        this.textRenderer.plan(text, trail.position, TRAIL_MARKER_Z, planner);
+        this.textRenderer.plan(text, trail.position, z, planner);
       }
     }
 
@@ -349,9 +377,16 @@ export class MapData implements Layer {
         const type = data.getInt32();
         const position: Vec2 = [data.getFloat64(), data.getFloat64()];
         const lengthMeters = data.getFloat64();
-        const highlighted = this.highlighted.has(id);
-        this.textRenderer.plan(
-            renderableDiamond(highlighted), position, TRAIL_MARKER_Z, planner);
+        let diamond;
+        let z;
+        if (this.highlighted.has(id)) {
+          diamond = TRAIL_DIAMOND_HIGHLIGHTED;
+          z = Z_RAISED_TRAIL_MARKER;
+        } else {
+          diamond = TRAIL_DIAMOND_REGULAR;
+          z = Z_TRAIL_MARKER;
+        }
+        this.textRenderer.plan(diamond, position, z, planner);
       }
     }
   }
@@ -402,10 +437,6 @@ export class MapData implements Layer {
         high: [position[0] + epsilon, position[1] + epsilon],
       };
       const lengthMeters = data.getFloat64();
-      const sparseScreenPixelSize =
-          this.textRenderer.measure(renderableDiamond(false));
-      const halfSparseWidth = sparseScreenPixelSize[0] / 2;
-      const halfSparseHeight = sparseScreenPixelSize[1] / 2;
       const trail =
           new Trail(
               id,
@@ -418,12 +449,7 @@ export class MapData implements Layer {
       this.metadataBounds.insert({
         entity: trail,
         position,
-        screenPixelBound: [
-          -halfSparseWidth,
-          -halfSparseHeight,
-          halfSparseWidth,
-          halfSparseHeight,
-        ],
+        screenPixelBound: this.diamondPixelBounds,
       }, bound);
       if (!this.trails.has(id)) {
         this.trails.set(id, trail);
