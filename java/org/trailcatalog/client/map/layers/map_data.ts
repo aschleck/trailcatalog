@@ -59,7 +59,8 @@ interface MapDataListener {
 }
 
 const DATA_ZOOM_THRESHOLD = 4;
-const RENDER_PATHS_ZOOM_THRESHOLD = 14;
+const RENDER_PATHS_ZOOM_THRESHOLD = 10;
+const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 13.5;
 const TEXT_DECODER = new TextDecoder();
 
 // 35px is a larger than the full height of a trail marker (full not half
@@ -123,22 +124,7 @@ export class MapData implements Layer {
     return near.map(h => h.entity);
   }
 
-  setTrailHighlighted(id: bigint, highlighted: boolean): void {
-    const trail = checkExists(this.trails.get(id));
-    const ids = trail.paths;
-    if (highlighted) {
-      for (const id of ids) {
-        this.highlighted.add(id & ~1n);
-      }
-    } else {
-      for (const id of ids) {
-        this.highlighted.delete(id & ~1n);
-      }
-    }
-    this.lastChange = Date.now();
-  }
-
-  selectClosest(point: Vec2): void {
+  queryClosest(point: Vec2): Path|Trail|undefined {
     const near: Handle[] = [];
     const screenToWorldPx = this.camera.inverseWorldRadius;
     const radius = CLICK_RADIUS_PX * screenToWorldPx;
@@ -184,8 +170,40 @@ export class MapData implements Layer {
       }
     }
 
-    if (best) {
-      const entity = best.entity;
+    return best?.entity;
+  }
+
+  setHighlighted(entity: Path|Trail, highlighted: boolean): void {
+    let ids;
+    if (entity instanceof Path) {
+      ids = [entity.id];
+    } else if (entity instanceof Trail) {
+      ids = entity.paths.map(id => id & ~1n);
+    } else {
+      throw checkExhaustive(entity);
+    }
+
+    if (highlighted) {
+      for (const id of ids) {
+        this.highlighted.add(id);
+      }
+    } else {
+      for (const id of ids) {
+        this.highlighted.delete(id);
+      }
+    }
+    this.lastChange = Date.now();
+  }
+
+  setTrailHighlighted(id: bigint, highlighted: boolean): void {
+    const trail = checkExists(this.trails.get(id));
+    this.setHighlighted(trail, highlighted);
+  }
+
+  selectClosest(point: Vec2): void {
+    const entity = this.queryClosest(point);
+
+    if (entity) {
       if (entity instanceof Path) {
         this.listener.selectedPath(entity);
       } else if (entity instanceof Trail) {
@@ -270,8 +288,13 @@ export class MapData implements Layer {
         data.skip(trailWayCount * 8 + 16);
         const lengthMeters = data.getFloat64();
         const trail = checkExists(this.trails.get(id)) as Trail;
-        this.textRenderer.plan(
-            renderableTrailPin(lengthMeters), trail.position, /* z= */ 1, planner);
+        let text;
+        if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
+          text = renderableTrailPin(lengthMeters);
+        } else {
+          text = renderableShield();
+        }
+        this.textRenderer.plan(text, trail.position, /* z= */ 1, planner);
       }
     }
 

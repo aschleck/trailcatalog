@@ -51,6 +51,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
   private readonly tileData: TileData;
 
   private screenArea: DOMRect;
+  private lastHoverTarget: Path|Trail|undefined;
   private lastMousePosition: Vec2|undefined;
   private lastRenderPlan: number;
   private nextRender: RenderType;
@@ -124,13 +125,18 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
   }
 
   click(clientX: number, clientY: number): void {
-    const center = this.camera.centerPixel;
-    const client = this.screenToRelativeCoord(clientX, clientY);
-    const position: Vec2 = [
-      center[0] + client[0] * this.camera.inverseWorldRadius,
-      center[1] + client[1] * this.camera.inverseWorldRadius,
-    ];
-    this.mapData.selectClosest(position);
+    this.mapData.selectClosest(this.clientToWorld(clientX, clientY));
+  }
+
+  hover(clientX: number, clientY: number): void {
+    const best = this.mapData.queryClosest(this.clientToWorld(clientX, clientY));
+    if (this.lastHoverTarget && this.lastHoverTarget !== best) {
+      this.mapData.setHighlighted(this.lastHoverTarget, false);
+    }
+    this.lastHoverTarget = best;
+    if (best) {
+      this.mapData.setHighlighted(best, true);
+    }
   }
 
   idle(): void {
@@ -172,6 +178,15 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
       center: this.camera.center,
       zoom: this.camera.zoom,
     });
+  }
+
+  private clientToWorld(clientX: number, clientY: number): Vec2 {
+    const center = this.camera.centerPixel;
+    const client = this.screenToRelativeCoord(clientX, clientY);
+    return [
+      center[0] + client[0] * this.camera.inverseWorldRadius,
+      center[1] + client[1] * this.camera.inverseWorldRadius,
+    ];
   }
 
   private screenToRelativeCoord(clientX: number, clientY: number): Vec2 {
@@ -237,6 +252,7 @@ function isTrail(e: Path|Trail): e is Trail {
 
 interface PointerListener {
   click(clientX: number, clientY: number): void;
+  hover(clientX: number, clientY: number): void;
   idle(): void;
   pan(dx: number, dy: number): void;
   zoom(amount: number, clientX: number, clientY: number): void;
@@ -265,6 +281,7 @@ class PointerInterpreter {
 
   pointerMove(e: PointerEvent): void {
     if (!this.pointers.has(e.pointerId)) {
+      this.listener.hover(e.clientX, e.clientY);
       return;
     }
 
