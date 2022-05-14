@@ -11,7 +11,7 @@ import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
-import { MAP_MOVED, PATH_SELECTED, TRAIL_SELECTED } from './events';
+import { DATA_CHANGED, MAP_MOVED, PATH_SELECTED, TRAIL_SELECTED } from './events';
 
 interface Args {
   camera: {
@@ -120,6 +120,10 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
         .filter(isTrail);
   }
 
+  listTrailsOnPath(path: Path): Trail[] {
+    return this.mapData.listTrailsOnPath(path);
+  }
+
   setTrailHighlighted(trail: bigint, highlighted: boolean): void {
     return this.mapData.setTrailHighlighted(trail, highlighted);
   }
@@ -169,15 +173,15 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
       layer.viewportBoundsChanged(size, this.camera.zoom);
     }
 
-    this.notifyDataChanged();
-  }
-
-  private notifyDataChanged(): void {
     this.trigger(MAP_MOVED, {
       controller: this,
       center: this.camera.center,
       zoom: this.camera.zoom,
     });
+  }
+
+  private notifyDataChanged(): void {
+    this.trigger(DATA_CHANGED, {controller: this});
   }
 
   private clientToWorld(clientX: number, clientY: number): Vec2 {
@@ -263,9 +267,13 @@ class PointerInterpreter {
   private readonly pointers: Map<number, PointerEvent>;
   private maybeClickStart: PointerEvent|undefined;
 
+  // If the user is panning or zooming, we want to trigger an idle call when they stop.
+  private needIdle: boolean;
+
   constructor(private readonly listener: PointerListener) {
     this.pointers = new Map();
     this.maybeClickStart = undefined;
+    this.needIdle = false;
   }
 
   pointerDown(e: PointerEvent): void {
@@ -286,6 +294,7 @@ class PointerInterpreter {
     }
 
     e.preventDefault();
+    this.needIdle = true;
 
     if (this.pointers.size === 1) {
       const [last] = this.pointers.values();
@@ -328,7 +337,10 @@ class PointerInterpreter {
     this.pointers.delete(e.pointerId);
 
     if (this.pointers.size === 0) {
-      this.listener.idle();
+      if (this.needIdle) {
+        this.listener.idle();
+        this.needIdle = false;
+      }
 
       if (this.maybeClickStart) {
         this.listener.click(this.maybeClickStart.clientX, this.maybeClickStart.clientY);

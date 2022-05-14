@@ -1,7 +1,7 @@
 import * as corgi from 'js/corgi';
 
 import { metersToMiles } from './common/math';
-import { MAP_MOVED, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
+import { DATA_CHANGED, MAP_MOVED, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
 import { MapElement } from './map/map_element';
 
 import { OverviewController, State } from './overview_controller';
@@ -13,7 +13,7 @@ export function OverviewElement({boundary}: {
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = {
-      selectedTrail: undefined,
+      selectedTrails: [],
       showTrailsList: false,
       trails: [],
     };
@@ -35,8 +35,8 @@ export function OverviewElement({boundary}: {
   const zoom = floatCoalesce(url.searchParams.get('zoom'), 12);
 
   let trailDetails;
-  if (state.selectedTrail) {
-    trailDetails = <TrailDetailElement trail={state.selectedTrail} />;
+  if (state.selectedTrails.length > 0) {
+    trailDetails = <SelectedTrailsElement trails={state.selectedTrails} />;
   } else {
     trailDetails = <></>;
   }
@@ -58,6 +58,7 @@ export function OverviewElement({boundary}: {
           args: undefined,
           events: {
             corgi: [
+              [DATA_CHANGED, 'onDataChange'],
               [MAP_MOVED, 'onMove'],
               [PATH_SELECTED, 'onPathSelected'],
               [TRAIL_SELECTED, 'onTrailSelected'],
@@ -98,33 +99,38 @@ export function OverviewElement({boundary}: {
   </>;
 }
 
-function TrailDetailElement({ trail }: { trail: Trail }) {
+function SelectedTrailsElement({ trails }: { trails: Trail[] }) {
   return <div
+      className="absolute inset-0"
+      unboundEvents={{click: 'unselectTrails'}}
+  >
+    <div
       className="
           absolute
           bg-white
           left-1/2
-          p-4
           rounded
           top-1/2
           -translate-x-1/2
           -translate-y-1/2
       "
   >
-    <section className="flex space-x-2">
-      <header className="font-bold font-lg grow text-tc-700">{trail.name}</header>
-      <aside className="cursor-pointer" unboundEvents={{click: 'unselectTrail'}}>✕</aside>
-    </section>
-    <section className="flex">
-      <section>
-        <header className="font-medium text-tc-500 uppercase">
-          Distance
-        </header>
-        <section>
-          {metersToMiles(trail.lengthMeters).toFixed(1)} miles
+      {trails.map(trail =>
+        <section className="m-4">
+          <header className="font-bold font-lg grow text-tc-700">
+            {trail.name}
+          </header>
+          <section>
+            <span className="text-tc-500">
+              Distance:
+            </span>
+            <span>
+              {metersToMiles(trail.lengthMeters).toFixed(1)} miles
+            </span>
+          </section>
         </section>
-      </section>
-    </section>
+      )}
+    </div>
   </div>;
 }
 

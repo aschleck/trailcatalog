@@ -112,6 +112,8 @@ const vElementPath: VContext[] = [];
 const vElements = new WeakSet<VElement>();
 const vElementsToNodes = new WeakMap<VElement, Node>();
 const vHandlesToElements = new WeakMap<VHandle, VElement>();
+const unboundEventListeners =
+    new WeakMap<HTMLElement, Array<[string, EventListenerOrEventListenerObject]>>();
 
 export function createVirtualElement(
     element: keyof HTMLElementTagNameMap|ElementFactory|(typeof Fragment),
@@ -146,7 +148,7 @@ export function createVirtualElement(
     }
 
     // Optimistic check
-    if (previousElement && shallowEqual(props, checkExists(previousElement.factoryProps))) {
+    if (previousElement && deepEqual(props, checkExists(previousElement.factoryProps))) {
       return previousElement;
     }
 
@@ -262,7 +264,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
     return element;
   }
 
-  const node = vElementsToNodes.get(from) as Element;
+  const node = vElementsToNodes.get(from) as HTMLElement;
   if (!node) {
     throw new Error('Expecting an existing node but unable to find it');
   }
@@ -275,13 +277,15 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   const oldPropKeys = Object.keys(from.props) as Array<keyof Properties<HTMLElement>>;
   const newPropKeys = Object.keys(to.props) as Array<keyof Properties<HTMLElement>>;
   for (const key of newPropKeys) {
-    if (key === 'children' || key === 'js' || key == 'unboundEvents') {
+    if (key === 'children' || key === 'js') {
       continue;
     }
 
-    if (from.props[key] !== to.props[key]) {
+    if (!deepEqual(from.props[key], to.props[key])) {
       if (key === 'className') {
         node.className = checkExists(to.props[key]);
+      } else if (key === 'unboundEvents') {
+        result.unboundEventss.push([node, checkExists(to.props[key])]);
       } else {
         node.setAttribute(key, checkExists(to.props[key]));
       }
@@ -289,7 +293,11 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   }
   for (const key of oldPropKeys) {
     if (!to.props.hasOwnProperty(key)) {
-      node.removeAttribute(key === 'className' ? 'class' : key);
+      if (key === 'unboundEvents') {
+        result.unboundEventss.push([node, {}]);
+      } else {
+        node.removeAttribute(key === 'className' ? 'class' : key);
+      }
     }
   }
 
@@ -460,6 +468,13 @@ function applyInstantiationResult(result: InstantiationResult): void {
   result.sideEffects.forEach(e => { e(); });
 
   for (const [element, events] of result.unboundEventss) {
+    const currentListeners = unboundEventListeners.get(element);
+    if (currentListeners) {
+      for (const [event, handler] of currentListeners) {
+        element.removeEventListener(event, handler);
+      }
+    }
+
     let cursor: HTMLElement|null = element;
     while (cursor !== null && !elementsToControllerSpecs.has(cursor)) {
       cursor = cursor.parentElement;
@@ -474,21 +489,23 @@ function applyInstantiationResult(result: InstantiationResult): void {
     const root = cursor;
     const spec = checkExists(elementsToControllerSpecs.get(root));
 
+    const listeners: Array<[string, EventListenerOrEventListenerObject]> = [];
     for (const [event, handler] of Object.entries(events)) {
       if (!(handler in spec.controller.prototype)) {
         console.error(`Unable to bind ${event} to ${handler}, method doesn't exist`);
         continue;
       }
 
-      element.addEventListener(
-          event,
-          (e: any) => {
-            maybeInstantiateAndCall(root, spec, (controller: any) => {
-              const method = controller[handler] as (e: any) => unknown;
-              method.call(controller, e);
-            });
-          });
+      const invoker = (e: any) => {
+        maybeInstantiateAndCall(root, spec, (controller: any) => {
+          const method = controller[handler] as (e: any) => unknown;
+          method.call(controller, e);
+        });
+      };
+      element.addEventListener(event, invoker);
+      listeners.push([event, invoker]);
     }
+    unboundEventListeners.set(element, listeners);
   }
 }
 
@@ -512,27 +529,38 @@ function isCorgiElement(v: unknown): v is CorgiElement {
   return v instanceof CorgiElement;
 }
 
-function shallowEqual(a: object, b: object): boolean {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-  if (aKeys.length !== bKeys.length) {
-    return false;
-  }
-  for (const key of aKeys) {
-    if (!b.hasOwnProperty(key)) {
+function deepEqual(a: unknown|undefined, b: unknown|undefined): boolean {
+  if (a === b) {
+    return true;
+  } else if (a instanceof Array && b instanceof Array) {
+    if (a.length !== b.length) {
       return false;
     }
-    const aValue = (a as {[k: string]: unknown})[key];
-    const bValue = (b as {[k: string]: unknown})[key];
-    if (aValue && bValue && typeof aValue === 'object' && typeof bValue === 'object') {
-      if (!shallowEqual(aValue, bValue)) {
+    for (let i = 0; i < a.length; ++i) {
+      if (!deepEqual(a[i], b[i])) {
         return false;
       }
-    } else if (aValue !== bValue) {
+    }
+    return true;
+  } else if (a instanceof Object && b instanceof Object) {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) {
       return false;
     }
+    for (const key of aKeys) {
+      if (!b.hasOwnProperty(key)) {
+        return false;
+      }
+      const aValue = (a as {[k: string]: unknown})[key];
+      const bValue = (b as {[k: string]: unknown})[key];
+      if (!deepEqual(aValue, bValue)) {
+        return false;
+      }
+    }
+    return true;
   }
-  return true;
+  return false;
 }
 
 function checkExists<V>(v: V|null|undefined): V {

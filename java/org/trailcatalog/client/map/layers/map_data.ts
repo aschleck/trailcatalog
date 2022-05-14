@@ -145,6 +145,10 @@ export class MapData implements Layer {
     return this.lastChange > time;
   }
 
+  listTrailsOnPath(path: Path): Trail[] {
+    return path.trails.map(t => this.trails.get(t)).filter(exists);
+  }
+
   queryInBounds(bounds: S2LatLngRect): Array<Path|Trail> {
     const near: Handle[] = [];
     this.getActiveBounds().queryRect(projectLatLngRect(bounds), near);
@@ -157,6 +161,10 @@ export class MapData implements Layer {
 
     const near: Handle[] = [];
     const screenToWorldPx = this.camera.inverseWorldRadius;
+    // We want to select a trail even if 0 distance to a path
+    const pathAntibias2 = screenToWorldPx * screenToWorldPx;
+    // We really like trails
+    const trailBias2 = 10 * 10;
     const radius = CLICK_RADIUS_PX * screenToWorldPx;
     this.getActiveBounds().queryCircle(point, radius, near);
 
@@ -166,8 +174,7 @@ export class MapData implements Layer {
       let d2 = Number.MAX_VALUE;
       if (handle.entity instanceof Path && this.camera.zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
         const pathHandle = handle as PathHandle;
-        const antibias = 1; // this makes us always prefer trails
-        d2 = distanceCheckLine(point, pathHandle.line) + antibias;
+        d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
       } else if (handle.entity instanceof Trail) {
         const trailHandle = handle as TrailHandle;
         const p = trailHandle.position;
@@ -185,8 +192,7 @@ export class MapData implements Layer {
           // Labels can overlap each other, so we pick the one most centered
           const dx = highX / 2 + lowX / 2 - point[0];
           const dy = highY / 2 + lowY / 2 - point[1];
-          const bias = 10 * 10;
-          d2 = (dx * dx + dy * dy) / bias;
+          d2 = (dx * dx + dy * dy) / trailBias2;
         }
       } else {
         continue;
@@ -661,4 +667,12 @@ function renderableDiamond(highlighted: boolean): RenderableText {
     paddingX: 0,
     paddingY: 0,
   };
+}
+
+function exists<T>(v: T|null|undefined): v is T {
+  if (v === null || v === undefined) {
+    return false;
+  } else {
+    return true;
+  }
 }

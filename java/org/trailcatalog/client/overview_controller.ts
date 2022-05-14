@@ -2,10 +2,10 @@ import { Controller, ControllerResponse } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
-import { MAP_MOVED, MapController, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
+import { DATA_CHANGED, MAP_MOVED, MapController, PATH_SELECTED, Trail, TRAIL_SELECTED } from './map/events';
 
 export interface State {
-  selectedTrail: Trail|undefined;
+  selectedTrails: Trail[];
   showTrailsList: boolean;
   trails: Trail[];
 }
@@ -22,6 +22,14 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
     super(response);
   }
 
+  onDataChange(e: CorgiEvent<typeof DATA_CHANGED>): void {
+    this.updateState({
+      ...this.state,
+      trails: e.detail.controller.listTrailsInViewport()
+          .sort((a, b) => b.lengthMeters - a.lengthMeters),
+    });
+  }
+
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
     // TODO(april): it'd be nice if this was a constructor arg or something
     this.mapController = e.detail.controller;
@@ -35,19 +43,23 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
 
     this.updateState({
       ...this.state,
+      selectedTrails: [],
       trails: controller.listTrailsInViewport()
           .sort((a, b) => b.lengthMeters - a.lengthMeters),
     });
   }
 
   onPathSelected(e: CorgiEvent<typeof PATH_SELECTED>): void {
-    console.log(e);
+    this.updateState({
+      ...this.state,
+      selectedTrails: e.detail.controller.listTrailsOnPath(e.detail.path),
+    });
   }
 
   onTrailSelected(e: CorgiEvent<typeof TRAIL_SELECTED>): void {
     this.updateState({
       ...this.state,
-      selectedTrail: e.detail.trail,
+      selectedTrails: [e.detail.trail],
     });
   }
 
@@ -66,10 +78,10 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
     this.setTrailHighlighted(e, false);
   }
 
-  unselectTrail(e: MouseEvent): void {
+  unselectTrails(e: MouseEvent): void {
     this.updateState({
       ...this.state,
-      selectedTrail: undefined,
+      selectedTrails: [],
     });
   }
 

@@ -3,6 +3,7 @@ import { declareEvent } from 'js/corgi/events';
 
 export interface MapController {
   listTrailsInViewport(): Trail[];
+  listTrailsOnPath(path: Path): Trail[];
   setTrailHighlighted(trail: bigint, selected: boolean): void;
 }
 
@@ -15,6 +16,10 @@ export interface Trail {
   readonly name: string;
   readonly lengthMeters: number;
 }
+
+export const DATA_CHANGED = declareEvent<{
+  controller: MapController;
+}>('data_changed');
 
 export const MAP_MOVED = declareEvent<{
   controller: MapController;
