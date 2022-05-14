@@ -12,7 +12,7 @@ import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
 import { Debouncer } from './debouncer';
-import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
+import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
 
 interface Args {
   camera: {
@@ -133,8 +133,11 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
 
   hover(clientX: number, clientY: number): void {
     const best = this.mapData.queryClosest(this.clientToWorld(clientX, clientY));
-    if (this.lastHoverTarget && this.lastHoverTarget !== best) {
-      this.mapData.setHighlighted(this.lastHoverTarget, false);
+    if (this.lastHoverTarget !== best) {
+      if (this.lastHoverTarget) {
+        this.mapData.setHighlighted(this.lastHoverTarget, false);
+      }
+      this.trigger(HOVER_CHANGED, {controller: this, target: best});
     }
     this.lastHoverTarget = best;
     if (best) {

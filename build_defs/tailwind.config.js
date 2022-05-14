@@ -8,7 +8,8 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        'tc': {
+        'highlight': '#ffe600',
+        'tc-gray': {
           200: '#2c2c2c',
           300: '#3a3a3a',
           500: '#737a80',

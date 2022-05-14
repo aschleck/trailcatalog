@@ -13,6 +13,11 @@ export const DATA_CHANGED = declareEvent<{
   controller: MapController;
 }>('data_changed');
 
+export const HOVER_CHANGED = declareEvent<{
+  controller: MapController;
+  target: Path|Trail|undefined;
+}>('hover_changed');
+
 export const MAP_MOVED = declareEvent<{
   controller: MapController;
   center: S2LatLng;

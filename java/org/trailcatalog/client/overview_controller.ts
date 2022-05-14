@@ -2,10 +2,11 @@ import { Controller, ControllerResponse } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
-import { DATA_CHANGED, MAP_MOVED, MapController, SELECTION_CHANGED } from './map/events';
+import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, MapController, SELECTION_CHANGED } from './map/events';
 import { Path, Trail } from './models/types';
 
 export interface State {
+  hovering: Path|Trail|undefined;
   selectedTrails: Trail[];
   showTrailsList: boolean;
   trails: Trail[];
@@ -28,6 +29,13 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
       ...this.state,
       trails: e.detail.controller.listTrailsInViewport()
           .sort((a, b) => b.lengthMeters - a.lengthMeters),
+    });
+  }
+
+  onHoverChanged(e: CorgiEvent<typeof HOVER_CHANGED>): void {
+    this.updateState({
+      ...this.state,
+      hovering: e.detail.target,
     });
   }
 

@@ -1,7 +1,7 @@
 import * as corgi from 'js/corgi';
 
 import { metersToMiles } from './common/math';
-import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
+import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
 import { Trail } from './models/types';
 
@@ -14,6 +14,7 @@ export function OverviewElement({boundary}: {
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = {
+      hovering: undefined,
       selectedTrails: [],
       showTrailsList: false,
       trails: [],
@@ -60,6 +61,7 @@ export function OverviewElement({boundary}: {
           events: {
             corgi: [
               [DATA_CHANGED, 'onDataChange'],
+              [HOVER_CHANGED, 'onHoverChanged'],
               [MAP_MOVED, 'onMove'],
               [SELECTION_CHANGED, 'onSelectionChanged'],
             ],
@@ -68,7 +70,7 @@ export function OverviewElement({boundary}: {
         })}
         className="flex flex-col h-full"
     >
-      <div className="align-middle bg-tc-200 leading-none">
+      <div className="align-middle bg-tc-gray-200 leading-none">
         <FabricIcon
             name="List"
             className={
@@ -81,13 +83,18 @@ export function OverviewElement({boundary}: {
       <div className="flex grow overflow-hidden relative">
         <div className={
             (state.showTrailsList ? "" : "hidden md:block ")
-                + "absolute bg-white inset-0 max-h-full overflow-y-scroll p-4 z-10 md:relative md:w-80"
+                + "absolute bg-white inset-0 max-h-full overflow-y-scroll z-10 md:relative md:w-80"
         }>
-          <header className="flex gap-2 uppercase">
+          <header className="flex gap-2 px-4 pt-2 uppercase">
             <div className="grow">Name</div>
             <div className="shrink-0 w-24">Distance</div>
           </header>
-          {filteredTrails.map(trail => <TrailListElement trail={trail} />)}
+          {filteredTrails.map(trail =>
+              <TrailListElement
+                  highlight={state?.hovering === trail}
+                  trail={trail}
+              />
+          )}
           {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
         </div>
         <div className="grow h-full relative">
@@ -113,7 +120,7 @@ function SelectedTrailsElement({ trails }: { trails: Trail[] }) {
   >
     {trails.map(trail =>
       <section
-          className="p-2 hover:bg-tc-700"
+          className="p-2 hover:bg-tc-gray-700"
           data-trail-id={trail.id}
           unboundEvents={{
             click: 'viewTrail',
@@ -123,7 +130,7 @@ function SelectedTrailsElement({ trails }: { trails: Trail[] }) {
           {trail.name}
         </header>
         <section>
-          <span className="text-tc-500">
+          <span className="text-tc-gray-500">
             Distance:
           </span>
           <span>
@@ -135,25 +142,27 @@ function SelectedTrailsElement({ trails }: { trails: Trail[] }) {
   </div>;
 }
 
-function TrailListElement({ trail }: { trail: Trail }) {
-  return <div>
-    <header
-        className="border-b cursor-pointer flex gap-2 py-2"
-        data-trail-id={trail.id}
-        unboundEvents={{
-          mouseover: 'highlightTrail',
-          mouseout: 'unhighlightTrail',
-        }}>
-      <div className="font-lg font-semibold grow">{trail.name}</div>
-      <div className="shrink-0 w-24">
-        <span className="font-bold font-lg">
-          {metersToMiles(trail.lengthMeters).toFixed(1)}
-        </span>
-        {' '}
-        <span className="font-xs text-slate-400">miles</span>
-      </div>
-    </header>
-  </div>;
+function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Trail }) {
+  return <section
+      className="border-b cursor-pointer flex gap-2 group items-stretch pr-2"
+      data-trail-id={trail.id}
+      unboundEvents={{
+        mouseover: 'highlightTrail',
+        mouseout: 'unhighlightTrail',
+      }}>
+    <div className={
+        (highlight ? 'bg-highlight ' : '') + 'w-2 group-hover:bg-highlight'
+    }>
+    </div>
+    <div className="font-lg font-semibold grow py-2">{trail.name}</div>
+    <div className="py-2 shrink-0 w-24">
+      <span className="font-bold font-lg">
+        {metersToMiles(trail.lengthMeters).toFixed(1)}
+      </span>
+      {' '}
+      <span className="font-xs text-slate-400">miles</span>
+    </div>
+  </section>;
 }
 
 function floatCoalesce(...numbers: Array<string|number|null>): number {
