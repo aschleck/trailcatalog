@@ -33,12 +33,15 @@ let nextProgramId = 0;
 
 export abstract class Program<P extends ProgramData> {
 
+  private readonly geometryType: number;
   readonly id: number;
 
   constructor(
       protected readonly program: P,
       protected readonly gl: WebGL2RenderingContext,
+      geometryType?: number,
   ) {
+    this.geometryType = geometryType ?? gl.TRIANGLE_STRIP;
     this.id = nextProgramId;
     nextProgramId += 1;
   }
@@ -77,9 +80,9 @@ export abstract class Program<P extends ProgramData> {
       }
 
       if (drawable.instances) {
-        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
+        gl.drawArraysInstanced(this.geometryType, 0, this.program.vertexCount, drawable.instances);
       } else {
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, this.program.vertexCount);
+        gl.drawArrays(this.geometryType, 0, this.program.vertexCount);
       }
     }
 

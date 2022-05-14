@@ -3,15 +3,11 @@ import { Vec2, Vec4 } from '../../common/types';
 import { Camera } from '../models/camera';
 
 import { BillboardProgram } from './billboard_program';
+import { Line } from './geometry';
+import { LineCapProgram } from './line_cap_program';
 import { LineProgram } from './line_program';
 import { Drawable } from './program';
 import { Renderer } from './renderer';
-
-export interface Line {
-  colorFill: Vec4;
-  colorStroke: Vec4;
-  vertices: Float64Array;
-}
 
 const MAX_GEOMETRY_BYTES = 28_000_000;
 
@@ -23,6 +19,7 @@ export class RenderPlanner {
   private geometryByteSize: number;
 
   private readonly billboardProgram: BillboardProgram;
+  private readonly lineCapProgram: LineCapProgram;
   private readonly lineProgram: LineProgram;
 
   constructor(private area: Vec2, private readonly renderer: Renderer) {
@@ -32,6 +29,7 @@ export class RenderPlanner {
     this.geometryByteSize = 0;
 
     this.billboardProgram = new BillboardProgram(renderer.gl);
+    this.lineCapProgram = new LineCapProgram(renderer.gl);
     this.lineProgram = new LineProgram(renderer.gl);
   }
 
@@ -122,51 +120,23 @@ export class RenderPlanner {
   }
 
   addLines(lines: Line[], z: number): void {
-    const stride = 4 + 4 + 4 + 4 + 1 + 1;
     const vertices = new Float32Array(this.geometry, this.geometryByteSize);
-    let vertexOffset = 0;
-    for (const line of lines) {
-      const doubles = line.vertices;
-      let distanceAlong = 0;
-      for (let i = 0; i < doubles.length - 2; i += 2) {
-        const x = doubles[i + 0];
-        const y = doubles[i + 1];
-        const xp = doubles[i + 2];
-        const yp = doubles[i + 3];
-
-        const xF = Math.fround(x);
-        const xR = x - xF;
-        const yF = Math.fround(y);
-        const yR = y - yF;
-        const xpF = Math.fround(xp);
-        const xpR = xp - xpF;
-        const ypF = Math.fround(yp);
-        const ypR = yp - ypF;
-
-        vertices.set([
-          xF, xR, yF, yR,
-          xpF, xpR, ypF, ypR,
-          ...line.colorFill,
-          ...line.colorStroke,
-          distanceAlong,
-          3,
-        ], vertexOffset);
-
-        const dx = xp - x;
-        const dy = yp - y;
-        distanceAlong += Math.sqrt(dx * dx + dy * dy);
-        vertexOffset += stride;
-      }
-    }
+    const drawable = this.lineProgram.plan(lines, vertices);
 
     this.drawables.push({
       buffer: this.geometryBuffer,
-      instances: vertexOffset / stride,
+      instances: drawable.instances,
+      offset: this.geometryByteSize,
+      program: this.lineCapProgram,
+      z,
+    }, {
+      buffer: this.geometryBuffer,
+      instances: drawable.instances,
       offset: this.geometryByteSize,
       program: this.lineProgram,
       z,
     });
-    this.geometryByteSize += 4 * vertexOffset;
+    this.geometryByteSize += drawable.bytes;
   }
 
   private align(alignment: number): void {

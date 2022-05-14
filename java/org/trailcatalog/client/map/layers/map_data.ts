@@ -8,11 +8,14 @@ import { LittleEndianView } from '../../common/little_endian_view';
 import { metersToMiles, reinterpretLong } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { Camera, projectLatLngRect } from '../models/camera';
-import { Line, RenderPlanner } from '../rendering/render_planner';
+import { Line } from '../rendering/geometry';
+import { RenderPlanner } from '../rendering/render_planner';
 import { DIAMOND_RADIUS_PX, Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
 import { DETAIL_ZOOM_THRESHOLD, FetcherCommand } from '../../workers/data_fetcher';
 
 import { Layer } from './layer';
+
+const TRAIL_MARKER_Z = 3;
 
 interface Entity {
   readonly id: bigint;
@@ -241,8 +244,15 @@ export class MapData implements Layer {
   private planDetailed(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     const cells = this.detailCellsInView(viewportSize);
     const lines: Line[] = [];
-    const regularFill: Vec4 = [0, 0, 0, 1];
-    const highlightedFill: Vec4 = [1, 0.918, 0, 1];
+    const raised: Line[] = [];
+    const regularColor = {
+      fill: [0, 0, 0, 1] as Vec4,
+      stroke: [0, 0, 0, 0] as Vec4,
+    };
+    const highlightedColor = {
+      fill: [1, 0.918, 0, 1] as Vec4,
+      stroke: [0, 0, 0, 1] as Vec4,
+    };
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
@@ -258,17 +268,25 @@ export class MapData implements Layer {
         const id = data.getBigInt64();
         const highlighted = this.highlighted.has(id);
 
-        if (highlighted || zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
+        if (zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
           const type = data.getInt32();
           const trailCount = data.getInt32();
           data.skip(trailCount * 8);
           const pathVertexBytes = data.getInt32();
           const pathVertexCount = pathVertexBytes / 16;
           data.align(8);
-          const color = this.highlighted.has(id) ? highlightedFill : regularFill;
-          lines.push({
-            colorFill: color,
-            colorStroke: color,
+          let color;
+          let buffer;
+          if (this.highlighted.has(id)) {
+            color = highlightedColor;
+            buffer = raised;
+          } else {
+            color = regularColor;
+            buffer = lines;
+          }
+          buffer.push({
+            colorFill: color.fill,
+            colorStroke: color.stroke,
             vertices: data.sliceFloat64(pathVertexCount * 2),
           });
         } else {
@@ -299,12 +317,15 @@ export class MapData implements Layer {
         } else {
           text = renderableDiamond(highlighted);
         }
-        this.textRenderer.plan(text, trail.position, /* z= */ 1, planner);
+        this.textRenderer.plan(text, trail.position, TRAIL_MARKER_Z, planner);
       }
     }
 
     if (lines.length > 0) {
       planner.addLines(lines, 0);
+    }
+    if (raised.length > 0) {
+      planner.addLines(raised, 1);
     }
   }
 
@@ -330,7 +351,7 @@ export class MapData implements Layer {
         const lengthMeters = data.getFloat64();
         const highlighted = this.highlighted.has(id);
         this.textRenderer.plan(
-            renderableDiamond(highlighted), position, /* z= */ 1, planner);
+            renderableDiamond(highlighted), position, TRAIL_MARKER_Z, planner);
       }
     }
   }
@@ -600,7 +621,7 @@ function renderableTrailPin(lengthMeters: number, highlighted: boolean): Rendera
     ...renderableDiamond(highlighted),
     text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
     paddingX: 6,
-    paddingY: 6,
+    paddingY: 7,
   };
 }
 

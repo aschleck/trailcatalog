@@ -72,8 +72,7 @@ export class TextRenderer {
     const metrics = ctx.measureText(text.text);
     const textSize: Vec2 = [
       Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
-      Math.ceil(
-          Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
+      Math.ceil(Math.abs(metrics.actualBoundingBoxAscent)),
     ];
 
     const textWidth = textSize[0] + 2 * text.paddingX;
@@ -112,8 +111,8 @@ export class TextRenderer {
     const metrics = ctx.measureText(text.text);
     const textSize: Vec2 = [
       Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
-      Math.ceil(
-          Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
+      // TODO(april): no letters below baseline pass through this method, so we drop it. Sketchy.
+      Math.ceil(Math.abs(metrics.actualBoundingBoxAscent)),
     ];
 
     const textWidth = textSize[0] + 2 * text.paddingX;
@@ -175,7 +174,7 @@ export class TextRenderer {
       ctx.fillStyle = text.fillColor;
       ctx.font = font;
       ctx.textBaseline = 'middle';
-      ctx.fillText(text.text, 1 + text.paddingX, textYOffset + textHeight / 2);
+      ctx.fillText(text.text, text.paddingX, textYOffset + textHeight / 2);
     }
     
     const texture = this.pool.acquire();

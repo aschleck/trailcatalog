@@ -4,71 +4,25 @@ import { splitVec2 } from '../../common/math';
 import { Line } from './geometry';
 import { Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 
-interface LineDrawable {
-  bytes: number;
-  instances: number;
-}
+const CIRCLE_STEPS = 8;
+const CIRCLE_VERTEX_COUNT = /* center */ 1 + CIRCLE_STEPS + /* end */ 1;
+const VERTEX_STRIDE = 18 * 4;
 
-/** Renders instanced lines as rectangles without mitering. */
-export class LineProgram extends Program<LineProgramData> {
+/** Renders lines caps as instanced circles. */
+export class LineCapProgram extends Program<LineCapProgramData> {
 
-  private readonly lineBuffer: WebGLBuffer;
+  private readonly circleBuffer: WebGLBuffer;
 
   constructor(gl: WebGL2RenderingContext) {
-    super(createLineProgram(gl), gl);
-    this.lineBuffer =
-        this.createStaticBuffer(
-                new Float32Array([
-                  0, -1,
-                  0, 1,
-                  1, -1,
-                  1, 1,
-                ]));
-  }
-
-  plan(lines: Line[], vertices: Float32Array): LineDrawable {
-    const stride = 4 + 4 + 4 + 4 + 1 + 1;
-    let vertexOffset = 0;
-    for (const line of lines) {
-      const doubles = line.vertices;
-      // TODO(april): not needed right now, so not calculating
-      let distanceAlong = 0;
-      for (let i = 0; i < doubles.length - 2; i += 2) {
-        const x = doubles[i + 0];
-        const y = doubles[i + 1];
-        const xp = doubles[i + 2];
-        const yp = doubles[i + 3];
-
-        const xF = Math.fround(x);
-        const xR = x - xF;
-        vertices[vertexOffset + 0] = xF;
-        vertices[vertexOffset + 1] = xR;
-        const yF = Math.fround(y);
-        const yR = y - yF;
-        vertices[vertexOffset + 2] = yF;
-        vertices[vertexOffset + 3] = yR;
-        const xpF = Math.fround(xp);
-        const xpR = xp - xpF;
-        vertices[vertexOffset + 4] = xpF;
-        vertices[vertexOffset + 5] = xpR;
-        const ypF = Math.fround(yp);
-        const ypR = yp - ypF;
-        vertices[vertexOffset + 6] = ypF;
-        vertices[vertexOffset + 7] = ypR;
-
-        vertices.set(line.colorFill, vertexOffset + 8);
-        vertices.set(line.colorStroke, vertexOffset + 12);
-        vertices[vertexOffset + 16] = 0;
-        vertices[vertexOffset + 17] = 3;
-
-        vertexOffset += stride;
-      }
+    super(createLineCapProgram(gl), gl, gl.TRIANGLE_FAN);
+    const vertices = [0, 0];
+    const theta = 2 * Math.PI / CIRCLE_STEPS;
+    for (let i = 0; i <= CIRCLE_STEPS; i++) {
+      const x = Math.cos(i * theta);
+      const y = Math.sin(i * theta);
+      vertices.push(x, y);
     }
-
-    return {
-      bytes: 4 * vertexOffset,
-      instances: vertexOffset / stride,
-    };
+    this.circleBuffer = this.createStaticBuffer(new Float32Array(vertices));
   }
 
   protected activate(): void {
@@ -76,7 +30,7 @@ export class LineProgram extends Program<LineProgramData> {
 
     gl.useProgram(this.program.id);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.circleBuffer);
     gl.enableVertexAttribArray(this.program.attributes.position);
     gl.vertexAttribPointer(
         this.program.attributes.position,
@@ -86,16 +40,12 @@ export class LineProgram extends Program<LineProgramData> {
         /* stride= */ 0,
         /* offset= */ 0);
 
+    gl.enableVertexAttribArray(this.program.attributes.center);
+    gl.vertexAttribDivisor(this.program.attributes.center, 1);
     gl.enableVertexAttribArray(this.program.attributes.colorFill);
     gl.vertexAttribDivisor(this.program.attributes.colorFill, 1);
     gl.enableVertexAttribArray(this.program.attributes.colorStroke);
     gl.vertexAttribDivisor(this.program.attributes.colorStroke, 1);
-    gl.enableVertexAttribArray(this.program.attributes.distanceAlong);
-    gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 1);
-    gl.enableVertexAttribArray(this.program.attributes.previous);
-    gl.vertexAttribDivisor(this.program.attributes.previous, 1);
-    gl.enableVertexAttribArray(this.program.attributes.next);
-    gl.vertexAttribDivisor(this.program.attributes.next, 1);
     gl.enableVertexAttribArray(this.program.attributes.radius);
     gl.vertexAttribDivisor(this.program.attributes.radius, 1);
   }
@@ -103,47 +53,34 @@ export class LineProgram extends Program<LineProgramData> {
   protected bind(offset: number): void {
     const gl = this.gl;
 
+    // These must match LineProgram, because we parasitize that geometry
+    gl.vertexAttribPointer(
+        this.program.attributes.center,
+        4,
+        gl.FLOAT,
+        /* normalize= */ false,
+        VERTEX_STRIDE,
+        /* offset= */ offset + 0);
     gl.vertexAttribPointer(
         this.program.attributes.colorFill,
         4,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 18 * 4,
+        VERTEX_STRIDE,
         /* offset= */ offset + 32);
     gl.vertexAttribPointer(
         this.program.attributes.colorStroke,
         4,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 18 * 4,
+        VERTEX_STRIDE,
         /* offset= */ offset + 48);
-    gl.vertexAttribPointer(
-        this.program.attributes.distanceAlong,
-        1,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 18 * 4,
-        /* offset= */ offset + 64);
-    gl.vertexAttribPointer(
-        this.program.attributes.previous,
-        4,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 18 * 4,
-        /* offset= */ offset + 0);
-    gl.vertexAttribPointer(
-        this.program.attributes.next,
-        4,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 18 * 4,
-        /* offset= */ offset + 16);
     gl.vertexAttribPointer(
         this.program.attributes.radius,
         1,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 18 * 4,
+        VERTEX_STRIDE,
         /* offset= */ offset + 68);
   }
 
@@ -152,16 +89,12 @@ export class LineProgram extends Program<LineProgramData> {
 
     gl.disableVertexAttribArray(this.program.attributes.position);
 
+    gl.vertexAttribDivisor(this.program.attributes.center, 0);
+    gl.disableVertexAttribArray(this.program.attributes.center);
     gl.vertexAttribDivisor(this.program.attributes.colorFill, 0);
     gl.disableVertexAttribArray(this.program.attributes.colorFill);
     gl.vertexAttribDivisor(this.program.attributes.colorStroke, 0);
     gl.disableVertexAttribArray(this.program.attributes.colorStroke);
-    gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 0);
-    gl.disableVertexAttribArray(this.program.attributes.distanceAlong);
-    gl.vertexAttribDivisor(this.program.attributes.previous, 0);
-    gl.disableVertexAttribArray(this.program.attributes.previous);
-    gl.vertexAttribDivisor(this.program.attributes.next, 0);
-    gl.disableVertexAttribArray(this.program.attributes.next);
     gl.vertexAttribDivisor(this.program.attributes.radius, 0);
     gl.disableVertexAttribArray(this.program.attributes.radius);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -169,19 +102,17 @@ export class LineProgram extends Program<LineProgramData> {
   }
 }
 
-interface LineProgramData extends ProgramData {
+interface LineCapProgramData extends ProgramData {
   attributes: {
+    center: number;
     colorFill: number;
     colorStroke: number;
-    distanceAlong: number;
-    next: number;
     position: number;
-    previous: number;
     radius: number;
   }
 }
 
-function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
+function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
   const programId = checkExists(gl.createProgram());
 
   const vs = `#version 300 es
@@ -190,13 +121,11 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
 
-      // x is either 0 or 1, y is either -0.5 or 0.5.
+      // The position of the vertex in the unit circle
       in highp vec2 position;
 
-      // These are Mercator coordinates ranging from -1 to 1 on both x and y
-      in highp vec4 previous;
-      in highp float distanceAlong;
-      in highp vec4 next;
+      // This is a Mercator coordinate ranging from -1 to 1 on both x and y
+      in highp vec4 center;
 
       in lowp vec4 colorFill;
       in lowp vec4 colorStroke;
@@ -205,27 +134,21 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
       out lowp vec4 fragColorFill;
       out lowp vec4 fragColorStroke;
-      out lowp float fragRadius;
-      out highp float fragDistanceAlong;
+      out highp float fragRadius;
       out highp float fragDistanceOrtho;
 
       ${FP64_OPERATIONS}
 
       void main() {
-        vec4 direction = next - previous;
-        vec4 perpendicular = perpendicular64(normalize64(direction));
-        vec4 location = -cameraCenter + previous + direction * position.x;
-        vec4 worldCoord = location * halfWorldSize + perpendicular * radius * position.y;
+        vec4 location = -cameraCenter + center;
+        vec4 worldCoord =
+            location * halfWorldSize + vec4(position.x, 0, position.y, 0) * radius;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
-
-        float worldDistanceAlong = distanceAlong + magnitude64(direction) * position.x;
-        fragDistanceAlong = 256. * pow(2., 17.) * worldDistanceAlong;
-        fragDistanceAlong = halfWorldSize * worldDistanceAlong;
 
         fragColorFill = colorFill;
         fragColorStroke = colorStroke;
         fragRadius = radius;
-        fragDistanceOrtho = position.y * radius;
+        fragDistanceOrtho = gl_VertexID == 0 ? 0. : radius;
       }
     `;
   const fs = `#version 300 es
@@ -233,7 +156,6 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
       in lowp float fragRadius;
-      in highp float fragDistanceAlong;
       in highp float fragDistanceOrtho;
 
       out lowp vec4 fragColor;
@@ -269,15 +191,14 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
   return {
     id: programId,
-    instanceSize: 18 * 4,
-    vertexCount: 4,
+    // These must match LineProgram, because we parasitize that geometry
+    instanceSize: VERTEX_STRIDE,
+    vertexCount: CIRCLE_VERTEX_COUNT,
     attributes: {
+      center: checkExists(gl.getAttribLocation(programId, 'center')),
       colorFill: checkExists(gl.getAttribLocation(programId, 'colorFill')),
       colorStroke: checkExists(gl.getAttribLocation(programId, 'colorStroke')),
-      distanceAlong: checkExists(gl.getAttribLocation(programId, 'distanceAlong')),
-      next: checkExists(gl.getAttribLocation(programId, 'next')),
       position: checkExists(gl.getAttribLocation(programId, 'position')),
-      previous: checkExists(gl.getAttribLocation(programId, 'previous')),
       radius: checkExists(gl.getAttribLocation(programId, 'radius')),
     },
     uniforms: {
