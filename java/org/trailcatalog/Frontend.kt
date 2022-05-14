@@ -131,7 +131,7 @@ fun fetchDetail(ctx: Context) {
     }
     output.writeInt(path.vertices.size)
     output.flush()
-    bytes.align(8)
+    bytes.align(4)
     output.write(path.vertices)
   }
 
@@ -234,12 +234,12 @@ class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
 
 private fun project(latLngDegrees: ByteArray): ByteArray {
   val degrees = ByteBuffer.wrap(latLngDegrees).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
-  val projected = ByteBuffer.allocate(latLngDegrees.size).order(ByteOrder.LITTLE_ENDIAN)
-  projected.asDoubleBuffer().let {
+  val projected = ByteBuffer.allocate(latLngDegrees.size / 2).order(ByteOrder.LITTLE_ENDIAN)
+  projected.asFloatBuffer().let {
     for (i in (0 until it.capacity()).step(2)) {
       val mercator = project(degrees.get(i), degrees.get(i + 1))
-      it.put(i, mercator.first)
-      it.put(i + 1, mercator.second)
+      it.put(i, mercator.first.toFloat())
+      it.put(i + 1, mercator.second.toFloat())
     }
   }
   return projected.array()

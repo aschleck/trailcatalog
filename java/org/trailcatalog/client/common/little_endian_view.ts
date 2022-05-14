@@ -40,6 +40,12 @@ export class LittleEndianView {
     return r;
   }
 
+  sliceFloat32(count: number): Float32Array {
+    const r = new Float32Array(this.buffer, this.position, count);
+    this.position += count * 4;
+    return r;
+  }
+
   sliceFloat64(count: number): Float64Array {
     const r = new Float64Array(this.buffer, this.position, count);
     this.position += count * 8;

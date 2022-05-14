@@ -22,7 +22,7 @@ const Z_RAISED_TRAIL_MARKER = 4;
 
 interface Entity {
   readonly id: bigint;
-  readonly line?: Float64Array;
+  readonly line?: Float32Array|Float64Array;
   readonly position?: Vec2;
 }
 
@@ -32,7 +32,7 @@ export class Path implements Entity {
       readonly type: number,
       readonly bound: PixelRect,
       readonly trails: bigint[],
-      readonly line: Float64Array,
+      readonly line: Float32Array|Float64Array,
   ) {}
 }
 
@@ -54,7 +54,7 @@ interface Filter {
 
 interface PathHandle {
   readonly entity: Path;
-  readonly line: Float64Array;
+  readonly line: Float32Array|Float64Array;
 }
 
 interface TrailHandle {
@@ -295,8 +295,8 @@ export class MapData implements Layer {
           const trailCount = data.getInt32();
           data.skip(trailCount * 8);
           const pathVertexBytes = data.getInt32();
-          const pathVertexCount = pathVertexBytes / 16;
-          data.align(8);
+          const pathVertexCount = pathVertexBytes / 8;
+          data.align(4);
           let color;
           let buffer;
           if (this.highlighted.has(id)) {
@@ -309,7 +309,7 @@ export class MapData implements Layer {
           buffer.push({
             colorFill: color.fill,
             colorStroke: color.stroke,
-            vertices: data.sliceFloat64(pathVertexCount * 2),
+            vertices: data.sliceFloat32(pathVertexCount * 2),
           });
         } else {
           data.skip(4);
@@ -483,9 +483,9 @@ export class MapData implements Layer {
       }
 
       const pathVertexBytes = data.getInt32();
-      const pathVertexCount = pathVertexBytes / 16;
-      data.align(8);
-      const points = data.sliceFloat64(pathVertexCount * 2);
+      const pathVertexCount = pathVertexBytes / 8;
+      data.align(4);
+      const points = data.sliceFloat32(pathVertexCount * 2);
       const bound: PixelRect = {
         low: [1, 1],
         high: [-1, -1],
@@ -619,7 +619,7 @@ export class MapData implements Layer {
   }
 }
 
-function distanceCheckLine(point: Vec2, line: Float64Array): number {
+function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number {
   let bestDistance2 = Number.MAX_VALUE;
   for (let i = 0; i < line.length - 2; i += 2) {
     const x1 = line[i + 0];
