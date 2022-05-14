@@ -579,7 +579,7 @@ export class MapData implements Layer {
       data.skip(pathTrailCount * 8);
 
       const pathVertexBytes = data.getInt32();
-      data.align(8);
+      data.align(4);
       data.skip(pathVertexBytes);
       const entity = this.paths.get(id);
       if (entity) {
