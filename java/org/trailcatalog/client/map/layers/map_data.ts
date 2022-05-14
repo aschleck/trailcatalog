@@ -654,7 +654,7 @@ function renderableTrailPin(lengthMeters: number, highlighted: boolean): Rendera
 function renderableDiamond(highlighted: boolean): RenderableText {
   return {
     text: '',
-    backgroundColor: highlighted ? HIGHLIGHT_TRAIL_COLOR : 'black',
+    backgroundColor: highlighted ? HIGHLIGHT_TRAIL_COLOR : '#3a3a3a',
     fillColor: highlighted ? 'black' : 'white',
     fontSize: 14,
     iconography: Iconography.DIAMOND,
