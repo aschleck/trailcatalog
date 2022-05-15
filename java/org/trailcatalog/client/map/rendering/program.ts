@@ -79,11 +79,7 @@ export abstract class Program<P extends ProgramData> {
         gl.bindTexture(gl.TEXTURE_2D, drawable.texture);
       }
 
-      if (drawable.instances) {
-        gl.drawArraysInstanced(this.geometryType, 0, this.program.vertexCount, drawable.instances);
-      } else {
-        gl.drawArrays(this.geometryType, 0, this.program.vertexCount);
-      }
+      this.draw(drawable);
     }
 
     this.deactivate();
@@ -98,6 +94,15 @@ export abstract class Program<P extends ProgramData> {
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     return buffer;
+  }
+
+  protected draw(drawable: Drawable): void {
+    const gl = this.gl;
+    if (drawable.instances) {
+      gl.drawArraysInstanced(this.geometryType, 0, this.program.vertexCount, drawable.instances);
+    } else {
+      gl.drawArrays(this.geometryType, 0, this.program.vertexCount);
+    }
   }
 }
 

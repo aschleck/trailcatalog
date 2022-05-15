@@ -68,7 +68,8 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.enterIdle();
     });
-    this.renderer = new Renderer(checkExists(this.canvas.getContext('webgl2')));
+    this.renderer =
+        new Renderer(checkExists(this.canvas.getContext('webgl2', {stencil: true})));
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);

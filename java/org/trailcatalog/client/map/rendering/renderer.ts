@@ -6,6 +6,9 @@ export class Renderer {
   constructor(readonly gl: WebGL2RenderingContext) {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    gl.clearColor(0.85, 0.85, 0.85, 1);
+    gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
   }
 
   createBuffer(byteSize: number): WebGLBuffer {
@@ -24,8 +27,7 @@ export class Renderer {
   render(): void {
     const gl = this.gl;
 
-    gl.clearColor(0.85, 0.85, 0.85, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
   }
 
   resize(area: Vec2): void {

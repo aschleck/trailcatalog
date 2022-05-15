@@ -27,7 +27,7 @@ export class LineCapProgram extends Program<LineCapProgramData> {
 
   protected activate(): void {
     const gl = this.gl;
-
+    gl.enable(gl.STENCIL_TEST);
     gl.useProgram(this.program.id);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.circleBuffer);
@@ -84,6 +84,27 @@ export class LineCapProgram extends Program<LineCapProgramData> {
         /* offset= */ offset + 68);
   }
 
+  protected draw(drawable: Drawable): void {
+    if (drawable.instances === undefined) {
+      throw new Error('Expecting instances');
+    }
+
+    const gl = this.gl;
+
+    // Draw without the border, always replacing the stencil buffer
+    gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+    gl.stencilMask(0xff);
+    gl.uniform1i(this.program.uniforms.renderBorder, 0);
+    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
+
+    // Draw with the border only where we didn't already draw
+    gl.stencilFunc(gl.NOTEQUAL, 1, 0xff);
+    // Don't write to the stencil buffer so we don't overlap other lines
+    gl.stencilMask(0x00);
+    gl.uniform1i(this.program.uniforms.renderBorder, 1);
+    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
+  }
+
   protected deactivate(): void {
     const gl = this.gl;
 
@@ -99,6 +120,7 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.radius);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
+    gl.disable(gl.STENCIL_TEST);
   }
 }
 
@@ -109,7 +131,13 @@ interface LineCapProgramData extends ProgramData {
     colorStroke: number;
     position: number;
     radius: number;
-  }
+  };
+  uniforms: {
+    cameraCenter: WebGLUniformLocation;
+    halfViewportSize: WebGLUniformLocation;
+    halfWorldSize: WebGLUniformLocation;
+    renderBorder: WebGLUniformLocation;
+  };
 }
 
 function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
@@ -120,6 +148,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       uniform highp vec4 cameraCenter;
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
+      uniform bool renderBorder;
 
       // The position of the vertex in the unit circle
       in highp vec2 position;
@@ -141,17 +170,21 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
 
       void main() {
         vec4 location = -cameraCenter + center;
+        highp float actualRadius = radius - (renderBorder ? 0. : 2.);
         vec4 worldCoord =
-            location * halfWorldSize + vec4(position.x, 0, position.y, 0) * radius;
+            location * halfWorldSize
+                + vec4(position.x, 0, position.y, 0) * actualRadius;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
 
         fragColorFill = colorFill;
         fragColorStroke = colorStroke;
         fragRadius = radius;
-        fragDistanceOrtho = gl_VertexID == 0 ? 0. : radius;
+        fragDistanceOrtho = gl_VertexID == 0 ? 0. : actualRadius;
       }
     `;
   const fs = `#version 300 es
+
+      uniform bool renderBorder;
 
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
@@ -162,9 +195,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
 
       void main() {
         mediump float o = abs(fragDistanceOrtho);
-        mediump vec4 color = mix(fragColorFill, fragColorStroke, o / fragRadius);
-        mediump float alpha = o < fragRadius - 0.5 ? 1. : 2. * (fragRadius - o);
-        fragColor = vec4(color.rgb, mix(0., color.a, alpha));
+        lowp float blend = (o - 2.);
+        lowp vec4 color = mix(fragColorFill, fragColorStroke, blend);
+        fragColor = vec4(color.rgb, color.a * (1. - clamp(o - 3., 0., 1.)));
       }
   `;
 
@@ -205,6 +238,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+      renderBorder: checkExists(gl.getUniformLocation(programId, 'renderBorder')),
     },
   };
 }

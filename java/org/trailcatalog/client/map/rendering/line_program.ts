@@ -59,7 +59,7 @@ export class LineProgram extends Program<LineProgramData> {
         vertices.set(line.colorFill, vertexOffset + 8);
         vertices.set(line.colorStroke, vertexOffset + 12);
         vertices[vertexOffset + 16] = 0;
-        vertices[vertexOffset + 17] = 3;
+        vertices[vertexOffset + 17] = 4;
 
         vertexOffset += stride;
       }
@@ -73,7 +73,7 @@ export class LineProgram extends Program<LineProgramData> {
 
   protected activate(): void {
     const gl = this.gl;
-
+    gl.enable(gl.STENCIL_TEST);
     gl.useProgram(this.program.id);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
@@ -147,6 +147,27 @@ export class LineProgram extends Program<LineProgramData> {
         /* offset= */ offset + 68);
   }
 
+  protected draw(drawable: Drawable): void {
+    if (drawable.instances === undefined) {
+      throw new Error('Expecting instances');
+    }
+
+    const gl = this.gl;
+
+    // Draw without the border, always replacing the stencil buffer
+    gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+    gl.stencilMask(0xff);
+    gl.uniform1i(this.program.uniforms.renderBorder, 0);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
+
+    // Draw with the border only where we didn't already draw
+    gl.stencilFunc(gl.NOTEQUAL, 1, 0xff);
+    // Don't write to the stencil buffer so we don't overlap other lines
+    gl.stencilMask(0x00);
+    gl.uniform1i(this.program.uniforms.renderBorder, 1);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
+  }
+
   protected deactivate(): void {
     const gl = this.gl;
 
@@ -166,6 +187,7 @@ export class LineProgram extends Program<LineProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.radius);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
+    gl.disable(gl.STENCIL_TEST);
   }
 }
 
@@ -178,7 +200,13 @@ interface LineProgramData extends ProgramData {
     position: number;
     previous: number;
     radius: number;
-  }
+  };
+  uniforms: {
+    cameraCenter: WebGLUniformLocation;
+    halfViewportSize: WebGLUniformLocation;
+    halfWorldSize: WebGLUniformLocation;
+    renderBorder: WebGLUniformLocation;
+  };
 }
 
 function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
@@ -189,8 +217,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       uniform highp vec4 cameraCenter;
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
+      uniform bool renderBorder;
 
-      // x is either 0 or 1, y is either -0.5 or 0.5.
+      // x is either 0 or 1, y is either -1 or 1.
       in highp vec2 position;
 
       // These are Mercator coordinates ranging from -1 to 1 on both x and y
@@ -215,7 +244,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         vec4 direction = next - previous;
         vec4 perpendicular = perpendicular64(normalize64(direction));
         vec4 location = -cameraCenter + previous + direction * position.x;
-        vec4 worldCoord = location * halfWorldSize + perpendicular * radius * position.y;
+        highp float actualRadius = radius - (renderBorder ? 0. : 2.);
+        vec4 push = perpendicular * actualRadius * position.y;
+        vec4 worldCoord = location * halfWorldSize + push;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
 
         float worldDistanceAlong = distanceAlong + magnitude64(direction) * position.x;
@@ -225,14 +256,16 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         fragColorFill = colorFill;
         fragColorStroke = colorStroke;
         fragRadius = radius;
-        fragDistanceOrtho = position.y * radius;
+        fragDistanceOrtho = position.y * actualRadius;
       }
     `;
   const fs = `#version 300 es
 
+      uniform bool renderBorder;
+
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
-      in lowp float fragRadius;
+      in highp float fragRadius;
       in highp float fragDistanceAlong;
       in highp float fragDistanceOrtho;
 
@@ -240,9 +273,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
       void main() {
         mediump float o = abs(fragDistanceOrtho);
-        mediump vec4 color = mix(fragColorFill, fragColorStroke, o / fragRadius);
-        mediump float alpha = o < fragRadius - 0.5 ? 1. : 2. * (fragRadius - o);
-        fragColor = vec4(color.rgb, mix(0., color.a, alpha));
+        lowp float blend = (o - 2.);
+        lowp vec4 color = mix(fragColorFill, fragColorStroke, blend);
+        fragColor = vec4(color.rgb, color.a * (1. - clamp(o - 3., 0., 1.)));
       }
   `;
 
@@ -284,6 +317,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+      renderBorder: checkExists(gl.getUniformLocation(programId, 'renderBorder')),
     },
   };
 }
