@@ -20,6 +20,8 @@ const Z_PATH = 1;
 const Z_RAISED_PATH = 2;
 const Z_TRAIL_MARKER = 3;
 const Z_RAISED_TRAIL_MARKER = 4;
+const PATH_RADIUS_PX = 1;
+const RAISED_PATH_RADIUS_PX = 4;
 
 interface Filter {
   boundary?: number;
@@ -230,7 +232,7 @@ export class MapData implements Layer {
     const raised: Line[] = [];
     const regularColor = {
       fill: [0, 0, 0, 1] as Vec4,
-      stroke: [0, 0, 0, 0] as Vec4,
+      stroke: [0, 0, 0, 1] as Vec4,
     };
     const highlightedColor = {
       fill: [1, 0.918, 0, 1] as Vec4,
@@ -311,10 +313,10 @@ export class MapData implements Layer {
     }
 
     if (lines.length > 0) {
-      planner.addLines(lines, 0);
+      planner.addLines(lines, PATH_RADIUS_PX, 0);
     }
     if (raised.length > 0) {
-      planner.addLines(raised, 1);
+      planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
     }
   }
 

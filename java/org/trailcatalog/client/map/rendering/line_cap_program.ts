@@ -163,8 +163,8 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
 
       out lowp vec4 fragColorFill;
       out lowp vec4 fragColorStroke;
-      out highp float fragRadius;
-      out highp float fragDistanceOrtho;
+      out lowp float fragRadius;
+      out lowp float fragDistanceOrtho;
 
       ${FP64_OPERATIONS}
 
@@ -189,7 +189,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
       in lowp float fragRadius;
-      in highp float fragDistanceOrtho;
+      in lowp float fragDistanceOrtho;
 
       out lowp vec4 fragColor;
 

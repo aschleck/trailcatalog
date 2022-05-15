@@ -119,9 +119,9 @@ export class RenderPlanner {
     this.align(256);
   }
 
-  addLines(lines: Line[], z: number): void {
+  addLines(lines: Line[], radius: number, z: number): void {
     const vertices = new Float32Array(this.geometry, this.geometryByteSize);
-    const drawable = this.lineProgram.plan(lines, vertices);
+    const drawable = this.lineProgram.plan(lines, radius, vertices);
 
     this.drawables.push({
       buffer: this.geometryBuffer,

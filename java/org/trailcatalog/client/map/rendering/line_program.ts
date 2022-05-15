@@ -26,7 +26,7 @@ export class LineProgram extends Program<LineProgramData> {
                 ]));
   }
 
-  plan(lines: Line[], vertices: Float32Array): LineDrawable {
+  plan(lines: Line[], radius: number, vertices: Float32Array): LineDrawable {
     const stride = 4 + 4 + 4 + 4 + 1 + 1;
     let vertexOffset = 0;
     for (const line of lines) {
@@ -59,7 +59,7 @@ export class LineProgram extends Program<LineProgramData> {
         vertices.set(line.colorFill, vertexOffset + 8);
         vertices.set(line.colorStroke, vertexOffset + 12);
         vertices[vertexOffset + 16] = 0;
-        vertices[vertexOffset + 17] = 4;
+        vertices[vertexOffset + 17] = radius;
 
         vertexOffset += stride;
       }
@@ -235,8 +235,8 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       out lowp vec4 fragColorFill;
       out lowp vec4 fragColorStroke;
       out lowp float fragRadius;
-      out highp float fragDistanceAlong;
-      out highp float fragDistanceOrtho;
+      out lowp float fragDistanceAlong;
+      out lowp float fragDistanceOrtho;
 
       ${FP64_OPERATIONS}
 
@@ -260,14 +260,13 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       }
     `;
   const fs = `#version 300 es
-
       uniform bool renderBorder;
 
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
-      in highp float fragRadius;
-      in highp float fragDistanceAlong;
-      in highp float fragDistanceOrtho;
+      in lowp float fragRadius;
+      in lowp float fragDistanceAlong;
+      in lowp float fragDistanceOrtho;
 
       out lowp vec4 fragColor;
 
