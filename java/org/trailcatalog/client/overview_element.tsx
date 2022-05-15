@@ -3,7 +3,7 @@ import * as corgi from 'js/corgi';
 import { metersToMiles } from './common/math';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
-import { Trail } from './models/types';
+import { Path, Trail } from './models/types';
 
 import { OverviewController, State } from './overview_controller';
 
@@ -99,11 +99,24 @@ export function OverviewElement({boundary}: {
         </div>
         <div className="grow h-full relative">
           <MapElement camera={{lat, lng, zoom}} filter={{boundary: parsedBoundary}} />
+          {state.hovering ? <OsmInfoElement hovering={state.hovering} /> : <></>}
           {trailDetails}
         </div>
       </div>
     </div>
   </>;
+}
+
+function OsmInfoElement({ hovering }: { hovering: Path|Trail }) {
+  let text;
+  if (hovering instanceof Path) {
+    text = `OSM way ${hovering.id / 2n}`;
+  } else {
+    text = `OSM relation ${hovering.id}`;
+  }
+  return <div className="absolute bg-white bottom-0 left-0 p-2">
+    {text}
+  </div>;
 }
 
 function SelectedTrailsElement({ trails }: { trails: Trail[] }) {
