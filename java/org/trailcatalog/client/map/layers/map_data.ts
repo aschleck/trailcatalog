@@ -391,33 +391,20 @@ export class MapData implements Layer {
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
       const type = data.getInt32();
       const position: Vec2 = [data.getFloat64(), data.getFloat64()];
-      // We really struggle bounds checking trails, but on the plus side we
-      // calculate a radius on click queries. So as long as our query radius
-      // includes this point we can do fine-grained checks to determine what is
-      // *actually* being clicked.
-      const epsilon = 1e-5;
-      const bound: PixelRect = {
-        low: [position[0] - epsilon, position[1] - epsilon],
-        high: [position[0] + epsilon, position[1] + epsilon],
-      };
       const lengthMeters = data.getFloat64();
-      const trail =
-          new Trail(
-              id,
-              name,
-              type,
-              bound,
-              [],
-              position,
-              lengthMeters);
+      const existing = this.trails.get(id);
+      let trail;
+      if (existing) {
+        trail = existing;
+      } else {
+        trail = constructTrail(id, name, type, [], position, lengthMeters);
+        this.trails.set(id, trail);
+      }
       this.metadataBounds.insert({
         entity: trail,
         position,
         screenPixelBound: this.diamondPixelBounds,
-      }, bound);
-      if (!this.trails.has(id)) {
-        this.trails.set(id, trail);
-      }
+      }, trail.bound);
     }
 
     this.metadataCells.set(id, buffer);
@@ -480,15 +467,6 @@ export class MapData implements Layer {
       data.align(8);
       const trailWays = [...data.sliceBigInt64(trailWayCount)];
       const position: Vec2 = [data.getFloat64(), data.getFloat64()];
-      // We really struggle bounds checking trails, but on the plus side we
-      // calculate a radius on click queries. So as long as our query radius
-      // includes this point we can do fine-grained checks to determine what is
-      // *actually* being clicked.
-      const epsilon = 1e-5;
-      const bound: PixelRect = {
-        low: [position[0] - epsilon, position[1] - epsilon],
-        high: [position[0] + epsilon, position[1] + epsilon],
-      };
       const lengthMeters = data.getFloat64();
       const detailScreenPixelSize =
           this.textRenderer.measure(renderableTrailPin(lengthMeters, false));
@@ -501,15 +479,7 @@ export class MapData implements Layer {
           trail.paths.push(...trailWays);
         }
       } else {
-        trail =
-            new Trail(
-                id,
-                name,
-                type,
-                bound,
-                trailWays,
-                position,
-                lengthMeters);
+        trail = constructTrail(id, name, type, trailWays, position, lengthMeters);
         this.trails.set(id, trail);
       }
       this.detailBounds.insert({
@@ -521,7 +491,7 @@ export class MapData implements Layer {
           halfDetailWidth,
           DIAMOND_RADIUS_PX,
         ],
-      }, bound);
+      }, trail.bound);
     }
   }
 
@@ -581,6 +551,32 @@ export class MapData implements Layer {
   private showDetail(zoom: number): boolean {
     return zoom >= DETAIL_ZOOM_THRESHOLD;
   }
+}
+
+function constructTrail(
+    id: bigint,
+    name: string,
+    type: number,
+    paths: bigint[],
+    position: Vec2,
+    lengthMeters: number): Trail {
+  // We really struggle bounds checking trails, but on the plus side we
+  // calculate a radius on click queries. So as long as our query radius
+  // includes this point we can do fine-grained checks to determine what is
+  // *actually* being clicked.
+  const epsilon = 1e-5;
+  const bound: PixelRect = {
+    low: [position[0] - epsilon, position[1] - epsilon],
+    high: [position[0] + epsilon, position[1] + epsilon],
+  };
+  return new Trail(
+      id,
+      name,
+      type,
+      bound,
+      paths,
+      position,
+      lengthMeters);
 }
 
 function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number {
