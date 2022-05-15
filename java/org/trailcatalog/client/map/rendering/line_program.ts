@@ -2,7 +2,9 @@ import { checkExists } from '../../common/asserts';
 import { splitVec2 } from '../../common/math';
 
 import { Line } from './geometry';
-import { Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
+import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
+
+export const VERTEX_STRIDE = (4 + 4 + 3) * 4;
 
 interface LineDrawable {
   bytes: number;
@@ -27,12 +29,10 @@ export class LineProgram extends Program<LineProgramData> {
   }
 
   plan(lines: Line[], radius: number, vertices: Float32Array): LineDrawable {
-    const stride = 4 + 4 + 4 + 4 + 1 + 1;
     let vertexOffset = 0;
+    const stride = VERTEX_STRIDE / 4;
     for (const line of lines) {
       const doubles = line.vertices;
-      // TODO(april): not needed right now, so not calculating
-      let distanceAlong = 0;
       for (let i = 0; i < doubles.length - 2; i += 2) {
         const x = doubles[i + 0];
         const y = doubles[i + 1];
@@ -56,17 +56,16 @@ export class LineProgram extends Program<LineProgramData> {
         vertices[vertexOffset + 6] = ypF;
         vertices[vertexOffset + 7] = ypR;
 
-        vertices.set(line.colorFill, vertexOffset + 8);
-        vertices.set(line.colorStroke, vertexOffset + 12);
-        vertices[vertexOffset + 16] = 0;
-        vertices[vertexOffset + 17] = radius;
+        vertices[vertexOffset + 8] = line.colorFill;
+        vertices[vertexOffset + 9] = line.colorStroke;
+        vertices[vertexOffset + 10] = radius;
 
         vertexOffset += stride;
       }
     }
 
     return {
-      bytes: 4 * vertexOffset,
+      bytes: vertexOffset * 4,
       instances: vertexOffset / stride,
     };
   }
@@ -90,8 +89,6 @@ export class LineProgram extends Program<LineProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.colorFill, 1);
     gl.enableVertexAttribArray(this.program.attributes.colorStroke);
     gl.vertexAttribDivisor(this.program.attributes.colorStroke, 1);
-    gl.enableVertexAttribArray(this.program.attributes.distanceAlong);
-    gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 1);
     gl.enableVertexAttribArray(this.program.attributes.previous);
     gl.vertexAttribDivisor(this.program.attributes.previous, 1);
     gl.enableVertexAttribArray(this.program.attributes.next);
@@ -105,46 +102,39 @@ export class LineProgram extends Program<LineProgramData> {
 
     gl.vertexAttribPointer(
         this.program.attributes.colorFill,
-        4,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 18 * 4,
-        /* offset= */ offset + 32);
-    gl.vertexAttribPointer(
-        this.program.attributes.colorStroke,
-        4,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ 18 * 4,
-        /* offset= */ offset + 48);
-    gl.vertexAttribPointer(
-        this.program.attributes.distanceAlong,
         1,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 18 * 4,
-        /* offset= */ offset + 64);
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 32);
+    gl.vertexAttribPointer(
+        this.program.attributes.colorStroke,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 36);
     gl.vertexAttribPointer(
         this.program.attributes.previous,
         4,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 18 * 4,
+        /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 0);
     gl.vertexAttribPointer(
         this.program.attributes.next,
         4,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 18 * 4,
+        /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 16);
     gl.vertexAttribPointer(
         this.program.attributes.radius,
         1,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 18 * 4,
-        /* offset= */ offset + 68);
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 40);
   }
 
   protected draw(drawable: Drawable): void {
@@ -177,8 +167,6 @@ export class LineProgram extends Program<LineProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.colorFill);
     gl.vertexAttribDivisor(this.program.attributes.colorStroke, 0);
     gl.disableVertexAttribArray(this.program.attributes.colorStroke);
-    gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 0);
-    gl.disableVertexAttribArray(this.program.attributes.distanceAlong);
     gl.vertexAttribDivisor(this.program.attributes.previous, 0);
     gl.disableVertexAttribArray(this.program.attributes.previous);
     gl.vertexAttribDivisor(this.program.attributes.next, 0);
@@ -195,7 +183,6 @@ interface LineProgramData extends ProgramData {
   attributes: {
     colorFill: number;
     colorStroke: number;
-    distanceAlong: number;
     next: number;
     position: number;
     previous: number;
@@ -224,20 +211,19 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
       // These are Mercator coordinates ranging from -1 to 1 on both x and y
       in highp vec4 previous;
-      in highp float distanceAlong;
       in highp vec4 next;
 
-      in lowp vec4 colorFill;
-      in lowp vec4 colorStroke;
+      in highp float colorFill;
+      in highp float colorStroke;
       // This is a radius in pixels
       in highp float radius;
 
       out lowp vec4 fragColorFill;
       out lowp vec4 fragColorStroke;
       out lowp float fragRadius;
-      out lowp float fragDistanceAlong;
       out lowp float fragDistanceOrtho;
 
+      ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
 
       void main() {
@@ -249,12 +235,8 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         vec4 worldCoord = location * halfWorldSize + push;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
 
-        float worldDistanceAlong = distanceAlong + magnitude64(direction) * position.x;
-        fragDistanceAlong = 256. * pow(2., 17.) * worldDistanceAlong;
-        fragDistanceAlong = halfWorldSize * worldDistanceAlong;
-
-        fragColorFill = colorFill;
-        fragColorStroke = colorStroke;
+        fragColorFill = uint32FToVec4(colorFill);
+        fragColorStroke = uint32FToVec4(colorStroke);
         fragRadius = radius;
         fragDistanceOrtho = position.y * actualRadius;
       }
@@ -265,7 +247,6 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
       in lowp float fragRadius;
-      in lowp float fragDistanceAlong;
       in lowp float fragDistanceOrtho;
 
       out lowp vec4 fragColor;
@@ -301,12 +282,11 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
   return {
     id: programId,
-    instanceSize: 18 * 4,
+    instanceSize: VERTEX_STRIDE,
     vertexCount: 4,
     attributes: {
       colorFill: checkExists(gl.getAttribLocation(programId, 'colorFill')),
       colorStroke: checkExists(gl.getAttribLocation(programId, 'colorStroke')),
-      distanceAlong: checkExists(gl.getAttribLocation(programId, 'distanceAlong')),
       next: checkExists(gl.getAttribLocation(programId, 'next')),
       position: checkExists(gl.getAttribLocation(programId, 'position')),
       previous: checkExists(gl.getAttribLocation(programId, 'previous')),

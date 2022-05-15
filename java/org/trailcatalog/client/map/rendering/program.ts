@@ -106,6 +106,17 @@ export abstract class Program<P extends ProgramData> {
   }
 }
 
+export const COLOR_OPERATIONS = `
+    vec4 uint32FToVec4(float v) {
+      uint uint32 = floatBitsToUint(v);
+      return vec4(
+          float((uint32 & 0xff000000u) >> 24u) / 255.,
+          float((uint32 & 0x00ff0000u) >> 16u) / 255.,
+          float((uint32 & 0x0000ff00u) >>  8u) / 255.,
+          float((uint32 & 0x000000ffu) >>  0u) / 255.);
+    }
+`;
+
 export const FP64_OPERATIONS = `
     vec4 add64(vec4 a, vec4 b) {
       return a + b;
@@ -139,4 +150,3 @@ export const FP64_OPERATIONS = `
       return vec2(v.x + v.y, v.z + v.w);
     }
 `;
-

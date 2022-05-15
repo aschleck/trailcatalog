@@ -2,11 +2,11 @@ import { checkExists } from '../../common/asserts';
 import { splitVec2 } from '../../common/math';
 
 import { Line } from './geometry';
-import { Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
+import { VERTEX_STRIDE } from './line_program';
+import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 
 const CIRCLE_STEPS = 8;
 const CIRCLE_VERTEX_COUNT = /* center */ 1 + CIRCLE_STEPS + /* end */ 1;
-const VERTEX_STRIDE = 18 * 4;
 
 /** Renders lines caps as instanced circles. */
 export class LineCapProgram extends Program<LineCapProgramData> {
@@ -63,25 +63,25 @@ export class LineCapProgram extends Program<LineCapProgramData> {
         /* offset= */ offset + 0);
     gl.vertexAttribPointer(
         this.program.attributes.colorFill,
-        4,
+        1,
         gl.FLOAT,
         /* normalize= */ false,
         VERTEX_STRIDE,
         /* offset= */ offset + 32);
     gl.vertexAttribPointer(
         this.program.attributes.colorStroke,
-        4,
+        1,
         gl.FLOAT,
         /* normalize= */ false,
         VERTEX_STRIDE,
-        /* offset= */ offset + 48);
+        /* offset= */ offset + 36);
     gl.vertexAttribPointer(
         this.program.attributes.radius,
         1,
         gl.FLOAT,
         /* normalize= */ false,
         VERTEX_STRIDE,
-        /* offset= */ offset + 68);
+        /* offset= */ offset + 40);
   }
 
   protected draw(drawable: Drawable): void {
@@ -156,8 +156,8 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       // This is a Mercator coordinate ranging from -1 to 1 on both x and y
       in highp vec4 center;
 
-      in lowp vec4 colorFill;
-      in lowp vec4 colorStroke;
+      in highp float colorFill;
+      in highp float colorStroke;
       // This is a radius in pixels
       in highp float radius;
 
@@ -166,6 +166,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       out lowp float fragRadius;
       out lowp float fragDistanceOrtho;
 
+      ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
 
       void main() {
@@ -176,8 +177,8 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
                 + vec4(position.x, 0, position.y, 0) * actualRadius;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
 
-        fragColorFill = colorFill;
-        fragColorStroke = colorStroke;
+        fragColorFill = uint32FToVec4(colorFill);
+        fragColorStroke = uint32FToVec4(colorStroke);
         fragRadius = radius;
         fragDistanceOrtho = gl_VertexID == 0 ? 0. : actualRadius;
       }

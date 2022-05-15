@@ -5,7 +5,7 @@ import { checkExhaustive, checkExists } from '../../common/asserts';
 import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
 import { DPI } from '../../common/dpi';
 import { LittleEndianView } from '../../common/little_endian_view';
-import { metersToMiles, reinterpretLong } from '../../common/math';
+import { metersToMiles, reinterpretLong, rgbaToUint32F } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { Path, Trail } from '../../models/types';
 import { Camera, projectLatLngRect } from '../models/camera';
@@ -22,6 +22,15 @@ const Z_TRAIL_MARKER = 3;
 const Z_RAISED_TRAIL_MARKER = 4;
 const PATH_RADIUS_PX = 1;
 const RAISED_PATH_RADIUS_PX = 4;
+
+const PATH_COLORS = {
+  fill: rgbaToUint32F(0, 0, 0, 1),
+  stroke: rgbaToUint32F(0, 0, 0, 1),
+} as const;
+const PATH_HIGHLIGHTED_COLORS = {
+  fill: rgbaToUint32F(1, 0.918, 0, 1),
+  stroke: rgbaToUint32F(0, 0, 0, 1),
+} as const;
 
 interface Filter {
   boundary?: number;
@@ -230,14 +239,6 @@ export class MapData implements Layer {
     const cells = this.detailCellsInView(viewportSize);
     const lines: Line[] = [];
     const raised: Line[] = [];
-    const regularColor = {
-      fill: [0, 0, 0, 1] as Vec4,
-      stroke: [0, 0, 0, 1] as Vec4,
-    };
-    const highlightedColor = {
-      fill: [1, 0.918, 0, 1] as Vec4,
-      stroke: [0, 0, 0, 1] as Vec4,
-    };
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
@@ -263,10 +264,10 @@ export class MapData implements Layer {
           let color;
           let buffer;
           if (this.highlighted.has(id)) {
-            color = highlightedColor;
+            color = PATH_HIGHLIGHTED_COLORS;
             buffer = raised;
           } else {
-            color = regularColor;
+            color = PATH_COLORS;
             buffer = lines;
           }
           buffer.push({
