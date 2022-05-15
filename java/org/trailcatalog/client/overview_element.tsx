@@ -1,6 +1,7 @@
 import * as corgi from 'js/corgi';
 
 import { metersToMiles } from './common/math';
+import { Vec2 } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
 import { Path, Trail } from './models/types';
@@ -15,6 +16,7 @@ export function OverviewElement({boundary}: {
   if (!state) {
     state = {
       hovering: undefined,
+      selectedCardPosition: [0, 0],
       selectedTrails: [],
       showTrailsList: false,
       trails: [],
@@ -38,7 +40,11 @@ export function OverviewElement({boundary}: {
 
   let trailDetails;
   if (state.selectedTrails.length > 0) {
-    trailDetails = <SelectedTrailsElement trails={state.selectedTrails} />;
+    trailDetails =
+        <SelectedTrailsElement
+            position={state.selectedCardPosition}
+            trails={state.selectedTrails}
+        />;
   } else {
     trailDetails = <></>;
   }
@@ -119,17 +125,20 @@ function OsmInfoElement({ hovering }: { hovering: Path|Trail }) {
   </div>;
 }
 
-function SelectedTrailsElement({ trails }: { trails: Trail[] }) {
+function SelectedTrailsElement({ position, trails }: {
+  position: Vec2,
+  trails: Trail[],
+}) {
   return <div
       className="
           absolute
           bg-white
-          left-1/2
+          mb-4
           rounded
-          top-1/2
           -translate-x-1/2
-          -translate-y-1/2
+          translate-y-[calc(-100%-0.75rem)]
       "
+      style={`left: ${position[0]}px; top: ${position[1]}px`}
   >
     {trails.map(trail =>
       <section

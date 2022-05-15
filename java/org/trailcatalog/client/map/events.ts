@@ -1,6 +1,7 @@
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { declareEvent } from 'js/corgi/events';
 
+import { Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
 
 export interface MapController {
@@ -27,4 +28,5 @@ export const MAP_MOVED = declareEvent<{
 export const SELECTION_CHANGED = declareEvent<{
   controller: MapController;
   selected: Path|Trail|undefined;
+  clickPx: Vec2;
 }>('selection_changed');

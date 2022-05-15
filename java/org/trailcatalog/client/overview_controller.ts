@@ -2,11 +2,13 @@ import { Controller, ControllerResponse } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
+import { Vec2 } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, MapController, SELECTION_CHANGED } from './map/events';
 import { Path, Trail } from './models/types';
 
 export interface State {
   hovering: Path|Trail|undefined;
+  selectedCardPosition: Vec2;
   selectedTrails: Trail[];
   showTrailsList: boolean;
   trails: Trail[];
@@ -58,7 +60,7 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
   }
 
   onSelectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {
-    const {controller, selected} = e.detail;
+    const {controller, clickPx, selected} = e.detail;
     let trails: Trail[];
     if (selected instanceof Path) {
       trails = controller.listTrailsOnPath(selected);
@@ -70,6 +72,7 @@ export class OverviewController extends Controller<undefined, HTMLDivElement, St
 
     this.updateState({
       ...this.state,
+      selectedCardPosition: clickPx,
       selectedTrails: trails,
     });
   }

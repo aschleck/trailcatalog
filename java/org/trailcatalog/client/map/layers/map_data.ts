@@ -38,10 +38,6 @@ interface TrailHandle {
 
 type Handle = PathHandle|TrailHandle;
 
-interface MapDataListener {
-  selectionChanged(selected: Path|Trail|undefined): void;
-}
-
 const DATA_ZOOM_THRESHOLD = 4;
 const HIGHLIGHT_PATH_COLOR = '#ffe600';
 const HIGHLIGHT_TRAIL_COLOR = '#f2f2f2';
@@ -72,7 +68,6 @@ export class MapData implements Layer {
   constructor(
       private readonly camera: Camera,
       filter: Filter,
-      private readonly listener: MapDataListener,
       private readonly textRenderer: TextRenderer,
   ) {
     this.metadataBounds = worldBounds();
@@ -205,11 +200,6 @@ export class MapData implements Layer {
   setTrailHighlighted(id: bigint, highlighted: boolean): void {
     const trail = checkExists(this.trails.get(id));
     this.setHighlighted(trail, highlighted);
-  }
-
-  selectClosest(point: Vec2): void {
-    const entity = this.queryClosest(point);
-    this.listener.selectionChanged(entity);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {

@@ -73,11 +73,8 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
-    this.mapData = new MapData(this.camera, response.args.filter, {
-      selectionChanged: (selected: Path|Trail|undefined) => {
-        this.trigger(SELECTION_CHANGED, {controller: this, selected});
-      },
-    }, this.textRenderer);
+    this.mapData =
+        new MapData(this.camera, response.args.filter, this.textRenderer);
     this.tileData = new TileData(this.camera, this.renderer);
 
     this.screenArea = new DOMRect();
@@ -92,7 +89,11 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
     const interpreter = new PointerInterpreter(this);
     this.registerListener(document, 'pointerdown', e => {
       if (e.target === this.canvas) {
-        this.trigger(SELECTION_CHANGED, {controller: this, selected: undefined});
+        this.trigger(SELECTION_CHANGED, {
+          controller: this,
+          selected: undefined,
+          clickPx: [e.clientX, e.clientY],
+        });
         interpreter.pointerDown(e);
       }
     });
@@ -129,7 +130,13 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
   }
 
   click(clientX: number, clientY: number): void {
-    this.mapData.selectClosest(this.clientToWorld(clientX, clientY));
+    const point = this.clientToWorld(clientX, clientY)
+    const entity = this.mapData.queryClosest(point);
+    this.trigger(SELECTION_CHANGED, {
+      controller: this,
+      selected: entity,
+      clickPx: [clientX - this.screenArea.x, clientY - this.screenArea.y],
+    });
   }
 
   hover(clientX: number, clientY: number): void {

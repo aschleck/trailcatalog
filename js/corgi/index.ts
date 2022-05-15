@@ -67,6 +67,7 @@ export interface Properties<E extends HTMLElement> {
   children?: VElementOrPrimitive[];
   className?: string;
   js?: AnyBoundController<E>;
+  style?: string; // TODO(april): this is sad
   unboundEvents?: UnboundEvents;
 }
 
