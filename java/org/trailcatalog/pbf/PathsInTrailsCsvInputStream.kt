@@ -1,14 +1,14 @@
 package org.trailcatalog.pbf
 
+import com.google.protobuf.ByteString
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
 import org.trailcatalog.models.RelationCategory
-import org.trailcatalog.proto.RelationSkeleton
 import java.nio.charset.StandardCharsets
 
 class PathsInTrailsCsvInputStream(
 
-    private val relations: Map<Long, RelationSkeleton>,
+    private val relations: Map<Long, ByteString>,
     block: PrimitiveBlock)
   : PbfEntityInputStream(
     block,

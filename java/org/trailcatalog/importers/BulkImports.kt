@@ -13,13 +13,14 @@ fun blockedOperation(
   chunks: Int = 1000,
   fn: (PrimitiveBlock) -> Unit) {
   FileInputStream(pbf).use {
-    val reader = PbfBlockReader(it)
-
     ProgressBar(action, "blocks").use { progress ->
-      for (blocks in reader.readBlocks().chunked(chunks)) {
+      val blocks = PbfBlockReader(it).readBlocks().iterator()
+      while (blocks.hasNext()) {
+        var i = 0
         withTempTables(tables, connection) {
-          for (block in blocks) {
-            fn.invoke(block)
+          while (i < chunks && blocks.hasNext()) {
+            fn.invoke(blocks.next())
+            i += 1
             progress.increment()
           }
         }

@@ -1,5 +1,6 @@
 package org.trailcatalog.pbf
 
+import com.google.protobuf.ByteString
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
 import java.nio.charset.StandardCharsets
@@ -14,7 +15,7 @@ import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.WAY_ID
 import org.trailcatalog.proto.WayGeometry
 
 class BoundariesCsvInputStream(
-    private val relations: Map<Long, RelationSkeleton>,
+    private val relations: Map<Long, ByteString>,
     private val ways: Map<Long, LongArray>,
     block: PrimitiveBlock)
   : PbfEntityInputStream(
@@ -58,7 +59,7 @@ class BoundariesCsvInputStream(
 
   private fun inflate(
       id: Long,
-      relations: Map<Long, RelationSkeleton>,
+      relations: Map<Long, ByteString>,
       used: MutableSet<Long>,
       ways: Map<Long, LongArray>): RelationGeometry? {
     if (used.contains(id)) {
@@ -68,7 +69,8 @@ class BoundariesCsvInputStream(
 
     used.add(id)
     val geometry = RelationGeometry.newBuilder()
-    for (member in (relations[id] ?: return null).membersList) {
+    val relationBytes = relations[id] ?: return null
+    for (member in RelationSkeleton.parseFrom(relationBytes).membersList) {
       when (member.valueCase) {
         NODE_ID -> {}
         RELATION_ID ->

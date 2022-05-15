@@ -61,15 +61,15 @@ http_archive(
     url = "https://github.com/bazelbuild/stardoc/archive/refs/tags/0.5.0.zip",
 )
 
-RULES_JVM_EXTERNAL_TAG = "4.2"
+RULES_JVM_EXTERNAL_VERSION = "6c325c279ab6906265d0ae2b4dd1871df3cad37f"
 
-RULES_JVM_EXTERNAL_SHA = "cd1a77b7b02e8e008439ca76fd34f5b07aecb8c752961f9640dea15e9e5ba1ca"
+RULES_JVM_EXTERNAL_SHA = "fb71346651d9d3b1cd025d79e2d202c18e723f6953174e432e1f4e210beb8780"
 
 http_archive(
     name = "rules_jvm_external",
     sha256 = RULES_JVM_EXTERNAL_SHA,
-    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
-    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_VERSION,
+    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_VERSION,
 )
 
 load("@rules_jvm_external//:repositories.bzl", "rules_jvm_external_deps")
@@ -96,14 +96,14 @@ rules_proto_dependencies()
 
 rules_proto_toolchains()
 
-rules_kotlin_version = "v1.5.0"
+RULES_KOTLIN_VERSION = "1.6.0-RC-1"
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 http_archive(
     name = "io_bazel_rules_kotlin",
-    sha256 = "12d22a3d9cbcf00f2e2d8f0683ba87d3823cb8c7f6837568dd7e48846e023307",
-    urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/%s/rules_kotlin_release.tgz" % rules_kotlin_version],
+    sha256 = "f1a4053eae0ea381147f5056bb51e396c5c494c7f8d50d0dee4cc2f9d5c701b0",
+    urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/%s/rules_kotlin_release.tgz" % RULES_KOTLIN_VERSION],
 )
 
 load("@io_bazel_rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories", "versions")
@@ -129,6 +129,7 @@ maven_install(
         "com.wolt.osm:parallelpbf:0.3.1",
         "com.zaxxer:HikariCP:5.0.1",
         "io.javalin:javalin:4.3.0",
+        "mil.nga:tiff:3.0.0",
         "org.apache.commons:commons-text:jar:1.9",
         "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.6.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.6.1",

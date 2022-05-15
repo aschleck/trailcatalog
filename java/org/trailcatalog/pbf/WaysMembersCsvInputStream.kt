@@ -1,32 +1,18 @@
 package org.trailcatalog.pbf
 
-import crosby.binary.Osmformat.PrimitiveBlock
-import crosby.binary.Osmformat.PrimitiveGroup
 import java.nio.charset.StandardCharsets
 
-class WaysMembersCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
-    block,
+class WaysMembersCsvInputStream(chunk: List<List<IdPairRecord>>) : IteratedInputStream<List<IdPairRecord>>(
+    chunk,
     "way_id,node_id\n".toByteArray(StandardCharsets.UTF_8),
 ) {
 
-  override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
-    for (way in group.waysList) {
-      var nodeId = 0L
-      val seen = HashSet<Long>()
-      for (delta in way.refsList) {
-        nodeId += delta
-
-        if (seen.contains(nodeId)) {
-          continue
-        } else {
-          seen.add(nodeId)
-        }
-
-        csv.append(way.id)
-        csv.append(",")
-        csv.append(nodeId)
-        csv.append("\n")
-      }
+  override fun convertToCsv(value: List<IdPairRecord>, csv: StringBuilder) {
+    for (pair in value) {
+      csv.append(pair.a)
+      csv.append(",")
+      csv.append(pair.b)
+      csv.append("\n")
     }
   }
 }

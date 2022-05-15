@@ -1,6 +1,7 @@
 package org.trailcatalog.pbf
 
 import com.google.common.geometry.S2Polyline
+import com.google.protobuf.ByteString
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.PrimitiveGroup
 import java.nio.charset.StandardCharsets
@@ -15,7 +16,7 @@ import java.nio.ByteOrder
 
 class TrailsCsvInputStream(
 
-    private val relations: Map<Long, RelationSkeleton>,
+    private val relations: Map<Long, ByteString>,
     block: PrimitiveBlock)
   : PbfEntityInputStream(
     block,
@@ -56,8 +57,9 @@ class TrailsCsvInputStream(
   }
 }
 
-fun flattenToWays(id: Long, relations: Map<Long, RelationSkeleton>, ways: MutableList<Long>): Boolean {
-  for (member in (relations[id] ?: return false).membersList) {
+fun flattenToWays(id: Long, relations: Map<Long, ByteString>, ways: MutableList<Long>): Boolean {
+  val relationBytes = relations[id] ?: return false
+  for (member in RelationSkeleton.parseFrom(relationBytes).membersList) {
     when (member.valueCase) {
       NODE_ID -> return false
       RELATION_ID -> {

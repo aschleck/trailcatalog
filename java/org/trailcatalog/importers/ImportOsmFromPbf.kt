@@ -1,13 +1,11 @@
 package org.trailcatalog.importers
 
 import com.google.common.collect.ImmutableList
-import crosby.binary.Osmformat.PrimitiveBlock
-import crosby.binary.Osmformat.PrimitiveGroup
 import crosby.binary.Osmformat.Relation.MemberType.RELATION
 import crosby.binary.Osmformat.Relation.MemberType.WAY
-import crosby.binary.Osmformat.Way
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
+import org.trailcatalog.pbf.IdPairRecord
 import org.trailcatalog.pbf.NodesCsvInputStream
 import org.trailcatalog.pbf.RelationsCsvInputStream
 import org.trailcatalog.pbf.RelationsMembersCsvInputStream
@@ -25,27 +23,29 @@ fun importOsmFromPbf(connection: PgConnection, pbf: String) {
     copier.copyIn("COPY tmp_ways FROM STDIN WITH CSV HEADER", WaysCsvInputStream(it))
   }
 
-  val nodesInWays = ArrayList<Pair<Long, Way>>()
+  val nodesInWays = ArrayList<IdPairRecord>()
   blockedOperation("reading nodes_in_ways", pbf, ImmutableList.of(), connection) {
     for (group in it.primitivegroupList) {
       for (way in group.waysList) {
-        nodesInWays.add(Pair(way.id, way))
+        var nodeId = 0L
+        for (delta in way.refsList) {
+          nodeId += delta
+          nodesInWays.add(IdPairRecord(way.id, nodeId))
+        }
       }
     }
   }
-  nodesInWays.sortBy { it.first }
-  val chunkSize = 100000
+  nodesInWays.sortBy { it.a }
+  val chunkSize = 1000000
   ProgressBar(
       "inserting nodes_in_ways",
       "chunks",
       ((nodesInWays.size + chunkSize - 1) / chunkSize).toLong()).use {
-    for (ways in nodesInWays.map { it.second }.chunked(chunkSize)) {
-      val block = PrimitiveBlock.newBuilder()
-      block.addPrimitivegroup(PrimitiveGroup.newBuilder().addAllWays(ways))
+    for (chunk in nodesInWays.chunked(chunkSize)) {
       withTempTables(ImmutableList.of("nodes_in_ways"), connection) {
         copier.copyIn(
             "COPY tmp_nodes_in_ways FROM STDIN WITH CSV HEADER",
-            WaysMembersCsvInputStream(block.buildPartial()))
+            WaysMembersCsvInputStream(chunk.chunked(256)))
       }
       it.increment()
     }

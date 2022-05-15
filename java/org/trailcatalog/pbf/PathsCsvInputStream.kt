@@ -11,8 +11,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class PathsCsvInputStream(
-    private val nodes: Map<Long, Pair<Double, Double>>?,
-    private val ways: MutableMap<Long, LongArray>,
+    private val nodes: Map<Long, NodeRecord>?,
     block: PrimitiveBlock)
   : PbfEntityInputStream(
       block,
@@ -25,11 +24,11 @@ class PathsCsvInputStream(
 
       val nodes = LongArray(way.refsCount)
       val nodeBytes = ByteBuffer.allocate(way.refsCount * 8).order(ByteOrder.LITTLE_ENDIAN)
-      var nodeId = 0L
+      var denseNodeId = 0L
       for (i in 0 until way.refsCount) {
-        nodeId += way.getRefs(i)
-        nodes[i] = nodeId
-        nodeBytes.putLong(nodeId)
+        denseNodeId += way.getRefs(i)
+        nodes[i] = denseNodeId
+        nodeBytes.putLong(denseNodeId)
       }
 
       val (cell, latLngs) =
@@ -46,9 +45,9 @@ class PathsCsvInputStream(
                 break
               }
 
-              latLngs.putDouble(position.first)
-              latLngs.putDouble(position.second)
-              bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
+              latLngs.putDouble(position.lat)
+              latLngs.putDouble(position.lng)
+              bound.addPoint(S2LatLng.fromDegrees(position.lat, position.lng))
             }
 
             if (valid) {
@@ -57,8 +56,6 @@ class PathsCsvInputStream(
               Pair(-1, byteArrayOf())
             }
           }
-
-      ways[way.id] = nodes
 
       if (!WayCategory.HIGHWAY.isParentOf(data.type) && !WayCategory.PISTE.isParentOf(data.type)) {
         continue
