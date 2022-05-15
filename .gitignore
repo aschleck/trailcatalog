@@ -2,6 +2,7 @@
 bazel-*
 *.pbf
 *.pbf.etag
+*.tif
 full_pkg.tar
 node_modules
 
