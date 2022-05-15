@@ -151,14 +151,19 @@ function SelectedTrailsElement({ position, trails }: {
         <header className="font-bold font-lg grow">
           {trail.name}
         </header>
-        <section>
-          <span className="text-tc-gray-500">
-            Distance:
-          </span>
-          <span>
-            {metersToMiles(trail.lengthMeters).toFixed(1)} miles
-          </span>
-        </section>
+        {[
+          ['Distance:', `${metersToMiles(trail.lengthMeters).toFixed(1)} miles`],
+          ['Relation ID:', trail.id],
+        ].map(([label, content]) =>
+          <section>
+            <span className="text-tc-gray-500">
+              {label}
+            </span>
+            <span>
+              {content}
+            </span>
+          </section>
+        )}
       </section>
     )}
   </div>;
