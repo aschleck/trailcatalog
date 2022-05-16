@@ -23,8 +23,8 @@ class BoundariesCsvInputStream(
       "id,type,cell,name,relation_geometry,s2_polygon,representative_boundary,source_relation,address\n".toByteArray(StandardCharsets.UTF_8),
   ) {
 
-  override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
-    for (relation in group.relationsList) {
+  override fun convertToCsv(value: PrimitiveGroup, csv: StringBuilder) {
+    for (relation in value.relationsList) {
       val data = getRelationData(relation, block.stringtable)
       if (data.name == null) {
         continue
@@ -68,18 +68,20 @@ class BoundariesCsvInputStream(
     }
 
     used.add(id)
-    val geometry = RelationGeometry.newBuilder()
+    val geometry = RelationGeometry.newBuilder().setRelationId(id)
     val relationBytes = relations[id] ?: return null
     for (member in RelationSkeleton.parseFrom(relationBytes).membersList) {
       when (member.valueCase) {
-        NODE_ID -> {}
+        NODE_ID -> {
+          // TODO(april): should we do something better here?
+        }
         RELATION_ID ->
           geometry.addMembers(
               RelationMember.newBuilder()
                   .setFunction(member.function)
                   .setRelation(inflate(member.relationId, relations, used, ways) ?: return null))
         WAY_ID -> {
-          val way = WayGeometry.newBuilder()
+          val way = WayGeometry.newBuilder().setWayId(member.wayId)
           (ways[member.wayId] ?: return null).forEach { way.addNodeIds(it) }
           geometry.addMembers(RelationMember.newBuilder().setFunction(member.function).setWay(way))
         }

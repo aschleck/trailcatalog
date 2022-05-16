@@ -36,18 +36,18 @@ fun importOsmFromPbf(connection: PgConnection, pbf: String) {
     }
   }
   nodesInWays.sortBy { it.a }
-  val chunkSize = 1000000
+  val chunkSize = 10000
   ProgressBar(
       "inserting nodes_in_ways",
-      "chunks",
-      ((nodesInWays.size + chunkSize - 1) / chunkSize).toLong()).use {
+      "rows",
+      nodesInWays.size.toLong()).use {
     for (chunk in nodesInWays.chunked(chunkSize)) {
       withTempTables(ImmutableList.of("nodes_in_ways"), connection) {
         copier.copyIn(
             "COPY tmp_nodes_in_ways FROM STDIN WITH CSV HEADER",
             WaysMembersCsvInputStream(chunk.chunked(256)))
       }
-      it.increment()
+      it.incrementBy(chunk.size)
     }
   }
 

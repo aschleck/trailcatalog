@@ -1,13 +1,10 @@
 package org.trailcatalog.importers
 
 import com.google.common.collect.ImmutableList
-import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2LatLngRect
 import com.google.protobuf.ByteString
 import crosby.binary.Osmformat.PrimitiveBlock
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
-import org.trailcatalog.models.WayCategory
 import org.trailcatalog.pbf.BoundariesCsvInputStream
 import org.trailcatalog.pbf.NANO
 import org.trailcatalog.pbf.NodeRecord
@@ -20,59 +17,49 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-fun seedFromPbf(
-    connection: PgConnection,
-    immediatelyBucketPaths: Boolean,
-    fillTcRelations: Boolean,
-    pbf: String) {
-  seedPaths(connection, immediatelyBucketPaths, pbf)
+fun seedFromPbf(connection: PgConnection, pbf: String) {
+  seedPaths(connection, pbf)
 
   val relations = HashMap<Long, ByteString>()
   val ways = HashMap<Long, LongArray>()
   ProgressBar("gathering relations and ways", "blocks").use {
     val reader = PbfBlockReader(FileInputStream(pbf))
     for (block in reader.readBlocks()) {
-      if (fillTcRelations) {
-        gatherRelationSkeletons(block, relations)
-      }
+      gatherRelationSkeletons(block, relations)
       gatherWays(block, ways)
       it.increment()
     }
   }
 
   val copier = CopyManager(connection)
-  if (fillTcRelations) {
-    blockedOperation("copying boundaries", pbf, ImmutableList.of("boundaries"), connection) {
-      copier.copyIn(
-          "COPY tmp_boundaries FROM STDIN WITH CSV HEADER",
-          BoundariesCsvInputStream(relations, ways, it))
-    }
+  blockedOperation("copying boundaries", pbf, ImmutableList.of("boundaries"), connection) {
+    copier.copyIn(
+        "COPY tmp_boundaries FROM STDIN WITH CSV HEADER",
+        BoundariesCsvInputStream(relations, ways, it))
+  }
 
-    blockedOperation("copying trails", pbf, ImmutableList.of("trails"), connection) {
-      copier.copyIn(
-          "COPY tmp_trails FROM STDIN WITH CSV HEADER", TrailsCsvInputStream(relations, it))
-    }
+  blockedOperation("copying trails", pbf, ImmutableList.of("trails"), connection) {
+    copier.copyIn(
+        "COPY tmp_trails FROM STDIN WITH CSV HEADER", TrailsCsvInputStream(relations, it))
+  }
 
-    blockedOperation(
-        "copying paths_in_trails",
-        pbf,
-        ImmutableList.of("paths_in_trails"),
-        connection) {
-      copier.copyIn(
-          "COPY tmp_paths_in_trails FROM STDIN WITH CSV HEADER",
-          PathsInTrailsCsvInputStream(relations, it))
-    }
+  blockedOperation(
+      "copying paths_in_trails",
+      pbf,
+      ImmutableList.of("paths_in_trails"),
+      connection) {
+    copier.copyIn(
+        "COPY tmp_paths_in_trails FROM STDIN WITH CSV HEADER",
+        PathsInTrailsCsvInputStream(relations, it))
   }
 }
 
-fun seedPaths(connection: PgConnection, immediatelyBucketPaths: Boolean, pbf: String) {
+fun seedPaths(connection: PgConnection, pbf: String) {
   val nodes = HashMap<Long, NodeRecord>()
-  if (immediatelyBucketPaths) {
-    ProgressBar("gathering nodes", "blocks").use {
-      for (block in PbfBlockReader(FileInputStream(pbf)).readBlocks()) {
-        gatherNodes(block, nodes)
-        it.increment()
-      }
+  ProgressBar("gathering nodes", "blocks").use {
+    for (block in PbfBlockReader(FileInputStream(pbf)).readBlocks()) {
+      gatherNodes(block, nodes)
+      it.increment()
     }
   }
 
@@ -80,7 +67,7 @@ fun seedPaths(connection: PgConnection, immediatelyBucketPaths: Boolean, pbf: St
   blockedOperation("copying paths", pbf, ImmutableList.of("paths"), connection) {
     copier.copyIn(
         "COPY tmp_paths FROM STDIN WITH CSV HEADER",
-        PathsCsvInputStream(if (immediatelyBucketPaths) nodes else null, it))
+        PathsCsvInputStream(nodes, it))
   }
 }
 

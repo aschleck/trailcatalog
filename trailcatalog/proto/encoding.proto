@@ -20,7 +20,8 @@ message RelationSkeletonMember {
 }
 
 message RelationGeometry {
-  repeated RelationMember members = 1;
+  uint64 relation_id = 1;
+  repeated RelationMember members = 2;
 }
 
 message RelationMember {
@@ -34,7 +35,8 @@ message RelationMember {
 }
 
 message WayGeometry {
-  repeated uint64 node_ids = 1;
+  uint64 way_id = 1;
+  repeated uint64 node_ids = 2;
 }
 
 enum RelationMemberFunction {

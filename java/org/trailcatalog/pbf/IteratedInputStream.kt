@@ -8,6 +8,7 @@ abstract class IteratedInputStream<V>(
   private var current: ByteArray,
 ) : InputStream() {
 
+  private val stringBuilder = StringBuilder()
   private val iterator: Iterator<V> = iterable.iterator()
   private var currentPos = 0
 
@@ -52,9 +53,9 @@ abstract class IteratedInputStream<V>(
       current = byteArrayOf()
       currentPos = 1
     } else {
-      val csv = StringBuilder()
-      convertToCsv(iterator.next(), csv)
-      current = csv.toString().toByteArray(StandardCharsets.UTF_8)
+      stringBuilder.clear()
+      convertToCsv(iterator.next(), stringBuilder)
+      current = stringBuilder.toString().toByteArray(StandardCharsets.UTF_8)
       currentPos = 0
     }
   }

@@ -100,15 +100,7 @@ primary_key = ["way_id", "node_id"]
   nullable = false
   type = "BIGINT"
 
-  [[actions.foreign_key]]
-  columns = ["way_id"]
-  referenced_table = "ways"
-  referenced_columns = ["id"]
-
-  [[actions.foreign_key]]
-  columns = ["node_id"]
-  referenced_table = "nodes"
-  referenced_columns = ["id"]
+  # foreign keys are intentionally omitted for performance
 
 [[actions]]
 type = "create_table"

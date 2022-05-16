@@ -9,10 +9,8 @@ import java.nio.file.Path
 fun main(args: Array<String>) {
   // path is like north-america/us/washington
   var geofabrikPath = ""
-  var immediatelyBucketPaths = true
   var importOsmFeatures = true
   var importTcFeatures = true
-  var fillTcRelations = true
   var fillInContainment = true
   var fillInGeometry = true
 
@@ -22,8 +20,6 @@ fun main(args: Array<String>) {
       "--geofabrik_path" -> geofabrikPath = value
       "--fill_in_containment" -> fillInContainment = value.toBooleanStrict()
       "--fill_in_geometry" -> fillInGeometry = value.toBooleanStrict()
-      "--fill_tc_relations" -> fillTcRelations = value.toBooleanStrict()
-      "--immediately_bucket_paths" -> immediatelyBucketPaths = value.toBooleanStrict()
       "--import_osm" -> importOsmFeatures = value.toBooleanStrict()
       "--import_tc" -> importTcFeatures = value.toBooleanStrict()
       else -> throw IllegalArgumentException("Unknown argument ${option}")
@@ -48,19 +44,36 @@ fun main(args: Array<String>) {
             getSequence(
                 "https://download.geofabrik.de/${geofabrikPath}-updates/state.txt".toHttpUrl())
           download(pbfUrl, pbf)
-          pg.prepareStatement(
-              "INSERT INTO geofabrik_sources (path, current_sequence_number) VALUES (?, ?)").use {
-            it.setString(1, geofabrikPath)
-            it.setInt(2, sequenceNumber)
-            it.execute()
+          val currentSequence =
+            pg.prepareStatement(
+                "SELECT current_sequence_number FROM geofabrik_sources WHERE path = ?").apply {
+              setString(1, geofabrikPath)
+            }.use {
+              it.executeQuery().use {
+                if (it.next()) {
+                  it.getInt(1)
+                } else {
+                  null
+                }
+              }
+            }
+          if (currentSequence != null && currentSequence != sequenceNumber) {
+            throw IllegalStateException("Existing data is at a different sequence, can't reimport")
+          } else if (currentSequence == null) {
+            pg.prepareStatement(
+                "INSERT INTO geofabrik_sources (path, current_sequence_number) VALUES (?, ?)").use {
+              it.setString(1, geofabrikPath)
+              it.setInt(2, sequenceNumber)
+              it.execute()
+            }
+            pg.commit()
           }
-          pg.commit()
 
           importOsmFromPbf(pg, pbf.toString())
         }
 
         if (importTcFeatures) {
-          seedFromPbf(pg, immediatelyBucketPaths, fillTcRelations, pbf.toString())
+          seedFromPbf(pg, pbf.toString())
         }
       }
 

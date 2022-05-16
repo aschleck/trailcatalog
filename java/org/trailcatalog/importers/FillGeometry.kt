@@ -2,7 +2,6 @@ package org.trailcatalog.importers
 
 import com.google.common.collect.ImmutableMultimap
 import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
@@ -12,8 +11,8 @@ import com.zaxxer.hikari.HikariDataSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
+import org.trailcatalog.pbf.NodeRecord
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.proto.RelationMemberFunction.INNER
 import org.trailcatalog.proto.RelationMemberFunction.OUTER
@@ -30,9 +29,6 @@ import java.sql.Connection
 fun fillInGeometry(hikari: HikariDataSource) {
   hikari.connection.use {
     fillInBoundaries(it)
-  }
-  fillInPaths(hikari)
-  hikari.connection.use {
     fillInTrails(it)
   }
 }
@@ -62,10 +58,10 @@ private fun fillInBoundaries(connection: Connection) {
         flattenNodesInto(geometry, nodes)
         setArray(1, connection.createArrayOf("bigint", nodes.toArray()))
       }.executeQuery()
-      val nodePositions = HashMap<Long, Pair<Double, Double>>()
+      val nodePositions = HashMap<Long, NodeRecord>()
       while (nodeResults.next()) {
         nodePositions[nodeResults.getLong(1)] =
-          Pair(nodeResults.getDouble(2), nodeResults.getDouble(3))
+            NodeRecord(nodeResults.getDouble(2), nodeResults.getDouble(3))
       }
 
       val polygon = geometryToPolygon(geometry, nodePositions)
@@ -93,134 +89,6 @@ private fun fillInBoundaries(connection: Connection) {
     }
 
     updateBoundary.executeBatch()
-  }
-}
-
-private fun fillInPaths(hikari: HikariDataSource) {
-  val scope = CoroutineScope(Dispatchers.IO)
-
-  ProgressBar("filling in paths", "paths").use { progress ->
-    val batches = Channel<List<Pair<Long, ByteArray>>>(10)
-    val fetchData = scope.async {
-      hikari.connection.use { connection ->
-        connection.autoCommit = false
-        val getPaths =
-          connection.prepareStatement(
-              "SELECT id, node_ids FROM paths WHERE cell = -1 AND length(node_ids) > 0").also {
-            it.fetchSize = 10000
-          }
-
-        val results = getPaths.executeQuery()
-
-        if (!results.isBeforeFirst) {
-          batches.close()
-          connection.autoCommit = true
-          return@async
-        }
-
-        while (!results.isAfterLast) {
-          val batch = ArrayList<Pair<Long, ByteArray>>()
-          var i = 0
-          while (i < 1000 && results.next()) {
-            val pathId = results.getLong(1)
-            val nodeBytes = results.getBytes(2)
-            batch.add(Pair(pathId, nodeBytes))
-            i += 1
-          }
-
-          batches.send(batch)
-        }
-        batches.close()
-        connection.autoCommit = true
-      }
-    }
-
-    val workers = (0 until 4).map {
-      scope.async {
-        val toLookup = HashSet<Long>()
-        val nodePositions = HashMap<Long, Pair<Double, Double>>()
-        hikari.connection.use { connection ->
-          connection.autoCommit = false
-
-          val getNodes =
-            connection.prepareStatement(
-                "SELECT id, lat_degrees, lng_degrees FROM nodes WHERE id = ANY (?)").also {
-              it.fetchSize = 20000
-            }
-          val updatePath =
-            connection.prepareStatement("UPDATE paths SET cell = ?, lat_lng_degrees = ? WHERE id = ?")
-
-          while (true) {
-            val result = batches.receiveCatching()
-            if (result.isClosed || result.isFailure) {
-              break
-            }
-
-            val batch = result.getOrNull()!!
-            toLookup.clear()
-            nodePositions.clear()
-
-            for ((_, nodeBytes) in batch) {
-              val nodeIds = ByteBuffer.wrap(nodeBytes).order(LITTLE_ENDIAN).asLongBuffer()
-              while (nodeIds.hasRemaining()) {
-                toLookup.add(nodeIds.get())
-              }
-            }
-
-            getNodes.apply {
-              setArray(1, connection.createArrayOf("bigint", toLookup.toArray()))
-            }.executeQuery().use {
-              while (it.next()) {
-                nodePositions[it.getLong(1)] = Pair(it.getDouble(2), it.getDouble(3))
-              }
-            }
-
-            for ((id, nodeBytes) in batch) {
-              val nodes = ByteBuffer.wrap(nodeBytes).order(LITTLE_ENDIAN).asLongBuffer()
-
-              val latLngs = ByteBuffer.allocate(2 * nodeBytes.size).order(LITTLE_ENDIAN)
-              val bound = S2LatLngRect.empty().toBuilder()
-              var valid = true
-              while (nodes.hasRemaining()) {
-                val nodeId = nodes.get()
-                val position = nodePositions[nodeId]
-                if (position == null) {
-                  valid = false
-                  break
-                }
-
-                latLngs.putDouble(position.first)
-                latLngs.putDouble(position.second)
-                bound.addPoint(S2LatLng.fromDegrees(position.first, position.second))
-              }
-
-              if (!valid) {
-                continue
-              }
-
-              updatePath.apply {
-                setLong(1, boundToCell(bound.build()).id())
-                setBytes(2, latLngs.array())
-                setLong(3, id)
-                addBatch()
-              }
-
-              progress.increment()
-            }
-
-            updatePath.executeBatch()
-            connection.commit()
-          }
-
-          connection.autoCommit = true
-        }
-      }
-    }
-
-    runBlocking {
-      fetchData.await()
-      workers.forEach { it.await() }
-    }
   }
 }
 
@@ -343,8 +211,7 @@ private fun pathsToPolyline(
       }
     }
   }
-  val s2Polyline = S2Polyline(polyline)
-  return s2Polyline
+  return S2Polyline(polyline)
 }
 
 private fun orientPaths(
@@ -544,7 +411,7 @@ fun maybeTracePath(
 private fun flattenNodesInto(geometry: RelationGeometry, out: MutableList<Long>) {
   for (member in geometry.membersList) {
     if (member.hasNodeId()) {
-      out.add(member.nodeId)
+      // TODO(april): we never set this when importing data so...?
     } else if (member.hasRelation()) {
       flattenNodesInto(member.relation, out)
     } else if (member.hasWay()) {
@@ -554,7 +421,7 @@ private fun flattenNodesInto(geometry: RelationGeometry, out: MutableList<Long>)
 }
 
 private fun geometryToPolygon(
-    geometry: RelationGeometry, nodePositions: Map<Long, Pair<Double, Double>>): S2Polygon {
+    geometry: RelationGeometry, nodePositions: Map<Long, NodeRecord>): S2Polygon {
   val polygon = S2PolygonBuilder(Options.UNDIRECTED_XOR)
   for (member in geometry.membersList) {
     val multiplier = when (member.function) {
@@ -572,9 +439,11 @@ private fun geometryToPolygon(
       val points = ArrayList<S2Point>()
       member.way.nodeIdsList.forEach {
         val position = nodePositions[it]!!
-        points.add(S2LatLng.fromDegrees(position.first, position.second).toPoint())
+        points.add(S2LatLng.fromDegrees(position.lat, position.lng).toPoint())
       }
-      addLoopWithSign(points, multiplier, polygon)
+      for ((a, b) in points.windowed(2)) {
+        polygon.addEdge(a, b)
+      }
     }
   }
 
