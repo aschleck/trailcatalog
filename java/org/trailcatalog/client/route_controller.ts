@@ -1,4 +1,5 @@
 import { Controller, ControllerResponse } from 'js/corgi/controller';
+import { EmptyDeps } from 'js/corgi/deps';
 
 import { checkExists } from './common/asserts';
 
@@ -22,11 +23,11 @@ export interface State {
   active: Route;
 }
 
-interface Response extends ControllerResponse<undefined, HTMLDivElement, State> {
+interface Response extends ControllerResponse<undefined, EmptyDeps, HTMLDivElement, State> {
   state: [State, (newState: State) => void];
 }
 
-export class RouteController extends Controller<undefined, HTMLDivElement, State, Response> {
+export class RouteController extends Controller<undefined, EmptyDeps, HTMLDivElement, State, Response> {
 
   constructor(response: Response) {
     super(response);

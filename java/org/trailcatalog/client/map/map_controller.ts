@@ -1,4 +1,5 @@
-import { Controller, ControllerResponse } from 'js/corgi/controller';
+import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
+import { HistoryService } from 'js/corgi/history/history_service';
 
 import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
@@ -25,17 +26,21 @@ interface Args {
   };
 }
 
-interface Response extends ControllerResponse<Args, HTMLDivElement, undefined> {
+interface Deps {
+  services: {
+    history: HistoryService;
+  };
 }
 
-export class MapController extends Controller<Args, HTMLDivElement, undefined, Response> {
+interface Response extends ControllerResponse<Args, Deps, HTMLDivElement, undefined> {
+}
 
-  static deps() {
+export class MapController extends Controller<Args, Deps, HTMLDivElement, undefined, Response> {
+
+  static deps(): RequestSpec<Deps> {
     return {
-      args: {
-        lat: Number,
-        lng: Number,
-        zoom: Number,
+      services: {
+        history: HistoryService,
       },
     };
   }
@@ -59,6 +64,7 @@ export class MapController extends Controller<Args, HTMLDivElement, undefined, R
 
   constructor(response: Response) {
     super(response);
+    response.deps.services.history.back();
     const cameraArgs = response.args.camera;
     this.camera = new Camera(cameraArgs.lat, cameraArgs.lng, cameraArgs.zoom);
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;

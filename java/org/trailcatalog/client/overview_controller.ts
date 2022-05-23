@@ -1,4 +1,5 @@
 import { Controller, ControllerResponse } from 'js/corgi/controller';
+import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
@@ -14,11 +15,11 @@ export interface State {
   trails: Trail[];
 }
 
-interface Response extends ControllerResponse<undefined, HTMLDivElement, State> {
+interface Response extends ControllerResponse<undefined, EmptyDeps, HTMLDivElement, State> {
   state: [State, (newState: State) => void];
 }
 
-export class OverviewController extends Controller<undefined, HTMLDivElement, State, Response> {
+export class OverviewController extends Controller<undefined, EmptyDeps, HTMLDivElement, State, Response> {
 
   private mapController: MapController|undefined;
 
