@@ -1,55 +1,51 @@
-import { Controller, ControllerResponse } from 'js/corgi/controller';
-import { EmptyDeps } from 'js/corgi/deps';
+import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
 
-import { checkExists } from './common/asserts';
+import { Route, ViewsService } from './views/views_service';
 
-interface BoundaryOverview {
-  kind: 'boundary_overview';
-  boundary: string;
+interface Deps {
+  services: {
+    views: ViewsService;
+  };
 }
-
-interface GlobalOverview {
-  kind: 'global_overview';
-}
-
-export type Route = BoundaryOverview|GlobalOverview;
-
-const routes = new Map<Route['kind'], RegExp>([
-  ['boundary_overview', /^\/boundary\/(?<boundary>\d+)$/],
-  ['global_overview', /^\/$/],
-]);
 
 export interface State {
   active: Route;
 }
 
-interface Response extends ControllerResponse<undefined, EmptyDeps, HTMLDivElement, State> {
+interface Response extends ControllerResponse<undefined, Deps, HTMLDivElement, State> {
   state: [State, (newState: State) => void];
 }
 
-export class RouteController extends Controller<undefined, EmptyDeps, HTMLDivElement, State, Response> {
+export class RouteController extends Controller<undefined, Deps, HTMLDivElement, State, Response> {
+
+  static getInitialState(): State {
+    return {
+      active: ViewsService.getActiveRoute(),
+    };
+  }
+
+  static deps(): RequestSpec<Deps> {
+    return {
+      services: {
+        views: ViewsService,
+      },
+    };
+  }
+
+  private readonly views: ViewsService;
 
   constructor(response: Response) {
     super(response);
+    this.views = response.deps.services.views;
+    this.views.addListener(this);
+    this.registerDisposer(() => {
+      this.views.removeListener(this);
+    });
   }
 
-  // TODO(april): register for history
-}
-
-function matchPath(path: string): Route|undefined {
-  for (const [kind, regex] of routes.entries()) {
-    const match = regex.exec(path);
-    if (match) {
-      return {
-        kind,
-        ...match.groups,
-      } as Route;
-    }
+  routeChanged(active: Route): void {
+    this.updateState({
+      active,
+    });
   }
-  return undefined;
-}
-
-export function getActiveRoute(): Route {
-  const url = new URL(window.location.href);
-  return checkExists(matchPath(url.pathname));
 }

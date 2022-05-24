@@ -1,9 +1,8 @@
+import { checkExhaustive, checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 
-import { checkExhaustive, checkExists } from './common/asserts';
-
 import { OverviewElement } from './overview_element';
-import { getActiveRoute, RouteController, State } from './route_controller';
+import { RouteController, State } from './route_controller';
 
 import './app.css';
 
@@ -13,9 +12,7 @@ import './app.css';
 
 function App(props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    state = {
-      active: getActiveRoute(),
-    };
+    state = RouteController.getInitialState();
   }
 
   let route;
@@ -23,6 +20,8 @@ function App(props: {}, state: State|undefined, updateState: (newState: State) =
     route = <OverviewElement boundary={state.active.boundary} />;
   } else if (state.active.kind === 'global_overview') {
     route = <OverviewElement />;
+  } else if (state.active.kind === 'trail_overview') {
+    route = <span>{state.active.trail}</span>;
   } else {
     checkExhaustive(state.active);
   }
@@ -32,6 +31,9 @@ function App(props: {}, state: State|undefined, updateState: (newState: State) =
         js={corgi.bind({
           controller: RouteController,
           args: undefined,
+          events: {
+            render: 'wakeup',
+          },
           state: [state, updateState],
         })}
         className="h-full"

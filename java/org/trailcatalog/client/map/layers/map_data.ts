@@ -119,6 +119,10 @@ export class MapData implements Layer {
     this.lastChange = Date.now();
   }
 
+  getTrail(id: bigint): Trail|undefined {
+    return this.trails.get(id);
+  }
+
   hasDataNewerThan(time: number): boolean {
     return this.lastChange > time;
   }
@@ -206,11 +210,6 @@ export class MapData implements Layer {
       }
     }
     this.lastChange = Date.now();
-  }
-
-  setTrailHighlighted(id: bigint, highlighted: boolean): void {
-    const trail = checkExists(this.trails.get(id));
-    this.setHighlighted(trail, highlighted);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {

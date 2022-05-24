@@ -142,10 +142,12 @@ function SelectedTrailsElement({ position, trails }: {
   >
     {trails.map(trail =>
       <section
-          className="p-2 hover:bg-tc-gray-700"
+          className="cursor-pointer p-2 hover:bg-tc-gray-700"
           data-trail-id={trail.id}
           unboundEvents={{
             click: 'viewTrail',
+            mouseover: 'highlightTrail',
+            mouseout: 'unhighlightTrail',
           }}
       >
         <header className="font-bold font-lg grow">
@@ -171,14 +173,14 @@ function SelectedTrailsElement({ position, trails }: {
 
 function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Trail }) {
   return <section
-      className="border-b cursor-pointer flex gap-2 group items-stretch pr-2"
+      className="border-b cursor-pointer flex gap-2 items-stretch pr-2"
       data-trail-id={trail.id}
       unboundEvents={{
         mouseover: 'highlightTrail',
         mouseout: 'unhighlightTrail',
       }}>
     <div className={
-        (highlight ? 'bg-highlight ' : '') + 'w-2 group-hover:bg-highlight'
+        (highlight ? 'bg-highlight ' : '') + 'w-2'
     }>
     </div>
     <div className="font-lg font-semibold grow py-2">{trail.name}</div>

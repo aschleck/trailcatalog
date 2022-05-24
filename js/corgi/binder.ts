@@ -199,10 +199,13 @@ function maybeInstantiateAndCall<E extends HTMLElement>(
 }
 
 function instantiateService(ctor: AnyServiceCtor): Promise<Service<any>> {
+  let deps;
   if (ctor.deps) {
-    throw new Error('Deps in services are not currently supported');
+    deps = fetchDeps(ctor.deps());
+  } else {
+    deps = Promise.resolve({});
   }
-  const instance = Promise.resolve(new ctor({}));
+  const instance = deps.then(d => new ctor({deps: d}));
   serviceSingletons.set(ctor, instance);
   return instance;
 }
@@ -213,13 +216,13 @@ function fetchDeps<D extends ControllerDeps>(deps: RequestSpec<D>): Promise<D> {
   if (deps.services) {
     for (const [key, ctor] of Object.entries(deps.services)) {
       let service = serviceSingletons.get(ctor as AnyServiceCtor);
-      if (service) {
-        response.services[key] = service;
-      } else {
-        promises.push(instantiateService(ctor).then(instance => {
-          response.services[key] = instance;
-        }));
+      if (!service) {
+        service = instantiateService(ctor);
       }
+
+      promises.push(service.then(instance => {
+        response.services[key] = instance;
+      }));
     }
   }
   return Promise.all(promises).then(() => response as D);

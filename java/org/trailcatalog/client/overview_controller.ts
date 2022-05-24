@@ -1,11 +1,17 @@
-import { Controller, ControllerResponse } from 'js/corgi/controller';
-import { EmptyDeps } from 'js/corgi/deps';
+import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
 import { Vec2 } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, MapController, SELECTION_CHANGED } from './map/events';
 import { Path, Trail } from './models/types';
+import { ViewsService } from './views/views_service';
+
+interface Deps {
+  services: {
+    views: ViewsService;
+  };
+}
 
 export interface State {
   hovering: Path|Trail|undefined;
@@ -15,16 +21,26 @@ export interface State {
   trails: Trail[];
 }
 
-interface Response extends ControllerResponse<undefined, EmptyDeps, HTMLDivElement, State> {
+interface Response extends ControllerResponse<undefined, Deps, HTMLDivElement, State> {
   state: [State, (newState: State) => void];
 }
 
-export class OverviewController extends Controller<undefined, EmptyDeps, HTMLDivElement, State, Response> {
+export class OverviewController extends Controller<undefined, Deps, HTMLDivElement, State, Response> {
+
+  static deps(): RequestSpec<Deps> {
+    return {
+      services: {
+        views: ViewsService,
+      },
+    };
+  }
 
   private mapController: MapController|undefined;
+  private views: ViewsService;
 
   constructor(response: Response) {
     super(response);
+    this.views = response.deps.services.views;
   }
 
   onDataChange(e: CorgiEvent<typeof DATA_CHANGED>): void {
@@ -101,18 +117,38 @@ export class OverviewController extends Controller<undefined, EmptyDeps, HTMLDiv
   }
 
   viewTrail(e: MouseEvent): void {
-    console.log(e);
+    const raw = (e.currentTarget as HTMLElement|undefined)?.dataset?.trailId;
+    if (raw === undefined) {
+      console.error('Unable to find trail ID');
+      return;
+    }
+
+    const id = Number.parseInt(raw);
+    if (Number.isNaN(id)) {
+      console.error(`Unable to parse trail ID ${raw}`);
+      return;
+    }
+
+    this.views.showTrail(id);
   }
 
   private setTrailHighlighted(e: MouseEvent, selected: boolean): void {
     if (!this.mapController) {
       return;
     }
-    const id = (checkExists(e.currentTarget) as HTMLElement).dataset['trailId'];
+    const id = (checkExists(e.currentTarget) as HTMLElement).dataset.trailId;
     if (!id) {
       return;
     }
-    this.mapController.setTrailHighlighted(BigInt(id), selected);
+    const trail = this.mapController.getTrail(BigInt(id));
+    if (!trail) {
+      return;
+    }
+    this.mapController.setHighlighted(trail, selected);
+    this.updateState({
+      ...this.state,
+      hovering: trail,
+    });
   }
 }
 

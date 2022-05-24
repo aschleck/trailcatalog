@@ -5,9 +5,10 @@ import { Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
 
 export interface MapController {
+  getTrail(id: bigint): Trail|undefined;
   listTrailsInViewport(): Trail[];
   listTrailsOnPath(path: Path): Trail[];
-  setTrailHighlighted(trail: bigint, selected: boolean): void;
+  setHighlighted(trail: Trail, selected: boolean): void;
 }
 
 export const DATA_CHANGED = declareEvent<{

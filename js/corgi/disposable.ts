@@ -29,6 +29,10 @@ export class Disposable {
     return this._isDisposed;
   }
 
+  protected registerDisposer(fn: () => void): void {
+    this.disposers.push(fn);
+  }
+
   protected registerListener<K extends EventKeys>(
       target: DocumentTarget<K>|HTMLElementTarget<K>|WindowTarget<K>,
       type: K,

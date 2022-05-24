@@ -270,7 +270,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
     if (!oldNode) {
       node.appendChild(childResult.root);
     } else if (oldNode !== childResult.root) {
-      oldNode.replaceChild(childResult.root, oldNode);
+      node.replaceChild(childResult.root, oldNode);
       result.sideEffects.push(() => { disposeBoundElementsIn(oldNode); });
     }
     result.sideEffects.push(...childResult.sideEffects);

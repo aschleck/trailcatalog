@@ -1,5 +1,5 @@
-import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
-import { HistoryService } from 'js/corgi/history/history_service';
+import { Controller, ControllerResponse } from 'js/corgi/controller';
+import { EmptyDeps } from 'js/corgi/deps';
 
 import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
@@ -26,24 +26,10 @@ interface Args {
   };
 }
 
-interface Deps {
-  services: {
-    history: HistoryService;
-  };
+interface Response extends ControllerResponse<Args, EmptyDeps, HTMLDivElement, undefined> {
 }
 
-interface Response extends ControllerResponse<Args, Deps, HTMLDivElement, undefined> {
-}
-
-export class MapController extends Controller<Args, Deps, HTMLDivElement, undefined, Response> {
-
-  static deps(): RequestSpec<Deps> {
-    return {
-      services: {
-        history: HistoryService,
-      },
-    };
-  }
+export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, undefined, Response> {
 
   private readonly camera: Camera;
   private readonly canvas: HTMLCanvasElement;
@@ -64,7 +50,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
   constructor(response: Response) {
     super(response);
-    response.deps.services.history.back();
     const cameraArgs = response.args.camera;
     this.camera = new Camera(cameraArgs.lat, cameraArgs.lng, cameraArgs.zoom);
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
@@ -120,6 +105,10 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     requestAnimationFrame(raf);
   }
 
+  getTrail(id: bigint): Trail|undefined {
+    return this.mapData.getTrail(id);
+  }
+
   listTrailsInViewport(): Trail[] {
     return this.mapData
         .queryInBounds(
@@ -131,8 +120,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     return this.mapData.listTrailsOnPath(path);
   }
 
-  setTrailHighlighted(trail: bigint, highlighted: boolean): void {
-    return this.mapData.setTrailHighlighted(trail, highlighted);
+  setHighlighted(trail: Trail, highlighted: boolean): void {
+    return this.mapData.setHighlighted(trail, highlighted);
   }
 
   click(clientX: number, clientY: number): void {
