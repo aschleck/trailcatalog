@@ -14,6 +14,10 @@ export interface SetFilterRequest {
 
 export interface UpdateViewportRequest {
   kind: 'uvr';
+  viewports: Viewport[];
+}
+
+export interface Viewport {
   lat: [number, number];
   lng: [number, number];
   zoom: number;
@@ -194,10 +198,12 @@ self.onmessage = e => {
   if (request.kind === 'sfr') {
     fetcher.setFilter(request);
   } else if (request.kind === 'uvr') {
-    const low = S2LatLng.fromRadians(request.lat[0], request.lng[0]);
-    const high = S2LatLng.fromRadians(request.lat[1], request.lng[1]);
+    // TODO(april): make this support multiple viewports
+    const viewport = request.viewports[0];
+    const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
+    const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
     const bounds = S2LatLngRect.fromPointPair(low, high);
-    fetcher.updateViewport(bounds, request.zoom);
+    fetcher.updateViewport(bounds, viewport.zoom);
   } else {
     checkExhaustive(request);
   }

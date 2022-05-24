@@ -1,5 +1,6 @@
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { Disposable } from 'js/common/disposable';
 
 import { checkExhaustive, checkExists } from '../../common/asserts';
 import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
@@ -7,6 +8,7 @@ import { DPI } from '../../common/dpi';
 import { LittleEndianView } from '../../common/little_endian_view';
 import { metersToMiles, reinterpretLong, rgbaToUint32F } from '../../common/math';
 import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
+import { MapDataService } from '../../data/map_data_service';
 import { Path, Trail } from '../../models/types';
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Line } from '../rendering/geometry';
@@ -49,12 +51,10 @@ interface TrailHandle {
 
 type Handle = PathHandle|TrailHandle;
 
-const DATA_ZOOM_THRESHOLD = 4;
 const HIGHLIGHT_PATH_COLOR = '#ffe600';
 const HIGHLIGHT_TRAIL_COLOR = '#f2f2f2';
 const RENDER_PATHS_ZOOM_THRESHOLD = 10;
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
-const TEXT_DECODER = new TextDecoder();
 
 const TRAIL_DIAMOND_REGULAR = renderableDiamond(false);
 const TRAIL_DIAMOND_HIGHLIGHTED = renderableDiamond(true);
@@ -63,49 +63,32 @@ const TRAIL_DIAMOND_HIGHLIGHTED = renderableDiamond(true);
 // because they are not centered vertically.)
 const CLICK_RADIUS_PX = 35 * DPI;
 
-export class MapData implements Layer {
+export class MapData extends Disposable implements Layer {
 
   private readonly metadataBounds: BoundsQuadtree<Handle>;
-  private readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   private readonly detailBounds: BoundsQuadtree<Handle>;
-  private readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
-  private readonly paths: Map<bigint, Path>;
-  private readonly trails: Map<bigint, Trail>;
-  private readonly fetcher: Worker;
   private readonly highlighted: Set<bigint>;
   private readonly diamondPixelBounds: Vec4;
   private lastChange: number;
 
   constructor(
       private readonly camera: Camera,
+      private readonly dataService: MapDataService,
       filter: Filter,
       private readonly textRenderer: TextRenderer,
   ) {
+    super();
     this.metadataBounds = worldBounds();
-    this.metadataCells = new Map();
     this.detailBounds = worldBounds();
-    this.detailCells = new Map();
-    this.paths = new Map();
-    this.trails = new Map();
-    this.fetcher = new Worker('/static/data_fetcher_worker.js');
-    this.fetcher.postMessage({
-      ...filter,
-      kind: 'sfr',
+
+    this.dataService.addListener(this);
+    this.registerDisposer(() => {
+      this.dataService.removeListener(this);
     });
-    this.fetcher.onmessage = e => {
-      const command = e.data as FetcherCommand;
-      if (command.type === 'lcm') {
-        this.loadMetadata(command.cell, command.data);
-      } else if (command.type === 'lcd') {
-        this.loadDetail(command.cell, command.data);
-      } else if (command.type == 'ucc') {
-        for (const cell of command.cells) {
-          this.unloadCell(cell);
-        }
-      } else {
-        checkExhaustive(command, 'Unknown type of command');
-      }
-    };
+    //this.fetcher.postMessage({
+    //  ...filter,
+    //  kind: 'sfr',
+    //});
     this.highlighted = new Set();
     const diamondPixelSize = this.textRenderer.measure(renderableDiamond(false));
     const halfDiamondWidth = diamondPixelSize[0] / 2;
@@ -120,7 +103,7 @@ export class MapData implements Layer {
   }
 
   getTrail(id: bigint): Trail|undefined {
-    return this.trails.get(id);
+    return this.dataService.trails.get(id);
   }
 
   hasDataNewerThan(time: number): boolean {
@@ -128,7 +111,7 @@ export class MapData implements Layer {
   }
 
   listTrailsOnPath(path: Path): Trail[] {
-    return path.trails.map(t => this.trails.get(t)).filter(exists);
+    return path.trails.map(t => this.dataService.trails.get(t)).filter(exists);
   }
 
   queryInBounds(bounds: S2LatLngRect): Array<Path|Trail> {
@@ -213,13 +196,8 @@ export class MapData implements Layer {
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
-    if (zoom < DATA_ZOOM_THRESHOLD) {
-      return;
-    }
-
     const bounds = this.camera.viewportBounds(viewportSize[0], viewportSize[1]);
-    this.fetcher.postMessage({
-      kind: 'uvr',
+    this.dataService.updateViewport(this, {
       lat: [bounds.lat().lo(), bounds.lat().hi()],
       lng: [bounds.lng().lo(), bounds.lng().hi()],
       zoom,
@@ -241,7 +219,7 @@ export class MapData implements Layer {
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
-      const buffer = this.detailCells.get(id);
+      const buffer = this.dataService.detailCells.get(id);
       if (!buffer) {
         continue;
       }
@@ -294,7 +272,7 @@ export class MapData implements Layer {
         data.align(8);
         data.skip(trailWayCount * 8 + 16);
         const lengthMeters = data.getFloat64();
-        const trail = checkExists(this.trails.get(id)) as Trail;
+        const trail = checkExists(this.dataService.trails.get(id)) as Trail;
         let text;
         let z;
         const highlighted = this.highlighted.has(id);
@@ -325,7 +303,7 @@ export class MapData implements Layer {
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
-      const buffer = this.metadataCells.get(id);
+      const buffer = this.dataService.metadataCells.get(id);
       if (!buffer) {
         continue;
       }
@@ -374,116 +352,35 @@ export class MapData implements Layer {
     return cells;
   }
 
-  private loadMetadata(id: S2CellNumber, buffer: ArrayBuffer): void {
-    // Check if the server wrote us a 1 byte response with 0 trails and paths.
-    if (buffer.byteLength <= 8) {
-      this.detailCells.set(id, undefined);
-      return;
-    }
-
-    const data = new LittleEndianView(buffer);
-
-    const trailCount = data.getInt32();
-    for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
-      const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
-      const type = data.getInt32();
-      const position: Vec2 = [data.getFloat64(), data.getFloat64()];
-      const lengthMeters = data.getFloat64();
-      const existing = this.trails.get(id);
-      let trail;
-      if (existing) {
-        trail = existing;
-      } else {
-        trail = constructTrail(id, name, type, [], position, lengthMeters);
-        this.trails.set(id, trail);
-      }
+  loadMetadata(paths: Path[], trails: Trail[]): void {
+    for (const trail of trails) {
       this.metadataBounds.insert({
         entity: trail,
-        position,
+        position: trail.position,
         screenPixelBound: this.diamondPixelBounds,
       }, trail.bound);
     }
 
-    this.metadataCells.set(id, buffer);
     this.lastChange = Date.now();
   }
 
-  private loadDetail(id: S2CellNumber, buffer: ArrayBuffer): void {
-    // Check if the server wrote us a 1 byte response with 0 trails and paths.
-    if (buffer.byteLength <= 8) {
-      this.detailCells.set(id, undefined);
-      return;
-    }
-
-    this.detailCells.set(id, buffer);
+  loadDetail(paths: Path[], trails: Trail[]): void {
     this.lastChange = Date.now();
 
-    const data = new LittleEndianView(buffer);
-
-    const pathCount = data.getInt32();
-    for (let i = 0; i < pathCount; ++i) {
-      const id = data.getBigInt64();
-      const type = data.getInt32();
-      const pathTrailCount = data.getInt32();
-      const pathTrails = [];
-      for (let j = 0; j < pathTrailCount; ++j) {
-        pathTrails.push(data.getBigInt64());
-      }
-
-      const pathVertexBytes = data.getInt32();
-      const pathVertexCount = pathVertexBytes / 8;
-      data.align(4);
-      const points = data.sliceFloat32(pathVertexCount * 2);
-      const bound: PixelRect = {
-        low: [1, 1],
-        high: [-1, -1],
-      };
-      for (let i = 0; i < pathVertexCount; ++i) {
-        const x = points[i * 2 + 0];
-        const y = points[i * 2 + 1];
-        bound.low[0] = Math.min(bound.low[0], x);
-        bound.low[1] = Math.min(bound.low[1], y);
-        bound.high[0] = Math.max(bound.high[0], x);
-        bound.high[1] = Math.max(bound.high[1], y);
-      }
-      const built = new Path(id, type, bound, pathTrails, points);
+    for (const path of paths) {
       this.detailBounds.insert({
-        entity: built,
-        line: points,
-      }, bound);
-      this.paths.set(id, built);
+        entity: path,
+        line: path.line,
+      }, path.bound);
     }
 
-    const trailCount = data.getInt32();
-    for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
-      const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
-      const type = data.getInt32();
-      const trailWayCount = data.getInt32();
-      data.align(8);
-      const trailWays = [...data.sliceBigInt64(trailWayCount)];
-      const position: Vec2 = [data.getFloat64(), data.getFloat64()];
-      const lengthMeters = data.getFloat64();
+    for (const trail of trails) {
       const detailScreenPixelSize =
-          this.textRenderer.measure(renderableTrailPin(lengthMeters, false));
+          this.textRenderer.measure(renderableTrailPin(trail.lengthMeters, false));
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
-      const existing = this.trails.get(id);
-      let trail;
-      if (existing) {
-        trail = existing;
-        if (trail.paths.length === 0) {
-          trail.paths.push(...trailWays);
-        }
-      } else {
-        trail = constructTrail(id, name, type, trailWays, position, lengthMeters);
-        this.trails.set(id, trail);
-      }
       this.detailBounds.insert({
         entity: trail,
-        position,
+        position: trail.position,
         screenPixelBound: [
           -halfDetailWidth,
           -detailScreenPixelSize[1] + DIAMOND_RADIUS_PX,
@@ -494,48 +391,14 @@ export class MapData implements Layer {
     }
   }
 
-  private unloadCell(id: S2CellNumber): void {
-    const buffer = this.detailCells.get(id);
-    this.metadataCells.delete(id);
-    this.detailCells.delete(id);
-    if (!buffer) {
-      return;
+  unloadEverywhere(paths: Path[], trails: Trail[]): void {
+    for (const path of paths) {
+      this.detailBounds.delete(path.bound);
     }
 
-    const data = new LittleEndianView(buffer);
-
-    const pathCount = data.getInt32();
-    for (let i = 0; i < pathCount; ++i) {
-      const id = data.getBigInt64();
-      data.skip(4);
-      const pathTrailCount = data.getInt32();
-      data.skip(pathTrailCount * 8);
-
-      const pathVertexBytes = data.getInt32();
-      data.align(4);
-      data.skip(pathVertexBytes);
-      const entity = this.paths.get(id);
-      if (entity) {
-        this.detailBounds.delete(entity.bound);
-        this.paths.delete(id);
-      }
-    }
-
-    const trailCount = data.getInt32();
-    for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
-      data.skip(nameLength + 4);
-      const trailWayCount = data.getInt32();
-      data.align(8);
-      data.skip(trailWayCount * 8 + 16 + 8);
-
-      const entity = this.trails.get(id);
-      if (entity) {
-        this.detailBounds.delete(entity.bound);
-        this.metadataBounds.delete(entity.bound);
-        this.trails.delete(id);
-      }
+    for (const trail of trails) {
+      this.detailBounds.delete(trail.bound);
+      this.metadataBounds.delete(trail.bound);
     }
   }
 
@@ -550,32 +413,6 @@ export class MapData implements Layer {
   private showDetail(zoom: number): boolean {
     return zoom >= DETAIL_ZOOM_THRESHOLD;
   }
-}
-
-function constructTrail(
-    id: bigint,
-    name: string,
-    type: number,
-    paths: bigint[],
-    position: Vec2,
-    lengthMeters: number): Trail {
-  // We really struggle bounds checking trails, but on the plus side we
-  // calculate a radius on click queries. So as long as our query radius
-  // includes this point we can do fine-grained checks to determine what is
-  // *actually* being clicked.
-  const epsilon = 1e-5;
-  const bound: PixelRect = {
-    low: [position[0] - epsilon, position[1] - epsilon],
-    high: [position[0] + epsilon, position[1] + epsilon],
-  };
-  return new Trail(
-      id,
-      name,
-      type,
-      bound,
-      paths,
-      position,
-      lengthMeters);
 }
 
 function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number {

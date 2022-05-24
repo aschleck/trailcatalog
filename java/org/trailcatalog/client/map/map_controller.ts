@@ -1,9 +1,9 @@
-import { Controller, ControllerResponse } from 'js/corgi/controller';
-import { EmptyDeps } from 'js/corgi/deps';
+import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
 import { Vec2 } from '../common/types';
+import { MapDataService } from '../data/map_data_service';
 import { Path, Trail } from '../models/types';
 import { MapData } from './layers/map_data';
 import { TileData } from './layers/tile_data';
@@ -26,10 +26,24 @@ interface Args {
   };
 }
 
-interface Response extends ControllerResponse<Args, EmptyDeps, HTMLDivElement, undefined> {
+interface Deps {
+  services: {
+    mapData: MapDataService;
+  };
 }
 
-export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, undefined, Response> {
+interface Response extends ControllerResponse<Args, Deps, HTMLDivElement, undefined> {
+}
+
+export class MapController extends Controller<Args, Deps, HTMLDivElement, undefined, Response> {
+
+  static deps(): RequestSpec<Deps> {
+    return {
+      services: {
+        mapData: MapDataService,
+      },
+    };
+  }
 
   private readonly camera: Camera;
   private readonly canvas: HTMLCanvasElement;
@@ -65,8 +79,14 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
 
     this.textRenderer = new TextRenderer(this.renderer);
     this.mapData =
-        new MapData(this.camera, response.args.filter, this.textRenderer);
+        new MapData(
+            this.camera,
+            response.deps.services.mapData,
+            response.args.filter,
+            this.textRenderer);
+    this.registerDisposable(this.mapData);
     this.tileData = new TileData(this.camera, this.renderer);
+    this.registerDisposable(this.tileData);
 
     this.screenArea = new DOMRect();
     this.lastRenderPlan = 0;

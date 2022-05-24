@@ -29,6 +29,12 @@ export class Disposable {
     return this._isDisposed;
   }
 
+  protected registerDisposable(disposable: Disposable): void {
+    this.disposers.push(() => {
+      disposable.dispose();
+    });
+  }
+
   protected registerDisposer(fn: () => void): void {
     this.disposers.push(fn);
   }

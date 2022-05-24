@@ -9,3 +9,10 @@ export function checkExists<V>(v: V|null|undefined): V {
   return v;
 }
 
+export function exists<T>(v: T|null|undefined): v is T {
+  if (v === null || v === undefined) {
+    return false;
+  } else {
+    return true;
+  }
+}

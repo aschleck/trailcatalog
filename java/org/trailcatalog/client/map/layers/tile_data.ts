@@ -1,4 +1,6 @@
-import { checkExhaustive } from '../../common/asserts';
+import { checkExhaustive } from 'js/common/asserts';
+import { Disposable } from 'js/common/disposable';
+
 import { HashMap } from '../../common/collections';
 import { TileId, Vec2 } from '../../common/types';
 import { FetcherCommand } from '../../workers/tile_fetcher';
@@ -11,7 +13,7 @@ import { Layer } from './layer';
 
 const NO_OFFSET: Vec2 = [0, 0];
 
-export class TileData implements Layer {
+export class TileData extends Disposable implements Layer {
 
   private readonly fetcher: Worker;
   private lastChange: number;
@@ -21,6 +23,7 @@ export class TileData implements Layer {
   constructor(
       private readonly camera: Camera,
       private readonly renderer: Renderer) {
+    super();
     this.fetcher = new Worker('/static/tile_fetcher_worker.js');
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
