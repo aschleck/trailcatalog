@@ -147,7 +147,7 @@ export class OverviewController extends Controller<undefined, Deps, HTMLDivEleme
     this.mapController.setHighlighted(trail, selected);
     this.updateState({
       ...this.state,
-      hovering: trail,
+      hovering: selected ? trail : undefined,
     });
   }
 }

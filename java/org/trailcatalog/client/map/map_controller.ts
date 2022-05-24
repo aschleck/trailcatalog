@@ -110,7 +110,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     });
     // If we started a pan and drag the pointer outside the canvas the target will change, so we
     // don't check it.
-    this.registerListener(document, 'pointermove', e => { interpreter.pointerMove(e); });
+    this.registerListener(document, 'pointermove', e => {
+      interpreter.pointerMove(e, e.target === this.canvas);
+    });
     this.registerListener(document, 'pointerup', e => { interpreter.pointerUp(e); });
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
 
@@ -312,9 +314,11 @@ class PointerInterpreter {
     }
   }
 
-  pointerMove(e: PointerEvent): void {
+  pointerMove(e: PointerEvent, inCanvas: boolean): void {
     if (!this.pointers.has(e.pointerId)) {
-      this.listener.hover(e.clientX, e.clientY);
+      if (inCanvas) {
+        this.listener.hover(e.clientX, e.clientY);
+      }
       return;
     }
 
