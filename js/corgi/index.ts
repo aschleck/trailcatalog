@@ -181,7 +181,7 @@ function updateToState(element: VElement, newState: object): void {
   });
   let newElement;
   try {
-    newElement = element.factory(element.props, newState, element.state[1]);
+    newElement = element.factory(element.factoryProps ?? null, newState, element.state[1]);
   } finally {
     vElementPath.pop();
   }

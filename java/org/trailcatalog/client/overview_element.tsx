@@ -164,25 +164,3 @@ function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Tra
   </section>;
 }
 
-function floatCoalesce(...numbers: Array<string|number|null>): number {
-  for (const x of numbers) {
-    if (x == undefined || x === null) {
-      continue;
-    }
-    const n = Number(x);
-    if (!isNaN(n)) {
-      return n;
-    }
-  }
-  throw new Error('No valid floats');
-}
-
-type FabricIconName = 'List';
-
-function FabricIcon({
-  name,
-  className,
-  ...props
-}: {name: FabricIconName} & corgi.Properties<HTMLElement>) {
-  return <i className={`ms-Icon ms-Icon--${name} ${className}`} {...props} />;
-}

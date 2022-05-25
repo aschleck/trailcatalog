@@ -7,10 +7,10 @@ import { LocationUrlController } from './location_url_controller';
 import { SidebarController, State } from './sidebar_controller';
 
 export function ViewportLayoutElement({filter, mapOverlay, sidebarContent}: {
-  filter: {
+  filter?: {
     boundary?: number;
   };
-  mapOverlay: string;
+  mapOverlay?: string;
   sidebarContent: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
@@ -66,7 +66,7 @@ export function ViewportLayoutElement({filter, mapOverlay, sidebarContent}: {
           >
             <MapElement camera={{lat, lng, zoom}} filter={filter} />
           </div>
-          {mapOverlay}
+          {mapOverlay ?? <></>}
         </div>
       </div>
     </div>

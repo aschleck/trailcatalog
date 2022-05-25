@@ -3,6 +3,7 @@ import * as corgi from 'js/corgi';
 
 import { OverviewElement } from './overview_element';
 import { RouteController, State } from './route_controller';
+import { TrailOverviewElement } from './trail_overview_element';
 
 import './app.css';
 
@@ -21,7 +22,7 @@ function App(props: {}, state: State|undefined, updateState: (newState: State) =
   } else if (state.active.kind === 'global_overview') {
     route = <OverviewElement />;
   } else if (state.active.kind === 'trail_overview') {
-    route = <span>{state.active.trail}</span>;
+    route = <TrailOverviewElement trailId={state.active.trail} />;
   } else {
     checkExhaustive(state.active);
   }

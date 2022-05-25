@@ -4,13 +4,13 @@ import { MapController } from './map_controller';
 
 export const MapElement = ({camera, filter}: {
   camera: {lat: number; lng: number; zoom: number;};
-  filter: {boundary?: number};
+  filter?: {boundary?: number};
 }) => {
   return <>
     <div
         js={corgi.bind({
           controller: MapController,
-          args: {camera, filter},
+          args: {camera, filter: filter ?? {}},
           events: {
             render: 'wakeup',
           },
