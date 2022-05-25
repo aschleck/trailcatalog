@@ -1,4 +1,4 @@
-import { S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
 import { checkExhaustive } from '../common/asserts';

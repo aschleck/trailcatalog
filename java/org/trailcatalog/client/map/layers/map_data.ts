@@ -7,7 +7,7 @@ import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
 import { DPI } from '../../common/dpi';
 import { LittleEndianView } from '../../common/little_endian_view';
 import { metersToMiles, reinterpretLong, rgbaToUint32F } from '../../common/math';
-import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../../common/types';
+import { S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { MapDataService } from '../../data/map_data_service';
 import { Path, Trail } from '../../models/types';
 import { Camera, projectLatLngRect } from '../models/camera';

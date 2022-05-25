@@ -1,4 +1,4 @@
-import { checkExhaustive, checkExists, exists } from 'js/common/asserts';
+import { checkExhaustive } from 'js/common/asserts';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
 

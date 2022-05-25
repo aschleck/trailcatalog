@@ -1,4 +1,4 @@
-import { Vec4 } from '../../common/types';
+
 
 export interface Line {
   colorFill: number;

@@ -1,4 +1,4 @@
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+
 
 import { HashSet } from '../common/collections';
 import { TileId, Vec2 } from '../common/types';

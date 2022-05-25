@@ -1,6 +1,4 @@
 import { Disposable } from 'js/common/disposable';
-
-import { EmptyDeps } from './deps';
 import { EventSpec, qualifiedName } from './events';
 import { ServiceDeps, RequestSpec as ServiceRequestSpec } from './service';
 

@@ -1,5 +1,4 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
 import { PixelRect, Vec2 } from '../../common/types';
 

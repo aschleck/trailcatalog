@@ -1,5 +1,4 @@
 import { worldBounds } from './bounds_quadtree';
-import { PixelRect } from './support';
 
 test('finds intersecting bound', () => {
   const qt = worldBounds<string>();

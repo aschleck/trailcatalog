@@ -1,15 +1,12 @@
-import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExhaustive, checkExists, exists } from 'js/common/asserts';
-import { Disposable } from 'js/common/disposable';
+
+import { checkExhaustive, exists } from 'js/common/asserts';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
 
 import { LittleEndianView } from '../common/little_endian_view';
-import { metersToMiles, reinterpretLong, rgbaToUint32F } from '../common/math';
-import { PixelRect, S2CellNumber, Vec2, Vec4 } from '../common/types';
+import { PixelRect, S2CellNumber, Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
-import { DETAIL_ZOOM_THRESHOLD, FetcherCommand, Viewport } from '../workers/data_fetcher';
+import { FetcherCommand, Viewport } from '../workers/data_fetcher';
 
 interface Filter {
   boundary?: number;

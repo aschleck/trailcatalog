@@ -1,5 +1,4 @@
 import { checkExists } from '../../common/asserts';
-import { splitVec2 } from '../../common/math';
 
 import { Line } from './geometry';
 import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
