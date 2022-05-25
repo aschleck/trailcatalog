@@ -17,7 +17,6 @@ export interface State {
   hovering: Path|Trail|undefined;
   selectedCardPosition: Vec2;
   selectedTrails: Trail[];
-  showTrailsList: boolean;
   trails: Trail[];
 }
 
@@ -59,15 +58,10 @@ export class OverviewController extends Controller<undefined, Deps, HTMLDivEleme
   }
 
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
-    // TODO(april): it'd be nice if this was a constructor arg or something
-    this.mapController = e.detail.controller;
+    const {controller} = e.detail;
 
-    const {center, controller, zoom} = e.detail;
-    const url = new URL(window.location.href);
-    url.searchParams.set('lat', center.latDegrees().toFixed(7));
-    url.searchParams.set('lng', center.lngDegrees().toFixed(7));
-    url.searchParams.set('zoom', zoom.toFixed(3));
-    window.history.replaceState(null, '', url);
+    // TODO(april): it'd be nice if this was a constructor arg or something
+    this.mapController = controller;
 
     this.updateState({
       ...this.state,
@@ -91,13 +85,6 @@ export class OverviewController extends Controller<undefined, Deps, HTMLDivEleme
       ...this.state,
       selectedCardPosition: clickPx,
       selectedTrails: trails,
-    });
-  }
-
-  toggleTrailsList(): void {
-    this.updateState({
-      ...this.state,
-      showTrailsList: !this.state.showTrailsList,
     });
   }
 

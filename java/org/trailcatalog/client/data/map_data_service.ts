@@ -28,6 +28,7 @@ export class MapDataService extends Service<EmptyDeps> {
 
   private readonly fetcher: Worker;
   private listener: Listener|undefined;
+  private viewport: Viewport;
 
   readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
@@ -37,6 +38,11 @@ export class MapDataService extends Service<EmptyDeps> {
   constructor(response: ServiceResponse<EmptyDeps>) {
     super(response);
     this.fetcher = new Worker('/static/data_fetcher_worker.js');
+    this.viewport = {
+      lat: [0, 0],
+      lng: [0, 0],
+      zoom: 31,
+    };
 
     this.metadataCells = new Map();
     this.detailCells = new Map();
@@ -66,7 +72,9 @@ export class MapDataService extends Service<EmptyDeps> {
   setListener(listener: Listener): void {
     this.listener = listener;
     this.listener.loadMetadata([], this.trails.values());
-    this.listener.loadDetail(this.paths.values(), this.trails.values());
+    if (this.viewport.zoom >= DETAIL_ZOOM_THRESHOLD) {
+      this.listener.loadDetail(this.paths.values(), this.trails.values());
+    }
   }
 
   clearListener(): void {
@@ -82,6 +90,7 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   updateViewport(viewport: Viewport): void {
+    this.viewport = viewport;
     if (viewport.zoom < DATA_ZOOM_THRESHOLD) {
       return;
     }

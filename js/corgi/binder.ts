@@ -87,10 +87,35 @@ export function bindElementToSpec(
     unboundEventss: Array<[HTMLElement, UnboundEvents]>): Array<() => void> {
   elementsToControllerSpecs.set(root, spec);
 
+  for (const [event, handler] of Object.entries(spec.events)) {
+    if (event === 'corgi') {
+      continue;
+    }
+
+    const handlerString = handler as string;
+    root.addEventListener(
+        event,
+        (e: Event) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          maybeInstantiateAndCall(root, spec, (controller: any) => {
+            const method = controller[handlerString] as (e: any) => unknown;
+            method.call(controller, e);
+          });
+        });
+  }
+
   for (const [eventSpec, handler] of spec.events.corgi ?? []) {
     root.addEventListener(
         qualifiedName(eventSpec),
         e => {
+          if (root === e.srcElement) {
+            return;
+          }
+
+          e.preventDefault();
+          e.stopPropagation();
           maybeInstantiateAndCall(root, spec, (controller: any) => {
             const method = controller[handler] as (e: CustomEvent<any>) => unknown;
             method.call(controller, e as CustomEvent<unknown>);
@@ -102,7 +127,10 @@ export function bindElementToSpec(
     for (const [event, handler] of Object.entries(events)) {
       element.addEventListener(
           event,
-          (e: any) => {
+          (e: Event) => {
+            e.preventDefault();
+            e.stopPropagation();
+
             maybeInstantiateAndCall(root, spec, (controller: any) => {
               const method = controller[handler] as (e: any) => unknown;
               method.call(controller, e);

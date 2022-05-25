@@ -84,6 +84,7 @@ fun fetchDetail(ctx: Context) {
               + "JOIN trails t ON pit.trail_id = t.id "
               + "WHERE "
               + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?)) "
+              + "AND t.cell != -1 "
               + "AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
@@ -98,7 +99,10 @@ fun fetchDetail(ctx: Context) {
               + "FROM paths p "
               + "JOIN paths_in_trails pit ON p.id = pit.path_id "
               + "JOIN trails t ON pit.trail_id = t.id "
-              + "WHERE p.cell = ? AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
+              + "WHERE "
+              + "p.cell = ? "
+              + "AND t.cell != -1 "
+              + "AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
         setLong(1, cell.id())
       }
     }

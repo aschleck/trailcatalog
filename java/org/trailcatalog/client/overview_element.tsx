@@ -7,6 +7,7 @@ import { MapElement } from './map/map_element';
 import { Path, Trail } from './models/types';
 
 import { OverviewController, State } from './overview_controller';
+import { ViewportLayoutElement } from './viewport_layout_element';
 
 const TRAIL_COUNT_MAX = 100;
 
@@ -18,7 +19,6 @@ export function OverviewElement({boundary}: {
       hovering: undefined,
       selectedCardPosition: [0, 0],
       selectedTrails: [],
-      showTrailsList: false,
       trails: [],
     };
   }
@@ -32,11 +32,6 @@ export function OverviewElement({boundary}: {
       parsedBoundary = parsed;
     }
   }
-
-  const url = new URL(window.location.href);
-  const lat = floatCoalesce(url.searchParams.get('lat'), 46.859369);
-  const lng = floatCoalesce(url.searchParams.get('lng'), -121.747888);
-  const zoom = floatCoalesce(url.searchParams.get('zoom'), 12);
 
   let trailDetails;
   if (state.selectedTrails.length > 0) {
@@ -59,6 +54,20 @@ export function OverviewElement({boundary}: {
     hiddenTrailCount = 0;
   }
 
+  const trailSidebar = <>
+    <header className="flex gap-2 px-4 pt-2 uppercase">
+      <div className="grow">Name</div>
+      <div className="shrink-0 w-24">Distance</div>
+    </header>
+    {filteredTrails.map(trail =>
+        <TrailListElement
+            highlight={state?.hovering === trail}
+            trail={trail}
+        />
+    )}
+    {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
+  </>;
+
   return <>
     <div
         js={corgi.bind({
@@ -76,53 +85,13 @@ export function OverviewElement({boundary}: {
         })}
         className="flex flex-col h-full"
     >
-      <div className="align-middle bg-tc-gray-200 leading-none">
-        <FabricIcon
-            name="List"
-            className={
-                (state.showTrailsList ? "bg-white" : "text-white")
-                    + " p-2 text-3xl md:hidden"
-            }
-            unboundEvents={{click: 'toggleTrailsList'}}
-        />
-      </div>
-      <div className="flex grow overflow-hidden relative">
-        <div className={
-            (state.showTrailsList ? "" : "hidden md:block ")
-                + "absolute bg-white inset-0 max-h-full overflow-y-scroll z-10 md:relative md:w-80"
-        }>
-          <header className="flex gap-2 px-4 pt-2 uppercase">
-            <div className="grow">Name</div>
-            <div className="shrink-0 w-24">Distance</div>
-          </header>
-          {filteredTrails.map(trail =>
-              <TrailListElement
-                  highlight={state?.hovering === trail}
-                  trail={trail}
-              />
-          )}
-          {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
-        </div>
-        <div className="grow h-full relative">
-          <MapElement camera={{lat, lng, zoom}} filter={{boundary: parsedBoundary}} />
-          {state.hovering ? <OsmInfoElement hovering={state.hovering} /> : <></>}
-          {trailDetails}
-        </div>
-      </div>
+      <ViewportLayoutElement
+          filter={{boundary: parsedBoundary}}
+          mapOverlay={trailDetails}
+          sidebarContent={trailSidebar}
+      />
     </div>
   </>;
-}
-
-function OsmInfoElement({ hovering }: { hovering: Path|Trail }) {
-  let text;
-  if (hovering instanceof Path) {
-    text = `OSM way ${hovering.id / 2n}`;
-  } else {
-    text = `OSM relation ${hovering.id}`;
-  }
-  return <div className="absolute bg-white bottom-0 left-0 p-2">
-    {text}
-  </div>;
 }
 
 function SelectedTrailsElement({ position, trails }: {
@@ -176,6 +145,7 @@ function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Tra
       className="border-b cursor-pointer flex gap-2 items-stretch pr-2"
       data-trail-id={trail.id}
       unboundEvents={{
+        click: 'viewTrail',
         mouseover: 'highlightTrail',
         mouseout: 'unhighlightTrail',
       }}>
