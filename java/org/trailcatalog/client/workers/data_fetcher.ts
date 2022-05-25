@@ -78,7 +78,11 @@ class DataFetcher {
   }
 
   setFilter(filter: SetFilterRequest): void {
-    this.filter = filterToQuery(filter);
+    const newFilter = filterToQuery(filter);
+    if (newFilter !== this.filter) {
+      this.filter = newFilter;
+      this.flush();
+    }
   }
 
   updateViewport(bounds: S2LatLngRect, zoom: number): void {
@@ -208,7 +212,6 @@ self.onmessage = e => {
   const request = e.data as Request;
   if (request.kind === 'sfr') {
     fetcher.setFilter(request);
-    fetcher.flush();
   } else if (request.kind === 'uvr') {
     const viewport = request.viewport;
     const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);

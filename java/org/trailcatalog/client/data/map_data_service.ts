@@ -49,10 +49,6 @@ export class MapDataService extends Service<EmptyDeps> {
     this.paths = new Map();
     this.trails = new Map();
 
-    //this.fetcher.postMessage({
-    //  ...filter,
-    //  kind: 'sfr',
-    //});
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
       if (command.type === 'lcm') {
@@ -69,8 +65,13 @@ export class MapDataService extends Service<EmptyDeps> {
     };
   }
 
-  setListener(listener: Listener): void {
+  setListener(listener: Listener, filter?: Filter): void {
     this.listener = listener;
+    this.fetcher.postMessage({
+      ...filter,
+      kind: 'sfr',
+    });
+
     this.listener.loadMetadata([], this.trails.values());
     if (this.viewport.zoom >= DETAIL_ZOOM_THRESHOLD) {
       this.listener.loadDetail(this.paths.values(), this.trails.values());

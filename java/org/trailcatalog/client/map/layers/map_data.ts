@@ -81,14 +81,10 @@ export class MapData extends Disposable implements Layer {
     this.metadataBounds = worldBounds();
     this.detailBounds = worldBounds();
 
-    this.dataService.setListener(this);
+    this.dataService.setListener(this, filter);
     this.registerDisposer(() => {
       this.dataService.clearListener();
     });
-    //this.fetcher.postMessage({
-    //  ...filter,
-    //  kind: 'sfr',
-    //});
     this.highlighted = new Set();
     const diamondPixelSize = this.textRenderer.measure(renderableDiamond(false));
     const halfDiamondWidth = diamondPixelSize[0] / 2;
