@@ -3,7 +3,7 @@ import { Disposable } from 'js/common/disposable';
 
 import { HashMap } from '../../common/collections';
 import { TileId, Vec2 } from '../../common/types';
-import { FetcherCommand } from '../../workers/tile_fetcher';
+import { TileDataService } from '../../data/tile_data_service';
 import { Camera } from '../models/camera';
 import { RenderPlanner } from '../rendering/render_planner';
 import { Renderer } from '../rendering/renderer';
@@ -15,29 +15,23 @@ const NO_OFFSET: Vec2 = [0, 0];
 
 export class TileData extends Disposable implements Layer {
 
-  private readonly fetcher: Worker;
   private lastChange: number;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
 
   constructor(
       private readonly camera: Camera,
+      private readonly dataService: TileDataService,
       private readonly renderer: Renderer) {
     super();
-    this.fetcher = new Worker('/static/tile_fetcher_worker.js');
-    this.fetcher.onmessage = e => {
-      const command = e.data as FetcherCommand;
-      if (command.type === 'ltc') {
-        this.loadTile(command.id, command.bitmap);
-      } else if (command.type === 'utc') {
-        this.unloadTiles(command.ids);
-      } else {
-        checkExhaustive(command, 'Unknown type of command');
-      }
-    };
     this.lastChange = Date.now();
     this.pool = new TexturePool(renderer);
     this.tiles = new HashMap(id => `${id.x},${id.y},${id.zoom}`);
+
+    this.dataService.setListener(this);
+    this.registerDisposer(() => {
+      this.dataService.clearListener();
+    });
   }
 
   hasDataNewerThan(time: number): boolean {
@@ -61,21 +55,17 @@ export class TileData extends Disposable implements Layer {
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
-    this.fetcher.postMessage({
-      cameraPosition: this.camera.centerPixel,
-      cameraZoom: zoom,
-      viewportSize,
-    });
+    this.dataService.updateViewport(this.camera.centerPixel, viewportSize, zoom);
   }
 
-  private loadTile(id: TileId, bitmap: ImageBitmap): void {
+  loadTile(id: TileId, bitmap: ImageBitmap): void {
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(bitmap, texture);
     this.tiles.set(id, texture);
     this.lastChange = Date.now();
   }
 
-  private unloadTiles(ids: TileId[]): void {
+  unloadTiles(ids: TileId[]): void {
     for (const id of ids) {
       const texture = this.tiles.get(id);
       if (texture) {

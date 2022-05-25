@@ -29,6 +29,10 @@ export class MapDataService extends Service<EmptyDeps> {
   private readonly fetcher: Worker;
   private listener: Listener|undefined;
   private viewport: Viewport;
+  // We load metadata when loading detail cells, so we need to track which trails have been loaded
+  // into details to avoid telling listeners to load them from the metadata into details and then
+  // to load them again when we fetch details.
+  private readonly trailsInDetails: Set<Trail>;
 
   readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
@@ -43,6 +47,7 @@ export class MapDataService extends Service<EmptyDeps> {
       lng: [0, 0],
       zoom: 31,
     };
+    this.trailsInDetails = new Set();
 
     this.metadataCells = new Map();
     this.detailCells = new Map();
@@ -73,9 +78,7 @@ export class MapDataService extends Service<EmptyDeps> {
     });
 
     this.listener.loadMetadata([], this.trails.values());
-    if (this.viewport.zoom >= DETAIL_ZOOM_THRESHOLD) {
-      this.listener.loadDetail(this.paths.values(), this.trails.values());
-    }
+    this.listener.loadDetail(this.paths.values(), this.trailsInDetails);
   }
 
   clearListener(): void {
@@ -199,6 +202,7 @@ export class MapDataService extends Service<EmptyDeps> {
         trail = constructTrail(id, name, type, trailWays, position, lengthMeters);
         this.trails.set(id, trail);
       }
+      this.trailsInDetails.add(trail);
       trails.push(trail);
     }
 
@@ -207,14 +211,13 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   private unloadCell(id: S2CellNumber): void {
-    // TODO(april): does this mean we leak metadata cells?
     const buffer = this.detailCells.get(id);
+    this.metadataCells.delete(id);
+    this.detailCells.delete(id);
+
     if (!buffer) {
       return;
     }
-
-    this.metadataCells.delete(id);
-    this.detailCells.delete(id);
 
     const data = new LittleEndianView(buffer);
 
@@ -249,6 +252,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const entity = this.trails.get(id);
       if (entity) {
         this.trails.delete(id);
+        this.trailsInDetails.delete(entity);
         trails.push(entity);
       }
     }

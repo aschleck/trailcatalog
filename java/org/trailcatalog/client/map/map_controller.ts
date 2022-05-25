@@ -4,6 +4,7 @@ import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
 import { Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
+import { TileDataService } from '../data/tile_data_service';
 import { Path, Trail } from '../models/types';
 import { MapData } from './layers/map_data';
 import { TileData } from './layers/tile_data';
@@ -29,6 +30,7 @@ interface Args {
 interface Deps {
   services: {
     mapData: MapDataService;
+    tileData: TileDataService;
   };
 }
 
@@ -41,6 +43,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     return {
       services: {
         mapData: MapDataService,
+        tileData: TileDataService,
       },
     };
   }
@@ -84,9 +87,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
             response.deps.services.mapData,
             response.args.filter,
             this.textRenderer);
-    this.registerDisposable(this.mapData);
-    this.tileData = new TileData(this.camera, this.renderer);
-    this.registerDisposable(this.tileData);
+    this.tileData =
+        new TileData(this.camera, response.deps.services.tileData, this.renderer);
+    [this.mapData, this.tileData].forEach(layer => {
+      this.registerDisposable(layer);
+    });
 
     this.screenArea = new DOMRect();
     this.lastRenderPlan = 0;
