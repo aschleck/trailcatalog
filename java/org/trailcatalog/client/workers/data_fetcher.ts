@@ -14,7 +14,7 @@ export interface SetFilterRequest {
 
 export interface UpdateViewportRequest {
   kind: 'uvr';
-  viewports: Viewport[];
+  viewport: Viewport;
 }
 
 export interface Viewport {
@@ -64,6 +64,17 @@ class DataFetcher {
     this.detailInFlight = new Map();
     this.throttler = new FetchThrottler();
     this.filter = filterToQuery({kind: 'sfr'});
+  }
+
+  flush(): void {
+    this.mail({
+      type: 'ucc',
+      cells: [...this.metadata, ...this.detail],
+    }, []);
+    this.metadata.clear();
+    this.metadataInFlight.clear();
+    this.detail.clear();
+    this.detailInFlight.clear();
   }
 
   setFilter(filter: SetFilterRequest): void {
@@ -197,9 +208,9 @@ self.onmessage = e => {
   const request = e.data as Request;
   if (request.kind === 'sfr') {
     fetcher.setFilter(request);
+    fetcher.flush();
   } else if (request.kind === 'uvr') {
-    // TODO(april): make this support multiple viewports
-    const viewport = request.viewports[0];
+    const viewport = request.viewport;
     const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
     const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
     const bounds = S2LatLngRect.fromPointPair(low, high);

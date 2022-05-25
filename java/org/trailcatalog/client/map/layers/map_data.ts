@@ -81,9 +81,9 @@ export class MapData extends Disposable implements Layer {
     this.metadataBounds = worldBounds();
     this.detailBounds = worldBounds();
 
-    this.dataService.addListener(this);
+    this.dataService.setListener(this);
     this.registerDisposer(() => {
-      this.dataService.removeListener(this);
+      this.dataService.clearListener();
     });
     //this.fetcher.postMessage({
     //  ...filter,
@@ -197,7 +197,7 @@ export class MapData extends Disposable implements Layer {
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
     const bounds = this.camera.viewportBounds(viewportSize[0], viewportSize[1]);
-    this.dataService.updateViewport(this, {
+    this.dataService.updateViewport({
       lat: [bounds.lat().lo(), bounds.lat().hi()],
       lng: [bounds.lng().lo(), bounds.lng().hi()],
       zoom,
@@ -352,7 +352,7 @@ export class MapData extends Disposable implements Layer {
     return cells;
   }
 
-  loadMetadata(paths: Path[], trails: Trail[]): void {
+  loadMetadata(paths: Iterable<Path>, trails: Iterable<Trail>): void {
     for (const trail of trails) {
       this.metadataBounds.insert({
         entity: trail,
@@ -364,7 +364,7 @@ export class MapData extends Disposable implements Layer {
     this.lastChange = Date.now();
   }
 
-  loadDetail(paths: Path[], trails: Trail[]): void {
+  loadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void {
     this.lastChange = Date.now();
 
     for (const path of paths) {
@@ -391,7 +391,7 @@ export class MapData extends Disposable implements Layer {
     }
   }
 
-  unloadEverywhere(paths: Path[], trails: Trail[]): void {
+  unloadEverywhere(paths: Iterable<Path>, trails: Iterable<Trail>): void {
     for (const path of paths) {
       this.detailBounds.delete(path.bound);
     }

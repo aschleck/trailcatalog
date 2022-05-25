@@ -16,9 +16,9 @@ interface Filter {
 }
 
 interface Listener {
-  loadMetadata(paths: Path[], trails: Trail[]): void;
-  loadDetail(paths: Path[], trails: Trail[]): void;
-  unloadEverywhere(paths: Path[], trails: Trail[]): void;
+  loadMetadata(paths: Iterable<Path>, trails: Iterable<Trail>): void;
+  loadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void;
+  unloadEverywhere(paths: Iterable<Path>, trails: Iterable<Trail>): void;
 }
 
 const DATA_ZOOM_THRESHOLD = 4;
@@ -27,7 +27,7 @@ const TEXT_DECODER = new TextDecoder();
 export class MapDataService extends Service<EmptyDeps> {
 
   private readonly fetcher: Worker;
-  private readonly listeners: Map<Listener, Viewport>;
+  private listener: Listener|undefined;
 
   readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
@@ -37,7 +37,6 @@ export class MapDataService extends Service<EmptyDeps> {
   constructor(response: ServiceResponse<EmptyDeps>) {
     super(response);
     this.fetcher = new Worker('/static/data_fetcher_worker.js');
-    this.listeners = new Map();
 
     this.metadataCells = new Map();
     this.detailCells = new Map();
@@ -64,12 +63,14 @@ export class MapDataService extends Service<EmptyDeps> {
     };
   }
 
-  addListener(listener: Listener): void {
-    this.listeners.set(listener, {lat: [0, 0], lng: [0, 0], zoom: 31});
+  setListener(listener: Listener): void {
+    this.listener = listener;
+    this.listener.loadMetadata([], this.trails.values());
+    this.listener.loadDetail(this.paths.values(), this.trails.values());
   }
 
-  removeListener(listener: Listener): void {
-    this.listeners.delete(listener);
+  clearListener(): void {
+    this.listener = undefined;
   }
 
   getTrail(id: bigint): Trail|undefined {
@@ -80,16 +81,14 @@ export class MapDataService extends Service<EmptyDeps> {
     return path.trails.map(t => this.trails.get(t)).filter(exists);
   }
 
-  updateViewport(listener: Listener, viewport: Viewport): void {
-    this.listeners.set(listener, viewport);
-
+  updateViewport(viewport: Viewport): void {
     if (viewport.zoom < DATA_ZOOM_THRESHOLD) {
       return;
     }
 
     this.fetcher.postMessage({
       kind: 'uvr',
-      viewports: [...this.listeners.values()],
+      viewport,
     });
   }
 
@@ -123,9 +122,7 @@ export class MapDataService extends Service<EmptyDeps> {
     }
 
     this.metadataCells.set(id, buffer);
-    for (const listener of this.listeners.keys()) {
-      listener.loadMetadata([], trails);
-    }
+    this.listener?.loadMetadata([], trails);
   }
 
   private loadDetail(id: S2CellNumber, buffer: ArrayBuffer): void {
@@ -196,9 +193,7 @@ export class MapDataService extends Service<EmptyDeps> {
     }
 
     this.detailCells.set(id, buffer);
-    for (const listener of this.listeners.keys()) {
-      listener.loadDetail(paths, trails);
-    }
+    this.listener?.loadDetail(paths, trails);
   }
 
   private unloadCell(id: S2CellNumber): void {
@@ -248,9 +243,7 @@ export class MapDataService extends Service<EmptyDeps> {
       }
     }
 
-    for (const listener of this.listeners.keys()) {
-      listener.unloadEverywhere(paths, trails);
-    }
+    this.listener?.unloadEverywhere(paths, trails);
   }
 }
 
