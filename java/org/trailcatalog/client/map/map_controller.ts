@@ -1,4 +1,4 @@
-import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
+import { Controller, Response } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
@@ -27,19 +27,11 @@ interface Args {
   };
 }
 
-interface Deps {
-  services: {
-    mapData: MapDataService;
-    tileData: TileDataService;
-  };
-}
+type Deps = typeof MapController.deps;
 
-interface Response extends ControllerResponse<Args, Deps, HTMLDivElement, undefined> {
-}
+export class MapController extends Controller<Args, Deps, HTMLDivElement, undefined> {
 
-export class MapController extends Controller<Args, Deps, HTMLDivElement, undefined, Response> {
-
-  static deps(): RequestSpec<Deps> {
+  static deps() {
     return {
       services: {
         mapData: MapDataService,
@@ -65,7 +57,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   private lastRenderPlan: number;
   private nextRender: RenderType;
 
-  constructor(response: Response) {
+  constructor(response: Response<MapController>) {
     super(response);
     const cameraArgs = response.args.camera;
     this.camera = new Camera(cameraArgs.lat, cameraArgs.lng, cameraArgs.zoom);

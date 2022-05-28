@@ -31,7 +31,6 @@ function App(props: {}, state: State|undefined, updateState: (newState: State) =
     <div
         js={corgi.bind({
           controller: RouteController,
-          args: undefined,
           events: {
             render: 'wakeup',
           },

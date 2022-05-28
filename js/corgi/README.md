@@ -21,13 +21,9 @@ export interface State {
   count: number;
 }
 
-interface Response extends ControllerResponse<undefined, EmptyDeps, HTMLElement, State> {
-  state: [State, (newState: State) => void];
-}
+export class OverviewController extends Controller<{}, EmptyDeps, HTMLElement, State> {
 
-export class OverviewController extends Controller<undefined, EmptyDeps, HTMLElement, State, Response> {
-
-  constructor(response: Response) {
+  constructor(response: Response<OverviewController>) {
     super(response);
   }
 

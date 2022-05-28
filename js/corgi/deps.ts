@@ -1,4 +1,4 @@
-export interface EmptyDeps {
+export type EmptyDeps = () => {
   services: {}
 }
 

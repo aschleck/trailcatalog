@@ -1,8 +1,9 @@
 import { checkExists } from 'js/common/asserts';
 
-import { Controller, ControllerCtor, ControllerDeps, ControllerResponse, RequestSpec } from './controller';
+import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, ControllerResponse } from './controller';
 import { EventSpec, qualifiedName } from './events';
-import { RequestSpec as ServiceRequestSpec, Service, ServiceDeps } from './service';
+import { Service, ServiceDeps } from './service';
+import { DepsConstructorsFor } from './types';
 
 type IsPrefix<P extends unknown[], T> = P extends [...P, ...unknown[]] ? P : never;
 type HasParameters<M, P extends unknown[], R> =
@@ -25,11 +26,11 @@ type StateTuple<S> = [S, (newState: S) => void];
 
 interface BoundController<
         A,
-        D extends ControllerDeps,
+        D extends ControllerDepsMethod,
         E extends HTMLElement,
         S,
         R extends ControllerResponse<A, D, E, S>,
-        C extends Controller<A, D, E, S, R>
+        C extends Controller<A, D, E, S>
     > {
   args: A;
   controller: ControllerCtor<A, D, E, S, R, C>;
@@ -53,7 +54,7 @@ export interface InstantiationResult {
 const elementsToControllerSpecs = new WeakMap<HTMLElement, AnyBoundController<HTMLElement>>();
 
 interface AnyServiceCtor {
-  deps?(): ServiceRequestSpec<ServiceDeps>;
+  deps?(): DepsConstructorsFor<ServiceDeps>;
   new (response: any): Service<any>;
 }
 const serviceSingletons = new Map<AnyServiceCtor, Promise<Service<any>>>();
@@ -63,18 +64,20 @@ const unboundEventListeners =
 
 export function bind<
     A,
-    D extends ControllerDeps,
+    D extends ControllerDepsMethod,
     E extends HTMLElement,
     S,
     R extends ControllerResponse<A, D, E, S>,
-    C extends Controller<A, D, E, S, R>
+    C extends Controller<A, D, E, S>
 >({args, controller, events, state}: {
-  args: A,
   controller: ControllerCtor<A, D, E, S, R, C>,
   events?: Partial<PropertyKeyToHandlerMap<C>>,
-} & (S extends undefined ? {state?: never} : {state: StateTuple<S>})): BoundController<A, D, E, S, R, C> {
+}
+& ({} extends A ? {args?: never} : {args: A})
+& (S extends undefined ? {state?: never} : {state: StateTuple<S>})
+): BoundController<A, D, E, S, R, C> {
   return {
-    args,
+    args: args ?? {} as any,
     controller,
     events: events ?? {},
     state: state ?? [undefined, () => {}] as any,
@@ -238,8 +241,8 @@ function instantiateService(ctor: AnyServiceCtor): Promise<Service<any>> {
   return instance;
 }
 
-function fetchDeps<D extends ControllerDeps>(deps: RequestSpec<D>): Promise<D> {
-  const response: ControllerDeps = {services: {}};
+function fetchDeps<D extends ControllerDeps>(deps: DepsConstructorsFor<D>): Promise<D> {
+  const response = {services: {}} as D;
   const promises = [];
   if (deps.services) {
     for (const [key, ctor] of Object.entries(deps.services)) {
@@ -253,7 +256,7 @@ function fetchDeps<D extends ControllerDeps>(deps: RequestSpec<D>): Promise<D> {
       }));
     }
   }
-  return Promise.all(promises).then(() => response as D);
+  return Promise.all(promises).then(() => response);
 }
 
 export function disposeBoundElementsIn(node: Node): void {

@@ -1,4 +1,4 @@
-import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
+import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
@@ -7,11 +7,7 @@ import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, MapController, SELECTION_CHANGE
 import { Path, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
-interface Deps {
-  services: {
-    views: ViewsService;
-  };
-}
+type Deps = typeof OverviewController.deps;
 
 export interface State {
   hovering: Path|Trail|undefined;
@@ -20,13 +16,9 @@ export interface State {
   trails: Trail[];
 }
 
-interface Response extends ControllerResponse<undefined, Deps, HTMLDivElement, State> {
-  state: [State, (newState: State) => void];
-}
+export class OverviewController extends Controller<{}, Deps, HTMLDivElement, State> {
 
-export class OverviewController extends Controller<undefined, Deps, HTMLDivElement, State, Response> {
-
-  static deps(): RequestSpec<Deps> {
+  static deps() {
     return {
       services: {
         views: ViewsService,
@@ -37,7 +29,7 @@ export class OverviewController extends Controller<undefined, Deps, HTMLDivEleme
   private mapController: MapController|undefined;
   private views: ViewsService;
 
-  constructor(response: Response) {
+  constructor(response: Response<OverviewController>) {
     super(response);
     this.views = response.deps.services.views;
   }

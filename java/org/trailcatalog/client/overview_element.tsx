@@ -72,7 +72,6 @@ export function OverviewElement({boundary}: {
     <div
         js={corgi.bind({
           controller: OverviewController,
-          args: undefined,
           events: {
             corgi: [
               [DATA_CHANGED, 'onDataChange'],

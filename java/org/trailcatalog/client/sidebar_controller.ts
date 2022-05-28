@@ -1,15 +1,11 @@
-import { Controller, ControllerResponse } from 'js/corgi/controller';
+import { Controller } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 
 export interface State {
   open: boolean;
 }
 
-interface Response extends ControllerResponse<undefined, EmptyDeps, HTMLElement, State> {
-  state: [State, (newState: State) => void];
-}
-
-export class SidebarController extends Controller<undefined, EmptyDeps, HTMLElement, State, Response> {
+export class SidebarController extends Controller<{}, EmptyDeps, HTMLElement, State> {
 
   toggleSidebarOpen(): void {
     this.updateState({

@@ -1,42 +1,47 @@
 import { Disposable } from 'js/common/disposable';
+
 import { EventSpec, qualifiedName } from './events';
-import { ServiceDeps, RequestSpec as ServiceRequestSpec } from './service';
+import { ServiceDeps } from './service';
+import { DepsConstructed, DepsConstructorsFor } from './types';
 
 export type ControllerDeps = ServiceDeps;
 
-export type RequestSpec<D extends ControllerDeps> = ServiceRequestSpec<D>;
+export type ControllerDepsMethod = () => DepsConstructorsFor<ServiceDeps>;
 
 export interface ControllerCtor<
-    A,
-    D extends ControllerDeps,
+    A extends {},
+    D extends ControllerDepsMethod,
     E extends HTMLElement,
     S,
     R extends ControllerResponse<A, D, E, S>,
-    C extends Controller<A, D, E, S, R>> {
-  deps?(): RequestSpec<D>;
+    C extends Controller<A, D, E, S>> {
+  deps?(): ReturnType<D>;
   new (response: R): C;
 }
 
-export interface ControllerResponse<A, D extends ControllerDeps, E extends HTMLElement, S> {
+export interface ControllerResponse<A, D extends ControllerDepsMethod, E, S> {
   root: E;
   args: A;
-  deps: D;
+  deps: DepsConstructed<ReturnType<D>>;
   state: [S, (newState: S) => void];
 }
 
+export type Response<C extends Controller<any, any, any, any>> = C['_RT'];
+
 export class Controller<
-    A,
-    D extends ControllerDeps,
+    A extends {},
+    D extends ControllerDepsMethod,
     E extends HTMLElement,
     S,
-    R extends ControllerResponse<A, D, E, S>,
 > extends Disposable {
+
+  readonly _RT!: ControllerResponse<A, D, E, S>;
 
   protected readonly root: E;
   protected state: S;
   private readonly stateUpdater: (newState: S) => void;
 
-  constructor(response: R) {
+  constructor(response: ControllerResponse<A, D, E, S>) {
     super();
     this.root = response.root;
     this.state = response.state[0];

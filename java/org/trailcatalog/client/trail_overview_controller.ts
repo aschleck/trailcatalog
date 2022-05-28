@@ -1,4 +1,4 @@
-import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
+import { Controller, Response } from 'js/corgi/controller';
 
 import { Trail } from './models/types';
 import { MapDataService } from './data/map_data_service';
@@ -7,23 +7,15 @@ interface Args {
   trailId: bigint;
 }
 
-interface Deps {
-  services: {
-    data: MapDataService;
-  };
-}
-
 export interface State {
   trail: Trail|undefined;
 }
 
-interface Response extends ControllerResponse<Args, Deps, HTMLElement, State> {
-  state: [State, (newState: State) => void];
-}
+type Deps = typeof TrailOverviewController.deps;
 
-export class TrailOverviewController extends Controller<Args, Deps, HTMLElement, State, Response> {
+export class TrailOverviewController extends Controller<Args, Deps, HTMLElement, State> {
 
-  static deps(): RequestSpec<Deps> {
+  static deps() {
     return {
       services: {
         data: MapDataService,
@@ -33,7 +25,7 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
 
   private data: MapDataService;
 
-  constructor(response: Response) {
+  constructor(response: Response<TrailOverviewController>) {
     super(response);
     this.data = response.deps.services.data;
 

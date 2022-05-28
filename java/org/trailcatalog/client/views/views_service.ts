@@ -1,6 +1,6 @@
 import { checkExists } from 'js/common/asserts';
 import { HistoryService } from 'js/corgi/history/history_service';
-import { RequestSpec, Service, ServiceResponse } from 'js/corgi/service';
+import { Service, ServiceResponse } from 'js/corgi/service';
 
 interface BoundaryOverview {
   kind: 'boundary_overview';
@@ -28,11 +28,7 @@ interface Listener {
   routeChanged(active: Route): void;
 }
 
-interface Deps {
-  services: {
-    history: HistoryService;
-  };
-}
+type Deps = typeof ViewsService.deps;
 
 export class ViewsService extends Service<Deps> {
 
@@ -41,7 +37,7 @@ export class ViewsService extends Service<Deps> {
     return checkExists(matchPath(url.pathname));
   }
 
-  static deps(): RequestSpec<Deps> {
+  static deps() {
     return {
       services: {
         history: HistoryService,

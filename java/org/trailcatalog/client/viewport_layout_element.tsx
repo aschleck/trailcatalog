@@ -35,7 +35,6 @@ export function ViewportLayoutElement({filter, mapOverlay, sidebarContent}: {
             }
             js={corgi.bind({
               controller: SidebarController,
-              args: undefined,
               events: {
                 click: 'toggleSidebarOpen',
               },
@@ -54,7 +53,6 @@ export function ViewportLayoutElement({filter, mapOverlay, sidebarContent}: {
           <div
               js={corgi.bind({
                 controller: LocationUrlController,
-                args: undefined,
                 events: {
                   corgi: [
                     [MAP_MOVED, 'onMove'],

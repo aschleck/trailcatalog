@@ -1,22 +1,14 @@
-import { Controller, ControllerResponse, RequestSpec } from 'js/corgi/controller';
+import { Controller, Response } from 'js/corgi/controller';
 
 import { Route, ViewsService } from './views/views_service';
-
-interface Deps {
-  services: {
-    views: ViewsService;
-  };
-}
 
 export interface State {
   active: Route;
 }
 
-interface Response extends ControllerResponse<undefined, Deps, HTMLDivElement, State> {
-  state: [State, (newState: State) => void];
-}
+type Deps = typeof RouteController.deps;
 
-export class RouteController extends Controller<undefined, Deps, HTMLDivElement, State, Response> {
+export class RouteController extends Controller<{}, Deps, HTMLDivElement, State> {
 
   static getInitialState(): State {
     return {
@@ -24,7 +16,7 @@ export class RouteController extends Controller<undefined, Deps, HTMLDivElement,
     };
   }
 
-  static deps(): RequestSpec<Deps> {
+  static deps() {
     return {
       services: {
         views: ViewsService,
@@ -34,7 +26,7 @@ export class RouteController extends Controller<undefined, Deps, HTMLDivElement,
 
   private readonly views: ViewsService;
 
-  constructor(response: Response) {
+  constructor(response: Response<RouteController>) {
     super(response);
     this.views = response.deps.services.views;
     this.views.addListener(this);
