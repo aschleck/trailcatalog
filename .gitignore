@@ -1,8 +1,10 @@
-.ijwb
-bazel-*
+*.osc
 *.pbf
 *.pbf.etag
 *.tif
+.DS_Store
+._.DS_Store
+.ijwb
+bazel-*
 full_pkg.tar
 node_modules
-
