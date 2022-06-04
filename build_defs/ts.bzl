@@ -13,6 +13,7 @@ def esbuild_binary(
         config = "//build_defs:esbuild_config",
         entry_point = entry_point,
         link_workspace_root = True,
+        minify = True,
         output_css = "%s.css" % name if has_css else None,
         sources_content = True,
         target = "es2020",
