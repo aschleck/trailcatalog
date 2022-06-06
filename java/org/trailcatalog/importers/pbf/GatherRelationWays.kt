@@ -14,7 +14,9 @@ class GatherRelationWays
     PEntry<Long, Pair<List<Long>, List<List<LatLngE7>>>>,
     Long,
     Pair<Long, List<LatLngE7>>>(
-    TypeToken.of(Long::class.java), object : TypeToken<Pair<Long, List<LatLngE7>>>() {}) {
+      "GatherRelationWays",
+      TypeToken.of(Long::class.java),
+      object : TypeToken<Pair<Long, List<LatLngE7>>>() {}) {
 
   override fun act(
       input: PEntry<Long, Pair<List<Long>, List<List<LatLngE7>>>>,

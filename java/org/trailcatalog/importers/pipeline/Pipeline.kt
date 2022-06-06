@@ -36,6 +36,7 @@ class Pipeline {
   }
 
   inline fun <reified K : Comparable<K>, reified V1 : Any, reified V2 : Any> join2(
+      context: String,
       first: BoundStage<*, PMap<K, V1>>,
       second: BoundStage<*, PMap<K, V2>>):
       BoundStage<*, PMap<K, Pair<List<V1>, List<V2>>>> {
@@ -46,6 +47,7 @@ class Pipeline {
         fn,
         this,
         ZipMaps2(
+            context,
             object : TypeToken<K>() {},
             object : TypeToken<V1>() {},
             object : TypeToken<V2>() {}))

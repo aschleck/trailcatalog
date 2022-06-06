@@ -59,7 +59,7 @@ fun processPbfs(pbfs: List<Path>) {
                 .read(PbfBlockReader(p))
                 .then(ExtractNodes())
           })
-      .groupBy { it.id }
+      .groupBy("GroupNodes") { it.id }
   val ways =
       pipeline.cat(
           pbfs.map { p ->
@@ -67,12 +67,15 @@ fun processPbfs(pbfs: List<Path>) {
                 .read(PbfBlockReader(p))
                 .then(ExtractWays())
           })
-      .groupBy { it.id }
+      .groupBy("GroupWays") { it.id }
   val waysToPoints =
       pipeline
-          .join2(nodes, ways.then(ExtractNodeWayPairs()))
+          .join2("JoinNodesForWayPoints", nodes, ways.then(ExtractNodeWayPairs()))
           .then(GatherWayNodes())
-  val waysWithGeometry = pipeline.join2(ways, waysToPoints).then(MakeWayGeometries())
+  val waysWithGeometry =
+      pipeline
+          .join2("JoinWaysForGeometry", ways, waysToPoints)
+          .then(MakeWayGeometries())
   val relations =
       pipeline.cat(
           pbfs.map { p ->
@@ -80,15 +83,19 @@ fun processPbfs(pbfs: List<Path>) {
                 .read(PbfBlockReader(p))
                 .then(ExtractRelations())
           })
-          .groupBy { it.id }
+          .groupBy("GroupRelations") { it.id }
   val relationsToGeometriesWithWays = relations.then(ExtractRelationGeometriesWithWays())
   val relationsToWayGeometries =
       pipeline
-          .join2(relationsToGeometriesWithWays.then(ExtractWayRelationPairs()), waysWithGeometry)
+          .join2(
+              "JoinOnWaysForRelationGeomeries",
+              relationsToGeometriesWithWays.then(ExtractWayRelationPairs()),
+              waysWithGeometry)
           .then(GatherRelationWays())
   val relationsWithGeometry =
       pipeline
-          .join2(relationsToGeometriesWithWays, relationsToWayGeometries)
+          .join2(
+              "JoinRelationsForGeometry", relationsToGeometriesWithWays, relationsToWayGeometries)
           .then(MakeRelationGeometries())
           .write(Dump())
 

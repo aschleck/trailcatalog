@@ -18,6 +18,7 @@ class ExtractRelationGeometriesWithWays
 
   override fun act(input: PMap<Long, Relation>): () -> PMap<Long, RelationGeometry> {
     return createPMap(
+        "ExtractRelationGeometriesWithWays",
         TypeToken.of(Long::class.java),
         TypeToken.of(RelationGeometry::class.java),
         estimateSize(input.estimatedByteSize())) { emitter ->

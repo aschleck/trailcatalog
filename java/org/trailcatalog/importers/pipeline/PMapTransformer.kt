@@ -7,6 +7,7 @@ import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.createPMap
 
 abstract class PMapTransformer<I, K : Comparable<K>, V : Any>(
+    private val context: String,
     private val keyType: TypeToken<K>,
     private val valueType: TypeToken<V>,
 ) : PStage<PCollection<I>, PMap<K, V>>() {
@@ -17,7 +18,7 @@ abstract class PMapTransformer<I, K : Comparable<K>, V : Any>(
     val estimate =
         (estimateRatio() * input.estimatedByteSize()).toLong()
             + estimateCount() * estimateElementBytes()
-    return createPMap(keyType, valueType, estimate) { emitter ->
+    return createPMap(context, keyType, valueType, estimate) { emitter ->
       while (input.hasNext()) {
         act(input.next(), emitter)
       }

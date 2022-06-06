@@ -7,7 +7,9 @@ import org.trailcatalog.importers.pipeline.collections.PEntry
 
 class MakeWayGeometries
   : PMapTransformer<PEntry<Long, Pair<List<Way>, List<Node>>>, Long, List<LatLngE7>>(
-    TypeToken.of(Long::class.java), object : TypeToken<List<LatLngE7>>() {}) {
+    "MakeWayGeometries",
+    TypeToken.of(Long::class.java),
+    object : TypeToken<List<LatLngE7>>() {}) {
 
   override fun act(
       input: PEntry<Long, Pair<List<Way>, List<Node>>>, emitter: Emitter2<Long, List<LatLngE7>>) {

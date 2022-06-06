@@ -6,7 +6,7 @@ import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 
 class GatherWayNodes : PMapTransformer<PEntry<Long, Pair<List<Node>, List<Long>>>, Long, Node>(
-    TypeToken.of(Long::class.java), TypeToken.of(Node::class.java)) {
+    "GatherWayNodes", TypeToken.of(Long::class.java), TypeToken.of(Node::class.java)) {
 
   override fun act(input: PEntry<Long, Pair<List<Node>, List<Long>>>, emitter: Emitter2<Long, Node>) {
     for (value in input.values) {

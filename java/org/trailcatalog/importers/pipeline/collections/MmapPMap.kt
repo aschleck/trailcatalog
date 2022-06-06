@@ -1,6 +1,7 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
+import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -44,14 +45,15 @@ class MmapPMap<K : Comparable<K>, V>(
 }
 
 fun <K : Comparable<K>, V : Any> createMmapPMap(
+    context: String,
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
     fn: (Emitter2<K, V>) -> Unit): () -> MmapPMap<K, V> {
   val keySerializer = getSerializer(keyType)
   val valueSerializer = getSerializer(valueType)
 
-  val shards = emitToSortedShards(keyType, valueType, keySerializer, valueSerializer, fn)
-  val merged = mergeSortedShards(keyType, valueType, shards, keySerializer)
+  val shards = emitToSortedShards(context, keyType, valueType, keySerializer, valueSerializer, fn)
+  val merged = mergeSortedShards(context, keyType, valueType, shards, keySerializer)
 
   return {
     MmapPMap(merged, keySerializer, valueSerializer, merged.sumOf { it.limit().toLong() })
@@ -59,6 +61,7 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
 }
 
 private fun <K : Comparable<K>, V : Any> emitToSortedShards(
+    context: String,
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
     keySerializer: Serializer<K>,
@@ -104,27 +107,35 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
       }
     }
 
-    fn(emitter)
+    longProgress("${context} emitting to shard") { progress ->
+      val logged = object : Emitter2<K, V> {
+        override fun emit(a: K, b: V) {
+          progress.increment()
+          emitter.emit(a, b)
+        }
+      }
+      fn(logged)
 
-    itemsInShard.sortBy { it.key }
-    var shardSize: Long = 0
-    for (item in itemsInShard) {
-      keySerializer.write(item.key, buffer)
-      buffer.asIntBuffer().put(item.value.size)
-      buffer.position(buffer.position() + 4)
-      buffer.put(item.value)
-      output.write(buffer.array(), 0, buffer.position())
-      shardSize += buffer.position()
-      buffer.rewind()
+      itemsInShard.sortBy { it.key }
+      var shardSize: Long = 0
+      for (item in itemsInShard) {
+        keySerializer.write(item.key, buffer)
+        buffer.asIntBuffer().put(item.value.size)
+        buffer.position(buffer.position() + 4)
+        buffer.put(item.value)
+        output.write(buffer.array(), 0, buffer.position())
+        shardSize += buffer.position()
+        buffer.rewind()
+      }
+
+      itemsInShard.clear()
+      shards.add(Pair(shardStart, shardSize))
+      shardStart += shardSize
+      shardValuesSize = 0
     }
-
-    itemsInShard.clear()
-    shards.add(Pair(shardStart, shardSize))
-    shardStart += shardSize
-    shardValuesSize = 0
   }
 
-  println("PMap (mmap) ${keyType} -> ${valueType} in ${shards.size} shards (size ${shardStart})")
+  println("  PMap (mmap) ${keyType} -> ${valueType} in ${shards.size} shards (size ${shardStart})")
 
   val fileChannel = FileChannel.open(sharded.toPath())
   return shards.map { s ->
@@ -133,6 +144,7 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
 }
 
 private fun <K : Comparable<K>, V : Any> mergeSortedShards(
+    context: String,
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
     shards: List<ByteBuffer>,
@@ -158,55 +170,59 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
       }
     }
 
-    var last: K? = null
-    val values = ArrayList<ByteArray>()
-    while (heap.isNotEmpty()) {
-      val min = heap.poll()
-      if (last == null) {
-        last = min.key
-      } else if (last.compareTo(min.key) != 0) {
+    longProgress("${context} merging shards") { progress ->
+      var last: K? = null
+      val values = ArrayList<ByteArray>()
+      while (heap.isNotEmpty()) {
+        val min = heap.poll()
+        if (last == null) {
+          last = min.key
+        } else if (last.compareTo(min.key) != 0) {
+          keySerializer.write(last, buffer)
+          buffer.asIntBuffer().put(values.size)
+          buffer.position(buffer.position() + 4)
+          for (value in values) {
+            buffer.put(value)
+          }
+          progress.incrementBy(values.size)
+          values.clear()
+          output.write(buffer.array(), 0, buffer.position())
+          length += buffer.position()
+          buffer.rewind()
+          last = min.key
+
+          if (length > Integer.MAX_VALUE / 4) {
+            maps.add(Pair(start, length))
+            start += length
+            length = 0
+          }
+        }
+
+        values.add(min.value)
+
+        val source = min.source
+        if (source.hasRemaining()) {
+          val key = keySerializer.read(source)
+          val size = source.asIntBuffer().get()
+          source.position(source.position() + 4)
+          val value = ByteArray(size)
+          min.source.get(value)
+          heap.add(MergeKey(key, value, min.source))
+        }
+      }
+
+      if (last != null) {
         keySerializer.write(last, buffer)
         buffer.asIntBuffer().put(values.size)
         buffer.position(buffer.position() + 4)
         for (value in values) {
           buffer.put(value)
         }
+        progress.incrementBy(values.size)
         values.clear()
         output.write(buffer.array(), 0, buffer.position())
         length += buffer.position()
-        buffer.rewind()
-        last = min.key
-
-        if (length > Integer.MAX_VALUE / 4) {
-          maps.add(Pair(start, length))
-          start += length
-          length = 0
-        }
       }
-
-      values.add(min.value)
-
-      val source = min.source
-      if (source.hasRemaining()) {
-        val key = keySerializer.read(source)
-        val size = source.asIntBuffer().get()
-        source.position(source.position() + 4)
-        val value = ByteArray(size)
-        min.source.get(value)
-        heap.add(MergeKey(key, value, min.source))
-      }
-    }
-
-    if (last != null) {
-      keySerializer.write(last, buffer)
-      buffer.asIntBuffer().put(values.size)
-      buffer.position(buffer.position() + 4)
-      for (value in values) {
-        buffer.put(value)
-      }
-      values.clear()
-      output.write(buffer.array(), 0, buffer.position())
-      length += buffer.position()
     }
 
     if (length > 0) {
@@ -215,7 +231,7 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
     }
   }
 
-  println("PMap (mmap) ${keyType} -> ${valueType} size ${start}")
+  println("  PMap (mmap) ${keyType} -> ${valueType} size ${start}")
 
   val postsortChannel = FileChannel.open(merged.toPath())
   return maps.map { s ->

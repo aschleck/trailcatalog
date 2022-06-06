@@ -16,7 +16,9 @@ class MakeRelationGeometries
       PEntry<Long, Pair<List<RelationGeometry>, List<Pair<Long, List<LatLngE7>>>>>,
       Long,
       RelationGeometry>(
-    TypeToken.of(Long::class.java), object : TypeToken<RelationGeometry>() {}) {
+    "MakeRelationGeometries",
+    TypeToken.of(Long::class.java),
+    object : TypeToken<RelationGeometry>() {}) {
 
   override fun act(
       input: PEntry<Long, Pair<List<RelationGeometry>, List<Pair<Long, List<LatLngE7>>>>>,

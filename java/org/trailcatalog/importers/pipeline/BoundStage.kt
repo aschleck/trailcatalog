@@ -28,11 +28,13 @@ class BoundStage<I, O>(
 }
 
 inline fun <reified K : Comparable<K>, reified V : Any> BoundStage<*, out PCollection<V>>.groupBy(
+    context: String,
     crossinline keyFn: (V) -> K): BoundStage<PCollection<V>, PMap<K, V>> {
   return BoundStage(
       this.act(null),
       pipeline,
-      object : PMapTransformer<V, K, V>(object : TypeToken<K>() {}, object : TypeToken<V>() {}) {
+      object : PMapTransformer<V, K, V>(
+          context, object : TypeToken<K>() {}, object : TypeToken<V>() {}) {
 
     override fun estimateRatio(): Double {
       return 2.0

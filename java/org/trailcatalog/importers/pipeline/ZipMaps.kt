@@ -8,6 +8,7 @@ import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.createPMap
 
 class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
+    private val context: String,
     private val keyType: TypeToken<K>,
     private val v1Type: TypeToken<V1>,
     private val v2Type: TypeToken<V2>,
@@ -28,6 +29,7 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
             .where(object : TypeParameter<V1>() {}, v1Type)
             .where(object : TypeParameter<V2>() {}, v2Type)
     return createPMap(
+        context,
         keyType,
         pairType,
         estimate) { emitter ->

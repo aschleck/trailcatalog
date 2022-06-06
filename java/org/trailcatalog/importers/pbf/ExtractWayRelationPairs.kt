@@ -10,6 +10,7 @@ import org.trailcatalog.proto.RelationMember.ValueCase.RELATION
 import org.trailcatalog.proto.RelationMember.ValueCase.WAY
 
 class ExtractWayRelationPairs : PMapTransformer<PEntry<Long, RelationGeometry>, Long, Long>(
+    "ExtractWayRelationPairs",
     TypeToken.of(Long::class.java),
     TypeToken.of(Long::class.java),
 ) {
