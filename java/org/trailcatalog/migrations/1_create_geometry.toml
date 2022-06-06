@@ -1,166 +1,39 @@
-# Create some tables for storing OSM data (mostly) raw.
-#
-# * The exception is that we calculate types of highways and routes, -1
-#   otherwise.
-# * We store latlngs in degrees, so we can do exact comparisons with node
-#   positions.
+# Latlngs are stored as integer degrees in E7 precision (accurate to 11.1 mm.)
+
+[[actions]]
+type = "create_table"
+name = "active_epoch"
+primary_key = ["epoch"]
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
 
 [[actions]]
 type = "create_table"
 name = "geofabrik_sources"
-primary_key = ["path", "current_sequence_number"]
+primary_key = ["path"]
 
   [[actions.columns]]
   name = "path"
   nullable = false
   type = "TEXT"
 
-  [[actions.columns]]
-  name = "current_sequence_number"
-  nullable = false
-  type = "INT"
-
-[[actions]]
-type = "create_table"
-name = "nodes"
-primary_key = ["id"]
-
-  [[actions.columns]]
-  name = "id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "lat_degrees"
-  nullable = false
-  type = "DOUBLE PRECISION"
-
-  [[actions.columns]]
-  name = "lng_degrees"
-  nullable = false
-  type = "DOUBLE PRECISION"
-
-[[actions]]
-type = "create_table"
-name = "relations"
-primary_key = ["id"]
-
-  [[actions.columns]]
-  name = "id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "type"
-  nullable = false
-  type = "INT"
-
-  [[actions.columns]]
-  name = "name"
-  nullable = true
-  type = "TEXT"
-
-  [[actions.columns]]
-  name = "relation_skeleton"
-  nullable = false
-  type = "BYTEA"
-
-[[actions]]
-type = "create_table"
-name = "ways"
-primary_key = ["id"]
-
-  [[actions.columns]]
-  name = "id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "type"
-  nullable = false
-  type = "INT"
-
-  [[actions.columns]]
-  name = "name"
-  nullable = true
-  type = "TEXT"
-
-[[actions]]
-type = "create_table"
-name = "nodes_in_ways"
-primary_key = ["way_id", "node_id"]
-
-  [[actions.columns]]
-  name = "way_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "node_id"
-  nullable = false
-  type = "BIGINT"
-
-  # foreign keys are intentionally omitted for performance
-
-[[actions]]
-type = "create_table"
-name = "ways_in_relations"
-primary_key = ["relation_id", "way_id"]
-
-  [[actions.columns]]
-  name = "relation_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "way_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.foreign_key]]
-  columns = ["relation_id"]
-  referenced_table = "relations"
-  referenced_columns = ["id"]
-
-  [[actions.foreign_key]]
-  columns = ["way_id"]
-  referenced_table = "ways"
-  referenced_columns = ["id"]
-
-[[actions]]
-type = "create_table"
-name = "relations_in_relations"
-primary_key = ["parent_id", "child_id"]
-
-  [[actions.columns]]
-  name = "parent_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "child_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.foreign_key]]
-  columns = ["parent_id"]
-  referenced_table = "relations"
-  referenced_columns = ["id"]
-
-  [[actions.foreign_key]]
-  columns = ["child_id"]
-  referenced_table = "relations"
-  referenced_columns = ["id"]
-
 [[actions]]
 type = "create_table"
 name = "boundaries"
-primary_key = ["id"]
+primary_key = ["id", "epoch"]
 
   [[actions.columns]]
   name = "id"
   nullable = false
   type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
 
   [[actions.columns]]
   name = "type"
@@ -178,11 +51,6 @@ primary_key = ["id"]
   type = "TEXT"
 
   [[actions.columns]]
-  name = "relation_geometry"
-  nullable = false
-  type = "BYTEA"
-
-  [[actions.columns]]
   name = "s2_polygon"
   nullable = false
   type = "BYTEA"
@@ -197,11 +65,6 @@ primary_key = ["id"]
   nullable = true
   type = "TEXT"
 
-  [[actions.foreign_key]]
-  columns = ["source_relation"]
-  referenced_table = "relations"
-  referenced_columns = ["id"]
-
 [[actions]]
 type = "add_index"
 table = "boundaries"
@@ -211,17 +74,9 @@ table = "boundaries"
   columns = ["cell"]
 
 [[actions]]
-type = "add_index"
-table = "boundaries"
-
-  [actions.index]
-  name = "boundaries_by_source_relation_idx"
-  columns = ["source_relation"]
-
-[[actions]]
 type = "create_table"
 name = "boundaries_in_boundaries"
-primary_key = ["parent_id", "child_id"]
+primary_key = ["parent_id", "child_id", "epoch"]
 
   [[actions.columns]]
   name = "parent_id"
@@ -232,6 +87,11 @@ primary_key = ["parent_id", "child_id"]
   name = "child_id"
   nullable = false
   type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
 
   [[actions.foreign_key]]
   columns = ["parent_id"]
@@ -246,12 +106,17 @@ primary_key = ["parent_id", "child_id"]
 [[actions]]
 type = "create_table"
 name = "paths"
-primary_key = ["id"]
+primary_key = ["id", "epoch"]
 
   [[actions.columns]]
   name = "id"
   nullable = false
   type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
 
   [[actions.columns]]
   name = "type"
@@ -292,22 +157,19 @@ table = "paths"
   columns = ["cell"]
 
 [[actions]]
-type = "add_index"
-table = "paths"
-
-  [actions.index]
-  name = "paths_by_source_way_idx"
-  columns = ["source_way"]
-
-[[actions]]
 type = "create_table"
 name = "trails"
-primary_key = ["id"]
+primary_key = ["id", "epoch"]
 
   [[actions.columns]]
   name = "id"
   nullable = false
   type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
 
   [[actions.columns]]
   name = "type"
@@ -332,15 +194,20 @@ primary_key = ["id"]
   [[actions.columns]]
   name = "center_lat_degrees"
   nullable = false
-  type = "DOUBLE PRECISION"
+  type = "INT"
 
   [[actions.columns]]
   name = "center_lng_degrees"
   nullable = false
-  type = "DOUBLE PRECISION"
+  type = "INT"
 
   [[actions.columns]]
-  name = "elevation_delta_meters"
+  name = "elevation_down_meters"
+  nullable = false
+  type = "REAL"
+
+  [[actions.columns]]
+  name = "elevation_up_meters"
   nullable = false
   type = "REAL"
 
@@ -359,31 +226,6 @@ primary_key = ["id"]
   nullable = true
   type = "BIGINT"
 
-  [[actions.columns]]
-  name = "source_way"
-  nullable = true
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "visibility"
-  nullable = false
-  type = "INT"
-
-  [[actions.foreign_key]]
-  columns = ["representative_boundary"]
-  referenced_table = "boundaries"
-  referenced_columns = ["id"]
-
-  [[actions.foreign_key]]
-  columns = ["source_relation"]
-  referenced_table = "relations"
-  referenced_columns = ["id"]
-
-  [[actions.foreign_key]]
-  columns = ["source_way"]
-  referenced_table = "ways"
-  referenced_columns = ["id"]
-
 [[actions]]
 type = "add_index"
 table = "trails"
@@ -393,47 +235,9 @@ table = "trails"
   columns = ["cell"]
 
 [[actions]]
-type = "add_index"
-table = "trails"
-
-  [actions.index]
-  name = "trails_by_source_relation_idx"
-  columns = ["source_relation"]
-
-[[actions]]
-type = "add_index"
-table = "trails"
-
-  [actions.index]
-  name = "trails_by_source_way_idx"
-  columns = ["source_way"]
-
-[[actions]]
-type = "create_table"
-name = "paths_in_trails"
-primary_key = ["path_id", "trail_id"]
-
-  [[actions.columns]]
-  name = "path_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "trail_id"
-  nullable = false
-  type = "BIGINT"
-
-  # An FK from path_id to paths is omitted because we don't create backpaths.
-
-  [[actions.foreign_key]]
-  columns = ["trail_id"]
-  referenced_table = "trails"
-  referenced_columns = ["id"]
-
-[[actions]]
 type = "create_table"
 name = "trails_in_boundaries"
-primary_key = ["boundary_id", "trail_id"]
+primary_key = ["boundary_id", "trail_id", "epoch"]
 
   [[actions.columns]]
   name = "boundary_id"
@@ -444,6 +248,11 @@ primary_key = ["boundary_id", "trail_id"]
   name = "trail_id"
   nullable = false
   type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
 
   [[actions.foreign_key]]
   columns = ["boundary_id"]

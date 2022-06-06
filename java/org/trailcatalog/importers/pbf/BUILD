@@ -7,7 +7,9 @@ kt_jvm_library(
     name = "pbf",
     srcs = glob(["*.kt"]),
     deps = [
-        ":records",
+        ":pbf_java",
+        "//java/org/trailcatalog/importers/pipeline",
+        "//java/org/trailcatalog/importers/pipeline/collections",
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
         "//java/org/trailcatalog/s2:s2-kt",
@@ -20,6 +22,9 @@ kt_jvm_library(
 )
 
 java_library(
-    name = "records",
-    srcs = glob(["*Record.java"]),
+    name = "pbf_java",
+    srcs = glob(["*.java"]),
+    deps = [
+        "//trailcatalog/proto:encoding_java_proto",
+    ],
 )

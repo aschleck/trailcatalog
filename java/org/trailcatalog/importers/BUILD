@@ -14,9 +14,11 @@ kt_jvm_library(
     srcs = glob(["*.kt"]),
     deps = [
         "//java/org/trailcatalog:pg_support",
+        "//java/org/trailcatalog/importers/pbf",
+        "//java/org/trailcatalog/importers/pbf:pbf_java",
+        "//java/org/trailcatalog/importers/pipeline",
+        "//java/org/trailcatalog/importers/pipeline/collections",
         "//java/org/trailcatalog/models",
-        "//java/org/trailcatalog/pbf",
-        "//java/org/trailcatalog/pbf:records",
         "//java/org/trailcatalog/s2:s2-java",
         "//trailcatalog/proto:encoding_java_proto",
         "@bazel_tools//tools/java/runfiles",

@@ -1,17 +1,28 @@
-package org.trailcatalog.pbf
+package org.trailcatalog.importers.pbf
 
 import com.wolt.osm.parallelpbf.blob.BlobInformation
 import com.wolt.osm.parallelpbf.blob.BlobReader
 import crosby.binary.Fileformat
 import crosby.binary.Osmformat.PrimitiveBlock
-import java.io.InputStream
+import org.trailcatalog.importers.pipeline.PSource
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.Optional
 import java.util.zip.Inflater
+import kotlin.io.path.inputStream
 
-class PbfBlockReader(private val input: InputStream) {
+class PbfBlockReader(private val path: Path) : PSource<PrimitiveBlock>() {
 
-  fun readBlocks() = sequence {
-    val reader = BlobReader(input)
+  override fun estimateCount(): Long {
+    return Files.size(path) / estimateElementBytes()
+  }
+
+  override fun estimateElementBytes(): Long {
+    return 50_000
+  }
+
+  override fun read() = sequence {
+    val reader = BlobReader(path.inputStream())
     var maybeInformation: Optional<BlobInformation>
     do {
       maybeInformation = reader

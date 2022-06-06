@@ -1,39 +1,29 @@
-package org.trailcatalog.pbf
+package org.trailcatalog.importers.pbf
 
+import com.google.common.reflect.TypeToken
+import crosby.binary.Osmformat
 import crosby.binary.Osmformat.PrimitiveBlock
-import crosby.binary.Osmformat.PrimitiveGroup
 import crosby.binary.Osmformat.StringTable
-import crosby.binary.Osmformat.Way
-import java.nio.charset.StandardCharsets
-import org.apache.commons.text.StringEscapeUtils.escapeCsv
+import org.trailcatalog.importers.pipeline.PTransformer
+import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.models.WayCategory
 
-class WaysCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
-    block,
-    "id,type,name\n".toByteArray(StandardCharsets.UTF_8),
-) {
+class ExtractWays : PTransformer<PrimitiveBlock, Way>(TypeToken.of(Way::class.java)) {
 
-  override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
-    for (way in group.waysList) {
-      val data = getWayData(way, block.stringtable)
-      csv.append(way.id)
-      csv.append(",")
-      csv.append(data.type.id)
-      csv.append(",")
-      if (data.name != null) {
-        csv.append(escapeCsv(data.name))
+  override fun act(input: PrimitiveBlock, emitter: Emitter<Way>) {
+    for (group in input.primitivegroupList) {
+      for (way in group.waysList) {
+        emitter.emit(getWay(way, input.stringtable))
       }
-      csv.append("\n")
     }
+  }
+
+  override fun estimateRatio(): Double {
+    return 0.5
   }
 }
 
-data class WayData(
-  val type: WayCategory,
-  val name: String?,
-)
-
-fun getWayData(way: Way, stringTable: StringTable): WayData {
+fun getWay(way: Osmformat.Way, stringTable: StringTable): Way {
   var category = WayCategory.ANY
   var name: String? = null
   for (i in 0 until way.keysCount) {
@@ -55,5 +45,11 @@ fun getWayData(way: Way, stringTable: StringTable): WayData {
         }
     }
   }
-  return WayData(type = category, name = name)
+  val refs = LongArray(way.refsCount)
+  var nodeId = 0L
+  for (i in 0 until way.refsCount) {
+    nodeId += way.getRefs(i)
+    refs[i] = nodeId
+  }
+  return Way(way.id, category.id, name ?: "", refs)
 }

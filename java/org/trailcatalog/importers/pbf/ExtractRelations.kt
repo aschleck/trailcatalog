@@ -1,49 +1,40 @@
-package org.trailcatalog.pbf
+package org.trailcatalog.importers.pbf
 
+import com.google.common.reflect.TypeToken
 import com.google.protobuf.ByteString
+import crosby.binary.Osmformat
 import crosby.binary.Osmformat.PrimitiveBlock
-import crosby.binary.Osmformat.PrimitiveGroup
-import crosby.binary.Osmformat.Relation
 import crosby.binary.Osmformat.Relation.MemberType.NODE
 import crosby.binary.Osmformat.Relation.MemberType.RELATION
 import crosby.binary.Osmformat.Relation.MemberType.WAY
 import crosby.binary.Osmformat.StringTable
-import java.nio.charset.StandardCharsets
-import org.apache.commons.text.StringEscapeUtils.escapeCsv
+import org.trailcatalog.importers.pipeline.PTransformer
+import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationMemberFunction.INNER
 import org.trailcatalog.proto.RelationMemberFunction.OUTER
 import org.trailcatalog.proto.RelationSkeleton
 import org.trailcatalog.proto.RelationSkeletonMember
 
-class RelationsCsvInputStream(block: PrimitiveBlock) : PbfEntityInputStream(
-    block,
-    "id,type,name,relation_skeleton\n".toByteArray(StandardCharsets.UTF_8),
-) {
+class ExtractRelations : PTransformer<PrimitiveBlock, Relation>(TypeToken.of(Relation::class.java)) {
 
-  override fun convertToCsv(group: PrimitiveGroup, csv: StringBuilder) {
-    for (relation in group.relationsList) {
-      val data = getRelationData(relation, block.stringtable)
-      csv.append(relation.id)
-      csv.append(",")
-      csv.append(data.type.id)
-      csv.append(",")
-      if (data.name != null) {
-        csv.append(escapeCsv(data.name))
+  override fun act(input: PrimitiveBlock, emitter: Emitter<Relation>) {
+    for (group in input.primitivegroupList) {
+      for (relation in group.relationsList) {
+        val converted = getRelation(relation, input.stringtable)
+        if (converted.type != RelationCategory.ANY.id) {
+          emitter.emit(converted)
+        }
       }
-      csv.append(",")
-      appendByteArray(relationToSkeleton(relation, block.stringtable).toByteArray(), csv)
-      csv.append("\n")
     }
+  }
+
+  override fun estimateRatio(): Double {
+    return 0.01
   }
 }
 
-data class RelationData(
-  val type: RelationCategory,
-  val name: String?,
-)
-
-fun getRelationData(relation: Relation, stringTable: StringTable): RelationData {
+fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relation {
   var category = RelationCategory.ANY
   var name: String? = null
   var network: String? = null
@@ -82,34 +73,30 @@ fun getRelationData(relation: Relation, stringTable: StringTable): RelationData 
   if (name == null && network != null && ref != null) {
     name = "${network} ${ref}"
   }
-  return RelationData(type = category, name = name)
+  return Relation(relation.id, category.id, name ?: "", relationToSkeleton(relation, stringTable))
 }
 
-private val BS_INNER = ByteString.copyFromUtf8("inner")
+private val INNER_BS = ByteString.copyFromUtf8("inner")
 
-fun relationToSkeleton(relation: Relation, stringTable: StringTable): RelationSkeleton {
+fun relationToSkeleton(relation: Osmformat.Relation, stringTable: StringTable): RelationSkeleton {
   var memberId = 0L
   val skeleton = RelationSkeleton.newBuilder()
   for (i in 0 until relation.memidsCount) {
     memberId += relation.getMemids(i)
-    val inner = stringTable.getS(relation.getRolesSid(i)) == BS_INNER
+    val inner = stringTable.getS(relation.getRolesSid(i)) == INNER_BS
 
     when (relation.getTypes(i)) {
-      NODE -> {
-        // these are things like trailheads and labels (r237599), so ignore them
-      }
-      RELATION -> {
+      NODE -> skeleton.addMembers(RelationSkeletonMember.newBuilder().setNodeId(memberId))
+      RELATION ->
         skeleton.addMembers(
             RelationSkeletonMember.newBuilder()
                 .setFunction(if (inner) INNER else OUTER)
                 .setRelationId(memberId))
-      }
-      WAY -> {
+      WAY ->
         skeleton.addMembers(
             RelationSkeletonMember.newBuilder()
                 .setFunction(if (inner) INNER else OUTER)
                 .setWayId(memberId))
-      }
       null -> {}
     }
   }

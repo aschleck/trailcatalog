@@ -74,17 +74,4 @@ fun download(url: HttpUrl, to: Path) {
   }
 }
 
-fun getSequence(url: HttpUrl): Int {
-  val sequencePrefix = "sequenceNumber="
-  return fetch (url) { body, _ ->
-    for (line in body.string().split("\n")) {
-      val trimmed = line.trim()
-      if (trimmed.startsWith(sequencePrefix)) {
-        return@fetch trimmed.substring(sequencePrefix.length).toInt()
-      }
-    }
-    throw IORuntimeException("Unable to find sequence number")
-  }
-}
-
 class IORuntimeException(message: String) : RuntimeException(message)

@@ -1,7 +1,10 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
 import com.google.protobuf.MessageLite
+import com.google.protobuf.Parser
 import java.lang.RuntimeException
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
@@ -97,14 +100,20 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
         }
       }
     } else if (type.isSubtypeOf(TypeToken.of(MessageLite::class.java))) {
-      val instance = type.rawType.getConstructor().newInstance() as MessageLite
-      val parser = instance.parserForType
+      val parser = type.rawType.getMethod("parser").invoke(null) as Parser<MessageLite>
       serializers[type] = object : Serializer<MessageLite> {
         override fun read(from: ByteBuffer): MessageLite {
-          return parser.parseFrom(from)
+          val coded = CodedInputStream.newInstance(from)
+          val bytes = ByteArray(coded.readUInt32())
+          from.position(from.position() + coded.totalBytesRead)
+          from.get(bytes)
+          return parser.parseFrom(bytes)
         }
 
         override fun write(v: MessageLite, to: ByteBuffer) {
+          val coded = CodedOutputStream.newInstance(to)
+          coded.writeUInt32NoTag(v.serializedSize)
+          coded.flush()
           to.put(v.toByteArray())
         }
       }
@@ -127,12 +136,4 @@ private fun extractType(type: Type): Type {
 
 fun <T : Any> registerSerializer(type: TypeToken<T>, serializer: Serializer<T>) {
   serializers[type] = serializer
-}
-
-fun storeInMemory(byteSize: Long): Boolean {
-  return byteSize < 10 * 1024 * 1024
-}
-
-fun workerCount(): Int {
-  return 2
 }

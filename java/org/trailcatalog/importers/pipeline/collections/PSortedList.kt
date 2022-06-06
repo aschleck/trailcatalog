@@ -9,8 +9,5 @@ interface PSortedList<T> : PList<T> {
 fun <T : Comparable<T>> createPSortedList(
     type: TypeToken<T>, estimatedByteSize: Long, fn: (Emitter<T>) -> Unit):
     () -> PSortedList<T> {
-  return when (storeInMemory(estimatedByteSize)) {
-    true -> createInMemoryPSortedList(estimatedByteSize, fn)
-    else -> createMmapPSortedList(type, fn)
-  }
+  return createMmapPSortedList(type, fn)
 }

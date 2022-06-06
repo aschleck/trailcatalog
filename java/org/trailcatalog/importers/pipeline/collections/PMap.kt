@@ -11,8 +11,5 @@ fun <K : Comparable<K>, V : Any> createPMap(
     valueType: TypeToken<out V>,
     estimatedByteSize: Long,
     fn: (Emitter2<K, V>) -> Unit): () -> PMap<K, V> {
-  return when (storeInMemory(estimatedByteSize)) {
-    true -> createInMemoryPMap(estimatedByteSize, fn)
-    else -> createMmapPMap(keyType, valueType, fn)
-  }
+  return createMmapPMap(keyType, valueType, fn)
 }

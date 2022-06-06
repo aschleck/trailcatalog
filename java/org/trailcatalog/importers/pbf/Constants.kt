@@ -1,4 +1,4 @@
-package org.trailcatalog.pbf
+package org.trailcatalog.importers.pbf
 
 import com.google.common.collect.ImmutableMap
 import com.google.protobuf.ByteString
