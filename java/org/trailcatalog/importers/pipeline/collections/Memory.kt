@@ -1,66 +1,70 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
-import com.google.protobuf.CodedInputStream
 import com.google.protobuf.CodedOutputStream
 import com.google.protobuf.MessageLite
 import com.google.protobuf.Parser
+import org.trailcatalog.importers.pipeline.io.EncodedInputStream
+import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import java.lang.RuntimeException
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
 import java.lang.reflect.WildcardType
-import java.nio.ByteBuffer
 
 val serializers = HashMap<TypeToken<*>, Serializer<*>>().also {
   it[TypeToken.of(Int::class.java)] = object : Serializer<Int> {
-    override fun read(from: ByteBuffer): Int {
-      val v = from.asIntBuffer().get()
-      from.position(from.position() + 4)
-      return v
+    override fun read(from: EncodedInputStream): Int {
+      return from.readInt()
     }
 
-    override fun write(v: Int, to: ByteBuffer) {
-      to.asIntBuffer().put(v)
-      to.position(to.position() + 4)
+    override fun size(v: Int): Int {
+      return 4
+    }
+
+    override fun write(v: Int, to: EncodedOutputStream) {
+      to.writeInt(v)
     }
   }
 
   it[TypeToken.of(java.lang.Integer::class.java)] = object : Serializer<Int> {
-    override fun read(from: ByteBuffer): Int {
-      val v = from.asIntBuffer().get()
-      from.position(from.position() + 4)
-      return v
+    override fun read(from: EncodedInputStream): Int {
+      return from.readInt()
     }
 
-    override fun write(v: Int, to: ByteBuffer) {
-      to.asIntBuffer().put(v)
-      to.position(to.position() + 4)
+    override fun size(v: Int): Int {
+      return 4
+    }
+
+    override fun write(v: Int, to: EncodedOutputStream) {
+      to.writeInt(v)
     }
   }
 
   it[TypeToken.of(Long::class.java)] = object : Serializer<Long> {
-    override fun read(from: ByteBuffer): Long {
-      val v = from.asLongBuffer().get()
-      from.position(from.position() + 8)
-      return v
+    override fun read(from: EncodedInputStream): Long {
+      return from.readLong()
     }
 
-    override fun write(v: Long, to: ByteBuffer) {
-      to.asLongBuffer().put(v)
-      to.position(to.position() + 8)
+    override fun size(v: Long): Int {
+      return 8
+    }
+
+    override fun write(v: Long, to: EncodedOutputStream) {
+      to.writeLong(v)
     }
   }
 
   it[TypeToken.of(java.lang.Long::class.java)] = object : Serializer<Long> {
-    override fun read(from: ByteBuffer): Long {
-      val v = from.asLongBuffer().get()
-      from.position(from.position() + 8)
-      return v
+    override fun read(from: EncodedInputStream): Long {
+      return from.readLong()
     }
 
-    override fun write(v: Long, to: ByteBuffer) {
-      to.asLongBuffer().put(v)
-      to.position(to.position() + 8)
+    override fun size(v: Long): Int {
+      return 8
+    }
+
+    override fun write(v: Long, to: EncodedOutputStream) {
+      to.writeLong(v)
     }
   }
 }
@@ -71,15 +75,21 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
       val parameterized = extractType(type.type) as ParameterizedType
       val value = getSerializer(TypeToken.of(extractType(parameterized.actualTypeArguments[0])))
       serializers[type] = object : Serializer<List<*>> {
-        override fun read(from: ByteBuffer): List<*> {
-          val length = from.asIntBuffer().get()
-          from.position(from.position() + 4)
+        override fun read(from: EncodedInputStream): List<*> {
+          val length = from.readVarInt()
           return (0 until length).map { value.read(from) }
         }
 
-        override fun write(v: List<*>, to: ByteBuffer) {
-          to.asIntBuffer().put(v.size)
-          to.position(to.position() + 4)
+        override fun size(v: List<*>): Int {
+          var bytes = EncodedOutputStream.varIntSize(v.size)
+          for (item in v) {
+            bytes += value.size(item)
+          }
+          return bytes
+        }
+
+        override fun write(v: List<*>, to: EncodedOutputStream) {
+          to.writeVarInt(v.size)
           for (item in v) {
             value.write(item, to)
           }
@@ -90,11 +100,15 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
       val left = getSerializer(TypeToken.of(extractType(parameterized.actualTypeArguments[0])))
       val right = getSerializer(TypeToken.of(extractType(parameterized.actualTypeArguments[1])))
       serializers[type] = object : Serializer<Pair<*, *>> {
-        override fun read(from: ByteBuffer): Pair<*, *> {
+        override fun read(from: EncodedInputStream): Pair<*, *> {
           return Pair(left.read(from), right.read(from))
         }
 
-        override fun write(v: Pair<*, *>, to: ByteBuffer) {
+        override fun size(v: Pair<*, *>): Int {
+          return left.size(v.first) + right.size(v.second)
+        }
+
+        override fun write(v: Pair<*, *>, to: EncodedOutputStream) {
           left.write(v.first, to)
           right.write(v.second, to)
         }
@@ -102,19 +116,17 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
     } else if (type.isSubtypeOf(TypeToken.of(MessageLite::class.java))) {
       val parser = type.rawType.getMethod("parser").invoke(null) as Parser<MessageLite>
       serializers[type] = object : Serializer<MessageLite> {
-        override fun read(from: ByteBuffer): MessageLite {
-          val coded = CodedInputStream.newInstance(from)
-          val bytes = ByteArray(coded.readUInt32())
-          from.position(from.position() + coded.totalBytesRead)
-          from.get(bytes)
-          return parser.parseFrom(bytes)
+        override fun read(from: EncodedInputStream): MessageLite {
+          return parser.parseDelimitedFrom(from)
         }
 
-        override fun write(v: MessageLite, to: ByteBuffer) {
-          val coded = CodedOutputStream.newInstance(to)
-          coded.writeUInt32NoTag(v.serializedSize)
-          coded.flush()
-          to.put(v.toByteArray())
+        override fun size(v: MessageLite): Int {
+          val size = v.serializedSize
+          return CodedOutputStream.computeUInt32SizeNoTag(size) + size
+        }
+
+        override fun write(v: MessageLite, to: EncodedOutputStream) {
+          v.writeDelimitedTo(to)
         }
       }
     } else {

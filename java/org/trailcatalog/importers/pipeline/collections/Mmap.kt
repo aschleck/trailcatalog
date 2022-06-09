@@ -1,18 +1,19 @@
 package org.trailcatalog.importers.pipeline.collections
 
-import com.google.common.collect.ImmutableList
 import com.google.common.reflect.TypeToken
+import org.trailcatalog.importers.pipeline.io.EncodedInputStream
+import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import java.io.File
-import java.io.FileOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 
 open class MmapPList<T>(
-    val maps: List<ByteBuffer>, val serializer: Serializer<T>, val size: Long) : PList<T> {
+    private val maps: List<EncodedInputStream>,
+    private val serializer: Serializer<T>,
+    private val size: Long) : PList<T> {
 
-  var shard = 0
+  private var shard = 0
 
   override fun estimatedByteSize(): Long {
     return size
@@ -31,12 +32,22 @@ open class MmapPList<T>(
   }
 }
 
-class MmapPSortedList<T>(
-        maps: List<ByteBuffer>, serializer: Serializer<T>, size: Long)
-    : MmapPList<T>(maps, serializer, size), PSortedList<T> {
+open class MmapPSortedList<T>(private val list: MmapPList<T>) : PSortedList<T> {
+
+  override fun estimatedByteSize(): Long {
+    return list.estimatedByteSize()
+  }
 
   override fun find(needle: (v: T) -> Int): T? {
     TODO("Not yet implemented")
+  }
+
+  override fun hasNext(): Boolean {
+    return list.hasNext()
+  }
+
+  override fun next(): T {
+    return list.next()
   }
 }
 
@@ -44,109 +55,53 @@ fun <T : Any> createMmapPList(type: TypeToken<out T>, fn: (Emitter<T>) -> Unit):
   val serializer = getSerializer(type)
   val file = File.createTempFile(cleanFilename("mmap-list-${type}"), null)
   file.deleteOnExit()
-
-  val shards = ImmutableList.builder<Pair<Long, Long>>()
-  var start = 0L
-  var length = 0L
-  val buffer = ByteBuffer.allocate(8 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
-  FileOutputStream(file).use { output ->
-    val emitter = object : Emitter<T> {
-      override fun emit(v: T) {
-        serializer.write(v, buffer)
-
-        if (buffer.position() > 4 * 1024 * 1024) {
-          output.write(buffer.array(), 0, buffer.position())
-          length += buffer.position()
-          buffer.rewind()
-        }
-
-        if (length > Integer.MAX_VALUE / 4) {
-          shards.add(Pair(start, length))
-          start += length
-          length = 0
+  val shards = RandomAccessFile(file, "rw").use { raf ->
+    val stream = EncodedOutputStream(raf.channel)
+    stream.use { output ->
+      val emitter = object : Emitter<T> {
+        override fun emit(v: T) {
+          serializer.write(v, output)
+          output.checkBufferSpace()
         }
       }
+
+      fn(emitter)
     }
 
-    fn(emitter)
-
-    output.write(buffer.array(), 0, buffer.position())
-    length += buffer.position()
-    if (length > 0) {
-      shards.add(Pair(start, length))
-      start += length
-    }
+    stream.shards()
   }
 
-  println("PList (mmap) ${type} size ${start}")
+  val size = if (shards.isNotEmpty()) shards[shards.size - 1].let { it.start + it.length } else 0
+  println("PList (mmap) ${type} size ${size}")
 
   val fileChannel = FileChannel.open(file.toPath())
-  val maps = shards.build().map { s ->
-    fileChannel.map(MapMode.READ_ONLY, s.first, s.second).order(ByteOrder.LITTLE_ENDIAN)
+  val maps = shards.map { s ->
+    EncodedInputStream(fileChannel.map(MapMode.READ_ONLY, s.start, s.length))
   }
 
   return {
-    MmapPList(maps, serializer, start)
+    MmapPList(maps, serializer, size)
   }
 }
 
-fun <T : Comparable<T>> createMmapPSortedList(type: TypeToken<T>, fn: (Emitter<T>) -> Unit):
+fun <T : Comparable<T>> createMmapPSortedList(type: TypeToken<out T>, fn: (Emitter<T>) -> Unit):
     () -> MmapPSortedList<T> {
-  val serializer = getSerializer(type)
-  val file = File.createTempFile(cleanFilename("mmap-sorted-list-${type}-"), null)
-  file.deleteOnExit()
-
-  var last: T? = null
-  val shards = ImmutableList.builder<Pair<Long, Long>>()
-  var start = 0L
-  var length = 0L
-  val buffer = ByteBuffer.allocate(8 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
-  FileOutputStream(file).use { output ->
-    val emitter = object : Emitter<T> {
+  val interceptedFn = { emitter: Emitter<T> ->
+    var last: T? = null
+    val checkingEmitter = object : Emitter<T> {
       override fun emit(v: T) {
-        val was = last
-        if (was != null) {
-          if (was.compareTo(v) != -1) {
-            throw RuntimeException("Sorted order was violated")
-          }
+        val l = last
+        if (l != null && l > v) {
+          throw RuntimeException("Sort order was violated")
         }
+        emitter.emit(v)
         last = v
-
-        serializer.write(v, buffer)
-
-        if (buffer.position() > 4 * 1024 * 1024) {
-          output.write(buffer.array(), 0, buffer.position())
-          length += buffer.position()
-          buffer.rewind()
-        }
-
-        if (length > Integer.MAX_VALUE / 4) {
-          shards.add(Pair(start, length))
-          start += length
-          length = 0
-        }
       }
     }
-
-    fn(emitter)
-
-    output.write(buffer.array(), 0, buffer.position())
-    length += buffer.position()
-    if (length > 0) {
-      shards.add(Pair(start, length))
-      start += length
-    }
+    fn(checkingEmitter)
   }
-
-  println("PSortedList (mmap) ${type} size ${start}")
-
-  val fileChannel = FileChannel.open(file.toPath())
-  val maps = shards.build().map { s ->
-    fileChannel.map(MapMode.READ_ONLY, s.first, s.second).order(ByteOrder.LITTLE_ENDIAN)
-  }
-
   return {
-    MmapPSortedList(maps, serializer, start)
+    MmapPSortedList(createMmapPList(type, interceptedFn).invoke())
   }
 }
 

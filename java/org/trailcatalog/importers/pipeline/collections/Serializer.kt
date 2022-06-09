@@ -1,8 +1,10 @@
 package org.trailcatalog.importers.pipeline.collections
 
-import java.nio.ByteBuffer
+import org.trailcatalog.importers.pipeline.io.EncodedInputStream
+import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 
 interface Serializer<T> {
-  fun read(from: ByteBuffer): T
-  fun write(v: T, to: ByteBuffer)
+  fun read(from: EncodedInputStream): T
+  fun size(v: T): Int
+  fun write(v: T, to: EncodedOutputStream)
 }
