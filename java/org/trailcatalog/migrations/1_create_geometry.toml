@@ -134,11 +134,6 @@ primary_key = ["id", "epoch"]
   type = "BYTEA"
 
   [[actions.columns]]
-  name = "node_ids"
-  nullable = false
-  type = "BYTEA"
-
-  [[actions.columns]]
   name = "source_way"
   nullable = false
   type = "BIGINT"

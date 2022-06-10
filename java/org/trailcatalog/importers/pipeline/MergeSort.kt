@@ -5,6 +5,7 @@ import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PSortedList
 import org.trailcatalog.importers.pipeline.collections.createPSortedList
 import java.util.PriorityQueue
+import java.util.concurrent.atomic.AtomicInteger
 
 class MergeSort<V : Comparable<V>>(private val type: TypeToken<V>)
   : PStage<List<PSortedList<V>>, PSortedList<V>>() {
@@ -13,9 +14,9 @@ class MergeSort<V : Comparable<V>>(private val type: TypeToken<V>)
     return 1.0
   }
 
-  override fun act(input: List<PSortedList<V>>): () -> PSortedList<V> {
+  override fun act(input: List<PSortedList<V>>, handles: AtomicInteger): () -> PSortedList<V> {
     val estimate = (estimateRatio() * input.sumOf { it.estimatedByteSize() }).toLong()
-    return createPSortedList(type, estimate) { emitter ->
+    return createPSortedList(type, estimate, handles) { emitter ->
       merge(input, emitter)
     }
   }
@@ -38,6 +39,8 @@ class MergeSort<V : Comparable<V>>(private val type: TypeToken<V>)
 
       if (min.source.hasNext()) {
         heap.add(MergeKey(min.source.next(), min.source))
+      } else {
+        min.source.close()
       }
     }
   }

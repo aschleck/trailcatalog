@@ -6,6 +6,7 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.createPMap
+import java.util.concurrent.atomic.AtomicInteger
 
 class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
     private val context: String,
@@ -19,7 +20,7 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
     return 1.0
   }
 
-  override fun act(input: Pair<PMap<K, V1>, PMap<K, V2>>):
+  override fun act(input: Pair<PMap<K, V1>, PMap<K, V2>>, handles: AtomicInteger):
       () -> PMap<K, Pair<List<V1>, List<V2>>> {
     val estimate =
         (estimateRatio() * (input.first.estimatedByteSize() + input.second.estimatedByteSize()))
@@ -32,7 +33,8 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
         context,
         keyType,
         pairType,
-        estimate) { emitter ->
+        estimate,
+        handles) { emitter ->
       zip(input, emitter)
     }
   }
@@ -72,5 +74,8 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
       emitter.emit(nr.key, Pair(ImmutableList.of(), nr.values))
       nr = if (right.hasNext()) right.next() else null
     }
+
+    left.close()
+    right.close()
   }
 }

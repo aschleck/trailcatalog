@@ -29,7 +29,6 @@ class ExtractWayRelationPairs : PMapTransformer<PEntry<Long, RelationGeometry>, 
   }
 }
 
-
 private fun inflate(
     root: Long,
     geometry: RelationGeometry,

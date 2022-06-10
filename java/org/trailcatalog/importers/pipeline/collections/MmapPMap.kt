@@ -9,14 +9,22 @@ import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
+import java.util.concurrent.atomic.AtomicInteger
 
 class MmapPMap<K : Comparable<K>, V>(
     private val maps: List<EncodedInputStream>,
     private val keySerializer: Serializer<K>,
     private val valueSerializer: Serializer<V>,
-    private val size: Long) : PMap<K, V> {
+    private val size: Long,
+    private val fileReference: FileReference,
+) : PMap<K, V> {
 
   var shard = 0
+
+  override fun close() {
+    maps.forEach { it.close() }
+    fileReference.close()
+  }
 
   override fun estimatedByteSize(): Long {
     return size
@@ -47,15 +55,18 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
     context: String,
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
+    handles: AtomicInteger,
     fn: (Emitter2<K, V>) -> Unit): () -> MmapPMap<K, V> {
+  if (handles.get() == 0) throw RuntimeException("${keyType} => ${valueType}")
   val keySerializer = getSerializer(keyType)
   val valueSerializer = getSerializer(valueType)
 
-  val shards = emitToSortedShards(context, keyType, valueType, keySerializer, valueSerializer, fn)
-  val merged = mergeSortedShards(context, keyType, valueType, shards, keySerializer)
-
-  return {
-    MmapPMap(merged, keySerializer, valueSerializer, merged.sumOf { it.size().toLong() })
+  val (shardedFile, shards) =
+      emitToSortedShards(context, keyType, valueType, keySerializer, valueSerializer, fn)
+  return mergeSortedShards(
+      context, keyType, valueType, shards, keySerializer, valueSerializer, handles).also {
+    shards.forEach { it.close() }
+    shardedFile.delete()
   }
 }
 
@@ -65,7 +76,7 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
     valueType: TypeToken<out V>,
     keySerializer: Serializer<K>,
     valueSerializer: Serializer<V>,
-    fn: (Emitter2<K, V>) -> Unit): List<EncodedInputStream> {
+    fn: (Emitter2<K, V>) -> Unit): Pair<File, List<EncodedInputStream>> {
   val sharded =
       File.createTempFile(cleanFilename("mmap-map-sharded-${keyType}-${valueType}"), null)
   sharded.deleteOnExit()
@@ -94,7 +105,7 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
           itemsInShard.add(SortKey(a, b))
           shardValuesSize += valueSerializer.size(b)
 
-          if (shardValuesSize > Integer.MAX_VALUE / 8) {
+          if (shardValuesSize > 100 * 1024 * 1024) {
             dumpShard()
           }
         }
@@ -120,9 +131,9 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
   println("  PMap (mmap) ${keyType} -> ${valueType} in ${shards.size} shards (size ${size})")
 
   val fileChannel = FileChannel.open(sharded.toPath())
-  return shards.map { s ->
+  return Pair(sharded, shards.map { s ->
     EncodedInputStream(fileChannel.map(MapMode.READ_ONLY, s.start, s.length))
-  }
+  })
 }
 
 private fun <K : Comparable<K>, V : Any> mergeSortedShards(
@@ -130,7 +141,10 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
     unmergedShards: List<EncodedInputStream>,
-    keySerializer: Serializer<K>): List<EncodedInputStream> {
+    keySerializer: Serializer<K>,
+    valueSerializer: Serializer<V>,
+    handles: AtomicInteger,
+): () -> MmapPMap<K, V> {
   val merged =
       File.createTempFile(cleanFilename("mmap-map-merged-${keyType}-${valueType}"), null)
   merged.deleteOnExit()
@@ -199,8 +213,14 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
   println("  PMap (mmap) ${keyType} -> ${valueType} size ${size}")
 
   val postsortChannel = FileChannel.open(merged.toPath())
-  return shards.map { s ->
-    EncodedInputStream(postsortChannel.map(MapMode.READ_ONLY, s.start, s.length))
+  val fileReference = FileReference(merged, handles)
+
+  return {
+    val opened = shards.map { s ->
+      EncodedInputStream(postsortChannel.map(MapMode.READ_ONLY, s.start, s.length))
+    }
+    MmapPMap(
+        opened, keySerializer, valueSerializer, opened.sumOf { it.size().toLong() }, fileReference)
   }
 }
 

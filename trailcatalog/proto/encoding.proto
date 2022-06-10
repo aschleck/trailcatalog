@@ -21,7 +21,8 @@ message RelationSkeletonMember {
 
 message RelationGeometry {
   uint64 relation_id = 1;
-  repeated RelationMember members = 2;
+  uint64 cell = 2;
+  repeated RelationMember members = 3;
 }
 
 message RelationMember {

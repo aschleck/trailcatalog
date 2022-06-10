@@ -10,10 +10,10 @@ class PipelineTest {
   @Test
   fun testJoin2() {
     val test = Pipeline()
-    val a = test.read(SequenceSource((0 until 20).asSequence())).groupBy { it }
-    val b = test.read(SequenceSource((15 downTo 4).asSequence())).groupBy { it }
+    val a = test.read(SequenceSource((0 until 20).asSequence())).groupBy("A") { it }
+    val b = test.read(SequenceSource((15 downTo 4).asSequence())).groupBy("B") { it }
     val debug = Debug<PMap<Int, Pair<List<Int>, List<Int>>>>()
-    test.join2(a, b).write(debug)
+    test.join2("JoinAB", a, b).write(debug)
     test.execute()
 
     assertThat(debug.values).containsExactly(
@@ -43,10 +43,10 @@ class PipelineTest {
   @Test
   fun testJoin2Then() {
     val test = Pipeline()
-    val a = test.read(SequenceSource((0 until 20).asSequence())).groupBy { it }
-    val b = test.read(SequenceSource((15 downTo 4).asSequence())).groupBy { it }
+    val a = test.read(SequenceSource((0 until 20).asSequence())).groupBy("A") { it }
+    val b = test.read(SequenceSource((15 downTo 4).asSequence())).groupBy("B") { it }
     val debug = Debug<PCollection<Int>>()
-    test.join2(a, b).then(Sum()).write(debug)
+    test.join2("JoinAB", a, b).then(Sum()).write(debug)
     test.execute()
 
     assertThat(debug.values).containsExactly(

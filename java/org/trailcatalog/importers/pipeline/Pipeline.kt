@@ -4,6 +4,7 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.PSortedList
+import java.util.concurrent.atomic.AtomicInteger
 
 class Pipeline {
 
@@ -15,14 +16,14 @@ class Pipeline {
 
   fun execute() {
     for (output in outputs) {
-      output.act(null).invoke()
+      output.act(null, AtomicInteger(-1)).invoke()
     }
   }
 
   inline fun <reified T : Any> cat(list: List<BoundStage<*, out PCollection<T>>>):
       BoundStage<List<PCollection<T>>, PCollection<T>> {
     val fn = {
-      list.map { it.act(null).invoke() }
+      list.map { it.act(null, AtomicInteger(-1)).invoke() }
     }
     return BoundStage(fn, this, Concatenate(object : TypeToken<T>() {}))
   }
@@ -30,7 +31,7 @@ class Pipeline {
   fun <I, O> join(list: List<BoundStage<*, I>>, stage: PStage<List<I>, O>):
       BoundStage<List<I>, O> {
     val fn = {
-      list.map { it.act(null).invoke() }
+      list.map { it.act(null, AtomicInteger(-1)).invoke() }
     }
     return BoundStage(fn, this, stage)
   }
@@ -41,7 +42,7 @@ class Pipeline {
       second: BoundStage<*, PMap<K, V2>>):
       BoundStage<*, PMap<K, Pair<List<V1>, List<V2>>>> {
     val fn = {
-      Pair(first.act(null).invoke(), second.act(null).invoke())
+      Pair(first.act(null, AtomicInteger(-1)).invoke(), second.act(null, AtomicInteger(-1)).invoke())
     }
     return BoundStage(
         fn,
@@ -56,7 +57,7 @@ class Pipeline {
   inline fun <reified T : Comparable<T>> merge(list: List<BoundStage<*, PSortedList<T>>>):
       BoundStage<List<PSortedList<T>>, PSortedList<T>> {
     val fn = {
-      list.map { it.act(null).invoke() }
+      list.map { it.act(null, AtomicInteger(-1)).invoke() }
     }
     return BoundStage(fn, this, MergeSort(object : TypeToken<T>() {}))
   }

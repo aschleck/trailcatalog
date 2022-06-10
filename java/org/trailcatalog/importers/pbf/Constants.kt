@@ -5,7 +5,6 @@ import com.google.protobuf.ByteString
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.models.WayCategory
 
-val HEX_CHARACTERS = "0123456789abcdef".toCharArray()
 const val TRAIL_FROM_RELATION_OFFSET = 0
 const val TRAIL_FROM_WAY_OFFSET = Long.MAX_VALUE / 2
 const val NANO = .000000001

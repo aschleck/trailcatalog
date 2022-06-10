@@ -8,9 +8,10 @@ import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.models.WayCategory
 
-class ExtractWays : PTransformer<PrimitiveBlock, Way>(TypeToken.of(Way::class.java)) {
+class ExtractWays
+  : PTransformer<PrimitiveBlock, WaySkeleton>(TypeToken.of(WaySkeleton::class.java)) {
 
-  override fun act(input: PrimitiveBlock, emitter: Emitter<Way>) {
+  override fun act(input: PrimitiveBlock, emitter: Emitter<WaySkeleton>) {
     for (group in input.primitivegroupList) {
       for (way in group.waysList) {
         emitter.emit(getWay(way, input.stringtable))
@@ -23,7 +24,7 @@ class ExtractWays : PTransformer<PrimitiveBlock, Way>(TypeToken.of(Way::class.ja
   }
 }
 
-fun getWay(way: Osmformat.Way, stringTable: StringTable): Way {
+fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   var category = WayCategory.ANY
   var name: String? = null
   for (i in 0 until way.keysCount) {
@@ -51,5 +52,5 @@ fun getWay(way: Osmformat.Way, stringTable: StringTable): Way {
     nodeId += way.getRefs(i)
     refs[i] = nodeId
   }
-  return Way(way.id, category.id, name ?: "", refs)
+  return WaySkeleton(way.id, category.id, name ?: "", refs)
 }

@@ -11,7 +11,7 @@ import org.trailcatalog.importers.pipeline.collections.PEntry
  */
 class GatherRelationWays
   : PMapTransformer<
-    PEntry<Long, Pair<List<Long>, List<List<LatLngE7>>>>,
+    PEntry<Long, Pair<List<Long>, List<Way>>>,
     Long,
     Pair<Long, List<LatLngE7>>>(
       "GatherRelationWays",
@@ -19,7 +19,7 @@ class GatherRelationWays
       object : TypeToken<Pair<Long, List<LatLngE7>>>() {}) {
 
   override fun act(
-      input: PEntry<Long, Pair<List<Long>, List<List<LatLngE7>>>>,
+      input: PEntry<Long, Pair<List<Long>, List<Way>>>,
       emitter: Emitter2<Long, Pair<Long, List<LatLngE7>>>) {
     val wayId = input.key
     for (value in input.values) {
@@ -27,7 +27,7 @@ class GatherRelationWays
         continue
       }
 
-      val geometry = value.second[0]
+      val geometry = value.second[0].points
       for (relationId in value.first) {
         emitter.emit(relationId, Pair(wayId, geometry))
       }

@@ -1,3 +1,5 @@
 package org.trailcatalog.importers.pbf;
 
-public record Way(long id, int type, String name, long[] nodes) {}
+import java.util.List;
+
+public record Way(long id, int type, String name, List<LatLngE7> points) {}

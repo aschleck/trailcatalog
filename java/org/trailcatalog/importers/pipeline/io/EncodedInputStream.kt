@@ -1,6 +1,8 @@
 package org.trailcatalog.importers.pipeline.io
 
 import java.io.InputStream
+import java.lang.reflect.Method
+import java.nio.ByteBuffer
 import java.nio.MappedByteBuffer
 import kotlin.math.min
 
@@ -36,6 +38,10 @@ class EncodedInputStream(private val buffer: MappedByteBuffer) : InputStream() {
     return count
   }
 
+  fun readDouble(): Double {
+    return Double.fromBits(readLong())
+  }
+
   fun readInt(): Int {
     return (buffer.get().toInt() and 0xFF) or
         ((buffer.get().toInt() and 0xFF) shl 8) or
@@ -65,5 +71,29 @@ class EncodedInputStream(private val buffer: MappedByteBuffer) : InputStream() {
     }
     i = i or v.shl(shift)
     return i
+  }
+
+  override fun close() {
+    close(buffer)
+  }
+
+  companion object {
+
+    private val unsafe: Any
+    private val invokeCleaner: Method
+
+    init {
+      val unsafeClazz = Class.forName("sun.misc.Unsafe")
+      unsafe = unsafeClazz.getDeclaredField("theUnsafe").apply {
+        isAccessible = true
+      }.get(null)
+      invokeCleaner = unsafeClazz.getMethod("invokeCleaner", ByteBuffer::class.java).apply {
+        isAccessible = true
+      }
+    }
+
+    private fun close(buffer: MappedByteBuffer) {
+      invokeCleaner.invoke(unsafe, buffer)
+    }
   }
 }

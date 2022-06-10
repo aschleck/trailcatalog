@@ -4,7 +4,28 @@ package org.trailcatalog.models
 // parent.id * ENUM_SIZE + 1 to parent.id * ENUM_SIZE + ENUM_SIZE.
 private const val ENUM_SIZE = 64
 
-enum class RelationCategory(val id: Int) {
+interface Category<T : Category<T>> {
+
+  val id: Int
+
+  fun coerceAtLeast(minimumValue: T?): T {
+    return if (minimumValue != null && id < minimumValue.id) {
+      minimumValue
+    } else {
+      this as T
+    }
+  }
+
+  fun isParentOf(other: Int): Boolean {
+    return aDescendsB(other, id)
+  }
+
+  fun isParentOf(category: T): Boolean {
+    return aDescendsB(category.id, id)
+  }
+}
+
+enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
   ANY(0),
     BOUNDARY(ANY.id * ENUM_SIZE + 1),
       BOUNDARY_ABORIGINAL_LANDS(BOUNDARY.id * ENUM_SIZE + 1),
@@ -55,21 +76,9 @@ enum class RelationCategory(val id: Int) {
         TRAIL_RUNNING(TRAIL.id * ENUM_SIZE + 9),
         TRAIL_SKIING(TRAIL.id * ENUM_SIZE + 10),
   ;
-
-  fun coerceAtLeast(minimumValue: RelationCategory?): RelationCategory {
-    return if (minimumValue != null && id < minimumValue.id) {
-      minimumValue
-    } else {
-      this
-    }
-  }
-
-  fun isParentOf(category: RelationCategory): Boolean {
-    return aDescendsB(category.id, id)
-  }
 }
 
-enum class WayCategory(val id: Int) {
+enum class WayCategory(override val id: Int) : Category<WayCategory> {
   ANY(0),
     HIGHWAY(ANY.id * ENUM_SIZE + 1),
       ROAD(HIGHWAY.id * ENUM_SIZE + 1),
@@ -116,18 +125,6 @@ enum class WayCategory(val id: Int) {
       PISTE_SKI_JUMP(PISTE.id * ENUM_SIZE + 8),
       PISTE_CONNECTION(PISTE.id * ENUM_SIZE + 9),
   ;
-
-  fun coerceAtLeast(minimumValue: WayCategory?): WayCategory {
-    return if (minimumValue != null && id < minimumValue.id) {
-      minimumValue
-    } else {
-      this
-    }
-  }
-
-  fun isParentOf(category: WayCategory): Boolean {
-    return aDescendsB(category.id, id)
-  }
 }
 
 private fun aDescendsB(a: Int, b: Int): Boolean {

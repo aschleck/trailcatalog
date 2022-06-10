@@ -2,7 +2,6 @@ package org.trailcatalog.importers.pbf
 
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.PStage
-import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.createPMap
 import org.trailcatalog.proto.RelationGeometry
@@ -12,21 +11,25 @@ import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.NODE_ID
 import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.RELATION_ID
 import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.WAY_ID
 import org.trailcatalog.proto.WayGeometry
+import java.util.concurrent.atomic.AtomicInteger
 
 class ExtractRelationGeometriesWithWays
   : PStage<PMap<Long, Relation>, PMap<Long, RelationGeometry>>() {
 
-  override fun act(input: PMap<Long, Relation>): () -> PMap<Long, RelationGeometry> {
+  override fun act(input: PMap<Long, Relation>, handles: AtomicInteger): () -> PMap<Long, RelationGeometry> {
     return createPMap(
         "ExtractRelationGeometriesWithWays",
         TypeToken.of(Long::class.java),
         TypeToken.of(RelationGeometry::class.java),
-        estimateSize(input.estimatedByteSize())) { emitter ->
+        estimateSize(input.estimatedByteSize()),
+        handles) { emitter ->
+      // How big can this really be anyway...?
       val inMemory = HashMap<Long, RelationSkeleton>()
       while (input.hasNext()) {
         val relation = input.next().values[0]
         inMemory[relation.id] = relation.skeleton
       }
+      input.close()
 
       val used = HashSet<Long>()
       for (id in inMemory.keys) {
@@ -44,7 +47,7 @@ private fun inflate(
     used: MutableSet<Long>,
 ): RelationGeometry? {
   if (used.contains(id)) {
-    println("relation ${id} was has a cyclic usage")
+    println("relation ${id} has a cyclic usage")
     return null
   }
 

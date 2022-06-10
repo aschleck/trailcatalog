@@ -13,6 +13,7 @@ kt_jvm_library(
     name = "import_lib",
     srcs = glob(["*.kt"]),
     deps = [
+        ":importer_java",
         "//java/org/trailcatalog:pg_support",
         "//java/org/trailcatalog/importers/pbf",
         "//java/org/trailcatalog/importers/pbf:pbf_java",
@@ -29,5 +30,13 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_postgresql_postgresql",
+    ],
+)
+
+java_library(
+    name = "importer_java",
+    srcs = glob(["*.java"]),
+    deps = [
+        "//java/org/trailcatalog/importers/pbf:pbf_java",
     ],
 )

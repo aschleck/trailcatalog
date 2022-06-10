@@ -6,13 +6,14 @@ import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 
 class MakeWayGeometries
-  : PMapTransformer<PEntry<Long, Pair<List<Way>, List<Node>>>, Long, List<LatLngE7>>(
+  : PMapTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Node>>>, Long, Way>(
     "MakeWayGeometries",
     TypeToken.of(Long::class.java),
-    object : TypeToken<List<LatLngE7>>() {}) {
+    TypeToken.of(Way::class.java),
+  ) {
 
   override fun act(
-      input: PEntry<Long, Pair<List<Way>, List<Node>>>, emitter: Emitter2<Long, List<LatLngE7>>) {
+      input: PEntry<Long, Pair<List<WaySkeleton>, List<Node>>>, emitter: Emitter2<Long, Way>) {
     val way = input.values.stream().flatMap { it.first.stream() }.findFirst().orElse(null) ?: return
 
     val mapped = HashMap<Long, LatLngE7>()
@@ -26,7 +27,7 @@ class MakeWayGeometries
     for (node in way.nodes) {
       geometry.add(mapped[node] ?: return)
     }
-    emitter.emit(way.id, geometry)
+    emitter.emit(way.id, Way(way.id, way.type, way.name, geometry))
   }
 
   override fun estimateRatio(): Double {

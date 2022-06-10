@@ -1,6 +1,8 @@
 package org.trailcatalog.importers.pipeline.collections
 
-interface PCollection<T> : Iterator<T> {
+import java.io.Closeable
+
+interface PCollection<T> : Closeable, Iterator<T> {
 
   fun estimatedByteSize(): Long
 }

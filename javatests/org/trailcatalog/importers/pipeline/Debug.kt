@@ -10,5 +10,6 @@ class Debug<T : PCollection<*>> : PSink<T>() {
     while (input.hasNext()) {
       values.add(input.next().toString())
     }
+    input.close()
   }
 }
