@@ -5,7 +5,6 @@ export class Path {
       readonly id: bigint,
       readonly type: number,
       readonly bound: PixelRect,
-      readonly trails: bigint[],
       readonly line: Float32Array|Float64Array,
   ) {}
 }

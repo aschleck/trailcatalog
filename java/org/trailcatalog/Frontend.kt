@@ -4,7 +4,6 @@ import com.google.common.geometry.S2CellId
 import com.google.common.io.LittleEndianDataOutputStream
 import io.javalin.Javalin
 import io.javalin.http.Context
-import org.trailcatalog.models.TrailVisibility
 import org.trailcatalog.s2.SimpleS2
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -13,6 +12,7 @@ import kotlin.math.ln
 import kotlin.math.sin
 
 val connectionSource = createConnectionSource()
+val epochTracker = EpochTracker(connectionSource)
 
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)
@@ -22,7 +22,7 @@ fun main(args: Array<String>) {
 
 data class WireBoundary(val id: Long, val type: Int, val name: String)
 
-data class WirePath(val id: Long, val type: Int, val trails: MutableList<Long>, val vertices: ByteArray)
+data class WirePath(val id: Long, val type: Int, val vertices: ByteArray)
 
 data class WireTrail(
   val id: Long,
@@ -78,32 +78,32 @@ fun fetchDetail(ctx: Context) {
   connectionSource.connection.use {
     val query = if (cell.level() >= SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL) {
       it.prepareStatement(
-          "SELECT p.id, p.type, p.lat_lng_degrees, pit.trail_id "
+          "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
-              + "JOIN paths_in_trails pit ON p.id = pit.path_id "
-              + "JOIN trails t ON pit.trail_id = t.id "
+              + "JOIN paths_in_trails pit ON p.id = pit.path_id AND p.epoch = pit.epoch "
               + "WHERE "
-              + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?)) "
-              + "AND t.cell != -1 "
-              + "AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
+              + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?))"
+              + "AND p.epoch = ? "
+      ).apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
         setLong(1, min.id())
         setLong(2, max.id())
         setLong(3, min.id() + Long.MIN_VALUE)
         setLong(4, max.id() + Long.MIN_VALUE)
+        setInt(5, epochTracker.epoch)
       }
     } else {
       it.prepareStatement(
-          "SELECT p.id, p.type, p.lat_lng_degrees, pit.trail_id "
+          "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
-              + "JOIN paths_in_trails pit ON p.id = pit.path_id "
-              + "JOIN trails t ON pit.trail_id = t.id "
+              + "JOIN paths_in_trails pit ON p.id = pit.path_id AND p.epoch = pit.epoch "
               + "WHERE "
               + "p.cell = ? "
-              + "AND t.cell != -1 "
-              + "AND t.visibility = ${TrailVisibility.VISIBLE.id}").apply {
+              + "AND p.epoch = ? "
+      ).apply {
         setLong(1, cell.id())
+        setInt(2, epochTracker.epoch)
       }
     }
     val results = query.executeQuery()
@@ -113,11 +113,9 @@ fun fetchDetail(ctx: Context) {
         paths[id] = WirePath(
             id = id,
             type = results.getInt(2),
-            trails = ArrayList(),
             vertices = project(results.getBytes(3)),
         )
       }
-      paths[id]!!.trails.add(results.getLong(4))
     }
   }
 
@@ -129,10 +127,6 @@ fun fetchDetail(ctx: Context) {
   for (path in paths.values) {
     output.writeLong(path.id)
     output.writeInt(path.type)
-    output.writeInt(path.trails.size)
-    for (trail in path.trails) {
-      output.writeLong(trail)
-    }
     output.writeInt(path.vertices.size)
     output.flush()
     bytes.align(4)
@@ -175,7 +169,7 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
               + (if (boundary != null) "JOIN trails_in_boundaries tib ON t.id = tib.trail_id " else "")
               + "WHERE "
               + "((cell >= ? AND cell <= ?) OR (cell >= ? AND cell <= ?)) "
-              + "AND visibility = ${TrailVisibility.VISIBLE.id} "
+              + "AND t.epoch = ?"
               + (if (boundary != null) "AND tib.boundary_id = ?" else "")).apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
@@ -183,8 +177,9 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
         setLong(2, max.id())
         setLong(3, min.id() + Long.MIN_VALUE)
         setLong(4, max.id() + Long.MIN_VALUE)
+        setInt(5, epochTracker.epoch)
         if (boundary != null) {
-          setLong(5, boundary)
+          setLong(6, boundary)
         }
       }
     } else {
@@ -200,18 +195,23 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
               + "FROM trails t "
               + (if (boundary != null) "JOIN trails_in_boundaries tib ON t.id = tib.trail_id " else "")
               + "WHERE "
-              + "cell = ? AND visibility = ${TrailVisibility.VISIBLE.id} "
+              + "t.cell = ? "
+              + "AND t.epoch = ? "
               + (if (boundary != null) "AND tib.boundary_id = ?" else "")).apply {
         setLong(1, cell.id())
+        setInt(2, epochTracker.epoch)
         if (boundary != null) {
-          setLong(2, boundary)
+          setLong(3, boundary)
         }
       }
     }
     val results = query.executeQuery()
     while (results.next()) {
       val pathOffset = if (includePaths) 1 else 0
-      val projected = project(results.getDouble(4 + pathOffset), results.getDouble(5 + pathOffset))
+      val projected =
+          project(
+              results.getInt(4 + pathOffset) / 10_000_000.0,
+              results.getInt(5 + pathOffset) / 10_000_000.0)
 
       trails.add(
           WireTrail(
@@ -237,11 +237,13 @@ class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
 }
 
 private fun project(latLngDegrees: ByteArray): ByteArray {
-  val degrees = ByteBuffer.wrap(latLngDegrees).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer()
-  val projected = ByteBuffer.allocate(latLngDegrees.size / 2).order(ByteOrder.LITTLE_ENDIAN)
+  val degrees = ByteBuffer.wrap(latLngDegrees).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer()
+  val projected = ByteBuffer.allocate(latLngDegrees.size).order(ByteOrder.LITTLE_ENDIAN)
   projected.asFloatBuffer().let {
     for (i in (0 until it.capacity()).step(2)) {
-      val mercator = project(degrees.get(i), degrees.get(i + 1))
+      // TODO(april): I think we get better precision with int E7 so we should probably do the
+      // double projection clientside instead.
+      val mercator = project(degrees.get(i) / 10_000_000.0, degrees.get(i + 1) / 10_000_000.0)
       it.put(i, mercator.first.toFloat())
       it.put(i + 1, mercator.second.toFloat())
     }

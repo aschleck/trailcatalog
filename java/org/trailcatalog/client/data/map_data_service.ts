@@ -1,8 +1,9 @@
 
-import { checkExhaustive, exists } from 'js/common/asserts';
+import { checkExhaustive } from 'js/common/asserts';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
 
+import { IdentitySetMultiMap } from '../common/collections';
 import { LittleEndianView } from '../common/little_endian_view';
 import { PixelRect, S2CellNumber, Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
@@ -34,6 +35,7 @@ export class MapDataService extends Service<EmptyDeps> {
   readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   readonly paths: Map<bigint, Path>;
+  readonly pathsToTrails: IdentitySetMultiMap<bigint, Trail>;
   readonly trails: Map<bigint, Trail>;
 
   constructor(response: ServiceResponse<EmptyDeps>) {
@@ -49,6 +51,7 @@ export class MapDataService extends Service<EmptyDeps> {
     this.metadataCells = new Map();
     this.detailCells = new Map();
     this.paths = new Map();
+    this.pathsToTrails = new IdentitySetMultiMap();
     this.trails = new Map();
 
     this.fetcher.onmessage = e => {
@@ -87,7 +90,7 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   listTrailsOnPath(path: Path): Trail[] {
-    return path.trails.map(t => this.trails.get(t)).filter(exists);
+    return this.pathsToTrails.get(path.id) ?? [];
   }
 
   updateViewport(viewport: Viewport): void {
@@ -149,12 +152,6 @@ export class MapDataService extends Service<EmptyDeps> {
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getBigInt64();
       const type = data.getInt32();
-      const pathTrailCount = data.getInt32();
-      const pathTrails = [];
-      for (let j = 0; j < pathTrailCount; ++j) {
-        pathTrails.push(data.getBigInt64());
-      }
-
       const pathVertexBytes = data.getInt32();
       const pathVertexCount = pathVertexBytes / 8;
       data.align(4);
@@ -171,7 +168,7 @@ export class MapDataService extends Service<EmptyDeps> {
         bound.high[0] = Math.max(bound.high[0], x);
         bound.high[1] = Math.max(bound.high[1], y);
       }
-      const built = new Path(id, type, bound, pathTrails, points);
+      const built = new Path(id, type, bound, points);
       this.paths.set(id, built);
       paths.push(built);
     }
@@ -183,9 +180,9 @@ export class MapDataService extends Service<EmptyDeps> {
       const nameLength = data.getInt32();
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
       const type = data.getInt32();
-      const trailWayCount = data.getInt32();
+      const pathCount = data.getInt32();
       data.align(8);
-      const trailWays = [...data.sliceBigInt64(trailWayCount)];
+      const paths = [...data.sliceBigInt64(pathCount)];
       const position: Vec2 = [data.getFloat64(), data.getFloat64()];
       const lengthMeters = data.getFloat64();
       const existing = this.trails.get(id);
@@ -193,14 +190,17 @@ export class MapDataService extends Service<EmptyDeps> {
       if (existing) {
         trail = existing;
         if (trail.paths.length === 0) {
-          trail.paths.push(...trailWays);
+          trail.paths.push(...paths);
         }
       } else {
-        trail = constructTrail(id, name, type, trailWays, position, lengthMeters);
+        trail = constructTrail(id, name, type, paths, position, lengthMeters);
         this.trails.set(id, trail);
       }
       this.trailsInDetails.add(trail);
       trails.push(trail);
+      for (const path of paths) {
+        this.pathsToTrails.put(path & ~1n, trail);
+      }
     }
 
     this.detailCells.set(id, buffer);
@@ -223,9 +223,6 @@ export class MapDataService extends Service<EmptyDeps> {
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getBigInt64();
       data.skip(4);
-      const pathTrailCount = data.getInt32();
-      data.skip(pathTrailCount * 8);
-
       const pathVertexBytes = data.getInt32();
       data.align(4);
       data.skip(pathVertexBytes);
@@ -242,12 +239,15 @@ export class MapDataService extends Service<EmptyDeps> {
       const id = data.getBigInt64();
       const nameLength = data.getInt32();
       data.skip(nameLength + 4);
-      const trailWayCount = data.getInt32();
+      const pathCount = data.getInt32();
       data.align(8);
-      data.skip(trailWayCount * 8 + 16 + 8);
+      data.skip(pathCount * 8 + 16 + 8);
 
       const entity = this.trails.get(id);
       if (entity) {
+        for (const path of entity.paths) {
+          this.pathsToTrails.delete(path, entity);
+        }
         this.trails.delete(id);
         this.trailsInDetails.delete(entity);
         trails.push(entity);

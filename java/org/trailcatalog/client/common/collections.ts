@@ -92,3 +92,64 @@ export class HashSet<V> {
     return this.values.values();
   }
 }
+
+export class IdentitySetMultiMap<K, V> {
+
+  private map: Map<K, V[]>;
+
+  constructor() {
+    this.map = new Map();
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  put(key: K, value: V): void {
+    let values = this.map.get(key);
+    if (values) {
+      for (const element of values) {
+        if (value === element) {
+          return;
+        }
+      }
+      values.push(value);
+    } else {
+      values = [value];
+      this.map.set(key, values);
+    }
+  }
+
+  delete(key: K, value: V): void {
+    const values = this.map.get(key);
+    if (!values) {
+      return;
+    }
+
+    if (values.length === 1) {
+      if (value === values[0]) {
+        this.map.delete(key);
+      }
+    } else {
+      for (let i = 0; i < values.length; ++i) {
+        if (value === values[i]) {
+          values.splice(i, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  get(key: K): V[]|undefined {
+    return this.map.get(key);
+  }
+
+  has(key: K): boolean {
+    return this.map.has(key);
+  }
+
+  [Symbol.iterator](): Iterator<[K, V[]]> {
+    return this.map[Symbol.iterator]();
+  }
+}
+

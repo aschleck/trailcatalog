@@ -1,5 +1,6 @@
 package org.trailcatalog.importers
 
+import com.zaxxer.hikari.HikariDataSource
 import org.apache.commons.text.StringEscapeUtils
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
@@ -8,7 +9,7 @@ import org.trailcatalog.importers.pipeline.collections.PCollection
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class DumpTrails(private val epoch: Int, private val connection: PgConnection)
+class DumpTrails(private val epoch: Int, private val hikari: HikariDataSource)
   : PSink<PCollection<Trail>>() {
 
   override fun write(input: PCollection<Trail>) {
@@ -44,7 +45,7 @@ class DumpTrails(private val epoch: Int, private val connection: PgConnection)
             csv.append(trail.relationId)
             csv.append("\n")
           }
-      CopyManager(connection).copyIn("COPY trails FROM STDIN WITH CSV HEADER", stream)
+      copyStreamToPg("trails", stream, hikari)
     }
   }
 }

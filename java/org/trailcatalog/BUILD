@@ -41,7 +41,10 @@ java_binary(
 
 kt_jvm_library(
     name = "frontend_lib",
-    srcs = ["Frontend.kt"],
+    srcs = [
+        "EpochTracker.kt",
+        "Frontend.kt",
+    ],
     data = [
         ":index.html",
         "//java/org/trailcatalog/static",

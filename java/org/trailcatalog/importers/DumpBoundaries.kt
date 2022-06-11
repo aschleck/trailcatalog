@@ -1,12 +1,14 @@
 package org.trailcatalog.importers
 
+import com.zaxxer.hikari.HikariDataSource
 import org.apache.commons.text.StringEscapeUtils
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PCollection
+import java.io.InputStream
 
-class DumpBoundaries(private val epoch: Int, private val connection: PgConnection)
+class DumpBoundaries(private val epoch: Int, private val hikari: HikariDataSource)
   : PSink<PCollection<Boundary>>() {
 
   override fun write(input: PCollection<Boundary>) {
@@ -29,7 +31,7 @@ class DumpBoundaries(private val epoch: Int, private val connection: PgConnectio
             csv.append(boundary.id)
             csv.append(",\n")
           }
-      CopyManager(connection).copyIn("COPY boundaries FROM STDIN WITH CSV HEADER", stream)
+      copyStreamToPg("boundaries", stream, hikari)
     }
   }
 }

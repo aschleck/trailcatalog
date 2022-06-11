@@ -2,8 +2,7 @@ package org.trailcatalog.importers
 
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
-import org.postgresql.copy.CopyManager
-import org.postgresql.jdbc.PgConnection
+import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PMap
@@ -13,7 +12,7 @@ import org.trailcatalog.s2.boundToCell
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-class DumpPaths(private val epoch: Int, private val connection: PgConnection)
+class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
   : PSink<PMap<Long, Way>>() {
 
   override fun write(input: PMap<Long, Way>) {
@@ -50,7 +49,7 @@ class DumpPaths(private val epoch: Int, private val connection: PgConnection)
             csv.append(way.id)
             csv.append("\n")
           }
-      CopyManager(connection).copyIn("COPY paths FROM STDIN WITH CSV HEADER", stream)
+      copyStreamToPg("paths", stream, hikari)
     }
   }
 }

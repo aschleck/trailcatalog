@@ -107,7 +107,7 @@ export class MapData extends Disposable implements Layer {
   }
 
   listTrailsOnPath(path: Path): Trail[] {
-    return path.trails.map(t => this.dataService.trails.get(t)).filter(exists);
+    return this.dataService.listTrailsOnPath(path);
   }
 
   queryInBounds(bounds: S2LatLngRect): Array<Path|Trail> {
@@ -229,8 +229,7 @@ export class MapData extends Disposable implements Layer {
 
         if (zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
           const type = data.getInt32();
-          const trailCount = data.getInt32();
-          data.skip(trailCount * 8);
+
           const pathVertexBytes = data.getInt32();
           const pathVertexCount = pathVertexBytes / 8;
           data.align(4);
@@ -250,8 +249,6 @@ export class MapData extends Disposable implements Layer {
           });
         } else {
           data.skip(4);
-          const trailCount = data.getInt32();
-          data.skip(trailCount * 8);
           const pathVertexBytes = data.getInt32();
           data.align(8);
           data.skip(pathVertexBytes);
@@ -453,12 +450,4 @@ function renderableDiamond(highlighted: boolean): RenderableText {
     paddingX: 0,
     paddingY: 0,
   };
-}
-
-function exists<T>(v: T|null|undefined): v is T {
-  if (v === null || v === undefined) {
-    return false;
-  } else {
-    return true;
-  }
 }

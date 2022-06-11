@@ -21,7 +21,8 @@ class ExtractWayRelationPairs : PMapTransformer<PEntry<Long, RelationGeometry>, 
     }
 
     val geometry = input.values[0]
-    inflate(input.key, geometry, emitter)
+    val seen = HashSet<Long>()
+    inflate(input.key, geometry, seen, emitter)
   }
 
   override fun estimateRatio(): Double {
@@ -32,13 +33,20 @@ class ExtractWayRelationPairs : PMapTransformer<PEntry<Long, RelationGeometry>, 
 private fun inflate(
     root: Long,
     geometry: RelationGeometry,
+    seen: MutableSet<Long>,
     emitter: Emitter2<Long, Long>,
 ) {
   for (member in geometry.membersList) {
     when (member.valueCase) {
       NODE_ID -> {}
-      RELATION -> inflate(root, member.relation, emitter)
-      WAY -> emitter.emit(member.way.wayId, root)
+      RELATION -> inflate(root, member.relation, seen, emitter)
+      WAY -> {
+        val wayId = member.way.wayId
+        if (!seen.contains(wayId)) {
+          emitter.emit(member.way.wayId, root)
+          seen.add(wayId)
+        }
+      }
       else -> throw AssertionError()
     }
   }

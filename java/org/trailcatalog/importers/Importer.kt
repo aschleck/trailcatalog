@@ -1,7 +1,9 @@
 package org.trailcatalog.importers
 
 import com.google.common.reflect.TypeToken
+import com.zaxxer.hikari.HikariDataSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
 import org.trailcatalog.createConnectionSource
 import org.trailcatalog.importers.pipeline.groupBy
@@ -19,12 +21,13 @@ import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
 import org.trailcatalog.importers.pbf.PbfBlockReader
 import org.trailcatalog.importers.pbf.registerPbfSerializers
+import org.trailcatalog.importers.pipeline.PMapTransformer
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
 import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
+import java.io.InputStream
 import java.nio.file.Path
-import java.sql.Connection
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -108,17 +111,17 @@ fun main(args: Array<String>) {
   })
 
   createConnectionSource(syncCommit = false).use { hikari ->
-    hikari.connection.use { connection ->
-      processPbfs(fetchSources(connection), connection.unwrap(PgConnection::class.java))
-    }
+    processPbfs(fetchSources(hikari), hikari)
   }
 }
 
-fun fetchSources(connection: Connection): Pair<Int, List<Path>> {
+fun fetchSources(hikari: HikariDataSource): Pair<Int, List<Path>> {
   val sources = ArrayList<String>()
-  connection.prepareStatement("SELECT path FROM geofabrik_sources").executeQuery().use {
-    while (it.next()) {
-      sources.add(it.getString(1))
+  hikari.connection.use { connection ->
+    connection.prepareStatement("SELECT path FROM geofabrik_sources").executeQuery().use {
+      while (it.next()) {
+        sources.add(it.getString(1))
+      }
     }
   }
 
@@ -141,7 +144,7 @@ fun fetchSources(connection: Connection): Pair<Int, List<Path>> {
   return Pair(epoch, paths)
 }
 
-fun processPbfs(input: Pair<Int, List<Path>>, connection: PgConnection) {
+fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
   val (epoch, pbfs) = input
 
   val pipeline = Pipeline()
@@ -169,7 +172,7 @@ fun processPbfs(input: Pair<Int, List<Path>>, connection: PgConnection) {
       pipeline
           .join2("JoinWaysForGeometry", ways, waysToPoints)
           .then(MakeWayGeometries())
-  waysWithGeometry.write(DumpPaths(epoch, connection))
+  waysWithGeometry.write(DumpPaths(epoch, hikari))
   val relations =
       pipeline.cat(
           pbfs.map { p ->
@@ -195,10 +198,37 @@ fun processPbfs(input: Pair<Int, List<Path>>, connection: PgConnection) {
       pipeline.join2("JoinRelationsWithGeometry", relations, relationsGeometryById)
   relationsWithGeometry
       .then(CreateBoundaries())
-      .write(DumpBoundaries(epoch, connection))
-  relationsWithGeometry
-      .then(CreateTrails())
-      .write(DumpTrails(epoch, connection))
+      .write(DumpBoundaries(epoch, hikari))
+  val trails = relationsWithGeometry.then(CreateTrails())
+  trails.write(DumpPathsInTrails(epoch, hikari))
+  trails.write(DumpTrails(epoch, hikari))
 
   pipeline.execute()
+
+  hikari.connection.use {
+    println("Updating epoch")
+    it.prepareStatement("INSERT INTO active_epoch (epoch) VALUES (?)").apply {
+      setInt(1, epoch)
+    }.execute()
+    println("Cleaning up old epochs")
+    for (table in listOf(
+        "active_epoch",
+        "boundaries",
+        "paths",
+        "paths_in_trails",
+        "trails",
+        "trails_in_boundaries",
+    )) {
+      it.prepareStatement("DELETE FROM ${table} WHERE epoch < ?").apply {
+        setInt(1, epoch)
+      }.execute()
+    }
+  }
+}
+
+fun copyStreamToPg(table: String, stream: InputStream, hikari: HikariDataSource) {
+  hikari.connection.use { connection ->
+    val pg = connection.unwrap(PgConnection::class.java)
+    CopyManager(pg).copyIn("COPY ${table} FROM STDIN WITH CSV HEADER", stream)
+  }
 }

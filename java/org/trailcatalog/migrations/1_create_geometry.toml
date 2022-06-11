@@ -70,38 +70,8 @@ type = "add_index"
 table = "boundaries"
 
   [actions.index]
-  name = "boundaries_by_cell_idx"
-  columns = ["cell"]
-
-[[actions]]
-type = "create_table"
-name = "boundaries_in_boundaries"
-primary_key = ["parent_id", "child_id", "epoch"]
-
-  [[actions.columns]]
-  name = "parent_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "child_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "epoch"
-  nullable = false
-  type = "INT"
-
-  [[actions.foreign_key]]
-  columns = ["parent_id"]
-  referenced_table = "boundaries"
-  referenced_columns = ["id"]
-
-  [[actions.foreign_key]]
-  columns = ["child_id"]
-  referenced_table = "boundaries"
-  referenced_columns = ["id"]
+  name = "boundaries_by_cell_epoch_idx"
+  columns = ["cell", "epoch"]
 
 [[actions]]
 type = "create_table"
@@ -138,18 +108,43 @@ primary_key = ["id", "epoch"]
   nullable = false
   type = "BIGINT"
 
-  [[actions.foreign_key]]
-  columns = ["source_way"]
-  referenced_table = "ways"
-  referenced_columns = ["id"]
-
 [[actions]]
 type = "add_index"
 table = "paths"
 
   [actions.index]
-  name = "paths_by_cell_idx"
-  columns = ["cell"]
+  name = "paths_by_cell_epoch_idx"
+  columns = ["cell", "epoch"]
+
+# This table is necessary because it allows us to filter out paths that are not part of a trail when
+# loading data.
+[[actions]]
+type = "create_table"
+name = "paths_in_trails"
+primary_key = ["path_id", "trail_id", "epoch"]
+
+  [[actions.columns]]
+  name = "path_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "trail_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+[[actions]]
+type = "add_index"
+table = "paths_in_trails"
+
+  [actions.index]
+  name = "paths_in_trails_by_path_id_epoch_idx"
+  columns = ["path_id", "epoch"]
 
 [[actions]]
 type = "create_table"
@@ -226,8 +221,8 @@ type = "add_index"
 table = "trails"
 
   [actions.index]
-  name = "trails_by_cell_idx"
-  columns = ["cell"]
+  name = "trails_by_cell_epoch_idx"
+  columns = ["cell", "epoch"]
 
 [[actions]]
 type = "create_table"
@@ -249,20 +244,10 @@ primary_key = ["boundary_id", "trail_id", "epoch"]
   nullable = false
   type = "INT"
 
-  [[actions.foreign_key]]
-  columns = ["boundary_id"]
-  referenced_table = "boundaries"
-  referenced_columns = ["id"]
-
-  [[actions.foreign_key]]
-  columns = ["trail_id"]
-  referenced_table = "trails"
-  referenced_columns = ["id"]
-
 [[actions]]
 type = "add_index"
 table = "trails_in_boundaries"
 
   [actions.index]
-  name = "trails_in_boundaries_by_boundary_idx"
-  columns = ["boundary_id"]
+  name = "trails_in_boundaries_by_boundary_epoch_idx"
+  columns = ["boundary_id", "epoch"]

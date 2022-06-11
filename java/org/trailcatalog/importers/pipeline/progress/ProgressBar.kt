@@ -12,6 +12,7 @@ fun longProgress(context: String, fn: (progress: LongProgress) -> Unit) {
 
 private class ProgressBar(private val context: String, private val progress: Progress) : Closeable {
 
+  private val lock = Object()
   private val start = System.currentTimeMillis()
   private var active = true
 
@@ -21,22 +22,22 @@ private class ProgressBar(private val context: String, private val progress: Pro
       while (running) {
         Thread.sleep(500)
 
-        synchronized (active) {
-          running = active
-        }
-
-        if (active) {
-          print("\r${message()}")
+        synchronized (lock) {
+          if (active) {
+            print("\r${message()}")
+          } else {
+            running = false
+          }
         }
       }
-      println("\r${message()}")
     }.start()
   }
 
   override fun close() {
-    synchronized(active) {
+    synchronized (lock) {
       active = false
     }
+    println("\r${message()}")
   }
 
   private fun message(): String {

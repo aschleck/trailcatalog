@@ -1,6 +1,7 @@
 package org.trailcatalog.importers
 
 import com.google.common.collect.ImmutableMultimap
+import com.google.common.collect.ImmutableSetMultimap
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
@@ -37,7 +38,11 @@ class CreateTrails
     val ordered = ArrayList<Long>()
     val mapped = HashMap<Long, List<LatLngE7>>()
     flattenWays(geometries[0], ordered, mapped)
-    val orientedPathIds = orientPaths(ordered, mapped)
+    var orientedPathIds = orientPaths(relation.id, ordered, mapped)
+    if (orientedPathIds == null) {
+      println("Unable to orient ${relation.id}")
+      orientedPathIds = ordered.toLongArray()
+    }
     val polyline = pathsToPolyline(orientedPathIds, mapped)
     val cell = boundToCell(polyline.rectBound).id()
     val center = polyline.interpolate(0.5).toLatLngE7()
@@ -75,8 +80,9 @@ private fun flattenWays(
 }
 
 private fun orientPaths(
+    trailId: Long,
     ordered: List<Long>,
-    pathPolylines: HashMap<Long, List<LatLngE7>>): LongArray {
+    pathPolylines: HashMap<Long, List<LatLngE7>>): LongArray? {
   val orientedPathIds = LongArray(ordered.size)
   var globallyAligned = true
   if (ordered.size > 2) {
@@ -152,11 +158,15 @@ private fun orientPaths(
     orientedPathIds[0] = ordered[0]
   }
 
-  if (!globallyAligned) {
-    globallyAlign(orientedPathIds, pathPolylines)
+  if (globallyAligned) {
+    return orientedPathIds
+  } else {
+    if (globallyAlign(trailId, orientedPathIds, pathPolylines)) {
+      return orientedPathIds
+    } else {
+      return null
+    }
   }
-
-  return orientedPathIds
 }
 
 private fun checkAligned(
@@ -181,60 +191,80 @@ private fun checkAligned(
 }
 
 private fun globallyAlign(
-    orientedPathIds: LongArray, pathPolylines: Map<Long, List<LatLngE7>>) {
-  val starts = ImmutableMultimap.Builder<LatLngE7, Long>()
+    trailId: Long, orientedPathIds: LongArray, pathPolylines: Map<Long, List<LatLngE7>>): Boolean {
+  // All the possible places we can start a trail from
+  val starts = ImmutableSetMultimap.Builder<LatLngE7, Long>()
+  // The count of times a path (forward or reverse) can be used.
   val uses = HashMap<Long, Int>()
+
+  // Seed all possible starts
   for (id in orientedPathIds) {
-    val forward = id and 1L.inv()
+    val forward = id.and(1L.inv())
     uses[forward] = (uses[forward] ?: 0) + 1
     val polyline = pathPolylines[forward]!!
     starts.put(polyline[0], forward)
     starts.put(polyline[polyline.size - 1], id or 1L)
   }
-
   val builtStarts = starts.build()
+
+  // Wouldn't it be great if the first path was the start?
   val firstGuess = orientedPathIds[0]
-  if (canTracePath(firstGuess, orientedPathIds, builtStarts, uses, pathPolylines) ||
-      canTracePath(firstGuess xor 1L, orientedPathIds, builtStarts, uses, pathPolylines)) {
-    return
+  if (canTracePath(trailId, firstGuess, orientedPathIds, builtStarts, uses, pathPolylines) ||
+      canTracePath(trailId, firstGuess xor 1L, orientedPathIds, builtStarts, uses, pathPolylines)) {
+    return true
   }
 
   for (start in builtStarts.keys()) {
-    if (builtStarts[start].size > 1) {
-      continue
-    }
     if (
         canTracePath(
+            trailId,
             builtStarts[start].iterator().next(),
             orientedPathIds,
             builtStarts,
             uses,
             pathPolylines)) {
-      return
+      return true
     }
   }
+
+  return false
 }
 
 fun canTracePath(
+    trailId: Long,
     start: Long,
     orientedPathIds: LongArray,
     starts: ImmutableMultimap<LatLngE7, Long>,
-    uses: Map<Long, Int>,
+    allowedUses: Map<Long, Int>,
     pathPolylines: Map<Long, List<LatLngE7>>): Boolean {
   val stack = Stack<Pair<Long, Int>>()
   val trail = ArrayList<Long>()
+  val actualUses = HashMap(allowedUses.keys.map { it to 0 }.toMap())
+
   stack.push(Pair(start, 1))
   var success = false
+  val startTime = System.currentTimeMillis()
+  val timeoutSeconds = 30
   while (!stack.isEmpty()) {
+    if ((System.currentTimeMillis() - startTime) / 1000 > timeoutSeconds) {
+      println(
+          "Spent more than ${timeoutSeconds} seconds tracing ${trailId} starting at ${start}, " +
+          "giving up")
+      return false
+    }
+
     val (cursor, depth) = stack.pop()
     trail.add(cursor)
+    val cursorForward = cursor.and(1L.inv())
+    actualUses[cursorForward] = actualUses[cursorForward]!! + 1
     if (depth == orientedPathIds.size) {
       success = true
       break
     }
 
     while (trail.size > depth) {
-      trail.removeLast()
+      val forward = trail.removeLast().and(1L.inv())
+      actualUses[forward] = actualUses[forward]!! - 1
     }
 
     val polyline = pathPolylines[cursor and 1L.inv()]!!
@@ -245,7 +275,8 @@ fun canTracePath(
     }
     for (candidate in starts[end]) {
       val forward = candidate and 1L.inv()
-      if (trail.count { stop -> forward == (stop and 1L.inv()) } < uses[forward] ?: 0) {
+      // Check to make sure if we use this candidate we haven't exceeded our uses
+      if (actualUses[forward]!! < allowedUses[forward]!!) {
         stack.push(Pair(candidate, depth + 1))
       }
     }

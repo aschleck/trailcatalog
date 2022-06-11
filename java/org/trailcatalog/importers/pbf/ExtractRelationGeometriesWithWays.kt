@@ -33,7 +33,7 @@ class ExtractRelationGeometriesWithWays
 
       val used = HashSet<Long>()
       for (id in inMemory.keys) {
-        val geometry = inflate(id, inMemory, used) ?: continue
+        val geometry = inflate(id, id, inMemory, used) ?: continue
         emitter.emit(id, geometry)
         used.clear()
       }
@@ -43,11 +43,12 @@ class ExtractRelationGeometriesWithWays
 
 private fun inflate(
     id: Long,
+    from: Long,
     relations: Map<Long, RelationSkeleton>,
     used: MutableSet<Long>,
 ): RelationGeometry? {
   if (used.contains(id)) {
-    println("relation ${id} has a cyclic usage")
+    println("relation ${id} has a cyclic usage from ${from}")
     return null
   }
 
@@ -62,7 +63,7 @@ private fun inflate(
               RelationMember.newBuilder()
                   .setFunction(member.function)
                   .setRelation(
-                      inflate(member.relationId, relations, used) ?: return null))
+                      inflate(member.relationId, from, relations, used) ?: return null))
       WAY_ID ->
         geometry.addMembers(
             RelationMember.newBuilder()
