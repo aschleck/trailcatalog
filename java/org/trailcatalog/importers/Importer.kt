@@ -21,11 +21,13 @@ import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
 import org.trailcatalog.importers.pbf.PbfBlockReader
 import org.trailcatalog.importers.pbf.registerPbfSerializers
-import org.trailcatalog.importers.pipeline.PMapTransformer
+import org.trailcatalog.importers.pipeline.collections.HEAP_DUMP_THRESHOLD
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
 import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
+import org.trailcatalog.importers.pipeline.io.BUFFER_SIZE
+import org.trailcatalog.importers.pipeline.io.FLUSH_THRESHOLD
 import java.io.InputStream
 import java.nio.file.Path
 import java.time.LocalDateTime
@@ -110,12 +112,39 @@ fun main(args: Array<String>) {
     }
   })
 
+  var i = 0
+  var epoch = -1
+  while (i < args.size) {
+    when (args[i]) {
+      "--block_size" -> {
+        FLUSH_THRESHOLD = args[i + 1].toInt()
+        i += 1
+      }
+      "--buffer_size" -> {
+        BUFFER_SIZE = args[i + 1].toInt()
+        i += 1
+      }
+      "--epoch" -> {
+        epoch = args[i + 1].toInt()
+        i += 1
+      }
+      "--heap_dump_threshold" -> {
+        HEAP_DUMP_THRESHOLD = args[i + 1].toInt()
+        i += 1
+      }
+      else -> {
+        throw RuntimeException("Unknown argument ${args[i]}")
+      }
+    }
+    i += 1
+  }
+
   createConnectionSource(syncCommit = false).use { hikari ->
-    processPbfs(fetchSources(hikari), hikari)
+    processPbfs(fetchSources(epoch, hikari), hikari)
   }
 }
 
-fun fetchSources(hikari: HikariDataSource): Pair<Int, List<Path>> {
+fun fetchSources(maybeEpoch: Int, hikari: HikariDataSource): Pair<Int, List<Path>> {
   val sources = ArrayList<String>()
   hikari.connection.use { connection ->
     connection.prepareStatement("SELECT path FROM geofabrik_sources").executeQuery().use {
@@ -126,7 +155,9 @@ fun fetchSources(hikari: HikariDataSource): Pair<Int, List<Path>> {
   }
 
   val now = LocalDateTime.now(ZoneOffset.UTC)
-  val epoch = if (now.hour >= 1 || now.minute >= 15) {
+  val epoch = if (maybeEpoch > 0) {
+    maybeEpoch
+  } else if (now.hour >= 1 || now.minute >= 15) {
     // TODO(april): rollback month
     (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
   } else {

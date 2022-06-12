@@ -5,8 +5,8 @@ import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
-private const val BUFFER_SIZE = 8 * 1024 * 1024
-private const val FLUSH_THRESHOLD = 64 * 1024
+var BUFFER_SIZE = 8 * 1024 * 1024
+var FLUSH_THRESHOLD = 64 * 1024
 
 data class Extents(val start: Long, val length: Long)
 
@@ -102,7 +102,7 @@ class EncodedOutputStream(private val channel: FileChannel) : OutputStream() {
     if (buffer.position() >= FLUSH_THRESHOLD) {
       flush()
 
-      if (position - start > 2_147_000_000) {
+      if (position - start > 2_000_000_000) {
         shard()
       }
     }

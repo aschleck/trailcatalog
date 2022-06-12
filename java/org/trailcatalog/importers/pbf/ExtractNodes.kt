@@ -2,10 +2,10 @@ package org.trailcatalog.importers.pbf
 
 import com.google.common.reflect.TypeToken
 import crosby.binary.Osmformat.PrimitiveBlock
-import org.trailcatalog.importers.pipeline.PSortedTransformer
+import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 
-class ExtractNodes : PSortedTransformer<PrimitiveBlock, Node>(TypeToken.of(Node::class.java)) {
+class ExtractNodes : PTransformer<PrimitiveBlock, Node>(TypeToken.of(Node::class.java)) {
 
   override fun act(input: PrimitiveBlock, emitter: Emitter<Node>) {
     for (group in input.primitivegroupList) {

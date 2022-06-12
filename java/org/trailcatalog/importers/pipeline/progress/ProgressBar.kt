@@ -53,7 +53,7 @@ private class ProgressBar(private val context: String, private val progress: Pro
     } else if (minutes >= 1) {
       "${minutes}:${seconds.toString().padStart(2, '0')}"
     } else {
-      seconds.toString()
+      "${seconds}s"
     }
 
     val pps = progress.progressPerSecond(totalMs / 1000.0)

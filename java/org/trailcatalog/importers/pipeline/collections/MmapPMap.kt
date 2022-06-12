@@ -11,6 +11,8 @@ import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
 import java.util.concurrent.atomic.AtomicInteger
 
+var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024
+
 class MmapPMap<K : Comparable<K>, V>(
     private val maps: List<EncodedInputStream>,
     private val keySerializer: Serializer<K>,
@@ -82,12 +84,15 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
   sharded.deleteOnExit()
   val shards = RandomAccessFile(sharded, "rw").use {
     val stream = EncodedOutputStream(it.channel)
+    val runtime = Runtime.getRuntime()
+    val maxMemory = runtime.maxMemory()
     stream.use { output ->
+      // This is much slower (0.5x?) than ArrayList+sort, but ArrayList.sort uses Timsort which is
+      // not in-place. What to do? Write our own quicksort? Sounds terrible.
       val itemsInShard = ArrayList<SortKey<K, V>>()
       var shardValuesSize = 0L
 
       val dumpShard = {
-        itemsInShard.sortBy { it.key }
         for (item in itemsInShard) {
           keySerializer.write(item.key, output)
           output.writeVarInt(valueSerializer.size(item.value))
@@ -100,13 +105,21 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
         shardValuesSize = 0
       }
 
+      var lastHeapCheck = 0L
+
       val emitter = object : Emitter2<K, V> {
         override fun emit(a: K, b: V) {
           itemsInShard.add(SortKey(a, b))
           shardValuesSize += valueSerializer.size(b)
 
-          if (shardValuesSize > 100 * 1024 * 1024) {
-            dumpShard()
+          // Check the heap every 50mb.
+          if (shardValuesSize - lastHeapCheck > 50 * 1024 * 1024) {
+            val remains = maxMemory - (runtime.totalMemory() - runtime.freeMemory())
+            // If we have less than 256mb of memory, dump
+            if (remains < HEAP_DUMP_THRESHOLD) {
+              dumpShard()
+            }
+            lastHeapCheck = shardValuesSize
           }
         }
       }
@@ -234,3 +247,9 @@ private data class MergeKey<K : Comparable<K>>(
 }
 
 private data class SortKey<K : Comparable<K>, V>(val key: K, val value: V)
+  : Comparable<SortKey<K, V>> {
+
+  override fun compareTo(other: SortKey<K, V>): Int {
+    return key.compareTo(other.key)
+  }
+}

@@ -69,6 +69,7 @@ fun <T : Any> createMmapPList(
   val serializer = getSerializer(type)
   val file = File.createTempFile(cleanFilename("mmap-list-${type}"), null)
   file.deleteOnExit()
+  val startTime = System.currentTimeMillis()
   val shards = RandomAccessFile(file, "rw").use { raf ->
     val stream = EncodedOutputStream(raf.channel)
     stream.use { output ->
@@ -86,7 +87,8 @@ fun <T : Any> createMmapPList(
   }
 
   val size = if (shards.isNotEmpty()) shards[shards.size - 1].let { it.start + it.length } else 0
-  println("PList (mmap) ${type} size ${size}")
+  val seconds = (System.currentTimeMillis() - startTime) / 1000
+  println("PList (mmap) ${type} size ${size} (${seconds}s)")
 
   val fileChannel = FileChannel.open(file.toPath())
   val fileReference = FileReference(file, handles)
