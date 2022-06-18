@@ -15,7 +15,7 @@ class EncodedStreamsTest {
 
     val length = RandomAccessFile(file, "rw").use {
       it.channel.use { channel ->
-        EncodedOutputStream(channel).use { output ->
+        ChannelEncodedOutputStream(channel).use { output ->
           output.write(3)
           output.writeInt(30)
           output.writeInt(3_000)

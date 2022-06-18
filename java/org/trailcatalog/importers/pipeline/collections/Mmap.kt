@@ -1,6 +1,7 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
+import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
 import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import java.io.File
@@ -71,7 +72,7 @@ fun <T : Any> createMmapPList(
   file.deleteOnExit()
   val startTime = System.currentTimeMillis()
   val shards = RandomAccessFile(file, "rw").use { raf ->
-    val stream = EncodedOutputStream(raf.channel)
+    val stream = ChannelEncodedOutputStream(raf.channel)
     stream.use { output ->
       val emitter = object : Emitter<T> {
         override fun emit(v: T) {

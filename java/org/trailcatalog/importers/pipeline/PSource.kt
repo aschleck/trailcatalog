@@ -3,7 +3,7 @@ package org.trailcatalog.importers.pipeline
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import java.util.concurrent.atomic.AtomicInteger
 
-abstract class PSource<T : Any>() : PStage<Void?, PCollection<T>>() {
+abstract class PSource<T : Any> : PStage<Void?, PCollection<T>>() {
 
   abstract fun read(): Sequence<T>
 

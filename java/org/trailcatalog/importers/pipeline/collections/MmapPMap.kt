@@ -1,11 +1,13 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
+import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
+import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
-import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
@@ -57,6 +59,7 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
     context: String,
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
+    estimatedByteSize: Long,
     handles: AtomicInteger,
     fn: (Emitter2<K, V>) -> Unit): () -> MmapPMap<K, V> {
   if (handles.get() == 0) throw RuntimeException("${keyType} => ${valueType}")
@@ -66,7 +69,15 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
   val (shardedFile, shards) =
       emitToSortedShards(context, keyType, valueType, keySerializer, valueSerializer, fn)
   return mergeSortedShards(
-      context, keyType, valueType, shards, keySerializer, valueSerializer, handles).also {
+      context,
+      keyType,
+      valueType,
+      shards,
+      keySerializer,
+      valueSerializer,
+      estimatedByteSize,
+      handles,
+  ).also {
     shards.forEach { it.close() }
     shardedFile.delete()
   }
@@ -83,20 +94,19 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
       File.createTempFile(cleanFilename("mmap-map-sharded-${keyType}-${valueType}"), null)
   sharded.deleteOnExit()
   val shards = RandomAccessFile(sharded, "rw").use {
-    val stream = EncodedOutputStream(it.channel)
+    val stream = ChannelEncodedOutputStream(it.channel)
     val runtime = Runtime.getRuntime()
     val maxMemory = runtime.maxMemory()
     stream.use { output ->
-      // This is much slower (0.5x?) than ArrayList+sort, but ArrayList.sort uses Timsort which is
-      // not in-place. What to do? Write our own quicksort? Sounds terrible.
-      val itemsInShard = ArrayList<SortKey<K, V>>()
+      val itemsInShard = ArrayList<SortKey<K>>()
       var shardValuesSize = 0L
 
       val dumpShard = {
+        itemsInShard.sort()
         for (item in itemsInShard) {
           keySerializer.write(item.key, output)
-          output.writeVarInt(valueSerializer.size(item.value))
-          valueSerializer.write(item.value, output)
+          output.writeVarInt(item.value.size)
+          output.write(item.value)
           output.checkBufferSpace()
         }
 
@@ -109,8 +119,11 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
 
       val emitter = object : Emitter2<K, V> {
         override fun emit(a: K, b: V) {
-          itemsInShard.add(SortKey(a, b))
-          shardValuesSize += valueSerializer.size(b)
+          val size = valueSerializer.size(b)
+          val bytes = ByteBuffer.allocate(size)
+          valueSerializer.write(b, ByteBufferEncodedOutputStream(bytes))
+          itemsInShard.add(SortKey(a, bytes.array()))
+          shardValuesSize += size
 
           // Check the heap every 50mb.
           if (shardValuesSize - lastHeapCheck > 50 * 1024 * 1024) {
@@ -156,6 +169,7 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
     unmergedShards: List<EncodedInputStream>,
     keySerializer: Serializer<K>,
     valueSerializer: Serializer<V>,
+    estimatedByteSize: Long,
     handles: AtomicInteger,
 ): () -> MmapPMap<K, V> {
   val merged =
@@ -163,7 +177,7 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
   merged.deleteOnExit()
 
   val shards = RandomAccessFile(merged, "rw").use {
-    val stream = EncodedOutputStream(it.channel)
+    val stream = ChannelEncodedOutputStream(it.channel)
     stream.use { output ->
       val heap = PriorityQueue<MergeKey<K>>()
       for (shard in unmergedShards) {
@@ -224,6 +238,7 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
 
   val size = if (shards.isNotEmpty()) shards[shards.size - 1].let { it.start + it.length } else 0
   println("  PMap (mmap) ${keyType} -> ${valueType} size ${size}")
+  println("  -> estimated ${estimatedByteSize} bytes (${estimatedByteSize * 100.0 / size}%)")
 
   val postsortChannel = FileChannel.open(merged.toPath())
   val fileReference = FileReference(merged, handles)
@@ -246,10 +261,10 @@ private data class MergeKey<K : Comparable<K>>(
   }
 }
 
-private data class SortKey<K : Comparable<K>, V>(val key: K, val value: V)
-  : Comparable<SortKey<K, V>> {
+private data class SortKey<K : Comparable<K>>(val key: K, val value: ByteArray)
+  : Comparable<SortKey<K>> {
 
-  override fun compareTo(other: SortKey<K, V>): Int {
+  override fun compareTo(other: SortKey<K>): Int {
     return key.compareTo(other.key)
   }
 }

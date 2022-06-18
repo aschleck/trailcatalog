@@ -31,6 +31,6 @@ class MakeWayGeometries
   }
 
   override fun estimateRatio(): Double {
-    return 1.0
+    return 0.5
   }
 }

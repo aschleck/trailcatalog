@@ -12,8 +12,11 @@ class EpochTracker(private val hikari: HikariDataSource) {
         hikari.connection.use {
           it.prepareStatement("SELECT epoch FROM active_epoch ORDER BY epoch DESC LIMIT 1").use {
             val results = it.executeQuery()
-            results.next()
-            epoch = results.getInt(1)
+            if (results.next()) {
+              epoch = results.getInt(1)
+            } else {
+              println("Unable to find an epoch")
+            }
           }
         }
 

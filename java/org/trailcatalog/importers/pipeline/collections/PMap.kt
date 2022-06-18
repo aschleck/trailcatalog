@@ -14,5 +14,5 @@ fun <K : Comparable<K>, V : Any> createPMap(
     estimatedByteSize: Long,
     handles: AtomicInteger,
     fn: (Emitter2<K, V>) -> Unit): () -> PMap<K, V> {
-  return createMmapPMap(context, keyType, valueType, handles, fn)
+  return createMmapPMap(context, keyType, valueType, estimatedByteSize, handles, fn)
 }

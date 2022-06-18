@@ -20,4 +20,8 @@ class GatherWayNodes : PMapTransformer<PEntry<Long, Pair<List<Node>, List<Long>>
       }
     }
   }
+
+  override fun estimateRatio(): Double {
+    return 1.0
+  }
 }

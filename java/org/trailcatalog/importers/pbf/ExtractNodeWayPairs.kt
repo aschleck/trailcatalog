@@ -18,6 +18,6 @@ class ExtractNodeWayPairs : PMapTransformer<PEntry<Long, WaySkeleton>, Long, Lon
   }
 
   override fun estimateRatio(): Double {
-    return 1.0
+    return 1.3
   }
 }

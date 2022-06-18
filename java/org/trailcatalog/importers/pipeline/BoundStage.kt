@@ -47,7 +47,7 @@ inline fun <reified K : Comparable<K>, reified V : Any> BoundStage<*, out PColle
           context, object : TypeToken<K>() {}, object : TypeToken<V>() {}) {
 
     override fun estimateRatio(): Double {
-      return 2.0
+      return 1.25
     }
 
     override fun act(input: V, emitter: Emitter2<K, V>) {

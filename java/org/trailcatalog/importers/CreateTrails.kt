@@ -38,6 +38,10 @@ class CreateTrails
     val ordered = ArrayList<Long>()
     val mapped = HashMap<Long, List<LatLngE7>>()
     flattenWays(geometries[0], ordered, mapped)
+    if (ordered.isEmpty()) {
+      println("Trail ${relation.id} is empty somehow")
+      return
+    }
     var orientedPathIds = orientPaths(relation.id, ordered, mapped)
     if (orientedPathIds == null) {
       println("Unable to orient ${relation.id}")
