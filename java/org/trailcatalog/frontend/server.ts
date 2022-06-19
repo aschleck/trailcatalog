@@ -6,6 +6,7 @@ import { Properties, VElementOrPrimitive } from 'js/corgi';
 import { deepEqual } from 'js/corgi/comparisons';
 
 import { InitialDataKey } from '../client/common/ssr_aware';
+import { ViewsService } from '../client/views/views_service';
 
 global.window = {
   SERVER_SIDE_RENDER: {
@@ -31,6 +32,14 @@ server.register(fastifyRequestContextPlugin);
 
 server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
   requestContext.set('url', `https://trailcatalog.org${request.url}`);
+
+  // TODO(april): such a janky way to check for 404.
+  try {
+    ViewsService.getActiveRoute();
+  } catch (ex) {
+    reply.code(404).send('Not Found');
+    return;
+  }
 
   // First we run a tracing path to discover what data we need
   const requestedData: InitialDataKey[] = [];
@@ -73,6 +82,10 @@ server.listen({ port: 7080 }, (err, address) => {
 });
 
 function page(content: string, dataKeys: object, dataValues: object): string {
+  const data = {
+    keys: dataKeys,
+    values: dataValues,
+  };
   return `
 <!DOCTYPE html>
 <html dir="ltr" lang="en" class="h-full">
@@ -86,10 +99,7 @@ function page(content: string, dataKeys: object, dataValues: object): string {
   </head>
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
-    <script>window.INITIAL_DATA={
-      "keys":${JSON.stringify(dataKeys)},
-      "values":${JSON.stringify(dataValues)}}
-    </script>
+    <script>window.INITIAL_DATA=${JSON.stringify(data)}</script>
     <script src="/static/client.js"></script>
   </body>
 </html>
