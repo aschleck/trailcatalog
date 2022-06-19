@@ -12,7 +12,7 @@ class ExtractNodeWayPairs : PMapTransformer<PEntry<Long, WaySkeleton>, Long, Lon
 
   override fun act(input: PEntry<Long, WaySkeleton>, emitter: Emitter2<Long, Long>) {
     val way = input.values[0]
-    for (nodeId in way.nodes) {
+    for (nodeId in way.nodes.toSet()) {
       emitter.emit(nodeId, way.id)
     }
   }

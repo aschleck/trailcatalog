@@ -73,6 +73,19 @@ class EncodedInputStream(private val buffer: MappedByteBuffer) : InputStream() {
     return i
   }
 
+  fun readVarLong(): Long {
+    var l = 0L
+    var v = buffer.get().toLong()
+    var shift = 0
+    while ((v and 0x80) != 0L) {
+      l = l or v.and(0x7F).shl(shift)
+      shift += 7
+      v = buffer.get().toLong()
+    }
+    l = l or v.shl(shift)
+    return l
+  }
+
   override fun close() {
     close(buffer)
   }

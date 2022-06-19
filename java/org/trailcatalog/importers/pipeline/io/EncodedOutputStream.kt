@@ -55,11 +55,33 @@ abstract class EncodedOutputStream : OutputStream() {
     write((l ushr 56).toByte())
   }
 
+  fun writeVarLong(l: Long): Long {
+    var v = l
+    var bytes = 1L
+    while (v and 0x7F.inv() != 0L) {
+      write(v.and(0x7F).or(0x80).toByte())
+      v = v ushr 7
+      bytes += 1
+    }
+    write(v.toByte())
+    return bytes
+  }
+
   companion object {
     fun varIntSize(i: Int): Int {
       var v = i
       var bytes = 1
       while (v and 0x7F.inv() != 0) {
+        v = v ushr 7
+        bytes += 1
+      }
+      return bytes
+    }
+
+    fun varLongSize(l: Long): Int {
+      var v = l
+      var bytes = 1
+      while (v and 0x7F.inv() != 0L) {
         v = v ushr 7
         bytes += 1
       }

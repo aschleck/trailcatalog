@@ -30,18 +30,18 @@ fun registerPbfSerializers() {
   registerSerializer(TypeToken.of(Node::class.java), object : Serializer<Node> {
 
     override fun read(from: EncodedInputStream): Node {
-      val id = from.readLong()
+      val id = from.readVarLong()
       val lat = from.readInt()
       val lng = from.readInt()
       return Node(id, LatLngE7(lat, lng))
     }
 
     override fun size(v: Node): Int {
-      return 16
+      return EncodedOutputStream.varLongSize(v.id) + 8
     }
 
     override fun write(v: Node, to: EncodedOutputStream) {
-      to.writeLong(v.id)
+      to.writeVarLong(v.id)
       to.writeInt(v.latLng.lat)
       to.writeInt(v.latLng.lng)
     }
@@ -50,8 +50,8 @@ fun registerPbfSerializers() {
   registerSerializer(TypeToken.of(Relation::class.java), object : Serializer<Relation> {
 
     override fun read(from: EncodedInputStream): Relation {
-      val id = from.readLong()
-      val type = from.readInt()
+      val id = from.readVarLong()
+      val type = from.readVarInt()
       val nameLength = from.readVarInt()
       val nameBytes = ByteArray(nameLength)
       from.read(nameBytes)
@@ -62,8 +62,8 @@ fun registerPbfSerializers() {
     override fun size(v: Relation): Int {
       val nameBytes = v.name.encodeToByteArray().size
       val skeletonBytes = v.skeleton.serializedSize
-      return 8 +
-          4 +
+      return EncodedOutputStream.varLongSize(v.id) +
+          EncodedOutputStream.varIntSize(v.type) +
           EncodedOutputStream.varIntSize(nameBytes) +
           nameBytes +
           CodedOutputStream.computeUInt32SizeNoTag(skeletonBytes) +
@@ -71,8 +71,8 @@ fun registerPbfSerializers() {
     }
 
     override fun write(v: Relation, to: EncodedOutputStream) {
-      to.writeLong(v.id)
-      to.writeInt(v.type)
+      to.writeVarLong(v.id)
+      to.writeVarInt(v.type)
       val bytes = v.name.encodeToByteArray()
       to.writeVarInt(bytes.size)
       to.write(bytes)
@@ -83,8 +83,8 @@ fun registerPbfSerializers() {
   registerSerializer(TypeToken.of(Way::class.java), object : Serializer<Way> {
 
     override fun read(from: EncodedInputStream): Way {
-      val id = from.readLong()
-      val type = from.readInt()
+      val id = from.readVarLong()
+      val type = from.readVarInt()
       val nameLength = from.readVarInt()
       val nameBytes = ByteArray(nameLength)
       from.read(nameBytes)
@@ -98,8 +98,8 @@ fun registerPbfSerializers() {
 
     override fun size(v: Way): Int {
       val nameBytes = v.name.encodeToByteArray().size
-      return 8 +
-          4 +
+      return EncodedOutputStream.varLongSize(v.id) +
+          EncodedOutputStream.varIntSize(v.type) +
           EncodedOutputStream.varIntSize(nameBytes) +
           nameBytes +
           EncodedOutputStream.varIntSize(v.points.size) +
@@ -107,8 +107,8 @@ fun registerPbfSerializers() {
     }
 
     override fun write(v: Way, to: EncodedOutputStream) {
-      to.writeLong(v.id)
-      to.writeInt(v.type)
+      to.writeVarLong(v.id)
+      to.writeVarInt(v.type)
       val bytes = v.name.encodeToByteArray()
       to.writeVarInt(bytes.size)
       to.write(bytes)
@@ -123,35 +123,35 @@ fun registerPbfSerializers() {
   registerSerializer(TypeToken.of(WaySkeleton::class.java), object : Serializer<WaySkeleton> {
 
     override fun read(from: EncodedInputStream): WaySkeleton {
-      val id = from.readLong()
-      val type = from.readInt()
+      val id = from.readVarLong()
+      val type = from.readVarInt()
       val nameLength = from.readVarInt()
       val nameBytes = ByteArray(nameLength)
       from.read(nameBytes)
       val nodesLength = from.readVarInt()
       val nodes = LongArray(nodesLength)
-      (0 until nodesLength).forEach { nodes[it] = from.readLong() }
+      (0 until nodesLength).forEach { nodes[it] = from.readVarLong() }
       return WaySkeleton(id, type, nameBytes.decodeToString(), nodes)
     }
 
     override fun size(v: WaySkeleton): Int {
       val nameBytes = v.name.encodeToByteArray().size
-      return 8 +
-          4 +
+      return EncodedOutputStream.varLongSize(v.id) +
+          EncodedOutputStream.varIntSize(v.type) +
           EncodedOutputStream.varIntSize(nameBytes) +
           nameBytes +
           EncodedOutputStream.varIntSize(v.nodes.size) +
-          8 * v.nodes.size
+          v.nodes.map { EncodedOutputStream.varLongSize(it) }.sum()
     }
 
     override fun write(v: WaySkeleton, to: EncodedOutputStream) {
-      to.writeLong(v.id)
-      to.writeInt(v.type)
+      to.writeVarLong(v.id)
+      to.writeVarInt(v.type)
       val bytes = v.name.encodeToByteArray()
       to.writeVarInt(bytes.size)
       to.write(bytes)
       to.writeVarInt(v.nodes.size)
-      v.nodes.forEach { to.writeLong(it) }
+      v.nodes.forEach { to.writeVarLong(it) }
     }
   })
 }
