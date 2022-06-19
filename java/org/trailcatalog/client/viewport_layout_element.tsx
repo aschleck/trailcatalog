@@ -1,5 +1,6 @@
 import * as corgi from 'js/corgi';
 
+import { currentUrl } from './common/ssr_aware';
 import { MAP_MOVED } from './map/events';
 import { MapElement } from './map/map_element';
 
@@ -19,7 +20,7 @@ export function ViewportLayoutElement({filter, mapOverlay, sidebarContent}: {
     };
   }
 
-  const url = new URL(window.location.href);
+  const url = currentUrl();
   const lat = floatCoalesce(url.searchParams.get('lat'), 46.859369);
   const lng = floatCoalesce(url.searchParams.get('lng'), -121.747888);
   const zoom = floatCoalesce(url.searchParams.get('zoom'), 12);

@@ -2,6 +2,8 @@ import { checkExists } from 'js/common/asserts';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { Service, ServiceResponse } from 'js/corgi/service';
 
+import { currentUrl } from '../common/ssr_aware';
+
 interface BoundaryOverview {
   kind: 'boundary_overview';
   boundary: string;
@@ -33,7 +35,7 @@ type Deps = typeof ViewsService.deps;
 export class ViewsService extends Service<Deps> {
 
   static getActiveRoute(): Route {
-    const url = new URL(window.location.href);
+    const url = currentUrl();
     return checkExists(matchPath(url.pathname));
   }
 

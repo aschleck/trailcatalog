@@ -5,6 +5,7 @@ import { checkExhaustive } from '../common/asserts';
 import { reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 
+import { DETAIL_ZOOM_THRESHOLD } from './data_constants';
 import { FetchThrottler } from './fetch_throttler';
 
 export interface SetFilterRequest {
@@ -43,8 +44,6 @@ export interface UnloadCellsCommand {
 }
 
 export type FetcherCommand = LoadCellDetailCommand|LoadCellMetadataCommand|UnloadCellsCommand;
-
-export const DETAIL_ZOOM_THRESHOLD = 10;
 
 class DataFetcher {
 

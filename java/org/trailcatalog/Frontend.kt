@@ -1,5 +1,7 @@
 package org.trailcatalog
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S2CellId
 import com.google.common.io.LittleEndianDataOutputStream
 import io.javalin.Javalin
@@ -8,6 +10,7 @@ import org.trailcatalog.s2.SimpleS2
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Base64
 import kotlin.math.ln
 import kotlin.math.sin
 
@@ -16,6 +19,7 @@ val epochTracker = EpochTracker(connectionSource)
 
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)
+  app.post("/api/data", ::fetchData)
   app.get("/api/fetch_metadata/{token}", ::fetchMeta)
   app.get("/api/fetch_detail/{token}", ::fetchDetail)
 }
@@ -33,6 +37,49 @@ data class WireTrail(
   val y: Double,
   val lengthMeters: Double,
 )
+
+fun fetchData(ctx: Context) {
+  val mapper = ObjectMapper()
+  val request = mapper.readTree(ctx.bodyAsInputStream())
+  val keys = request.get("keys").elements()
+  val responses = ArrayList<HashMap<String, Any>>()
+  for (key in keys) {
+    val type = key.get("type").asText()
+    when (type) {
+      null -> throw IllegalArgumentException("Key has no type")
+      "trail" -> {
+        val data = HashMap<String, Any>()
+        val id = key.get("id").asLong()
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+                  "SELECT name, type, path_ids, center_lat_degrees, center_lng_degrees, length_meters "
+                  + "FROM trails "
+                  + "WHERE id = ? AND epoch = ?")
+              .apply {
+                setLong(1, id)
+                setInt(2, epochTracker.epoch)
+              }.executeQuery()
+          if (!results.next()) {
+            throw IllegalArgumentException("Unable to get trail ${id}")
+          }
+          data["id"] = id
+          data["name"] = results.getString(1)
+          data["type"] = results.getInt(2)
+          data["path_ids"] = String(Base64.getEncoder().encode(results.getBytes(3)))
+          data["center_degrees"] = HashMap<String, Int>().also {
+            it["lat"] = results.getInt(4)
+            it["lng"] = results.getInt(5)
+          }
+          data["length_meters"] = results.getDouble(6)
+        }
+        responses.add(data)
+      }
+    }
+  }
+  ctx.json(HashMap<String, Any>().also {
+    it["values"] = responses
+  })
+}
 
 fun fetchMeta(ctx: Context) {
   ctx.contentType("application/octet-stream")

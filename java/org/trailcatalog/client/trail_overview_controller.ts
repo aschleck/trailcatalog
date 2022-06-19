@@ -30,7 +30,7 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
     this.data = response.deps.services.data;
 
     this.updateState({
-      trail: this.data.trails.get(response.args.trailId),
+      trail: this.data.trails.get(response.args.trailId) ?? this.state.trail,
     });
   }
 }

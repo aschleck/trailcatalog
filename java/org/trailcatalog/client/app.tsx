@@ -1,6 +1,8 @@
 import { checkExhaustive, checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 
+import { isServerSide } from './common/ssr_aware';
+
 import { OverviewElement } from './overview_element';
 import { RouteController, State } from './route_controller';
 import { TrailOverviewElement } from './trail_overview_element';
@@ -11,7 +13,7 @@ import './app.css';
 
 //new Controller(document.getElementById('canvas') as HTMLCanvasElement);
 
-function App(props: {}, state: State|undefined, updateState: (newState: State) => void) {
+export function App(props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = RouteController.getInitialState();
   }
@@ -43,4 +45,6 @@ function App(props: {}, state: State|undefined, updateState: (newState: State) =
   </>;
 }
 
-corgi.appendElement(checkExists(document.getElementById('root')), <App />);
+if (!isServerSide()) {
+  corgi.hydrateTree(checkExists(document.getElementById('root')), <App />);
+}

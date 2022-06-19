@@ -27,14 +27,13 @@ pkg_tar(
 pkg_files(
     name = "frontend_data",
     srcs = [
-        ":index.html",
         "//java/org/trailcatalog/static",
     ],
     prefix = "static",
 )
 
 java_binary(
-    name = "frontend",
+    name = "api_server",
     main_class = "org.trailcatalog.FrontendKt",
     runtime_deps = [":frontend_lib"],
 )
@@ -46,7 +45,6 @@ kt_jvm_library(
         "Frontend.kt",
     ],
     data = [
-        ":index.html",
         "//java/org/trailcatalog/static",
     ],
     deps = [
@@ -54,6 +52,7 @@ kt_jvm_library(
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
         "@bazel_tools//tools/java/runfiles",
+        "@maven//:com_fasterxml_jackson_core_jackson_databind",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:io_javalin_javalin",
         "@maven//:org_slf4j_slf4j_simple",

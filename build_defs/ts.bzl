@@ -6,7 +6,9 @@ load("@npm//jest-cli:index.bzl", "jest_test")
 def esbuild_binary(
         name,
         entry_point = None,
-        deps = None):
+        deps = None,
+        platform = "browser",
+):
     has_css = native.glob(["*.css"]) != []
     esbuild(
         name = name,
@@ -15,6 +17,7 @@ def esbuild_binary(
         link_workspace_root = True,
         minify = True,
         output_css = "%s.css" % name if has_css else None,
+        platform = platform,
         sources_content = True,
         target = "es2020",
         deps = deps + [
@@ -23,7 +26,7 @@ def esbuild_binary(
     )
 
 
-def tc_ts_project(name, srcs = None, data = None, deps = None):
+def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):
     srcs = srcs or native.glob(["*.ts", "*.tsx"], exclude=["*.test.ts"])
 
     ts_project(
@@ -40,12 +43,19 @@ def tc_ts_project(name, srcs = None, data = None, deps = None):
 
     if native.glob(["*.css"]):
         copy_to_bin(
-            name = "css",
+            name = name + "_css",
             srcs = native.glob(["*.css"]),
+        )
+        native.filegroup(
+            name = "css",
+            srcs = (css_deps or []) + [
+                ":{}_css".format(name),
+            ],
         )
     else:
         native.filegroup(
             name = "css",
+            data = css_deps or [],
         )
 
     ts_project(

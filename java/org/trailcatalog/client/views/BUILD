@@ -5,6 +5,7 @@ load("//build_defs:ts.bzl", "tc_ts_project")
 tc_ts_project(
     name = "views",
     deps = [
+        "//java/org/trailcatalog/client/common",
         "//js/common",
         "//js/corgi",
         "//js/corgi/history",

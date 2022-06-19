@@ -1,6 +1,7 @@
 import { checkExists } from 'js/common/asserts';
 
 import { AnyBoundController, applyInstantiationResult, bindElementToSpec, disposeBoundElementsIn, InstantiationResult, UnboundEvents } from './binder';
+import { deepEqual } from './comparisons';
 
 export const Fragment = Symbol();
 export { bind } from './binder';
@@ -38,7 +39,7 @@ interface VElement {
   children: VElementOrPrimitive[];
 }
 
-type VElementOrPrimitive = VElement|number|string;
+export type VElementOrPrimitive = VElement|number|string;
 
 type ElementFactory = (
     props: Properties<HTMLElement>|null,
@@ -60,12 +61,29 @@ export function createVirtualElement(
     element: keyof HTMLElementTagNameMap|ElementFactory|(typeof Fragment),
     props: Properties<HTMLElement>|null,
     ...children: Array<VElementOrPrimitive|VElementOrPrimitive[]>): VElementOrPrimitive {
-  const expandChildren = [];
+  const allChildren = [];
   for (const c of children) {
     if (c instanceof Array) {
-      expandChildren.push(...c);
+      allChildren.push(...c);
     } else {
-      expandChildren.push(c);
+      allChildren.push(c);
+    }
+  }
+  // In the DOM adjacent text nodes get merged, so merge them here too.
+  const expandChildren: typeof allChildren = [];
+  for (let i = 0; i < allChildren.length; ++i) {
+    const child = allChildren[i];
+    if (child instanceof Object || i === 0) {
+      expandChildren.push(child);
+    } else if (child === '') {
+      continue;
+    } else {
+      const previous = expandChildren[expandChildren.length - 1];
+      if (!(previous instanceof Object)) {
+        expandChildren[expandChildren.length - 1] = `${previous}${child}`;
+      } else {
+        expandChildren.push(child);
+      }
     }
   }
 
@@ -348,6 +366,73 @@ export function appendElement(parent: HTMLElement, child: VElementOrPrimitive): 
   }
 }
 
+export function hydrateTree(parent: HTMLElement, tree: VElementOrPrimitive): void {
+  if (parent.childNodes.length !== 1) {
+    throw new Error("Unable to hydrate, parent has multiple children");
+  }
+
+  const result = hydrateElement(parent.childNodes[0], tree);
+  applyInstantiationResult(result);
+}
+
+function hydrateElement(root: ChildNode, element: VElementOrPrimitive): InstantiationResult {
+  if (typeof element !== 'object') {
+    return {
+      root: new Text(String(element)),
+      sideEffects: [],
+      unboundEventss: [],
+    };
+  }
+
+  if (!(root instanceof HTMLElement)) {
+    throw new Error("Cannot hydrate non-element root");
+  }
+  if (root.tagName !== element.element.toUpperCase()) {
+    throw new Error(
+        `Mismatched tag type: ${root.tagName} != ${element.element}`);
+  }
+  if (root.childNodes.length !== element.children.length) {
+    throw new Error(
+        `Mismatched child count: ${root.childNodes.length} != ${element.children.length}`);
+  }
+
+  vElementsToNodes.set(element, root);
+  let maybeSpec: AnyBoundController<HTMLElement>|undefined;
+  let unboundEventss: Array<[HTMLElement, UnboundEvents]> = [];
+
+  const props = element.props;
+  for (const [key, value] of Object.entries(props)) {
+    if (key === 'js') {
+      maybeSpec = value;
+    } else if (key === 'unboundEvents') {
+      unboundEventss.push([root, value]);
+    }
+  }
+
+  if (maybeSpec && unboundEventss.length > 0) {
+    throw new Error('Cannot specify both js and unboundEvents');
+  }
+
+  const sideEffects = [];
+
+  for (let i = 0; i < element.children.length; ++i) {
+    const childResult = hydrateElement(root.childNodes[i], element.children[i]);
+    sideEffects.push(...childResult.sideEffects);
+    unboundEventss.push(...childResult.unboundEventss);
+  }
+
+  if (maybeSpec) {
+    sideEffects.push(...bindElementToSpec(root, maybeSpec, unboundEventss));
+    unboundEventss.length = 0;
+  }
+
+  return {
+    root,
+    sideEffects,
+    unboundEventss,
+  };
+}
+
 declare global {
   namespace JSX {
     interface IntrinsicElements {
@@ -366,39 +451,5 @@ declare global {
 
 function isCorgiElement(v: unknown): v is CorgiElement {
   return v instanceof CorgiElement;
-}
-
-function deepEqual(a: unknown|undefined, b: unknown|undefined): boolean {
-  if (a === b) {
-    return true;
-  } else if (a instanceof Array && b instanceof Array) {
-    if (a.length !== b.length) {
-      return false;
-    }
-    for (let i = 0; i < a.length; ++i) {
-      if (!deepEqual(a[i], b[i])) {
-        return false;
-      }
-    }
-    return true;
-  } else if (a instanceof Object && b instanceof Object) {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length) {
-      return false;
-    }
-    for (const key of aKeys) {
-      if (!b.hasOwnProperty(key)) {
-        return false;
-      }
-      const aValue = (a as {[k: string]: unknown})[key];
-      const bValue = (b as {[k: string]: unknown})[key];
-      if (!deepEqual(aValue, bValue)) {
-        return false;
-      }
-    }
-    return true;
-  }
-  return false;
 }
 

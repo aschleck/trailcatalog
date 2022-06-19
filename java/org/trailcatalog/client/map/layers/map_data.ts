@@ -14,7 +14,7 @@ import { Camera, projectLatLngRect } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
 import { DIAMOND_RADIUS_PX, Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
-import { DETAIL_ZOOM_THRESHOLD } from '../../workers/data_fetcher';
+import { DETAIL_ZOOM_THRESHOLD } from '../../workers/data_constants';
 
 import { Layer } from './layer';
 
