@@ -127,7 +127,8 @@ fun fetchDetail(ctx: Context) {
       it.prepareStatement(
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
-              + "JOIN paths_in_trails pit ON p.id = pit.path_id AND p.epoch = pit.epoch "
+              + "JOIN paths_in_trails pit "
+              + "ON (p.id = pit.path_id OR p.id + 1 = pit.path_id) AND p.epoch = pit.epoch "
               + "WHERE "
               + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?))"
               + "AND p.epoch = ? "
@@ -144,7 +145,8 @@ fun fetchDetail(ctx: Context) {
       it.prepareStatement(
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
-              + "JOIN paths_in_trails pit ON p.id = pit.path_id AND p.epoch = pit.epoch "
+              + "JOIN paths_in_trails pit "
+              + "ON (p.id = pit.path_id OR p.id + 1 = pit.path_id) AND p.epoch = pit.epoch "
               + "WHERE "
               + "p.cell = ? "
               + "AND p.epoch = ? "

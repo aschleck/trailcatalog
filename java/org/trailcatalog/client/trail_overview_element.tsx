@@ -22,7 +22,7 @@ export function TrailOverviewElement({trailId}: {
         lng: number;
       };
       length_meters: number;
-    };
+    }|undefined;
     let trail;
     if (raw) {
       trail =
@@ -38,7 +38,6 @@ export function TrailOverviewElement({trailId}: {
     state = {
       trail,
     };
-    console.log(trail);
   }
 
   let parsedId;
