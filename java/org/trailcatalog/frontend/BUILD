@@ -1,7 +1,7 @@
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
-load("@build_bazel_rules_nodejs//:index.bzl", "nodejs_binary")
+load("@build_bazel_rules_nodejs//:index.bzl", "nodejs_binary", "pkg_web")
 
 nodejs_binary(
     name = "runner",

@@ -17,15 +17,25 @@ package_group(
 pkg_tar(
     name = "full_pkg",
     srcs = [
-        ":frontend_data",
-        ":frontend_deploy.jar",
+        ":api_server_deploy.jar",
+        ":frontend_pkg",
         ":importers_pkg",
+        ":static_data",
     ],
     stamp = 1,
 )
 
 pkg_files(
-    name = "frontend_data",
+    name = "frontend_pkg",
+    srcs = [
+        "//java/org/trailcatalog/frontend:frontend.js",
+        "//java/org/trailcatalog/frontend:frontend.js.map",
+    ],
+    prefix = "frontend",
+)
+
+pkg_files(
+    name = "static_data",
     srcs = [
         "//java/org/trailcatalog/static",
     ],
