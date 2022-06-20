@@ -1,4 +1,5 @@
 import * as corgi from 'js/corgi';
+import { FabricIcon } from 'js/dino/fabric';
 
 import { currentUrl } from './common/ssr_aware';
 import { MAP_MOVED } from './map/events';
@@ -7,7 +8,12 @@ import { MapElement } from './map/map_element';
 import { LocationUrlController } from './location_url_controller';
 import { SidebarController, State } from './sidebar_controller';
 
-export function ViewportLayoutElement({filter, mapOverlay, sidebarContent}: {
+export function ViewportLayoutElement({camera, filter, mapOverlay, sidebarContent}: {
+  camera?: {
+    lat: number;
+    lng: number;
+    zoom: number;
+  };
   filter?: {
     boundary?: number;
   };
@@ -21,9 +27,9 @@ export function ViewportLayoutElement({filter, mapOverlay, sidebarContent}: {
   }
 
   const url = currentUrl();
-  const lat = floatCoalesce(url.searchParams.get('lat'), 46.859369);
-  const lng = floatCoalesce(url.searchParams.get('lng'), -121.747888);
-  const zoom = floatCoalesce(url.searchParams.get('zoom'), 12);
+  const lat = floatCoalesce(url.searchParams.get('lat'), camera?.lat, 46.859369);
+  const lng = floatCoalesce(url.searchParams.get('lng'), camera?.lng, -121.747888);
+  const zoom = floatCoalesce(url.searchParams.get('zoom'), camera?.zoom, 12);
 
   return <>
     <div className="flex flex-col h-full">
@@ -72,9 +78,9 @@ export function ViewportLayoutElement({filter, mapOverlay, sidebarContent}: {
   </>;
 }
 
-function floatCoalesce(...numbers: Array<string|number|null>): number {
+function floatCoalesce(...numbers: Array<string|number|null|undefined>): number {
   for (const x of numbers) {
-    if (x == undefined || x === null) {
+    if (x === undefined || x === null) {
       continue;
     }
     const n = Number(x);
@@ -85,12 +91,3 @@ function floatCoalesce(...numbers: Array<string|number|null>): number {
   throw new Error('No valid floats');
 }
 
-type FabricIconName = 'List';
-
-function FabricIcon({
-  name,
-  className,
-  ...props
-}: {name: FabricIconName} & corgi.Properties<HTMLElement>) {
-  return <i className={`ms-Icon ms-Icon--${name} ${className}`} {...props} />;
-}

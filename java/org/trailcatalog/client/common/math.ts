@@ -1,9 +1,23 @@
 import { Long } from 'java/org/trailcatalog/s2';
 
-import { Vec2, Vec4 } from './types';
+import { LatLng, Vec2, Vec4 } from './types';
 
 export function metersToMiles(meters: number): number {
   return meters * 0.00062137119224;
+}
+
+export function degreesE7ToLatLng(lat: number, lng: number): LatLng {
+  return [
+    lat / 10_000_000,
+    lng / 10_000_000,
+  ] as LatLng;
+}
+
+export function projectLatLng(latLng: LatLng): Vec2 {
+  const radians = [latLng[0] / 180 * Math.PI, latLng[1] / 180 * Math.PI];
+  const x = radians[1] / Math.PI;
+  const y = Math.log((1 + Math.sin(radians[0])) / (1 - Math.sin(radians[0]))) / (2 * Math.PI);
+  return [x, y];
 }
 
 const reinterpretIntBuffer = new ArrayBuffer(4);

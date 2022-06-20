@@ -16,11 +16,15 @@ tc_ts_project(
     data = [
         "//java/org/trailcatalog:assets",
     ],
+    css_deps = [
+        "//js/dino:css",
+    ],
     deps = [
         "//java/org/trailcatalog/client/map",
         "//java/org/trailcatalog/client/views",
         "//js/common",
         "//js/corgi",
+        "//js/dino",
     ],
 )
 

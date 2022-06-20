@@ -124,6 +124,10 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     requestAnimationFrame(raf);
   }
 
+  updateArgs(newArgs: Args): void {
+    this.camera.set(newArgs.camera.lat, newArgs.camera.lng, newArgs.camera.zoom);
+  }
+
   getTrail(id: bigint): Trail|undefined {
     return this.mapData.getTrail(id);
   }

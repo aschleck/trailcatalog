@@ -48,6 +48,8 @@ export class Controller<
     this.stateUpdater = response.state[1];
   }
 
+  updateArgs(newArgs: A): void {}
+
   protected trigger<D>(spec: EventSpec<D>, detail: D): void {
     this.root.dispatchEvent(new CustomEvent(qualifiedName(spec), {
       bubbles: true,

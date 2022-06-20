@@ -12,7 +12,8 @@ module.exports = {
         'tc-gray': {
           200: '#2c2c2c',
           300: '#3a3a3a',
-          500: '#737a80',
+          400: '#737a80',
+          600: '#e2e2e2',
           700: '#f3f3f3',
         },
         'white-translucent': '#ffffffa0',

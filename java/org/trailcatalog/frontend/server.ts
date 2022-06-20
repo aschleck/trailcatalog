@@ -131,10 +131,10 @@ function renderProperties(props: Properties<HTMLElement>): string {
     let actualKey;
     if (key === 'className') {
       actualKey = 'class';
-    } else if (key === 'style') {
-      actualKey = key;
-    } else {
+    } else if (key === 'children' || key === 'js' || key === 'unboundEvents') {
       continue;
+    } else {
+      actualKey = key;
     }
 
     const escapedValue = [];

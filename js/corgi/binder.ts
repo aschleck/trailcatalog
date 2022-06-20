@@ -1,5 +1,6 @@
 import { checkExists } from 'js/common/asserts';
 
+import { deepEqual } from './comparisons';
 import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, ControllerResponse } from './controller';
 import { EventSpec, qualifiedName } from './events';
 import { Service, ServiceDeps } from './service';
@@ -61,6 +62,26 @@ const serviceSingletons = new Map<AnyServiceCtor, Promise<Service<any>>>();
 
 const unboundEventListeners =
     new WeakMap<HTMLElement, Array<[string, EventListenerOrEventListenerObject]>>();
+
+export function applyUpdate(
+    root: HTMLElement,
+    from: AnyBoundController<HTMLElement>|undefined,
+    to: AnyBoundController<HTMLElement>|undefined): void {
+  if (from === undefined || to === undefined) {
+    throw new Error("Unable to update bound element with new js or remove old js");
+  }
+
+  if (deepEqual(from.args, to.args)) {
+    return;
+  }
+
+  from.args = to.args;
+  if (from.instance) {
+    from.instance.then(i => {
+      i.updateArgs(to.args);
+    });
+  }
+}
 
 export function bind<
     A,

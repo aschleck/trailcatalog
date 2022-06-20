@@ -1,6 +1,6 @@
 import { checkExists } from 'js/common/asserts';
 
-import { AnyBoundController, applyInstantiationResult, bindElementToSpec, disposeBoundElementsIn, InstantiationResult, UnboundEvents } from './binder';
+import { AnyBoundController, applyInstantiationResult, applyUpdate as applyBinderUpdate, bindElementToSpec, disposeBoundElementsIn, InstantiationResult, UnboundEvents } from './binder';
 import { deepEqual } from './comparisons';
 
 export const Fragment = Symbol();
@@ -11,6 +11,7 @@ export interface Properties<E extends HTMLElement> {
   className?: string;
   js?: AnyBoundController<E|HTMLElement>;
   style?: string; // TODO(april): this is sad
+  title?: string;
   unboundEvents?: UnboundEvents;
 }
 
@@ -236,7 +237,10 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   const oldPropKeys = Object.keys(from.props) as Array<keyof Properties<HTMLElement>>;
   const newPropKeys = Object.keys(to.props) as Array<keyof Properties<HTMLElement>>;
   for (const key of newPropKeys) {
-    if (key === 'children' || key === 'js') {
+    if (key === 'children') {
+      continue;
+    } else if (key === 'js') {
+      applyBinderUpdate(node, from.props[key], to.props[key]);
       continue;
     }
 
@@ -438,6 +442,7 @@ declare global {
     interface IntrinsicElements {
       a: AnchorProperties;
       aside: Properties<HTMLElement>;
+      button: Properties<HTMLButtonElement>;
       canvas: Properties<HTMLCanvasElement>;
       div: Properties<HTMLDivElement>;
       footer: Properties<HTMLElement>;

@@ -6,15 +6,15 @@ import { checkExhaustive, checkExists } from '../../common/asserts';
 import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
 import { DPI } from '../../common/dpi';
 import { LittleEndianView } from '../../common/little_endian_view';
-import { metersToMiles, reinterpretLong, rgbaToUint32F } from '../../common/math';
-import { S2CellNumber, Vec2, Vec4 } from '../../common/types';
+import { degreesE7ToLatLng, metersToMiles, projectLatLng, reinterpretLong, rgbaToUint32F } from '../../common/math';
+import { LatLng, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { MapDataService } from '../../data/map_data_service';
 import { Path, Trail } from '../../models/types';
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
 import { DIAMOND_RADIUS_PX, Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
-import { DETAIL_ZOOM_THRESHOLD } from '../../workers/data_constants';
+import { DETAIL_ZOOM_THRESHOLD, PIN_CELL_ID } from '../../workers/data_constants';
 
 import { Layer } from './layer';
 
@@ -45,7 +45,7 @@ interface PathHandle {
 
 interface TrailHandle {
   readonly entity: Trail;
-  readonly position: Vec2;
+  readonly centerPx: Vec2;
   readonly screenPixelBound: Vec4;
 }
 
@@ -95,6 +95,7 @@ export class MapData extends Disposable implements Layer {
       halfDiamondWidth,
       halfDiamondHeight,
     ];
+
     this.lastChange = Date.now();
   }
 
@@ -138,7 +139,7 @@ export class MapData extends Disposable implements Layer {
         d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
       } else if (handle.entity instanceof Trail) {
         const trailHandle = handle as TrailHandle;
-        const p = trailHandle.position;
+        const p = trailHandle.centerPx;
         const bound =
             this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD
                 ? trailHandle.screenPixelBound : this.diamondPixelBounds;
@@ -206,6 +207,7 @@ export class MapData extends Disposable implements Layer {
     } else {
       this.planSparse(viewportSize, planner);
     }
+    this.planPins(planner);
   }
 
   private planDetailed(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
@@ -263,9 +265,10 @@ export class MapData extends Disposable implements Layer {
         const type = data.getInt32();
         const trailWayCount = data.getInt32();
         data.align(8);
-        data.skip(trailWayCount * 8 + 16);
+        data.skip(trailWayCount * 8);
+        const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+        const centerPx = projectLatLng(center);
         const lengthMeters = data.getFloat64();
-        const trail = checkExists(this.dataService.trails.get(id)) as Trail;
         let text;
         let z;
         const highlighted = this.highlighted.has(id);
@@ -279,7 +282,7 @@ export class MapData extends Disposable implements Layer {
           text = TRAIL_DIAMOND_REGULAR;
           z = Z_TRAIL_MARKER;
         }
-        this.textRenderer.plan(text, trail.position, z, planner);
+        this.textRenderer.plan(text, centerPx, z, planner);
       }
     }
 
@@ -309,7 +312,8 @@ export class MapData extends Disposable implements Layer {
         const nameLength = data.getInt32();
         data.skip(nameLength);
         const type = data.getInt32();
-        const position: Vec2 = [data.getFloat64(), data.getFloat64()];
+        const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+        const centerPx = projectLatLng(center);
         const lengthMeters = data.getFloat64();
         let diamond;
         let z;
@@ -320,8 +324,53 @@ export class MapData extends Disposable implements Layer {
           diamond = TRAIL_DIAMOND_REGULAR;
           z = Z_TRAIL_MARKER;
         }
-        this.textRenderer.plan(diamond, position, z, planner);
+        this.textRenderer.plan(diamond, centerPx, z, planner);
       }
+    }
+  }
+
+  private planPins(planner: RenderPlanner): void {
+    const buffer = this.dataService.detailCells.get(PIN_CELL_ID);
+    if (!buffer) {
+      return;
+    }
+
+    const lines: Line[] = [];
+    const raised: Line[] = [];
+
+    const data = new LittleEndianView(buffer);
+
+    const pathCount = data.getInt32();
+    for (let i = 0; i < pathCount; ++i) {
+      const id = data.getBigInt64();
+      const highlighted = this.highlighted.has(id);
+
+      const type = data.getInt32();
+
+      const pathVertexBytes = data.getInt32();
+      const pathVertexCount = pathVertexBytes / 8;
+      data.align(4);
+      let color;
+      let buffer;
+      if (this.highlighted.has(id)) {
+        color = PATH_HIGHLIGHTED_COLORS;
+        buffer = raised;
+      } else {
+        color = PATH_COLORS;
+        buffer = lines;
+      }
+      buffer.push({
+        colorFill: color.fill,
+        colorStroke: color.stroke,
+        vertices: data.sliceFloat32(pathVertexCount * 2),
+      });
+    }
+
+    if (lines.length > 0) {
+      planner.addLines(lines, PATH_RADIUS_PX, 0);
+    }
+    if (raised.length > 0) {
+      planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
     }
   }
 
@@ -349,7 +398,7 @@ export class MapData extends Disposable implements Layer {
     for (const trail of trails) {
       this.metadataBounds.insert({
         entity: trail,
-        position: trail.position,
+        centerPx: trail.centerPx,
         screenPixelBound: this.diamondPixelBounds,
       }, trail.bound);
     }
@@ -373,7 +422,7 @@ export class MapData extends Disposable implements Layer {
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
       this.detailBounds.insert({
         entity: trail,
-        position: trail.position,
+        centerPx: trail.centerPx,
         screenPixelBound: [
           -halfDetailWidth,
           -detailScreenPixelSize[1] + DIAMOND_RADIUS_PX,

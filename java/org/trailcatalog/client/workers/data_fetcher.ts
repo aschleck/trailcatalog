@@ -5,12 +5,17 @@ import { checkExhaustive } from '../common/asserts';
 import { reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 
-import { DETAIL_ZOOM_THRESHOLD } from './data_constants';
+import { DETAIL_ZOOM_THRESHOLD, PIN_CELL_ID } from './data_constants';
 import { FetchThrottler } from './fetch_throttler';
 
 export interface SetFilterRequest {
   kind: 'sfr';
   boundary?: number;
+}
+
+export interface SetPinsRequest {
+  kind: 'spr';
+  trail: bigint;
 }
 
 export interface UpdateViewportRequest {
@@ -24,7 +29,7 @@ export interface Viewport {
   zoom: number;
 }
 
-type Request = SetFilterRequest|UpdateViewportRequest;
+type Request = SetFilterRequest|SetPinsRequest|UpdateViewportRequest;
 
 export interface LoadCellDetailCommand {
   type: 'lcd';
@@ -84,8 +89,44 @@ class DataFetcher {
     }
   }
 
+  setPins(pins: SetPinsRequest): void {
+    const id = PIN_CELL_ID;
+    const inFlight = this.metadataInFlight.get(id);
+    if (inFlight) {
+      inFlight.abort();
+    }
+
+    const abort = new AbortController();
+    this.metadataInFlight.set(id, abort);PIN_CELL_ID;
+    this.throttler.fetch(`/api/data_packed`, {
+      method: 'POST',
+      signal: abort.signal,
+      body: JSON.stringify({
+        trail_id: pins.trail,
+      }, (k, v) => typeof v === 'bigint' ? String(v) : v),
+    }).then(response => {
+      if (response.ok) {
+        return response.arrayBuffer();
+      } else {
+        throw new Error("Failed to download pin data");
+      }
+    })
+    .then(data => {
+      this.metadataInFlight.delete(id);
+      this.mail({
+        type: 'ucc',
+        cells: [id],
+      }, []);
+      this.mail({
+        type: 'lcd',
+        cell: id,
+        data,
+      }, [data]);
+    });
+  }
+
   updateViewport(bounds: S2LatLngRect, zoom: number): void {
-    const used = new Set();
+    const used = new Set([PIN_CELL_ID]); // never cancel our pin request
 
     const metadataCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
     for (let i = 0; i < metadataCellsInBound.size(); ++i) {
@@ -211,6 +252,8 @@ self.onmessage = e => {
   const request = e.data as Request;
   if (request.kind === 'sfr') {
     fetcher.setFilter(request);
+  } else if (request.kind === 'spr') {
+    fetcher.setPins(request);
   } else if (request.kind === 'uvr') {
     const viewport = request.viewport;
     const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);

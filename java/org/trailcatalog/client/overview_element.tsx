@@ -126,7 +126,7 @@ function SelectedTrailsElement({ position, trails }: {
           ['Relation ID:', trail.id],
         ].map(([label, content]) =>
           <section>
-            <span className="text-tc-gray-500">
+            <span className="text-tc-gray-400">
               {label}
             </span>
             <span>

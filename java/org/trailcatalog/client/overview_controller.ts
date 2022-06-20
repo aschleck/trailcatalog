@@ -26,8 +26,8 @@ export class OverviewController extends Controller<{}, Deps, HTMLDivElement, Sta
     };
   }
 
+  private readonly views: ViewsService;
   private mapController: MapController|undefined;
-  private views: ViewsService;
 
   constructor(response: Response<OverviewController>) {
     super(response);

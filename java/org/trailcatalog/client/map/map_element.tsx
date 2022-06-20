@@ -3,7 +3,12 @@ import * as corgi from 'js/corgi';
 import { MapController } from './map_controller';
 
 export const MapElement = ({camera, filter}: {
-  camera: {lat: number; lng: number; zoom: number;};
+  camera: {
+    force?: boolean;
+    lat: number;
+    lng: number;
+    zoom: number;
+  };
   filter?: {boundary?: number};
 }) => {
   return <>

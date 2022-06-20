@@ -77,6 +77,13 @@ export class ViewsService extends Service<Deps> {
     this.listeners.delete(listener);
   }
 
+  showOverview(camera?: {lat: number, lng: number, zoom: number}): void {
+    if (camera) {
+      this.history.goTo(`/?lat=${camera.lat}&lng=${camera.lng}&zoom=${camera.zoom}`);
+    } else {
+    }
+  }
+
   showTrail(id: number): void {
     this.history.goTo(`/trail/${id}`);
   }

@@ -1,4 +1,4 @@
-import { PixelRect, Vec2 } from '../common/types';
+import { LatLng, PixelRect, Vec2 } from '../common/types';
 
 export class Path {
   constructor(
@@ -16,8 +16,13 @@ export class Trail {
       readonly type: number,
       readonly bound: PixelRect,
       readonly paths: bigint[],
-      readonly position: Vec2,
+      readonly center: LatLng,
+      readonly centerPx: Vec2,
       readonly lengthMeters: number,
   ) {}
+
+  get sourceRelation(): bigint {
+    return this.id;
+  }
 }
 

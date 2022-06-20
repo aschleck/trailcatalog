@@ -5,8 +5,10 @@ import { Service, ServiceResponse } from 'js/corgi/service';
 
 import { IdentitySetMultiMap } from '../common/collections';
 import { LittleEndianView } from '../common/little_endian_view';
-import { PixelRect, S2CellNumber, Vec2 } from '../common/types';
+import { degreesE7ToLatLng, projectLatLng } from '../common/math';
+import { LatLng, PixelRect, S2CellNumber, Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
+import { PIN_CELL_ID } from '../workers/data_constants';
 import { FetcherCommand, Viewport } from '../workers/data_fetcher';
 
 interface Filter {
@@ -73,12 +75,19 @@ export class MapDataService extends Service<EmptyDeps> {
   setListener(listener: Listener, filter?: Filter): void {
     this.listener = listener;
     this.fetcher.postMessage({
-      ...filter,
       kind: 'sfr',
+      ...filter,
     });
 
     this.listener.loadMetadata([], this.trails.values());
     this.listener.loadDetail(this.paths.values(), this.trailsInDetails);
+  }
+
+  setPins({trail}: {trail: bigint}): void {
+    this.fetcher.postMessage({
+      kind: 'spr',
+      trail,
+    });
   }
 
   clearListener(): void {
@@ -108,7 +117,7 @@ export class MapDataService extends Service<EmptyDeps> {
   private loadMetadata(id: S2CellNumber, buffer: ArrayBuffer): void {
     // Check if the server wrote us a 1 byte response with 0 trails and paths.
     if (buffer.byteLength <= 8) {
-      this.detailCells.set(id, undefined);
+      this.metadataCells.set(id, undefined);
       return;
     }
 
@@ -121,14 +130,14 @@ export class MapDataService extends Service<EmptyDeps> {
       const nameLength = data.getInt32();
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
       const type = data.getInt32();
-      const position: Vec2 = [data.getFloat64(), data.getFloat64()];
+      const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const lengthMeters = data.getFloat64();
       const existing = this.trails.get(id);
       let trail;
       if (existing) {
         trail = existing;
       } else {
-        trail = constructTrail(id, name, type, [], position, lengthMeters);
+        trail = constructTrail(id, name, type, [], center, lengthMeters);
         this.trails.set(id, trail);
       }
       trails.push(trail);
@@ -142,6 +151,17 @@ export class MapDataService extends Service<EmptyDeps> {
     // Check if the server wrote us a 1 byte response with 0 trails and paths.
     if (buffer.byteLength <= 8) {
       this.detailCells.set(id, undefined);
+      return;
+    }
+    // Interesting choice: we don't load the pin cell. The complication we're avoiding is the case
+    // where we have the cell containing a path/trail and that path/trail in the pin cell at the
+    // same time. Determining how to unload data in the paths/trails map is complicated. The main
+    // problem with skipping this is that we could render things but they wouldn't be
+    // interactive, As it turns out, our usecase is to always render pinned paths regardless of zoom
+    // level. We can therefore just only render pinned paths and skip trails, and we sacrafice
+    // interactivity for them.
+    if (id === PIN_CELL_ID) {
+      this.detailCells.set(id, buffer);
       return;
     }
 
@@ -183,7 +203,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const pathCount = data.getInt32();
       data.align(8);
       const paths = [...data.sliceBigInt64(pathCount)];
-      const position: Vec2 = [data.getFloat64(), data.getFloat64()];
+      const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const lengthMeters = data.getFloat64();
       const existing = this.trails.get(id);
       let trail;
@@ -193,7 +213,7 @@ export class MapDataService extends Service<EmptyDeps> {
           trail.paths.push(...paths);
         }
       } else {
-        trail = constructTrail(id, name, type, paths, position, lengthMeters);
+        trail = constructTrail(id, name, type, paths, center, lengthMeters);
         this.trails.set(id, trail);
       }
       this.trailsInDetails.add(trail);
@@ -212,7 +232,7 @@ export class MapDataService extends Service<EmptyDeps> {
     this.metadataCells.delete(id);
     this.detailCells.delete(id);
 
-    if (!buffer) {
+    if (!buffer || id === PIN_CELL_ID) {
       return;
     }
 
@@ -241,7 +261,7 @@ export class MapDataService extends Service<EmptyDeps> {
       data.skip(nameLength + 4);
       const pathCount = data.getInt32();
       data.align(8);
-      data.skip(pathCount * 8 + 16 + 8);
+      data.skip(pathCount * 8 + 8 + 8);
 
       const entity = this.trails.get(id);
       if (entity) {
@@ -263,16 +283,17 @@ function constructTrail(
     name: string,
     type: number,
     paths: bigint[],
-    position: Vec2,
+    center: LatLng,
     lengthMeters: number): Trail {
   // We really struggle bounds checking trails, but on the plus side we
   // calculate a radius on click queries. So as long as our query radius
   // includes this point we can do fine-grained checks to determine what is
   // *actually* being clicked.
   const epsilon = 1e-5;
+  const centerPx = projectLatLng(center);
   const bound: PixelRect = {
-    low: [position[0] - epsilon, position[1] - epsilon],
-    high: [position[0] + epsilon, position[1] + epsilon],
+    low: [centerPx[0] - epsilon, centerPx[1] - epsilon],
+    high: [centerPx[0] + epsilon, centerPx[1] + epsilon],
   };
   return new Trail(
       id,
@@ -280,7 +301,8 @@ function constructTrail(
       type,
       bound,
       paths,
-      position,
+      center,
+      centerPx,
       lengthMeters);
 }
 

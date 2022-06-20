@@ -20,6 +20,7 @@ val epochTracker = EpochTracker(connectionSource)
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)
   app.post("/api/data", ::fetchData)
+  app.post("/api/data_packed", ::fetchDataPacked)
   app.get("/api/fetch_metadata/{token}", ::fetchMeta)
   app.get("/api/fetch_detail/{token}", ::fetchDetail)
 }
@@ -33,8 +34,8 @@ data class WireTrail(
   val name: String,
   val type: Int,
   val pathIds: ByteArray,
-  val x: Double,
-  val y: Double,
+  val lat: Int,
+  val lng: Int,
   val lengthMeters: Double,
 )
 
@@ -52,7 +53,13 @@ fun fetchData(ctx: Context) {
         val id = key.get("id").asLong()
         connectionSource.connection.use {
           val results = it.prepareStatement(
-                  "SELECT name, type, path_ids, center_lat_degrees, center_lng_degrees, length_meters "
+              "SELECT "
+                  + "name, "
+                  + "type, "
+                  + "path_ids, "
+                  + "center_lat_degrees, "
+                  + "center_lng_degrees, "
+                  + "length_meters "
                   + "FROM trails "
                   + "WHERE id = ? AND epoch = ?")
               .apply {
@@ -104,8 +111,8 @@ fun fetchMeta(ctx: Context) {
     output.writeInt(asUtf8.size)
     output.write(asUtf8)
     output.writeInt(trail.type)
-    output.writeDouble(trail.x)
-    output.writeDouble(trail.y)
+    output.writeInt(trail.lat)
+    output.writeInt(trail.lng)
     output.writeDouble(trail.lengthMeters)
   }
   ctx.result(bytes.toByteArray())
@@ -121,14 +128,19 @@ fun fetchDetail(ctx: Context) {
     throw IllegalArgumentException("Invalid boundary")
   }
 
+  // Does this still need to be a hashmap? Why?
   val paths = HashMap<Long, WirePath>()
   connectionSource.connection.use {
+    // In these queries we test if p.id = pit.path_id - 1. You may think this is equivalent to
+    // p.id + 1 = pit.path_id, and it logically is, but that totally defeats the query planner. So
+    // it's significantly faster to do it this way. Though one wonders if we should only put the
+    // forward path in the pit table, because that would make this even faster.
     val query = if (cell.level() >= SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL) {
       it.prepareStatement(
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
               + "JOIN paths_in_trails pit "
-              + "ON (p.id = pit.path_id OR p.id + 1 = pit.path_id) AND p.epoch = pit.epoch "
+              + "ON (p.id = pit.path_id OR p.id = pit.path_id - 1) AND p.epoch = pit.epoch "
               + "WHERE "
               + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?))"
               + "AND p.epoch = ? "
@@ -146,7 +158,7 @@ fun fetchDetail(ctx: Context) {
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
               + "JOIN paths_in_trails pit "
-              + "ON (p.id = pit.path_id OR p.id + 1 = pit.path_id) AND p.epoch = pit.epoch "
+              + "ON (p.id = pit.path_id OR p.id = pit.path_id - 1) AND p.epoch = pit.epoch "
               + "WHERE "
               + "p.cell = ? "
               + "AND p.epoch = ? "
@@ -171,7 +183,87 @@ fun fetchDetail(ctx: Context) {
   val trails = fetchTrails(cell, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL, /* includePaths= */ true, boundary)
   val bytes = AlignableByteArrayOutputStream()
   val output = LittleEndianDataOutputStream(bytes)
+  writeDetailPaths(paths, bytes, output)
+  writeDetailTrails(trails, bytes, output)
+  ctx.result(bytes.toByteArray())
+}
 
+fun fetchDataPacked(ctx: Context) {
+  ctx.contentType("application/octet-stream")
+
+  val mapper = ObjectMapper()
+  val request = mapper.readTree(ctx.bodyAsInputStream())
+  val trailId = request.get("trail_id").asLong()
+
+  val trail = connectionSource.connection.use {
+    val results = it.prepareStatement(
+        "SELECT "
+            + "id, "
+            + "name, "
+            + "type, "
+            + "path_ids, "
+            + "center_lat_degrees, "
+            + "center_lng_degrees, "
+            + "length_meters "
+            + "FROM trails t "
+            + "WHERE "
+            + "t.id = ? "
+            + "AND t.epoch = ? ").apply {
+      setLong(1, trailId)
+      setInt(2, epochTracker.epoch)
+    }.executeQuery()
+
+    if (!results.next()) {
+      throw IllegalArgumentException("Trail ${trailId} doesn't exist")
+    }
+
+    WireTrail(
+        id = results.getLong(1),
+        name = results.getString(2),
+        type = results.getInt(3),
+        pathIds = results.getBytes(4),
+        lat = results.getInt(5),
+        lng = results.getInt(6),
+        lengthMeters = results.getDouble(7),
+    )
+  }
+
+  val paths = HashMap<Long, WirePath>()
+  connectionSource.connection.use {
+    val results = it.prepareStatement(
+        "SELECT p.id, p.type, p.lat_lng_degrees "
+            + "FROM paths p "
+            + "JOIN paths_in_trails pit "
+            + "ON (p.id = pit.path_id OR p.id = pit.path_id - 1) AND p.epoch = pit.epoch "
+            + "WHERE "
+            + "pit.trail_id = ? "
+            + "AND pit.epoch = ?").apply {
+      setLong(1, trailId)
+      setInt(2, epochTracker.epoch)
+    }.executeQuery()
+
+    while (results.next()) {
+      val id = results.getLong(1)
+      paths[id] =
+          WirePath(
+              id = id,
+              type = results.getInt(2),
+              vertices = project(results.getBytes(3)),
+          )
+    }
+  }
+
+  val bytes = AlignableByteArrayOutputStream()
+  val output = LittleEndianDataOutputStream(bytes)
+  writeDetailPaths(paths, bytes, output)
+  writeDetailTrails(listOf(trail), bytes, output)
+  ctx.result(bytes.toByteArray())
+}
+
+private fun writeDetailPaths(
+    paths: Map<Long, WirePath>,
+    bytes: AlignableByteArrayOutputStream,
+    output: LittleEndianDataOutputStream) {
   output.writeInt(paths.size)
   for (path in paths.values) {
     output.writeLong(path.id)
@@ -181,7 +273,12 @@ fun fetchDetail(ctx: Context) {
     bytes.align(4)
     output.write(path.vertices)
   }
+}
 
+private fun writeDetailTrails(
+    trails: List<WireTrail>,
+    bytes: AlignableByteArrayOutputStream,
+    output: LittleEndianDataOutputStream) {
   output.writeInt(trails.size)
   for (trail in trails) {
     output.writeLong(trail.id)
@@ -193,12 +290,10 @@ fun fetchDetail(ctx: Context) {
     output.flush()
     bytes.align(8)
     output.write(trail.pathIds)
-    output.writeDouble(trail.x)
-    output.writeDouble(trail.y)
+    output.writeInt(trail.lat)
+    output.writeInt(trail.lng)
     output.writeDouble(trail.lengthMeters)
   }
-
-  ctx.result(bytes.toByteArray())
 }
 
 private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boundary: Long?): List<WireTrail> {
@@ -257,19 +352,14 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
     val results = query.executeQuery()
     while (results.next()) {
       val pathOffset = if (includePaths) 1 else 0
-      val projected =
-          project(
-              results.getInt(4 + pathOffset) / 10_000_000.0,
-              results.getInt(5 + pathOffset) / 10_000_000.0)
-
       trails.add(
           WireTrail(
               id = results.getLong(1),
               name = results.getString(2),
               type = results.getInt(3),
               pathIds = if (includePaths) results.getBytes(4) else byteArrayOf(),
-              x = projected.first,
-              y = projected.second,
+              lat = results.getInt(4 + pathOffset),
+              lng = results.getInt(5 + pathOffset),
               lengthMeters = results.getDouble(6 + pathOffset),
           ))
     }
