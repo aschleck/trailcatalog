@@ -41,6 +41,7 @@ export function TrailOverviewElement({trailId}: {
               raw.length_meters);
     }
     state = {
+      nearbyTrails: undefined,
       trail,
     };
   }
@@ -50,13 +51,6 @@ export function TrailOverviewElement({trailId}: {
     parsedId = BigInt(trailId);
   } catch {
     return <>Invalid trail ID {trailId}</>;
-  }
-
-  let trailSidebar;
-  if (state.trail) {
-    trailSidebar = <TrailSidebar trail={state.trail} />;
-  } else {
-    trailSidebar = "Loading...";
   }
 
   return <>
@@ -80,19 +74,26 @@ export function TrailOverviewElement({trailId}: {
                 ? {lat: state.trail.center[0], lng: state.trail.center[1], zoom: 12}
                 : undefined
           }
-          sidebarContent={trailSidebar}
+          sidebarContent={<TrailSidebar state={state} />}
       />
     </div>
   </>;
 }
 
-function TrailSidebar({trail}: {trail: Trail}) {
+function TrailSidebar({state}: {state: State}) {
+  if (!state.trail) {
+    return <div>Loading...</div>;
+  }
+
+  const nearby = state.nearbyTrails?.length;
+  const nearbyLabel = nearby !== undefined ? `Nearby trails (${nearby})` : 'Nearby trails';
+  const trail = state.trail;
   return <>
     <div className="m-4 space-y-3">
       <aside>
         <OutlinedButton
             icon="BulletedList"
-            label="Nearby trails"
+            label={nearbyLabel}
             unboundEvents={{
               click: 'viewNearbyTrails',
             }}
