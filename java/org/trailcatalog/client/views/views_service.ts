@@ -81,6 +81,7 @@ export class ViewsService extends Service<Deps> {
     if (camera) {
       this.history.goTo(`/?lat=${camera.lat}&lng=${camera.lng}&zoom=${camera.zoom}`);
     } else {
+      this.history.goTo('/');
     }
   }
 

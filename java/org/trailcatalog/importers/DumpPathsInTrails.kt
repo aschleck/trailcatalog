@@ -15,7 +15,7 @@ class DumpPathsInTrails(private val epoch: Int, private val hikari: HikariDataSo
           StringifyingInputStream(input) { trail, csv ->
             val paths = HashSet<Long>()
             for (path in trail.paths) {
-              paths.add(path)
+              paths.add(path.and(1L.inv()))
             }
             for (path in paths) {
               // path_id,trail_id,epoch

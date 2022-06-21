@@ -131,16 +131,12 @@ fun fetchDetail(ctx: Context) {
   // Does this still need to be a hashmap? Why?
   val paths = HashMap<Long, WirePath>()
   connectionSource.connection.use {
-    // In these queries we test if p.id = pit.path_id - 1. You may think this is equivalent to
-    // p.id + 1 = pit.path_id, and it logically is, but that totally defeats the query planner. So
-    // it's significantly faster to do it this way. Though one wonders if we should only put the
-    // forward path in the pit table, because that would make this even faster.
     val query = if (cell.level() >= SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL) {
       it.prepareStatement(
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
               + "JOIN paths_in_trails pit "
-              + "ON (p.id = pit.path_id OR p.id = pit.path_id - 1) AND p.epoch = pit.epoch "
+              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
               + "WHERE "
               + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?))"
               + "AND p.epoch = ? "
@@ -158,7 +154,7 @@ fun fetchDetail(ctx: Context) {
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
               + "JOIN paths_in_trails pit "
-              + "ON (p.id = pit.path_id OR p.id = pit.path_id - 1) AND p.epoch = pit.epoch "
+              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
               + "WHERE "
               + "p.cell = ? "
               + "AND p.epoch = ? "
@@ -234,7 +230,7 @@ fun fetchDataPacked(ctx: Context) {
         "SELECT p.id, p.type, p.lat_lng_degrees "
             + "FROM paths p "
             + "JOIN paths_in_trails pit "
-            + "ON (p.id = pit.path_id OR p.id = pit.path_id - 1) AND p.epoch = pit.epoch "
+            + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
             + "WHERE "
             + "pit.trail_id = ? "
             + "AND pit.epoch = ?").apply {
