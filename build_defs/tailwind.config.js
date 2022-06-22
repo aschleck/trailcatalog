@@ -19,7 +19,8 @@ module.exports = {
         'white-translucent': '#ffffffa0',
       },
       fontFamily: {
-        'sans': ['Barlow', ...defaultTheme.fontFamily.sans],
+        'header': ['Barlow', ...defaultTheme.fontFamily.sans],
+        'sans': ['Roboto', ...defaultTheme.fontFamily.sans],
       },
     },
   },

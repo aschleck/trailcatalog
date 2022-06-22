@@ -2,6 +2,7 @@ import * as corgi from 'js/corgi';
 
 import { metersToMiles } from './common/math';
 import { Vec2 } from './common/types';
+import { HOVER_HEX_PALETTE } from './map/common/colors';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
 import { Path, Trail } from './models/types';
@@ -55,9 +56,8 @@ export function OverviewElement({boundary}: {
   }
 
   const trailSidebar = <>
-    <header className="flex gap-2 px-4 pt-2 uppercase">
-      <div className="grow">Name</div>
-      <div className="shrink-0 w-24">Distance</div>
+    <header className="font-bold font-header text-xl px-4 pt-2">
+      Nearby trails
     </header>
     {filteredTrails.map(trail =>
         <TrailListElement
@@ -140,26 +140,32 @@ function SelectedTrailsElement({ position, trails }: {
 }
 
 function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Trail }) {
-  return <section
-      className="border-b cursor-pointer flex gap-2 items-stretch pr-2"
-      data-trail-id={trail.id}
-      unboundEvents={{
-        click: 'viewTrail',
-        mouseover: 'highlightTrail',
-        mouseout: 'unhighlightTrail',
-      }}>
-    <div className={
-        (highlight ? 'bg-highlight ' : '') + 'w-2'
-    }>
-    </div>
-    <div className="font-lg font-semibold grow py-2">{trail.name}</div>
-    <div className="py-2 shrink-0 w-24">
-      <span className="font-bold font-lg">
-        {metersToMiles(trail.lengthMeters).toFixed(1)}
-      </span>
-      {' '}
-      <span className="font-xs text-slate-400">miles</span>
-    </div>
-  </section>;
+  return <>
+    <section
+        className={
+          'cursor-pointer flex gap-2 items-stretch pr-2'
+              + (highlight ? ' bg-tc-gray-700' : '')
+        }
+        data-trail-id={trail.id}
+        unboundEvents={{
+          click: 'viewTrail',
+          mouseover: 'highlightTrail',
+          mouseout: 'unhighlightTrail',
+        }}>
+      <div
+          className="my-1 rounded-r-lg w-1"
+          style={highlight ? `background-color: ${HOVER_HEX_PALETTE.stroke}` : ''}
+      >
+      </div>
+      <div className="font-lg grow py-2">{trail.name}</div>
+      <div className="py-2 shrink-0 w-24">
+        <span className="font-lg">
+          {metersToMiles(trail.lengthMeters).toFixed(1)}
+        </span>
+        {' '}
+        <span className="font-xs text-tc-gray-400">miles</span>
+      </div>
+    </section>
+  </>;
 }
 

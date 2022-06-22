@@ -1,6 +1,6 @@
 import { Long } from 'java/org/trailcatalog/s2';
 
-import { LatLng, Vec2, Vec4 } from './types';
+import { LatLng, Rgba32F, Vec2, Vec4 } from './types';
 
 export function metersToMiles(meters: number): number {
   return meters * 0.00062137119224;
@@ -34,11 +34,22 @@ export function reinterpretLong(v: Long): number {
 /**
  * Converts an rgba color in the range [0, 1] to an int, and then casts the int's bits to float.
  */
-export function rgbaToUint32F(r: number, g: number, b: number, a: number): number {
+export function rgbaToUint32F(r: number, g: number, b: number, a: number): Rgba32F {
   const v = ((255 * r) << 24) | ((255 * g) << 16) | ((255 * b) << 8) | (255 * a);
   const ints = new Int32Array(reinterpretIntBuffer);
   ints[0] = v;
-  return new Float32Array(reinterpretIntBuffer)[0];
+  return new Float32Array(reinterpretIntBuffer)[0] as Rgba32F;
+}
+
+export function rgba32FToHex(color: Rgba32F): string {
+  const floats = new Float32Array(reinterpretIntBuffer);
+  floats[0] = color;
+  const v = new Int32Array(reinterpretIntBuffer)[0];
+  const r = ((v >> 24) & 0xff).toString(16).padStart(2, '0');
+  const g = ((v >> 16) & 0xff).toString(16).padStart(2, '0');
+  const b = ((v >> 8) & 0xff).toString(16).padStart(2, '0');
+  const a = (v & 0xff).toString(16).padStart(2, '0');
+  return `#${r}${g}${b}${a}`;
 }
 
 export function splitVec2(v: Vec2): Vec4 {

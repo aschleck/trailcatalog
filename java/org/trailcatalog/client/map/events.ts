@@ -1,14 +1,15 @@
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { declareEvent } from 'js/corgi/events';
 
-import { Vec2 } from '../common/types';
+import { Rgba32F, Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
 
 export interface MapController {
   getTrail(id: bigint): Trail|undefined;
   listTrailsInViewport(): Trail[];
   listTrailsOnPath(path: Path): Trail[];
-  setHighlighted(trail: Trail, selected: boolean): void;
+  setActive(trail: Trail, state: boolean): void;
+  setHover(trail: Trail, state: boolean): void;
 }
 
 export const DATA_CHANGED = declareEvent<{

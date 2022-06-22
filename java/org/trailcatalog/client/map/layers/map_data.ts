@@ -7,9 +7,10 @@ import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
 import { DPI } from '../../common/dpi';
 import { LittleEndianView } from '../../common/little_endian_view';
 import { degreesE7ToLatLng, metersToMiles, projectLatLng, reinterpretLong, rgbaToUint32F } from '../../common/math';
-import { LatLng, S2CellNumber, Vec2, Vec4 } from '../../common/types';
+import { LatLng, Rgba32F, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { MapDataService } from '../../data/map_data_service';
 import { Path, Trail } from '../../models/types';
+import { ACTIVE_PALETTE, ACTIVE_HEX_PALETTE, DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, HOVER_HEX_PALETTE } from '../common/colors';
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
@@ -24,15 +25,6 @@ const Z_TRAIL_MARKER = 3;
 const Z_RAISED_TRAIL_MARKER = 4;
 const PATH_RADIUS_PX = 1;
 const RAISED_PATH_RADIUS_PX = 4;
-
-const PATH_COLORS = {
-  fill: rgbaToUint32F(0, 0, 0, 1),
-  stroke: rgbaToUint32F(0, 0, 0, 1),
-} as const;
-const PATH_HIGHLIGHTED_COLORS = {
-  fill: rgbaToUint32F(1, 0.918, 0, 1),
-  stroke: rgbaToUint32F(0, 0, 0, 1),
-} as const;
 
 interface Filter {
   boundary?: number;
@@ -56,8 +48,8 @@ const HIGHLIGHT_TRAIL_COLOR = '#f2f2f2';
 const RENDER_PATHS_ZOOM_THRESHOLD = 10;
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 
-const TRAIL_DIAMOND_REGULAR = renderableDiamond(false);
-const TRAIL_DIAMOND_HIGHLIGHTED = renderableDiamond(true);
+const TRAIL_DIAMOND_REGULAR =
+    renderableDiamond(DEFAULT_HEX_PALETTE.fill, DEFAULT_HEX_PALETTE.stroke);
 
 // 35px is a larger than the full height of a trail marker (full not half
 // because they are not centered vertically.)
@@ -67,8 +59,9 @@ export class MapData extends Disposable implements Layer {
 
   private readonly metadataBounds: BoundsQuadtree<Handle>;
   private readonly detailBounds: BoundsQuadtree<Handle>;
-  private readonly highlighted: Set<bigint>;
   private readonly diamondPixelBounds: Vec4;
+  private readonly active: Set<bigint>;
+  private readonly hover: Set<bigint>;
   private lastChange: number;
 
   constructor(
@@ -85,8 +78,7 @@ export class MapData extends Disposable implements Layer {
     this.registerDisposer(() => {
       this.dataService.clearListener();
     });
-    this.highlighted = new Set();
-    const diamondPixelSize = this.textRenderer.measure(renderableDiamond(false));
+    const diamondPixelSize = this.textRenderer.measure(TRAIL_DIAMOND_REGULAR);
     const halfDiamondWidth = diamondPixelSize[0] / 2;
     const halfDiamondHeight = diamondPixelSize[1] / 2;
     this.diamondPixelBounds = [
@@ -95,6 +87,8 @@ export class MapData extends Disposable implements Layer {
       halfDiamondWidth,
       halfDiamondHeight,
     ];
+    this.active = new Set();
+    this.hover = new Set();
 
     this.lastChange = Date.now();
   }
@@ -169,7 +163,15 @@ export class MapData extends Disposable implements Layer {
     return best;
   }
 
-  setHighlighted(entity: Path|Trail, highlighted: boolean): void {
+  setActive(entity: Path|Trail, state: boolean): void {
+    this.setColor(entity, this.active, state);
+  }
+
+  setHover(entity: Path|Trail, state: boolean): void {
+    this.setColor(entity, this.hover, state);
+  }
+
+  private setColor(entity: Path|Trail, set: Set<bigint>, state: boolean): void {
     let ids;
     if (entity instanceof Path) {
       ids = [entity.id];
@@ -180,13 +182,13 @@ export class MapData extends Disposable implements Layer {
       throw checkExhaustive(entity);
     }
 
-    if (highlighted) {
+    if (state) {
       for (const id of ids) {
-        this.highlighted.add(id);
+        set.add(id);
       }
     } else {
       for (const id of ids) {
-        this.highlighted.delete(id);
+        set.delete(id);
       }
     }
     this.lastChange = Date.now();
@@ -227,32 +229,17 @@ export class MapData extends Disposable implements Layer {
       const pathCount = data.getInt32();
       for (let i = 0; i < pathCount; ++i) {
         const id = data.getBigInt64();
-        const highlighted = this.highlighted.has(id);
 
         if (zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
-          const type = data.getInt32();
-
+          data.skip(4);
           const pathVertexBytes = data.getInt32();
           const pathVertexCount = pathVertexBytes / 8;
           data.align(4);
-          let color;
-          let buffer;
-          if (this.highlighted.has(id)) {
-            color = PATH_HIGHLIGHTED_COLORS;
-            buffer = raised;
-          } else {
-            color = PATH_COLORS;
-            buffer = lines;
-          }
-          buffer.push({
-            colorFill: color.fill,
-            colorStroke: color.stroke,
-            vertices: data.sliceFloat32(pathVertexCount * 2),
-          });
+          this.pushPath(id, data.sliceFloat32(pathVertexCount * 2), lines, raised);
         } else {
           data.skip(4);
           const pathVertexBytes = data.getInt32();
-          data.align(8);
+          data.align(4);
           data.skip(pathVertexBytes);
         }
       }
@@ -269,18 +256,20 @@ export class MapData extends Disposable implements Layer {
         const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
         const centerPx = projectLatLng(center);
         const lengthMeters = data.getFloat64();
+        const active = this.active.has(id);
+        const hover = this.hover.has(id);
+        const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
+        const fill =
+            hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
+        const stroke =
+            hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
         let text;
-        let z;
-        const highlighted = this.highlighted.has(id);
         if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
-          text = renderableTrailPin(lengthMeters, highlighted);
-          z = highlighted ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
-        } else if (highlighted) {
-          text = TRAIL_DIAMOND_HIGHLIGHTED;
-          z = Z_RAISED_TRAIL_MARKER;
+          text = renderableTrailPin(lengthMeters, fill, stroke);
+        } else if (active || hover) {
+          text = renderableDiamond(fill, stroke);
         } else {
           text = TRAIL_DIAMOND_REGULAR;
-          z = Z_TRAIL_MARKER;
         }
         this.textRenderer.plan(text, centerPx, z, planner);
       }
@@ -315,14 +304,19 @@ export class MapData extends Disposable implements Layer {
         const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
         const centerPx = projectLatLng(center);
         const lengthMeters = data.getFloat64();
+
+        const active = this.active.has(id);
+        const hover = this.hover.has(id);
+        const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
+        const fill =
+            hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
+        const stroke =
+            hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
         let diamond;
-        let z;
-        if (this.highlighted.has(id)) {
-          diamond = TRAIL_DIAMOND_HIGHLIGHTED;
-          z = Z_RAISED_TRAIL_MARKER;
+        if (active || hover) {
+          diamond = renderableDiamond(fill, stroke);
         } else {
           diamond = TRAIL_DIAMOND_REGULAR;
-          z = Z_TRAIL_MARKER;
         }
         this.textRenderer.plan(diamond, centerPx, z, planner);
       }
@@ -343,27 +337,11 @@ export class MapData extends Disposable implements Layer {
     const pathCount = data.getInt32();
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getBigInt64();
-      const highlighted = this.highlighted.has(id);
-
       const type = data.getInt32();
-
       const pathVertexBytes = data.getInt32();
       const pathVertexCount = pathVertexBytes / 8;
       data.align(4);
-      let color;
-      let buffer;
-      if (this.highlighted.has(id)) {
-        color = PATH_HIGHLIGHTED_COLORS;
-        buffer = raised;
-      } else {
-        color = PATH_COLORS;
-        buffer = lines;
-      }
-      buffer.push({
-        colorFill: color.fill,
-        colorStroke: color.stroke,
-        vertices: data.sliceFloat32(pathVertexCount * 2),
-      });
+      this.pushPath(id, data.sliceFloat32(pathVertexCount * 2), lines, raised);
     }
 
     if (lines.length > 0) {
@@ -372,6 +350,21 @@ export class MapData extends Disposable implements Layer {
     if (raised.length > 0) {
       planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
     }
+  }
+
+  private pushPath(id: bigint, vertices: Float32Array, lines: Line[], raised: Line[]): void {
+    const active = this.active.has(id);
+    const hover = this.hover.has(id);
+    const buffer = active || hover ? raised : lines;
+    const fill =
+        hover ? HOVER_PALETTE.fill : active ? ACTIVE_PALETTE.fill : DEFAULT_PALETTE.fill;
+    const stroke =
+        hover ? HOVER_PALETTE.stroke : active ? ACTIVE_PALETTE.stroke : DEFAULT_PALETTE.stroke;
+    buffer.push({
+      colorFill: fill,
+      colorStroke: stroke,
+      vertices: vertices,
+    });
   }
 
   private detailCellsInView(viewportSize: Vec2): S2CellId[] {
@@ -418,7 +411,7 @@ export class MapData extends Disposable implements Layer {
 
     for (const trail of trails) {
       const detailScreenPixelSize =
-          this.textRenderer.measure(renderableTrailPin(trail.lengthMeters, false));
+          this.textRenderer.measure(renderableTrailPin(trail.lengthMeters, 'unused', 'unused'));
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
       this.detailBounds.insert({
         entity: trail,
@@ -480,20 +473,20 @@ function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number
   return bestDistance2;
 }
 
-function renderableTrailPin(lengthMeters: number, highlighted: boolean): RenderableText {
+function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableText {
   return {
-    ...renderableDiamond(highlighted),
+    ...renderableDiamond(fill, stroke),
     text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
     paddingX: 6,
     paddingY: 7,
   };
 }
 
-function renderableDiamond(highlighted: boolean): RenderableText {
+function renderableDiamond(fill: string, stroke: string): RenderableText {
   return {
     text: '',
-    backgroundColor: highlighted ? HIGHLIGHT_TRAIL_COLOR : '#3a3a3a',
-    fillColor: highlighted ? 'black' : 'white',
+    fillColor: fill,
+    strokeColor: stroke,
     fontSize: 14,
     iconography: Iconography.DIAMOND,
     paddingX: 0,

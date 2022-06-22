@@ -2,6 +2,7 @@ import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { checkExists } from './common/asserts';
+import { rgbaToUint32F } from './common/math';
 import { Vec2 } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, MapController, SELECTION_CHANGED } from './map/events';
 import { Path, Trail } from './models/types';
@@ -123,7 +124,7 @@ export class OverviewController extends Controller<{}, Deps, HTMLDivElement, Sta
     if (!trail) {
       return;
     }
-    this.mapController.setHighlighted(trail, selected);
+    this.mapController.setHover(trail, selected);
     this.updateState({
       ...this.state,
       hovering: selected ? trail : undefined,

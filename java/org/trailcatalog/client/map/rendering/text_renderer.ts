@@ -1,6 +1,6 @@
 import { checkExists } from '../../common/asserts';
 import { HashMap, HashSet } from '../../common/collections';
-import { Vec2 } from '../../common/types';
+import { Rgba32F, Vec2 } from '../../common/types';
 
 import { RenderPlanner } from './render_planner';
 import { Renderer } from './renderer';
@@ -11,14 +11,14 @@ export enum Iconography {
   DIAMOND = 1,
 }
 
-const DIAMOND_BORDER_RADIUS_PX = 2;
-export const DIAMOND_RADIUS_PX = 8;
+const DIAMOND_BORDER_RADIUS_PX = 1;
+export const DIAMOND_RADIUS_PX = 6;
 const DIAMOND_Y_PADDING_PX = 4;
 
 export interface RenderableText {
   text: string;
-  backgroundColor: string,
   fillColor: string,
+  strokeColor: string,
   fontSize: number;
   iconography: Iconography;
   paddingX: number;
@@ -35,7 +35,7 @@ export class TextRenderer {
 
   constructor(private readonly renderer: Renderer) {
     const keyFn =
-        (k: RenderableText) => `${k.fontSize}${k.text}${k.backgroundColor}${k.fillColor}`
+        (k: RenderableText) => `${k.fontSize}${k.text}${k.fillColor}${k.strokeColor}`
     this.cache = new HashMap(keyFn);
     this.canvas = document.createElement('canvas');
     this.context = checkExists(this.canvas.getContext('2d'));
@@ -136,9 +136,9 @@ export class TextRenderer {
     this.canvas.width = fullSize[0];
     this.canvas.height = fullSize[1];
 
-    ctx.fillStyle = text.backgroundColor;
+    ctx.fillStyle = text.fillColor;
     ctx.lineWidth = 2;
-    ctx.strokeStyle = text.fillColor;
+    ctx.strokeStyle = text.strokeColor;
 
     let textYOffset;
     if (text.iconography === Iconography.DIAMOND) {
@@ -171,7 +171,7 @@ export class TextRenderer {
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = text.fillColor;
+      ctx.fillStyle = text.strokeColor;
       ctx.font = font;
       ctx.textBaseline = 'middle';
       ctx.fillText(text.text, text.paddingX, textYOffset + textHeight / 2);

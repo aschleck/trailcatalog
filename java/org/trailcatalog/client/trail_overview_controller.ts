@@ -56,6 +56,10 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
       zoom,
     };
 
+    if (this.state.trail) {
+      controller.setActive(this.state.trail, true);
+    }
+
     const nearby = 
           controller.listTrailsInViewport()
               .filter(t => t.id !== this.state.trail?.id)

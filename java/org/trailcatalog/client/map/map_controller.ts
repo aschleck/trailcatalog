@@ -2,7 +2,7 @@ import { Controller, Response } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
-import { Vec2 } from '../common/types';
+import { Rgba32F, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
 import { Path, Trail } from '../models/types';
@@ -143,8 +143,12 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     return this.mapData.listTrailsOnPath(path);
   }
 
-  setHighlighted(trail: Trail, highlighted: boolean): void {
-    return this.mapData.setHighlighted(trail, highlighted);
+  setActive(trail: Trail, state: boolean): void {
+    return this.mapData.setActive(trail, state);
+  }
+
+  setHover(trail: Trail, state: boolean): void {
+    return this.mapData.setHover(trail, state);
   }
 
   click(clientX: number, clientY: number): void {
@@ -161,13 +165,13 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     const best = this.mapData.queryClosest(this.clientToWorld(clientX, clientY));
     if (this.lastHoverTarget !== best) {
       if (this.lastHoverTarget) {
-        this.mapData.setHighlighted(this.lastHoverTarget, false);
+        this.mapData.setHover(this.lastHoverTarget, false);
       }
       this.trigger(HOVER_CHANGED, {controller: this, target: best});
     }
     this.lastHoverTarget = best;
     if (best) {
-      this.mapData.setHighlighted(best, true);
+      this.mapData.setHover(best, true);
     }
   }
 
