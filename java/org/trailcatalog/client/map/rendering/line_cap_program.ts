@@ -37,12 +37,14 @@ export class LineCapProgram extends Program<LineCapProgramData> {
         /* stride= */ 0,
         /* offset= */ 0);
 
-    gl.enableVertexAttribArray(this.program.attributes.center);
-    gl.vertexAttribDivisor(this.program.attributes.center, 1);
     gl.enableVertexAttribArray(this.program.attributes.colorFill);
     gl.vertexAttribDivisor(this.program.attributes.colorFill, 1);
     gl.enableVertexAttribArray(this.program.attributes.colorStroke);
     gl.vertexAttribDivisor(this.program.attributes.colorStroke, 1);
+    gl.enableVertexAttribArray(this.program.attributes.next);
+    gl.vertexAttribDivisor(this.program.attributes.next, 1);
+    gl.enableVertexAttribArray(this.program.attributes.previous);
+    gl.vertexAttribDivisor(this.program.attributes.previous, 1);
     gl.enableVertexAttribArray(this.program.attributes.radius);
     gl.vertexAttribDivisor(this.program.attributes.radius, 1);
   }
@@ -52,12 +54,19 @@ export class LineCapProgram extends Program<LineCapProgramData> {
 
     // These must match LineProgram, because we parasitize that geometry
     gl.vertexAttribPointer(
-        this.program.attributes.center,
+        this.program.attributes.previous,
         4,
         gl.FLOAT,
         /* normalize= */ false,
         VERTEX_STRIDE,
         /* offset= */ offset + 0);
+    gl.vertexAttribPointer(
+        this.program.attributes.next,
+        4,
+        gl.FLOAT,
+        /* normalize= */ false,
+        VERTEX_STRIDE,
+        /* offset= */ offset + 16);
     gl.vertexAttribPointer(
         this.program.attributes.colorFill,
         1,
@@ -92,6 +101,9 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     gl.stencilFunc(gl.ALWAYS, 1, 0xff);
     gl.stencilMask(0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
+    gl.uniform1ui(this.program.uniforms.side, 0);
+    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
+    gl.uniform1ui(this.program.uniforms.side, 1);
     gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
 
     // Draw with the border only where we didn't already draw
@@ -99,6 +111,9 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     // Don't write to the stencil buffer so we don't overlap other lines
     gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
+    // side 1 was already set, so no need for uniform1ui
+    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
+    gl.uniform1ui(this.program.uniforms.side, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
   }
 
@@ -107,12 +122,14 @@ export class LineCapProgram extends Program<LineCapProgramData> {
 
     gl.disableVertexAttribArray(this.program.attributes.position);
 
-    gl.vertexAttribDivisor(this.program.attributes.center, 0);
-    gl.disableVertexAttribArray(this.program.attributes.center);
     gl.vertexAttribDivisor(this.program.attributes.colorFill, 0);
     gl.disableVertexAttribArray(this.program.attributes.colorFill);
     gl.vertexAttribDivisor(this.program.attributes.colorStroke, 0);
     gl.disableVertexAttribArray(this.program.attributes.colorStroke);
+    gl.vertexAttribDivisor(this.program.attributes.next, 0);
+    gl.disableVertexAttribArray(this.program.attributes.next);
+    gl.vertexAttribDivisor(this.program.attributes.previous, 0);
+    gl.disableVertexAttribArray(this.program.attributes.previous);
     gl.vertexAttribDivisor(this.program.attributes.radius, 0);
     gl.disableVertexAttribArray(this.program.attributes.radius);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -123,16 +140,18 @@ export class LineCapProgram extends Program<LineCapProgramData> {
 
 interface LineCapProgramData extends ProgramData {
   attributes: {
-    center: number;
     colorFill: number;
     colorStroke: number;
+    next: number;
     position: number;
+    previous: number;
     radius: number;
   };
   uniforms: {
     cameraCenter: WebGLUniformLocation;
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    side: WebGLUniformLocation;
     renderBorder: WebGLUniformLocation;
   };
 }
@@ -146,12 +165,14 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
       uniform bool renderBorder;
+      uniform uint side;
 
       // The position of the vertex in the unit circle
       in highp vec2 position;
 
-      // This is a Mercator coordinate ranging from -1 to 1 on both x and y
-      in highp vec4 center;
+      // These are Mercator coordinates ranging from -1 to 1 on both x and y
+      in highp vec4 next;
+      in highp vec4 previous;
 
       in highp float colorFill;
       in highp float colorStroke;
@@ -167,6 +188,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       ${FP64_OPERATIONS}
 
       void main() {
+        vec4 center = side == 0u ? previous : next;
         vec4 location = -cameraCenter + center;
         highp float actualRadius = radius - (renderBorder ? 0. : 2.);
         vec4 worldCoord =
@@ -226,10 +248,11 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
     instanceSize: VERTEX_STRIDE,
     vertexCount: CIRCLE_VERTEX_COUNT,
     attributes: {
-      center: checkExists(gl.getAttribLocation(programId, 'center')),
       colorFill: checkExists(gl.getAttribLocation(programId, 'colorFill')),
       colorStroke: checkExists(gl.getAttribLocation(programId, 'colorStroke')),
+      next: checkExists(gl.getAttribLocation(programId, 'next')),
       position: checkExists(gl.getAttribLocation(programId, 'position')),
+      previous: checkExists(gl.getAttribLocation(programId, 'previous')),
       radius: checkExists(gl.getAttribLocation(programId, 'radius')),
     },
     uniforms: {
@@ -237,6 +260,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
       renderBorder: checkExists(gl.getUniformLocation(programId, 'renderBorder')),
+      side: checkExists(gl.getUniformLocation(programId, 'side')),
     },
   };
 }
