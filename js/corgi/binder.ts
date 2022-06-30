@@ -209,6 +209,8 @@ export function applyInstantiationResult(result: InstantiationResult): void {
       }
 
       const invoker = (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
         maybeInstantiateAndCall(root, spec, (controller: any) => {
           const method = controller[handler] as (e: any) => unknown;
           method.call(controller, e);

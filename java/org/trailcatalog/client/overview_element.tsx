@@ -141,11 +141,12 @@ function SelectedTrailsElement({ position, trails }: {
 
 function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Trail }) {
   return <>
-    <section
+    <a
         className={
           'cursor-pointer flex gap-2 items-stretch pr-2'
               + (highlight ? ' bg-tc-gray-700' : '')
         }
+        href={`/trail/${trail.id}`}
         data-trail-id={trail.id}
         unboundEvents={{
           click: 'viewTrail',
@@ -165,7 +166,7 @@ function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Tra
         {' '}
         <span className="font-xs text-tc-gray-400">miles</span>
       </div>
-    </section>
+    </a>
   </>;
 }
 
