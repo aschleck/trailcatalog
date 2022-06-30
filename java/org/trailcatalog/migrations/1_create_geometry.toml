@@ -182,14 +182,14 @@ primary_key = ["id", "epoch"]
   type = "BYTEA"
 
   [[actions.columns]]
-  name = "center_lat_degrees"
+  name = "bound_degrees_e7"
   nullable = false
-  type = "INT"
+  type = "BYTEA"
 
   [[actions.columns]]
-  name = "center_lng_degrees"
+  name = "marker_degrees_e7"
   nullable = false
-  type = "INT"
+  type = "BYTEA"
 
   [[actions.columns]]
   name = "elevation_down_meters"

@@ -94,5 +94,5 @@ export function projectLatLngRect(rect: S2LatLngRect): PixelRect {
   return {
     low: projectS2LatLng(rect.lo()),
     high: projectS2LatLng(rect.hi()),
-  };
+  } as PixelRect;
 }

@@ -17,6 +17,7 @@ import org.trailcatalog.importers.pbf.GatherWayNodes
 import org.trailcatalog.importers.pbf.ExtractWayRelationPairs
 import org.trailcatalog.importers.pbf.GatherRelationWays
 import org.trailcatalog.importers.pbf.LatLngE7
+import org.trailcatalog.importers.pbf.LatLngRectE7
 import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
 import org.trailcatalog.importers.pbf.PbfBlockReader
@@ -83,9 +84,10 @@ fun main(args: Array<String>) {
           array[i] = from.readLong()
         }
       }
-      val center = LatLngE7(from.readInt(), from.readInt())
+      val bound = LatLngRectE7(from.readInt(), from.readInt(), from.readInt(), from.readInt())
+      val marker = LatLngE7(from.readInt(), from.readInt())
       val lengthMeters = from.readDouble()
-      return Trail(id, type, cell, name, paths, center, lengthMeters)
+      return Trail(id, type, cell, name, paths, bound, marker, lengthMeters)
     }
 
     override fun size(v: Trail): Int {
@@ -94,7 +96,7 @@ fun main(args: Array<String>) {
           v.name.encodeToByteArray().size +
           EncodedOutputStream.varIntSize(v.paths.size) +
           8 * v.paths.size +
-          4 + 4 + 8
+          4 * 4 + 2 * 4 + 8
     }
 
     override fun write(v: Trail, to: EncodedOutputStream) {
@@ -106,8 +108,12 @@ fun main(args: Array<String>) {
       to.write(name)
       to.writeVarInt(v.paths.size)
       v.paths.forEach { to.writeLong(it) }
-      to.writeInt(v.center.lat)
-      to.writeInt(v.center.lng)
+      to.writeInt(v.bound.lowLat)
+      to.writeInt(v.bound.lowLng)
+      to.writeInt(v.bound.highLat)
+      to.writeInt(v.bound.highLng)
+      to.writeInt(v.marker.lat)
+      to.writeInt(v.marker.lng)
       to.writeDouble(v.lengthMeters)
     }
   })

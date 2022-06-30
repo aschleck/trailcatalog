@@ -6,7 +6,7 @@ import { Service, ServiceResponse } from 'js/corgi/service';
 import { IdentitySetMultiMap } from '../common/collections';
 import { LittleEndianView } from '../common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng } from '../common/math';
-import { LatLng, PixelRect, S2CellNumber, Vec2 } from '../common/types';
+import { LatLng, LatLngRect, PixelRect, S2CellNumber, Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
 import { PIN_CELL_ID } from '../workers/data_constants';
 import { FetcherCommand, Viewport } from '../workers/data_fetcher';
@@ -130,14 +130,22 @@ export class MapDataService extends Service<EmptyDeps> {
       const nameLength = data.getInt32();
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
       const type = data.getInt32();
-      const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const lengthMeters = data.getFloat64();
       const existing = this.trails.get(id);
       let trail;
       if (existing) {
         trail = existing;
       } else {
-        trail = constructTrail(id, name, type, [], center, lengthMeters);
+        trail =
+            constructTrail(
+                id,
+                name,
+                type,
+                [],
+                {low: [0, 0], high: [0, 0]} as LatLngRect,
+                marker,
+                lengthMeters);
         this.trails.set(id, trail);
       }
       trails.push(trail);
@@ -176,10 +184,10 @@ export class MapDataService extends Service<EmptyDeps> {
       const pathVertexCount = pathVertexBytes / 8;
       data.align(4);
       const points = data.sliceFloat32(pathVertexCount * 2);
-      const bound: PixelRect = {
+      const bound = {
         low: [1, 1],
         high: [-1, -1],
-      };
+      } as PixelRect;
       for (let i = 0; i < pathVertexCount; ++i) {
         const x = points[i * 2 + 0];
         const y = points[i * 2 + 1];
@@ -203,7 +211,10 @@ export class MapDataService extends Service<EmptyDeps> {
       const pathCount = data.getInt32();
       data.align(8);
       const paths = [...data.sliceBigInt64(pathCount)];
-      const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const boundLow = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const boundHigh = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const bound = {low: boundLow, high: boundHigh, brand: 'LatLngRect'} as const;
+      const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const lengthMeters = data.getFloat64();
       const existing = this.trails.get(id);
       let trail;
@@ -212,8 +223,9 @@ export class MapDataService extends Service<EmptyDeps> {
         if (trail.paths.length === 0) {
           trail.paths.push(...paths);
         }
+        trail.bound = bound;
       } else {
-        trail = constructTrail(id, name, type, paths, center, lengthMeters);
+        trail = constructTrail(id, name, type, paths, bound, marker, lengthMeters);
         this.trails.set(id, trail);
       }
       this.trailsInDetails.add(trail);
@@ -261,7 +273,7 @@ export class MapDataService extends Service<EmptyDeps> {
       data.skip(nameLength + 4);
       const pathCount = data.getInt32();
       data.align(8);
-      data.skip(pathCount * 8 + 8 + 8);
+      data.skip(pathCount * 8 + 4 * 4 + 2 * 4 + 8);
 
       const entity = this.trails.get(id);
       if (entity) {
@@ -283,26 +295,29 @@ function constructTrail(
     name: string,
     type: number,
     paths: bigint[],
-    center: LatLng,
+    bound: LatLngRect,
+    marker: LatLng,
     lengthMeters: number): Trail {
   // We really struggle bounds checking trails, but on the plus side we
   // calculate a radius on click queries. So as long as our query radius
   // includes this point we can do fine-grained checks to determine what is
   // *actually* being clicked.
   const epsilon = 1e-5;
-  const centerPx = projectLatLng(center);
-  const bound: PixelRect = {
-    low: [centerPx[0] - epsilon, centerPx[1] - epsilon],
-    high: [centerPx[0] + epsilon, centerPx[1] + epsilon],
-  };
+  const markerPx = projectLatLng(marker);
+  const mouseBound = {
+    low: [markerPx[0] - epsilon, markerPx[1] - epsilon],
+    high: [markerPx[0] + epsilon, markerPx[1] + epsilon],
+    brand: 'PixelRect' as const,
+  } as PixelRect;
   return new Trail(
       id,
       name,
       type,
-      bound,
+      mouseBound,
       paths,
-      center,
-      centerPx,
+      bound,
+      marker,
+      markerPx,
       lengthMeters);
 }
 

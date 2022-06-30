@@ -34,8 +34,8 @@ data class WireTrail(
   val name: String,
   val type: Int,
   val pathIds: ByteArray,
-  val lat: Int,
-  val lng: Int,
+  val bound: ByteArray,
+  val marker: ByteArray,
   val lengthMeters: Double,
 )
 
@@ -57,8 +57,8 @@ fun fetchData(ctx: Context) {
                   + "name, "
                   + "type, "
                   + "path_ids, "
-                  + "center_lat_degrees, "
-                  + "center_lng_degrees, "
+                  + "bound_degrees_e7, "
+                  + "marker_degrees_e7, "
                   + "length_meters "
                   + "FROM trails "
                   + "WHERE id = ? AND epoch = ?")
@@ -73,10 +73,8 @@ fun fetchData(ctx: Context) {
           data["name"] = results.getString(1)
           data["type"] = results.getInt(2)
           data["path_ids"] = String(Base64.getEncoder().encode(results.getBytes(3)))
-          data["center_degrees"] = HashMap<String, Int>().also {
-            it["lat"] = results.getInt(4)
-            it["lng"] = results.getInt(5)
-          }
+          data["bound"] = String(Base64.getEncoder().encode(results.getBytes(4)))
+          data["marker"] = String(Base64.getEncoder().encode(results.getBytes(5)))
           data["length_meters"] = results.getDouble(6)
         }
         responses.add(data)
@@ -111,8 +109,7 @@ fun fetchMeta(ctx: Context) {
     output.writeInt(asUtf8.size)
     output.write(asUtf8)
     output.writeInt(trail.type)
-    output.writeInt(trail.lat)
-    output.writeInt(trail.lng)
+    output.write(trail.marker)
     output.writeDouble(trail.lengthMeters)
   }
   ctx.result(bytes.toByteArray())
@@ -198,8 +195,8 @@ fun fetchDataPacked(ctx: Context) {
             + "name, "
             + "type, "
             + "path_ids, "
-            + "center_lat_degrees, "
-            + "center_lng_degrees, "
+            + "bound_degrees_e7, "
+            + "marker_degrees_e7, "
             + "length_meters "
             + "FROM trails t "
             + "WHERE "
@@ -218,8 +215,8 @@ fun fetchDataPacked(ctx: Context) {
         name = results.getString(2),
         type = results.getInt(3),
         pathIds = results.getBytes(4),
-        lat = results.getInt(5),
-        lng = results.getInt(6),
+        bound = results.getBytes(5),
+        marker = results.getBytes(6),
         lengthMeters = results.getDouble(7),
     )
   }
@@ -286,8 +283,8 @@ private fun writeDetailTrails(
     output.flush()
     bytes.align(8)
     output.write(trail.pathIds)
-    output.writeInt(trail.lat)
-    output.writeInt(trail.lng)
+    output.write(trail.bound)
+    output.write(trail.marker)
     output.writeDouble(trail.lengthMeters)
   }
 }
@@ -302,8 +299,8 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
               + "name, "
               + "type, "
               + (if (includePaths) "path_ids, " else "")
-              + "center_lat_degrees, "
-              + "center_lng_degrees, "
+              + "bound_degrees_e7, "
+              + "marker_degrees_e7, "
               + "length_meters "
               + "FROM trails t "
               + (if (boundary != null) "JOIN trails_in_boundaries tib ON t.id = tib.trail_id " else "")
@@ -329,8 +326,8 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
               + "name, "
               + "type, "
               + (if (includePaths) "path_ids, " else "")
-              + "center_lat_degrees, "
-              + "center_lng_degrees, "
+              + "bound_degrees_e7, "
+              + "marker_degrees_e7, "
               + "length_meters "
               + "FROM trails t "
               + (if (boundary != null) "JOIN trails_in_boundaries tib ON t.id = tib.trail_id " else "")
@@ -354,8 +351,8 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
               name = results.getString(2),
               type = results.getInt(3),
               pathIds = if (includePaths) results.getBytes(4) else byteArrayOf(),
-              lat = results.getInt(4 + pathOffset),
-              lng = results.getInt(5 + pathOffset),
+              bound = results.getBytes(4 + pathOffset),
+              marker = results.getBytes(5 + pathOffset),
               lengthMeters = results.getDouble(6 + pathOffset),
           ))
     }

@@ -16,7 +16,7 @@ class DumpTrails(private val epoch: Int, private val hikari: HikariDataSource)
     input.use {
       val stream =
           StringifyingInputStream(input) { trail, csv ->
-            // id,epoch,type,cell,name,path_ids,center_lat_degrees,center_lng_degrees,
+            // id,epoch,type,cell,name,path_ids,bound_degrees_e7,marker_degrees_e7,
             // elevation_down_meters,elevation_up_meters,length_meters,representative_boundary,
             // source_relation
             csv.append(trail.relationId)
@@ -36,9 +36,19 @@ class DumpTrails(private val epoch: Int, private val hikari: HikariDataSource)
             }
             appendByteArray(paths.array(), csv)
             csv.append(",")
-            csv.append(trail.center.lat)
+            val bound = ByteBuffer.allocate(4 * 4).order(ByteOrder.LITTLE_ENDIAN)
+            val boundAsInts = bound.asIntBuffer()
+            boundAsInts.put(trail.bound.lowLat)
+            boundAsInts.put(trail.bound.lowLng)
+            boundAsInts.put(trail.bound.highLat)
+            boundAsInts.put(trail.bound.highLng)
+            appendByteArray(bound.array(), csv)
             csv.append(",")
-            csv.append(trail.center.lng)
+            val marker = ByteBuffer.allocate(2 * 4).order(ByteOrder.LITTLE_ENDIAN)
+            val markerAsInts = marker.asIntBuffer()
+            markerAsInts.put(trail.marker.lat)
+            markerAsInts.put(trail.marker.lng)
+            appendByteArray(marker.array(), csv)
             csv.append(",0,0,")
             csv.append(trail.lengthMeters)
             csv.append(",,")

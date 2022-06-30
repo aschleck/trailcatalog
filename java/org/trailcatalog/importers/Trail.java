@@ -1,6 +1,7 @@
 package org.trailcatalog.importers;
 
 import org.trailcatalog.importers.pbf.LatLngE7;
+import org.trailcatalog.importers.pbf.LatLngRectE7;
 
 public record Trail(
     long relationId,
@@ -8,6 +9,7 @@ public record Trail(
     long cell,
     String name,
     long[] paths,
-    LatLngE7 center,
+    LatLngRectE7 bound,
+    LatLngE7 marker,
     double lengthMeters) {
 }

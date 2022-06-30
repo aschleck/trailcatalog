@@ -6,10 +6,15 @@ export type Vec4 = [number, number, number, number];
 export type LatLng = Vec2 & {brand: 'LatLng'};
 export type Rgba32F = number & {brand: 'Rgba32F'};
 
-export interface PixelRect {
+export type LatLngRect = {
   low: Vec2;
   high: Vec2;
-};
+} & {brand: 'LatLngRect'};
+
+export type PixelRect = {
+  low: Vec2;
+  high: Vec2;
+} & {brand: 'PixelRect'};
 
 export interface TileId {
   x: number;

@@ -37,7 +37,7 @@ interface PathHandle {
 
 interface TrailHandle {
   readonly entity: Trail;
-  readonly centerPx: Vec2;
+  readonly markerPx: Vec2;
   readonly screenPixelBound: Vec4;
 }
 
@@ -133,7 +133,7 @@ export class MapData extends Disposable implements Layer {
         d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
       } else if (handle.entity instanceof Trail) {
         const trailHandle = handle as TrailHandle;
-        const p = trailHandle.centerPx;
+        const p = trailHandle.markerPx;
         const bound =
             this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD
                 ? trailHandle.screenPixelBound : this.diamondPixelBounds;
@@ -252,9 +252,9 @@ export class MapData extends Disposable implements Layer {
         const type = data.getInt32();
         const trailWayCount = data.getInt32();
         data.align(8);
-        data.skip(trailWayCount * 8);
-        const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-        const centerPx = projectLatLng(center);
+        data.skip(trailWayCount * 8 + 4 * 4);
+        const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+        const markerPx = projectLatLng(marker);
         const lengthMeters = data.getFloat64();
         const active = this.active.has(id);
         const hover = this.hover.has(id);
@@ -271,7 +271,7 @@ export class MapData extends Disposable implements Layer {
         } else {
           text = TRAIL_DIAMOND_REGULAR;
         }
-        this.textRenderer.plan(text, centerPx, z, planner);
+        this.textRenderer.plan(text, markerPx, z, planner);
       }
     }
 
@@ -301,8 +301,8 @@ export class MapData extends Disposable implements Layer {
         const nameLength = data.getInt32();
         data.skip(nameLength);
         const type = data.getInt32();
-        const center = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-        const centerPx = projectLatLng(center);
+        const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+        const markerPx = projectLatLng(marker);
         const lengthMeters = data.getFloat64();
 
         const active = this.active.has(id);
@@ -318,7 +318,7 @@ export class MapData extends Disposable implements Layer {
         } else {
           diamond = TRAIL_DIAMOND_REGULAR;
         }
-        this.textRenderer.plan(diamond, centerPx, z, planner);
+        this.textRenderer.plan(diamond, markerPx, z, planner);
       }
     }
   }
@@ -391,9 +391,9 @@ export class MapData extends Disposable implements Layer {
     for (const trail of trails) {
       this.metadataBounds.insert({
         entity: trail,
-        centerPx: trail.centerPx,
+        markerPx: trail.markerPx,
         screenPixelBound: this.diamondPixelBounds,
-      }, trail.bound);
+      }, trail.mouseBound);
     }
 
     this.lastChange = Date.now();
@@ -415,14 +415,14 @@ export class MapData extends Disposable implements Layer {
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
       this.detailBounds.insert({
         entity: trail,
-        centerPx: trail.centerPx,
+        markerPx: trail.markerPx,
         screenPixelBound: [
           -halfDetailWidth,
           -detailScreenPixelSize[1] + DIAMOND_RADIUS_PX,
           halfDetailWidth,
           DIAMOND_RADIUS_PX,
         ],
-      }, trail.bound);
+      }, trail.mouseBound);
     }
   }
 
@@ -432,8 +432,8 @@ export class MapData extends Disposable implements Layer {
     }
 
     for (const trail of trails) {
-      this.detailBounds.delete(trail.bound);
-      this.metadataBounds.delete(trail.bound);
+      this.detailBounds.delete(trail.mouseBound);
+      this.metadataBounds.delete(trail.mouseBound);
     }
   }
 

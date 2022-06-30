@@ -1,4 +1,4 @@
-import { LatLng, PixelRect, Vec2 } from '../common/types';
+import { LatLng, LatLngRect, PixelRect, Vec2 } from '../common/types';
 
 export class Path {
   constructor(
@@ -14,10 +14,11 @@ export class Trail {
       readonly id: bigint,
       readonly name: string,
       readonly type: number,
-      readonly bound: PixelRect,
+      readonly mouseBound: PixelRect,
       readonly paths: bigint[],
-      readonly center: LatLng,
-      readonly centerPx: Vec2,
+      public bound: LatLngRect,
+      readonly marker: LatLng,
+      readonly markerPx: Vec2,
       readonly lengthMeters: number,
   ) {}
 
