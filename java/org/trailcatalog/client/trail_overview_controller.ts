@@ -72,6 +72,7 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
   }
 
   viewNearbyTrails(): void {
+    this.data.clearPins();
     this.views.showOverview(this.lastCamera);
   }
 
