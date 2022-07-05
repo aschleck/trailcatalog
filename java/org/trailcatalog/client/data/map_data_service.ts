@@ -29,6 +29,12 @@ export class MapDataService extends Service<EmptyDeps> {
   private readonly fetcher: Worker;
   private listener: Listener|undefined;
   private viewport: Viewport;
+  // When a pin is set but the trail isn't loaded, we need to fetch the trail from the server
+  // directly. These promises resolve on that load.
+  private readonly pinnedMissingTrails: Map<bigint, {
+    resolve: (trail: Trail) => void;
+    reject: (v?: unknown) => void;
+  }>;
   // We load metadata when loading detail cells, so we need to track which trails have been loaded
   // into details to avoid telling listeners to load them from the metadata into details and then
   // to load them again when we fetch details.
@@ -48,6 +54,7 @@ export class MapDataService extends Service<EmptyDeps> {
       lng: [0, 0],
       zoom: 31,
     };
+    this.pinnedMissingTrails = new Map();
     this.trailsInDetails = new Set();
 
     this.metadataCells = new Map();
@@ -83,11 +90,39 @@ export class MapDataService extends Service<EmptyDeps> {
     this.listener.loadDetail(this.paths.values(), this.trailsInDetails);
   }
 
-  setPins({trail}: {trail: bigint}): void {
+  clearPins(): void {
+    this.fetcher.postMessage({
+      kind: 'spr',
+    });
+
+    for (const {reject} of this.pinnedMissingTrails.values()) {
+      reject();
+    }
+    this.pinnedMissingTrails.clear();
+  }
+
+  setPins({trail}: {trail: bigint}): Promise<Trail> {
     this.fetcher.postMessage({
       kind: 'spr',
       trail,
     });
+
+    for (const {reject} of this.pinnedMissingTrails.values()) {
+      reject();
+    }
+    this.pinnedMissingTrails.clear();
+
+    const existing = this.trails.get(trail);
+    if (existing && this.trailsInDetails.has(existing)) {
+      return Promise.resolve(existing);
+    } else {
+      return new Promise((resolve, reject) => {
+        this.pinnedMissingTrails.set(trail, {
+          resolve,
+          reject,
+        });
+      });
+    }
   }
 
   clearListener(): void {
@@ -161,6 +196,7 @@ export class MapDataService extends Service<EmptyDeps> {
       this.detailCells.set(id, undefined);
       return;
     }
+
     // Interesting choice: we don't load the pin cell. The complication we're avoiding is the case
     // where we have the cell containing a path/trail and that path/trail in the pin cell at the
     // same time. Determining how to unload data in the paths/trails map is complicated. The main
@@ -168,8 +204,45 @@ export class MapDataService extends Service<EmptyDeps> {
     // interactive, As it turns out, our usecase is to always render pinned paths regardless of zoom
     // level. We can therefore just only render pinned paths and skip trails, and we sacrafice
     // interactivity for them.
+    //
+    // The exception is that we do need trail bounds, so we update the bounds for any trails we get.
     if (id === PIN_CELL_ID) {
       this.detailCells.set(id, buffer);
+
+      const data = new LittleEndianView(buffer);
+      const pathCount = data.getInt32();
+      for (let i = 0; i < pathCount; ++i) {
+        data.skip(8 + 4);
+        const pathVertexBytes = data.getInt32();
+        data.align(4);
+        data.skip(pathVertexBytes);
+      }
+
+      const trailCount = data.getInt32();
+      for (let i = 0; i < trailCount; ++i) {
+        const id = data.getBigInt64();
+        const nameLength = data.getInt32();
+        data.skip(nameLength + 4);
+        const pathCount = data.getInt32();
+        data.align(8);
+        data.skip(pathCount * 8);
+        const boundLow = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+        const boundHigh = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+        const bound = {low: boundLow, high: boundHigh, brand: 'LatLngRect'} as const;
+        data.skip(2 * 4 + 8);
+        const existing = this.trails.get(id);
+        if (existing) {
+          existing.bound = bound;
+        }
+      }
+
+      for (const [trailId, {resolve}] of this.pinnedMissingTrails) {
+        const trail = this.trails.get(trailId);
+        if (trail) {
+          resolve(trail);
+          this.pinnedMissingTrails.delete(trailId);
+        }
+      }
       return;
     }
 

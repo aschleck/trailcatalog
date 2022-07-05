@@ -70,12 +70,6 @@ export function TrailOverviewElement({trailId}: {
     return <>Invalid trail ID {trailId}</>;
   }
 
-  let camera;
-  if (state.trail) {
-    // Probably we should just pass the bound in directly instead of doing this, alas
-    camera = boundingLlz(state.trail);
-  }
-
   return <>
     <div
         js={corgi.bind({
@@ -91,10 +85,16 @@ export function TrailOverviewElement({trailId}: {
         })}
         className="flex flex-col h-full"
     >
-      <ViewportLayoutElement
-          camera={camera}
-          sidebarContent={<TrailSidebar state={state} />}
-      />
+      {state.trail
+          ? <>
+            <ViewportLayoutElement
+                // Probably we should just pass the bound in directly instead of doing this, alas
+                camera={boundingLlz(state.trail)}
+                sidebarContent={<TrailSidebar state={state} />}
+            />
+          </>
+          : "Loading..."
+      }
     </div>
   </>;
 }

@@ -15,7 +15,7 @@ export interface SetFilterRequest {
 
 export interface SetPinsRequest {
   kind: 'spr';
-  trail: bigint;
+  trail?: bigint;
 }
 
 export interface UpdateViewportRequest {
@@ -96,8 +96,16 @@ class DataFetcher {
       inFlight.abort();
     }
 
+    if (!pins.trail) {
+      this.metadataInFlight.delete(id);
+      this.mail({
+        type: 'ucc',
+        cells: [id],
+      }, []);
+    }
+
     const abort = new AbortController();
-    this.metadataInFlight.set(id, abort);PIN_CELL_ID;
+    this.metadataInFlight.set(id, abort);
     this.throttler.fetch(`/api/data_packed`, {
       method: 'POST',
       signal: abort.signal,

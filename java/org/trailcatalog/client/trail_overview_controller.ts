@@ -39,13 +39,11 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
     this.data = response.deps.services.data;
     this.views = response.deps.services.views;
 
-    this.data.setPins({trail: response.args.trailId});
-
-    this.updateState({
-      ...this.state,
-      // TODO(april): we should be able to load trails if they aren't present to support in-app
-      // cross-linking.
-      trail: this.data.trails.get(response.args.trailId) ?? this.state.trail,
+    this.data.setPins({trail: response.args.trailId}).then(trail => {
+      this.updateState({
+        ...this.state,
+        trail,
+      });
     });
   }
 

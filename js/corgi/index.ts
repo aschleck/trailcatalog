@@ -162,7 +162,7 @@ export function createVirtualElement(
 
     return v;
   } else if (element === Fragment) {
-    if (expandChildren.length === 1) {
+    if (expandChildren.length === 1 && typeof expandChildren[0] === 'object') {
       return expandChildren[0];
     } else {
       return {
