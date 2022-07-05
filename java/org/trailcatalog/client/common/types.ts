@@ -11,6 +11,12 @@ export type LatLngRect = {
   high: Vec2;
 } & {brand: 'LatLngRect'};
 
+export type LatLngZoom = {
+  lat: number;
+  lng: number;
+  zoom: number;
+};
+
 export type PixelRect = {
   low: Vec2;
   high: Vec2;
@@ -20,5 +26,5 @@ export interface TileId {
   x: number;
   y: number;
   zoom: number;
-}
+};
 

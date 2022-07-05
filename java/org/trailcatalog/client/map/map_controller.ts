@@ -2,7 +2,7 @@ import { Controller, Response } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
-import { Rgba32F, Vec2 } from '../common/types';
+import { LatLngZoom, Rgba32F, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
 import { Path, Trail } from '../models/types';
@@ -125,7 +125,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   }
 
   updateArgs(newArgs: Args): void {
-    this.camera.set(newArgs.camera.lat, newArgs.camera.lng, newArgs.camera.zoom);
+    this.setCamera(newArgs.camera);
   }
 
   getTrail(id: bigint): Trail|undefined {
@@ -145,6 +145,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
   setActive(trail: Trail, state: boolean): void {
     return this.mapData.setActive(trail, state);
+  }
+
+  setCamera(llz: LatLngZoom): void {
+    this.camera.set(llz.lat, llz.lng, llz.zoom);
+    this.idle();
   }
 
   setHover(trail: Trail, state: boolean): void {

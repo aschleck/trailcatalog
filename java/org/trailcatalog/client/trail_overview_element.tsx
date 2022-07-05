@@ -8,7 +8,7 @@ import { initialData } from './common/ssr_aware';
 import { MAP_MOVED } from './map/events';
 import { Trail } from './models/types';
 
-import { TrailOverviewController, State } from './trail_overview_controller';
+import { boundingLlz, TrailOverviewController, State } from './trail_overview_controller';
 import { ViewportLayoutElement } from './viewport_layout_element';
 
 export function TrailOverviewElement({trailId}: {
@@ -73,17 +73,7 @@ export function TrailOverviewElement({trailId}: {
   let camera;
   if (state.trail) {
     // Probably we should just pass the bound in directly instead of doing this, alas
-    const trail = state.trail;
-    const dLL = [
-      trail.bound.high[0] - trail.bound.low[0],
-      trail.bound.high[1] - trail.bound.low[1],
-    ];
-    const center = [
-      trail.bound.low[0] + dLL[0] / 2,
-      trail.bound.low[1] + dLL[1] / 2,
-    ];
-    const zoom = Math.log(512 / Math.max(dLL[0], dLL[1])) / Math.log(2);
-    camera = {lat: center[0], lng: center[1], zoom};
+    camera = boundingLlz(state.trail);
   }
 
   return <>
@@ -131,7 +121,15 @@ function TrailSidebar({state}: {state: State}) {
       <div className="border-b-[1px] border-tc-gray-600 -mx-4" />
       <header className="flex font-bold justify-between text-xl">
         <div>{trail.name}</div>
-        <div><OutlinedButton dense={true} icon="ZoomToFit" /></div>
+        <div>
+          <OutlinedButton
+              dense={true}
+              icon="ZoomToFit"
+              unboundEvents={{
+                click: 'zoomToFit',
+              }}
+          />
+        </div>
       </header>
       <section>
         Relation ID:{' '}

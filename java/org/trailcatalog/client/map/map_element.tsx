@@ -1,13 +1,12 @@
 import * as corgi from 'js/corgi';
 
+import { LatLngZoom } from '../common/types';
+
 import { MapController } from './map_controller';
 
 export const MapElement = ({camera, filter}: {
-  camera: {
+  camera: LatLngZoom & {
     force?: boolean;
-    lat: number;
-    lng: number;
-    zoom: number;
   };
   filter?: {boundary?: number};
 }) => {
