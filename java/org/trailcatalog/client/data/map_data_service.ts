@@ -197,6 +197,14 @@ export class MapDataService extends Service<EmptyDeps> {
       return;
     }
 
+    if (id === PIN_CELL_ID) {
+      this.loadPinnedDetail(buffer);
+    } else {
+      this.loadRegularDetail(id, buffer);
+    }
+  }
+
+  private loadPinnedDetail(buffer: ArrayBuffer): void {
     // Interesting choice: we don't load the pin cell. The complication we're avoiding is the case
     // where we have the cell containing a path/trail and that path/trail in the pin cell at the
     // same time. Determining how to unload data in the paths/trails map is complicated. The main
@@ -205,47 +213,49 @@ export class MapDataService extends Service<EmptyDeps> {
     // level. We can therefore just only render pinned paths and skip trails, and we sacrafice
     // interactivity for them.
     //
-    // The exception is that we do need trail bounds, so we update the bounds for any trails we get.
-    if (id === PIN_CELL_ID) {
-      this.detailCells.set(id, buffer);
+    // The exception is that we do fill in existing data.
+    this.detailCells.set(PIN_CELL_ID, buffer);
 
-      const data = new LittleEndianView(buffer);
-      const pathCount = data.getInt32();
-      for (let i = 0; i < pathCount; ++i) {
-        data.skip(8 + 4);
-        const pathVertexBytes = data.getInt32();
-        data.align(4);
-        data.skip(pathVertexBytes);
-      }
-
-      const trailCount = data.getInt32();
-      for (let i = 0; i < trailCount; ++i) {
-        const id = data.getBigInt64();
-        const nameLength = data.getInt32();
-        data.skip(nameLength + 4);
-        const pathCount = data.getInt32();
-        data.align(8);
-        data.skip(pathCount * 8);
-        const boundLow = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-        const boundHigh = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-        const bound = {low: boundLow, high: boundHigh, brand: 'LatLngRect'} as const;
-        data.skip(2 * 4 + 8);
-        const existing = this.trails.get(id);
-        if (existing) {
-          existing.bound = bound;
-        }
-      }
-
-      for (const [trailId, {resolve}] of this.pinnedMissingTrails) {
-        const trail = this.trails.get(trailId);
-        if (trail) {
-          resolve(trail);
-          this.pinnedMissingTrails.delete(trailId);
-        }
-      }
-      return;
+    const data = new LittleEndianView(buffer);
+    const pathCount = data.getInt32();
+    for (let i = 0; i < pathCount; ++i) {
+      data.skip(8 + 4);
+      const pathVertexBytes = data.getInt32();
+      data.align(4);
+      data.skip(pathVertexBytes);
     }
 
+    const trailCount = data.getInt32();
+    for (let i = 0; i < trailCount; ++i) {
+      const id = data.getBigInt64();
+      const nameLength = data.getInt32();
+      data.skip(nameLength + 4);
+      const pathCount = data.getInt32();
+      data.align(8);
+      const paths = [...data.sliceBigInt64(pathCount)];
+      const boundLow = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const boundHigh = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const bound = {low: boundLow, high: boundHigh, brand: 'LatLngRect'} as const;
+      data.skip(2 * 4 + 8);
+      const existing = this.trails.get(id);
+      if (existing) {
+        if (existing.paths.length === 0) {
+          existing.paths.push(...paths);
+        }
+        existing.bound = bound;
+      }
+    }
+
+    for (const [trailId, {resolve}] of this.pinnedMissingTrails) {
+      const trail = this.trails.get(trailId);
+      if (trail) {
+        resolve(trail);
+        this.pinnedMissingTrails.delete(trailId);
+      }
+    }
+  }
+
+  private loadRegularDetail(id: S2CellNumber, buffer: ArrayBuffer): void {
     const data = new LittleEndianView(buffer);
 
     const pathCount = data.getInt32();
