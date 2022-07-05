@@ -211,7 +211,8 @@ export class MapDataService extends Service<EmptyDeps> {
     // problem with skipping this is that we could render things but they wouldn't be
     // interactive, As it turns out, our usecase is to always render pinned paths regardless of zoom
     // level. We can therefore just only render pinned paths and skip trails, and we sacrafice
-    // interactivity for them.
+    // interactivity for them. This also allows us to downsample packed path geometry without visual
+    // artifacting (because when the user is zoomed in they will load the real paths spatially.)
     //
     // The exception is that we do fill in existing data.
     this.detailCells.set(PIN_CELL_ID, buffer);

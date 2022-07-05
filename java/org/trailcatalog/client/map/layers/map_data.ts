@@ -209,7 +209,7 @@ export class MapData extends Disposable implements Layer {
     } else {
       this.planSparse(viewportSize, planner);
     }
-    this.planPins(planner);
+    this.planPins(zoom, planner);
   }
 
   private planDetailed(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
@@ -323,7 +323,7 @@ export class MapData extends Disposable implements Layer {
     }
   }
 
-  private planPins(planner: RenderPlanner): void {
+  private planPins(zoom: number, planner: RenderPlanner): void {
     const buffer = this.dataService.detailCells.get(PIN_CELL_ID);
     if (!buffer) {
       return;
@@ -341,7 +341,11 @@ export class MapData extends Disposable implements Layer {
       const pathVertexBytes = data.getInt32();
       const pathVertexCount = pathVertexBytes / 8;
       data.align(4);
-      this.pushPath(id, data.sliceFloat32(pathVertexCount * 2), lines, raised);
+      if (this.dataService.paths.has(id) && zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
+        data.skip(pathVertexCount * 2 * 4);
+      } else {
+        this.pushPath(id, data.sliceFloat32(pathVertexCount * 2), lines, raised);
+      }
     }
 
     if (lines.length > 0) {

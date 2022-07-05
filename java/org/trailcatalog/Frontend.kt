@@ -11,8 +11,12 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Base64
+import java.util.Stack
+import kotlin.math.abs
 import kotlin.math.ln
+import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 val connectionSource = createConnectionSource()
 val epochTracker = EpochTracker(connectionSource)
@@ -241,7 +245,7 @@ fun fetchDataPacked(ctx: Context) {
           WirePath(
               id = id,
               type = results.getInt(2),
-              vertices = project(results.getBytes(3)),
+              vertices = projectSimplified(results.getBytes(3)),
           )
     }
   }
@@ -375,7 +379,7 @@ private fun project(latLngDegrees: ByteArray): ByteArray {
     for (i in (0 until it.capacity()).step(2)) {
       // TODO(april): I think we get better precision with int E7 so we should probably do the
       // double projection clientside instead.
-      val mercator = project(degrees.get(i) / 10_000_000.0, degrees.get(i + 1) / 10_000_000.0)
+      val mercator = project(degrees.get(i), degrees.get(i + 1))
       it.put(i, mercator.first.toFloat())
       it.put(i + 1, mercator.second.toFloat())
     }
@@ -383,10 +387,59 @@ private fun project(latLngDegrees: ByteArray): ByteArray {
   return projected.array()
 }
 
+private fun projectSimplified(latLngDegrees: ByteArray): ByteArray {
+  val degrees = ByteBuffer.wrap(latLngDegrees).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer()
+  val spans = Stack<Pair<Int, Int>>()
+  spans.add(Pair(0, degrees.limit() / 2 - 1))
+  val epsilon = 1 / 2.0.pow(17.0) // 1px at zoom level 17
+  val points = ArrayList<Int>()
+  while (spans.isNotEmpty()) {
+    val (startI, endI) = spans.pop()
+    if (startI == endI) {
+      points.add(startI)
+      continue
+    }
+
+    var biggestE = 0.0
+    var furthest = -1
+    val start = project(degrees[startI * 2], degrees[startI * 2 + 1])
+    val end = project(degrees[endI * 2], degrees[endI * 2 + 1])
+    val dx = end.first - start.first
+    val dy = end.second - start.second
+    val scale = 1.0 / sqrt(dx * dx + dy * dy)
+    for (i in startI + 1  until endI) {
+      val point = project(degrees[i * 2], degrees[i * 2 + 1])
+      val dz = abs(dx * (start.second - point.second) - (start.first - point.first) * dy) * scale
+      if (dz > epsilon && dz > biggestE) {
+        biggestE = dz
+        furthest = i
+      }
+    }
+
+    if (furthest > -1) {
+      spans.push(Pair(furthest, endI))
+      spans.push(Pair(startI, furthest - 1))
+    } else {
+      points.add(startI)
+      points.add(endI)
+    }
+  }
+
+  val projected = ByteBuffer.allocate(points.size * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
+  projected.asFloatBuffer().let {
+    for (i in points) {
+      val mercator = project(degrees.get(i * 2), degrees.get(i * 2 + 1))
+      it.put(mercator.first.toFloat())
+      it.put(mercator.second.toFloat())
+    }
+  }
+  return projected.array()
+}
+
 /** Projects into Mercator space from -1 to 1. */
-private fun project(latDegrees: Double, lngDegrees: Double): Pair<Double, Double> {
-  val x = lngDegrees / 180
-  val latRadians = latDegrees / 180 * Math.PI
+private fun project(latDegrees: Int, lngDegrees: Int): Pair<Double, Double> {
+  val x = lngDegrees / 10_000_000.0 / 180
+  val latRadians = latDegrees / 10_000_000.0 / 180 * Math.PI
   val y = ln((1 + sin(latRadians)) / (1 - sin(latRadians))) / (2 * Math.PI)
   return Pair(x, y)
 }
