@@ -58,6 +58,8 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
     };
 
     if (this.state.trail) {
+      // This is bad here. We already have a loading screen before showing the map, so we can just
+      // pass the active trail in as a map arg. Oh well.
       controller.setActive(this.state.trail, true);
     }
 
