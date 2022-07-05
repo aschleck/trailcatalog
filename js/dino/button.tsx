@@ -39,7 +39,7 @@ function Button({className, dense, icon, label, ...props}: {
   return <>
     <button
         className={
-          'inline-block leading-none rounded space-x-2 '
+          'inline-block leading-none rounded select-none space-x-2 '
               + (!dense ? 'p-1 ' : 'p-0.5')
               + (className ? ` ${className}` : '')
         }
