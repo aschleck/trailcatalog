@@ -19,6 +19,13 @@ interface AnchorProperties extends Properties<HTMLAnchorElement> {
   href?: string;
 }
 
+interface ImageProperties extends Properties<HTMLImageElement> {
+  alt?: string;
+  height?: string;
+  src?: string;
+  width?: string;
+}
+
 class CorgiElement {
   constructor(
       public readonly element: HTMLElement,
@@ -448,6 +455,7 @@ declare global {
       footer: Properties<HTMLElement>;
       header: Properties<HTMLElement>;
       i: Properties<HTMLElement>;
+      img: ImageProperties;
       section: Properties<HTMLElement>;
       span: Properties<HTMLSpanElement>;
     }

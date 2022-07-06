@@ -3,7 +3,7 @@ package(default_visibility = [":internal"])
 load("@build_bazel_rules_nodejs//:index.bzl", "copy_to_bin")
 load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary")
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package_group(
@@ -40,6 +40,7 @@ pkg_files(
         "//java/org/trailcatalog/static",
     ],
     prefix = "static",
+    strip_prefix = strip_prefix.from_pkg(),
 )
 
 java_binary(

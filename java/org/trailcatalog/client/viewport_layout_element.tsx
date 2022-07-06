@@ -33,12 +33,12 @@ export function ViewportLayoutElement({camera, filter, mapOverlay, sidebarConten
 
   return <>
     <div className="flex flex-col h-full">
-      <div className="align-middle bg-tc-gray-200 leading-none">
+      <div className="align-middle bg-tc-gray-200 flex gap-4 items-center leading-none p-4">
         <FabricIcon
             name="List"
             className={
                 (state.open ? "bg-white" : "text-white")
-                    + " p-2 text-3xl md:hidden"
+                    + " text-3xl md:hidden"
             }
             js={corgi.bind({
               controller: SidebarController,
@@ -47,6 +47,11 @@ export function ViewportLayoutElement({camera, filter, mapOverlay, sidebarConten
               },
               state: [state, updateState],
             })}
+        />
+        <img
+            alt="Trailcatalog logo"
+            src="/static/images/logo.svg"
+            className="h-6"
         />
       </div>
       <div className="flex grow overflow-hidden relative">
