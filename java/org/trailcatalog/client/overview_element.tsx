@@ -8,6 +8,7 @@ import { MapElement } from './map/map_element';
 import { Path, Trail } from './models/types';
 
 import { OverviewController, State } from './overview_controller';
+import { TrailPopup } from './trail_popup';
 import { ViewportLayoutElement } from './viewport_layout_element';
 
 const TRAIL_COUNT_MAX = 100;
@@ -37,7 +38,7 @@ export function OverviewElement({boundary}: {
   let trailDetails;
   if (state.selectedTrails.length > 0) {
     trailDetails =
-        <SelectedTrailsElement
+        <TrailPopup
             position={state.selectedCardPosition}
             trails={state.selectedTrails}
         />;
@@ -56,7 +57,7 @@ export function OverviewElement({boundary}: {
   }
 
   const trailSidebar = <>
-    <header className="font-bold font-header text-xl px-4 pt-2">
+    <header className="font-bold font-header text-xl px-3 pt-2">
       Nearby trails
     </header>
     {filteredTrails.map(trail =>
@@ -91,52 +92,6 @@ export function OverviewElement({boundary}: {
       />
     </div>
   </>;
-}
-
-function SelectedTrailsElement({ position, trails }: {
-  position: Vec2,
-  trails: Trail[],
-}) {
-  return <div
-      className="
-          absolute
-          bg-white
-          mb-4
-          rounded
-          -translate-x-1/2
-          translate-y-[calc(-100%-0.75rem)]
-      "
-      style={`left: ${position[0]}px; top: ${position[1]}px`}
-  >
-    {trails.map(trail =>
-      <section
-          className="cursor-pointer p-2 hover:bg-tc-gray-700"
-          data-trail-id={trail.id}
-          unboundEvents={{
-            click: 'viewTrail',
-            mouseover: 'highlightTrail',
-            mouseout: 'unhighlightTrail',
-          }}
-      >
-        <header className="font-bold font-lg grow">
-          {trail.name}
-        </header>
-        {[
-          ['Distance:', `${metersToMiles(trail.lengthMeters).toFixed(1)} miles`],
-          ['Relation ID:', trail.id],
-        ].map(([label, content]) =>
-          <section>
-            <span className="text-tc-gray-400">
-              {label}
-            </span>
-            <span>
-              {content}
-            </span>
-          </section>
-        )}
-      </section>
-    )}
-  </div>;
 }
 
 function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Trail }) {

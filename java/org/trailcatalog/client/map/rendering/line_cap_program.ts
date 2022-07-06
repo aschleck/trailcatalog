@@ -215,7 +215,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
 
       void main() {
         mediump float o = abs(fragDistanceOrtho);
-        lowp float blend = (o - 2.);
+        lowp float blend = min(max(0., o - 2.), 1.);
         lowp vec4 color = mix(fragColorFill, fragColorStroke, blend);
         fragColor = vec4(color.rgb, color.a * (1. - clamp(o - 3., 0., 1.)));
       }

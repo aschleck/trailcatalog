@@ -202,6 +202,14 @@ export class MapDataService extends Service<EmptyDeps> {
     } else {
       this.loadRegularDetail(id, buffer);
     }
+
+    for (const [trailId, {resolve}] of this.pinnedMissingTrails) {
+      const trail = this.trails.get(trailId);
+      if (trail) {
+        resolve(trail);
+        this.pinnedMissingTrails.delete(trailId);
+      }
+    }
   }
 
   private loadPinnedDetail(buffer: ArrayBuffer): void {
@@ -244,14 +252,6 @@ export class MapDataService extends Service<EmptyDeps> {
           existing.paths.push(...paths);
         }
         existing.bound = bound;
-      }
-    }
-
-    for (const [trailId, {resolve}] of this.pinnedMissingTrails) {
-      const trail = this.trails.get(trailId);
-      if (trail) {
-        resolve(trail);
-        this.pinnedMissingTrails.delete(trailId);
       }
     }
   }

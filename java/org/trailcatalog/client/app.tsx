@@ -3,6 +3,7 @@ import * as corgi from 'js/corgi';
 
 import { isServerSide } from './common/ssr_aware';
 
+import { BoundaryOverviewElement } from './boundary_overview_element';
 import { OverviewElement } from './overview_element';
 import { RouteController, State } from './route_controller';
 import { TrailOverviewElement } from './trail_overview_element';
@@ -20,7 +21,7 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
 
   let route;
   if (state.active.kind === 'boundary_overview') {
-    route = <OverviewElement boundary={state.active.boundary} />;
+    route = <BoundaryOverviewElement boundaryId={state.active.boundary} />;
   } else if (state.active.kind === 'global_overview') {
     route = <OverviewElement />;
   } else if (state.active.kind === 'trail_overview') {

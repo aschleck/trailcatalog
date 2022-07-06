@@ -5,10 +5,12 @@ import { LittleEndianView } from './common/little_endian_view';
 import { degreesE7ToLatLng, metersToMiles, projectLatLng } from './common/math';
 import { LatLng, LatLngRect } from './common/types';
 import { initialData } from './common/ssr_aware';
-import { MAP_MOVED } from './map/events';
+import { MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { Trail } from './models/types';
 
+import { decodeBase64 } from './base64';
 import { boundingLlz, TrailOverviewController, State } from './trail_overview_controller';
+import { TrailPopup } from './trail_popup';
 import { ViewportLayoutElement } from './viewport_layout_element';
 
 export function TrailOverviewElement({trailId}: {
@@ -58,7 +60,10 @@ export function TrailOverviewElement({trailId}: {
               raw.length_meters);
     }
     state = {
+      hovering: undefined,
       nearbyTrails: undefined,
+      selectedCardPosition: [-1, -1],
+      selectedTrails: [],
       trail,
     };
   }
@@ -70,6 +75,17 @@ export function TrailOverviewElement({trailId}: {
     return <>Invalid trail ID {trailId}</>;
   }
 
+  let trailDetails;
+  if (state.selectedTrails.length > 0) {
+    trailDetails =
+        <TrailPopup
+            position={state.selectedCardPosition}
+            trails={state.selectedTrails}
+        />;
+  } else {
+    trailDetails = <></>;
+  }
+
   return <>
     <div
         js={corgi.bind({
@@ -78,9 +94,11 @@ export function TrailOverviewElement({trailId}: {
           events: {
             corgi: [
               [MAP_MOVED, 'onMove'],
+              [SELECTION_CHANGED, 'onSelectionChanged'],
             ],
             render: 'wakeup',
           },
+          key: trailId,
           state: [state, updateState],
         })}
         className="flex flex-col h-full"
@@ -90,6 +108,7 @@ export function TrailOverviewElement({trailId}: {
             <ViewportLayoutElement
                 // Probably we should just pass the bound in directly instead of doing this, alas
                 camera={boundingLlz(state.trail)}
+                mapOverlay={trailDetails}
                 sidebarContent={<TrailSidebar state={state} />}
             />
           </>
@@ -133,7 +152,7 @@ function TrailSidebar({state}: {state: State}) {
       </header>
       <section>
         Relation ID:{' '}
-        <a 
+        <a
             title="View relation in OSM"
             href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
         >{trail.sourceRelation}</a>
@@ -151,37 +170,3 @@ function TrailSidebar({state}: {state: State}) {
   </>;
 }
 
-// This and following based on https://developer.mozilla.org/en-US/docs/Glossary/Base64
-function decodeBase64(base64: string): ArrayBuffer {
-  const nInLen = base64.replace(/=+/, '').length;
-  const nOutLen = nInLen / 4 * 3;
-  const taBytes = new Uint8Array(nOutLen);
-
-  for (let nMod3, nMod4, nUint24 = 0, nOutIdx = 0, nInIdx = 0; nInIdx < nInLen; nInIdx++) {
-    nMod4 = nInIdx & 3;
-    nUint24 |= b64ToUint6(base64.charCodeAt(nInIdx)) << 6 * (3 - nMod4);
-    if (nMod4 === 3 || nInLen - nInIdx === 1) {
-      for (nMod3 = 0; nMod3 < 3 && nOutIdx < nOutLen; nMod3++, nOutIdx++) {
-        taBytes[nOutIdx] = nUint24 >>> (16 >>> nMod3 & 24) & 255;
-      }
-      nUint24 = 0;
-    }
-  }
-
-  return taBytes.buffer;
-}
-
-function b64ToUint6(nChr: number): number {
-  return nChr > 64 && nChr < 91 ?
-          nChr - 65
-      : nChr > 96 && nChr < 123 ?
-          nChr - 71
-      : nChr > 47 && nChr < 58 ?
-          nChr + 4
-      : nChr === 43 ?
-          62
-      : nChr === 47 ?
-          63
-      :
-          0;
-}

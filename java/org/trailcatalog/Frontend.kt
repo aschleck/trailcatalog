@@ -52,6 +52,31 @@ fun fetchData(ctx: Context) {
     val type = key.get("type").asText()
     when (type) {
       null -> throw IllegalArgumentException("Key has no type")
+      "boundary" -> {
+        val data = HashMap<String, Any>()
+        val id = key.get("id").asLong()
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+              "SELECT "
+                  + "name, "
+                  + "type, "
+                  + "s2_polygon "
+                  + "FROM boundaries "
+                  + "WHERE id = ? AND epoch = ?")
+              .apply {
+                setLong(1, id)
+                setInt(2, epochTracker.epoch)
+              }.executeQuery()
+          if (!results.next()) {
+            throw IllegalArgumentException("Unable to get boundary ${id}")
+          }
+          data["id"] = id
+          data["name"] = results.getString(1)
+          data["type"] = results.getInt(2)
+          data["s2_polygon"] = String(Base64.getEncoder().encode(results.getBytes(3)))
+        }
+        responses.add(data)
+      }
       "trail" -> {
         val data = HashMap<String, Any>()
         val id = key.get("id").asLong()

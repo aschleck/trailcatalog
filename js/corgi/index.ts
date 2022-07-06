@@ -225,7 +225,8 @@ function updateToState(element: VElement, newState: object): void {
 function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResult {
   if (!from
       || from.element !== to.element
-      || from.props.js?.controller !== to.props.js?.controller) {
+      || from.props.js?.controller !== to.props.js?.controller
+      || from.props.js?.key !== to.props.js?.key) {
     const element = createElement(to);
     vElementsToNodes.set(to, element.root);
     return element;

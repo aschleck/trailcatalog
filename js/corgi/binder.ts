@@ -37,6 +37,7 @@ interface BoundController<
   controller: ControllerCtor<A, D, E, S, R, C>;
   events: Partial<PropertyKeyToHandlerMap<C>>;
   instance?: Promise<C>;
+  key?: string; // controllers will only be reused if their keys match
   state: StateTuple<S>,
 }
 
@@ -90,9 +91,10 @@ export function bind<
     S,
     R extends ControllerResponse<A, D, E, S>,
     C extends Controller<A, D, E, S>
->({args, controller, events, state}: {
+>({args, controller, events, key, state}: {
   controller: ControllerCtor<A, D, E, S, R, C>,
   events?: Partial<PropertyKeyToHandlerMap<C>>,
+  key?: string,
 }
 & ({} extends A ? {args?: never} : {args: A})
 & (S extends undefined ? {state?: never} : {state: StateTuple<S>})
@@ -101,6 +103,7 @@ export function bind<
     args: args ?? {} as any,
     controller,
     events: events ?? {},
+    key,
     state: state ?? [undefined, () => {}] as any,
   };
 }

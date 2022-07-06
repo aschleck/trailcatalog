@@ -102,6 +102,7 @@ class DataFetcher {
         type: 'ucc',
         cells: [id],
       }, []);
+      return;
     }
 
     const abort = new AbortController();

@@ -7,18 +7,20 @@ import { MapController, MAP_MOVED } from './map/events';
 import { Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
+import { State as VState, ViewportController } from './viewport_controller';
+
 interface Args {
   trailId: bigint;
 }
 
-export interface State {
+export interface State extends VState {
   nearbyTrails: Trail[]|undefined;
   trail: Trail|undefined;
 }
 
 type Deps = typeof TrailOverviewController.deps;
 
-export class TrailOverviewController extends Controller<Args, Deps, HTMLElement, State> {
+export class TrailOverviewController extends ViewportController<Args, Deps, State> {
 
   static deps() {
     return {
@@ -30,14 +32,12 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
   }
 
   private readonly data: MapDataService;
-  private readonly views: ViewsService;
   private controller: MapController|undefined;
   private lastCamera: {lat: number; lng: number; zoom: number}|undefined;
 
   constructor(response: Response<TrailOverviewController>) {
     super(response);
     this.data = response.deps.services.data;
-    this.views = response.deps.services.views;
 
     this.data.setPins({trail: response.args.trailId}).then(trail => {
       this.updateState({
@@ -50,7 +50,7 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
   // This may not always fire prior to the person hitting nearby trails, which is bad
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
     const {controller, center, zoom} = e.detail;
-    this.controller = controller;
+    this.mapController = controller;
     this.lastCamera = {
       lat: center.latDegrees(),
       lng: center.lngDegrees(),
@@ -80,7 +80,7 @@ export class TrailOverviewController extends Controller<Args, Deps, HTMLElement,
 
   zoomToFit(): void {
     if (this.state.trail) {
-      this.controller?.setCamera(boundingLlz(this.state.trail));
+      this.mapController?.setCamera(boundingLlz(this.state.trail));
     }
   }
 }

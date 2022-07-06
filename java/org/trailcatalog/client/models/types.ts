@@ -1,5 +1,18 @@
 import { LatLng, LatLngRect, PixelRect, Vec2 } from '../common/types';
 
+export class Boundary {
+  constructor(
+      readonly id: bigint,
+      readonly name: string,
+      readonly type: number,
+      readonly polygon: ArrayBuffer,
+  ) {}
+
+  get sourceRelation(): bigint {
+    return this.id;
+  }
+}
+
 export class Path {
   constructor(
       readonly id: bigint,
