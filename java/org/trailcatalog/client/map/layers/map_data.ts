@@ -14,7 +14,7 @@ import { ACTIVE_PALETTE, ACTIVE_HEX_PALETTE, DEFAULT_PALETTE, DEFAULT_HEX_PALETT
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
-import { DIAMOND_RADIUS_PX, Iconography, RenderableText, TextRenderer } from '../rendering/text_renderer';
+import { RenderableDiamond, RenderableText, TextRenderer } from '../rendering/text_renderer';
 import { DETAIL_ZOOM_THRESHOLD, PIN_CELL_ID } from '../../workers/data_constants';
 
 import { Layer } from './layer';
@@ -78,7 +78,7 @@ export class MapData extends Disposable implements Layer {
     this.registerDisposer(() => {
       this.dataService.clearListener();
     });
-    const diamondPixelSize = this.textRenderer.measure(TRAIL_DIAMOND_REGULAR);
+    const diamondPixelSize = this.textRenderer.measureDiamond();
     const halfDiamondWidth = diamondPixelSize[0] / 2;
     const halfDiamondHeight = diamondPixelSize[1] / 2;
     this.diamondPixelBounds = [
@@ -263,15 +263,14 @@ export class MapData extends Disposable implements Layer {
             hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
         const stroke =
             hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
-        let text;
         if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
-          text = renderableTrailPin(lengthMeters, fill, stroke);
+          this.textRenderer.planText(
+              renderableTrailPin(lengthMeters, fill, stroke), markerPx, z, planner);
         } else if (active || hover) {
-          text = renderableDiamond(fill, stroke);
+          this.textRenderer.planDiamond(renderableDiamond(fill, stroke), markerPx, z, planner);
         } else {
-          text = TRAIL_DIAMOND_REGULAR;
+          this.textRenderer.planDiamond(TRAIL_DIAMOND_REGULAR, markerPx, z, planner);
         }
-        this.textRenderer.plan(text, markerPx, z, planner);
       }
     }
 
@@ -318,7 +317,7 @@ export class MapData extends Disposable implements Layer {
         } else {
           diamond = TRAIL_DIAMOND_REGULAR;
         }
-        this.textRenderer.plan(diamond, markerPx, z, planner);
+        this.textRenderer.planDiamond(diamond, markerPx, z, planner);
       }
     }
   }
@@ -415,16 +414,16 @@ export class MapData extends Disposable implements Layer {
 
     for (const trail of trails) {
       const detailScreenPixelSize =
-          this.textRenderer.measure(renderableTrailPin(trail.lengthMeters, 'unused', 'unused'));
+          this.textRenderer.measureText(renderableTrailPin(trail.lengthMeters, 'unused', 'unused'));
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
       this.detailBounds.insert({
         entity: trail,
         markerPx: trail.markerPx,
         screenPixelBound: [
           -halfDetailWidth,
-          -detailScreenPixelSize[1] + DIAMOND_RADIUS_PX,
+          0,
           halfDetailWidth,
-          DIAMOND_RADIUS_PX,
+          detailScreenPixelSize[1],
         ],
       }, trail.mouseBound);
     }
@@ -479,21 +478,16 @@ function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number
 
 function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableText {
   return {
-    ...renderableDiamond(fill, stroke),
     text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
-    paddingX: 6,
-    paddingY: 7,
-  };
-}
-
-function renderableDiamond(fill: string, stroke: string): RenderableText {
-  return {
-    text: '',
     fillColor: fill,
     strokeColor: stroke,
     fontSize: 14,
-    iconography: Iconography.DIAMOND,
-    paddingX: 0,
-    paddingY: 0,
+  };
+}
+
+function renderableDiamond(fill: string, stroke: string): RenderableDiamond {
+  return {
+    fillColor: fill,
+    strokeColor: stroke,
   };
 }

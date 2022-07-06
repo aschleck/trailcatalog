@@ -6,181 +6,176 @@ import { RenderPlanner } from './render_planner';
 import { Renderer } from './renderer';
 import { TexturePool } from './texture_pool';
 
-export enum Iconography {
-  NONE = 0,
-  DIAMOND = 1,
-}
+const DRAW_PADDING_PX = 1;
+const DIAMOND_BORDER_RADIUS_PX = 2;
+const DIAMOND_RADIUS_PX = 7;
+const PIN_POINT_RADIUS_PX = [5, 5] as const;
+const PIN_TEXT_PADDING_PX = [-1, 4] as const;
 
-const DIAMOND_BORDER_RADIUS_PX = 1;
-export const DIAMOND_RADIUS_PX = 6;
-const DIAMOND_Y_PADDING_PX = 4;
+export interface RenderableDiamond {
+  fillColor: string,
+  strokeColor: string,
+}
 
 export interface RenderableText {
   text: string;
   fillColor: string,
   strokeColor: string,
   fontSize: number;
-  iconography: Iconography;
-  paddingX: number;
-  paddingY: number;
 }
 
 export class TextRenderer {
 
-  private readonly cache: HashMap<RenderableText, RenderedText>;
+  private readonly diamondCache: HashMap<RenderableDiamond, RenderedTexture>;
+  private readonly textCache: HashMap<RenderableText, RenderedTexture>;
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
   private readonly pool: TexturePool;
-  private readonly textInUse: HashSet<RenderableText>;
+  private generation: number;
 
   constructor(private readonly renderer: Renderer) {
-    const keyFn =
-        (k: RenderableText) => `${k.fontSize}${k.text}${k.fillColor}${k.strokeColor}`
-    this.cache = new HashMap(keyFn);
+    this.diamondCache = new HashMap((k: RenderableDiamond) => `${k.fillColor}${k.strokeColor}`);
+    this.textCache =
+        new HashMap((k: RenderableText) => `${k.fontSize}${k.text}${k.fillColor}${k.strokeColor}`);
     this.canvas = document.createElement('canvas');
     this.context = checkExists(this.canvas.getContext('2d'));
     this.pool = new TexturePool(renderer);
-    this.textInUse = new HashSet(keyFn);
+    this.generation = 0;
 
     new FontFace(
         'Roboto',
-        "url(https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Mu4mxKKTU1Kg.woff2) "
+        "url(https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmEU9fBBc4AMP6lQ.woff2) "
             + "format('woff2')").load().then(() => {
-              // Force regenerating all textures
+              // Force regenerating all textures. This isn't clearly good because sizes will be
+              // cached outside of this class and will likely mismatch.
               this.mark();
               this.sweep();
             });
   }
 
   mark(): void {
-    this.textInUse.clear();
+    this.generation = Date.now();
   }
 
   sweep(): void {
-    for (const [text, rendered] of this.cache) {
-      if (!this.textInUse.has(text)) {
-        this.cache.delete(text);
-        this.pool.release(rendered.texture);
+    for (const cache of [this.diamondCache, this.textCache]) {
+      for (const [item, rendered] of cache) {
+        if (rendered.generation < this.generation) {
+          cache.delete(item);
+          this.pool.release(rendered.texture);
+        }
       }
     }
   }
 
-  measure(text: RenderableText): Vec2 {
-    const font = `${text.fontSize}px Roboto,sans-serif`;
+  measureDiamond(): Vec2 {
+    return [
+      2 * DIAMOND_RADIUS_PX + 2 * DRAW_PADDING_PX,
+      2 * DIAMOND_RADIUS_PX + 2 * DRAW_PADDING_PX,
+    ];
+  }
+
+  measureText(text: RenderableText): Vec2 {
     const ctx = this.context;
-    ctx.font = font;
+    ctx.font = font(text);
     const metrics = ctx.measureText(text.text);
     const textSize: Vec2 = [
       Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
       Math.ceil(Math.abs(metrics.actualBoundingBoxAscent)),
     ];
 
-    const textWidth = textSize[0] + 2 * text.paddingX;
-    const textHeight = textSize[1] + 2 * text.paddingY;
-
-    let width, height;
-    if (text.iconography === Iconography.DIAMOND) {
-      if (text.text) {
-        width = Math.max(textWidth, 2 * DIAMOND_RADIUS_PX + DIAMOND_BORDER_RADIUS_PX);
-        height = textHeight + 2 * DIAMOND_RADIUS_PX + DIAMOND_Y_PADDING_PX;
-      } else {
-        width = 2 * DIAMOND_RADIUS_PX + 20;
-        height = 2 * DIAMOND_RADIUS_PX + 20;
-      }
-    } else {
-      width = textWidth;
-      height = textHeight;
-    }
-
-    return [width, height];
+    return [
+      textSize[0] + 2 * textSize[1] + 2 * DRAW_PADDING_PX + 2 * PIN_TEXT_PADDING_PX[0],
+      textSize[1] + PIN_POINT_RADIUS_PX[1] + 2 * DRAW_PADDING_PX + 2 * PIN_TEXT_PADDING_PX[1],
+    ];
   }
 
-  plan(text: RenderableText, position: Vec2, z: number, planner: RenderPlanner): void {
-    // Coordinate system: y=0 is the top
+  // Coordinate system: y=0 is the top
 
-    this.textInUse.add(text);
-    const cached = this.cache.get(text);
+  planDiamond(diamond: RenderableDiamond, position: Vec2, z: number, planner: RenderPlanner): void {
+    const cached = this.diamondCache.get(diamond);
     if (cached) {
+      cached.generation = this.generation;
       planner.addBillboard(position, cached.offset, cached.size, cached.texture, z);
       return;
     }
 
-    const font = `bold ${text.fontSize}px Roboto,sans-serif`;
+    const fullSize = [
+      2 * DIAMOND_RADIUS_PX + 2 * DRAW_PADDING_PX,
+      2 * DIAMOND_RADIUS_PX + 2 * DRAW_PADDING_PX,
+    ] as Vec2;
+    this.canvas.width = fullSize[0];
+    this.canvas.height = fullSize[1];
+
     const ctx = this.context;
-    ctx.font = font;
+    ctx.fillStyle = diamond.fillColor;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = diamond.strokeColor;
+
+    renderDiamond(
+        /* x= */ fullSize[0] / 2,
+        /* y= */ fullSize[1] / 2,
+        /* radius= */ DIAMOND_RADIUS_PX,
+        ctx);
+
+    const texture = this.pool.acquire();
+    this.renderer.uploadTexture(this.canvas, texture);
+    const offset = [0, 0] as Vec2;
+    this.diamondCache.set(diamond, {
+      generation: this.generation,
+      offset,
+      size: fullSize,
+      texture,
+    });
+    planner.addBillboard(position, offset, fullSize, texture, z);
+  }
+
+  planText(text: RenderableText, position: Vec2, z: number, planner: RenderPlanner): void {
+    const cached = this.textCache.get(text);
+    if (cached) {
+      cached.generation = this.generation;
+      planner.addBillboard(position, cached.offset, cached.size, cached.texture, z);
+      return;
+    }
+
+    const ctx = this.context;
+    ctx.font = font(text);
     const metrics = ctx.measureText(text.text);
     const textSize: Vec2 = [
       Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
-      // TODO(april): no letters below baseline pass through this method, so we drop it. Sketchy.
       Math.ceil(Math.abs(metrics.actualBoundingBoxAscent)),
     ];
 
-    const textWidth = textSize[0] + 2 * text.paddingX;
-    const textHeight = textSize[1] + 2 * text.paddingY;
-
-    let width, height;
-    if (text.iconography === Iconography.DIAMOND) {
-      if (text.text) {
-        width = Math.max(textWidth, 2 * DIAMOND_RADIUS_PX + DIAMOND_BORDER_RADIUS_PX);
-        height = textHeight + 2 * DIAMOND_RADIUS_PX + DIAMOND_Y_PADDING_PX;
-      } else {
-        width = 2 * DIAMOND_RADIUS_PX + 20;
-        height = 2 * DIAMOND_RADIUS_PX + 20;
-      }
-    } else {
-      width = textWidth;
-      height = textHeight;
-    }
-
-    const fullSize: Vec2 = [width, height];
+    const fullSize = [
+      textSize[0] + 2 * textSize[1] + 2 * DRAW_PADDING_PX + 2 * PIN_TEXT_PADDING_PX[0],
+      textSize[1] + PIN_POINT_RADIUS_PX[1] + 2 * DRAW_PADDING_PX + 2 * PIN_TEXT_PADDING_PX[1],
+    ] as Vec2;
     this.canvas.width = fullSize[0];
     this.canvas.height = fullSize[1];
 
     ctx.fillStyle = text.fillColor;
+    ctx.font = font(text);
     ctx.lineWidth = 2;
     ctx.strokeStyle = text.strokeColor;
 
-    let textYOffset;
-    if (text.iconography === Iconography.DIAMOND) {
-      renderDiamond(
-          /* x= */ width / 2,
-          /* y= */ DIAMOND_RADIUS_PX + DIAMOND_BORDER_RADIUS_PX / 2,
-          /* radius= */ DIAMOND_RADIUS_PX,
-          ctx);
-      textYOffset = 2 * DIAMOND_RADIUS_PX + DIAMOND_Y_PADDING_PX;
-    } else {
-      textYOffset = 1;
-    }
+    renderPin(
+        /* x= */ fullSize[0] / 2,
+        /* y= */ (fullSize[1] - PIN_POINT_RADIUS_PX[1]) / 2,
+        /* width= */ textSize[0] + 2 * PIN_TEXT_PADDING_PX[0],
+        /* height= */ textSize[1] + 2 * PIN_TEXT_PADDING_PX[1],
+        ctx);
 
-    if (text.text) {
-      const overlapX = text.paddingY / 3;
-      ctx.beginPath();
-      ctx.moveTo(1 + text.paddingX + overlapX, textYOffset)
-      ctx.lineTo(textWidth - text.paddingX - overlapX, textYOffset);
-      ctx.quadraticCurveTo(
-          textWidth + text.paddingX - 1,
-          textYOffset + textHeight / 2,
-          textWidth - text.paddingX - overlapX,
-          textYOffset + textHeight - 1);
-      ctx.lineTo(1 + text.paddingX + overlapX, textYOffset + textHeight - 1);
-      ctx.quadraticCurveTo(
-          -text.paddingX,
-          textYOffset + textHeight / 2,
-          1 + text.paddingX + overlapX,
-          textYOffset);
-      ctx.fill();
-      ctx.stroke();
+    ctx.fillStyle = text.strokeColor;
+    ctx.fillText(
+        text.text,
+        textSize[1] + DRAW_PADDING_PX + PIN_TEXT_PADDING_PX[0],
+        DRAW_PADDING_PX + PIN_TEXT_PADDING_PX[1] + textSize[1]);
 
-      ctx.fillStyle = text.strokeColor;
-      ctx.font = font;
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text.text, text.paddingX, textYOffset + textHeight / 2);
-    }
-    
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(this.canvas, texture);
-    const offset: Vec2 = [0, -fullSize[1] / 2 + textYOffset / 2];
-    this.cache.set(text, {
+    const offset = [0, fullSize[1] / 2] as Vec2;
+    this.textCache.set(text, {
+      generation: this.generation,
       offset,
       size: fullSize,
       texture,
@@ -189,10 +184,15 @@ export class TextRenderer {
   }
 }
 
-interface RenderedText {
+interface RenderedTexture {
+  generation: number;
   offset: Vec2;
   size: Vec2;
   texture: WebGLTexture;
+}
+
+function font(text: RenderableText): string {
+  return `500 ${text.fontSize}px Roboto,sans-serif`;
 }
 
 function renderDiamond(
@@ -201,12 +201,28 @@ function renderDiamond(
     radius: number,
     ctx: CanvasRenderingContext2D): void {
   ctx.beginPath();
-  ctx.moveTo(x, y - radius);
-  ctx.arcTo(x + radius, y, x + radius, y + radius, DIAMOND_BORDER_RADIUS_PX);
-  ctx.lineTo(x + radius, y);
+  ctx.moveTo(x + DIAMOND_BORDER_RADIUS_PX / 2, y - radius + DIAMOND_BORDER_RADIUS_PX / 2);
+  ctx.arcTo(x + radius, y, x, y + radius, DIAMOND_BORDER_RADIUS_PX);
   ctx.arcTo(x, y + radius, x - radius, y, DIAMOND_BORDER_RADIUS_PX);
-  ctx.lineTo(x - radius, y);
-  ctx.arcTo(x, y - radius, x + radius, y - radius, DIAMOND_BORDER_RADIUS_PX);
+  ctx.arcTo(x - radius, y, x, y - radius, DIAMOND_BORDER_RADIUS_PX);
+  ctx.arcTo(x, y - radius, x + radius, y, DIAMOND_BORDER_RADIUS_PX);
+  ctx.fill();
+  ctx.stroke();
+}
+
+function renderPin(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    ctx: CanvasRenderingContext2D): void {
+  const radius = height / 2;
+  ctx.arc(x - width / 2, y, radius, 0.5 * Math.PI, 1.5 * Math.PI);
+  ctx.arc(x + width / 2, y, radius, 1.5 * Math.PI, 2.5 * Math.PI);
+  ctx.lineTo(x + PIN_POINT_RADIUS_PX[0], y + radius);
+  ctx.lineTo(x, y + radius + PIN_POINT_RADIUS_PX[1]);
+  ctx.lineTo(x - PIN_POINT_RADIUS_PX[0], y + radius);
+  ctx.lineTo(x - width / 2, y + radius);
   ctx.fill();
   ctx.stroke();
 }

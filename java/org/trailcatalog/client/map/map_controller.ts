@@ -69,7 +69,10 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
       this.enterIdle();
     });
     this.renderer =
-        new Renderer(checkExists(this.canvas.getContext('webgl2', {stencil: true})));
+        new Renderer(checkExists(this.canvas.getContext('webgl2', {
+          premultipliedAlpha: true,
+          stencil: true,
+        })));
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
