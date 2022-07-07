@@ -6,14 +6,12 @@ import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pbf.LatLngE7
-import org.trailcatalog.importers.pbf.LatLngRectE7
 import org.trailcatalog.importers.pbf.Relation
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationGeometry
-import org.trailcatalog.s2.boundToCell
 import java.util.Stack
 
 class CreateTrails
@@ -49,19 +47,13 @@ class CreateTrails
       orientedPathIds = ordered.toLongArray()
     }
     val polyline = pathsToPolyline(orientedPathIds, mapped)
-    val bound = polyline.rectBound
-    val cell = boundToCell(bound).id()
-    val center = polyline.interpolate(0.5).toLatLngE7()
     emitter.emit(
         Trail(
             relation.id,
             relation.type,
-            cell,
             relation.name,
             orientedPathIds,
-            LatLngRectE7.from(bound),
-            center,
-            polylineToMeters(polyline)))
+            polyline))
   }
 }
 

@@ -1,15 +1,13 @@
 package org.trailcatalog.importers;
 
+import com.google.common.geometry.S2Polyline;
 import org.trailcatalog.importers.pbf.LatLngE7;
 import org.trailcatalog.importers.pbf.LatLngRectE7;
 
 public record Trail(
     long relationId,
     int type,
-    long cell,
     String name,
     long[] paths,
-    LatLngRectE7 bound,
-    LatLngE7 marker,
-    double lengthMeters) {
+    S2Polyline polyline) {
 }

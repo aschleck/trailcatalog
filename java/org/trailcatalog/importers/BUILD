@@ -38,5 +38,6 @@ java_library(
     srcs = glob(["*.java"]),
     deps = [
         "//java/org/trailcatalog/importers/pbf:pbf_java",
+        "@maven//:com_google_geometry_s2_geometry",
     ],
 )

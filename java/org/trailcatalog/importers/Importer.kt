@@ -1,5 +1,8 @@
 package org.trailcatalog.importers
 
+import com.google.common.geometry.S2Point
+import com.google.common.geometry.S2Polygon
+import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
 import com.zaxxer.hikari.HikariDataSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -17,7 +20,6 @@ import org.trailcatalog.importers.pbf.GatherWayNodes
 import org.trailcatalog.importers.pbf.ExtractWayRelationPairs
 import org.trailcatalog.importers.pbf.GatherRelationWays
 import org.trailcatalog.importers.pbf.LatLngE7
-import org.trailcatalog.importers.pbf.LatLngRectE7
 import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
 import org.trailcatalog.importers.pbf.PbfBlockReader
@@ -29,6 +31,7 @@ import org.trailcatalog.importers.pipeline.io.EncodedInputStream
 import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.BUFFER_SIZE
 import org.trailcatalog.importers.pipeline.io.FLUSH_THRESHOLD
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.file.Path
 import java.time.LocalDateTime
@@ -71,11 +74,29 @@ fun main(args: Array<String>) {
     }
   })
 
+  registerSerializer(TypeToken.of(BoundaryPolygon::class.java), object : Serializer<BoundaryPolygon> {
+    override fun read(from: EncodedInputStream): BoundaryPolygon {
+      val id = from.readLong()
+      val polygon = S2Polygon.decode(from)
+      return BoundaryPolygon(id, polygon)
+    }
+
+    override fun size(v: BoundaryPolygon): Int {
+      val bytes = ByteArrayOutputStream()
+      v.polygon.encode(bytes)
+      return 8 + bytes.size()
+    }
+
+    override fun write(v: BoundaryPolygon, to: EncodedOutputStream) {
+      to.writeLong(v.id)
+      v.polygon.encode(to)
+    }
+  })
+
   registerSerializer(TypeToken.of(Trail::class.java), object : Serializer<Trail> {
     override fun read(from: EncodedInputStream): Trail {
       val id = from.readLong()
       val type = from.readInt()
-      val cell = from.readLong()
       val name = ByteArray(from.readVarInt()).also {
         from.read(it)
       }.decodeToString()
@@ -84,37 +105,58 @@ fun main(args: Array<String>) {
           array[i] = from.readLong()
         }
       }
-      val bound = LatLngRectE7(from.readInt(), from.readInt(), from.readInt(), from.readInt())
-      val marker = LatLngE7(from.readInt(), from.readInt())
-      val lengthMeters = from.readDouble()
-      return Trail(id, type, cell, name, paths, bound, marker, lengthMeters)
+      val pointCount = from.readVarInt()
+      val points = ArrayList<S2Point>(pointCount)
+      repeat(pointCount) {
+        points.add(LatLngE7(from.readInt(), from.readInt()).toS2LatLng().toPoint())
+      }
+      val polyline = S2Polyline(points)
+      return Trail(id, type, name, paths, polyline)
     }
 
     override fun size(v: Trail): Int {
-      return 8 + 4 + 8 +
+      return 8 + 4 +
           EncodedOutputStream.varIntSize(v.name.length) +
           v.name.encodeToByteArray().size +
           EncodedOutputStream.varIntSize(v.paths.size) +
           8 * v.paths.size +
-          4 * 4 + 2 * 4 + 8
+          EncodedOutputStream.varIntSize(v.polyline.numVertices()) +
+          4 * v.polyline.numVertices() * 2
     }
 
     override fun write(v: Trail, to: EncodedOutputStream) {
       to.writeLong(v.relationId)
       to.writeInt(v.type)
-      to.writeLong(v.cell)
       val name = v.name.encodeToByteArray()
       to.writeVarInt(name.size)
       to.write(name)
       to.writeVarInt(v.paths.size)
       v.paths.forEach { to.writeLong(it) }
-      to.writeInt(v.bound.lowLat)
-      to.writeInt(v.bound.lowLng)
-      to.writeInt(v.bound.highLat)
-      to.writeInt(v.bound.highLng)
-      to.writeInt(v.marker.lat)
-      to.writeInt(v.marker.lng)
-      to.writeDouble(v.lengthMeters)
+      to.writeVarInt(v.polyline.numVertices())
+      v.polyline.vertices().forEach {
+        val latLng = LatLngE7.fromS2Point(it)
+        to.writeInt(latLng.lat)
+        to.writeInt(latLng.lng)
+      }
+    }
+  })
+
+  registerSerializer(TypeToken.of(TrailPolyline::class.java), object : Serializer<TrailPolyline> {
+    override fun read(from: EncodedInputStream): TrailPolyline {
+      val id = from.readLong()
+      val polyline = S2Polyline.decode(from)
+      return TrailPolyline(id, polyline)
+    }
+
+    override fun size(v: TrailPolyline): Int {
+      val bytes = ByteArrayOutputStream()
+      v.polyline.encodeCompact(bytes)
+      return 8 + bytes.size()
+    }
+
+    override fun write(v: TrailPolyline, to: EncodedOutputStream) {
+      to.writeLong(v.id)
+      v.polyline.encodeCompact(to)
     }
   })
 
@@ -233,12 +275,18 @@ fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
           .then(MakeRelationGeometries())
   val relationsWithGeometry =
       pipeline.join2("JoinRelationsWithGeometry", relations, relationsGeometryById)
-  relationsWithGeometry
-      .then(CreateBoundaries())
-      .write(DumpBoundaries(epoch, hikari))
+  val boundaries = relationsWithGeometry.then(CreateBoundaries())
+  boundaries.write(DumpBoundaries(epoch, hikari))
   val trails = relationsWithGeometry.then(CreateTrails())
   trails.write(DumpPathsInTrails(epoch, hikari))
   trails.write(DumpTrails(epoch, hikari))
+  pipeline
+      .join2(
+          "JoinOnContainment",
+          boundaries.then(GroupBoundariesByCell()),
+          trails.then(GroupTrailsByCell()))
+      .then(CreateTrailsInBoundaries())
+      .write(DumpTrailsInBoundaries(epoch, hikari))
 
   pipeline.execute()
 
