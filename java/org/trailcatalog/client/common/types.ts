@@ -4,7 +4,7 @@ export type Vec2 = [number, number];
 export type Vec4 = [number, number, number, number];
 
 export type LatLng = Vec2 & {brand: 'LatLng'};
-export type Rgba32F = number & {brand: 'Rgba32F'};
+export type RgbaU32 = number & {brand: 'RgbaU32'};
 
 export type LatLngRect = {
   low: Vec2;

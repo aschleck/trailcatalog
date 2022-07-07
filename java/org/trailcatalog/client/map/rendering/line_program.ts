@@ -27,7 +27,7 @@ export class LineProgram extends Program<LineProgramData> {
                 ]));
   }
 
-  plan(lines: Line[], radius: number, vertices: Float32Array): LineDrawable {
+  plan(lines: Line[], radius: number, vertices: Float32Array, uints: Uint32Array): LineDrawable {
     let vertexOffset = 0;
     const stride = VERTEX_STRIDE / 4;
     for (const line of lines) {
@@ -55,8 +55,8 @@ export class LineProgram extends Program<LineProgramData> {
         vertices[vertexOffset + 6] = ypF;
         vertices[vertexOffset + 7] = ypR;
 
-        vertices[vertexOffset + 8] = line.colorFill;
-        vertices[vertexOffset + 9] = line.colorStroke;
+        uints[vertexOffset + 8] = line.colorFill;
+        uints[vertexOffset + 9] = line.colorStroke;
         vertices[vertexOffset + 10] = radius;
 
         vertexOffset += stride;

@@ -1,7 +1,7 @@
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { declareEvent } from 'js/corgi/events';
 
-import { LatLngZoom, Rgba32F, Vec2 } from '../common/types';
+import { LatLngZoom, Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
 
 export interface MapController {

@@ -1,6 +1,6 @@
 import { checkExists } from '../../common/asserts';
 import { HashMap, HashSet } from '../../common/collections';
-import { Rgba32F, Vec2 } from '../../common/types';
+import { Vec2 } from '../../common/types';
 
 import { RenderPlanner } from './render_planner';
 import { Renderer } from './renderer';

@@ -3,7 +3,7 @@ import { Controller, Response } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
-import { LatLngZoom, Rgba32F, Vec2 } from '../common/types';
+import { LatLngZoom, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
 import { Path, Trail } from '../models/types';

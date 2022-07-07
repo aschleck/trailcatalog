@@ -1,6 +1,6 @@
 import { Long } from 'java/org/trailcatalog/s2';
 
-import { LatLng, Rgba32F, Vec2, Vec4 } from './types';
+import { LatLng, RgbaU32, Vec2, Vec4 } from './types';
 
 export function metersToMiles(meters: number): number {
   return meters * 0.00062137119224;
@@ -20,35 +20,29 @@ export function projectLatLng(latLng: LatLng): Vec2 {
   return [x, y];
 }
 
-const reinterpretIntBuffer = new ArrayBuffer(4);
 const reinterpretLongBuffer = new ArrayBuffer(8);
+const reinterpretFloatArray = new Float64Array(reinterpretLongBuffer);
+const reinterpretIntArray = new Int32Array(reinterpretLongBuffer);
 
 /** Reads a float using the bits of a Closure Long. */
 export function reinterpretLong(v: Long): number {
-  const floats = new Int32Array(reinterpretLongBuffer);
-  floats[0] = v.getHighBits();
-  floats[1] = v.getLowBits();
-  return new Float64Array(reinterpretLongBuffer)[0];
+  reinterpretIntArray[0] = v.getHighBits();
+  reinterpretIntArray[1] = v.getLowBits();
+  return reinterpretFloatArray[0];
 }
 
 /**
- * Converts an rgba color in the range [0, 1] to an int, and then casts the int's bits to float.
+ * Converts an rgba color in the range [0, 1] to an int.
  */
-export function rgbaToUint32F(r: number, g: number, b: number, a: number): Rgba32F {
-  const v = ((255 * r) << 24) | ((255 * g) << 16) | ((255 * b) << 8) | (255 * a);
-  const ints = new Int32Array(reinterpretIntBuffer);
-  ints[0] = v;
-  return new Float32Array(reinterpretIntBuffer)[0] as Rgba32F;
+export function rgbaToUint32(r: number, g: number, b: number, a: number): RgbaU32 {
+  return (((255 * r) << 24) | ((255 * g) << 16) | ((255 * b) << 8) | (255 * a)) as RgbaU32;
 }
 
-export function rgba32FToHex(color: Rgba32F): string {
-  const floats = new Float32Array(reinterpretIntBuffer);
-  floats[0] = color;
-  const v = new Int32Array(reinterpretIntBuffer)[0];
-  const r = ((v >> 24) & 0xff).toString(16).padStart(2, '0');
-  const g = ((v >> 16) & 0xff).toString(16).padStart(2, '0');
-  const b = ((v >> 8) & 0xff).toString(16).padStart(2, '0');
-  const a = (v & 0xff).toString(16).padStart(2, '0');
+export function rgbaU32ToHex(color: RgbaU32): string {
+  const r = ((color >> 24) & 0xff).toString(16).padStart(2, '0');
+  const g = ((color >> 16) & 0xff).toString(16).padStart(2, '0');
+  const b = ((color >> 8) & 0xff).toString(16).padStart(2, '0');
+  const a = (color & 0xff).toString(16).padStart(2, '0');
   return `#${r}${g}${b}${a}`;
 }
 

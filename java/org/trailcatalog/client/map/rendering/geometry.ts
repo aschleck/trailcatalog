@@ -1,8 +1,8 @@
-import { Rgba32F } from '../../common/types';
+import { RgbaU32 } from '../../common/types';
 
 export interface Line {
-  colorFill: Rgba32F;
-  colorStroke: Rgba32F;
+  colorFill: RgbaU32;
+  colorStroke: RgbaU32;
   vertices: Float32Array|Float64Array;
 }
 

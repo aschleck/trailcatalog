@@ -121,7 +121,10 @@ export class RenderPlanner {
 
   addLines(lines: Line[], radius: number, z: number): void {
     const vertices = new Float32Array(this.geometry, this.geometryByteSize);
-    const drawable = this.lineProgram.plan(lines, radius, vertices);
+    // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
+    // canonicalization. So we have to write them as uints to the same buffer.
+    const uints = new Uint32Array(this.geometry, this.geometryByteSize);
+    const drawable = this.lineProgram.plan(lines, radius, vertices, uints);
 
     this.drawables.push({
       buffer: this.geometryBuffer,
