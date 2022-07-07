@@ -1,3 +1,5 @@
+import { S2Polygon } from 'java/org/trailcatalog/s2';
+
 import { LatLng, LatLngRect, PixelRect, Vec2 } from '../common/types';
 
 export class Boundary {
@@ -5,7 +7,7 @@ export class Boundary {
       readonly id: bigint,
       readonly name: string,
       readonly type: number,
-      readonly polygon: ArrayBuffer,
+      readonly polygon: S2Polygon,
   ) {}
 
   get sourceRelation(): bigint {

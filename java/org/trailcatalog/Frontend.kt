@@ -3,10 +3,12 @@ package org.trailcatalog
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S2CellId
+import com.google.common.geometry.S2Polygon
 import com.google.common.io.LittleEndianDataOutputStream
 import io.javalin.Javalin
 import io.javalin.http.Context
 import org.trailcatalog.s2.SimpleS2
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -73,7 +75,12 @@ fun fetchData(ctx: Context) {
           data["id"] = id
           data["name"] = results.getString(1)
           data["type"] = results.getInt(2)
-          data["s2_polygon"] = String(Base64.getEncoder().encode(results.getBytes(3)))
+          val polygon = S2Polygon.decode(ByteArrayInputStream(results.getBytes(3)))
+          val snapped = S2Polygon()
+          snapped.initToSnapped(polygon, 22)
+          val buffer = ByteArrayOutputStream()
+          snapped.encode(buffer)
+          data["s2_polygon"] = String(Base64.getEncoder().encode(buffer.toByteArray()))
         }
         responses.add(data)
       }

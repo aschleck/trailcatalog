@@ -1,6 +1,3 @@
-
-import { Disposable } from 'js/common/disposable';
-
 import { HashMap } from '../../common/collections';
 import { TileId, Vec2 } from '../../common/types';
 import { TileDataService } from '../../data/tile_data_service';
@@ -13,7 +10,7 @@ import { Layer } from './layer';
 
 const NO_OFFSET: Vec2 = [0, 0];
 
-export class TileData extends Disposable implements Layer {
+export class TileData extends Layer {
 
   private lastChange: number;
   private readonly pool: TexturePool;

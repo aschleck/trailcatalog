@@ -1,3 +1,4 @@
+import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import * as corgi from 'js/corgi';
 
 import { LittleEndianView } from './common/little_endian_view';
@@ -31,7 +32,7 @@ export function BoundaryOverviewElement({boundaryId}: {
               BigInt(boundaryId),
               raw.name,
               raw.type,
-              decodeBase64(raw.s2_polygon));
+              SimpleS2.decodePolygon(decodeBase64(raw.s2_polygon)));
     }
     state = {
       boundary,
@@ -78,7 +79,10 @@ export function BoundaryOverviewElement({boundaryId}: {
       {state.boundary
           ? <>
             <ViewportLayoutElement
-                mapOverlay={trailDetails}
+                overlay={{
+                  content: trailDetails,
+                  polygon: state?.boundary?.polygon,
+                }}
                 sidebarContent={<BoundarySidebar state={state} />}
             />
           </>

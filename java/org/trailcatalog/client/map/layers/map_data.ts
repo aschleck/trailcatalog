@@ -1,6 +1,5 @@
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { Disposable } from 'js/common/disposable';
 
 import { checkExhaustive, checkExists } from '../../common/asserts';
 import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
@@ -43,8 +42,6 @@ interface TrailHandle {
 
 type Handle = PathHandle|TrailHandle;
 
-const HIGHLIGHT_PATH_COLOR = '#ffe600';
-const HIGHLIGHT_TRAIL_COLOR = '#f2f2f2';
 const RENDER_PATHS_ZOOM_THRESHOLD = 10;
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 
@@ -55,7 +52,7 @@ const TRAIL_DIAMOND_REGULAR =
 // because they are not centered vertically.)
 const CLICK_RADIUS_PX = 35 * DPI;
 
-export class MapData extends Disposable implements Layer {
+export class MapData extends Layer {
 
   private readonly metadataBounds: BoundsQuadtree<Handle>;
   private readonly detailBounds: BoundsQuadtree<Handle>;

@@ -13,9 +13,7 @@ import { ViewportLayoutElement } from './viewport_layout_element';
 
 const TRAIL_COUNT_MAX = 100;
 
-export function OverviewElement({boundary}: {
-  boundary?: string;
-}, state: State|undefined, updateState: (newState: State) => void) {
+export function OverviewElement(props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = {
       hovering: undefined,
@@ -23,16 +21,6 @@ export function OverviewElement({boundary}: {
       selectedTrails: [],
       trails: [],
     };
-  }
-
-  let parsedBoundary;
-  if (boundary) {
-    const parsed = Number.parseInt(boundary);
-    if (isNaN(parsed)) {
-      throw new Error(`Boundary ${boundary} is invalid`);
-    } else {
-      parsedBoundary = parsed;
-    }
   }
 
   let trailDetails;
@@ -86,8 +74,7 @@ export function OverviewElement({boundary}: {
         className="flex flex-col h-full"
     >
       <ViewportLayoutElement
-          filter={{boundary: parsedBoundary}}
-          mapOverlay={trailDetails}
+          overlay={{content: trailDetails}}
           sidebarContent={trailSidebar}
       />
     </div>

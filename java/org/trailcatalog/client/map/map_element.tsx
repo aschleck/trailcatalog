@@ -1,20 +1,21 @@
+import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
 
 import { LatLngZoom } from '../common/types';
 
 import { MapController } from './map_controller';
 
-export const MapElement = ({camera, filter}: {
-  camera: LatLngZoom & {
-    force?: boolean;
+export const MapElement = ({camera, overlay}: {
+  camera: LatLngZoom;
+  overlay?: {
+    polygon?: S2Polygon;
   };
-  filter?: {boundary?: number};
 }) => {
   return <>
     <div
         js={corgi.bind({
           controller: MapController,
-          args: {camera, filter: filter ?? {}},
+          args: {camera, overlay: overlay ?? {}},
           events: {
             render: 'wakeup',
           },

@@ -1,3 +1,4 @@
+import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
 import { FabricIcon } from 'js/dino/fabric';
 
@@ -8,16 +9,16 @@ import { MapElement } from './map/map_element';
 import { LocationUrlController } from './location_url_controller';
 import { SidebarController, State } from './sidebar_controller';
 
-export function ViewportLayoutElement({camera, filter, mapOverlay, sidebarContent}: {
+export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
   camera?: {
     lat: number;
     lng: number;
     zoom: number;
   };
-  filter?: {
-    boundary?: number;
+  overlay?: {
+    content?: string;
+    polygon?: S2Polygon;
   };
-  mapOverlay?: string;
   sidebarContent: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
@@ -74,9 +75,12 @@ export function ViewportLayoutElement({camera, filter, mapOverlay, sidebarConten
               })}
               className="h-full"
           >
-            <MapElement camera={{lat, lng, zoom}} filter={filter} />
+            <MapElement
+                camera={{lat, lng, zoom}}
+                overlay={overlay}
+            />
           </div>
-          {mapOverlay ?? <></>}
+          {overlay?.content ?? <></>}
         </div>
       </div>
     </div>

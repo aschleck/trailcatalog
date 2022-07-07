@@ -84,7 +84,7 @@ function clamp(x: number, min: number, max: number): number {
   }
 }
 
-function projectS2LatLng(ll: S2LatLng): Vec2 {
+export function projectS2LatLng(ll: S2LatLng): Vec2 {
   const x = ll.lngRadians() / Math.PI;
   const y = Math.log((1 + Math.sin(ll.latRadians())) / (1 - Math.sin(ll.latRadians()))) / (2 * Math.PI);
   return [x, y];

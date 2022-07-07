@@ -39,6 +39,26 @@ goog.exportProperty(S2LatLngRect.prototype, 'hi', S2LatLngRect.prototype.hi);
 goog.exportProperty(S2LatLngRect.prototype, 'lat', S2LatLngRect.prototype.lat);
 goog.exportProperty(S2LatLngRect.prototype, 'lng', S2LatLngRect.prototype.lng);
 
+const S2Loop = goog.require('com.google.common.geometry.S2Loop');
+goog.exportSymbol('com.google.common.geometry.S2Loop', S2Loop);
+goog.exportProperty(S2Loop.prototype, 'sign', S2Loop.prototype.sign);
+goog.exportProperty(S2Loop.prototype, 'numVertices', S2Loop.prototype.numVertices);
+goog.exportProperty(S2Loop.prototype, 'vertex', S2Loop.prototype.vertex);
+goog.exportProperty(S2Loop.prototype, 'vertices', S2Loop.prototype.vertices);
+
+const S2Point = goog.require('com.google.common.geometry.S2Point');
+goog.exportSymbol('com.google.common.geometry.S2Point', S2Point);
+goog.exportProperty(S2Point.prototype, 'getX', S2Point.prototype.getX);
+goog.exportProperty(S2Point.prototype, 'getY', S2Point.prototype.getY);
+goog.exportProperty(S2Point.prototype, 'getZ', S2Point.prototype.getZ);
+
+const S2Polygon = goog.require('com.google.common.geometry.S2Polygon');
+goog.exportSymbol('com.google.common.geometry.S2Polygon', S2Polygon);
+goog.exportProperty(S2Polygon.prototype, 'containsPolygon', S2Polygon.prototype.containsPolygon);
+goog.exportProperty(S2Polygon.prototype, 'getLoops', S2Polygon.prototype.getLoops);
+goog.exportProperty(S2Polygon.prototype, 'loop', S2Polygon.prototype.loop);
+goog.exportProperty(S2Polygon.prototype, 'numLoops', S2Polygon.prototype.numLoops);
+
 const ArrayList = goog.require('java.util.ArrayList');
 goog.exportSymbol('java.util.ArrayList', ArrayList);
 goog.exportProperty(ArrayList.prototype, 'getAtIndex', ArrayList.prototype.getAtIndex);
@@ -53,5 +73,7 @@ const SimpleS2 = goog.require('org.trailcatalog.s2.SimpleS2');
 goog.exportSymbol('org.trailcatalog.s2.SimpleS2', SimpleS2);
 goog.exportProperty(SimpleS2, 'HIGHEST_METADATA_INDEX_LEVEL', SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
 goog.exportProperty(SimpleS2, 'HIGHEST_DETAIL_INDEX_LEVEL', SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL);
-goog.exportProperty(SimpleS2, 'cover', SimpleS2.cover);
 goog.exportProperty(SimpleS2, 'cellLevel', SimpleS2.cellLevel);
+goog.exportProperty(SimpleS2, 'cover', SimpleS2.cover);
+goog.exportProperty(SimpleS2, 'decodePolygon', SimpleS2.decodePolygon);
+goog.exportProperty(SimpleS2, 'pointToLatLng', SimpleS2.pointToLatLng);

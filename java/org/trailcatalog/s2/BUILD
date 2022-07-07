@@ -49,6 +49,7 @@ j2cl_library(
         "*.js",
     ]),
     deps = [
+        "@com_google_elemental2//:elemental2-core-j2cl",
         "@com_google_geometry_s2//:s2-j2cl",
         "@com_google_guava-j2cl",
         "@com_google_j2cl//:jsinterop-annotations-j2cl",
@@ -59,6 +60,7 @@ java_library(
     name = "s2-java",
     srcs = glob(["*.java"]),
     deps = [
+        "@com_google_elemental2//:elemental2-core",
         "@com_google_j2cl//:jsinterop-annotations",
         "@maven//:com_google_geometry_s2_geometry",
     ],

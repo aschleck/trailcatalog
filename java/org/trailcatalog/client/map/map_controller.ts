@@ -1,3 +1,4 @@
+import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { Controller, Response } from 'js/corgi/controller';
 
 import { checkExists } from '../common/asserts';
@@ -6,7 +7,9 @@ import { LatLngZoom, Rgba32F, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
 import { Path, Trail } from '../models/types';
+import { Layer } from './layers/layer';
 import { MapData } from './layers/map_data';
+import { OverlayData } from './layers/overlay_data';
 import { TileData } from './layers/tile_data';
 import { Camera } from './models/camera';
 import { Renderer } from './rendering/renderer';
@@ -22,8 +25,8 @@ interface Args {
     lng: number;
     zoom: number;
   };
-  filter: {
-    boundary?: number;
+  overlay: {
+    polygon?: S2Polygon;
   };
 }
 
@@ -47,9 +50,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   private readonly renderer: Renderer;
   private readonly renderPlanner: RenderPlanner;
 
+  private readonly layers: Layer[];
   private readonly mapData: MapData;
   private readonly textRenderer: TextRenderer;
-  private readonly tileData: TileData;
 
   private screenArea: DOMRect;
   private lastHoverTarget: Path|Trail|undefined;
@@ -80,11 +83,14 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
         new MapData(
             this.camera,
             response.deps.services.mapData,
-            response.args.filter,
+            {},
             this.textRenderer);
-    this.tileData =
-        new TileData(this.camera, response.deps.services.tileData, this.renderer);
-    [this.mapData, this.tileData].forEach(layer => {
+    this.layers = [
+      this.mapData,
+      new TileData(this.camera, response.deps.services.tileData, this.renderer),
+      new OverlayData(response.args.overlay),
+    ];
+    this.layers.forEach(layer => {
       this.registerDisposable(layer);
     });
 
@@ -209,7 +215,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   private enterIdle(): void {
     this.nextRender = RenderType.DataChange;
     const size: Vec2 = [this.canvas.width, this.canvas.height];
-    for (const layer of [this.mapData, this.tileData]) {
+    for (const layer of this.layers) {
       layer.viewportBoundsChanged(size, this.camera.zoom);
     }
 
@@ -241,8 +247,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
   private render(): void {
     if (!this.lastMousePosition) {
-      const hasNewData =
-          [this.mapData, this.tileData].filter(l => l.hasDataNewerThan(this.lastRenderPlan));
+      const hasNewData = this.layers.filter(l => l.hasDataNewerThan(this.lastRenderPlan));
       if (hasNewData.length > 0) {
         this.dataChangedDebouncer.trigger();
         this.nextRender = RenderType.DataChange;
@@ -256,7 +261,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
         const size: Vec2 = [this.canvas.width, this.canvas.height];
         const zoom = this.camera.zoom;
-        for (const layer of [this.mapData, this.tileData]) {
+        for (const layer of this.layers) {
           layer.plan(size, zoom, this.renderPlanner);
         }
         this.renderPlanner.save();

@@ -173,9 +173,9 @@ setup_j2cl_workspace()
 
 http_archive(
     name = "com_google_elemental2",
-    sha256 = "0aaf2ccb9a8d8ef9fcc8d3f0f9c336530097c8a5bc8ba6502808b98df702fbdd",
-    strip_prefix = "elemental2-f8586086f47c82385036bc7974580d59f4721d6a",
-    url = "https://github.com/google/elemental2/archive/f8586086f47c82385036bc7974580d59f4721d6a.zip",
+    sha256 = "1bff8487e2a0425c7a80e9f793dc8e7c11ed1ca69750ccab2c0b3196dedd40e2",
+    strip_prefix = "elemental2-7572ef9de9406c19998b51ae829c0fc91a551bd0",
+    url = "https://github.com/google/elemental2/archive/7572ef9de9406c19998b51ae829c0fc91a551bd0.zip",
 )
 
 load("@com_google_elemental2//build_defs:repository.bzl", "load_elemental2_repo_deps")

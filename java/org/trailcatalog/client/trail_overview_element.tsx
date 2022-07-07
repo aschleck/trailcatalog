@@ -108,7 +108,7 @@ export function TrailOverviewElement({trailId}: {
             <ViewportLayoutElement
                 // Probably we should just pass the bound in directly instead of doing this, alas
                 camera={boundingLlz(state.trail)}
-                mapOverlay={trailDetails}
+                overlay={{content: trailDetails}}
                 sidebarContent={<TrailSidebar state={state} />}
             />
           </>

@@ -9,6 +9,15 @@ export const ACTIVE_HEX_PALETTE = {
   stroke: rgba32FToHex(ACTIVE_PALETTE.stroke),
 } as const;
 
+export const BOUNDARY_PALETTE = {
+  fill: rgbaToUint32F(1, 0, 0, 1),
+  stroke: rgbaToUint32F(0, 0, 0, 1),
+} as const;
+export const BOUNDARY_HEX_PALETTE = {
+  fill: rgba32FToHex(BOUNDARY_PALETTE.fill),
+  stroke: rgba32FToHex(BOUNDARY_PALETTE.stroke),
+} as const;
+
 export const DEFAULT_PALETTE = {
   fill: rgbaToUint32F(0, 0, 0, 1),
   stroke: rgbaToUint32F(1, 1, 1, 1),
