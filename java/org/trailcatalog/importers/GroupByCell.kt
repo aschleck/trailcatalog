@@ -12,7 +12,7 @@ import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.s2.boundToCell
 import java.io.ByteArrayInputStream
 
-private const val CONTAINMENT_CELL_LEVEL = 8
+private const val CONTAINMENT_CELL_LEVEL = 9
 private const val SNAP_CELL_LEVEL = 24
 
 data class BoundaryPolygon(val id: Long, val polygon: S2Polygon)
