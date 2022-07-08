@@ -1,5 +1,3 @@
-
-
 import { HashSet } from '../common/collections';
 import { TileId, Vec2 } from '../common/types';
 

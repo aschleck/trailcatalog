@@ -1,4 +1,4 @@
-import {deepEqual} from 'js/corgi/comparisons';
+import { deepEqual } from 'js/corgi/comparisons';
 
 export interface InitialDataKey {
   type: string;

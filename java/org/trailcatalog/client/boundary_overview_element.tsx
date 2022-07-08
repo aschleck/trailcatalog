@@ -1,15 +1,14 @@
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import * as corgi from 'js/corgi';
+import { OutlinedButton } from 'js/dino/button';
 
 import { LittleEndianView } from './common/little_endian_view';
-import { degreesE7ToLatLng, metersToMiles, projectLatLng } from './common/math';
-import { LatLng, LatLngRect } from './common/types';
-import { initialData } from './common/ssr_aware';
-import { SELECTION_CHANGED } from './map/events';
-import { Boundary } from './models/types';
+import { metersToMiles } from './common/math';
+import { initialData } from './data';
+import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
+import { Boundary, Trail } from './models/types';
 
-import { decodeBase64 } from './base64';
-import { BoundaryOverviewController, State } from './boundary_overview_controller';
+import { boundaryFromRaw, BoundaryOverviewController, State, trailsInBoundaryFromRaw } from './boundary_overview_controller';
+import { TrailListItem } from './trail_list';
 import { TrailPopup } from './trail_popup';
 import { ViewportLayoutElement } from './viewport_layout_element';
 
@@ -17,26 +16,23 @@ export function BoundaryOverviewElement({boundaryId}: {
   boundaryId: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    const raw = initialData({
-      type: 'boundary',
-      id: boundaryId,
-    }) as {
-      name: string;
-      type: number;
-      s2_polygon: string;
-    }|undefined;
+    const rawBoundary = initialData('boundary', {id: boundaryId});
     let boundary;
-    if (raw) {
-      boundary =
-          new Boundary(
-              BigInt(boundaryId),
-              raw.name,
-              raw.type,
-              SimpleS2.decodePolygon(decodeBase64(raw.s2_polygon)));
+    if (rawBoundary) {
+      boundary = boundaryFromRaw(rawBoundary);
     }
+
+    const rawTrailsInBoundary = initialData('trails_in_boundary', {boundary_id: boundaryId});
+    let trailsInBoundary;
+    if (rawTrailsInBoundary) {
+      trailsInBoundary = trailsInBoundaryFromRaw(rawTrailsInBoundary);
+    }
+
     state = {
       boundary,
+      trailsInBoundary,
       hovering: undefined,
+      nearbyTrails: [],
       selectedCardPosition: [-1, -1],
       selectedTrails: [],
     };
@@ -67,6 +63,9 @@ export function BoundaryOverviewElement({boundaryId}: {
           args: {boundaryId: parsedId},
           events: {
             corgi: [
+              [DATA_CHANGED, 'onDataChange'],
+              [HOVER_CHANGED, 'onHoverChanged'],
+              [MAP_MOVED, 'onMove'],
               [SELECTION_CHANGED, 'onSelectionChanged'],
             ],
             render: 'wakeup',
@@ -97,19 +96,39 @@ function BoundarySidebar({state}: {state: State}) {
     return <div>Loading...</div>;
   }
 
+  const nearby = state.nearbyTrails?.length;
+  const nearbyLabel = nearby !== undefined ? `Nearby trails (${nearby})` : 'Nearby trails';
   const boundary = state.boundary;
   return <>
-    <div className="m-4 space-y-3">
-      <div className="border-b-[1px] border-tc-gray-600 -mx-4" />
-      <header className="flex font-bold justify-between text-xl">
+    <div className="my-4 space-y-3">
+      <aside className="mx-3">
+        <OutlinedButton
+            icon="BulletedList"
+            label={nearbyLabel}
+            unboundEvents={{
+              click: 'viewNearbyTrails',
+            }}
+        />
+      </aside>
+      <div className="border-b-[1px] border-tc-gray-600" />
+      <header className="flex font-bold justify-between mx-3 text-xl">
         <div>{boundary.name}</div>
       </header>
-      <section>
+      <section className="mx-3">
         Relation ID:{' '}
         <a
             title="View relation in OSM"
             href={`https://www.openstreetmap.org/relation/${boundary.sourceRelation}`}
         >{boundary.sourceRelation}</a>
+      </section>
+      <div className="border-b-[1px] border-tc-gray-600" />
+      <section>
+        {(state.trailsInBoundary ?? []).map(trail =>
+            <TrailListItem
+                highlight={state?.hovering?.id === trail.id}
+                trail={trail}
+            />
+        )}
       </section>
     </div>
   </>;

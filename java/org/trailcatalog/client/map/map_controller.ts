@@ -1,7 +1,8 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
+import { checkExists } from 'js/common/asserts';
+import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 
-import { checkExists } from '../common/asserts';
 import { DPI } from '../common/dpi';
 import { LatLngZoom, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
@@ -16,7 +17,6 @@ import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
-import { Debouncer } from './debouncer';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
 
 interface Args {

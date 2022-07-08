@@ -12,6 +12,7 @@ export function TrailPopup({ position, trails }: {
       className="
           absolute
           bg-white
+          font-header
           mb-4
           rounded
           -translate-x-1/2
@@ -34,12 +35,12 @@ export function TrailPopup({ position, trails }: {
         </header>
         {[
           ['Distance:', `${metersToMiles(trail.lengthMeters).toFixed(1)} miles`],
-          ['Relation ID:', trail.id],
         ].map(([label, content]) =>
           <section>
-            <span className="text-tc-gray-400">
+            <span className="font-medium text-tc-gray-400">
               {label}
             </span>
+            {' '}
             <span>
               {content}
             </span>

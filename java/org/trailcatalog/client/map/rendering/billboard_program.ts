@@ -1,4 +1,4 @@
-import { checkExists } from '../../common/asserts';
+import { checkExists } from 'js/common/asserts';
 
 import { FP64_OPERATIONS, Program, ProgramData } from './program';
 

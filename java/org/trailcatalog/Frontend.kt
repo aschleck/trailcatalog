@@ -49,7 +49,7 @@ fun fetchData(ctx: Context) {
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyAsInputStream())
   val keys = request.get("keys").elements()
-  val responses = ArrayList<HashMap<String, Any>>()
+  val responses = ArrayList<Any>()
   for (key in keys) {
     val type = key.get("type").asText()
     when (type) {
@@ -112,6 +112,36 @@ fun fetchData(ctx: Context) {
           data["bound"] = String(Base64.getEncoder().encode(results.getBytes(4)))
           data["marker"] = String(Base64.getEncoder().encode(results.getBytes(5)))
           data["length_meters"] = results.getDouble(6)
+        }
+        responses.add(data)
+      }
+      "trails_in_boundary" -> {
+        val data = ArrayList<HashMap<String, Any>>()
+        val id = key.get("boundary_id").asLong()
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+              "SELECT "
+                  + "id, "
+                  + "name, "
+                  + "type, "
+                  + "length_meters "
+                  + "FROM trails t "
+                  + "RIGHT JOIN trails_in_boundaries tib "
+                  + "ON t.id = tib.trail_id AND t.epoch = tib.epoch "
+                  + "WHERE tib.boundary_id = ? AND tib.epoch = ? "
+                  + "ORDER BY length_meters DESC")
+              .apply {
+                setLong(1, id)
+                setInt(2, epochTracker.epoch)
+              }.executeQuery()
+          while (results.next()) {
+            val trail = HashMap<String, Any>()
+            trail["id"] = results.getLong(1).toString()
+            trail["name"] = results.getString(2)
+            trail["type"] = results.getInt(3)
+            trail["length_meters"] = results.getDouble(4)
+            data.add(trail)
+          }
         }
         responses.add(data)
       }

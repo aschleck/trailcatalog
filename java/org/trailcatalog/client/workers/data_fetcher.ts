@@ -1,7 +1,7 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { checkExhaustive } from 'js/common/asserts';
 
-import { checkExhaustive } from '../common/asserts';
 import { reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 

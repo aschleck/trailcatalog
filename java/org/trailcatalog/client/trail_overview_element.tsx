@@ -4,8 +4,8 @@ import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { LittleEndianView } from './common/little_endian_view';
 import { degreesE7ToLatLng, metersToMiles, projectLatLng } from './common/math';
 import { LatLng, LatLngRect } from './common/types';
-import { initialData } from './common/ssr_aware';
-import { MAP_MOVED, SELECTION_CHANGED } from './map/events';
+import { initialData } from './data';
+import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { Trail } from './models/types';
 
 import { decodeBase64 } from './base64';
@@ -17,17 +17,7 @@ export function TrailOverviewElement({trailId}: {
   trailId: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    const raw = initialData({
-      type: 'trail',
-      id: trailId,
-    }) as {
-      name: string;
-      type: number;
-      path_ids: string;
-      bound: string;
-      marker: string;
-      length_meters: number;
-    }|undefined;
+    const raw = initialData('trail', {id: trailId});
     let trail;
     if (raw) {
       const paths = [];
@@ -93,6 +83,7 @@ export function TrailOverviewElement({trailId}: {
           args: {trailId: parsedId},
           events: {
             corgi: [
+              [DATA_CHANGED, 'onDataChange'],
               [MAP_MOVED, 'onMove'],
               [SELECTION_CHANGED, 'onSelectionChanged'],
             ],

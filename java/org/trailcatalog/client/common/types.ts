@@ -11,6 +11,14 @@ export type LatLngRect = {
   high: Vec2;
 } & {brand: 'LatLngRect'};
 
+export function emptyLatLngRect(): LatLngRect {
+  return {
+    low: [0, 0],
+    high: [0, 0],
+    brand: 'LatLngRect',
+  };
+}
+
 export type LatLngZoom = {
   lat: number;
   lng: number;
@@ -21,6 +29,14 @@ export type PixelRect = {
   low: Vec2;
   high: Vec2;
 } & {brand: 'PixelRect'};
+
+export function emptyPixelRect(): PixelRect {
+  return {
+    low: [0, 0],
+    high: [0, 0],
+    brand: 'PixelRect',
+  };
+}
 
 export interface TileId {
   x: number;

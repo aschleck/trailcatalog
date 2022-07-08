@@ -16,7 +16,7 @@ interface Filter {
 }
 
 interface Listener {
-  loadMetadata(paths: Iterable<Path>, trails: Iterable<Trail>): void;
+  loadMetadata(trails: Iterable<Trail>): void;
   loadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void;
   unloadEverywhere(paths: Iterable<Path>, trails: Iterable<Trail>): void;
 }
@@ -86,7 +86,7 @@ export class MapDataService extends Service<EmptyDeps> {
       ...filter,
     });
 
-    this.listener.loadMetadata([], this.trails.values());
+    this.listener.loadMetadata(this.trails.values());
     this.listener.loadDetail(this.paths.values(), this.trailsInDetails);
   }
 
@@ -187,7 +187,7 @@ export class MapDataService extends Service<EmptyDeps> {
     }
 
     this.metadataCells.set(id, buffer);
-    this.listener?.loadMetadata([], trails);
+    this.listener?.loadMetadata(trails);
   }
 
   private loadDetail(id: S2CellNumber, buffer: ArrayBuffer): void {

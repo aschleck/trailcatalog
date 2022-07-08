@@ -1,13 +1,12 @@
 import * as corgi from 'js/corgi';
 
-import { metersToMiles } from './common/math';
 import { Vec2 } from './common/types';
-import { HOVER_HEX_PALETTE } from './map/common/colors';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
 import { Path, Trail } from './models/types';
 
 import { OverviewController, State } from './overview_controller';
+import { TrailListItem } from './trail_list';
 import { TrailPopup } from './trail_popup';
 import { ViewportLayoutElement } from './viewport_layout_element';
 
@@ -17,9 +16,9 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
   if (!state) {
     state = {
       hovering: undefined,
+      nearbyTrails: [],
       selectedCardPosition: [0, 0],
       selectedTrails: [],
-      trails: [],
     };
   }
 
@@ -34,13 +33,14 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
     trailDetails = <></>;
   }
 
+  const nearby = state.nearbyTrails ?? [];
   let filteredTrails;
   let hiddenTrailCount;
-  if (state.trails.length > TRAIL_COUNT_MAX) {
-    filteredTrails = state.trails.slice(0, TRAIL_COUNT_MAX);
-    hiddenTrailCount = state.trails.length - TRAIL_COUNT_MAX;
+  if (nearby.length > TRAIL_COUNT_MAX) {
+    filteredTrails = nearby.slice(0, TRAIL_COUNT_MAX);
+    hiddenTrailCount = nearby.length - TRAIL_COUNT_MAX;
   } else {
-    filteredTrails = state.trails;
+    filteredTrails = nearby;
     hiddenTrailCount = 0;
   }
 
@@ -49,8 +49,8 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
       Nearby trails
     </header>
     {filteredTrails.map(trail =>
-        <TrailListElement
-            highlight={state?.hovering === trail}
+        <TrailListItem
+            highlight={state?.hovering?.id === trail.id}
             trail={trail}
         />
     )}
@@ -78,37 +78,6 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
           sidebarContent={trailSidebar}
       />
     </div>
-  </>;
-}
-
-function TrailListElement({ highlight, trail }: { highlight: boolean, trail: Trail }) {
-  return <>
-    <a
-        className={
-          'cursor-pointer flex gap-2 items-stretch pr-2'
-              + (highlight ? ' bg-tc-gray-700' : '')
-        }
-        href={`/trail/${trail.id}`}
-        data-trail-id={trail.id}
-        unboundEvents={{
-          click: 'viewTrail',
-          mouseover: 'highlightTrail',
-          mouseout: 'unhighlightTrail',
-        }}>
-      <div
-          className="my-1 rounded-r-lg w-1"
-          style={highlight ? `background-color: ${HOVER_HEX_PALETTE.stroke}` : ''}
-      >
-      </div>
-      <div className="font-lg grow py-2">{trail.name}</div>
-      <div className="py-2 shrink-0 w-24">
-        <span className="font-lg">
-          {metersToMiles(trail.lengthMeters).toFixed(1)}
-        </span>
-        {' '}
-        <span className="font-xs text-tc-gray-400">miles</span>
-      </div>
-    </a>
   </>;
 }
 

@@ -1,7 +1,7 @@
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { checkExhaustive, checkExists } from 'js/common/asserts';
 
-import { checkExhaustive, checkExists } from '../../common/asserts';
 import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
 import { DPI } from '../../common/dpi';
 import { LittleEndianView } from '../../common/little_endian_view';
@@ -387,7 +387,7 @@ export class MapData extends Layer {
     return cells;
   }
 
-  loadMetadata(paths: Iterable<Path>, trails: Iterable<Trail>): void {
+  loadMetadata(trails: Iterable<Trail>): void {
     for (const trail of trails) {
       this.metadataBounds.insert({
         entity: trail,

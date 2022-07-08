@@ -1,3 +1,4 @@
+import { Debouncer } from 'js/common/debouncer';
 import { Disposable } from 'js/common/disposable';
 
 import { EventSpec, qualifiedName } from './events';
@@ -39,13 +40,15 @@ export class Controller<
 
   protected readonly root: E;
   protected state: S;
-  private readonly stateUpdater: (newState: S) => void;
+  private readonly updateStateDebouncer: Debouncer;
 
   constructor(response: ControllerResponse<A, D, E, S>) {
     super();
     this.root = response.root;
     this.state = response.state[0];
-    this.stateUpdater = response.state[1];
+    this.updateStateDebouncer = new Debouncer(0, () => {
+      response.state[1](this.state);
+    });
   }
 
   updateArgs(newArgs: A): void {}
@@ -59,8 +62,8 @@ export class Controller<
   }
 
   protected updateState(newState: S): void {
-    this.stateUpdater(newState);
     this.state = newState;
+    this.updateStateDebouncer.trigger();
   }
 
   wakeup(): void {}

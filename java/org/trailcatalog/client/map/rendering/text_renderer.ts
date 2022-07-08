@@ -1,4 +1,5 @@
-import { checkExists } from '../../common/asserts';
+import { checkExists } from 'js/common/asserts';
+
 import { HashMap, HashSet } from '../../common/collections';
 import { Vec2 } from '../../common/types';
 

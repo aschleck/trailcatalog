@@ -1,4 +1,5 @@
-import { checkExists } from '../../common/asserts';
+import { checkExists } from 'js/common/asserts';
+
 import { splitVec2 } from '../../common/math';
 import { Vec2 } from '../../common/types';
 import { Camera } from '../models/camera';

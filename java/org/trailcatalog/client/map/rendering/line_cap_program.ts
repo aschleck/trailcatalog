@@ -1,4 +1,5 @@
-import { checkExists } from '../../common/asserts';
+import { checkExists } from 'js/common/asserts';
+
 import { VERTEX_STRIDE } from './line_program';
 import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 

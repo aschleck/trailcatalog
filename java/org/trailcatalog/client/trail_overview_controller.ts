@@ -14,7 +14,6 @@ interface Args {
 }
 
 export interface State extends VState {
-  nearbyTrails: Trail[]|undefined;
   trail: Trail|undefined;
 }
 
@@ -32,8 +31,6 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
   }
 
   private readonly data: MapDataService;
-  private controller: MapController|undefined;
-  private lastCamera: {lat: number; lng: number; zoom: number}|undefined;
 
   constructor(response: Response<TrailOverviewController>) {
     super(response);
@@ -49,28 +46,14 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
 
   // This may not always fire prior to the person hitting nearby trails, which is bad
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
-    const {controller, center, zoom} = e.detail;
-    this.mapController = controller;
-    this.lastCamera = {
-      lat: center.latDegrees(),
-      lng: center.lngDegrees(),
-      zoom,
-    };
-
     if (this.state.trail) {
       // This is bad here. We already have a loading screen before showing the map, so we can just
       // pass the active trail in as a map arg. Oh well.
+      const {controller} = e.detail;
       controller.setActive(this.state.trail, true);
     }
 
-    const nearby = 
-          controller.listTrailsInViewport()
-              .filter(t => t.id !== this.state.trail?.id)
-              .sort((a, b) => b.lengthMeters - a.lengthMeters);
-    this.updateState({
-      ...this.state,
-      nearbyTrails: nearby,
-    });
+    super.onMove(e);
   }
 
   viewNearbyTrails(): void {

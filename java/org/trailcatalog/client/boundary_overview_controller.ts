@@ -1,10 +1,14 @@
+import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
-import { checkExists } from './common/asserts';
-import { Boundary } from './models/types';
+import { emptyLatLngRect, emptyPixelRect, LatLng } from './common/types';
+import { Boundary, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
+import { decodeBase64 } from './base64';
+import { DataResponses, fetchData } from './data';
 import { Deps, State as VState, ViewportController } from './viewport_controller';
 
 interface Args {
@@ -13,6 +17,7 @@ interface Args {
 
 export interface State extends VState {
   boundary: Boundary|undefined;
+  trailsInBoundary: Trail[]|undefined;
 }
 
 export class BoundaryOverviewController extends ViewportController<Args, Deps, State> {
@@ -27,6 +32,53 @@ export class BoundaryOverviewController extends ViewportController<Args, Deps, S
 
   constructor(response: Response<BoundaryOverviewController>) {
     super(response);
+
+    const id = `${response.args.boundaryId}`;
+    if (!this.state.boundary) {
+      fetchData('boundary', {id}).then(raw => {
+        this.updateState({
+          ...this.state,
+          boundary: boundaryFromRaw(raw),
+        });
+      });
+    }
+
+    if (!this.state.trailsInBoundary) {
+      fetchData('trails_in_boundary', {boundary_id: id}).then(raw => {
+        this.updateState({
+          ...this.state,
+          trailsInBoundary: trailsInBoundaryFromRaw(raw),
+        });
+      });
+    }
+  }
+
+  viewNearbyTrails(): void {
+    // TODO(april): oops
+    //this.views.showOverview(this.lastCamera);
+    this.views.showBoundary(163769n);
   }
 }
 
+export function boundaryFromRaw(raw: DataResponses['boundary']): Boundary {
+  return new Boundary(
+      BigInt(raw.id),
+      raw.name,
+      raw.type,
+      SimpleS2.decodePolygon(decodeBase64(raw.s2_polygon)));
+}
+
+export function trailsInBoundaryFromRaw(raw: DataResponses['trails_in_boundary']): Trail[] {
+  return raw.map(
+      t =>
+          new Trail(
+              BigInt(t.id),
+              t.name,
+              t.type,
+              emptyPixelRect(),
+              [],
+              emptyLatLngRect(),
+              [0, 0] as LatLng,
+              [0, 0],
+              t.length_meters));
+}

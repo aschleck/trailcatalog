@@ -77,6 +77,10 @@ export class ViewsService extends Service<Deps> {
     this.listeners.delete(listener);
   }
 
+  showBoundary(id: bigint): void {
+    this.history.goTo(`/boundary/${id}`);
+  }
+
   showOverview(camera?: {lat: number, lng: number, zoom: number}): void {
     if (camera) {
       this.history.goTo(`/?lat=${camera.lat}&lng=${camera.lng}&zoom=${camera.zoom}`);
@@ -85,7 +89,7 @@ export class ViewsService extends Service<Deps> {
     }
   }
 
-  showTrail(id: number): void {
+  showTrail(id: bigint): void {
     this.history.goTo(`/trail/${id}`);
   }
 }
