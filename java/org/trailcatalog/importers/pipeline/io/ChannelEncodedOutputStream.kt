@@ -46,10 +46,16 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel)
   fun checkBufferSpace() {
     if (buffer.position() >= FLUSH_THRESHOLD) {
       flush()
+    }
 
-      if (position - start > 2_000_000_000) {
-        shard()
-      }
+    if (position - start > 2_000_000_000) {
+      shard()
+    }
+  }
+
+  fun checkBufferSpaceNoShard() {
+    if (buffer.position() >= FLUSH_THRESHOLD) {
+      flush()
     }
   }
 

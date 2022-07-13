@@ -1,7 +1,6 @@
 package org.trailcatalog.importers
 
 import com.google.common.geometry.S2Point
-import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
 import com.zaxxer.hikari.HikariDataSource
@@ -31,7 +30,6 @@ import org.trailcatalog.importers.pipeline.io.EncodedInputStream
 import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.BUFFER_SIZE
 import org.trailcatalog.importers.pipeline.io.FLUSH_THRESHOLD
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.file.Path
 import java.time.LocalDateTime
@@ -77,19 +75,19 @@ fun main(args: Array<String>) {
   registerSerializer(TypeToken.of(BoundaryPolygon::class.java), object : Serializer<BoundaryPolygon> {
     override fun read(from: EncodedInputStream): BoundaryPolygon {
       val id = from.readLong()
-      val polygon = S2Polygon.decode(from)
+      val polygon = ByteArray(from.readVarInt())
+      from.read(polygon)
       return BoundaryPolygon(id, polygon)
     }
 
     override fun size(v: BoundaryPolygon): Int {
-      val bytes = ByteArrayOutputStream()
-      v.polygon.encode(bytes)
-      return 8 + bytes.size()
+      return 8 + EncodedOutputStream.varIntSize(v.polygon.size) + v.polygon.size
     }
 
     override fun write(v: BoundaryPolygon, to: EncodedOutputStream) {
       to.writeLong(v.id)
-      v.polygon.encode(to)
+      to.writeVarInt(v.polygon.size)
+      to.write(v.polygon)
     }
   })
 
@@ -144,19 +142,19 @@ fun main(args: Array<String>) {
   registerSerializer(TypeToken.of(TrailPolyline::class.java), object : Serializer<TrailPolyline> {
     override fun read(from: EncodedInputStream): TrailPolyline {
       val id = from.readLong()
-      val polyline = S2Polyline.decode(from)
+      val polyline = ByteArray(from.readVarInt())
+      from.read(polyline)
       return TrailPolyline(id, polyline)
     }
 
     override fun size(v: TrailPolyline): Int {
-      val bytes = ByteArrayOutputStream()
-      v.polyline.encodeCompact(bytes)
-      return 8 + bytes.size()
+      return 8 + EncodedOutputStream.varIntSize(v.polyline.size) + v.polyline.size
     }
 
     override fun write(v: TrailPolyline, to: EncodedOutputStream) {
       to.writeLong(v.id)
-      v.polyline.encodeCompact(to)
+      to.writeVarInt(v.polyline.size)
+      to.write(v.polyline)
     }
   })
 
