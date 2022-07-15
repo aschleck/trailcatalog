@@ -12,6 +12,7 @@ import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.s2.boundToCell
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import kotlin.math.min
 
 private const val CONTAINMENT_CELL_LEVEL = 8
 private const val SNAP_CELL_LEVEL = 24
@@ -80,7 +81,7 @@ private fun intersectingContainmentCells(base: S2CellId) = sequence<S2CellId> {
           } else {
             base.parent(CONTAINMENT_CELL_LEVEL)
           }))
-  union.expand(CONTAINMENT_CELL_LEVEL)
+  union.expand(min(base.level(), CONTAINMENT_CELL_LEVEL))
   for (cell in union) {
     if (cell.level() < CONTAINMENT_CELL_LEVEL) {
       for (child in cell.childrenAtLevel(CONTAINMENT_CELL_LEVEL)) {

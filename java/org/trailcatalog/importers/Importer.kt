@@ -19,11 +19,16 @@ import org.trailcatalog.importers.pbf.GatherWayNodes
 import org.trailcatalog.importers.pbf.ExtractWayRelationPairs
 import org.trailcatalog.importers.pbf.GatherRelationWays
 import org.trailcatalog.importers.pbf.LatLngE7
+import org.trailcatalog.importers.pbf.Node
+import org.trailcatalog.importers.pbf.Way
+import org.trailcatalog.importers.pbf.WaySkeleton
 import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
 import org.trailcatalog.importers.pbf.PbfBlockReader
 import org.trailcatalog.importers.pbf.registerPbfSerializers
+import org.trailcatalog.importers.pipeline.PStage
 import org.trailcatalog.importers.pipeline.collections.HEAP_DUMP_THRESHOLD
+import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
@@ -278,13 +283,13 @@ fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
   val trails = relationsWithGeometry.then(CreateTrails())
   trails.write(DumpPathsInTrails(epoch, hikari))
   trails.write(DumpTrails(epoch, hikari))
-  pipeline
+  val byCells = pipeline
       .join2(
           "JoinOnContainment",
           boundaries.then(GroupBoundariesByCell()),
           trails.then(GroupTrailsByCell()))
-      .then(CreateTrailsInBoundaries())
-      .write(DumpTrailsInBoundaries(epoch, hikari))
+  byCells.then(CreateBoundariesInBoundaries()).write(DumpBoundariesInBoundaries(epoch, hikari))
+  byCells.then(CreateTrailsInBoundaries()).write(DumpTrailsInBoundaries(epoch, hikari))
 
   pipeline.execute()
 
@@ -297,6 +302,7 @@ fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
     for (table in listOf(
         "active_epoch",
         "boundaries",
+        "boundaries_in_boundaries",
         "paths",
         "paths_in_trails",
         "trails",

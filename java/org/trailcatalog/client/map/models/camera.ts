@@ -40,7 +40,12 @@ export class Camera {
   }
 
   linearZoom(dZ: number, relativePixels: Vec2): void {
-    this._zoom = clamp(this._zoom + dZ, 2, 19);
+    const nz = clamp(this._zoom + dZ, 2, 19);
+    if (this._zoom === nz) {
+      return;
+    }
+
+    this._zoom = nz;
     this._inverseWorldRadius = 1 / this.worldRadius;
 
     const deltaScale = Math.pow(2, dZ);

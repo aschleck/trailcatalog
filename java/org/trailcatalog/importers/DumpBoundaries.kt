@@ -15,7 +15,7 @@ class DumpBoundaries(private val epoch: Int, private val hikari: HikariDataSourc
     input.use {
       val stream =
           StringifyingInputStream(input) { boundary, csv ->
-            // id,epoch,type,cell,name,s2_polygon,source_relation,address
+            // id,epoch,type,cell,name,s2_polygon,source_relation
             csv.append(boundary.id)
             csv.append(",")
             csv.append(epoch)
@@ -29,7 +29,7 @@ class DumpBoundaries(private val epoch: Int, private val hikari: HikariDataSourc
             appendByteArray(boundary.s2Polygon, csv)
             csv.append(",")
             csv.append(boundary.id)
-            csv.append(",\n")
+            csv.append("\n")
           }
       copyStreamToPg("boundaries", stream, hikari)
     }

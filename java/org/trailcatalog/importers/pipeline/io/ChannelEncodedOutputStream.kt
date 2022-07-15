@@ -31,6 +31,7 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel)
   override fun close() {
     shard()
     super.close()
+    channel.close()
   }
 
   override fun flush() {

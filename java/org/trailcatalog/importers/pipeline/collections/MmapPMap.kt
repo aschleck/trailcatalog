@@ -11,7 +11,6 @@ import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
-import java.util.concurrent.atomic.AtomicInteger
 
 var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024
 
@@ -20,14 +19,12 @@ class MmapPMap<K : Comparable<K>, V>(
     private val keySerializer: Serializer<K>,
     private val valueSerializer: Serializer<V>,
     private val size: Long,
-    private val fileReference: FileReference,
 ) : PMap<K, V> {
 
   var shard = 0
 
   override fun close() {
     maps.forEach { it.close() }
-    fileReference.close()
   }
 
   override fun estimatedByteSize(): Long {
@@ -60,9 +57,7 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
     estimatedByteSize: Long,
-    handles: AtomicInteger,
-    fn: (Emitter2<K, V>) -> Unit): () -> MmapPMap<K, V> {
-  if (handles.get() == 0) throw RuntimeException("${keyType} => ${valueType}")
+    fn: (Emitter2<K, V>) -> Unit): DisposableSupplier<MmapPMap<K, V>> {
   val keySerializer = getSerializer(keyType)
   val valueSerializer = getSerializer(valueType)
 
@@ -76,7 +71,6 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
       keySerializer,
       valueSerializer,
       estimatedByteSize,
-      handles,
   ).also {
     shards.forEach { it.close() }
     shardedFile.delete()
@@ -170,8 +164,7 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
     keySerializer: Serializer<K>,
     valueSerializer: Serializer<V>,
     estimatedByteSize: Long,
-    handles: AtomicInteger,
-): () -> MmapPMap<K, V> {
+): DisposableSupplier<MmapPMap<K, V>> {
   val merged =
       File.createTempFile(cleanFilename("mmap-map-merged-${keyType}-${valueType}"), null)
   merged.deleteOnExit()
@@ -241,15 +234,16 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
   println("  PMap (mmap) ${keyType} -> ${valueType} size ${size}")
   println("  -> estimated ${estimatedByteSize} bytes (${estimatedByteSize * 100.0 / size}%)")
 
-  val postsortChannel = FileChannel.open(merged.toPath())
-  val fileReference = FileReference(merged, handles)
+  val fileReference = FileReference(merged)
 
-  return {
-    val opened = shards.map { s ->
-      EncodedInputStream(postsortChannel.map(MapMode.READ_ONLY, s.start, s.length))
+  return DisposableSupplier(fileReference) {
+    val opened = FileChannel.open(merged.toPath()).use { postsortChannel ->
+      shards.map { s ->
+        EncodedInputStream(postsortChannel.map(MapMode.READ_ONLY, s.start, s.length))
+      }
     }
     MmapPMap(
-        opened, keySerializer, valueSerializer, opened.sumOf { it.size().toLong() }, fileReference)
+        opened, keySerializer, valueSerializer, opened.sumOf { it.size().toLong() })
   }
 }
 

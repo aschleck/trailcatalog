@@ -1,6 +1,7 @@
 package org.trailcatalog.importers.pbf
 
 import com.google.common.reflect.TypeToken
+import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 import org.trailcatalog.importers.pipeline.PStage
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.createPMap
@@ -11,18 +12,16 @@ import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.NODE_ID
 import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.RELATION_ID
 import org.trailcatalog.proto.RelationSkeletonMember.ValueCase.WAY_ID
 import org.trailcatalog.proto.WayGeometry
-import java.util.concurrent.atomic.AtomicInteger
 
 class ExtractRelationGeometriesWithWays
   : PStage<PMap<Long, Relation>, PMap<Long, RelationGeometry>>() {
 
-  override fun act(input: PMap<Long, Relation>, handles: AtomicInteger): () -> PMap<Long, RelationGeometry> {
+  override fun act(input: PMap<Long, Relation>): DisposableSupplier<PMap<Long, RelationGeometry>> {
     return createPMap(
         "ExtractRelationGeometriesWithWays",
         TypeToken.of(Long::class.java),
         TypeToken.of(RelationGeometry::class.java),
-        estimateSize(input.estimatedByteSize()),
-        handles) { emitter ->
+        estimateSize(input.estimatedByteSize())) { emitter ->
       // How big can this really be anyway...?
       val inMemory = HashMap<Long, RelationSkeleton>()
       while (input.hasNext()) {

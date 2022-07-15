@@ -1,7 +1,6 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
-import java.util.concurrent.atomic.AtomicInteger
 
 interface PMap<K : Comparable<K>, V> : PCollection<PEntry<K, V>>
 
@@ -12,7 +11,6 @@ fun <K : Comparable<K>, V : Any> createPMap(
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
     estimatedByteSize: Long,
-    handles: AtomicInteger,
-    fn: (Emitter2<K, V>) -> Unit): () -> PMap<K, V> {
-  return createMmapPMap(context, keyType, valueType, estimatedByteSize, handles, fn)
+    fn: (Emitter2<K, V>) -> Unit): DisposableSupplier<PMap<K, V>> {
+  return createMmapPMap(context, keyType, valueType, estimatedByteSize, fn)
 }

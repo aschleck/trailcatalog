@@ -60,11 +60,6 @@ primary_key = ["id", "epoch"]
   nullable = false
   type = "BIGINT"
 
-  [[actions.columns]]
-  name = "address"
-  nullable = true
-  type = "TEXT"
-
 [[actions]]
 type = "add_index"
 table = "boundaries"
@@ -72,6 +67,34 @@ table = "boundaries"
   [actions.index]
   name = "boundaries_by_cell_epoch_idx"
   columns = ["cell", "epoch"]
+
+[[actions]]
+type = "create_table"
+name = "boundaries_in_boundaries"
+primary_key = ["child_id", "parent_id", "epoch"]
+
+  [[actions.columns]]
+  name = "child_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "parent_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+[[actions]]
+type = "add_index"
+table = "boundaries_in_boundaries"
+
+  [actions.index]
+  name = "boundaries_in_boundaries_by_child_id_epoch_idx"
+  columns = ["child_id", "epoch"]
 
 [[actions]]
 type = "create_table"
@@ -205,11 +228,6 @@ primary_key = ["id", "epoch"]
   name = "length_meters"
   nullable = false
   type = "REAL"
-
-  [[actions.columns]]
-  name = "representative_boundary"
-  nullable = true
-  type = "BIGINT"
 
   [[actions.columns]]
   name = "source_relation"

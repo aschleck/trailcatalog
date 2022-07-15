@@ -1,15 +1,15 @@
 package org.trailcatalog.importers.pipeline
 
-import java.util.concurrent.atomic.AtomicInteger
+import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 
 abstract class PSink<T : Any> : PStage<T, Void?>() {
 
   abstract fun write(input: T)
 
-  final override fun act(input: T, handles: AtomicInteger): () -> Void? {
+  final override fun act(input: T): DisposableSupplier<Void?> {
     println("Sinking ${this::class.simpleName}")
-    return {
-      write(input)
+    write(input)
+    return DisposableSupplier({}) {
       null
     }
   }

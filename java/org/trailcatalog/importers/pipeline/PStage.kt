@@ -1,10 +1,10 @@
 package org.trailcatalog.importers.pipeline
 
-import java.util.concurrent.atomic.AtomicInteger
+import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 
 abstract class PStage<I, O> {
 
-  abstract fun act(input: I, handles: AtomicInteger): () -> O
+  abstract fun act(input: I): DisposableSupplier<O>
 
   protected open fun estimateCount(): Long {
     return 0
