@@ -157,7 +157,16 @@ export class MapData extends Layer {
       }
     }
 
-    return best;
+    if (best instanceof Path) {
+      const trails = this.dataService.pathsToTrails.get(best.id) ?? [];
+      if (trails.length === 1) {
+        return trails[0];
+      } else {
+        return best;
+      }
+    } else {
+      return best;
+    }
   }
 
   setActive(entity: Path|Trail, state: boolean): void {
