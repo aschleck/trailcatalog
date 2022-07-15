@@ -1,12 +1,14 @@
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
-import { LatLngZoom } from './common/types';
+import { boundingLlz } from './common/math';
+import { emptyS2Polygon } from './common/types';
 import { MapDataService } from './data/map_data_service';
 import { MapController, MAP_MOVED } from './map/events';
-import { Trail } from './models/types';
+import { Boundary, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
+import { DataResponses, fetchData } from './data';
 import { State as VState, ViewportController } from './viewport_controller';
 
 interface Args {
@@ -14,6 +16,7 @@ interface Args {
 }
 
 export interface State extends VState {
+  containingBoundaries: Boundary[]|undefined;
   trail: Trail|undefined;
 }
 
@@ -36,12 +39,24 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
     super(response);
     this.data = response.deps.services.data;
 
-    this.data.setPins({trail: response.args.trailId}).then(trail => {
+    const id = response.args.trailId;
+
+    this.data.setPins({trail: id}).then(trail => {
       this.updateState({
         ...this.state,
         trail,
       });
     });
+
+    if (!this.state.containingBoundaries) {
+      fetchData('boundaries_containing_trail', {trail_id: `${id}`}).then(raw => {
+        this.updateState({
+          ...this.state,
+          containingBoundaries: containingBoundariesFromRaw(raw),
+        });
+      });
+    }
+
   }
 
   // This may not always fire prior to the person hitting nearby trails, which is bad
@@ -63,20 +78,19 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
 
   zoomToFit(): void {
     if (this.state.trail) {
-      this.mapController?.setCamera(boundingLlz(this.state.trail));
+      this.mapController?.setCamera(boundingLlz(this.state.trail.bound));
     }
   }
 }
 
-export function boundingLlz(trail: Trail): LatLngZoom {
-  const dLL = [
-    trail.bound.high[0] - trail.bound.low[0],
-    trail.bound.high[1] - trail.bound.low[1],
-  ];
-  const center = [
-    trail.bound.low[0] + dLL[0] / 2,
-    trail.bound.low[1] + dLL[1] / 2,
-  ];
-  const zoom = Math.log(512 / Math.max(dLL[0], dLL[1])) / Math.log(2);
-  return {lat: center[0], lng: center[1], zoom};
+export function containingBoundariesFromRaw(
+    raw: DataResponses['boundaries_containing_trail']): Boundary[] {
+  return raw.map(
+      b =>
+          new Boundary(
+              BigInt(b.id),
+              b.name,
+              b.type,
+              emptyS2Polygon()));
 }
+

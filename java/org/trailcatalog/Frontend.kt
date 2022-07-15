@@ -84,6 +84,58 @@ fun fetchData(ctx: Context) {
         }
         responses.add(data)
       }
+      "boundaries_containing_boundary" -> {
+        val data = ArrayList<HashMap<String, Any>>()
+        val id = key.get("child_id").asLong()
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+              "SELECT "
+                  + "b.id, "
+                  + "b.name, "
+                  + "b.type "
+                  + "FROM boundaries_in_boundaries bib "
+                  + "JOIN boundaries b ON bib.parent_id = b.id AND bib.epoch = b.epoch "
+                  + "WHERE bib.child_id = ? AND bib.epoch = ? ")
+              .apply {
+                setLong(1, id)
+                setInt(2, epochTracker.epoch)
+              }.executeQuery()
+          while (results.next()) {
+            val boundary = HashMap<String, Any>()
+            boundary["id"] = results.getLong(1).toString()
+            boundary["name"] = results.getString(2)
+            boundary["type"] = results.getInt(3)
+            data.add(boundary)
+          }
+        }
+        responses.add(data)
+      }
+      "boundaries_containing_trail" -> {
+        val data = ArrayList<HashMap<String, Any>>()
+        val id = key.get("trail_id").asLong()
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+              "SELECT "
+                  + "b.id, "
+                  + "b.name, "
+                  + "b.type "
+                  + "FROM trails_in_boundaries tib "
+                  + "JOIN boundaries b ON tib.boundary_id = b.id AND tib.epoch = b.epoch "
+                  + "WHERE tib.trail_id = ? AND tib.epoch = ?")
+              .apply {
+                setLong(1, id)
+                setInt(2, epochTracker.epoch)
+              }.executeQuery()
+          while (results.next()) {
+            val boundary = HashMap<String, Any>()
+            boundary["id"] = results.getLong(1).toString()
+            boundary["name"] = results.getString(2)
+            boundary["type"] = results.getInt(3)
+            data.add(boundary)
+          }
+        }
+        responses.add(data)
+      }
       "trail" -> {
         val data = HashMap<String, Any>()
         val id = key.get("id").asLong()

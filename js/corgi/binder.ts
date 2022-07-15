@@ -3,6 +3,7 @@ import { checkExists } from 'js/common/asserts';
 import { deepEqual } from './comparisons';
 import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, ControllerResponse } from './controller';
 import { EventSpec, qualifiedName } from './events';
+import { isAnchorContextClick } from './mouse';
 import { Service, ServiceDeps } from './service';
 import { DepsConstructorsFor } from './types';
 
@@ -18,8 +19,10 @@ interface PropertyKeyToHandlerMap<C> {
     EventSpec<unknown>,
     AMethodOnWithParameters<C, [CustomEvent<unknown>]>,
   ]>;
+  mousedown: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   mouseover: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   mouseout: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
+  mouseup: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   render: AMethodOnWithParameters<C, []>,
 }
 
@@ -119,18 +122,7 @@ export function bindElementToSpec(
       continue;
     }
 
-    const handlerString = handler as string;
-    root.addEventListener(
-        event,
-        (e: Event) => {
-          e.preventDefault();
-          e.stopPropagation();
-
-          maybeInstantiateAndCall(root, spec, (controller: any) => {
-            const method = controller[handlerString] as (e: any) => unknown;
-            method.call(controller, e);
-          });
-        });
+    bindEventListener(root, event, handler as string, root, spec);
   }
 
   for (const [eventSpec, handler] of spec.events.corgi ?? []) {
@@ -152,17 +144,7 @@ export function bindElementToSpec(
 
   for (const [element, events] of unboundEventss) {
     for (const [event, handler] of Object.entries(events)) {
-      element.addEventListener(
-          event,
-          (e: Event) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            maybeInstantiateAndCall(root, spec, (controller: any) => {
-              const method = controller[handler] as (e: any) => unknown;
-              method.call(controller, e);
-            });
-          });
+      bindEventListener(element, event, handler, root, spec);
     }
   }
 
@@ -211,15 +193,7 @@ export function applyInstantiationResult(result: InstantiationResult): void {
         continue;
       }
 
-      const invoker = (e: any) => {
-        e.preventDefault();
-        e.stopPropagation();
-        maybeInstantiateAndCall(root, spec, (controller: any) => {
-          const method = controller[handler] as (e: any) => unknown;
-          method.call(controller, e);
-        });
-      };
-      element.addEventListener(event, invoker);
+      const invoker = bindEventListener(element, event, handler, root, spec);
       listeners.push([event, invoker]);
     }
     unboundEventListeners.set(element, listeners);
@@ -299,3 +273,25 @@ export function disposeBoundElementsIn(node: Node): void {
   }
 }
 
+function bindEventListener(
+    element: HTMLElement,
+    event: string,
+    handler: string,
+    root: HTMLElement,
+    spec: AnyBoundController<HTMLElement>): (e: Event) => void {
+  const invoker = (e: Event) => {
+    if (isAnchorContextClick(e)) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    maybeInstantiateAndCall(root, spec, (controller: any) => {
+      const method = controller[handler] as (e: any) => unknown;
+      method.call(controller, e);
+    });
+  };
+  element.addEventListener(event, invoker);
+  return invoker;
+}

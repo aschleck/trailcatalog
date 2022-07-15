@@ -117,12 +117,17 @@ function render(element: VElementOrPrimitive): string {
       return `<${element.element}${spaceProperties} />`;
     }
   } else {
-    return `${element}`;
+    return renderText(element);
   }
 }
 
 const ESCAPES = {
   '"': '&#34;',
+  '&': '&#38;',
+  '<': '&#60;',
+  '>': '&#62;',
+  '\'': '&#39;',
+  '`': '&#96;',
 } as const;
 
 function renderProperties(props: Properties<HTMLElement>): string {
@@ -148,4 +153,17 @@ function renderProperties(props: Properties<HTMLElement>): string {
 
     attributes.push(`${actualKey}="${escapedValue.join('')}"`);
   }
-  return attributes.join(' '); }
+  return attributes.join(' ');
+}
+
+function renderText(value: number|string): string {
+  const escapedValue = [];
+  for (const c of String(value)) {
+    if (c in ESCAPES) {
+      escapedValue.push(ESCAPES[c as keyof typeof ESCAPES]);
+    } else {
+      escapedValue.push(c);
+    }
+  }
+  return escapedValue.join('');
+}

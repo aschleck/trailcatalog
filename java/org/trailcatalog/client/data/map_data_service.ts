@@ -38,7 +38,9 @@ export class MapDataService extends Service<EmptyDeps> {
   // We load metadata when loading detail cells, so we need to track which trails have been loaded
   // into details to avoid telling listeners to load them from the metadata into details and then
   // to load them again when we fetch details.
+  // There are similar problems with metadata.
   private readonly trailsInDetails: Set<Trail>;
+  private readonly trailsInMetadata: Set<Trail>;
 
   readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
@@ -56,6 +58,7 @@ export class MapDataService extends Service<EmptyDeps> {
     };
     this.pinnedMissingTrails = new Map();
     this.trailsInDetails = new Set();
+    this.trailsInMetadata = new Set();
 
     this.metadataCells = new Map();
     this.detailCells = new Map();
@@ -86,7 +89,7 @@ export class MapDataService extends Service<EmptyDeps> {
       ...filter,
     });
 
-    this.listener.loadMetadata(this.trails.values());
+    this.listener.loadMetadata(this.trailsInMetadata);
     this.listener.loadDetail(this.paths.values(), this.trailsInDetails);
   }
 
@@ -183,6 +186,7 @@ export class MapDataService extends Service<EmptyDeps> {
                 lengthMeters);
         this.trails.set(id, trail);
       }
+      this.trailsInMetadata.add(trail);
       trails.push(trail);
     }
 
@@ -366,6 +370,7 @@ export class MapDataService extends Service<EmptyDeps> {
         }
         this.trails.delete(id);
         this.trailsInDetails.delete(entity);
+        this.trailsInMetadata.delete(entity);
         trails.push(entity);
       }
     }

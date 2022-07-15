@@ -1,9 +1,22 @@
 import { Long } from 'java/org/trailcatalog/s2';
 
-import { LatLng, RgbaU32, Vec2, Vec4 } from './types';
+import { LatLng, LatLngRect, LatLngZoom, RgbaU32, Vec2, Vec4 } from './types';
 
 export function metersToMiles(meters: number): number {
   return meters * 0.00062137119224;
+}
+
+export function boundingLlz(bound: LatLngRect): LatLngZoom {
+  const dLL = [
+    bound.high[0] - bound.low[0],
+    bound.high[1] - bound.low[1],
+  ];
+  const center = [
+    bound.low[0] + dLL[0] / 2,
+    bound.low[1] + dLL[1] / 2,
+  ];
+  const zoom = Math.log(512 / Math.max(dLL[0], dLL[1])) / Math.log(2);
+  return {lat: center[0], lng: center[1], zoom};
 }
 
 export function degreesE7ToLatLng(lat: number, lng: number): LatLng {

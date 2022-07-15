@@ -374,7 +374,7 @@ export function appendElement(parent: HTMLElement, child: VElementOrPrimitive): 
     parent.append(result.root);
     applyInstantiationResult(result);
   } else {
-    parent.append(String(child));
+    parent.append(new Text(String(child)));
   }
 }
 

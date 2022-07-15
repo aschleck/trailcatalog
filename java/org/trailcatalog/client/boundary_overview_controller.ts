@@ -3,7 +3,7 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
-import { emptyLatLngRect, emptyPixelRect, LatLng } from './common/types';
+import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng } from './common/types';
 import { Boundary, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
@@ -17,6 +17,7 @@ interface Args {
 
 export interface State extends VState {
   boundary: Boundary|undefined;
+  containingBoundaries: Boundary[]|undefined;
   trailsInBoundary: Trail[]|undefined;
 }
 
@@ -39,6 +40,15 @@ export class BoundaryOverviewController extends ViewportController<Args, Deps, S
         this.updateState({
           ...this.state,
           boundary: boundaryFromRaw(raw),
+        });
+      });
+    }
+
+    if (!this.state.containingBoundaries) {
+      fetchData('boundaries_containing_boundary', {child_id: id}).then(raw => {
+        this.updateState({
+          ...this.state,
+          containingBoundaries: containingBoundariesFromRaw(raw),
         });
       });
     }
@@ -66,6 +76,16 @@ export function boundaryFromRaw(raw: DataResponses['boundary']): Boundary {
       raw.name,
       raw.type,
       SimpleS2.decodePolygon(decodeBase64(raw.s2_polygon)));
+}
+
+export function containingBoundariesFromRaw(raw: DataResponses['boundaries_containing_boundary']): Boundary[] {
+  return raw.map(
+      b =>
+          new Boundary(
+              BigInt(b.id),
+              b.name,
+              b.type,
+              emptyS2Polygon()));
 }
 
 export function trailsInBoundaryFromRaw(raw: DataResponses['trails_in_boundary']): Trail[] {

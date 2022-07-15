@@ -269,3 +269,11 @@ table = "trails_in_boundaries"
   [actions.index]
   name = "trails_in_boundaries_by_boundary_id_epoch_idx"
   columns = ["boundary_id", "epoch"]
+
+[[actions]]
+type = "add_index"
+table = "trails_in_boundaries"
+
+  [actions.index]
+  name = "trails_in_boundaries_by_trail_id_epoch_idx"
+  columns = ["trail_id", "epoch"]

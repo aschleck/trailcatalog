@@ -5,6 +5,12 @@ interface DataRequests {
   boundary: {
     id: string;
   };
+  boundaries_containing_boundary: {
+    child_id: string;
+  };
+  boundaries_containing_trail: {
+    trail_id: string;
+  };
   trail: {
     id: string;
   };
@@ -20,7 +26,18 @@ export interface DataResponses {
     type: number;
     s2_polygon: string;
   };
+  boundaries_containing_boundary: Array<{
+    id: string;
+    name: string;
+    type: number;
+  }>;
+  boundaries_containing_trail: Array<{
+    id: string;
+    name: string;
+    type: number;
+  }>;
   trail: {
+    id: string;
     name: string;
     type: number;
     path_ids: string;

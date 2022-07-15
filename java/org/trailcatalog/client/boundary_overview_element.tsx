@@ -2,12 +2,14 @@ import * as corgi from 'js/corgi';
 import { OutlinedButton } from 'js/dino/button';
 
 import { LittleEndianView } from './common/little_endian_view';
-import { metersToMiles } from './common/math';
+import { boundingLlz, metersToMiles } from './common/math';
+import { s2LatLngRectToTc } from './common/types';
 import { initialData } from './data';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { Boundary, Trail } from './models/types';
 
-import { boundaryFromRaw, BoundaryOverviewController, State, trailsInBoundaryFromRaw } from './boundary_overview_controller';
+import { boundaryCrumbs } from './boundary_crumbs';
+import { boundaryFromRaw, BoundaryOverviewController, containingBoundariesFromRaw, State, trailsInBoundaryFromRaw } from './boundary_overview_controller';
 import { TrailListItem } from './trail_list';
 import { TrailPopup } from './trail_popup';
 import { ViewportLayoutElement } from './viewport_layout_element';
@@ -22,6 +24,12 @@ export function BoundaryOverviewElement({boundaryId}: {
       boundary = boundaryFromRaw(rawBoundary);
     }
 
+    const rawContainingBoundaries = initialData('boundaries_containing_boundary', {child_id: boundaryId});
+    let containingBoundaries;
+    if (rawContainingBoundaries) {
+      containingBoundaries = containingBoundariesFromRaw(rawContainingBoundaries);
+    }
+
     const rawTrailsInBoundary = initialData('trails_in_boundary', {boundary_id: boundaryId});
     let trailsInBoundary;
     if (rawTrailsInBoundary) {
@@ -30,6 +38,7 @@ export function BoundaryOverviewElement({boundaryId}: {
 
     state = {
       boundary,
+      containingBoundaries,
       trailsInBoundary,
       hovering: undefined,
       nearbyTrails: [],
@@ -78,9 +87,10 @@ export function BoundaryOverviewElement({boundaryId}: {
       {state.boundary
           ? <>
             <ViewportLayoutElement
+                camera={boundingLlz(s2LatLngRectToTc(state.boundary.polygon.getRectBound()))}
                 overlay={{
                   content: trailDetails,
-                  polygon: state?.boundary?.polygon,
+                  polygon: state.boundary.polygon,
                 }}
                 sidebarContent={<BoundarySidebar state={state} />}
             />
@@ -96,6 +106,9 @@ function BoundarySidebar({state}: {state: State}) {
     return <div>Loading...</div>;
   }
 
+  const containing = state.containingBoundaries;
+  const containingLabels = containing ? boundaryCrumbs(containing) : [];
+
   const nearby = state.nearbyTrails?.length;
   const nearbyLabel = nearby !== undefined ? `Nearby trails (${nearby})` : 'Nearby trails';
   const boundary = state.boundary;
@@ -110,11 +123,14 @@ function BoundarySidebar({state}: {state: State}) {
             }}
         />
       </aside>
+      <aside className="mx-3 text-tc-gray-300">
+        {containingLabels}
+      </aside>
       <div className="border-b-[1px] border-tc-gray-600" />
       <header className="flex font-bold justify-between mx-3 text-xl">
         <div>{boundary.name}</div>
       </header>
-      <section className="mx-3">
+      <section className="mx-3 text-tc-gray-300">
         Relation ID:{' '}
         <a
             title="View relation in OSM"

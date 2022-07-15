@@ -50,6 +50,7 @@ export declare namespace com.google.common.geometry {
   class S2Polygon {
     containsPolygon(polygon: S2Polygon): boolean;
     getLoops(): java.util.List<S2Loop>;
+    getRectBound(): S2LatLngRect;
     loop(k: number): S2Loop;
     numLoops(): number;
   }
