@@ -7,7 +7,7 @@ export const Fragment = Symbol();
 export { bind } from './binder';
 
 export interface Properties<E extends HTMLElement> {
-  children?: VElementOrPrimitive[];
+  children?: VElementOrPrimitive|VElementOrPrimitive[],
   className?: string;
   js?: AnyBoundController<E|HTMLElement>;
   style?: string; // TODO(april): this is sad

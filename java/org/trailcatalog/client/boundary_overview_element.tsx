@@ -8,7 +8,7 @@ import { initialData } from './data';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { Boundary, Trail } from './models/types';
 
-import { boundaryCrumbs } from './boundary_crumbs';
+import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, BoundaryOverviewController, containingBoundariesFromRaw, State, trailsInBoundaryFromRaw } from './boundary_overview_controller';
 import { TrailListItem } from './trail_list';
 import { TrailPopup } from './trail_popup';
@@ -107,7 +107,7 @@ function BoundarySidebar({state}: {state: State}) {
   }
 
   const containing = state.containingBoundaries;
-  const containingLabels = containing ? boundaryCrumbs(containing) : [];
+  const containingLabels = containing ? <BoundaryCrumbs boundaries={containing} /> : <></>;
 
   const nearby = state.nearbyTrails?.length;
   const nearbyLabel = nearby !== undefined ? `Nearby trails (${nearby})` : 'Nearby trails';

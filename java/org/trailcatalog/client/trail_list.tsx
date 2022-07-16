@@ -1,4 +1,5 @@
 import * as corgi from 'js/corgi';
+import { Link } from 'js/corgi/history/link_element';
 
 import { metersToMiles } from './common/math';
 import { HOVER_HEX_PALETTE } from './map/common/colors';
