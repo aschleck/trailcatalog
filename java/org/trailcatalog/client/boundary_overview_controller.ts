@@ -64,9 +64,9 @@ export class BoundaryOverviewController extends ViewportController<Args, Deps, S
   }
 
   viewNearbyTrails(): void {
+    this.views.showOverview(this.lastCamera);
     // TODO(april): oops
-    //this.views.showOverview(this.lastCamera);
-    this.views.showBoundary(163769n);
+    //this.views.showBoundary(163769n);
   }
 }
 
