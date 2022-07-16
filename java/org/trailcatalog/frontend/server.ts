@@ -2,8 +2,8 @@ import fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import fetch from 'node-fetch';
 import { fastifyRequestContextPlugin, requestContext } from '@fastify/request-context';
 
+import { deepEqual } from 'js/common/comparisons';
 import { Properties, VElementOrPrimitive } from 'js/corgi';
-import { deepEqual } from 'js/corgi/comparisons';
 
 import { InitialDataKey } from '../client/common/ssr_aware';
 import { ViewsService } from '../client/views/views_service';

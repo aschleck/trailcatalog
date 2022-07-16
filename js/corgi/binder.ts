@@ -1,6 +1,6 @@
 import { checkExists } from 'js/common/asserts';
+import { deepEqual } from 'js/common/comparisons';
 
-import { deepEqual } from './comparisons';
 import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, ControllerResponse } from './controller';
 import { EventSpec, qualifiedName } from './events';
 import { isAnchorContextClick } from './mouse';

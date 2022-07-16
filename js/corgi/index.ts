@@ -1,7 +1,7 @@
 import { checkExists } from 'js/common/asserts';
+import { deepEqual } from 'js/common/comparisons';
 
 import { AnyBoundController, applyInstantiationResult, applyUpdate as applyBinderUpdate, bindElementToSpec, disposeBoundElementsIn, InstantiationResult, UnboundEvents } from './binder';
-import { deepEqual } from './comparisons';
 
 export const Fragment = Symbol();
 export { bind } from './binder';

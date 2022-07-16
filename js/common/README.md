@@ -1,16 +1,9 @@
-# corgi
+# common
 
-This is a generally sketchy JavaScript library inspired by React and a proprietary framework that I
-love. The basic idea is to separate views from controller logic, so you end up with standard TSX
-views like `overview_element.tsx` and corgi controllers like `overview_controller.ts.` Controllers
-are lazily initialized and event driven, and can communicate with each other by firing events. When
-a controller needs to update view state, it calls `updateState({background: 'red'})` and the view
-is reinvoked and patched into the page. This framework also allows controllers to depend on
-singleton classes, called services. Finally, when a controller's element is removed from the page,
-it is disposed.
+These are some utility functions.
 
-This framework, corgi, and the supporting //js/common library, are BSD 3-clause licensed separately
-from the rest of this repository (which is AGPL.)
+This folder and the associated framework, corgi, are BSD 3-clause licensed separately from the rest
+of this repository (which is AGPL.)
 
 ## Example snippet
 
