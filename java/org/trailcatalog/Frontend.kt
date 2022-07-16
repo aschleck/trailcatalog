@@ -75,12 +75,7 @@ fun fetchData(ctx: Context) {
           data["id"] = id
           data["name"] = results.getString(1)
           data["type"] = results.getInt(2)
-          val polygon = S2Polygon.decode(ByteArrayInputStream(results.getBytes(3)))
-          val snapped = S2Polygon()
-          snapped.initToSnapped(polygon, 22)
-          val buffer = ByteArrayOutputStream()
-          snapped.encode(buffer)
-          data["s2_polygon"] = String(Base64.getEncoder().encode(buffer.toByteArray()))
+          data["s2_polygon"] = String(Base64.getEncoder().encode(results.getBytes(3)))
         }
         responses.add(data)
       }

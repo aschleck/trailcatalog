@@ -195,7 +195,6 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
             output.writeVarInt(values.size)
             for (value in values) {
               output.write(value)
-              output.checkBufferSpaceNoShard()
             }
             output.checkBufferSpace()
             progress.incrementBy(values.size)

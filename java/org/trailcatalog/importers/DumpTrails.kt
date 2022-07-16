@@ -5,7 +5,7 @@ import org.apache.commons.text.StringEscapeUtils
 import org.trailcatalog.importers.pbf.LatLngRectE7
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PCollection
-import org.trailcatalog.s2.boundToCell
+import org.trailcatalog.s2.polylineToCell
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -17,7 +17,7 @@ class DumpTrails(private val epoch: Int, private val hikari: HikariDataSource)
       val stream =
           StringifyingInputStream(input) { trail, csv ->
             val bound = LatLngRectE7.from(trail.polyline.rectBound)
-            val cell = boundToCell(trail.polyline.rectBound).id()
+            val cell = polylineToCell(trail.polyline).id()
             val marker = trail.polyline.interpolate(0.5).toLatLngE7()
             val lengthMeters = polylineToMeters(trail.polyline)
 

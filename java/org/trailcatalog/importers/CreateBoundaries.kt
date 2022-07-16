@@ -1,8 +1,11 @@
 package org.trailcatalog.importers
 
+import com.google.common.geometry.S1Angle
+import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2PolygonBuilder.Options
+import com.google.common.geometry.S2Projections
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pbf.Relation
 import org.trailcatalog.importers.pipeline.PTransformer
@@ -10,7 +13,7 @@ import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory.BOUNDARY
 import org.trailcatalog.proto.RelationGeometry
-import org.trailcatalog.s2.boundToCell
+import org.trailcatalog.s2.polygonToCell
 import java.io.ByteArrayOutputStream
 
 class CreateBoundaries
@@ -26,6 +29,10 @@ class CreateBoundaries
     }
 
     val relation = relations[0]
+    // Avoid timezones and other nonsense
+    if (relation.type == BOUNDARY.id) {
+      return
+    }
     if (relation.name.isNullOrBlank()) {
       return
     }
@@ -37,15 +44,25 @@ class CreateBoundaries
     val encoded = ByteArrayOutputStream().also {
       polygon.encode(it)
     }
-    val cell = boundToCell(polygon.rectBound).id()
+    val cell = polygonToCell(polygon).id()
+    if (cell == S2CellId.fromFace(0).id()) {
+      println(relation.id)
+    }
     emitter.emit(Boundary(relation.id, relation.type, cell, relation.name, encoded.toByteArray()))
   }
 }
 
 private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
-  val polygon = S2PolygonBuilder(Options.UNDIRECTED_XOR)
-  expandIntoPolygon(geometry, polygon)
-  return polygon.assemblePolygon()
+  val unsnapped = S2PolygonBuilder(Options.UNDIRECTED_XOR).let {
+    expandIntoPolygon(geometry, it)
+    it.assemblePolygon()
+  }
+  val snapped = S2Polygon()
+  snapped.initToSimplified(
+      unsnapped,
+      S1Angle.radians(S2Projections.PROJ.maxDiag.getValue(21) / 2.0 + 1e-15),
+      /* snapToCellCenters= */ true)
+  return snapped
 }
 
 private fun expandIntoPolygon(geometry: RelationGeometry, polygon: S2PolygonBuilder) {

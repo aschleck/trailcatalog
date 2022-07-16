@@ -25,7 +25,18 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel)
   }
 
   override fun write(b: ByteArray, off: Int, len: Int) {
-    buffer.put(b, off, len)
+    if (len <= buffer.limit() - buffer.position()) {
+      buffer.put(b, off, len)
+    } else {
+      if (buffer.position() > 0) {
+        flush()
+      }
+      val wrote = channel.write(ByteBuffer.wrap(b, off, len))
+      if (wrote != len) {
+        throw RuntimeException("Didn't write all bytes")
+      }
+      position += wrote
+    }
   }
 
   override fun close() {
@@ -51,12 +62,6 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel)
 
     if (position - start > 2_000_000_000) {
       shard()
-    }
-  }
-
-  fun checkBufferSpaceNoShard() {
-    if (buffer.position() >= FLUSH_THRESHOLD) {
-      flush()
     }
   }
 
