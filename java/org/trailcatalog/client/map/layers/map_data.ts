@@ -227,6 +227,7 @@ export class MapData extends Layer {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
       const buffer = this.dataService.detailCells.get(id);
       if (!buffer) {
+        this.planSparseCell(id, planner);
         continue;
       }
 
@@ -293,38 +294,42 @@ export class MapData extends Layer {
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
-      const buffer = this.dataService.metadataCells.get(id);
-      if (!buffer) {
-        continue;
+      this.planSparseCell(id, planner);
+    }
+  }
+
+  private planSparseCell(id: S2CellNumber, planner: RenderPlanner): void {
+    const buffer = this.dataService.metadataCells.get(id);
+    if (!buffer) {
+      return;
+    }
+
+    const data = new LittleEndianView(buffer);
+
+    const trailCount = data.getInt32();
+    for (let i = 0; i < trailCount; ++i) {
+      const id = data.getBigInt64();
+      const nameLength = data.getInt32();
+      data.skip(nameLength);
+      const type = data.getInt32();
+      const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const markerPx = projectLatLng(marker);
+      const lengthMeters = data.getFloat64();
+
+      const active = this.active.has(id);
+      const hover = this.hover.has(id);
+      const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
+      const fill =
+          hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
+      const stroke =
+          hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
+      let diamond;
+      if (active || hover) {
+        diamond = renderableDiamond(fill, stroke);
+      } else {
+        diamond = TRAIL_DIAMOND_REGULAR;
       }
-
-      const data = new LittleEndianView(buffer);
-
-      const trailCount = data.getInt32();
-      for (let i = 0; i < trailCount; ++i) {
-        const id = data.getBigInt64();
-        const nameLength = data.getInt32();
-        data.skip(nameLength);
-        const type = data.getInt32();
-        const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-        const markerPx = projectLatLng(marker);
-        const lengthMeters = data.getFloat64();
-
-        const active = this.active.has(id);
-        const hover = this.hover.has(id);
-        const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
-        const fill =
-            hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
-        const stroke =
-            hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
-        let diamond;
-        if (active || hover) {
-          diamond = renderableDiamond(fill, stroke);
-        } else {
-          diamond = TRAIL_DIAMOND_REGULAR;
-        }
-        this.textRenderer.planDiamond(diamond, markerPx, z, planner);
-      }
+      this.textRenderer.planDiamond(diamond, markerPx, z, planner);
     }
   }
 
