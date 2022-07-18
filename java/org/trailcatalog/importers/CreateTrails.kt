@@ -5,6 +5,7 @@ import com.google.common.collect.ImmutableSetMultimap
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
+import com.sun.org.slf4j.internal.LoggerFactory
 import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.Relation
 import org.trailcatalog.importers.pipeline.PTransformer
@@ -13,6 +14,8 @@ import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationGeometry
 import java.util.Stack
+
+private val logger = LoggerFactory.getLogger(CreateTrails::class.java)
 
 class CreateTrails
   : PTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Trail>(
@@ -38,12 +41,12 @@ class CreateTrails
     val mapped = HashMap<Long, List<LatLngE7>>()
     flattenWays(geometries[0], ordered, mapped)
     if (ordered.isEmpty()) {
-      println("Trail ${relation.id} is empty somehow")
+      logger.warn("Trail ${relation.id} is empty somehow")
       return
     }
     var orientedPathIds = orientPaths(relation.id, ordered, mapped)
     if (orientedPathIds == null) {
-      println("Unable to orient ${relation.id}")
+      logger.warn("Unable to orient ${relation.id}")
       orientedPathIds = ordered.toLongArray()
     }
     val polyline = pathsToPolyline(orientedPathIds, mapped)
@@ -246,7 +249,7 @@ fun canTracePath(
   val timeoutSeconds = 30
   while (!stack.isEmpty()) {
     if ((System.currentTimeMillis() - startTime) / 1000 > timeoutSeconds) {
-      println(
+      logger.warn(
           "Spent more than ${timeoutSeconds} seconds tracing ${trailId} starting at ${start}, " +
           "giving up")
       return false

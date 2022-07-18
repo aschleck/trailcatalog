@@ -135,6 +135,7 @@ maven_install(
         "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.6.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.6.1",
         "org.junit.jupiter:junit-jupiter:5.8.2",
+        "org.locationtech.proj4j:proj4j:1.1.5",
         "org.postgresql:postgresql:42.3.1",
         "org.slf4j:slf4j-simple:1.8.0-beta4",
     ],
