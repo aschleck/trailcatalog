@@ -34,10 +34,10 @@ export const MapElement = ({camera, overlay}: {
           text-xs
       ">
         Maps ©{' '}
-        <a className="pointer-events-auto" href="https://www.thunderforest.com">
-          Thunderforest
-        </a>,
-        Data ©{' '}
+        <a className="pointer-events-auto" href="https://www.maptiler.com/copyright/">
+          MapTiler
+        </a>
+        {' · Data © '}
         <a className="pointer-events-auto" href="https://www.openstreetmap.org/copyright">
           OpenStreetMap contributors
         </a>

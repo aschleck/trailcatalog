@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.common
 
 import com.google.common.util.concurrent.AtomicDouble
 import java.io.Closeable

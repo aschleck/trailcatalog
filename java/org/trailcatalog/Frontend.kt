@@ -20,8 +20,8 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-val connectionSource = createConnectionSource()
-val epochTracker = EpochTracker(connectionSource)
+private val connectionSource = createConnectionSource()
+private val epochTracker = EpochTracker(connectionSource)
 
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)
@@ -31,11 +31,11 @@ fun main(args: Array<String>) {
   app.get("/api/fetch_detail/{token}", ::fetchDetail)
 }
 
-data class WireBoundary(val id: Long, val type: Int, val name: String)
+private data class WireBoundary(val id: Long, val type: Int, val name: String)
 
-data class WirePath(val id: Long, val type: Int, val vertices: ByteArray)
+private data class WirePath(val id: Long, val type: Int, val vertices: ByteArray)
 
-data class WireTrail(
+private data class WireTrail(
   val id: Long,
   val name: String,
   val type: Int,
@@ -45,7 +45,7 @@ data class WireTrail(
   val lengthMeters: Double,
 )
 
-fun fetchData(ctx: Context) {
+private fun fetchData(ctx: Context) {
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyAsInputStream())
   val keys = request.get("keys").elements()
@@ -199,7 +199,7 @@ fun fetchData(ctx: Context) {
   })
 }
 
-fun fetchMeta(ctx: Context) {
+private fun fetchMeta(ctx: Context) {
   ctx.contentType("application/octet-stream")
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
@@ -228,7 +228,7 @@ fun fetchMeta(ctx: Context) {
   ctx.result(bytes.toByteArray())
 }
 
-fun fetchDetail(ctx: Context) {
+private fun fetchDetail(ctx: Context) {
   ctx.contentType("application/octet-stream")
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
@@ -294,7 +294,7 @@ fun fetchDetail(ctx: Context) {
   ctx.result(bytes.toByteArray())
 }
 
-fun fetchDataPacked(ctx: Context) {
+private fun fetchDataPacked(ctx: Context) {
   ctx.contentType("application/octet-stream")
 
   val mapper = ObjectMapper()
@@ -473,7 +473,7 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
   return trails
 }
 
-class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
+private class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
 
   fun align(alignment: Int) {
     count = (count + alignment - 1) / alignment * alignment

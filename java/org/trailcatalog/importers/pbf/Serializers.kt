@@ -141,7 +141,7 @@ fun registerPbfSerializers() {
     override fun size(v: WaySkeleton): Int {
       val nameBytes = v.name.encodeToByteArray().size
       return EncodedOutputStream.varLongSize(v.id) +
-          EncodedOutputStream.varIntSize(v.type) +
+          EncodedOutputStream.varIntSize(v.version) +
           EncodedOutputStream.varIntSize(v.type) +
           EncodedOutputStream.varIntSize(nameBytes) +
           nameBytes +

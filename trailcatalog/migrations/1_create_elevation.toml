@@ -1,0 +1,72 @@
+[[actions]]
+type = "create_table"
+name = "usgs_elevation_models"
+primary_key = ["id"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "date"
+  nullable = false
+  type = "TIMESTAMPTZ"
+
+  [[actions.columns]]
+  name = "resolution_radians"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+  [[actions.columns]]
+  name = "lat_bound_degrees"
+  nullable = false
+  type = "INT4RANGE"
+
+  [[actions.columns]]
+  name = "lng_bound_degrees"
+  nullable = false
+  type = "INT4RANGE"
+
+  [[actions.columns]]
+  name = "url"
+  nullable = false
+  type = "TEXT"
+
+[[actions]]
+type = "add_index"
+table = "usgs_elevation_models"
+
+  [actions.index]
+  name = "usgs_elevation_models_by_lat_lng_idx"
+  columns = ["lat_bound_degrees", "lng_bound_degrees"]
+  type = "gist"
+
+[[actions]]
+type = "create_table"
+name = "way_elevation_cache"
+primary_key = ["id", "version"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "version"
+  nullable = false
+  type = "INT"
+
+  [[actions.columns]]
+  name = "height_samples_1m_meters"
+  nullable = false
+  type = "BYTEA"
+
+[[actions]]
+type = "add_index"
+table = "way_elevation_cache"
+
+  [actions.index]
+  name = "way_elevation_cache_by_id_version_idx"
+  columns = ["id", "epoch"]
+

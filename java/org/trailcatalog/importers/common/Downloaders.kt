@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.common
 
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -6,7 +6,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
 import java.io.InputStreamReader
-import java.io.Reader
 import java.lang.RuntimeException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
@@ -74,4 +73,4 @@ fun download(url: HttpUrl, to: Path) {
   }
 }
 
-class IORuntimeException(message: String) : RuntimeException(message)
+private class IORuntimeException(message: String) : RuntimeException(message)

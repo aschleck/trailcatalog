@@ -15,6 +15,7 @@ kt_jvm_library(
     deps = [
         ":importer_java",
         "//java/org/trailcatalog:pg_support",
+        "//java/org/trailcatalog/importers/common",
         "//java/org/trailcatalog/importers/pbf",
         "//java/org/trailcatalog/importers/pbf:pbf_java",
         "//java/org/trailcatalog/importers/pipeline",
@@ -24,7 +25,6 @@ kt_jvm_library(
         "//trailcatalog/proto:encoding_java_proto",
         "@bazel_tools//tools/java/runfiles",
         "@maven//:com_google_geometry_s2_geometry",
-        "@maven//:com_squareup_okhttp3_okhttp",
         "@maven//:com_wolt_osm_parallelpbf",
         "@maven//:mil_nga_tiff",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",

@@ -8,6 +8,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
 import org.trailcatalog.createConnectionSource
+import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.pipeline.groupBy
 import org.trailcatalog.importers.pipeline.Pipeline
 import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
@@ -19,16 +20,11 @@ import org.trailcatalog.importers.pbf.GatherWayNodes
 import org.trailcatalog.importers.pbf.ExtractWayRelationPairs
 import org.trailcatalog.importers.pbf.GatherRelationWays
 import org.trailcatalog.importers.pbf.LatLngE7
-import org.trailcatalog.importers.pbf.Node
-import org.trailcatalog.importers.pbf.Way
-import org.trailcatalog.importers.pbf.WaySkeleton
 import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
 import org.trailcatalog.importers.pbf.PbfBlockReader
 import org.trailcatalog.importers.pbf.registerPbfSerializers
-import org.trailcatalog.importers.pipeline.PStage
 import org.trailcatalog.importers.pipeline.collections.HEAP_DUMP_THRESHOLD
-import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream

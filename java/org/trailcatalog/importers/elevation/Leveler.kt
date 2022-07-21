@@ -2,11 +2,6 @@ package org.trailcatalog.importers.elevation
 
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Point
-import mil.nga.tiff.FieldTagType
-import mil.nga.tiff.TiffReader
-import org.locationtech.proj4j.CRSFactory
-import org.locationtech.proj4j.CoordinateTransformFactory
-import org.locationtech.proj4j.ProjCoordinate
 import org.trailcatalog.createConnectionSource
 import org.trailcatalog.s2.earthMetersToAngle
 import java.io.File

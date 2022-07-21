@@ -3,7 +3,24 @@ import { TileId, Vec2 } from '../common/types';
 
 import { FetchThrottler } from './fetch_throttler';
 
-const TILE_SIZE_PX = 256;
+const TILE_SOURCES = {
+  maptiler: {
+    extraZoom: -1, // we're using the 512x512px tiles
+    getTileUrl: (id: TileId) =>
+        `https://api.maptiler.com/maps/topo/${id.zoom}/${id.x}/${id.y}.png?` +
+            `key=wWxlJy7a8SEPXS7AZ42l`,
+  },
+  thunderforest: {
+    extraZoom: 0,
+    getTileUrl: (id: TileId) =>
+        `https://tile.thunderforest.com/landscape/${id.zoom}/${id.x}/${id.y}.png?` +
+            `apikey=d72e980f5f1849fbb9fb3a113a119a6f`,
+  },
+} as const;
+
+const TILE_SET = TILE_SOURCES.maptiler;
+
+const WEB_MERCATOR_TILE_SIZE_PX = 256;
 
 export interface UpdateViewportRequest {
   cameraPosition: Vec2;
@@ -43,12 +60,11 @@ class TileFetcher {
   updateViewport(request: UpdateViewportRequest): void {
     // World coordinates in this function are in tile pixels, not in screen pixels
 
-    const extraZoom = 0;
-    const tz = Math.floor(request.cameraZoom + extraZoom);
+    const tz = Math.floor(request.cameraZoom + TILE_SET.extraZoom);
     const halfWorldSize = Math.pow(2, tz - 1); // - 1 gives us the half
     const center = request.cameraPosition;
     const centerInWorldPx = [center[0] * halfWorldSize, center[1] * halfWorldSize];
-    const doubleSize = TILE_SIZE_PX * Math.pow(2, request.cameraZoom - tz + 1);
+    const doubleSize = WEB_MERCATOR_TILE_SIZE_PX * Math.pow(2, request.cameraZoom - tz + 1);
     const halfViewportInWorldPx = [
       request.viewportSize[0] / doubleSize,
       request.viewportSize[1] / doubleSize,
@@ -80,7 +96,7 @@ class TileFetcher {
             y: halfWorldSize - y,
             zoom: tz,
           };
-          fetch(urlFor(urlId))
+          fetch(TILE_SET.getTileUrl(urlId))
               .then(response => {
                 if (response.ok) {
                   return response.blob()
@@ -163,7 +179,3 @@ function tilesIntersect(a: TileId, b: TileId): boolean {
   return a.x === bx && a.y === by;
 }
 
-function urlFor(id: TileId): string {
-  return `https://tile.thunderforest.com/landscape/${id.zoom}/${id.x}/${id.y}.png?` +
-      `apikey=d72e980f5f1849fbb9fb3a113a119a6f`;
-}
