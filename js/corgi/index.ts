@@ -17,6 +17,7 @@ export interface Properties<E extends HTMLElement> {
 
 interface AnchorProperties extends Properties<HTMLAnchorElement> {
   href?: string;
+  target?: '_self'|'_blank'|'_parent'|'_top';
 }
 
 interface ImageProperties extends Properties<HTMLImageElement> {

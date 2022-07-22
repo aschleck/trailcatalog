@@ -135,6 +135,7 @@ function TrailSidebar({state}: {state: State}) {
         <a
             title="View relation in OSM"
             href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
+            target="_blank"
         >{trail.sourceRelation}</a>
       </section>
       <section className="mx-3">

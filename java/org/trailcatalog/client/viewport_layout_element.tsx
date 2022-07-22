@@ -54,6 +54,15 @@ export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
             src="/static/images/logo.svg"
             className="h-6"
         />
+        <div className="flex grow justify-end">
+          <a href="https://github.com/aschleck/trailcatalog" target="_blank">
+            <img
+                alt="Trailcatalog on GitHub"
+                src="/static/images/github.png"
+                className="h-6"
+            />
+          </a>
+        </div>
       </div>
       <div className="flex grow overflow-hidden relative">
         <div className={

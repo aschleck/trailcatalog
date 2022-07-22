@@ -135,6 +135,7 @@ function BoundarySidebar({state}: {state: State}) {
         <a
             title="View relation in OSM"
             href={`https://www.openstreetmap.org/relation/${boundary.sourceRelation}`}
+            target="_blank"
         >{boundary.sourceRelation}</a>
       </section>
       <div className="border-b-[1px] border-tc-gray-600" />

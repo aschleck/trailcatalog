@@ -2,7 +2,7 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "static",
-    srcs = glob(["images/**/*.svg"]) + [
+    srcs = glob(["images/**/*"]) + [
         ":js",
     ],
 )
