@@ -3,35 +3,28 @@ package org.trailcatalog.importers.elevation.metadata
 import com.google.gson.Gson
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import org.postgresql.util.PGobject
 import org.trailcatalog.createConnectionSource
+import org.trailcatalog.importers.common.ClosedIntRange
 import org.trailcatalog.importers.common.fetch
 import org.trailcatalog.s2.earthMetersToAngle
 import java.sql.Timestamp
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
-private data class IntRange(val low: Int, val high: Int) : PGobject() {
-
-  init {
-    type = "int4range"
-    value = "[${low}, ${high}]"
-  }
-}
-
 private data class BoundingBox(val minX: Double, val minY: Double, val maxX: Double, val maxY: Double) {
-  fun xRange(): IntRange {
-    return IntRange((minX * 10_000_000).toInt(), (maxX * 10_000_000).toInt())
+  fun xRange(): ClosedIntRange {
+    return ClosedIntRange((minX * 10_000_000).toInt(), (maxX * 10_000_000).toInt())
   }
 
-  fun yRange(): IntRange {
-    return IntRange((minY * 10_000_000).toInt(), (maxY * 10_000_000).toInt())
+  fun yRange(): ClosedIntRange {
+    return ClosedIntRange((minY * 10_000_000).toInt(), (maxY * 10_000_000).toInt())
   }
 }
 
 private data class Product(
     val title: String,
     val sourceId: String,
+    // This is the date the entry was created, not imagery date. Alas.
     val dateCreated: String,
     val downloadURL: String,
     val boundingBox: BoundingBox,

@@ -1,6 +1,6 @@
+*.etag
 *.osc
 *.pbf
-*.pbf.etag
 *.tif
 .DS_Store
 ._.DS_Store

@@ -21,6 +21,5 @@ kt_jvm_library(
         "//java/org/trailcatalog/s2:s2-kt",
         "@maven//:com_google_code_gson_gson",
         "@maven//:com_squareup_okhttp3_okhttp",
-        "@maven//:org_postgresql_postgresql",
     ],
 )

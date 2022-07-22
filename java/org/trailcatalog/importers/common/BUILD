@@ -8,5 +8,6 @@ kt_jvm_library(
     deps = [
         "@maven//:com_google_guava_guava",
         "@maven//:com_squareup_okhttp3_okhttp",
+        "@maven//:org_postgresql_postgresql",
     ],
 )

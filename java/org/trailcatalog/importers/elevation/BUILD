@@ -17,9 +17,11 @@ kt_jvm_library(
     ],
     deps = [
         "//java/org/trailcatalog:pg_support",
+        "//java/org/trailcatalog/importers/common",
         "//java/org/trailcatalog/s2:s2-kt",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:mil_nga_tiff",
         "@maven//:org_locationtech_proj4j_proj4j",
+        "@maven//:org_slf4j_slf4j_simple",
     ],
 )

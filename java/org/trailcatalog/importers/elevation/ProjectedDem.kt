@@ -2,8 +2,9 @@ package org.trailcatalog.importers.elevation
 
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
+import org.slf4j.LoggerFactory
 import mil.nga.tiff.FieldTagType
-import mil.nga.tiff.Rasters
+import mil.nga.tiff.FieldType
 import mil.nga.tiff.TIFFImage
 import mil.nga.tiff.TiffReader
 import org.locationtech.proj4j.CRSFactory
@@ -11,21 +12,34 @@ import org.locationtech.proj4j.CoordinateTransform
 import org.locationtech.proj4j.CoordinateTransformFactory
 import org.locationtech.proj4j.ProjCoordinate
 import java.io.File
+import java.nio.FloatBuffer
 import kotlin.math.roundToInt
 
-class ProjectedDem(val file: File) {
+private val logger = LoggerFactory.getLogger(ProjectedDem::class.java)
+
+class ProjectedDem(private val file: File) {
 
   private val image: TIFFImage
-  private val rasters: Rasters
+  private val size: Pair<Int, Int>
+  private val raster: FloatBuffer
   private val origin: Origin
+  private val noDataValue: Float
   private val transform: CoordinateTransform
   private val bound: S2LatLngRect
 
   init {
     // http://geotiff.maptools.org/spec/geotiff2.6.html
+    logger.info("Opening {}", file)
     image = TiffReader.readTiff(file)
     val directory = image.fileDirectories[0]
-    rasters = directory.readRasters()
+    size = Pair(directory.imageWidth.toInt(), directory.imageHeight.toInt())
+    raster = directory.readRasters().sampleValues[0].asFloatBuffer()
+    logger.info("Opened {}", file)
+
+    if (directory.getFieldTypeForSample(0) != FieldType.FLOAT) {
+      throw IllegalArgumentException(
+          "Can't handle non-float rasters (${directory.getFieldTypeForSample(0)})")
+    }
 
     if (directory[FieldTagType.ModelTransformation] != null) {
       throw IllegalArgumentException("Can't handle transformations")
@@ -62,8 +76,8 @@ class ProjectedDem(val file: File) {
     origin = Origin(XyPair(tiepoints[3], tiepoints[4]), XyPair(scale[0], -1 * scale[1]))
 
     @Suppress("UNCHECKED_CAST")
-    val noDataValue = (directory[FieldTagType.GDAL_NODATA].values as List<String>).let {
-      it[0].toInt()
+    noDataValue = (directory[FieldTagType.GDAL_NODATA].values as List<String>).let {
+      it[0].toFloat()
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -91,6 +105,12 @@ class ProjectedDem(val file: File) {
           }
           modelType = valueOffset
         }
+        GeoTiffTagType.GeodeticCRSGeoKey.id -> {
+          if (tiffTagLocation != 0.toShort()) {
+            throw IllegalArgumentException("Unable to handle GCRS TIFF tags")
+          }
+          epsg = valueOffset
+        }
         GeoTiffTagType.GeogAngularUnitsGeoKey.id -> {
           if (tiffTagLocation != 0.toShort()) {
             throw IllegalArgumentException("Unable to handle angular units TIFF tags")
@@ -115,13 +135,18 @@ class ProjectedDem(val file: File) {
     if (angularUnits != GeoTiffAngularUnits.AngularDegree.id) {
       throw IllegalArgumentException("Unable to handle non-degree angular units")
     }
-    if (epsg < 0) {
-      throw IllegalArgumentException("Unable to find the coordinate projection")
-    }
-    if (linearUnits != GeoTiffLinearUnits.LinearMeter.id) {
-      throw IllegalArgumentException("Unable to handle non-meter linear units")
-    }
-    if (modelType != GeoTiffModelType.ModelTypeProjected.id) {
+    if (modelType == GeoTiffModelType.ModelTypeGeographic.id) {
+      if (epsg < 0) {
+        throw IllegalArgumentException("Unable to find the coordinate projection")
+      }
+    } else if (modelType == GeoTiffModelType.ModelTypeProjected.id) {
+      if (epsg < 0) {
+        throw IllegalArgumentException("Unable to find the coordinate projection")
+      }
+      if (linearUnits != GeoTiffLinearUnits.LinearMeter.id) {
+        throw IllegalArgumentException("Unable to handle non-meter linear units")
+      }
+    } else {
       throw IllegalArgumentException("Unable to handle non-projected model types")
     }
     if (rasterType != GeoTiffRasterSpace.RasterPixelIsArea.id) {
@@ -149,17 +174,27 @@ class ProjectedDem(val file: File) {
         S2LatLngRect.fromPointPair(
             inverse.transform(topLeft, coordinate).degreesToS2LatLng(),
             inverse.transform(bottomRight, coordinate).degreesToS2LatLng())
+    logger.info("{}", bound.toStringDegrees())
   }
 
-  fun query(ll: S2LatLng): Double {
-//    if (!bound.contains(ll)) {
-//      return null
-//    }
+  @Override
+  protected fun finalize() {
+    println("Closing ${file}")
+  }
+
+  fun query(ll: S2LatLng): Float? {
+    if (!bound.contains(ll)) {
+      return null
+    }
 
     val modelCoordinate = transform.transform(ll.toProjCoordinateDegrees(), ProjCoordinate())
     // TODO(april): some sort of filtering?
     val x = ((modelCoordinate.x - origin.modelPosition.x) / origin.rasterScale.x).roundToInt()
     val y = ((modelCoordinate.y - origin.modelPosition.y) / origin.rasterScale.y).roundToInt()
-    return rasters.getPixel(x, y)[0].toDouble()
+    val value = raster.get(y * size.first + x)
+    return when (value) {
+      noDataValue -> null
+      else -> value
+    }
   }
 }

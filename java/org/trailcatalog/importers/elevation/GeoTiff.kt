@@ -7,10 +7,13 @@ data class XyPair(val x: Double, val y: Double)
 
 data class Origin(val modelPosition: XyPair, val rasterScale: XyPair)
 
+// https://docs.opengeospatial.org/is/19-008r4/19-008r4.html#_requirements_class_geodeticcrsgeokey
+
 enum class GeoTiffTagType(val id: Short) {
   // http://geotiff.maptools.org/spec/geotiff2.7.html
   GTModelTypeGeoKey(1024),
   GTRasterTypeGeoKey(1025),
+  GeodeticCRSGeoKey(2048),
   GeogAngularUnitsGeoKey(2054),
   ProjectedCSTypeGeoKey(3072),
   ProjLinearUnitsGeoKey(3076),
