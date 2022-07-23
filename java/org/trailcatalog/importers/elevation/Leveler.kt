@@ -4,9 +4,11 @@ import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Point
 import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.createConnectionSource
+import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
 import org.trailcatalog.s2.earthMetersToAngle
 import java.nio.ByteBuffer
 import java.nio.ByteOrder.LITTLE_ENDIAN
+import java.nio.file.Path
 
 fun main(args: Array<String>) {
   createConnectionSource(syncCommit = false).use { hikari ->

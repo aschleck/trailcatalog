@@ -2,7 +2,6 @@ package org.trailcatalog.importers.elevation
 
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
-import com.google.common.collect.MapMaker
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.zaxxer.hikari.HikariDataSource
@@ -12,6 +11,7 @@ import org.slf4j.LoggerFactory
 import org.trailcatalog.importers.common.ClosedIntRange
 import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.common.toClosedIntRange
+import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
 import org.trailcatalog.s2.earthMetersToAngle
 import java.nio.file.Path
 
@@ -25,14 +25,14 @@ class DemResolver(private val hikari: HikariDataSource) {
   private val metadata = ArrayList<DemMetadata>()
 
   private val dems =
-      CacheBuilder.newBuilder().maximumSize(3).build(
-          object : CacheLoader<DemMetadata, ProjectedDem>() {
-            override fun load(p0: DemMetadata): ProjectedDem {
+      CacheBuilder.newBuilder().maximumSize(30).build(
+          object : CacheLoader<DemMetadata, GeoTiffReader>() {
+            override fun load(p0: DemMetadata): GeoTiffReader {
               val url = p0.url.toHttpUrl()
               val path = Path.of("dems", url.pathSegments[url.pathSegments.size - 1])
               download(url, path)
               logger.info("Opening DEM {}", p0)
-              return ProjectedDem(path.toFile())
+              return GeoTiffReader(path)
             }
           })
 
@@ -48,8 +48,6 @@ class DemResolver(private val hikari: HikariDataSource) {
             "lat_bound_degrees && ? " +
             "AND " +
             "lng_bound_degrees && ? " +
-            "AND " +
-            "resolution_radians > 1.5696098420815538e-07" +
             "ORDER BY resolution_radians ASC, date DESC").also {
           it.setObject(1, ClosedIntRange(area.latLo().e7(), area.latHi().e7()))
           it.setObject(2, ClosedIntRange(area.lngLo().e7(), area.lngHi().e7()))

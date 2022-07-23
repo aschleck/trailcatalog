@@ -4,6 +4,8 @@ import java.io.InputStream
 import java.lang.reflect.Method
 import java.nio.ByteBuffer
 import java.nio.MappedByteBuffer
+import kotlin.experimental.and
+import kotlin.experimental.or
 import kotlin.math.min
 
 class EncodedInputStream(private val buffer: MappedByteBuffer) : InputStream() {
@@ -18,6 +20,13 @@ class EncodedInputStream(private val buffer: MappedByteBuffer) : InputStream() {
 
   fun position(): Int {
     return buffer.position()
+  }
+
+  fun seek(position: UInt) {
+    if (position > Int.MAX_VALUE.toUInt()) {
+      throw IllegalArgumentException("Unable to seek past Int.MAX_VALUE")
+    }
+    buffer.position(position.toInt())
   }
 
   fun size(): Int {
@@ -58,6 +67,23 @@ class EncodedInputStream(private val buffer: MappedByteBuffer) : InputStream() {
         ((buffer.get().toLong() and 0xFF) shl 40) or
         ((buffer.get().toLong() and 0xFF) shl 48) or
         ((buffer.get().toLong() and 0xFF) shl 56)
+  }
+
+  fun readShort(): Short {
+    return (buffer.get().toShort() and 0xFF) or
+        ((buffer.get().toShort() and 0xFF).toInt() shl 8).toShort()
+  }
+
+  fun readUInt(): UInt {
+    return (buffer.get().toUInt() and 0xFF.toUInt()) or
+        ((buffer.get().toUInt() and 0xFF.toUInt()) shl 8) or
+        ((buffer.get().toUInt() and 0xFF.toUInt()) shl 16) or
+        ((buffer.get().toUInt() and 0xFF.toUInt()) shl 24)
+  }
+
+  fun readUShort(): UShort {
+    return (buffer.get().toUShort() and 0xFF.toUShort()) or
+        ((buffer.get().toUShort() and 0xFF.toUShort()).toInt() shl 8).toUShort()
   }
 
   fun readVarInt(): Int {
