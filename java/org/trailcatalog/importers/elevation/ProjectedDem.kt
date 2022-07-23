@@ -189,12 +189,25 @@ class ProjectedDem(private val file: File) {
 
     val modelCoordinate = transform.transform(ll.toProjCoordinateDegrees(), ProjCoordinate())
     // TODO(april): some sort of filtering?
-    val x = ((modelCoordinate.x - origin.modelPosition.x) / origin.rasterScale.x).roundToInt()
-    val y = ((modelCoordinate.y - origin.modelPosition.y) / origin.rasterScale.y).roundToInt()
-    val value = raster.get(y * size.first + x)
+    val x = ((modelCoordinate.x - origin.modelPosition.x) / origin.rasterScale.x)
+    val y = ((modelCoordinate.y - origin.modelPosition.y) / origin.rasterScale.y)
+    val lx = x.toInt()
+    val ly = y.toInt()
+    val tlv = raster.get(ly * size.first + lx)
+    val trv = raster.get(ly * size.first + (lx + 1))
+    val blv = raster.get((ly + 1) * size.first + lx)
+    val brv = raster.get((ly + 1) * size.first + (lx + 1))
+    val fx = (x % 1).toFloat()
+    val tv = mix(fx, tlv, trv)
+    val bv = mix(fx, blv, brv)
+    val value = mix((y % 1).toFloat(), tv, bv)
     return when (value) {
       noDataValue -> null
       else -> value
     }
   }
+}
+
+private fun mix(f: Float, a: Float, b: Float): Float {
+  return (1 - f) * a + f * b
 }

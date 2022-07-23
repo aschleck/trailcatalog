@@ -48,6 +48,8 @@ class DemResolver(private val hikari: HikariDataSource) {
             "lat_bound_degrees && ? " +
             "AND " +
             "lng_bound_degrees && ? " +
+            "AND " +
+            "resolution_radians > 1.5696098420815538e-07" +
             "ORDER BY resolution_radians ASC, date DESC").also {
           it.setObject(1, ClosedIntRange(area.latLo().e7(), area.latHi().e7()))
           it.setObject(2, ClosedIntRange(area.lngLo().e7(), area.lngHi().e7()))

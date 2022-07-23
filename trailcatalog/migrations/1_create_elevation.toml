@@ -58,7 +58,17 @@ primary_key = ["id", "version"]
   type = "INT"
 
   [[actions.columns]]
-  name = "height_samples_1m_meters"
+  name = "down_meters"
+  nullable = false
+  type = "REAL"
+
+  [[actions.columns]]
+  name = "up_meters"
+  nullable = false
+  type = "REAL"
+
+  [[actions.columns]]
+  name = "height_samples_10m_meters"
   nullable = false
   type = "BYTEA"
 
@@ -69,4 +79,3 @@ table = "way_elevation_cache"
   [actions.index]
   name = "way_elevation_cache_by_id_version_idx"
   columns = ["id", "epoch"]
-

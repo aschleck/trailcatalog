@@ -15,7 +15,7 @@ fun main(args: Array<String>) {
   }
 }
 
-private data class Profile(val up: Double, val down: Double)
+private data class Profile(val up: Double, val down: Double, val heights: List<Float>)
 
 private fun calculateTrailProfiles(trails: ArrayList<Long>, hikari: HikariDataSource) {
   val trailArray = trails.toArray()
@@ -66,10 +66,10 @@ private fun calculateTrailProfiles(trails: ArrayList<Long>, hikari: HikariDataSo
         totalUp += profile.down
         totalDown += profile.up
       }
-
-      println(trailId)
-      println(Profile(totalUp, totalDown))
     }
+
+    println(trailId)
+    println(Profile(totalUp, totalDown, listOf()))
   }
 }
 
@@ -83,18 +83,24 @@ private fun calculatePathProfiles(geometry: Map<Long, ByteArray>, resolver: DemR
       points.add(S2LatLng.fromE7(e7s.get(), e7s.get()).toPoint())
     }
 
+    // 1609 meters to a mile, so at four bytes per meter we'd pay 6.4kb per mile. Seems like a lot,
+    // but accuracy is nice... Let's calculate at 1m but build the profile every 10m.
     val increment = earthMetersToAngle(1.0)
+    val sampleRate = 10
+
     var offsetRadians = 0.0
     var current = 0
-    var last: Double
+    var last: Float
     var totalUp = 0.0
     var totalDown = 0.0
+    val profile = ArrayList<Float>()
+    var sampleIndex = 0
     while (current < points.size - 1) {
       val previous = points[current]
       val next = points[current + 1]
       val length = previous.angle(next)
       var position = offsetRadians
-      last = resolver.query(S2LatLng(previous)).toDouble()
+      last = resolver.query(S2LatLng(previous))
       while (position < length) {
         val fraction = Math.sin(position) / Math.sin(length)
         val ll =
@@ -102,7 +108,12 @@ private fun calculatePathProfiles(geometry: Map<Long, ByteArray>, resolver: DemR
                 S2Point.add(
                     S2Point.mul(previous, Math.cos(position) - fraction * Math.cos(length)),
                     S2Point.mul(next, fraction)))
-        val height = resolver.query(ll).toDouble()
+        val height = resolver.query(ll)
+        if (sampleIndex % sampleRate == 0) {
+          profile.add(height)
+        }
+        sampleIndex += 1
+
         val dz = height - last
         if (dz >= 0) {
           totalUp += dz
@@ -114,9 +125,14 @@ private fun calculatePathProfiles(geometry: Map<Long, ByteArray>, resolver: DemR
       }
       current += 1
       offsetRadians = position - length
+      
+      // Make sure we've always added the last point to the profile
+      if (current == points.size - 1 && sampleIndex % sampleRate != 1) {
+        profile.add(last)
+      }
     }
 
-    profiles[id] = Profile(totalUp, totalDown)
+    profiles[id] = Profile(totalUp, totalDown, profile)
   }
   return profiles
 }
