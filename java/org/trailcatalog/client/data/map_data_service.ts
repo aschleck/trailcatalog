@@ -18,7 +18,8 @@ interface Filter {
 interface Listener {
   loadMetadata(trails: Iterable<Trail>): void;
   loadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void;
-  unloadEverywhere(paths: Iterable<Path>, trails: Iterable<Trail>): void;
+  unloadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void;
+  unloadMetadata(trails: Iterable<Trail>): void;
 }
 
 const DATA_ZOOM_THRESHOLD = 4;
@@ -74,7 +75,8 @@ export class MapDataService extends Service<EmptyDeps> {
         this.loadDetail(command.cell, command.data);
       } else if (command.type == 'ucc') {
         for (const cell of command.cells) {
-          this.unloadCell(cell);
+          this.unloadDetailCell(cell);
+          this.unloadMetadataCell(cell);
         }
       } else {
         checkExhaustive(command, 'Unknown type of command');
@@ -327,9 +329,8 @@ export class MapDataService extends Service<EmptyDeps> {
     this.listener?.loadDetail(paths, trails);
   }
 
-  private unloadCell(id: S2CellNumber): void {
+  private unloadDetailCell(id: S2CellNumber): void {
     const buffer = this.detailCells.get(id);
-    this.metadataCells.delete(id);
     this.detailCells.delete(id);
 
     if (!buffer || id === PIN_CELL_ID) {
@@ -368,14 +369,43 @@ export class MapDataService extends Service<EmptyDeps> {
         for (const path of entity.paths) {
           this.pathsToTrails.delete(path, entity);
         }
-        this.trails.delete(id);
         this.trailsInDetails.delete(entity);
+        trails.push(entity);
+      }
+    }
+
+    this.listener?.unloadDetail(paths, trails);
+  }
+
+  private unloadMetadataCell(id: S2CellNumber): void {
+    const buffer = this.metadataCells.get(id);
+    this.metadataCells.delete(id);
+
+    if (!buffer || id === PIN_CELL_ID) {
+      return;
+    }
+
+    const data = new LittleEndianView(buffer);
+
+    const trailCount = data.getInt32();
+    const trails = [];
+    for (let i = 0; i < trailCount; ++i) {
+      const id = data.getBigInt64();
+      const nameLength = data.getInt32();
+      data.skip(nameLength + 4 + 2 * 4 + 8);
+
+      const entity = this.trails.get(id);
+      if (entity) {
+        for (const path of entity.paths) {
+          this.pathsToTrails.delete(path, entity);
+        }
+        this.trails.delete(id);
         this.trailsInMetadata.delete(entity);
         trails.push(entity);
       }
     }
 
-    this.listener?.unloadEverywhere(paths, trails);
+    this.listener?.unloadMetadata(trails);
   }
 }
 

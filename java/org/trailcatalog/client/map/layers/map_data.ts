@@ -440,13 +440,18 @@ export class MapData extends Layer {
     }
   }
 
-  unloadEverywhere(paths: Iterable<Path>, trails: Iterable<Trail>): void {
+  unloadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void {
     for (const path of paths) {
       this.detailBounds.delete(path.bound);
     }
 
     for (const trail of trails) {
       this.detailBounds.delete(trail.mouseBound);
+    }
+  }
+
+  unloadMetadata(trails: Iterable<Trail>): void {
+    for (const trail of trails) {
       this.metadataBounds.delete(trail.mouseBound);
     }
   }
