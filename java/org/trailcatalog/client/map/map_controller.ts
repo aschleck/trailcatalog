@@ -168,6 +168,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   click(clientX: number, clientY: number): void {
     const point = this.clientToWorld(clientX, clientY)
     const entity = this.mapData.queryClosest(point);
+    // On mobile we don't get hover events, so we won't have previously hovered.
+    this.actOnHover(entity);
     this.trigger(SELECTION_CHANGED, {
       controller: this,
       selected: entity,
@@ -177,6 +179,10 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
   hover(clientX: number, clientY: number): void {
     const best = this.mapData.queryClosest(this.clientToWorld(clientX, clientY));
+    this.actOnHover(best);
+  }
+
+  private actOnHover(best: Path|Trail|undefined): void {
     if (this.lastHoverTarget !== best) {
       if (this.lastHoverTarget) {
         this.mapData.setHover(this.lastHoverTarget, false);
