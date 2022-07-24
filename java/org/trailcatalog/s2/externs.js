@@ -24,6 +24,7 @@ const S2LatLng = goog.require('com.google.common.geometry.S2LatLng');
 goog.exportSymbol('com.google.common.geometry.S2LatLng', S2LatLng);
 goog.exportProperty(S2LatLng, 'fromDegrees', S2LatLng.fromDegrees);
 goog.exportProperty(S2LatLng, 'fromRadians', S2LatLng.fromRadians);
+goog.exportProperty(S2LatLng.prototype, 'equals', S2LatLng.prototype.equals);
 goog.exportProperty(S2LatLng.prototype, 'latDegrees', S2LatLng.prototype.latDegrees);
 goog.exportProperty(S2LatLng.prototype, 'lngDegrees', S2LatLng.prototype.lngDegrees);
 goog.exportProperty(S2LatLng.prototype, 'latRadians', S2LatLng.prototype.latRadians);

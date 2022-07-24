@@ -92,6 +92,7 @@ function page(content: string, dataKeys: object, dataValues: object): string {
   <head>
     <meta charset="utf-8"/>
     <title>Trailcatalog</title>
+    <meta name="description" content="Organizing trails from OpenStreetMap">
     <meta
         name="viewport"
         content="height=height, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width" />

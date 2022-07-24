@@ -1,8 +1,9 @@
+import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { boundingLlz } from './common/math';
-import { emptyS2Polygon } from './common/types';
+import { emptyS2Polygon, LatLngZoom } from './common/types';
 import { MapDataService } from './data/map_data_service';
 import { MapController, MAP_MOVED } from './map/events';
 import { Boundary, Trail } from './models/types';
@@ -12,11 +13,13 @@ import { DataResponses, fetchData } from './data';
 import { State as VState, ViewportController } from './viewport_controller';
 
 interface Args {
+  fitted: LatLngZoom|undefined;
   trailId: bigint;
 }
 
 export interface State extends VState {
   containingBoundaries: Boundary[]|undefined;
+  showZoomToFit: boolean;
   trail: Trail|undefined;
 }
 
@@ -34,6 +37,7 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
   }
 
   private readonly data: MapDataService;
+  private fitted: [S2LatLng, number]|undefined;
 
   constructor(response: Response<TrailOverviewController>) {
     super(response);
@@ -42,6 +46,12 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
     const id = response.args.trailId;
 
     this.data.setPins({trail: id}).then(trail => {
+      const llz = boundingLlz(trail.bound);
+      this.fitted = [
+        S2LatLng.fromDegrees(llz.lat, llz.lng),
+        llz.zoom,
+      ];
+
       this.updateState({
         ...this.state,
         trail,
@@ -56,19 +66,27 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
         });
       });
     }
-
   }
 
   // This may not always fire prior to the person hitting nearby trails, which is bad
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
+    const {center, controller, zoom} = e.detail;
     if (this.state.trail) {
       // This is bad here. We already have a loading screen before showing the map, so we can just
       // pass the active trail in as a map arg. Oh well.
-      const {controller} = e.detail;
       controller.setActive(this.state.trail, true);
     }
 
     super.onMove(e);
+
+    if (!this.state.showZoomToFit && this.fitted) {
+      if (!center.equals(this.fitted[0]) || zoom != this.fitted[1]) {
+        this.updateState({
+          ...this.state,
+          showZoomToFit: true,
+        });
+      }
+    }
   }
 
   viewNearbyTrails(): void {
@@ -80,6 +98,11 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
     if (this.state.trail) {
       this.mapController?.setCamera(boundingLlz(this.state.trail.bound));
     }
+
+    this.updateState({
+      ...this.state,
+      showZoomToFit: false,
+    });
   }
 }
 

@@ -38,6 +38,7 @@ export function TrailOverviewElement({trailId}: {
       nearbyTrails: undefined,
       selectedCardPosition: [-1, -1],
       selectedTrails: [],
+      showZoomToFit: false,
     };
   }
 
@@ -59,11 +60,16 @@ export function TrailOverviewElement({trailId}: {
     trailDetails = <></>;
   }
 
+  let bound;
+  if (state.trail) {
+    bound = boundingLlz(state.trail.bound);
+  }
+
   return <>
     <div
         js={corgi.bind({
           controller: TrailOverviewController,
-          args: {trailId: parsedId},
+          args: {fitted: bound, trailId: parsedId},
           events: {
             corgi: [
               [DATA_CHANGED, 'onDataChange'],
@@ -77,11 +83,11 @@ export function TrailOverviewElement({trailId}: {
         })}
         className="flex flex-col h-full"
     >
-      {state.trail
+      {state.trail && bound
           ? <>
             <ViewportLayoutElement
                 // Probably we should just pass the bound in directly instead of doing this, alas
-                camera={boundingLlz(state.trail.bound)}
+                camera={bound}
                 overlay={{content: trailDetails}}
                 sidebarContent={<TrailSidebar state={state} />}
             />
@@ -121,13 +127,17 @@ function TrailSidebar({state}: {state: State}) {
       <header className="flex font-bold justify-between mx-3 text-xl">
         <div>{trail.name}</div>
         <div>
-          <OutlinedButton
-              dense={true}
-              icon="ZoomToFit"
-              unboundEvents={{
-                click: 'zoomToFit',
-              }}
-          />
+          {state.showZoomToFit
+              ?
+                  <OutlinedButton
+                      dense={true}
+                      icon="ZoomToFit"
+                      unboundEvents={{
+                        click: 'zoomToFit',
+                      }}
+                  />
+              : <></>
+          }
         </div>
       </header>
       <section className="mx-3 text-tc-gray-300">

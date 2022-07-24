@@ -34,11 +34,17 @@ export const MapElement = ({camera, overlay}: {
           text-xs
       ">
         Maps ©{' '}
-        <a className="pointer-events-auto" href="https://www.maptiler.com/copyright/">
+        <a
+            className="pointer-events-auto"
+            href="https://www.maptiler.com/copyright/"
+            target="_blank">
           MapTiler
         </a>
         {' · Data © '}
-        <a className="pointer-events-auto" href="https://www.openstreetmap.org/copyright">
+        <a
+            className="pointer-events-auto"
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank">
           OpenStreetMap contributors
         </a>
       </div>
