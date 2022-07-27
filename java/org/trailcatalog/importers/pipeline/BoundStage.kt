@@ -65,7 +65,7 @@ abstract class BoundStage<I, O>(
   protected open fun traceInputs() {}
 }
 
-inline fun <reified K : Comparable<K>, reified V : Any> BoundStage<*, PCollection<V>>.groupBy(
+inline fun <reified K : Comparable<K>, reified V : Any> BoundStage<*, out PCollection<V>>.groupBy(
     context: String,
     crossinline keyFn: (V) -> K): BoundStage<PCollection<V>, PMap<K, V>> {
   val act = {

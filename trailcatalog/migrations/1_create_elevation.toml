@@ -1,7 +1,12 @@
 [[actions]]
 type = "create_table"
-name = "usgs_elevation_models"
-primary_key = ["id"]
+name = "digital_elevation_models"
+primary_key = ["namespace", "id"]
+
+  [[actions.columns]]
+  name = "namespace"
+  nullable = false
+  type = "TEXT"
 
   [[actions.columns]]
   name = "id"
@@ -35,16 +40,16 @@ primary_key = ["id"]
 
 [[actions]]
 type = "add_index"
-table = "usgs_elevation_models"
+table = "digital_elevation_models"
 
   [actions.index]
-  name = "usgs_elevation_models_by_lat_lng_idx"
+  name = "digital_elevation_models_by_lat_lng_idx"
   columns = ["lat_bound_degrees", "lng_bound_degrees"]
   type = "gist"
 
 [[actions]]
 type = "create_table"
-name = "way_elevation_cache"
+name = "path_elevations"
 primary_key = ["id", "version"]
 
   [[actions.columns]]
@@ -74,8 +79,8 @@ primary_key = ["id", "version"]
 
 [[actions]]
 type = "add_index"
-table = "way_elevation_cache"
+table = "path_elevations"
 
   [actions.index]
-  name = "way_elevation_cache_by_id_version_idx"
-  columns = ["id", "epoch"]
+  name = "path_elevations_by_id_idx"
+  columns = ["id"]

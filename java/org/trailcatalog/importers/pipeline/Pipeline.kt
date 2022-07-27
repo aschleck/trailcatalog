@@ -24,7 +24,11 @@ class Pipeline {
   }
 
   inline fun <reified T : Any> cat(list: List<BoundStage<*, out PCollection<T>>>):
-      BoundStage<List<PCollection<T>>, PCollection<T>> {
+      BoundStage<*, out PCollection<T>> {
+    if (list.size == 1) {
+      return list[0]
+    }
+
     return object : BoundStage<List<PCollection<T>>, PCollection<T>>(this, Concatenate(object : TypeToken<T>() {})) {
       override fun getInput(): List<PCollection<T>> {
         return list.map { it.invoke() }

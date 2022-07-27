@@ -36,6 +36,11 @@ fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
                 .coerceAtLeast(HIGHWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
       NAME_BS ->
         name = stringTable.getS(way.getVals(i)).toStringUtf8()
+      NATURAL_BS ->
+        // Prefer road categories to naturals
+        if (!WayCategory.ROAD.isParentOf(category)) {
+          category = category.coerceAtLeast(WayCategory.PATH)
+        }
       PISTE_TYPE_BS ->
         // Prefer road categories to pistes
         if (!WayCategory.ROAD.isParentOf(category)) {
@@ -44,6 +49,8 @@ fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
                   .coerceAtLeast(WayCategory.PISTE)
                   .coerceAtLeast(PISTE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
         }
+      RAILWAY_BS ->
+        category = category.coerceAtLeast(WayCategory.HIGHWAY)
     }
   }
   val refs = LongArray(way.refsCount)

@@ -38,9 +38,9 @@ fun main(args: Array<String>) {
   connections.connection.use { connection ->
     val insertProduct =
         connection.prepareStatement(
-            "INSERT INTO usgs_elevation_models " +
-                "(id, date, resolution_radians, lat_bound_degrees, lng_bound_degrees, url) " +
-                "VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO digital_elevation_models " +
+                "(namespace, id, date, resolution_radians, lat_bound_degrees, lng_bound_degrees, url) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
     for ((dataset, resolution) in mapOf(
         Pair("Digital%20Elevation%20Model%20(DEM)%201%20meter", earthMetersToAngle(1.0).radians()),
@@ -63,16 +63,17 @@ fun main(args: Array<String>) {
 
           for (product in response.items) {
             insertProduct.also {
-              it.setString(1, product.sourceId)
+              it.setString(1, "usgs")
+              it.setString(2, product.sourceId)
               it.setTimestamp(
-                  2,
+                  3,
                   Timestamp(
                       Instant.from(
                           DateTimeFormatter.ISO_INSTANT.parse(product.dateCreated)).toEpochMilli()))
-              it.setDouble(3, resolution)
-              it.setObject(4, product.boundingBox.yRange())
-              it.setObject(5, product.boundingBox.xRange())
-              it.setString(6, product.downloadURL)
+              it.setDouble(4, resolution)
+              it.setObject(5, product.boundingBox.yRange())
+              it.setObject(6, product.boundingBox.xRange())
+              it.setString(7, product.downloadURL)
             }.addBatch()
           }
 
