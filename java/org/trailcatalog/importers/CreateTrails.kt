@@ -37,40 +37,90 @@ class CreateTrails
       return
     }
 
-    val ordered = ArrayList<Long>()
     val mapped = HashMap<Long, List<LatLngE7>>()
-    flattenWays(geometries[0], ordered, mapped)
-    if (ordered.isEmpty()) {
+    val ordered = flattenWays(geometries[0], mapped, false)
+    val orderedArray = if (ordered == null) {
+      logger.warn("Unable to orient ${relation.id}")
+
+      // If we bail here then we just lost basically all the big trails. But our distance
+      // computation is fubar for them anyway so does it even matter? I guess it's better to show
+      // them wrong than lose them?
+      val naive = ArrayList<Long>()
+      naiveFlattenWays(geometries[0], naive)
+      naive.toLongArray()
+    } else if (ordered.isEmpty()) {
       logger.warn("Trail ${relation.id} is empty somehow")
       return
+    } else {
+      ordered.toLongArray()
     }
-    var orientedPathIds = orientPaths(relation.id, ordered, mapped)
-    if (orientedPathIds == null) {
-      logger.warn("Unable to orient ${relation.id}")
-      orientedPathIds = ordered.toLongArray()
-    }
-    val polyline = pathsToPolyline(orientedPathIds, mapped)
+    val polyline = pathsToPolyline(orderedArray, mapped)
     emitter.emit(
         Trail(
             relation.id,
             relation.type,
             relation.name,
-            orientedPathIds,
+            orderedArray,
             polyline))
   }
 }
 
+/**
+ * Returns oriented way IDs in the given relation. Fills in `mapped` (a map from oriented relation
+ * and way IDs to latlngs) while running.
+ *
+ * The naive thing to do is first flatten all the relations to their ways, and then sort. This
+ * generally works but breaks down on huge super relations. What we do instead is assume that each
+ * child relation makes sense, so we can sort it individually and then treat it as a single polyline
+ * higher up in the relations tree. This is not necessarily the case in OSM modeling, but I'm over
+ * it.
+ *
+ * Because we need to get every present way into mapped, we also pass in whether the parent relation
+ * failed flattening to the child. This enables skipping sorting on stuff we know will fail.
+ */
 private fun flattenWays(
     geometry: RelationGeometry,
-    ordered: MutableList<Long>,
-    mapped: MutableMap<Long, List<LatLngE7>>) {
+    mapped: MutableMap<Long, List<LatLngE7>>,
+    parentFailed: Boolean): List<Long>? {
+  val ids = ArrayList<Long>(geometry.membersList.count { it.hasRelation() || it.hasWay() })
+  val childRelations = HashMap<Long, List<Long>>()
+  var failed = parentFailed
   for (member in geometry.membersList) {
     if (member.hasNodeId()) {
       // who cares
     } else if (member.hasRelation()) {
-      flattenWays(member.relation, ordered, mapped)
+      // Note that MAX_VALUE / 2 % 10 is 3.5. So to keep this value even we just add 1.
+      val id = member.relation.relationId * 2 + Long.MAX_VALUE / 2 + 1
+      val flatChild = flattenWays(member.relation, mapped, failed)
+      if (flatChild == null) {
+        logger.warn("Unable to orient child relation ${member.relation.relationId}")
+        // We can't bail out early because we still need to get every way in the other child
+        // relations into mapped
+        failed = true
+        continue
+      }
+      ids.add(id)
+      childRelations[id] = flatChild
+      val childLatLngs = ArrayList<LatLngE7>()
+      for (i in flatChild.indices) {
+        val childChildId = flatChild[i]
+        val points = mapped[childChildId.and(1L.inv())]!!
+        if (points.isEmpty()) {
+          continue
+        }
+        val direction = if (childChildId % 2 == 0L) {
+          points
+        } else {
+          points.reversed()
+        }
+        val startOffset = if (i == 0) 0 else 1
+        val endOffset = if (i == direction.size - 1) 0 else 1
+        val subset = direction.subList(startOffset, direction.size - endOffset)
+        childLatLngs.addAll(subset)
+      }
+      mapped[id] = childLatLngs
     } else if (member.hasWay()) {
-      ordered.add(2 * member.way.wayId)
+      ids.add(2 * member.way.wayId)
       val raw = member.way.latLngE7List
       val latLngs = ArrayList<LatLngE7>(member.way.latLngE7Count / 2)
       for (i in 0 until member.way.latLngE7Count step 2) {
@@ -79,12 +129,46 @@ private fun flattenWays(
       mapped[2 * member.way.wayId] = latLngs
     }
   }
+
+  if (failed) {
+    return null
+  }
+
+  val oriented = orientPaths(geometry.relationId, ids, mapped) ?: return null
+  val flatIds = ArrayList<Long>()
+  for (childId in oriented) {
+    if (childId >= Long.MAX_VALUE / 2) {
+      val childIds = childRelations[childId.and(1L.inv())]!!
+      if (childId % 2 == 0L) {
+        flatIds.addAll(childIds)
+      } else {
+        childIds.reversed().forEach { flatIds.add(it.xor(1L)) }
+      }
+    } else {
+      flatIds.add(childId)
+    }
+  }
+  return flatIds
+}
+
+private fun naiveFlattenWays(
+    geometry: RelationGeometry,
+    wayIds: MutableList<Long>) {
+  for (member in geometry.membersList) {
+    if (member.hasNodeId()) {
+      // who cares
+    } else if (member.hasRelation()) {
+      naiveFlattenWays(member.relation, wayIds)
+    } else if (member.hasWay()) {
+      wayIds.add(2 * member.way.wayId)
+    }
+  }
 }
 
 private fun orientPaths(
     trailId: Long,
     ordered: List<Long>,
-    pathPolylines: HashMap<Long, List<LatLngE7>>): LongArray? {
+    pathPolylines: Map<Long, List<LatLngE7>>): LongArray? {
   val orientedPathIds = LongArray(ordered.size)
   var globallyAligned = true
   if (ordered.size > 2) {
@@ -298,14 +382,17 @@ private fun pathsToPolyline(
     orientedPathIds: LongArray,
     pathPolylines: HashMap<Long, List<LatLngE7>>): S2Polyline {
   val polyline = ArrayList<S2Point>()
-  for (pathId in orientedPathIds) {
-    val path = pathPolylines[(pathId / 2) * 2]!!
+  for (pathIndex in orientedPathIds.indices) {
+    val pathId = orientedPathIds[pathIndex]
+    val path = pathPolylines[pathId.and(1L.inv())]!!
+    val startOffset = if (pathIndex == 0) 0 else 1
+    val endOffset = if (pathIndex == orientedPathIds.size - 1) 0 else 1
     if (pathId % 2 == 0L) {
-      for (i in 0 until path.size) {
+      for (i in startOffset until path.size - endOffset) {
         polyline.add(path[i].toS2LatLng().toPoint())
       }
     } else {
-      for (i in (path.size - 1) downTo 0) {
+      for (i in (path.size - 1 - endOffset) downTo startOffset) {
         polyline.add(path[i].toS2LatLng().toPoint())
       }
     }
