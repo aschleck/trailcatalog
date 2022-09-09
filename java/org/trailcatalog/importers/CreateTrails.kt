@@ -48,12 +48,15 @@ class CreateTrails
       val naive = ArrayList<Long>()
       naiveFlattenWays(geometries[0], naive)
       naive.toLongArray()
-    } else if (ordered.isEmpty()) {
-      logger.warn("Trail ${relation.id} is empty somehow")
-      return
     } else {
       ordered.toLongArray()
     }
+
+    if (orderedArray.isEmpty()) {
+      logger.warn("Trail ${relation.id} is empty somehow")
+      return
+    }
+
     val polyline = pathsToPolyline(orderedArray, mapped)
     emitter.emit(
         Trail(
@@ -132,6 +135,9 @@ private fun flattenWays(
 
   if (failed) {
     return null
+  } else if (ids.isEmpty()) {
+    // This is the case where a relation has only a node inside of it?
+    return ids
   }
 
   val oriented = orientPaths(geometry.relationId, ids, mapped) ?: return null
@@ -300,7 +306,15 @@ private fun globallyAlign(
     return true
   }
 
+  val startTime = System.currentTimeMillis()
+  val timeoutSeconds = 60
   for (start in builtStarts.keys()) {
+    if ((System.currentTimeMillis() - startTime) / 1000 > timeoutSeconds) {
+      logger.warn(
+          "Spent more than ${timeoutSeconds} seconds tracing ${trailId} total, giving up")
+      return false
+    }
+
     if (
         canTracePath(
             trailId,
