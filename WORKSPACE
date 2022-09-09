@@ -137,7 +137,7 @@ maven_install(
         "org.junit.jupiter:junit-jupiter:5.8.2",
         "org.locationtech.proj4j:proj4j:1.1.5",
         "org.postgresql:postgresql:42.3.1",
-        "org.slf4j:slf4j-simple:1.8.0-beta4",
+        "org.slf4j:slf4j-simple:2.0.0",
     ],
     repositories = [
         "https://repo1.maven.org/maven2",

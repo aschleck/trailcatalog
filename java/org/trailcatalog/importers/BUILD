@@ -30,6 +30,7 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_postgresql_postgresql",
+        "@maven//:org_slf4j_slf4j_simple",
     ],
 )
 
