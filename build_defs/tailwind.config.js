@@ -10,7 +10,7 @@ module.exports = {
       colors: {
         'highlight': '#ffe600',
         'tc-gray': {
-          200: '#2c2c2c',
+          200: '#222222',
           300: '#3a3a3a',
           400: '#737a80',
           600: '#e2e2e2',
@@ -20,6 +20,7 @@ module.exports = {
       },
       fontFamily: {
         'header': ['Barlow', ...defaultTheme.fontFamily.sans],
+        'input': ['Nunito Sans', ...defaultTheme.fontFamily.sans],
         'sans': ['Roboto', ...defaultTheme.fontFamily.sans],
       },
     },

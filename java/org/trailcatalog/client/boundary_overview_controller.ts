@@ -65,8 +65,6 @@ export class BoundaryOverviewController extends ViewportController<Args, Deps, S
 
   viewNearbyTrails(): void {
     this.views.showOverview(this.lastCamera);
-    // TODO(april): oops
-    //this.views.showBoundary(163769n);
   }
 }
 
@@ -79,7 +77,7 @@ export function boundaryFromRaw(raw: DataResponses['boundary']): Boundary {
 }
 
 export function containingBoundariesFromRaw(raw: DataResponses['boundaries_containing_boundary']): Boundary[] {
-  return raw.map(
+  return raw.boundaries.map(
       b =>
           new Boundary(
               BigInt(b.id),
@@ -89,7 +87,7 @@ export function containingBoundariesFromRaw(raw: DataResponses['boundaries_conta
 }
 
 export function trailsInBoundaryFromRaw(raw: DataResponses['trails_in_boundary']): Trail[] {
-  return raw.map(
+  return raw.trails.map(
       t =>
           new Trail(
               BigInt(t.id),

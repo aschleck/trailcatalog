@@ -2,9 +2,10 @@ import * as corgi from 'js/corgi';
 
 import { LinkController, State } from './link_controller';
 
-export function Link({children, href}: {
+export function Link({children, className, href}: {
   // TODO(april): why does this need to be typed optional?
   children?: corgi.VElementOrPrimitive[],
+  className?: string;
   href: string,
 }, state: State|undefined, updateState: (newState: State) => void) {
   return <>
@@ -16,8 +17,9 @@ export function Link({children, href}: {
           },
           state: [state ?? {}, updateState],
         })}
+        className={className}
         href={href}>
-      {children ? children : []}
+      {children ?? []}
     </a>
   </>;
 }

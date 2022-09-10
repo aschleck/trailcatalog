@@ -1,0 +1,18 @@
+[[actions]]
+type = "custom"
+
+start = """
+  CREATE EXTENSION IF NOT EXISTS btree_gist;
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  ALTER EXTENSION pg_trgm SET SCHEMA pg_catalog;
+  CREATE INDEX IF NOT EXISTS search_boundaries_idx ON boundaries USING gist (epoch, name gist_trgm_ops(siglen=256));
+  CREATE INDEX IF NOT EXISTS search_trails_idx ON trails USING gist (epoch, name gist_trgm_ops(siglen=256));
+"""
+
+abort = """
+  DROP INDEX IF EXISTS search_boundaries_idx;
+  DROP INDEX IF EXISTS search_trails_idx;
+  DROP EXTENSION IF EXISTS btree_gist;
+  DROP EXTENSION IF EXISTS pg_trgm;
+"""
+

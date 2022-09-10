@@ -1,10 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Roboto:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Roboto:wght@400;500;600;700&family=Nunito+Sans:wght@400&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-a:not(.flex) {
+a:not(.flex):not(.no-underline) {
   @apply underline;
 }
 

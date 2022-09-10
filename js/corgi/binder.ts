@@ -19,6 +19,8 @@ interface PropertyKeyToHandlerMap<C> {
     EventSpec<unknown>,
     AMethodOnWithParameters<C, [CustomEvent<unknown>]>,
   ]>;
+  // This is wrong, it could also just be Event, but also I don't care
+  input: AMethodOnWithParameters<C, [CustomEvent<InputEvent>]>,
   mousedown: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   mouseover: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   mouseout: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,

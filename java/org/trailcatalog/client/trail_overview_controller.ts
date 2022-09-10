@@ -108,7 +108,7 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
 
 export function containingBoundariesFromRaw(
     raw: DataResponses['boundaries_containing_trail']): Boundary[] {
-  return raw.map(
+  return raw.boundaries.map(
       b =>
           new Boundary(
               BigInt(b.id),

@@ -143,16 +143,20 @@ function renderProperties(props: Properties<HTMLElement>): string {
       actualKey = key;
     }
 
-    const escapedValue = [];
-    for (const c of (value as string)) {
-      if (c in ESCAPES) {
-        escapedValue.push(ESCAPES[c as keyof typeof ESCAPES]);
-      } else {
-        escapedValue.push(c);
+    if (value) {
+      const escapedValue = [];
+      for (const c of value) {
+        if (c in ESCAPES) {
+          escapedValue.push(ESCAPES[c as keyof typeof ESCAPES]);
+        } else {
+          escapedValue.push(c);
+        }
       }
-    }
 
-    attributes.push(`${actualKey}="${escapedValue.join('')}"`);
+      attributes.push(`${actualKey}="${escapedValue.join('')}"`);
+    } else {
+      attributes.push(actualKey);
+    }
   }
   return attributes.join(' ');
 }

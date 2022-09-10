@@ -11,6 +11,7 @@ export interface Properties<E extends HTMLElement> {
   className?: string;
   js?: AnyBoundController<E|HTMLElement>;
   style?: string; // TODO(april): this is sad
+  tabIndex?: string;
   title?: string;
   unboundEvents?: UnboundEvents;
 }
@@ -25,6 +26,12 @@ interface ImageProperties extends Properties<HTMLImageElement> {
   height?: string;
   src?: string;
   width?: string;
+}
+
+interface InputProperties extends Properties<HTMLInputElement> {
+  type?: 'password'|'text';
+  placeholder?: string;
+  value?: string;
 }
 
 class CorgiElement {
@@ -116,7 +123,10 @@ export function createVirtualElement(
     }
 
     // Optimistic check
-    if (previousElement && deepEqual(props, checkExists(previousElement.factoryProps))) {
+    if (
+        previousElement
+            && deepEqual(props, checkExists(previousElement.factoryProps))
+            && deepEqual(expandChildren, previousElement.children)) {
       return previousElement;
     }
 
@@ -458,6 +468,8 @@ declare global {
       header: Properties<HTMLElement>;
       i: Properties<HTMLElement>;
       img: ImageProperties;
+      input: InputProperties;
+      label: Properties<HTMLElement>;
       section: Properties<HTMLElement>;
       span: Properties<HTMLSpanElement>;
     }

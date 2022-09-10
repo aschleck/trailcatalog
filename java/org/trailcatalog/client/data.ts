@@ -11,6 +11,12 @@ interface DataRequests {
   boundaries_containing_trail: {
     trail_id: string;
   };
+  search_boundaries: {
+    query: string;
+  };
+  search_trails: {
+    query: string;
+  };
   trail: {
     id: string;
   };
@@ -26,16 +32,34 @@ export interface DataResponses {
     type: number;
     s2_polygon: string;
   };
-  boundaries_containing_boundary: Array<{
-    id: string;
-    name: string;
-    type: number;
-  }>;
-  boundaries_containing_trail: Array<{
-    id: string;
-    name: string;
-    type: number;
-  }>;
+  boundaries_containing_boundary: {
+    boundaries: Array<{
+      id: string;
+      name: string;
+      type: number;
+    }>;
+  },
+  boundaries_containing_trail: {
+    boundaries: Array<{
+      id: string;
+      name: string;
+      type: number;
+    }>;
+  },
+  search_boundaries: {
+    results: Array<{
+      id: string;
+      name: string;
+      type: number;
+    }>;
+  };
+  search_trails: {
+    results: Array<{
+      id: string;
+      name: string;
+      length_meters: number;
+    }>;
+  };
   trail: {
     id: string;
     name: string;
@@ -45,12 +69,14 @@ export interface DataResponses {
     marker: string;
     length_meters: number;
   };
-  trails_in_boundary: Array<{
-    id: string;
-    name: string;
-    type: number;
-    length_meters: number;
-  }>;
+  trails_in_boundary: {
+    trails: Array<{
+      id: string;
+      name: string;
+      type: number;
+      length_meters: number;
+    }>;
+  },
 }
 
 type RequestTuples<T extends (keyof DataRequests)[]> = {[K in keyof T]: [T[K], DataRequests[T[K]]]}

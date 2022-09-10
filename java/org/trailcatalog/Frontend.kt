@@ -2,6 +2,7 @@ package org.trailcatalog
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.google.common.collect.ImmutableMap
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Polygon
 import com.google.common.io.LittleEndianDataOutputStream
@@ -103,7 +104,7 @@ private fun fetchData(ctx: Context) {
             data.add(boundary)
           }
         }
-        responses.add(data)
+        responses.add(ImmutableMap.of("boundaries", data))
       }
       "boundaries_containing_trail" -> {
         val data = ArrayList<HashMap<String, Any>>()
@@ -129,7 +130,105 @@ private fun fetchData(ctx: Context) {
             data.add(boundary)
           }
         }
-        responses.add(data)
+        responses.add(ImmutableMap.of("boundaries", data))
+      }
+      "search_boundaries" -> {
+        val data = ArrayList<HashMap<String, Any>>()
+        val query = sanitizeQuery(key.get("query").asText())
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+              "SELECT "
+                  + "b.id, "
+                  + "b.name, "
+                  + "b.type "
+                  + "FROM ( "
+                  + "  SELECT id, name, type, length(name) / 1000. AS score "
+                  + "  FROM boundaries "
+                  + "  WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
+                  + "  UNION ALL "
+                  + "  SELECT "
+                  + "    id, "
+                  + "    name, "
+                  + "    type, "
+                  + "    1 - strict_word_similarity(?, name) AS score "
+                  + "  FROM boundaries "
+                  + "  WHERE epoch = ? "
+                  + ") b "
+                  + "WHERE score < 0.8 "
+                  + "ORDER BY score ASC "
+                  + "LIMIT 10")
+              .apply {
+                setString(1, query)
+                setInt(2, epochTracker.epoch)
+                setString(3, query)
+                setInt(4, epochTracker.epoch)
+              }.executeQuery()
+          val seen = HashSet<Long>()
+          while (results.next()) {
+            val id = results.getLong(1)
+            if (seen.contains(id)) {
+              continue
+            } else {
+              seen.add(id)
+            }
+
+            val boundary = HashMap<String, Any>()
+            boundary["id"] = id.toString()
+            boundary["name"] = results.getString(2)
+            boundary["type"] = results.getInt(3)
+            data.add(boundary)
+          }
+        }
+        responses.add(ImmutableMap.of("results", data))
+      }
+      "search_trails" -> {
+        val data = ArrayList<HashMap<String, Any>>()
+        val query = sanitizeQuery(key.get("query").asText())
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+              "SELECT "
+                  + "t.id, "
+                  + "t.name, "
+                  + "t.length_meters "
+                  + "FROM ( "
+                  + "  SELECT id, name, length_meters, length(name) / 1000. AS score "
+                  + "  FROM trails "
+                  + "  WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
+                  + "  UNION ALL "
+                  + "  SELECT "
+                  + "    id, "
+                  + "    name, "
+                  + "    length_meters, "
+                  + "    1 - strict_word_similarity(?, name) AS score "
+                  + "  FROM trails "
+                  + "  WHERE epoch = ? "
+                  + ") t "
+                  + "WHERE score < 0.7 "
+                  + "ORDER BY score ASC "
+                  + "LIMIT 5")
+              .apply {
+                setString(1, query)
+                setInt(2, epochTracker.epoch)
+                setString(3, query)
+                setInt(4, epochTracker.epoch)
+              }.executeQuery()
+          val seen = HashSet<Long>()
+          while (results.next()) {
+            val id = results.getLong(1)
+            if (seen.contains(id)) {
+              continue
+            } else {
+              seen.add(id)
+            }
+
+            val trail = HashMap<String, Any>()
+            trail["id"] = id.toString()
+            trail["name"] = results.getString(2)
+            trail["length_meters"] = results.getFloat(3)
+            data.add(trail)
+          }
+        }
+        responses.add(ImmutableMap.of("results", data))
       }
       "trail" -> {
         val data = HashMap<String, Any>()
@@ -190,7 +289,7 @@ private fun fetchData(ctx: Context) {
             data.add(trail)
           }
         }
-        responses.add(data)
+        responses.add(ImmutableMap.of("trails", data))
       }
     }
   }
@@ -551,4 +650,8 @@ private fun project(latDegrees: Int, lngDegrees: Int): Pair<Double, Double> {
   val latRadians = latDegrees / 10_000_000.0 / 180 * Math.PI
   val y = ln((1 + sin(latRadians)) / (1 - sin(latRadians))) / (2 * Math.PI)
   return Pair(x, y)
+}
+
+private fun sanitizeQuery(query: String): String {
+  return query.replace("[%_\\]]", "")
 }

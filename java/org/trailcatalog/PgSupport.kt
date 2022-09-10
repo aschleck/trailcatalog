@@ -8,7 +8,7 @@ fun createConnectionSource(maxSize: Int = -1, syncCommit: Boolean = true): Hikar
     val envUrl = System.getenv("DATABASE_URL")
     jdbcUrl = when (envUrl) {
       null ->
-        "jdbc:postgresql://127.0.0.1:30432/trailcatalog?currentSchema=migration_1_create_sources"
+        "jdbc:postgresql://127.0.0.1:30432/trailcatalog?currentSchema=migration_2_search"
       else -> "jdbc:$envUrl"
     }
     val envUser = System.getenv("DATABASE_USERNAME_PASSWORD")
