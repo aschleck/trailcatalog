@@ -8,11 +8,13 @@ import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
 
 var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024
+private val BYTE_BUFFER = ByteBuffer.allocate(32 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
 
 class MmapPMap<K : Comparable<K>, V>(
     private val maps: List<EncodedInputStream>,
@@ -113,11 +115,13 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
 
       val emitter = object : Emitter2<K, V> {
         override fun emit(a: K, b: V) {
-          val size = valueSerializer.size(b)
-          val bytes = ByteBuffer.allocate(size)
-          valueSerializer.write(b, ByteBufferEncodedOutputStream(bytes))
-          itemsInShard.add(SortKey(a, bytes.array()))
-          shardValuesSize += size
+          valueSerializer.write(b, ByteBufferEncodedOutputStream(BYTE_BUFFER))
+          BYTE_BUFFER.flip()
+          val bytes = ByteArray(BYTE_BUFFER.limit())
+          BYTE_BUFFER.get(bytes)
+          BYTE_BUFFER.clear()
+          itemsInShard.add(SortKey(a, bytes))
+          shardValuesSize += bytes.size
 
           // Check the heap every 50mb.
           if (shardValuesSize - lastHeapCheck > 50 * 1024 * 1024) {

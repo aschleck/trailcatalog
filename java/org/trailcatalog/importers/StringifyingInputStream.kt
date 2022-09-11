@@ -1,6 +1,7 @@
 package org.trailcatalog.importers
 
 import java.io.InputStream
+import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 class StringifyingInputStream<V>(
@@ -64,6 +65,16 @@ class StringifyingInputStream<V>(
 }
 
 val HEX_CHARACTERS = "0123456789abcdef".toCharArray()
+
+fun appendByteBuffer(bytes: ByteBuffer, output: StringBuilder) {
+  output.append("\\x")
+  while (bytes.hasRemaining()) {
+    val b = bytes.get()
+    val i = b.toInt() and 0xff
+    output.append(HEX_CHARACTERS[i / 16])
+    output.append(HEX_CHARACTERS[i % 16])
+  }
+}
 
 fun appendByteArray(bytes: ByteArray, output: StringBuilder) {
   output.append("\\x")

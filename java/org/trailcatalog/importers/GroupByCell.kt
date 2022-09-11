@@ -16,7 +16,7 @@ import java.io.ByteArrayOutputStream
 import kotlin.math.min
 
 private const val CONTAINMENT_CELL_LEVEL = 8
-private const val SNAP_CELL_LEVEL = 22
+private const val SNAP_CELL_LEVEL = 18
 
 data class BoundaryPolygon(val id: Long, val polygon: ByteArray)
 data class TrailPolyline(val id: Long, val polyline: ByteArray)
@@ -60,7 +60,17 @@ class GroupTrailsByCell
   override fun act(
       input: Trail,
       emitter: Emitter2<Long, TrailPolyline>) {
-    val covering = COVERER.getCovering(input.polyline)
+    val cells = ArrayList<S2CellId>()
+    var lastCell = S2CellId(0)
+    for (vertex in input.polyline.vertices()) {
+      val cell = S2CellId.fromPoint(vertex).parent(SNAP_CELL_LEVEL)
+      if (cell != lastCell) {
+        cells.add(cell)
+        lastCell = cell
+      }
+    }
+    val covering = S2CellUnion()
+    covering.initFromCellIds(cells)
     val encoded = ByteArrayOutputStream().also {
       covering.encode(it)
     }
@@ -91,3 +101,4 @@ private fun intersectingContainmentCells(base: S2CellId) = sequence<S2CellId> {
     }
   }
 }
+

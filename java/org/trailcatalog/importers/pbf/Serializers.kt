@@ -1,5 +1,6 @@
 package org.trailcatalog.importers.pbf
 
+import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
 import com.google.protobuf.CodedOutputStream
 import org.trailcatalog.importers.pipeline.collections.Serializer
@@ -17,10 +18,6 @@ fun registerPbfSerializers() {
       return LatLngE7(lat, lng)
     }
 
-    override fun size(v: LatLngE7): Int {
-      return 8
-    }
-
     override fun write(v: LatLngE7, to: EncodedOutputStream) {
       to.writeInt(v.lat)
       to.writeInt(v.lng)
@@ -34,10 +31,6 @@ fun registerPbfSerializers() {
       val lat = from.readInt()
       val lng = from.readInt()
       return Node(id, LatLngE7(lat, lng))
-    }
-
-    override fun size(v: Node): Int {
-      return EncodedOutputStream.varLongSize(v.id) + 8
     }
 
     override fun write(v: Node, to: EncodedOutputStream) {
@@ -59,17 +52,6 @@ fun registerPbfSerializers() {
       return Relation(id, type, nameBytes.decodeToString(), skeleton)
     }
 
-    override fun size(v: Relation): Int {
-      val nameBytes = v.name.encodeToByteArray().size
-      val skeletonBytes = v.skeleton.serializedSize
-      return EncodedOutputStream.varLongSize(v.id) +
-          EncodedOutputStream.varIntSize(v.type) +
-          EncodedOutputStream.varIntSize(nameBytes) +
-          nameBytes +
-          CodedOutputStream.computeUInt32SizeNoTag(skeletonBytes) +
-          skeletonBytes
-    }
-
     override fun write(v: Relation, to: EncodedOutputStream) {
       to.writeVarLong(v.id)
       to.writeVarInt(v.type)
@@ -77,6 +59,17 @@ fun registerPbfSerializers() {
       to.writeVarInt(bytes.size)
       to.write(bytes)
       v.skeleton.writeDelimitedTo(to)
+    }
+  })
+
+  registerSerializer(TypeToken.of(S2Polyline::class.java), object : Serializer<S2Polyline> {
+
+    override fun read(from: EncodedInputStream): S2Polyline {
+      return S2Polyline.decode(from)
+    }
+
+    override fun write(v: S2Polyline, to: EncodedOutputStream) {
+      v.encodeCompact(to)
     }
   })
 
@@ -89,23 +82,8 @@ fun registerPbfSerializers() {
       val nameLength = from.readVarInt()
       val nameBytes = ByteArray(nameLength)
       from.read(nameBytes)
-      val pointsLength = from.readVarInt()
-      val points = ArrayList<LatLngE7>(pointsLength)
-      repeat(pointsLength) {
-        points.add(LatLngE7(from.readInt(), from.readInt()))
-      }
-      return Way(id, version, type, nameBytes.decodeToString(), points)
-    }
-
-    override fun size(v: Way): Int {
-      val nameBytes = v.name.encodeToByteArray().size
-      return EncodedOutputStream.varLongSize(v.id) +
-          EncodedOutputStream.varIntSize(v.version) +
-          EncodedOutputStream.varIntSize(v.type) +
-          EncodedOutputStream.varIntSize(nameBytes) +
-          nameBytes +
-          EncodedOutputStream.varIntSize(v.points.size) +
-          8 * v.points.size
+      val polyline = S2Polyline.decode(from)
+      return Way(id, version, type, nameBytes.decodeToString(), polyline)
     }
 
     override fun write(v: Way, to: EncodedOutputStream) {
@@ -115,11 +93,7 @@ fun registerPbfSerializers() {
       val bytes = v.name.encodeToByteArray()
       to.writeVarInt(bytes.size)
       to.write(bytes)
-      to.writeVarInt(v.points.size)
-      v.points.forEach {
-        to.writeInt(it.lat)
-        to.writeInt(it.lng)
-      }
+      v.polyline.encodeCompact(to)
     }
   })
 
@@ -136,17 +110,6 @@ fun registerPbfSerializers() {
       val nodes = LongArray(nodesLength)
       (0 until nodesLength).forEach { nodes[it] = from.readVarLong() }
       return WaySkeleton(id, version, type, nameBytes.decodeToString(), nodes)
-    }
-
-    override fun size(v: WaySkeleton): Int {
-      val nameBytes = v.name.encodeToByteArray().size
-      return EncodedOutputStream.varLongSize(v.id) +
-          EncodedOutputStream.varIntSize(v.version) +
-          EncodedOutputStream.varIntSize(v.type) +
-          EncodedOutputStream.varIntSize(nameBytes) +
-          nameBytes +
-          EncodedOutputStream.varIntSize(v.nodes.size) +
-          v.nodes.map { EncodedOutputStream.varLongSize(it) }.sum()
     }
 
     override fun write(v: WaySkeleton, to: EncodedOutputStream) {

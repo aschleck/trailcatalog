@@ -53,14 +53,6 @@ fun main(args: Array<String>) {
       return Boundary(id, type, cell, name, polygon)
     }
 
-    override fun size(v: Boundary): Int {
-      return 8 + 4 + 8 +
-          EncodedOutputStream.varIntSize(v.name.length) +
-          v.name.encodeToByteArray().size +
-          EncodedOutputStream.varIntSize(v.s2Polygon.size) +
-          v.s2Polygon.size
-    }
-
     override fun write(v: Boundary, to: EncodedOutputStream) {
       to.writeLong(v.id)
       to.writeInt(v.type)
@@ -79,10 +71,6 @@ fun main(args: Array<String>) {
       val polygon = ByteArray(from.readVarInt())
       from.read(polygon)
       return BoundaryPolygon(id, polygon)
-    }
-
-    override fun size(v: BoundaryPolygon): Int {
-      return 8 + EncodedOutputStream.varIntSize(v.polygon.size) + v.polygon.size
     }
 
     override fun write(v: BoundaryPolygon, to: EncodedOutputStream) {
@@ -113,16 +101,6 @@ fun main(args: Array<String>) {
       return Trail(id, type, name, paths, polyline)
     }
 
-    override fun size(v: Trail): Int {
-      return 8 + 4 +
-          EncodedOutputStream.varIntSize(v.name.length) +
-          v.name.encodeToByteArray().size +
-          EncodedOutputStream.varIntSize(v.paths.size) +
-          8 * v.paths.size +
-          EncodedOutputStream.varIntSize(v.polyline.numVertices()) +
-          4 * v.polyline.numVertices() * 2
-    }
-
     override fun write(v: Trail, to: EncodedOutputStream) {
       to.writeLong(v.relationId)
       to.writeInt(v.type)
@@ -146,10 +124,6 @@ fun main(args: Array<String>) {
       val polyline = ByteArray(from.readVarInt())
       from.read(polyline)
       return TrailPolyline(id, polyline)
-    }
-
-    override fun size(v: TrailPolyline): Int {
-      return 8 + EncodedOutputStream.varIntSize(v.polyline.size) + v.polyline.size
     }
 
     override fun write(v: TrailPolyline, to: EncodedOutputStream) {

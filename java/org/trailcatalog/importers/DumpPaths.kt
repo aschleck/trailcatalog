@@ -3,14 +3,17 @@ package org.trailcatalog.importers
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.zaxxer.hikari.HikariDataSource
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.models.WayCategory.HIGHWAY
 import org.trailcatalog.models.WayCategory.PISTE
 import org.trailcatalog.s2.boundToCell
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+
+private val BYTE_BUFFER = ByteBuffer.allocate(1 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
 
 class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
   : PSink<PMap<Long, Way>>() {
@@ -26,13 +29,13 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
               return@StringifyingInputStream
             }
 
-            val latLngDegrees =
-                ByteBuffer.allocate(2 * 4 * way.points.size).order(ByteOrder.LITTLE_ENDIAN)
             val bound = S2LatLngRect.empty().toBuilder()
-            val asInts = latLngDegrees.asIntBuffer()
-            way.points.forEach {
-              bound.addPoint(S2LatLng.fromE7(it.lat, it.lng))
-              asInts.put(it.lat).put(it.lng)
+            val asInts = BYTE_BUFFER.asIntBuffer()
+            way.polyline.vertices().forEach {
+              val ll = S2LatLng(it)
+              bound.addPoint(ll)
+              val e7 = LatLngE7.fromS2Point(it)
+              asInts.put(e7.lat).put(e7.lng)
             }
 
             // id,epoch,type,cell,lat_lng_degrees,source_way
@@ -44,7 +47,8 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
             csv.append(",")
             csv.append(boundToCell(bound.build()).id())
             csv.append(",")
-            appendByteArray(latLngDegrees.array(), csv)
+            appendByteBuffer(BYTE_BUFFER.flip(), csv)
+            BYTE_BUFFER.clear()
             csv.append(",")
             csv.append(way.id)
             csv.append("\n")

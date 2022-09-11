@@ -17,10 +17,6 @@ val serializers = HashMap<TypeToken<*>, Serializer<*>>().also {
       return from.readInt()
     }
 
-    override fun size(v: Int): Int {
-      return 4
-    }
-
     override fun write(v: Int, to: EncodedOutputStream) {
       to.writeInt(v)
     }
@@ -29,10 +25,6 @@ val serializers = HashMap<TypeToken<*>, Serializer<*>>().also {
   it[TypeToken.of(java.lang.Integer::class.java)] = object : Serializer<Int> {
     override fun read(from: EncodedInputStream): Int {
       return from.readInt()
-    }
-
-    override fun size(v: Int): Int {
-      return 4
     }
 
     override fun write(v: Int, to: EncodedOutputStream) {
@@ -45,10 +37,6 @@ val serializers = HashMap<TypeToken<*>, Serializer<*>>().also {
       return from.readLong()
     }
 
-    override fun size(v: Long): Int {
-      return 8
-    }
-
     override fun write(v: Long, to: EncodedOutputStream) {
       to.writeLong(v)
     }
@@ -57,10 +45,6 @@ val serializers = HashMap<TypeToken<*>, Serializer<*>>().also {
   it[TypeToken.of(java.lang.Long::class.java)] = object : Serializer<Long> {
     override fun read(from: EncodedInputStream): Long {
       return from.readLong()
-    }
-
-    override fun size(v: Long): Int {
-      return 8
     }
 
     override fun write(v: Long, to: EncodedOutputStream) {
@@ -80,14 +64,6 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
           return (0 until length).map { value.read(from) }
         }
 
-        override fun size(v: List<*>): Int {
-          var bytes = EncodedOutputStream.varIntSize(v.size)
-          for (item in v) {
-            bytes += value.size(item)
-          }
-          return bytes
-        }
-
         override fun write(v: List<*>, to: EncodedOutputStream) {
           to.writeVarInt(v.size)
           for (item in v) {
@@ -104,10 +80,6 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
           return Pair(left.read(from), right.read(from))
         }
 
-        override fun size(v: Pair<*, *>): Int {
-          return left.size(v.first) + right.size(v.second)
-        }
-
         override fun write(v: Pair<*, *>, to: EncodedOutputStream) {
           left.write(v.first, to)
           right.write(v.second, to)
@@ -118,11 +90,6 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
       serializers[type] = object : Serializer<MessageLite> {
         override fun read(from: EncodedInputStream): MessageLite {
           return parser.parseDelimitedFrom(from)
-        }
-
-        override fun size(v: MessageLite): Int {
-          val size = v.serializedSize
-          return CodedOutputStream.computeUInt32SizeNoTag(size) + size
         }
 
         override fun write(v: MessageLite, to: EncodedOutputStream) {

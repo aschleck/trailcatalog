@@ -61,11 +61,13 @@ fun polygonToCell(polygon: S2Polygon): S2CellId {
 }
 
 fun polylineToCell(polyline: S2Polyline): S2CellId {
-  val covering =
-    S2RegionCoverer.builder()
-        .setMaxLevel(SimpleS2.HIGHEST_INDEX_LEVEL)
-        .build()
-        .getCovering(polyline)
+  val covering = S2CellUnion()
+  covering.initFromCellIds(ArrayList<S2CellId>().also {
+    for (v in 0 until polyline.numVertices()) {
+      it.add(S2CellId.fromPoint(polyline.vertex(v)).parent(SimpleS2.HIGHEST_INDEX_LEVEL))
+    }
+  })
+
   var containedBy =
     S2CellId.fromPoint(polyline.interpolate(0.5))
         .parent(SimpleS2.HIGHEST_INDEX_LEVEL)

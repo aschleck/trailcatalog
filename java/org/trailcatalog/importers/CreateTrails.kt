@@ -6,7 +6,6 @@ import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
 import org.slf4j.LoggerFactory
-import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.Relation
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
@@ -37,7 +36,7 @@ class CreateTrails
       return
     }
 
-    val mapped = HashMap<Long, List<LatLngE7>>()
+    val mapped = HashMap<Long, S2Polyline>()
     val ordered = flattenWays(geometries[0], mapped, false)
     val orderedArray = if (ordered == null) {
       logger.warn("Unable to orient ${relation.id}")
@@ -83,7 +82,7 @@ class CreateTrails
  */
 private fun flattenWays(
     geometry: RelationGeometry,
-    mapped: MutableMap<Long, List<LatLngE7>>,
+    mapped: MutableMap<Long, S2Polyline>,
     parentFailed: Boolean): List<Long>? {
   val ids = ArrayList<Long>(geometry.membersList.count { it.hasRelation() || it.hasWay() })
   val childRelations = HashMap<Long, List<Long>>()
@@ -104,32 +103,29 @@ private fun flattenWays(
       }
       ids.add(id)
       childRelations[id] = flatChild
-      val childLatLngs = ArrayList<LatLngE7>()
+      val childLatLngs = ArrayList<S2Point>()
       for (i in flatChild.indices) {
         val childChildId = flatChild[i]
         val points = mapped[childChildId.and(1L.inv())]!!
-        if (points.isEmpty()) {
+        if (points.numVertices() == 0) {
           continue
         }
-        val direction = if (childChildId % 2 == 0L) {
-          points
-        } else {
-          points.reversed()
-        }
         val startOffset = if (i == 0) 0 else 1
-        val endOffset = if (i == direction.size - 1) 0 else 1
-        val subset = direction.subList(startOffset, direction.size - endOffset)
-        childLatLngs.addAll(subset)
+        val endOffset = if (i == points.numVertices() - 1) 0 else 1
+        if (childChildId % 2 == 0L) {
+          for (v in startOffset until points.numVertices() - endOffset) {
+            childLatLngs.add(points.vertex(v))
+          }
+        } else {
+          for (v in startOffset until points.numVertices() - endOffset) {
+            childLatLngs.add(points.vertex(points.numVertices() - 1 - v))
+          }
+        }
       }
-      mapped[id] = childLatLngs
+      mapped[id] = S2Polyline(childLatLngs)
     } else if (member.hasWay()) {
       ids.add(2 * member.way.wayId)
-      val raw = member.way.latLngE7List
-      val latLngs = ArrayList<LatLngE7>(member.way.latLngE7Count / 2)
-      for (i in 0 until member.way.latLngE7Count step 2) {
-        latLngs.add(LatLngE7(raw[i], raw[i + 1]))
-      }
-      mapped[2 * member.way.wayId] = latLngs
+      mapped[2 * member.way.wayId] = S2Polyline.decode(member.way.s2Polyline.newInput())
     }
   }
 
@@ -174,7 +170,7 @@ private fun naiveFlattenWays(
 private fun orientPaths(
     trailId: Long,
     ordered: List<Long>,
-    pathPolylines: Map<Long, List<LatLngE7>>): LongArray? {
+    pathPolylines: Map<Long, S2Polyline>): LongArray? {
   val orientedPathIds = LongArray(ordered.size)
   var globallyAligned = true
   if (ordered.size > 2) {
@@ -262,30 +258,21 @@ private fun orientPaths(
 }
 
 private fun checkAligned(
-    firstVertices: List<LatLngE7>,
+    firstVertices: S2Polyline,
     firstReversed: Boolean,
-    secondVertices: List<LatLngE7>,
+    secondVertices: S2Polyline,
     secondReversed: Boolean,
 ): Boolean {
-  val firstLast =
-      if (firstReversed) {
-        firstVertices[0]
-      } else {
-        firstVertices[firstVertices.size - 1]
-      }
+  val firstLast = firstVertices.vertex(if (firstReversed) 0 else firstVertices.numVertices() - 1)
   val secondFirst =
-      if (secondReversed) {
-        secondVertices[secondVertices.size - 1]
-      } else {
-        secondVertices[0]
-      }
+      secondVertices.vertex(if (secondReversed) secondVertices.numVertices() - 1 else 0)
   return firstLast == secondFirst
 }
 
 private fun globallyAlign(
-    trailId: Long, orientedPathIds: LongArray, pathPolylines: Map<Long, List<LatLngE7>>): Boolean {
+    trailId: Long, orientedPathIds: LongArray, pathPolylines: Map<Long, S2Polyline>): Boolean {
   // All the possible places we can start a trail from
-  val starts = ImmutableSetMultimap.Builder<LatLngE7, Long>()
+  val starts = ImmutableSetMultimap.Builder<S2Point, Long>()
   // The count of times a path (forward or reverse) can be used.
   val uses = HashMap<Long, Int>()
 
@@ -294,8 +281,8 @@ private fun globallyAlign(
     val forward = id.and(1L.inv())
     uses[forward] = (uses[forward] ?: 0) + 1
     val polyline = pathPolylines[forward]!!
-    starts.put(polyline[0], forward)
-    starts.put(polyline[polyline.size - 1], id or 1L)
+    starts.put(polyline.vertex(0), forward)
+    starts.put(polyline.vertex(polyline.numVertices() - 1), id or 1L)
   }
   val builtStarts = starts.build()
 
@@ -334,9 +321,9 @@ fun canTracePath(
     trailId: Long,
     start: Long,
     orientedPathIds: LongArray,
-    starts: ImmutableMultimap<LatLngE7, Long>,
+    starts: ImmutableMultimap<S2Point, Long>,
     allowedUses: Map<Long, Int>,
-    pathPolylines: Map<Long, List<LatLngE7>>): Boolean {
+    pathPolylines: Map<Long, S2Polyline>): Boolean {
   val stack = Stack<Pair<Long, Int>>()
   val trail = ArrayList<Long>()
   val actualUses = HashMap(allowedUses.keys.map { it to 0 }.toMap())
@@ -369,9 +356,9 @@ fun canTracePath(
 
     val polyline = pathPolylines[cursor and 1L.inv()]!!
     val end = if ((cursor and 1L) == 0L) {
-      polyline[polyline.size - 1]
+      polyline.vertex(polyline.numVertices() - 1)
     } else {
-      polyline[0]
+      polyline.vertex(0)
     }
     for (candidate in starts[end]) {
       val forward = candidate and 1L.inv()
@@ -394,7 +381,7 @@ fun canTracePath(
 
 private fun pathsToPolyline(
     orientedPathIds: LongArray,
-    pathPolylines: HashMap<Long, List<LatLngE7>>): S2Polyline {
+    pathPolylines: HashMap<Long, S2Polyline>): S2Polyline {
   val polyline = ArrayList<S2Point>()
   for (pathIndex in orientedPathIds.indices) {
     val pathId = orientedPathIds[pathIndex]
@@ -402,12 +389,12 @@ private fun pathsToPolyline(
     val startOffset = if (pathIndex == 0) 0 else 1
     val endOffset = if (pathIndex == orientedPathIds.size - 1) 0 else 1
     if (pathId % 2 == 0L) {
-      for (i in startOffset until path.size - endOffset) {
-        polyline.add(path[i].toS2LatLng().toPoint())
+      for (i in startOffset until path.numVertices() - endOffset) {
+        polyline.add(path.vertex(i))
       }
     } else {
-      for (i in (path.size - 1 - endOffset) downTo startOffset) {
-        polyline.add(path[i].toS2LatLng().toPoint())
+      for (i in (path.numVertices() - 1 - endOffset) downTo startOffset) {
+        polyline.add(path.vertex(i))
       }
     }
   }

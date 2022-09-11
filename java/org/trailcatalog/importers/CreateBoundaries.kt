@@ -5,8 +5,10 @@ import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2PolygonBuilder.Options
+import com.google.common.geometry.S2Polyline
 import com.google.common.geometry.S2Projections
 import com.google.common.reflect.TypeToken
+import java.io.ByteArrayOutputStream
 import org.trailcatalog.importers.pbf.Relation
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
@@ -14,7 +16,6 @@ import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory.BOUNDARY
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.s2.polygonToCell
-import java.io.ByteArrayOutputStream
 
 class CreateBoundaries
   : PTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Boundary>(
@@ -71,9 +72,9 @@ private fun expandIntoPolygon(geometry: RelationGeometry, polygon: S2PolygonBuil
     if (member.hasRelation()) {
       expandIntoPolygon(member.relation, polygon)
     } else if (member.hasWay()) {
-      val latLngs = member.way.latLngE7List
-      for (i in 0 until latLngs.size - 2 step 2) {
-        polygon.addEdge(e7ToS2(latLngs[i], latLngs[i + 1]), e7ToS2(latLngs[i + 2], latLngs[i + 3]))
+      val polyline = S2Polyline.decode(member.way.s2Polyline.newInput())
+      for (i in 0 until polyline.numVertices() - 1) {
+        polygon.addEdge(polyline.vertex(i), polyline.vertex(i + 1))
       }
     }
   }
