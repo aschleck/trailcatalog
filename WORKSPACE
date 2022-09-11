@@ -96,17 +96,17 @@ rules_proto_dependencies()
 
 rules_proto_toolchains()
 
-RULES_KOTLIN_VERSION = "1.6.0-RC-1"
+RULES_KOTLIN_VERSION = "v1.6.0"
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 http_archive(
     name = "io_bazel_rules_kotlin",
-    sha256 = "f1a4053eae0ea381147f5056bb51e396c5c494c7f8d50d0dee4cc2f9d5c701b0",
+    sha256 = "a57591404423a52bd6b18ebba7979e8cd2243534736c5c94d35c89718ea38f94",
     urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/%s/rules_kotlin_release.tgz" % RULES_KOTLIN_VERSION],
 )
 
-load("@io_bazel_rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories", "versions")
+load("@io_bazel_rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories")
 
 kotlin_repositories()
 
@@ -123,7 +123,7 @@ maven_install(
         "com.google.geometry:s2-geometry:2.0.0",
         "com.google.guava:guava:31.1-jre",
         "com.google.guava:guava-gwt:31.1-jre",
-        "com.google.javascript:closure-compiler-unshaded:jar:v20220104",
+        "com.google.javascript:closure-compiler-unshaded:jar:v20220905",
         "com.google.truth:truth:1.1.3",
         "com.google.truth.extensions:truth-java8-extension:1.1.3",
         "com.squareup.okhttp3:okhttp:4.9.0",
@@ -146,9 +146,9 @@ maven_install(
 
 http_archive(
     name = "io_bazel_rules_closure",
-    sha256 = "486754baa3659663c96fd788b299946df9344bd86d43945710eaa649b68f48e6",
-    strip_prefix = "rules_closure-b5ca4055703da019b345a659a4f57a62c11c780a",
-    urls = ["https://github.com/bazelbuild/rules_closure/archive/b5ca4055703da019b345a659a4f57a62c11c780a.zip"],
+    sha256 = "c4b3c84c908891a91a7ad4f17cb685167042795f72d0d5b7ba364bbb7850cc98",
+    strip_prefix = "rules_closure-d01ed25111e00e4e488db6a9213965df81b5b1ef",
+    urls = ["https://github.com/bazelbuild/rules_closure/archive/d01ed25111e00e4e488db6a9213965df81b5b1ef.zip"],
 )
 
 load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies", "rules_closure_toolchains")
@@ -170,13 +170,13 @@ load_j2cl_repo_deps()
 
 load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external", "setup_j2cl_workspace")
 
-setup_j2cl_workspace()
+setup_j2cl_workspace(omit_kotlin = True)
 
 http_archive(
     name = "com_google_elemental2",
-    sha256 = "1bff8487e2a0425c7a80e9f793dc8e7c11ed1ca69750ccab2c0b3196dedd40e2",
-    strip_prefix = "elemental2-7572ef9de9406c19998b51ae829c0fc91a551bd0",
-    url = "https://github.com/google/elemental2/archive/7572ef9de9406c19998b51ae829c0fc91a551bd0.zip",
+    sha256 = "35c1900143297a7ef96f8ea1e38c687e5592ea69e973b15030e01c9f8c839d7c",
+    strip_prefix = "elemental2-d5a43d684efb6acc5e8e805df2db7e5050f7dcea",
+    url = "https://github.com/google/elemental2/archive/d5a43d684efb6acc5e8e805df2db7e5050f7dcea.zip",
 )
 
 load("@com_google_elemental2//build_defs:repository.bzl", "load_elemental2_repo_deps")
