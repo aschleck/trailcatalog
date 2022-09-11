@@ -2,8 +2,8 @@ import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
-import { boundingLlz } from './common/math';
-import { emptyS2Polygon, LatLngZoom } from './common/types';
+import { screenLlz } from './common/math';
+import { emptyS2Polygon, LatLng } from './common/types';
 import { MapDataService } from './data/map_data_service';
 import { MapController, MAP_MOVED } from './map/events';
 import { Boundary, Trail } from './models/types';
@@ -13,7 +13,6 @@ import { DataResponses, fetchData } from './data';
 import { State as VState, ViewportController } from './viewport_controller';
 
 interface Args {
-  fitted: LatLngZoom|undefined;
   trailId: bigint;
 }
 
@@ -37,7 +36,7 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
   }
 
   private readonly data: MapDataService;
-  private fitted: [S2LatLng, number]|undefined;
+  private center: S2LatLng|undefined;
 
   constructor(response: Response<TrailOverviewController>) {
     super(response);
@@ -46,11 +45,8 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
     const id = response.args.trailId;
 
     this.data.setPins({trail: id}).then(trail => {
-      const llz = boundingLlz(trail.bound);
-      this.fitted = [
-        S2LatLng.fromDegrees(llz.lat, llz.lng),
-        llz.zoom,
-      ];
+      const llz = screenLlz(trail.bound, new DOMRect());
+      this.center = S2LatLng.fromDegrees(llz.lat, llz.lng);
 
       this.updateState({
         ...this.state,
@@ -79,8 +75,8 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
 
     super.onMove(e);
 
-    if (!this.state.showZoomToFit && this.fitted) {
-      if (!center.equals(this.fitted[0]) || zoom != this.fitted[1]) {
+    if (!this.state.showZoomToFit && this.center) {
+      if (!center.equals(this.center)) {
         this.updateState({
           ...this.state,
           showZoomToFit: true,
@@ -96,7 +92,7 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
 
   zoomToFit(): void {
     if (this.state.trail) {
-      this.mapController?.setCamera(boundingLlz(this.state.trail.bound));
+      this.mapController?.setCamera(this.state.trail.bound);
     }
 
     this.updateState({

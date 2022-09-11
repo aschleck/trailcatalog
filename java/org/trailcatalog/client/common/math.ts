@@ -6,7 +6,7 @@ export function metersToMiles(meters: number): number {
   return meters * 0.00062137119224;
 }
 
-export function boundingLlz(bound: LatLngRect): LatLngZoom {
+export function screenLlz(bound: LatLngRect, screen: DOMRect): LatLngZoom {
   const dLL = [
     bound.high[0] - bound.low[0],
     bound.high[1] - bound.low[1],
@@ -15,7 +15,14 @@ export function boundingLlz(bound: LatLngRect): LatLngZoom {
     bound.low[0] + dLL[0] / 2,
     bound.low[1] + dLL[1] / 2,
   ];
-  const zoom = Math.log(512 / Math.max(dLL[0], dLL[1])) / Math.log(2);
+  // Ideal fit: screen / (256 * 2^zoom) = dLL[0] / 360
+  // => 2^zoom = screen / 256 / (dLL[0] / 360)
+  // => zoom = log(screen / 256 / (dLL[0] / 360)) / log(2)
+  const zoom =
+      Math.min(
+              Math.log(screen.width / 256 / (dLL[1] / 360)),
+              Math.log(screen.height / 256 / (dLL[0] / 180)))
+          / Math.log(2);
   return {lat: center[0], lng: center[1], zoom};
 }
 

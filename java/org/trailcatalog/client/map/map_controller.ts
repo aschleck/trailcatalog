@@ -4,7 +4,8 @@ import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 
 import { DPI } from '../common/dpi';
-import { LatLngZoom, Vec2 } from '../common/types';
+import { screenLlz } from '../common/math';
+import { LatLngRect, LatLngZoom, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
 import { Path, Trail } from '../models/types';
@@ -20,11 +21,7 @@ import { TextRenderer } from './rendering/text_renderer';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
 
 interface Args {
-  camera: {
-    lat: number;
-    lng: number;
-    zoom: number;
-  };
+  camera: LatLngRect|LatLngZoom;
   overlay: {
     polygon?: S2Polygon;
   };
@@ -62,8 +59,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
   constructor(response: Response<MapController>) {
     super(response);
-    const cameraArgs = response.args.camera;
-    this.camera = new Camera(cameraArgs.lat, cameraArgs.lng, cameraArgs.zoom);
+
+    // We defer setting real coordinates until after we check our size below
+    this.camera = new Camera(0, 0, -1);
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.notifyDataChanged();
@@ -100,6 +98,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
     this.registerListener(window, 'resize', () => this.resize());
     this.resize();
+    this.setCamera(response.args.camera);
 
     // We track pointer events on document because it allows us to drag the mouse off-screen while
     // panning.
@@ -156,7 +155,15 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     return this.mapData.setActive(trail, state);
   }
 
-  setCamera(llz: LatLngZoom): void {
+  setCamera(camera: LatLngRect|LatLngZoom): void {
+    let llz;
+    if (isLatLngRect(camera)) {
+      llz = screenLlz(camera, this.screenArea);
+      // -0.2 zoom to give a little breathing room
+      llz.zoom -= 0.2;
+    } else {
+      llz = camera;
+    }
     this.camera.set(llz.lat, llz.lng, llz.zoom);
     this.idle();
   }
@@ -407,4 +414,8 @@ function distance2(a: PointerEvent, b: PointerEvent): number {
   const x = a.clientX - b.clientX;
   const y = a.clientY - b.clientY;
   return x * x + y * y;
+}
+
+function isLatLngRect(v: LatLngRect|LatLngZoom): v is LatLngRect {
+  return 'brand' in v;
 }

@@ -2,7 +2,7 @@ import * as corgi from 'js/corgi';
 import { OutlinedButton } from 'js/dino/button';
 
 import { LittleEndianView } from './common/little_endian_view';
-import { boundingLlz, metersToMiles } from './common/math';
+import { metersToMiles } from './common/math';
 import { s2LatLngRectToTc } from './common/types';
 import { initialData } from './data';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
@@ -87,7 +87,7 @@ export function BoundaryOverviewElement({boundaryId}: {
       {state.boundary
           ? <>
             <ViewportLayoutElement
-                camera={boundingLlz(s2LatLngRectToTc(state.boundary.polygon.getRectBound()))}
+                camera={s2LatLngRectToTc(state.boundary.polygon.getRectBound())}
                 overlay={{
                   content: trailDetails,
                   polygon: state.boundary.polygon,

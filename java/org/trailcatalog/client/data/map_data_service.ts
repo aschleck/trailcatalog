@@ -209,9 +209,11 @@ export class MapDataService extends Service<EmptyDeps> {
       this.loadRegularDetail(id, buffer);
     }
 
+    // It's possible that we load the pinned data from a detail cell before the pin cell returns,
+    // so let's just do it here just for fun.
     for (const [trailId, {resolve}] of this.pinnedMissingTrails) {
       const trail = this.trails.get(trailId);
-      if (trail) {
+      if (trail && this.trailsInDetails.has(trail)) {
         resolve(trail);
         this.pinnedMissingTrails.delete(trailId);
       }
@@ -229,6 +231,8 @@ export class MapDataService extends Service<EmptyDeps> {
     // artifacting (because when the user is zoomed in they will load the real paths spatially.)
     //
     // The exception is that we do fill in existing data.
+    //
+    // The other exception is that we will resolve pinned promises so we can pass bounds. Ew.
     this.detailCells.set(PIN_CELL_ID, buffer);
 
     const data = new LittleEndianView(buffer);
@@ -244,20 +248,34 @@ export class MapDataService extends Service<EmptyDeps> {
     for (let i = 0; i < trailCount; ++i) {
       const id = data.getBigInt64();
       const nameLength = data.getInt32();
-      data.skip(nameLength + 4);
+      const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
+      const type = data.getInt32();
       const pathCount = data.getInt32();
       data.align(8);
       const paths = [...data.sliceBigInt64(pathCount)];
       const boundLow = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const boundHigh = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const bound = {low: boundLow, high: boundHigh, brand: 'LatLngRect'} as const;
-      data.skip(2 * 4 + 8);
+      const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const lengthMeters = data.getFloat64();
       const existing = this.trails.get(id);
+      let trail;
       if (existing) {
         if (existing.paths.length === 0) {
           existing.paths.push(...paths);
         }
         existing.bound = bound;
+        trail = existing;
+      } else {
+        trail = constructTrail(id, name, type, paths, bound, marker, lengthMeters);
+      }
+
+      // If we don't do this here, then when the user loads the page zoomed out detail will never
+      // load and then we will never do this elsewhere.
+      const missing = this.pinnedMissingTrails.get(id);
+      if (missing) {
+        missing.resolve(trail);
+        this.pinnedMissingTrails.delete(id);
       }
     }
   }

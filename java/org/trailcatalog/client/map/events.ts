@@ -1,7 +1,7 @@
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { declareEvent } from 'js/corgi/events';
 
-import { LatLngZoom, Vec2 } from '../common/types';
+import { LatLngRect, LatLngZoom, Vec2 } from '../common/types';
 import { Path, Trail } from '../models/types';
 
 export interface MapController {
@@ -9,7 +9,7 @@ export interface MapController {
   listTrailsInViewport(): Trail[];
   listTrailsOnPath(path: Path): Trail[];
   setActive(trail: Trail, state: boolean): void;
-  setCamera(llz: LatLngZoom): void;
+  setCamera(camera: LatLngRect|LatLngZoom): void;
   setHover(trail: Trail, state: boolean): void;
 }
 

@@ -1,12 +1,12 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
 
-import { LatLngZoom } from '../common/types';
+import { LatLngRect, LatLngZoom } from '../common/types';
 
 import { MapController } from './map_controller';
 
 export const MapElement = ({camera, overlay}: {
-  camera: LatLngZoom;
+  camera: LatLngRect|LatLngZoom;
   overlay?: {
     polygon?: S2Polygon;
   };

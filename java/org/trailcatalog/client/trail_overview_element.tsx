@@ -2,7 +2,7 @@ import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 
 import { LittleEndianView } from './common/little_endian_view';
-import { boundingLlz, degreesE7ToLatLng, metersToMiles, projectLatLng } from './common/math';
+import { degreesE7ToLatLng, metersToMiles, projectLatLng } from './common/math';
 import { LatLng, LatLngRect } from './common/types';
 import { initialData } from './data';
 import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
@@ -60,16 +60,11 @@ export function TrailOverviewElement({trailId}: {
     trailDetails = <></>;
   }
 
-  let bound;
-  if (state.trail) {
-    bound = boundingLlz(state.trail.bound);
-  }
-
   return <>
     <div
         js={corgi.bind({
           controller: TrailOverviewController,
-          args: {fitted: bound, trailId: parsedId},
+          args: {trailId: parsedId},
           events: {
             corgi: [
               [DATA_CHANGED, 'onDataChange'],
@@ -83,11 +78,10 @@ export function TrailOverviewElement({trailId}: {
         })}
         className="flex flex-col h-full"
     >
-      {state.trail && bound
+      {state.trail
           ? <>
             <ViewportLayoutElement
-                // Probably we should just pass the bound in directly instead of doing this, alas
-                camera={bound}
+                camera={state.trail.bound}
                 overlay={{content: trailDetails}}
                 sidebarContent={<TrailSidebar state={state} />}
             />

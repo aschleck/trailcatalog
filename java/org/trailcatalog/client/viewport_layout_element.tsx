@@ -3,6 +3,7 @@ import * as corgi from 'js/corgi';
 import { FabricIcon } from 'js/dino/fabric';
 
 import { currentUrl } from './common/ssr_aware';
+import { LatLngRect, LatLngZoom } from './common/types';
 import { MAP_MOVED } from './map/events';
 import { MapElement } from './map/map_element';
 
@@ -11,11 +12,7 @@ import { SearchElement } from './search_element';
 import { SidebarController, State } from './sidebar_controller';
 
 export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
-  camera?: {
-    lat: number;
-    lng: number;
-    zoom: number;
-  };
+  camera?: LatLngRect|LatLngZoom;
   overlay?: {
     content?: string;
     polygon?: S2Polygon;
@@ -29,9 +26,17 @@ export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
   }
 
   const url = currentUrl();
-  const lat = floatCoalesce(url.searchParams.get('lat'), camera?.lat, 46.859369);
-  const lng = floatCoalesce(url.searchParams.get('lng'), camera?.lng, -121.747888);
-  const zoom = floatCoalesce(url.searchParams.get('zoom'), camera?.zoom, 12);
+  if (
+      !camera
+          || url.searchParams.has('lat')
+          || url.searchParams.has('lng')
+          || url.searchParams.has('zoom')) {
+    camera = {
+      lat: floatCoalesce(url.searchParams.get('lat'), 46.859369),
+      lng: floatCoalesce(url.searchParams.get('lng'), -121.747888),
+      zoom: floatCoalesce(url.searchParams.get('zoom'), 12),
+    };
+  }
 
   return <>
     <div className="flex flex-col h-full">
@@ -98,7 +103,7 @@ export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
               className="h-full"
           >
             <MapElement
-                camera={{lat, lng, zoom}}
+                camera={camera}
                 overlay={overlay}
             />
           </div>
