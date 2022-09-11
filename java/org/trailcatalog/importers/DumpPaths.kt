@@ -31,12 +31,14 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
 
             val bound = S2LatLngRect.empty().toBuilder()
             val asInts = BYTE_BUFFER.asIntBuffer()
-            way.polyline.vertices().forEach {
+            for (i in 0 until way.polyline.numVertices()) {
+              val it = way.polyline.vertex(i)
               val ll = S2LatLng(it)
               bound.addPoint(ll)
               val e7 = LatLngE7.fromS2Point(it)
               asInts.put(e7.lat).put(e7.lng)
             }
+            BYTE_BUFFER.limit(4 * asInts.position()) // ? can we do this better?
 
             // id,epoch,type,cell,lat_lng_degrees,source_way
             csv.append(2 * way.id)
@@ -47,7 +49,7 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
             csv.append(",")
             csv.append(boundToCell(bound.build()).id())
             csv.append(",")
-            appendByteBuffer(BYTE_BUFFER.flip(), csv)
+            appendByteBuffer(BYTE_BUFFER, csv)
             BYTE_BUFFER.clear()
             csv.append(",")
             csv.append(way.id)
