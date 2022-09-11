@@ -1,6 +1,5 @@
 package org.trailcatalog.importers.pbf
 
-import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
 import com.google.protobuf.CodedOutputStream
 import org.trailcatalog.importers.pipeline.collections.Serializer
@@ -82,8 +81,12 @@ fun registerPbfSerializers() {
       val nameLength = from.readVarInt()
       val nameBytes = ByteArray(nameLength)
       from.read(nameBytes)
-      val polyline = S2Polyline.decode(from)
-      return Way(id, version, type, nameBytes.decodeToString(), polyline)
+      val pointsLength = from.readVarInt()
+      val points = ArrayList<LatLngE7>(pointsLength)
+      repeat(pointsLength) {
+        points.add(LatLngE7(from.readInt(), from.readInt()))
+      }
+      return Way(id, version, type, nameBytes.decodeToString(), points)
     }
 
     override fun write(v: Way, to: EncodedOutputStream) {
@@ -93,9 +96,11 @@ fun registerPbfSerializers() {
       val bytes = v.name.encodeToByteArray()
       to.writeVarInt(bytes.size)
       to.write(bytes)
-      // encodeCompact is about 3x slower for 0.5x the disk, in practice seems better to just
-      // encode.
-      v.polyline.encode(to)
+      to.writeVarInt(v.points.size)
+      v.points.forEach {
+        to.writeInt(it.lat)
+        to.writeInt(it.lng)
+      }
     }
   })
 

@@ -101,10 +101,13 @@ class PbfBlockReader(
         else -> coded.skipField(tag)
       }
     }
-    return block.build()
+    return block.buildPartial()
   }
 
   private fun parseGroup(coded: CodedInputStream): PrimitiveGroup {
+    val length = coded.readRawVarint32()
+    val oldLimit = coded.pushLimit(length)
+
     val group = PrimitiveGroup.newBuilder()
     var done = false
     while (!done) {
@@ -125,6 +128,8 @@ class PbfBlockReader(
         coded.skipField(tag)
       }
     }
-    return group.build()
+
+    coded.popLimit(oldLimit)
+    return group.buildPartial()
   }
 }
