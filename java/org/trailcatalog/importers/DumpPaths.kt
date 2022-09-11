@@ -31,11 +31,8 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
 
             val bound = S2LatLngRect.empty().toBuilder()
             val asInts = BYTE_BUFFER.asIntBuffer()
-            for (i in 0 until way.polyline.numVertices()) {
-              val it = way.polyline.vertex(i)
-              val ll = S2LatLng(it)
-              bound.addPoint(ll)
-              val e7 = LatLngE7.fromS2Point(it)
+            for (e7 in way.points) {
+              bound.addPoint(e7.toS2LatLng())
               asInts.put(e7.lat).put(e7.lng)
             }
             BYTE_BUFFER.limit(4 * asInts.position()) // ? can we do this better?

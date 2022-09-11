@@ -61,17 +61,6 @@ fun registerPbfSerializers() {
     }
   })
 
-  registerSerializer(TypeToken.of(S2Polyline::class.java), object : Serializer<S2Polyline> {
-
-    override fun read(from: EncodedInputStream): S2Polyline {
-      return S2Polyline.decode(from)
-    }
-
-    override fun write(v: S2Polyline, to: EncodedOutputStream) {
-      v.encodeCompact(to)
-    }
-  })
-
   registerSerializer(TypeToken.of(Way::class.java), object : Serializer<Way> {
 
     override fun read(from: EncodedInputStream): Way {

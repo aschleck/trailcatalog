@@ -1,14 +1,9 @@
 package org.trailcatalog.importers.pbf
 
-import com.google.common.geometry.S2CellId
-import com.google.common.geometry.S2Point
-import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.PMapTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
-
-private const val NODE_SNAP_CELL_LEVEL = 24
 
 class MakeWayGeometries
   : PMapTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Node>>>, Long, Way>(
@@ -28,17 +23,11 @@ class MakeWayGeometries
       }
     }
 
-    val geometry = ArrayList<S2Point>()
-    var lastCell = S2CellId(0)
+    val geometry = ArrayList<LatLngE7>()
     for (node in way.nodes) {
-      val cell =
-          S2CellId.fromLatLng((mapped[node] ?: return).toS2LatLng()).parent(NODE_SNAP_CELL_LEVEL)
-      if (cell != lastCell) {
-        geometry.add(cell.toPoint())
-        lastCell = cell
-      }
+      geometry.add(mapped[node] ?: return)
     }
-    emitter.emit(way.id, Way(way.id, way.version, way.type, way.name, S2Polyline(geometry)))
+    emitter.emit(way.id, Way(way.id, way.version, way.type, way.name, geometry))
   }
 
   override fun estimateRatio(): Double {
