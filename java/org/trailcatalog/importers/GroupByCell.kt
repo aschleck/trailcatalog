@@ -62,6 +62,10 @@ class GroupTrailsByCell
       emitter: Emitter2<Long, TrailPolyline>) {
     val cells = ArrayList<S2CellId>()
     var lastCell = S2CellId(0)
+    // A good question to ask: is this safe? We might skip over cells if the points are very spread
+    // apart. We luck out here because we are looking for full containment later in the pipeline, ie
+    // the entirety of the polyline must be contained for containment. Since there can be no points
+    // in the polyline outside the bounds of this S2CellUnion, it works out.
     for (vertex in input.polyline.vertices()) {
       val cell = S2CellId.fromPoint(vertex).parent(SNAP_CELL_LEVEL)
       if (cell != lastCell) {

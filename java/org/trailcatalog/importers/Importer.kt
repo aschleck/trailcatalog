@@ -204,7 +204,7 @@ fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
       pipeline.cat(
           pbfs.map { p ->
             pipeline
-                .read(PbfBlockReader(p))
+                .read(PbfBlockReader(p, readNodes = true, readRelations = false, readWays = false))
                 .then(ExtractNodes())
           })
       .groupBy("GroupNodes") { it.id }
@@ -212,7 +212,7 @@ fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
       pipeline.cat(
           pbfs.map { p ->
             pipeline
-                .read(PbfBlockReader(p))
+                .read(PbfBlockReader(p, readNodes = false, readRelations = false, readWays = true))
                 .then(ExtractWays())
           })
       .groupBy("GroupWays") { it.id }
@@ -229,7 +229,7 @@ fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
       pipeline.cat(
           pbfs.map { p ->
             pipeline
-                .read(PbfBlockReader(p))
+                .read(PbfBlockReader(p, readNodes = false, readRelations = true, readWays = false))
                 .then(ExtractRelations())
           })
           .groupBy("GroupRelations") { it.id }

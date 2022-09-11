@@ -93,7 +93,9 @@ fun registerPbfSerializers() {
       val bytes = v.name.encodeToByteArray()
       to.writeVarInt(bytes.size)
       to.write(bytes)
-      v.polyline.encodeCompact(to)
+      // encodeCompact is about 3x slower for 0.5x the disk, in practice seems better to just
+      // encode.
+      v.polyline.encode(to)
     }
   })
 
