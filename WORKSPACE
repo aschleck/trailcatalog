@@ -19,9 +19,9 @@ go_register_toolchains(version = "1.17.6")
 
 http_archive(
     name = "build_bazel_rules_nodejs",
-    sha256 = "2ef61a8d4a80ea244ddc8ef82641ea111f8e7d37acbf9e5af9d23aeb21f32e6f",
-    strip_prefix = "rules_nodejs-1074231da3bd390a3ae600f8892da05bef3b6939",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/archive/1074231da3bd390a3ae600f8892da05bef3b6939.zip"],
+    sha256 = "d378df503b8441457851d252dc39b1ed1d8f78abf2247d69abf21b410a256bc6",
+    strip_prefix = "rules_nodejs-ad70bee8bfd142348853d5cd91dfc04c3acbd4cb",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/archive/ad70bee8bfd142348853d5cd91dfc04c3acbd4cb.zip"],
 )
 
 load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
@@ -61,9 +61,9 @@ http_archive(
     url = "https://github.com/bazelbuild/stardoc/archive/refs/tags/0.5.0.zip",
 )
 
-RULES_JVM_EXTERNAL_VERSION = "6c325c279ab6906265d0ae2b4dd1871df3cad37f"
+RULES_JVM_EXTERNAL_VERSION = "d6884e66411033794a8f7137864e07143eb6814f"
 
-RULES_JVM_EXTERNAL_SHA = "fb71346651d9d3b1cd025d79e2d202c18e723f6953174e432e1f4e210beb8780"
+RULES_JVM_EXTERNAL_SHA = "0c21581c8251aff1e894e6998eca8fbc869886ff801f11fb2ff4463dce10c0d9"
 
 http_archive(
     name = "rules_jvm_external",

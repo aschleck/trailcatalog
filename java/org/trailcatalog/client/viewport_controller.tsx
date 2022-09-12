@@ -20,7 +20,7 @@ export interface State {
   selectedTrails: Trail[];
 }
 
-export class ViewportController<A, D extends Deps, S extends State>
+export class ViewportController<A extends {}, D extends Deps, S extends State>
     extends Controller<A, D, HTMLDivElement, S> {
 
   protected readonly views: ViewsService;

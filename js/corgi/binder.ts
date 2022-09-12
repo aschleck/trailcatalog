@@ -31,7 +31,7 @@ interface PropertyKeyToHandlerMap<C> {
 type StateTuple<S> = [S, (newState: S) => void];
 
 interface BoundController<
-        A,
+        A extends {},
         D extends ControllerDepsMethod,
         E extends HTMLElement,
         S,
@@ -90,7 +90,7 @@ export function applyUpdate(
 }
 
 export function bind<
-    A,
+    A extends {},
     D extends ControllerDepsMethod,
     E extends HTMLElement,
     S,
