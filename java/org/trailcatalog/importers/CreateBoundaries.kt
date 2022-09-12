@@ -53,7 +53,7 @@ class CreateBoundaries
 }
 
 private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
-  val unsnapped = S2PolygonBuilder(Options.UNDIRECTED_XOR).let {
+  val unsnapped = S2PolygonBuilder(Options.UNDIRECTED_UNION).let {
     expandIntoPolygon(geometry, it)
     it.assemblePolygon()
   }
