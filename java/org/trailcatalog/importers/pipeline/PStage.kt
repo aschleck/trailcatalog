@@ -4,7 +4,7 @@ import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 
 abstract class PStage<I, O> {
 
-  abstract fun act(input: I): DisposableSupplier<O>
+  abstract fun act(input: I, dependants: Int): DisposableSupplier<O>
 
   protected open fun estimateCount(): Long {
     return 0

@@ -16,7 +16,9 @@ import org.trailcatalog.proto.WayGeometry
 class ExtractRelationGeometriesWithWays
   : PStage<PMap<Long, Relation>, PMap<Long, RelationGeometry>>() {
 
-  override fun act(input: PMap<Long, Relation>): DisposableSupplier<PMap<Long, RelationGeometry>> {
+  override fun act(
+      input: PMap<Long, Relation>,
+      dependants: Int): DisposableSupplier<PMap<Long, RelationGeometry>> {
     return createPMap(
         "ExtractRelationGeometriesWithWays",
         TypeToken.of(Long::class.java),

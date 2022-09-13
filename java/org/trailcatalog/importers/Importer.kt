@@ -218,11 +218,11 @@ fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
       .groupBy("GroupWays") { it.id }
   val waysToPoints =
       pipeline
-          .join2Oneshot("JoinNodesForWayPoints", nodes, ways.then(ExtractNodeWayPairs()))
+          .join2("JoinNodesForWayPoints", nodes, ways.then(ExtractNodeWayPairs()))
           .then(GatherWayNodes())
   val waysWithGeometry =
       pipeline
-          .join2Oneshot("JoinWaysForGeometry", ways, waysToPoints)
+          .join2("JoinWaysForGeometry", ways, waysToPoints)
           .then(MakeWayGeometries())
   waysWithGeometry.write(DumpPaths(epoch, hikari))
   val relations =
@@ -236,14 +236,14 @@ fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
   val relationsToGeometriesWithWays = relations.then(ExtractRelationGeometriesWithWays())
   val relationsToWayGeometries =
       pipeline
-          .join2Oneshot(
+          .join2(
               "JoinOnWaysForRelationGeomeries",
               relationsToGeometriesWithWays.then(ExtractWayRelationPairs()),
               waysWithGeometry)
           .then(GatherRelationWays())
   val relationsGeometryById =
       pipeline
-          .join2Oneshot(
+          .join2(
               "JoinRelationsForGeometry", relationsToGeometriesWithWays, relationsToWayGeometries)
           .then(MakeRelationGeometries())
   val relationsWithGeometry =

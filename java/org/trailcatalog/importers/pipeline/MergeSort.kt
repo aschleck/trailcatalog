@@ -14,7 +14,9 @@ class MergeSort<V : Comparable<V>>(private val type: TypeToken<V>)
     return 1.0
   }
 
-  override fun act(input: List<PSortedList<V>>): DisposableSupplier<PSortedList<V>> {
+  override fun act(
+      input: List<PSortedList<V>>,
+      dependants: Int): DisposableSupplier<PSortedList<V>> {
     val estimate = (estimateRatio() * input.sumOf { it.estimatedByteSize() }).toLong()
     return createPSortedList(type, estimate) { emitter ->
       merge(input, emitter)

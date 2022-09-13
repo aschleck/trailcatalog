@@ -15,7 +15,7 @@ abstract class PMapTransformer<I, K : Comparable<K>, V : Any>(
 
   abstract fun act(input: I, emitter: Emitter2<K, V>)
 
-  override fun act(input: PCollection<I>): DisposableSupplier<PMap<K, V>> {
+  override fun act(input: PCollection<I>, dependants: Int): DisposableSupplier<PMap<K, V>> {
     val estimate =
         (estimateRatio() * input.estimatedByteSize()).toLong()
             + estimateCount() * estimateElementBytes()

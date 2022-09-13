@@ -13,7 +13,7 @@ abstract class PSortedTransformer<I, O : Comparable<O>>(
 
   abstract fun act(input: I, emitter: Emitter<O>)
 
-  override fun act(input: PCollection<I>): DisposableSupplier<PSortedList<O>> {
+  override fun act(input: PCollection<I>, dependants: Int): DisposableSupplier<PSortedList<O>> {
     val estimate =
         (estimateRatio() * input.estimatedByteSize()).toLong()
             + estimateCount() * estimateElementBytes()

@@ -36,7 +36,7 @@ abstract class BoundStage<I, O>(
   fun invoke(): O {
     val existing = result.get()
     val computed = if (existing == null) {
-      result.set(this.stage.act(getInput()))
+      result.set(this.stage.act(getInput(), this.handles.get()))
       result.get()
     } else {
       existing

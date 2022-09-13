@@ -7,7 +7,7 @@ abstract class PSource<T : Any> : PStage<Void?, PCollection<T>>() {
 
   abstract fun read(): Sequence<T>
 
-  final override fun act(input: Void?): DisposableSupplier<PCollection<T>> {
+  final override fun act(input: Void?, dependants: Int): DisposableSupplier<PCollection<T>> {
     return DisposableSupplier({}) {
       val iterator = read().iterator()
 

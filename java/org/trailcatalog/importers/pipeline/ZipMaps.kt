@@ -22,7 +22,16 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
     return 1.0
   }
 
-  override fun act(input: Pair<PMap<K, V1>, PMap<K, V2>>):
+  override fun act(input: Pair<PMap<K, V1>, PMap<K, V2>>, dependants: Int):
+      DisposableSupplier<PMap<K, Pair<List<V1>, List<V2>>>> {
+    return if (dependants > 1) {
+      actMultishot(input)
+    } else {
+      actOneshot(input)
+    }
+  }
+
+  private fun actMultishot(input: Pair<PMap<K, V1>, PMap<K, V2>>):
       DisposableSupplier<PMap<K, Pair<List<V1>, List<V2>>>> {
     val estimate =
         (estimateRatio() * (input.first.estimatedByteSize() + input.second.estimatedByteSize()))
@@ -80,18 +89,8 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
     left.close()
     right.close()
   }
-}
 
-class ZipMaps2Oneshot<K : Comparable<K>, V1 : Any, V2 : Any>(
-    private val context: String,
-)
-  : PStage<Pair<PMap<K, V1>, PMap<K, V2>>, PMap<K, Pair<List<V1>, List<V2>>>>() {
-
-  override fun estimateRatio(): Double {
-    return 1.0
-  }
-
-  override fun act(input: Pair<PMap<K, V1>, PMap<K, V2>>):
+  private fun actOneshot(input: Pair<PMap<K, V1>, PMap<K, V2>>):
       DisposableSupplier<PMap<K, Pair<List<V1>, List<V2>>>> {
     val left = input.first
     val right = input.second

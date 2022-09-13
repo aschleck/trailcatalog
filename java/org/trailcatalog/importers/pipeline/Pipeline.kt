@@ -78,27 +78,6 @@ class Pipeline {
     }
   }
 
-  inline fun <reified K : Comparable<K>, reified V1 : Any, reified V2 : Any> join2Oneshot(
-      context: String,
-      first: BoundStage<*, PMap<K, V1>>,
-      second: BoundStage<*, PMap<K, V2>>):
-      BoundStage<Pair<PMap<K, V1>, PMap<K, V2>>, PMap<K, Pair<List<V1>, List<V2>>>> {
-    return object : BoundStage<Pair<PMap<K, V1>, PMap<K, V2>>, PMap<K, Pair<List<V1>, List<V2>>>>(
-        this,
-        ZipMaps2Oneshot(context),
-    ) {
-
-      override fun getInput(): Pair<PMap<K, V1>, PMap<K, V2>> {
-        return Pair(first.invoke(), second.invoke())
-      }
-
-      override fun traceInputs() {
-        first.trace()
-        second.trace()
-      }
-    }
-  }
-
   inline fun <reified T : Comparable<T>> merge(list: List<BoundStage<*, PSortedList<T>>>):
       BoundStage<List<PSortedList<T>>, PSortedList<T>> {
     return object : BoundStage<List<PSortedList<T>>, PSortedList<T>>(
