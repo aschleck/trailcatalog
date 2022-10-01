@@ -3,21 +3,6 @@ workspace(name = "trailcatalog")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
-    name = "io_bazel_rules_go",
-    sha256 = "d6b2513456fe2229811da7eb67a444be7785f5323c6708b38d851d2b51e54d83",
-    urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.30.0/rules_go-v0.30.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.30.0/rules_go-v0.30.0.zip",
-    ],
-)
-
-load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
-
-go_rules_dependencies()
-
-go_register_toolchains(version = "1.17.6")
-
-http_archive(
     name = "build_bazel_rules_nodejs",
     sha256 = "d378df503b8441457851d252dc39b1ed1d8f78abf2247d69abf21b410a256bc6",
     strip_prefix = "rules_nodejs-ad70bee8bfd142348853d5cd91dfc04c3acbd4cb",
@@ -45,20 +30,14 @@ load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "
 
 esbuild_repositories(npm_repository = "npm")
 
+# TODO: remove after https://github.com/bazelbuild/rules_nodejs/pull/3414
 http_archive(
     name = "io_bazel_rules_webtesting",
-    sha256 = "843d93b49cb404152114b3e08f98584f2ca1b102fc5a432918ae8eee6309963d",
-    strip_prefix = "rules_webtesting-e9cf17123068b1123c68219edf9b274bf057b9cc",
+    sha256 = "5dc7796a03172f4949c734a4a9c685cc3c11511ffa49036ca8f979c06d177d9f",
+    strip_prefix = "rules_webtesting-c241fb5b46f2d1c408f3446b9f2ada773acb6716",
     urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/e9cf17123068b1123c68219edf9b274bf057b9cc.zip",
+        "https://github.com/bazelbuild/rules_webtesting/archive/c241fb5b46f2d1c408f3446b9f2ada773acb6716.zip",
     ],
-)
-
-http_archive(
-    name = "io_bazel_stardoc",
-    sha256 = "c0b2f66b220e6741dffaaa49e709490026dbb5519d335628621f4f9266e79dd8",
-    strip_prefix = "stardoc-0.5.0",
-    url = "https://github.com/bazelbuild/stardoc/archive/refs/tags/0.5.0.zip",
 )
 
 RULES_JVM_EXTERNAL_VERSION = "d6884e66411033794a8f7137864e07143eb6814f"
