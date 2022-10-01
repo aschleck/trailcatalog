@@ -5,6 +5,8 @@
 .DS_Store
 ._.DS_Store
 .ijwb
+__pycache__
 bazel-*
 full_pkg.tar
 node_modules
+venv

@@ -1,0 +1,6 @@
+name: trailcatalog
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: Trails and paths oh my
