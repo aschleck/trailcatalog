@@ -19,7 +19,6 @@ pkg_tar(
     srcs = [
         ":api_server_deploy.jar",
         ":frontend_pkg",
-        ":importers_pkg",
         ":static_data",
     ],
     stamp = 1,
@@ -68,14 +67,6 @@ kt_jvm_library(
         "@maven//:io_javalin_javalin",
         "@maven//:org_slf4j_slf4j_simple",
     ],
-)
-
-pkg_files(
-    name = "importers_pkg",
-    srcs = [
-        "//java/org/trailcatalog/importers:importer_deploy.jar",
-    ],
-    prefix = "importers",
 )
 
 kt_jvm_library(

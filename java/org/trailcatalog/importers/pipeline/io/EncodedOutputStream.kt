@@ -3,7 +3,7 @@ package org.trailcatalog.importers.pipeline.io
 import java.io.OutputStream
 
 var BUFFER_SIZE = 8 * 1024 * 1024
-var FLUSH_THRESHOLD = 64 * 1024
+var FLUSH_THRESHOLD = 4 * 1024 * 1024
 
 data class Extents(val start: Long, val length: Long)
 

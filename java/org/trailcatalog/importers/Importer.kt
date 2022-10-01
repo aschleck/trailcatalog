@@ -135,6 +135,7 @@ fun main(args: Array<String>) {
 
   var i = 0
   var epoch = -1
+  var pbfPath = ""
   while (i < args.size) {
     when (args[i]) {
       "--block_size" -> {
@@ -153,6 +154,10 @@ fun main(args: Array<String>) {
         HEAP_DUMP_THRESHOLD = args[i + 1].toInt()
         i += 1
       }
+      "--pbf_path" -> {
+        pbfPath = args[i + 1]
+        i += 1
+      }
       else -> {
         throw RuntimeException("Unknown argument ${args[i]}")
       }
@@ -161,11 +166,12 @@ fun main(args: Array<String>) {
   }
 
   createConnectionSource(syncCommit = false).use { hikari ->
-    processPbfs(fetchSources(epoch, hikari), hikari)
+    processPbfs(fetchSources(epoch, pbfPath, hikari), hikari)
   }
 }
 
-fun fetchSources(maybeEpoch: Int, hikari: HikariDataSource): Pair<Int, List<Path>> {
+fun fetchSources(
+    maybeEpoch: Int, maybePbfPath: String, hikari: HikariDataSource): Pair<Int, List<Path>> {
   val sources = ArrayList<String>()
   hikari.connection.use { connection ->
     connection.prepareStatement("SELECT path FROM geofabrik_sources").executeQuery().use {
@@ -188,7 +194,10 @@ fun fetchSources(maybeEpoch: Int, hikari: HikariDataSource): Pair<Int, List<Path
   val paths = ArrayList<Path>()
   for (source in sources) {
     val pbfUrl = "https://download.geofabrik.de/${source}-${epoch}.osm.pbf".toHttpUrl()
-    val pbf = Path.of("pbfs", pbfUrl.pathSegments[pbfUrl.pathSize - 1])
+    val pbf =
+        Path.of(
+            if (maybePbfPath.isNotEmpty()) maybePbfPath else "pbfs",
+            pbfUrl.pathSegments[pbfUrl.pathSize - 1])
     download(pbfUrl, pbf)
     paths.add(pbf)
   }

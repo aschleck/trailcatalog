@@ -7,7 +7,9 @@ import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Polygon
 import com.google.common.io.LittleEndianDataOutputStream
 import io.javalin.Javalin
+import io.javalin.core.util.Header
 import io.javalin.http.Context
+import io.javalin.http.HttpCode
 import org.trailcatalog.s2.SimpleS2
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -300,6 +302,13 @@ private fun fetchData(ctx: Context) {
 
 private fun fetchMeta(ctx: Context) {
   ctx.contentType("application/octet-stream")
+  ("\"${epochTracker.epoch}\"").let { etag ->
+    ctx.header("ETag", etag)
+    if (etag == ctx.header(Header.IF_NONE_MATCH)) {
+      ctx.status(HttpCode.NOT_MODIFIED)
+      return@fetchMeta
+    }
+  }
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
   val boundary = try {
@@ -329,6 +338,13 @@ private fun fetchMeta(ctx: Context) {
 
 private fun fetchDetail(ctx: Context) {
   ctx.contentType("application/octet-stream")
+  ("\"${epochTracker.epoch}\"").let { etag ->
+    ctx.header("ETag", etag)
+    if (etag == ctx.header(Header.IF_NONE_MATCH)) {
+      ctx.status(HttpCode.NOT_MODIFIED)
+      return@fetchDetail
+    }
+  }
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
   val boundary = try {
@@ -395,6 +411,13 @@ private fun fetchDetail(ctx: Context) {
 
 private fun fetchDataPacked(ctx: Context) {
   ctx.contentType("application/octet-stream")
+  ("\"${epochTracker.epoch}\"").let { etag ->
+    ctx.header("ETag", etag)
+    if (etag == ctx.header(Header.IF_NONE_MATCH)) {
+      ctx.status(HttpCode.NOT_MODIFIED)
+      return@fetchDataPacked
+    }
+  }
 
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyAsInputStream())
