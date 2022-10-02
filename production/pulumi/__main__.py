@@ -94,7 +94,9 @@ projects.IAMBinding(
 
 importer = compute.InstanceTemplate(
     "importer",
+    name="importer",
     machine_type="n2-standard-2",
+    opts=ResourceOptions(delete_before_replace=True),
     disks=[
         compute.InstanceTemplateDiskArgs(
             boot=True,
@@ -199,8 +201,10 @@ runcmd:
     ],
     scheduling=compute.InstanceTemplateSchedulingArgs(
         automatic_restart=False,
+        instance_termination_action="DELETE",
         on_host_maintenance="TERMINATE",
         preemptible=True,
+        provisioning_model="SPOT",
     ),
     service_account=compute.InstanceTemplateServiceAccountArgs(
         email=importer_account.email,
