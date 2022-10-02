@@ -1,5 +1,6 @@
 import * as corgi from 'js/corgi';
 
+import { formatCount } from './common/formatters';
 import { Vec2 } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
@@ -45,8 +46,9 @@ export function OverviewElement(props: {}, state: State|undefined, updateState: 
   }
 
   const trailSidebar = <>
-    <header className="font-bold font-header text-xl px-3 pt-2">
-      Nearby trails
+    <header className="border-b px-3 py-4">
+      <span className="font-bold text-xl">{formatCount(nearby.length)}</span>
+      {' '}trails found
     </header>
     {filteredTrails.map(trail =>
         <TrailListItem

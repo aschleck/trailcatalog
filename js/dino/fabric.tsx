@@ -5,6 +5,7 @@ import './fabric-icons-inline.css';
 // Fabric's official definitions are missing icons, so we just do it ourselves.
 const FABRIC_ICON_CODES = [
   'BulletedList',
+  'ChevronRight',
   'Info',
   'Info12',
   'List',
@@ -18,6 +19,7 @@ E8FD
 E946
 E55A
 E721
+E76C
 EA37
 F649
  */

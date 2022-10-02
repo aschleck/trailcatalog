@@ -1,8 +1,10 @@
 import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
+import { FabricIcon } from 'js/dino/fabric';
 
+import { formatDistance } from './common/formatters';
 import { LittleEndianView } from './common/little_endian_view';
-import { degreesE7ToLatLng, metersToMiles, projectLatLng } from './common/math';
+import { degreesE7ToLatLng, projectLatLng } from './common/math';
 import { LatLng, LatLngRect } from './common/types';
 import { initialData } from './data';
 import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
@@ -101,56 +103,65 @@ function TrailSidebar({state}: {state: State}) {
   const containingLabels = containing ? <BoundaryCrumbs boundaries={containing} /> : <></>;
 
   const nearby = state.nearbyTrails?.length;
-  const nearbyLabel = nearby !== undefined ? `Nearby trails (${nearby})` : 'Nearby trails';
   const trail = state.trail;
+  const distance = formatDistance(trail.lengthMeters);
   return <>
-    <div className="my-4 space-y-3">
-      <aside className="mx-3">
-        <OutlinedButton
-            icon="BulletedList"
-            label={nearbyLabel}
+    <div className="flex flex-col min-h-full">
+      <aside className="border-b mx-3 py-4">
+        <a
+            className="font-bold no-underline"
+            href="/"
             unboundEvents={{
               click: 'viewNearbyTrails',
             }}
-        />
+        >
+          <FabricIcon name="List" />
+          {' '}
+          <span className="align-top">
+            {nearby !== undefined ? `${nearby} nearby trails` : 'Nearby trails'}
+          </span>
+        </a>
       </aside>
-      <aside className="mx-3 text-tc-gray-300">
-        {containingLabels}
+      <section className="border-b grow mx-3 py-4">
+        <header className="flex font-bold justify-between pb-1 text-2xl">
+          <div>{trail.name}</div>
+          <div>
+            {state.showZoomToFit
+                ?
+                    <OutlinedButton
+                        dense={true}
+                        icon="ZoomToFit"
+                        unboundEvents={{
+                          click: 'zoomToFit',
+                        }}
+                    />
+                : <></>
+            }
+          </div>
+        </header>
+        <aside className="pb-4 text-sm text-tc-gray-400">
+          {containingLabels}
+        </aside>
+        <section>
+          <span className="font-bold text-2xl">
+            {distance.value}
+          </span>
+          {' '}
+          <span className="text-sm text-tc-gray-400">
+            {distance.unit}
+          </span>
+        </section>
+      </section>
+      <aside className="mx-3 py-4">
+        <section className="text-tc-gray-300">
+          Relation ID:{' '}
+          <a
+              title="View relation in OSM"
+              href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
+              target="_blank"
+          >{trail.sourceRelation}</a>
+        </section>
       </aside>
-      <div className="border-b-[1px] border-tc-gray-600" />
-      <header className="flex font-bold justify-between mx-3 text-xl">
-        <div>{trail.name}</div>
-        <div>
-          {state.showZoomToFit
-              ?
-                  <OutlinedButton
-                      dense={true}
-                      icon="ZoomToFit"
-                      unboundEvents={{
-                        click: 'zoomToFit',
-                      }}
-                  />
-              : <></>
-          }
-        </div>
-      </header>
-      <section className="mx-3 text-tc-gray-300">
-        Relation ID:{' '}
-        <a
-            title="View relation in OSM"
-            href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
-            target="_blank"
-        >{trail.sourceRelation}</a>
-      </section>
-      <section className="mx-3">
-        <span className="font-bold text-2xl">
-          {metersToMiles(trail.lengthMeters).toFixed(1)}
-        </span>
-        {' '}
-        <span className="text-sm text-tc-gray-400">
-          miles <FlatButton icon="Info12" title="Something important" />
-        </span>
-      </section>
     </div>
   </>;
 }

@@ -16,6 +16,9 @@ global.window = {
     initialData: (key: InitialDataKey) => {
       return requestContext.get('initialData')(key);
     },
+    language: function() {
+      return requestContext.get('language');
+    },
   },
   location: {
     search: '',
@@ -31,6 +34,11 @@ const server = fastify({
 server.register(fastifyRequestContextPlugin);
 
 server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
+  requestContext.set(
+      'language',
+      (request.headers['accept-language'] ?? 'en-US')
+          .split(';')[0]
+          .split(',')[0]);
   requestContext.set('url', `https://trailcatalog.org${request.url}`);
 
   // TODO(april): such a janky way to check for 404.

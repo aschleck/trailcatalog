@@ -13,6 +13,7 @@ declare global {
     SERVER_SIDE_RENDER?: {
       currentUrl(): string;
       initialData<K extends InitialDataKey>(key: K): object|undefined;
+      language(): string;
     };
   }
 }
@@ -37,3 +38,8 @@ export function initialData<K extends InitialDataKey>(key: K): object|undefined 
 export function isServerSide(): boolean {
   return !!window.SERVER_SIDE_RENDER;
 }
+
+export function getLanguage(): string {
+  return window.SERVER_SIDE_RENDER?.language() ?? window.navigator.language;
+}
+
