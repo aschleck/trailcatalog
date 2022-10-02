@@ -142,7 +142,7 @@ write_files:
         --rm \\
         --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
         --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
-        --env JAVA_TOOL_OPTIONS="-Xmx7g" \\
+        --env JAVA_TOOL_OPTIONS="-Xmx6800m" \\
         --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
         us-west1-docker.pkg.dev/trailcatalog/containers/importer \\
         --block_size 4194304 \\
