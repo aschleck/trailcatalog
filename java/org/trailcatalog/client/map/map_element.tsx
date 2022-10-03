@@ -2,11 +2,13 @@ import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
 
 import { LatLngRect, LatLngZoom } from '../common/types';
+import { Filters } from './layers/map_data';
 
 import { MapController } from './map_controller';
 
-export const MapElement = ({camera, overlay}: {
+export const MapElement = ({camera, filters, overlay}: {
   camera: LatLngRect|LatLngZoom;
+  filters?: Filters;
   overlay?: {
     polygon?: S2Polygon;
   };
@@ -15,7 +17,11 @@ export const MapElement = ({camera, overlay}: {
     <div
         js={corgi.bind({
           controller: MapController,
-          args: {camera, overlay: overlay ?? {}},
+          args: {
+            camera,
+            filters: filters ?? {},
+            overlay: overlay ?? {},
+          },
           events: {
             render: 'wakeup',
           },
@@ -24,7 +30,7 @@ export const MapElement = ({camera, overlay}: {
       <canvas className="h-full w-full" />
       <div className="
           absolute
-          bg-white-translucent
+          bg-white-opaque-160
           bottom-0
           p-0.5
           pointer-events-none

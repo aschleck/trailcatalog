@@ -11,8 +11,18 @@ import { LocationUrlController } from './location_url_controller';
 import { SearchElement } from './search_element';
 import { SidebarController, State } from './sidebar_controller';
 
-export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
+export function ViewportLayoutElement({
+  bannerContent,
+  camera,
+  filters,
+  overlay,
+  sidebarContent,
+}: {
+  bannerContent?: string;
   camera?: LatLngRect|LatLngZoom;
+  filters?: {
+    trail?: (id: bigint) => boolean;
+  };
   overlay?: {
     content?: string;
     polygon?: S2Polygon;
@@ -42,7 +52,7 @@ export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
     <div className="flex flex-col h-full">
       <div className="
           align-middle
-          bg-tc-gray-200
+          bg-tc-gray-100
           flex
           gap-4
           items-center
@@ -82,6 +92,7 @@ export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
           </a>
         </div>
       </div>
+      {bannerContent ?? ''}
       <div className="flex grow overflow-hidden relative">
         <div className={
             (state.open ? "" : "hidden md:block ")
@@ -104,6 +115,7 @@ export function ViewportLayoutElement({camera, overlay, sidebarContent}: {
           >
             <MapElement
                 camera={camera}
+                filters={filters}
                 overlay={overlay}
             />
           </div>

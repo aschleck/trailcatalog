@@ -28,7 +28,7 @@ export function SearchElement(
           icon="Search"
           placeholder="Search trails or destinations"
           unboundEvents={{
-            input: 'search',
+            keyup: 'search',
           }}
       />
       {

@@ -6,6 +6,7 @@ import { isServerSide } from './common/ssr_aware';
 import { BoundaryOverviewElement } from './boundary_overview_element';
 import { OverviewElement } from './overview_element';
 import { RouteController, State } from './route_controller';
+import { SearchResultsOverviewElement } from './search_results_overview_element';
 import { TrailOverviewElement } from './trail_overview_element';
 
 import './app.css';
@@ -24,6 +25,8 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
     route = <BoundaryOverviewElement boundaryId={state.active.boundary} />;
   } else if (state.active.kind === 'global_overview') {
     route = <OverviewElement />;
+  } else if (state.active.kind === 'search_results_overview') {
+    route = <SearchResultsOverviewElement />;
   } else if (state.active.kind === 'trail_overview') {
     route = <TrailOverviewElement trailId={state.active.trail} />;
   } else {

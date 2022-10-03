@@ -5,6 +5,9 @@ import './fabric-icons-inline.css';
 // Fabric's official definitions are missing icons, so we just do it ourselves.
 const FABRIC_ICON_CODES = [
   'BulletedList',
+  'CalculatorMultiply',
+  'Checkbox',
+  'CheckboxComposite',
   'ChevronRight',
   'Info',
   'Info12',
@@ -16,6 +19,9 @@ const FABRIC_ICON_CODES = [
 /**
  * A copyable list for use in the https://uifabricicons.azurewebsites.net/ tool:
 E8FD
+E947
+E739
+E73A
 E946
 E55A
 E721

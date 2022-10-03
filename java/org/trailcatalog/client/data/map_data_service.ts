@@ -11,10 +11,6 @@ import { Path, Trail } from '../models/types';
 import { PIN_CELL_ID } from '../workers/data_constants';
 import { FetcherCommand, Viewport } from '../workers/data_fetcher';
 
-interface Filter {
-  boundary?: number;
-}
-
 interface Listener {
   loadMetadata(trails: Iterable<Trail>): void;
   loadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void;
@@ -84,13 +80,8 @@ export class MapDataService extends Service<EmptyDeps> {
     };
   }
 
-  setListener(listener: Listener, filter?: Filter): void {
+  setListener(listener: Listener): void {
     this.listener = listener;
-    this.fetcher.postMessage({
-      kind: 'sfr',
-      ...filter,
-    });
-
     this.listener.loadMetadata(this.trailsInMetadata);
     this.listener.loadDetail(this.paths.values(), this.trailsInDetails);
   }

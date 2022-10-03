@@ -311,15 +311,9 @@ private fun fetchMeta(ctx: Context) {
   }
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
-  val boundary = try {
-    ctx.queryParam("boundary")?.toLong()
-  } catch (e: NumberFormatException) {
-    throw IllegalArgumentException("Invalid boundary")
-  }
 
   val trails =
-      fetchTrails(
-          cell, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL, /* includePaths= */ false, boundary)
+      fetchTrails(cell, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL, /* includePaths= */ false)
   val bytes = AlignableByteArrayOutputStream()
   val output = LittleEndianDataOutputStream(bytes)
 
@@ -347,11 +341,6 @@ private fun fetchDetail(ctx: Context) {
   }
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
-  val boundary = try {
-    ctx.queryParam("boundary")?.toLong()
-  } catch (e: NumberFormatException) {
-    throw IllegalArgumentException("Invalid boundary")
-  }
 
   // Does this still need to be a hashmap? Why?
   val paths = HashMap<Long, WirePath>()
@@ -401,7 +390,7 @@ private fun fetchDetail(ctx: Context) {
     }
   }
 
-  val trails = fetchTrails(cell, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL, /* includePaths= */ true, boundary)
+  val trails = fetchTrails(cell, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL, /* includePaths= */ true)
   val bytes = AlignableByteArrayOutputStream()
   val output = LittleEndianDataOutputStream(bytes)
   writeDetailPaths(paths, bytes, output)
@@ -524,7 +513,7 @@ private fun writeDetailTrails(
   }
 }
 
-private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boundary: Long?): List<WireTrail> {
+private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean): List<WireTrail> {
   val trails = ArrayList<WireTrail>()
   connectionSource.connection.use {
     val query = if (cell.level() >= bottom) {
@@ -538,11 +527,9 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
               + "marker_degrees_e7, "
               + "length_meters "
               + "FROM trails t "
-              + (if (boundary != null) "JOIN trails_in_boundaries tib ON t.id = tib.trail_id " else "")
               + "WHERE "
               + "((cell >= ? AND cell <= ?) OR (cell >= ? AND cell <= ?)) "
-              + "AND t.epoch = ?"
-              + (if (boundary != null) "AND tib.boundary_id = ?" else "")).apply {
+              + "AND t.epoch = ?").apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
         setLong(1, min.id())
@@ -550,9 +537,6 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
         setLong(3, min.id() + Long.MIN_VALUE)
         setLong(4, max.id() + Long.MIN_VALUE)
         setInt(5, epochTracker.epoch)
-        if (boundary != null) {
-          setLong(6, boundary)
-        }
       }
     } else {
       it.prepareStatement(
@@ -565,16 +549,11 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean, boun
               + "marker_degrees_e7, "
               + "length_meters "
               + "FROM trails t "
-              + (if (boundary != null) "JOIN trails_in_boundaries tib ON t.id = tib.trail_id " else "")
               + "WHERE "
               + "t.cell = ? "
-              + "AND t.epoch = ? "
-              + (if (boundary != null) "AND tib.boundary_id = ?" else "")).apply {
+              + "AND t.epoch = ? ").apply {
         setLong(1, cell.id())
         setInt(2, epochTracker.epoch)
-        if (boundary != null) {
-          setLong(3, boundary)
-        }
       }
     }
     val results = query.executeQuery()

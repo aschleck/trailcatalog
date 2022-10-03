@@ -8,15 +8,24 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        'black-opaque': {
+          20: '#00000014',
+        },
         'highlight': '#ffe600',
         'tc-gray': {
-          200: '#222222',
+          100: '#222222',
+          200: '#363636',
           300: '#3a3a3a',
           400: '#737a80',
           600: '#e2e2e2',
           700: '#f3f3f3',
         },
-        'white-translucent': '#ffffffa0',
+        'tc-green': {
+          700: '#9fe26b',
+        },
+        'white-opaque': {
+          160: '#ffffffa0',
+        },
       },
       fontFamily: {
         'header': ['Barlow', ...defaultTheme.fontFamily.sans],

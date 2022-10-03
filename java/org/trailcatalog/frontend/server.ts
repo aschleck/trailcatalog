@@ -21,7 +21,7 @@ global.window = {
     },
   },
   location: {
-    search: '',
+    search: 'hardcoded-do-not-use',
   },
 } as any;
 

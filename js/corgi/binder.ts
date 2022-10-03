@@ -19,6 +19,8 @@ interface PropertyKeyToHandlerMap<C> {
     EventSpec<unknown>,
     AMethodOnWithParameters<C, [CustomEvent<unknown>]>,
   ]>;
+  keydown: AMethodOnWithParameters<C, [CustomEvent<KeyboardEvent>]>,
+  keyup: AMethodOnWithParameters<C, [CustomEvent<KeyboardEvent>]>,
   // This is wrong, it could also just be Event, but also I don't care
   input: AMethodOnWithParameters<C, [CustomEvent<InputEvent>]>,
   mousedown: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
@@ -82,8 +84,9 @@ export function applyUpdate(
   }
 
   from.args = to.args;
-  if (from.instance) {
-    from.instance.then(i => {
+  const spec = elementsToControllerSpecs.get(root);
+  if (spec?.instance) {
+    spec.instance.then(i => {
       i.updateArgs(to.args);
     });
   }

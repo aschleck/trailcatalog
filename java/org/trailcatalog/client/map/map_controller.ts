@@ -10,7 +10,7 @@ import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
 import { Path, Trail } from '../models/types';
 import { Layer } from './layers/layer';
-import { MapData } from './layers/map_data';
+import { Filters, MapData } from './layers/map_data';
 import { OverlayData } from './layers/overlay_data';
 import { TileData } from './layers/tile_data';
 import { Camera } from './models/camera';
@@ -22,6 +22,7 @@ import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './eve
 
 interface Args {
   camera: LatLngRect|LatLngZoom;
+  filters: Filters;
   overlay: {
     polygon?: S2Polygon;
   };
@@ -81,7 +82,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
         new MapData(
             this.camera,
             response.deps.services.mapData,
-            {},
+            response.args.filters,
             this.textRenderer);
     this.layers = [
       this.mapData,
@@ -134,6 +135,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
   updateArgs(newArgs: Args): void {
     this.setCamera(newArgs.camera);
+    this.mapData.setFilters(newArgs.filters);
   }
 
   getTrail(id: bigint): Trail|undefined {

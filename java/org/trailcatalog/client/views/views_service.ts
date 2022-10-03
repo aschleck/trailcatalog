@@ -1,4 +1,4 @@
-import { checkExists } from 'js/common/asserts';
+import { checkExists, exists } from 'js/common/asserts';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { Service, ServiceResponse } from 'js/corgi/service';
 
@@ -13,16 +13,21 @@ interface GlobalOverview {
   kind: 'global_overview';
 }
 
+interface SearchResultsOverview {
+  kind: 'search_results_overview';
+}
+
 interface TrailOverview {
   kind: 'trail_overview';
   trail: string;
 }
 
-export type Route = BoundaryOverview|GlobalOverview|TrailOverview;
+export type Route = BoundaryOverview|GlobalOverview|SearchResultsOverview|TrailOverview;
 
 const routes: {[k in Route['kind']]: RegExp} = {
   'boundary_overview': /^\/boundary\/(?<boundary>\d+)$/,
   'global_overview': /^\/$/,
+  'search_results_overview': /^\/search$/,
   'trail_overview': /^\/trail\/(?<trail>\d+)$/,
 };
 
@@ -87,6 +92,19 @@ export class ViewsService extends Service<Deps> {
     } else {
       this.history.goTo('/');
     }
+  }
+
+  showSearchResults({boundary, camera, query}: {
+    boundary?: bigint,
+    camera?: {lat: number, lng: number, zoom: number},
+    query: string,
+  }): void {
+    const filters = [
+      boundary ? `boundary=${boundary}` : undefined,
+      camera ? `lat=${camera.lat}&lng=${camera.lng}&zoom=${camera.zoom}` : undefined,
+      `query=${encodeURIComponent(query)}`,
+    ].filter(exists);
+    this.history.goTo(`/search?${filters.join('&')}`);
   }
 
   showTrail(id: bigint): void {

@@ -18,16 +18,16 @@ import { DETAIL_ZOOM_THRESHOLD, PIN_CELL_ID } from '../../workers/data_constants
 
 import { Layer } from './layer';
 
+export interface Filters {
+  trail?: (id: bigint) => boolean;
+}
+
 const Z_PATH = 1;
 const Z_RAISED_PATH = 2;
 const Z_TRAIL_MARKER = 3;
 const Z_RAISED_TRAIL_MARKER = 4;
 const PATH_RADIUS_PX = 1;
 const RAISED_PATH_RADIUS_PX = 4;
-
-interface Filter {
-  boundary?: number;
-}
 
 interface PathHandle {
   readonly entity: Path;
@@ -64,14 +64,14 @@ export class MapData extends Layer {
   constructor(
       private readonly camera: Camera,
       private readonly dataService: MapDataService,
-      filter: Filter,
+      private filters: Filters,
       private readonly textRenderer: TextRenderer,
   ) {
     super();
     this.metadataBounds = worldBounds();
     this.detailBounds = worldBounds();
 
-    this.dataService.setListener(this, filter);
+    this.dataService.setListener(this);
     this.registerDisposer(() => {
       this.dataService.clearListener();
     });
@@ -129,6 +129,10 @@ export class MapData extends Layer {
         const pathHandle = handle as PathHandle;
         d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
       } else if (handle.entity instanceof Trail) {
+        if (this.filters.trail && !this.filters.trail(handle.entity.id)) {
+          continue;
+        }
+
         const trailHandle = handle as TrailHandle;
         const p = trailHandle.markerPx;
         const bound =
@@ -171,6 +175,10 @@ export class MapData extends Layer {
 
   setActive(entity: Path|Trail, state: boolean): void {
     this.setColor(entity, this.active, state);
+  }
+
+  setFilters(filters: Filters): void {
+    this.filters = filters;
   }
 
   setHover(entity: Path|Trail, state: boolean): void {
@@ -263,6 +271,11 @@ export class MapData extends Layer {
         const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
         const markerPx = projectLatLng(marker);
         const lengthMeters = data.getFloat64();
+
+        if (this.filters.trail && !this.filters.trail(id)) {
+          continue;
+        }
+
         const active = this.active.has(id);
         const hover = this.hover.has(id);
         const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
@@ -315,6 +328,10 @@ export class MapData extends Layer {
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const markerPx = projectLatLng(marker);
       const lengthMeters = data.getFloat64();
+
+      if (this.filters.trail && !this.filters.trail(id)) {
+        continue;
+      }
 
       const active = this.active.has(id);
       const hover = this.hover.has(id);

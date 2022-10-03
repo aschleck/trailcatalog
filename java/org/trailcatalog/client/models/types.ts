@@ -42,3 +42,12 @@ export class Trail {
   }
 }
 
+export class TrailSearchResult {
+  constructor(
+      readonly id: bigint,
+      readonly name: string,
+      readonly marker: LatLng,
+      readonly lengthMeters: number,
+  ) {}
+}
+

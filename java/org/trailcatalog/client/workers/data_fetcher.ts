@@ -8,11 +8,6 @@ import { S2CellNumber } from '../common/types';
 import { DETAIL_ZOOM_THRESHOLD, PIN_CELL_ID } from './data_constants';
 import { FetchThrottler } from './fetch_throttler';
 
-export interface SetFilterRequest {
-  kind: 'sfr';
-  boundary?: number;
-}
-
 export interface SetPinsRequest {
   kind: 'spr';
   trail?: bigint;
@@ -29,7 +24,7 @@ export interface Viewport {
   zoom: number;
 }
 
-type Request = SetFilterRequest|SetPinsRequest|UpdateViewportRequest;
+type Request = SetPinsRequest|UpdateViewportRequest;
 
 export interface LoadCellDetailCommand {
   type: 'lcd';
@@ -57,7 +52,6 @@ class DataFetcher {
   private readonly detail: Set<S2CellNumber>;
   private readonly detailInFlight: Map<S2CellNumber, AbortController>;
   private readonly throttler: FetchThrottler;
-  private filter: string;
 
   constructor(
       private readonly mail:
@@ -67,7 +61,6 @@ class DataFetcher {
     this.detail = new Set();
     this.detailInFlight = new Map();
     this.throttler = new FetchThrottler();
-    this.filter = filterToQuery({kind: 'sfr'});
   }
 
   flush(): void {
@@ -79,14 +72,6 @@ class DataFetcher {
     this.metadataInFlight.clear();
     this.detail.clear();
     this.detailInFlight.clear();
-  }
-
-  setFilter(filter: SetFilterRequest): void {
-    const newFilter = filterToQuery(filter);
-    if (newFilter !== this.filter) {
-      this.filter = newFilter;
-      this.flush();
-    }
   }
 
   setPins(pins: SetPinsRequest): void {
@@ -151,7 +136,7 @@ class DataFetcher {
       const abort = new AbortController();
       this.metadataInFlight.set(id, abort);
 
-      this.throttler.fetch(`/api/fetch_metadata/${token}${this.filter}`, { signal: abort.signal })
+      this.throttler.fetch(`/api/fetch_metadata/${token}`, { signal: abort.signal })
           .then(response => {
             if (response.ok) {
               return response.arrayBuffer();
@@ -192,7 +177,7 @@ class DataFetcher {
         const abort = new AbortController();
         this.detailInFlight.set(id, abort);
 
-        this.throttler.fetch(`/api/fetch_detail/${token}${this.filter}`, { signal: abort.signal })
+        this.throttler.fetch(`/api/fetch_detail/${token}`, { signal: abort.signal })
             .then(response => {
               if (response.ok) {
                 return response.arrayBuffer();
@@ -259,9 +244,7 @@ class DataFetcher {
 const fetcher = new DataFetcher((self as any).postMessage.bind(self));
 self.onmessage = e => {
   const request = e.data as Request;
-  if (request.kind === 'sfr') {
-    fetcher.setFilter(request);
-  } else if (request.kind === 'spr') {
+  if (request.kind === 'spr') {
     fetcher.setPins(request);
   } else if (request.kind === 'uvr') {
     const viewport = request.viewport;
@@ -274,10 +257,3 @@ self.onmessage = e => {
   }
 };
 
-function filterToQuery(filter: SetFilterRequest): string {
-  if (filter.boundary) {
-    return `?boundary=${filter.boundary}`;
-  } else {
-    return '';
-  }
-}
