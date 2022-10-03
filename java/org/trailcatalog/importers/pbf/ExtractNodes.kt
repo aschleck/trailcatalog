@@ -25,7 +25,9 @@ class ExtractNodes : PTransformer<PrimitiveBlock, Node>(TypeToken.of(Node::class
 
         val latDegrees = (input.latOffset + input.granularity * denseLat) * NANO
         val lngDegrees = (input.lonOffset + input.granularity * denseLon) * NANO
-        emitter.emit(Node(denseId, LatLngE7(latDegrees.toIntE7(), lngDegrees.toIntE7())))
+        if (lngDegrees < -17.627133 || lngDegrees > 50.963726) {
+          emitter.emit(Node(denseId, LatLngE7(latDegrees.toIntE7(), lngDegrees.toIntE7())))
+        }
       }
     }
   }

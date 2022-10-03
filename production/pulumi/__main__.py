@@ -1,5 +1,5 @@
 from pulumi import Output, ResourceOptions
-from pulumi_gcp import compute, projects, secretmanager, serviceaccount
+from pulumi_gcp import artifactregistry, compute, projects, secretmanager, serviceaccount
 
 network = compute.Network("default")
 
@@ -124,6 +124,7 @@ bootcmd:
 - mkfs.ext4 -F /dev/nvme0n1
 - mkdir -p /mnt/disks/scratch
 - mount -t ext4 -o discard,defaults,nobarrier /dev/nvme0n1 /mnt/disks/scratch
+- chmod ugo+rwx /mnt/disks/scratch
 
 write_files:
 - path: /var/lib/cloud/launcher.sh
@@ -131,6 +132,21 @@ write_files:
   owner: root
   content: |
     #!/bin/sh
+    set -euxo pipefail
+
+    /usr/bin/docker \\
+        run \\
+        --name=aria2c \\
+        --rm \\
+        --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
+        us-west1-docker.pkg.dev/trailcatalog/containers/aria2c:latest \\
+        --dir /tmp \\
+        --max-upload-limit=1K \\
+        --seed-ratio=0.001 \\
+        --seed-time=0 \\
+        https://ftpmirror.your.org/pub/openstreetmap/pbf/planet-latest.osm.pbf.torrent
+
+    mv /mnt/disks/scratch/planet-2*.osm.pbf /mnt/disks/scratch/planet-latest.osm.pbf
 
     auth_token="$(toolbox gcloud secrets versions access latest --secret {args['db_auth']} --quiet | tail -n 1)"
     echo "Got auth token: ${{auth_token}}"
@@ -138,24 +154,24 @@ write_files:
     /usr/bin/docker \\
         run \\
         --name=importer \\
-        --network "bridge" \\
         --rm \\
         --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
         --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
-        --env JAVA_TOOL_OPTIONS="-Xmx6800m" \\
+        --env JAVA_TOOL_OPTIONS="-Xmx6600m" \\
         --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
-        us-west1-docker.pkg.dev/trailcatalog/containers/importer \\
+        us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \\
         --block_size 4194304 \\
-        --buffer_size 12194304 \\
-        --heap_dump_threshold 768000000 \\
-        --pbf_path /tmp
+        --buffer_size 16777216 \\
+        --heap_dump_threshold 1024000000 \\
+        --pbf_path /tmp \\
+        --source planet
 - path: /var/lib/cloud/reaper.sh
   permissions: 0755
   owner: root
   content: |
     #!/bin/sh
-    sleep 120s
-    while docker ps | grep importer; do sleep 10; done
+    sleep 60s
+    while ps ax | grep --quiet '[l]auncher.sh'; do sleep 10; done
     sleep 30s
     export NAME=$(curl -X GET http://metadata.google.internal/computeMetadata/v1/instance/name -H 'Metadata-Flavor: Google')
     export ZONE=$(curl -X GET http://metadata.google.internal/computeMetadata/v1/instance/zone -H 'Metadata-Flavor: Google')
@@ -220,3 +236,11 @@ runcmd:
         ],
     ),
 )
+
+registry = artifactregistry.Repository(
+        "containers",
+        repository_id="containers",
+        format="DOCKER",
+        location="us-west1",
+)
+

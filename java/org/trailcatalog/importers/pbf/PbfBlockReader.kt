@@ -65,13 +65,13 @@ class PbfBlockReader(
                     if (size != decompressed.size) {
                       throw IllegalStateException("Payload size mismatch: $size vs ${decompressed.size}")
                     } else {
-                      decompressed
+                      CodedInputStream.newInstance(decompressed)
                     }
                   }
-                  blob.hasRaw() -> blob.raw.toByteArray()
+                  blob.hasRaw() -> blob.raw.newCodedInput()
                   else -> throw AssertionError("Unknown type of blob")
                 }
-                parseBlock(CodedInputStream.newInstance(payload))
+                parseBlock(payload)
               }
       if (maybeBlock.isPresent) {
         yield(maybeBlock.get())

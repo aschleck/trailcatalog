@@ -35,6 +35,7 @@ import java.io.InputStream
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import kotlin.io.path.exists
 
 fun main(args: Array<String>) {
   registerPbfSerializers()
@@ -135,7 +136,8 @@ fun main(args: Array<String>) {
 
   var i = 0
   var epoch = -1
-  var pbfPath = ""
+  var pbfPath = "./pbfs"
+  var source = "geofabrik"
   while (i < args.size) {
     when (args[i]) {
       "--block_size" -> {
@@ -158,6 +160,10 @@ fun main(args: Array<String>) {
         pbfPath = args[i + 1]
         i += 1
       }
+      "--source" -> {
+        source = args[i + 1]
+        i += 1
+      }
       else -> {
         throw RuntimeException("Unknown argument ${args[i]}")
       }
@@ -166,12 +172,22 @@ fun main(args: Array<String>) {
   }
 
   createConnectionSource(syncCommit = false).use { hikari ->
-    processPbfs(fetchSources(epoch, pbfPath, hikari), hikari)
+    val sources = when (source) {
+      "geofabrik" -> {
+        fetchGeofabrikSources(epoch, pbfPath, hikari)
+      }
+      "planet" -> {
+        fetchPlanetSource(pbfPath)
+      }
+      else -> throw RuntimeException("Unknown type of source ${source}")
+    }
+
+    processPbfs(sources, hikari)
   }
 }
 
-fun fetchSources(
-    maybeEpoch: Int, maybePbfPath: String, hikari: HikariDataSource): Pair<Int, List<Path>> {
+private fun fetchGeofabrikSources(
+    maybeEpoch: Int, pbfPath: String, hikari: HikariDataSource): Pair<Int, List<Path>> {
   val sources = ArrayList<String>()
   hikari.connection.use { connection ->
     connection.prepareStatement("SELECT path FROM geofabrik_sources").executeQuery().use {
@@ -181,28 +197,24 @@ fun fetchSources(
     }
   }
 
-  val now = LocalDateTime.now(ZoneOffset.UTC)
-  val epoch = if (maybeEpoch > 0) {
-    maybeEpoch
-  } else if (now.hour >= 1 || now.minute >= 15) {
-    // TODO(april): rollback month
-    (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
-  } else {
-    throw RuntimeException("Don't do this")
-  }
-
+  val epoch = if (maybeEpoch > 0) maybeEpoch else calculateEpoch()
   val paths = ArrayList<Path>()
   for (source in sources) {
     val pbfUrl = "https://download.geofabrik.de/${source}-${epoch}.osm.pbf".toHttpUrl()
-    val pbf =
-        Path.of(
-            if (maybePbfPath.isNotEmpty()) maybePbfPath else "pbfs",
-            pbfUrl.pathSegments[pbfUrl.pathSize - 1])
+    val pbf = Path.of(pbfPath, pbfUrl.pathSegments[pbfUrl.pathSize - 1])
     download(pbfUrl, pbf)
     paths.add(pbf)
   }
 
   return Pair(epoch, paths)
+}
+
+private fun fetchPlanetSource(pbfPath: String): Pair<Int, List<Path>> {
+  val planet = Path.of(pbfPath, "planet-latest.osm.pbf")
+  if (!planet.exists()) {
+    throw RuntimeException("No such file ${planet}")
+  }
+  return Pair(calculateEpoch(), listOf(planet))
 }
 
 fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
@@ -298,5 +310,15 @@ fun copyStreamToPg(table: String, stream: InputStream, hikari: HikariDataSource)
   hikari.connection.use { connection ->
     val pg = connection.unwrap(PgConnection::class.java)
     CopyManager(pg).copyIn("COPY ${table} FROM STDIN WITH CSV HEADER", stream)
+  }
+}
+
+private fun calculateEpoch(): Int {
+  val now = LocalDateTime.now(ZoneOffset.UTC)
+  return if (now.hour >= 1 || now.minute >= 15) {
+    // TODO(april): rollback month
+    (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
+  } else {
+    throw RuntimeException("Don't do this")
   }
 }
