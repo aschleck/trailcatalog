@@ -2,6 +2,7 @@ package org.trailcatalog.importers
 
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2CellId
+import com.google.common.geometry.S2Loop
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2PolygonBuilder.Options
@@ -53,10 +54,10 @@ class CreateBoundaries
 }
 
 private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
-  val unsnapped = S2PolygonBuilder(Options.UNDIRECTED_UNION).let {
-    expandIntoPolygon(geometry, it)
-    it.assemblePolygon()
-  }
+  val loops = ArrayList<S2Loop>()
+  expandIntoPolygon(geometry, loops)
+  val unsnapped = S2Polygon(loops)
+
   val snapped = S2Polygon()
   snapped.initToSimplified(
       unsnapped,
@@ -65,16 +66,43 @@ private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
   return snapped
 }
 
-private fun expandIntoPolygon(geometry: RelationGeometry, polygon: S2PolygonBuilder) {
+private fun expandIntoPolygon(
+    geometry: RelationGeometry,
+    loops: MutableList<S2Loop>) {
+  val us = S2PolygonBuilder(Options.UNDIRECTED_UNION)
+  for (member in geometry.membersList) {
+    // TODO(april): consider inner vs outer
+    if (member.hasWay()) {
+      val latLngs = member.way.latLngE7List
+      for (i in 0 until latLngs.size - 2 step 2) {
+        us.addEdge(e7ToS2(latLngs[i], latLngs[i + 1]), e7ToS2(latLngs[i + 2], latLngs[i + 3]))
+      }
+    }
+  }
+  val ourLoops = ArrayList<S2Loop>()
+  us.assembleLoops(ourLoops, /* unusedEdges= */ null)
+  for (loop in ourLoops) {
+    if (loop.isHole()) {
+      loop.invert()
+    }
+
+    var contained = false
+    for (other in loops) {
+      if (other.contains(loop)) {
+        contained = true
+        break
+      }
+    }
+
+    if (!contained) {
+      loops.add(loop)
+    }
+  }
+
   for (member in geometry.membersList) {
     // TODO(april): consider inner vs outer
     if (member.hasRelation()) {
-      expandIntoPolygon(member.relation, polygon)
-    } else if (member.hasWay()) {
-      val latLngs = member.way.latLngE7List
-      for (i in 0 until latLngs.size - 2 step 2) {
-        polygon.addEdge(e7ToS2(latLngs[i], latLngs[i + 1]), e7ToS2(latLngs[i + 2], latLngs[i + 3]))
-      }
+      expandIntoPolygon(member.relation, loops)
     }
   }
 }
