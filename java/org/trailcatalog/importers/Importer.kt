@@ -153,7 +153,7 @@ fun main(args: Array<String>) {
         i += 1
       }
       "--heap_dump_threshold" -> {
-        HEAP_DUMP_THRESHOLD = args[i + 1].toInt()
+        HEAP_DUMP_THRESHOLD = args[i + 1].toLong()
         i += 1
       }
       "--pbf_path" -> {
