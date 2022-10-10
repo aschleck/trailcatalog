@@ -3,6 +3,7 @@ import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 
 import { latLngFromBase64E7 } from './common/data';
+import { currentUrl } from './common/ssr_aware';
 import { TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
 
@@ -68,6 +69,21 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
       query,
       trails: searchTrailsFromRaw(await tp),
     });
+  }
+
+  private clearSearch(): void {
+    const url = currentUrl();
+    let camera;
+    if (url.searchParams.has('lat')
+        || url.searchParams.has('lng')
+        || url.searchParams.has('zoom')) {
+      camera = {
+        lat: Number(url.searchParams.get('lat')),
+        lng: Number(url.searchParams.get('lng')),
+        zoom: Number(url.searchParams.get('zoom')),
+      };
+    }
+    this.views.showOverview(camera);
   }
 
   private goToSearchPage(): void {

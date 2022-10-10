@@ -7,6 +7,7 @@ export function OutlinedInput({borderColor, className, icon, placeholder, ...pro
   borderColor?: string,
   className?: string,
   icon?: FabricIconName,
+  inset?: corgi.VElementOrPrimitive,
   placeholder?: string,
 } & corgi.InputProperties) {
   return <>
@@ -21,9 +22,10 @@ export function OutlinedInput({borderColor, className, icon, placeholder, ...pro
   </>;
 }
 
-function Input({className, icon, placeholder, unboundEvents, value, ...props}: {
+function Input({className, icon, inset, placeholder, unboundEvents, value, ...props}: {
   className?: string,
   icon?: FabricIconName,
+  inset?: corgi.VElementOrPrimitive,
   placeholder?: string,
   unboundEvents?: UnboundEvents;
   value?: string;
@@ -43,6 +45,7 @@ function Input({className, icon, placeholder, unboundEvents, value, ...props}: {
           unboundEvents={unboundEvents}
           value={value}
       />
+      {inset ?? ''}
     </label>
   </>;
 }

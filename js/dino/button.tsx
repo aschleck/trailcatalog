@@ -5,7 +5,7 @@ import { FabricIcon, FabricIconName } from './fabric';
 export function FlatButton({className, dense, icon, label, ...props}: {
   className?: string,
   dense?: boolean,
-  icon: FabricIconName,
+  icon?: FabricIconName,
   label?: string,
 } & corgi.Properties<HTMLButtonElement>) {
   return <>
@@ -16,7 +16,7 @@ export function FlatButton({className, dense, icon, label, ...props}: {
 export function OutlinedButton({className, dense, icon, label, ...props}: {
   className?: string,
   dense?: boolean,
-  icon: FabricIconName,
+  icon?: FabricIconName,
   label?: string,
 } & corgi.Properties<HTMLButtonElement>) {
   return <>
@@ -33,7 +33,7 @@ export function OutlinedButton({className, dense, icon, label, ...props}: {
 function Button({className, dense, icon, label, ...props}: {
   className?: string,
   dense?: boolean,
-  icon: FabricIconName,
+  icon?: FabricIconName,
   label?: string,
 } & corgi.Properties<HTMLButtonElement>) {
   return <>
@@ -45,7 +45,7 @@ function Button({className, dense, icon, label, ...props}: {
         }
         {...props}
     >
-      <FabricIcon name={icon} className="align-bottom" />
+      {icon ? <FabricIcon name={icon} className="align-bottom" /> : ''}
       {label ? <span>{label}</span> : ''}
     </button>
   </>;

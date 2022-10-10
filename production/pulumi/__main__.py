@@ -173,7 +173,7 @@ for preemptible in (True, False):
             us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \\
             --block_size 4194304 \\
             --buffer_size 500000000 \\
-            --heap_dump_threshold 2048000000 \\
+            --heap_dump_threshold 3048000000 \\
             --pbf_path /tmp \\
             --source planet
     - path: /var/lib/cloud/reaper.sh

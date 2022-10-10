@@ -1,5 +1,7 @@
 import * as corgi from 'js/corgi';
 import { Link } from 'js/corgi/history/link_element';
+import { FlatButton } from 'js/dino/button';
+import { FabricIcon } from 'js/dino/fabric';
 import { OutlinedInput } from 'js/dino/input';
 
 import { currentUrl } from './common/ssr_aware';
@@ -29,11 +31,31 @@ export function SearchElement(
       <OutlinedInput
           className="border-tc-gray-400 peer w-96"
           icon="Search"
+          inset={
+            state.query
+                ?  <FlatButton
+                    className="bg-white -mr-2 -my-1 text-black"
+                    unboundEvents={{
+                      click: 'clearSearch',
+                    }}
+                    label={
+                      <span className="whitespace-nowrap">
+                        <span className="align-middle">Clear search</span>
+                        {' '}
+                        <FabricIcon
+                            className="align-middle text-sm"
+                            name="CalculatorMultiply"
+                        />
+                      </span>
+                    }
+                />
+                : ''
+          }
           placeholder="Search trails or destinations"
+          value={state.query}
           unboundEvents={{
             keyup: 'search',
           }}
-          value={state.query}
       />
       {
         state.boundaries.length + state.trails.length > 0

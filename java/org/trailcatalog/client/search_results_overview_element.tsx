@@ -74,7 +74,6 @@ export function SearchResultsOverviewElement(
     if (state.searchTrails) {
       filteredTrails = state.searchTrails.filter(t => filter(t.id));
 
-      const bound = emptyLatLngRect();
       for (const trail of filteredTrails) {
         if (trail.marker[0] < bound.low[0]) {
           bound.low[0] = trail.marker[0];
