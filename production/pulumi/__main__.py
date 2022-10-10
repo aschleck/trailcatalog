@@ -172,7 +172,7 @@ for preemptible in (True, False):
             --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
             us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \\
             --block_size 4194304 \\
-            --buffer_size 2000000000 \\
+            --buffer_size 500000000 \\
             --heap_dump_threshold 2048000000 \\
             --pbf_path /tmp \\
             --source planet

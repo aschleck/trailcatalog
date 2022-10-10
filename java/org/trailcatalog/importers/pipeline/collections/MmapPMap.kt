@@ -14,7 +14,7 @@ import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
 
 var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024L
-private val BYTE_BUFFER = ByteBuffer.allocate(32 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+private val BYTE_BUFFER = ByteBuffer.allocate(256 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
 
 class MmapPMap<K : Comparable<K>, V>(
     private val maps: List<EncodedInputStream>,
