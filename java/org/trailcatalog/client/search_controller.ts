@@ -2,7 +2,7 @@ import { checkExists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 
-import { LatLng } from './common/types';
+import { latLngFromBase64E7 } from './common/data';
 import { TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
 
@@ -57,7 +57,7 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
 
   private async actuallySearch(query: string): Promise<void> {
     const bp = fetchData('search_boundaries', {query});
-    const tp = fetchData('search_trails', {query});
+    const tp = fetchData('search_trails', {query, limit: 5});
 
     this.updateState({
       boundaries: (await bp).results.map(({id, name, type}) => ({
@@ -83,6 +83,9 @@ export function searchTrailsFromRaw(raw: DataResponses['search_trails']): TrailS
           new TrailSearchResult(
               BigInt(t.id),
               t.name,
-              [0, 0] as LatLng,
-              t.length_meters));
+              latLngFromBase64E7(t.marker),
+              t.length_meters,
+              t.boundaries.map(id => ({id, ...raw.boundaries[id]})),
+          ));
 }
+

@@ -3,11 +3,11 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
+import { decodeBase64 } from './common/base64';
 import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng } from './common/types';
 import { Boundary, Trail, TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
 
-import { decodeBase64 } from './base64';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_overview_controller';
 import { DataResponses, fetchData } from './data';
 import { searchTrailsFromRaw } from './search_controller';
@@ -15,16 +15,19 @@ import { Deps, State as VState, ViewportController } from './viewport_controller
 
 interface Args {
   boundaryId: string|undefined;
-  query: string;
+  query: string|undefined;
 }
 
 export interface State extends VState {
   boundary: Boundary|undefined;
   filterInBoundary: boolean;
-  trailsInBoundary: Set<bigint>|undefined;
+  trailsInBoundary: Trail[]|undefined;
+  trailsInBoundaryIds: Set<bigint>|undefined;
   searchTrails: TrailSearchResult[]|undefined;
   searchTrailsIds: Set<bigint>|undefined;
 }
+
+export const LIMIT = 100;
 
 export class SearchResultsOverviewController extends ViewportController<Args, Deps, State> {
 
@@ -36,7 +39,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     };
   }
 
-  private query: string;
+  private query: string|undefined;
 
   constructor(response: Response<SearchResultsOverviewController>) {
     super(response);
@@ -56,22 +59,26 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
 
       if (!this.state.trailsInBoundary) {
         fetchData('trails_in_boundary', {boundary_id: id}).then(raw => {
+          const trailsInBoundary = trailsInBoundaryFromRaw(raw);
           this.updateState({
             ...this.state,
-            trailsInBoundary: new Set(trailsInBoundaryFromRaw(raw).map(t => t.id)),
+            trailsInBoundary,
+            trailsInBoundaryIds: new Set(trailsInBoundary.map(t => t.id)),
           });
         });
       }
     }
 
-    fetchData('search_trails', {query: this.query}).then(raw => {
-      const searchTrails = searchTrailsFromRaw(raw);
-      this.updateState({
-        ...this.state,
-        searchTrails,
-        searchTrailsIds: new Set(searchTrails.map(t => t.id)),
+    if (this.query && !this.state.searchTrails) {
+      fetchData('search_trails', {query: this.query, limit: LIMIT}).then(raw => {
+        const searchTrails = searchTrailsFromRaw(raw);
+        this.updateState({
+          ...this.state,
+          searchTrails,
+          searchTrailsIds: new Set(searchTrails.map(t => t.id)),
+        });
       });
-    });
+    }
   }
 
   clearBoundary(): void {

@@ -16,6 +16,7 @@ interface DataRequests {
   };
   search_trails: {
     query: string;
+    limit: number;
   };
   trail: {
     id: string;
@@ -57,8 +58,16 @@ export interface DataResponses {
     results: Array<{
       id: string;
       name: string;
+      boundaries: string[];
+      marker: string;
       length_meters: number;
     }>;
+    boundaries: {
+      [id: string]: {
+        type: number;
+        name: string;
+      }
+    };
   };
   trail: {
     id: string;

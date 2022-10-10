@@ -4,7 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
-a:not(.flex):not(.no-underline) {
+a:hover {
   @apply underline;
 }
 

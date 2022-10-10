@@ -26,8 +26,9 @@ export const MapElement = ({camera, filters, overlay}: {
             render: 'wakeup',
           },
         })}
-        className="h-full relative select-none touch-none w-full">
-      <canvas className="h-full w-full" />
+        className="h-full relative select-none touch-none w-full"
+    >
+      <canvas className="h-full w-full" tabIndex="-1" />
       <div className="
           absolute
           bg-white-opaque-160

@@ -16,8 +16,8 @@ export type LatLngRect = {
 
 export function emptyLatLngRect(): LatLngRect {
   return {
-    low: [0, 0],
-    high: [0, 0],
+    low: [90, 180],
+    high: [-90, -180],
     brand: 'LatLngRect',
   };
 }

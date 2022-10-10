@@ -2,6 +2,10 @@ import { Long } from 'java/org/trailcatalog/s2';
 
 import { LatLng, LatLngRect, LatLngZoom, RgbaU32, Vec2, Vec4 } from './types';
 
+export function clamp(v: number, min: number, max: number): number {
+  return Math.min(Math.max(v, min), max);
+}
+
 export function metersToMiles(meters: number): number {
   return meters * 0.00062137119224;
 }
@@ -73,4 +77,3 @@ export function splitVec2(v: Vec2): Vec4 {
   const yF = Math.fround(y);
   return [xF, x - xF, yF, y - yF];
 }
-

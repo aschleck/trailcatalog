@@ -1,6 +1,6 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 
-import { LatLng, LatLngRect, PixelRect, Vec2 } from '../common/types';
+import { LatLng, LatLngRect, PixelRect, s2LatLngRectToTc, Vec2 } from '../common/types';
 
 export class Boundary {
   constructor(
@@ -9,6 +9,11 @@ export class Boundary {
       readonly type: number,
       readonly polygon: S2Polygon,
   ) {}
+
+  get bound(): LatLngRect {
+    return s2LatLngRectToTc(this.polygon.getRectBound());
+
+  }
 
   get sourceRelation(): bigint {
     return this.id;
@@ -48,6 +53,11 @@ export class TrailSearchResult {
       readonly name: string,
       readonly marker: LatLng,
       readonly lengthMeters: number,
+      readonly boundaries: Array<{
+        id: string;
+        name: string;
+        type: number;
+      }>,
   ) {}
 }
 

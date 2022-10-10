@@ -16,19 +16,19 @@ export interface Properties<E extends HTMLElement> {
   unboundEvents?: UnboundEvents;
 }
 
-interface AnchorProperties extends Properties<HTMLAnchorElement> {
+export interface AnchorProperties extends Properties<HTMLAnchorElement> {
   href?: string;
   target?: '_self'|'_blank'|'_parent'|'_top';
 }
 
-interface ImageProperties extends Properties<HTMLImageElement> {
+export interface ImageProperties extends Properties<HTMLImageElement> {
   alt?: string;
   height?: string;
   src?: string;
   width?: string;
 }
 
-interface InputProperties extends Properties<HTMLInputElement> {
+export interface InputProperties extends Properties<HTMLInputElement> {
   type?: 'password'|'text';
   placeholder?: string;
   value?: string;
@@ -89,10 +89,10 @@ export function createVirtualElement(
   const expandChildren: typeof allChildren = [];
   for (let i = 0; i < allChildren.length; ++i) {
     const child = allChildren[i];
-    if (child instanceof Object || i === 0) {
-      expandChildren.push(child);
-    } else if (child === '') {
+    if (child === '') {
       continue;
+    } else if (child instanceof Object || i === 0) {
+      expandChildren.push(child);
     } else {
       const previous = expandChildren[expandChildren.length - 1];
       if (!(previous instanceof Object)) {

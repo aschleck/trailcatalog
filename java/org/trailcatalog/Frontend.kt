@@ -184,53 +184,10 @@ private fun fetchData(ctx: Context) {
         responses.add(ImmutableMap.of("results", data))
       }
       "search_trails" -> {
-        val data = ArrayList<HashMap<String, Any>>()
-        val query = sanitizeQuery(key.get("query").asText())
-        connectionSource.connection.use {
-          val results = it.prepareStatement(
-              "SELECT "
-                  + "t.id, "
-                  + "t.name, "
-                  + "t.length_meters "
-                  + "FROM ( "
-                  + "  SELECT id, name, length_meters, length(name) / 1000. AS score "
-                  + "  FROM trails "
-                  + "  WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
-                  + "  UNION ALL "
-                  + "  SELECT "
-                  + "    id, "
-                  + "    name, "
-                  + "    length_meters, "
-                  + "    1 - strict_word_similarity(?, name) AS score "
-                  + "  FROM trails "
-                  + "  WHERE epoch = ? "
-                  + ") t "
-                  + "WHERE score < 0.7 "
-                  + "ORDER BY score ASC "
-                  + "LIMIT 5")
-              .apply {
-                setString(1, query)
-                setInt(2, epochTracker.epoch)
-                setString(3, query)
-                setInt(4, epochTracker.epoch)
-              }.executeQuery()
-          val seen = HashSet<Long>()
-          while (results.next()) {
-            val id = results.getLong(1)
-            if (seen.contains(id)) {
-              continue
-            } else {
-              seen.add(id)
-            }
-
-            val trail = HashMap<String, Any>()
-            trail["id"] = id.toString()
-            trail["name"] = results.getString(2)
-            trail["length_meters"] = results.getFloat(3)
-            data.add(trail)
-          }
-        }
-        responses.add(ImmutableMap.of("results", data))
+        responses.add(
+            executeSearchTrails(
+                key.get("query").asText(),
+                key.get("limit").asInt().coerceIn(1, 100)))
       }
       "trail" -> {
         val data = HashMap<String, Any>()
@@ -298,6 +255,96 @@ private fun fetchData(ctx: Context) {
   ctx.json(HashMap<String, Any>().also {
     it["values"] = responses
   })
+}
+
+private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> {
+  val data = ArrayList<HashMap<String, Any>>()
+  val query = sanitizeQuery(rawQuery)
+  val requiredBoundaries = HashSet<Long>();
+  connectionSource.connection.use {
+    val results = it.prepareStatement(
+        "SELECT "
+            + "sr.id, "
+            + "sr.name, "
+            + "sr.marker_degrees_e7, "
+            + "sr.length_meters, "
+            + "ARRAY_REMOVE(ARRAY_AGG(tib.boundary_id), NULL) "
+            + "FROM ("
+            + "  SELECT "
+            + "    t.id as id, "
+            + "    t.name as name, "
+            + "    t.marker_degrees_e7 as marker_degrees_e7, "
+            + "    t.length_meters as length_meters, "
+            + "    MAX(score) as score "
+            + "  FROM ( "
+            + "    SELECT "
+            + "      id, "
+            + "      name, "
+            + "      marker_degrees_e7, "
+            + "      length_meters, "
+            + "      length(name) / 1000. AS score "
+            + "    FROM trails "
+            + "    WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
+            + "    UNION ALL "
+            + "    SELECT "
+            + "      id, "
+            + "      name, "
+            + "      marker_degrees_e7, "
+            + "      length_meters, "
+            + "      1 - strict_word_similarity(?, name) AS score "
+            + "    FROM trails "
+            + "    WHERE epoch = ? "
+            + "  ) t "
+            + "  WHERE score < 0.7 "
+            + "  GROUP BY 1, 2, 3, 4 "
+            + "  ORDER BY MAX(score) ASC "
+            + "  LIMIT ?"
+            + ") sr "
+            + "LEFT JOIN trails_in_boundaries tib ON sr.id = tib.trail_id AND tib.epoch = ?"
+            + "GROUP BY 1, 2, 3, 4, sr.score "
+            + "ORDER BY sr.score ASC")
+        .apply {
+          setString(1, query)
+          setInt(2, epochTracker.epoch)
+          setString(3, query)
+          setInt(4, epochTracker.epoch)
+          setInt(5, limit)
+          setInt(6, epochTracker.epoch)
+        }.executeQuery()
+    while (results.next()) {
+      val trail = HashMap<String, Any>()
+      trail["id"] = results.getLong(1).toString()
+      trail["name"] = results.getString(2)
+      trail["marker"] = String(Base64.getEncoder().encode(results.getBytes(3)))
+      trail["length_meters"] = results.getFloat(4)
+      @Suppress("UNCHECKED_CAST")
+      val boundaries = results.getArray(5).getArray() as Array<Long>
+      trail["boundaries"] = boundaries.map { it.toString() }
+      requiredBoundaries.addAll(boundaries)
+      data.add(trail)
+    }
+  }
+
+  val boundaries = HashMap<String, Any>()
+  connectionSource.connection.use {
+    val results = it.prepareStatement(
+        "SELECT "
+            + "b.id, "
+            + "b.name, "
+            + "b.type "
+            + "FROM boundaries b "
+            + "WHERE b.id = ANY (?) AND epoch = ?")
+        .apply {
+          setArray(1, it.createArrayOf("BIGINT", requiredBoundaries.toArray()))
+          setInt(2, epochTracker.epoch)
+        }.executeQuery()
+    while (results.next()) {
+      boundaries[results.getLong(1).toString()] =
+          ImmutableMap.of("name", results.getString(2), "type", results.getInt(3))
+    }
+  }
+
+  return ImmutableMap.of("results", data, "boundaries", boundaries)
 }
 
 private fun fetchMeta(ctx: Context) {

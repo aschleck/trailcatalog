@@ -4,7 +4,7 @@ import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 
 import { DPI } from '../common/dpi';
-import { screenLlz } from '../common/math';
+import { clamp, screenLlz } from '../common/math';
 import { LatLngRect, LatLngZoom, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
@@ -106,6 +106,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     const interpreter = new PointerInterpreter(this);
     this.registerListener(document, 'pointerdown', e => {
       if (e.target === this.canvas) {
+        this.canvas.focus();
         this.trigger(SELECTION_CHANGED, {
           controller: this,
           selected: undefined,
@@ -161,8 +162,12 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     let llz;
     if (isLatLngRect(camera)) {
       llz = screenLlz(camera, this.screenArea);
-      // -0.2 zoom to give a little breathing room
-      llz.zoom -= 0.2;
+      if (isFinite(llz.zoom)) {
+        // -0.2 zoom to give a little breathing room
+        llz.zoom -= 0.2;
+      } else {
+        llz.zoom = clamp(llz.zoom, 3, 14.5);
+      }
     } else {
       llz = camera;
     }

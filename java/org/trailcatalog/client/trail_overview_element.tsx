@@ -2,6 +2,8 @@ import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FabricIcon } from 'js/dino/fabric';
 
+import { decodeBase64 } from './common/base64';
+import { latLngFromBase64E7 } from './common/data';
 import { formatDistance } from './common/formatters';
 import { LittleEndianView } from './common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng } from './common/math';
@@ -10,7 +12,6 @@ import { initialData } from './data';
 import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { Trail } from './models/types';
 
-import { decodeBase64 } from './base64';
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { DataResponses } from './data';
 import { containingBoundariesFromRaw, TrailOverviewController, State } from './trail_overview_controller';
@@ -179,11 +180,7 @@ function trailFromRaw(raw: DataResponses['trail']): Trail {
     high: [boundStream.getInt32() / 10_000_000, boundStream.getInt32() / 10_000_000],
     brand: 'LatLngRect' as const,
   } as LatLngRect;
-  const markerStream = new LittleEndianView(decodeBase64(raw.marker));
-  const marker = [
-    markerStream.getInt32() / 10_000_000,
-    markerStream.getInt32() / 10_000_000,
-  ] as LatLng;
+  const marker = latLngFromBase64E7(raw.marker);
   return new Trail(
       BigInt(raw.id),
       raw.name,

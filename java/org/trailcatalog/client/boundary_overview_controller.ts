@@ -3,11 +3,11 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
+import { decodeBase64 } from './common/base64';
 import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng } from './common/types';
 import { Boundary, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
-import { decodeBase64 } from './base64';
 import { DataResponses, fetchData } from './data';
 import { Deps, State as VState, ViewportController } from './viewport_controller';
 

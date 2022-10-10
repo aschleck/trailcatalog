@@ -97,12 +97,12 @@ export class ViewsService extends Service<Deps> {
   showSearchResults({boundary, camera, query}: {
     boundary?: bigint,
     camera?: {lat: number, lng: number, zoom: number},
-    query: string,
+    query?: string,
   }): void {
     const filters = [
       boundary ? `boundary=${boundary}` : undefined,
       camera ? `lat=${camera.lat}&lng=${camera.lng}&zoom=${camera.zoom}` : undefined,
-      `query=${encodeURIComponent(query)}`,
+      query ? `query=${encodeURIComponent(query)}` : undefined,
     ].filter(exists);
     this.history.goTo(`/search?${filters.join('&')}`);
   }

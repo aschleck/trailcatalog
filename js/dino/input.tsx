@@ -8,7 +8,7 @@ export function OutlinedInput({borderColor, className, icon, placeholder, ...pro
   className?: string,
   icon?: FabricIconName,
   placeholder?: string,
-} & corgi.Properties<HTMLInputElement>) {
+} & corgi.InputProperties) {
   return <>
     <Input
         className={
@@ -21,12 +21,13 @@ export function OutlinedInput({borderColor, className, icon, placeholder, ...pro
   </>;
 }
 
-function Input({className, icon, placeholder, unboundEvents, ...props}: {
+function Input({className, icon, placeholder, unboundEvents, value, ...props}: {
   className?: string,
   icon?: FabricIconName,
   placeholder?: string,
   unboundEvents?: UnboundEvents;
-} & corgi.Properties<HTMLInputElement>) {
+  value?: string;
+} & corgi.InputProperties) {
   return <>
     <label
         className={
@@ -40,6 +41,7 @@ function Input({className, icon, placeholder, unboundEvents, ...props}: {
           className="bg-transparent grow outline-none placeholder-current"
           placeholder={placeholder}
           unboundEvents={unboundEvents}
+          value={value}
       />
     </label>
   </>;

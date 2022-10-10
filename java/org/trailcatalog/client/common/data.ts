@@ -1,6 +1,9 @@
 import { deepEqual } from 'js/common/comparisons';
 
+import { decodeBase64 } from './base64';
+import { LittleEndianView } from './little_endian_view';
 import { InitialDataKey, initialData } from './ssr_aware';
+import { LatLng } from './types';
 
 type AsObjects<T extends string[]> = {[K in keyof T]: object};
 type KeyedTuples<T extends string[]> = {[K in keyof T]: [T[K], object]};
@@ -66,4 +69,12 @@ export function fetchDataBatch<T extends string[]>(tuples: KeyedTuples<T>):
           return data as AsObjects<T>;
         });
   }
+}
+
+export function latLngFromBase64E7(bytes: string): LatLng {
+  const markerStream = new LittleEndianView(decodeBase64(bytes));
+  return [
+    markerStream.getInt32() / 10_000_000,
+    markerStream.getInt32() / 10_000_000,
+  ] as LatLng;
 }

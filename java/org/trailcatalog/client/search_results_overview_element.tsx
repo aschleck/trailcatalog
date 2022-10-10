@@ -1,18 +1,18 @@
-import { checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 import { FlatButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 
 import { currentUrl } from './common/ssr_aware';
+import { emptyLatLngRect } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
-import { Boundary } from './models/types';
+import { TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_overview_controller';
 import { initialData } from './data';
 import { searchTrailsFromRaw } from './search_controller';
-import { SearchResultsOverviewController, State } from './search_results_overview_controller';
-import { TrailListItem } from './trail_list';
+import { LIMIT, SearchResultsOverviewController, State } from './search_results_overview_controller';
+import { TrailSidebar } from './trail_list';
 import { TrailPopup } from './trail_popup';
 import { ViewportLayoutElement } from './viewport_layout_element';
 
@@ -20,11 +20,13 @@ export function SearchResultsOverviewElement(
     {}: {}, state: State|undefined, updateState: (newState: State) => void) {
   const search = currentUrl().searchParams;
   const boundaryId = search.get('boundary') ?? undefined;
-  const query = checkExists(search.get('query'));
+  const query = search.get('query') ?? undefined;
 
   if (!state) {
     let boundary;
     let trailsInBoundary;
+    let trailsInBoundaryIds;
+
     if (boundaryId) {
       const rawBoundary = initialData('boundary', {id: boundaryId});
       if (rawBoundary) {
@@ -33,22 +35,28 @@ export function SearchResultsOverviewElement(
 
       const rawTrailsInBoundary = initialData('trails_in_boundary', {boundary_id: boundaryId});
       if (rawTrailsInBoundary) {
-        trailsInBoundary = new Set(trailsInBoundaryFromRaw(rawTrailsInBoundary).map(t => t.id));
+        trailsInBoundary = trailsInBoundaryFromRaw(rawTrailsInBoundary);
+        trailsInBoundaryIds = new Set(trailsInBoundary.map(t => t.id));
       }
     }
 
     let searchTrails;
-    const rawSearchTrails = initialData('search_trails', {query});
-    if (rawSearchTrails) {
-      searchTrails = searchTrailsFromRaw(rawSearchTrails);
+    let searchTrailsIds;
+    if (query) {
+      const rawSearchTrails = initialData('search_trails', {query, limit: LIMIT});
+      if (rawSearchTrails) {
+        searchTrails = searchTrailsFromRaw(rawSearchTrails);
+        searchTrailsIds = new Set(searchTrails.map(t => t.id));
+      }
     }
 
     state = {
       boundary,
       filterInBoundary: !!boundary,
       searchTrails,
-      searchTrailsIds: searchTrails ? new Set(searchTrails.map(t => t.id)) : undefined,
+      searchTrailsIds,
       trailsInBoundary,
+      trailsInBoundaryIds,
       hovering: undefined,
       nearbyTrails: [],
       selectedCardPosition: [-1, -1],
@@ -56,12 +64,52 @@ export function SearchResultsOverviewElement(
     };
   }
 
-  const trailFilter = 
-      state.filterInBoundary
-          ? (id: bigint) => {
-            return !state || !state.trailsInBoundary || state.trailsInBoundary.has(id);
-          }
-          : undefined;
+  const trailFilter = (id: bigint) => {
+    if (!state) {
+      return true;
+    }
+
+    if (state.searchTrailsIds && !state.searchTrailsIds.has(id)) {
+      return false;
+    }
+
+    if (state.filterInBoundary && state.trailsInBoundaryIds) {
+      return state.trailsInBoundaryIds.has(id);
+    }
+
+    return true;
+  };
+
+  let filteredTrails = undefined;
+  let bound = emptyLatLngRect();
+  if (query) {
+    if (state.searchTrails) {
+      filteredTrails = state.searchTrails.filter(t => trailFilter(t.id));
+
+      const bound = emptyLatLngRect();
+      for (const trail of filteredTrails) {
+        if (trail.marker[0] < bound.low[0]) {
+          bound.low[0] = trail.marker[0];
+        }
+        if (trail.marker[0] > bound.high[0]) {
+          bound.high[0] = trail.marker[0];
+        }
+        if (trail.marker[1] < bound.low[1]) {
+          bound.low[1] = trail.marker[1];
+        }
+        if (trail.marker[1] > bound.high[1]) {
+          bound.high[1] = trail.marker[1];
+        }
+      }
+    }
+  } else if (state.boundary && state.trailsInBoundary) {
+    bound = state.boundary.bound;
+    if (state.filterInBoundary) {
+      filteredTrails = state.trailsInBoundary;
+    } else {
+      filteredTrails = state.nearbyTrails;
+    }
+  }
 
   let trailDetails;
   if (state.selectedTrails.length > 0) {
@@ -80,7 +128,7 @@ export function SearchResultsOverviewElement(
           controller: SearchResultsOverviewController,
           args: {
             boundaryId,
-            query: search.get('query') ?? undefined,
+            query,
           },
           events: {
             corgi: [
@@ -91,26 +139,36 @@ export function SearchResultsOverviewElement(
             ],
             render: 'wakeup',
           },
-          key: `${search.get('boundary')}&${search.get('query')}`,
+          key: `${search.get('boundary')}&${query}`,
           state: [state, updateState],
         })}
         className="flex flex-col h-full"
     >
-      <ViewportLayoutElement
-          bannerContent={<SearchFilter state={state} />}
-          filters={{
-            trail: trailFilter,
-          }}
-          overlay={
-            state.boundary
-                ? {
-                  content: trailDetails,
-                  polygon: state.boundary.polygon,
+      {
+        filteredTrails
+            ? <ViewportLayoutElement
+                bannerContent={<SearchFilter state={state} />}
+                camera={bound}
+                filters={{
+                  trail: trailFilter,
+                }}
+                overlay={
+                  state.boundary
+                      ? {
+                        content: trailDetails,
+                        polygon: state.boundary.polygon,
+                      }
+                      : undefined
                 }
-                : undefined
-          }
-          sidebarContent={<span>cow</span>}
-      />
+                sidebarContent={
+                  <TrailSidebar
+                      hovering={state.hovering}
+                      nearby={filteredTrails}
+                  />
+                }
+            />
+            : "Loading..."
+      }
     </div>
   </>;
 }

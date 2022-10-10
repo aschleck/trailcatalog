@@ -1,17 +1,20 @@
 import * as corgi from 'js/corgi';
 import { Link } from 'js/corgi/history/link_element';
-
 import { OutlinedInput } from 'js/dino/input';
 
+import { currentUrl } from './common/ssr_aware';
+
+import { BoundaryCrumbs } from './boundary_crumbs';
 import { SearchController, State } from './search_controller';
 
 export function SearchElement(
     props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
+    const search = currentUrl().searchParams;
     state = {
       boundaries: [],
       trails: [],
-      query: '',
+      query: search.get('query') ?? '',
     };
   }
 
@@ -30,12 +33,18 @@ export function SearchElement(
           unboundEvents={{
             keyup: 'search',
           }}
+          value={state.query}
       />
       {
         state.boundaries.length + state.trails.length > 0
             ? <SearchResults
                 boundaries={state.boundaries}
-                className="hidden active:block focus-within:block peer-focus-within:block"
+                className="
+                    hidden
+                    leading-normal
+                    active:block
+                    focus-within:block
+                    peer-focus-within:block"
                 query={state.query}
                 trails={state.trails} />
             : <></>
@@ -72,9 +81,14 @@ function SearchResults({boundaries, className, query, trails}: {
           icon="/static/images/icons/trail.svg"
           label="Trails"
           results={trails.map(trail => <>
-            <Link className="no-underline" href={`/trail/${trail.id}`}>
-              <HighlightText haystack={trail.name} needle={query} />
-            </Link>
+            <div>
+              <Link className="no-underline" href={`/trail/${trail.id}`}>
+                <HighlightText haystack={trail.name} needle={query} />
+              </Link>
+            </div>
+            <div className="text-sm text-tc-gray-400">
+              <BoundaryCrumbs boundaries={trail.boundaries} />
+            </div>
           </>)}
       />
       <SearchCategory
