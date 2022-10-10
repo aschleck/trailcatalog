@@ -4,7 +4,7 @@ import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { decodeBase64 } from './common/base64';
-import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng } from './common/types';
+import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng, s2LatLngRectToTc } from './common/types';
 import { Boundary, Trail, TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
 
@@ -108,6 +108,13 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
           searchTrailsIds: new Set(searchTrails.map(t => t.id)),
         });
       });
+    }
+  }
+
+  centerBoundary(): void {
+    if (this.state.boundary) {
+      const bound = this.state.boundary.polygon.getRectBound();
+      this.mapController?.setCamera(s2LatLngRectToTc(bound));
     }
   }
 

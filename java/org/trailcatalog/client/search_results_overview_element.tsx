@@ -168,18 +168,22 @@ function SearchFilter({state}: {state: State}) {
         state.boundary
             ? <>
               <div className="bg-tc-green-700 flex gap-2 items-center px-2 rounded">
-                <img
-                    aria-hidden="true"
-                    className="h-[1em] my-1"
-                    src="/static/images/icons/boundary-filled.svg" />
-                {state.boundary.name}
+                <a
+                    className="flex gap-2 items-center my-1"
+                    href="#"
+                    unboundEvents={{click: 'centerBoundary'}}>
+                  <img
+                      aria-hidden="true"
+                      className="h-[1em]"
+                      src="/static/images/icons/boundary-filled.svg" />
+                  {state.boundary.name}
+                </a>
 
                 {divider}
 
-                <label>
+                <label className="flex gap-2 items-center my-1">
                   <Checkbox
                       checked={state.filterInBoundary}
-                      className="my-1"
                       unboundEvents={{
                         click: 'toggleBoundaryFilter',
                       }}
