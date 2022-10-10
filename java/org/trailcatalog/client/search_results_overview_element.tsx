@@ -90,13 +90,17 @@ export function SearchResultsOverviewElement(
         }
       }
     }
-  } else if (state.boundary && state.trailsInBoundary) {
-    bound = state.boundary.bound;
-    if (state.filterInBoundary) {
-      filteredTrails = state.trailsInBoundary;
-    } else {
-      filteredTrails = state.nearbyTrails;
+  } else if (boundaryId) {
+    if (state.boundary && state.trailsInBoundary) {
+      bound = state.boundary.bound;
+      if (state.filterInBoundary) {
+        filteredTrails = state.trailsInBoundary;
+      } else {
+        filteredTrails = state.nearbyTrails;
+      }
     }
+  } else {
+    filteredTrails = state.nearbyTrails;
   }
 
   let trailDetails;
@@ -140,14 +144,10 @@ export function SearchResultsOverviewElement(
                 filters={{
                   trail: filter,
                 }}
-                overlay={
-                  state.boundary
-                      ? {
-                        content: trailDetails,
-                        polygon: state.boundary.polygon,
-                      }
-                      : undefined
-                }
+                overlay={{
+                  content: trailDetails,
+                  polygon: state.boundary?.polygon,
+                }}
                 sidebarContent={
                   <TrailSidebar
                       hovering={state.hovering}
@@ -164,7 +164,7 @@ export function SearchResultsOverviewElement(
 function SearchFilter({state}: {state: State}) {
   const divider = <div className="bg-black-opaque-20 w-px" />;
   return <>
-    <aside className="bg-tc-gray-200 flex gap-3 items-center p-2 text-white">
+    <aside className="bg-tc-gray-200 flex gap-3 items-center px-3 py-2 text-white">
       <a className="flex gap-1 items-center no-underline text-sm" href="#" unboundEvents={{click: 'locateMe'}}>
         <FabricIcon name="Location" />
         <span className="hover:underline">Locate me</span>
