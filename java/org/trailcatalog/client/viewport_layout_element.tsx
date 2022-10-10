@@ -30,21 +30,22 @@ export function ViewportLayoutElement({
   sidebarContent: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    state = {
-      open: false,
-    };
-  }
+    const url = currentUrl();
+    if (
+        !camera
+            || url.searchParams.has('lat')
+            || url.searchParams.has('lng')
+            || url.searchParams.has('zoom')) {
+      camera = {
+        lat: floatCoalesce(url.searchParams.get('lat'), 46.859369),
+        lng: floatCoalesce(url.searchParams.get('lng'), -121.747888),
+        zoom: floatCoalesce(url.searchParams.get('zoom'), 12),
+      };
+    }
 
-  const url = currentUrl();
-  if (
-      !camera
-          || url.searchParams.has('lat')
-          || url.searchParams.has('lng')
-          || url.searchParams.has('zoom')) {
-    camera = {
-      lat: floatCoalesce(url.searchParams.get('lat'), 46.859369),
-      lng: floatCoalesce(url.searchParams.get('lng'), -121.747888),
-      zoom: floatCoalesce(url.searchParams.get('zoom'), 12),
+    state = {
+      camera,
+      open: false,
     };
   }
 
@@ -114,9 +115,11 @@ export function ViewportLayoutElement({
               className="h-full"
           >
             <MapElement
-                camera={camera}
+                camera={state.camera}
                 filters={filters}
-                overlay={overlay}
+                overlay={{
+                  polygon: overlay?.polygon,
+                }}
             />
           </div>
           {overlay?.content ?? <></>}

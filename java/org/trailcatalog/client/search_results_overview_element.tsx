@@ -55,7 +55,9 @@ export function SearchResultsOverviewElement(
       filterInBoundary: !!boundary,
       searchTrails,
       searchTrailsIds,
+      trailsFilter: () => true,
       trailsInBoundary,
+      trailsInBoundaryFilter: () => true,
       trailsInBoundaryIds,
       hovering: undefined,
       nearbyTrails: [],
@@ -64,27 +66,13 @@ export function SearchResultsOverviewElement(
     };
   }
 
-  const trailFilter = (id: bigint) => {
-    if (!state) {
-      return true;
-    }
-
-    if (state.searchTrailsIds && !state.searchTrailsIds.has(id)) {
-      return false;
-    }
-
-    if (state.filterInBoundary && state.trailsInBoundaryIds) {
-      return state.trailsInBoundaryIds.has(id);
-    }
-
-    return true;
-  };
+  const filter = state.filterInBoundary ? state.trailsInBoundaryFilter : state.trailsFilter;
 
   let filteredTrails = undefined;
   let bound = emptyLatLngRect();
   if (query) {
     if (state.searchTrails) {
-      filteredTrails = state.searchTrails.filter(t => trailFilter(t.id));
+      filteredTrails = state.searchTrails.filter(t => filter(t.id));
 
       const bound = emptyLatLngRect();
       for (const trail of filteredTrails) {
@@ -150,7 +138,7 @@ export function SearchResultsOverviewElement(
                 bannerContent={<SearchFilter state={state} />}
                 camera={bound}
                 filters={{
-                  trail: trailFilter,
+                  trail: filter,
                 }}
                 overlay={
                   state.boundary
@@ -189,15 +177,17 @@ function SearchFilter({state}: {state: State}) {
 
                 {divider}
 
-                <Checkbox
-                    checked={state.filterInBoundary}
-                    className="my-1"
-                    unboundEvents={{
-                      click: 'toggleBoundaryFilter',
-                    }}
-                />
+                <label>
+                  <Checkbox
+                      checked={state.filterInBoundary}
+                      className="my-1"
+                      unboundEvents={{
+                        click: 'toggleBoundaryFilter',
+                      }}
+                  />
 
-                Filter by boundary
+                  Filter by boundary
+                </label>
 
                 {divider}
 

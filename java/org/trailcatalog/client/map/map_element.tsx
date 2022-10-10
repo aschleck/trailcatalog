@@ -6,13 +6,13 @@ import { Filters } from './layers/map_data';
 
 import { MapController } from './map_controller';
 
-export const MapElement = ({camera, filters, overlay}: {
+export function MapElement({camera, filters, overlay}: {
   camera: LatLngRect|LatLngZoom;
   filters?: Filters;
   overlay?: {
     polygon?: S2Polygon;
   };
-}) => {
+}) {
   return <>
     <div
         js={corgi.bind({
@@ -57,4 +57,4 @@ export const MapElement = ({camera, filters, overlay}: {
       </div>
     </div>
   </>;
-};
+}

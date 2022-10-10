@@ -21,7 +21,9 @@ interface Args {
 export interface State extends VState {
   boundary: Boundary|undefined;
   filterInBoundary: boolean;
+  trailsFilter: (id: bigint) => boolean;
   trailsInBoundary: Trail[]|undefined;
+  trailsInBoundaryFilter: (id: bigint) => boolean;
   trailsInBoundaryIds: Set<bigint>|undefined;
   searchTrails: TrailSearchResult[]|undefined;
   searchTrailsIds: Set<bigint>|undefined;
@@ -44,6 +46,34 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   constructor(response: Response<SearchResultsOverviewController>) {
     super(response);
     this.query = response.args.query;
+
+    // We do this here to
+    // a) avoid making filter functions every time the TSX re-renders
+    // b) capture this controller's this reference, because the state reference isn't stable
+    this.updateState({
+      ...this.state,
+      trailsFilter: (id: bigint) => {
+        const searchTrailsIds = this.state.searchTrailsIds;
+        if (searchTrailsIds && !searchTrailsIds.has(id)) {
+          return false;
+        }
+
+        return true;
+      },
+      trailsInBoundaryFilter: (id: bigint) => {
+        const searchTrailsIds = this.state.searchTrailsIds;
+        if (searchTrailsIds && !searchTrailsIds.has(id)) {
+          return false;
+        }
+
+        const trailsInBoundaryIds = this.state.trailsInBoundaryIds;
+        if (trailsInBoundaryIds) {
+          return trailsInBoundaryIds.has(id);
+        }
+
+        return true;
+      },
+    });
 
     if (response.args.boundaryId) {
       const id = response.args.boundaryId;
@@ -82,10 +112,14 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   }
 
   clearBoundary(): void {
-    this.views.showSearchResults({
-      camera: this.lastCamera,
-      query: this.query,
-    });
+    if (this.query) {
+      this.views.showSearchResults({
+        camera: this.lastCamera,
+        query: this.query,
+      });
+    } else {
+      this.views.showOverview(this.lastCamera);
+    }
   }
 
   toggleBoundaryFilter(): void {

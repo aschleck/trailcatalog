@@ -150,10 +150,12 @@ class TileFetcher {
       this.loaded.delete(id);
       unloadIds.push(id);
     }
-    this.mail({
-      type: 'utc',
-      ids: unloadIds,
-    });
+    if (unloadIds.length > 0) {
+      this.mail({
+        type: 'utc',
+        ids: unloadIds,
+      });
+    }
   }
 }
 

@@ -11,6 +11,8 @@ export function deepEqual(a: unknown|undefined, b: unknown|undefined): boolean {
       }
     }
     return true;
+  } else if (a instanceof Function || b instanceof Function) {
+    return a === b;
   } else if (a instanceof Object && b instanceof Object) {
     const aKeys = Object.keys(a);
     const bKeys = Object.keys(b);
