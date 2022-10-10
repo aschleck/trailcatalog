@@ -106,12 +106,16 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     const interpreter = new PointerInterpreter(this);
     this.registerListener(document, 'pointerdown', e => {
       if (e.target === this.canvas) {
+        // These are somewhat problematic because double-click listeners get confused, but our goal
+        // is to steal focus from inputs and close any popups for panning, which is noble. So for
+        // now let's fix this up in the double click handlers until it gets too annoying.
         this.canvas.focus();
         this.trigger(SELECTION_CHANGED, {
           controller: this,
           selected: undefined,
           clickPx: [e.clientX, e.clientY],
         });
+
         interpreter.pointerDown(e);
       }
     });

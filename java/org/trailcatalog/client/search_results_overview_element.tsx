@@ -70,11 +70,12 @@ export function SearchResultsOverviewElement(
   const filter = state.filterInBoundary ? state.trailsInBoundaryFilter : state.trailsFilter;
 
   let filteredTrails = undefined;
-  let bound = emptyLatLngRect();
+  let bound;
   if (query) {
     if (state.searchTrails) {
       filteredTrails = state.searchTrails.filter(t => filter(t.id));
 
+      bound = emptyLatLngRect();
       for (const trail of filteredTrails) {
         if (trail.marker[0] < bound.low[0]) {
           bound.low[0] = trail.marker[0];
