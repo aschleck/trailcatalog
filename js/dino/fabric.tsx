@@ -12,6 +12,7 @@ const FABRIC_ICON_CODES = [
   'Info',
   'Info12',
   'List',
+  'Location',
   'Search',
   'ZoomToFit',
 ] as const;
@@ -26,6 +27,7 @@ E946
 E55A
 E721
 E76C
+E81D
 EA37
 F649
  */

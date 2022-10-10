@@ -104,7 +104,7 @@ function SearchResults({boundaries, className, query, trails}: {
           label="Trails"
           results={trails.map(trail => <>
             <div>
-              <Link className="no-underline" href={`/trail/${trail.id}`}>
+              <Link href={`/trail/${trail.id}`}>
                 <HighlightText haystack={trail.name} needle={query} />
               </Link>
             </div>
@@ -117,7 +117,7 @@ function SearchResults({boundaries, className, query, trails}: {
           icon="/static/images/icons/national_park.svg"
           label="National Parks"
           results={nationalParks.map(boundary => <>
-            <Link className="no-underline" href={`/boundary/${boundary.id}`}>
+            <Link href={`/boundary/${boundary.id}`}>
               <HighlightText haystack={boundary.name} needle={query} />
             </Link>
           </>)}
@@ -126,7 +126,7 @@ function SearchResults({boundaries, className, query, trails}: {
           icon="/static/images/icons/boundary.svg"
           label="Areas"
           results={nonParks.map(boundary => <>
-            <Link className="no-underline" href={`/boundary/${boundary.id}`}>
+            <Link href={`/boundary/${boundary.id}`}>
               <HighlightText haystack={boundary.name} needle={query} />
             </Link>
           </>)}

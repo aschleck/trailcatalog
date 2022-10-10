@@ -1,6 +1,7 @@
 import * as corgi from 'js/corgi';
 import { FlatButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
+import { FabricIcon } from 'js/dino/fabric';
 
 import { currentUrl } from './common/ssr_aware';
 import { emptyLatLngRect } from './common/types';
@@ -161,13 +162,17 @@ export function SearchResultsOverviewElement(
 }
 
 function SearchFilter({state}: {state: State}) {
-  const divider = <div className="bg-black-opaque-20 h-full w-px" />;
+  const divider = <div className="bg-black-opaque-20 w-px" />;
   return <>
-    <aside className="bg-tc-gray-200 flex p-2">
+    <aside className="bg-tc-gray-200 flex gap-3 items-center p-2 text-white">
+      <a className="flex gap-1 items-center no-underline text-sm" href="#" unboundEvents={{click: 'locateMe'}}>
+        <FabricIcon name="Location" />
+        <span className="hover:underline">Locate me</span>
+      </a>
       {
         state.boundary
             ? <>
-              <div className="bg-tc-green-700 flex gap-2 items-center px-2 rounded">
+              <div className="bg-tc-green-700 flex gap-2 px-2 rounded text-black">
                 <a
                     className="flex gap-2 items-center my-1"
                     href="#"
@@ -181,7 +186,15 @@ function SearchFilter({state}: {state: State}) {
 
                 {divider}
 
-                <label className="flex gap-2 items-center my-1">
+                <label
+                    className="
+                        cursor-pointer
+                        flex
+                        gap-2
+                        items-center
+                        my-1
+                        hover:underline"
+                >
                   <Checkbox
                       checked={state.filterInBoundary}
                       unboundEvents={{

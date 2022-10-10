@@ -129,6 +129,18 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     }
   }
 
+  locateMe(): void {
+    navigator.geolocation.getCurrentPosition(position => {
+      this.mapController?.setCamera({
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        zoom: 12,
+      });
+    }, e => {
+      console.error(e);
+    });
+  }
+
   toggleBoundaryFilter(): void {
     this.updateState({
       ...this.state,

@@ -110,7 +110,7 @@ function TrailSidebar({state}: {state: State}) {
     <div className="flex flex-col min-h-full">
       <aside className="border-b mx-3 py-4">
         <a
-            className="font-bold no-underline"
+            className="font-bold"
             href="/"
             unboundEvents={{
               click: 'viewNearbyTrails',

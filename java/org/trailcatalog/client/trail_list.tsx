@@ -70,7 +70,7 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
       >
       </div>
       <div className="font-lg grow">
-        <a className="no-underline" href={`/trail/${trail.id}`}>
+        <a href={`/trail/${trail.id}`}>
           {trail.name}
         </a>
         {
