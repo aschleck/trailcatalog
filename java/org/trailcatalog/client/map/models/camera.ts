@@ -1,6 +1,9 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 
+import { clamp } from '../../common/math';
 import { PixelRect, Vec2 } from '../../common/types';
+
+const MERCATOR_MAX_LAT_RADIANS = 85 / 90 * Math.PI / 2;
 
 export class Camera {
   private _center: S2LatLng;
@@ -40,7 +43,7 @@ export class Camera {
   }
 
   linearZoom(dZ: number, relativePixels: Vec2): void {
-    const nz = clamp(this._zoom + dZ, 2, 19);
+    const nz = clamp(this._zoom + dZ, 3, 19);
     if (this._zoom === nz) {
       return;
     }
@@ -63,8 +66,11 @@ export class Camera {
     const centerPixel = projectS2LatLng(this._center);
     const worldYPixel = centerPixel[1] + dPixels[1] * this._inverseWorldRadius;
     const newLat = Math.asin(Math.tanh(worldYPixel * Math.PI));
+    const clampedNewLat = clamp(newLat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS);
     const dLng = Math.PI * dPixels[0] * this._inverseWorldRadius;
-    this._center = S2LatLng.fromRadians(newLat, this._center.lngRadians() + dLng);
+    const newLng = this._center.lngRadians() + dLng;
+    const wrappedNewLng = (newLng + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+    this._center = S2LatLng.fromRadians(clampedNewLat, wrappedNewLng);
   }
 
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
@@ -76,16 +82,6 @@ export class Camera {
     return S2LatLngRect.fromPointPair(
         S2LatLng.fromRadians(lowLat, this._center.lngRadians() - dLng),
         S2LatLng.fromRadians(highLat, this._center.lngRadians() + dLng));
-  }
-}
-
-function clamp(x: number, min: number, max: number): number {
-  if (x < min) {
-    return min;
-  } else if (x > max) {
-    return max;
-  } else {
-    return x;
   }
 }
 

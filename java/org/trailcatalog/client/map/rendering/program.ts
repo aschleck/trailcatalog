@@ -1,8 +1,6 @@
 import { checkExists } from 'js/common/asserts';
 
-import { splitVec2 } from '../../common/math';
-import { Vec2 } from '../../common/types';
-import { Camera } from '../models/camera';
+import { Vec2, Vec4 } from '../../common/types';
 
 export interface Drawable {
   readonly buffer: WebGLBuffer;
@@ -51,16 +49,14 @@ export abstract class Program<P extends ProgramData> {
   protected abstract bind(offset: number): void;
   protected abstract deactivate(): void;
 
-  render(area: Vec2, camera: Camera, drawables: Drawable[]): void {
+  render(area: Vec2, centerPixels: Vec4[], worldRadius: number, drawables: Drawable[]): void {
     const gl = this.gl;
 
     this.activate();
 
-    const cameraCenter = splitVec2(camera.centerPixel);
-    gl.uniform4fv(this.program.uniforms.cameraCenter, cameraCenter);
     gl.uniform2f(
         this.program.uniforms.halfViewportSize, area[0] / 2, area[1] / 2);
-    gl.uniform1f(this.program.uniforms.halfWorldSize, camera.worldRadius);
+    gl.uniform1f(this.program.uniforms.halfWorldSize, worldRadius);
 
     const uniforms = this.program.uniformBlock;
     for (const drawable of drawables) {
@@ -80,7 +76,10 @@ export abstract class Program<P extends ProgramData> {
         gl.bindTexture(gl.TEXTURE_2D, drawable.texture);
       }
 
-      this.draw(drawable);
+      for (const centerPixel of centerPixels) {
+        gl.uniform4fv(this.program.uniforms.cameraCenter, centerPixel);
+        this.draw(drawable);
+      }
     }
 
     this.deactivate();

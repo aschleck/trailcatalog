@@ -1,4 +1,4 @@
-
+import { splitVec2 } from '../../common/math';
 import { Vec2 } from '../../common/types';
 import { Camera } from '../models/camera';
 
@@ -59,8 +59,27 @@ export class RenderPlanner {
     }
 
     this.renderer.uploadGeometry(this.geometry, this.geometryByteSize, this.geometryBuffer);
+
+    const bounds = camera.viewportBounds(this.area[0], this.area[1]);
+
+    const centerPixel = camera.centerPixel;
+    const centerPixels = [splitVec2(centerPixel)];
+    // Add extra camera positions for wrapping the world
+    //
+    // There's some weird normalization bug at
+    // lat=42.3389265&lng=177.6919189&zoom=3.020
+    // where tiles don't show up around the wrap. Seems like S2 sometimes normalizes and sometimes
+    // doesn't depending on the size of the range. So we check the max/min.
+    if (Math.min(bounds.lng().lo(), bounds.lng().hi()) < -Math.PI) {
+      centerPixels.push(splitVec2([centerPixel[0] + 2, centerPixel[1]]));
+    }
+    if (Math.max(bounds.lng().lo(), bounds.lng().hi()) > Math.PI) {
+      centerPixels.push(splitVec2([centerPixel[0] - 2, centerPixel[1]]));
+    }
+
     let drawStart = this.drawables[0];
     let drawStartIndex = 0;
+    // Gather sequential drawables that share the same program and draw them all at once
     for (let i = 1; i < this.drawables.length; ++i) {
       const drawable = this.drawables[i];
       if (drawStart.program === drawable.program) {
@@ -68,13 +87,14 @@ export class RenderPlanner {
       }
 
       drawStart.program.render(
-          this.area, camera, this.drawables.slice(drawStartIndex, i));
+          this.area, centerPixels, camera.worldRadius, this.drawables.slice(drawStartIndex, i));
       drawStart = drawable;
       drawStartIndex = i;
     }
 
+    // The last batch didn't actually draw, so draw it
     drawStart.program.render(
-        this.area, camera, this.drawables.slice(drawStartIndex, this.drawables.length));
+        this.area, centerPixels, camera.worldRadius, this.drawables.slice(drawStartIndex, this.drawables.length));
   }
 
   addBillboard(center: Vec2, offsetPx: Vec2, size: Vec2, texture: WebGLTexture, z: number): void {

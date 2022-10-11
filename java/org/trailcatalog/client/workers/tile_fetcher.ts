@@ -61,7 +61,8 @@ class TileFetcher {
     // World coordinates in this function are in tile pixels, not in screen pixels
 
     const tz = Math.floor(request.cameraZoom + TILE_SET.extraZoom);
-    const halfWorldSize = Math.pow(2, tz - 1); // - 1 gives us the half
+    const worldSize = Math.pow(2, tz);
+    const halfWorldSize = worldSize / 2;
     const center = request.cameraPosition;
     const centerInWorldPx = [center[0] * halfWorldSize, center[1] * halfWorldSize];
     const doubleSize = WEB_MERCATOR_TILE_SIZE_PX * Math.pow(2, request.cameraZoom - tz + 1);
@@ -80,7 +81,8 @@ class TileFetcher {
             x < centerInWorldPx[0] + halfViewportInWorldPx[0];
             ++x) {
           const id = {
-            x,
+            // Handle world wrap
+            x: (x + 3 * halfWorldSize) % worldSize - halfWorldSize,
             y,
             zoom: tz,
           };
@@ -92,7 +94,7 @@ class TileFetcher {
           this.inFlight.add(id);
           // We use coordinates from -1 to 1 but servers use 0 to 1.
           const urlId = {
-            x: x + halfWorldSize,
+            x: id.x + halfWorldSize,
             y: halfWorldSize - y,
             zoom: tz,
           };
