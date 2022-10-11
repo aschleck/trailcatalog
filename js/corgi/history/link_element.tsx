@@ -17,7 +17,7 @@ export function Link({children, className, href}: {
           },
           state: [state ?? {}, updateState],
         })}
-        className={className}
+        className={className ?? ''}
         href={href}>
       {children ?? []}
     </a>

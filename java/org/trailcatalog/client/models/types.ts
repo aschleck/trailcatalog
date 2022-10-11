@@ -20,6 +20,19 @@ export class Boundary {
   }
 }
 
+export class BoundarySearchResult {
+  constructor(
+      readonly id: bigint,
+      readonly name: string,
+      readonly type: number,
+      readonly boundaries: Array<{
+        id: string;
+        name: string;
+        type: number;
+      }>,
+  ) {}
+}
+
 export class Path {
   constructor(
       readonly id: bigint,

@@ -4,7 +4,7 @@ import { Controller, Response } from 'js/corgi/controller';
 
 import { latLngFromBase64E7 } from './common/data';
 import { currentUrl } from './common/ssr_aware';
-import { TrailSearchResult } from './models/types';
+import { BoundarySearchResult, TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
 
 import { DataResponses, fetchData } from './data';
@@ -12,11 +12,7 @@ import { DataResponses, fetchData } from './data';
 type Deps = typeof SearchController.deps;
 
 export interface State {
-  boundaries: Array<{
-    id: bigint;
-    name: string;
-    type: number;
-  }>;
+  boundaries: BoundarySearchResult[];
   query: string;
   trails: TrailSearchResult[],
 }
@@ -61,11 +57,7 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
     const tp = fetchData('search_trails', {query, limit: 5});
 
     this.updateState({
-      boundaries: (await bp).results.map(({id, name, type}) => ({
-        id: BigInt(id),
-        name,
-        type,
-      })),
+      boundaries: searchBoundariesFromRaw(await bp),
       query,
       trails: searchTrailsFromRaw(await tp),
     });
@@ -91,6 +83,17 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
       query: this.lastQuery,
     });
   }
+}
+
+function searchBoundariesFromRaw(raw: DataResponses['search_boundaries']): BoundarySearchResult[] {
+  return raw.results.map(
+      b =>
+          new BoundarySearchResult(
+              BigInt(b.id),
+              b.name,
+              b.type,
+              b.boundaries.map(id => ({id, ...raw.boundaries[id]})),
+          ));
 }
 
 export function searchTrailsFromRaw(raw: DataResponses['search_trails']): TrailSearchResult[] {

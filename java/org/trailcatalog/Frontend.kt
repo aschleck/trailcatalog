@@ -135,53 +135,7 @@ private fun fetchData(ctx: Context) {
         responses.add(ImmutableMap.of("boundaries", data))
       }
       "search_boundaries" -> {
-        val data = ArrayList<HashMap<String, Any>>()
-        val query = sanitizeQuery(key.get("query").asText())
-        connectionSource.connection.use {
-          val results = it.prepareStatement(
-              "SELECT "
-                  + "b.id, "
-                  + "b.name, "
-                  + "b.type "
-                  + "FROM ( "
-                  + "  SELECT id, name, type, length(name) / 1000. AS score "
-                  + "  FROM boundaries "
-                  + "  WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
-                  + "  UNION ALL "
-                  + "  SELECT "
-                  + "    id, "
-                  + "    name, "
-                  + "    type, "
-                  + "    1 - strict_word_similarity(?, name) AS score "
-                  + "  FROM boundaries "
-                  + "  WHERE epoch = ? "
-                  + ") b "
-                  + "WHERE score < 0.8 "
-                  + "ORDER BY score ASC "
-                  + "LIMIT 10")
-              .apply {
-                setString(1, query)
-                setInt(2, epochTracker.epoch)
-                setString(3, query)
-                setInt(4, epochTracker.epoch)
-              }.executeQuery()
-          val seen = HashSet<Long>()
-          while (results.next()) {
-            val id = results.getLong(1)
-            if (seen.contains(id)) {
-              continue
-            } else {
-              seen.add(id)
-            }
-
-            val boundary = HashMap<String, Any>()
-            boundary["id"] = id.toString()
-            boundary["name"] = results.getString(2)
-            boundary["type"] = results.getInt(3)
-            data.add(boundary)
-          }
-        }
-        responses.add(ImmutableMap.of("results", data))
+        responses.add(executeSearchBoundaries(key.get("query").asText(), 10))
       }
       "search_trails" -> {
         responses.add(
@@ -257,6 +211,77 @@ private fun fetchData(ctx: Context) {
   })
 }
 
+private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, Any> {
+  val data = ArrayList<HashMap<String, Any>>()
+  val query = sanitizeQuery(rawQuery)
+  val requiredBoundaries = HashSet<Long>();
+  connectionSource.connection.use {
+    val results = it.prepareStatement(
+        "SELECT "
+            + "sr.id, "
+            + "sr.name, "
+            + "sr.type, "
+            + "ARRAY_REMOVE(ARRAY_AGG(bib.parent_id), NULL) "
+            + "FROM ("
+            + "  SELECT "
+            + "    b.id as id, "
+            + "    b.name as name, "
+            + "    b.type as type, "
+            + "    MAX(score) as score "
+            + "  FROM ( "
+            + "    SELECT id, name, type, length(name) / 1000. AS score "
+            + "    FROM boundaries "
+            + "    WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
+            + "    UNION ALL "
+            + "    SELECT "
+            + "      id, "
+            + "      name, "
+            + "      type, "
+            + "      1 - strict_word_similarity(?, name) AS score "
+            + "    FROM boundaries "
+            + "    WHERE epoch = ? "
+            + "  ) b "
+            + "  WHERE score < 0.8 "
+            + "  GROUP BY 1, 2, 3 "
+            + "  ORDER BY MAX(score) ASC "
+            + "  LIMIT ?"
+            + ") sr "
+            + "LEFT JOIN boundaries_in_boundaries bib ON sr.id = bib.child_id AND bib.epoch = ?"
+            + "GROUP BY 1, 2, 3, sr.score "
+            + "ORDER BY sr.score ASC")
+        .apply {
+          setString(1, query)
+          setInt(2, epochTracker.epoch)
+          setString(3, query)
+          setInt(4, epochTracker.epoch)
+          setInt(5, limit)
+          setInt(6, epochTracker.epoch)
+        }.executeQuery()
+    val seen = HashSet<Long>()
+    while (results.next()) {
+      val id = results.getLong(1)
+      if (seen.contains(id)) {
+        continue
+      } else {
+        seen.add(id)
+      }
+
+      val boundary = HashMap<String, Any>()
+      boundary["id"] = id.toString()
+      boundary["name"] = results.getString(2)
+      boundary["type"] = results.getInt(3)
+      @Suppress("UNCHECKED_CAST")
+      val boundaries = results.getArray(4).getArray() as Array<Long>
+      boundary["boundaries"] = boundaries.map { it.toString() }
+      requiredBoundaries.addAll(boundaries)
+      data.add(boundary)
+    }
+  }
+
+  val boundaries = fetchBoundaries(requiredBoundaries)
+  return ImmutableMap.of("results", data, "boundaries", boundaries)
+}
+
 private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> {
   val data = ArrayList<HashMap<String, Any>>()
   val query = sanitizeQuery(rawQuery)
@@ -325,6 +350,11 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
     }
   }
 
+  val boundaries = fetchBoundaries(requiredBoundaries)
+  return ImmutableMap.of("results", data, "boundaries", boundaries)
+}
+
+private fun fetchBoundaries(requiredBoundaries: HashSet<Long>): Map<String, Any> {
   val boundaries = HashMap<String, Any>()
   connectionSource.connection.use {
     val results = it.prepareStatement(
@@ -343,8 +373,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
           ImmutableMap.of("name", results.getString(2), "type", results.getInt(3))
     }
   }
-
-  return ImmutableMap.of("results", data, "boundaries", boundaries)
+  return boundaries;
 }
 
 private fun fetchMeta(ctx: Context) {

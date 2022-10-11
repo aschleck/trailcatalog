@@ -52,7 +52,14 @@ export interface DataResponses {
       id: string;
       name: string;
       type: number;
+      boundaries: string[];
     }>;
+    boundaries: {
+      [id: string]: {
+        type: number;
+        name: string;
+      }
+    };
   };
   search_trails: {
     results: Array<{

@@ -103,34 +103,60 @@ function SearchResults({boundaries, className, query, trails}: {
           icon="/static/images/icons/trail.svg"
           label="Trails"
           results={trails.map(trail => <>
-            <div>
-              <Link href={`/trail/${trail.id}`}>
-                <HighlightText haystack={trail.name} needle={query} />
-              </Link>
-            </div>
-            <div className="text-sm text-tc-gray-400">
-              <BoundaryCrumbs boundaries={trail.boundaries} />
-            </div>
+            <ResultItem
+                boundaries={trail.boundaries}
+                href={`/trail/${trail.id}`}
+                text={trail.name}
+                query={query}
+            />
           </>)}
       />
       <SearchCategory
           icon="/static/images/icons/national_park.svg"
           label="National Parks"
           results={nationalParks.map(boundary => <>
-            <Link href={`/boundary/${boundary.id}`}>
-              <HighlightText haystack={boundary.name} needle={query} />
-            </Link>
+            <ResultItem
+                boundaries={boundary.boundaries}
+                href={`/search?boundary=${boundary.id}`}
+                text={boundary.name}
+                query={query}
+            />
           </>)}
       />
       <SearchCategory
-          icon="/static/images/icons/boundary.svg"
+          icon="/static/images/icons/boundary-filled.svg"
           label="Areas"
           results={nonParks.map(boundary => <>
-            <Link href={`/boundary/${boundary.id}`}>
-              <HighlightText haystack={boundary.name} needle={query} />
-            </Link>
+            <ResultItem
+                boundaries={boundary.boundaries}
+                href={`/search?boundary=${boundary.id}`}
+                text={boundary.name}
+                query={query}
+            />
           </>)}
       />
+    </div>
+  </>;
+}
+
+function ResultItem({boundaries, href, text, query}: {
+  boundaries: Array<{
+    id: string;
+    name: string;
+    type: number;
+  }>;
+  href: string;
+  text: string;
+  query: string;
+}) {
+  return <>
+    <div>
+      <Link href={href}>
+        <HighlightText haystack={text} needle={query} />
+      </Link>
+    </div>
+    <div className="font-normal text-sm text-tc-gray-400">
+      <BoundaryCrumbs boundaries={boundaries} />
     </div>
   </>;
 }
@@ -142,16 +168,16 @@ function SearchCategory({icon, label, results}: {
 }) {
   return <>
     <div className="mt-3 space-y-3">
-      <div className="flex font-bold gap-1 items-center">
+      <div className="flex font-bold gap-2 items-center">
         <img
             aria-hidden="true"
             src={icon}
-            className="h-6"
+            className="h-5"
         />
         {label}
       </div>
       {results.map(c => <>
-        <div className="border-b pb-2">
+        <div className="border-b font-header font-medium pb-2">
           {c}
         </div>
       </>)}
