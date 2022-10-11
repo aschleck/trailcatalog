@@ -105,7 +105,15 @@ function TrailSidebar({state}: {state: State}) {
 
   const nearby = state.nearbyTrails?.length;
   const trail = state.trail;
+
   const distance = formatDistance(trail.lengthMeters);
+  let isOneWay;
+  if (trail.paths.length === 1) {
+    isOneWay = true;
+  } else {
+    isOneWay = (trail.paths[0] & ~1n) !== (trail.paths[trail.paths.length - 1] & ~1n);
+  }
+
   return <>
     <div className="flex flex-col min-h-full">
       <aside className="border-b mx-3 py-4">
@@ -144,13 +152,18 @@ function TrailSidebar({state}: {state: State}) {
           {containingLabels}
         </aside>
         <section>
-          <span className="font-bold text-2xl">
-            {distance.value}
-          </span>
-          {' '}
-          <span className="text-sm text-tc-gray-400">
-            {distance.unit}
-          </span>
+          <div className="text-sm text-tc-gray-400">
+            {isOneWay ? 'One-way distance' : 'Round-trip distance'}
+          </div>
+          <div>
+            <span className="font-bold text-2xl">
+              {distance.value}
+            </span>
+            {' '}
+            <span className="text-sm text-tc-gray-400">
+              {distance.unit}
+            </span>
+          </div>
         </section>
       </section>
       <aside className="mx-3 py-4">
