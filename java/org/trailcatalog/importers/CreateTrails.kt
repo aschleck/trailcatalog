@@ -135,12 +135,16 @@ private fun flattenWays(
 
   if (failed) {
     return null
-  } else if (ids.isEmpty()) {
-    // This is the case where a relation has only a node inside of it?
-    return ids
   }
 
-  val oriented = orientPaths(geometry.relationId, ids, mapped) ?: return null
+  val filtered = ids.filter { mapped[it]!!.size > 0 }
+  if (filtered.isEmpty()) {
+    // This is the case where a relation has only a node inside of it?
+    return filtered
+  }
+
+  val oriented =
+      orientPaths(geometry.relationId, filtered, mapped) ?: return null
   val flatIds = ArrayList<Long>()
   for (childId in oriented) {
     if (childId >= Long.MAX_VALUE / 2) {

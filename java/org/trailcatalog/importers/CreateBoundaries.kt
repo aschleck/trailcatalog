@@ -80,7 +80,13 @@ private fun expandIntoPolygon(
     }
   }
   val ourLoops = ArrayList<S2Loop>()
-  us.assembleLoops(ourLoops, /* unusedEdges= */ null)
+  try {
+    us.assembleLoops(ourLoops, /* unusedEdges= */ null)
+  } catch (_: StackOverflowError) {
+    println("Unable to assemble ${geometry.getRelationId()}")
+    return
+  }
+
   for (loop in ourLoops) {
     if (loop.isHole()) {
       loop.invert()

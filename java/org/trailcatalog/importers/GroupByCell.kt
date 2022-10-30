@@ -15,7 +15,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import kotlin.math.min
 
-private const val CONTAINMENT_CELL_LEVEL = 8
+private const val CONTAINMENT_CELL_LEVEL = 7
 private const val SNAP_CELL_LEVEL = 18
 
 data class BoundaryPolygon(val id: Long, val polygon: ByteArray)
