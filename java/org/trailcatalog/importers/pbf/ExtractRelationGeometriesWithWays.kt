@@ -1,6 +1,7 @@
 package org.trailcatalog.importers.pbf
 
 import com.google.common.reflect.TypeToken
+import java.util.Stack
 import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 import org.trailcatalog.importers.pipeline.PStage
 import org.trailcatalog.importers.pipeline.collections.PMap
@@ -32,7 +33,7 @@ class ExtractRelationGeometriesWithWays
       }
       input.close()
 
-      val used = HashSet<Long>()
+      val used = Stack<Long>()
       for (id in inMemory.keys) {
         val geometry = inflate(id, id, inMemory, used) ?: continue
         emitter.emit(id, geometry)
@@ -46,14 +47,14 @@ private fun inflate(
     id: Long,
     from: Long,
     relations: Map<Long, RelationSkeleton>,
-    used: MutableSet<Long>,
+    used: Stack<Long>,
 ): RelationGeometry? {
   if (used.contains(id)) {
     println("relation ${id} has a cyclic usage from ${from}")
     return null
   }
 
-  used.add(id)
+  used.push(id)
   val skeleton = relations[id] ?: return null
   val geometry = RelationGeometry.newBuilder()
   for (member in skeleton.membersList) {
@@ -73,5 +74,6 @@ private fun inflate(
       else -> throw AssertionError()
     }
   }
+  used.pop()
   return geometry.build()
 }
