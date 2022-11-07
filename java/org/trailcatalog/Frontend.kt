@@ -216,6 +216,7 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
   val query = sanitizeQuery(rawQuery)
   val requiredBoundaries = HashSet<Long>();
   connectionSource.connection.use {
+    it.createStatement().executeUpdate("SET pg_trgm.strict_word_similarity_threshold TO 0.2")
     val results = it.prepareStatement(
         "SELECT "
             + "sr.id, "
@@ -239,7 +240,7 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
             + "      type, "
             + "      1 - strict_word_similarity(?, name) AS score "
             + "    FROM boundaries "
-            + "    WHERE epoch = ? "
+            + "    WHERE ? <<% name AND epoch = ? "
             + "  ) b "
             + "  WHERE score < 0.8 "
             + "  GROUP BY 1, 2, 3 "
@@ -253,9 +254,10 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
           setString(1, query)
           setInt(2, epochTracker.epoch)
           setString(3, query)
-          setInt(4, epochTracker.epoch)
-          setInt(5, limit)
-          setInt(6, epochTracker.epoch)
+          setString(4, query)
+          setInt(5, epochTracker.epoch)
+          setInt(6, limit)
+          setInt(7, epochTracker.epoch)
         }.executeQuery()
     val seen = HashSet<Long>()
     while (results.next()) {
@@ -287,6 +289,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
   val query = sanitizeQuery(rawQuery)
   val requiredBoundaries = HashSet<Long>();
   connectionSource.connection.use {
+    it.createStatement().executeUpdate("SET pg_trgm.strict_word_similarity_threshold TO 0.3")
     val results = it.prepareStatement(
         "SELECT "
             + "sr.id, "
@@ -318,7 +321,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "      length_meters, "
             + "      1 - strict_word_similarity(?, name) AS score "
             + "    FROM trails "
-            + "    WHERE epoch = ? "
+            + "    WHERE ? <<% name AND epoch = ? "
             + "  ) t "
             + "  WHERE score < 0.7 "
             + "  GROUP BY 1, 2, 3, 4 "
@@ -332,9 +335,10 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
           setString(1, query)
           setInt(2, epochTracker.epoch)
           setString(3, query)
-          setInt(4, epochTracker.epoch)
-          setInt(5, limit)
-          setInt(6, epochTracker.epoch)
+          setString(4, query)
+          setInt(5, epochTracker.epoch)
+          setInt(6, limit)
+          setInt(7, epochTracker.epoch)
         }.executeQuery()
     while (results.next()) {
       val trail = HashMap<String, Any>()
