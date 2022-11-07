@@ -63,10 +63,14 @@ server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
     body: JSON.stringify({
       keys: requestedData,
     }),
-  }).then(r => r.json()) as {
-    values: unknown[];
-  };
-  const responseData = response.values;
+  });
+
+  if (!response.ok) {
+    reply.type('text/html').code(response.status);
+    reply.send(response.statusText);
+  }
+
+  const responseData = (await response.json() as {values: unknown[]}).values;
 
   // Finally we re-render with our data
   requestContext.set('initialData', (key: InitialDataKey) => {
@@ -79,7 +83,7 @@ server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
   });
   const content = App({}, undefined, () => {});
   reply.type('text/html').code(200);
-  reply.send(page(render(content), requestedData, response.values));
+  reply.send(page(render(content), requestedData, responseData));
 });
 
 server.listen({ port: 7080 }, (err, address) => {

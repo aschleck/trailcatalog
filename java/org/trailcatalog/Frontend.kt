@@ -73,7 +73,8 @@ private fun fetchData(ctx: Context) {
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           if (!results.next()) {
-            throw IllegalArgumentException("Unable to get boundary ${id}")
+            ctx.status(HttpCode.NOT_FOUND)
+            return@fetchData
           }
           data["id"] = id
           data["name"] = results.getString(1)
@@ -162,7 +163,8 @@ private fun fetchData(ctx: Context) {
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           if (!results.next()) {
-            throw IllegalArgumentException("Unable to get trail ${id}")
+            ctx.status(HttpCode.NOT_FOUND)
+            return@fetchData
           }
           data["id"] = id
           data["name"] = results.getString(1)
@@ -511,7 +513,8 @@ private fun fetchDataPacked(ctx: Context) {
     }.executeQuery()
 
     if (!results.next()) {
-      throw IllegalArgumentException("Trail ${trailId} doesn't exist")
+      ctx.status(HttpCode.NOT_FOUND)
+      return@fetchDataPacked
     }
 
     WireTrail(
