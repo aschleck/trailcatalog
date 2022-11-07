@@ -1,0 +1,3 @@
+[[actions]]
+type = "remove_table"
+table = "geofabrik_sources"

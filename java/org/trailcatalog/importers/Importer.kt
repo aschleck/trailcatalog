@@ -136,6 +136,7 @@ fun main(args: Array<String>) {
 
   var i = 0
   var epoch = -1
+  var geofabrikSources = ArrayList<String>()
   var pbfPath = "./pbfs"
   var source = "geofabrik"
   while (i < args.size) {
@@ -150,6 +151,10 @@ fun main(args: Array<String>) {
       }
       "--epoch" -> {
         epoch = args[i + 1].toInt()
+        i += 1
+      }
+      "--geofabrik_sources" -> {
+        geofabrikSources.addAll(args[i + 1].split(","))
         i += 1
       }
       "--heap_dump_threshold" -> {
@@ -174,7 +179,7 @@ fun main(args: Array<String>) {
   createConnectionSource(syncCommit = false).use { hikari ->
     val sources = when (source) {
       "geofabrik" -> {
-        fetchGeofabrikSources(epoch, pbfPath, hikari)
+        fetchGeofabrikSources(epoch, geofabrikSources, pbfPath, hikari)
       }
       "planet" -> {
         fetchPlanetSource(pbfPath)
@@ -187,16 +192,10 @@ fun main(args: Array<String>) {
 }
 
 private fun fetchGeofabrikSources(
-    maybeEpoch: Int, pbfPath: String, hikari: HikariDataSource): Pair<Int, List<Path>> {
-  val sources = ArrayList<String>()
-  hikari.connection.use { connection ->
-    connection.prepareStatement("SELECT path FROM geofabrik_sources").executeQuery().use {
-      while (it.next()) {
-        sources.add(it.getString(1))
-      }
-    }
-  }
-
+    maybeEpoch: Int,
+    sources: List<String>,
+    pbfPath: String,
+    hikari: HikariDataSource): Pair<Int, List<Path>> {
   val epoch = if (maybeEpoch > 0) maybeEpoch else calculateEpoch()
   val paths = ArrayList<Path>()
   for (source in sources) {
