@@ -249,7 +249,7 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
             + "  ORDER BY MAX(score) ASC "
             + "  LIMIT ?"
             + ") sr "
-            + "LEFT JOIN boundaries_in_boundaries bib ON sr.id = bib.child_id AND bib.epoch = ?"
+            + "LEFT JOIN boundaries_in_boundaries bib ON sr.id = bib.child_id AND bib.epoch = ? "
             + "GROUP BY 1, 2, 3, sr.score "
             + "ORDER BY sr.score ASC")
         .apply {
@@ -330,7 +330,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "  ORDER BY MAX(score) ASC "
             + "  LIMIT ?"
             + ") sr "
-            + "LEFT JOIN trails_in_boundaries tib ON sr.id = tib.trail_id AND tib.epoch = ?"
+            + "LEFT JOIN trails_in_boundaries tib ON sr.id = tib.trail_id AND tib.epoch = ? "
             + "GROUP BY 1, 2, 3, 4, sr.score "
             + "ORDER BY sr.score ASC")
         .apply {
