@@ -55,7 +55,7 @@ goog.exportProperty(S2Point.prototype, 'getZ', S2Point.prototype.getZ);
 
 const S2Polygon = goog.require('com.google.common.geometry.S2Polygon');
 goog.exportSymbol('com.google.common.geometry.S2Polygon', S2Polygon);
-goog.exportProperty(S2Polygon.prototype, 'containsPolygon', S2Polygon.prototype.containsPolygon);
+goog.exportProperty(S2Polygon.prototype, 'contains', S2Polygon.prototype.contains);
 goog.exportProperty(S2Polygon.prototype, 'getLoops', S2Polygon.prototype.getLoops);
 goog.exportProperty(S2Polygon.prototype, 'getRectBound', S2Polygon.prototype.getRectBound);
 goog.exportProperty(S2Polygon.prototype, 'loop', S2Polygon.prototype.loop);
