@@ -34,8 +34,10 @@ enum class TiffDataType(val id: kotlin.UShort) {
 }
 
 enum class CompressionType(val id: UShort) {
+  // https://www.awaresystems.be/imaging/tiff/tifftags/compression.html
   None(1.toUShort()),
   Lzw(5.toUShort()),
+  AdobeDeflate(8.toUShort()),
 }
 
 enum class PredictorType(val id: UShort) {

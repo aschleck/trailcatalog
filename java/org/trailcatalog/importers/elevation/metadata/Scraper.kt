@@ -53,7 +53,7 @@ fun main(args: Array<String>) {
     )) {
       var offset = 0
       var remaining = 1
-      val limit = 1000
+      val limit = 500
       while (remaining > 0) {
         fetch(metadataUrl(dataset, offset, limit)) { body, _ ->
           println("Fetched ${limit} from ${offset}")

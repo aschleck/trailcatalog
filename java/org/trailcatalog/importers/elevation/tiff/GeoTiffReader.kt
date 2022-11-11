@@ -3,6 +3,8 @@ package org.trailcatalog.importers.elevation.tiff
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
 import com.google.common.geometry.S2LatLng
+import mil.nga.tiff.compression.CompressionDecoder
+import mil.nga.tiff.compression.DeflateCompression
 import mil.nga.tiff.compression.LZWCompression
 import mil.nga.tiff.compression.Predictor
 import org.locationtech.proj4j.CRSFactory
@@ -25,6 +27,7 @@ data class Origin(val modelPosition: XyPair, val rasterScale: XyPair)
 class GeoTiffReader(val path: Path) : Closeable {
 
   private val stream: EncodedInputStream
+  private val decompressor: CompressionDecoder
   private val imageWidth: Int
   private val imageHeight: Int
   private val tileWidth: Int
@@ -32,6 +35,7 @@ class GeoTiffReader(val path: Path) : Closeable {
   private val tileOffsets: ArrayList<UInt>
   private val tileByteSizes: ArrayList<UInt>
   private val origin: Origin
+  private val translate: XyPair
   private val transform: CoordinateTransform
   private val noData: Float
 
@@ -128,9 +132,14 @@ class GeoTiffReader(val path: Path) : Closeable {
     this.tileWidth = tileWidth.toInt()
     this.tileHeight = tileHeight.toInt()
 
-    if (compression != CompressionType.Lzw.id) {
-      throw IllegalArgumentException("Expected LZW compression")
+    decompressor = if (compression == CompressionType.AdobeDeflate.id) {
+      DeflateCompression()
+    } else if (compression == CompressionType.Lzw.id) {
+      LZWCompression()
+    } else {
+      throw IllegalArgumentException("Unknown compression type: ${compression}")
     }
+
     if (predictor != PredictorType.FloatingPoint.id) {
       throw IllegalArgumentException("Expected floating point predictor")
     }
@@ -267,8 +276,14 @@ class GeoTiffReader(val path: Path) : Closeable {
     } else {
       throw IllegalArgumentException("Unable to handle non-projected model types")
     }
-    if (rasterType != GeoTiffRasterSpace.RasterPixelIsArea.id) {
-      throw IllegalArgumentException("Unable to handle non-area raster pixels")
+
+    // TODO(april): is this right?
+    if (rasterType == GeoTiffRasterSpace.RasterPixelIsArea.id) {
+      translate = XyPair(0.0, 0.0)
+    } else if (rasterType == GeoTiffRasterSpace.RasterPixelIsPoint.id) {
+      translate = XyPair(-0.5, -0.5)
+    } else {
+      throw IllegalArgumentException("Unknown raster type: ${rasterType}")
     }
 
     val factory = CRSFactory()
@@ -278,15 +293,16 @@ class GeoTiffReader(val path: Path) : Closeable {
             "WGS84", "+title=long/lat:WGS84 +proj=longlat +datum=WGS84 +units=degrees")
     transform = CoordinateTransformFactory().createTransform(wgs84, projection)
 
-    if (gdalNoDataOffset == null) {
-      throw IllegalArgumentException("Expected GDAL_NODATA")
+    if (gdalNoDataOffset != null) {
+      stream.seek(gdalNoDataOffset.offset)
+      val noDataString = StringBuilder()
+      for (i in 0.toUInt() until gdalNoDataOffset.count) {
+        noDataString.append(stream.read().toChar())
+      }
+      noData = noDataString.toString().toFloat()
+    } else {
+      noData = 999999f // TODO(april): ?
     }
-    stream.seek(gdalNoDataOffset.offset)
-    val noDataString = StringBuilder()
-    for (i in 0.toUInt() until gdalNoDataOffset.count) {
-      noDataString.append(stream.read().toChar())
-    }
-    noData = noDataString.toString().toFloat()
   }
 
   override fun close() {
@@ -301,8 +317,8 @@ class GeoTiffReader(val path: Path) : Closeable {
   fun query(ll: S2LatLng): Float? {
     val modelCoordinate = transform.transform(ll.toProjCoordinateDegrees(), ProjCoordinate())
     // TODO(april): some sort of filtering?
-    val x = ((modelCoordinate.x - origin.modelPosition.x) / origin.rasterScale.x)
-    val y = ((modelCoordinate.y - origin.modelPosition.y) / origin.rasterScale.y)
+    val x = ((modelCoordinate.x - origin.modelPosition.x) / origin.rasterScale.x) + translate.x
+    val y = ((modelCoordinate.y - origin.modelPosition.y) / origin.rasterScale.y) + translate.y
     val lx = x.toInt()
     val ly = y.toInt()
     val tlv = query(lx, ly)
@@ -354,7 +370,7 @@ class GeoTiffReader(val path: Path) : Closeable {
     if (read != compressed.size) {
       throw IllegalStateException("Didn't read the whole tile")
     }
-    val decoded = LZWCompression().decode(compressed, LITTLE_ENDIAN)
+    val decoded = decompressor.decode(compressed, LITTLE_ENDIAN)
     return Predictor.decode(
         decoded, PredictorType.FloatingPoint.id.toInt(), tileWidth, tileHeight, listOf(32), 1)
   }

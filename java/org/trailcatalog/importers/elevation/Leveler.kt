@@ -1,140 +1,162 @@
 package org.trailcatalog.importers.elevation
 
+import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Point
+import com.google.common.reflect.TypeToken
 import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.createConnectionSource
-import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
+import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
+import org.trailcatalog.importers.pbf.ExtractNodes
+import org.trailcatalog.importers.pbf.ExtractWays
+import org.trailcatalog.importers.pbf.GatherWayNodes
+import org.trailcatalog.importers.pbf.MakeWayGeometries
+import org.trailcatalog.importers.pbf.PbfBlockReader
+import org.trailcatalog.importers.pbf.Way
+import org.trailcatalog.importers.pipeline.PSink
+import org.trailcatalog.importers.pipeline.PTransformer
+import org.trailcatalog.importers.pipeline.Pipeline
+import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.importers.pipeline.collections.PEntry
+import org.trailcatalog.importers.pipeline.collections.PList
+import org.trailcatalog.importers.pipeline.collections.Serializer
+import org.trailcatalog.importers.pipeline.collections.registerSerializer
+import org.trailcatalog.importers.pipeline.groupBy
+import org.trailcatalog.importers.pipeline.io.EncodedInputStream
+import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
+import org.trailcatalog.importers.processArgsAndGetPbfs
 import org.trailcatalog.s2.earthMetersToAngle
-import java.nio.ByteBuffer
-import java.nio.ByteOrder.LITTLE_ENDIAN
-import java.nio.file.Path
+import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
+  registerSerializer(TypeToken.of(S2CellId::class.java), object : Serializer<S2CellId> {
+
+    override fun read(from: EncodedInputStream): S2CellId {
+      return S2CellId(from.readLong())
+    }
+
+    override fun write(v: S2CellId, to: EncodedOutputStream) {
+      to.writeLong(v.id())
+    }
+  })
+
+  val (_, pbfs) = processArgsAndGetPbfs(args)
+
   createConnectionSource(syncCommit = false).use { hikari ->
-    val trails = arrayListOf(4137055L, 1855761L, 12409804L)
-    calculateTrailProfiles(trails, hikari)
+    val pipeline = Pipeline()
+    val nodes =
+        pipeline.cat(
+            pbfs.map { p ->
+              pipeline
+                  .read(PbfBlockReader(p, readNodes = true, readRelations = false, readWays = false))
+                  .then(ExtractNodes())
+            })
+            .groupBy("GroupNodes") { it.id }
+    val ways =
+        pipeline.cat(
+            pbfs.map { p ->
+              pipeline
+                  .read(PbfBlockReader(p, readNodes = false, readRelations = false, readWays = true))
+                  .then(ExtractWays())
+            })
+            .groupBy("GroupWays") { it.id }
+    val waysToPoints =
+        pipeline
+            .join2("JoinNodesForWayPoints", nodes, ways.then(ExtractNodeWayPairs()))
+            .then(GatherWayNodes())
+    val waysWithGeometry =
+        pipeline
+            .join2("JoinWaysForGeometry", ways, waysToPoints)
+            .then(MakeWayGeometries())
+            .then(object : PTransformer<PEntry<Long, Way>, Way>(TypeToken.of(Way::class.java)) {
+              override fun act(input: PEntry<Long, Way>, emitter: Emitter<Way>) {
+                emitter.emit(input.values[0])
+              }
+            })
+    val waysByCells = waysWithGeometry.groupBy("GroupWaysByCells") {
+      S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
+    }
+    waysByCells.then(CalculateProfiles(hikari)).write(object : PSink<PList<Way>>() {
+      override fun write(input: PList<Way>) {
+        while (input.hasNext()) {
+          input.next()
+        }
+        input.close()
+      }
+    })
+
+    pipeline.execute()
   }
 }
 
-private data class Profile(val up: Double, val down: Double, val heights: List<Float>)
-
-private fun calculateTrailProfiles(trails: ArrayList<Long>, hikari: HikariDataSource) {
-  val trailArray = trails.toArray()
-  val paths = HashMap<Long, ByteArray>()
-  val pathGeometries = HashMap<Long, ByteArray>()
-  hikari.connection.use { connection ->
-    connection
-        .prepareStatement(
-            "SELECT id, path_ids FROM trails WHERE id = ANY (?)").also {
-          it.setArray(1, connection.createArrayOf("bigint", trailArray))
-        }
-        .executeQuery()
-        .use {
-          while (it.next()) {
-            paths[it.getLong(1)] = it.getBytes(2)
-          }
-        }
-    connection
-        .prepareStatement(
-            "SELECT p.id, p.lat_lng_degrees " +
-                "FROM paths p " +
-                "RIGHT JOIN paths_in_trails pit ON p.id = pit.path_id " +
-                "WHERE pit.trail_id = ANY (?)")
-        .also {
-          it.setArray(1, connection.createArrayOf("bigint", trailArray))
-        }
-        .executeQuery()
-        .use {
-          while (it.next()) {
-            pathGeometries[it.getLong(1)] = it.getBytes(2)
-          }
-        }
+private class CalculateProfiles(private val hikari: HikariDataSource)
+    : PTransformer<PEntry<S2CellId, Way>, Way>(TypeToken.of(Way::class.java)) {
+  override fun act(input: PEntry<S2CellId, Way>, emitter: Emitter<Way>) {
+    val resolver = DemResolver(hikari)
+    input.values.forEach { println(it.id); println(calculateProfile(it, resolver)) }
+    exitProcess(0)
   }
+}
 
-  val resolver = DemResolver(hikari)
-  val pathProfiles = calculatePathProfiles(pathGeometries, resolver)
-  for ((trailId, pathIds) in paths) {
-    val pathIdsBuffer = ByteBuffer.wrap(pathIds).order(LITTLE_ENDIAN).asLongBuffer()
-    var totalUp = 0.0
-    var totalDown = 0.0
-    while (pathIdsBuffer.hasRemaining()) {
-      val pathId = pathIdsBuffer.get()
-      val profile = pathProfiles[pathId.and(1L.inv())]!!
-      if (pathId % 2 == 0L) {
-        totalUp += profile.up
-        totalDown += profile.down
+private data class Profile(
+    val id: Long,
+    val version: Int,
+    val down: Double,
+    val up: Double,
+    val profile: List<Float>,
+)
+
+private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
+  val points = way.points.map { it.toS2LatLng().toPoint() }
+
+  // 1609 meters to a mile, so at four bytes per meter we'd pay 6.4kb per mile. Seems like a lot,
+  // but accuracy is nice... Let's calculate at 5m but build the profile every 10m.
+  val increment = earthMetersToAngle(5.0)
+  val sampleRate = 2
+
+  var offsetRadians = 0.0
+  var current = 0
+  var last: Float
+  var totalUp = 0.0
+  var totalDown = 0.0
+  val profile = ArrayList<Float>()
+  var sampleIndex = 0
+  while (current < points.size - 1) {
+    val previous = points[current]
+    val next = points[current + 1]
+    val length = previous.angle(next)
+    var position = offsetRadians
+    last = resolver.query(S2LatLng(previous))
+    while (position < length) {
+      val fraction = Math.sin(position) / Math.sin(length)
+      val ll =
+          S2LatLng(
+              S2Point.add(
+                  S2Point.mul(previous, Math.cos(position) - fraction * Math.cos(length)),
+                  S2Point.mul(next, fraction)))
+      val height = resolver.query(ll)
+      if (sampleIndex % sampleRate == 0) {
+        profile.add(height)
+      }
+      sampleIndex += 1
+
+      val dz = height - last
+      if (dz >= 0) {
+        totalUp += dz
       } else {
-        totalUp += profile.down
-        totalDown += profile.up
+        totalDown -= dz
       }
+      last = height
+      position += increment.radians()
     }
+    current += 1
+    offsetRadians = position - length
 
-    println(trailId)
-    println(Profile(totalUp, totalDown, listOf()))
+    // Make sure we've always added the last point to the profile
+    if (current == points.size - 1 && sampleIndex % sampleRate != 1) {
+      profile.add(last)
+    }
   }
-}
 
-private fun calculatePathProfiles(geometry: Map<Long, ByteArray>, resolver: DemResolver):
-    Map<Long, Profile> {
-  val profiles = HashMap<Long, Profile>()
-  for ((id, bytes) in geometry) {
-    val e7s = ByteBuffer.wrap(bytes).order(LITTLE_ENDIAN).asIntBuffer()
-    val points = ArrayList<S2Point>()
-    while (e7s.hasRemaining()) {
-      points.add(S2LatLng.fromE7(e7s.get(), e7s.get()).toPoint())
-    }
-
-    // 1609 meters to a mile, so at four bytes per meter we'd pay 6.4kb per mile. Seems like a lot,
-    // but accuracy is nice... Let's calculate at 1m but build the profile every 10m.
-    val increment = earthMetersToAngle(1.0)
-    val sampleRate = 10
-
-    var offsetRadians = 0.0
-    var current = 0
-    var last: Float
-    var totalUp = 0.0
-    var totalDown = 0.0
-    val profile = ArrayList<Float>()
-    var sampleIndex = 0
-    while (current < points.size - 1) {
-      val previous = points[current]
-      val next = points[current + 1]
-      val length = previous.angle(next)
-      var position = offsetRadians
-      last = resolver.query(S2LatLng(previous))
-      while (position < length) {
-        val fraction = Math.sin(position) / Math.sin(length)
-        val ll =
-            S2LatLng(
-                S2Point.add(
-                    S2Point.mul(previous, Math.cos(position) - fraction * Math.cos(length)),
-                    S2Point.mul(next, fraction)))
-        val height = resolver.query(ll)
-        if (sampleIndex % sampleRate == 0) {
-          profile.add(height)
-        }
-        sampleIndex += 1
-
-        val dz = height - last
-        if (dz >= 0) {
-          totalUp += dz
-        } else {
-          totalDown -= dz
-        }
-        last = height
-        position += increment.radians()
-      }
-      current += 1
-      offsetRadians = position - length
-      
-      // Make sure we've always added the last point to the profile
-      if (current == points.size - 1 && sampleIndex % sampleRate != 1) {
-        profile.add(last)
-      }
-    }
-
-    profiles[id] = Profile(totalUp, totalDown, profile)
-  }
-  return profiles
+  return Profile(id=way.id, version=way.version, down=totalDown, up=totalUp, profile=profile)
 }
