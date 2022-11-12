@@ -6,8 +6,10 @@ import com.google.common.geometry.S2Point
 import com.google.common.reflect.TypeToken
 import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.createConnectionSource
-import org.trailcatalog.importers.ELEVATION_PROFILES_FILE
-import org.trailcatalog.importers.Profile
+import org.trailcatalog.importers.basemap.ELEVATION_PROFILES_FILE
+import org.trailcatalog.importers.basemap.ElevationProfilesReader
+import org.trailcatalog.importers.basemap.Profile
+import org.trailcatalog.importers.basemap.processArgsAndGetPbfs
 import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
 import org.trailcatalog.importers.pbf.ExtractNodes
 import org.trailcatalog.importers.pbf.ExtractRelationGeometriesWithWays
@@ -35,7 +37,6 @@ import org.trailcatalog.importers.pipeline.groupBy
 import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
 import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
-import org.trailcatalog.importers.processArgsAndGetPbfs
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.s2.earthMetersToAngle
@@ -125,23 +126,7 @@ fun main(args: Array<String>) {
                 })
 
     val existingProfiles =
-        pipeline
-            .read(object : PSource<Profile>() {
-              override fun read() = sequence {
-                val serializer = getSerializer(TypeToken.of(Profile::class.java))
-                if (ELEVATION_PROFILES_FILE.exists()) {
-                  RandomAccessFile(ELEVATION_PROFILES_FILE, "r").use {
-                    val map = it.channel.map(MapMode.READ_ONLY, 0, ELEVATION_PROFILES_FILE.length())
-                    EncodedInputStream(map).use { input ->
-                      while (input.hasRemaining()) {
-                        yield(serializer.read(input))
-                      }
-                    }
-                  }
-                }
-              }
-            })
-            .groupBy("GroupProfiles") { it.id }
+        pipeline.read(ElevationProfilesReader()).groupBy("GroupProfiles") { it.id }
 
     val waysSources = pipeline.join2("JoinExistingProfiles", relevantWays, existingProfiles)
     val alreadyHadProfiles =

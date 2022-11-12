@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.basemap
 
 import java.io.InputStream
 import java.nio.ByteBuffer

@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.basemap
 
 import com.zaxxer.hikari.HikariDataSource
 import org.postgresql.copy.CopyManager
@@ -103,6 +103,7 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
         "active_epoch",
         "boundaries",
         "boundaries_in_boundaries",
+        "path_elevations",
         "paths",
         "paths_in_trails",
         "trails",

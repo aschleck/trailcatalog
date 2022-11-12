@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.basemap
 
 import com.google.common.geometry.S2CellUnion
 import com.google.common.reflect.TypeToken

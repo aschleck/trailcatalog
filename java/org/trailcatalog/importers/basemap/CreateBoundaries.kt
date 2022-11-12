@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.basemap
 
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2CellId

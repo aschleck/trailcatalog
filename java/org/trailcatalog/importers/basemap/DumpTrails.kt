@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.basemap
 
 import com.zaxxer.hikari.HikariDataSource
 import org.apache.commons.text.StringEscapeUtils

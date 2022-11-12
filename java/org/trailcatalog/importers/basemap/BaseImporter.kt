@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.basemap
 
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
@@ -162,7 +162,7 @@ fun processArgsAndGetPbfs(args: Array<String>): Pair<Int, List<Path>> {
         i += 1
       }
       "--elevation_profiles" -> {
-        ELEVATION_PROFILES_FILE = File(args[i + 1].split(","))
+        ELEVATION_PROFILES_FILE = File(args[i + 1])
         i += 1
       }
       "--geofabrik_sources" -> {

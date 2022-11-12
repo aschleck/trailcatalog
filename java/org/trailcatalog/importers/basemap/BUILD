@@ -8,7 +8,7 @@ load("@rules_java//java:defs.bzl", "java_binary")
 java_binary(
     name = "importer",
     main_class = "org.trailcatalog.importers.ImporterKt",
-    runtime_deps = [":import_lib"],
+    runtime_deps = [":basemap"],
 )
 
 java_image(
@@ -28,10 +28,10 @@ container_push(
 )
 
 kt_jvm_library(
-    name = "import_lib",
+    name = "basemap",
     srcs = glob(["*.kt"]),
     deps = [
-        ":importer_java",
+        ":basemap_java",
         "//java/org/trailcatalog:pg_support",
         "//java/org/trailcatalog/importers/common",
         "//java/org/trailcatalog/importers/pbf",
@@ -53,7 +53,7 @@ kt_jvm_library(
 )
 
 java_library(
-    name = "importer_java",
+    name = "basemap_java",
     srcs = glob(["*.java"]),
     deps = [
         "//java/org/trailcatalog/importers/pbf:pbf_java",

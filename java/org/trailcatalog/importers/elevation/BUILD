@@ -17,7 +17,7 @@ kt_jvm_library(
     ],
     deps = [
         "//java/org/trailcatalog:pg_support",
-        "//java/org/trailcatalog/importers:import_lib",
+        "//java/org/trailcatalog/importers/basemap",
         "//java/org/trailcatalog/importers/common",
         "//java/org/trailcatalog/importers/elevation/tiff",
         "//java/org/trailcatalog/importers/pbf",

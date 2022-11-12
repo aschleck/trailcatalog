@@ -219,11 +219,11 @@ local_repository(
 
 http_archive(
     name = "rules_pkg",
+    sha256 = "451e08a4d78988c06fa3f9306ec813b836b1d076d0f055595444ba4ff22b867f",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.7.1/rules_pkg-0.7.1.tar.gz",
         "https://github.com/bazelbuild/rules_pkg/releases/download/0.7.1/rules_pkg-0.7.1.tar.gz",
     ],
-    sha256 = "451e08a4d78988c06fa3f9306ec813b836b1d076d0f055595444ba4ff22b867f",
 )
 
 load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
@@ -248,6 +248,7 @@ load("@io_bazel_rules_docker//container:pull.bzl", "container_pull")
 
 container_pull(
     name = "container_java_17",
+    digest = "sha256:e05f955883625cc717c7251037db590f08e6e4a322e73db60ef1492a9b7ce33e",
     registry = "gcr.io",
     repository = "distroless/java17",
     tag = "latest",

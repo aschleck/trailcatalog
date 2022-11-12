@@ -1,4 +1,4 @@
-package org.trailcatalog.importers
+package org.trailcatalog.importers.basemap
 
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
