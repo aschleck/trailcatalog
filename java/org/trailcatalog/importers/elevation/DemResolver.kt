@@ -59,6 +59,8 @@ class DemResolver(private val hikari: HikariDataSource) {
 }
 
 private fun demFilePath(metadata: DemMetadata): Path {
+  val base = Path.of("/tmp/dems")
+  base.toFile().mkdir()
   val url = metadata.url.toHttpUrl()
-  return Path.of("dems", url.pathSegments[url.pathSegments.size - 1])
+  return base.resolve(url.pathSegments[url.pathSegments.size - 1])
 }

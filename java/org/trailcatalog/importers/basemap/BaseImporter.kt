@@ -15,13 +15,12 @@ import org.trailcatalog.importers.pipeline.io.EncodedInputStream
 import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.BUFFER_SIZE
 import org.trailcatalog.importers.pipeline.io.FLUSH_THRESHOLD
-import java.io.File
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import kotlin.io.path.exists
 
-fun processArgsAndGetPbfs(args: Array<String>): Pair<Int, List<Path>> {
+fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
   registerPbfSerializers()
 
   registerSerializer(TypeToken.of(Boundary::class.java), object : Serializer<Boundary> {
@@ -62,30 +61,6 @@ fun processArgsAndGetPbfs(args: Array<String>): Pair<Int, List<Path>> {
       to.writeLong(v.id)
       to.writeVarInt(v.polygon.size)
       to.write(v.polygon)
-    }
-  })
-
-  registerSerializer(TypeToken.of(Profile::class.java), object : Serializer<Profile> {
-
-    override fun read(from: EncodedInputStream): Profile {
-      val id = from.readVarLong()
-      val version = from.readVarInt()
-      val down = from.readDouble()
-      val up = from.readDouble()
-      val profile = ArrayList<Float>()
-      for (i in 0 until from.readVarInt()) {
-        profile.add(from.readFloat())
-      }
-      return Profile(id, version, down, up, profile)
-    }
-
-    override fun write(v: Profile, to: EncodedOutputStream) {
-      to.writeVarLong(v.id)
-      to.writeVarInt(v.version)
-      to.writeDouble(v.down)
-      to.writeDouble(v.up)
-      to.writeVarInt(v.profile.size)
-      v.profile.forEach { to.writeFloat(it) }
     }
   })
 
@@ -161,10 +136,6 @@ fun processArgsAndGetPbfs(args: Array<String>): Pair<Int, List<Path>> {
         epoch = args[i + 1].toInt()
         i += 1
       }
-      "--elevation_profiles" -> {
-        ELEVATION_PROFILES_FILE = File(args[i + 1])
-        i += 1
-      }
       "--geofabrik_sources" -> {
         geofabrikSources.addAll(args[i + 1].split(","))
         i += 1
@@ -228,7 +199,7 @@ private fun fetchPlanetSource(pbfPath: String): Pair<Int, List<Path>> {
 private fun calculateEpoch(): Int {
   val now = LocalDateTime.now(ZoneOffset.UTC)
   return if (now.hour >= 1 || now.minute >= 15) {
-    // TODO(april): rollback month
+    // TODO(april): roll back month
     (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
   } else {
     throw RuntimeException("Don't do this")

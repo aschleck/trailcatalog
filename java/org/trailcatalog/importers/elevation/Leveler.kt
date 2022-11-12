@@ -6,9 +6,6 @@ import com.google.common.geometry.S2Point
 import com.google.common.reflect.TypeToken
 import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.createConnectionSource
-import org.trailcatalog.importers.basemap.ELEVATION_PROFILES_FILE
-import org.trailcatalog.importers.basemap.ElevationProfilesReader
-import org.trailcatalog.importers.basemap.Profile
 import org.trailcatalog.importers.basemap.processArgsAndGetPbfs
 import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
 import org.trailcatalog.importers.pbf.ExtractNodes
@@ -23,7 +20,6 @@ import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pbf.WaySkeleton
 import org.trailcatalog.importers.pipeline.PMapTransformer
 import org.trailcatalog.importers.pipeline.PSink
-import org.trailcatalog.importers.pipeline.PSource
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.Pipeline
 import org.trailcatalog.importers.pipeline.collections.Emitter
@@ -40,10 +36,35 @@ import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.s2.earthMetersToAngle
+import java.io.File
 import java.io.RandomAccessFile
-import java.nio.channels.FileChannel.MapMode
+import java.nio.file.Path
 
 fun main(args: Array<String>) {
+  registerSerializer(TypeToken.of(Profile::class.java), object : Serializer<Profile> {
+
+    override fun read(from: EncodedInputStream): Profile {
+      val id = from.readVarLong()
+      val version = from.readVarInt()
+      val down = from.readDouble()
+      val up = from.readDouble()
+      val profile = ArrayList<Float>()
+      for (i in 0 until from.readVarInt()) {
+        profile.add(from.readFloat())
+      }
+      return Profile(id, version, down, up, profile)
+    }
+
+    override fun write(v: Profile, to: EncodedOutputStream) {
+      to.writeVarLong(v.id)
+      to.writeVarInt(v.version)
+      to.writeDouble(v.down)
+      to.writeDouble(v.up)
+      to.writeVarInt(v.profile.size)
+      v.profile.forEach { to.writeFloat(it) }
+    }
+  })
+
   registerSerializer(TypeToken.of(S2CellId::class.java), object : Serializer<S2CellId> {
 
     override fun read(from: EncodedInputStream): S2CellId {
@@ -55,169 +76,191 @@ fun main(args: Array<String>) {
     }
   })
 
-  val (_, pbfs) = processArgsAndGetPbfs(args)
+
+  var i = 0
+  val remainingArgs = ArrayList<String>()
+  while (i < args.size)
+  {
+    when (args[i]) {
+      "--elevation_profiles" -> {
+        ELEVATION_PROFILES_FILE = File(args[i + 1])
+        i += 1
+      }
+      else -> remainingArgs.add(args[i])
+    }
+    i += 1
+  }
 
   createConnectionSource(syncCommit = false).use { hikari ->
-    val pipeline = Pipeline()
-
-    val ways =
-        pipeline.cat(
-            pbfs.map { p ->
-              pipeline
-                  .read(PbfBlockReader(p, readNodes = false, readRelations = false, readWays = true))
-                  .then(ExtractWays())
-            })
-            .groupBy("GroupWays") { it.id }
-
-    val relations =
-        pipeline.cat(
-            pbfs.map { p ->
-              pipeline
-                  .read(PbfBlockReader(p, readNodes = false, readRelations = true, readWays = false))
-                  .then(ExtractRelations())
-            })
-            .groupBy("GroupRelations") { it.id }
-    val relationsToGeometriesWithWays = relations.then(ExtractRelationGeometriesWithWays())
-    val waysInRelations =
-        pipeline.join2("JoinOnRelation", relations, relationsToGeometriesWithWays)
-            .then(
-                object : PTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Long>(
-                    TypeToken.of(Long::class.java)) {
-                  override fun act(
-                      input: PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>,
-                      emitter: Emitter<Long>) {
-                    for (value in input.values) {
-                      val isTrail = value.first.any { RelationCategory.TRAIL.isParentOf(it.type) }
-                      if (isTrail) {
-                        value.second.forEach { emitWays(it, emitter) }
-                      }
-                    }
-                  }
-
-                  private fun emitWays(relation: RelationGeometry, emitter: Emitter<Long>) {
-                    for (member in relation.membersList) {
-                      if (member.hasRelation()) {
-                        emitWays(member.relation, emitter)
-                      }
-                      if (member.hasWay()) {
-                        emitter.emit(member.way.wayId)
-                      }
-                    }
-                  }
-                })
-            .groupBy("GatherWaysInRelations") { it }
-
-    val relevantWays =
-        pipeline.join2("JoinForRelevantWays", ways, waysInRelations)
-            .then(
-                object : PMapTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Long>>>, Long, WaySkeleton>(
-                    "FilterRelevantWays",
-                    TypeToken.of(Long::class.java),
-                    TypeToken.of(WaySkeleton::class.java)) {
-                  override fun act(
-                      input: PEntry<Long, Pair<List<WaySkeleton>, List<Long>>>,
-                      emitter: Emitter2<Long, WaySkeleton>) {
-                    for (value in input.values) {
-                      if (value.first.isNotEmpty() && value.second.isNotEmpty()) {
-                        emitter.emit(input.key, value.first[0])
-                      }
-                    }
-                  }
-                })
-
-    val existingProfiles =
-        pipeline.read(ElevationProfilesReader()).groupBy("GroupProfiles") { it.id }
-
-    val waysSources = pipeline.join2("JoinExistingProfiles", relevantWays, existingProfiles)
-    val alreadyHadProfiles =
-        waysSources
-            .then(
-                object : PTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Profile>>>, Profile>(
-                    TypeToken.of(Profile::class.java)) {
-                  override fun act(
-                      input: PEntry<Long, Pair<List<WaySkeleton>, List<Profile>>>,
-                      emitter: Emitter<Profile>) {
-                    for (value in input.values) {
-                      if (value.first.isEmpty()) {
-                        continue
-                      }
-
-                      val version = value.first[0].version
-                      val hasVersion = value.second.any { it.version == version }
-                      if (hasVersion) {
-                        emitter.emit(value.second[0])
-                      }
-                    }
-                  }
-                })
-    val missingWays =
-        waysSources
-            .then(
-                object : PMapTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Profile>>>, Long, WaySkeleton>(
-                    "FilterForMissingProfiles",
-                    TypeToken.of(Long::class.java),
-                    TypeToken.of(WaySkeleton::class.java)) {
-                  override fun act(
-                      input: PEntry<Long, Pair<List<WaySkeleton>, List<Profile>>>,
-                      emitter: Emitter2<Long, WaySkeleton>) {
-                    for (value in input.values) {
-                      if (value.first.isEmpty()) {
-                        continue
-                      }
-
-                      val version = value.first[0].version
-                      val hasVersion = value.second.any { it.version == version }
-                      if (!hasVersion) {
-                        emitter.emit(input.key, value.first[0])
-                      }
-                    }
-                  }
-                })
-
-    val nodes =
-        pipeline.cat(
-            pbfs.map { p ->
-              pipeline
-                  .read(PbfBlockReader(p, readNodes = true, readRelations = false, readWays = false))
-                  .then(ExtractNodes())
-            })
-            .groupBy("GroupNodes") { it.id }
-    val waysToPoints =
-        pipeline
-            .join2("JoinNodesForWayPoints", nodes, missingWays.then(ExtractNodeWayPairs()))
-            .then(GatherWayNodes())
-    val waysWithGeometry =
-        pipeline
-            .join2("JoinWaysForGeometry", relevantWays, waysToPoints)
-            .then(MakeWayGeometries())
-            .then(object : PTransformer<PEntry<Long, Way>, Way>(TypeToken.of(Way::class.java)) {
-              override fun act(input: PEntry<Long, Way>, emitter: Emitter<Way>) {
-                emitter.emit(input.values[0])
-              }
-            })
-    val waysByCells = waysWithGeometry.groupBy("GroupWaysByCells") {
-      S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
-    }
-    val calculatedProfiles = waysByCells.then(CalculateProfiles(hikari))
-
-    pipeline.cat(listOf(alreadyHadProfiles, calculatedProfiles))
-        .write(object : PSink<PCollection<Profile>>() {
-          override fun write(input: PCollection<Profile>) {
-            val serializer = getSerializer(TypeToken.of(Profile::class.java))
-
-            RandomAccessFile(ELEVATION_PROFILES_FILE, "rw").use {
-              ChannelEncodedOutputStream(it.channel).use { output ->
-                while (input.hasNext()) {
-                  serializer.write(input.next(), output)
-                }
-                input.close()
-              }
-            }
-          }
-        })
-
-    pipeline.execute()
+    processPbfs(processArgsAndGetPbfs(remainingArgs), hikari)
   }
+}
+
+private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
+  val (epoch, pbfs) = input
+
+  val pipeline = Pipeline()
+
+  val ways =
+      pipeline.cat(
+          pbfs.map { p ->
+            pipeline
+                .read(PbfBlockReader(p, readNodes = false, readRelations = false, readWays = true))
+                .then(ExtractWays())
+          })
+          .groupBy("GroupWays") { it.id }
+
+  val relations =
+      pipeline.cat(
+          pbfs.map { p ->
+            pipeline
+                .read(PbfBlockReader(p, readNodes = false, readRelations = true, readWays = false))
+                .then(ExtractRelations())
+          })
+          .groupBy("GroupRelations") { it.id }
+  val relationsToGeometriesWithWays = relations.then(ExtractRelationGeometriesWithWays())
+  val waysInRelations =
+      pipeline.join2("JoinOnRelation", relations, relationsToGeometriesWithWays)
+          .then(
+              object : PTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Long>(
+                  TypeToken.of(Long::class.java)) {
+                override fun act(
+                    input: PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>,
+                    emitter: Emitter<Long>) {
+                  for (value in input.values) {
+                    val isTrail = value.first.any { RelationCategory.TRAIL.isParentOf(it.type) }
+                    if (isTrail) {
+                      value.second.forEach { emitWays(it, emitter) }
+                    }
+                  }
+                }
+
+                private fun emitWays(relation: RelationGeometry, emitter: Emitter<Long>) {
+                  for (member in relation.membersList) {
+                    if (member.hasRelation()) {
+                      emitWays(member.relation, emitter)
+                    }
+                    if (member.hasWay()) {
+                      emitter.emit(member.way.wayId)
+                    }
+                  }
+                }
+              })
+          .groupBy("GatherWaysInRelations") { it }
+
+  val relevantWays =
+      pipeline.join2("JoinForRelevantWays", ways, waysInRelations)
+          .then(
+              object : PMapTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Long>>>, Long, WaySkeleton>(
+                  "FilterRelevantWays",
+                  TypeToken.of(Long::class.java),
+                  TypeToken.of(WaySkeleton::class.java)) {
+                override fun act(
+                    input: PEntry<Long, Pair<List<WaySkeleton>, List<Long>>>,
+                    emitter: Emitter2<Long, WaySkeleton>) {
+                  for (value in input.values) {
+                    if (value.first.isNotEmpty() && value.second.isNotEmpty()) {
+                      emitter.emit(input.key, value.first[0])
+                    }
+                  }
+                }
+              })
+
+  val existingProfiles =
+      pipeline.read(ElevationProfilesReader(optional = true)).groupBy("GroupProfiles") { it.id }
+
+  val waysSources = pipeline.join2("JoinExistingProfiles", relevantWays, existingProfiles)
+  val alreadyHadProfiles =
+      waysSources
+          .then(
+              object : PTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Profile>>>, Profile>(
+                  TypeToken.of(Profile::class.java)) {
+                override fun act(
+                    input: PEntry<Long, Pair<List<WaySkeleton>, List<Profile>>>,
+                    emitter: Emitter<Profile>) {
+                  for (value in input.values) {
+                    if (value.first.isEmpty()) {
+                      continue
+                    }
+
+                    val version = value.first[0].version
+                    val hasVersion = value.second.any { it.version == version }
+                    if (hasVersion) {
+                      emitter.emit(value.second[0])
+                    }
+                  }
+                }
+              })
+  val missingWays =
+      waysSources
+          .then(
+              object : PMapTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Profile>>>, Long, WaySkeleton>(
+                  "FilterForMissingProfiles",
+                  TypeToken.of(Long::class.java),
+                  TypeToken.of(WaySkeleton::class.java)) {
+                override fun act(
+                    input: PEntry<Long, Pair<List<WaySkeleton>, List<Profile>>>,
+                    emitter: Emitter2<Long, WaySkeleton>) {
+                  for (value in input.values) {
+                    if (value.first.isEmpty()) {
+                      continue
+                    }
+
+                    val version = value.first[0].version
+                    val hasVersion = value.second.any { it.version == version }
+                    if (!hasVersion) {
+                      emitter.emit(input.key, value.first[0])
+                    }
+                  }
+                }
+              })
+
+  val nodes =
+      pipeline.cat(
+          pbfs.map { p ->
+            pipeline
+                .read(PbfBlockReader(p, readNodes = true, readRelations = false, readWays = false))
+                .then(ExtractNodes())
+          })
+          .groupBy("GroupNodes") { it.id }
+  val waysToPoints =
+      pipeline
+          .join2("JoinNodesForWayPoints", nodes, missingWays.then(ExtractNodeWayPairs()))
+          .then(GatherWayNodes())
+  val waysWithGeometry =
+      pipeline
+          .join2("JoinWaysForGeometry", relevantWays, waysToPoints)
+          .then(MakeWayGeometries())
+          .then(object : PTransformer<PEntry<Long, Way>, Way>(TypeToken.of(Way::class.java)) {
+            override fun act(input: PEntry<Long, Way>, emitter: Emitter<Way>) {
+              emitter.emit(input.values[0])
+            }
+          })
+  val waysByCells = waysWithGeometry.groupBy("GroupWaysByCells") {
+    S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
+  }
+  val calculatedProfiles = waysByCells.then(CalculateProfiles(hikari))
+
+  val allProfiles = pipeline.cat(listOf(alreadyHadProfiles, calculatedProfiles))
+
+  allProfiles.write(DumpPathElevations(epoch, hikari))
+
+  allProfiles.write(object : PSink<PCollection<Profile>>() {
+    override fun write(input: PCollection<Profile>) {
+      val serializer = getSerializer(TypeToken.of(Profile::class.java))
+
+      RandomAccessFile(ELEVATION_PROFILES_FILE, "rw").use {
+        ChannelEncodedOutputStream(it.channel).use { output ->
+          while (input.hasNext()) {
+            serializer.write(input.next(), output)
+          }
+          input.close()
+        }
+      }
+    }
+  })
+
+  pipeline.execute()
 }
 
 private class CalculateProfiles(hikari: HikariDataSource)

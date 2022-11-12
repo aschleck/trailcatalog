@@ -22,7 +22,7 @@ import java.nio.file.Path
 
 fun main(args: Array<String>) {
   createConnectionSource(syncCommit = false).use { hikari ->
-    processPbfs(processArgsAndGetPbfs(args), hikari)
+    processPbfs(processArgsAndGetPbfs(args.asList()), hikari)
   }
 }
 

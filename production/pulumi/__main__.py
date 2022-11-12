@@ -52,6 +52,13 @@ db_authorization = secretmanager.Secret(
     replication=secretmanager.SecretReplicationArgs(automatic=True),
 )
 
+import_cache_disk = compute.Disk(
+    "import-cache",
+    size=100,
+    type="pd-standard",
+    zone="us-west1-a",
+)
+
 pink = compute.Instance(
     "pink",
     name="pink",
@@ -108,6 +115,11 @@ for preemptible in (True, False):
                 source_image="projects/cos-cloud/global/images/cos-stable-101-17162-40-5",
             ),
             compute.InstanceTemplateDiskArgs(
+                auto_delete=False,
+                device_name="import-cache",
+                source=import_cache_disk.name,
+            ),
+            compute.InstanceTemplateDiskArgs(
                 device_name="local-ssd-0",
                 disk_size_gb=375,
                 disk_type="local-ssd",
@@ -131,6 +143,9 @@ for preemptible in (True, False):
     #cloud-config
 
     bootcmd:
+    - mkdir -p /mnt/disks/import_cache
+    - mount -t ext4 /dev/by-id/google-import-cache /mnt/disks/import_cache
+    - chmod a+rwx /mnt/disks/import_cache
     - mdadm --create /dev/md0 --level=0 --raid-devices=2 /dev/nvme0n1 /dev/nvme0n2
     - mkfs.ext4 -F /dev/md0
     - mkdir -p /mnt/disks/scratch
@@ -161,6 +176,27 @@ for preemptible in (True, False):
 
         auth_token="$(toolbox gcloud secrets versions access latest --secret {args['db_auth']} --quiet | tail -n 1)"
         echo "Got auth token: ${{auth_token}}"
+
+        mkdir /mnt/disks/scratch/dems
+
+        /usr/bin/docker \\
+            run \\
+            --name=leveler \\
+            --rm \\
+            --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
+            --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
+            --env JAVA_TOOL_OPTIONS="-Xms8g -Xmx11g -Xss1g -XX:MaxMetaspaceSize=1g" \\
+            --mount type=bind,source=/mnt/disks/import_cache,target=/import_cache \\
+            --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
+            us-west1-docker.pkg.dev/trailcatalog/containers/leveler:latest \\
+            --block_size 4194304 \\
+            --buffer_size 500000000 \\
+            --elevation_profile /import_cache/elevation_profile.pb \\
+            --heap_dump_threshold 3048000000 \\
+            --pbf_path /tmp \\
+            --source planet
+
+        rm -rf /mnt/disks/scratch/dems
 
         /usr/bin/docker \\
             run \\
