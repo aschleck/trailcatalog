@@ -7,13 +7,3 @@ primary_key = ["epoch"]
   name = "epoch"
   nullable = false
   type = "INT"
-
-[[actions]]
-type = "create_table"
-name = "geofabrik_sources"
-primary_key = ["path"]
-
-  [[actions.columns]]
-  name = "path"
-  nullable = false
-  type = "TEXT"

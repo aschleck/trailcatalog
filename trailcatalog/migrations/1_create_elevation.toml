@@ -50,7 +50,7 @@ table = "digital_elevation_models"
 [[actions]]
 type = "create_table"
 name = "path_elevations"
-primary_key = ["id", "version"]
+primary_key = ["id", "epoch"]
 
   [[actions.columns]]
   name = "id"
@@ -58,7 +58,7 @@ primary_key = ["id", "version"]
   type = "BIGINT"
 
   [[actions.columns]]
-  name = "version"
+  name = "epoch"
   nullable = false
   type = "INT"
 

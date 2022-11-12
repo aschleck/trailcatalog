@@ -51,6 +51,10 @@ class EncodedInputStream(private val buffer: MappedByteBuffer) : InputStream() {
     return Double.fromBits(readLong())
   }
 
+  fun readFloat(): Float {
+    return Float.fromBits(readInt())
+  }
+
   fun readInt(): Int {
     return (buffer.get().toInt() and 0xFF) or
         ((buffer.get().toInt() and 0xFF) shl 8) or

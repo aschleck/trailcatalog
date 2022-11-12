@@ -55,6 +55,7 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel)
     buffer.clear()
   }
 
+  // TODO(april): since I broke down and added buffer checking to write, does this do much?
   fun checkBufferSpace() {
     if (buffer.position() >= FLUSH_THRESHOLD) {
       flush()
