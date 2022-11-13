@@ -35,9 +35,9 @@ class ExtractRelationGeometriesWithWays
 
       val used = Stack<Long>()
       for (id in inMemory.keys) {
+        used.clear()
         val geometry = inflate(id, id, inMemory, used) ?: continue
         emitter.emit(id, geometry)
-        used.clear()
       }
     }
   }
