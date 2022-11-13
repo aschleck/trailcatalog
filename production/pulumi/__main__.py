@@ -112,7 +112,7 @@ for preemptible in (True, False):
                 boot=True,
                 disk_size_gb=10,
                 disk_type="pd-balanced",
-                source_image="projects/cos-cloud/global/images/cos-stable-101-17162-40-5",
+                source_image="projects/cos-cloud/global/images/cos-stable-101-17162-40-13",
             ),
             compute.InstanceTemplateDiskArgs(
                 auto_delete=False,
@@ -179,6 +179,7 @@ for preemptible in (True, False):
 
         mkdir /mnt/disks/scratch/dems
 
+        /usr/bin/docker-credential-gcr configure-docker --registries=us-west1-docker.pkg.dev
         /usr/bin/docker \\
             run \\
             --name=leveler \\
@@ -198,6 +199,7 @@ for preemptible in (True, False):
 
         rm -rf /mnt/disks/scratch/dems
 
+        /usr/bin/docker-credential-gcr configure-docker --registries=us-west1-docker.pkg.dev
         /usr/bin/docker \\
             run \\
             --name=importer \\
@@ -205,10 +207,12 @@ for preemptible in (True, False):
             --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
             --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
             --env JAVA_TOOL_OPTIONS="-Xms8g -Xmx11g -Xss1g -XX:MaxMetaspaceSize=1g" \\
+            --mount type=bind,source=/mnt/disks/import_cache,target=/import_cache \\
             --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
             us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \\
             --block_size 4194304 \\
             --buffer_size 500000000 \\
+            --elevation_profile /import_cache/elevation_profile.pb \\
             --heap_dump_threshold 3048000000 \\
             --pbf_path /tmp \\
             --source planet
@@ -243,7 +247,6 @@ for preemptible in (True, False):
 
         [Service]
         Environment="HOME=/home/trailcatalog"
-        ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries=us-west1-docker.pkg.dev
         ExecStart=/var/lib/cloud/launcher.sh
         ExecStop=/usr/bin/docker stop importer
         ExecStopPost=/usr/bin/docker rm importer
