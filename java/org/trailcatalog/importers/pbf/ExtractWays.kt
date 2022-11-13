@@ -59,5 +59,5 @@ fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
     nodeId += way.getRefs(i)
     refs[i] = nodeId
   }
-  return WaySkeleton(way.id, way.info.version, category.id, name ?: "", refs)
+  return WaySkeleton(way.id, category.id, name ?: "", refs)
 }

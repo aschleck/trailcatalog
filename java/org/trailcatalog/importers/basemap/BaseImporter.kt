@@ -1,10 +1,10 @@
 package org.trailcatalog.importers.basemap
 
+import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import org.trailcatalog.createConnectionSource
 import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.registerPbfSerializers
@@ -69,19 +69,19 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
 
     override fun read(from: EncodedInputStream): Profile {
       val id = from.readVarLong()
-      val version = from.readVarInt()
+      val hash = from.readInt()
       val down = from.readDouble()
       val up = from.readDouble()
       val profile = ArrayList<Float>()
       for (i in 0 until from.readVarInt()) {
         profile.add(from.readFloat())
       }
-      return Profile(id, version, down, up, profile)
+      return Profile(id, hash, down, up, profile)
     }
 
     override fun write(v: Profile, to: EncodedOutputStream) {
       to.writeVarLong(v.id)
-      to.writeVarInt(v.version)
+      to.writeInt(v.hash)
       to.writeDouble(v.down)
       to.writeDouble(v.up)
       to.writeVarInt(v.profile.size)
@@ -146,6 +146,16 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
     }
   })
 
+  registerSerializer(TypeToken.of(S2CellId::class.java), object : Serializer<S2CellId> {
+    override fun read(from: EncodedInputStream): S2CellId {
+      return S2CellId(from.readLong())
+    }
+
+    override fun write(v: S2CellId, to: EncodedOutputStream) {
+      to.writeLong(v.id())
+    }
+  })
+
   var i = 0
   var epoch = -1
   val geofabrikSources = ArrayList<String>()
@@ -192,16 +202,14 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
     i += 1
   }
 
-  return createConnectionSource(syncCommit = false).use { hikari ->
-    when (source) {
-      "geofabrik" -> {
-        fetchGeofabrikSources(epoch, geofabrikSources, pbfPath)
-      }
-      "planet" -> {
-        fetchPlanetSource(pbfPath)
-      }
-      else -> throw RuntimeException("Unknown type of source ${source}")
+  return when (source) {
+    "geofabrik" -> {
+      fetchGeofabrikSources(epoch, geofabrikSources, pbfPath)
     }
+    "planet" -> {
+      fetchPlanetSource(pbfPath)
+    }
+    else -> throw RuntimeException("Unknown type of source ${source}")
   }
 }
 

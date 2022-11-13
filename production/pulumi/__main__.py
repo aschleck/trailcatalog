@@ -144,7 +144,7 @@ for preemptible in (True, False):
 
     bootcmd:
     - mkdir -p /mnt/disks/import_cache
-    - mount -t ext4 /dev/by-id/google-import-cache /mnt/disks/import_cache
+    - mount -t ext4 /dev/disk/by-id/google-import-cache-part1 /mnt/disks/import_cache
     - chmod a+rwx /mnt/disks/import_cache
     - mdadm --create /dev/md0 --level=0 --raid-devices=2 /dev/nvme0n1 /dev/nvme0n2
     - mkfs.ext4 -F /dev/md0
@@ -160,6 +160,7 @@ for preemptible in (True, False):
         #!/bin/sh
         set -euxo pipefail
 
+        /usr/bin/docker-credential-gcr configure-docker --registries=us-west1-docker.pkg.dev
         /usr/bin/docker \\
             run \\
             --name=aria2c \\
@@ -182,26 +183,6 @@ for preemptible in (True, False):
         /usr/bin/docker-credential-gcr configure-docker --registries=us-west1-docker.pkg.dev
         /usr/bin/docker \\
             run \\
-            --name=leveler \\
-            --rm \\
-            --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
-            --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
-            --env JAVA_TOOL_OPTIONS="-Xms8g -Xmx11g -Xss1g -XX:MaxMetaspaceSize=1g" \\
-            --mount type=bind,source=/mnt/disks/import_cache,target=/import_cache \\
-            --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
-            us-west1-docker.pkg.dev/trailcatalog/containers/leveler:latest \\
-            --block_size 4194304 \\
-            --buffer_size 500000000 \\
-            --elevation_profile /import_cache/elevation_profile.pb \\
-            --heap_dump_threshold 3048000000 \\
-            --pbf_path /tmp \\
-            --source planet
-
-        rm -rf /mnt/disks/scratch/dems
-
-        /usr/bin/docker-credential-gcr configure-docker --registries=us-west1-docker.pkg.dev
-        /usr/bin/docker \\
-            run \\
             --name=importer \\
             --rm \\
             --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
@@ -216,6 +197,9 @@ for preemptible in (True, False):
             --heap_dump_threshold 3048000000 \\
             --pbf_path /tmp \\
             --source planet
+
+        rm -rf /mnt/disks/scratch/dems
+
     - path: /var/lib/cloud/reaper.sh
       permissions: 0755
       owner: root

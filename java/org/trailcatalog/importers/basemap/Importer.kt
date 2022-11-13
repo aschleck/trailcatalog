@@ -1,5 +1,7 @@
 package org.trailcatalog.importers.basemap
 
+import com.google.common.geometry.S2CellId
+import com.google.common.reflect.TypeToken
 import com.zaxxer.hikari.HikariDataSource
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
@@ -17,6 +19,16 @@ import org.trailcatalog.importers.pbf.GatherRelationWays
 import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
 import org.trailcatalog.importers.pbf.PbfBlockReader
+import org.trailcatalog.importers.pbf.Way
+import org.trailcatalog.importers.pipeline.BoundStage
+import org.trailcatalog.importers.pipeline.PMapTransformer
+import org.trailcatalog.importers.pipeline.PTransformer
+import org.trailcatalog.importers.pipeline.binaryStructListReader
+import org.trailcatalog.importers.pipeline.binaryStructListWriter
+import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.importers.pipeline.collections.Emitter2
+import org.trailcatalog.importers.pipeline.collections.PEntry
+import org.trailcatalog.importers.pipeline.collections.PMap
 import java.io.InputStream
 import java.nio.file.Path
 
@@ -29,7 +41,12 @@ fun main(args: Array<String>) {
 private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
   val (epoch, pbfs) = input
 
+  // TODO(april): it's good for speed to only calculate paths used in relations, but it means that
+  // we won't be able to dynamically create trails. So need to relax this in the future.
+
   val pipeline = Pipeline()
+
+  // First, get basic way geometries
   val nodes =
       pipeline.cat(
           pbfs.map { p ->
@@ -54,14 +71,9 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
       pipeline
           .join2("JoinWaysForGeometry", ways, waysToPoints)
           .then(MakeWayGeometries())
-  val profiles = pipeline.read(ElevationProfilesReader())
-  profiles.write(DumpPathElevations(epoch, hikari))
-  val waysToProfiles = profiles.groupBy("GroupProfiles") { it.id }
-  val waysWithElevationAndGeometry =
-      pipeline
-        .join2("JoinWaysForElevation", waysWithGeometry, waysToProfiles)
-        .then(UpdateWayElevations())
-  waysWithElevationAndGeometry.write(DumpPaths(epoch, hikari))
+
+  // Now, take the way geometries, filter it down to ways in likely trail relations, and calculate
+  // the required elevation profiles.
   val relations =
       pipeline.cat(
           pbfs.map { p ->
@@ -71,6 +83,24 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
           })
           .groupBy("GroupRelations") { it.id }
   val relationsToGeometriesWithWays = relations.then(ExtractRelationGeometriesWithWays())
+  val waysInTrailRelations =
+      pipeline.join2("JoinOnRelation", relations, relationsToGeometriesWithWays)
+          .then(ExtractWaysFromTrailRelations())
+  val waysNeedingElevations =
+      pipeline.join2("JoinForWaysNeedingElevations", waysWithGeometry, waysInTrailRelations)
+          .then(InnerJoinWays())
+  val waysToElevations = calculateProfiles(hikari, pipeline, waysNeedingElevations)
+
+  // Merge the way geometry and way elevations
+  val waysWithElevationAndGeometry =
+      pipeline
+        .join2("JoinWaysForElevation", waysWithGeometry, waysToElevations)
+        .then(UpdateWayElevations())
+
+  // Dump the paths
+  waysWithElevationAndGeometry.write(DumpPaths(epoch, hikari))
+
+  // Now start resolving all of the relations' geometry
   val relationsToWayGeometries =
       pipeline
           .join2(
@@ -85,6 +115,8 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
           .then(MakeRelationGeometries())
   val relationsWithGeometry =
       pipeline.join2("JoinRelationsWithGeometry", relations, relationsGeometryById)
+
+  // Now start dumping boundaries, trails, and what contains what.
   val boundaries = relationsWithGeometry.then(CreateBoundaries())
   boundaries.write(DumpBoundaries(epoch, hikari))
   val trails = relationsWithGeometry.then(CreateTrails())
@@ -121,6 +153,83 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
       }.execute()
     }
   }
+}
+
+private fun calculateProfiles(
+    hikari: HikariDataSource,
+    pipeline: Pipeline,
+    waysNeedingProfiles: BoundStage<*, PMap<Long, Way>>,
+): BoundStage<*, PMap<Long, Profile>> {
+  val existingProfiles =
+      pipeline.read(binaryStructListReader<Profile>(ELEVATION_PROFILES_FILE))
+          .groupBy("GroupProfiles") { it.id }
+
+  val waysSources = pipeline.join2("JoinExistingProfiles", waysNeedingProfiles, existingProfiles)
+  val alreadyHadProfiles =
+      waysSources
+          .then(
+              object : PTransformer<PEntry<Long, Pair<List<Way>, List<Profile>>>, Profile>(
+                  TypeToken.of(Profile::class.java)) {
+                override fun act(
+                    input: PEntry<Long, Pair<List<Way>, List<Profile>>>,
+                    emitter: Emitter<Profile>) {
+                  for (value in input.values) {
+                    if (value.first.isEmpty()) {
+                      continue
+                    }
+
+                    val hash = value.first[0].hash
+                    val hasHash = value.second.any { it.hash == hash }
+                    if (hasHash) {
+                      emitter.emit(value.second[0])
+                    }
+                  }
+                }
+              })
+  val missingWays =
+      waysSources
+          .then(
+              object : PMapTransformer<PEntry<Long, Pair<List<Way>, List<Profile>>>, Long, Way>(
+                  "FilterForMissingProfiles",
+                  TypeToken.of(Long::class.java),
+                  TypeToken.of(Way::class.java)) {
+                override fun act(
+                    input: PEntry<Long, Pair<List<Way>, List<Profile>>>,
+                    emitter: Emitter2<Long, Way>) {
+                  for (value in input.values) {
+                    if (value.first.isEmpty()) {
+                      continue
+                    }
+
+                    val hash = value.first[0].hash
+                    val hasHash = value.second.any { it.hash == hash }
+                    if (!hasHash) {
+                      emitter.emit(input.key, value.first[0])
+                    }
+                  }
+                }
+              })
+          .then(
+              object : PTransformer<PEntry<Long, Way>, Way>(TypeToken.of(Way::class.java)) {
+                override fun act(input: PEntry<Long, Way>, emitter: Emitter<Way>) {
+                  emitter.emit(input.values[0])
+                }
+              })
+
+  val waysByCells = missingWays.groupBy("GroupWaysMissingProfilesByCells") {
+    // 1 degree on Earth is around 111km, which is in between the edge lengths of level 6 and 7. So
+    // just pick 7.
+    S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
+  }
+  val calculatedProfiles = waysByCells.then(CalculateWayElevations(hikari))
+
+  pipeline
+      .cat(listOf(alreadyHadProfiles, calculatedProfiles))
+      .write(binaryStructListWriter(ELEVATION_PROFILES_FILE))
+
+  return pipeline
+      .cat(listOf(alreadyHadProfiles, calculatedProfiles))
+      .groupBy("GroupProfilesById") { it.id }
 }
 
 fun copyStreamToPg(table: String, stream: InputStream, hikari: HikariDataSource) {

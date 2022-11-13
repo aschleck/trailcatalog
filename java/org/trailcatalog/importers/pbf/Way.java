@@ -4,7 +4,7 @@ import java.util.List;
 
 public record Way(
     long id,
-    int version,
+    int hash,
     int type,
     float downMeters,
     float upMeters,

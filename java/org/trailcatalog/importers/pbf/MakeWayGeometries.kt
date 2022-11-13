@@ -24,11 +24,14 @@ class MakeWayGeometries
     }
 
     val geometry = ArrayList<LatLngE7>()
-    for (node in way.nodes) {
-      geometry.add(mapped[node] ?: return)
+    var hash = 0
+    for (id in way.nodes) {
+      val node = mapped[id] ?: return
+      hash = 31 * hash + node.lat
+      hash = 31 * hash + node.lng
+      geometry.add(node)
     }
-    emitter.emit(
-        way.id, Way(way.id, way.version, way.type, Float.NaN, Float.NaN, geometry))
+    emitter.emit(way.id, Way(way.id, hash, way.type, Float.NaN, Float.NaN, geometry))
   }
 
   override fun estimateRatio(): Double {

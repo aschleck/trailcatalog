@@ -8,6 +8,7 @@ import com.google.common.geometry.S2LatLngRect
 import com.zaxxer.hikari.HikariDataSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.slf4j.LoggerFactory
+import org.trailcatalog.importers.common.IORuntimeException
 import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
 import org.trailcatalog.s2.earthMetersToAngle
@@ -33,11 +34,13 @@ class DemResolver(private val hikari: HikariDataSource) {
                   val path = demFilePath(p0)
                   download(p0.url.toHttpUrl(), path)
                   logger.info("Opening DEM {}", p0)
-                  return GeoTiffReader(path)
+                  return GeoTiffReader(path).also {
+                    path.deleteIfExists()
+                  }
                 }
               })
 
-  fun query(ll: S2LatLng): Float {
+  fun query(ll: S2LatLng): Float? {
     if (!area.contains(ll)) {
       // TODO(april): this is 10 miles, but is there a reason to pull 10 miles?
       area = S2LatLngRect.fromPoint(ll).expandedByDistance(earthMetersToAngle(16093.0))
@@ -49,12 +52,16 @@ class DemResolver(private val hikari: HikariDataSource) {
       if (!dem.bounds.contains(ll)) {
         continue
       }
-      val value = dems[dem].query(ll)
-      if (value != null) {
-        return value
+      try {
+        val value = dems[dem].query(ll)
+        if (value != null) {
+          return value
+        }
+      } catch (e: IORuntimeException) {
+        logger.warn("Failed to open DEM", e)
       }
     }
-    throw IllegalStateException("Unable to find a DEM for ${ll}")
+    return null
   }
 }
 

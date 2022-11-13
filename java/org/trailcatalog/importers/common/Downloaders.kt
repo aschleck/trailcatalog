@@ -73,4 +73,4 @@ fun download(url: HttpUrl, to: Path) {
   }
 }
 
-private class IORuntimeException(message: String) : RuntimeException(message)
+class IORuntimeException(message: String) : RuntimeException(message)

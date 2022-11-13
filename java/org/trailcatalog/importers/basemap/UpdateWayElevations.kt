@@ -22,8 +22,7 @@ class UpdateWayElevations
     val down = profile?.down?.toFloat() ?: Float.NaN
     val up = profile?.up?.toFloat() ?: Float.NaN
 
-    emitter.emit(
-        way.id, Way(way.id, way.version, way.type, down, up, way.points))
+    emitter.emit(way.id, Way(way.id, way.hash, way.type, down, up, way.points))
   }
 
   override fun estimateRatio(): Double {

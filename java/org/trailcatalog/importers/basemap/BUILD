@@ -34,6 +34,7 @@ kt_jvm_library(
         ":basemap_java",
         "//java/org/trailcatalog:pg_support",
         "//java/org/trailcatalog/importers/common",
+        "//java/org/trailcatalog/importers/elevation",
         "//java/org/trailcatalog/importers/pbf",
         "//java/org/trailcatalog/importers/pbf:pbf_java",
         "//java/org/trailcatalog/importers/pipeline",
