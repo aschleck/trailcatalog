@@ -1,4 +1,4 @@
-package org.trailcatalog.importers.elevation
+package org.trailcatalog.importers.basemap
 
 import java.io.File
 

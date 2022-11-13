@@ -6,6 +6,9 @@ import com.google.common.geometry.S2Point
 import com.google.common.reflect.TypeToken
 import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.createConnectionSource
+import org.trailcatalog.importers.basemap.ELEVATION_PROFILES_FILE
+import org.trailcatalog.importers.basemap.ElevationProfilesReader
+import org.trailcatalog.importers.basemap.Profile
 import org.trailcatalog.importers.basemap.processArgsAndGetPbfs
 import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
 import org.trailcatalog.importers.pbf.ExtractNodes
@@ -36,35 +39,10 @@ import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.s2.earthMetersToAngle
-import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Path
 
 fun main(args: Array<String>) {
-  registerSerializer(TypeToken.of(Profile::class.java), object : Serializer<Profile> {
-
-    override fun read(from: EncodedInputStream): Profile {
-      val id = from.readVarLong()
-      val version = from.readVarInt()
-      val down = from.readDouble()
-      val up = from.readDouble()
-      val profile = ArrayList<Float>()
-      for (i in 0 until from.readVarInt()) {
-        profile.add(from.readFloat())
-      }
-      return Profile(id, version, down, up, profile)
-    }
-
-    override fun write(v: Profile, to: EncodedOutputStream) {
-      to.writeVarLong(v.id)
-      to.writeVarInt(v.version)
-      to.writeDouble(v.down)
-      to.writeDouble(v.up)
-      to.writeVarInt(v.profile.size)
-      v.profile.forEach { to.writeFloat(it) }
-    }
-  })
-
   registerSerializer(TypeToken.of(S2CellId::class.java), object : Serializer<S2CellId> {
 
     override fun read(from: EncodedInputStream): S2CellId {
@@ -76,28 +54,16 @@ fun main(args: Array<String>) {
     }
   })
 
-
-  var i = 0
-  val remainingArgs = ArrayList<String>()
-  while (i < args.size)
-  {
-    when (args[i]) {
-      "--elevation_profiles" -> {
-        ELEVATION_PROFILES_FILE = File(args[i + 1])
-        i += 1
-      }
-      else -> remainingArgs.add(args[i])
-    }
-    i += 1
-  }
-
   createConnectionSource(syncCommit = false).use { hikari ->
-    processPbfs(processArgsAndGetPbfs(remainingArgs), hikari)
+    processPbfs(processArgsAndGetPbfs(args.asList()), hikari)
   }
 }
 
 private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
-  val (epoch, pbfs) = input
+  val (_, pbfs) = input
+
+  // TODO(april): it's good for speed to only calculate paths used in relations, but it means that
+  // we won't be able to dynamically create trails. So need to relax this in the future.
 
   val pipeline = Pipeline()
 
@@ -237,28 +203,28 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
             }
           })
   val waysByCells = waysWithGeometry.groupBy("GroupWaysByCells") {
+    // 1 degree on Earth is around 111km, which is in between the edge lengths of level 6 and 7. So
+    // just pick 7.
     S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
   }
   val calculatedProfiles = waysByCells.then(CalculateProfiles(hikari))
 
-  val allProfiles = pipeline.cat(listOf(alreadyHadProfiles, calculatedProfiles))
+  pipeline
+      .cat(listOf(alreadyHadProfiles, calculatedProfiles))
+      .write(object : PSink<PCollection<Profile>>() {
+        override fun write(input: PCollection<Profile>) {
+          val serializer = getSerializer(TypeToken.of(Profile::class.java))
 
-  allProfiles.write(DumpPathElevations(epoch, hikari))
-
-  allProfiles.write(object : PSink<PCollection<Profile>>() {
-    override fun write(input: PCollection<Profile>) {
-      val serializer = getSerializer(TypeToken.of(Profile::class.java))
-
-      RandomAccessFile(ELEVATION_PROFILES_FILE, "rw").use {
-        ChannelEncodedOutputStream(it.channel).use { output ->
-          while (input.hasNext()) {
-            serializer.write(input.next(), output)
+          RandomAccessFile(ELEVATION_PROFILES_FILE, "rw").use {
+            ChannelEncodedOutputStream(it.channel).use { output ->
+              while (input.hasNext()) {
+                serializer.write(input.next(), output)
+              }
+              input.close()
+            }
           }
-          input.close()
         }
-      }
-    }
-  })
+      })
 
   pipeline.execute()
 }

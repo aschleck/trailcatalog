@@ -27,7 +27,8 @@ class MakeWayGeometries
     for (node in way.nodes) {
       geometry.add(mapped[node] ?: return)
     }
-    emitter.emit(way.id, Way(way.id, way.version, way.type, way.name, geometry))
+    emitter.emit(
+        way.id, Way(way.id, way.version, way.type, Float.NaN, Float.NaN, geometry))
   }
 
   override fun estimateRatio(): Double {

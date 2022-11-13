@@ -1,11 +1,9 @@
 package org.trailcatalog.importers.basemap
 
-import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.zaxxer.hikari.HikariDataSource
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PMap

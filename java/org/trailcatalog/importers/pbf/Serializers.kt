@@ -1,7 +1,6 @@
 package org.trailcatalog.importers.pbf
 
 import com.google.common.reflect.TypeToken
-import com.google.protobuf.CodedOutputStream
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
@@ -67,24 +66,22 @@ fun registerPbfSerializers() {
       val id = from.readVarLong()
       val version = from.readVarInt()
       val type = from.readVarInt()
-      val nameLength = from.readVarInt()
-      val nameBytes = ByteArray(nameLength)
-      from.read(nameBytes)
+      val down = from.readFloat()
+      val up = from.readFloat()
       val pointsLength = from.readVarInt()
       val points = ArrayList<LatLngE7>(pointsLength)
       repeat(pointsLength) {
         points.add(LatLngE7(from.readInt(), from.readInt()))
       }
-      return Way(id, version, type, nameBytes.decodeToString(), points)
+      return Way(id, version, type, down, up, points)
     }
 
     override fun write(v: Way, to: EncodedOutputStream) {
       to.writeVarLong(v.id)
       to.writeVarInt(v.version)
       to.writeVarInt(v.type)
-      val bytes = v.name.encodeToByteArray()
-      to.writeVarInt(bytes.size)
-      to.write(bytes)
+      to.writeFloat(v.downMeters)
+      to.writeFloat(v.upMeters)
       to.writeVarInt(v.points.size)
       v.points.forEach {
         to.writeInt(it.lat)

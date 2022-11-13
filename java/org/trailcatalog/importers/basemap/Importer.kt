@@ -54,7 +54,14 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
       pipeline
           .join2("JoinWaysForGeometry", ways, waysToPoints)
           .then(MakeWayGeometries())
-  waysWithGeometry.write(DumpPaths(epoch, hikari))
+  val profiles = pipeline.read(ElevationProfilesReader())
+  profiles.write(DumpPathElevations(epoch, hikari))
+  val waysToProfiles = profiles.groupBy("GroupProfiles") { it.id }
+  val waysWithElevationAndGeometry =
+      pipeline
+        .join2("JoinWaysForElevation", waysWithGeometry, waysToProfiles)
+        .then(UpdateWayElevations())
+  waysWithElevationAndGeometry.write(DumpPaths(epoch, hikari))
   val relations =
       pipeline.cat(
           pbfs.map { p ->
@@ -69,7 +76,7 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
           .join2(
               "JoinOnWaysForRelationGeomeries",
               relationsToGeometriesWithWays.then(ExtractWayRelationPairs()),
-              waysWithGeometry)
+              waysWithElevationAndGeometry)
           .then(GatherRelationWays())
   val relationsGeometryById =
       pipeline

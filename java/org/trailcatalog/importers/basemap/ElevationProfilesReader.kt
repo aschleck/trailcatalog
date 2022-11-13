@@ -1,4 +1,4 @@
-package org.trailcatalog.importers.elevation
+package org.trailcatalog.importers.basemap
 
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.PSource

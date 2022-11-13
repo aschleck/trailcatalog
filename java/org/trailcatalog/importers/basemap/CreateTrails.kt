@@ -13,6 +13,7 @@ import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationGeometry
+import org.trailcatalog.proto.WayGeometry
 import java.util.Stack
 
 private val logger = LoggerFactory.getLogger(CreateTrails::class.java)
@@ -38,7 +39,8 @@ class CreateTrails
     }
 
     val mapped = HashMap<Long, List<LatLngE7>>()
-    val ordered = flattenWays(geometries[0], mapped, false)
+    val ways = HashMap<Long, WayGeometry>()
+    val ordered = flattenWays(geometries[0], mapped, ways, false)
     val orderedArray = if (ordered == null) {
       logger.warn("Unable to orient ${relation.id}")
 
@@ -58,13 +60,34 @@ class CreateTrails
     }
 
     val polyline = pathsToPolyline(orderedArray, mapped)
+    var downMeters = 0f
+    var upMeters = 0f
+    for (pathId in orderedArray) {
+      val way = ways[pathId / 2]
+      if (way == null) {
+        downMeters = Float.NaN
+        upMeters = Float.NaN
+        break
+      }
+
+      if (pathId.and(1L) == 0L) {
+        downMeters += way.downMeters
+        upMeters += way.upMeters
+      } else {
+        downMeters += way.upMeters
+        upMeters += way.downMeters
+      }
+    }
+
     emitter.emit(
         Trail(
             relation.id,
             relation.type,
             relation.name,
             orderedArray,
-            polyline))
+            polyline,
+            downMeters,
+            upMeters))
   }
 }
 
@@ -84,6 +107,7 @@ class CreateTrails
 private fun flattenWays(
     geometry: RelationGeometry,
     mapped: MutableMap<Long, List<LatLngE7>>,
+    ways: MutableMap<Long, WayGeometry>,
     parentFailed: Boolean): List<Long>? {
   val ids = ArrayList<Long>(geometry.membersList.count { it.hasRelation() || it.hasWay() })
   val childRelations = HashMap<Long, List<Long>>()
@@ -94,7 +118,7 @@ private fun flattenWays(
     } else if (member.hasRelation()) {
       // Note that MAX_VALUE / 2 % 10 is 3.5. So to keep this value even we just add 1.
       val id = member.relation.relationId * 2 + Long.MAX_VALUE / 2 + 1
-      val flatChild = flattenWays(member.relation, mapped, failed)
+      val flatChild = flattenWays(member.relation, mapped, ways, failed)
       if (flatChild == null) {
         logger.warn("Unable to orient child relation ${member.relation.relationId}")
         // We can't bail out early because we still need to get every way in the other child
@@ -130,6 +154,7 @@ private fun flattenWays(
         latLngs.add(LatLngE7(raw[i], raw[i + 1]))
       }
       mapped[2 * member.way.wayId] = latLngs
+      ways[member.way.wayId] = member.way
     }
   }
 

@@ -1,9 +1,6 @@
-package org.trailcatalog.importers.elevation
+package org.trailcatalog.importers.basemap
 
 import com.zaxxer.hikari.HikariDataSource
-import org.trailcatalog.importers.basemap.StringifyingInputStream
-import org.trailcatalog.importers.basemap.appendByteArray
-import org.trailcatalog.importers.basemap.copyStreamToPg
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import java.nio.ByteBuffer

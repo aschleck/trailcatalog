@@ -37,7 +37,9 @@ message RelationMember {
 
 message WayGeometry {
   uint64 way_id = 1;
-  repeated int32 lat_lng_e7 = 2;
+  float down_meters = 2;
+  float up_meters = 3;
+  repeated int32 lat_lng_e7 = 4;
 }
 
 enum RelationMemberFunction {

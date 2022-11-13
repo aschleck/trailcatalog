@@ -13,7 +13,7 @@ import org.trailcatalog.proto.WayGeometry
 
 class MakeRelationGeometries
   : PMapTransformer<
-      PEntry<Long, Pair<List<RelationGeometry>, List<Pair<Long, List<LatLngE7>>>>>,
+      PEntry<Long, Pair<List<RelationGeometry>, List<Pair<Long, Way>>>>,
       Long,
       RelationGeometry>(
     "MakeRelationGeometries",
@@ -21,13 +21,13 @@ class MakeRelationGeometries
     object : TypeToken<RelationGeometry>() {}) {
 
   override fun act(
-      input: PEntry<Long, Pair<List<RelationGeometry>, List<Pair<Long, List<LatLngE7>>>>>,
+      input: PEntry<Long, Pair<List<RelationGeometry>, List<Pair<Long, Way>>>>,
       emitter: Emitter2<Long, RelationGeometry>) {
     val relationId = input.key
     val partial =
         input.values.stream().flatMap { it.first.stream() }.findFirst().orElse(null) ?: return
 
-    val ways = HashMap<Long, List<LatLngE7>>()
+    val ways = HashMap<Long, Way>()
     for (value in input.values) {
       for ((wayId, geometry) in value.second) {
         ways[wayId] = geometry
@@ -45,7 +45,7 @@ class MakeRelationGeometries
 
 private fun inflate(
     partial: RelationGeometry,
-    ways: Map<Long, List<LatLngE7>>): RelationGeometry? {
+    ways: Map<Long, Way>): RelationGeometry? {
   val geometry = RelationGeometry.newBuilder().setRelationId(partial.relationId)
   for (member in partial.membersList) {
     when (member.valueCase) {
@@ -57,10 +57,14 @@ private fun inflate(
                 .setRelation(inflate(member.relation, ways) ?: return null))
       WAY -> {
         val wayId = member.way.wayId
-        val points = ways[wayId] ?: return null
+        val original = ways[wayId] ?: return null
 
-        val way = WayGeometry.newBuilder().setWayId(wayId)
-        points.forEach { way.addLatLngE7(it.lat).addLatLngE7(it.lng) }
+        val way =
+            WayGeometry.newBuilder()
+                .setWayId(wayId)
+                .setDownMeters(original.downMeters)
+                .setUpMeters(original.upMeters)
+        original.points.forEach { way.addLatLngE7(it.lat).addLatLngE7(it.lng) }
         geometry.addMembers(RelationMember.newBuilder().setFunction(member.function).setWay(way))
       }
       else -> throw AssertionError()

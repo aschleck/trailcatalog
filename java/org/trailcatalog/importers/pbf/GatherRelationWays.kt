@@ -13,21 +13,21 @@ class GatherRelationWays
   : PMapTransformer<
     PEntry<Long, Pair<List<Long>, List<Way>>>,
     Long,
-    Pair<Long, List<LatLngE7>>>(
+    Pair<Long, Way>>(
       "GatherRelationWays",
       TypeToken.of(Long::class.java),
-      object : TypeToken<Pair<Long, List<LatLngE7>>>() {}) {
+      object : TypeToken<Pair<Long, Way>>() {}) {
 
   override fun act(
       input: PEntry<Long, Pair<List<Long>, List<Way>>>,
-      emitter: Emitter2<Long, Pair<Long, List<LatLngE7>>>) {
+      emitter: Emitter2<Long, Pair<Long, Way>>) {
     val wayId = input.key
     for (value in input.values) {
       if (value.second.isEmpty()) {
         continue
       }
 
-      val geometry = value.second[0].points
+      val geometry = value.second[0]
       for (relationId in value.first) {
         emitter.emit(relationId, Pair(wayId, geometry))
       }

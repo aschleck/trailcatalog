@@ -7,14 +7,14 @@ load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 
 java_binary(
     name = "importer",
-    main_class = "org.trailcatalog.importers.ImporterKt",
+    main_class = "org.trailcatalog.importers.basemap.ImporterKt",
     runtime_deps = [":basemap"],
 )
 
 java_image(
     name = "container",
     base = "@container_java_17//image",
-    main_class = "org.trailcatalog.importers.ImporterKt",
+    main_class = "org.trailcatalog.importers.basemap.ImporterKt",
     runtime_deps = [":importer"],
 )
 

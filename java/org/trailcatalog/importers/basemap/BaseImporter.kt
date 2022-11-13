@@ -15,6 +15,7 @@ import org.trailcatalog.importers.pipeline.io.EncodedInputStream
 import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.BUFFER_SIZE
 import org.trailcatalog.importers.pipeline.io.FLUSH_THRESHOLD
+import java.io.File
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -64,6 +65,30 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
     }
   })
 
+  registerSerializer(TypeToken.of(Profile::class.java), object : Serializer<Profile> {
+
+    override fun read(from: EncodedInputStream): Profile {
+      val id = from.readVarLong()
+      val version = from.readVarInt()
+      val down = from.readDouble()
+      val up = from.readDouble()
+      val profile = ArrayList<Float>()
+      for (i in 0 until from.readVarInt()) {
+        profile.add(from.readFloat())
+      }
+      return Profile(id, version, down, up, profile)
+    }
+
+    override fun write(v: Profile, to: EncodedOutputStream) {
+      to.writeVarLong(v.id)
+      to.writeVarInt(v.version)
+      to.writeDouble(v.down)
+      to.writeDouble(v.up)
+      to.writeVarInt(v.profile.size)
+      v.profile.forEach { to.writeFloat(it) }
+    }
+  })
+
   registerSerializer(TypeToken.of(Trail::class.java), object : Serializer<Trail> {
     override fun read(from: EncodedInputStream): Trail {
       val id = from.readLong()
@@ -82,7 +107,9 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
         points.add(LatLngE7(from.readInt(), from.readInt()).toS2LatLng().toPoint())
       }
       val polyline = S2Polyline(points)
-      return Trail(id, type, name, paths, polyline)
+      val downMeters = from.readFloat()
+      val upMeters = from.readFloat()
+      return Trail(id, type, name, paths, polyline, downMeters, upMeters)
     }
 
     override fun write(v: Trail, to: EncodedOutputStream) {
@@ -99,6 +126,8 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
         to.writeInt(latLng.lat)
         to.writeInt(latLng.lng)
       }
+      to.writeFloat(v.downMeters)
+      to.writeFloat(v.upMeters)
     }
   })
 
@@ -130,6 +159,10 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       }
       "--buffer_size" -> {
         BUFFER_SIZE = args[i + 1].toInt()
+        i += 1
+      }
+      "--elevation_profile" -> {
+        ELEVATION_PROFILES_FILE = File(args[i + 1])
         i += 1
       }
       "--epoch" -> {
