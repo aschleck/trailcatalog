@@ -38,21 +38,28 @@ export function MapElement({camera, filters, overlay}: {
           right-0
           select-none
           text-slate-700
-          text-xs
+          text-[0.625rem]
       ">
-        Maps ©{' '}
-        <a
-            className="pointer-events-auto"
-            href="https://www.maptiler.com/copyright/"
-            target="_blank">
-          MapTiler
-        </a>
-        {' · Data © '}
+        {'Data ©'}
         <a
             className="pointer-events-auto"
             href="https://www.openstreetmap.org/copyright"
             target="_blank">
           OpenStreetMap contributors
+        </a>
+        {', Elevation ©'}
+        <a
+            className="pointer-events-auto"
+            href="https://spacedata.copernicus.eu/documents/20126/0/CSCDA_ESA_Mission-specific+Annex.pdf"
+            target="_blank">
+          Copernicus
+        </a>
+        {', Maps ©'}
+        <a
+            className="pointer-events-auto"
+            href="https://www.maptiler.com/copyright/"
+            target="_blank">
+          MapTiler
         </a>
       </div>
     </div>
