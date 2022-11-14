@@ -9,6 +9,7 @@ import java.io.InputStreamReader
 import java.lang.RuntimeException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
+import kotlin.io.path.exists
 import kotlin.io.path.name
 import kotlin.io.path.outputStream
 
@@ -34,7 +35,7 @@ fun <R> fetch(url: HttpUrl, action: (body: ResponseBody, response: Response) -> 
 fun download(url: HttpUrl, to: Path) {
   val etag = to.resolveSibling("${to.name}.etag")
   val etagValue = etag.toFile().run {
-    if (canRead()) {
+    if (to.exists() && canRead()) {
       InputStreamReader(inputStream()).use {
         it.readText().trim()
       }

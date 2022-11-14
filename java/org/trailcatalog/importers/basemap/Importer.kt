@@ -160,6 +160,7 @@ private fun calculateProfiles(
     pipeline: Pipeline,
     waysNeedingProfiles: BoundStage<*, PMap<Long, Way>>,
 ): BoundStage<*, PMap<Long, Profile>> {
+  ELEVATION_PROFILES_FILE.createNewFile()
   val existingProfiles =
       pipeline.read(binaryStructListReader<Profile>(ELEVATION_PROFILES_FILE))
           .groupBy("GroupProfiles") { it.id }
@@ -218,8 +219,8 @@ private fun calculateProfiles(
 
   val waysByCells = missingWays.groupBy("GroupWaysMissingProfilesByCells") {
     // 1 degree on Earth is around 111km, which is in between the edge lengths of level 6 and 7. So
-    // just pick 7.
-    S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
+    // just pick 6.
+    S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(6)
   }
   val calculatedProfiles = waysByCells.then(CalculateWayElevations(hikari))
 

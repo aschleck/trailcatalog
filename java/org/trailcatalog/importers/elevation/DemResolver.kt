@@ -24,7 +24,8 @@ class DemResolver(private val hikari: HikariDataSource) {
 
   private val dems =
       CacheBuilder.newBuilder()
-          .maximumSize(30)
+          .maximumSize(100)
+          .weakValues()
           .removalListener(RemovalListener<DemMetadata, GeoTiffReader> {
             it.key?.let { metadata -> demFilePath(metadata).deleteIfExists() }
           })
