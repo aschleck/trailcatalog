@@ -3,16 +3,18 @@ package org.trailcatalog.importers.basemap
 import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PCollection
+import org.trailcatalog.importers.pipeline.collections.PMap
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class DumpPathElevations(private val epoch: Int, private val hikari: HikariDataSource)
-  : PSink<PCollection<Profile>>() {
+  : PSink<PMap<Long, Profile>>() {
 
-  override fun write(input: PCollection<Profile>) {
+  override fun write(input: PMap<Long, Profile>) {
     input.use {
       val stream =
-          StringifyingInputStream(input) { profile, csv ->
+          StringifyingInputStream(input) { pair, csv ->
+            val profile = pair.values[0]
             // id,epoch,down_meters,up_meters,height_samples_10m_meters
             csv.append(2 * profile.id)
             csv.append(",")

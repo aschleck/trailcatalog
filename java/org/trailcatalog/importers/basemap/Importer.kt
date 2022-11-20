@@ -99,6 +99,7 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
 
   // Dump the paths
   waysWithElevationAndGeometry.write(DumpPaths(epoch, hikari))
+  waysToElevations.write(DumpPathElevations(epoch, hikari))
 
   // Now start resolving all of the relations' geometry
   val relationsToWayGeometries =
@@ -219,8 +220,10 @@ private fun calculateProfiles(
 
   val waysByCells = missingWays.groupBy("GroupWaysMissingProfilesByCells") {
     // 1 degree on Earth is around 111km, which is in between the edge lengths of level 6 and 7. So
-    // just pick 6.
-    S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(6)
+    // to balance between downloading Copernicus imagery multiple times (because level 6 cells are
+    // contained by a Copernicus tile) and loading too many USGS 1m tiles at one time (because
+    // they have 30x the density of a Copernicus tile in 5x the size), just pick 7.
+    S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
   }
   val calculatedProfiles = waysByCells.then(CalculateWayElevations(hikari))
 

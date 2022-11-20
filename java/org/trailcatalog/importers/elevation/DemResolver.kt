@@ -2,7 +2,6 @@ package org.trailcatalog.importers.elevation
 
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
-import com.google.common.cache.RemovalListener
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.zaxxer.hikari.HikariDataSource
@@ -13,7 +12,6 @@ import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
 import org.trailcatalog.s2.earthMetersToAngle
 import java.nio.file.Path
-import kotlin.io.path.deleteIfExists
 
 private val logger = LoggerFactory.getLogger(DemResolver::class.java)
 
@@ -24,20 +22,17 @@ class DemResolver(private val hikari: HikariDataSource) {
 
   private val dems =
       CacheBuilder.newBuilder()
-          .maximumSize(100)
-          .weakValues()
-          .removalListener(RemovalListener<DemMetadata, GeoTiffReader> {
-            it.key?.let { metadata -> demFilePath(metadata).deleteIfExists() }
-          })
+          .maximumSize(30)
+          .removalListener<DemMetadata, GeoTiffReader> {
+            it.value?.close()
+          }
           .build(
               object : CacheLoader<DemMetadata, GeoTiffReader>() {
                 override fun load(p0: DemMetadata): GeoTiffReader {
                   val path = demFilePath(p0)
                   download(p0.url.toHttpUrl(), path)
                   logger.info("Opening DEM {}", p0)
-                  return GeoTiffReader(path).also {
-                    path.deleteIfExists()
-                  }
+                  return GeoTiffReader(path)
                 }
               })
 

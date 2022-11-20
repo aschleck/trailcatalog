@@ -8,7 +8,7 @@ import org.trailcatalog.importers.common.ClosedIntRange
 import org.trailcatalog.importers.common.toClosedIntRange
 
 fun getDemMetadata(area: S2LatLngRect, hikari: HikariDataSource): List<DemMetadata> {
-  return getCopernicus30m(area)
+  return /*getTargetedMetadata(area, hikari) +*/ getCopernicus30m(area)
 }
 
 private fun getCopernicus30m(area: S2LatLngRect): List<DemMetadata> {
@@ -21,7 +21,7 @@ private fun getCopernicus30m(area: S2LatLngRect): List<DemMetadata> {
       val fLng = (if (lng < 0) "W" else "E") + pLng
       metadata.add(
           DemMetadata(
-              "copernicus_${lat}_${lng}",
+              "copernicus/${lat}/${lng}",
               S2LatLngRect.fromPointPair(
                   S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
                   S2LatLng.fromDegrees(lat + 1.0, lng + 1.0),
@@ -38,8 +38,8 @@ private fun getCopernicus30m(area: S2LatLngRect): List<DemMetadata> {
 private fun getTargetedMetadata(area: S2LatLngRect, hikari: HikariDataSource): List<DemMetadata> {
   return hikari.connection.use { connection ->
     connection.prepareStatement(
-        "SELECT id, lat_bound_degrees, lng_bound_degrees, url " +
-            "FROM usgs_elevation_models " +
+        "SELECT namespace, id, lat_bound_degrees, lng_bound_degrees, url " +
+            "FROM digital_elevation_models " +
             "WHERE " +
             "lat_bound_degrees && ? " +
             "AND " +
@@ -50,14 +50,15 @@ private fun getTargetedMetadata(area: S2LatLngRect, hikari: HikariDataSource): L
     }.executeQuery().use {
       val metadata = ArrayList<DemMetadata>()
       while (it.next()) {
-        val id = it.getString(1)
-        val latBound = it.getObject(2, PGobject::class.java).toClosedIntRange()
-        val lngBound = it.getObject(3, PGobject::class.java).toClosedIntRange()
+        val namespace = it.getString(1)
+        val id = it.getString(2)
+        val latBound = it.getObject(3, PGobject::class.java).toClosedIntRange()
+        val lngBound = it.getObject(4, PGobject::class.java).toClosedIntRange()
         val bound = S2LatLngRect.fromPointPair(
             S2LatLng.fromE7(latBound.low, lngBound.low),
             S2LatLng.fromE7(latBound.high, lngBound.high))
-        val url = it.getString(4)
-        metadata.add(DemMetadata(id, bound, url))
+        val url = it.getString(5)
+        metadata.add(DemMetadata("${namespace}/${id}", bound, url))
       }
       metadata
     }

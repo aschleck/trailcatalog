@@ -18,18 +18,20 @@ import java.nio.ByteOrder.LITTLE_ENDIAN
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.nio.file.Path
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.fileSize
 
 data class XyPair(val x: Double, val y: Double)
 
 data class Origin(val modelPosition: XyPair, val rasterScale: XyPair)
 
-class GeoTiffReader(val path: Path) : Closeable {
+class GeoTiffReader(private val path: Path) : Closeable {
 
   private val stream: EncodedInputStream
   private val decompressor: CompressionDecoder
   private val imageWidth: Int
   private val imageHeight: Int
+  private var predictor = PredictorType.None.id
   private val tileWidth: Int
   private val tileHeight: Int
   private val tileOffsets: ArrayList<UInt>
@@ -61,7 +63,6 @@ class GeoTiffReader(val path: Path) : Closeable {
     var width = 0.toUShort()
     var height = 0.toUShort()
     var compression = 0.toUShort()
-    var predictor = 0.toUShort()
     var tileWidth = 0.toUShort()
     var tileHeight = 0.toUShort()
     var tileOffsetList: ValueList? = null
@@ -140,9 +141,6 @@ class GeoTiffReader(val path: Path) : Closeable {
       throw IllegalArgumentException("Unknown compression type: ${compression}")
     }
 
-    if (predictor != PredictorType.FloatingPoint.id) {
-      throw IllegalArgumentException("Expected floating point predictor")
-    }
     if (sampleFormat != SampleFormat.Float.id) {
       throw IllegalArgumentException("Expected floating point samples")
     }
@@ -307,6 +305,7 @@ class GeoTiffReader(val path: Path) : Closeable {
 
   override fun close() {
     stream.close()
+    path.deleteIfExists()
   }
 
   @Override
@@ -371,8 +370,7 @@ class GeoTiffReader(val path: Path) : Closeable {
       throw IllegalStateException("Didn't read the whole tile")
     }
     val decoded = decompressor.decode(compressed, LITTLE_ENDIAN)
-    return Predictor.decode(
-        decoded, PredictorType.FloatingPoint.id.toInt(), tileWidth, tileHeight, listOf(32), 1)
+    return Predictor.decode(decoded, predictor.toInt(), tileWidth, tileHeight, listOf(32), 1)
   }
 }
 
