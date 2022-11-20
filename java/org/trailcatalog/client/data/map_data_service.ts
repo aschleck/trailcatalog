@@ -162,7 +162,9 @@ export class MapDataService extends Service<EmptyDeps> {
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
       const type = data.getInt32();
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-      const lengthMeters = data.getFloat64();
+      const elevationDownMeters = data.getFloat32();
+      const elevationUpMeters = data.getFloat32();
+      const lengthMeters = data.getFloat32();
       const existing = this.trails.get(id);
       let trail;
       if (existing) {
@@ -176,6 +178,8 @@ export class MapDataService extends Service<EmptyDeps> {
                 [],
                 {low: [0, 0], high: [0, 0]} as LatLngRect,
                 marker,
+                elevationDownMeters,
+                elevationUpMeters,
                 lengthMeters);
         this.trails.set(id, trail);
       }
@@ -248,7 +252,9 @@ export class MapDataService extends Service<EmptyDeps> {
       const boundHigh = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const bound = {low: boundLow, high: boundHigh, brand: 'LatLngRect'} as const;
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-      const lengthMeters = data.getFloat64();
+      const elevationDownMeters = data.getFloat32();
+      const elevationUpMeters = data.getFloat32();
+      const lengthMeters = data.getFloat32();
       const existing = this.trails.get(id);
       let trail;
       if (existing) {
@@ -258,7 +264,17 @@ export class MapDataService extends Service<EmptyDeps> {
         existing.bound = bound;
         trail = existing;
       } else {
-        trail = constructTrail(id, name, type, paths, bound, marker, lengthMeters);
+        trail =
+            constructTrail(
+                id,
+                name,
+                type,
+                paths,
+                bound,
+                marker,
+                elevationDownMeters,
+                elevationUpMeters,
+                lengthMeters);
       }
 
       // If we don't do this here, then when the user loads the page zoomed out detail will never
@@ -314,7 +330,9 @@ export class MapDataService extends Service<EmptyDeps> {
       const boundHigh = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const bound = {low: boundLow, high: boundHigh, brand: 'LatLngRect'} as const;
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-      const lengthMeters = data.getFloat64();
+      const elevationDownMeters = data.getFloat32();
+      const elevationUpMeters = data.getFloat32();
+      const lengthMeters = data.getFloat32();
       const existing = this.trails.get(id);
       let trail;
       if (existing) {
@@ -324,7 +342,17 @@ export class MapDataService extends Service<EmptyDeps> {
         }
         trail.bound = bound;
       } else {
-        trail = constructTrail(id, name, type, paths, bound, marker, lengthMeters);
+        trail =
+            constructTrail(
+                id,
+                name,
+                type,
+                paths,
+                bound,
+                marker,
+                elevationDownMeters,
+                elevationUpMeters,
+                lengthMeters);
         this.trails.set(id, trail);
       }
       this.trailsInDetails.add(trail);
@@ -371,7 +399,7 @@ export class MapDataService extends Service<EmptyDeps> {
       data.skip(nameLength + 4);
       const pathCount = data.getInt32();
       data.align(8);
-      data.skip(pathCount * 8 + 4 * 4 + 2 * 4 + 8);
+      data.skip(pathCount * 8 + 4 * 4 + 2 * 4 + 2 * 4 + 4);
 
       const entity = this.trails.get(id);
       if (entity) {
@@ -401,7 +429,7 @@ export class MapDataService extends Service<EmptyDeps> {
     for (let i = 0; i < trailCount; ++i) {
       const id = data.getBigInt64();
       const nameLength = data.getInt32();
-      data.skip(nameLength + 4 + 2 * 4 + 8);
+      data.skip(nameLength + 4 + 2 * 4 + 2 * 4 + 4);
 
       const entity = this.trails.get(id);
       if (entity) {
@@ -425,6 +453,8 @@ function constructTrail(
     paths: bigint[],
     bound: LatLngRect,
     marker: LatLng,
+    elevationDownMeters: number,
+    elevationUpMeters: number,
     lengthMeters: number): Trail {
   // We really struggle bounds checking trails, but on the plus side we
   // calculate a radius on click queries. So as long as our query radius
@@ -446,6 +476,8 @@ function constructTrail(
       bound,
       marker,
       markerPx,
+      elevationDownMeters,
+      elevationUpMeters,
       lengthMeters);
 }
 

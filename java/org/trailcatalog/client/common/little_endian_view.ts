@@ -18,6 +18,12 @@ export class LittleEndianView {
     return r;
   }
 
+  getFloat32(): number {
+    const r = this.view.getFloat32(this.position, /* littleEndian= */ true);
+    this.position += 4;
+    return r;
+  }
+
   getFloat64(): number {
     const r = this.view.getFloat64(this.position, /* littleEndian= */ true);
     this.position += 8;

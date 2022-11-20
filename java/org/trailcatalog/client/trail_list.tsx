@@ -1,8 +1,7 @@
 import * as corgi from 'js/corgi';
 import { Link } from 'js/corgi/history/link_element';
 
-import { formatCount } from './common/formatters';
-import { formatDistance } from './common/formatters';
+import { formatCount, formatDistance, formatHeight } from './common/formatters';
 import { HOVER_HEX_PALETTE } from './map/common/colors';
 import { Path, Trail, TrailSearchResult } from './models/types';
 
@@ -13,6 +12,8 @@ const TRAIL_COUNT_MAX = 100;
 interface SimpleTrail {
   id: bigint|string;
   name: string;
+  elevationDownMeters: number;
+  elevationUpMeters: number;
   lengthMeters: number;
   boundaries?: Array<{
     id: bigint|string;
@@ -52,6 +53,7 @@ export function TrailSidebar({hovering, nearby}: {
 
 export function TrailListItem({ highlight, trail }: { highlight: boolean, trail: SimpleTrail }) {
   const distance = formatDistance(trail.lengthMeters);
+  const elevationUp = formatHeight(trail.elevationUpMeters);
   return <>
     <div
         className={
@@ -82,11 +84,20 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
         }
       </div>
       <div className="shrink-[0.1] w-24">
-        <span className="font-lg">
-          {distance.value}
-        </span>
-        {' '}
-        <span className="font-xs text-tc-gray-400">{distance.unit}</span>
+        <div>
+          <span className="font-lg">
+            {distance.value}
+          </span>
+          {' '}
+          <span className="font-xs text-tc-gray-400">{distance.unit}</span>
+        </div>
+        <div>
+          <span className="font-lg">
+            {elevationUp.value}
+          </span>
+          {' '}
+          <span className="font-xs text-tc-gray-400">{elevationUp.unit}</span>
+        </div>
       </div>
     </div>
   </>;

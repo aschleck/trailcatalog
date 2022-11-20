@@ -52,6 +52,8 @@ export class Trail {
       public bound: LatLngRect,
       readonly marker: LatLng,
       readonly markerPx: Vec2,
+      readonly elevationDownMeters: number,
+      readonly elevationUpMeters: number,
       readonly lengthMeters: number,
   ) {}
 
@@ -65,6 +67,8 @@ export class TrailSearchResult {
       readonly id: bigint,
       readonly name: string,
       readonly marker: LatLng,
+      readonly elevationDownMeters: number,
+      readonly elevationUpMeters: number,
       readonly lengthMeters: number,
       readonly boundaries: Array<{
         id: string;

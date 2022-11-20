@@ -98,5 +98,7 @@ export function trailsInBoundaryFromRaw(raw: DataResponses['trails_in_boundary']
               emptyLatLngRect(),
               [0, 0] as LatLng,
               [0, 0],
+              t.elevation_down_meters,
+              t.elevation_up_meters,
               t.length_meters));
 }

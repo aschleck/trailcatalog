@@ -1,4 +1,4 @@
-import { metersToMiles } from './math';
+import { metersToFeet, metersToMiles } from './math';
 import { getLanguage } from './ssr_aware';
 
 const countFormatter = new Intl.NumberFormat(undefined, {
@@ -9,6 +9,11 @@ const countFormatter = new Intl.NumberFormat(undefined, {
 const distanceFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
   minimumFractionDigits: 1,
+  style: 'decimal',
+});
+
+const heightFormatter = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 0,
   style: 'decimal',
 });
 
@@ -28,5 +33,15 @@ export function formatDistance(meters: number): FormattedScalar {
   return {
     value: distanceFormatter.format(useMiles ? metersToMiles(meters) : meters / 1000),
     unit: useMiles ? 'miles' : 'km',
+  };
+}
+
+export function formatHeight(meters: number): FormattedScalar {
+  const useFeet =
+      getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
+
+  return {
+    value: heightFormatter.format(useFeet ? metersToFeet(meters) : meters),
+    unit: useFeet ? 'ft' : 'm',
   };
 }

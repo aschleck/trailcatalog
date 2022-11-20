@@ -11,6 +11,9 @@ interface DataRequests {
   boundaries_containing_trail: {
     trail_id: string;
   };
+  path_profile: {
+    id: string;
+  };
   search_boundaries: {
     query: string;
   };
@@ -39,14 +42,19 @@ export interface DataResponses {
       name: string;
       type: number;
     }>;
-  },
+  };
   boundaries_containing_trail: {
     boundaries: Array<{
       id: string;
       name: string;
       type: number;
     }>;
-  },
+  };
+  path_profile: {
+    id: string;
+    granularity_meters: number;
+    samples_meters: number[];
+  };
   search_boundaries: {
     results: Array<{
       id: string;
@@ -67,6 +75,8 @@ export interface DataResponses {
       name: string;
       boundaries: string[];
       marker: string;
+      elevation_down_meters: number;
+      elevation_up_meters: number;
       length_meters: number;
     }>;
     boundaries: {
@@ -83,6 +93,8 @@ export interface DataResponses {
     path_ids: string;
     bound: string;
     marker: string;
+    elevation_down_meters: number;
+    elevation_up_meters: number;
     length_meters: number;
   };
   trails_in_boundary: {
@@ -90,6 +102,8 @@ export interface DataResponses {
       id: string;
       name: string;
       type: number;
+      elevation_down_meters: number;
+      elevation_up_meters: number;
       length_meters: number;
     }>;
   },

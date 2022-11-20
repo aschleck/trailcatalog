@@ -4,7 +4,7 @@ import { FabricIcon } from 'js/dino/fabric';
 
 import { decodeBase64 } from './common/base64';
 import { latLngFromBase64E7 } from './common/data';
-import { formatDistance } from './common/formatters';
+import { formatDistance, formatHeight } from './common/formatters';
 import { LittleEndianView } from './common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng } from './common/math';
 import { LatLng, LatLngRect } from './common/types';
@@ -107,6 +107,7 @@ function TrailSidebar({state}: {state: State}) {
   const trail = state.trail;
 
   const distance = formatDistance(trail.lengthMeters);
+  const elevationUp = formatHeight(trail.elevationUpMeters);
   let isOneWay;
   if (trail.paths.length === 1) {
     isOneWay = true;
@@ -151,17 +152,24 @@ function TrailSidebar({state}: {state: State}) {
         <aside className="pb-4 text-sm text-tc-gray-400">
           {containingLabels}
         </aside>
+        <TrailNumbers numbers={[{
+            label: isOneWay ? 'One-way distance' : 'Round-trip distance',
+            unit: distance.unit,
+            value: distance.value,
+          }, {
+            label: 'Elevation gain',
+            unit: elevationUp.unit,
+            value: elevationUp.value,
+          }]}
+        />
         <section>
           <div className="text-sm text-tc-gray-400">
-            {isOneWay ? 'One-way distance' : 'Round-trip distance'}
           </div>
           <div>
             <span className="font-bold text-2xl">
-              {distance.value}
             </span>
             {' '}
             <span className="text-sm text-tc-gray-400">
-              {distance.unit}
             </span>
           </div>
         </section>
@@ -177,6 +185,35 @@ function TrailSidebar({state}: {state: State}) {
         </section>
       </aside>
     </div>
+  </>;
+}
+
+function TrailNumbers({numbers}: {
+  numbers: Array<{
+    label: string;
+    unit: string;
+    value: string;
+  }>;
+}) {
+  return <>
+    <section className="flex gap-4">
+      {numbers.map(n =>
+          <div>
+            <div className="text-sm text-tc-gray-400">
+              {n.label}
+            </div>
+            <div>
+              <span className="font-bold text-2xl">
+                {n.value}
+              </span>
+              {' '}
+              <span className="text-sm text-tc-gray-400">
+                {n.unit}
+              </span>
+            </div>
+          </div>
+      )}
+    </section>
   </>;
 }
 
@@ -203,5 +240,7 @@ function trailFromRaw(raw: DataResponses['trail']): Trail {
       bound,
       marker,
       projectLatLng(marker),
+      raw.elevation_down_meters,
+      raw.elevation_up_meters,
       raw.length_meters);
 }

@@ -270,7 +270,8 @@ export class MapData extends Layer {
         data.skip(trailWayCount * 8 + 4 * 4);
         const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
         const markerPx = projectLatLng(marker);
-        const lengthMeters = data.getFloat64();
+        data.skip(2 * 4);
+        const lengthMeters = data.getFloat32();
 
         if (this.filters.trail && !this.filters.trail(id)) {
           continue;
@@ -327,7 +328,8 @@ export class MapData extends Layer {
       const type = data.getInt32();
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const markerPx = projectLatLng(marker);
-      const lengthMeters = data.getFloat64();
+      data.skip(2 * 4);
+      const lengthMeters = data.getFloat32();
 
       if (this.filters.trail && !this.filters.trail(id)) {
         continue;

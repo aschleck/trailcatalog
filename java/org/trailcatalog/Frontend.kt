@@ -45,7 +45,9 @@ private data class WireTrail(
   val pathIds: ByteArray,
   val bound: ByteArray,
   val marker: ByteArray,
-  val lengthMeters: Double,
+  val elevationDownMeters: Float,
+  val elevationUpMeters: Float,
+  val lengthMeters: Float,
 )
 
 private fun fetchData(ctx: Context) {
@@ -135,6 +137,30 @@ private fun fetchData(ctx: Context) {
         }
         responses.add(ImmutableMap.of("boundaries", data))
       }
+      "path_profile" -> {
+        val data = ArrayList<HashMap<String, Any>>()
+        val id = key.get("id").asLong()
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+              "SELECT "
+                  + "pe.id, "
+                  + "pe.height_samples_10m_meters "
+                  + "FROM path_elevations pe "
+                  + "WHERE pe.id = ? AND pe.epoch = ?")
+              .apply {
+                setLong(1, id)
+                setInt(2, epochTracker.epoch)
+              }.executeQuery()
+          if (!results.next()) {
+            ctx.status(HttpCode.NOT_FOUND)
+            return@fetchData
+          }
+          data["id"] = id
+          data["granularity_meters"] = 10
+          val samples = results.getArray(2).getArray() as Array<Float>
+          data["samples_meters"] = samples
+        }
+      }
       "search_boundaries" -> {
         responses.add(executeSearchBoundaries(key.get("query").asText(), 10))
       }
@@ -155,6 +181,8 @@ private fun fetchData(ctx: Context) {
                   + "path_ids, "
                   + "bound_degrees_e7, "
                   + "marker_degrees_e7, "
+                  + "elevation_down_meters, "
+                  + "elevation_up_meters, "
                   + "length_meters "
                   + "FROM trails "
                   + "WHERE id = ? AND epoch = ?")
@@ -172,7 +200,9 @@ private fun fetchData(ctx: Context) {
           data["path_ids"] = String(Base64.getEncoder().encode(results.getBytes(3)))
           data["bound"] = String(Base64.getEncoder().encode(results.getBytes(4)))
           data["marker"] = String(Base64.getEncoder().encode(results.getBytes(5)))
-          data["length_meters"] = results.getDouble(6)
+          data["elevation_down_meters"] = results.getFloat(6)
+          data["elevation_up_meters"] = results.getFloat(7)
+          data["length_meters"] = results.getFloat(8)
         }
         responses.add(data)
       }
@@ -185,6 +215,8 @@ private fun fetchData(ctx: Context) {
                   + "id, "
                   + "name, "
                   + "type, "
+                  + "elevation_down_meters, "
+                  + "elevation_up_meters, "
                   + "length_meters "
                   + "FROM trails t "
                   + "RIGHT JOIN trails_in_boundaries tib "
@@ -200,7 +232,9 @@ private fun fetchData(ctx: Context) {
             trail["id"] = results.getLong(1).toString()
             trail["name"] = results.getString(2)
             trail["type"] = results.getInt(3)
-            trail["length_meters"] = results.getDouble(4)
+            trail["elevation_down_meters"] = results.getFloat(4)
+            trail["elevation_up_meters"] = results.getFloat(5)
+            trail["length_meters"] = results.getFloat(6)
             data.add(trail)
           }
         }
@@ -297,6 +331,8 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "sr.id, "
             + "sr.name, "
             + "sr.marker_degrees_e7, "
+            + "sr.elevation_down_meters, "
+            + "sr.elevation_up_meters, "
             + "sr.length_meters, "
             + "ARRAY_REMOVE(ARRAY_AGG(tib.boundary_id), NULL) "
             + "FROM ("
@@ -304,6 +340,8 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "    t.id as id, "
             + "    t.name as name, "
             + "    t.marker_degrees_e7 as marker_degrees_e7, "
+            + "    t.elevation_down_meters as elevation_down_meters, "
+            + "    t.elevation_up_meters as elevation_up_meters, "
             + "    t.length_meters as length_meters, "
             + "    MAX(score) as score "
             + "  FROM ( "
@@ -311,6 +349,8 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "      id, "
             + "      name, "
             + "      marker_degrees_e7, "
+            + "      elevation_down_meters, "
+            + "      elevation_up_meters, "
             + "      length_meters, "
             + "      length(name) / 1000. AS score "
             + "    FROM trails "
@@ -320,6 +360,8 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "      id, "
             + "      name, "
             + "      marker_degrees_e7, "
+            + "      elevation_down_meters, "
+            + "      elevation_up_meters, "
             + "      length_meters, "
             + "      1 - strict_word_similarity(?, name) AS score "
             + "    FROM trails "
@@ -347,9 +389,11 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
       trail["id"] = results.getLong(1).toString()
       trail["name"] = results.getString(2)
       trail["marker"] = String(Base64.getEncoder().encode(results.getBytes(3)))
-      trail["length_meters"] = results.getFloat(4)
+      trail["elevation_down_meters"] = results.getFloat(4)
+      trail["elevation_up_meters"] = results.getFloat(5)
+      trail["length_meters"] = results.getFloat(6)
       @Suppress("UNCHECKED_CAST")
-      val boundaries = results.getArray(5).getArray() as Array<Long>
+      val boundaries = results.getArray(7).getArray() as Array<Long>
       trail["boundaries"] = boundaries.map { it.toString() }
       requiredBoundaries.addAll(boundaries)
       data.add(trail)
@@ -407,7 +451,9 @@ private fun fetchMeta(ctx: Context) {
     output.write(asUtf8)
     output.writeInt(trail.type)
     output.write(trail.marker)
-    output.writeDouble(trail.lengthMeters)
+    output.writeFloat(trail.elevationDownMeters)
+    output.writeFloat(trail.elevationUpMeters)
+    output.writeFloat(trail.lengthMeters)
   }
   ctx.result(bytes.toByteArray())
 }
@@ -503,6 +549,8 @@ private fun fetchDataPacked(ctx: Context) {
             + "path_ids, "
             + "bound_degrees_e7, "
             + "marker_degrees_e7, "
+            + "elevation_down_meters, "
+            + "elevation_up_meters, "
             + "length_meters "
             + "FROM trails t "
             + "WHERE "
@@ -524,7 +572,9 @@ private fun fetchDataPacked(ctx: Context) {
         pathIds = results.getBytes(4),
         bound = results.getBytes(5),
         marker = results.getBytes(6),
-        lengthMeters = results.getDouble(7),
+        elevationDownMeters = results.getFloat(7),
+        elevationUpMeters = results.getFloat(8),
+        lengthMeters = results.getFloat(9),
     )
   }
 
@@ -592,7 +642,9 @@ private fun writeDetailTrails(
     output.write(trail.pathIds)
     output.write(trail.bound)
     output.write(trail.marker)
-    output.writeDouble(trail.lengthMeters)
+    output.writeFloat(trail.elevationDownMeters)
+    output.writeFloat(trail.elevationUpMeters)
+    output.writeFloat(trail.lengthMeters)
   }
 }
 
@@ -608,6 +660,8 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean): Lis
               + (if (includePaths) "path_ids, " else "")
               + "bound_degrees_e7, "
               + "marker_degrees_e7, "
+              + "elevation_down_meters, "
+              + "elevation_up_meters, "
               + "length_meters "
               + "FROM trails t "
               + "WHERE "
@@ -630,6 +684,8 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean): Lis
               + (if (includePaths) "path_ids, " else "")
               + "bound_degrees_e7, "
               + "marker_degrees_e7, "
+              + "elevation_down_meters, "
+              + "elevation_up_meters, "
               + "length_meters "
               + "FROM trails t "
               + "WHERE "
@@ -650,7 +706,9 @@ private fun fetchTrails(cell: S2CellId, bottom: Int, includePaths: Boolean): Lis
               pathIds = if (includePaths) results.getBytes(4) else byteArrayOf(),
               bound = results.getBytes(4 + pathOffset),
               marker = results.getBytes(5 + pathOffset),
-              lengthMeters = results.getDouble(6 + pathOffset),
+              elevationDownMeters = results.getFloat(6 + pathOffset),
+              elevationUpMeters = results.getFloat(7 + pathOffset),
+              lengthMeters = results.getFloat(8 + pathOffset),
           ))
     }
   }

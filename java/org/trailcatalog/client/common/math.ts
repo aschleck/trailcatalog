@@ -6,6 +6,10 @@ export function clamp(v: number, min: number, max: number): number {
   return Math.min(Math.max(v, min), max);
 }
 
+export function metersToFeet(meters: number): number {
+  return meters * 3.28084;
+}
+
 export function metersToMiles(meters: number): number {
   return meters * 0.00062137119224;
 }

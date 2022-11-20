@@ -109,6 +109,8 @@ export function searchTrailsFromRaw(raw: DataResponses['search_trails']): TrailS
               BigInt(t.id),
               t.name,
               latLngFromBase64E7(t.marker),
+              t.elevation_down_meters,
+              t.elevation_up_meters,
               t.length_meters,
               t.boundaries.map(id => ({id, ...raw.boundaries[id]})),
           ));
