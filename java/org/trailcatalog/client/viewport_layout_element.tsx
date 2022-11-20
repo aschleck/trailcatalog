@@ -6,18 +6,23 @@ import { currentUrl } from './common/ssr_aware';
 import { LatLngRect, LatLngZoom } from './common/types';
 import { MAP_MOVED } from './map/events';
 import { MapElement } from './map/map_element';
+import { Trail } from './models/types';
 
+import { Header } from './page';
 import { LocationUrlController } from './location_url_controller';
-import { SearchElement } from './search_element';
 import { SidebarController, State } from './sidebar_controller';
 
 export function ViewportLayoutElement({
+  active,
   bannerContent,
   camera,
   filters,
   overlay,
   sidebarContent,
 }: {
+  active?: {
+    trails?: Trail[];
+  };
   bannerContent?: string;
   camera?: LatLngRect|LatLngZoom;
   filters?: {
@@ -51,48 +56,7 @@ export function ViewportLayoutElement({
 
   return <>
     <div className="flex flex-col h-full">
-      <div className="
-          align-middle
-          bg-tc-gray-100
-          flex
-          gap-4
-          items-center
-          leading-none
-          p-4
-          text-white
-      ">
-        <div className="basis-1 grow">
-          <FabricIcon
-              name="List"
-              className={
-                  (state.open ? "bg-white" : "text-white")
-                      + " text-3xl md:hidden"
-              }
-              js={corgi.bind({
-                controller: SidebarController,
-                events: {
-                  click: 'toggleSidebarOpen',
-                },
-                state: [state, updateState],
-              })}
-          />
-          <img
-              alt="Trailcatalog logo"
-              src="/static/images/logo.svg"
-              className="h-6"
-          />
-        </div>
-        <SearchElement />
-        <div className="basis-1 flex grow justify-end">
-          <a href="https://github.com/aschleck/trailcatalog" target="_blank">
-            <img
-                alt="Trailcatalog on GitHub"
-                src="/static/images/icons/github.png"
-                className="h-6"
-            />
-          </a>
-        </div>
-      </div>
+      <Header />
       {bannerContent ?? ''}
       <div className="flex grow overflow-hidden relative">
         <div className={
@@ -115,6 +79,7 @@ export function ViewportLayoutElement({
               className="h-full"
           >
             <MapElement
+                active={active}
                 camera={state.camera}
                 filters={filters}
                 overlay={{

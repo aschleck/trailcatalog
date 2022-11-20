@@ -2,19 +2,14 @@ import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FabricIcon } from 'js/dino/fabric';
 
-import { decodeBase64 } from './common/base64';
-import { latLngFromBase64E7 } from './common/data';
 import { formatDistance, formatHeight } from './common/formatters';
-import { LittleEndianView } from './common/little_endian_view';
-import { degreesE7ToLatLng, projectLatLng } from './common/math';
-import { LatLng, LatLngRect } from './common/types';
 import { initialData } from './data';
 import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { Trail } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { DataResponses } from './data';
-import { containingBoundariesFromRaw, TrailOverviewController, State } from './trail_overview_controller';
+import { containingBoundariesFromRaw, trailFromRaw } from './trails';
+import { TrailOverviewController, State } from './trail_overview_controller';
 import { TrailPopup } from './trail_popup';
 import { ViewportLayoutElement } from './viewport_layout_element';
 
@@ -84,6 +79,7 @@ export function TrailOverviewElement({trailId}: {
       {state.trail
           ? <>
             <ViewportLayoutElement
+                active={{trails: [state.trail]}}
                 camera={state.trail.bound}
                 overlay={{content: trailDetails}}
                 sidebarContent={<TrailSidebar state={state} />}
@@ -217,30 +213,3 @@ function TrailNumbers({numbers}: {
   </>;
 }
 
-function trailFromRaw(raw: DataResponses['trail']): Trail {
-  const paths = [];
-  const pathBuffer = decodeBase64(raw.path_ids);
-  const pathStream = new LittleEndianView(pathBuffer);
-  for (let i = 0; i < pathBuffer.byteLength; i += 8) {
-    paths.push(pathStream.getBigInt64());
-  }
-  const boundStream = new LittleEndianView(decodeBase64(raw.bound));
-  const bound = {
-    low: [boundStream.getInt32() / 10_000_000, boundStream.getInt32() / 10_000_000],
-    high: [boundStream.getInt32() / 10_000_000, boundStream.getInt32() / 10_000_000],
-    brand: 'LatLngRect' as const,
-  } as LatLngRect;
-  const marker = latLngFromBase64E7(raw.marker);
-  return new Trail(
-      BigInt(raw.id),
-      raw.name,
-      raw.type,
-      {low: [0, 0], high: [0, 0], brand: 'PixelRect' as const},
-      paths,
-      bound,
-      marker,
-      projectLatLng(marker),
-      raw.elevation_down_meters,
-      raw.elevation_up_meters,
-      raw.length_meters);
-}

@@ -138,7 +138,7 @@ private fun fetchData(ctx: Context) {
         responses.add(ImmutableMap.of("boundaries", data))
       }
       "path_profile" -> {
-        val data = ArrayList<HashMap<String, Any>>()
+        val data = HashMap<String, Any>()
         val id = key.get("id").asLong()
         connectionSource.connection.use {
           val results = it.prepareStatement(

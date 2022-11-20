@@ -3,13 +3,13 @@ import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { screenLlz } from './common/math';
-import { emptyS2Polygon, LatLng } from './common/types';
 import { MapDataService } from './data/map_data_service';
-import { MapController, MAP_MOVED } from './map/events';
+import { MAP_MOVED } from './map/events';
 import { Boundary, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
 import { DataResponses, fetchData } from './data';
+import { containingBoundariesFromRaw } from './trails';
 import { State as VState, ViewportController } from './viewport_controller';
 
 interface Args {
@@ -66,13 +66,7 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
 
   // This may not always fire prior to the person hitting nearby trails, which is bad
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
-    const {center, controller, zoom} = e.detail;
-    if (this.state.trail) {
-      // This is bad here. We already have a loading screen before showing the map, so we can just
-      // pass the active trail in as a map arg. Oh well.
-      controller.setActive(this.state.trail, true);
-    }
-
+    const {center} = e.detail;
     super.onMove(e);
 
     if (!this.state.showZoomToFit && this.center) {
@@ -100,16 +94,5 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
       showZoomToFit: false,
     });
   }
-}
-
-export function containingBoundariesFromRaw(
-    raw: DataResponses['boundaries_containing_trail']): Boundary[] {
-  return raw.boundaries.map(
-      b =>
-          new Boundary(
-              BigInt(b.id),
-              b.name,
-              b.type,
-              emptyS2Polygon()));
 }
 

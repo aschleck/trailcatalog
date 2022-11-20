@@ -13,16 +13,22 @@ interface SearchResultsOverview {
   kind: 'search_results_overview';
 }
 
+interface TrailDetail {
+  kind: 'trail_detail';
+  trail: string;
+}
+
 interface TrailOverview {
   kind: 'trail_overview';
   trail: string;
 }
 
-export type Route = BoundaryOverview|SearchResultsOverview|TrailOverview;
+export type Route = BoundaryOverview|SearchResultsOverview|TrailDetail|TrailOverview;
 
 const routes: {[k in Route['kind']]: RegExp} = {
   'boundary_overview': /^\/boundary\/(?<boundary>\d+)$/,
   'search_results_overview': /^\/(search)?$/,
+  'trail_detail': /^\/trail\/(?<trail>\d+)\/detail$/,
   'trail_overview': /^\/trail\/(?<trail>\d+)$/,
 };
 

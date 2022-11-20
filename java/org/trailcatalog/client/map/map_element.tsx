@@ -3,12 +3,27 @@ import * as corgi from 'js/corgi';
 
 import { LatLngRect, LatLngZoom } from '../common/types';
 import { Filters } from './layers/map_data';
+import { Trail } from '../models/types';
 
 import { MapController } from './map_controller';
 
-export function MapElement({camera, filters, overlay}: {
+export function MapElement({
+  active,
+  camera,
+  className,
+  filters,
+  height,
+  interactive,
+  overlay,
+}: {
+  active?: {
+    trails?: Trail[];
+  };
   camera: LatLngRect|LatLngZoom;
+  className?: string;
   filters?: Filters;
+  height?: string;
+  interactive?: boolean;
   overlay?: {
     polygon?: S2Polygon;
   };
@@ -18,15 +33,20 @@ export function MapElement({camera, filters, overlay}: {
         js={corgi.bind({
           controller: MapController,
           args: {
+            active: active ?? {},
             camera,
             filters: filters ?? {},
+            interactive: interactive ?? true,
             overlay: overlay ?? {},
           },
           events: {
             render: 'wakeup',
           },
         })}
-        className="h-full relative select-none touch-none w-full"
+        className={
+          `${height ? height : "h-full"} relative select-none touch-none w-full`
+              + (className ? ` ${className}` : "")
+        }
     >
       <canvas className="h-full w-full" tabIndex="-1" />
       <div className="

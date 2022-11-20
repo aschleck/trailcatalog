@@ -21,8 +21,12 @@ import { TextRenderer } from './rendering/text_renderer';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
 
 interface Args {
+  active: {
+    trails?: Trail[];
+  };
   camera: LatLngRect|LatLngZoom;
   filters: Filters;
+  interactive: boolean;
   overlay: {
     polygon?: S2Polygon;
   };
@@ -101,6 +105,24 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.resize();
     this.setCamera(response.args.camera);
 
+    if (response.args.interactive) {
+      this.registerInteractiveListeners();
+    }
+
+    const raf = () => {
+      if (this.isDisposed) {
+        return;
+      }
+
+      requestAnimationFrame(raf);
+      this.render();
+    };
+    requestAnimationFrame(raf);
+
+    (response.args.active.trails ?? []).forEach(t => this.setActive(t, true));
+  }
+
+  private registerInteractiveListeners() {
     // We track pointer events on document because it allows us to drag the mouse off-screen while
     // panning.
     const interpreter = new PointerInterpreter(this);
@@ -126,16 +148,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     });
     this.registerListener(document, 'pointerup', e => { interpreter.pointerUp(e); });
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
-
-    const raf = () => {
-      if (this.isDisposed) {
-        return;
-      }
-
-      requestAnimationFrame(raf);
-      this.render();
-    };
-    requestAnimationFrame(raf);
   }
 
   updateArgs(newArgs: Args): void {
