@@ -35,7 +35,7 @@ type StateTuple<S> = [S, (newState: S) => void];
 interface BoundController<
         A extends {},
         D extends ControllerDepsMethod,
-        E extends HTMLElement,
+        E extends HTMLElement|SVGElement,
         S,
         R extends ControllerResponse<A, D, E, S>,
         C extends Controller<A, D, E, S>
@@ -48,19 +48,19 @@ interface BoundController<
   state: StateTuple<S>,
 }
 
-export interface AnyBoundController<E extends HTMLElement>
+export interface AnyBoundController<E extends HTMLElement|SVGElement>
     extends BoundController<any, any, E, any, any, any> {}
 
 export type UnboundEvents =
-    Partial<{[k in keyof PropertyKeyToHandlerMap<AnyBoundController<HTMLElement>>]: string}>;
+    Partial<{[k in keyof PropertyKeyToHandlerMap<AnyBoundController<HTMLElement|SVGElement>>]: string}>;
 
 export interface InstantiationResult {
   root: Node;
   sideEffects: Array<() => void>;
-  unboundEventss: Array<[HTMLElement, UnboundEvents]>;
+  unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]>;
 }
 
-const elementsToControllerSpecs = new WeakMap<HTMLElement, AnyBoundController<HTMLElement>>();
+const elementsToControllerSpecs = new WeakMap<HTMLElement|SVGElement, AnyBoundController<HTMLElement|SVGElement>>();
 
 interface AnyServiceCtor {
   deps?(): DepsConstructorsFor<ServiceDeps>;
@@ -69,12 +69,12 @@ interface AnyServiceCtor {
 const serviceSingletons = new Map<AnyServiceCtor, Promise<Service<any>>>();
 
 const unboundEventListeners =
-    new WeakMap<HTMLElement, Array<[string, EventListenerOrEventListenerObject]>>();
+    new WeakMap<HTMLElement|SVGElement, Array<[string, EventListenerOrEventListenerObject]>>();
 
 export function applyUpdate(
-    root: HTMLElement,
-    from: AnyBoundController<HTMLElement>|undefined,
-    to: AnyBoundController<HTMLElement>|undefined): void {
+    root: HTMLElement|SVGElement,
+    from: AnyBoundController<HTMLElement|SVGElement>|undefined,
+    to: AnyBoundController<HTMLElement|SVGElement>|undefined): void {
   if (from === undefined || to === undefined) {
     throw new Error("Unable to update bound element with new js or remove old js");
   }
@@ -95,7 +95,7 @@ export function applyUpdate(
 export function bind<
     A extends {},
     D extends ControllerDepsMethod,
-    E extends HTMLElement,
+    E extends HTMLElement|SVGElement,
     S,
     R extends ControllerResponse<A, D, E, S>,
     C extends Controller<A, D, E, S>
@@ -117,9 +117,9 @@ export function bind<
 }
 
 export function bindElementToSpec(
-    root: HTMLElement,
-    spec: AnyBoundController<HTMLElement>,
-    unboundEventss: Array<[HTMLElement, UnboundEvents]>): Array<() => void> {
+    root: HTMLElement|SVGElement,
+    spec: AnyBoundController<HTMLElement|SVGElement>,
+    unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]>): Array<() => void> {
   elementsToControllerSpecs.set(root, spec);
 
   for (const [event, handler] of Object.entries(spec.events)) {
@@ -177,7 +177,7 @@ export function applyInstantiationResult(result: InstantiationResult): void {
       }
     }
 
-    let cursor: HTMLElement|null = element;
+    let cursor: HTMLElement|SVGElement|null = element;
     while (cursor !== null && !elementsToControllerSpecs.has(cursor)) {
       cursor = cursor.parentElement;
     }
@@ -205,7 +205,7 @@ export function applyInstantiationResult(result: InstantiationResult): void {
   }
 }
 
-function maybeInstantiateAndCall<E extends HTMLElement>(
+function maybeInstantiateAndCall<E extends HTMLElement|SVGElement>(
     root: E,
     spec: AnyBoundController<E>,
     fn: (controller: AnyBoundController<E>) => void): void {
@@ -265,11 +265,11 @@ function fetchDeps<D extends ControllerDeps>(deps: DepsConstructorsFor<D>): Prom
 }
 
 export function disposeBoundElementsIn(node: Node): void {
-  if (!(node instanceof HTMLElement)) {
+  if (!(node instanceof HTMLElement) && !(node instanceof SVGElement)) {
     return;
   }
   for (const root of [node, ...node.querySelectorAll('[js]')]) {
-    const spec = elementsToControllerSpecs.get(root as HTMLElement);
+    const spec = elementsToControllerSpecs.get(root as HTMLElement|SVGElement);
     if (spec?.instance) {
       spec.instance.then(instance => {
         instance.dispose();
@@ -279,11 +279,11 @@ export function disposeBoundElementsIn(node: Node): void {
 }
 
 function bindEventListener(
-    element: HTMLElement,
+    element: HTMLElement|SVGElement,
     event: string,
     handler: string,
-    root: HTMLElement,
-    spec: AnyBoundController<HTMLElement>): (e: Event) => void {
+    root: HTMLElement|SVGElement,
+    spec: AnyBoundController<HTMLElement|SVGElement>): (e: Event) => void {
   const invoker = (e: Event) => {
     if (isAnchorContextClick(e)) {
       return;

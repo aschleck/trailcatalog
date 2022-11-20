@@ -36,6 +36,10 @@ export class LittleEndianView {
     return r;
   }
 
+  hasRemaining(): boolean {
+    return this.position < this.view.byteLength;
+  }
+
   skip(byteCount: number): void {
     this.position += byteCount;
   }

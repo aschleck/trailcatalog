@@ -6,10 +6,10 @@ import { AnyBoundController, applyInstantiationResult, applyUpdate as applyBinde
 export const Fragment = Symbol();
 export { bind } from './binder';
 
-export interface Properties<E extends HTMLElement> {
+export interface Properties<E extends HTMLElement|SVGElement> {
   children?: VElementOrPrimitive|VElementOrPrimitive[],
   className?: string;
-  js?: AnyBoundController<E|HTMLElement>;
+  js?: AnyBoundController<E|HTMLElement|SVGElement>;
   style?: string; // TODO(april): this is sad
   tabIndex?: string;
   title?: string;
@@ -32,6 +32,19 @@ export interface InputProperties extends Properties<HTMLInputElement> {
   type?: 'password'|'text';
   placeholder?: string;
   value?: string;
+}
+
+export interface PolylineProperties extends Properties<SVGPolylineElement> {
+  fill?: string;
+  stroke?: string;
+  stroke_width?: number|string;
+  points: string;
+}
+
+export interface SVGProperties extends Properties<SVGElement> {
+  height?: number|string;
+  viewBox?: string;
+  width?: number|string;
 }
 
 class CorgiElement {
@@ -269,7 +282,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
       } else if (key === 'unboundEvents') {
         result.unboundEventss.push([node, checkExists(to.props[key])]);
       } else {
-        node.setAttribute(key, checkExists(to.props[key]));
+        node.setAttribute(key.replace('_', "-"), checkExists(to.props[key]));
       }
     }
   }
@@ -278,7 +291,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
       if (key === 'unboundEvents') {
         result.unboundEventss.push([node, {}]);
       } else {
-        node.removeAttribute(key === 'className' ? 'class' : key);
+        node.removeAttribute(key === 'className' ? 'class' : key.replace('_', '-'));
       }
     }
   }
@@ -338,8 +351,8 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
 
   const root = document.createElement(element.element);
   vElementsToNodes.set(element, root);
-  let maybeSpec: AnyBoundController<HTMLElement>|undefined;
-  let unboundEventss: Array<[HTMLElement, UnboundEvents]> = [];
+  let maybeSpec: AnyBoundController<HTMLElement|SVGElement>|undefined;
+  let unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]> = [];
 
   const props = element.props;
   for (const [key, value] of Object.entries(props)) {
@@ -379,7 +392,7 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
   };
 }
 
-export function appendElement(parent: HTMLElement, child: VElementOrPrimitive): void {
+export function appendElement(parent: HTMLElement|SVGElement, child: VElementOrPrimitive): void {
   if (typeof child === 'object') {
     const result = createElement(child);
     parent.append(result.root);
@@ -389,7 +402,7 @@ export function appendElement(parent: HTMLElement, child: VElementOrPrimitive): 
   }
 }
 
-export function hydrateTree(parent: HTMLElement, tree: VElementOrPrimitive): void {
+export function hydrateTree(parent: HTMLElement|SVGElement, tree: VElementOrPrimitive): void {
   if (parent.childNodes.length !== 1) {
     throw new Error("Unable to hydrate, parent has multiple children");
   }
@@ -407,10 +420,10 @@ function hydrateElement(root: ChildNode, element: VElementOrPrimitive): Instanti
     };
   }
 
-  if (!(root instanceof HTMLElement)) {
+  if (!(root instanceof HTMLElement) && !(root instanceof SVGElement)) {
     throw new Error("Cannot hydrate non-element root");
   }
-  if (root.tagName !== element.element.toUpperCase()) {
+  if (root.tagName.toUpperCase() !== element.element.toUpperCase()) {
     throw new Error(
         `Mismatched tag type: ${root.tagName} != ${element.element}`);
   }
@@ -420,8 +433,8 @@ function hydrateElement(root: ChildNode, element: VElementOrPrimitive): Instanti
   }
 
   vElementsToNodes.set(element, root);
-  let maybeSpec: AnyBoundController<HTMLElement>|undefined;
-  let unboundEventss: Array<[HTMLElement, UnboundEvents]> = [];
+  let maybeSpec: AnyBoundController<HTMLElement|SVGElement>|undefined;
+  let unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]> = [];
 
   const props = element.props;
   for (const [key, value] of Object.entries(props)) {
@@ -470,8 +483,10 @@ declare global {
       img: ImageProperties;
       input: InputProperties;
       label: Properties<HTMLElement>;
+      polyline: PolylineProperties;
       section: Properties<HTMLElement>;
       span: Properties<HTMLSpanElement>;
+      svg: SVGProperties;
     }
   }
 }

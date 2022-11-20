@@ -11,8 +11,8 @@ interface DataRequests {
   boundaries_containing_trail: {
     trail_id: string;
   };
-  path_profile: {
-    id: string;
+  path_profiles_in_trail: {
+    trail_id: string;
   };
   search_boundaries: {
     query: string;
@@ -50,10 +50,12 @@ export interface DataResponses {
       type: number;
     }>;
   };
-  path_profile: {
-    id: string;
-    granularity_meters: number;
-    samples_meters: number[];
+  path_profiles_in_trail: {
+    profiles: Array<{
+      id: string;
+      granularity_meters: number;
+      samples_meters: string;
+    }>;
   };
   search_boundaries: {
     results: Array<{

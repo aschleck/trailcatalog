@@ -12,7 +12,7 @@ export type ControllerDepsMethod = () => DepsConstructorsFor<ServiceDeps>;
 export interface ControllerCtor<
     A extends {},
     D extends ControllerDepsMethod,
-    E extends HTMLElement,
+    E extends HTMLElement|SVGElement,
     S,
     R extends ControllerResponse<A, D, E, S>,
     C extends Controller<A, D, E, S>> {
@@ -32,7 +32,7 @@ export type Response<C extends Controller<any, any, any, any>> = C['_RT'];
 export class Controller<
     A extends {},
     D extends ControllerDepsMethod,
-    E extends HTMLElement,
+    E extends HTMLElement|SVGElement,
     S,
 > extends Disposable {
 

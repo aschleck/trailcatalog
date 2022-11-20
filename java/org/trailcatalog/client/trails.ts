@@ -3,7 +3,7 @@ import { latLngFromBase64E7 } from './common/data';
 import { LittleEndianView } from './common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng } from './common/math';
 import { emptyS2Polygon, LatLng, LatLngRect } from './common/types';
-import { Boundary, Trail } from './models/types';
+import { Boundary, ElevationProfile, Trail } from './models/types';
 
 import { DataResponses } from './data';
 
@@ -16,6 +16,22 @@ export function containingBoundariesFromRaw(
               b.name,
               b.type,
               emptyS2Polygon()));
+}
+
+export function pathProfilesInTrailFromRaw(
+    raw: DataResponses['path_profiles_in_trail']): Map<bigint, ElevationProfile> {
+  return new Map(raw.profiles.map(
+      p => {
+        const samples = [];
+        const sampleStream = new LittleEndianView(decodeBase64(p.samples_meters));
+        while (sampleStream.hasRemaining()) {
+          samples.push(sampleStream.getFloat32());
+        }
+        return [
+          BigInt(p.id),
+          new ElevationProfile(p.granularity_meters, samples),
+        ];
+      }));
 }
 
 export function trailFromRaw(raw: DataResponses['trail']): Trail {

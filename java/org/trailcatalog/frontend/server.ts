@@ -155,17 +155,23 @@ function renderProperties(props: Properties<HTMLElement>): string {
       actualKey = key;
     }
 
-    if (value) {
-      const escapedValue = [];
-      for (const c of value) {
-        if (c in ESCAPES) {
-          escapedValue.push(ESCAPES[c as keyof typeof ESCAPES]);
-        } else {
-          escapedValue.push(c);
+    if (value !== undefined) {
+      let rendered;
+      if (typeof value === 'string') {
+        const escapedValue = [];
+        for (const c of value) {
+          if (c in ESCAPES) {
+            escapedValue.push(ESCAPES[c as keyof typeof ESCAPES]);
+          } else {
+            escapedValue.push(c);
+          }
         }
+        rendered = escapedValue.join('');
+      } else {
+        rendered = value;
       }
 
-      attributes.push(`${actualKey}="${escapedValue.join('')}"`);
+      attributes.push(`${actualKey}="${rendered}"`);
     } else {
       attributes.push(actualKey);
     }

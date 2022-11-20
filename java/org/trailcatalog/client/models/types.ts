@@ -33,6 +33,13 @@ export class BoundarySearchResult {
   ) {}
 }
 
+export class ElevationProfile {
+  constructor(
+      readonly granularity_meters: number,
+      readonly samples_meters: number[],
+  ) {}
+}
+
 export class Path {
   constructor(
       readonly id: bigint,

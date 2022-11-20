@@ -137,28 +137,30 @@ private fun fetchData(ctx: Context) {
         }
         responses.add(ImmutableMap.of("boundaries", data))
       }
-      "path_profile" -> {
-        val data = HashMap<String, Any>()
-        val id = key.get("id").asLong()
+      "path_profiles_in_trail" -> {
+        val data = ArrayList<HashMap<String, Any>>()
+        val id = key.get("trail_id").asLong()
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
-                  + "pe.id, "
+                  + "pit.path_id, "
                   + "pe.height_samples_10m_meters "
-                  + "FROM path_elevations pe "
-                  + "WHERE pe.id = ? AND pe.epoch = ?")
+                  + "FROM paths_in_trails pit "
+                  + "JOIN path_elevations pe ON pit.path_id = pe.id "
+                  + "WHERE pit.trail_id = ? AND pit.epoch = ? AND pe.epoch = ?")
               .apply {
                 setLong(1, id)
                 setInt(2, epochTracker.epoch)
+                setInt(3, epochTracker.epoch)
               }.executeQuery()
-          if (!results.next()) {
-            ctx.status(HttpCode.NOT_FOUND)
-            return@fetchData
+          while (results.next()) {
+            val path = HashMap<String, Any>()
+            path["id"] = results.getLong(1)
+            path["granularity_meters"] = 10
+            path["samples_meters"] = String(Base64.getEncoder().encode(results.getBytes(2)))
+            data.add(path)
           }
-          data["id"] = id
-          data["granularity_meters"] = 10
-          val samples = results.getArray(2).getArray() as Array<Float>
-          data["samples_meters"] = samples
+          responses.add(ImmutableMap.of("profiles", data))
         }
       }
       "search_boundaries" -> {
