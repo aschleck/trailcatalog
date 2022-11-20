@@ -28,7 +28,8 @@ private fun getCopernicus30m(area: S2LatLngRect): List<DemMetadata> {
               ),
               "https://copernicus-dem-30m.s3.amazonaws.com/"
                   + "Copernicus_DSM_COG_10_${fLat}_00_${fLng}_00_DEM/"
-                  + "Copernicus_DSM_COG_10_${fLat}_00_${fLng}_00_DEM.tif"
+                  + "Copernicus_DSM_COG_10_${fLat}_00_${fLng}_00_DEM.tif",
+              global = true,
           ))
     }
   }
@@ -58,7 +59,7 @@ private fun getTargetedMetadata(area: S2LatLngRect, hikari: HikariDataSource): L
             S2LatLng.fromE7(latBound.low, lngBound.low),
             S2LatLng.fromE7(latBound.high, lngBound.high))
         val url = it.getString(5)
-        metadata.add(DemMetadata("${namespace}/${id}", bound, url))
+        metadata.add(DemMetadata("${namespace}/${id}", bound, url, global = false))
       }
       metadata
     }

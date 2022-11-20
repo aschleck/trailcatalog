@@ -8,10 +8,12 @@ import com.zaxxer.hikari.HikariDataSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.slf4j.LoggerFactory
 import org.trailcatalog.importers.common.IORuntimeException
+import org.trailcatalog.importers.common.NotFoundException
 import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
 import org.trailcatalog.s2.earthMetersToAngle
 import java.nio.file.Path
+import java.util.concurrent.ExecutionException
 
 private val logger = LoggerFactory.getLogger(DemResolver::class.java)
 
@@ -53,8 +55,12 @@ class DemResolver(private val hikari: HikariDataSource) {
         if (value != null) {
           return value
         }
-      } catch (e: IORuntimeException) {
-        logger.warn("Failed to open DEM", e)
+      } catch (e: ExecutionException) {
+        if (dem.global && e.cause is NotFoundException) {
+          return 0f
+        } else {
+          logger.warn("Failed to open DEM", e)
+        }
       }
     }
     return null
