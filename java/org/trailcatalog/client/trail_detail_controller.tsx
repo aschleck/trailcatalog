@@ -20,6 +20,7 @@ export interface State {
   containingBoundaries?: Boundary[];
   elevation?: {
     cursor?: LatLng;
+    cursorFraction?: number;
     heights: string;
     points: LatLng[];
     resolution: Vec2;
@@ -86,7 +87,7 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
     }
 
     const elevation = this.state.elevation;
-    const bound = (e.srcElement as Element).getBoundingClientRect();
+    const bound = (e.currentTarget as Element).getBoundingClientRect();
     const fraction = (e.clientX - bound.x) / bound.width;
     // Not exactly accurate (points might be very close at the path edges) but I don't care.
     const point = elevation.points[Math.floor(fraction * elevation.points.length)];
@@ -96,6 +97,7 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
       elevation: {
         ...elevation,
         cursor: point,
+        cursorFraction: fraction,
       },
     });
   }

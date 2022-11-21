@@ -34,6 +34,14 @@ export interface InputProperties extends Properties<HTMLInputElement> {
   value?: string;
 }
 
+export interface LineProperties extends Properties<SVGLineElement> {
+  stroke?: string;
+  x1: number|string;
+  y1: number|string;
+  x2: number|string;
+  y2: number|string;
+}
+
 export interface PolylineProperties extends Properties<SVGPolylineElement> {
   fill?: string;
   stroke?: string;
@@ -483,6 +491,7 @@ declare global {
       img: ImageProperties;
       input: InputProperties;
       label: Properties<HTMLElement>;
+      line: LineProperties;
       polyline: PolylineProperties;
       section: Properties<HTMLElement>;
       span: Properties<HTMLSpanElement>;

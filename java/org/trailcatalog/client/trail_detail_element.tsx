@@ -113,6 +113,14 @@ function Content(state: Required<State>) {
 }
 
 function ElevationGraph({elevation}: Required<State>) {
+  let indicator;
+  if (elevation.cursorFraction !== undefined) {
+    const x = elevation.cursorFraction * elevation.resolution[0];
+    indicator = <line x1={x} y1="0" x2={x} y2={elevation.resolution[1]} stroke="black" />;
+  } else {
+    indicator = <line x1="0" y1="0" x2="0" y2="0" stroke="black" />;
+  }
+
   return <>
     <svg
         unboundEvents={{
@@ -120,6 +128,7 @@ function ElevationGraph({elevation}: Required<State>) {
         }}
         viewBox={`0 0 ${elevation.resolution[0]} ${elevation.resolution[1]}`}>
       <polyline fill="none" points={elevation.heights} stroke="black" stroke_width="3" />
+      {indicator}
     </svg>
   </>;
 }
