@@ -88,7 +88,7 @@ export function BoundaryOverviewElement({boundaryId}: {
           ? <>
             <ViewportLayoutElement
                 camera={s2LatLngRectToTc(state.boundary.polygon.getRectBound())}
-                overlay={{
+                overlays={{
                   content: trailDetails,
                   polygon: state.boundary.polygon,
                 }}

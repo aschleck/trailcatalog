@@ -1,31 +1,71 @@
-import { S2Polygon } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
-import { Vec2 } from '../../common/types';
+import { LatLng, Vec2 } from '../../common/types';
 import { BOUNDARY_PALETTE } from '../common/colors';
 import { projectS2LatLng } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
+import { Renderer } from '../rendering/renderer';
+import { TexturePool } from '../rendering/texture_pool';
 
 import { Layer } from './layer';
 
+export interface Overlays {
+  point?: LatLng;
+  polygon?: S2Polygon;
+}
+
 const BOUNDARY_RADIUS_PX = 1;
+const NO_OFFSET: Vec2 = [0, 0];
 
 export class OverlayData extends Layer {
 
+  private readonly billboards: Array<{
+    center: Vec2;
+    size: Vec2;
+    texture: WebGLTexture;
+  }>;
   private readonly lines: Line[];
+  private bearIcon: WebGLTexture|undefined;
 
-  constructor(
-      overlay: {
-        polygon?: S2Polygon;
-      },
-  ) {
+  constructor(overlays: Overlays, renderer: Renderer) {
     super();
+    this.billboards = [];
     this.lines = [];
 
-    if (overlay.polygon) {
-      for (let l = 0; l < overlay.polygon.numLoops(); ++l) {
-        const loop = overlay.polygon.loop(l);
+    fetch("/static/images/icons/bear-face.png")
+        .then(response => {
+          if (response.ok) {
+            return response.blob()
+                .then(blob => createImageBitmap(blob))
+                .then(bitmap => {
+                  const pool = new TexturePool(renderer);
+                  this.bearIcon = pool.acquire();
+                  renderer.uploadTexture(bitmap, this.bearIcon);
+                });
+          }
+        });
+
+    this.setOverlay(overlays);
+  }
+
+  setOverlay(overlays: Overlays) {
+    this.billboards.length = 0;
+    // TODO(april): need to have listeners for icon loads or else this can get lost
+    if (overlays.point && this.bearIcon) {
+      const center = projectS2LatLng(S2LatLng.fromDegrees(overlays.point[0], overlays.point[1]));
+      this.billboards.push({
+        center,
+        size: [32, 32],
+        texture: this.bearIcon,
+      });
+    }
+
+    this.lines.length = 0;
+    if (overlays.polygon) {
+      for (let l = 0; l < overlays.polygon.numLoops(); ++l) {
+        const loop = overlays.polygon.loop(l);
         const vertexCount = loop.numVertices();
         const vertices = new Float32Array(loop.numVertices() * 2 + 2);
         for (let v = 0; v < vertexCount; ++v) {
@@ -51,6 +91,10 @@ export class OverlayData extends Layer {
   }
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+    for (const billboard of this.billboards) {
+      planner.addBillboard(
+          billboard.center, NO_OFFSET, billboard.size, billboard.texture, /* z= */ 2);
+    }
     planner.addLines(this.lines, BOUNDARY_RADIUS_PX, 0);
   }
 

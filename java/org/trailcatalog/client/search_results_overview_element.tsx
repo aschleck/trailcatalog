@@ -145,7 +145,7 @@ export function SearchResultsOverviewElement(
                 filters={{
                   trail: filter,
                 }}
-                overlay={{
+                overlays={{
                   content: trailDetails,
                   polygon: state.boundary?.polygon,
                 }}

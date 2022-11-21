@@ -5,6 +5,7 @@ import { FabricIcon } from 'js/dino/fabric';
 import { currentUrl } from './common/ssr_aware';
 import { LatLngRect, LatLngZoom } from './common/types';
 import { MAP_MOVED } from './map/events';
+import { Overlays } from './map/layers/overlay_data';
 import { MapElement } from './map/map_element';
 import { Trail } from './models/types';
 
@@ -17,7 +18,7 @@ export function ViewportLayoutElement({
   bannerContent,
   camera,
   filters,
-  overlay,
+  overlays,
   sidebarContent,
 }: {
   active?: {
@@ -28,9 +29,8 @@ export function ViewportLayoutElement({
   filters?: {
     trail?: (id: bigint) => boolean;
   };
-  overlay?: {
+  overlays?: Overlays & {
     content?: string;
-    polygon?: S2Polygon;
   };
   sidebarContent: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
@@ -82,12 +82,10 @@ export function ViewportLayoutElement({
                 active={active}
                 camera={state.camera}
                 filters={filters}
-                overlay={{
-                  polygon: overlay?.polygon,
-                }}
+                overlays={overlays}
             />
           </div>
-          {overlay?.content ?? <></>}
+          {overlays?.content ?? <></>}
         </div>
       </div>
     </div>

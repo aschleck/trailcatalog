@@ -3,6 +3,7 @@ import * as corgi from 'js/corgi';
 
 import { LatLngRect, LatLngZoom } from '../common/types';
 import { Filters } from './layers/map_data';
+import { Overlays } from './layers/overlay_data';
 import { Trail } from '../models/types';
 
 import { MapController } from './map_controller';
@@ -14,7 +15,7 @@ export function MapElement({
   filters,
   height,
   interactive,
-  overlay,
+  overlays,
 }: {
   active?: {
     trails?: Trail[];
@@ -24,9 +25,7 @@ export function MapElement({
   filters?: Filters;
   height?: string;
   interactive?: boolean;
-  overlay?: {
-    polygon?: S2Polygon;
-  };
+  overlays?: Overlays;
 }) {
   return <>
     <div
@@ -37,7 +36,7 @@ export function MapElement({
             camera,
             filters: filters ?? {},
             interactive: interactive ?? true,
-            overlay: overlay ?? {},
+            overlays: overlays ?? {},
           },
           events: {
             render: 'wakeup',

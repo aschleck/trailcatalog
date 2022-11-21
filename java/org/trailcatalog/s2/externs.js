@@ -29,6 +29,7 @@ goog.exportProperty(S2LatLng.prototype, 'latDegrees', S2LatLng.prototype.latDegr
 goog.exportProperty(S2LatLng.prototype, 'lngDegrees', S2LatLng.prototype.lngDegrees);
 goog.exportProperty(S2LatLng.prototype, 'latRadians', S2LatLng.prototype.latRadians);
 goog.exportProperty(S2LatLng.prototype, 'lngRadians', S2LatLng.prototype.lngRadians);
+goog.exportProperty(S2LatLng.prototype, 'toPoint', S2LatLng.prototype.toPoint);
 
 const S2LatLngRect = goog.require('com.google.common.geometry.S2LatLngRect');
 goog.exportSymbol('com.google.common.geometry.S2LatLngRect', S2LatLngRect);
@@ -49,6 +50,11 @@ goog.exportProperty(S2Loop.prototype, 'vertices', S2Loop.prototype.vertices);
 
 const S2Point = goog.require('com.google.common.geometry.S2Point');
 goog.exportSymbol('com.google.common.geometry.S2Point', S2Point);
+goog.exportProperty(S2Point.prototype, 'add', S2Point.prototype.add);
+goog.exportProperty(S2Point.prototype, 'angle', S2Point.prototype.angle);
+goog.exportProperty(S2Point.prototype, 'div', S2Point.prototype.div);
+goog.exportProperty(S2Point.prototype, 'mul', S2Point.prototype.mul);
+goog.exportProperty(S2Point.prototype, 'sub', S2Point.prototype.sub);
 goog.exportProperty(S2Point.prototype, 'getX', S2Point.prototype.getX);
 goog.exportProperty(S2Point.prototype, 'getY', S2Point.prototype.getY);
 goog.exportProperty(S2Point.prototype, 'getZ', S2Point.prototype.getZ);

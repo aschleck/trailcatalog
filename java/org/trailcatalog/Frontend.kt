@@ -146,17 +146,15 @@ private fun fetchData(ctx: Context) {
                   + "pit.path_id, "
                   + "pe.height_samples_10m_meters "
                   + "FROM paths_in_trails pit "
-                  + "JOIN path_elevations pe ON pit.path_id = pe.id "
-                  + "WHERE pit.trail_id = ? AND pit.epoch = ? AND pe.epoch = ?")
+                  + "JOIN path_elevations pe ON pit.path_id = pe.id AND pit.epoch = pe.epoch "
+                  + "WHERE pit.trail_id = ? AND pit.epoch = ?")
               .apply {
                 setLong(1, id)
                 setInt(2, epochTracker.epoch)
-                setInt(3, epochTracker.epoch)
               }.executeQuery()
           while (results.next()) {
             val path = HashMap<String, Any>()
             path["id"] = results.getLong(1)
-            path["granularity_meters"] = 10
             path["samples_meters"] = String(Base64.getEncoder().encode(results.getBytes(2)))
             data.add(path)
           }

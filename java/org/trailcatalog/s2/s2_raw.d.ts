@@ -23,6 +23,7 @@ export declare namespace com.google.common.geometry {
     lngDegrees(): number;
     latRadians(): number;
     lngRadians(): number;
+    toPoint(): S2Point;
   }
 
   class S2LatLngRect {
@@ -43,6 +44,11 @@ export declare namespace com.google.common.geometry {
   }
 
   class S2Point {
+    add(p: S2Point): S2Point;
+    angle(p: S2Point): number;
+    div(scale: number): S2Point;
+    mul(scale: number): S2Point;
+    sub(p: S2Point): S2Point;
     getX(): number;
     getY(): number;
     getZ(): number;

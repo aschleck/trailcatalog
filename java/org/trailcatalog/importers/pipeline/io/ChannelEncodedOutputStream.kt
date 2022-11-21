@@ -56,6 +56,8 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel)
   }
 
   // TODO(april): since I broke down and added buffer checking to write, does this do much?
+  // Thought: yes. Because we can't flush after write(Byte) in case it's part of a larger
+  // serialization. So we need to checkBufferSpace after all of that.
   fun checkBufferSpace() {
     if (buffer.position() >= FLUSH_THRESHOLD) {
       flush()

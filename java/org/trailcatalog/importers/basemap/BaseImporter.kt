@@ -72,11 +72,15 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       val hash = from.readInt()
       val down = from.readDouble()
       val up = from.readDouble()
+      val points = ArrayList<LatLngE7>()
+      for (i in 0 until from.readVarInt()) {
+        points.add(LatLngE7(from.readInt(), from.readInt()))
+      }
       val profile = ArrayList<Float>()
       for (i in 0 until from.readVarInt()) {
         profile.add(from.readFloat())
       }
-      return Profile(id, hash, down, up, profile)
+      return Profile(id, hash, down, up, points, profile)
     }
 
     override fun write(v: Profile, to: EncodedOutputStream) {
@@ -84,6 +88,11 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       to.writeInt(v.hash)
       to.writeDouble(v.down)
       to.writeDouble(v.up)
+      to.writeVarInt(v.points.size)
+      v.points.forEach {
+        to.writeInt(it.lat)
+        to.writeInt(it.lng)
+      }
       to.writeVarInt(v.profile.size)
       v.profile.forEach { to.writeFloat(it) }
     }

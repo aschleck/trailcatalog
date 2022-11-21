@@ -1,6 +1,7 @@
 package org.trailcatalog.importers.basemap
 
 import java.io.File
+import org.trailcatalog.importers.pbf.LatLngE7
 
 var ELEVATION_PROFILES_FILE = File("elevation_profiles.pb")
 
@@ -9,5 +10,6 @@ data class Profile(
     val hash: Int,
     val down: Double,
     val up: Double,
+    val points: List<LatLngE7>,
     val profile: List<Float>,
 )

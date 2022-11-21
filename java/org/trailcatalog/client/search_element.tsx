@@ -112,7 +112,7 @@ function SearchResults({boundaries, className, query, trails}: {
           </>)}
       />
       <SearchCategory
-          icon="/static/images/icons/national_park.svg"
+          icon="/static/images/icons/national-park.svg"
           label="National Parks"
           results={nationalParks.map(boundary => <>
             <ResultItem

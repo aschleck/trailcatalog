@@ -22,14 +22,20 @@ export function pathProfilesInTrailFromRaw(
     raw: DataResponses['path_profiles_in_trail']): Map<bigint, ElevationProfile> {
   return new Map(raw.profiles.map(
       p => {
+        const points = [];
         const samples = [];
         const sampleStream = new LittleEndianView(decodeBase64(p.samples_meters));
         while (sampleStream.hasRemaining()) {
+          points.push([
+            sampleStream.getInt32() / 10_000_000,
+            sampleStream.getInt32() / 10_000_000,
+          ] as LatLng);
           samples.push(sampleStream.getFloat32());
         }
+
         return [
           BigInt(p.id),
-          new ElevationProfile(p.granularity_meters, samples),
+          new ElevationProfile(points, samples),
         ];
       }));
 }

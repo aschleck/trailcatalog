@@ -5,13 +5,13 @@ import { Controller, Response } from 'js/corgi/controller';
 
 import { DPI } from '../common/dpi';
 import { clamp, screenLlz } from '../common/math';
-import { LatLngRect, LatLngZoom, Vec2 } from '../common/types';
+import { LatLng, LatLngRect, LatLngZoom, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
 import { Path, Trail } from '../models/types';
 import { Layer } from './layers/layer';
 import { Filters, MapData } from './layers/map_data';
-import { OverlayData } from './layers/overlay_data';
+import { OverlayData, Overlays } from './layers/overlay_data';
 import { TileData } from './layers/tile_data';
 import { Camera } from './models/camera';
 import { Renderer } from './rendering/renderer';
@@ -27,9 +27,7 @@ interface Args {
   camera: LatLngRect|LatLngZoom;
   filters: Filters;
   interactive: boolean;
-  overlay: {
-    polygon?: S2Polygon;
-  };
+  overlays: Overlays;
 }
 
 type Deps = typeof MapController.deps;
@@ -54,6 +52,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
 
   private readonly layers: Layer[];
   private readonly mapData: MapData;
+  private readonly overlayData: OverlayData;
   private readonly textRenderer: TextRenderer;
 
   private screenArea: DOMRect;
@@ -88,10 +87,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
             response.deps.services.mapData,
             response.args.filters,
             this.textRenderer);
+    this.overlayData = new OverlayData(response.args.overlays, this.renderer);
     this.layers = [
       this.mapData,
       new TileData(this.camera, response.deps.services.tileData, this.renderer),
-      new OverlayData(response.args.overlay),
+      this.overlayData,
     ];
     this.layers.forEach(layer => {
       this.registerDisposable(layer);
@@ -153,6 +153,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   updateArgs(newArgs: Args): void {
     this.setCamera(newArgs.camera);
     this.mapData.setFilters(newArgs.filters);
+    this.overlayData.setOverlay(newArgs.overlays);
+    this.nextRender = RenderType.DataChange;
   }
 
   getTrail(id: bigint): Trail|undefined {

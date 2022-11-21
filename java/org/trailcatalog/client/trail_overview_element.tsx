@@ -81,7 +81,7 @@ export function TrailOverviewElement({trailId}: {
             <ViewportLayoutElement
                 active={{trails: [state.trail]}}
                 camera={state.trail.bound}
-                overlay={{content: trailDetails}}
+                overlays={{content: trailDetails}}
                 sidebarContent={<TrailSidebar state={state} />}
             />
           </>
