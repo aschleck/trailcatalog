@@ -7,10 +7,12 @@ import { CorgiEvent } from 'js/corgi/events';
 import { decodeBase64 } from './common/base64';
 import { LittleEndianView } from './common/little_endian_view';
 import { LatLng, Vec2 } from './common/types';
+import { MapDataService } from './data/map_data_service';
+import { unprojectS2LatLng } from './map/models/camera';
 import { Boundary, ElevationProfile, Trail } from './models/types';
 
 import { DataResponses, fetchData } from './data';
-import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
+import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw } from './trails';
 
 interface Args {
   trailId: bigint;
@@ -26,6 +28,7 @@ export interface State {
     resolution: Vec2;
   }
   pathProfiles?: Map<bigint, ElevationProfile>;
+  pinned: boolean;
   trail?: Trail;
 }
 
@@ -36,23 +39,26 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
   static deps() {
     return {
       services: {
+        data: MapDataService,
       },
     };
   }
 
+  private readonly data: MapDataService;
+
   constructor(response: Response<TrailDetailController>) {
     super(response);
+    this.data = response.deps.services.data;
+
+    this.data.setPins({trail: response.args.trailId}, true).then(trail => {
+      this.updateState({
+        ...this.state,
+        pinned: true,
+        trail,
+      });
+    });
 
     const id = `${response.args.trailId}`;
-    if (!this.state.trail) {
-      fetchData('trail', {id}).then(raw => {
-        this.updateState({
-          ...this.state,
-          trail: trailFromRaw(raw),
-        });
-      });
-    }
-
     if (!this.state.containingBoundaries) {
       fetchData('boundaries_containing_trail', {trail_id: id}).then(raw => {
         this.updateState({
@@ -74,9 +80,9 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
 
   updateState(newState: State) {
     // Yikes!
-    if (!(this.state.pathProfiles && this.state.trail)
-        && (newState.pathProfiles && newState.trail)) {
-      newState.elevation = calculateGraph(newState.pathProfiles, newState.trail);
+    if (!(this.state.pathProfiles && this.state.pinned && this.state.trail)
+        && (newState.pathProfiles && newState.pinned && newState.trail)) {
+      newState.elevation = calculateGraph(this.data, newState.pathProfiles, newState.trail);
     }
     super.updateState(newState);
   }
@@ -103,7 +109,10 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
   }
 }
 
-export function calculateGraph(pathProfiles: Map<bigint, ElevationProfile>, trail: Trail): {
+export function calculateGraph(
+    data: MapDataService,
+    pathProfiles: Map<bigint, ElevationProfile>,
+    trail: Trail): {
   heights: string;
   points: LatLng[];
   resolution: Vec2;
@@ -115,34 +124,35 @@ export function calculateGraph(pathProfiles: Map<bigint, ElevationProfile>, trai
   let length = 0;
 
   const heights: Vec2[] = [];
-  const points: LatLng[] = [];
+  const latLngs: LatLng[] = [];
   let lastPoint: S2Point|undefined = undefined;
-  const process = (latLng: LatLng, sample: number) => {
-    points.push(latLng);
+  const process = (point: S2Point, sample: number) => {
+    const ll = SimpleS2.pointToLatLng(point);
+    latLngs.push([ll.latDegrees(), ll.lngDegrees()] as LatLng);
     heights.push([length, sample]);
     min = Math.min(min, sample);
     max = Math.max(max, sample);
 
-    const thisPoint = S2LatLng.fromDegrees(latLng[0], latLng[1]).toPoint();
     if (lastPoint != null) {
-      length += lastPoint.angle(thisPoint) * 6371010;
+      length += angleToEarthMeters(lastPoint.angle(point));
     }
-    lastPoint = thisPoint;
+    lastPoint = point;
   };
   for (let i = 0; i < trail.paths.length; ++i) {
-    const path = trail.paths[i];
-    const profile = checkExists(pathProfiles.get(path & ~1n));
-    const latLngs = profile.latLngs;
+    const pathId = trail.paths[i];
+    const profile = checkExists(pathProfiles.get(pathId & ~1n));
+    const path = checkExists(data.pinnedPaths.get(pathId & ~1n));
+    const points = calculateSampleLocations(profile.granularityMeters, path.line);
     const samples = profile.samplesMeters;
     const offset = i === 0 ? 0 : 1;
 
-    if ((path & 1n) === 0n) {
+    if ((pathId & 1n) === 0n) {
       for (let j = offset; j < samples.length; ++j) {
-        process(latLngs[j], samples[j]);
+        process(points[j], samples[j]);
       }
     } else {
       for (let j = samples.length - 1 - offset; j >= 0; --j) {
-        process(latLngs[j], samples[j]);
+        process(points[j], samples[j]);
       }
     }
   }
@@ -153,11 +163,48 @@ export function calculateGraph(pathProfiles: Map<bigint, ElevationProfile>, trai
     const fx = Math.floor(x * inverseLength);
     const fy = Math.floor((max - y) * inverseHeight);
     return `${fx},${fy}`;
-  }).join(" ");
+  }).join(' ');
   return {
     heights: heightsString,
-    points,
+    points: latLngs,
     resolution: [resolutionWidth, resolutionHeight],
   };
 }
 
+function calculateSampleLocations(
+    granularityMeters: number, line: Float32Array|Float64Array): S2Point[] {
+  const increment = earthMetersToAngle(granularityMeters);
+  const points = [];
+  let current = 0;
+  let previous = unprojectS2LatLng(line[0], line[1]).toPoint();
+  let offsetRadians = 0;
+  for (let i = 2; i < line.length; i += 2) {
+    const next = unprojectS2LatLng(line[i], line[i + 1]).toPoint();
+    const length = previous.angle(next);
+    let position = offsetRadians;
+    while (position < length) {
+      const fraction = Math.sin(position) / Math.sin(length);
+      const point =
+          previous
+              .mul(Math.cos(position) - fraction * Math.cos(length))
+              .add(next.mul(fraction));
+      points.push(point);
+      position += increment;
+    }
+    previous = next;
+    offsetRadians = position - length;
+  }
+  // This is scary because I think we may end up with one more point than there are samples in
+  // some situations. Whatever!
+  points.push(previous);
+  return points;
+}
+
+// TODO(april): either make S2Earth J2CL compat or move these somewhere
+function angleToEarthMeters(radians: number): number {
+  return radians * 6371010.0;
+}
+
+function earthMetersToAngle(meters: number): number {
+  return meters / 6371010.0;
+}

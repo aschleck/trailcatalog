@@ -290,7 +290,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
       } else if (key === 'unboundEvents') {
         result.unboundEventss.push([node, checkExists(to.props[key])]);
       } else {
-        node.setAttribute(key.replace('_', "-"), checkExists(to.props[key]));
+        node.setAttribute(key.replace('_', '-'), checkExists(to.props[key]));
       }
     }
   }
@@ -348,6 +348,12 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   return result;
 }
 
+const TAG_TO_NAMESPACE = new Map([
+  ['line', 'http://www.w3.org/2000/svg'],
+  ['polyline', 'http://www.w3.org/2000/svg'],
+  ['svg', 'http://www.w3.org/2000/svg'],
+]);
+
 function createElement(element: VElementOrPrimitive): InstantiationResult {
   if (typeof element !== 'object') {
     return {
@@ -357,7 +363,8 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
     };
   }
 
-  const root = document.createElement(element.element);
+  const ns = TAG_TO_NAMESPACE.get(element.element) ?? 'http://www.w3.org/1999/xhtml';
+  const root = document.createElementNS(ns, element.element) as HTMLElement|SVGElement;
   vElementsToNodes.set(element, root);
   let maybeSpec: AnyBoundController<HTMLElement|SVGElement>|undefined;
   let unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]> = [];
@@ -369,9 +376,9 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
     } else if (key === 'unboundEvents') {
       unboundEventss.push([root, value]);
     } else if (key === 'className') {
-      root.className = value;
+      root.setAttribute('class', value);
     } else {
-      root.setAttribute(key, value);
+      root.setAttribute(key.replace('_', '-'), value);
     }
   }
 

@@ -152,7 +152,7 @@ function renderProperties(props: Properties<HTMLElement>): string {
     } else if (key === 'children' || key === 'js' || key === 'unboundEvents') {
       continue;
     } else {
-      actualKey = key;
+      actualKey = key.replace('_', '-');
     }
 
     if (value !== undefined) {

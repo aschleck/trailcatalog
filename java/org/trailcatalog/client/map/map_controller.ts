@@ -151,7 +151,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   }
 
   updateArgs(newArgs: Args): void {
-    this.setCamera(newArgs.camera);
+    // TODO(april): theoretically we should support the following, but it causes lots of thrasing:
+    // this.setCamera(newArgs.camera);
     this.mapData.setFilters(newArgs.filters);
     this.overlayData.setOverlay(newArgs.overlays);
     this.nextRender = RenderType.DataChange;

@@ -10,6 +10,7 @@ import { FetchThrottler } from './fetch_throttler';
 
 export interface SetPinsRequest {
   kind: 'spr';
+  precise: boolean;
   trail?: bigint;
 }
 
@@ -96,6 +97,7 @@ class DataFetcher {
       method: 'POST',
       signal: abort.signal,
       body: JSON.stringify({
+        precise: pins.precise,
         trail_id: pins.trail,
       }, (k, v) => typeof v === 'bigint' ? String(v) : v),
     }).then(response => {

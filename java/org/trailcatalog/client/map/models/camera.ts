@@ -91,6 +91,12 @@ export function projectS2LatLng(ll: S2LatLng): Vec2 {
   return [x, y];
 }
 
+export function unprojectS2LatLng(x: number, y: number): S2LatLng {
+  const lngRadians = Math.PI * x;
+  const latRadians = Math.asin(Math.tanh(y * Math.PI));
+  return S2LatLng.fromRadians(latRadians, lngRadians);
+}
+
 export function projectLatLngRect(rect: S2LatLngRect): PixelRect {
   return {
     low: projectS2LatLng(rect.lo()),

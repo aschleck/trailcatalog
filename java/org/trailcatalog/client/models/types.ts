@@ -35,7 +35,7 @@ export class BoundarySearchResult {
 
 export class ElevationProfile {
   constructor(
-      readonly latLngs: LatLng[],
+      readonly granularityMeters: number,
       readonly samplesMeters: number[],
   ) {}
 }

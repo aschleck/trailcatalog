@@ -39,7 +39,6 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
   var last: Float
   var totalUp = 0.0
   var totalDown = 0.0
-  val latLngs = ArrayList<S2LatLng>()
   val profile = ArrayList<Float>()
   var sampleIndex = 0
   while (current < points.size - 1) {
@@ -51,6 +50,7 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
     // at sea-level. But should we think about this more?
     last = resolver.query(S2LatLng(previous)) ?: 0f
     while (position < length) {
+      // Haversine as opposed to arc interpolation
       val fraction = Math.sin(position) / Math.sin(length)
       val ll =
           S2LatLng(
@@ -59,7 +59,6 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
                   S2Point.mul(next, fraction)))
       val height = resolver.query(ll) ?: 0f
       if (sampleIndex % sampleRate == 0) {
-        latLngs.add(ll)
         profile.add(height)
       }
       sampleIndex += 1
@@ -78,7 +77,6 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
 
     // Make sure we've always added the last point to the profile
     if (current == points.size - 1 && sampleIndex % sampleRate != 1) {
-      latLngs.add(S2LatLng(next))
       profile.add(last)
     }
   }
@@ -88,6 +86,5 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
       hash=way.hash,
       down=totalDown,
       up=totalUp,
-      points=latLngs.map { LatLngE7.fromS2LatLng(it) },
       profile=profile)
 }

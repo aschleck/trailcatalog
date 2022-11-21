@@ -53,6 +53,7 @@ export interface DataResponses {
   path_profiles_in_trail: {
     profiles: Array<{
       id: string;
+      granularity_meters: number;
       samples_meters: string;
     }>;
   };

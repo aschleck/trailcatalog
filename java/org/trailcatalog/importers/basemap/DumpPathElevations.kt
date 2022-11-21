@@ -25,11 +25,8 @@ class DumpPathElevations(private val epoch: Int, private val hikari: HikariDataS
             csv.append(profile.up)
             csv.append(",")
             val samples =
-                ByteBuffer.allocate(3 * 4 * profile.profile.size).order(ByteOrder.LITTLE_ENDIAN)
+                ByteBuffer.allocate(4 * profile.profile.size).order(ByteOrder.LITTLE_ENDIAN)
             for (i in 0 until profile.profile.size) {
-              val point = profile.points[i]
-              samples.putInt(point.lat)
-              samples.putInt(point.lng)
               samples.putFloat(profile.profile[i])
             }
             appendByteArray(samples.array(), csv)

@@ -42,6 +42,7 @@ export class MapDataService extends Service<EmptyDeps> {
   readonly metadataCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   readonly detailCells: Map<S2CellNumber, ArrayBuffer|undefined>;
   readonly paths: Map<bigint, Path>;
+  readonly pinnedPaths: Map<bigint, Path>;
   readonly pathsToTrails: IdentitySetMultiMap<bigint, Trail>;
   readonly trails: Map<bigint, Trail>;
 
@@ -60,6 +61,7 @@ export class MapDataService extends Service<EmptyDeps> {
     this.metadataCells = new Map();
     this.detailCells = new Map();
     this.paths = new Map();
+    this.pinnedPaths = new Map();
     this.pathsToTrails = new IdentitySetMultiMap();
     this.trails = new Map();
 
@@ -89,6 +91,7 @@ export class MapDataService extends Service<EmptyDeps> {
   clearPins(): void {
     this.fetcher.postMessage({
       kind: 'spr',
+      precise: false,
     });
 
     for (const {reject} of this.pinnedMissingTrails.values()) {
@@ -97,9 +100,10 @@ export class MapDataService extends Service<EmptyDeps> {
     this.pinnedMissingTrails.clear();
   }
 
-  setPins({trail}: {trail: bigint}): Promise<Trail> {
+  setPins({trail}: {trail: bigint}, precise: boolean = false): Promise<Trail> {
     this.fetcher.postMessage({
       kind: 'spr',
+      precise,
       trail,
     });
 
@@ -109,7 +113,7 @@ export class MapDataService extends Service<EmptyDeps> {
     this.pinnedMissingTrails.clear();
 
     const existing = this.trails.get(trail);
-    if (existing && this.trailsInDetails.has(existing)) {
+    if (existing && !precise && this.trailsInDetails.has(existing)) {
       return Promise.resolve(existing);
     } else {
       return new Promise((resolve, reject) => {
@@ -229,14 +233,22 @@ export class MapDataService extends Service<EmptyDeps> {
     //
     // The other exception is that we will resolve pinned promises so we can pass bounds. Ew.
     this.detailCells.set(PIN_CELL_ID, buffer);
+    this.pinnedPaths.clear();
 
     const data = new LittleEndianView(buffer);
     const pathCount = data.getInt32();
+    const bound = {
+      low: [1, 1],
+      high: [-1, -1],
+    } as PixelRect;
     for (let i = 0; i < pathCount; ++i) {
-      data.skip(8 + 4);
+      const id = data.getBigInt64();
+      const type = data.getInt32();
       const pathVertexBytes = data.getInt32();
+      const pathVertexCount = pathVertexBytes / 4;
       data.align(4);
-      data.skip(pathVertexBytes);
+      const points = data.sliceFloat32(pathVertexCount);
+      this.pinnedPaths.set(id, new Path(id, type, bound, points));
     }
 
     const trailCount = data.getInt32();
@@ -296,16 +308,16 @@ export class MapDataService extends Service<EmptyDeps> {
       const id = data.getBigInt64();
       const type = data.getInt32();
       const pathVertexBytes = data.getInt32();
-      const pathVertexCount = pathVertexBytes / 8;
+      const pathVertexCount = pathVertexBytes / 4;
       data.align(4);
-      const points = data.sliceFloat32(pathVertexCount * 2);
+      const points = data.sliceFloat32(pathVertexCount);
       const bound = {
         low: [1, 1],
         high: [-1, -1],
       } as PixelRect;
-      for (let i = 0; i < pathVertexCount; ++i) {
-        const x = points[i * 2 + 0];
-        const y = points[i * 2 + 1];
+      for (let i = 0; i < pathVertexCount; i += 2) {
+        const x = points[i + 0];
+        const y = points[i + 1];
         bound.low[0] = Math.min(bound.low[0], x);
         bound.low[1] = Math.min(bound.low[1], y);
         bound.high[0] = Math.max(bound.high[0], x);

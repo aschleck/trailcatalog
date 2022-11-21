@@ -368,12 +368,12 @@ export class MapData extends Layer {
       const id = data.getBigInt64();
       const type = data.getInt32();
       const pathVertexBytes = data.getInt32();
-      const pathVertexCount = pathVertexBytes / 8;
+      const pathVertexCount = pathVertexBytes / 4;
       data.align(4);
       if (this.dataService.paths.has(id) && zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
-        data.skip(pathVertexCount * 2 * 4);
+        data.skip(pathVertexCount * 4);
       } else {
-        this.pushPath(id, data.sliceFloat32(pathVertexCount * 2), lines, raised);
+        this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
       }
     }
 

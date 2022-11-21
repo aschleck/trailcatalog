@@ -10,6 +10,5 @@ data class Profile(
     val hash: Int,
     val down: Double,
     val up: Double,
-    val points: List<LatLngE7>,
     val profile: List<Float>,
 )

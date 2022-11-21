@@ -155,6 +155,7 @@ private fun fetchData(ctx: Context) {
           while (results.next()) {
             val path = HashMap<String, Any>()
             path["id"] = results.getLong(1)
+            path["granularity_meters"] = 10
             path["samples_meters"] = String(Base64.getEncoder().encode(results.getBytes(2)))
             data.add(path)
           }
@@ -368,12 +369,12 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "    WHERE ? <<% name AND epoch = ? "
             + "  ) t "
             + "  WHERE score < 0.7 "
-            + "  GROUP BY 1, 2, 3, 4 "
+            + "  GROUP BY 1, 2, 3, 4, 5, 6 "
             + "  ORDER BY MAX(score) ASC "
             + "  LIMIT ?"
             + ") sr "
             + "LEFT JOIN trails_in_boundaries tib ON sr.id = tib.trail_id AND tib.epoch = ? "
-            + "GROUP BY 1, 2, 3, 4, sr.score "
+            + "GROUP BY 1, 2, 3, 4, 5, 6, sr.score "
             + "ORDER BY sr.score ASC")
         .apply {
           setString(1, query)
@@ -538,6 +539,7 @@ private fun fetchDataPacked(ctx: Context) {
 
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyAsInputStream())
+  val precise = request.get("precise").asBoolean()
   val trailId = request.get("trail_id").asLong()
 
   val trail = connectionSource.connection.use {
@@ -598,7 +600,9 @@ private fun fetchDataPacked(ctx: Context) {
           WirePath(
               id = id,
               type = results.getInt(2),
-              vertices = projectSimplified(results.getBytes(3)),
+              vertices = results.getBytes(3).let {
+                if (precise) project(it) else projectSimplified(it)
+              }
           )
     }
   }

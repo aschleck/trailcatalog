@@ -12,7 +12,7 @@ import { BoundaryCrumbs } from './boundary_crumbs';
 import { DataResponses } from './data';
 import { MapElement } from './map/map_element';
 import { Header } from './page';
-import { calculateGraph, TrailDetailController, State } from './trail_detail_controller';
+import { TrailDetailController, State } from './trail_detail_controller';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
 export function TrailDetailElement({trailId}: {
@@ -37,15 +37,10 @@ export function TrailDetailElement({trailId}: {
       pathProfiles = pathProfilesInTrailFromRaw(rawPathProfiles);
     }
 
-    let elevation;
-    if (pathProfiles && trail) {
-      elevation = calculateGraph(pathProfiles, trail);
-    }
-
     state = {
       containingBoundaries,
-      elevation,
       pathProfiles,
+      pinned: false,
       trail,
     };
   }
@@ -72,11 +67,12 @@ export function TrailDetailElement({trailId}: {
           })}
           className="h-full max-w-6xl px-4 my-8 w-full"
       >
-        {state.containingBoundaries && state.elevation && state.pathProfiles && state.trail
+        {state.containingBoundaries && state.trail
             ? <Content
                 containingBoundaries={state.containingBoundaries}
                 elevation={state.elevation}
                 pathProfiles={state.pathProfiles}
+                pinned={state.pinned}
                 trail={state.trail}
             />
             : "Loading..."
@@ -86,8 +82,9 @@ export function TrailDetailElement({trailId}: {
   </>;
 }
 
-function Content(state: Required<State>) {
-  const {containingBoundaries, pathProfiles, trail} = state;
+function Content(state: State) {
+  const containingBoundaries = checkExists(state.containingBoundaries);
+  const trail = checkExists(state.trail);
   const distance = formatDistance(trail.lengthMeters);
   const elevationUp = formatHeight(trail.elevationUpMeters);
   return [
@@ -106,13 +103,14 @@ function Content(state: Required<State>) {
         className="my-8"
         height="h-[32rem]"
         interactive={false}
-        overlays={{point: state.elevation.cursor}}
+        overlays={{point: state.elevation?.cursor}}
     />,
-    <ElevationGraph {...state} />,
+    state.elevation ? <ElevationGraph {...state} /> : <svg></svg>,
   ];
 }
 
-function ElevationGraph({elevation}: Required<State>) {
+function ElevationGraph(state: State) {
+  const elevation = checkExists(state.elevation);
   let indicator;
   if (elevation.cursorFraction !== undefined) {
     const x = elevation.cursorFraction * elevation.resolution[0];
