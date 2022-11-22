@@ -21,6 +21,8 @@ export interface AnchorProperties extends Properties<HTMLAnchorElement> {
   target?: '_self'|'_blank'|'_parent'|'_top';
 }
 
+export interface GroupProperties extends Properties<SVGGElement> {}
+
 export interface ImageProperties extends Properties<HTMLImageElement> {
   alt?: string;
   height?: string;
@@ -53,6 +55,11 @@ export interface SVGProperties extends Properties<SVGElement> {
   height?: number|string;
   viewBox?: string;
   width?: number|string;
+}
+
+export interface TextProperties extends Properties<SVGTextElement> {
+  x?: number|string;
+  y?: number|string;
 }
 
 class CorgiElement {
@@ -349,9 +356,11 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
 }
 
 const TAG_TO_NAMESPACE = new Map([
+  ['g', 'http://www.w3.org/2000/svg'],
   ['line', 'http://www.w3.org/2000/svg'],
   ['polyline', 'http://www.w3.org/2000/svg'],
   ['svg', 'http://www.w3.org/2000/svg'],
+  ['text', 'http://www.w3.org/2000/svg'],
 ]);
 
 function createElement(element: VElementOrPrimitive): InstantiationResult {
@@ -493,6 +502,7 @@ declare global {
       canvas: Properties<HTMLCanvasElement>;
       div: Properties<HTMLDivElement>;
       footer: Properties<HTMLElement>;
+      g: GroupProperties;
       header: Properties<HTMLElement>;
       i: Properties<HTMLElement>;
       img: ImageProperties;
@@ -503,6 +513,7 @@ declare global {
       section: Properties<HTMLElement>;
       span: Properties<HTMLSpanElement>;
       svg: SVGProperties;
+      text: TextProperties;
     }
   }
 }

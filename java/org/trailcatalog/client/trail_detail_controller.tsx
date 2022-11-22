@@ -23,6 +23,7 @@ export interface State {
   elevation?: {
     cursor?: LatLng;
     cursorFraction?: number;
+    extremes: [number, number];
     heights: string;
     points: LatLng[];
     resolution: Vec2;
@@ -113,6 +114,7 @@ export function calculateGraph(
     data: MapDataService,
     pathProfiles: Map<bigint, ElevationProfile>,
     trail: Trail): {
+  extremes: [number, number];
   heights: string;
   points: LatLng[];
   resolution: Vec2;
@@ -165,6 +167,7 @@ export function calculateGraph(
     return `${fx},${fy}`;
   }).join(' ');
   return {
+    extremes: [min, max],
     heights: heightsString,
     points: latLngs,
     resolution: [resolutionWidth, resolutionHeight],

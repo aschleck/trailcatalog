@@ -3,7 +3,8 @@ import { checkExists } from 'js/common/asserts';
 
 import { decodeBase64 } from './common/base64';
 import { latLngFromBase64E7 } from './common/data';
-import { formatDistance, formatHeight } from './common/formatters';
+import { formatDistance, formatHeight, shouldUseImperial } from './common/formatters';
+import { metersToFeet } from './common/math';
 import { LatLng } from './common/types';
 import { initialData } from './data';
 import { Boundary, Trail } from './models/types';
@@ -111,12 +112,36 @@ function Content(state: State) {
 
 function ElevationGraph(state: State) {
   const elevation = checkExists(state.elevation);
+  const [width, height] = elevation.resolution;
+
+  const [minMeters, maxMeters] = elevation.extremes;
+  let min;
+  let max;
+  if (shouldUseImperial()) {
+    min = metersToFeet(minMeters);
+    max = metersToFeet(maxMeters);
+  } else {
+    min = minMeters;
+    max = maxMeters;
+  }
+  const gridEvery = Math.ceil((max - min) / 8 / 100) * 100;
+  const gridLines = [];
+  const gridText = [];
+  const lowestGrid = Math.floor((min + gridEvery - 1) / gridEvery) * gridEvery;
+  const highestGrid = Math.floor(max / gridEvery) * gridEvery;
+  const scale = height / (max - min);
+  for (let y = lowestGrid; y <= highestGrid; y += gridEvery) {
+    const ry = height - scale * (y - min);
+    gridLines.push(<line x1="0" y1={ry} x2={width} y2={ry} />);
+    gridText.push(<text x="0" y={ry}>{y}</text>);
+  }
+
   let indicator;
   if (elevation.cursorFraction !== undefined) {
-    const x = elevation.cursorFraction * elevation.resolution[0];
-    indicator = <line x1={x} y1="0" x2={x} y2={elevation.resolution[1]} stroke="black" />;
+    const x = elevation.cursorFraction * width;
+    indicator = <line x1={x} y1="0" x2={x} y2={height} />;
   } else {
-    indicator = <line x1="0" y1="0" x2="0" y2="0" stroke="black" />;
+    indicator = <line x1="0" y1="0" x2="0" y2="0" />;
   }
 
   return <>
@@ -124,9 +149,15 @@ function ElevationGraph(state: State) {
         unboundEvents={{
           'pointermove': 'moveElevationCursor',
         }}
-        viewBox={`0 0 ${elevation.resolution[0]} ${elevation.resolution[1]}`}>
-      <polyline fill="none" points={elevation.heights} stroke="black" stroke_width="3" />
-      {indicator}
+        viewBox={`0 0 ${width} ${height}`}>
+      <g className="stroke-gray-300">
+        <g style="stroke-dasharray: 8">
+          {gridLines}
+        </g>
+        {gridText}
+        {indicator}
+      </g>
+      <polyline fill="none" points={elevation.heights} stroke="black" stroke_width="2" />
     </svg>
   </>;
 }

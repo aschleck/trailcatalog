@@ -27,21 +27,22 @@ export function formatCount(count: number): string {
 }
 
 export function formatDistance(meters: number): FormattedScalar {
-  const useMiles =
-      getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
-
+  const useImperial = shouldUseImperial();
   return {
-    value: distanceFormatter.format(useMiles ? metersToMiles(meters) : meters / 1000),
-    unit: useMiles ? 'miles' : 'km',
+    value: distanceFormatter.format(useImperial ? metersToMiles(meters) : meters / 1000),
+    unit: useImperial ? 'miles' : 'km',
   };
 }
 
 export function formatHeight(meters: number): FormattedScalar {
-  const useFeet =
-      getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
-
+  const useImperial = shouldUseImperial();
   return {
-    value: heightFormatter.format(useFeet ? metersToFeet(meters) : meters),
-    unit: useFeet ? 'ft' : 'm',
+    value: heightFormatter.format(useImperial ? metersToFeet(meters) : meters),
+    unit: useImperial ? 'ft' : 'm',
   };
 }
+
+export function shouldUseImperial(): boolean {
+  return getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
+}
+
