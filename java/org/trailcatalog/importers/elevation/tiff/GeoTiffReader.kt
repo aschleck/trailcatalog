@@ -310,7 +310,7 @@ class GeoTiffReader(private val path: Path) : Closeable {
 
   @Override
   fun finalize() {
-    close()
+    stream.close()
   }
 
   fun query(ll: S2LatLng): Float? {

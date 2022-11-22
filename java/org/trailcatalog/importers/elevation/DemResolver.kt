@@ -4,10 +4,10 @@ import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
+import com.google.common.util.concurrent.UncheckedExecutionException
 import com.zaxxer.hikari.HikariDataSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.slf4j.LoggerFactory
-import org.trailcatalog.importers.common.IORuntimeException
 import org.trailcatalog.importers.common.NotFoundException
 import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
@@ -56,6 +56,8 @@ class DemResolver(private val hikari: HikariDataSource) {
           return value
         }
       } catch (e: ExecutionException) {
+        logger.warn("Failed to open DEM", e)
+      } catch (e: UncheckedExecutionException) {
         if (dem.global && e.cause is NotFoundException) {
           return 0f
         } else {
