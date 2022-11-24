@@ -25,7 +25,19 @@ data class XyPair(val x: Double, val y: Double)
 
 data class Origin(val modelPosition: XyPair, val rasterScale: XyPair)
 
-class GeoTiffReader(private val path: Path) : Closeable {
+interface DemReader : Closeable {
+  override fun close() {}
+  fun query(ll: S2LatLng): Float?
+}
+
+class ConstantReader(private val value: Float?) : DemReader {
+
+  override fun query(ll: S2LatLng): Float? {
+    return value
+  }
+}
+
+class GeoTiffReader(private val path: Path) : DemReader {
 
   private val stream: EncodedInputStream
   private val decompressor: CompressionDecoder
@@ -313,7 +325,7 @@ class GeoTiffReader(private val path: Path) : Closeable {
     stream.close()
   }
 
-  fun query(ll: S2LatLng): Float? {
+  override fun query(ll: S2LatLng): Float? {
     val modelCoordinate = transform.transform(ll.toProjCoordinateDegrees(), ProjCoordinate())
     // TODO(april): some sort of filtering?
     val x = ((modelCoordinate.x - origin.modelPosition.x) / origin.rasterScale.x) + translate.x

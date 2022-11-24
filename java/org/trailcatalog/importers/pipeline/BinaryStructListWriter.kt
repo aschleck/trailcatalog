@@ -23,6 +23,7 @@ class BinaryStructListWriter<T : Any>(
       ChannelEncodedOutputStream(it.channel).use { output ->
         while (input.hasNext()) {
           serializer.write(input.next(), output)
+          output.checkBufferSpace()
         }
         input.close()
       }

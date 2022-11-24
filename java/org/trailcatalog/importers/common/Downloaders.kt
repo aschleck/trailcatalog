@@ -16,8 +16,9 @@ import kotlin.io.path.name
 import kotlin.io.path.outputStream
 import kotlin.reflect.KClass
 
+private val okhttp = OkHttpClient()
+
 fun <R> fetch(url: HttpUrl, action: (body: ResponseBody, response: Response) -> R): R {
-  val okhttp = OkHttpClient()
   return okhttp.newCall(Request.Builder().get().url(url).build())
       .execute()
       .use {
