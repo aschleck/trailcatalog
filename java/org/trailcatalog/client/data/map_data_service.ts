@@ -208,15 +208,10 @@ export class MapDataService extends Service<EmptyDeps> {
       this.loadRegularDetail(id, buffer);
     }
 
-    // It's possible that we load the pinned data from a detail cell before the pin cell returns,
-    // so let's just do it here just for fun.
-    for (const [trailId, {resolve}] of this.pinnedMissingTrails) {
-      const trail = this.trails.get(trailId);
-      if (trail && this.trailsInDetails.has(trail)) {
-        resolve(trail);
-        this.pinnedMissingTrails.delete(trailId);
-      }
-    }
+    // We may load pinned trails before the pinned call comes back, and are incentivized to resolve
+    // the pin here because we can. However callers may be expecting both the trail and its paths
+    // to be available. Because of some terrible choices, see comment in loadPinnedDetail, we look
+    // for pinned paths in pinnedPaths. So let's just not resolve trails early.
   }
 
   private loadPinnedDetail(buffer: ArrayBuffer): void {
