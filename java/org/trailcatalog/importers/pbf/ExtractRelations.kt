@@ -76,26 +76,49 @@ fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relatio
   return Relation(relation.id, category.id, name ?: "", relationToSkeleton(relation, stringTable))
 }
 
+private val BACKWARD_BS = ByteString.copyFromUtf8("backward")
+private val FORWARD_BS = ByteString.copyFromUtf8("forward")
 private val INNER_BS = ByteString.copyFromUtf8("inner")
+private val OUTER_BS = ByteString.copyFromUtf8("outer")
+private val SUBAREA_BS = ByteString.copyFromUtf8("subarea")
+private val EMPTY_BS = ByteString.copyFromUtf8("")
 
 fun relationToSkeleton(relation: Osmformat.Relation, stringTable: StringTable): RelationSkeleton {
   var memberId = 0L
   val skeleton = RelationSkeleton.newBuilder()
   for (i in 0 until relation.memidsCount) {
     memberId += relation.getMemids(i)
-    val inner = stringTable.getS(relation.getRolesSid(i)) == INNER_BS
+    // Do we care about north/south/east/west?
+    // This implicitly drops "alternative" which seems good.
+    val function =
+        when (stringTable.getS(relation.getRolesSid(i))) {
+          BACKWARD_BS -> OUTER
+          FORWARD_BS -> OUTER
+          INNER_BS -> INNER
+          OUTER_BS -> OUTER
+          SUBAREA_BS -> OUTER
+          EMPTY_BS -> OUTER
+          null -> OUTER
+          else -> null
+        }
+
+    if (function == null) {
+      continue
+    }
 
     when (relation.getTypes(i)) {
-      NODE -> skeleton.addMembers(RelationSkeletonMember.newBuilder().setNodeId(memberId))
+      // TODO(april): think about this more if we add trailhead information
+      // NODE -> skeleton.addMembers(RelationSkeletonMember.newBuilder().setNodeId(memberId))
+      NODE -> {}
       RELATION ->
         skeleton.addMembers(
             RelationSkeletonMember.newBuilder()
-                .setFunction(if (inner) INNER else OUTER)
+                .setFunction(function)
                 .setRelationId(memberId))
       WAY ->
         skeleton.addMembers(
             RelationSkeletonMember.newBuilder()
-                .setFunction(if (inner) INNER else OUTER)
+                .setFunction(function)
                 .setWayId(memberId))
       null -> {}
     }

@@ -7,8 +7,7 @@ import java.nio.ByteOrder
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PMap
-import org.trailcatalog.models.WayCategory.HIGHWAY
-import org.trailcatalog.models.WayCategory.PISTE
+import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.boundToCell
 
 private val BYTE_BUFFER = ByteBuffer.allocate(1 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
@@ -21,9 +20,7 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
       val stream =
           StringifyingInputStream(input) { (_, ways), csv ->
             val way = ways[0]
-            if (!HIGHWAY.isParentOf(way.type)
-                && !PISTE.isParentOf(way.type)
-            ) {
+            if (way.type == WayCategory.ANY.id) {
               return@StringifyingInputStream
             }
 

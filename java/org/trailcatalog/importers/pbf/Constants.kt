@@ -30,6 +30,22 @@ val ADMINISTRATIVE_LEVEL_NAMES = ImmutableMap.builder<ByteString, RelationCatego
 
     .build()
 
+val AERIALWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("cable_car"), WayCategory.AERIALWAY_CABLE_CAR)
+    .put(ByteString.copyFromUtf8("gondola"), WayCategory.AERIALWAY_GONDOLA)
+    .put(ByteString.copyFromUtf8("mixed_lift"), WayCategory.AERIALWAY_MIXED_LIFT)
+    .put(ByteString.copyFromUtf8("chair_lift"), WayCategory.AERIALWAY_CHAIR_LIFT)
+    .put(ByteString.copyFromUtf8("drag_lift"), WayCategory.AERIALWAY_DRAG_LIFT)
+    .put(ByteString.copyFromUtf8("t-bar"), WayCategory.AERIALWAY_T_BAR)
+    .put(ByteString.copyFromUtf8("j-bar"), WayCategory.AERIALWAY_J_BAR)
+    .put(ByteString.copyFromUtf8("platter"), WayCategory.AERIALWAY_PLATTER)
+    .put(ByteString.copyFromUtf8("rope_tow"), WayCategory.AERIALWAY_ROPE_TOW)
+    .put(ByteString.copyFromUtf8("magic_carpet"), WayCategory.AERIALWAY_MAGIC_CARPET)
+    .put(ByteString.copyFromUtf8("zip_line"), WayCategory.AERIALWAY_ZIP_LINE)
+    .put(ByteString.copyFromUtf8("goods"), WayCategory.AERIALWAY_GOODS)
+
+    .build()
+
 val BOUNDARY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, RelationCategory>()
     .put(ByteString.copyFromUtf8("aboriginal_lands"), RelationCategory.BOUNDARY_ABORIGINAL_LANDS)
     .put(ByteString.copyFromUtf8("administrative"), RelationCategory.BOUNDARY_ADMINISTRATIVE)
@@ -123,7 +139,14 @@ val ROUTE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, RelationCategory>()
 
     .build()
 
+val ROUTE_WAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("ferry"), WayCategory.WATERWAY_FERRY)
+    .put(ByteString.copyFromUtf8("piste"), WayCategory.PISTE)
+
+    .build()
+
 val ADMIN_LEVEL_BS = ByteString.copyFromUtf8("admin_level")
+val AERIALWAY_BS = ByteString.copyFromUtf8("aerialway")
 val BOUNDARY_BS = ByteString.copyFromUtf8("boundary")
 val HIGHWAY_BS = ByteString.copyFromUtf8("highway")
 val NAME_BS = ByteString.copyFromUtf8("name")

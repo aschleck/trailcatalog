@@ -36,7 +36,7 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
 
   var offsetRadians = 0.0
   var current = 0
-  var last: Float
+  var last = 0f
   var totalUp = 0.0
   var totalDown = 0.0
   val profile = ArrayList<Float>()
@@ -74,12 +74,10 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
     }
     current += 1
     offsetRadians = position - length
-
-    // Make sure we've always added the last point to the profile
-    if (current == points.size - 1 && sampleIndex % sampleRate != 1) {
-      profile.add(last)
-    }
   }
+
+  // Always add the last point
+  profile.add(last)
 
   return Profile(
       id=way.id,

@@ -29,6 +29,18 @@ fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   var name: String? = null
   for (i in 0 until way.keysCount) {
     when (stringTable.getS(way.getKeys(i))) {
+      AERIALWAY_BS ->
+        category =
+            category
+                .coerceAtLeast(WayCategory.AERIALWAY)
+                .coerceAtLeast(AERIALWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+      ROUTE_BS ->
+        // Prefer anything to routes
+        if (WayCategory.ANY == category) {
+          category =
+              category
+                  .coerceAtLeast(ROUTE_WAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+        }
       HIGHWAY_BS ->
         category =
             category

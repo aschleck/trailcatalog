@@ -142,11 +142,22 @@ export function calculateGraph(
   };
   for (let i = 0; i < trail.paths.length; ++i) {
     const pathId = trail.paths[i];
+    const path = data.pinnedPaths.get(pathId & ~1n);
+    if (!path) {
+      console.error(`Path ${pathId} is missing`);
+      continue;
+    }
+
     const profile = checkExists(pathProfiles.get(pathId & ~1n));
-    const path = checkExists(data.pinnedPaths.get(pathId & ~1n));
     const points = calculateSampleLocations(profile.granularityMeters, path.line);
     const samples = profile.samplesMeters;
     const offset = i === 0 ? 0 : 1;
+
+    // I think there are some precision mismatches that can result in a different number of points
+    if (samples.length === points.length + 1) {
+      console.error(`Path ${pathId}'s points and samples don't match`);
+      points.push(points[points.length - 1]);
+    }
 
     if ((pathId & 1n) === 0n) {
       for (let j = offset; j < samples.length; ++j) {
@@ -197,8 +208,7 @@ function calculateSampleLocations(
     previous = next;
     offsetRadians = position - length;
   }
-  // This is scary because I think we may end up with one more point than there are samples in
-  // some situations. Whatever!
+  // Always add the last point
   points.push(previous);
   return points;
 }
