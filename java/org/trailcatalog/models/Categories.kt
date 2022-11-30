@@ -2,7 +2,7 @@ package org.trailcatalog.models
 
 // Enum scheme: each enum can have `ENUM_SIZE` children, ranging from id
 // parent.id * ENUM_SIZE + 1 to parent.id * ENUM_SIZE + ENUM_SIZE.
-private const val ENUM_SIZE = 64
+const val ENUM_SIZE = 64
 
 interface Category<T : Category<T>> {
 

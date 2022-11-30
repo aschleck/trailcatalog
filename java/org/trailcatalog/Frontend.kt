@@ -10,6 +10,8 @@ import io.javalin.Javalin
 import io.javalin.core.util.Header
 import io.javalin.http.Context
 import io.javalin.http.HttpCode
+import org.trailcatalog.models.ENUM_SIZE
+import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
