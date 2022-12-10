@@ -13,6 +13,4 @@ abort = """
   DROP INDEX IF EXISTS search_boundaries_idx;
   DROP INDEX IF EXISTS search_trails_idx;
   DROP EXTENSION IF EXISTS btree_gist;
-  DROP EXTENSION IF EXISTS pg_trgm;
 """
-

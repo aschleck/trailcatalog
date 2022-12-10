@@ -41,6 +41,21 @@ val serializers = HashMap<TypeToken<*>, Serializer<*>>().also {
     }
   }
 
+  it[TypeToken.of(String::class.java)] = object : Serializer<String> {
+    override fun read(from: EncodedInputStream): String {
+      return ByteArray(from.readVarInt()).also {
+        from.read(it)
+      }.decodeToString()
+    }
+
+    override fun write(v: String, to: EncodedOutputStream) {
+      v.encodeToByteArray().let {
+        to.writeVarInt(it.size)
+        to.write(it)
+      }
+    }
+  }
+
   it[TypeToken.of(java.lang.Long::class.java)] = object : Serializer<Long> {
     override fun read(from: EncodedInputStream): Long {
       return from.readLong()

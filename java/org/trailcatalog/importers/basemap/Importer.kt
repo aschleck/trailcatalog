@@ -29,6 +29,8 @@ import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.importers.pipeline.collections.PMap
+import org.trailcatalog.importers.pipeline.invert
+import org.trailcatalog.importers.pipeline.uniqueValues
 import java.io.InputStream
 import java.nio.file.Path
 
@@ -129,7 +131,23 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
           boundaries.then(GroupBoundariesByCell()),
           trails.then(GroupTrailsByCell()))
   byCells.then(CreateBoundariesInBoundaries()).write(DumpBoundariesInBoundaries(epoch, hikari))
-  byCells.then(CreateTrailsInBoundaries()).write(DumpTrailsInBoundaries(epoch, hikari))
+  val trailsInBoundaries = byCells.then(CreateTrailsInBoundaries()).uniqueValues("UniqueBoundaries")
+  val trailIdToContainingBoundaries =
+      pipeline
+          .join2(
+              "JoinOnBoundary",
+              boundaries.groupBy("GroupById") { it.id },
+              trailsInBoundaries.invert("InvertMap"))
+          .then(GatherTrailBoundaries())
+  pipeline
+      .join2(
+          "JoinOnTrail",
+          trails.groupBy("GroupById") { it.relationId },
+          trailIdToContainingBoundaries)
+      .then(CreateReadableTrailIds())
+      .then(DisambiguateTrailIds())
+      .write(DumpReadableTrailIds(epoch, hikari))
+  trailsInBoundaries.write(DumpTrailsInBoundaries(epoch, hikari))
 
   pipeline.execute()
 
@@ -143,9 +161,11 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
         "active_epoch",
         "boundaries",
         "boundaries_in_boundaries",
+        "boundary_identifiers",
         "path_elevations",
         "paths",
         "paths_in_trails",
+        "trail_identifiers",
         "trails",
         "trails_in_boundaries",
     )) {

@@ -4,6 +4,7 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PCollection
+import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.importers.pipeline.collections.PMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -65,6 +66,11 @@ abstract class BoundStage<I, O>(
   protected open fun traceInputs() {}
 }
 
+inline fun <reified K : Comparable<K>, reified V : Comparable<V>> BoundStage<*, out PMap<K, V>>.invert(
+    context: String): BoundStage<out Any?, PMap<V, K>> {
+  return then(InvertMap(context, object : TypeToken<K>() {}, object : TypeToken<V>() {}))
+}
+
 inline fun <reified K : Comparable<K>, reified V : Any> BoundStage<*, out PCollection<V>>.groupBy(
     context: String,
     crossinline keyFn: (V) -> K): BoundStage<PCollection<V>, PMap<K, V>> {
@@ -96,3 +102,9 @@ inline fun <reified K : Comparable<K>, reified V : Any> BoundStage<*, out PColle
     }
   }
 }
+
+inline fun <reified K : Comparable<K>, reified V : Any> BoundStage<*, out PMap<K, V>>.uniqueValues(
+    context: String): BoundStage<out Any?, PMap<K, V>> {
+  return then(UniqueValues(context, object : TypeToken<K>() {}, object : TypeToken<V>() {}))
+}
+

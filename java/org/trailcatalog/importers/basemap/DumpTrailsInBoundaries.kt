@@ -12,13 +12,7 @@ class DumpTrailsInBoundaries(private val epoch: Int, private val hikari: HikariD
       val stream =
           StringifyingInputStream(input) { entry, csv ->
             val trail = entry.key
-            val seen = HashSet<Long>()
             for (boundary in entry.values) {
-              if (seen.contains(boundary)) {
-                continue
-              }
-              seen.add(boundary)
-
               // boundary_id,trail_id,epoch
               csv.append(boundary)
               csv.append(",")

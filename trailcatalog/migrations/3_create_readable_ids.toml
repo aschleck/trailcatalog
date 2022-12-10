@@ -1,0 +1,54 @@
+[[actions]]
+type = "create_table"
+name = "boundary_identifiers"
+primary_key = ["numeric_id", "epoch"]
+
+  [[actions.columns]]
+  name = "numeric_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "readable_id"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+[[actions]]
+type = "create_table"
+name = "trail_identifiers"
+primary_key = ["numeric_id", "epoch"]
+
+  [[actions.columns]]
+  name = "numeric_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "readable_id"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+[[actions]]
+type = "custom"
+
+# Need to manually run this as postgres:
+# CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA pg_catalog;
+start = """
+  CREATE UNIQUE INDEX IF NOT EXISTS boundary_identifiers_readable_idx ON boundary_identifiers (readable_id, epoch);
+  CREATE UNIQUE INDEX IF NOT EXISTS trail_identifiers_readable_idx ON trail_identifiers (readable_id, epoch);
+"""
+
+abort = """
+  DROP INDEX IF EXISTS boundary_identifiers_readable_idx;
+  DROP INDEX IF EXISTS trail_identifiers_readable_idx;
+"""
