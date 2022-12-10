@@ -64,11 +64,26 @@ frontend_account = serviceaccount.Account(
     account_id="frontend",
 )
 
+importer_account = serviceaccount.Account(
+    "importer",
+    account_id="importer",
+)
+
 projects.IAMBinding(
-    "frontend-secrets-access",
+    "importer-basic-editor",
+    project="trailcatalog",
+    role="roles/editor",
+    members=[importer_account.email.apply(lambda name: f"serviceAccount:{name}")],
+)
+
+projects.IAMBinding(
+    "secrets-access",
     project="trailcatalog",
     role="roles/secretmanager.secretAccessor",
-    members=[frontend_account.email.apply(lambda name: f"serviceAccount:{name}")],
+    members=[
+        frontend_account.email.apply(lambda name: f"serviceAccount:{name}"),
+        importer_account.email.apply(lambda name: f"serviceAccount:{name}"),
+    ],
 )
 
 pink = compute.Instance(
@@ -163,26 +178,6 @@ pink = compute.Instance(
             - /root/initialize.sh
             """),
     },
-)
-
-importer_account = serviceaccount.Account(
-    "importer",
-    account_id="importer",
-)
-
-projects.IAMBinding(
-    "importer-basic-editor",
-    project="trailcatalog",
-    role="roles/editor",
-    members=[importer_account.email.apply(lambda name: f"serviceAccount:{name}")],
-)
-
-# Not strictly needed, but we can hopefully scope the one above down at some point.
-projects.IAMBinding(
-    "importer-secrets-access",
-    project="trailcatalog",
-    role="roles/secretmanager.secretAccessor",
-    members=[importer_account.email.apply(lambda name: f"serviceAccount:{name}")],
 )
 
 for preemptible in (True, False):
