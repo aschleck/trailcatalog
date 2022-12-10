@@ -1,4 +1,0 @@
-# TODO(april): delete this if we recreate database
-[[actions]]
-type = "remove_table"
-table = "geofabrik_sources"

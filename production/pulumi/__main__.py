@@ -59,6 +59,18 @@ import_cache_disk = compute.Disk(
     zone="us-west1-a",
 )
 
+frontend_account = serviceaccount.Account(
+    "frontend",
+    account_id="frontend",
+)
+
+projects.IAMBinding(
+    "frontend-secrets-access",
+    project="trailcatalog",
+    role="roles/secretmanager.secretAccessor",
+    members=[frontend_account.email.apply(lambda name: f"serviceAccount:{name}")],
+)
+
 pink = compute.Instance(
     "pink",
     name="pink",
@@ -66,9 +78,8 @@ pink = compute.Instance(
     zone="us-west1-a",
     boot_disk=compute.InstanceBootDiskArgs(
         initialize_params=compute.InstanceBootDiskInitializeParamsArgs(
-            # No idea what happened to this
-            # image="debian-cloud/debian-11",
-            size=150,
+            image="debian-cloud/debian-11",
+            size=300,
         ),
     ),
     network_interfaces=[compute.InstanceNetworkInterfaceArgs(
@@ -76,7 +87,82 @@ pink = compute.Instance(
         # An empty access config means an ephemeral IP
         access_configs=[compute.InstanceNetworkInterfaceAccessConfigArgs()],
     )],
-    opts=ResourceOptions(ignore_changes=["metadata"]),
+    service_account=compute.InstanceTemplateServiceAccountArgs(
+        email=frontend_account.email,
+        scopes=[
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/logging.write",
+            "https://www.googleapis.com/auth/monitoring.write",
+        ],
+    ),
+    opts=ResourceOptions(delete_before_replace=True),
+    metadata={
+        "google-logging-enabled": "true",
+        "user-data": Output.all(
+            db_auth=db_authorization.secret_id,
+        ).apply(lambda args: f"""\
+            #cloud-config
+
+            write_files:
+            - path: /root/initialize.sh
+              permissions: 0700
+              owner: root
+              content: |
+                #!/bin/bash
+                set -euox pipefail
+                [[ -e /root/already-ran.txt ]] && exit 0
+                touch /root/already-ran.txt
+                echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+                curl -q https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+                curl -fsSL https://deb.nodesource.com/setup_19.x | bash -
+                curl -fsSL https://tailscale.com/install.sh | sh
+                apt-get update
+                apt-get -y upgrade
+                apt-get install -y openjdk-17-jre-headless nginx nodejs postgresql-15 tmux certbot python3-certbot-nginx
+                echo 'host    trailcatalog    trailcatalog    10.128.0.0/9            scram-sha-256' >> /etc/postgresql/15/main/pg_hba.conf
+                echo 'host    trailcatalog    trailcatalog    100.64.0.0/10           scram-sha-256' >> /etc/postgresql/15/main/pg_hba.conf
+                echo 'shared_buffers = 2GB' >> /etc/postgresql/15/main/postgresql.conf
+                systemctl enable postgresql.service
+                systemctl restart postgresql.service
+                pg_pwd="$(gcloud secrets versions access latest --secret {args['db_auth']} --quiet | sed 's/^[^:]*://' | tail -n 1)"
+                echo "CREATE ROLE trailcatalog LOGIN ENCRYPTED PASSWORD '${{pg_pwd}}';" | sudo su postgres -c psql
+                echo "CREATE DATABASE trailcatalog WITH OWNER trailcatalog;" | sudo su postgres -c psql
+                rm /etc/nginx/sites-enabled/default
+                ln -s /etc/nginx/sites-available/trailcatalog /etc/nginx/sites-enabled/
+
+            - path: /etc/nginx/sites-available/trailcatalog
+              permissions: 0644
+              owner: root
+              content: |
+                server {{
+                        listen 80 default_server;
+                        listen [::]:80 default_server;
+
+                        root /home/april/trailcatalog/static;
+                        etag on;
+                        gzip on;
+
+                        index index.html;
+
+                        server_name _;
+
+                        location / {{
+                                proxy_pass http://127.0.0.1:7080;
+                        }}
+
+                        location /api/ {{
+                                proxy_pass http://127.0.0.1:7070;
+                        }}
+
+                        location /static/ {{
+                                rewrite ^/static(.*)$ $1 break;
+                        }}
+                }}
+
+            runcmd:
+            - /root/initialize.sh
+            """),
+    },
 )
 
 importer_account = serviceaccount.Account(
