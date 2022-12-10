@@ -36,6 +36,36 @@ export class LittleEndianView {
     return r;
   }
 
+  getVarBigInt64(): bigint {
+    let r = 0n;
+    let v = BigInt(this.view.getInt8(this.position));
+    this.position += 1;
+    let shift = 0n;
+    while ((v & 0x80n) != 0n) {
+      r |= (v & 0x7fn) << shift;
+      shift += 7n;
+      v = BigInt(this.view.getInt8(this.position));
+      this.position += 1;
+    }
+    r |= v << shift;
+    return r;
+  }
+
+  getVarInt32(): number {
+    let r = 0;
+    let v = this.view.getInt8(this.position);
+    this.position += 1;
+    let shift = 0;
+    while ((v & 0x80) != 0) {
+      r |= (v & 0x7f) << shift;
+      shift += 7;
+      v = this.view.getInt8(this.position);
+      this.position += 1;
+    }
+    r |= v << shift;
+    return r;
+  }
+
   hasRemaining(): boolean {
     return this.position < this.view.byteLength;
   }

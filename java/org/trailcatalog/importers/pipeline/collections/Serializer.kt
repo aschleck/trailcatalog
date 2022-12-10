@@ -1,7 +1,7 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
-import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
+import org.trailcatalog.common.EncodedOutputStream
 
 interface Serializer<T> {
   fun read(from: EncodedInputStream): T

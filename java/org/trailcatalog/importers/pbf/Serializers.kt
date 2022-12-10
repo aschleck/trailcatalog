@@ -4,7 +4,7 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
-import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
+import org.trailcatalog.common.EncodedOutputStream
 import org.trailcatalog.proto.RelationSkeleton
 
 fun registerPbfSerializers() {

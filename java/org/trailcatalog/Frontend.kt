@@ -10,6 +10,7 @@ import io.javalin.Javalin
 import io.javalin.core.util.Header
 import io.javalin.http.Context
 import io.javalin.http.HttpCode
+import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.models.ENUM_SIZE
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
@@ -444,15 +445,15 @@ private fun fetchMeta(ctx: Context) {
   val trails =
       fetchTrails(cell, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL, /* includePaths= */ false)
   val bytes = AlignableByteArrayOutputStream()
-  val output = LittleEndianDataOutputStream(bytes)
+  val output = DelegatingEncodedOutputStream(bytes)
 
-  output.writeInt(trails.size)
+  output.writeVarInt(trails.size)
   for (trail in trails) {
-    output.writeLong(trail.id)
+    output.writeVarLong(trail.id)
     val asUtf8 = trail.name.toByteArray(Charsets.UTF_8)
-    output.writeInt(asUtf8.size)
+    output.writeVarInt(asUtf8.size)
     output.write(asUtf8)
-    output.writeInt(trail.type)
+    output.writeVarInt(trail.type)
     output.write(trail.marker)
     output.writeFloat(trail.elevationDownMeters)
     output.writeFloat(trail.elevationUpMeters)
@@ -523,7 +524,7 @@ private fun fetchDetail(ctx: Context) {
 
   val trails = fetchTrails(cell, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL, /* includePaths= */ true)
   val bytes = AlignableByteArrayOutputStream()
-  val output = LittleEndianDataOutputStream(bytes)
+  val output = DelegatingEncodedOutputStream(bytes)
   writeDetailPaths(paths, bytes, output)
   writeDetailTrails(trails, bytes, output)
   ctx.result(bytes.toByteArray())
@@ -610,7 +611,7 @@ private fun fetchDataPacked(ctx: Context) {
   }
 
   val bytes = AlignableByteArrayOutputStream()
-  val output = LittleEndianDataOutputStream(bytes)
+  val output = DelegatingEncodedOutputStream(bytes)
   writeDetailPaths(paths, bytes, output)
   writeDetailTrails(listOf(trail), bytes, output)
   ctx.result(bytes.toByteArray())
@@ -619,12 +620,12 @@ private fun fetchDataPacked(ctx: Context) {
 private fun writeDetailPaths(
     paths: Map<Long, WirePath>,
     bytes: AlignableByteArrayOutputStream,
-    output: LittleEndianDataOutputStream) {
-  output.writeInt(paths.size)
+    output: DelegatingEncodedOutputStream) {
+  output.writeVarInt(paths.size)
   for (path in paths.values) {
-    output.writeLong(path.id)
-    output.writeInt(path.type)
-    output.writeInt(path.vertices.size)
+    output.writeVarLong(path.id)
+    output.writeVarInt(path.type)
+    output.writeVarInt(path.vertices.size / 4)
     output.flush()
     bytes.align(4)
     output.write(path.vertices)
@@ -634,15 +635,15 @@ private fun writeDetailPaths(
 private fun writeDetailTrails(
     trails: List<WireTrail>,
     bytes: AlignableByteArrayOutputStream,
-    output: LittleEndianDataOutputStream) {
-  output.writeInt(trails.size)
+    output: DelegatingEncodedOutputStream) {
+  output.writeVarInt(trails.size)
   for (trail in trails) {
-    output.writeLong(trail.id)
+    output.writeVarLong(trail.id)
     val asUtf8 = trail.name.toByteArray(Charsets.UTF_8)
-    output.writeInt(asUtf8.size)
+    output.writeVarInt(asUtf8.size)
     output.write(asUtf8)
-    output.writeInt(trail.type)
-    output.writeInt(trail.pathIds.size / 8)
+    output.writeVarInt(trail.type)
+    output.writeVarInt(trail.pathIds.size / 8)
     output.flush()
     bytes.align(8)
     output.write(trail.pathIds)

@@ -59,6 +59,7 @@ kt_jvm_library(
     ],
     deps = [
         ":pg_support",
+        "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
         "@bazel_tools//tools/java/runfiles",

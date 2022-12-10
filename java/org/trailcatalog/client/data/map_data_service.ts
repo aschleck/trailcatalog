@@ -158,13 +158,13 @@ export class MapDataService extends Service<EmptyDeps> {
 
     const data = new LittleEndianView(buffer);
 
-    const trailCount = data.getInt32();
+    const trailCount = data.getVarInt32();
     const trails = [];
     for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
+      const id = data.getVarBigInt64();
+      const nameLength = data.getVarInt32();
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
-      const type = data.getInt32();
+      const type = data.getVarInt32();
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const elevationDownMeters = data.getFloat32();
       const elevationUpMeters = data.getFloat32();
@@ -231,28 +231,27 @@ export class MapDataService extends Service<EmptyDeps> {
     this.pinnedPaths.clear();
 
     const data = new LittleEndianView(buffer);
-    const pathCount = data.getInt32();
+    const pathCount = data.getVarInt32();
     const bound = {
       low: [1, 1],
       high: [-1, -1],
     } as PixelRect;
     for (let i = 0; i < pathCount; ++i) {
-      const id = data.getBigInt64();
-      const type = data.getInt32();
-      const pathVertexBytes = data.getInt32();
-      const pathVertexCount = pathVertexBytes / 4;
+      const id = data.getVarBigInt64();
+      const type = data.getVarInt32();
+      const pathVertexCount = data.getVarInt32() / 4;
       data.align(4);
       const points = data.sliceFloat32(pathVertexCount);
       this.pinnedPaths.set(id, new Path(id, type, bound, points));
     }
 
-    const trailCount = data.getInt32();
+    const trailCount = data.getVarInt32();
     for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
+      const id = data.getVarBigInt64();
+      const nameLength = data.getVarInt32();
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
-      const type = data.getInt32();
-      const pathCount = data.getInt32();
+      const type = data.getVarInt32();
+      const pathCount = data.getVarInt32();
       data.align(8);
       const paths = [...data.sliceBigInt64(pathCount)];
       const boundLow = degreesE7ToLatLng(data.getInt32(), data.getInt32());
@@ -297,13 +296,12 @@ export class MapDataService extends Service<EmptyDeps> {
   private loadRegularDetail(id: S2CellNumber, buffer: ArrayBuffer): void {
     const data = new LittleEndianView(buffer);
 
-    const pathCount = data.getInt32();
+    const pathCount = data.getVarInt32();
     const paths = [];
     for (let i = 0; i < pathCount; ++i) {
-      const id = data.getBigInt64();
-      const type = data.getInt32();
-      const pathVertexBytes = data.getInt32();
-      const pathVertexCount = pathVertexBytes / 4;
+      const id = data.getVarBigInt64();
+      const type = data.getVarInt32();
+      const pathVertexCount = data.getVarInt32();
       data.align(4);
       const points = data.sliceFloat32(pathVertexCount);
       const bound = {
@@ -323,14 +321,14 @@ export class MapDataService extends Service<EmptyDeps> {
       paths.push(built);
     }
 
-    const trailCount = data.getInt32();
+    const trailCount = data.getVarInt32();
     const trails = [];
     for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
+      const id = data.getVarBigInt64();
+      const nameLength = data.getVarInt32();
       const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
-      const type = data.getInt32();
-      const pathCount = data.getInt32();
+      const type = data.getVarInt32();
+      const pathCount = data.getVarInt32();
       data.align(8);
       const paths = [...data.sliceBigInt64(pathCount)];
       const boundLow = degreesE7ToLatLng(data.getInt32(), data.getInt32());
@@ -383,12 +381,12 @@ export class MapDataService extends Service<EmptyDeps> {
 
     const data = new LittleEndianView(buffer);
 
-    const pathCount = data.getInt32();
+    const pathCount = data.getVarInt32();
     const paths = [];
     for (let i = 0; i < pathCount; ++i) {
-      const id = data.getBigInt64();
-      data.skip(4);
-      const pathVertexBytes = data.getInt32();
+      const id = data.getVarBigInt64();
+      data.getVarInt32();
+      const pathVertexBytes = data.getVarInt32() * 4;
       data.align(4);
       data.skip(pathVertexBytes);
       const entity = this.paths.get(id);
@@ -398,13 +396,14 @@ export class MapDataService extends Service<EmptyDeps> {
       }
     }
 
-    const trailCount = data.getInt32();
+    const trailCount = data.getVarInt32();
     const trails = [];
     for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
-      data.skip(nameLength + 4);
-      const pathCount = data.getInt32();
+      const id = data.getVarBigInt64();
+      const nameLength = data.getVarInt32();
+      data.skip(nameLength);
+      data.getVarInt32();
+      const pathCount = data.getVarInt32();
       data.align(8);
       data.skip(pathCount * 8 + 4 * 4 + 2 * 4 + 2 * 4 + 4);
 
@@ -431,12 +430,14 @@ export class MapDataService extends Service<EmptyDeps> {
 
     const data = new LittleEndianView(buffer);
 
-    const trailCount = data.getInt32();
+    const trailCount = data.getVarInt32();
     const trails = [];
     for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
-      data.skip(nameLength + 4 + 2 * 4 + 2 * 4 + 4);
+      const id = data.getVarBigInt64();
+      const nameLength = data.getVarInt32();
+      data.skip(nameLength);
+      data.getVarInt32();
+      data.skip(2 * 4 + 2 * 4 + 4);
 
       const entity = this.trails.get(id);
       if (entity) {

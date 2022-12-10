@@ -3,6 +3,11 @@ package org.trailcatalog.importers.pipeline.io
 import com.google.common.collect.ImmutableList
 import java.nio.ByteBuffer
 import java.nio.channels.WritableByteChannel
+import org.trailcatalog.common.EncodedOutputStream
+import org.trailcatalog.common.Extents
+
+var BUFFER_SIZE = 500 * 1024 * 1024
+var FLUSH_THRESHOLD = 4 * 1024 * 1024
 
 class ChannelEncodedOutputStream(private val channel: WritableByteChannel)
   : EncodedOutputStream() {

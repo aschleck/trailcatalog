@@ -1,11 +1,10 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
-import com.google.protobuf.CodedOutputStream
 import com.google.protobuf.MessageLite
 import com.google.protobuf.Parser
 import org.trailcatalog.importers.pipeline.io.EncodedInputStream
-import org.trailcatalog.importers.pipeline.io.EncodedOutputStream
+import org.trailcatalog.common.EncodedOutputStream
 import java.lang.RuntimeException
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type

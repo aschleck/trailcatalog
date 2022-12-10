@@ -1,9 +1,6 @@
-package org.trailcatalog.importers.pipeline.io
+package org.trailcatalog.common
 
 import java.io.OutputStream
-
-var BUFFER_SIZE = 500 * 1024 * 1024
-var FLUSH_THRESHOLD = 4 * 1024 * 1024
 
 data class Extents(val start: Long, val length: Long)
 
@@ -28,16 +25,13 @@ abstract class EncodedOutputStream : OutputStream() {
     write((i ushr 24).toByte())
   }
 
-  fun writeVarInt(i: Int): Long {
+  fun writeVarInt(i: Int) {
     var v = i
-    var bytes = 1L
     while (v and 0x7F.inv() != 0) {
       write(v.and(0x7F).or(0x80).toByte())
       v = v ushr 7
-      bytes += 1
     }
     write(v.toByte())
-    return bytes
   }
 
   fun writeFloat(f: Float) {
@@ -55,16 +49,13 @@ abstract class EncodedOutputStream : OutputStream() {
     write((l ushr 56).toByte())
   }
 
-  fun writeVarLong(l: Long): Long {
+  fun writeVarLong(l: Long) {
     var v = l
-    var bytes = 1L
     while (v and 0x7F.inv() != 0L) {
       write(v.and(0x7F).or(0x80).toByte())
       v = v ushr 7
-      bytes += 1
     }
     write(v.toByte())
-    return bytes
   }
 
   companion object {

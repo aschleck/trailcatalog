@@ -241,31 +241,30 @@ export class MapData extends Layer {
 
       const data = new LittleEndianView(buffer);
 
-      const pathCount = data.getInt32();
+      const pathCount = data.getVarInt32();
       for (let i = 0; i < pathCount; ++i) {
-        const id = data.getBigInt64();
+        const id = data.getVarBigInt64();
 
         if (zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
-          data.skip(4);
-          const pathVertexBytes = data.getInt32();
-          const pathVertexCount = pathVertexBytes / 8;
+          data.getVarInt32();
+          const pathVertexCount = data.getVarInt32();
           data.align(4);
-          this.pushPath(id, data.sliceFloat32(pathVertexCount * 2), lines, raised);
+          this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
         } else {
-          data.skip(4);
-          const pathVertexBytes = data.getInt32();
+          data.getVarInt32();
+          const pathVertexCount = data.getVarInt32();
           data.align(4);
-          data.skip(pathVertexBytes);
+          data.skip(pathVertexCount * 4);
         }
       }
 
-      const trailCount = data.getInt32();
+      const trailCount = data.getVarInt32();
       for (let i = 0; i < trailCount; ++i) {
-        const id = data.getBigInt64();
-        const nameLength = data.getInt32();
+        const id = data.getVarBigInt64();
+        const nameLength = data.getVarInt32();
         data.skip(nameLength);
-        const type = data.getInt32();
-        const trailWayCount = data.getInt32();
+        const type = data.getVarInt32();
+        const trailWayCount = data.getVarInt32();
         data.align(8);
         data.skip(trailWayCount * 8 + 4 * 4);
         const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
@@ -320,12 +319,12 @@ export class MapData extends Layer {
 
     const data = new LittleEndianView(buffer);
 
-    const trailCount = data.getInt32();
+    const trailCount = data.getVarInt32();
     for (let i = 0; i < trailCount; ++i) {
-      const id = data.getBigInt64();
-      const nameLength = data.getInt32();
+      const id = data.getVarBigInt64();
+      const nameLength = data.getVarInt32();
       data.skip(nameLength);
-      const type = data.getInt32();
+      const type = data.getVarInt32();
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const markerPx = projectLatLng(marker);
       data.skip(2 * 4);
@@ -363,12 +362,11 @@ export class MapData extends Layer {
 
     const data = new LittleEndianView(buffer);
 
-    const pathCount = data.getInt32();
+    const pathCount = data.getVarInt32();
     for (let i = 0; i < pathCount; ++i) {
-      const id = data.getBigInt64();
-      const type = data.getInt32();
-      const pathVertexBytes = data.getInt32();
-      const pathVertexCount = pathVertexBytes / 4;
+      const id = data.getVarBigInt64();
+      const type = data.getVarInt32();
+      const pathVertexCount = data.getVarInt32();
       data.align(4);
       if (this.dataService.paths.has(id) && zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
         data.skip(pathVertexCount * 4);
