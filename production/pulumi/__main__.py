@@ -125,7 +125,7 @@ pink = compute.Instance(
               content: |
                 #!/bin/bash
                 set -euox pipefail
-                [[ -e /root/already-ran.txt ]] && exit 0
+                [[ -e /root/already-ran.txt ]] && exit 0 || true
                 touch /root/already-ran.txt
                 echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
                 curl -q https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
@@ -142,8 +142,10 @@ pink = compute.Instance(
                 pg_pwd="$(gcloud secrets versions access latest --secret {args['db_auth']} --quiet | sed 's/^[^:]*://' | tail -n 1)"
                 echo "CREATE ROLE trailcatalog LOGIN ENCRYPTED PASSWORD '${{pg_pwd}}';" | sudo su postgres -c psql
                 echo "CREATE DATABASE trailcatalog WITH OWNER trailcatalog;" | sudo su postgres -c psql
+                echo "CREATE EXTENSION pg_trgm SCHEMA pg_catalog;" | sudo su postgres -c psql -d trailcatalog
                 rm /etc/nginx/sites-enabled/default
                 ln -s /etc/nginx/sites-available/trailcatalog /etc/nginx/sites-enabled/
+                service nginx reload
 
             - path: /etc/nginx/sites-available/trailcatalog
               permissions: 0644
