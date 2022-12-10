@@ -239,7 +239,7 @@ export class MapDataService extends Service<EmptyDeps> {
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getVarBigInt64();
       const type = data.getVarInt32();
-      const pathVertexCount = data.getVarInt32() / 4;
+      const pathVertexCount = data.getVarInt32();
       data.align(4);
       const points = data.sliceFloat32(pathVertexCount);
       this.pinnedPaths.set(id, new Path(id, type, bound, points));
