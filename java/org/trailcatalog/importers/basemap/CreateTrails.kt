@@ -132,7 +132,7 @@ private fun flattenWays(
       for (i in flatChild.indices) {
         val childChildId = flatChild[i]
         val points = mapped[childChildId.and(1L.inv())]!!
-        if (points.isEmpty()) {
+        if (points.size < 2) {
           continue
         }
         val direction = if (childChildId % 2 == 0L) {
