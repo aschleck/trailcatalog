@@ -107,9 +107,13 @@ function matchPath(path: string): Route|undefined {
   for (const [kind, regex] of Object.entries(routes)) {
     const match = regex.exec(path);
     if (match) {
+      const groups: {[key: string]: string} = {};
+      for (const [key, value] of Object.entries(match.groups ?? {})) {
+        groups[key] = decodeURIComponent(value);
+      }
       return {
         kind,
-        ...match.groups,
+        ...groups,
       } as Route;
     }
   }
