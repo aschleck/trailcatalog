@@ -4,13 +4,13 @@ import { Service, ServiceResponse } from 'js/corgi/service';
 
 import { currentUrl } from '../common/ssr_aware';
 
-interface BoundaryOverview {
-  kind: 'boundary_overview';
-  boundary: string;
+interface SearchResults {
+  kind: 'search_results';
 }
 
-interface SearchResultsOverview {
-  kind: 'search_results_overview';
+interface SearchTrail {
+  kind: 'search_trail';
+  trail: string;
 }
 
 interface TrailDetail {
@@ -18,18 +18,12 @@ interface TrailDetail {
   trail: string;
 }
 
-interface TrailOverview {
-  kind: 'trail_overview';
-  trail: string;
-}
-
-export type Route = BoundaryOverview|SearchResultsOverview|TrailDetail|TrailOverview;
+export type Route = SearchResults|SearchTrail|TrailDetail;
 
 const routes: {[k in Route['kind']]: RegExp} = {
-  'boundary_overview': /^\/boundary\/(?<boundary>\d+)$/,
-  'search_results_overview': /^\/(search)?$/,
-  'trail_detail': /^\/trail\/(?<trail>\d+)\/detail$/,
-  'trail_overview': /^\/trail\/(?<trail>\d+)$/,
+  'search_results': /^\/(search)?$/,
+  'search_trail': /^\/search\/trail\/(?<trail>\d+)$/,
+  'trail_detail': /^\/trail\/(?<trail>.+)$/,
 };
 
 interface Listener {
@@ -83,10 +77,6 @@ export class ViewsService extends Service<Deps> {
     this.listeners.delete(listener);
   }
 
-  showBoundary(id: bigint): void {
-    this.history.goTo(`/boundary/${id}`);
-  }
-
   showOverview(camera?: {lat: number, lng: number, zoom: number}): void {
     if (camera) {
       this.history.goTo(`/?lat=${camera.lat}&lng=${camera.lng}&zoom=${camera.zoom}`);
@@ -109,7 +99,7 @@ export class ViewsService extends Service<Deps> {
   }
 
   showTrail(id: bigint): void {
-    this.history.goTo(`/trail/${id}`);
+    this.history.goTo(`/search/trail/${id}`);
   }
 }
 

@@ -1,6 +1,8 @@
 import { fetchDataBatch as fetchDataBatchUnsafe } from './common/data';
 import { initialData as initialDataUnsafe } from './common/ssr_aware';
 
+export type TrailId = {numeric: string}|{readable: string};
+
 interface DataRequests {
   boundary: {
     id: string;
@@ -9,10 +11,10 @@ interface DataRequests {
     child_id: string;
   };
   boundaries_containing_trail: {
-    trail_id: string;
+    trail_id: TrailId;
   };
   path_profiles_in_trail: {
-    trail_id: string;
+    trail_id: TrailId;
   };
   search_boundaries: {
     query: string;
@@ -22,7 +24,7 @@ interface DataRequests {
     limit: number;
   };
   trail: {
-    id: string;
+    trail_id: TrailId;
   };
   trails_in_boundary: {
     boundary_id: string;
@@ -90,6 +92,7 @@ export interface DataResponses {
   };
   trail: {
     id: string;
+    readable_id: string;
     name: string;
     type: number;
     path_ids: string;

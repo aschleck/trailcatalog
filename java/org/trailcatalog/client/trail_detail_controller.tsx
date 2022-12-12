@@ -11,11 +11,11 @@ import { MapDataService } from './data/map_data_service';
 import { unprojectS2LatLng } from './map/models/camera';
 import { Boundary, ElevationProfile, Trail } from './models/types';
 
-import { DataResponses, fetchData } from './data';
-import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw } from './trails';
+import { DataResponses, fetchData, TrailId } from './data';
+import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
 interface Args {
-  trailId: bigint;
+  trailId: TrailId;
 }
 
 export interface State {
@@ -51,17 +51,32 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
     super(response);
     this.data = response.deps.services.data;
 
-    this.data.setPins({trail: response.args.trailId}, true).then(trail => {
-      this.updateState({
-        ...this.state,
-        pinned: true,
-        trail,
+    const pin = (id: bigint) => {
+      this.data.setPins({trail: id}, true).then(_ => {
+        this.updateState({
+          ...this.state,
+          pinned: true,
+        });
       });
-    });
+    };
 
-    const id = `${response.args.trailId}`;
+    const trailId = response.args.trailId;
+    if (this.state.trail) {
+      pin(this.state.trail.id);
+    } else {
+      fetchData('trail', {trail_id: trailId}).then(raw => {
+        const trail = trailFromRaw(raw);
+        this.updateState({
+          ...this.state,
+          trail,
+        });
+
+        pin(trail.id);
+      });
+    }
+
     if (!this.state.containingBoundaries) {
-      fetchData('boundaries_containing_trail', {trail_id: id}).then(raw => {
+      fetchData('boundaries_containing_trail', {trail_id: trailId}).then(raw => {
         this.updateState({
           ...this.state,
           containingBoundaries: containingBoundariesFromRaw(raw),
@@ -70,7 +85,7 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
     }
 
     if (!this.state.pathProfiles) {
-      fetchData('path_profiles_in_trail', {trail_id: id}).then(raw => {
+      fetchData('path_profiles_in_trail', {trail_id: trailId}).then(raw => {
         this.updateState({
           ...this.state,
           pathProfiles: pathProfilesInTrailFromRaw(raw),

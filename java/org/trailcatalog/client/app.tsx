@@ -3,7 +3,6 @@ import * as corgi from 'js/corgi';
 
 import { isServerSide } from './common/ssr_aware';
 
-import { BoundaryOverviewElement } from './boundary_overview_element';
 import { RouteController, State } from './route_controller';
 import { SearchResultsOverviewElement } from './search_results_overview_element';
 import { TrailDetailElement } from './trail_detail_element';
@@ -13,21 +12,17 @@ import './app.css';
 
 // TODO: assert little endian
 
-//new Controller(document.getElementById('canvas') as HTMLCanvasElement);
-
 export function App(props: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = RouteController.getInitialState();
   }
 
   let route;
-  if (state.active.kind === 'boundary_overview') {
-    route = <BoundaryOverviewElement boundaryId={state.active.boundary} />;
-  } else if (state.active.kind === 'search_results_overview') {
+  if (state.active.kind === 'search_results') {
     route = <SearchResultsOverviewElement />;
   } else if (state.active.kind === 'trail_detail') {
     route = <TrailDetailElement trailId={state.active.trail} />;
-  } else if (state.active.kind === 'trail_overview') {
+  } else if (state.active.kind === 'search_trail') {
     route = <TrailOverviewElement trailId={state.active.trail} />;
   } else {
     checkExhaustive(state.active);

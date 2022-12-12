@@ -18,6 +18,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.sql.PreparedStatement
 import java.util.Base64
 import java.util.Stack
 import kotlin.math.abs
@@ -116,7 +117,7 @@ private fun fetchData(ctx: Context) {
       }
       "boundaries_containing_trail" -> {
         val data = ArrayList<HashMap<String, Any>>()
-        val id = key.get("trail_id").asLong()
+        val (idColumn, setId) = parseTrailId(key.get("trail_id"))
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
@@ -124,10 +125,11 @@ private fun fetchData(ctx: Context) {
                   + "b.name, "
                   + "b.type "
                   + "FROM trails_in_boundaries tib "
+                  + "JOIN trail_identifiers ti ON tib.trail_id = ti.numeric_id AND tib.epoch = ti.epoch "
                   + "JOIN boundaries b ON tib.boundary_id = b.id AND tib.epoch = b.epoch "
-                  + "WHERE tib.trail_id = ? AND tib.epoch = ?")
+                  + "WHERE ${idColumn} = ? AND tib.epoch = ?")
               .apply {
-                setLong(1, id)
+                setId(this, 1)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           while (results.next()) {
@@ -142,17 +144,18 @@ private fun fetchData(ctx: Context) {
       }
       "path_profiles_in_trail" -> {
         val data = ArrayList<HashMap<String, Any>>()
-        val id = key.get("trail_id").asLong()
+        val (idColumn, setId) = parseTrailId(key.get("trail_id"))
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
                   + "pit.path_id, "
                   + "pe.height_samples_10m_meters "
                   + "FROM paths_in_trails pit "
+                  + "JOIN trail_identifiers ti ON pit.trail_id = ti.numeric_id AND pit.epoch = ti.epoch "
                   + "JOIN path_elevations pe ON pit.path_id = pe.id AND pit.epoch = pe.epoch "
-                  + "WHERE pit.trail_id = ? AND pit.epoch = ?")
+                  + "WHERE ${idColumn} = ? AND pit.epoch = ?")
               .apply {
-                setLong(1, id)
+                setId(this, 1)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           while (results.next()) {
@@ -176,37 +179,41 @@ private fun fetchData(ctx: Context) {
       }
       "trail" -> {
         val data = HashMap<String, Any>()
-        val id = key.get("id").asLong()
+        val (idColumn, setId) = parseTrailId(key.get("trail_id"))
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
-                  + "name, "
-                  + "type, "
-                  + "path_ids, "
-                  + "bound_degrees_e7, "
-                  + "marker_degrees_e7, "
-                  + "elevation_down_meters, "
-                  + "elevation_up_meters, "
-                  + "length_meters "
-                  + "FROM trails "
-                  + "WHERE id = ? AND epoch = ?")
+                  + "t.id, "
+                  + "ti.readable_id, "
+                  + "t.name, "
+                  + "t.type, "
+                  + "t.path_ids, "
+                  + "t.bound_degrees_e7, "
+                  + "t.marker_degrees_e7, "
+                  + "t.elevation_down_meters, "
+                  + "t.elevation_up_meters, "
+                  + "t.length_meters "
+                  + "FROM trails t "
+                  + "JOIN trail_identifiers ti ON t.id = ti.numeric_id AND t.epoch = ti.epoch "
+                  + "WHERE ${idColumn} = ? AND t.epoch = ?")
               .apply {
-                setLong(1, id)
+                setId(this, 1)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           if (!results.next()) {
             ctx.status(HttpCode.NOT_FOUND)
             return@fetchData
           }
-          data["id"] = id
-          data["name"] = results.getString(1)
-          data["type"] = results.getInt(2)
-          data["path_ids"] = String(Base64.getEncoder().encode(results.getBytes(3)))
-          data["bound"] = String(Base64.getEncoder().encode(results.getBytes(4)))
-          data["marker"] = String(Base64.getEncoder().encode(results.getBytes(5)))
-          data["elevation_down_meters"] = results.getFloat(6)
-          data["elevation_up_meters"] = results.getFloat(7)
-          data["length_meters"] = results.getFloat(8)
+          data["id"] = results.getLong(1).toString()
+          data["readable_id"] = results.getString(2)
+          data["name"] = results.getString(3)
+          data["type"] = results.getInt(4)
+          data["path_ids"] = String(Base64.getEncoder().encode(results.getBytes(5)))
+          data["bound"] = String(Base64.getEncoder().encode(results.getBytes(6)))
+          data["marker"] = String(Base64.getEncoder().encode(results.getBytes(7)))
+          data["elevation_down_meters"] = results.getFloat(8)
+          data["elevation_up_meters"] = results.getFloat(9)
+          data["length_meters"] = results.getFloat(10)
         }
         responses.add(data)
       }
@@ -249,6 +256,22 @@ private fun fetchData(ctx: Context) {
   ctx.json(HashMap<String, Any>().also {
     it["values"] = responses
   })
+}
+
+private fun parseTrailId(id: JsonNode):
+    Pair<String, (statement: PreparedStatement, index: Int) -> Unit> {
+  val idColumn: String
+  val setId: (statement: PreparedStatement, index: Int) -> Unit
+  if (id.has("numeric")) {
+    idColumn = "ti.numeric_id"
+    setId = { statement, index -> statement.setLong(index, id.get("numeric").asLong()) }
+  } else if (id.has("readable")) {
+    idColumn = "ti.readable_id"
+    setId = { statement, index -> statement.setString(index, id.get("readable").asText()) }
+  } else {
+    throw IllegalArgumentException("Unknown type of trail ID")
+  }
+  return Pair(idColumn, setId)
 }
 
 private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, Any> {

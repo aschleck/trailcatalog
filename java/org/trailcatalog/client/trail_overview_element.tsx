@@ -17,13 +17,14 @@ export function TrailOverviewElement({trailId}: {
   trailId: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    const rawTrail = initialData('trail', {id: trailId});
+    const rawTrail = initialData('trail', {trail_id: {numeric: trailId}});
     let trail;
     if (rawTrail) {
       trail = trailFromRaw(rawTrail);
     }
 
-    const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: trailId});
+    const rawContainingBoundaries =
+        initialData('boundaries_containing_trail', {trail_id: {numeric: trailId}});
     let containingBoundaries;
     if (rawContainingBoundaries) {
       containingBoundaries = containingBoundariesFromRaw(rawContainingBoundaries);

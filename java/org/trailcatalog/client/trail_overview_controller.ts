@@ -55,7 +55,7 @@ export class TrailOverviewController extends ViewportController<Args, Deps, Stat
     });
 
     if (!this.state.containingBoundaries) {
-      fetchData('boundaries_containing_trail', {trail_id: `${id}`}).then(raw => {
+      fetchData('boundaries_containing_trail', {trail_id: {numeric: `${id}`}}).then(raw => {
         this.updateState({
           ...this.state,
           containingBoundaries: containingBoundariesFromRaw(raw),

@@ -19,20 +19,27 @@ import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw }
 export function TrailDetailElement({trailId}: {
   trailId: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
+  let parsedId;
+  try {
+    parsedId = {numeric: String(BigInt(trailId))};
+  } catch {
+    parsedId = {readable: trailId};
+  }
+
   if (!state) {
-    const rawTrail = initialData('trail', {id: trailId});
+    const rawTrail = initialData('trail', {trail_id: parsedId});
     let trail;
     if (rawTrail) {
       trail = trailFromRaw(rawTrail);
     }
 
-    const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: trailId});
+    const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: parsedId});
     let containingBoundaries;
     if (rawContainingBoundaries) {
       containingBoundaries = containingBoundariesFromRaw(rawContainingBoundaries);
     }
 
-    const rawPathProfiles = initialData('path_profiles_in_trail', {trail_id: trailId});
+    const rawPathProfiles = initialData('path_profiles_in_trail', {trail_id: parsedId});
     let pathProfiles;
     if (rawPathProfiles) {
       pathProfiles = pathProfilesInTrailFromRaw(rawPathProfiles);
@@ -44,13 +51,6 @@ export function TrailDetailElement({trailId}: {
       pinned: false,
       trail,
     };
-  }
-
-  let parsedId;
-  try {
-    parsedId = BigInt(trailId);
-  } catch {
-    return <>Invalid trail ID {trailId}</>;
   }
 
   return <>
@@ -103,7 +103,6 @@ function Content(state: State) {
         camera={trail.bound}
         className="my-8"
         height="h-[32rem]"
-        interactive={false}
         overlays={{point: state.elevation?.cursor}}
     />,
     state.elevation ? <ElevationGraph {...state} /> : <svg></svg>,
