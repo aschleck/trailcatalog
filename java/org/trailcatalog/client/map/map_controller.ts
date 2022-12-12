@@ -135,7 +135,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
         this.trigger(SELECTION_CHANGED, {
           controller: this,
           selected: undefined,
-          clickPx: [e.clientX, e.clientY],
+          clickPx: [e.offsetX, e.offsetY],
         });
 
         interpreter.pointerDown(e);
@@ -198,20 +198,20 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     return this.mapData.setHover(trail, state);
   }
 
-  click(clientX: number, clientY: number): void {
-    const point = this.clientToWorld(clientX, clientY)
+  click(offsetX: number, offsetY: number): void {
+    const point = this.clientToWorld(offsetX, offsetY)
     const entity = this.mapData.queryClosest(point);
     // On mobile we don't get hover events, so we won't have previously hovered.
     this.actOnHover(entity);
     this.trigger(SELECTION_CHANGED, {
       controller: this,
       selected: entity,
-      clickPx: [clientX - this.screenArea.x, clientY - this.screenArea.y],
+      clickPx: [offsetX, offsetY],
     });
   }
 
-  hover(clientX: number, clientY: number): void {
-    const best = this.mapData.queryClosest(this.clientToWorld(clientX, clientY));
+  hover(offsetX: number, offsetY: number): void {
+    const best = this.mapData.queryClosest(this.clientToWorld(offsetX, offsetY));
     this.actOnHover(best);
   }
 
@@ -237,8 +237,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.nextRender = RenderType.CameraChange;
   }
 
-  zoom(amount: number, clientX: number, clientY: number): void {
-    this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(clientX, clientY));
+  zoom(amount: number, offsetX: number, offsetY: number): void {
+    this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }
@@ -246,7 +246,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   private wheel(e: WheelEvent): void {
     e.preventDefault();
 
-    this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(e.clientX, e.clientY));
+    this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(e.offsetX, e.offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }
@@ -269,18 +269,18 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.trigger(DATA_CHANGED, {controller: this});
   }
 
-  private clientToWorld(clientX: number, clientY: number): Vec2 {
+  private clientToWorld(offsetX: number, offsetY: number): Vec2 {
     const center = this.camera.centerPixel;
-    const client = this.screenToRelativeCoord(clientX, clientY);
+    const client = this.screenToRelativeCoord(offsetX, offsetY);
     return [
       center[0] + client[0] * this.camera.inverseWorldRadius,
       center[1] + client[1] * this.camera.inverseWorldRadius,
     ];
   }
 
-  private screenToRelativeCoord(clientX: number, clientY: number): Vec2 {
-    const x = clientX - this.screenArea.x - this.screenArea.width / 2;
-    const y = this.screenArea.y + this.screenArea.height / 2 - clientY;
+  private screenToRelativeCoord(offsetX: number, offsetY: number): Vec2 {
+    const x = offsetX - this.screenArea.width / 2;
+    const y = this.screenArea.height / 2 - offsetY;
     return [x, y];
   }
 
@@ -339,17 +339,25 @@ function isTrail(e: Path|Trail): e is Trail {
 }
 
 interface PointerListener {
-  click(clientX: number, clientY: number): void;
-  hover(clientX: number, clientY: number): void;
+  click(offsetX: number, offsetY: number): void;
+  hover(offsetX: number, offsetY: number): void;
   idle(): void;
   pan(dx: number, dy: number): void;
-  zoom(amount: number, clientX: number, clientY: number): void;
+  zoom(amount: number, offsetX: number, offsetY: number): void;
+}
+
+// Firefox has a bug where after the event handler runs offsetX/offsetY are cleared, so we clone
+// events. What a mess.
+interface SimplePointerEvent {
+  offsetX: number;
+  offsetY: number;
+  pointerId: number;
 }
 
 class PointerInterpreter {
 
-  private readonly pointers: Map<number, PointerEvent>;
-  private maybeClickStart: PointerEvent|undefined;
+  private readonly pointers: Map<number, SimplePointerEvent>;
+  private maybeClickStart: SimplePointerEvent|undefined;
 
   // If the user is panning or zooming, we want to trigger an idle call when they stop.
   private needIdle: boolean;
@@ -362,10 +370,18 @@ class PointerInterpreter {
 
   pointerDown(e: PointerEvent): void {
     e.preventDefault();
-    this.pointers.set(e.pointerId, e);
+    this.pointers.set(e.pointerId, {
+      offsetX: e.offsetX,
+      offsetY: e.offsetY,
+      pointerId: e.pointerId,
+    });
 
     if (this.pointers.size === 1) {
-      this.maybeClickStart = e;
+      this.maybeClickStart = {
+        offsetX: e.offsetX,
+        offsetY: e.offsetY,
+        pointerId: e.pointerId,
+      };
     } else {
       this.maybeClickStart = undefined;
     }
@@ -374,7 +390,7 @@ class PointerInterpreter {
   pointerMove(e: PointerEvent, inCanvas: boolean): void {
     if (!this.pointers.has(e.pointerId)) {
       if (inCanvas) {
-        this.listener.hover(e.clientX, e.clientY);
+        this.listener.hover(e.offsetX, e.offsetY);
       }
       return;
     }
@@ -384,7 +400,7 @@ class PointerInterpreter {
 
     if (this.pointers.size === 1) {
       const [last] = this.pointers.values();
-      this.listener.pan(last.clientX - e.clientX, -(last.clientY - e.clientY));
+      this.listener.pan(last.offsetX - e.offsetX, -(last.offsetY - e.offsetY));
 
       if (this.maybeClickStart) {
         const d2 = distance2(this.maybeClickStart, e);
@@ -407,11 +423,15 @@ class PointerInterpreter {
       const is = distance2(pivot, e);
       this.listener.zoom(
           Math.sqrt(is / was),
-          (pivot.clientX + e.clientX) / 2,
-          (pivot.clientY + e.clientY) / 2);
+          (pivot.offsetX + e.offsetX) / 2,
+          (pivot.offsetY + e.offsetY) / 2);
     }
 
-    this.pointers.set(e.pointerId, e);
+    this.pointers.set(e.pointerId, {
+      offsetX: e.offsetX,
+      offsetY: e.offsetY,
+      pointerId: e.pointerId,
+    });
   }
 
   pointerUp(e: PointerEvent): void {
@@ -429,16 +449,16 @@ class PointerInterpreter {
       }
 
       if (this.maybeClickStart) {
-        this.listener.click(this.maybeClickStart.clientX, this.maybeClickStart.clientY);
+        this.listener.click(this.maybeClickStart.offsetX, this.maybeClickStart.offsetY);
         this.maybeClickStart = undefined;
       }
     }
   }
 }
 
-function distance2(a: PointerEvent, b: PointerEvent): number {
-  const x = a.clientX - b.clientX;
-  const y = a.clientY - b.clientY;
+function distance2(a: SimplePointerEvent, b: SimplePointerEvent): number {
+  const x = a.offsetX - b.offsetX;
+  const y = a.offsetY - b.offsetY;
   return x * x + y * y;
 }
 
