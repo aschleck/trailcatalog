@@ -28,6 +28,10 @@ export class HistoryService extends Service<EmptyDeps> {
     this.notifyListeners(new URL(window.location.href));
   }
 
+  silentlyReplaceUrl(url: string, state?: object): void {
+    window.history.replaceState(state, '', url);
+  }
+
   private notifyListeners(active: URL) {
     for (const listener of this.listeners) {
       listener.urlChanged(active);

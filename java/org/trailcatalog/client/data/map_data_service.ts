@@ -477,6 +477,7 @@ function constructTrail(
   } as PixelRect;
   return new Trail(
       id,
+      /* readable_id= */ undefined,
       name,
       type,
       mouseBound,

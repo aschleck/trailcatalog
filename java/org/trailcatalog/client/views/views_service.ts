@@ -13,17 +13,23 @@ interface SearchTrail {
   trail: string;
 }
 
-interface TrailDetail {
-  kind: 'trail_detail';
+interface TrailDetailByNumeric {
+  kind: 'trail_detail_by_numeric';
   trail: string;
 }
 
-export type Route = SearchResults|SearchTrail|TrailDetail;
+interface TrailDetailByReadable {
+  kind: 'trail_detail_by_readable';
+  trail: string;
+}
+
+export type Route = SearchResults|SearchTrail|TrailDetailByNumeric|TrailDetailByReadable;
 
 const routes: {[k in Route['kind']]: RegExp} = {
   'search_results': /^\/(search)?$/,
   'search_trail': /^\/search\/trail\/(?<trail>\d+)$/,
-  'trail_detail': /^\/trail\/(?<trail>.+)$/,
+  'trail_detail_by_numeric': /^\/trail\/id\/(?<trail>\d+)$/,
+  'trail_detail_by_readable': /^\/trail\/(?<trail>.+)$/,
 };
 
 interface Listener {

@@ -51,6 +51,7 @@ export function trailFromRaw(raw: DataResponses['trail']): Trail {
   const marker = latLngFromBase64E7(raw.marker);
   return new Trail(
       BigInt(raw.id),
+      raw.readable_id,
       raw.name,
       raw.type,
       {low: [0, 0], high: [0, 0], brand: 'PixelRect' as const},

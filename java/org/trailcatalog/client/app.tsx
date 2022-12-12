@@ -20,10 +20,12 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
   let route;
   if (state.active.kind === 'search_results') {
     route = <SearchResultsOverviewElement />;
-  } else if (state.active.kind === 'trail_detail') {
-    route = <TrailDetailElement trailId={state.active.trail} />;
   } else if (state.active.kind === 'search_trail') {
     route = <TrailOverviewElement trailId={state.active.trail} />;
+  } else if (state.active.kind === 'trail_detail_by_numeric') {
+    route = <TrailDetailElement trailId={{numeric: state.active.trail}} />;
+  } else if (state.active.kind === 'trail_detail_by_readable') {
+    route = <TrailDetailElement trailId={{readable: state.active.trail}} />;
   } else {
     checkExhaustive(state.active);
   }

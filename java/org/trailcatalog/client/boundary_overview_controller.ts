@@ -91,6 +91,7 @@ export function trailsInBoundaryFromRaw(raw: DataResponses['trails_in_boundary']
       t =>
           new Trail(
               BigInt(t.id),
+              /* readable_id= */ undefined,
               t.name,
               t.type,
               emptyPixelRect(),

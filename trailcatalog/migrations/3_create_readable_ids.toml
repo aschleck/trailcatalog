@@ -1,3 +1,45 @@
+# TODO(april): this was a bad idea. We should just accept our fate and make things only have
+# readable IDs even though it will use an additional ~4 mb/100,000 trails on the wire.
+#
+# Let's think step by step.
+# * If we totally remove numeric_id, then we have to use readable_id everywhere
+# * Including paths_in_trails, which currently has a 367 MB primary index
+# * So changing an 8 byte column to ~44 bytes will increase it to 628 MB.
+# * Maybe that means around +400 MB of indices
+# * Client-side memory usage probably goes up marginally
+# * Bandwidth goes up marginally
+#
+# What's gross about current solution?
+# * Need 2x routes for trail pages: by numeric and by readable
+# * Frontend.kt has to accept both types of IDs in data requests
+# * Trail contains two IDs client-side, readable is often empty
+#
+# Other factors:
+# * If we ever want to have non-OSM trails, then it's easy to namespace the numeric IDs but we'd
+#   have to namespace the user visible readable ID if we didn't have a numeric ID (or we add another
+#   column.) Probably best to add a new column or change the source_relation column. And even if we
+#   namespace the numeric, we could still only have 2-ish namespaces easily. So better to make a
+#   column.
+# * If we ever want to have non-OSM trails, generating the next numeric ID is tricky.
+# * If we ever want to have non-OSM trails, it's difficult to assert uniqueness unless they're in
+#   the same epoch.
+# * Anecdotal tests on the 200k row trail_identifiers table suggests querying by numeric has equal
+#   performance with querying by string.
+#
+# What queries will we not tolerate latency on?
+# * Search by string
+# * Viewport queries by cell
+#
+# So three clear options:
+# * Do nothing
+# * Only use readable ID client-side
+# * Totally drop the numeric ID
+#
+# The last two options are remarkably similar, basically the tradeoff is whether we are okay
+# tolerating a larger index if it means we get a cleaner data model. In the long term we'd always
+# pick maintainability over a few hundred MB of memory, so universally using readable ID seems quite
+# compelling.
+
 [[actions]]
 type = "create_table"
 name = "boundary_identifiers"
@@ -41,8 +83,7 @@ primary_key = ["numeric_id", "epoch"]
 [[actions]]
 type = "custom"
 
-# Need to manually run this as postgres:
-# CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA pg_catalog;
+# There's an add_index reshape operation, why didn't I use that...
 start = """
   CREATE UNIQUE INDEX IF NOT EXISTS boundary_identifiers_readable_idx ON boundary_identifiers (readable_id, epoch);
   CREATE UNIQUE INDEX IF NOT EXISTS trail_identifiers_readable_idx ON trail_identifiers (readable_id, epoch);

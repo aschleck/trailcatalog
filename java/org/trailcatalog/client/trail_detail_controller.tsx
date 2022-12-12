@@ -2,6 +2,7 @@ import { S2LatLng, S2Point } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
+import { HistoryService } from 'js/corgi/history/history_service';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { decodeBase64 } from './common/base64';
@@ -41,6 +42,7 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
     return {
       services: {
         data: MapDataService,
+        history: HistoryService,
       },
     };
   }
@@ -50,19 +52,22 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
   constructor(response: Response<TrailDetailController>) {
     super(response);
     this.data = response.deps.services.data;
+    const history = response.deps.services.history;
 
-    const pin = (id: bigint) => {
-      this.data.setPins({trail: id}, true).then(_ => {
+    const pin = (trail: Trail) => {
+      this.data.setPins({trail: trail.id}, true).then(_ => {
         this.updateState({
           ...this.state,
           pinned: true,
         });
       });
+
+      history.silentlyReplaceUrl(`/trail/${trail.readable_id}`);
     };
 
     const trailId = response.args.trailId;
     if (this.state.trail) {
-      pin(this.state.trail.id);
+      pin(this.state.trail);
     } else {
       fetchData('trail', {trail_id: trailId}).then(raw => {
         const trail = trailFromRaw(raw);
@@ -71,7 +76,7 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
           trail,
         });
 
-        pin(trail.id);
+        pin(trail);
       });
     }
 

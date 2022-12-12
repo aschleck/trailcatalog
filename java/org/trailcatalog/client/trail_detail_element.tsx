@@ -6,40 +6,32 @@ import { latLngFromBase64E7 } from './common/data';
 import { formatDistance, formatHeight, shouldUseImperial } from './common/formatters';
 import { metersToFeet } from './common/math';
 import { LatLng } from './common/types';
-import { initialData } from './data';
 import { Boundary, Trail } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { DataResponses } from './data';
+import { DataResponses, initialData, TrailId } from './data';
 import { MapElement } from './map/map_element';
 import { Header } from './page';
 import { TrailDetailController, State } from './trail_detail_controller';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
 export function TrailDetailElement({trailId}: {
-  trailId: string;
+  trailId: TrailId;
 }, state: State|undefined, updateState: (newState: State) => void) {
-  let parsedId;
-  try {
-    parsedId = {numeric: String(BigInt(trailId))};
-  } catch {
-    parsedId = {readable: trailId};
-  }
-
   if (!state) {
-    const rawTrail = initialData('trail', {trail_id: parsedId});
+    const rawTrail = initialData('trail', {trail_id: trailId});
     let trail;
     if (rawTrail) {
       trail = trailFromRaw(rawTrail);
     }
 
-    const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: parsedId});
+    const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: trailId});
     let containingBoundaries;
     if (rawContainingBoundaries) {
       containingBoundaries = containingBoundariesFromRaw(rawContainingBoundaries);
     }
 
-    const rawPathProfiles = initialData('path_profiles_in_trail', {trail_id: parsedId});
+    const rawPathProfiles = initialData('path_profiles_in_trail', {trail_id: trailId});
     let pathProfiles;
     if (rawPathProfiles) {
       pathProfiles = pathProfilesInTrailFromRaw(rawPathProfiles);
@@ -59,11 +51,11 @@ export function TrailDetailElement({trailId}: {
       <div
           js={corgi.bind({
             controller: TrailDetailController,
-            args: {trailId: parsedId},
+            args: {trailId},
             events: {
               render: 'wakeup',
             },
-            key: trailId,
+            key: JSON.stringify(trailId),
             state: [state, updateState],
           })}
           className="h-full max-w-6xl px-4 my-8 w-full"

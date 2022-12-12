@@ -52,6 +52,8 @@ export class Path {
 export class Trail {
   constructor(
       readonly id: bigint,
+      // When loading trails for viewport, we don't fetch readable IDs. Not sure if good or bad.
+      readonly readable_id: string|undefined,
       readonly name: string,
       readonly type: number,
       readonly mouseBound: PixelRect,
