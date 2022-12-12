@@ -161,7 +161,7 @@ pink = compute.Instance(
 
                         index index.html;
 
-                        server_name _;
+                        server_name trailcatalog.org;
 
                         location / {{
                                 proxy_pass http://127.0.0.1:7080;
