@@ -59,14 +59,17 @@ server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
 
   const response = await fetch('http://127.0.0.1:7070/api/data', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: {
+      'Content-Type': 'application/json',
+      'If-None-Match': request.headers['if-none-match'] ?? '',
+    },
     body: JSON.stringify({
       keys: requestedData,
     }),
   });
 
   if (!response.ok) {
-    reply.type('text/html').code(response.status);
+    reply.type('text/plain').code(response.status);
     reply.send(response.statusText);
   }
 
@@ -82,7 +85,12 @@ server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
     return undefined;
   });
   const content = App({}, undefined, () => {});
+
   reply.type('text/html').code(200);
+  const etag = response.headers.get('ETag');
+  if (etag) {
+    reply.header('ETag', etag);
+  }
   reply.send(page(render(content), requestedData, responseData));
 });
 

@@ -55,6 +55,10 @@ private data class WireTrail(
 )
 
 private fun fetchData(ctx: Context) {
+  if (addETagAndCheckCached(ctx)) {
+    return
+  }
+
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyAsInputStream())
   val keys = request.get("keys").elements()
@@ -455,12 +459,8 @@ private fun fetchBoundaries(requiredBoundaries: HashSet<Long>): Map<String, Any>
 
 private fun fetchMeta(ctx: Context) {
   ctx.contentType("application/octet-stream")
-  ("\"${epochTracker.epoch}\"").let { etag ->
-    ctx.header("ETag", etag)
-    if (etag == ctx.header(Header.IF_NONE_MATCH)) {
-      ctx.status(HttpCode.NOT_MODIFIED)
-      return@fetchMeta
-    }
+  if (addETagAndCheckCached(ctx)) {
+    return
   }
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
@@ -487,12 +487,8 @@ private fun fetchMeta(ctx: Context) {
 
 private fun fetchDetail(ctx: Context) {
   ctx.contentType("application/octet-stream")
-  ("\"${epochTracker.epoch}\"").let { etag ->
-    ctx.header("ETag", etag)
-    if (etag == ctx.header(Header.IF_NONE_MATCH)) {
-      ctx.status(HttpCode.NOT_MODIFIED)
-      return@fetchDetail
-    }
+  if (addETagAndCheckCached(ctx)) {
+    return
   }
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
@@ -555,12 +551,8 @@ private fun fetchDetail(ctx: Context) {
 
 private fun fetchDataPacked(ctx: Context) {
   ctx.contentType("application/octet-stream")
-  ("\"${epochTracker.epoch}\"").let { etag ->
-    ctx.header("ETag", etag)
-    if (etag == ctx.header(Header.IF_NONE_MATCH)) {
-      ctx.status(HttpCode.NOT_MODIFIED)
-      return@fetchDataPacked
-    }
+  if (addETagAndCheckCached(ctx)) {
+    return
   }
 
   val mapper = ObjectMapper()
@@ -751,6 +743,19 @@ private class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
     count = (count + alignment - 1) / alignment * alignment
     // No need to grow because the next write will catch up
   }
+}
+
+private fun addETagAndCheckCached(ctx: Context): Boolean {
+  ("\"${epochTracker.epoch}\"").let { etag ->
+    ctx.header("ETag", etag)
+    val requestETag = ctx.header(Header.IF_NONE_MATCH)
+    // nginx weakens etags when gzipping, so we have to also check if the user sent us a weak etag.
+    if (etag == requestETag || "W/${etag}" == requestETag) {
+      ctx.status(HttpCode.NOT_MODIFIED)
+      return true
+    }
+  }
+  return false
 }
 
 private fun project(latLngDegrees: ByteArray): ByteArray {
