@@ -19,6 +19,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.sql.PreparedStatement
+import java.time.Instant
 import java.util.Base64
 import java.util.Stack
 import kotlin.math.abs
@@ -29,6 +30,7 @@ import kotlin.math.sqrt
 
 private val connectionSource = createConnectionSource()
 private val epochTracker = EpochTracker(connectionSource)
+private val startTime = Instant.now().getEpochSecond() % 10000 // make it shorter
 
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)
@@ -746,7 +748,7 @@ private class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
 }
 
 private fun addETagAndCheckCached(ctx: Context): Boolean {
-  ("\"${epochTracker.epoch}\"").let { etag ->
+  ("\"${startTime}-${epochTracker.epoch}\"").let { etag ->
     ctx.header("ETag", etag)
     val requestETag = ctx.header(Header.IF_NONE_MATCH)
     // nginx weakens etags when gzipping, so we have to also check if the user sent us a weak etag.
