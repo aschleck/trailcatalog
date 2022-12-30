@@ -235,7 +235,11 @@ export class MapData extends Layer {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
       const buffer = this.dataService.detailCells.get(id);
       if (!buffer) {
-        this.planSparseCell(id, planner);
+        // Kind of weird we have to check has too, but we write undefined into this map when there
+        // is no data so we need to verify we haven't fetched nil before falling back to sparse.
+        if (!this.dataService.detailCells.has(id)) {
+          this.planSparseCell(id, planner);
+        }
         continue;
       }
 

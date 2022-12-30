@@ -124,46 +124,6 @@ class DataFetcher {
   updateViewport(bounds: S2LatLngRect, zoom: number): void {
     const used = new Set([PIN_CELL_ID]); // never cancel our pin request
 
-    const metadataCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
-    for (let i = 0; i < metadataCellsInBound.size(); ++i) {
-      const cell = metadataCellsInBound.getAtIndex(i);
-      const id = reinterpretLong(cell.id()) as S2CellNumber;
-      used.add(id);
-
-      if (this.metadata.has(id) || this.metadataInFlight.has(id)) {
-        continue;
-      }
-
-      const token = cell.toToken();
-      const abort = new AbortController();
-      this.metadataInFlight.set(id, abort);
-
-      this.throttler.fetch(`/api/fetch_metadata/${token}`, { signal: abort.signal })
-          .then(response => {
-            if (response.ok) {
-              return response.arrayBuffer();
-            } else {
-              throw new Error(`Failed to download metadata for ${token}`);
-            }
-          })
-          .then(data => {
-            this.metadata.add(id);
-            this.mail({
-              type: 'lcm',
-              cell: id,
-              data,
-            }, [data]);
-          })
-          .catch(e => {
-            if (e.name !== 'AbortError') {
-              throw e;
-            }
-          })
-          .finally(() => {
-            this.metadataInFlight.delete(id);
-          });
-    }
-
     if (zoom >= DETAIL_ZOOM_THRESHOLD) {
       const detailCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL);
       for (let i = 0; i < detailCellsInBound.size(); ++i) {
@@ -206,11 +166,44 @@ class DataFetcher {
       }
     }
 
-    for (const [id, abort] of this.metadataInFlight) {
-      if (!used.has(id)) {
-        abort.abort();
-        this.metadataInFlight.delete(id);
+    const metadataCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
+    for (let i = 0; i < metadataCellsInBound.size(); ++i) {
+      const cell = metadataCellsInBound.getAtIndex(i);
+      const id = reinterpretLong(cell.id()) as S2CellNumber;
+      used.add(id);
+
+      if (this.metadata.has(id) || this.metadataInFlight.has(id)) {
+        continue;
       }
+
+      const token = cell.toToken();
+      const abort = new AbortController();
+      this.metadataInFlight.set(id, abort);
+
+      this.throttler.fetch(`/api/fetch_metadata/${token}`, { signal: abort.signal })
+          .then(response => {
+            if (response.ok) {
+              return response.arrayBuffer();
+            } else {
+              throw new Error(`Failed to download metadata for ${token}`);
+            }
+          })
+          .then(data => {
+            this.metadata.add(id);
+            this.mail({
+              type: 'lcm',
+              cell: id,
+              data,
+            }, [data]);
+          })
+          .catch(e => {
+            if (e.name !== 'AbortError') {
+              throw e;
+            }
+          })
+          .finally(() => {
+            this.metadataInFlight.delete(id);
+          });
     }
 
     for (const [id, abort] of this.detailInFlight) {
@@ -220,10 +213,17 @@ class DataFetcher {
       }
     }
 
-		// Rough approximation: only consider unloading if zoomed in.
-		if (zoom < DETAIL_ZOOM_THRESHOLD) {
-			return;
-		}
+    for (const [id, abort] of this.metadataInFlight) {
+      if (!used.has(id)) {
+        abort.abort();
+        this.metadataInFlight.delete(id);
+      }
+    }
+
+    // Rough approximation: only consider unloading if zoomed in.
+    if (zoom < DETAIL_ZOOM_THRESHOLD) {
+      return;
+    }
 
     const unload = [];
     for (const id of this.detail) {
