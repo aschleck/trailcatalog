@@ -135,7 +135,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
         this.trigger(SELECTION_CHANGED, {
           controller: this,
           selected: undefined,
-          clickPx: [e.offsetX, e.offsetY],
+          clickPx: [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
         });
 
         interpreter.pointerDown(e);
@@ -194,7 +194,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     return this.mapData.setHover(trail, state);
   }
 
-  click(offsetX: number, offsetY: number): void {
+  click(pageX: number, pageY: number): void {
+    const offsetX = pageX - this.screenArea.left;
+    const offsetY = pageY - this.screenArea.top;
     const point = this.clientToWorld(offsetX, offsetY)
     const entity = this.mapData.queryClosest(point);
     // On mobile we don't get hover events, so we won't have previously hovered.
@@ -206,7 +208,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     });
   }
 
-  hover(offsetX: number, offsetY: number): void {
+  hover(pageX: number, pageY: number): void {
+    const offsetX = pageX - this.screenArea.left;
+    const offsetY = pageY - this.screenArea.top;
     const best = this.mapData.queryClosest(this.clientToWorld(offsetX, offsetY));
     this.actOnHover(best);
   }
@@ -233,7 +237,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.nextRender = RenderType.CameraChange;
   }
 
-  zoom(amount: number, offsetX: number, offsetY: number): void {
+  zoom(amount: number, pageX: number, pageY: number): void {
+    const offsetX = pageX - this.screenArea.left;
+    const offsetY = pageY - this.screenArea.top;
     this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
@@ -242,7 +248,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   private wheel(e: WheelEvent): void {
     e.preventDefault();
 
-    this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(e.offsetX, e.offsetY));
+    const offsetX = e.pageX - this.screenArea.left;
+    const offsetY = e.pageY - this.screenArea.top;
+    this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }
@@ -312,7 +320,13 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     // We reset the size first or else it will taint the BoundingClientRect call.
     this.canvas.width = 0;
     this.canvas.height = 0;
-    this.screenArea = checkExists(this.canvas.parentElement).getBoundingClientRect();
+    const viewportRect = checkExists(this.canvas.parentElement).getBoundingClientRect();
+    this.screenArea =
+        new DOMRect(
+            viewportRect.left + window.scrollX,
+            viewportRect.top + window.scrollY,
+            viewportRect.width,
+            viewportRect.height);
     const width = this.screenArea.width * DPI;
     const height = this.screenArea.height * DPI;
     this.canvas.width = width;
@@ -335,18 +349,18 @@ function isTrail(e: Path|Trail): e is Trail {
 }
 
 interface PointerListener {
-  click(offsetX: number, offsetY: number): void;
-  hover(offsetX: number, offsetY: number): void;
+  click(pageX: number, pageY: number): void;
+  hover(pageX: number, pageY: number): void;
   idle(): void;
   pan(dx: number, dy: number): void;
-  zoom(amount: number, offsetX: number, offsetY: number): void;
+  zoom(amount: number, pageX: number, pageY: number): void;
 }
 
 // Firefox has a bug where after the event handler runs offsetX/offsetY are cleared, so we clone
 // events. What a mess.
 interface SimplePointerEvent {
-  offsetX: number;
-  offsetY: number;
+  pageX: number;
+  pageY: number;
   pointerId: number;
 }
 
@@ -367,15 +381,15 @@ class PointerInterpreter {
   pointerDown(e: PointerEvent): void {
     e.preventDefault();
     this.pointers.set(e.pointerId, {
-      offsetX: e.offsetX,
-      offsetY: e.offsetY,
+      pageX: e.pageX,
+      pageY: e.pageY,
       pointerId: e.pointerId,
     });
 
     if (this.pointers.size === 1) {
       this.maybeClickStart = {
-        offsetX: e.offsetX,
-        offsetY: e.offsetY,
+        pageX: e.pageX,
+        pageY: e.pageY,
         pointerId: e.pointerId,
       };
     } else {
@@ -386,7 +400,7 @@ class PointerInterpreter {
   pointerMove(e: PointerEvent, inCanvas: boolean): void {
     if (!this.pointers.has(e.pointerId)) {
       if (inCanvas) {
-        this.listener.hover(e.offsetX, e.offsetY);
+        this.listener.hover(e.pageX, e.pageY);
       }
       return;
     }
@@ -396,7 +410,7 @@ class PointerInterpreter {
 
     if (this.pointers.size === 1) {
       const [last] = this.pointers.values();
-      this.listener.pan(last.offsetX - e.offsetX, -(last.offsetY - e.offsetY));
+      this.listener.pan(last.pageX - e.pageX, -(last.pageY - e.pageY));
 
       if (this.maybeClickStart) {
         const d2 = distance2(this.maybeClickStart, e);
@@ -419,13 +433,13 @@ class PointerInterpreter {
       const is = distance2(pivot, e);
       this.listener.zoom(
           Math.sqrt(is / was),
-          (pivot.offsetX + e.offsetX) / 2,
-          (pivot.offsetY + e.offsetY) / 2);
+          (pivot.pageX + e.pageX) / 2,
+          (pivot.pageY + e.pageY) / 2);
     }
 
     this.pointers.set(e.pointerId, {
-      offsetX: e.offsetX,
-      offsetY: e.offsetY,
+      pageX: e.pageX,
+      pageY: e.pageY,
       pointerId: e.pointerId,
     });
   }
@@ -445,7 +459,7 @@ class PointerInterpreter {
       }
 
       if (this.maybeClickStart) {
-        this.listener.click(this.maybeClickStart.offsetX, this.maybeClickStart.offsetY);
+        this.listener.click(this.maybeClickStart.pageX, this.maybeClickStart.pageY);
         this.maybeClickStart = undefined;
       }
     }
@@ -453,8 +467,8 @@ class PointerInterpreter {
 }
 
 function distance2(a: SimplePointerEvent, b: SimplePointerEvent): number {
-  const x = a.offsetX - b.offsetX;
-  const y = a.offsetY - b.offsetY;
+  const x = a.pageX - b.pageX;
+  const y = a.pageY - b.pageY;
   return x * x + y * y;
 }
 
