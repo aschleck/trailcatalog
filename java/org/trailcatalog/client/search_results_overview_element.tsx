@@ -131,7 +131,7 @@ export function SearchResultsOverviewElement(
               [DATA_CHANGED, 'onDataChange'],
               [HOVER_CHANGED, 'onHoverChanged'],
               [MAP_MOVED, 'onMove'],
-              [SELECTION_CHANGED, 'onSelectionChanged'],
+              [SELECTION_CHANGED, 'selectionChanged'],
             ],
             render: 'wakeup',
           },

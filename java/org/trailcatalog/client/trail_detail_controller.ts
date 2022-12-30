@@ -13,12 +13,13 @@ import { Boundary, ElevationProfile, Path, Trail } from './models/types';
 
 import { fetchData, TrailId } from './data';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
+import { State as VState, ViewportController } from './viewport_controller';
 
 interface Args {
   trailId: TrailId;
 }
 
-export interface State {
+export interface State extends VState {
   containingBoundaries?: Boundary[];
   elevation?: {
     cursor?: LatLng;
@@ -30,8 +31,6 @@ export interface State {
   }
   pathProfiles?: Map<bigint, ElevationProfile>;
   pinned: boolean;
-  selectedCardPosition: Vec2;
-  selectedTrails: Trail[];
   trail?: Trail;
   weather?: {
     temperatureCelsius: number;
@@ -41,7 +40,7 @@ export interface State {
 
 type Deps = typeof TrailDetailController.deps;
 
-export class TrailDetailController extends Controller<Args, Deps, HTMLElement, State> {
+export class TrailDetailController extends ViewportController<Args, Deps, State> {
 
   static deps() {
     return {
@@ -150,28 +149,6 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
       },
     });
   }
-
-  selectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {
-    const {controller, clickPx, selected} = e.detail;
-
-    let trails: Trail[];
-    if (selected instanceof Path) {
-      trails = controller.listTrailsOnPath(selected);
-    } else if (selected instanceof Trail) {
-      trails = [selected];
-    } else {
-      trails = [];
-    }
-
-    this.updateState({
-      ...this.state,
-      selectedCardPosition: clickPx,
-      selectedTrails: trails,
-    });
-  }
-
-  highlightTrail(): void {}
-  unhighlightTrail(): void {}
 }
 
 export function calculateGraph(
