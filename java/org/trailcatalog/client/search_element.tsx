@@ -29,7 +29,7 @@ export function SearchElement(
         })}
     >
       <OutlinedInput
-          className="border-tc-gray-500 peer w-96"
+          className="border-tc-gray-400 peer w-96"
           icon="Search"
           inset={
             state.query
@@ -155,7 +155,7 @@ function ResultItem({boundaries, href, text, query}: {
         <HighlightText haystack={text} needle={query} />
       </Link>
     </div>
-    <div className="font-normal text-sm text-tc-gray-500">
+    <div className="font-normal text-sm text-tc-gray-400">
       <BoundaryCrumbs boundaries={boundaries} />
     </div>
   </>;

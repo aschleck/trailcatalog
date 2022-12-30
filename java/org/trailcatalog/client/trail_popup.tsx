@@ -36,7 +36,7 @@ export function TrailPopup({ position, trails }: {
           ['Distance:', `${metersToMiles(trail.lengthMeters).toFixed(1)} miles`],
         ].map(([label, content]) =>
           <section>
-            <span className="font-medium text-tc-gray-500">
+            <span className="font-medium text-tc-gray-400">
               {label}
             </span>
             {' '}

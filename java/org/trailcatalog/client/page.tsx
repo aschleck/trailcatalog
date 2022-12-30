@@ -6,7 +6,7 @@ export function Header() {
   return <>
     <div className="
         align-middle
-        bg-tc-gray-800
+        bg-tc-gray-900
         flex
         gap-4
         items-center
