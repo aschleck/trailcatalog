@@ -1,16 +1,12 @@
 import * as corgi from 'js/corgi';
 import { checkExists } from 'js/common/asserts';
 
-import { decodeBase64 } from './common/base64';
-import { latLngFromBase64E7 } from './common/data';
 import { formatDistance, formatHeight, shouldUseImperial } from './common/formatters';
 import { metersToFeet } from './common/math';
-import { LatLng } from './common/types';
-import { Boundary, Trail } from './models/types';
+import { MapElement } from './map/map_element';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { DataResponses, initialData, TrailId } from './data';
-import { MapElement } from './map/map_element';
+import { initialData, TrailId } from './data';
 import { Header } from './page';
 import { TrailDetailController, State } from './trail_detail_controller';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';

@@ -1,4 +1,6 @@
 import { deepEqual } from 'js/common/comparisons';
+import { fetchDeps } from 'js/corgi/binder';
+import { HistoryService } from 'js/corgi/history/history_service';
 
 export interface InitialDataKey {
   type: string;
@@ -14,6 +16,7 @@ declare global {
       currentUrl(): string;
       initialData<K extends InitialDataKey>(key: K): object|undefined;
       language(): string;
+      redirect(url: string): void;
     };
   }
 }
@@ -43,3 +46,14 @@ export function getLanguage(): string {
   return window.SERVER_SIDE_RENDER?.language() ?? window.navigator.language;
 }
 
+export function redirect(url: string): void {
+  if (window.SERVER_SIDE_RENDER) {
+    window.SERVER_SIDE_RENDER.redirect(url);
+  } else {
+    fetchDeps({
+      services: {history: HistoryService},
+    }).then(deps => {
+      deps.services.history.replaceTo(url);
+    });
+  }
+}

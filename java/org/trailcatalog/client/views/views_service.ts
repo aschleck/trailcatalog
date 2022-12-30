@@ -8,28 +8,22 @@ interface SearchResults {
   kind: 'search_results';
 }
 
-interface SearchTrail {
-  kind: 'search_trail';
+interface GoToTrail {
+  kind: 'go_to_trail';
+  id: string;
+}
+
+interface TrailDetail {
+  kind: 'trail_detail';
   trail: string;
 }
 
-interface TrailDetailByNumeric {
-  kind: 'trail_detail_by_numeric';
-  trail: string;
-}
-
-interface TrailDetailByReadable {
-  kind: 'trail_detail_by_readable';
-  trail: string;
-}
-
-export type Route = SearchResults|SearchTrail|TrailDetailByNumeric|TrailDetailByReadable;
+export type Route = GoToTrail|SearchResults|TrailDetail;
 
 const routes: {[k in Route['kind']]: RegExp} = {
+  'go_to_trail': /^\/goto\/trail\/(?<id>\d+)$/,
   'search_results': /^\/(search)?$/,
-  'search_trail': /^\/search\/trail\/(?<trail>\d+)$/,
-  'trail_detail_by_numeric': /^\/trail\/id\/(?<trail>\d+)$/,
-  'trail_detail_by_readable': /^\/trail\/(?<trail>.+)$/,
+  'trail_detail': /^\/trail\/(?<trail>.+)$/,
 };
 
 interface Listener {
@@ -105,7 +99,7 @@ export class ViewsService extends Service<Deps> {
   }
 
   showTrail(id: bigint): void {
-    this.history.goTo(`/search/trail/${id}`);
+    this.history.goTo(`/goto/trail/${id}`);
   }
 }
 

@@ -72,7 +72,7 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
       >
       </div>
       <div className="font-lg grow">
-        <a href={`/search/trail/${trail.id}`}>
+        <a href={`/goto/trail/${trail.id}`}>
           {trail.name}
         </a>
         {

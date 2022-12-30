@@ -8,6 +8,7 @@ tc_ts_project(
         "//java/org/trailcatalog/s2",
         "//js/common",
         "//js/corgi",
+        "//js/corgi/history",
     ],
 )
 

@@ -3,10 +3,10 @@ import * as corgi from 'js/corgi';
 
 import { isServerSide } from './common/ssr_aware';
 
+import { GoToTrailElement } from './go_to_trail_element';
 import { RouteController, State } from './route_controller';
 import { SearchResultsOverviewElement } from './search_results_overview_element';
 import { TrailDetailElement } from './trail_detail_element';
-import { TrailOverviewElement } from './trail_overview_element';
 
 import './app.css';
 
@@ -20,11 +20,9 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
   let route;
   if (state.active.kind === 'search_results') {
     route = <SearchResultsOverviewElement />;
-  } else if (state.active.kind === 'search_trail') {
-    route = <TrailOverviewElement trailId={state.active.trail} />;
-  } else if (state.active.kind === 'trail_detail_by_numeric') {
-    route = <TrailDetailElement trailId={{numeric: state.active.trail}} />;
-  } else if (state.active.kind === 'trail_detail_by_readable') {
+  } else if (state.active.kind === 'go_to_trail') {
+    route = <GoToTrailElement trailId={state.active.id} />;
+  } else if (state.active.kind === 'trail_detail') {
     route = <TrailDetailElement trailId={{readable: state.active.trail}} />;
   } else {
     checkExhaustive(state.active);

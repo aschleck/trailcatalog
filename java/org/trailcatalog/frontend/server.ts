@@ -19,6 +19,9 @@ global.window = {
     language: function() {
       return requestContext.get('language');
     },
+    redirect: function(url: string) {
+      requestContext.set('redirect', url);
+    },
   },
   location: {
     search: 'hardcoded-do-not-use',
@@ -85,6 +88,11 @@ server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
     return undefined;
   });
   const content = App({}, undefined, () => {});
+
+  const redirectUrl = requestContext.get('redirect');
+  if (redirectUrl) {
+    reply.redirect(302, redirectUrl);
+  }
 
   reply.type('text/html').code(200);
   const etag = response.headers.get('ETag');

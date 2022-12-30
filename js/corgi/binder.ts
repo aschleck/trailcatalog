@@ -247,7 +247,7 @@ function instantiateService(ctor: AnyServiceCtor): Promise<Service<any>> {
   return instance;
 }
 
-function fetchDeps<D extends ControllerDeps>(deps: DepsConstructorsFor<D>): Promise<D> {
+export function fetchDeps<D extends ServiceDeps>(deps: DepsConstructorsFor<D>): Promise<D> {
   const response = {services: {}} as D;
   const promises = [];
   if (deps.services) {

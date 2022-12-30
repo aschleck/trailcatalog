@@ -105,7 +105,7 @@ function SearchResults({boundaries, className, query, trails}: {
           results={trails.map(trail => <>
             <ResultItem
                 boundaries={trail.boundaries}
-                href={`/search/trail/${trail.id}`}
+                href={`/goto/trail/${trail.id}`}
                 text={trail.name}
                 query={query}
             />

@@ -257,7 +257,7 @@ function updateToState(element: VElement, newState: object): void {
   }
 
   Object.assign(element, newElement);
-  vElementsToNodes.set(element, node);
+  vElementsToNodes.set(element, result.root);
   applyInstantiationResult(result);
 }
 
