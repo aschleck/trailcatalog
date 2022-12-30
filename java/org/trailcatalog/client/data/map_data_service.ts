@@ -14,6 +14,7 @@ import { FetcherCommand, Viewport } from '../workers/data_fetcher';
 interface Listener {
   loadMetadata(trails: Iterable<Trail>): void;
   loadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void;
+  loadPinned(): void;
   unloadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void;
   unloadMetadata(trails: Iterable<Trail>): void;
 }
@@ -291,6 +292,8 @@ export class MapDataService extends Service<EmptyDeps> {
         this.pinnedMissingTrails.delete(id);
       }
     }
+
+    this.listener?.loadPinned();
   }
 
   private loadRegularDetail(id: S2CellNumber, buffer: ArrayBuffer): void {

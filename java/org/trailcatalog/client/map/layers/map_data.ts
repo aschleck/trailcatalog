@@ -461,6 +461,10 @@ export class MapData extends Layer {
     }
   }
 
+  loadPinned(): void {
+    this.lastChange = Date.now();
+  }
+
   unloadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void {
     for (const path of paths) {
       this.detailBounds.delete(path.bound);
