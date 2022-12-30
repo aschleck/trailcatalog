@@ -1,5 +1,6 @@
-import * as corgi from 'js/corgi';
 import { checkExists } from 'js/common/asserts';
+import * as corgi from 'js/corgi';
+import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 
 import { formatDistance, formatHeight, shouldUseImperial } from './common/formatters';
 import { metersToFeet } from './common/math';
@@ -78,7 +79,23 @@ function Content(state: State) {
   const containingBoundaries = checkExists(state.containingBoundaries);
   const trail = checkExists(state.trail);
   const distance = formatDistance(trail.lengthMeters);
+  const elevationDown = formatHeight(trail.elevationDownMeters);
   const elevationUp = formatHeight(trail.elevationUpMeters);
+  let elevationHigh;
+  let elevationLow;
+  if (state.elevation) {
+    const [minMeters, maxMeters] = state.elevation.extremes;
+    elevationHigh = formatHeight(maxMeters);
+    elevationLow = formatHeight(minMeters);
+  }
+
+  let isOneWay;
+  if (trail.paths.length === 1) {
+    isOneWay = true;
+  } else {
+    isOneWay = (trail.paths[0] & ~1n) !== (trail.paths[trail.paths.length - 1] & ~1n);
+  }
+
   return [
     <header className="font-bold font-sans text-3xl">
       {trail.name}
@@ -86,8 +103,42 @@ function Content(state: State) {
     <aside>
       <BoundaryCrumbs boundaries={containingBoundaries} />
     </aside>,
-    <aside>
-      {distance.value} {distance.unit}, {elevationUp.value} {elevationUp.unit}
+    <div className="bg-tc-gray-100 h-0.5 my-4 w-full" />,
+    <aside className="flex flex-wrap items-stretch">
+      <NumericCrumb
+          icon="CharticulatorLine"
+          label={isOneWay ? "One-way distance" : "Round-trip distance"}
+          value={distance.value}
+          unit={distance.unit}
+      />
+      <NumericDivider />
+      <NumericCrumb
+          icon="Market"
+          label="Ascent"
+          value={elevationUp.value}
+          unit={elevationUp.unit}
+      />
+      <NumericDivider />
+      <NumericCrumb
+          icon="MarketDown"
+          label="Descent"
+          value={elevationDown.value}
+          unit={elevationDown.unit}
+      />
+      <NumericDivider />
+      <NumericCrumb
+          icon="SortUp"
+          label="Highest point"
+          value={elevationHigh?.value ?? ''}
+          unit={elevationHigh?.unit ?? ''}
+      />
+      <NumericDivider />
+      <NumericCrumb
+          icon="SortDown"
+          label="Lowest point"
+          value={elevationLow?.value ?? ''}
+          unit={elevationLow?.unit ?? ''}
+      />
     </aside>,
     <MapElement
         active={{trails: [trail]}}
@@ -98,6 +149,36 @@ function Content(state: State) {
     />,
     state.elevation ? <ElevationGraph {...state} /> : <svg></svg>,
   ];
+}
+
+function NumericCrumb({
+  icon,
+  label,
+  value,
+  unit,
+}: {
+  icon: FabricIconName,
+  label: string,
+  value: string,
+  unit: string,
+}) {
+  return <>
+    <div className="min-w-[192px]">
+      <div>{label}</div>
+      <div>
+        <FabricIcon name={icon} />
+        <span className="text-lg">{value}</span>
+        {' '}
+        <span className="text-sm">{unit}</span>
+      </div>
+    </div>
+  </>;
+}
+
+function NumericDivider() {
+  return <>
+    <div className="bg-tc-gray-100 mx-2 w-0.5"></div>
+  </>;
 }
 
 function ElevationGraph(state: State) {

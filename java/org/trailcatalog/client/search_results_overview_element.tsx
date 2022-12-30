@@ -168,7 +168,7 @@ export function SearchResultsOverviewElement(
 function SearchFilter({state}: {state: State}) {
   const divider = <div className="bg-black-opaque-20 w-px" />;
   return <>
-    <aside className="bg-tc-gray-200 flex gap-3 items-center px-3 py-2 text-white">
+    <aside className="bg-tc-gray-700 flex gap-3 items-center px-3 py-2 text-white">
       <a className="flex gap-1 items-center no-underline text-sm" href="#" unboundEvents={{click: 'locateMe'}}>
         <FabricIcon name="Location" />
         <span className="hover:underline">Locate me</span>

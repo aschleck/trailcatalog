@@ -4,31 +4,69 @@ import './fabric-icons-inline.css';
 
 // Fabric's official definitions are missing icons, so we just do it ourselves.
 const FABRIC_ICON_CODES = [
-  'BulletedList',
+  'BlowingSnow',
   'CalculatorMultiply',
+  'CharticulatorLine',
   'Checkbox',
-  'CheckboxComposite',
+  'CheckboxCompositeReversed',
   'ChevronRight',
-  'Info',
-  'Info12',
-  'List',
+  'ChromeBack',
+  'ChromeClose',
+  'Cloudy',
+  'CollapseMenu',
+  'Globe',
+  'LightSnow',
   'Location',
+  'Market',
+  'MarketDown',
+  'MostySunnyDay',
+  'PartlySunnyDay',
+  'PartlySunnyFlurriesDay',
+  'PartlySunnyShowersDay',
+  'PartlySunnyTStormsDay',
+  'Rain',
+  'RainSnow',
+  'ScaleVolume',
   'Search',
+  'Snow',
+  'SortDown',
+  'SortUp',
+  'Sunny',
+  'Thunderstorms',
   'ZoomToFit',
 ] as const;
 
 /**
  * A copyable list for use in the https://uifabricicons.azurewebsites.net/ tool:
-E8FD
+EA02
 E947
+E639
 E739
-E73A
-E946
-E55A
-E721
+E73D
 E76C
+E830
+E8BB
+E9BF
+EF66
+E774
+EA02
 E81D
-EA37
+EAFC
+EF42
+E468
+E469
+E472
+E46E
+E470
+E9C4
+E9C7
+F18C
+E721
+E9C8
+EE69
+EE68
+E9BD
+E9C6
 F649
  */
 

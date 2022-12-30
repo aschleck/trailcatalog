@@ -58,7 +58,7 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
     <div
         className={
           'border-b cursor-pointer flex gap-2 items-stretch pr-2 py-3'
-              + (highlight ? ' bg-tc-gray-700' : '')
+              + (highlight ? ' bg-tc-gray-100' : '')
         }
         data-trail-id={`${trail.id}`}
         unboundEvents={{
@@ -77,7 +77,7 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
         </a>
         {
           trail.boundaries
-              ? <div className="text-sm text-tc-gray-400">
+              ? <div className="text-sm text-tc-gray-500">
                 <BoundaryCrumbs boundaries={trail.boundaries} />
               </div>
               : ''
@@ -89,14 +89,14 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
             {distance.value}
           </span>
           {' '}
-          <span className="font-xs text-tc-gray-400">{distance.unit}</span>
+          <span className="font-xs text-tc-gray-500">{distance.unit}</span>
         </div>
         <div>
           <span className="font-lg">
             {elevationUp.value}
           </span>
           {' '}
-          <span className="font-xs text-tc-gray-400">{elevationUp.unit}</span>
+          <span className="font-xs text-tc-gray-500">{elevationUp.unit}</span>
         </div>
       </div>
     </div>

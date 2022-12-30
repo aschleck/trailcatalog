@@ -9,7 +9,7 @@ export function Checkbox({checked, className, ...props}: {
   return <>
     <FlatButton
         className={'height-[1em]' + (className ? ` ${className}` : '')}
-        icon={checked ?? false ? 'CheckboxComposite' : 'Checkbox'}
+        icon={checked ?? false ? 'CheckboxCompositeReversed' : 'Checkbox'}
         {...props}
     />
   </>;
