@@ -16,11 +16,13 @@ export function Header() {
         w-full
     ">
       <div className="basis-1 grow">
-        <img
-            alt="Trailcatalog logo"
-            src="/static/images/logo.svg"
-            className="h-6"
-        />
+        <a href="/">
+          <img
+              alt="Trailcatalog logo"
+              src="/static/images/logo.svg"
+              className="h-6"
+          />
+        </a>
       </div>
       <SearchElement />
       <div className="basis-1 flex grow justify-end">
