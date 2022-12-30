@@ -8,6 +8,7 @@ import { MapElement } from './map/map_element';
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { initialData, TrailId } from './data';
 import { Header } from './page';
+import { setTitle } from './title';
 import { TrailDetailController, State } from './trail_detail_controller';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
@@ -40,6 +41,8 @@ export function TrailDetailElement({trailId}: {
       trail,
     };
   }
+
+  setTitle(state.trail?.name);
 
   return <>
     <div className="flex flex-col h-full items-center">

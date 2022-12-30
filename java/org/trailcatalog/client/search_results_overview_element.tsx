@@ -13,6 +13,7 @@ import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_overview_co
 import { initialData } from './data';
 import { searchTrailsFromRaw } from './search_controller';
 import { LIMIT, SearchResultsOverviewController, State } from './search_results_overview_controller';
+import { setTitle } from './title';
 import { TrailSidebar } from './trail_list';
 import { TrailPopup } from './trail_popup';
 import { ViewportLayoutElement } from './viewport_layout_element';
@@ -22,6 +23,8 @@ export function SearchResultsOverviewElement(
   const search = currentUrl().searchParams;
   const boundaryId = search.get('boundary') ?? undefined;
   const query = search.get('query') ?? undefined;
+
+  setTitle(query);
 
   if (!state) {
     let boundary;

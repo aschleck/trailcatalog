@@ -19,8 +19,11 @@ global.window = {
     language: function() {
       return requestContext.get('language');
     },
-    redirect: function(url: string) {
-      requestContext.set('redirect', url);
+    redirectTo: function(url: string) {
+      requestContext.set('redirectTo', url);
+    },
+    setTitle: function(title: string) {
+      requestContext.set('title', title);
     },
   },
   location: {
@@ -89,7 +92,7 @@ server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
   });
   const content = App({}, undefined, () => {});
 
-  const redirectUrl = requestContext.get('redirect');
+  const redirectUrl = requestContext.get('redirectTo');
   if (redirectUrl) {
     reply.redirect(302, redirectUrl);
   }
@@ -99,7 +102,12 @@ server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
   if (etag) {
     reply.header('ETag', etag);
   }
-  reply.send(page(render(content), requestedData, responseData));
+  reply.send(
+      page(
+          render(content),
+          requestContext.get('title') ?? 'Trailcatalog',
+          requestedData,
+          responseData));
 });
 
 server.listen({ port: 7080 }, (err, address) => {
@@ -109,7 +117,7 @@ server.listen({ port: 7080 }, (err, address) => {
   console.log(`Running on ${address}`);
 });
 
-function page(content: string, dataKeys: object, dataValues: object): string {
+function page(content: string, title: string, dataKeys: object, dataValues: object): string {
   const data = {
     keys: dataKeys,
     values: dataValues,
@@ -119,7 +127,7 @@ function page(content: string, dataKeys: object, dataValues: object): string {
 <html dir="ltr" lang="en" class="h-full">
   <head>
     <meta charset="utf-8"/>
-    <title>Trailcatalog</title>
+    <title>${title}</title>
     <meta name="description" content="Organizing trails from OpenStreetMap">
     <meta
         name="viewport"

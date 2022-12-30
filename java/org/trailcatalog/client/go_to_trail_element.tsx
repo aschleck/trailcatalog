@@ -1,6 +1,6 @@
 import * as corgi from 'js/corgi';
 
-import { redirect } from './common/ssr_aware';
+import { redirectTo } from './common/ssr_aware';
 
 import { initialData } from './data';
 import { GoToTrailController, State } from './go_to_trail_controller';
@@ -22,7 +22,7 @@ export function GoToTrailElement({trailId}: {
   }
 
   if (state.trail) {
-    redirect(`/trail/${state.trail.readable_id}`);
+    redirectTo(`/trail/${state.trail.readable_id}`);
     return <>
       <a href={`/trail/${state.trail.readable_id}`}>
         Click here if you are not automatically redirected

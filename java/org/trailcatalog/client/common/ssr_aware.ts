@@ -16,7 +16,8 @@ declare global {
       currentUrl(): string;
       initialData<K extends InitialDataKey>(key: K): object|undefined;
       language(): string;
-      redirect(url: string): void;
+      redirectTo(url: string): void;
+      setTitle(title: string): void;
     };
   }
 }
@@ -46,14 +47,22 @@ export function getLanguage(): string {
   return window.SERVER_SIDE_RENDER?.language() ?? window.navigator.language;
 }
 
-export function redirect(url: string): void {
+export function redirectTo(url: string): void {
   if (window.SERVER_SIDE_RENDER) {
-    window.SERVER_SIDE_RENDER.redirect(url);
+    window.SERVER_SIDE_RENDER.redirectTo(url);
   } else {
     fetchDeps({
       services: {history: HistoryService},
     }).then(deps => {
       deps.services.history.replaceTo(url);
     });
+  }
+}
+
+export function setTitle(title: string): void {
+  if (window.SERVER_SIDE_RENDER) {
+    window.SERVER_SIDE_RENDER.setTitle(title);
+  } else {
+    document.title = title;
   }
 }
