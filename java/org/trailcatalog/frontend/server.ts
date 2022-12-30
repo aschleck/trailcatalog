@@ -94,7 +94,7 @@ server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
 
   const redirectUrl = requestContext.get('redirectTo');
   if (redirectUrl) {
-    reply.redirect(302, redirectUrl);
+    reply.redirect(302, encodeURI(redirectUrl));
   }
 
   reply.type('text/html').code(200);
