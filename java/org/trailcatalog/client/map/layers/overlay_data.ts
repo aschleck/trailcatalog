@@ -80,6 +80,7 @@ export class OverlayData extends Layer {
         this.lines.push({
           colorFill: BOUNDARY_PALETTE.fill,
           colorStroke: BOUNDARY_PALETTE.stroke,
+          stipple: false,
           vertices,
         });
       }

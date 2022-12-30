@@ -82,8 +82,9 @@ export declare namespace nativebootstrap {
 
 export declare namespace org.trailcatalog.s2 {
   class SimpleS2 {
-    static HIGHEST_METADATA_INDEX_LEVEL: number;
-    static HIGHEST_DETAIL_INDEX_LEVEL: number;
+    static HIGHEST_OVERVIEW_INDEX_LEVEL: number;
+    static HIGHEST_COARSE_INDEX_LEVEL: number;
+    static HIGHEST_FINE_INDEX_LEVEL: number;
     static cellLevel(id: nativebootstrap.Long): number;
     static cover(viewport: com.google.common.geometry.S2LatLngRect, deepest: number):
         java.util.ArrayList<com.google.common.geometry.S2CellId>;

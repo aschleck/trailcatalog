@@ -3,7 +3,14 @@ import { checkExists } from 'js/common/asserts';
 import { Line } from './geometry';
 import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 
-export const VERTEX_STRIDE = (4 + 4 + 3) * 4;
+// We write the stipple with 4 bytes to keep the 32bit numbers aligned.
+export const VERTEX_STRIDE =
+    4 * (
+        4 + 4 + 2
+            + /* distanceAlong= */ 1
+            + /* radius= */ 1
+            + /* stipple= */ 1
+    );
 
 interface LineDrawable {
   bytes: number;
@@ -27,11 +34,18 @@ export class LineProgram extends Program<LineProgramData> {
                 ]));
   }
 
-  plan(lines: Line[], radius: number, vertices: Float32Array, uints: Uint32Array): LineDrawable {
+  plan(lines: Line[], radius: number, buffer: ArrayBuffer, offset: number): LineDrawable {
+    const floats = new Float32Array(buffer, offset);
+    // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
+    // canonicalization. So we have to write them as uints to the same buffer.
+    const uint32s = new Uint32Array(buffer, offset);
+
     let vertexOffset = 0;
     const stride = VERTEX_STRIDE / 4;
     for (const line of lines) {
+      // TODO(april): do we need this precision?
       const doubles = line.vertices;
+      let distanceAlong = 0;
       for (let i = 0; i < doubles.length - 2; i += 2) {
         const x = doubles[i + 0];
         const y = doubles[i + 1];
@@ -40,25 +54,28 @@ export class LineProgram extends Program<LineProgramData> {
 
         const xF = Math.fround(x);
         const xR = x - xF;
-        vertices[vertexOffset + 0] = xF;
-        vertices[vertexOffset + 1] = xR;
+        floats[vertexOffset + 0] = xF;
+        floats[vertexOffset + 1] = xR;
         const yF = Math.fround(y);
         const yR = y - yF;
-        vertices[vertexOffset + 2] = yF;
-        vertices[vertexOffset + 3] = yR;
+        floats[vertexOffset + 2] = yF;
+        floats[vertexOffset + 3] = yR;
         const xpF = Math.fround(xp);
         const xpR = xp - xpF;
-        vertices[vertexOffset + 4] = xpF;
-        vertices[vertexOffset + 5] = xpR;
+        floats[vertexOffset + 4] = xpF;
+        floats[vertexOffset + 5] = xpR;
         const ypF = Math.fround(yp);
         const ypR = yp - ypF;
-        vertices[vertexOffset + 6] = ypF;
-        vertices[vertexOffset + 7] = ypR;
+        floats[vertexOffset + 6] = ypF;
+        floats[vertexOffset + 7] = ypR;
 
-        uints[vertexOffset + 8] = line.colorFill;
-        uints[vertexOffset + 9] = line.colorStroke;
-        vertices[vertexOffset + 10] = radius;
+        uint32s[vertexOffset + 8] = line.colorFill;
+        uint32s[vertexOffset + 9] = line.colorStroke;
+        floats[vertexOffset + 10] = distanceAlong;
+        floats[vertexOffset + 11] = radius;
+        uint32s[vertexOffset + 12] = line.stipple ? 1 : 0;
 
+        distanceAlong += Math.sqrt((xp - x) * (xp - x) + (yp - y) * (yp - y));
         vertexOffset += stride;
       }
     }
@@ -92,8 +109,12 @@ export class LineProgram extends Program<LineProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.previous, 1);
     gl.enableVertexAttribArray(this.program.attributes.next);
     gl.vertexAttribDivisor(this.program.attributes.next, 1);
+    gl.enableVertexAttribArray(this.program.attributes.distanceAlong);
+    gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 1);
     gl.enableVertexAttribArray(this.program.attributes.radius);
     gl.vertexAttribDivisor(this.program.attributes.radius, 1);
+    gl.enableVertexAttribArray(this.program.attributes.stipple);
+    gl.vertexAttribDivisor(this.program.attributes.stipple, 1);
   }
 
   protected bind(offset: number): void {
@@ -128,12 +149,25 @@ export class LineProgram extends Program<LineProgramData> {
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 16);
     gl.vertexAttribPointer(
-        this.program.attributes.radius,
+        this.program.attributes.distanceAlong,
         1,
         gl.FLOAT,
         /* normalize= */ false,
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 40);
+    gl.vertexAttribPointer(
+        this.program.attributes.radius,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 44);
+    gl.vertexAttribIPointer(
+        this.program.attributes.stipple,
+        1,
+        gl.UNSIGNED_INT,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 48);
   }
 
   protected draw(drawable: Drawable): void {
@@ -170,8 +204,12 @@ export class LineProgram extends Program<LineProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.previous);
     gl.vertexAttribDivisor(this.program.attributes.next, 0);
     gl.disableVertexAttribArray(this.program.attributes.next);
+    gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 0);
+    gl.disableVertexAttribArray(this.program.attributes.distanceAlong);
     gl.vertexAttribDivisor(this.program.attributes.radius, 0);
     gl.disableVertexAttribArray(this.program.attributes.radius);
+    gl.vertexAttribDivisor(this.program.attributes.stipple, 0);
+    gl.disableVertexAttribArray(this.program.attributes.stipple);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
     gl.disable(gl.STENCIL_TEST);
@@ -182,10 +220,12 @@ interface LineProgramData extends ProgramData {
   attributes: {
     colorFill: number;
     colorStroke: number;
+    distanceAlong: number;
     next: number;
     position: number;
     previous: number;
     radius: number;
+    stipple: number;
   };
   uniforms: {
     cameraCenter: WebGLUniformLocation;
@@ -214,12 +254,18 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
       in highp float colorFill;
       in highp float colorStroke;
+      // A distance in Mercator coordinates
+      in highp float distanceAlong;
       // This is a radius in pixels
       in highp float radius;
+      // We treat this as a boolean for now
+      in uint stipple;
 
       out lowp vec4 fragColorFill;
       out lowp vec4 fragColorStroke;
+      out lowp float fragDistanceAlong;
       out lowp float fragRadius;
+      out lowp float fragStipple;
       out lowp float fragDistanceOrtho;
 
       ${COLOR_OPERATIONS}
@@ -236,8 +282,12 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
-        fragRadius = radius;
+        // We want to avoid stipples "dancing" as zoom changes, so we make this more of a step
+        // change.
+        fragDistanceAlong = exp2(floor(2. * log2(halfWorldSize)) / 2.) * (distanceAlong + position.x * magnitude64(direction));
         fragDistanceOrtho = position.y * actualRadius;
+        fragRadius = radius;
+        fragStipple = stipple > 0u ? 0.5 : 1.0;
       }
     `;
   const fs = `#version 300 es
@@ -245,15 +295,18 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
-      in lowp float fragRadius;
+      in lowp float fragDistanceAlong;
       in lowp float fragDistanceOrtho;
+      in lowp float fragRadius;
+      in lowp float fragStipple;
 
       out lowp vec4 fragColor;
 
       void main() {
         mediump float o = abs(fragDistanceOrtho);
         lowp float blend = min(max(0., o - 2.), 1.);
-        lowp vec4 color = mix(fragColorFill, fragColorStroke, blend);
+        lowp float stipple = fract(fragDistanceAlong / 8.) < fragStipple ? 1. : 0.;
+        lowp vec4 color = stipple * mix(fragColorFill, fragColorStroke, blend);
         fragColor = vec4(color.rgb, color.a * (1. - clamp(o - 3., 0., 1.)));
       }
   `;
@@ -289,7 +342,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       next: checkExists(gl.getAttribLocation(programId, 'next')),
       position: checkExists(gl.getAttribLocation(programId, 'position')),
       previous: checkExists(gl.getAttribLocation(programId, 'previous')),
+      distanceAlong: checkExists(gl.getAttribLocation(programId, 'distanceAlong')),
       radius: checkExists(gl.getAttribLocation(programId, 'radius')),
+      stipple: checkExists(gl.getAttribLocation(programId, 'stipple')),
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),

@@ -48,6 +48,8 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.previous, 1);
     gl.enableVertexAttribArray(this.program.attributes.radius);
     gl.vertexAttribDivisor(this.program.attributes.radius, 1);
+    gl.enableVertexAttribArray(this.program.attributes.stipple);
+    gl.vertexAttribDivisor(this.program.attributes.stipple, 1);
   }
 
   protected bind(offset: number): void {
@@ -88,7 +90,13 @@ export class LineCapProgram extends Program<LineCapProgramData> {
         gl.FLOAT,
         /* normalize= */ false,
         VERTEX_STRIDE,
-        /* offset= */ offset + 40);
+        /* offset= */ offset + 44);
+    gl.vertexAttribIPointer(
+        this.program.attributes.stipple,
+        1,
+        gl.UNSIGNED_INT,
+        VERTEX_STRIDE,
+        /* offset= */ offset + 48);
   }
 
   protected draw(drawable: Drawable): void {
@@ -133,6 +141,8 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.previous);
     gl.vertexAttribDivisor(this.program.attributes.radius, 0);
     gl.disableVertexAttribArray(this.program.attributes.radius);
+    gl.vertexAttribDivisor(this.program.attributes.stipple, 0);
+    gl.disableVertexAttribArray(this.program.attributes.stipple);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.useProgram(null);
     gl.disable(gl.STENCIL_TEST);
@@ -147,6 +157,7 @@ interface LineCapProgramData extends ProgramData {
     position: number;
     previous: number;
     radius: number;
+    stipple: number;
   };
   uniforms: {
     cameraCenter: WebGLUniformLocation;
@@ -179,11 +190,14 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       in highp float colorStroke;
       // This is a radius in pixels
       in highp float radius;
+      // We treat this as a boolean for now
+      in uint stipple;
 
       out lowp vec4 fragColorFill;
       out lowp vec4 fragColorStroke;
-      out lowp float fragRadius;
       out lowp float fragDistanceOrtho;
+      out lowp float fragRadius;
+      out lowp float fragStipple;
 
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
@@ -199,8 +213,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
-        fragRadius = radius;
         fragDistanceOrtho = gl_VertexID == 0 ? 0. : actualRadius;
+        fragRadius = radius;
+        fragStipple = stipple > 0u ? 0. : 1.;
       }
     `;
   const fs = `#version 300 es
@@ -209,8 +224,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
 
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
-      in lowp float fragRadius;
       in lowp float fragDistanceOrtho;
+      in lowp float fragRadius;
+      in lowp float fragStipple;
 
       out lowp vec4 fragColor;
 
@@ -218,7 +234,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
         mediump float o = abs(fragDistanceOrtho);
         lowp float blend = min(max(0., o - 2.), 1.);
         lowp vec4 color = mix(fragColorFill, fragColorStroke, blend);
-        fragColor = vec4(color.rgb, color.a * (1. - clamp(o - 3., 0., 1.)));
+        // This shader doesn't play well with stipples, so turn it off when stippling.
+        lowp float stipple = fragStipple >= 1. ? 1. : 0.;
+        fragColor = stipple * vec4(color.rgb, color.a * (1. - clamp(o - 3., 0., 1.)));
       }
   `;
 
@@ -255,6 +273,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       position: checkExists(gl.getAttribLocation(programId, 'position')),
       previous: checkExists(gl.getAttribLocation(programId, 'previous')),
       radius: checkExists(gl.getAttribLocation(programId, 'radius')),
+      stipple: checkExists(gl.getAttribLocation(programId, 'stipple')),
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),

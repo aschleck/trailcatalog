@@ -14,7 +14,7 @@ import { Camera, projectLatLngRect } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
 import { RenderableDiamond, RenderableText, TextRenderer } from '../rendering/text_renderer';
-import { DETAIL_ZOOM_THRESHOLD, PIN_CELL_ID } from '../../workers/data_constants';
+import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../../workers/data_constants';
 
 import { Layer } from './layer';
 
@@ -42,7 +42,6 @@ interface TrailHandle {
 
 type Handle = PathHandle|TrailHandle;
 
-const RENDER_PATHS_ZOOM_THRESHOLD = 10;
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 
 const TRAIL_DIAMOND_REGULAR =
@@ -54,8 +53,11 @@ const CLICK_RADIUS_PX = 35 * DPI;
 
 export class MapData extends Layer {
 
-  private readonly metadataBounds: BoundsQuadtree<Handle>;
-  private readonly detailBounds: BoundsQuadtree<Handle>;
+  // A note on bounds: we load trails into all quadtrees because trail pins have different sizes at
+  // different zooms.
+  private readonly overviewBounds: BoundsQuadtree<Handle>;
+  private readonly coarseBounds: BoundsQuadtree<Handle>;
+  private readonly fineBounds: BoundsQuadtree<Handle>;
   private readonly diamondPixelBounds: Vec4;
   private readonly active: Set<bigint>;
   private readonly hover: Set<bigint>;
@@ -68,8 +70,9 @@ export class MapData extends Layer {
       private readonly textRenderer: TextRenderer,
   ) {
     super();
-    this.metadataBounds = worldBounds();
-    this.detailBounds = worldBounds();
+    this.overviewBounds = worldBounds();
+    this.coarseBounds = worldBounds();
+    this.fineBounds = worldBounds();
 
     this.dataService.setListener(this);
     this.registerDisposer(() => {
@@ -125,7 +128,7 @@ export class MapData extends Layer {
     let bestDistance2 = (7 * screenToWorldPx) * (7 * screenToWorldPx);
     for (const handle of near) {
       let d2 = Number.MAX_VALUE;
-      if (handle.entity instanceof Path && this.camera.zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
+      if (handle.entity instanceof Path && this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
         const pathHandle = handle as PathHandle;
         d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
       } else if (handle.entity instanceof Trail) {
@@ -219,83 +222,49 @@ export class MapData extends Layer {
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     if (this.showDetail(zoom)) {
-      this.planDetailed(viewportSize, zoom, planner);
-    } else {
-      this.planSparse(viewportSize, planner);
+      if (this.showFine(zoom)) {
+        this.planFine(viewportSize, planner);
+      } else {
+        this.planCoarse(viewportSize, planner);
+      }
     }
+
+    this.planOverview(viewportSize, zoom, planner);
     this.planPins(zoom, planner);
   }
 
-  private planDetailed(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
-    const cells = this.detailCellsInView(viewportSize);
-    const lines: Line[] = [];
-    const raised: Line[] = [];
+  private planCoarse(viewportSize: Vec2, planner: RenderPlanner): void {
+    const cells = this.coarseCellsInView(viewportSize);
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
-      const buffer = this.dataService.detailCells.get(id);
-      if (!buffer) {
-        // Kind of weird we have to check has too, but we write undefined into this map when there
-        // is no data so we need to verify we haven't fetched nil before falling back to sparse.
-        if (!this.dataService.detailCells.has(id)) {
-          this.planSparseCell(id, planner);
+      const buffer = this.dataService.coarseCells.get(id);
+      if (buffer !== undefined) {
+        if (buffer) {
+          this.planCoarseCell(buffer, planner);
         }
-        continue;
-      }
-
-      const data = new LittleEndianView(buffer);
-
-      const pathCount = data.getVarInt32();
-      for (let i = 0; i < pathCount; ++i) {
-        const id = data.getVarBigInt64();
-
-        if (zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
-          data.getVarInt32();
-          const pathVertexCount = data.getVarInt32();
-          data.align(4);
-          this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
-        } else {
-          data.getVarInt32();
-          const pathVertexCount = data.getVarInt32();
-          data.align(4);
-          data.skip(pathVertexCount * 4);
+      } else {
+        const fallback = this.dataService.fineCells.get(id);
+        if (fallback) {
+          this.planFineCell(fallback, planner);
         }
       }
+    }
+  }
 
-      const trailCount = data.getVarInt32();
-      for (let i = 0; i < trailCount; ++i) {
-        const id = data.getVarBigInt64();
-        const nameLength = data.getVarInt32();
-        data.skip(nameLength);
-        const type = data.getVarInt32();
-        const trailWayCount = data.getVarInt32();
-        data.align(8);
-        data.skip(trailWayCount * 8 + 4 * 4);
-        const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-        const markerPx = projectLatLng(marker);
-        data.skip(2 * 4);
-        const lengthMeters = data.getFloat32();
+  private planCoarseCell(buffer: ArrayBuffer, planner: RenderPlanner): void {
+    const data = new LittleEndianView(buffer);
 
-        if (this.filters.trail && !this.filters.trail(id)) {
-          continue;
-        }
+    const pathCount = data.getVarInt32();
+    const lines: Line[] = [];
+    const raised: Line[] = [];
+    for (let i = 0; i < pathCount; ++i) {
+      const id = data.getVarBigInt64();
 
-        const active = this.active.has(id);
-        const hover = this.hover.has(id);
-        const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
-        const fill =
-            hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
-        const stroke =
-            hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
-        if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
-          this.textRenderer.planText(
-              renderableTrailPin(lengthMeters, fill, stroke), markerPx, z, planner);
-        } else if (active || hover) {
-          this.textRenderer.planDiamond(renderableDiamond(fill, stroke), markerPx, z, planner);
-        } else {
-          this.textRenderer.planDiamond(TRAIL_DIAMOND_REGULAR, markerPx, z, planner);
-        }
-      }
+      data.getVarInt32();
+      const pathVertexCount = data.getVarInt32();
+      data.align(4);
+      this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
     }
 
     if (lines.length > 0) {
@@ -306,17 +275,59 @@ export class MapData extends Layer {
     }
   }
 
-  private planSparse(viewportSize: Vec2, planner: RenderPlanner): void {
-    const cells = this.metadataCellsInView(viewportSize);
+  private planFine(viewportSize: Vec2, planner: RenderPlanner): void {
+    const cells = this.fineCellsInView(viewportSize);
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
-      this.planSparseCell(id, planner);
+      const buffer = this.dataService.fineCells.get(id);
+      if (buffer !== undefined) {
+        if (buffer) {
+          this.planFineCell(buffer, planner);
+        }
+      } else {
+        const fallback = this.dataService.coarseCells.get(id);
+        if (fallback) {
+          this.planCoarseCell(fallback, planner);
+        }
+      }
     }
   }
 
-  private planSparseCell(id: S2CellNumber, planner: RenderPlanner): void {
-    const buffer = this.dataService.metadataCells.get(id);
+  private planFineCell(buffer: ArrayBuffer, planner: RenderPlanner): void {
+    const data = new LittleEndianView(buffer);
+
+    const pathCount = data.getVarInt32();
+    const lines: Line[] = [];
+    const raised: Line[] = [];
+    for (let i = 0; i < pathCount; ++i) {
+      const id = data.getVarBigInt64();
+
+      data.getVarInt32();
+      const pathVertexCount = data.getVarInt32();
+      data.align(4);
+      this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
+    }
+
+    if (lines.length > 0) {
+      planner.addLines(lines, PATH_RADIUS_PX, 0);
+    }
+    if (raised.length > 0) {
+      planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
+    }
+  }
+
+  private planOverview(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+    const cells = this.overviewCellsInView(viewportSize);
+
+    for (const cell of cells) {
+      const id = reinterpretLong(cell.id()) as S2CellNumber;
+      this.planOverviewCell(id, zoom, planner);
+    }
+  }
+
+  private planOverviewCell(id: S2CellNumber, zoom: number, planner: RenderPlanner): void {
+    const buffer = this.dataService.overviewCells.get(id);
     if (!buffer) {
       return;
     }
@@ -329,6 +340,9 @@ export class MapData extends Layer {
       const nameLength = data.getVarInt32();
       data.skip(nameLength);
       const type = data.getVarInt32();
+      const pathCount = data.getVarInt32();
+      data.align(8);
+      data.skip(8 * pathCount);
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const markerPx = projectLatLng(marker);
       data.skip(2 * 4);
@@ -346,17 +360,19 @@ export class MapData extends Layer {
       const stroke =
           hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
       let diamond;
-      if (active || hover) {
-        diamond = renderableDiamond(fill, stroke);
+      if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
+        this.textRenderer.planText(
+            renderableTrailPin(lengthMeters, fill, stroke), markerPx, z, planner);
+      } else if (active || hover) {
+        this.textRenderer.planDiamond(renderableDiamond(fill, stroke), markerPx, z, planner);
       } else {
-        diamond = TRAIL_DIAMOND_REGULAR;
+        this.textRenderer.planDiamond(TRAIL_DIAMOND_REGULAR, markerPx, z, planner);
       }
-      this.textRenderer.planDiamond(diamond, markerPx, z, planner);
     }
   }
 
   private planPins(zoom: number, planner: RenderPlanner): void {
-    const buffer = this.dataService.detailCells.get(PIN_CELL_ID);
+    const buffer = this.dataService.coarseCells.get(PIN_CELL_ID);
     if (!buffer) {
       return;
     }
@@ -372,7 +388,7 @@ export class MapData extends Layer {
       const type = data.getVarInt32();
       const pathVertexCount = data.getVarInt32();
       data.align(4);
-      if (this.dataService.paths.has(id) && zoom >= RENDER_PATHS_ZOOM_THRESHOLD) {
+      if (this.dataService.paths.has(id) && zoom >= COARSE_ZOOM_THRESHOLD) {
         data.skip(pathVertexCount * 4);
       } else {
         this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
@@ -390,6 +406,7 @@ export class MapData extends Layer {
   private pushPath(id: bigint, vertices: Float32Array, lines: Line[], raised: Line[]): void {
     const active = this.active.has(id);
     const hover = this.hover.has(id);
+    const onTrail = this.dataService.pathsToTrails.has(id);
     const buffer = active || hover ? raised : lines;
     const fill =
         hover ? HOVER_PALETTE.fill : active ? ACTIVE_PALETTE.fill : DEFAULT_PALETTE.fill;
@@ -398,16 +415,21 @@ export class MapData extends Layer {
     buffer.push({
       colorFill: fill,
       colorStroke: stroke,
+      stipple: !onTrail,
       vertices: vertices,
     });
   }
 
-  private detailCellsInView(viewportSize: Vec2): S2CellId[] {
-    return this.cellsInView(viewportSize, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL);
+  private coarseCellsInView(viewportSize: Vec2): S2CellId[] {
+    return this.cellsInView(viewportSize, SimpleS2.HIGHEST_COARSE_INDEX_LEVEL);
   }
 
-  private metadataCellsInView(viewportSize: Vec2): S2CellId[] {
-    return this.cellsInView(viewportSize, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
+  private fineCellsInView(viewportSize: Vec2): S2CellId[] {
+    return this.cellsInView(viewportSize, SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
+  }
+
+  private overviewCellsInView(viewportSize: Vec2): S2CellId[] {
+    return this.cellsInView(viewportSize, SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL);
   }
 
   private cellsInView(viewportSize: Vec2, deepest: number): S2CellId[] {
@@ -422,33 +444,30 @@ export class MapData extends Layer {
     return cells;
   }
 
-  loadMetadata(trails: Iterable<Trail>): void {
+  loadOverviewCell(trails: Iterable<Trail>): void {
     for (const trail of trails) {
-      this.metadataBounds.insert({
+      this.overviewBounds.insert({
         entity: trail,
         markerPx: trail.markerPx,
         screenPixelBound: this.diamondPixelBounds,
       }, trail.mouseBound);
     }
 
-    this.lastChange = Date.now();
-  }
-
-  loadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void {
-    this.lastChange = Date.now();
-
-    for (const path of paths) {
-      this.detailBounds.insert({
-        entity: path,
-        line: path.line,
-      }, path.bound);
-    }
-
     for (const trail of trails) {
       const detailScreenPixelSize =
           this.textRenderer.measureText(renderableTrailPin(trail.lengthMeters, 'unused', 'unused'));
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
-      this.detailBounds.insert({
+      this.coarseBounds.insert({
+        entity: trail,
+        markerPx: trail.markerPx,
+        screenPixelBound: [
+          -halfDetailWidth,
+          0,
+          halfDetailWidth,
+          detailScreenPixelSize[1],
+        ],
+      }, trail.mouseBound);
+      this.fineBounds.insert({
         entity: trail,
         markerPx: trail.markerPx,
         screenPixelBound: [
@@ -459,38 +478,77 @@ export class MapData extends Layer {
         ],
       }, trail.mouseBound);
     }
+
+    this.lastChange = Date.now();
+  }
+
+  loadCoarseCell(paths: Iterable<Path>): void {
+    this.lastChange = Date.now();
+
+    for (const path of paths) {
+      this.coarseBounds.insert({
+        entity: path,
+        line: path.line,
+      }, path.bound);
+    }
+  }
+
+  loadFineCell(paths: Iterable<Path>): void {
+    this.lastChange = Date.now();
+
+    for (const path of paths) {
+      this.fineBounds.insert({
+        entity: path,
+        line: path.line,
+      }, path.bound);
+    }
   }
 
   loadPinned(): void {
     this.lastChange = Date.now();
   }
 
-  unloadDetail(paths: Iterable<Path>, trails: Iterable<Trail>): void {
+  unloadCoarseCell(paths: Iterable<Path>): void {
     for (const path of paths) {
-      this.detailBounds.delete(path.bound);
-    }
-
-    for (const trail of trails) {
-      this.detailBounds.delete(trail.mouseBound);
+      this.coarseBounds.delete(path.bound);
     }
   }
 
-  unloadMetadata(trails: Iterable<Trail>): void {
+  unloadFineCell(paths: Iterable<Path>): void {
+    for (const path of paths) {
+      this.fineBounds.delete(path.bound);
+    }
+  }
+
+  unloadOverviewCell(trails: Iterable<Trail>): void {
     for (const trail of trails) {
-      this.metadataBounds.delete(trail.mouseBound);
+      this.overviewBounds.delete(trail.mouseBound);
+      this.coarseBounds.delete(trail.mouseBound);
+      this.fineBounds.delete(trail.mouseBound);
     }
   }
 
   private getActiveBounds(): BoundsQuadtree<Handle> {
-    if (this.showDetail(this.camera.zoom)) {
-      return this.detailBounds;
+    // TODO(april): ideally we would query both fine and coarse because they may have different
+    // content, but that's annoying.
+    const zoom = this.camera.zoom;
+    if (this.showDetail(zoom)) {
+      if (this.showFine(zoom)) {
+        return this.fineBounds;
+      } else {
+        return this.coarseBounds;
+      }
     } else {
-      return this.metadataBounds;
+      return this.overviewBounds;
     }
   }
 
   private showDetail(zoom: number): boolean {
-    return zoom >= DETAIL_ZOOM_THRESHOLD;
+    return zoom >= COARSE_ZOOM_THRESHOLD;
+  }
+
+  private showFine(zoom: number): boolean {
+    return zoom >= FINE_ZOOM_THRESHOLD;
   }
 }
 

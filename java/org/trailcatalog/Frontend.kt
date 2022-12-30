@@ -35,9 +35,10 @@ private val startTime = Instant.now().getEpochSecond() % 10000 // make it shorte
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)
   app.post("/api/data", ::fetchData)
-  app.post("/api/data_packed", ::fetchDataPacked)
-  app.get("/api/fetch_metadata/{token}", ::fetchMeta)
-  app.get("/api/fetch_detail/{token}", ::fetchDetail)
+  app.post("/api/data-packed", ::fetchDataPacked)
+  app.get("/api/fetch-overview/{token}", ::fetchOverview)
+  app.get("/api/fetch-coarse/{token}", ::fetchCoarse)
+  app.get("/api/fetch-fine/{token}", ::fetchFine)
 }
 
 private data class WireBoundary(val id: Long, val type: Int, val name: String)
@@ -459,7 +460,7 @@ private fun fetchBoundaries(requiredBoundaries: HashSet<Long>): Map<String, Any>
   return boundaries;
 }
 
-private fun fetchMeta(ctx: Context) {
+private fun fetchOverview(ctx: Context) {
   ctx.contentType("application/octet-stream")
   if (addETagAndCheckCached(ctx)) {
     return
@@ -468,7 +469,7 @@ private fun fetchMeta(ctx: Context) {
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
 
   val trails =
-      fetchTrails(cell, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL, /* includePaths= */ false)
+      fetchTrails(cell, SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL, /* includePaths= */ true)
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
 
@@ -479,15 +480,20 @@ private fun fetchMeta(ctx: Context) {
     output.writeVarInt(asUtf8.size)
     output.write(asUtf8)
     output.writeVarInt(trail.type)
+    output.writeVarInt(trail.pathIds.size / 8)
+    output.flush()
+    bytes.align(8)
+    output.write(trail.pathIds)
     output.write(trail.marker)
     output.writeFloat(trail.elevationDownMeters)
     output.writeFloat(trail.elevationUpMeters)
     output.writeFloat(trail.lengthMeters)
   }
+
   ctx.result(bytes.toByteArray())
 }
 
-private fun fetchDetail(ctx: Context) {
+private fun fetchCoarse(ctx: Context) {
   ctx.contentType("application/octet-stream")
   if (addETagAndCheckCached(ctx)) {
     return
@@ -495,10 +501,9 @@ private fun fetchDetail(ctx: Context) {
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
 
-  // Does this still need to be a hashmap? Why?
-  val paths = HashMap<Long, WirePath>()
+  val paths = ArrayList<WirePath>()
   connectionSource.connection.use {
-    val query = if (cell.level() >= SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL) {
+    val query = if (cell.level() >= SimpleS2.HIGHEST_COARSE_INDEX_LEVEL) {
       it.prepareStatement(
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
@@ -533,21 +538,72 @@ private fun fetchDetail(ctx: Context) {
     val results = query.executeQuery()
     while (results.next()) {
       val id = results.getLong(1)
-      if (!paths.containsKey(id)) {
-        paths[id] = WirePath(
-            id = id,
-            type = results.getInt(2),
-            vertices = project(results.getBytes(3)),
-        )
-      }
+      paths.add(
+          WirePath(
+              id = id,
+              type = results.getInt(2),
+              vertices = project(results.getBytes(3)),
+          ))
     }
   }
-
-  val trails = fetchTrails(cell, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL, /* includePaths= */ true)
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
   writeDetailPaths(paths, bytes, output)
-  writeDetailTrails(trails, bytes, output)
+  ctx.result(bytes.toByteArray())
+}
+
+private fun fetchFine(ctx: Context) {
+  ctx.contentType("application/octet-stream")
+  if (addETagAndCheckCached(ctx)) {
+    return
+  }
+
+  val cell = S2CellId.fromToken(ctx.pathParam("token"))
+
+  val paths = ArrayList<WirePath>()
+  connectionSource.connection.use {
+    val query = if (cell.level() >= SimpleS2.HIGHEST_FINE_INDEX_LEVEL) {
+      it.prepareStatement(
+          "SELECT p.id, p.type, p.lat_lng_degrees "
+              + "FROM paths p "
+              + "WHERE "
+              + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?))"
+              + "AND p.epoch = ? "
+      ).apply {
+        val min = cell.rangeMin()
+        val max = cell.rangeMax()
+        setLong(1, min.id())
+        setLong(2, max.id())
+        setLong(3, min.id() + Long.MIN_VALUE)
+        setLong(4, max.id() + Long.MIN_VALUE)
+        setInt(5, epochTracker.epoch)
+      }
+    } else {
+      it.prepareStatement(
+          "SELECT p.id, p.type, p.lat_lng_degrees "
+              + "FROM paths p "
+              + "WHERE "
+              + "p.cell = ? "
+              + "AND p.epoch = ? "
+      ).apply {
+        setLong(1, cell.id())
+        setInt(2, epochTracker.epoch)
+      }
+    }
+    val results = query.executeQuery()
+    while (results.next()) {
+      val id = results.getLong(1)
+      paths.add(
+          WirePath(
+              id = id,
+              type = results.getInt(2),
+              vertices = project(results.getBytes(3)),
+          ))
+    }
+  }
+  val bytes = AlignableByteArrayOutputStream()
+  val output = DelegatingEncodedOutputStream(bytes)
+  writeDetailPaths(paths, bytes, output)
   ctx.result(bytes.toByteArray())
 }
 
@@ -600,7 +656,7 @@ private fun fetchDataPacked(ctx: Context) {
     )
   }
 
-  val paths = HashMap<Long, WirePath>()
+  val paths = ArrayList<WirePath>()
   connectionSource.connection.use {
     val results = it.prepareStatement(
         "SELECT p.id, p.type, p.lat_lng_degrees "
@@ -616,14 +672,14 @@ private fun fetchDataPacked(ctx: Context) {
 
     while (results.next()) {
       val id = results.getLong(1)
-      paths[id] =
+      paths.add(
           WirePath(
               id = id,
               type = results.getInt(2),
               vertices = results.getBytes(3).let {
                 if (precise) project(it) else projectSimplified(it)
               }
-          )
+          ))
     }
   }
 
@@ -635,11 +691,11 @@ private fun fetchDataPacked(ctx: Context) {
 }
 
 private fun writeDetailPaths(
-    paths: Map<Long, WirePath>,
+    paths: List<WirePath>,
     bytes: AlignableByteArrayOutputStream,
     output: DelegatingEncodedOutputStream) {
   output.writeVarInt(paths.size)
-  for (path in paths.values) {
+  for (path in paths) {
     output.writeVarLong(path.id)
     output.writeVarInt(path.type)
     output.writeVarInt(path.vertices.size / 4)

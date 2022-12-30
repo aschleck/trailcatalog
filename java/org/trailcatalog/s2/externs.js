@@ -79,8 +79,9 @@ goog.exportProperty(Long.prototype, 'getLowBits', Long.prototype.getLowBits);
 
 const SimpleS2 = goog.require('org.trailcatalog.s2.SimpleS2');
 goog.exportSymbol('org.trailcatalog.s2.SimpleS2', SimpleS2);
-goog.exportProperty(SimpleS2, 'HIGHEST_METADATA_INDEX_LEVEL', SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
-goog.exportProperty(SimpleS2, 'HIGHEST_DETAIL_INDEX_LEVEL', SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL);
+goog.exportProperty(SimpleS2, 'HIGHEST_COARSE_INDEX_LEVEL', SimpleS2.HIGHEST_COARSE_INDEX_LEVEL);
+goog.exportProperty(SimpleS2, 'HIGHEST_FINE_INDEX_LEVEL', SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
+goog.exportProperty(SimpleS2, 'HIGHEST_OVERVIEW_INDEX_LEVEL', SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL);
 goog.exportProperty(SimpleS2, 'cellLevel', SimpleS2.cellLevel);
 goog.exportProperty(SimpleS2, 'cover', SimpleS2.cover);
 goog.exportProperty(SimpleS2, 'decodePolygon', SimpleS2.decodePolygon);

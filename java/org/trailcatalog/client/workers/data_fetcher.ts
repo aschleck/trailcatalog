@@ -5,7 +5,7 @@ import { checkExhaustive } from 'js/common/asserts';
 import { reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 
-import { DETAIL_ZOOM_THRESHOLD, PIN_CELL_ID } from './data_constants';
+import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from './data_constants';
 import { FetchThrottler } from './fetch_throttler';
 
 export interface SetPinsRequest {
@@ -27,14 +27,20 @@ export interface Viewport {
 
 type Request = SetPinsRequest|UpdateViewportRequest;
 
-export interface LoadCellDetailCommand {
-  type: 'lcd';
+export interface LoadCellCoarseCommand {
+  type: 'lcc';
   cell: S2CellNumber;
   data: ArrayBuffer;
 }
 
-export interface LoadCellMetadataCommand {
-  type: 'lcm';
+export interface LoadCellFineCommand {
+  type: 'lcf';
+  cell: S2CellNumber;
+  data: ArrayBuffer;
+}
+
+export interface LoadCellOverviewCommand {
+  type: 'lco';
   cell: S2CellNumber;
   data: ArrayBuffer;
 }
@@ -44,46 +50,56 @@ export interface UnloadCellsCommand {
   cells: S2CellNumber[];
 }
 
-export type FetcherCommand = LoadCellDetailCommand|LoadCellMetadataCommand|UnloadCellsCommand;
+export type FetcherCommand =
+    LoadCellCoarseCommand
+        |LoadCellFineCommand
+        |LoadCellOverviewCommand
+        |UnloadCellsCommand;
 
 class DataFetcher {
 
-  private readonly metadata: Set<S2CellNumber>;
-  private readonly metadataInFlight: Map<S2CellNumber, AbortController>;
-  private readonly detail: Set<S2CellNumber>;
-  private readonly detailInFlight: Map<S2CellNumber, AbortController>;
+  private readonly overview: Set<S2CellNumber>;
+  private readonly overviewInFlight: Map<S2CellNumber, AbortController>;
+  private readonly coarse: Set<S2CellNumber>;
+  private readonly coarseInFlight: Map<S2CellNumber, AbortController>;
+  private readonly fine: Set<S2CellNumber>;
+  private readonly fineInFlight: Map<S2CellNumber, AbortController>;
   private readonly throttler: FetchThrottler;
 
   constructor(
       private readonly mail:
           (response: FetcherCommand, transfer: Transferable[]) => void) {
-    this.metadata = new Set();
-    this.metadataInFlight = new Map();
-    this.detail = new Set();
-    this.detailInFlight = new Map();
+    this.overview = new Set();
+    this.overviewInFlight = new Map();
+    this.coarse = new Set();
+    this.coarseInFlight = new Map();
+    this.fine = new Set();
+    this.fineInFlight = new Map();
     this.throttler = new FetchThrottler();
   }
 
   flush(): void {
     this.mail({
       type: 'ucc',
-      cells: [...this.metadata, ...this.detail],
+      cells: [...this.overview, ...this.coarse, ...this.fine],
     }, []);
-    this.metadata.clear();
-    this.metadataInFlight.clear();
-    this.detail.clear();
-    this.detailInFlight.clear();
+    this.overview.clear();
+    this.overviewInFlight.clear();
+    this.coarse.clear();
+    this.coarseInFlight.clear();
+    this.fine.clear();
+    this.fineInFlight.clear();
   }
 
   setPins(pins: SetPinsRequest): void {
     const id = PIN_CELL_ID;
-    const inFlight = this.metadataInFlight.get(id);
+    const inFlight = this.overviewInFlight.get(id);
     if (inFlight) {
       inFlight.abort();
     }
 
     if (!pins.trail) {
-      this.metadataInFlight.delete(id);
+      this.overviewInFlight.delete(id);
       this.mail({
         type: 'ucc',
         cells: [id],
@@ -92,8 +108,8 @@ class DataFetcher {
     }
 
     const abort = new AbortController();
-    this.metadataInFlight.set(id, abort);
-    this.throttler.fetch(`/api/data_packed`, {
+    this.overviewInFlight.set(id, abort);
+    this.throttler.fetch(`/api/data-packed`, {
       method: 'POST',
       signal: abort.signal,
       body: JSON.stringify({
@@ -108,13 +124,14 @@ class DataFetcher {
       }
     })
     .then(data => {
-      this.metadataInFlight.delete(id);
+      this.overviewInFlight.delete(id);
       this.mail({
         type: 'ucc',
         cells: [id],
       }, []);
+      // TODO(april): weird we use overview for InFlight but then send this as coarse
       this.mail({
-        type: 'lcd',
+        type: 'lcc',
         cell: id,
         data,
       }, [data]);
@@ -124,74 +141,32 @@ class DataFetcher {
   updateViewport(bounds: S2LatLngRect, zoom: number): void {
     const used = new Set([PIN_CELL_ID]); // never cancel our pin request
 
-    if (zoom >= DETAIL_ZOOM_THRESHOLD) {
-      const detailCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_DETAIL_INDEX_LEVEL);
-      for (let i = 0; i < detailCellsInBound.size(); ++i) {
-        const cell = detailCellsInBound.getAtIndex(i);
-        const id = reinterpretLong(cell.id()) as S2CellNumber;
-        used.add(id);
-
-        if (this.detail.has(id) || this.detailInFlight.has(id)) {
-          continue;
-        }
-
-        const token = cell.toToken();
-        const abort = new AbortController();
-        this.detailInFlight.set(id, abort);
-
-        this.throttler.fetch(`/api/fetch_detail/${token}`, { signal: abort.signal })
-            .then(response => {
-              if (response.ok) {
-                return response.arrayBuffer();
-              } else {
-                throw new Error(`Failed to download detail for ${token}`);
-              }
-            })
-            .then(data => {
-              this.detail.add(id);
-              this.mail({
-                type: 'lcd',
-                cell: id,
-                data,
-              }, [data]);
-            })
-            .catch(e => {
-              if (e.name !== 'AbortError') {
-                throw e;
-              }
-            })
-            .finally(() => {
-              this.detailInFlight.delete(id);
-            });
-      }
-    }
-
-    const metadataCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_METADATA_INDEX_LEVEL);
-    for (let i = 0; i < metadataCellsInBound.size(); ++i) {
-      const cell = metadataCellsInBound.getAtIndex(i);
+    const overviewCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL);
+    for (let i = 0; i < overviewCellsInBound.size(); ++i) {
+      const cell = overviewCellsInBound.getAtIndex(i);
       const id = reinterpretLong(cell.id()) as S2CellNumber;
       used.add(id);
 
-      if (this.metadata.has(id) || this.metadataInFlight.has(id)) {
+      if (this.overview.has(id) || this.overviewInFlight.has(id)) {
         continue;
       }
 
       const token = cell.toToken();
       const abort = new AbortController();
-      this.metadataInFlight.set(id, abort);
+      this.overviewInFlight.set(id, abort);
 
-      this.throttler.fetch(`/api/fetch_metadata/${token}`, { signal: abort.signal })
+      this.throttler.fetch(`/api/fetch-overview/${token}`, { signal: abort.signal })
           .then(response => {
             if (response.ok) {
               return response.arrayBuffer();
             } else {
-              throw new Error(`Failed to download metadata for ${token}`);
+              throw new Error(`Failed to download overview for ${token}`);
             }
           })
           .then(data => {
-            this.metadata.add(id);
+            this.overview.add(id);
             this.mail({
-              type: 'lcm',
+              type: 'lco',
               cell: id,
               data,
             }, [data]);
@@ -202,34 +177,95 @@ class DataFetcher {
             }
           })
           .finally(() => {
-            this.metadataInFlight.delete(id);
+            this.overviewInFlight.delete(id);
           });
     }
 
-    for (const [id, abort] of this.detailInFlight) {
-      if (!used.has(id)) {
-        abort.abort();
-        this.detailInFlight.delete(id);
+    if (zoom >= COARSE_ZOOM_THRESHOLD) {
+      let command: 'lcc'|'lcf';
+      let depth: number;
+      let endpoint: string;
+      let destination: Set<S2CellNumber>;
+      let inFlight: Map<S2CellNumber, AbortController>;
+      if (zoom >= FINE_ZOOM_THRESHOLD) {
+        command = 'lcf';
+        depth = SimpleS2.HIGHEST_FINE_INDEX_LEVEL;
+        endpoint = 'fetch-fine';
+        destination = this.fine;
+        inFlight = this.fineInFlight;
+      } else {
+        command = 'lcc';
+        depth = SimpleS2.HIGHEST_COARSE_INDEX_LEVEL;
+        endpoint = 'fetch-coarse';
+        destination = this.coarse;
+        inFlight = this.coarseInFlight;
+      }
+
+      const detailCellsInBound = SimpleS2.cover(bounds, depth);
+      for (let i = 0; i < detailCellsInBound.size(); ++i) {
+        const cell = detailCellsInBound.getAtIndex(i);
+        const id = reinterpretLong(cell.id()) as S2CellNumber;
+        used.add(id);
+
+        if (destination.has(id) || inFlight.has(id)) {
+          continue;
+        }
+
+        const token = cell.toToken();
+        const abort = new AbortController();
+        inFlight.set(id, abort);
+
+        this.throttler.fetch(`/api/${endpoint}/${token}`, { signal: abort.signal })
+            .then(response => {
+              if (response.ok) {
+                return response.arrayBuffer();
+              } else {
+                throw new Error(`Failed to download ${endpoint} for ${token}`);
+              }
+            })
+            .then(data => {
+              destination.add(id);
+              this.mail({
+                type: command,
+                cell: id,
+                data,
+              }, [data]);
+            })
+            .catch(e => {
+              if (e.name !== 'AbortError') {
+                throw e;
+              }
+            })
+            .finally(() => {
+              inFlight.delete(id);
+            });
       }
     }
 
-    for (const [id, abort] of this.metadataInFlight) {
+    for (const [id, abort] of this.overviewInFlight) {
       if (!used.has(id)) {
         abort.abort();
-        this.metadataInFlight.delete(id);
+        this.overviewInFlight.delete(id);
+      }
+    }
+
+    for (const [id, abort] of this.coarseInFlight) {
+      if (!used.has(id)) {
+        abort.abort();
+        this.coarseInFlight.delete(id);
       }
     }
 
     // Rough approximation: only consider unloading if zoomed in.
-    if (zoom < DETAIL_ZOOM_THRESHOLD) {
+    if (zoom < COARSE_ZOOM_THRESHOLD) {
       return;
     }
 
     const unload = [];
-    for (const id of this.detail) {
+    for (const id of this.coarse) {
       if (!used.has(id)) {
-        this.metadata.delete(id);
-        this.detail.delete(id);
+        this.overview.delete(id);
+        this.coarse.delete(id);
         unload.push(id);
       }
     }
