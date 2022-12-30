@@ -21,11 +21,10 @@ export function TrailPopup({ position, trails }: {
       style={`left: ${position[0]}px; top: ${position[1]}px`}
   >
     {trails.map(trail =>
-      <section
-          className="cursor-pointer p-2 hover:bg-tc-gray-100"
-          data-trail-id={trail.id}
+      <a
+          className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
+          href={`/goto/trail/${trail.id}`}
           unboundEvents={{
-            click: 'viewTrail',
             mouseover: 'highlightTrail',
             mouseout: 'unhighlightTrail',
           }}
@@ -46,7 +45,7 @@ export function TrailPopup({ position, trails }: {
             </span>
           </section>
         )}
-      </section>
+      </a>
     )}
   </div>;
 }

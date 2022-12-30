@@ -5,6 +5,7 @@ import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
 import { metersToFeet } from './common/math';
 import { formatWeatherCode } from './common/weather';
+import { SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
@@ -12,6 +13,7 @@ import { initialData, TrailId } from './data';
 import { Header } from './page';
 import { setTitle } from './title';
 import { TrailDetailController, State } from './trail_detail_controller';
+import { TrailPopup } from './trail_popup';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
 export function TrailDetailElement({trailId}: {
@@ -40,6 +42,8 @@ export function TrailDetailElement({trailId}: {
       containingBoundaries,
       pathProfiles,
       pinned: false,
+      selectedCardPosition: [-1, -1],
+      selectedTrails: [],
       trail,
     };
   }
@@ -54,6 +58,9 @@ export function TrailDetailElement({trailId}: {
             controller: TrailDetailController,
             args: {trailId},
             events: {
+              corgi: [
+                [SELECTION_CHANGED, 'selectionChanged'],
+              ],
               render: 'wakeup',
             },
             key: JSON.stringify(trailId),
@@ -99,6 +106,17 @@ function Content(state: State) {
     isOneWay = true;
   } else {
     isOneWay = (trail.paths[0] & ~1n) !== (trail.paths[trail.paths.length - 1] & ~1n);
+  }
+
+  let trailDetails;
+  if (state.selectedTrails.length > 0) {
+    trailDetails =
+        <TrailPopup
+            position={state.selectedCardPosition}
+            trails={state.selectedTrails}
+        />;
+  } else {
+    trailDetails = <></>;
   }
 
   return [
@@ -152,13 +170,16 @@ function Content(state: State) {
           unit={temperature?.unit ?? ''}
       />
     </aside>,
-    <MapElement
-        active={{trails: [trail]}}
-        camera={trail.bound}
-        className="my-8"
-        height="h-[32rem]"
-        overlays={{point: state.elevation?.cursor}}
-    />,
+    <div className="relative">
+      <MapElement
+          active={{trails: [trail]}}
+          camera={trail.bound}
+          className="my-8"
+          height="h-[32rem]"
+          overlays={{point: state.elevation?.cursor}}
+      />
+      {trailDetails ?? <></>}
+    </div>,
     state.elevation ? <ElevationGraph {...state} /> : <svg></svg>,
   ];
 }

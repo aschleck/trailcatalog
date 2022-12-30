@@ -7,8 +7,9 @@ import { CorgiEvent } from 'js/corgi/events';
 
 import { LatLng, Vec2 } from './common/types';
 import { MapDataService } from './data/map_data_service';
+import { SELECTION_CHANGED } from './map/events';
 import { unprojectS2LatLng } from './map/models/camera';
-import { Boundary, ElevationProfile, Trail } from './models/types';
+import { Boundary, ElevationProfile, Path, Trail } from './models/types';
 
 import { fetchData, TrailId } from './data';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
@@ -29,6 +30,8 @@ export interface State {
   }
   pathProfiles?: Map<bigint, ElevationProfile>;
   pinned: boolean;
+  selectedCardPosition: Vec2;
+  selectedTrails: Trail[];
   trail?: Trail;
   weather?: {
     temperatureCelsius: number;
@@ -147,6 +150,28 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
       },
     });
   }
+
+  selectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {
+    const {controller, clickPx, selected} = e.detail;
+
+    let trails: Trail[];
+    if (selected instanceof Path) {
+      trails = controller.listTrailsOnPath(selected);
+    } else if (selected instanceof Trail) {
+      trails = [selected];
+    } else {
+      trails = [];
+    }
+
+    this.updateState({
+      ...this.state,
+      selectedCardPosition: clickPx,
+      selectedTrails: trails,
+    });
+  }
+
+  highlightTrail(): void {}
+  unhighlightTrail(): void {}
 }
 
 export function calculateGraph(
