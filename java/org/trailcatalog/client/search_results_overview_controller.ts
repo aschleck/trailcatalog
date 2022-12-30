@@ -9,7 +9,7 @@ import { DATA_CHANGED, HOVER_CHANGED, MapController, MAP_MOVED, SELECTION_CHANGE
 import { Boundary, Path, Trail, TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
 
-import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_overview_controller';
+import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
 import { DataResponses, fetchData } from './data';
 import { searchTrailsFromRaw } from './search_controller';
 import { State as VState, ViewportController } from './viewport_controller';

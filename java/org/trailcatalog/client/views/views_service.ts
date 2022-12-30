@@ -4,8 +4,9 @@ import { Service, ServiceResponse } from 'js/corgi/service';
 
 import { currentUrl } from '../common/ssr_aware';
 
-interface SearchResults {
-  kind: 'search_results';
+interface BoundaryDetail {
+  kind: 'boundary_detail';
+  id: string;
 }
 
 interface GoToTrail {
@@ -13,14 +14,19 @@ interface GoToTrail {
   id: string;
 }
 
+interface SearchResults {
+  kind: 'search_results';
+}
+
 interface TrailDetail {
   kind: 'trail_detail';
   trail: string;
 }
 
-export type Route = GoToTrail|SearchResults|TrailDetail;
+export type Route = BoundaryDetail|GoToTrail|SearchResults|TrailDetail;
 
 const routes: {[k in Route['kind']]: RegExp} = {
+  'boundary_detail': /^\/boundary\/(?<id>\d+)$/,
   'go_to_trail': /^\/goto\/trail\/(?<id>\d+)$/,
   'search_results': /^\/(search)?$/,
   'trail_detail': /^\/trail\/(?<trail>.+)$/,

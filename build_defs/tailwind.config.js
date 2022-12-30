@@ -11,7 +11,10 @@ module.exports = {
         'black-opaque': {
           20: '#00000014',
         },
-        'highlight': '#ffe600',
+        'tc-highlight': {
+          1: '#ffe600',
+          2: '#9fe26b',
+        },
         'tc-gray': {
           900: '#222222',
           700: '#363636',
@@ -19,9 +22,6 @@ module.exports = {
           400: '#737a80',
           200: '#e2e2e2',
           100: '#f3f3f3',
-        },
-        'tc-green': {
-          700: '#9fe26b',
         },
         'white-opaque': {
           160: '#ffffffa0',

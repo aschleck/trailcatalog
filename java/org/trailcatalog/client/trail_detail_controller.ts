@@ -2,12 +2,11 @@ import { S2Point } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
-import { HistoryService } from 'js/corgi/history/history_service';
 import { CorgiEvent } from 'js/corgi/events';
+import { HistoryService } from 'js/corgi/history/history_service';
 
 import { LatLng, Vec2 } from './common/types';
 import { MapDataService } from './data/map_data_service';
-import { SELECTION_CHANGED } from './map/events';
 import { unprojectS2LatLng } from './map/models/camera';
 import { Boundary, ElevationProfile, Path, Trail } from './models/types';
 

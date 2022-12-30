@@ -9,7 +9,7 @@ import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map
 import { TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_overview_controller';
+import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
 import { initialData } from './data';
 import { searchTrailsFromRaw } from './search_controller';
 import { LIMIT, SearchResultsOverviewController, State } from './search_results_overview_controller';
@@ -176,11 +176,11 @@ function SearchFilter({state}: {state: State}) {
       {
         state.boundary
             ? <>
-              <div className="bg-tc-green-700 flex gap-2 px-2 rounded text-black">
+              <div className="bg-tc-highlight-2 flex gap-2 px-2 rounded text-black">
                 <a
                     className="flex gap-2 items-center my-1"
-                    href="#"
-                    unboundEvents={{click: 'centerBoundary'}}>
+                    href={`/boundary/${state.boundary.id}`}
+                >
                   <img
                       aria-hidden="true"
                       className="h-[1em]"
