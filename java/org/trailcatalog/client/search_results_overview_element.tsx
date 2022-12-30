@@ -213,7 +213,7 @@ function SearchFilter({state}: {state: State}) {
 
                 <FlatButton
                     className="my-1"
-                    icon="CalculatorMultiply"
+                    icon="ChromeClose"
                     unboundEvents={{
                       click: 'clearBoundary',
                     }}

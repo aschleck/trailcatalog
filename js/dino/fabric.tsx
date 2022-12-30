@@ -5,7 +5,6 @@ import './fabric-icons-inline.css';
 // Fabric's official definitions are missing icons, so we just do it ourselves.
 const FABRIC_ICON_CODES = [
   'BlowingSnow',
-  'CalculatorMultiply',
   'CharticulatorLine',
   'Checkbox',
   'CheckboxCompositeReversed',
@@ -40,7 +39,6 @@ const FABRIC_ICON_CODES = [
 /**
  * A copyable list for use in the https://uifabricicons.azurewebsites.net/ tool:
 EA02
-E947
 E639
 E739
 E73D

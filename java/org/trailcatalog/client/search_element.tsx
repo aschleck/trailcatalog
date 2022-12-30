@@ -44,7 +44,7 @@ export function SearchElement(
                         {' '}
                         <FabricIcon
                             className="align-middle text-sm"
-                            name="CalculatorMultiply"
+                            name="ChromeClose"
                         />
                       </span>
                     }
