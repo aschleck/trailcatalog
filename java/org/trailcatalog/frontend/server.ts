@@ -122,12 +122,13 @@ function page(content: string, title: string, dataKeys: object, dataValues: obje
     keys: dataKeys,
     values: dataValues,
   };
+  const escapedData = JSON.stringify(data).replace(/\//g, '\\/');
   return `
 <!DOCTYPE html>
 <html dir="ltr" lang="en" class="h-full">
   <head>
     <meta charset="utf-8"/>
-    <title>${title}</title>
+    <title>${renderText(title)}</title>
     <meta name="description" content="Organizing trails from OpenStreetMap">
     <meta
         name="viewport"
@@ -136,7 +137,7 @@ function page(content: string, title: string, dataKeys: object, dataValues: obje
   </head>
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
-    <script>window.INITIAL_DATA=${JSON.stringify(data)}</script>
+    <script>window.INITIAL_DATA=${escapedData}</script>
     <script src="/static/client.js"></script>
   </body>
 </html>
