@@ -4,7 +4,7 @@ import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 
 import { DPI } from '../common/dpi';
-import { clamp, screenLlz } from '../common/math';
+import { screenLlz } from '../common/math';
 import { LatLng, LatLngRect, LatLngZoom, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
@@ -151,7 +151,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   }
 
   updateArgs(newArgs: Args): void {
-    // TODO(april): theoretically we should support the following, but it causes lots of thrasing:
+    // TODO(april): theoretically we should support the following, but it causes lots of thrashing:
     // this.setCamera(newArgs.camera);
     this.mapData.setFilters(newArgs.filters);
     this.overlayData.setOverlay(newArgs.overlays);
@@ -181,12 +181,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     let llz;
     if (isLatLngRect(camera)) {
       llz = screenLlz(camera, this.screenArea);
-      if (isFinite(llz.zoom)) {
-        // -0.2 zoom to give a little breathing room
-        llz.zoom -= 0.2;
-      } else {
-        llz.zoom = clamp(llz.zoom, 3, 14.5);
-      }
+      // -0.2 zoom to give a little breathing room
+      llz.zoom -= 0.2;
     } else {
       llz = camera;
     }

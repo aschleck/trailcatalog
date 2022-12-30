@@ -4,6 +4,8 @@ import { clamp } from '../../common/math';
 import { PixelRect, Vec2 } from '../../common/types';
 
 const MERCATOR_MAX_LAT_RADIANS = 85 / 90 * Math.PI / 2;
+const ZOOM_MIN = 3; // we don't have tiles below 3
+const ZOOM_MAX = 19;
 
 export class Camera {
   private _center: S2LatLng;
@@ -12,7 +14,7 @@ export class Camera {
 
   constructor(lat: number, lng: number, zoom: number) {
     this._center = S2LatLng.fromDegrees(lat, lng);
-    this._zoom = zoom;
+    this._zoom = isFinite(zoom) ? clamp(zoom, ZOOM_MIN, ZOOM_MAX) : ZOOM_MIN;
     this._inverseWorldRadius = 1 / this.worldRadius;
   }
 
@@ -38,12 +40,12 @@ export class Camera {
 
   set(lat: number, lng: number, zoom: number): void {
     this._center = S2LatLng.fromDegrees(lat, lng);
-    this._zoom = zoom;
+    this._zoom = isFinite(zoom) ? clamp(zoom, ZOOM_MIN, ZOOM_MAX) : ZOOM_MIN;
     this._inverseWorldRadius = 1 / this.worldRadius;
   }
 
   linearZoom(dZ: number, relativePixels: Vec2): void {
-    const nz = clamp(this._zoom + dZ, 3, 19);
+    const nz = clamp(this._zoom + dZ, ZOOM_MIN, ZOOM_MAX);
     if (this._zoom === nz) {
       return;
     }
