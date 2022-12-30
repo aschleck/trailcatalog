@@ -22,9 +22,9 @@ export function GoToTrailElement({trailId}: {
   }
 
   if (state.trail) {
-    redirectTo(`/trail/${state.trail.readable_id}`);
+    redirectTo(`/trail/${state.trail.readableId}`);
     return <>
-      <a href={`/trail/${state.trail.readable_id}`}>
+      <a href={`/trail/${state.trail.readableId}`}>
         Click here if you are not automatically redirected
       </a>
     </>;

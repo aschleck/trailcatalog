@@ -14,6 +14,7 @@ const FABRIC_ICON_CODES = [
   'ChromeClose',
   'Cloudy',
   'CollapseMenu',
+  'Fog',
   'Globe',
   'LightSnow',
   'Location',
@@ -48,6 +49,7 @@ E830
 E8BB
 E9BF
 EF66
+E9CB
 E774
 EA02
 E81D

@@ -2,8 +2,9 @@ import { checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 
-import { formatDistance, formatHeight, shouldUseImperial } from './common/formatters';
+import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
 import { metersToFeet } from './common/math';
+import { formatWeatherCode } from './common/weather';
 import { MapElement } from './map/map_element';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
@@ -61,13 +62,7 @@ export function TrailDetailElement({trailId}: {
           className="h-full max-w-6xl px-4 my-8 w-full"
       >
         {state.containingBoundaries && state.trail
-            ? <Content
-                containingBoundaries={state.containingBoundaries}
-                elevation={state.elevation}
-                pathProfiles={state.pathProfiles}
-                pinned={state.pinned}
-                trail={state.trail}
-            />
+            ? <Content {...state} />
             : "Loading..."
         }
       </div>
@@ -87,6 +82,16 @@ function Content(state: State) {
     const [minMeters, maxMeters] = state.elevation.extremes;
     elevationHigh = formatHeight(maxMeters);
     elevationLow = formatHeight(minMeters);
+  }
+  let temperature;
+  let weather;
+  if (state.weather) {
+    temperature = formatTemperature(state.weather.temperatureCelsius);
+    const wc = formatWeatherCode(state.weather.weatherCode);
+    weather = {
+      icon: wc.icon,
+      label: `${wc.label} • ${temperature.value}`,
+    };
   }
 
   let isOneWay;
@@ -139,6 +144,13 @@ function Content(state: State) {
           value={elevationLow?.value ?? ''}
           unit={elevationLow?.unit ?? ''}
       />
+      <NumericDivider />
+      <NumericCrumb
+          icon={weather?.icon ?? 'Checkbox'}
+          label="Current weather"
+          value={weather?.label ?? ''}
+          unit={temperature?.unit ?? ''}
+      />
     </aside>,
     <MapElement
         active={{trails: [trail]}}
@@ -158,7 +170,7 @@ function NumericCrumb({
   unit,
 }: {
   icon: FabricIconName,
-  label: string,
+  label: corgi.VElementOrPrimitive,
   value: string,
   unit: string,
 }) {
@@ -167,6 +179,7 @@ function NumericCrumb({
       <div>{label}</div>
       <div>
         <FabricIcon name={icon} />
+        {' '}
         <span className="text-lg">{value}</span>
         {' '}
         <span className="text-sm">{unit}</span>
@@ -232,3 +245,4 @@ function ElevationGraph(state: State) {
     </svg>
   </>;
 }
+

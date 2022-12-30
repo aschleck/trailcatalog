@@ -30,6 +30,10 @@ export interface State {
   pathProfiles?: Map<bigint, ElevationProfile>;
   pinned: boolean;
   trail?: Trail;
+  weather?: {
+    temperatureCelsius: number;
+    weatherCode: number;
+  };
 }
 
 type Deps = typeof TrailDetailController.deps;
@@ -60,7 +64,24 @@ export class TrailDetailController extends Controller<Args, Deps, HTMLElement, S
         });
       });
 
-      history.silentlyReplaceUrl(`/trail/${trail.readable_id}`);
+      history.silentlyReplaceUrl(`/trail/${trail.readableId}`);
+
+      const center = unprojectS2LatLng(trail.markerPx[0], trail.markerPx[1]);
+      fetch(
+          'https://api.open-meteo.com/v1/forecast'
+              + `?latitude=${center.latDegrees()}`
+              + `&longitude=${center.lngDegrees()}`
+              + '&current_weather=true')
+          .then(response => response.json())
+          .then(response => {
+            this.updateState({
+              ...this.state,
+              weather: {
+                temperatureCelsius: response.current_weather.temperature,
+                weatherCode: response.current_weather.weathercode,
+              },
+            });
+          });
     };
 
     const trailId = response.args.trailId;

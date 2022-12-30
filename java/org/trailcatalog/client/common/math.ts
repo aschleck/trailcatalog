@@ -2,6 +2,10 @@ import { Long } from 'java/org/trailcatalog/s2';
 
 import { LatLng, LatLngRect, LatLngZoom, RgbaU32, Vec2, Vec4 } from './types';
 
+export function celsiusToFahrenheit(celsius: number): number {
+  return 1.8 * celsius + 32;
+}
+
 export function clamp(v: number, min: number, max: number): number {
   return Math.min(Math.max(v, min), max);
 }

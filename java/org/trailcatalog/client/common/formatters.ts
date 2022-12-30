@@ -1,4 +1,4 @@
-import { metersToFeet, metersToMiles } from './math';
+import { celsiusToFahrenheit, metersToFeet, metersToMiles } from './math';
 import { getLanguage } from './ssr_aware';
 
 const countFormatter = new Intl.NumberFormat(undefined, {
@@ -13,6 +13,11 @@ const distanceFormatter = new Intl.NumberFormat(undefined, {
 });
 
 const heightFormatter = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 0,
+  style: 'decimal',
+});
+
+const temperatureFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
   style: 'decimal',
 });
@@ -39,6 +44,14 @@ export function formatHeight(meters: number): FormattedScalar {
   return {
     value: heightFormatter.format(useImperial ? metersToFeet(meters) : meters),
     unit: useImperial ? 'ft' : 'm',
+  };
+}
+
+export function formatTemperature(celsius: number): FormattedScalar {
+  const useImperial = shouldUseImperial();
+  return {
+    value: temperatureFormatter.format(useImperial ? celsiusToFahrenheit(celsius) : celsius),
+    unit: useImperial ? '°F' : '°C',
   };
 }
 

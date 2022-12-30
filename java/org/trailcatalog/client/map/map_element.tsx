@@ -80,6 +80,13 @@ export function MapElement({
             target="_blank">
           MapTiler
         </a>
+        {', Weather ©'}
+        <a
+            className="pointer-events-auto"
+            href="https://open-meteo.com/"
+            target="_blank">
+          OpenMeteo
+        </a>
       </div>
     </div>
   </>;
