@@ -92,7 +92,8 @@ export class MapDataService extends Service<EmptyDeps> {
   setListener(listener: Listener): void {
     this.listener = listener;
 
-    listener.loadOverviewCell(this.trails.values());
+    // Is this a TypeScript bug? It says values() is Iterable.
+    listener.loadOverviewCell([...this.trails.values()]);
 
     for (const [id, buffer] of this.coarseCells) {
       if (!buffer) {

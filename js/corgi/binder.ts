@@ -241,7 +241,23 @@ export function applyInstantiationResult(result: InstantiationResult): void {
       listeners.push([event, invoker]);
     }
 
-    // TODO: handle corgi events?
+    for (const [eventSpec, handler] of events.corgi ?? []) {
+      const invoker = (e: Event) => {
+        if (root === e.srcElement) {
+          return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+        maybeInstantiateAndCall(root, spec, (controller: any) => {
+          const method = controller[handler] as (e: CustomEvent<any>) => unknown;
+          method.call(controller, e as CustomEvent<unknown>);
+        });
+      };
+      const event = qualifiedName(eventSpec);
+      element.addEventListener(event, invoker);
+      listeners.push([event, invoker]);
+    }
 
     unboundEventListeners.set(element, listeners);
   }
