@@ -1,10 +1,9 @@
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 load("@build_bazel_rules_nodejs//:index.bzl", "js_library")
-load("@build_bazel_rules_nodejs//packages/concatjs:index.bzl", "ts_library")
 load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_application", "j2cl_library")
 load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
-load("@npm//@bazel/typescript:index.bzl", "ts_config", "ts_project")
+load("@npm//@bazel/typescript:index.bzl", "ts_project")
 
 ts_project(
     name = "s2",

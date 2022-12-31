@@ -1,3 +1,4 @@
+import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
@@ -260,11 +261,10 @@ export class MapData extends Layer {
     const raised: Line[] = [];
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getVarBigInt64();
-
-      data.getVarInt32();
+      const type = data.getVarInt32();
       const pathVertexCount = data.getVarInt32();
       data.align(4);
-      this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
+      this.pushPath(id, type, data.sliceFloat32(pathVertexCount), lines, raised);
     }
 
     if (lines.length > 0) {
@@ -302,11 +302,10 @@ export class MapData extends Layer {
     const raised: Line[] = [];
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getVarBigInt64();
-
-      data.getVarInt32();
+      const type = data.getVarInt32();
       const pathVertexCount = data.getVarInt32();
       data.align(4);
-      this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
+      this.pushPath(id, type, data.sliceFloat32(pathVertexCount), lines, raised);
     }
 
     if (lines.length > 0) {
@@ -391,7 +390,7 @@ export class MapData extends Layer {
       if (this.dataService.paths.has(id) && zoom >= COARSE_ZOOM_THRESHOLD) {
         data.skip(pathVertexCount * 4);
       } else {
-        this.pushPath(id, data.sliceFloat32(pathVertexCount), lines, raised);
+        this.pushPath(id, type, data.sliceFloat32(pathVertexCount), lines, raised);
       }
     }
 
@@ -403,10 +402,20 @@ export class MapData extends Layer {
     }
   }
 
-  private pushPath(id: bigint, vertices: Float32Array, lines: Line[], raised: Line[]): void {
+  private pushPath(
+      id: bigint,
+      type: number,
+      vertices: Float32Array,
+      lines: Line[],
+      raised: Line[]): void {
     const active = this.active.has(id);
     const hover = this.hover.has(id);
     const onTrail = this.dataService.pathsToTrails.has(id);
+    const isPath = aDescendsB(type, WayCategory.PATH);
+    if (!onTrail && !isPath) {
+      return;
+    }
+
     const buffer = active || hover ? raised : lines;
     const fill =
         hover ? HOVER_PALETTE.fill : active ? ACTIVE_PALETTE.fill : DEFAULT_PALETTE.fill;

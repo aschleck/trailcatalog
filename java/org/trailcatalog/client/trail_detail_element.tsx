@@ -253,7 +253,14 @@ function ElevationGraph(state: State) {
   for (let y = lowestGrid; y <= highestGrid; y += gridEvery) {
     gridLines.push(<line x1="0" y1={-y * scale} x2={resWidth} y2={-y * scale} />);
     gridText.push(
-        <text dominant_baseline="hanging" text_anchor="end" x="-8" y={-y * scale}>{y}</text>
+        <text
+            dominant_baseline="hanging"
+            text_anchor="end"
+            x="-8"
+            y={-y * scale}
+        >
+          {y}
+        </text>
     );
   }
 
@@ -264,7 +271,8 @@ function ElevationGraph(state: State) {
         <text
             dominant_baseline="hanging"
             x={x / length * resWidth}
-            y={-lowestGrid * scale + 8}>
+            y={-lowestGrid * scale + 8}
+        >
           {x} {lengthUnit}
         </text>
     );
@@ -292,19 +300,24 @@ function ElevationGraph(state: State) {
             height + GRAPH_TEXT_SPACE_PX[1],
           ].join(' ')
         }>
-      <g className="stroke-gray-300">
+      <g className="stroke-tc-gray-400">
         <g style="stroke-dasharray: 4">
           {gridLines}
         </g>
-        {distanceIndicators}
-        {gridText}
         {indicator}
+      </g>
+      <g className="fill-tc-gray-400">
+        {gridText}
+      </g>
+      <g className="fill-black">
+        {distanceIndicators}
       </g>
       <polyline
           fill="none"
           points={elevation.heights}
           stroke="black"
           stroke_width={2}
+          vector_effect="non-scaling-stroke"
           style={
             [
               'transform:',

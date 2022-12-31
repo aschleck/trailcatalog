@@ -13,6 +13,7 @@ tc_ts_project(
         "//java/org/trailcatalog/client/map/rendering",
         "//java/org/trailcatalog/client/models",
         "//java/org/trailcatalog/client/workers:ts",
+        "//java/org/trailcatalog/models:models-ts",
     ],
 )
 

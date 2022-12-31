@@ -1,3 +1,4 @@
+import { aDescendsB, RelationCategory } from 'java/org/trailcatalog/models/categories';
 import * as corgi from 'js/corgi';
 import { Link } from 'js/corgi/history/link_element';
 import { FlatButton } from 'js/dino/button';
@@ -200,10 +201,6 @@ function HighlightText({needle, haystack}: {needle: string, haystack: string}) {
 }
 
 function isNationalParky(type: number): boolean {
-  // TODO: keep this in sync with the Kotlin? Compile to JS?
-  if (type === 68 || type === 4419) {
-    return true;
-  } else {
-    return false;
-  }
+  return aDescendsB(type, RelationCategory.BOUNDARY_NATIONAL_PARK)
+      || aDescendsB(type, RelationCategory.BOUNDARY_PROTECTED_AREA_2)
 }

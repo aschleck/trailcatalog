@@ -42,6 +42,7 @@ export interface LineProperties extends Properties<SVGLineElement> {
   y1: number|string;
   x2: number|string;
   y2: number|string;
+  vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
 }
 
 export interface PolylineProperties extends Properties<SVGPolylineElement> {
@@ -49,6 +50,7 @@ export interface PolylineProperties extends Properties<SVGPolylineElement> {
   stroke?: string;
   stroke_width?: number|string;
   points: string;
+  vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
 }
 
 export interface SVGProperties extends Properties<SVGElement> {
@@ -62,6 +64,7 @@ export interface TextProperties extends Properties<SVGTextElement> {
       'auto'|'text-bottom'|'alphabetic'|'ideographic'|'middle'|'central'|'mathematical'|'hanging'
             |'text-top';
   text_anchor?: 'start'|'middle'|'end';
+  vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
   x?: number|string;
   y?: number|string;
   dx?: number|string;
