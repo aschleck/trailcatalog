@@ -130,8 +130,12 @@ export class MapData extends Layer {
     for (const handle of near) {
       let d2 = Number.MAX_VALUE;
       if (handle.entity instanceof Path && this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
-        const pathHandle = handle as PathHandle;
-        d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
+        const path = handle.entity;
+        if (this.dataService.pathsToTrails.has(path.id)
+            || aDescendsB(path.type, WayCategory.PATH)) {
+          const pathHandle = handle as PathHandle;
+          d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
+        }
       } else if (handle.entity instanceof Trail) {
         if (this.filters.trail && !this.filters.trail(handle.entity.id)) {
           continue;

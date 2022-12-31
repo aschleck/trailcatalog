@@ -21,32 +21,54 @@ export function TrailPopup({ position, trails }: {
       style={`left: ${position[0]}px; top: ${position[1]}px`}
   >
     {trails.map(trail =>
-      <a
-          className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
-          href={`/goto/trail/${trail.id}`}
-          unboundEvents={{
-            mouseover: 'highlightTrail',
-            mouseout: 'unhighlightTrail',
-          }}
-      >
-        <header className="font-bold font-lg grow">
-          {trail.name}
-        </header>
-        {[
-          ['Distance:', `${metersToMiles(trail.lengthMeters).toFixed(1)} miles`],
-        ].map(([label, content]) =>
-          <section>
-            <span className="font-medium text-tc-gray-400">
-              {label}
-            </span>
-            {' '}
-            <span>
-              {content}
-            </span>
-          </section>
-        )}
-      </a>
+      trail.id >= 0n
+          ? <TrailLink trail={trail} />
+          : <OsmWayLink id={-trail.id} />
     )}
   </div>;
 }
 
+function TrailLink({trail}: {trail: Trail}) {
+  return <>
+    <a
+        className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
+        data-trail-id={trail.id}
+        href={`/goto/trail/${trail.id}`}
+        unboundEvents={{
+          mouseover: 'highlightTrail',
+          mouseout: 'unhighlightTrail',
+        }}
+    >
+      <header className="font-bold font-lg grow">
+        {trail.name}
+      </header>
+      {[
+        ['Distance:', `${metersToMiles(trail.lengthMeters).toFixed(1)} miles`],
+      ].map(([label, content]) =>
+        <section>
+          <span className="font-medium text-tc-gray-400">
+            {label}
+          </span>
+          {' '}
+          <span>
+            {content}
+          </span>
+        </section>
+      )}
+    </a>
+  </>;
+}
+
+function OsmWayLink({id}: {id: bigint}) {
+  return <>
+    <a
+        className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
+        href={`https://www.openstreetmap.org/way/${id}`}
+        target="_blank"
+    >
+      <header className="font-bold font-lg grow">
+        Way {id}
+      </header>
+    </a>
+  </>;
+}
