@@ -13,6 +13,12 @@ export function aDescendsB(a: number, b: number): boolean {
 }
 """)
 
+  println("export enum PointCategory {")
+  for (c in PointCategory.values()) {
+    println("  ${c} = ${c.id},")
+  }
+  println("}")
+
   println("export enum RelationCategory {")
   for (c in RelationCategory.values()) {
     println("  ${c} = ${c.id},")

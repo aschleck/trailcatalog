@@ -38,6 +38,31 @@ fun registerPbfSerializers() {
     }
   })
 
+  registerSerializer(TypeToken.of(Point::class.java), object : Serializer<Point> {
+
+    override fun read(from: EncodedInputStream): Point {
+      val id = from.readVarLong()
+      val type = from.readVarInt()
+      val name = ByteArray(from.readVarInt()).also {
+        from.read(it)
+      }.decodeToString()
+      val lat = from.readInt()
+      val lng = from.readInt()
+      return Point(id, type, if (name.length == 0) null else name, LatLngE7(lat, lng))
+    }
+
+    override fun write(v: Point, to: EncodedOutputStream) {
+      to.writeVarLong(v.id)
+      to.writeVarInt(v.type)
+      (v.name ?: "").encodeToByteArray().let {
+        to.writeVarInt(it.size)
+        to.write(it)
+      }
+      to.writeInt(v.latLng.lat)
+      to.writeInt(v.latLng.lng)
+    }
+  })
+
   registerSerializer(TypeToken.of(Relation::class.java), object : Serializer<Relation> {
 
     override fun read(from: EncodedInputStream): Relation {

@@ -2,6 +2,7 @@ package org.trailcatalog.s2
 
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2CellUnion
+import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Polyline
 import com.google.common.geometry.S2Polygon
@@ -33,6 +34,10 @@ fun boundToCell(bound: S2LatLngRect): S2CellId {
   // Relation 8907468 gets marked as full in both directions for some reason. Not clear why but the
   // logic of just picking a face cell makes sense regardless.
   return S2CellId.fromFace(0)
+}
+
+fun latLngToCell(latLng: S2LatLng): S2CellId {
+  return S2CellId.fromLatLng(latLng).parent(SimpleS2.HIGHEST_INDEX_LEVEL)
 }
 
 fun polygonToCell(polygon: S2Polygon): S2CellId {

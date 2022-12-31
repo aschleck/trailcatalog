@@ -1,0 +1,43 @@
+[[actions]]
+type = "create_table"
+name = "points"
+primary_key = ["id", "epoch"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+  [[actions.columns]]
+  name = "type"
+  nullable = false
+  type = "INT"
+
+  [[actions.columns]]
+  name = "cell"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "name"
+  nullable = true
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "marker_degrees_e7"
+  nullable = false
+  type = "BYTEA"
+
+[[actions]]
+type = "add_index"
+table = "points"
+
+  [actions.index]
+  name = "points_by_cell_epoch_idx"
+  columns = ["cell", "epoch"]
+

@@ -87,12 +87,8 @@ class PbfBlockReader(
       when (tag.ushr(3)) {
         0 -> done = true
         PrimitiveBlock.STRINGTABLE_FIELD_NUMBER ->
-          if (readRelations || readWays) {
-            block.setStringtable(
-                coded.readMessage(StringTable.parser(), ExtensionRegistry.getEmptyRegistry()))
-          } else {
-            coded.skipField(tag)
-          }
+          block.setStringtable(
+              coded.readMessage(StringTable.parser(), ExtensionRegistry.getEmptyRegistry()))
         PrimitiveBlock.PRIMITIVEGROUP_FIELD_NUMBER -> block.addPrimitivegroup(parseGroup(coded))
         PrimitiveBlock.DATE_GRANULARITY_FIELD_NUMBER -> block.setDateGranularity(coded.readInt32())
         PrimitiveBlock.GRANULARITY_FIELD_NUMBER -> block.setGranularity(coded.readInt32())

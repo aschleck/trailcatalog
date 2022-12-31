@@ -10,6 +10,7 @@ import org.trailcatalog.importers.pipeline.groupBy
 import org.trailcatalog.importers.pipeline.Pipeline
 import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
 import org.trailcatalog.importers.pbf.ExtractNodes
+import org.trailcatalog.importers.pbf.ExtractPoints
 import org.trailcatalog.importers.pbf.ExtractRelationGeometriesWithWays
 import org.trailcatalog.importers.pbf.ExtractRelations
 import org.trailcatalog.importers.pbf.ExtractWays
@@ -49,14 +50,14 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   val pipeline = Pipeline()
 
   // First, get basic way geometries
-  val nodes =
+  val nodeBlocks =
       pipeline.cat(
           pbfs.map { p ->
             pipeline
                 .read(PbfBlockReader(p, readNodes = true, readRelations = false, readWays = false))
-                .then(ExtractNodes())
-          })
-      .groupBy("GroupNodes") { it.id }
+          });
+  val nodes = nodeBlocks.then(ExtractNodes()).groupBy("GroupNodes") { it.id }
+  nodeBlocks.then(ExtractPoints()).write(DumpPoints(epoch, hikari))
   val ways =
       pipeline.cat(
           pbfs.map { p ->

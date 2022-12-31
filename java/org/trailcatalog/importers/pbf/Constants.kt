@@ -2,12 +2,67 @@ package org.trailcatalog.importers.pbf
 
 import com.google.common.collect.ImmutableMap
 import com.google.protobuf.ByteString
+import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.models.WayCategory
 
 const val TRAIL_FROM_RELATION_OFFSET = 0
 const val TRAIL_FROM_WAY_OFFSET = Long.MAX_VALUE / 2
 const val NANO = .000000001
+
+val POINT_AMENITY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("bbq"), PointCategory.AMENITY_FIRE_BARBEQUE)
+    .put(ByteString.copyFromUtf8("drinking_water"), PointCategory.AMENITY_DRINKING_WATER)
+    .put(ByteString.copyFromUtf8("parking"), PointCategory.AMENITY_PARKING)
+    .put(ByteString.copyFromUtf8("shelter"), PointCategory.AMENITY_SHELTER)
+    .put(ByteString.copyFromUtf8("toilets"), PointCategory.AMENITY_TOILETS)
+
+    .build()
+
+val POINT_HIGHWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("trailhead"), PointCategory.WAY_PATH_TRAILHEAD)
+
+    .build()
+
+val POINT_INFORMATION_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("guidepost"), PointCategory.INFORMATION_GUIDE_POST)
+    .put(ByteString.copyFromUtf8("visitor_centre"), PointCategory.INFORMATION_VISITOR_CENTER)
+
+    .build()
+
+val POINT_LEISURE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("firepit"), PointCategory.AMENITY_FIRE_PIT)
+    .put(ByteString.copyFromUtf8("picnic_table"), PointCategory.AMENITY_PICNIC_TABLE)
+
+    .build()
+
+val POINT_MOUNTAIN_PASS_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("yes"), PointCategory.WAY_MOUNTAIN_PASS)
+
+    .build()
+
+val POINT_NATURAL_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("cave_entrance"), PointCategory.NATURAL_CAVE_ENTRANCE)
+    .put(ByteString.copyFromUtf8("peak"), PointCategory.NATURAL_PEAK)
+    .put(ByteString.copyFromUtf8("saddle"), PointCategory.NATURAL_SADDLE)
+    .put(ByteString.copyFromUtf8("volcano"), PointCategory.NATURAL_VOLCANO)
+
+    .build()
+
+val POINT_TOURISM_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("alpine_hut"), PointCategory.AMENITY_HUT_ALPINE)
+    .put(ByteString.copyFromUtf8("camp_pitch"), PointCategory.AMENITY_CAMP_PITCH)
+    .put(ByteString.copyFromUtf8("camp_site"), PointCategory.AMENITY_CAMP_SITE)
+    .put(ByteString.copyFromUtf8("picnic_site"), PointCategory.AMENITY_PICNIC_SITE)
+    .put(ByteString.copyFromUtf8("viewpoint"), PointCategory.WAY_VIEWPOINT)
+    .put(ByteString.copyFromUtf8("wilderness_hut"), PointCategory.AMENITY_HUT_WILDERNESS)
+
+    .build()
+
+val POINT_WATERWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("waterfall"), PointCategory.NATURAL_WATERFALL)
+
+    .build()
 
 val PATHS_TO_TRAILS = ImmutableMap.builder<WayCategory, RelationCategory>()
     .put(WayCategory.PATH, RelationCategory.TRAIL)
@@ -147,8 +202,12 @@ val ROUTE_WAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
 
 val ADMIN_LEVEL_BS = ByteString.copyFromUtf8("admin_level")
 val AERIALWAY_BS = ByteString.copyFromUtf8("aerialway")
+val AMENITY_BS = ByteString.copyFromUtf8("amenity")
 val BOUNDARY_BS = ByteString.copyFromUtf8("boundary")
 val HIGHWAY_BS = ByteString.copyFromUtf8("highway")
+val INFORMATION_BS = ByteString.copyFromUtf8("information")
+val LEISURE_BS = ByteString.copyFromUtf8("leisure")
+val MOUNTAIN_PASS_BS = ByteString.copyFromUtf8("mountain_pass")
 val NAME_BS = ByteString.copyFromUtf8("name")
 val NATURAL_BS = ByteString.copyFromUtf8("natural")
 val NETWORK_BS = ByteString.copyFromUtf8("network")
@@ -157,3 +216,5 @@ val PROTECT_CLASS_BS = ByteString.copyFromUtf8("protect_class")
 val RAILWAY_BS = ByteString.copyFromUtf8("railway")
 val REF_BS = ByteString.copyFromUtf8("ref")
 val ROUTE_BS = ByteString.copyFromUtf8("route")
+val TOURISM_BS = ByteString.copyFromUtf8("tourism")
+val WATERWAY_BS = ByteString.copyFromUtf8("waterway")

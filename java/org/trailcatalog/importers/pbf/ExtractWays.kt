@@ -24,7 +24,7 @@ class ExtractWays
   }
 }
 
-fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
+private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   var category = WayCategory.ANY
   var name: String? = null
   for (i in 0 until way.keysCount) {

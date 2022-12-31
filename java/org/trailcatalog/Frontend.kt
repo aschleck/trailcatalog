@@ -45,6 +45,8 @@ private data class WireBoundary(val id: Long, val type: Int, val name: String)
 
 private data class WirePath(val id: Long, val type: Int, val vertices: ByteArray)
 
+private data class WirePoint(val id: Long, val type: Int, val name: String?, val marker: ByteArray)
+
 private data class WireTrail(
   val id: Long,
   val name: String,
@@ -601,9 +603,53 @@ private fun fetchFine(ctx: Context) {
           ))
     }
   }
+
+  val points = ArrayList<WirePoint>()
+  connectionSource.connection.use {
+    val query = if (cell.level() >= SimpleS2.HIGHEST_FINE_INDEX_LEVEL) {
+      it.prepareStatement(
+          "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
+              + "FROM points p "
+              + "WHERE "
+              + "((p.cell >= ? AND p.cell <= ?) OR (p.cell >= ? AND p.cell <= ?))"
+              + "AND p.epoch = ? "
+      ).apply {
+        val min = cell.rangeMin()
+        val max = cell.rangeMax()
+        setLong(1, min.id())
+        setLong(2, max.id())
+        setLong(3, min.id() + Long.MIN_VALUE)
+        setLong(4, max.id() + Long.MIN_VALUE)
+        setInt(5, epochTracker.epoch)
+      }
+    } else {
+      it.prepareStatement(
+          "SELECT p.id, p.type, p.name, p.lat_lng_degrees "
+              + "FROM points p "
+              + "WHERE "
+              + "p.cell = ? "
+              + "AND p.epoch = ? "
+      ).apply {
+        setLong(1, cell.id())
+        setInt(2, epochTracker.epoch)
+      }
+    }
+    val results = query.executeQuery()
+    while (results.next()) {
+      points.add(
+          WirePoint(
+              id = results.getLong(1),
+              type = results.getInt(2),
+              name = results.getString(3),
+              vertices = project(results.getBytes(4)),
+          ))
+    }
+  }
+
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
   writeDetailPaths(paths, bytes, output)
+  writeDetailPoints(points, bytes, output)
   ctx.result(bytes.toByteArray())
 }
 
@@ -702,6 +748,22 @@ private fun writeDetailPaths(
     output.flush()
     bytes.align(4)
     output.write(path.vertices)
+  }
+}
+
+private fun writeDetailPoints(
+    points: List<WirePoint>,
+    bytes: AlignableByteArrayOutputStream,
+    output: DelegatingEncodedOutputStream) {
+  output.writeVarInt(points.size)
+  for (point in points) {
+    output.writeVarLong(point.id)
+    output.writeVarInt(point.type)
+    (path.name ?: "").toByteArray(Charsets.UTF_8).let {
+      output.writeVarInt(it.size)
+      output.write(it)
+    }
+    output.write(point.marker)
   }
 }
 
