@@ -1,6 +1,7 @@
 import * as corgi from 'js/corgi';
 import { Link } from 'js/corgi/history/link_element';
 import { FlatButton } from 'js/dino/button';
+import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
 import { OutlinedInput } from 'js/dino/input';
 
@@ -29,26 +30,25 @@ export function SearchElement(
         })}
     >
       <OutlinedInput
-          className="border-tc-gray-400 peer w-96"
+          className="border-white peer w-96"
           icon="Search"
           inset={
             state.query
-                ?  <FlatButton
-                    className="bg-white -mr-2 -my-1 text-black"
-                    unboundEvents={{
-                      click: 'clearSearch',
-                    }}
-                    label={
-                      <span className="whitespace-nowrap">
-                        <span className="align-middle">Clear search</span>
-                        {' '}
-                        <FabricIcon
-                            className="align-middle text-sm"
-                            name="ChromeClose"
-                        />
-                      </span>
-                    }
-                />
+                ? <>
+                  <span
+                      unboundEvents={{
+                        corgi: [
+                          [ACTION, 'clearSearch'],
+                        ],
+                      }}
+                    >
+                      <FlatButton
+                          className="text-white"
+                          dense={true}
+                          icon="ChromeClose"
+                      />
+                    </span>
+                  </>
                 : ''
           }
           placeholder="Search trails or destinations"

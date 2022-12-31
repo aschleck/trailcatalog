@@ -59,10 +59,12 @@ export function ViewportLayoutElement({
       <Header />
       {bannerContent ?? ''}
       <div className="flex grow overflow-hidden relative">
-        <div className={
-            (state.open ? "" : "hidden md:block ")
-                + "absolute bg-white inset-0 max-h-full overflow-y-scroll z-10 md:relative md:w-80"
-        }>
+        <div
+            className={
+                (state.open ? "" : "hidden md:block ")
+                    + "absolute bg-white inset-0 max-h-full overflow-y-scroll md:relative md:w-80"
+            }
+        >
           {sidebarContent}
         </div>
         <div className="grow h-full relative">

@@ -1,6 +1,7 @@
 import * as corgi from 'js/corgi';
-import { FlatButton } from 'js/dino/button';
+import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
+import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
 
 import { currentUrl } from './common/ssr_aware';
@@ -169,16 +170,21 @@ function SearchFilter({state}: {state: State}) {
   const divider = <div className="bg-black-opaque-20 w-px" />;
   return <>
     <aside className="bg-tc-gray-700 flex gap-3 items-center px-3 py-2 text-white">
-      <a className="flex gap-1 items-center no-underline text-sm" href="#" unboundEvents={{click: 'locateMe'}}>
-        <FabricIcon name="Location" />
-        <span className="hover:underline">Locate me</span>
-      </a>
+      <span
+          unboundEvents={{
+            corgi: [
+              [ACTION, 'locateMe'],
+            ]
+          }}
+      >
+        <OutlinedButton icon="Location" label="Locate me" />
+      </span>
       {
         state.boundary
             ? <>
               <div className="bg-tc-highlight-2 flex gap-2 px-2 rounded text-black">
                 <a
-                    className="flex gap-2 items-center my-1"
+                    className="flex gap-2 items-center"
                     href={`/boundary/${state.boundary.id}`}
                 >
                   <img
@@ -196,28 +202,29 @@ function SearchFilter({state}: {state: State}) {
                         flex
                         gap-2
                         items-center
-                        my-1
                         hover:underline"
-                >
-                  <Checkbox
-                      checked={state.filterInBoundary}
                       unboundEvents={{
-                        click: 'toggleBoundaryFilter',
+                        corgi: [
+                          [ACTION, 'toggleBoundaryFilter'],
+                        ],
                       }}
-                  />
+                >
+                  <Checkbox checked={state.filterInBoundary} />
 
                   Filter by boundary
                 </label>
 
                 {divider}
 
-                <FlatButton
-                    className="my-1"
-                    icon="ChromeClose"
+                <span
                     unboundEvents={{
-                      click: 'clearBoundary',
+                      corgi: [
+                        [ACTION, 'clearBoundary'],
+                      ],
                     }}
-                />
+                >
+                  <FlatButton icon="ChromeClose" />
+                </span>
               </div>
             </>
             : ''

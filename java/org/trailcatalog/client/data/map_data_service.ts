@@ -128,6 +128,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const paths = [];
       for (let i = 0; i < pathCount; ++i) {
         const id = data.getVarBigInt64();
+        data.getVarInt32();
         const pathVertexCount = data.getVarInt32();
         data.align(4);
         data.skip(4 * pathVertexCount);

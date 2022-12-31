@@ -15,15 +15,13 @@ export function Header() {
         text-white
         w-full
     ">
-      <div className="basis-1 grow">
-        <a href="/">
-          <img
-              alt="Trailcatalog logo"
-              src="/static/images/logo.svg"
-              className="h-6"
-          />
-        </a>
-      </div>
+      <a href="/">
+        <img
+            alt="Trailcatalog logo"
+            src="/static/images/logo.svg"
+            className="h-6"
+        />
+      </a>
       <SearchElement />
       <div className="basis-1 flex grow justify-end">
         <a href="https://github.com/aschleck/trailcatalog" target="_blank">

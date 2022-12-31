@@ -27,8 +27,11 @@ interface PropertyKeyToHandlerMap<C> {
   mouseover: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   mouseout: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   mouseup: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
+  pointerdown: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
   pointerleave: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
   pointermove: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
+  pointerover: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
+  pointerup: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
   render: AMethodOnWithParameters<C, []>,
 }
 
@@ -54,7 +57,14 @@ export interface AnyBoundController<E extends HTMLElement|SVGElement>
     extends BoundController<any, any, E, any, any, any> {}
 
 export type UnboundEvents =
-    Partial<{[k in keyof PropertyKeyToHandlerMap<AnyBoundController<HTMLElement|SVGElement>>]: string}>;
+    Partial<
+      Omit<{
+        [k in keyof PropertyKeyToHandlerMap<AnyBoundController<HTMLElement|SVGElement>>]: string
+      }, 'corgi'> & {
+        corgi: Array<[EventSpec<unknown>, string]>;
+      }
+    >;
+;
 
 export interface InstantiationResult {
   root: Node;
@@ -151,7 +161,28 @@ export function bindElementToSpec(
 
   for (const [element, events] of unboundEventss) {
     for (const [event, handler] of Object.entries(events)) {
-      bindEventListener(element, event, handler, root, spec);
+      if (event === 'corgi') {
+        continue;
+      }
+
+      bindEventListener(element, event, handler as string, root, spec);
+    }
+
+    for (const [eventSpec, handler] of events.corgi ?? []) {
+      element.addEventListener(
+          qualifiedName(eventSpec),
+          e => {
+            if (root === e.srcElement) {
+              return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+            maybeInstantiateAndCall(root, spec, (controller: any) => {
+              const method = controller[handler] as (e: CustomEvent<any>) => unknown;
+              method.call(controller, e as CustomEvent<unknown>);
+            });
+          });
     }
   }
 
@@ -195,14 +226,23 @@ export function applyInstantiationResult(result: InstantiationResult): void {
 
     const listeners: Array<[string, EventListenerOrEventListenerObject]> = [];
     for (const [event, handler] of Object.entries(events)) {
-      if (!(handler in spec.controller.prototype)) {
+      if (event === 'corgi') {
+        continue;
+      }
+
+      const shandler = handler as string;
+
+      if (!(shandler in spec.controller.prototype)) {
         console.error(`Unable to bind ${event} to ${handler}, method doesn't exist`);
         continue;
       }
 
-      const invoker = bindEventListener(element, event, handler, root, spec);
+      const invoker = bindEventListener(element, event, shandler, root, spec);
       listeners.push([event, invoker]);
     }
+
+    // TODO: handle corgi events?
+
     unboundEventListeners.set(element, listeners);
   }
 }
