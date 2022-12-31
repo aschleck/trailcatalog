@@ -1,13 +1,13 @@
 import * as corgi from 'js/corgi';
 
-import { FlatButton } from './button';
+import { Button } from './button';
 
 export function Checkbox({checked, className, ...props}: {
   checked?: boolean,
   className?: string,
 } & corgi.Properties<HTMLElement>) {
   return <>
-    <FlatButton
+    <Button
         className={'height-[1em]' + (className ? ` ${className}` : '')}
         icon={checked ?? false ? 'CheckboxCompositeReversed' : 'Checkbox'}
         {...props}

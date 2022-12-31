@@ -38,7 +38,7 @@ export function OutlinedButton({className, dense, icon, label, ...props}: {
   </>;
 }
 
-function Button({className, dense, icon, label, ...props}: {
+export function Button({className, dense, icon, label, ...props}: {
       className?: string,
       dense?: boolean,
       icon?: FabricIconName,
