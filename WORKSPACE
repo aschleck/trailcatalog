@@ -3,6 +3,15 @@ workspace(name = "trailcatalog")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
+    name = "rules_java",
+    url = "https://github.com/bazelbuild/rules_java/releases/download/5.4.0/rules_java-5.4.0.tar.gz",
+    sha256 = "9b87757af5c77e9db5f7c000579309afae75cf6517da745de01ba0c6e4870951",
+)
+load("@rules_java//java:repositories.bzl", "rules_java_dependencies", "rules_java_toolchains")
+rules_java_dependencies()
+rules_java_toolchains()
+
+http_archive(
     name = "build_bazel_rules_nodejs",
     sha256 = "d378df503b8441457851d252dc39b1ed1d8f78abf2247d69abf21b410a256bc6",
     strip_prefix = "rules_nodejs-ad70bee8bfd142348853d5cd91dfc04c3acbd4cb",
@@ -75,13 +84,13 @@ rules_proto_dependencies()
 
 rules_proto_toolchains()
 
-RULES_KOTLIN_VERSION = "v1.6.0"
+RULES_KOTLIN_VERSION = "v1.7.1"
 
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 http_archive(
     name = "io_bazel_rules_kotlin",
-    sha256 = "a57591404423a52bd6b18ebba7979e8cd2243534736c5c94d35c89718ea38f94",
+    sha256 = "fd92a98bd8a8f0e1cdcb490b93f5acef1f1727ed992571232d33de42395ca9b3",
     urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/%s/rules_kotlin_release.tgz" % RULES_KOTLIN_VERSION],
 )
 
