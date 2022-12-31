@@ -86,6 +86,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
             this.camera,
             response.deps.services.mapData,
             response.args.filters,
+            this.renderer,
             this.textRenderer);
     this.overlayData = new OverlayData(response.args.overlays, this.renderer);
     this.layers = [

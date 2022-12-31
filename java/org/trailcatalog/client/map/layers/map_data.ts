@@ -1,4 +1,4 @@
-import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories';
+import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
@@ -14,7 +14,9 @@ import { ACTIVE_PALETTE, ACTIVE_HEX_PALETTE, DEFAULT_PALETTE, DEFAULT_HEX_PALETT
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
+import { Renderer } from '../rendering/renderer';
 import { RenderableDiamond, RenderableText, TextRenderer } from '../rendering/text_renderer';
+import { TexturePool } from '../rendering/texture_pool';
 import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../../workers/data_constants';
 
 import { Layer } from './layer';
@@ -23,10 +25,39 @@ export interface Filters {
   trail?: (id: bigint) => boolean;
 }
 
+const NO_OFFSET = [0, 0] as Vec2;
+const POINT_BILLBOARD_SIZE_PX = [20, 20] as Vec2;
+const POINTS_ATLAS = new Map<PointCategory, number>([
+  [PointCategory.AMENITY_HUT_ALPINE, 0], // alpine_hut.svg
+  [PointCategory.AMENITY_FIRE_BARBECUE, 1], // barbeque.svg
+  [PointCategory.AMENITY_CAMP_PITCH, 3], // camp_pitch.svg
+  [PointCategory.AMENITY_CAMP_SITE, 4], // camp_site.svg
+  [PointCategory.NATURAL_CAVE_ENTRANCE, 5], // cave_entrance.svg
+  [PointCategory.AMENITY_WATER_DRINKING, 6], // drinking_water.svg
+  [PointCategory.AMENITY_FIRE_PIT, 7], // firepit.svg
+  [PointCategory.INFORMATION_GUIDE_POST, 8], // guidepost.svg
+  [PointCategory.INFORMATION_VISITOR_CENTER, 9], // visitor_center.svg
+  [PointCategory.WAY_MOUNTAIN_PASS, 10], // mountain_pass.svg
+  [PointCategory.AMENITY_PARKING, 11], // parking.svg
+  [PointCategory.AMENITY_PICNIC_TABLE, 12], // picnic_table.svg
+  [PointCategory.NATURAL_SADDLE, 13], // saddle.svg
+  [PointCategory.AMENITY_SHELTER, 14], // shelter.svg
+  [PointCategory.AMENITY_TOILETS, 15], // toilets.svg
+  [PointCategory.WAY_PATH_TRAILHEAD, 16], // trailhead.svg
+  [PointCategory.WAY_VIEWPOINT, 17], // viewpoint.svg
+  // !!! This is a repeat of mountain pass
+  [PointCategory.NATURAL_PEAK, 10], // mountain_pass.svg
+  [PointCategory.NATURAL_VOLCANO, 18], // volcano.svg
+  [PointCategory.NATURAL_WATERFALL, 19], // waterfall.svg
+  [PointCategory.AMENITY_HUT_WILDERNESS, 20], // wilderness_hut.svg
+]);
+const POINTS_ATLAS_SIZE = [8, 4] as Vec2;
+
 const Z_PATH = 1;
 const Z_RAISED_PATH = 2;
-const Z_TRAIL_MARKER = 3;
-const Z_RAISED_TRAIL_MARKER = 4;
+const Z_POINT = 3;
+const Z_TRAIL_MARKER = 4;
+const Z_RAISED_TRAIL_MARKER = 5;
 const PATH_RADIUS_PX = 1;
 const RAISED_PATH_RADIUS_PX = 4;
 
@@ -62,23 +93,25 @@ export class MapData extends Layer {
   private readonly diamondPixelBounds: Vec4;
   private readonly active: Set<bigint>;
   private readonly hover: Set<bigint>;
+  private readonly pointsAtlas: WebGLTexture;
   private lastChange: number;
 
   constructor(
       private readonly camera: Camera,
       private readonly dataService: MapDataService,
       private filters: Filters,
+      renderer: Renderer,
       private readonly textRenderer: TextRenderer,
   ) {
     super();
     this.overviewBounds = worldBounds();
     this.coarseBounds = worldBounds();
     this.fineBounds = worldBounds();
+    this.active = new Set();
+    this.hover = new Set();
+    // Why don't we need to dispose?
+    this.pointsAtlas = new TexturePool(renderer).acquire();
 
-    this.dataService.setListener(this);
-    this.registerDisposer(() => {
-      this.dataService.clearListener();
-    });
     const diamondPixelSize = this.textRenderer.measureDiamond();
     const halfDiamondWidth = diamondPixelSize[0] / 2;
     const halfDiamondHeight = diamondPixelSize[1] / 2;
@@ -88,10 +121,27 @@ export class MapData extends Layer {
       halfDiamondWidth,
       halfDiamondHeight,
     ];
-    this.active = new Set();
-    this.hover = new Set();
 
     this.lastChange = Date.now();
+
+    this.dataService.setListener(this);
+    this.registerDisposer(() => {
+      this.dataService.clearListener();
+    });
+
+    fetch('/static/images/atlases/points.png')
+        .then(response => {
+          if (response.ok) {
+            return response.blob();
+          } else {
+            throw new Error('Unable to fetch atlas');
+          }
+        })
+        .then(blob => createImageBitmap(blob))
+        .then(bitmap => {
+          renderer.uploadTexture(bitmap, this.pointsAtlas);
+          this.lastChange = Date.now();
+        });
   }
 
   getTrail(id: bigint): Trail|undefined {
@@ -317,6 +367,27 @@ export class MapData extends Layer {
     }
     if (raised.length > 0) {
       planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
+    }
+
+    const pointCount = data.getVarInt32();
+    for (let i = 0; i < pointCount; ++i) {
+      const id = data.getVarBigInt64();
+      const type = data.getVarInt32();
+      const nameLength = data.getVarInt32();
+      data.skip(nameLength);
+      const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      const markerPx = projectLatLng(marker);
+      const icon = POINTS_ATLAS.get(type);
+      if (icon !== undefined) {
+        planner.addAtlasedBillboard(
+            markerPx,
+            NO_OFFSET,
+            POINT_BILLBOARD_SIZE_PX,
+            icon,
+            POINTS_ATLAS_SIZE,
+            this.pointsAtlas,
+            Z_POINT);
+      }
     }
   }
 

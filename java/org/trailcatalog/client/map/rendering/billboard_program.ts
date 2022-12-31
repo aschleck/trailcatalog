@@ -86,10 +86,11 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       uniform highp float halfWorldSize; // pixels
 
       layout(std140) uniform PerBillboardBlock {
+        mediump uvec4 atlasIndexAndSize;
+        bool sizeIsPixels;
         highp vec4 center; // Mercator
         highp vec2 offsetPx; // pixels
-        highp vec4 size; // Mercator
-        bool sizeIsPixels;
+        highp vec4 size; // Mercator or pixels
       };
 
       in highp vec2 position;
@@ -108,11 +109,17 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
                 : (relativeCenter + extents) * halfWorldSize;
         vec2 screenCoord = reduce64(worldCoord) + offsetPx;
         gl_Position = vec4(screenCoord / halfViewportSize, 0, 1);
-        fragColorPosition = colorPosition;
+
+        uvec2 atlasXy = uvec2(
+            atlasIndexAndSize.x % atlasIndexAndSize.y, atlasIndexAndSize.x / atlasIndexAndSize.y);
+        vec2 scale = 1. / vec4(atlasIndexAndSize).yz;
+        vec2 translate = vec2(atlasXy) * scale;
+        fragColorPosition = translate + scale * colorPosition;
       }
     `;
   const fs = `#version 300 es
       uniform sampler2D color;
+
       in mediump vec2 fragColorPosition;
       out mediump vec4 fragColor;
 

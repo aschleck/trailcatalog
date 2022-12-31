@@ -11,8 +11,8 @@ const val TRAIL_FROM_WAY_OFFSET = Long.MAX_VALUE / 2
 const val NANO = .000000001
 
 val POINT_AMENITY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
-    .put(ByteString.copyFromUtf8("bbq"), PointCategory.AMENITY_FIRE_BARBEQUE)
-    .put(ByteString.copyFromUtf8("drinking_water"), PointCategory.AMENITY_DRINKING_WATER)
+    .put(ByteString.copyFromUtf8("bbq"), PointCategory.AMENITY_FIRE_BARBECUE)
+    .put(ByteString.copyFromUtf8("drinking_water"), PointCategory.AMENITY_WATER_DRINKING)
     .put(ByteString.copyFromUtf8("parking"), PointCategory.AMENITY_PARKING)
     .put(ByteString.copyFromUtf8("shelter"), PointCategory.AMENITY_SHELTER)
     .put(ByteString.copyFromUtf8("toilets"), PointCategory.AMENITY_TOILETS)

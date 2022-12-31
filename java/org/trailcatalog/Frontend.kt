@@ -624,7 +624,7 @@ private fun fetchFine(ctx: Context) {
       }
     } else {
       it.prepareStatement(
-          "SELECT p.id, p.type, p.name, p.lat_lng_degrees "
+          "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
               + "FROM points p "
               + "WHERE "
               + "p.cell = ? "
@@ -641,7 +641,7 @@ private fun fetchFine(ctx: Context) {
               id = results.getLong(1),
               type = results.getInt(2),
               name = results.getString(3),
-              vertices = project(results.getBytes(4)),
+              marker = results.getBytes(4),
           ))
     }
   }
@@ -759,7 +759,7 @@ private fun writeDetailPoints(
   for (point in points) {
     output.writeVarLong(point.id)
     output.writeVarInt(point.type)
-    (path.name ?: "").toByteArray(Charsets.UTF_8).let {
+    (point.name ?: "").toByteArray(Charsets.UTF_8).let {
       output.writeVarInt(it.size)
       output.write(it)
     }

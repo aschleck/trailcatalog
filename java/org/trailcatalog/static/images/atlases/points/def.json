@@ -1,0 +1,26 @@
+{
+  "key_type": "PointCategory",
+  "images": [
+    {"file": "alpine_hut.svg", "key": "PointCategory.AMENITY_HUT_ALPINE"},
+    {"file": "barbeque.svg", "key": "PointCategory.AMENITY_FIRE_BARBECUE"},
+		{"file": "bridge.svg"},
+    {"file": "camp_pitch.svg", "key": "PointCategory.AMENITY_CAMP_PITCH"},
+    {"file": "camp_site.svg", "key": "PointCategory.AMENITY_CAMP_SITE"},
+    {"file": "cave_entrance.svg", "key": "PointCategory.NATURAL_CAVE_ENTRANCE"},
+    {"file": "drinking_water.svg", "key": "PointCategory.AMENITY_WATER_DRINKING"},
+    {"file": "firepit.svg", "key": "PointCategory.AMENITY_FIRE_PIT"},
+    {"file": "guidepost.svg", "key": "PointCategory.INFORMATION_GUIDE_POST"},
+    {"file": "visitor_center.svg", "key": "PointCategory.INFORMATION_VISITOR_CENTER"},
+    {"file": "mountain_pass.svg", "key": "PointCategory.WAY_MOUNTAIN_PASS"},
+    {"file": "parking.svg", "key": "PointCategory.AMENITY_PARKING"},
+    {"file": "picnic_table.svg", "key": "PointCategory.AMENITY_PICNIC_TABLE"},
+    {"file": "saddle.svg", "key": "PointCategory.NATURAL_SADDLE"},
+    {"file": "shelter.svg", "key": "PointCategory.AMENITY_SHELTER"},
+    {"file": "toilets.svg", "key": "PointCategory.AMENITY_TOILETS"},
+    {"file": "trailhead.svg", "key": "PointCategory.WAY_PATH_TRAILHEAD"},
+    {"file": "viewpoint.svg", "key": "PointCategory.WAY_VIEWPOINT"},
+    {"file": "volcano.svg", "key": "PointCategory.NATURAL_VOLCANO"},
+    {"file": "waterfall.svg", "key": "PointCategory.NATURAL_WATERFALL"},
+    {"file": "wilderness_hut.svg", "key": "PointCategory.AMENITY_HUT_WILDERNESS"}
+  ]
+}

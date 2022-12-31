@@ -97,7 +97,14 @@ export class RenderPlanner {
         this.area, centerPixels, camera.worldRadius, this.drawables.slice(drawStartIndex, this.drawables.length));
   }
 
-  addBillboard(center: Vec2, offsetPx: Vec2, size: Vec2, texture: WebGLTexture, z: number): void {
+  addAtlasedBillboard(
+      center: Vec2,
+      offsetPx: Vec2,
+      size: Vec2,
+      atlasIndex: number,
+      atlasSize: Vec2,
+      texture: WebGLTexture,
+      z: number): void {
     const x = center[0];
     const xF = Math.fround(x);
     const xR = x - xF;
@@ -121,22 +128,30 @@ export class RenderPlanner {
       z,
     });
 
-    const vertices = new Float32Array(this.geometry, this.geometryByteSize);
-    vertices.set([
+    const floats = new Float32Array(this.geometry, this.geometryByteSize);
+    const uint32s = new Uint32Array(this.geometry, this.geometryByteSize);
+
+    // It's wasteful to use 32-bit ints here (could use 8s) but we have 256 bytes anyway.
+    uint32s.set([
+      // We merge index and size because otherwise std140 gives index a uvec4.
+      /* atlasIndexAndSize= */ atlasIndex, atlasSize[0], atlasSize[1], 0,
+      /* sizeIsPixels= */ size[0] >= 1 ? 1 : 0, // well this is sketchy
+      /* pad out the boolean to clean stale data */ 0, 0, 0,
+    ], 0);
+    this.geometryByteSize += 2 * 4 * 4;
+
+    floats.set([
       /* center= */ xF, xR, yF, yR,
       /* offsetPx= */ offsetPx[0], offsetPx[1],
       /* std140 padding= */ 0, 0,
       /* size= */ wF, wR, hF, hR,
-    ]);
+    ], 2 * 4);
     this.geometryByteSize += 4 * 4 + 4 * 4 + 4 * 4;
-    new Uint8Array(this.geometry, this.geometryByteSize).set([
-        /* sizeIsPixels= */ size[0] >= 1 ? 1 : 0, // well this is sketchy
-        0, // pad this bool out so that it doesn't get corrupted by old data
-        0,
-        0,
-    ]);
-    this.geometryByteSize += 1;
     this.align(256);
+  }
+
+  addBillboard(center: Vec2, offsetPx: Vec2, size: Vec2, texture: WebGLTexture, z: number): void {
+    this.addAtlasedBillboard(center, offsetPx, size, 0, [1, 1], texture, z);
   }
 
   addLines(lines: Line[], radius: number, z: number): void {
