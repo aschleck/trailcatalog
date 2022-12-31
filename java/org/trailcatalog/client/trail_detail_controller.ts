@@ -14,6 +14,8 @@ import { fetchData, TrailId } from './data';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 import { State as VState, ViewportController } from './viewport_controller';
 
+const ELEVATION_GRAPH_RESOLUTION_WIDTH = 1200;
+
 interface Args {
   trailId: TrailId;
 }
@@ -128,14 +130,30 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     super.updateState(newState);
   }
 
+  clearElevationCursor(e: PointerEvent) {
+    if (!this.state.elevation) {
+      return;
+    }
+
+    this.updateState({
+      ...this.state,
+      elevation: {
+        ...this.state.elevation,
+        cursor: undefined,
+        cursorFraction: undefined,
+      },
+    });
+  }
+
   moveElevationCursor(e: PointerEvent) {
     if (!this.state.elevation) {
       return;
     }
 
     const elevation = this.state.elevation;
-    const bound = (e.currentTarget as Element).getBoundingClientRect();
-    const fraction = (e.clientX - bound.x) / bound.width;
+    const svg = e.currentTarget as SVGGraphicsElement;
+    const transform = checkExists(svg.getScreenCTM());
+    const fraction = (e.clientX - transform.e) / transform.d / ELEVATION_GRAPH_RESOLUTION_WIDTH;
     // Not exactly accurate (points might be very close at the path edges) but I don't care.
     const point = elevation.points[Math.floor(fraction * elevation.points.length)];
 
@@ -160,7 +178,7 @@ export function calculateGraph(
   resolution: Vec2;
 } {
   const resolutionHeight = 300;
-  const resolutionWidth = 1200;
+  const ELEVATION_GRAPH_RESOLUTION_WIDTH = 1200;
   let min = Number.MAX_VALUE;
   let max = Number.MIN_VALUE;
   let length = 0;
@@ -211,17 +229,17 @@ export function calculateGraph(
   }
 
   const inverseHeight = resolutionHeight / (max - min);
-  const inverseLength = resolutionWidth / length;
+  const inverseLength = ELEVATION_GRAPH_RESOLUTION_WIDTH / length;
   const heightsString = heights.map(([x, y]) => {
     const fx = Math.floor(x * inverseLength);
-    const fy = Math.floor((max - y) * inverseHeight);
+    const fy = Math.floor((y - min) * inverseHeight);
     return `${fx},${fy}`;
   }).join(' ');
   return {
     extremes: [min, max],
     heights: heightsString,
     points: latLngs,
-    resolution: [resolutionWidth, resolutionHeight],
+    resolution: [ELEVATION_GRAPH_RESOLUTION_WIDTH, resolutionHeight],
   };
 }
 

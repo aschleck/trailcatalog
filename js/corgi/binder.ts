@@ -27,6 +27,7 @@ interface PropertyKeyToHandlerMap<C> {
   mouseover: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   mouseout: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   mouseup: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
+  pointerleave: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
   pointermove: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
   render: AMethodOnWithParameters<C, []>,
 }

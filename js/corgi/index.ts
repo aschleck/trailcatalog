@@ -58,8 +58,14 @@ export interface SVGProperties extends Properties<SVGElement> {
 }
 
 export interface TextProperties extends Properties<SVGTextElement> {
+  dominant_baseline?:
+      'auto'|'text-bottom'|'alphabetic'|'ideographic'|'middle'|'central'|'mathematical'|'hanging'
+            |'text-top';
+  text_anchor?: 'start'|'middle'|'end';
   x?: number|string;
   y?: number|string;
+  dx?: number|string;
+  dy?: number|string;
 }
 
 class CorgiElement {

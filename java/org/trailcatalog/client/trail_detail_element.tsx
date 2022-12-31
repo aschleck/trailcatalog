@@ -3,7 +3,7 @@ import * as corgi from 'js/corgi';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 
 import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
-import { metersToFeet } from './common/math';
+import { metersToFeet, metersToMiles } from './common/math';
 import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
@@ -15,6 +15,8 @@ import { setTitle } from './title';
 import { TrailDetailController, State } from './trail_detail_controller';
 import { TrailPopup } from './trail_popup';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
+
+const GRAPH_TEXT_SPACE_PX = [64, 32] as const;
 
 export function TrailDetailElement({trailId}: {
   trailId: TrailId;
@@ -51,7 +53,7 @@ export function TrailDetailElement({trailId}: {
   setTitle(state.trail?.name);
 
   return <>
-    <div className="flex flex-col h-full items-center">
+    <div className="flex flex-col items-center min-h-full">
       <Header />
       <div
           js={corgi.bind({
@@ -216,35 +218,62 @@ function NumericDivider() {
 }
 
 function ElevationGraph(state: State) {
+  const trail = checkExists(state.trail);
   const elevation = checkExists(state.elevation);
-  const [width, height] = elevation.resolution;
+  const [resWidth, resHeight] = elevation.resolution;
+
+  // SVG has a flipped y coordinate, so we do everything negatively to flip properly. The controller
+  // calculates points in a particular resolution, so we determine what elevations we want to show
+  // and then transform the points into our frame.
 
   const [minMeters, maxMeters] = elevation.extremes;
+  let length;
+  let lengthUnit;
   let min;
   let max;
   if (shouldUseImperial()) {
+    length = metersToMiles(trail.lengthMeters);
+    lengthUnit = 'mi';
     min = metersToFeet(minMeters);
     max = metersToFeet(maxMeters);
   } else {
+    length = trail.lengthMeters / 1000;
+    lengthUnit = 'km';
     min = minMeters;
     max = maxMeters;
   }
+
   const gridEvery = Math.ceil((max - min) / 8 / 100) * 100;
   const gridLines = [];
   const gridText = [];
-  const lowestGrid = Math.floor((min + gridEvery - 1) / gridEvery) * gridEvery;
-  const highestGrid = Math.floor(max / gridEvery) * gridEvery;
-  const scale = height / (max - min);
+  const lowestGrid = (Math.floor(min / gridEvery) - 1) * gridEvery;
+  const highestGrid = (Math.ceil(max / gridEvery) + 1) * gridEvery;
+  const height = 300;
+  const scale = 300 / (highestGrid - lowestGrid);
   for (let y = lowestGrid; y <= highestGrid; y += gridEvery) {
-    const ry = height - scale * (y - min);
-    gridLines.push(<line x1="0" y1={ry} x2={width} y2={ry} />);
-    gridText.push(<text x="0" y={ry}>{y}</text>);
+    gridLines.push(<line x1="0" y1={-y * scale} x2={resWidth} y2={-y * scale} />);
+    gridText.push(
+        <text dominant_baseline="hanging" text_anchor="end" x="-8" y={-y * scale}>{y}</text>
+    );
+  }
+
+  const indicateEvery = Math.ceil(length / 7 * 2) / 2;
+  const distanceIndicators = [];
+  for (let x = 0; x <= length; x += indicateEvery) {
+    distanceIndicators.push(
+        <text
+            dominant_baseline="hanging"
+            x={x / length * resWidth}
+            y={-lowestGrid * scale + 8}>
+          {x} {lengthUnit}
+        </text>
+    );
   }
 
   let indicator;
-  if (elevation.cursorFraction !== undefined) {
-    const x = elevation.cursorFraction * width;
-    indicator = <line x1={x} y1="0" x2={x} y2={height} />;
+  if (elevation.cursorFraction !== undefined && elevation.cursorFraction >= 0) {
+    const x = elevation.cursorFraction * resWidth;
+    indicator = <line x1={x} y1={-lowestGrid * scale} x2={x} y2={-highestGrid * scale} />;
   } else {
     indicator = <line x1="0" y1="0" x2="0" y2="0" />;
   }
@@ -252,17 +281,38 @@ function ElevationGraph(state: State) {
   return <>
     <svg
         unboundEvents={{
+          'pointerleave': 'clearElevationCursor',
           'pointermove': 'moveElevationCursor',
         }}
-        viewBox={`0 0 ${width} ${height}`}>
+        viewBox={
+          [
+            -GRAPH_TEXT_SPACE_PX[0],
+            -highestGrid * scale,
+            resWidth + GRAPH_TEXT_SPACE_PX[0],
+            height + GRAPH_TEXT_SPACE_PX[1],
+          ].join(' ')
+        }>
       <g className="stroke-gray-300">
-        <g style="stroke-dasharray: 8">
+        <g style="stroke-dasharray: 4">
           {gridLines}
         </g>
+        {distanceIndicators}
         {gridText}
         {indicator}
       </g>
-      <polyline fill="none" points={elevation.heights} stroke="black" stroke_width="2" />
+      <polyline
+          fill="none"
+          points={elevation.heights}
+          stroke="black"
+          stroke_width={2}
+          style={
+            [
+              'transform:',
+              `translateY(${-max * scale}px)`,
+              `scaleY(${(max - min) / resHeight * scale})`,
+            ].join(' ')
+          }
+      />
     </svg>
   </>;
 }
