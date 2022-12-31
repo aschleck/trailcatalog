@@ -232,7 +232,8 @@ export function calculateGraph(
   const inverseLength = ELEVATION_GRAPH_RESOLUTION_WIDTH / length;
   const heightsString = heights.map(([x, y]) => {
     const fx = Math.floor(x * inverseLength);
-    const fy = Math.floor((y - min) * inverseHeight);
+    // We y-flip here because it makes the transforms in the element simpler.
+    const fy = Math.floor((max - y) * inverseHeight);
     return `${fx},${fy}`;
   }).join(' ');
   return {
