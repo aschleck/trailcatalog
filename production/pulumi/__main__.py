@@ -254,7 +254,7 @@ for preemptible in (True, False):
             --max-upload-limit=1K \\
             --seed-ratio=0.001 \\
             --seed-time=0 \\
-            https://ftpmirror.your.org/pub/openstreetmap/pbf/planet-latest.osm.pbf.torrent
+            https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf.torrent
 
         mv /mnt/disks/scratch/planet-2*.osm.pbf /mnt/disks/scratch/planet-latest.osm.pbf
 
@@ -270,14 +270,14 @@ for preemptible in (True, False):
             --rm \\
             --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
             --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
-            --env JAVA_TOOL_OPTIONS="-Xms8g -Xmx11g -Xss1g -XX:MaxMetaspaceSize=1g" \\
+            --env JAVA_TOOL_OPTIONS="-Xms11g -Xmx11g -Xss1g -XX:MaxMetaspaceSize=1g" \\
             --mount type=bind,source=/mnt/disks/import_cache,target=/import_cache \\
             --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
             us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \\
             --block_size 4194304 \\
             --buffer_size 500000000 \\
             --elevation_profile /import_cache/elevation_profile.pb \\
-            --heap_dump_threshold 3048000000 \\
+            --heap_dump_threshold 4048000000 \\
             --pbf_path /tmp \\
             --source planet
 
