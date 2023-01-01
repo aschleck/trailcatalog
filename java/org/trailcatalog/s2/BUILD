@@ -1,20 +1,16 @@
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
-load("@build_bazel_rules_nodejs//:index.bzl", "js_library")
+load("//build_defs:ts.bzl", "tc_ts_project")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_application", "j2cl_library")
 load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
-load("@npm//@bazel/typescript:index.bzl", "ts_project")
 
-ts_project(
+tc_ts_project(
     name = "s2",
     srcs = [
         "SimpleS2.ts",
         "index.ts",
     ],
-    allow_js = True,
-    declaration = True,
-    preserve_jsx = True,
-    tsconfig = "//:tsconfig",
     deps = [
         ":s2_typed",
     ],

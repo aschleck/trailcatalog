@@ -1,9 +1,9 @@
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
-load("@build_bazel_rules_nodejs//:index.bzl", "nodejs_binary", "pkg_web")
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
 
-nodejs_binary(
+js_binary(
     name = "runner",
     entry_point = "frontend.js",
     data = [
@@ -13,7 +13,7 @@ nodejs_binary(
 
 esbuild_binary(
     name = "frontend",
-    entry_point = "server.ts",
+    entry_point = "server.js",
     platform = "node",
     deps = [
         ":css",
@@ -30,10 +30,10 @@ tc_ts_project(
         "//java/org/trailcatalog/client:ts",
         "//java/org/trailcatalog/client/common",
         "//js/corgi",
-        "@npm//fastify",
-        "@npm//node-fetch",
-        "@npm//@fastify/request-context",
-        "@npm//@types/node",
+        "//:node_modules/fastify",
+        "//:node_modules/node-fetch",
+        "//:node_modules/@fastify/request-context",
+        "//:node_modules/@types/node",
     ],
 )
 

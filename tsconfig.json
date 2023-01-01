@@ -3,11 +3,12 @@
     "allowJs": true,
     "baseUrl": ".",
     "declaration": true,
-    "jsx": "preserve",
+    "esModuleInterop": true, // recommended by esbuild
+    "isolatedModules": true, // recommended by esbuild
+    "jsx": "react",
     "jsxFactory": "corgi.createVirtualElement",
     "jsxFragmentFactory": "corgi.Fragment",
-    "preserveSymlinks": true,
-    "module": "CommonJS", // for Jest
+    "module": "commonjs", // for Jest
     "moduleResolution": "node",
     "strict": true,
     "target": "es2020",
@@ -23,19 +24,5 @@
         "bazel-out/darwin-dbg/bin/*"
       ]
     },
-    "rootDirs": [
-      ".",
-      "bazel-out/x64_windows-fastbuild/bin",
-      "bazel-out/x64_windows-dbg/bin",
-      "bazel-out/k8-fastbuild/bin",
-      "bazel-out/k8-dbg/bin",
-      "bazel-out/host/bin",
-      "bazel-out/darwin-fastbuild/bin",
-      "bazel-out/darwin-dbg/bin"
-    ]
   },
-  "exclude": [
-    "**/bin/external/**/*",
-    "node_modules/*"
-  ]
 }

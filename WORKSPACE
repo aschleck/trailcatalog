@@ -12,42 +12,72 @@ rules_java_dependencies()
 rules_java_toolchains()
 
 http_archive(
-    name = "build_bazel_rules_nodejs",
-    sha256 = "d378df503b8441457851d252dc39b1ed1d8f78abf2247d69abf21b410a256bc6",
-    strip_prefix = "rules_nodejs-ad70bee8bfd142348853d5cd91dfc04c3acbd4cb",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/archive/ad70bee8bfd142348853d5cd91dfc04c3acbd4cb.zip"],
+    name = "aspect_rules_ts",
+    sha256 = "e81f37c4fe014fc83229e619360d51bfd6cb8ac405a7e8018b4a362efa79d000",
+    strip_prefix = "rules_ts-1.0.4",
+    url = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v1.0.4.tar.gz",
 )
 
-load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
+load("@aspect_rules_ts//ts:repositories.bzl", LATEST_TS_VERSION="LATEST_VERSION", "rules_ts_dependencies")
 
-build_bazel_rules_nodejs_dependencies()
+rules_ts_dependencies(
+    ts_version = LATEST_TS_VERSION,
+)
 
-load("@build_bazel_rules_nodejs//:index.bzl", "node_repositories")
+load("@rules_nodejs//nodejs:repositories.bzl", "DEFAULT_NODE_VERSION", "nodejs_register_toolchains")
 
-node_repositories()
+nodejs_register_toolchains(
+    name = "node",
+    node_version = DEFAULT_NODE_VERSION,
+)
 
-load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
+load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock")
 
-yarn_install(
+npm_translate_lock(
     name = "npm",
-    exports_directories_only = False,
-    package_json = "//:package.json",
-    yarn_lock = "//:yarn.lock",
+    pnpm_lock = "//:pnpm-lock.yaml",
 )
 
-load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "esbuild_repositories")
+load("@npm//:repositories.bzl", "npm_repositories")
 
-esbuild_repositories(npm_repository = "npm")
+npm_repositories()
 
-# TODO: remove after https://github.com/bazelbuild/rules_nodejs/pull/3414
 http_archive(
-    name = "io_bazel_rules_webtesting",
-    sha256 = "5dc7796a03172f4949c734a4a9c685cc3c11511ffa49036ca8f979c06d177d9f",
-    strip_prefix = "rules_webtesting-c241fb5b46f2d1c408f3446b9f2ada773acb6716",
-    urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/c241fb5b46f2d1c408f3446b9f2ada773acb6716.zip",
-    ],
+    name = "aspect_rules_esbuild",
+    sha256 = "f9b5bf16251e3e4e127337ef968e6a398c9a4f353f1730e6c7ff6c9a8981e858",
+    strip_prefix = "rules_esbuild-0.13.4",
+    url = "https://github.com/aspect-build/rules_esbuild/archive/refs/tags/v0.13.4.tar.gz",
 )
+
+load("@aspect_rules_esbuild//esbuild:dependencies.bzl", "rules_esbuild_dependencies")
+
+rules_esbuild_dependencies()
+
+load("@aspect_rules_esbuild//esbuild:repositories.bzl", LATEST_ESBUILD_VERSION="LATEST_VERSION", "esbuild_register_toolchains")
+
+esbuild_register_toolchains(
+    name = "esbuild",
+    esbuild_version = LATEST_ESBUILD_VERSION,
+)
+
+http_archive(
+    name = "aspect_rules_jest",
+    sha256 = "f2be891d9b38473f08a336e5f6ca327bfdc90411b1798a1c476c6f6ceae54520",
+    strip_prefix = "rules_jest-0.13.1",
+    url = "https://github.com/aspect-build/rules_jest/archive/refs/tags/v0.13.1.tar.gz",
+)
+
+load("@aspect_rules_jest//jest:dependencies.bzl", "rules_jest_dependencies")
+
+rules_jest_dependencies()
+
+load("@aspect_rules_jest//jest:repositories.bzl", "jest_repositories")
+
+jest_repositories(name = "jest")
+
+load("@jest//:npm_repositories.bzl", jest_npm_repositories = "npm_repositories")
+
+jest_npm_repositories()
 
 RULES_JVM_EXTERNAL_VERSION = "d6884e66411033794a8f7137864e07143eb6814f"
 

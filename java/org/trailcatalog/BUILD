@@ -1,6 +1,6 @@
 package(default_visibility = [":internal"])
 
-load("@build_bazel_rules_nodejs//:index.bzl", "copy_to_bin")
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")

@@ -1,6 +1,6 @@
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
-load("@npm//@bazel/typescript:index.bzl", "ts_project")
+load("//build_defs:ts.bzl", "tc_ts_project")
 load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary")
 
@@ -9,13 +9,9 @@ kt_jvm_library(
     srcs = glob(["*.kt"], exclude=["ToTypeScript.kt"]),
 )
 
-ts_project(
+tc_ts_project(
     name = "models-ts",
     srcs = [":to_ts"],
-    allow_js = True,
-    declaration = True,
-    preserve_jsx = True,
-    tsconfig = "//:tsconfig",
 )
 
 genrule(

@@ -1,19 +1,34 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@npm//@bazel/esbuild:index.bzl", "esbuild_config")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 
-exports_files(["jest.config.js"])
-
-esbuild_config(
+js_library(
     name = "esbuild_config",
+    srcs = [
+        "esbuild.config.mjs",
+    ],
+    deps = [
+        ":esbuild_config_deps",
+        "//third_party/deanc-esbuild-plugin-postcss",
+    ],
+)
+
+js_library(
+    name = "esbuild_config_deps",
     srcs = [
         "postcss.config.mjs",
         "tailwind.config.js",
     ],
-    config_file = "esbuild.config.mjs",
     deps = [
-        "@npm//@deanc/esbuild-plugin-postcss",
-        "@npm//autoprefixer",
-        "@npm//tailwindcss",
+        "//:node_modules/autoprefixer",
+        "//:node_modules/tailwindcss",
     ],
 )
+
+js_library(
+    name = "jest_config",
+    srcs = [
+        "jest.config.js",
+    ],
+)
+
