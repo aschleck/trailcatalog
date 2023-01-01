@@ -47,7 +47,8 @@ export function MapElement({
               + (className ? ` ${className}` : "")
         }
     >
-      <canvas className="h-full w-full" tabIndex="-1" />
+      {/* We set tabIndex so the canvas can pull focus off of inputs */}
+      <canvas className="h-full w-full focus-visible:outline-none" tabIndex="-1" />
       <div className="
           absolute
           bg-white-opaque-160
