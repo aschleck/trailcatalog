@@ -56,8 +56,8 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
             pipeline
                 .read(PbfBlockReader(p, readNodes = true, readRelations = false, readWays = false))
           });
-  val nodes = nodeBlocks.then(ExtractNodes()).groupBy("GroupNodes") { it.id }
   nodeBlocks.then(ExtractPoints()).write(DumpPoints(epoch, hikari))
+  val nodes = nodeBlocks.then(ExtractNodes()).groupBy("GroupNodes") { it.id }
   val ways =
       pipeline.cat(
           pbfs.map { p ->
