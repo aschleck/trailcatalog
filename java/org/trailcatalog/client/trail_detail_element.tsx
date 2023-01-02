@@ -45,7 +45,6 @@ export function TrailDetailElement({trailId}: {
     state = {
       containingBoundaries,
       pathProfiles,
-      pinned: false,
       selectedCardPosition: [-1, -1],
       selectedTrails: [],
       trail,
@@ -58,7 +57,7 @@ export function TrailDetailElement({trailId}: {
     <div className="flex flex-col items-center min-h-full">
       <Header />
 
-      {state.containingBoundaries && state.trail && state.pinned
+      {state.containingBoundaries && state.trail
           ? <Content trailId={trailId} state={state} updateState={updateState} />
           : <Loading trailId={trailId} state={state} updateState={updateState} />
       }

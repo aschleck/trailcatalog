@@ -33,7 +33,6 @@ export interface State extends VState {
     resolution: Vec2;
   }
   pathProfiles?: Map<bigint, ElevationProfile>;
-  pinned: boolean;
   trail?: Trail;
   weather?: {
     temperatureCelsius: number;
@@ -57,28 +56,14 @@ export class LoadingController extends Controller<Args, LoadingDeps, HTMLElement
   constructor(response: Response<LoadingController>) {
     super(response);
 
-    const pin = (trail: Trail) => {
-      response.deps.services.data.setPins({trail: trail.id}, true).then(_ => {
-        this.updateState({
-          ...this.state,
-          pinned: true,
-        });
-      });
-    };
-
     const trailId = response.args.trailId;
-    if (this.state.trail) {
-      pin(this.state.trail);
-    } else {
-      fetchData('trail', {trail_id: trailId}).then(raw => {
-        const trail = trailFromRaw(raw);
-        pin(trail);
-        this.updateState({
-          ...this.state,
-          trail,
-        });
+    fetchData('trail', {trail_id: trailId}).then(raw => {
+      const trail = trailFromRaw(raw);
+      this.updateState({
+        ...this.state,
+        trail,
       });
-    }
+    });
 
     if (!this.state.containingBoundaries) {
       fetchData('boundaries_containing_trail', {trail_id: trailId}).then(raw => {
@@ -125,6 +110,18 @@ export class TrailDetailController extends ViewportController<{}, Deps, State> {
     const trail = checkExists(this.state.trail);
     history.silentlyReplaceUrl(`/trail/${trail.readableId}`);
 
+    const data = response.deps.services.data;
+    response.deps.services.data.setPins({trail: trail.id}, true).then(_ => {
+      this.updateState({
+        ...this.state,
+        elevation:
+            calculateGraph(
+                data,
+                checkExists(this.state.pathProfiles),
+                checkExists(this.state.trail)),
+      });
+    });
+
     const center = unprojectS2LatLng(trail.markerPx[0], trail.markerPx[1]);
     fetch(
         'https://api.open-meteo.com/v1/forecast'
@@ -141,16 +138,6 @@ export class TrailDetailController extends ViewportController<{}, Deps, State> {
             },
           });
         });
-
-    const data = response.deps.services.data;
-    this.updateState({
-      ...this.state,
-      elevation:
-          calculateGraph(
-              data,
-              checkExists(this.state.pathProfiles),
-              checkExists(this.state.trail)),
-    });
   }
 
   browseMap() {
