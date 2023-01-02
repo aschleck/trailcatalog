@@ -1,5 +1,4 @@
 import * as corgi from 'js/corgi';
-import { Link } from 'js/corgi/history/link_element';
 
 import { formatCount, formatDistance, formatHeight } from './common/formatters';
 import { HOVER_HEX_PALETTE } from './map/common/colors';

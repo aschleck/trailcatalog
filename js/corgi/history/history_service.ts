@@ -13,6 +13,19 @@ export class HistoryService extends Service<EmptyDeps> {
     super(response);
     this.listeners = new Set();
 
+    window.addEventListener('click', (e: Event) => {
+      let cursor: Element|null = e.target as Element;
+      while (cursor && cursor.tagName !== 'A') {
+        cursor = cursor.parentElement;
+      }
+      if (cursor) {
+        const href = cursor.getAttribute('href');
+        if (href && href.startsWith('/')) {
+          e.preventDefault();
+          this.goTo(href);
+        }
+      }
+    });
     window.addEventListener('popstate', (e: PopStateEvent) => {
       this.notifyListeners(new URL(window.location.href));
     });

@@ -1,6 +1,5 @@
 import { aDescendsB, RelationCategory } from 'java/org/trailcatalog/models/categories';
 import * as corgi from 'js/corgi';
-import { Link } from 'js/corgi/history/link_element';
 import { FlatButton } from 'js/dino/button';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
@@ -152,9 +151,9 @@ function ResultItem({boundaries, href, text, query}: {
 }) {
   return <>
     <div>
-      <Link href={href}>
+      <a href={href}>
         <HighlightText haystack={text} needle={query} />
-      </Link>
+      </a>
     </div>
     <div className="font-normal text-sm text-tc-gray-400">
       <BoundaryCrumbs boundaries={boundaries} />
