@@ -270,7 +270,7 @@ for preemptible in (True, False):
             --rm \\
             --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
             --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
-            --env JAVA_TOOL_OPTIONS="-Xms11g -Xmx11g -Xss1g -XX:MaxMetaspaceSize=1g" \\
+            --env JAVA_TOOL_OPTIONS="-XX:InitialHeapSize=10g -XX:MaxHeapSize=10g -XX:MaxMetaspaceSize=1g" \\
             --mount type=bind,source=/mnt/disks/import_cache,target=/import_cache \\
             --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
             us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \\
