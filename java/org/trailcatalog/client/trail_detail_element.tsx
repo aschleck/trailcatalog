@@ -147,16 +147,16 @@ function Content({trailId, state, updateState}: {
           key: JSON.stringify(trailId),
           state: [state, updateState],
         })}
-        className="h-full max-w-6xl px-4 my-8 w-full"
+        className="h-full max-w-6xl px-4 my-6 w-full"
     >
       <header className="font-bold font-sans text-3xl">
         {trail.name}
       </header>
-      <aside>
+      <aside className="mt-2">
         <BoundaryCrumbs boundaries={containingBoundaries} />
       </aside>
-      <div className="bg-tc-gray-100 h-0.5 my-4 w-full" />
-      <aside className="flex flex-wrap items-stretch">
+      <div className="bg-tc-gray-100 h-0.5 mt-4 w-full" />
+      <aside className="flex flex-wrap items-stretch mt-4">
         <NumericCrumb
             icon="CharticulatorLine"
             label={isOneWay ? "One-way distance" : "Round-trip distance"}
@@ -199,11 +199,10 @@ function Content({trailId, state, updateState}: {
             unit={temperature?.unit ?? ''}
         />
       </aside>
-      <div className="relative">
+      <div className="mt-8 relative">
         <MapElement
             active={{trails: [trail]}}
             camera={trail.bound}
-            className="my-8"
             height="h-[32rem]"
             ref="map"
             overlays={{
@@ -237,13 +236,11 @@ function NumericCrumb({
   unit: string,
 }) {
   return <>
-    <div className="min-w-[192px]">
+    <div className="min-w-[142px]">
       <div>{label}</div>
-      <div>
-        <FabricIcon name={icon} />
-        {' '}
-        <span className="text-lg">{value}</span>
-        {' '}
+      <div className="mt-2">
+        <FabricIcon name={icon} className="mr-2" />
+        <span className="mr-0.5 text-lg">{value}</span>
         <span className="text-sm">{unit}</span>
       </div>
     </div>
@@ -285,7 +282,9 @@ function ElevationGraph(state: State) {
   const gridEvery = Math.ceil((max - min) / 8 / 100) * 100;
   const gridLines = [];
   const gridText = [];
-  const lowestGrid = (Math.floor(min / gridEvery) - 1) * gridEvery;
+  const rawLowestGrid = (Math.floor(min / gridEvery) - 1) * gridEvery;
+  // It's weird to show negative elevation values for trails that go to sea level.
+  const lowestGrid = min >= 0 ? Math.max(0, rawLowestGrid) : rawLowestGrid;
   const highestGrid = (Math.ceil(max / gridEvery) + 1) * gridEvery;
   const height = 300;
   const scale = 300 / (highestGrid - lowestGrid);
