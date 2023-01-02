@@ -13,7 +13,7 @@ import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
 import { initialData } from './data';
 import { searchTrailsFromRaw } from './search_controller';
-import { LIMIT, SearchResultsOverviewController, State } from './search_results_overview_controller';
+import { LIMIT, LoadingController, SearchResultsOverviewController, State } from './search_results_overview_controller';
 import { setTitle } from './title';
 import { TrailSidebar } from './trail_list';
 import { TrailPopup } from './trail_popup';
@@ -71,6 +71,42 @@ export function SearchResultsOverviewElement(
     };
   }
 
+  return <>
+      {((!boundaryId || state.boundary) && (!query || state.searchTrails))
+          ? <Content boundaryId={boundaryId} query={query} state={state} updateState={updateState} />
+          : <Loading boundaryId={boundaryId} query={query} state={state} updateState={updateState} />
+      }
+  </>;
+}
+
+function Loading({boundaryId, query, state, updateState}: {
+  boundaryId?: string,
+  query?: string,
+  state: State,
+  updateState: (newState: State) => void,
+}) {
+  return <>
+    <div
+        js={corgi.bind({
+          controller: LoadingController,
+          args: {boundaryId, query},
+          events: {
+            render: 'wakeup',
+          },
+          state: [state, updateState],
+        })}
+    >
+      Loading...
+    </div>
+  </>;
+}
+
+function Content({boundaryId, query, state, updateState}: {
+  boundaryId?: string,
+  query?: string,
+  state: State,
+  updateState: (newState: State) => void,
+}) {
   const filter = state.filterInBoundary ? state.trailsInBoundaryFilter : state.trailsFilter;
 
   let filteredTrails: Array<Trail|TrailSearchResult> = [];
@@ -136,7 +172,7 @@ export function SearchResultsOverviewElement(
             ],
             render: 'wakeup',
           },
-          key: `${search.get('boundary')}&${query}`,
+          key: `${boundaryId}&${query}`,
           state: [state, updateState],
         })}
         className="flex flex-col h-full"

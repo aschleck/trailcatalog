@@ -80,8 +80,10 @@ class CorgiElement {
 
 type VHandle = object & {brand: 'VHandle'};
 
+export const FRAGMENT_TAG = 'fragment';
+
 interface VElement {
-  element: keyof HTMLElementTagNameMap;
+  element: keyof HTMLElementTagNameMap|typeof FRAGMENT_TAG;
   props: Properties<HTMLElement>;
 
   factory?: ElementFactory;
@@ -202,30 +204,20 @@ export function createVirtualElement(
       vElementPath.pop();
     }
 
-    if (vElements.has(v)) {
-      // there is a gnarly bug to be careful about: if a <A /> is defined as A = <B /> then A will
-      // return the result of B directly. We therefore need to make sure we don't create a v element
-      // for the result of B tied to A, because A is irrelevant.
-    } else {
-      v.factory = element;
-      v.factoryProps = props;
-      v.handle = handle;
-      v.state = [state, updateState];
-      vElements.add(v);
-      vHandlesToElements.set(handle, v);
-    }
+    v.factory = element;
+    v.factoryProps = props;
+    v.handle = handle;
+    v.state = [state, updateState];
+    vElements.add(v);
+    vHandlesToElements.set(handle, v);
 
     return v;
   } else if (element === Fragment) {
-    if (expandChildren.length === 1 && typeof expandChildren[0] === 'object') {
-      return expandChildren[0];
-    } else {
-      return {
-        element: 'div',
-        props,
-        children: expandChildren,
-      };
-    }
+    return {
+      element: FRAGMENT_TAG,
+      props,
+      children: expandChildren,
+    };
   } else {
     return {
       element,
@@ -244,11 +236,6 @@ function updateToState(element: VElement, newState: object): void {
     throw new Error('Cannot update element without a factory');
   }
 
-  const node = vElementsToNodes.get(element);
-  if (!node) {
-    return;
-  }
-
   vElementPath.push({
     liveChildren: element.children,
     reconstructed: 0,
@@ -260,17 +247,53 @@ function updateToState(element: VElement, newState: object): void {
     vElementPath.pop();
   }
 
-  const result = applyUpdate(element, newElement);
-  if (node !== result.root) {
-    node.parentNode?.replaceChild(result.root, node);
+  let oldExpand;
+  if (element.element === FRAGMENT_TAG) {
+    oldExpand = expandFragments(element.children);
+  } else {
+    oldExpand = [element];
+  }
+  let newExpand;
+  if (newElement.element === FRAGMENT_TAG) {
+    newExpand = expandFragments(newElement.children);
+  } else {
+    newExpand = [newElement];
   }
 
-  Object.assign(element, newElement);
-  vElementsToNodes.set(element, result.root);
-  applyInstantiationResult(result);
+  if (oldExpand.length !== newExpand.length) {
+    throw new Error('Cannot change child count with fragment state update');
+  }
+
+  for (let i = 0; i < oldExpand.length; ++i) {
+    const was = oldExpand[i];
+    const is = newExpand[i];
+
+    if (typeof was !== 'object' || typeof is !== 'object') {
+      throw new Error('Cannot update primitive fragment children');
+    }
+
+    const node = vElementsToNodes.get(was);
+    if (!node) {
+      console.error('Stale state update, or terrifying bug');
+      return;
+    }
+
+    const result = applyUpdate(was, is);
+    if (node !== result.root) {
+      node.parentNode?.replaceChild(result.root, node);
+    }
+
+    Object.assign(was, is);
+    vElementsToNodes.set(was, result.root);
+    applyInstantiationResult(result);
+  }
 }
 
 function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResult {
+  if (to.element === FRAGMENT_TAG) {
+    throw new Error('Not supposed to get fragments here');
+  }
+
   if (!from
       || from.element !== to.element
       || from.props.js?.controller !== to.props.js?.controller
@@ -322,9 +345,11 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   }
 
   const oldChildren = [...node.childNodes];
-  for (let i = 0; i < to.children.length; ++i) {
-    const was = from.children[i];
-    const is = to.children[i];
+  const fromChildren = expandFragments(from.children);
+  const toChildren = expandFragments(to.children);
+  for (let i = 0; i < toChildren.length; ++i) {
+    const was = fromChildren[i];
+    const is = toChildren[i];
 
     if (was === is) {
       continue;
@@ -355,7 +380,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
     result.sideEffects.push(...childResult.sideEffects);
     result.unboundEventss.push(...childResult.unboundEventss);
   }
-  for (let i = to.children.length; i < from.children.length; ++i) {
+  for (let i = toChildren.length; i < fromChildren.length; ++i) {
     const old = checkExists(node.lastChild);
     old.remove();
     result.sideEffects.push(() => { disposeBoundElementsIn(old); });
@@ -380,6 +405,10 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
       sideEffects: [],
       unboundEventss: [],
     };
+  }
+
+  if (element.element === FRAGMENT_TAG) {
+    throw new Error('Not supposed to get fragments here');
   }
 
   const ns = TAG_TO_NAMESPACE.get(element.element) ?? 'http://www.w3.org/1999/xhtml';
@@ -411,7 +440,7 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
 
   const sideEffects = [];
 
-  for (const child of element.children) {
+  for (const child of expandFragments(element.children)) {
     const childResult = createElement(child);
     root.append(childResult.root);
     sideEffects.push(...childResult.sideEffects);
@@ -432,6 +461,10 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
 
 export function appendElement(parent: HTMLElement|SVGElement, child: VElementOrPrimitive): void {
   if (typeof child === 'object') {
+    if (child.element === FRAGMENT_TAG) {
+      throw new Error('Fragments are unsupported');
+    }
+
     const result = createElement(child);
     parent.append(result.root);
     applyInstantiationResult(result);
@@ -441,12 +474,21 @@ export function appendElement(parent: HTMLElement|SVGElement, child: VElementOrP
 }
 
 export function hydrateTree(parent: HTMLElement|SVGElement, tree: VElementOrPrimitive): void {
-  if (parent.childNodes.length !== 1) {
-    throw new Error("Unable to hydrate, parent has multiple children");
+  let expanded;
+  if (typeof tree === 'object' && tree.element === FRAGMENT_TAG) {
+    expanded = expandFragments(tree.children);
+  } else {
+    expanded = [tree];
   }
 
-  const result = hydrateElement(parent.childNodes[0], tree);
-  applyInstantiationResult(result);
+  if (expanded.length !== parent.childNodes.length) {
+    throw new Error(
+        `Parent has ${parent.childNodes.length} children but expected ${expanded.length}`);
+  }
+
+  for (let i = 0; i < expanded.length; ++i) {
+    applyInstantiationResult(hydrateElement(parent.childNodes[i], expanded[i]));
+  }
 }
 
 function hydrateElement(root: ChildNode, element: VElementOrPrimitive): InstantiationResult {
@@ -458,6 +500,10 @@ function hydrateElement(root: ChildNode, element: VElementOrPrimitive): Instanti
     };
   }
 
+  if (element.element === FRAGMENT_TAG) {
+    throw new Error('Not supposed to get fragments here');
+  }
+
   if (!(root instanceof HTMLElement) && !(root instanceof SVGElement)) {
     throw new Error("Cannot hydrate non-element root");
   }
@@ -465,9 +511,10 @@ function hydrateElement(root: ChildNode, element: VElementOrPrimitive): Instanti
     throw new Error(
         `Mismatched tag type: ${root.tagName} != ${element.element}`);
   }
-  if (root.childNodes.length !== element.children.length) {
+  const children = expandFragments(element.children);
+  if (root.childNodes.length !== children.length) {
     throw new Error(
-        `Mismatched child count: ${root.childNodes.length} != ${element.children.length}`);
+        `Mismatched child count: ${root.childNodes.length} != ${children.length}`);
   }
 
   vElementsToNodes.set(element, root);
@@ -489,8 +536,8 @@ function hydrateElement(root: ChildNode, element: VElementOrPrimitive): Instanti
 
   const sideEffects = [];
 
-  for (let i = 0; i < element.children.length; ++i) {
-    const childResult = hydrateElement(root.childNodes[i], element.children[i]);
+  for (let i = 0; i < children.length; ++i) {
+    const childResult = hydrateElement(root.childNodes[i], children[i]);
     sideEffects.push(...childResult.sideEffects);
     unboundEventss.push(...childResult.unboundEventss);
   }
@@ -536,3 +583,18 @@ function isCorgiElement(v: unknown): v is CorgiElement {
   return v instanceof CorgiElement;
 }
 
+function expandFragments(elements: VElementOrPrimitive[]): VElementOrPrimitive[] {
+  const expanded: VElementOrPrimitive[] = [];
+  expandFragmentsRecursive(elements, expanded);
+  return expanded;
+}
+
+function expandFragmentsRecursive(elements: VElementOrPrimitive[], into: VElementOrPrimitive[]): void {
+  for (const element of elements) {
+    if (typeof element === 'object' && element.element === FRAGMENT_TAG) {
+      expandFragmentsRecursive(element.children, into);
+    } else {
+      into.push(element);
+    }
+  }
+}

@@ -3,7 +3,7 @@ import fetch from 'node-fetch';
 import { fastifyRequestContextPlugin, requestContext } from '@fastify/request-context';
 
 import { deepEqual } from 'js/common/comparisons';
-import { Properties, VElementOrPrimitive } from 'js/corgi';
+import { FRAGMENT_TAG, Properties, VElementOrPrimitive } from 'js/corgi';
 
 import { InitialDataKey } from '../client/common/ssr_aware';
 import { ViewsService } from '../client/views/views_service';
@@ -148,7 +148,10 @@ function render(element: VElementOrPrimitive): string {
   if (element instanceof Object) {
     const properties = renderProperties(element.props);
     const spaceProperties = properties ? ` ${properties}` : '';
-    if (element.children) {
+    if (element.element === FRAGMENT_TAG) {
+      const children = element.children.map(render);
+      return children.join('');
+    } else if (element.children) {
       const children = element.children.map(render);
       return `<${element.element}${spaceProperties}>${children.join('')}</${element.element}>`;
     } else {
