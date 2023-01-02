@@ -10,7 +10,6 @@ import { MapElement } from './map/map_element';
 import { Trail } from './models/types';
 
 import { Header } from './page';
-import { LocationUrlController } from './location_url_controller';
 import { SidebarController, State } from './sidebar_controller';
 
 export function ViewportLayoutElement({
@@ -19,6 +18,7 @@ export function ViewportLayoutElement({
   camera,
   filters,
   overlays,
+  ref,
   sidebarContent,
 }: {
   active?: {
@@ -32,6 +32,7 @@ export function ViewportLayoutElement({
   overlays?: Overlays & {
     content?: string;
   };
+  ref?: string;
   sidebarContent: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
@@ -68,25 +69,13 @@ export function ViewportLayoutElement({
           {sidebarContent}
         </div>
         <div className="grow h-full relative">
-          <div
-              js={corgi.bind({
-                controller: LocationUrlController,
-                events: {
-                  corgi: [
-                    [MAP_MOVED, 'onMove'],
-                  ],
-                },
-                state: [{}, () => {}],
-              })}
-              className="h-full"
-          >
-            <MapElement
-                active={active}
-                camera={state.camera}
-                filters={filters}
-                overlays={overlays}
-            />
-          </div>
+          <MapElement
+              active={active}
+              camera={state.camera}
+              filters={filters}
+              overlays={overlays}
+              ref={ref}
+          />
           {overlays?.content ?? <></>}
         </div>
       </div>

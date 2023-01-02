@@ -2,6 +2,7 @@ import { checkExists } from 'js/common/asserts';
 import { deepEqual } from 'js/common/comparisons';
 
 import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, ControllerResponse } from './controller';
+import { elementFinder, SupportedElement } from './dom';
 import { EventSpec, qualifiedName } from './events';
 import { isAnchorContextClick } from './mouse';
 import { Service, ServiceDeps } from './service';
@@ -40,7 +41,7 @@ type StateTuple<S> = [S, (newState: S) => void];
 interface BoundController<
         A extends {},
         D extends ControllerDepsMethod,
-        E extends HTMLElement|SVGElement,
+        E extends SupportedElement,
         S,
         R extends ControllerResponse<A, D, E, S>,
         C extends Controller<A, D, E, S>
@@ -50,16 +51,17 @@ interface BoundController<
   events: Partial<PropertyKeyToHandlerMap<C>>;
   instance?: Promise<C>;
   key?: string; // controllers will only be reused if their keys match
+  ref?: string;
   state: StateTuple<S>,
 }
 
-export interface AnyBoundController<E extends HTMLElement|SVGElement>
+export interface AnyBoundController<E extends SupportedElement>
     extends BoundController<any, any, E, any, any, any> {}
 
 export type UnboundEvents =
     Partial<
       Omit<{
-        [k in keyof PropertyKeyToHandlerMap<AnyBoundController<HTMLElement|SVGElement>>]: string
+        [k in keyof PropertyKeyToHandlerMap<AnyBoundController<SupportedElement>>]: string
       }, 'corgi'> & {
         corgi: Array<[EventSpec<unknown>, string]>;
       }
@@ -69,10 +71,10 @@ export type UnboundEvents =
 export interface InstantiationResult {
   root: Node;
   sideEffects: Array<() => void>;
-  unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]>;
+  unboundEventss: Array<[SupportedElement, UnboundEvents]>;
 }
 
-const elementsToControllerSpecs = new WeakMap<HTMLElement|SVGElement, AnyBoundController<HTMLElement|SVGElement>>();
+const elementsToControllerSpecs = new WeakMap<SupportedElement, AnyBoundController<SupportedElement>>();
 
 interface AnyServiceCtor {
   deps?(): DepsConstructorsFor<ServiceDeps>;
@@ -81,12 +83,12 @@ interface AnyServiceCtor {
 const serviceSingletons = new Map<AnyServiceCtor, Promise<Service<any>>>();
 
 const unboundEventListeners =
-    new WeakMap<HTMLElement|SVGElement, Array<[string, EventListenerOrEventListenerObject]>>();
+    new WeakMap<SupportedElement, Array<[string, EventListenerOrEventListenerObject]>>();
 
 export function applyUpdate(
-    root: HTMLElement|SVGElement,
-    from: AnyBoundController<HTMLElement|SVGElement>|undefined,
-    to: AnyBoundController<HTMLElement|SVGElement>|undefined): void {
+    root: SupportedElement,
+    from: AnyBoundController<SupportedElement>|undefined,
+    to: AnyBoundController<SupportedElement>|undefined): void {
   if (from === undefined || to === undefined) {
     throw new Error("Unable to update bound element with new js or remove old js");
   }
@@ -107,14 +109,15 @@ export function applyUpdate(
 export function bind<
     A extends {},
     D extends ControllerDepsMethod,
-    E extends HTMLElement|SVGElement,
+    E extends SupportedElement,
     S,
     R extends ControllerResponse<A, D, E, S>,
     C extends Controller<A, D, E, S>
->({args, controller, events, key, state}: {
+>({args, controller, events, key, ref, state}: {
   controller: ControllerCtor<A, D, E, S, R, C>,
   events?: Partial<PropertyKeyToHandlerMap<C>>,
   key?: string,
+  ref?: string,
 }
 & ({} extends A ? {args?: never} : {args: A})
 & (S extends undefined ? {state?: never} : {state: StateTuple<S>})
@@ -124,14 +127,15 @@ export function bind<
     controller,
     events: events ?? {},
     key,
+    ref,
     state: state ?? [undefined, () => {}] as any,
   };
 }
 
 export function bindElementToSpec(
-    root: HTMLElement|SVGElement,
-    spec: AnyBoundController<HTMLElement|SVGElement>,
-    unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]>): Array<() => void> {
+    root: SupportedElement,
+    spec: AnyBoundController<SupportedElement>,
+    unboundEventss: Array<[SupportedElement, UnboundEvents]>): Array<() => void> {
   elementsToControllerSpecs.set(root, spec);
 
   for (const [event, handler] of Object.entries(spec.events)) {
@@ -210,7 +214,7 @@ export function applyInstantiationResult(result: InstantiationResult): void {
       }
     }
 
-    let cursor: HTMLElement|SVGElement|null = element;
+    let cursor: SupportedElement|null = element;
     while (cursor !== null && !elementsToControllerSpecs.has(cursor)) {
       cursor = cursor.parentElement;
     }
@@ -263,14 +267,14 @@ export function applyInstantiationResult(result: InstantiationResult): void {
   }
 }
 
-function maybeInstantiateAndCall<E extends HTMLElement|SVGElement>(
+function maybeInstantiateAndCall<E extends SupportedElement>(
     root: E,
     spec: AnyBoundController<E>,
-    fn: (controller: AnyBoundController<E>) => void): void {
+    fn: (controller: AnyBoundController<E>) => void): Promise<unknown> {
   if (!spec.instance) {
     let deps;
     if (spec.controller.deps) {
-      deps = fetchDeps(spec.controller.deps());
+      deps = fetchControllerDeps(spec.controller.deps(), root);
     } else {
       deps = Promise.resolve(() => ({}));
     }
@@ -282,20 +286,52 @@ function maybeInstantiateAndCall<E extends HTMLElement|SVGElement>(
         deps: d,
         state: spec.state,
       });
-      root.setAttribute('js', '');
       return instance;
     });
   }
 
-  spec.instance.then(instance => {
+  return spec.instance.then(instance => {
     fn(instance);
   });
+}
+
+function fetchControllerDeps<D extends ControllerDeps>(
+    deps: DepsConstructorsFor<D>, root: SupportedElement): Promise<D> {
+  const response: D = {controllers: {}, services: {}} as D;
+  const promises: Array<Promise<unknown>> = [];
+  for (const [key, untypedCtor] of Object.entries(deps.controllers ?? {})) {
+    const ctor = untypedCtor as ControllerCtor<any, any, any, any, any, any>;
+
+    const elements =
+        elementFinder(
+            root,
+            candidate => candidate.getAttribute('data-js-ref') === key,
+            parent => !parent.hasAttribute('data-js'));
+    if (elements.length > 1) {
+      throw new Error(`Key ${key} matched multiple controllers`);
+    } else if (elements.length === 0) {
+      throw new Error(`Key ${key} did not match any controllers`);
+    }
+
+    const element = elements[0];
+    const spec = checkExists(elementsToControllerSpecs.get(element));
+    promises.push(
+        maybeInstantiateAndCall(element, spec, (controller: any) => {
+          if (ctor !== controller.constructor) {
+            throw new Error(`Key ${key} matched a non-${ctor.name} controller`);
+          }
+          response.controllers[key] = controller;
+        }));
+  }
+  return Promise.all(promises)
+      .then(() => fetchServiceDeps(deps))
+      .then(sr => Object.assign(response, sr));
 }
 
 function instantiateService(ctor: AnyServiceCtor): Promise<Service<any>> {
   let deps;
   if (ctor.deps) {
-    deps = fetchDeps(ctor.deps());
+    deps = fetchServiceDeps(ctor.deps());
   } else {
     deps = Promise.resolve({});
   }
@@ -304,20 +340,20 @@ function instantiateService(ctor: AnyServiceCtor): Promise<Service<any>> {
   return instance;
 }
 
-export function fetchDeps<D extends ServiceDeps>(deps: DepsConstructorsFor<D>): Promise<D> {
+export function fetchServiceDeps<D extends ServiceDeps>(deps: DepsConstructorsFor<D>): Promise<D> {
   const response = {services: {}} as D;
   const promises = [];
-  if (deps.services) {
-    for (const [key, ctor] of Object.entries(deps.services)) {
-      let service = serviceSingletons.get(ctor as AnyServiceCtor);
-      if (!service) {
-        service = instantiateService(ctor);
-      }
+  for (const [key, untypedCtor] of Object.entries(deps.services ?? {})) {
+    const ctor = untypedCtor as AnyServiceCtor;
 
-      promises.push(service.then(instance => {
-        response.services[key] = instance;
-      }));
+    let service = serviceSingletons.get(ctor);
+    if (!service) {
+      service = instantiateService(ctor);
     }
+
+    promises.push(service.then(instance => {
+      response.services[key] = instance;
+    }));
   }
   return Promise.all(promises).then(() => response);
 }
@@ -327,7 +363,7 @@ export function disposeBoundElementsIn(node: Node): void {
     return;
   }
   for (const root of [node, ...node.querySelectorAll('[js]')]) {
-    const spec = elementsToControllerSpecs.get(root as HTMLElement|SVGElement);
+    const spec = elementsToControllerSpecs.get(root as SupportedElement);
     if (spec?.instance) {
       spec.instance.then(instance => {
         instance.dispose();
@@ -337,11 +373,11 @@ export function disposeBoundElementsIn(node: Node): void {
 }
 
 function bindEventListener(
-    element: HTMLElement|SVGElement,
+    element: SupportedElement,
     event: string,
     handler: string,
-    root: HTMLElement|SVGElement,
-    spec: AnyBoundController<HTMLElement|SVGElement>): (e: Event) => void {
+    root: SupportedElement,
+    spec: AnyBoundController<SupportedElement>): (e: Event) => void {
   const invoker = (e: Event) => {
     if (isAnchorContextClick(e)) {
       return;

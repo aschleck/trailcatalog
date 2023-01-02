@@ -7,7 +7,7 @@ import { FabricIcon } from 'js/dino/fabric';
 import { currentUrl } from './common/ssr_aware';
 import { emptyLatLngRect } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
-import { TrailSearchResult } from './models/types';
+import { Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
@@ -73,7 +73,7 @@ export function SearchResultsOverviewElement(
 
   const filter = state.filterInBoundary ? state.trailsInBoundaryFilter : state.trailsFilter;
 
-  let filteredTrails = undefined;
+  let filteredTrails: Array<Trail|TrailSearchResult> = [];
   let bound;
   if (query) {
     if (state.searchTrails) {
@@ -141,27 +141,24 @@ export function SearchResultsOverviewElement(
         })}
         className="flex flex-col h-full"
     >
-      {
-        filteredTrails
-            ? <ViewportLayoutElement
-                bannerContent={<SearchFilter state={state} />}
-                camera={bound}
-                filters={{
-                  trail: filter,
-                }}
-                overlays={{
-                  content: trailDetails,
-                  polygon: state.boundary?.polygon,
-                }}
-                sidebarContent={
-                  <TrailSidebar
-                      hovering={state.hovering}
-                      nearby={filteredTrails}
-                  />
-                }
+      <ViewportLayoutElement
+          bannerContent={<SearchFilter state={state} />}
+          camera={bound}
+          ref="map"
+          filters={{
+            trail: filter,
+          }}
+          overlays={{
+            content: trailDetails,
+            polygon: state.boundary?.polygon,
+          }}
+          sidebarContent={
+            <TrailSidebar
+                hovering={state.hovering}
+                nearby={filteredTrails}
             />
-            : "Loading..."
-      }
+          }
+      />
     </div>
   </>;
 }

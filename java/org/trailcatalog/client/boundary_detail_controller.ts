@@ -5,7 +5,9 @@ import { CorgiEvent } from 'js/corgi/events';
 
 import { decodeBase64 } from './common/base64';
 import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng } from './common/types';
+import { MapController } from './map/map_controller';
 import { Boundary, Trail } from './models/types';
+import { ViewsService } from './views/views_service';
 
 import { DataResponses, fetchData } from './data';
 import { State as VState, ViewportController } from './viewport_controller';
@@ -20,9 +22,11 @@ export interface State extends VState {
   trailsInBoundary: Trail[]|undefined;
 }
 
-export class BoundaryDetailController extends ViewportController<Args, EmptyDeps, State> {
+type Deps = typeof BoundaryDetailController.deps;
 
-  constructor(response: Response<BoundaryDetailController>) {
+export class LoadingController extends Controller<Args, EmptyDeps, HTMLElement, State> {
+
+  constructor(response: Response<LoadingController>) {
     super(response);
 
     const boundaryId = response.args.boundaryId;
@@ -52,6 +56,40 @@ export class BoundaryDetailController extends ViewportController<Args, EmptyDeps
           trailsInBoundary: trailsInBoundaryFromRaw(raw),
         });
       });
+    }
+  }
+}
+
+export class BoundaryDetailController extends ViewportController<{}, Deps, State> {
+
+  static deps() {
+    return {
+      controllers: {
+        map: MapController,
+      },
+      services: {
+        views: ViewsService,
+      },
+    };
+  }
+
+  private readonly views: ViewsService;
+
+  constructor(response: Response<BoundaryDetailController>) {
+    super(response);
+    this.views = response.deps.services.views;
+  }
+
+  browseMap() {
+    this.views.showSearchResults({
+      boundary: this.state.boundary?.id,
+      camera: this.mapController.cameraLlz,
+    });
+  }
+
+  zoomToFit(): void {
+    if (this.state.boundary) {
+      this.mapController?.setCamera(this.state.boundary.bound);
     }
   }
 }

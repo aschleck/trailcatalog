@@ -16,6 +16,7 @@ export function MapElement({
   height,
   interactive,
   overlays,
+  ref,
 }: {
   active?: {
     trails?: Trail[];
@@ -26,11 +27,13 @@ export function MapElement({
   height?: string;
   interactive?: boolean;
   overlays?: Overlays;
+  ref?: string,
 }) {
   return <>
     <div
         js={corgi.bind({
           controller: MapController,
+          ref,
           args: {
             active: active ?? {},
             camera,

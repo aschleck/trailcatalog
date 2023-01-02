@@ -3,47 +3,36 @@ import * as corgi from 'js/corgi';
 import { ButtonController, State } from './button_controller';
 import { FabricIcon, FabricIconName } from './fabric';
 
-export function FlatButton({className, dense, icon, label, ...props}: {
+type ButtonProps = {
+  ariaLabel?: string,
   className?: string,
   dense?: boolean,
   icon?: FabricIconName,
   label?: string,
-} & corgi.Properties<HTMLButtonElement>) {
+} & corgi.Properties<HTMLButtonElement>;
+
+export function FlatButton({className, ...props}: ButtonProps) {
   return <>
     <Button
         className={'active:bg-tc-gray-400' + (className ? ` ${className}` : '')}
-        dense={dense}
-        icon={icon}
-        label={label}
         {...props} />
   </>;
 }
 
-export function OutlinedButton({className, dense, icon, label, ...props}: {
-  dense?: boolean,
-  icon?: FabricIconName,
-  label?: string,
-} & corgi.Properties<HTMLButtonElement>) {
+export function OutlinedButton({className, ...props}: ButtonProps) {
   return <>
     <Button
         className={
             'border-[1px] border-tc-gray-400 active:bg-tc-gray-400'
                 + (className ? ` ${className}` : '')
         }
-        dense={dense}
-        icon={icon}
-        label={label}
         {...props}
     />
   </>;
 }
 
-export function Button({className, dense, icon, label, ...props}: {
-      className?: string,
-      dense?: boolean,
-      icon?: FabricIconName,
-      label?: string,
-    } & corgi.Properties<HTMLButtonElement>,
+export function Button(
+    {ariaLabel, className, dense, icon, label, ...props}: ButtonProps,
     state: State|undefined,
     updateState: (newState: State) => void) {
   if (!state) {
@@ -68,6 +57,7 @@ export function Button({className, dense, icon, label, ...props}: {
         {...props}
     >
       {icon ? <FabricIcon name={icon} className="align-bottom" /> : ''}
+      {ariaLabel ? <span className="sr-only">{ariaLabel}</span> : ''}
       {label ? <span>{label}</span> : ''}
     </button>
   </>;

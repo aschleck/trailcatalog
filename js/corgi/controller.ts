@@ -5,9 +5,11 @@ import { EventSpec, qualifiedName } from './events';
 import { ServiceDeps } from './service';
 import { DepsConstructed, DepsConstructorsFor } from './types';
 
-export type ControllerDeps = ServiceDeps;
+export type ControllerDeps = ServiceDeps & {
+  controllers: {[ref: string]: Controller<any, any, any, any>};
+};
 
-export type ControllerDepsMethod = () => DepsConstructorsFor<ServiceDeps>;
+export type ControllerDepsMethod = () => DepsConstructorsFor<ControllerDeps>;
 
 export interface ControllerCtor<
     A extends {},

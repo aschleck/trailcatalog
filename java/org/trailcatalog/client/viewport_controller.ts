@@ -1,9 +1,9 @@
 import { Controller, Response } from 'js/corgi/controller';
-import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
 
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from './common/types';
 import { SELECTION_CHANGED } from './map/events';
+import { MapController } from './map/map_controller';
 import { Path, Trail } from './models/types';
 
 export interface State {
@@ -11,19 +11,32 @@ export interface State {
   selectedTrails: Trail[];
 }
 
-export class ViewportController<A extends {}, D extends EmptyDeps, S extends State>
+type Deps = typeof ViewportController.deps;
+
+export class ViewportController<A extends {}, D extends Deps, S extends State>
     extends Controller<A, D, HTMLDivElement, S> {
+
+  static deps() {
+    return {
+      controllers: {
+        map: MapController,
+      },
+    };
+  }
+
+  protected readonly mapController: MapController;
 
   constructor(response: Response<ViewportController<A, D, S>>) {
     super(response);
+    this.mapController = response.deps.controllers.map;
   }
 
   selectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {
-    const {controller, clickPx, selected} = e.detail;
+    const {clickPx, selected} = e.detail;
 
     let trails: Trail[];
     if (selected instanceof Path) {
-      trails = controller.listTrailsOnPath(selected);
+      trails = this.mapController.listTrailsOnPath(selected);
       if (trails.length === 0) {
         const wayId = selected.id / 2n;
         trails.push(new Trail(

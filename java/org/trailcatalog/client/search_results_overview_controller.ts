@@ -5,7 +5,8 @@ import { CorgiEvent } from 'js/corgi/events';
 
 import { decodeBase64 } from './common/base64';
 import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng, s2LatLngRectToTc } from './common/types';
-import { DATA_CHANGED, HOVER_CHANGED, MapController, MAP_MOVED, SELECTION_CHANGED } from './map/events';
+import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
+import { MapController } from './map/map_controller';
 import { Boundary, Path, Trail, TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
 
@@ -29,7 +30,7 @@ export interface State extends VState {
   };
   filterInBoundary: boolean;
   hovering: Path|Trail|undefined;
-  nearbyTrails: Trail[]|undefined;
+  nearbyTrails: Trail[];
   trailsFilter: (id: bigint) => boolean;
   trailsInBoundary: Trail[]|undefined;
   trailsInBoundaryFilter: (id: bigint) => boolean;
@@ -45,16 +46,17 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
 
   static deps() {
     return {
+      controllers: {
+        map: MapController,
+      },
       services: {
         views: ViewsService,
       },
     };
   }
 
-  protected readonly views: ViewsService;
+  private readonly views: ViewsService;
   private query: string|undefined;
-  protected lastCamera: {lat: number; lng: number; zoom: number}|undefined;
-  protected mapController: MapController|undefined;
 
   constructor(response: Response<SearchResultsOverviewController>) {
     super(response);
@@ -128,24 +130,24 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   centerBoundary(): void {
     if (this.state.boundary) {
       const bound = this.state.boundary.polygon.getRectBound();
-      this.mapController?.setCamera(s2LatLngRectToTc(bound));
+      this.mapController.setCamera(s2LatLngRectToTc(bound));
     }
   }
 
   clearBoundary(): void {
     if (this.query) {
       this.views.showSearchResults({
-        camera: this.lastCamera,
+        camera: this.mapController.cameraLlz,
         query: this.query,
       });
     } else {
-      this.views.showOverview(this.lastCamera);
+      this.views.showOverview(this.mapController.cameraLlz);
     }
   }
 
   locateMe(): void {
     navigator.geolocation.getCurrentPosition(position => {
-      this.mapController?.setCamera({
+      this.mapController.setCamera({
         lat: position.coords.latitude,
         lng: position.coords.longitude,
         zoom: 12,
@@ -163,18 +165,15 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   }
 
   onDataChange(e: CorgiEvent<typeof DATA_CHANGED>): void {
-    const {controller} = e.detail;
-    this.mapController = controller;
     this.updateState({
       ...this.state,
-      nearbyTrails: controller.listTrailsInViewport()
-          .sort((a, b) => b.lengthMeters - a.lengthMeters),
+      nearbyTrails:
+          this.mapController.listTrailsInViewport()
+              .sort((a, b) => b.lengthMeters - a.lengthMeters),
     });
   }
 
   onHoverChanged(e: CorgiEvent<typeof HOVER_CHANGED>): void {
-    const {controller} = e.detail;
-    this.mapController = controller;
     this.updateState({
       ...this.state,
       hovering: e.detail.target,
@@ -182,23 +181,21 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   }
 
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
-    const {controller, center, zoom} = e.detail;
-    this.mapController = controller;
-    this.lastCamera = {
-      lat: center.latDegrees(),
-      lng: center.lngDegrees(),
-      zoom,
-    };
+    const {center, zoom} = e.detail;
+    const url = new URL(window.location.href);
+    url.searchParams.set('lat', center.latDegrees().toFixed(7));
+    url.searchParams.set('lng', center.lngDegrees().toFixed(7));
+    url.searchParams.set('zoom', zoom.toFixed(3));
+    window.history.replaceState(null, '', url);
+
     this.updateState({
       ...this.state,
-      nearbyTrails: controller.listTrailsInViewport()
+      nearbyTrails: this.mapController.listTrailsInViewport()
           .sort((a, b) => b.lengthMeters - a.lengthMeters),
     });
   }
 
   override selectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {
-    this.mapController = e.detail.controller;
-
     super.selectionChanged(e);
 
     const trails = this.state.selectedTrails;
@@ -248,9 +245,6 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   }
 
   private setTrailHighlighted(e: MouseEvent, selected: boolean): void {
-    if (!this.mapController) {
-      return;
-    }
     const id = (checkExists(e.currentTarget) as HTMLElement).dataset.trailId;
     if (!id) {
       return;

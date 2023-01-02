@@ -172,19 +172,28 @@ function renderProperties(props: Properties<HTMLElement>): string {
   const attributes = [];
   for (const [key, value] of Object.entries(props)) {
     let actualKey;
+    let actualValue = value;
     if (key === 'className') {
       actualKey = 'class';
-    } else if (key === 'children' || key === 'js' || key === 'unboundEvents') {
+    } else if (key === 'children' || key === 'unboundEvents') {
       continue;
+    } else if (key === 'js') {
+      attributes.push('data-js');
+      if (value.ref) {
+        actualKey = 'data-js-ref';
+        actualValue = value.ref;
+      } else {
+        continue;
+      }
     } else {
       actualKey = key.replace('_', '-');
     }
 
-    if (value !== undefined) {
+    if (actualValue !== undefined) {
       let rendered;
-      if (typeof value === 'string') {
+      if (typeof actualValue === 'string') {
         const escapedValue = [];
-        for (const c of value) {
+        for (const c of actualValue) {
           if (c in ESCAPES) {
             escapedValue.push(ESCAPES[c as keyof typeof ESCAPES]);
           } else {
@@ -193,7 +202,7 @@ function renderProperties(props: Properties<HTMLElement>): string {
         }
         rendered = escapedValue.join('');
       } else {
-        rendered = value;
+        rendered = actualValue;
       }
 
       attributes.push(`${actualKey}="${rendered}"`);

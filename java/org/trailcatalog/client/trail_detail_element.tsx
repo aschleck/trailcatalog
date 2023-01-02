@@ -1,5 +1,7 @@
 import { checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
+import { FlatButton } from 'js/dino/button';
+import { ACTION } from 'js/dino/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 
 import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
@@ -12,7 +14,7 @@ import { BoundaryCrumbs } from './boundary_crumbs';
 import { initialData, TrailId } from './data';
 import { Header } from './page';
 import { setTitle } from './title';
-import { TrailDetailController, State } from './trail_detail_controller';
+import { LoadingController, TrailDetailController, State } from './trail_detail_controller';
 import { TrailPopup } from './trail_popup';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
@@ -55,31 +57,42 @@ export function TrailDetailElement({trailId}: {
   return <>
     <div className="flex flex-col items-center min-h-full">
       <Header />
-      <div
-          js={corgi.bind({
-            controller: TrailDetailController,
-            args: {trailId},
-            events: {
-              corgi: [
-                [SELECTION_CHANGED, 'selectionChanged'],
-              ],
-              render: 'wakeup',
-            },
-            key: JSON.stringify(trailId),
-            state: [state, updateState],
-          })}
-          className="h-full max-w-6xl px-4 my-8 w-full"
-      >
-        {state.containingBoundaries && state.trail
-            ? <Content {...state} />
-            : "Loading..."
-        }
-      </div>
+
+      {state.containingBoundaries && state.trail && state.pinned
+          ? <Content trailId={trailId} state={state} updateState={updateState} />
+          : <Loading trailId={trailId} state={state} updateState={updateState} />
+      }
     </div>
   </>;
 }
 
-function Content(state: State) {
+function Loading({trailId, state, updateState}: {
+  trailId: TrailId,
+  state: State,
+  updateState: (newState: State) => void,
+}) {
+  return <>
+    <div
+        js={corgi.bind({
+          controller: LoadingController,
+          args: {trailId},
+          events: {
+            render: 'wakeup',
+          },
+          state: [state, updateState],
+        })}
+        className="h-full max-w-6xl px-4 my-8 w-full"
+    >
+      Loading...
+    </div>
+  </>;
+}
+
+function Content({trailId, state, updateState}: {
+  trailId: TrailId,
+  state: State,
+  updateState: (newState: State) => void,
+}) {
   const containingBoundaries = checkExists(state.containingBoundaries);
   const trail = checkExists(state.trail);
   const distance = formatDistance(trail.lengthMeters);
@@ -121,69 +134,95 @@ function Content(state: State) {
     trailDetails = <></>;
   }
 
-  return [
-    <header className="font-bold font-sans text-3xl">
-      {trail.name}
-    </header>,
-    <aside>
-      <BoundaryCrumbs boundaries={containingBoundaries} />
-    </aside>,
-    <div className="bg-tc-gray-100 h-0.5 my-4 w-full" />,
-    <aside className="flex flex-wrap items-stretch">
-      <NumericCrumb
-          icon="CharticulatorLine"
-          label={isOneWay ? "One-way distance" : "Round-trip distance"}
-          value={distance.value}
-          unit={distance.unit}
-      />
-      <NumericDivider />
-      <NumericCrumb
-          icon="Market"
-          label="Ascent"
-          value={elevationUp.value}
-          unit={elevationUp.unit}
-      />
-      <NumericDivider />
-      <NumericCrumb
-          icon="MarketDown"
-          label="Descent"
-          value={elevationDown.value}
-          unit={elevationDown.unit}
-      />
-      <NumericDivider />
-      <NumericCrumb
-          icon="SortUp"
-          label="Highest point"
-          value={elevationHigh?.value ?? ''}
-          unit={elevationHigh?.unit ?? ''}
-      />
-      <NumericDivider />
-      <NumericCrumb
-          icon="SortDown"
-          label="Lowest point"
-          value={elevationLow?.value ?? ''}
-          unit={elevationLow?.unit ?? ''}
-      />
-      <NumericDivider />
-      <NumericCrumb
-          icon={weather?.icon ?? 'Checkbox'}
-          label="Current weather"
-          value={weather?.label ?? ''}
-          unit={temperature?.unit ?? ''}
-      />
-    </aside>,
-    <div className="relative">
-      <MapElement
-          active={{trails: [trail]}}
-          camera={trail.bound}
-          className="my-8"
-          height="h-[32rem]"
-          overlays={{point: state.elevation?.cursor}}
-      />
-      {trailDetails ?? <></>}
-    </div>,
-    state.elevation ? <ElevationGraph {...state} /> : <svg></svg>,
-  ];
+  return <>
+    <div
+        js={corgi.bind({
+          controller: TrailDetailController,
+          events: {
+            corgi: [
+              [SELECTION_CHANGED, 'selectionChanged'],
+            ],
+            render: 'wakeup',
+          },
+          key: JSON.stringify(trailId),
+          state: [state, updateState],
+        })}
+        className="h-full max-w-6xl px-4 my-8 w-full"
+    >
+      <header className="font-bold font-sans text-3xl">
+        {trail.name}
+      </header>
+      <aside>
+        <BoundaryCrumbs boundaries={containingBoundaries} />
+      </aside>
+      <div className="bg-tc-gray-100 h-0.5 my-4 w-full" />
+      <aside className="flex flex-wrap items-stretch">
+        <NumericCrumb
+            icon="CharticulatorLine"
+            label={isOneWay ? "One-way distance" : "Round-trip distance"}
+            value={distance.value}
+            unit={distance.unit}
+        />
+        <NumericDivider />
+        <NumericCrumb
+            icon="Market"
+            label="Ascent"
+            value={elevationUp.value}
+            unit={elevationUp.unit}
+        />
+        <NumericDivider />
+        <NumericCrumb
+            icon="MarketDown"
+            label="Descent"
+            value={elevationDown.value}
+            unit={elevationDown.unit}
+        />
+        <NumericDivider />
+        <NumericCrumb
+            icon="SortUp"
+            label="Highest point"
+            value={elevationHigh?.value ?? ''}
+            unit={elevationHigh?.unit ?? ''}
+        />
+        <NumericDivider />
+        <NumericCrumb
+            icon="SortDown"
+            label="Lowest point"
+            value={elevationLow?.value ?? ''}
+            unit={elevationLow?.unit ?? ''}
+        />
+        <NumericDivider />
+        <NumericCrumb
+            icon={weather?.icon ?? 'Checkbox'}
+            label="Current weather"
+            value={weather?.label ?? ''}
+            unit={temperature?.unit ?? ''}
+        />
+      </aside>
+      <div className="relative">
+        <MapElement
+            active={{trails: [trail]}}
+            camera={trail.bound}
+            className="my-8"
+            height="h-[32rem]"
+            ref="map"
+            overlays={{
+              point: state.elevation?.cursor
+            }}
+        />
+        <div className="absolute flex flex-col gap-2 right-2 top-2">
+          <div unboundEvents={{corgi: [[ACTION, 'zoomToFit']]}}>
+            <FlatButton ariaLabel="Zoom to trail" className="bg-white" icon="ZoomToFit" />
+          </div>
+          <div unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
+            <FlatButton ariaLabel="Browse the map" className="bg-white" icon="ScaleVolume" />
+          </div>
+        </div>
+        {trailDetails ?? <></>}
+      </div>
+      {state.elevation ? <ElevationGraph {...state} /> : <svg></svg>}
+    </div>
+  </>;
 }
 
 function NumericCrumb({

@@ -6,5 +6,5 @@ type ConstructorsFor<T> = {[K in keyof T]: new (...args: any) => T[K]};
 
 export type DepsConstructed<T> = {[K in keyof T]: Constructed<T[K]>};
 
-export type DepsConstructorsFor<T> = {[K in keyof T]: ConstructorsFor<T[K]>};
+export type DepsConstructorsFor<T> = Partial<{[K in keyof T]: ConstructorsFor<T[K]>}>;
 

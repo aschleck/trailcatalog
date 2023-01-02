@@ -1,5 +1,5 @@
 import { deepEqual } from 'js/common/comparisons';
-import { fetchDeps } from 'js/corgi/binder';
+import { fetchGlobalDeps } from 'js/corgi/deps';
 import { HistoryService } from 'js/corgi/history/history_service';
 
 export interface InitialDataKey {
@@ -51,7 +51,7 @@ export function redirectTo(url: string): void {
   if (window.SERVER_SIDE_RENDER) {
     window.SERVER_SIDE_RENDER.redirectTo(url);
   } else {
-    fetchDeps({
+    fetchGlobalDeps({
       services: {history: HistoryService},
     }).then(deps => {
       deps.services.history.replaceTo(url);

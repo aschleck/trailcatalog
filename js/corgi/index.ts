@@ -274,7 +274,8 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   if (!from
       || from.element !== to.element
       || from.props.js?.controller !== to.props.js?.controller
-      || from.props.js?.key !== to.props.js?.key) {
+      || from.props.js?.key !== to.props.js?.key
+      || from.props.js?.ref !== to.props.js?.ref) {
     const element = createElement(to);
     vElementsToNodes.set(to, element.root);
     return element;
@@ -391,6 +392,10 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
   for (const [key, value] of Object.entries(props)) {
     if (key === 'js') {
       maybeSpec = value;
+      root.setAttribute('data-js', '');
+      if (value.ref) {
+        root.setAttribute('data-js-ref', value.ref);
+      }
     } else if (key === 'unboundEvents') {
       unboundEventss.push([root, value]);
     } else if (key === 'className') {

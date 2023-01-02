@@ -134,7 +134,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
         // now let's fix this up in the double click handlers until it gets too annoying.
         this.canvas.focus();
         this.trigger(SELECTION_CHANGED, {
-          controller: this,
           selected: undefined,
           clickPx: [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
         });
@@ -157,6 +156,15 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.mapData.setFilters(newArgs.filters);
     this.overlayData.setOverlay(newArgs.overlays);
     this.nextRender = RenderType.DataChange;
+  }
+
+  get cameraLlz(): LatLngZoom {
+    const center = this.camera.center;
+    return {
+      lat: center.latDegrees(),
+      lng: center.lngDegrees(),
+      zoom: this.camera.zoom,
+    };
   }
 
   getTrail(id: bigint): Trail|undefined {
@@ -203,7 +211,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     // On mobile we don't get hover events, so we won't have previously hovered.
     this.actOnHover(entity);
     this.trigger(SELECTION_CHANGED, {
-      controller: this,
       selected: entity,
       clickPx: [offsetX, offsetY],
     });
@@ -221,7 +228,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
       if (this.lastHoverTarget) {
         this.mapData.setHover(this.lastHoverTarget, false);
       }
-      this.trigger(HOVER_CHANGED, {controller: this, target: best});
+      this.trigger(HOVER_CHANGED, {target: best});
     }
     this.lastHoverTarget = best;
     if (best) {
@@ -264,14 +271,13 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     }
 
     this.trigger(MAP_MOVED, {
-      controller: this,
       center: this.camera.center,
       zoom: this.camera.zoom,
     });
   }
 
   private notifyDataChanged(): void {
-    this.trigger(DATA_CHANGED, {controller: this});
+    this.trigger(DATA_CHANGED, {});
   }
 
   private clientToWorld(offsetX: number, offsetY: number): Vec2 {

@@ -7,8 +7,10 @@ import { HistoryService } from 'js/corgi/history/history_service';
 
 import { LatLng, Vec2 } from './common/types';
 import { MapDataService } from './data/map_data_service';
+import { MapController } from './map/map_controller';
 import { unprojectS2LatLng } from './map/models/camera';
 import { Boundary, ElevationProfile, Path, Trail } from './models/types';
+import { ViewsService } from './views/views_service';
 
 import { fetchData, TrailId } from './data';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
@@ -40,51 +42,28 @@ export interface State extends VState {
 }
 
 type Deps = typeof TrailDetailController.deps;
+type LoadingDeps = typeof LoadingController.deps;
 
-export class TrailDetailController extends ViewportController<Args, Deps, State> {
+export class LoadingController extends Controller<Args, LoadingDeps, HTMLElement, State> {
 
   static deps() {
     return {
       services: {
         data: MapDataService,
-        history: HistoryService,
       },
     };
   }
 
-  private readonly data: MapDataService;
-
-  constructor(response: Response<TrailDetailController>) {
+  constructor(response: Response<LoadingController>) {
     super(response);
-    this.data = response.deps.services.data;
-    const history = response.deps.services.history;
 
     const pin = (trail: Trail) => {
-      this.data.setPins({trail: trail.id}, true).then(_ => {
+      response.deps.services.data.setPins({trail: trail.id}, true).then(_ => {
         this.updateState({
           ...this.state,
           pinned: true,
         });
       });
-
-      history.silentlyReplaceUrl(`/trail/${trail.readableId}`);
-
-      const center = unprojectS2LatLng(trail.markerPx[0], trail.markerPx[1]);
-      fetch(
-          'https://api.open-meteo.com/v1/forecast'
-              + `?latitude=${center.latDegrees()}`
-              + `&longitude=${center.lngDegrees()}`
-              + '&current_weather=true')
-          .then(response => response.json())
-          .then(response => {
-            this.updateState({
-              ...this.state,
-              weather: {
-                temperatureCelsius: response.current_weather.temperature,
-                weatherCode: response.current_weather.weathercode,
-              },
-            });
-          });
     };
 
     const trailId = response.args.trailId;
@@ -93,12 +72,11 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     } else {
       fetchData('trail', {trail_id: trailId}).then(raw => {
         const trail = trailFromRaw(raw);
+        pin(trail);
         this.updateState({
           ...this.state,
           trail,
         });
-
-        pin(trail);
       });
     }
 
@@ -120,14 +98,63 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
       });
     }
   }
+}
 
-  updateState(newState: State) {
-    // Yikes!
-    if (!(this.state.pathProfiles && this.state.pinned && this.state.trail)
-        && (newState.pathProfiles && newState.pinned && newState.trail)) {
-      newState.elevation = calculateGraph(this.data, newState.pathProfiles, newState.trail);
-    }
-    super.updateState(newState);
+export class TrailDetailController extends ViewportController<{}, Deps, State> {
+
+  static deps() {
+    return {
+      controllers: {
+        map: MapController,
+      },
+      services: {
+        data: MapDataService,
+        history: HistoryService,
+        views: ViewsService,
+      },
+    };
+  }
+
+  private readonly views: ViewsService;
+
+  constructor(response: Response<TrailDetailController>) {
+    super(response);
+    this.views = response.deps.services.views;
+
+    const history = response.deps.services.history;
+    const trail = checkExists(this.state.trail);
+    history.silentlyReplaceUrl(`/trail/${trail.readableId}`);
+
+    const center = unprojectS2LatLng(trail.markerPx[0], trail.markerPx[1]);
+    fetch(
+        'https://api.open-meteo.com/v1/forecast'
+            + `?latitude=${center.latDegrees()}`
+            + `&longitude=${center.lngDegrees()}`
+            + '&current_weather=true')
+        .then(response => response.json())
+        .then(response => {
+          this.updateState({
+            ...this.state,
+            weather: {
+              temperatureCelsius: response.current_weather.temperature,
+              weatherCode: response.current_weather.weathercode,
+            },
+          });
+        });
+
+    const data = response.deps.services.data;
+    this.updateState({
+      ...this.state,
+      elevation:
+          calculateGraph(
+              data,
+              checkExists(this.state.pathProfiles),
+              checkExists(this.state.trail)),
+    });
+  }
+
+  browseMap() {
+    this.views.showOverview(this.mapController.cameraLlz);
   }
 
   clearElevationCursor(e: PointerEvent) {
@@ -165,6 +192,12 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
         cursorFraction: fraction,
       },
     });
+  }
+
+  zoomToFit(): void {
+    if (this.state.trail) {
+      this.mapController?.setCamera(this.state.trail.bound);
+    }
   }
 }
 
