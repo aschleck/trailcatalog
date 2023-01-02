@@ -1,5 +1,7 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
+import { OutlinedButton } from 'js/dino/button';
+import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
 
 import { currentUrl } from './common/ssr_aware';
@@ -18,6 +20,7 @@ export function ViewportLayoutElement({
   camera,
   filters,
   overlays,
+  query,
   ref,
   sidebarContent,
 }: {
@@ -32,6 +35,7 @@ export function ViewportLayoutElement({
   overlays?: Overlays & {
     content?: string;
   };
+  query?: string;
   ref?: string;
   sidebarContent: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
@@ -57,7 +61,23 @@ export function ViewportLayoutElement({
 
   return <>
     <div className="flex flex-col h-full">
-      <Header />
+      <Header
+          query={query}
+          extra={
+            <span
+                unboundEvents={{
+                  corgi: [
+                    [ACTION, 'locateMe'],
+                  ]
+                }}
+            >
+              <OutlinedButton
+                  icon="Location"
+                  label="Locate me"
+              />
+            </span>
+          }
+      />
       {bannerContent ?? ''}
       <div className="flex grow overflow-hidden relative">
         <div

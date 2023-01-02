@@ -23,7 +23,7 @@ def esbuild_binary(
             "//build_defs:esbuild_config_deps",
             "//third_party/deanc-esbuild-plugin-postcss",
         ],
-        minify = True,
+        minify = False,
         output_css = "%s.css" % name if has_css else None,
         platform = platform,
         sources_content = True,

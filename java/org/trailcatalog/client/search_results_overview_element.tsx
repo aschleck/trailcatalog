@@ -1,5 +1,5 @@
 import * as corgi from 'js/corgi';
-import { FlatButton, OutlinedButton } from 'js/dino/button';
+import { FlatButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
@@ -180,6 +180,7 @@ function Content({boundaryId, query, state, updateState}: {
       <ViewportLayoutElement
           bannerContent={<SearchFilter state={state} />}
           camera={bound}
+          query={query}
           ref="map"
           filters={{
             trail: filter,
@@ -203,15 +204,6 @@ function SearchFilter({state}: {state: State}) {
   const divider = <div className="bg-black-opaque-20 w-px" />;
   return <>
     <aside className="bg-tc-gray-700 flex gap-3 items-center px-3 py-2 text-white">
-      <span
-          unboundEvents={{
-            corgi: [
-              [ACTION, 'locateMe'],
-            ]
-          }}
-      >
-        <OutlinedButton icon="Location" label="Locate me" />
-      </span>
       {
         state.boundary
             ? <>

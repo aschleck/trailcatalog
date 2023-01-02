@@ -1,8 +1,12 @@
 import * as corgi from 'js/corgi';
+import { VElementOrPrimitive } from 'js/corgi';
 
 import { SearchElement } from './search_element';
 
-export function Header() {
+export function Header({query, extra}: {
+  query?: string;
+  extra?: VElementOrPrimitive|VElementOrPrimitive[],
+}) {
   return <>
     <div className="
         align-middle
@@ -22,7 +26,8 @@ export function Header() {
             className="h-6"
         />
       </a>
-      <SearchElement />
+      <SearchElement query={query} />
+      {extra ? extra : ''}
       <div className="basis-1 flex grow justify-end">
         <a href="https://github.com/aschleck/trailcatalog" target="_blank">
           <img

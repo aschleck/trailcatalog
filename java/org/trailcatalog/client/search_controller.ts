@@ -13,6 +13,7 @@ type Deps = typeof SearchController.deps;
 
 export interface State {
   boundaries: BoundarySearchResult[];
+  displayedQuery: string;
   query: string;
   trails: TrailSearchResult[],
 }
@@ -29,65 +30,72 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
 
   private readonly debouncer: Debouncer;
   private readonly views: ViewsService;
-  private lastQuery: string;
 
   constructor(response: Response<SearchController>) {
     super(response);
-    this.lastQuery = '';
     this.views = response.deps.services.views;
 
     this.debouncer = new Debouncer(200 /* ms */, () => {
-      this.actuallySearch(this.lastQuery);
+      this.actuallySearch();
     });
   }
 
   search(e: KeyboardEvent): void {
     const input = checkExists(e.srcElement) as HTMLInputElement;
-    this.lastQuery = input.value;
+    this.updateState({
+      ...this.state,
+      query: input.value,
+    });
 
     if (e.key === "Enter") {
-      this.goToSearchPage();
+      this.goToSearchPage(input.value);
     } else {
       this.debouncer.trigger();
     }
   }
 
-  private async actuallySearch(query: string): Promise<void> {
+  private async actuallySearch(): Promise<void> {
+    const query = this.state.query;
     const bp = fetchData('search_boundaries', {query});
     const tp = fetchData('search_trails', {query, limit: 5});
     const boundaries = await bp;
     const trails = await tp;
 
-    if (query !== this.lastQuery) {
+    if (query !== this.state.query) {
       return;
     }
 
     this.updateState({
+      ...this.state,
       boundaries: searchBoundariesFromRaw(boundaries),
-      query,
       trails: searchTrailsFromRaw(trails),
     });
   }
 
   private clearSearch(): void {
-    const url = currentUrl();
-    let camera;
-    if (url.searchParams.has('lat')
-        || url.searchParams.has('lng')
-        || url.searchParams.has('zoom')) {
-      camera = {
-        lat: Number(url.searchParams.get('lat')),
-        lng: Number(url.searchParams.get('lng')),
-        zoom: Number(url.searchParams.get('zoom')),
-      };
+    if (this.state.displayedQuery) {
+      const url = currentUrl();
+      let camera;
+      if (url.searchParams.has('lat')
+          || url.searchParams.has('lng')
+          || url.searchParams.has('zoom')) {
+        camera = {
+          lat: Number(url.searchParams.get('lat')),
+          lng: Number(url.searchParams.get('lng')),
+          zoom: Number(url.searchParams.get('zoom')),
+        };
+      }
+      this.views.showOverview(camera);
+    } else {
+      this.updateState({
+        ...this.state,
+        query: '',
+      });
     }
-    this.views.showOverview(camera);
   }
 
-  private goToSearchPage(): void {
-    this.views.showSearchResults({
-      query: this.lastQuery,
-    });
+  private goToSearchPage(query: string): void {
+    this.views.showSearchResults({query});
   }
 }
 

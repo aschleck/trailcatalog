@@ -2,6 +2,7 @@ import { checkExists } from 'js/common/asserts';
 import { deepEqual } from 'js/common/comparisons';
 
 import { AnyBoundController, applyInstantiationResult, applyUpdate as applyBinderUpdate, bindElementToSpec, disposeBoundElementsIn, InstantiationResult, UnboundEvents } from './binder';
+import { SupportedElement } from './dom';
 
 export const Fragment = Symbol();
 export { bind } from './binder';
@@ -90,6 +91,7 @@ interface VElement {
   factoryProps?: Properties<HTMLElement>;
   handle?: VHandle,
   state?: [object|undefined, (newState: object) => void];
+  trace?: VElementOrPrimitive[];
 
   children: VElementOrPrimitive[];
 }
@@ -103,12 +105,12 @@ type ElementFactory = (
 ) => VElement;
 
 interface VContext {
-  liveChildren: VElementOrPrimitive[];
+  live: VElementOrPrimitive[];
   reconstructed: number;
+  trace: VElementOrPrimitive[];
 }
 
 const vElementPath: VContext[] = [];
-const vElements = new WeakSet<VElement>();
 const vElementsToNodes = new WeakMap<VElement, Node>();
 const vHandlesToElements = new WeakMap<VHandle, VElement>();
 
@@ -149,24 +151,31 @@ export function createVirtualElement(
     const propClone = Object.assign({}, props);
     propClone.children = expandChildren;
 
+    // It's best to reuse existing elements, because then when parents rerender their children are
+    // have the correct props and states and stuff (which saves us work.) If we don't match things
+    // up we can have problems, for example parents not realizing that their child inputs have
+    // changed and so not clearing them when re-rendering.
     let previousElement;
     if (vElementPath.length > 0) {
       const top = vElementPath[vElementPath.length - 1];
-      if (top.liveChildren.length > top.reconstructed) {
-        const candidate = top.liveChildren[top.reconstructed];
+      // This is kind of slow, but hopefully it's okay since this is important.
+      for (let i = top.reconstructed; i < top.live.length; ++i) {
+        const candidate = top.live[i];
         if (typeof candidate == 'object' && candidate.factory === element) {
           previousElement = candidate;
+          top.reconstructed = i + 1;
+          break;
         }
       }
-      top.reconstructed += 1;
-    }
 
-    // Optimistic check
-    if (
-        previousElement
-            && deepEqual(props, checkExists(previousElement.factoryProps))
-            && deepEqual(expandChildren, previousElement.children)) {
-      return previousElement;
+      // Optimistic check
+      if (
+          previousElement
+              && deepEqual(props, checkExists(previousElement.factoryProps))
+              && deepEqual(expandChildren, previousElement.children)) {
+        top.trace.push(previousElement);
+        return previousElement;
+      }
     }
 
     let handle;
@@ -178,28 +187,31 @@ export function createVirtualElement(
       updateState = checkExists(previousElement.state)[1];
 
       vElementPath.push({
-        liveChildren: previousElement.children,
+        live: checkExists(previousElement.trace),
         reconstructed: 0,
+        trace: [],
       });
     } else {
       const h = {} as VHandle;
       handle = h;
       updateState = (newState: object) => {
         const v = vHandlesToElements.get(h);
-        if (v) {
+        if (v && h === v.handle) {
           updateToState(v, newState);
         }
       };
 
       vElementPath.push({
-        liveChildren: [],
+        live: [],
         reconstructed: 0,
+        trace: [],
       });
     }
 
     let v;
     try {
       v = element(propClone, state, updateState);
+      v.trace = vElementPath[vElementPath.length - 1].trace;
     } finally {
       vElementPath.pop();
     }
@@ -208,8 +220,15 @@ export function createVirtualElement(
     v.factoryProps = props;
     v.handle = handle;
     v.state = [state, updateState];
-    vElements.add(v);
-    vHandlesToElements.set(handle, v);
+
+    if (vElementPath.length > 0) {
+      vElementPath[vElementPath.length - 1].trace.push(v);
+    }
+
+    // Parents keep references to our first element, so never update it if we have a previous.
+    if (!previousElement) {
+      vHandlesToElements.set(handle, v);
+    }
 
     return v;
   } else if (element === Fragment) {
@@ -217,12 +236,22 @@ export function createVirtualElement(
       element: FRAGMENT_TAG,
       props,
       children: expandChildren,
+      factory: undefined,
+      factoryProps: undefined,
+      handle: undefined,
+      state: undefined,
+      trace: undefined,
     };
   } else {
     return {
       element,
       props,
       children: expandChildren,
+      factory: undefined,
+      factoryProps: undefined,
+      handle: undefined,
+      state: undefined,
+      trace: undefined,
     };
   }
 }
@@ -237,8 +266,9 @@ function updateToState(element: VElement, newState: object): void {
   }
 
   vElementPath.push({
-    liveChildren: element.children,
+    live: checkExists(element.trace),
     reconstructed: 0,
+    trace: [],
   });
   let newElement;
   try {
@@ -247,44 +277,41 @@ function updateToState(element: VElement, newState: object): void {
     vElementPath.pop();
   }
 
-  let oldExpand;
-  if (element.element === FRAGMENT_TAG) {
-    oldExpand = expandFragments(element.children);
-  } else {
-    oldExpand = [element];
-  }
-  let newExpand;
-  if (newElement.element === FRAGMENT_TAG) {
-    newExpand = expandFragments(newElement.children);
-  } else {
-    newExpand = [newElement];
-  }
+  updateThroughFragments(element, newElement);
+  element.state = [newState, checkExists(element.state)[1]];
+}
 
-  if (oldExpand.length !== newExpand.length) {
-    throw new Error('Cannot change child count with fragment state update');
+function updateThroughFragments(from: VElement, to: VElement) {
+  if ((from.element === FRAGMENT_TAG) !== (to.element === FRAGMENT_TAG)) {
+    throw new Error('Fragment flip-flopping is bad');
+  }
+  if (from.children.length !== to.children.length) {
+    throw new Error('Mismatched child counts');
   }
 
-  for (let i = 0; i < oldExpand.length; ++i) {
-    const was = oldExpand[i];
-    const is = newExpand[i];
+  if (from.element === FRAGMENT_TAG) {
+    for (let i = 0; i < from.children.length; ++i) {
+      const was = from.children[i];
+      const is = to.children[i];
+      if (typeof was !== 'object' || typeof is !== 'object') {
+        throw new Error('Cannot update primitive fragment children');
+      }
 
-    if (typeof was !== 'object' || typeof is !== 'object') {
-      throw new Error('Cannot update primitive fragment children');
+      updateThroughFragments(was, is);
     }
-
-    const node = vElementsToNodes.get(was);
+  } else {
+    const node = vElementsToNodes.get(from);
     if (!node) {
       console.error('Stale state update, or terrifying bug');
       return;
     }
 
-    const result = applyUpdate(was, is);
+    const result = applyUpdate(from, to);
     if (node !== result.root) {
       node.parentNode?.replaceChild(result.root, node);
+      result.sideEffects.push(() => { disposeBoundElementsIn(node); });
     }
 
-    Object.assign(was, is);
-    vElementsToNodes.set(was, result.root);
     applyInstantiationResult(result);
   }
 }
@@ -300,7 +327,15 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
       || from.props.js?.key !== to.props.js?.key
       || from.props.js?.ref !== to.props.js?.ref) {
     const element = createElement(to);
-    vElementsToNodes.set(to, element.root);
+    if (from) {
+      vElementsToNodes.set(from, element.root);
+      Object.assign(from, to);
+
+      // We reused the element, so remap it.
+      if (to.handle) {
+        vHandlesToElements.set(to.handle, from);
+      }
+    }
     return element;
   }
 
@@ -329,6 +364,8 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
         node.className = checkExists(to.props[key]);
       } else if (key === 'unboundEvents') {
         result.unboundEventss.push([node, checkExists(to.props[key])]);
+      } else if ((key as string) === 'value') {
+        (node as HTMLInputElement).value = checkExists(to.props[key]);
       } else {
         node.setAttribute(key.replace('_', '-'), checkExists(to.props[key]));
       }
@@ -344,50 +381,128 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
     }
   }
 
-  const oldChildren = [...node.childNodes];
-  const fromChildren = expandFragments(from.children);
-  const toChildren = expandFragments(to.children);
+  applyThroughFragments(from.children, to.children, node, 0, [...node.childNodes], result);
+
+  vElementsToNodes.set(from, result.root);
+  if (to.handle) {
+    vHandlesToElements.set(to.handle, from);
+  }
+  from.handle = to.handle;
+  from.props = to.props;
+  from.factory = to.factory;
+  from.factoryProps = to.factoryProps;
+  from.state = to.state;
+  from.trace = to.trace;
+  return result;
+}
+
+// When applying updates, we need to compare using the fragment tree but never actually create
+// fragments in the DOM. So this recursive function processes `node`'s children and moves
+// `currentChildIndex` forward as it matches children.
+function applyThroughFragments(
+    fromChildren: VElementOrPrimitive[],
+    toChildren: VElementOrPrimitive[],
+    node: SupportedElement,
+    currentChildIndex: number,
+    oldChildren: ChildNode[],
+    result: InstantiationResult,
+): number {
   for (let i = 0; i < toChildren.length; ++i) {
     const was = fromChildren[i];
     const is = toChildren[i];
 
     if (was === is) {
+      currentChildIndex += 1;
       continue;
     }
 
-    if (typeof was !== 'object' || typeof is !== 'object') {
-      const childResult = createElement(is);
-      if (i < oldChildren.length) {
-        const old = node.childNodes[i];
-        node.replaceChild(childResult.root, old);
-        result.sideEffects.push(() => { disposeBoundElementsIn(old); });
-      } else {
-        node.appendChild(childResult.root);
+    const wasElement = typeof was === 'object';
+    const wasFragment = wasElement && was.element === FRAGMENT_TAG;
+    const isElement = typeof is === 'object';
+    const isFragment = isElement && is.element === FRAGMENT_TAG;
+    fromChildren[i] = was ?? is;
+
+    if ((!was || wasFragment) && isFragment) {
+      // Are we creating or changing a fragment?
+      currentChildIndex =
+          applyThroughFragments(
+              wasFragment ? was.children : [],
+              is.children,
+              node,
+              currentChildIndex,
+              oldChildren,
+              result);
+      if (wasElement) {
+        if (is.handle) {
+          vHandlesToElements.set(is.handle, was);
+        }
+        was.handle = is.handle;
+        was.props = is.props;
+        was.factory = is.factory;
+        was.factoryProps = is.factoryProps;
+        was.state = is.state;
+        was.trace = is.trace;
       }
+      continue;
+    }
+
+    if (wasElement && !wasFragment && isElement && !isFragment) {
+      // Important to get the old node before we apply the update or else we'll just fetch the new
+      // node.
+      const oldNode = vElementsToNodes.get(was);
+      const childResult = applyUpdate(was, is);
+      if (!oldNode) {
+        node.appendChild(childResult.root);
+      } else if (oldNode !== childResult.root) {
+        node.replaceChild(childResult.root, oldNode);
+        result.sideEffects.push(() => { disposeBoundElementsIn(oldNode); });
+      }
+
+      currentChildIndex += 1;
       result.sideEffects.push(...childResult.sideEffects);
       result.unboundEventss.push(...childResult.unboundEventss);
-      continue;
-    }
+    } else {
+      // We just clobber data for primitives and problems. Note that if `is` is a fragment then we
+      // have to expand it.
+      for (const expand of expandFragments([is])) {
+        const childResult = createElement(expand);
+        if (currentChildIndex < oldChildren.length) {
+          const old = oldChildren[currentChildIndex];
+          node.replaceChild(childResult.root, old);
+          result.sideEffects.push(() => { disposeBoundElementsIn(old); });
+        } else {
+          node.appendChild(childResult.root);
+        }
 
-    const childResult = applyUpdate(was, is);
-    const oldNode = was?.element ? vElementsToNodes.get(was) : undefined;
-    if (!oldNode) {
-      node.appendChild(childResult.root);
-    } else if (oldNode !== childResult.root) {
-      node.replaceChild(childResult.root, oldNode);
-      result.sideEffects.push(() => { disposeBoundElementsIn(oldNode); });
+        currentChildIndex += 1;
+        result.sideEffects.push(...childResult.sideEffects);
+        result.unboundEventss.push(...childResult.unboundEventss);
+      }
+
+      if (wasElement && isElement) {
+        Object.assign(was, is);
+        const node = vElementsToNodes.get(is);
+        if (node) {
+          vElementsToNodes.set(was, node);
+        }
+        if (is.handle) {
+          vHandlesToElements.set(is.handle, was);
+        }
+      } else {
+        // We need to replace `was` with `is`.
+        fromChildren[i] = is;
+      }
     }
-    result.sideEffects.push(...childResult.sideEffects);
-    result.unboundEventss.push(...childResult.unboundEventss);
   }
   for (let i = toChildren.length; i < fromChildren.length; ++i) {
-    const old = checkExists(node.lastChild);
+    // Could we do this from the back...?
+    const old = oldChildren[currentChildIndex];
+    oldChildren.splice(currentChildIndex, 1);
     old.remove();
     result.sideEffects.push(() => { disposeBoundElementsIn(old); });
   }
-
-  vElementsToNodes.set(to, result.root);
-  return result;
+  fromChildren.length = toChildren.length;
+  return currentChildIndex;
 }
 
 const TAG_TO_NAMESPACE = new Map([

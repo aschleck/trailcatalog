@@ -12,13 +12,13 @@ import { BoundaryCrumbs } from './boundary_crumbs';
 import { SearchController, State } from './search_controller';
 
 export function SearchElement(
-    props: {}, state: State|undefined, updateState: (newState: State) => void) {
+    {query}: {query?: string}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
-    const search = currentUrl().searchParams;
     state = {
       boundaries: [],
+      displayedQuery: query ?? '',
+      query: query ?? '',
       trails: [],
-      query: search.get('query') ?? '',
     };
   }
 
@@ -31,7 +31,7 @@ export function SearchElement(
         })}
     >
       <OutlinedInput
-          className="border-white peer w-96"
+          className="peer w-96"
           icon="Search"
           inset={
             state.query

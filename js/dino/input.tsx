@@ -3,37 +3,34 @@ import { UnboundEvents } from 'js/corgi/binder';
 
 import { FabricIcon, FabricIconName } from './fabric';
 
-export function OutlinedInput({borderColor, className, icon, placeholder, ...props}: {
-  borderColor?: string,
+type InputProps = {
   className?: string,
+  dense?: boolean,
   icon?: FabricIconName,
   inset?: corgi.VElementOrPrimitive,
   placeholder?: string,
-} & corgi.InputProperties) {
+} & corgi.InputProperties;
+
+export function OutlinedInput({className, ...props}: {
+  className?: string,
+} & InputProps) {
   return <>
     <Input
         className={
-            'border-[1px] rounded focus-within:border-current'
+            'border-[1px] border-tc-gray-400 rounded focus-within:border-current'
                 + (className ? ` ${className}` : '')}
-        icon={icon}
-        placeholder={placeholder}
         {...props}
     />
   </>;
 }
 
-function Input({className, icon, inset, placeholder, unboundEvents, value, ...props}: {
-  className?: string,
-  icon?: FabricIconName,
-  inset?: corgi.VElementOrPrimitive,
-  placeholder?: string,
-  unboundEvents?: UnboundEvents;
-  value?: string;
-} & corgi.InputProperties) {
+function Input(
+    {className, dense, icon, inset, placeholder, unboundEvents, value, ...props}: InputProps) {
   return <>
     <label
         className={
-            'flex font-input gap-3 items-center px-3 py-2'
+            'flex font-input gap-3 items-center'
+                + (dense !== true ? ' px-3 py-1' : '')
                 + (className ? ` ${className} ` : '')
         }
         {...props}
