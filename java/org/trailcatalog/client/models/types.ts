@@ -75,6 +75,7 @@ export class TrailSearchResult {
   constructor(
       readonly id: bigint,
       readonly name: string,
+      readonly bound: LatLngRect,
       readonly marker: LatLng,
       readonly elevationDownMeters: number,
       readonly elevationUpMeters: number,

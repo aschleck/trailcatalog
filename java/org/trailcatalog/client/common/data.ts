@@ -3,7 +3,7 @@ import { deepEqual } from 'js/common/comparisons';
 import { decodeBase64 } from './base64';
 import { LittleEndianView } from './little_endian_view';
 import { InitialDataKey, initialData } from './ssr_aware';
-import { LatLng } from './types';
+import { LatLng, LatLngRect } from './types';
 
 type AsObjects<T extends string[]> = {[K in keyof T]: object};
 type KeyedTuples<T extends string[]> = {[K in keyof T]: [T[K], object]};
@@ -77,4 +77,13 @@ export function latLngFromBase64E7(bytes: string): LatLng {
     markerStream.getInt32() / 10_000_000,
     markerStream.getInt32() / 10_000_000,
   ] as LatLng;
+}
+
+export function latLngRectFromBase64E7(bytes: string): LatLngRect {
+  const boundStream = new LittleEndianView(decodeBase64(bytes));
+  return {
+    low: [boundStream.getInt32() / 10_000_000, boundStream.getInt32() / 10_000_000],
+    high: [boundStream.getInt32() / 10_000_000, boundStream.getInt32() / 10_000_000],
+    brand: 'LatLngRect' as const,
+  } as LatLngRect;
 }

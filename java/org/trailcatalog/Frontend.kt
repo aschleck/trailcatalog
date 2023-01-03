@@ -366,6 +366,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
         "SELECT "
             + "sr.id, "
             + "sr.name, "
+            + "sr.bound_degrees_e7, "
             + "sr.marker_degrees_e7, "
             + "sr.elevation_down_meters, "
             + "sr.elevation_up_meters, "
@@ -375,6 +376,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "  SELECT "
             + "    t.id as id, "
             + "    t.name as name, "
+            + "    t.bound_degrees_e7, "
             + "    t.marker_degrees_e7 as marker_degrees_e7, "
             + "    t.elevation_down_meters as elevation_down_meters, "
             + "    t.elevation_up_meters as elevation_up_meters, "
@@ -384,6 +386,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "    SELECT "
             + "      id, "
             + "      name, "
+            + "      bound_degrees_e7, "
             + "      marker_degrees_e7, "
             + "      elevation_down_meters, "
             + "      elevation_up_meters, "
@@ -395,6 +398,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "    SELECT "
             + "      id, "
             + "      name, "
+            + "      bound_degrees_e7, "
             + "      marker_degrees_e7, "
             + "      elevation_down_meters, "
             + "      elevation_up_meters, "
@@ -404,12 +408,12 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "    WHERE ? <<% name AND epoch = ? "
             + "  ) t "
             + "  WHERE score < 0.7 "
-            + "  GROUP BY 1, 2, 3, 4, 5, 6 "
+            + "  GROUP BY 1, 2, 3, 4, 5, 6, 7 "
             + "  ORDER BY MAX(score) ASC "
             + "  LIMIT ?"
             + ") sr "
             + "LEFT JOIN trails_in_boundaries tib ON sr.id = tib.trail_id AND tib.epoch = ? "
-            + "GROUP BY 1, 2, 3, 4, 5, 6, sr.score "
+            + "GROUP BY 1, 2, 3, 4, 5, 6, 7, sr.score "
             + "ORDER BY sr.score ASC")
         .apply {
           setString(1, query)
@@ -424,12 +428,13 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
       val trail = HashMap<String, Any>()
       trail["id"] = results.getLong(1).toString()
       trail["name"] = results.getString(2)
-      trail["marker"] = String(Base64.getEncoder().encode(results.getBytes(3)))
-      trail["elevation_down_meters"] = results.getFloat(4)
-      trail["elevation_up_meters"] = results.getFloat(5)
-      trail["length_meters"] = results.getFloat(6)
+      trail["bound"] = String(Base64.getEncoder().encode(results.getBytes(3)))
+      trail["marker"] = String(Base64.getEncoder().encode(results.getBytes(4)))
+      trail["elevation_down_meters"] = results.getFloat(5)
+      trail["elevation_up_meters"] = results.getFloat(6)
+      trail["length_meters"] = results.getFloat(7)
       @Suppress("UNCHECKED_CAST")
-      val boundaries = results.getArray(7).getArray() as Array<Long>
+      val boundaries = results.getArray(8).getArray() as Array<Long>
       trail["boundaries"] = boundaries.map { it.toString() }
       requiredBoundaries.addAll(boundaries)
       data.add(trail)

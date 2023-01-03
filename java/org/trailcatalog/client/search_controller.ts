@@ -2,7 +2,7 @@ import { checkExists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 
-import { latLngFromBase64E7 } from './common/data';
+import { latLngFromBase64E7, latLngRectFromBase64E7 } from './common/data';
 import { currentUrl } from './common/ssr_aware';
 import { BoundarySearchResult, TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
@@ -116,6 +116,7 @@ export function searchTrailsFromRaw(raw: DataResponses['search_trails']): TrailS
           new TrailSearchResult(
               BigInt(t.id),
               t.name,
+              latLngRectFromBase64E7(t.bound),
               latLngFromBase64E7(t.marker),
               t.elevation_down_meters,
               t.elevation_up_meters,

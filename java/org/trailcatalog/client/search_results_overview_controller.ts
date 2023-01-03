@@ -36,6 +36,7 @@ export interface State extends VState {
   trailsInBoundary: Trail[]|undefined;
   trailsInBoundaryFilter: (id: bigint) => boolean;
   trailsInBoundaryIds: Set<bigint>|undefined;
+  searchQuery?: string;
   searchTrails: TrailSearchResult[]|undefined;
   searchTrailsIds: Set<bigint>|undefined;
 }

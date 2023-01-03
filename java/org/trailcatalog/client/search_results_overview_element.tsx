@@ -27,7 +27,7 @@ export function SearchResultsOverviewElement(
 
   setTitle(query);
 
-  if (!state) {
+  if (!state || query !== state.searchQuery) {
     let boundary;
     let trailsInBoundary;
     let trailsInBoundaryIds;
@@ -58,6 +58,7 @@ export function SearchResultsOverviewElement(
     state = {
       boundary,
       filterInBoundary: !!boundary,
+      searchQuery: query,
       searchTrails,
       searchTrailsIds,
       trailsFilter: () => true,
@@ -117,17 +118,17 @@ function Content({boundaryId, query, state, updateState}: {
 
       bound = emptyLatLngRect();
       for (const trail of filteredTrails) {
-        if (trail.marker[0] < bound.low[0]) {
-          bound.low[0] = trail.marker[0];
+        if (trail.bound.low[0] < bound.low[0]) {
+          bound.low[0] = trail.bound.low[0];
         }
-        if (trail.marker[0] > bound.high[0]) {
-          bound.high[0] = trail.marker[0];
+        if (trail.bound.high[0] > bound.high[0]) {
+          bound.high[0] = trail.bound.high[0];
         }
-        if (trail.marker[1] < bound.low[1]) {
-          bound.low[1] = trail.marker[1];
+        if (trail.bound.low[1] < bound.low[1]) {
+          bound.low[1] = trail.bound.low[1];
         }
-        if (trail.marker[1] > bound.high[1]) {
-          bound.high[1] = trail.marker[1];
+        if (trail.bound.high[1] > bound.high[1]) {
+          bound.high[1] = trail.bound.high[1];
         }
       }
     }

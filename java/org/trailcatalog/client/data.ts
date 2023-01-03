@@ -78,6 +78,7 @@ export interface DataResponses {
       id: string;
       name: string;
       boundaries: string[];
+      bound: string;
       marker: string;
       elevation_down_meters: number;
       elevation_up_meters: number;
