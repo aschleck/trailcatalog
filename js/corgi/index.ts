@@ -183,11 +183,12 @@ export function createVirtualElement(
     let updateState;
     if (previousElement) {
       handle = checkExists(previousElement.handle);
-      state = checkExists(previousElement.state)[0];
-      updateState = checkExists(previousElement.state)[1];
+      const canonical = vHandlesToElements.get(handle) ?? previousElement;
+      state = checkExists(canonical.state)[0];
+      updateState = checkExists(canonical.state)[1];
 
       vElementPath.push({
-        live: checkExists(previousElement.trace),
+        live: checkExists(canonical.trace),
         reconstructed: 0,
         trace: [],
       });
