@@ -77,6 +77,26 @@ projects.IAMBinding(
 )
 
 projects.IAMBinding(
+    "ops-agent-log-writer",
+    project="trailcatalog",
+    role="roles/logging.logWriter",
+    members=[
+        frontend_account.email.apply(lambda name: f"serviceAccount:{name}"),
+        importer_account.email.apply(lambda name: f"serviceAccount:{name}"),
+    ],
+)
+
+projects.IAMBinding(
+    "ops-agent-metric-writer",
+    project="trailcatalog",
+    role="roles/monitoring.metricWriter",
+    members=[
+        frontend_account.email.apply(lambda name: f"serviceAccount:{name}"),
+        importer_account.email.apply(lambda name: f"serviceAccount:{name}"),
+    ],
+)
+
+projects.IAMBinding(
     "secrets-access",
     project="trailcatalog",
     role="roles/secretmanager.secretAccessor",
@@ -89,7 +109,7 @@ projects.IAMBinding(
 pink = compute.Instance(
     "pink",
     name="pink",
-    machine_type="e2-medium",
+    machine_type="e2-standard-2",
     zone="us-west1-a",
     boot_disk=compute.InstanceBootDiskArgs(
         initialize_params=compute.InstanceBootDiskInitializeParamsArgs(
@@ -111,6 +131,7 @@ pink = compute.Instance(
         ],
     ),
     opts=ResourceOptions(delete_before_replace=True),
+    # TODO(april): we should also set up Cloudflare DDNS here
     metadata={
         "google-logging-enabled": "true",
         "user-data": Output.all(
