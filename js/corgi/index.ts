@@ -465,7 +465,9 @@ function applyThroughFragments(
     } else {
       // We just clobber data for primitives and problems. Note that if `is` is a fragment then we
       // have to expand it.
-      for (const expand of expandFragments([is])) {
+      const wasNodes = expandFragments([was]);
+      const isNodes = expandFragments([is]);
+      for (const expand of isNodes) {
         const childResult = createElement(expand);
         if (currentChildIndex < oldChildren.length) {
           const old = oldChildren[currentChildIndex];
@@ -478,6 +480,12 @@ function applyThroughFragments(
         currentChildIndex += 1;
         result.sideEffects.push(...childResult.sideEffects);
         result.unboundEventss.push(...childResult.unboundEventss);
+      }
+      for (let i = isNodes.length; i < wasNodes.length; ++i) {
+        const old = node.childNodes[currentChildIndex];
+        old.remove();
+        result.sideEffects.push(() => { disposeBoundElementsIn(old); });
+        currentChildIndex += 1;
       }
 
       if (wasElement && isElement) {
