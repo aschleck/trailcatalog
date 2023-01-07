@@ -28,8 +28,8 @@ public final class SimpleS2 {
 
   // These are the levels exposed to the client
   public static final int HIGHEST_OVERVIEW_INDEX_LEVEL = 5;
-  public static final int HIGHEST_COARSE_INDEX_LEVEL = 10;
-  public static final int HIGHEST_FINE_INDEX_LEVEL = 13;
+  public static final int HIGHEST_COARSE_INDEX_LEVEL = 7;
+  public static final int HIGHEST_FINE_INDEX_LEVEL = 12;
   // This is the level at which the database gets indexed
   public static final int HIGHEST_INDEX_LEVEL = 13;
 
