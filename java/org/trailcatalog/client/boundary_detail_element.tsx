@@ -4,8 +4,10 @@ import { FlatButton } from 'js/dino/button';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 
+import { formatDistance, formatHeight } from './common/formatters';
 import { SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
+import { Boundary, Trail } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { BoundaryDetailController, boundaryFromRaw, containingBoundariesFromRaw, LoadingController, State, trailsInBoundaryFromRaw } from './boundary_detail_controller';
@@ -118,15 +120,26 @@ function Content({boundaryId, state, updateState}: {
       <header className="font-bold font-sans text-3xl">
         {boundary.name}
       </header>
-      <aside>
+      <aside className="flex gap-2 mt-2 text-tc-gray-400">
         <BoundaryCrumbs boundaries={containingBoundaries} />
+        •
+        <div>
+          <a href={`https://www.openstreetmap.org/relation/${boundary.sourceRelation}`}>
+            <img
+                alt="OpenStreetMap logo"
+                className="h-[1em] inline-block mr-1"
+                src="/static/images/icons/osm-logo.svg"
+            />
+            Relation {boundary.sourceRelation}
+          </a>
+        </div>
       </aside>
       <div className="relative">
         <MapElement
             camera={boundary.bound}
             className="my-8"
             height="h-[32rem]"
-            overlays={{polygon: state.boundary?.polygon}}
+            overlays={{polygon: boundary.polygon}}
             ref="map"
         />
         <div className="absolute flex flex-col gap-2 right-2 top-2">
@@ -139,19 +152,10 @@ function Content({boundaryId, state, updateState}: {
         </div>
         {trailDetails ?? <></>}
       </div>
-      <div className="flex flex-wrap">
+      <div className="flex flex-wrap gap-4">
         {
           trailsInBoundary.map(t => <>
-            <a
-                className="block border border-2 border-tc-gray-200 flex no-underline rounded"
-                href={`/goto/trail/${t.id}`}
-            >
-              <div className="bg-tc-gray-100 h-32 w-32">
-              </div>
-              <div>
-                {t.name}
-              </div>
-            </a>
+            <TrailBlock containingBoundaries={containingBoundaries} trail={t} />
           </>)
         }
       </div>
@@ -159,3 +163,43 @@ function Content({boundaryId, state, updateState}: {
   </>;
 }
 
+function TrailBlock({containingBoundaries, trail}: {
+  containingBoundaries: Boundary[];
+  trail: Trail;
+}) {
+  const distance = formatDistance(trail.lengthMeters);
+  const elevationDown = formatHeight(trail.elevationDownMeters);
+  const elevationUp = formatHeight(trail.elevationUpMeters);
+
+  return <>
+    <div
+        className={
+          'block border-2 border-tc-gray-200 flex rounded-lg w-[calc(100%_/_3_-_0.67rem)]'
+        }
+    >
+      <div className="bg-tc-gray-100 h-32 w-32" />
+      <div className="flex flex-col grow mx-5 my-2">
+        <a className="font-semibold" href={`/goto/trail/${trail.id}`}>
+          {trail.name}
+        </a>
+        <section className="grow text-sm text-tc-gray-400">
+          <BoundaryCrumbs boundaries={containingBoundaries} />
+        </section>
+        <section className="self-end space-x-2 text-sm">
+          <TrailNumericCrumb {...distance} />
+          <TrailNumericCrumb {...elevationUp} />
+        </section>
+      </div>
+    </div>
+  </>;
+}
+
+function TrailNumericCrumb({value, unit}: {value: string; unit: string}) {
+  return <>
+    <span>
+      <span className="font-bold">{value}</span>
+      {' '}
+      <span className="text-tc-gray-400">{unit}</span>
+    </span>
+  </>;
+}

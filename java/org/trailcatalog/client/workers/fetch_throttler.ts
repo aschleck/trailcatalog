@@ -1,4 +1,4 @@
-export const MAX_REQUESTS_IN_FLIGHT = 16;
+export const MAX_REQUESTS_IN_FLIGHT = 8;
 
 interface RequestInitWithSignal extends RequestInit {
   signal: AbortSignal;

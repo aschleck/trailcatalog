@@ -712,6 +712,7 @@ declare global {
       input: InputProperties;
       label: Properties<HTMLElement>;
       line: LineProperties;
+      main: Properties<HTMLElement>;
       polyline: PolylineProperties;
       section: Properties<HTMLElement>;
       span: Properties<HTMLSpanElement>;

@@ -151,8 +151,19 @@ function Content({trailId, state, updateState}: {
       <header className="font-bold font-sans text-3xl">
         {trail.name}
       </header>
-      <aside className="mt-2">
+      <aside className="flex gap-2 mt-2 text-tc-gray-400">
         <BoundaryCrumbs boundaries={containingBoundaries} />
+        •
+        <div>
+          <a href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}>
+            <img
+                alt="OpenStreetMap logo"
+                className="h-[1em] inline-block mr-1"
+                src="/static/images/icons/osm-logo.svg"
+            />
+            Relation {trail.sourceRelation}
+          </a>
+        </div>
       </aside>
       <div className="bg-tc-gray-100 h-0.5 mt-4 w-full" />
       <aside className="flex flex-wrap items-stretch mt-4">
