@@ -23,14 +23,14 @@ export function SearchElement(
 
   return <>
     <div
-        className="relative"
+        className="grow max-w-[24rem] relative"
         js={corgi.bind({
           controller: SearchController,
           state: [state, updateState],
         })}
     >
       <OutlinedInput
-          className="peer w-96"
+          className="peer w-full"
           icon="Search"
           inset={
             state.query
@@ -94,7 +94,7 @@ function SearchResults({boundaries, className, query, trails}: {
           px-3
           text-black
           top-full
-          z-10
+          z-50
           ${className}
       `}
       tabIndex="-1"

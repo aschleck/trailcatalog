@@ -1,5 +1,5 @@
 import * as corgi from 'js/corgi';
-import { FlatButton } from 'js/dino/button';
+import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
@@ -7,17 +7,18 @@ import { FabricIcon } from 'js/dino/fabric';
 import { currentUrl } from './common/ssr_aware';
 import { emptyLatLngRect } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
+import { MapElement } from './map/map_element';
 import { Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
 import { initialData } from './data';
+import { Header } from './page';
 import { searchTrailsFromRaw } from './search_controller';
 import { LIMIT, LoadingController, SearchResultsOverviewController, State } from './search_results_overview_controller';
 import { setTitle } from './title';
 import { TrailSidebar } from './trail_list';
 import { TrailPopup } from './trail_popup';
-import { ViewportLayoutElement } from './viewport_layout_element';
 
 export function SearchResultsOverviewElement(
     {}: {}, state: State|undefined, updateState: (newState: State) => void) {
@@ -27,7 +28,7 @@ export function SearchResultsOverviewElement(
 
   setTitle(query);
 
-  if (!state || query !== state.searchQuery) {
+  if (!state || boundaryId !== state.boundaryId || query !== state.searchQuery) {
     let boundary;
     let trailsInBoundary;
     let trailsInBoundaryIds;
@@ -57,7 +58,9 @@ export function SearchResultsOverviewElement(
 
     state = {
       boundary,
+      boundaryId,
       filterInBoundary: !!boundary,
+      mobileSidebarOpen: false,
       searchQuery: query,
       searchTrails,
       searchTrailsIds,
@@ -145,6 +148,20 @@ function Content({boundaryId, query, state, updateState}: {
     filteredTrails = state.nearbyTrails;
   }
 
+  const url = currentUrl();
+  let llz;
+  if (
+      !bound
+          || url.searchParams.has('lat')
+          || url.searchParams.has('lng')
+          || url.searchParams.has('zoom')) {
+    llz = {
+      lat: floatCoalesce(url.searchParams.get('lat'), 46.859369),
+      lng: floatCoalesce(url.searchParams.get('lng'), -121.747888),
+      zoom: floatCoalesce(url.searchParams.get('zoom'), 12),
+    };
+  }
+
   let trailDetails;
   if (state.selectedTrails.length > 0) {
     trailDetails =
@@ -178,25 +195,44 @@ function Content({boundaryId, query, state, updateState}: {
         })}
         className="flex flex-col h-full"
     >
-      <ViewportLayoutElement
-          bannerContent={<SearchFilter state={state} />}
-          camera={bound}
+      <Header
           query={query}
-          ref="map"
-          filters={{
-            trail: filter,
-          }}
-          overlays={{
-            content: trailDetails,
-            polygon: state.boundary?.polygon,
-          }}
-          sidebarContent={
-            <TrailSidebar
-                hovering={state.hovering}
-                nearby={filteredTrails}
-            />
+          extra={
+            <span
+                unboundEvents={{
+                  corgi: [
+                    [ACTION, 'locateMe'],
+                  ]
+                }}
+            >
+              <OutlinedButton
+                  icon="Location"
+                  label="Locate me"
+              />
+            </span>
           }
       />
+      {state.boundary ? <SearchFilter state={state} /> : ''}
+      <div className="flex grow h-full">
+        <TrailSidebar
+            hovering={state.hovering}
+            mobileOpen={state.mobileSidebarOpen}
+            nearby={filteredTrails}
+        />
+        <div className="grow h-full relative">
+          <MapElement
+              camera={llz ?? bound ?? {lat: 46.859369, lng: -121.747888, zoom: 12}}
+              ref="map"
+              filters={{
+                trail: filter,
+              }}
+              overlays={{
+                polygon: state.boundary?.polygon,
+              }}
+          />
+          {trailDetails}
+        </div>
+      </div>
     </div>
   </>;
 }
@@ -258,3 +294,17 @@ function SearchFilter({state}: {state: State}) {
     </aside>
   </>;
 }
+
+function floatCoalesce(...numbers: Array<string|number|null|undefined>): number {
+  for (const x of numbers) {
+    if (x === undefined || x === null) {
+      continue;
+    }
+    const n = Number(x);
+    if (!isNaN(n)) {
+      return n;
+    }
+  }
+  throw new Error('No valid floats');
+}
+

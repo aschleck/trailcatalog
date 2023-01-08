@@ -21,8 +21,9 @@ interface SimpleTrail {
   }>;
 }
 
-export function TrailSidebar({hovering, nearby}: {
+export function TrailSidebar({hovering, mobileOpen, nearby}: {
   hovering: Path|Trail|undefined,
+  mobileOpen: boolean,
   nearby: SimpleTrail[],
 }) {
   let filteredTrails;
@@ -36,17 +37,33 @@ export function TrailSidebar({hovering, nearby}: {
   }
 
   return <>
-    <header className="border-b px-3 py-4">
-      <span className="font-bold text-xl">{formatCount(nearby.length)}</span>
-      {' '}trails found
-    </header>
-    {filteredTrails.map(trail =>
-        <TrailListItem
-            highlight={hovering?.id === trail.id}
-            trail={trail}
-        />
-    )}
-    {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
+    <div
+        className={
+          "bg-white overflow-y-scroll z-10"
+              + " absolute bottom-0 max-h-[50%] w-full"
+              + " md:h-full md:max-h-full md:relative md:w-80"
+        }
+    >
+      <header
+          className="border-b px-3 py-4"
+          unboundEvents={{click: 'toggleSidebar'}}
+      >
+        <span className="font-bold text-xl">{formatCount(nearby.length)}</span>
+        {' '}trails found
+      </header>
+      <div className={
+        'border-t'
+            + (mobileOpen ? ' block' : ' hidden md:block')
+      }>
+        {filteredTrails.map(trail =>
+            <TrailListItem
+                highlight={hovering?.id === trail.id}
+                trail={trail}
+            />
+        )}
+        {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
+      </div>
+    </div>
   </>;
 }
 

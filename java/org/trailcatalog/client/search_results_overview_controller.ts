@@ -24,6 +24,7 @@ interface Args {
 type Deps = typeof SearchResultsOverviewController.deps;
 
 export interface State extends VState {
+  boundaryId: string|undefined;
   boundary: Boundary|undefined;
   clickCandidate?: {
     lastClick: number;
@@ -31,6 +32,7 @@ export interface State extends VState {
   };
   filterInBoundary: boolean;
   hovering: Path|Trail|undefined;
+  mobileSidebarOpen: boolean;
   nearbyTrails: Trail[];
   trailsFilter: (id: bigint) => boolean;
   trailsInBoundary: Trail[]|undefined;
@@ -202,6 +204,13 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
       ...this.state,
       nearbyTrails: this.mapController.listTrailsInViewport()
           .sort((a, b) => b.lengthMeters - a.lengthMeters),
+    });
+  }
+
+  toggleSidebar(): void {
+    this.updateState({
+      ...this.state,
+      mobileSidebarOpen: !this.state.mobileSidebarOpen,
     });
   }
 

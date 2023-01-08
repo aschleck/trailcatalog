@@ -325,6 +325,7 @@ function ElevationGraph(state: State) {
 
   return <>
     <svg
+        className="select-none touch-none"
         unboundEvents={{
           'pointerleave': 'clearElevationCursor',
           'pointermove': 'moveElevationCursor',

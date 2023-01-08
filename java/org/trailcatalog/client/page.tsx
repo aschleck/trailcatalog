@@ -12,6 +12,7 @@ export function Header({query, extra}: {
         align-middle
         bg-tc-gray-900
         flex
+        flex-wrap
         gap-4
         items-center
         leading-none
@@ -23,7 +24,12 @@ export function Header({query, extra}: {
         <img
             alt="Trailcatalog logo"
             src="/static/images/logo.svg"
-            className="h-6"
+            className="hidden h-6 sm:block"
+        />
+        <img
+            alt="Trailcatalog logo"
+            src="/static/images/logomark.svg"
+            className="block h-6 sm:hidden"
         />
       </a>
       <SearchElement query={query} />
