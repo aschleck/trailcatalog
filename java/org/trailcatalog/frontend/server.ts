@@ -218,9 +218,6 @@ function renderProperties(props: Properties<HTMLElement>): string {
       }
 
       attributes.push(`${actualKey}="${rendered}"`);
-    } else {
-      // TOOD(april): what even is this case
-      attributes.push(actualKey);
     }
   }
   return attributes.join(' ');

@@ -1,17 +1,36 @@
 import * as corgi from 'js/corgi';
 
-import { Button } from './button';
+import { FabricIcon, FabricIconName } from './fabric';
 
-export function Checkbox({checked, className, ...props}: {
-  checked?: boolean,
-  className?: string,
-} & corgi.Properties<HTMLElement>) {
+export function Checkbox({label, ...props}: {
+  label?: corgi.VElementOrPrimitive,
+} & corgi.InputProperties) {
   return <>
-    <Button
-        className={'height-[1em]' + (className ? ` ${className}` : '')}
-        icon={checked ?? false ? 'CheckboxCompositeReversed' : 'Checkbox'}
+    <IconCheckbox
+        icons={{checked:'CheckboxCompositeReversed', unchecked:'Checkbox'}}
+        label={label}
         {...props}
     />
+  </>;
+}
+
+export function IconCheckbox({checked, className, icons, label, ...props}: {
+  checked?: boolean,
+  className?: string,
+  icons: {checked: FabricIconName, unchecked: FabricIconName},
+  label?: corgi.VElementOrPrimitive,
+} & corgi.InputProperties) {
+  return <>
+    <label className={className}>
+      <input
+          checked={checked}
+          className="absolute appearance-none height-[1em] peer"
+          type="checkbox"
+          {...props}
+      />
+      <FabricIcon name={checked ?? false ? icons.checked : icons.unchecked} />
+      {label ?? ''}
+    </label>
   </>;
 }
 

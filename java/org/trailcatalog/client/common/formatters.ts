@@ -35,7 +35,7 @@ export function formatDistance(meters: number): FormattedScalar {
   const useImperial = shouldUseImperial();
   return {
     value: distanceFormatter.format(useImperial ? metersToMiles(meters) : meters / 1000),
-    unit: useImperial ? 'miles' : 'km',
+    unit: useImperial ? 'mi' : 'km',
   };
 }
 

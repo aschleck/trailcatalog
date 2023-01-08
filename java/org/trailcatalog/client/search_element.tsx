@@ -51,7 +51,7 @@ export function SearchElement(
                   </>
                 : ''
           }
-          placeholder="Search trails or destinations"
+          placeholder="Search trails, national parks, or areas"
           value={state.query}
           unboundEvents={{
             keyup: 'search',

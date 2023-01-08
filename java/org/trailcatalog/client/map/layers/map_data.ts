@@ -5,8 +5,9 @@ import { checkExhaustive, checkExists } from 'js/common/asserts';
 
 import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
 import { DPI } from '../../common/dpi';
+import { formatDistance } from '../../common/formatters';
 import { LittleEndianView } from '../../common/little_endian_view';
-import { degreesE7ToLatLng, metersToMiles, projectLatLng, reinterpretLong } from '../../common/math';
+import { degreesE7ToLatLng, projectLatLng, reinterpretLong } from '../../common/math';
 import { LatLng, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { MapDataService } from '../../data/map_data_service';
 import { Path, Trail } from '../../models/types';
@@ -660,8 +661,9 @@ function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number
 }
 
 function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableText {
+  const {value, unit} = formatDistance(lengthMeters);
   return {
-    text: `${metersToMiles(lengthMeters).toFixed(1)} mi`,
+    text: `${value} ${unit}`,
     fillColor: fill,
     strokeColor: stroke,
     fontSize: 14,

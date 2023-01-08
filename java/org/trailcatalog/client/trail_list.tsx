@@ -41,7 +41,7 @@ export function TrailSidebar({hovering, mobileOpen, nearby}: {
         className={
           "bg-white overflow-y-scroll z-10"
               + " absolute bottom-0 max-h-[50%] w-full"
-              + " md:h-full md:max-h-full md:relative md:w-80"
+              + " md:max-h-full md:relative md:w-80"
         }
     >
       <header

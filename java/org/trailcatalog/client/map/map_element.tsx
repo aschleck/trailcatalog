@@ -62,6 +62,7 @@ export function MapElement({
           select-none
           text-slate-700
           text-[0.625rem]
+          z-20
       ">
         {'Data ©'}
         <a

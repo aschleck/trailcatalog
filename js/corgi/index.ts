@@ -35,7 +35,7 @@ export interface InputProperties extends Properties<HTMLInputElement> {
   checked?: boolean;
   name?: string;
   placeholder?: string;
-  type?: 'password'|'radio'|'text';
+  type?: 'checkbox'|'password'|'radio'|'text';
   value?: string;
 }
 

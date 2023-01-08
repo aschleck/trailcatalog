@@ -14,7 +14,7 @@ type ButtonProps = {
 export function FlatButton({className, ...props}: ButtonProps) {
   return <>
     <Button
-        className={'active:bg-tc-gray-400' + (className ? ` ${className}` : '')}
+        className={className}
         {...props} />
   </>;
 }
@@ -23,7 +23,7 @@ export function OutlinedButton({className, ...props}: ButtonProps) {
   return <>
     <Button
         className={
-            'border-[1px] border-tc-gray-400 active:bg-tc-gray-400'
+            'border-[1px] border-tc-gray-400'
                 + (className ? ` ${className}` : '')
         }
         {...props}
@@ -50,7 +50,8 @@ export function Button(
           state: [state, updateState],
         })}
         className={
-          'inline-block leading-none rounded select-none space-x-2 '
+          'inline-block leading-none rounded select-none space-x-2'
+              + ' active:bg-tc-gray-600 focus:bg-tc-gray-600'
               + (!dense ? ' p-2 ' : '-m-1 p-1')
               + (className ? ` ${className}` : '')
         }

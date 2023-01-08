@@ -1,3 +1,4 @@
+import { checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
@@ -212,14 +213,14 @@ function Content({boundaryId, query, state, updateState}: {
             </span>
           }
       />
-      {state.boundary ? <SearchFilter state={state} /> : ''}
-      <div className="flex grow h-full">
+      <div className="flex grow overflow-hidden">
         <TrailSidebar
             hovering={state.hovering}
             mobileOpen={state.mobileSidebarOpen}
             nearby={filteredTrails}
         />
         <div className="grow h-full relative">
+          {state.boundary ? <SearchFilter state={state} /> : ''}
           <MapElement
               camera={llz ?? bound ?? {lat: 46.859369, lng: -121.747888, zoom: 12}}
               ref="map"
@@ -238,59 +239,50 @@ function Content({boundaryId, query, state, updateState}: {
 }
 
 function SearchFilter({state}: {state: State}) {
-  const divider = <div className="bg-black-opaque-20 w-px" />;
+  const boundary = checkExists(state.boundary);
+  const divider = <div className="bg-black-opaque-20 self-stretch w-px" />;
   return <>
-    <aside className="bg-tc-gray-700 flex gap-3 items-center px-3 py-2 text-white">
-      {
-        state.boundary
-            ? <>
-              <div className="bg-tc-highlight-2 flex gap-2 px-2 rounded text-black">
-                <a
-                    className="flex gap-2 items-center"
-                    href={`/boundary/${state.boundary.id}`}
-                >
-                  <img
-                      aria-hidden="true"
-                      className="h-[1em]"
-                      src="/static/images/icons/boundary-filled.svg" />
-                  {state.boundary.name}
-                </a>
+    <aside
+        className={
+          'bg-tc-highlight-1 flex gap-2 px-2 items-center rounded text-black'
+              + ' md:right-3 md:top-2 md:z-10 md:absolute'
+        }
+    >
+      <a
+          className="flex gap-2 items-center"
+          href={`/boundary/${boundary.id}`}
+      >
+        <img
+            aria-hidden="true"
+            className="h-[1em]"
+            src="/static/images/icons/boundary-filled.svg" />
+        {boundary.name}
+      </a>
 
-                {divider}
+      <Checkbox
+          className="
+              cursor-pointer
+              flex
+              gap-2
+              items-center"
+          checked={state.filterInBoundary}
+          label="Filter by boundary"
+          unboundEvents={{
+            change: 'toggleBoundaryFilter',
+          }}
+      />
 
-                <label
-                    className="
-                        cursor-pointer
-                        flex
-                        gap-2
-                        items-center
-                        hover:underline"
-                      unboundEvents={{
-                        corgi: [
-                          [ACTION, 'toggleBoundaryFilter'],
-                        ],
-                      }}
-                >
-                  <Checkbox checked={state.filterInBoundary} />
+      {divider}
 
-                  Filter by boundary
-                </label>
-
-                {divider}
-
-                <span
-                    unboundEvents={{
-                      corgi: [
-                        [ACTION, 'clearBoundary'],
-                      ],
-                    }}
-                >
-                  <FlatButton icon="ChromeClose" />
-                </span>
-              </div>
-            </>
-            : ''
-      }
+      <span
+          unboundEvents={{
+            corgi: [
+              [ACTION, 'clearBoundary'],
+            ],
+          }}
+      >
+        <FlatButton icon="ChromeClose" />
+      </span>
     </aside>
   </>;
 }
