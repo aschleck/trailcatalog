@@ -47,6 +47,8 @@ export interface TileId {
   zoom: number;
 };
 
+export type UnitSystem = 'imperial'|'metric';
+
 export function s2LatLngRectToTc(rect: S2LatLngRect): LatLngRect {
   const lo = rect.lo();
   const hi = rect.hi();

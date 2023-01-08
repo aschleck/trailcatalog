@@ -1,7 +1,9 @@
 import * as corgi from 'js/corgi';
 import { VElementOrPrimitive } from 'js/corgi';
+import { Radio } from 'js/dino/radio';
 
 import { SearchElement } from './search_element';
+import { UnitSelector } from './unit_selector_element';
 
 export function Header({query, extra}: {
   query?: string;
@@ -34,6 +36,7 @@ export function Header({query, extra}: {
       </a>
       <SearchElement query={query} />
       {extra ? extra : ''}
+      <UnitSelector />
       <div className="basis-1 flex grow justify-end">
         <a href="https://github.com/aschleck/trailcatalog" target="_blank">
           <img

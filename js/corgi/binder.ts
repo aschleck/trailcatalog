@@ -15,6 +15,7 @@ type IsMethodWithParameters<T, K extends keyof T, P extends unknown[]> = HasPara
 type AMethodOnWithParameters<T, P extends unknown[]> = keyof {[K in keyof T as IsMethodWithParameters<T, K, P>]: 'valid'};
 
 interface PropertyKeyToHandlerMap<C> {
+  change: AMethodOnWithParameters<C, [CustomEvent<Event>]>,
   click: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
   corgi: Array<[
     EventSpec<unknown>,

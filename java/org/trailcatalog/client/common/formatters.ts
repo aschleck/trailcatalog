@@ -1,5 +1,5 @@
 import { celsiusToFahrenheit, metersToFeet, metersToMiles } from './math';
-import { getLanguage } from './ssr_aware';
+import { getUnitSystem } from './ssr_aware';
 
 const countFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
@@ -56,6 +56,6 @@ export function formatTemperature(celsius: number): FormattedScalar {
 }
 
 export function shouldUseImperial(): boolean {
-  return getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
+  return getUnitSystem() === 'imperial';
 }
 

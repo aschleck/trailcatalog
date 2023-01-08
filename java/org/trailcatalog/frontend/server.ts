@@ -10,6 +10,9 @@ import { ViewsService } from '../client/views/views_service';
 
 global.window = {
   SERVER_SIDE_RENDER: {
+    cookies: function() {
+      return requestContext.get('cookies');
+    },
     currentUrl: function() {
       return requestContext.get('url');
     },
@@ -40,6 +43,7 @@ const server = fastify({
 server.register(fastifyRequestContextPlugin);
 
 server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
+  requestContext.set('cookies', request.headers['cookie']);
   requestContext.set(
       'language',
       (request.headers['accept-language'] ?? 'en-US')
@@ -204,12 +208,18 @@ function renderProperties(props: Properties<HTMLElement>): string {
           }
         }
         rendered = escapedValue.join('');
+      } else if (typeof actualValue === 'boolean') {
+        if (actualValue) {
+          attributes.push(actualKey);
+        }
+        continue;
       } else {
         rendered = actualValue;
       }
 
       attributes.push(`${actualKey}="${rendered}"`);
     } else {
+      // TOOD(april): what even is this case
       attributes.push(actualKey);
     }
   }

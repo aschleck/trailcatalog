@@ -41,6 +41,10 @@ export class HistoryService extends Service<EmptyDeps> {
     this.notifyListeners(new URL(window.location.href));
   }
 
+  reload(): void {
+    this.notifyListeners(new URL(window.location.href));
+  }
+
   replaceTo(url: string, state?: object): void {
     // url might just be a relative path, so we pull the real href from the window.
     window.history.replaceState(state, '', url);

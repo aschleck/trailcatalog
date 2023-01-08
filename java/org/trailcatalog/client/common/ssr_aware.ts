@@ -2,6 +2,8 @@ import { deepEqual } from 'js/common/comparisons';
 import { fetchGlobalDeps } from 'js/corgi/deps';
 import { HistoryService } from 'js/corgi/history/history_service';
 
+import { UnitSystem } from './types';
+
 export interface InitialDataKey {
   type: string;
 }
@@ -13,6 +15,7 @@ declare global {
       values: object[];
     };
     SERVER_SIDE_RENDER?: {
+      cookies(): string;
       currentUrl(): string;
       initialData<K extends InitialDataKey>(key: K): object|undefined;
       language(): string;
@@ -45,6 +48,22 @@ export function isServerSide(): boolean {
 
 export function getLanguage(): string {
   return window.SERVER_SIDE_RENDER?.language() ?? window.navigator.language;
+}
+
+export const UNIT_SYSTEM_COOKIE = 'unit_system';
+
+export function getUnitSystem(): UnitSystem {
+  const requested =
+      (window.SERVER_SIDE_RENDER?.cookies() ?? window.document?.cookie)
+          ?.split('; ')
+          ?.find(c => c.startsWith(`${UNIT_SYSTEM_COOKIE}=`))
+          ?.split('=')[1];
+  if (requested === 'imperial' || requested === 'metric') {
+    return requested;
+  }
+
+  const imperial = getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
+  return imperial ? 'imperial' : 'metric';
 }
 
 export function redirectTo(url: string): void {

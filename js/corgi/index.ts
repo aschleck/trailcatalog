@@ -32,8 +32,10 @@ export interface ImageProperties extends Properties<HTMLImageElement> {
 }
 
 export interface InputProperties extends Properties<HTMLInputElement> {
-  type?: 'password'|'text';
+  checked?: boolean;
+  name?: string;
   placeholder?: string;
+  type?: 'password'|'radio'|'text';
   value?: string;
 }
 
@@ -368,17 +370,28 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
       } else if ((key as string) === 'value') {
         (node as HTMLInputElement).value = checkExists(to.props[key]);
       } else {
-        node.setAttribute(key.replace('_', '-'), checkExists(to.props[key]));
+        const canonical = key.replace('_', '-');
+        const value = checkExists(to.props[key]);
+        if (typeof value === 'boolean') {
+          if (value) {
+            node.setAttribute(canonical, '');
+          }
+        } else {
+          node.setAttribute(canonical, value);
+        }
       }
     }
   }
   for (const key of oldPropKeys) {
+    const canonical = key.replace('_', '-');
     if (!to.props.hasOwnProperty(key)) {
       if (key === 'unboundEvents') {
         result.unboundEventss.push([node, {}]);
       } else {
-        node.removeAttribute(key === 'className' ? 'class' : key.replace('_', '-'));
+        node.removeAttribute(key === 'className' ? 'class' : canonical);
       }
+    } else if (typeof to.props[key] === 'boolean' && !to.props[key]) {
+      node.removeAttribute(canonical);
     }
   }
 
@@ -543,6 +556,7 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
 
   const props = element.props;
   for (const [key, value] of Object.entries(props)) {
+    const canonical = key.replace('_', '-');
     if (key === 'js') {
       maybeSpec = value;
       root.setAttribute('data-js', '');
@@ -553,8 +567,12 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
       unboundEventss.push([root, value]);
     } else if (key === 'className') {
       root.setAttribute('class', value);
+    } else if (typeof value === 'boolean') {
+      if (value) {
+        root.setAttribute(canonical, '');
+      }
     } else {
-      root.setAttribute(key.replace('_', '-'), value);
+      root.setAttribute(canonical, value);
     }
   }
 
