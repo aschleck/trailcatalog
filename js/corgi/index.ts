@@ -286,11 +286,11 @@ function updateThroughFragments(from: VElement, to: VElement) {
   if ((from.element === FRAGMENT_TAG) !== (to.element === FRAGMENT_TAG)) {
     throw new Error('Fragment flip-flopping is bad');
   }
-  if (from.children.length !== to.children.length) {
-    throw new Error('Mismatched child counts');
-  }
-
   if (from.element === FRAGMENT_TAG) {
+    if (from.children.length !== to.children.length) {
+      throw new Error('Mismatched child counts');
+    }
+
     for (let i = 0; i < from.children.length; ++i) {
       const was = from.children[i];
       const is = to.children[i];
