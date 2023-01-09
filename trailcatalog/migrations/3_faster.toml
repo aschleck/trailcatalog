@@ -1,0 +1,9 @@
+[[actions]]
+type = "add_index"
+table = "paths_in_trails"
+
+  [actions.index]
+  name = "paths_in_trails_by_trail_id_epoch_idx"
+  columns = ["trail_id", "epoch"]
+  concurrently = false
+
