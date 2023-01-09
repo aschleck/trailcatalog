@@ -494,8 +494,9 @@ function applyThroughFragments(
         result.sideEffects.push(...childResult.sideEffects);
         result.unboundEventss.push(...childResult.unboundEventss);
       }
+      const afterIs = currentChildIndex;
       for (let i = isNodes.length; i < wasNodes.length; ++i) {
-        const old = node.childNodes[currentChildIndex];
+        const old = node.childNodes[afterIs];
         old.remove();
         result.sideEffects.push(() => { disposeBoundElementsIn(old); });
         currentChildIndex += 1;
