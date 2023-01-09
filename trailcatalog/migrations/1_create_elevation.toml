@@ -77,10 +77,6 @@ primary_key = ["id", "epoch"]
   nullable = false
   type = "BYTEA"
 
-[[actions]]
-type = "add_index"
-table = "path_elevations"
+  [actions.partition_by]
+  list = ["epoch"]
 
-  [actions.index]
-  name = "path_elevations_by_id_idx"
-  columns = ["id"]

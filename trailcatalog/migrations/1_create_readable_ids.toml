@@ -11,27 +11,6 @@
 # * Ultimately we're shaving O(10) milliseconds off queries by inlining the table. And most of our
 #   queries are viewport searches that likely slightly benefit from bigint keys.
 
-# TODO(april): unused. Delete?
-[[actions]]
-type = "create_table"
-name = "boundary_identifiers"
-primary_key = ["numeric_id", "epoch"]
-
-  [[actions.columns]]
-  name = "numeric_id"
-  nullable = false
-  type = "BIGINT"
-
-  [[actions.columns]]
-  name = "readable_id"
-  nullable = false
-  type = "TEXT"
-
-  [[actions.columns]]
-  name = "epoch"
-  nullable = false
-  type = "INT"
-
 [[actions]]
 type = "create_table"
 name = "trail_identifiers"
@@ -52,16 +31,16 @@ primary_key = ["numeric_id", "epoch"]
   nullable = false
   type = "INT"
 
+  [actions.partition_by]
+  list = ["epoch"]
+
 [[actions]]
-type = "custom"
+type = "add_index"
+table = "trail_identifiers"
 
-# There's an add_index reshape operation, why didn't I use that...
-start = """
-  CREATE UNIQUE INDEX IF NOT EXISTS boundary_identifiers_readable_idx ON boundary_identifiers (readable_id, epoch);
-  CREATE UNIQUE INDEX IF NOT EXISTS trail_identifiers_readable_idx ON trail_identifiers (readable_id, epoch);
-"""
+  [actions.index]
+  name = "trail_identifiers_readable_idx"
+  columns = ["readable_id", "epoch"]
+  concurrently = false
+  unique = true
 
-abort = """
-  DROP INDEX IF EXISTS boundary_identifiers_readable_idx;
-  DROP INDEX IF EXISTS trail_identifiers_readable_idx;
-"""

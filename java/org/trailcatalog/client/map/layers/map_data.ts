@@ -408,8 +408,6 @@ export class MapData extends Layer {
       data.skip(nameLength);
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const markerPx = projectLatLng(marker);
-      // TODO(april): yikes! This is messed up! Remove at next import.
-      data.skip(8);
       const hover = this.hover.has(id);
       const icon = POINTS_ATLAS.get(type) ?? 0;
       planner.addAtlasedBillboard(

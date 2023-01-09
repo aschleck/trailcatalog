@@ -111,10 +111,15 @@ pink = compute.Instance(
     name="pink",
     machine_type="e2-standard-2",
     zone="us-west1-a",
+    opts=ResourceOptions(
+        delete_before_replace=True,
+        ignore_changes=["bootDisk.initializeParams.image"],
+    ),
     boot_disk=compute.InstanceBootDiskArgs(
         initialize_params=compute.InstanceBootDiskInitializeParamsArgs(
             image="debian-cloud/debian-11",
             size=300,
+            type="pd-balanced",
         ),
     ),
     network_interfaces=[compute.InstanceNetworkInterfaceArgs(
@@ -130,7 +135,6 @@ pink = compute.Instance(
             "https://www.googleapis.com/auth/monitoring.write",
         ],
     ),
-    opts=ResourceOptions(delete_before_replace=True),
     # TODO(april): we should also set up Cloudflare DDNS here
     metadata={
         "google-logging-enabled": "true",
@@ -215,8 +219,8 @@ for preemptible in (True, False):
             compute.InstanceTemplateDiskArgs(
                 boot=True,
                 disk_size_gb=10,
-                disk_type="pd-balanced",
-                source_image="projects/cos-cloud/global/images/cos-stable-101-17162-40-13",
+                disk_type="pd-standard",
+                source_image="cos-cloud/cos-stable",
             ),
             compute.InstanceTemplateDiskArgs(
                 auto_delete=False,
@@ -289,9 +293,9 @@ for preemptible in (True, False):
             run \\
             --name=importer \\
             --rm \\
-            --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
+            --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog-next" \\
             --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
-            --env JAVA_TOOL_OPTIONS="-XX:InitialHeapSize=10g -XX:MaxHeapSize=10g -XX:MaxMetaspaceSize=1g" \\
+            --env JAVA_TOOL_OPTIONS="-XX:InitialHeapSize=12g -XX:MaxHeapSize=12g -XX:MaxMetaspaceSize=1g" \\
             --mount type=bind,source=/mnt/disks/import_cache,target=/import_cache \\
             --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
             us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \\

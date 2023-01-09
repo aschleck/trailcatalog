@@ -448,8 +448,6 @@ export class MapDataService extends Service<EmptyDeps> {
         name = undefined;
       }
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-      // TODO(april): yikes! This is messed up! Remove at next import.
-      data.skip(8);
       const markerPx = projectLatLng(marker);
       const bound = {
         low: [markerPx[0] - EPSILON, markerPx[1] - EPSILON],
@@ -524,8 +522,6 @@ export class MapDataService extends Service<EmptyDeps> {
       data.getVarInt32();
       const nameLength = data.getVarInt32();
       data.skip(nameLength + 2 * 4);
-      // TODO(april): yikes! This is messed up! Remove at next import.
-      data.skip(8);
       const point = this.points.get(id);
       if (point) {
         this.points.delete(id);

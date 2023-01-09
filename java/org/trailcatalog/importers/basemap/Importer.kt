@@ -44,6 +44,30 @@ fun main(args: Array<String>) {
 private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
   val (epoch, pbfs) = input
 
+  val partitionedTables =
+      listOf(
+          "boundaries",
+          "boundaries_in_boundaries",
+          "path_elevations",
+          "paths",
+          "paths_in_trails",
+          "points",
+          "trail_identifiers",
+          "trails",
+          "trails_in_boundaries",
+      )
+  hikari.connection.use {
+    println("Creating partitions")
+    for (table in partitionedTables) {
+      it.prepareStatement(
+              """
+              CREATE TABLE IF NOT EXISTS ${table}_${epoch}
+              PARTITION OF ${table} FOR VALUES IN (${epoch})
+              """)
+          .execute()
+    }
+  }
+
   // TODO(april): it's good for speed to only calculate paths used in relations, but it means that
   // we won't be able to dynamically create trails. So need to relax this in the future.
 
@@ -157,23 +181,27 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
     it.prepareStatement("INSERT INTO active_epoch (epoch) VALUES (?)").apply {
       setInt(1, epoch)
     }.execute()
+
     println("Cleaning up old epochs")
-    for (table in listOf(
-        "active_epoch",
-        "boundaries",
-        "boundaries_in_boundaries",
-        "boundary_identifiers",
-        "path_elevations",
-        "paths",
-        "paths_in_trails",
-        "trail_identifiers",
-        "trails",
-        "trails_in_boundaries",
-    )) {
-      it.prepareStatement("DELETE FROM ${table} WHERE epoch < ?").apply {
-        setInt(1, epoch)
-      }.execute()
+    it.prepareStatement("SELECT epoch FROM active_epoch WHERE epoch < ?").apply {
+      setInt(1, epoch)
+    }.executeQuery().use { results ->
+      while (results.next()) {
+        val oldEpoch = results.getInt(1)
+        for (table in partitionedTables) {
+          val partition = "${table}_${oldEpoch}"
+          it.prepareStatement("""
+              ALTER TABLE ${table} DETACH PARTITION ${partition};
+              DROP TABLE ${partition};
+          """).execute()
+        }
+      }
     }
+
+    println("Removing old epochs")
+    it.prepareStatement("DELETE FROM active_epoch WHERE epoch < ?").apply {
+      setInt(1, epoch)
+    }.execute()
   }
 }
 
@@ -260,6 +288,6 @@ private fun calculateProfiles(
 fun copyStreamToPg(table: String, stream: InputStream, hikari: HikariDataSource) {
   hikari.connection.use { connection ->
     val pg = connection.unwrap(PgConnection::class.java)
-    CopyManager(pg).copyIn("COPY ${table} FROM STDIN WITH CSV HEADER", stream)
+    CopyManager(pg).copyIn("COPY ${table} FROM STDIN WITH (FORMAT CSV, HEADER, NULL 'NULL')", stream)
   }
 }

@@ -33,6 +33,9 @@ primary_key = ["id", "epoch"]
   nullable = false
   type = "BYTEA"
 
+  [actions.partition_by]
+  list = ["epoch"]
+
 [[actions]]
 type = "add_index"
 table = "points"
@@ -40,4 +43,5 @@ table = "points"
   [actions.index]
   name = "points_by_cell_epoch_idx"
   columns = ["cell", "epoch"]
+  concurrently = false
 

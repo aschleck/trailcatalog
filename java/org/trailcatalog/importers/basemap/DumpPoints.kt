@@ -20,8 +20,10 @@ class DumpPoints(private val epoch: Int, private val hikari: HikariDataSource)
       val stream =
           StringifyingInputStream(input) { point, csv ->
             val markerAsInts = BYTE_BUFFER.asIntBuffer()
-            markerAsInts.put(point.latLng.lat)
-            markerAsInts.put(point.latLng.lng)
+            markerAsInts
+                .put(point.latLng.lat)
+                .put(point.latLng.lng)
+            BYTE_BUFFER.limit(4 * markerAsInts.position()) // ? can we do this better?
 
             // id,epoch,type,cell,name,marker_degrees_e7
             csv.append(point.id)
