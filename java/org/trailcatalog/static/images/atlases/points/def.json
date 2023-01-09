@@ -1,6 +1,7 @@
 {
   "key_type": "PointCategory",
   "images": [
+    {"file": "point.svg"},
     {"file": "alpine_hut.svg", "key": "PointCategory.AMENITY_HUT_ALPINE"},
     {"file": "barbeque.svg", "key": "PointCategory.AMENITY_FIRE_BARBECUE"},
 		{"file": "bridge.svg"},

@@ -8,7 +8,7 @@ import { screenLlz } from '../common/math';
 import { LatLng, LatLngRect, LatLngZoom, Vec2 } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { TileDataService } from '../data/tile_data_service';
-import { Path, Trail } from '../models/types';
+import { Path, Point, Trail } from '../models/types';
 import { Layer } from './layers/layer';
 import { Filters, MapData } from './layers/map_data';
 import { OverlayData, Overlays } from './layers/overlay_data';
@@ -56,7 +56,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
   private readonly textRenderer: TextRenderer;
 
   private screenArea: DOMRect;
-  private lastHoverTarget: Path|Trail|undefined;
+  private lastHoverTarget: Path|Point|Trail|undefined;
   private lastMousePosition: Vec2|undefined;
   private lastRenderPlan: number;
   private nextRender: RenderType;
@@ -223,7 +223,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.actOnHover(best);
   }
 
-  private actOnHover(best: Path|Trail|undefined): void {
+  private actOnHover(best: Path|Point|Trail|undefined): void {
     if (this.lastHoverTarget !== best) {
       if (this.lastHoverTarget) {
         this.mapData.setHover(this.lastHoverTarget, false);
@@ -351,7 +351,7 @@ enum RenderType {
   DataChange = 3,
 }
 
-function isTrail(e: Path|Trail): e is Trail {
+function isTrail(e: Path|Point|Trail): e is Trail {
   return e instanceof Trail;
 }
 

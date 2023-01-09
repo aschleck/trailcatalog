@@ -7,21 +7,22 @@ import { IdentitySetMultiMap } from '../common/collections';
 import { LittleEndianView } from '../common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng } from '../common/math';
 import { LatLng, LatLngRect, PixelRect, S2CellNumber, Vec2 } from '../common/types';
-import { Path, Trail } from '../models/types';
+import { Path, Point, Trail } from '../models/types';
 import { PIN_CELL_ID } from '../workers/data_constants';
 import { FetcherCommand, Viewport } from '../workers/data_fetcher';
 
 interface Listener {
   loadOverviewCell(trails: Iterable<Trail>): void;
   loadCoarseCell(paths: Iterable<Path>): void;
-  loadFineCell(paths: Iterable<Path>): void;
+  loadFineCell(paths: Iterable<Path>, points: Iterable<Point>): void;
   loadPinned(): void;
   unloadCoarseCell(paths: Iterable<Path>): void;
-  unloadFineCell(paths: Iterable<Path>): void;
+  unloadFineCell(paths: Iterable<Path>, points: Iterable<Point>): void;
   unloadOverviewCell(trails: Iterable<Trail>): void;
 }
 
 const DATA_ZOOM_THRESHOLD = 4;
+const EPSILON = 1e-9;
 const TEXT_DECODER = new TextDecoder();
 
 export class MapDataService extends Service<EmptyDeps> {
@@ -49,6 +50,7 @@ export class MapDataService extends Service<EmptyDeps> {
   readonly paths: Map<bigint, Path>;
   readonly pinnedPaths: Map<bigint, Path>;
   readonly pathsToTrails: IdentitySetMultiMap<bigint, Trail>;
+  readonly points: Map<bigint, Point>;
   readonly trails: Map<bigint, Trail>;
 
   constructor(response: ServiceResponse<EmptyDeps>) {
@@ -67,6 +69,7 @@ export class MapDataService extends Service<EmptyDeps> {
     this.paths = new Map();
     this.pinnedPaths = new Map();
     this.pathsToTrails = new IdentitySetMultiMap();
+    this.points = new Map();
     this.trails = new Map();
 
     this.fetcher.onmessage = e => {
@@ -138,7 +141,19 @@ export class MapDataService extends Service<EmptyDeps> {
           paths.push(path);
         }
       }
-      listener.loadFineCell(paths);
+      const pointCount = data.getVarInt32();
+      const points = [];
+      for (let i = 0; i < pointCount; ++i) {
+        const id = data.getVarBigInt64();
+        data.getVarInt32();
+        const nameLength = data.getVarInt32();
+        data.skip(nameLength + 2 * 4);
+        const point = this.points.get(id);
+        if (point) {
+          points.push(point);
+        }
+      }
+      listener.loadFineCell(paths, points);
     }
   }
 
@@ -420,8 +435,33 @@ export class MapDataService extends Service<EmptyDeps> {
       paths.push(built);
     }
 
+    const pointCount = data.getVarInt32();
+    const points = [];
+    for (let i = 0; i < pointCount; ++i) {
+      const id = data.getVarBigInt64();
+      const type = data.getVarInt32();
+      const nameLength = data.getVarInt32();
+      let name;
+      if (nameLength > 0) {
+        name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
+      } else {
+        name = undefined;
+      }
+      const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+      // TODO(april): yikes! This is messed up! Remove at next import.
+      data.skip(8);
+      const markerPx = projectLatLng(marker);
+      const bound = {
+        low: [markerPx[0] - EPSILON, markerPx[1] - EPSILON],
+        high: [markerPx[0] + EPSILON, markerPx[1] + EPSILON],
+      } as PixelRect;
+      const built = new Point(id, type, name, markerPx, bound);
+      this.points.set(id, built);
+      points.push(built);
+    }
+
     this.fineCells.set(id, buffer);
-    this.listener?.loadFineCell(paths);
+    this.listener?.loadFineCell(paths, points);
   }
 
   private unloadCoarseCell(id: S2CellNumber): void {
@@ -477,7 +517,23 @@ export class MapDataService extends Service<EmptyDeps> {
       }
     }
 
-    this.listener?.unloadFineCell(paths);
+    const pointCount = data.getVarInt32();
+    const points = [];
+    for (let i = 0; i < pointCount; ++i) {
+      const id = data.getVarBigInt64();
+      data.getVarInt32();
+      const nameLength = data.getVarInt32();
+      data.skip(nameLength + 2 * 4);
+      // TODO(april): yikes! This is messed up! Remove at next import.
+      data.skip(8);
+      const point = this.points.get(id);
+      if (point) {
+        this.points.delete(id);
+        points.push(point);
+      }
+    }
+
+    this.listener?.unloadFineCell(paths, points);
   }
 
   private unloadOverviewCell(id: S2CellNumber): void {

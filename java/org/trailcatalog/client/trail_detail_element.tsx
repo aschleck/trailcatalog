@@ -45,8 +45,8 @@ export function TrailDetailElement({trailId}: {
     state = {
       containingBoundaries,
       pathProfiles,
+      selected: [],
       selectedCardPosition: [-1, -1],
-      selectedTrails: [],
       trail,
     };
   }
@@ -123,11 +123,11 @@ function Content({trailId, state, updateState}: {
   }
 
   let trailDetails;
-  if (state.selectedTrails.length > 0) {
+  if (state.selected.length > 0) {
     trailDetails =
         <TrailPopup
+            items={state.selected}
             position={state.selectedCardPosition}
-            trails={state.selectedTrails}
         />;
   } else {
     trailDetails = <></>;

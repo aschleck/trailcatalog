@@ -2,7 +2,7 @@ import * as corgi from 'js/corgi';
 
 import { formatCount, formatDistance, formatHeight } from './common/formatters';
 import { HOVER_HEX_PALETTE } from './map/common/colors';
-import { Path, Trail, TrailSearchResult } from './models/types';
+import { Path, Point, Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 
@@ -22,7 +22,7 @@ interface SimpleTrail {
 }
 
 export function TrailSidebar({hovering, mobileOpen, nearby}: {
-  hovering: Path|Trail|undefined,
+  hovering: Path|Point|Trail|undefined,
   mobileOpen: boolean,
   nearby: SimpleTrail[],
 }) {

@@ -10,9 +10,9 @@ import { LittleEndianView } from '../../common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng, reinterpretLong } from '../../common/math';
 import { LatLng, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { MapDataService } from '../../data/map_data_service';
-import { Path, Trail } from '../../models/types';
 import { ACTIVE_PALETTE, ACTIVE_HEX_PALETTE, DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, HOVER_HEX_PALETTE } from '../common/colors';
 import { Camera, projectLatLngRect } from '../models/camera';
+import { Path, Point, Trail } from '../../models/types';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
 import { Renderer } from '../rendering/renderer';
@@ -28,16 +28,18 @@ export interface Filters {
 
 const NO_OFFSET = [0, 0] as Vec2;
 const POINT_BILLBOARD_SIZE_PX = [20, 20] as Vec2;
+const POINT_HOVER_BILLBOARD_SIZE_PX = [28, 28] as Vec2;
 const POINTS_ATLAS = new Map<PointCategory, number>([
-  [PointCategory.AMENITY_HUT_ALPINE, 0], // alpine_hut.svg
-  [PointCategory.AMENITY_FIRE_BARBECUE, 1], // barbeque.svg
-  [PointCategory.AMENITY_CAMP_PITCH, 3], // camp_pitch.svg
-  [PointCategory.AMENITY_CAMP_SITE, 4], // camp_site.svg
-  [PointCategory.NATURAL_CAVE_ENTRANCE, 5], // cave_entrance.svg
-  [PointCategory.AMENITY_WATER_DRINKING, 6], // drinking_water.svg
-  [PointCategory.AMENITY_FIRE_PIT, 7], // firepit.svg
-  [PointCategory.INFORMATION_GUIDE_POST, 8], // guidepost.svg
-  [PointCategory.INFORMATION_VISITOR_CENTER, 9], // visitor_center.svg
+  // [point.svg, 0], // point.svg
+  [PointCategory.AMENITY_HUT_ALPINE, 1], // alpine_hut.svg
+  [PointCategory.AMENITY_FIRE_BARBECUE, 2], // barbeque.svg
+  // [bridge.svg, 3], // bridge.svg
+  [PointCategory.AMENITY_CAMP_PITCH, 4], // camp_pitch.svg
+  [PointCategory.AMENITY_CAMP_SITE, 5], // camp_site.svg
+  [PointCategory.NATURAL_CAVE_ENTRANCE, 6], // cave_entrance.svg
+  [PointCategory.AMENITY_WATER_DRINKING, 7], // drinking_water.svg
+  [PointCategory.AMENITY_FIRE_PIT, 8], // firepit.svg
+  [PointCategory.INFORMATION_GUIDE_POST, 9], // guidepost.svg
   [PointCategory.WAY_MOUNTAIN_PASS, 10], // mountain_pass.svg
   [PointCategory.AMENITY_PARKING, 11], // parking.svg
   [PointCategory.AMENITY_PICNIC_TABLE, 12], // picnic_table.svg
@@ -46,11 +48,12 @@ const POINTS_ATLAS = new Map<PointCategory, number>([
   [PointCategory.AMENITY_TOILETS, 15], // toilets.svg
   [PointCategory.WAY_PATH_TRAILHEAD, 16], // trailhead.svg
   [PointCategory.WAY_VIEWPOINT, 17], // viewpoint.svg
+  [PointCategory.INFORMATION_VISITOR_CENTER, 18], // visitor_center.svg
   // !!! This is a repeat of mountain pass
   [PointCategory.NATURAL_PEAK, 10], // mountain_pass.svg
-  [PointCategory.NATURAL_VOLCANO, 18], // volcano.svg
-  [PointCategory.NATURAL_WATERFALL, 19], // waterfall.svg
-  [PointCategory.AMENITY_HUT_WILDERNESS, 20], // wilderness_hut.svg
+  [PointCategory.NATURAL_VOLCANO, 19], // volcano.svg
+  [PointCategory.NATURAL_WATERFALL, 20], // waterfall.svg
+  [PointCategory.AMENITY_HUT_WILDERNESS, 21], // wilderness_hut.svg
 ]);
 const POINTS_ATLAS_SIZE = [8, 4] as Vec2;
 
@@ -67,13 +70,18 @@ interface PathHandle {
   readonly line: Float32Array|Float64Array;
 }
 
+interface PointHandle {
+  readonly entity: Point;
+  readonly markerPx: Vec2;
+}
+
 interface TrailHandle {
   readonly entity: Trail;
   readonly markerPx: Vec2;
   readonly screenPixelBound: Vec4;
 }
 
-type Handle = PathHandle|TrailHandle;
+type Handle = PathHandle|PointHandle|TrailHandle;
 
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 
@@ -157,13 +165,13 @@ export class MapData extends Layer {
     return this.dataService.listTrailsOnPath(path);
   }
 
-  queryInBounds(bounds: S2LatLngRect): Array<Path|Trail> {
+  queryInBounds(bounds: S2LatLngRect): Array<Path|Point|Trail> {
     const near: Handle[] = [];
     this.getActiveBounds().queryRect(projectLatLngRect(bounds), near);
     return near.map(h => h.entity);
   }
 
-  queryClosest(point: Vec2): Path|Trail|undefined {
+  queryClosest(point: Vec2): Path|Trail|Point|undefined {
     // This method is kind of funny because it tries to be abstract about the types it's processing,
     // but it ends up being type specific implicitly.
 
@@ -171,7 +179,9 @@ export class MapData extends Layer {
     const screenToWorldPx = this.camera.inverseWorldRadius;
     // We want to select a trail even if 0 distance to a path
     const pathAntibias2 = screenToWorldPx * screenToWorldPx;
-    // We really like trails
+    // We like points
+    const pointBias2 = 5 * 10;
+    // But we really like trails
     const trailBias2 = 10 * 10;
     const radius = CLICK_RADIUS_PX * screenToWorldPx;
     this.getActiveBounds().queryCircle(point, radius, near);
@@ -186,6 +196,24 @@ export class MapData extends Layer {
             || aDescendsB(path.type, WayCategory.PATH)) {
           const pathHandle = handle as PathHandle;
           d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
+        }
+      } else if (handle.entity instanceof Point && this.camera.zoom >= FINE_ZOOM_THRESHOLD) {
+        const pointHandle = handle as PointHandle;
+        const p = pointHandle.markerPx;
+        const halfX = POINT_BILLBOARD_SIZE_PX[0] / 2;
+        const halfY = POINT_BILLBOARD_SIZE_PX[1] / 2;
+        const lowX = p[0] - halfX * screenToWorldPx;
+        const lowY = p[1] - halfY * screenToWorldPx;
+        const highX = p[0] + halfX * screenToWorldPx;
+        const highY = p[1] + halfY * screenToWorldPx;
+        if (lowX <= point[0]
+            && point[0] <= highX
+            && lowY <= point[1]
+            && point[1] <= highY) {
+          // Labels can overlap each other, so we pick the one most centered
+          const dx = highX / 2 + lowX / 2 - point[0];
+          const dy = highY / 2 + lowY / 2 - point[1];
+          d2 = (dx * dx + dy * dy) / pointBias2;
         }
       } else if (handle.entity instanceof Trail) {
         if (this.filters.trail && !this.filters.trail(handle.entity.id)) {
@@ -240,17 +268,19 @@ export class MapData extends Layer {
     this.filters = filters;
   }
 
-  setHover(entity: Path|Trail, state: boolean): void {
+  setHover(entity: Path|Point|Trail, state: boolean): void {
     this.setColor(entity, this.hover, state);
   }
 
-  private setColor(entity: Path|Trail, set: Set<bigint>, state: boolean): void {
+  private setColor(entity: Path|Point|Trail, set: Set<bigint>, state: boolean): void {
     let ids;
     if (entity instanceof Path) {
       ids = [entity.id];
     } else if (entity instanceof Trail) {
       ids = entity.paths.map(id => id & ~1n);
       ids.push(entity.id); // what are the odds that a path and its trail will collide?
+    } else if (entity instanceof Point) {
+      ids = [entity.id]; // what are the odds that a point is near a same ID path
     } else {
       throw checkExhaustive(entity);
     }
@@ -378,17 +408,18 @@ export class MapData extends Layer {
       data.skip(nameLength);
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const markerPx = projectLatLng(marker);
-      const icon = POINTS_ATLAS.get(type);
-      if (icon !== undefined) {
-        planner.addAtlasedBillboard(
-            markerPx,
-            NO_OFFSET,
-            POINT_BILLBOARD_SIZE_PX,
-            icon,
-            POINTS_ATLAS_SIZE,
-            this.pointsAtlas,
-            Z_POINT);
-      }
+      // TODO(april): yikes! This is messed up! Remove at next import.
+      data.skip(8);
+      const hover = this.hover.has(id);
+      const icon = POINTS_ATLAS.get(type) ?? 0;
+      planner.addAtlasedBillboard(
+          markerPx,
+          NO_OFFSET,
+          hover ? POINT_HOVER_BILLBOARD_SIZE_PX : POINT_BILLBOARD_SIZE_PX,
+          icon,
+          POINTS_ATLAS_SIZE,
+          this.pointsAtlas,
+          Z_POINT);
     }
   }
 
@@ -578,7 +609,7 @@ export class MapData extends Layer {
     }
   }
 
-  loadFineCell(paths: Iterable<Path>): void {
+  loadFineCell(paths: Iterable<Path>, points: Iterable<Point>): void {
     this.lastChange = Date.now();
 
     for (const path of paths) {
@@ -586,6 +617,13 @@ export class MapData extends Layer {
         entity: path,
         line: path.line,
       }, path.bound);
+    }
+
+    for (const point of points) {
+      this.fineBounds.insert({
+        entity: point,
+        markerPx: point.markerPx,
+      }, point.mouseBound);
     }
   }
 
@@ -599,9 +637,12 @@ export class MapData extends Layer {
     }
   }
 
-  unloadFineCell(paths: Iterable<Path>): void {
+  unloadFineCell(paths: Iterable<Path>, points: Iterable<Point>): void {
     for (const path of paths) {
       this.fineBounds.delete(path.bound);
+    }
+    for (const point of points) {
+      this.fineBounds.delete(point.mouseBound);
     }
   }
 

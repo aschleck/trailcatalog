@@ -47,6 +47,24 @@ export class Path {
       readonly bound: PixelRect,
       readonly line: Float32Array|Float64Array,
   ) {}
+
+  get sourceWay(): bigint {
+    return this.id;
+  }
+}
+
+export class Point {
+  constructor(
+      readonly id: bigint,
+      readonly type: number,
+      readonly name: string|undefined,
+      readonly markerPx: Vec2,
+      readonly mouseBound: PixelRect,
+  ) {}
+
+  get sourceNode(): bigint {
+    return this.id;
+  }
 }
 
 export class Trail {

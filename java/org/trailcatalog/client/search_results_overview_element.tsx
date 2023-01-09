@@ -71,8 +71,8 @@ export function SearchResultsOverviewElement(
       trailsInBoundaryIds,
       hovering: undefined,
       nearbyTrails: [],
+      selected: [],
       selectedCardPosition: [-1, -1],
-      selectedTrails: [],
     };
   }
 
@@ -164,11 +164,11 @@ function Content({boundaryId, query, state, updateState}: {
   }
 
   let trailDetails;
-  if (state.selectedTrails.length > 0) {
+  if (state.selected.length > 0) {
     trailDetails =
         <TrailPopup
+            items={state.selected}
             position={state.selectedCardPosition}
-            trails={state.selectedTrails}
         />;
   } else {
     trailDetails = <></>;

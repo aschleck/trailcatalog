@@ -41,8 +41,8 @@ export function BoundaryDetailElement({boundaryId}: {
     state = {
       boundary,
       containingBoundaries,
+      selected: [],
       selectedCardPosition: [-1, -1],
-      selectedTrails: [],
 			trailsInBoundary,
     };
   }
@@ -92,11 +92,11 @@ function Content({boundaryId, state, updateState}: {
   const trailsInBoundary = checkExists(state.trailsInBoundary);
 
   let trailDetails;
-  if (state.selectedTrails.length > 0) {
+  if (state.selected.length > 0) {
     trailDetails =
         <TrailPopup
+            items={state.selected}
             position={state.selectedCardPosition}
-            trails={state.selectedTrails}
         />;
   } else {
     trailDetails = <></>;

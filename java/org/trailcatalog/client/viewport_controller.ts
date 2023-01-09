@@ -4,11 +4,11 @@ import { CorgiEvent } from 'js/corgi/events';
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from './common/types';
 import { SELECTION_CHANGED } from './map/events';
 import { MapController } from './map/map_controller';
-import { Path, Trail } from './models/types';
+import { Path, Point, Trail } from './models/types';
 
 export interface State {
+  selected: Array<Path|Point|Trail>;
   selectedCardPosition: Vec2;
-  selectedTrails: Trail[];
 }
 
 type Deps = typeof ViewportController.deps;
@@ -34,36 +34,24 @@ export class ViewportController<A extends {}, D extends Deps, S extends State>
   selectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {
     const {clickPx, selected} = e.detail;
 
-    let trails: Trail[];
+    let items: Array<Path|Point|Trail>;
     if (selected instanceof Path) {
-      trails = this.mapController.listTrailsOnPath(selected);
+      const trails = this.mapController.listTrailsOnPath(selected);
       if (trails.length === 0) {
-        const wayId = selected.id / 2n;
-        trails.push(new Trail(
-          -wayId,
-          /* readableName= */ undefined,
-          /* name= */ 'OSM Way',
-          /* type= */ -1,
-          /* mouseBound= */ emptyPixelRect(),
-          /* paths= */ [selected.id],
-          /* bound= */ emptyLatLngRect(),
-          /* marker= */ [0, 0] as LatLng,
-          /* markerPx= */ [0, 0],
-          /* elevationDownMeters= */ -1,
-          /* elevationUpMeters= */ -1,
-          /* lengthMeters= */ -1,
-        ));
+        items = [selected];
+      } else {
+        items = trails;
       }
-    } else if (selected instanceof Trail) {
-      trails = [selected];
+    } else if (!!selected) {
+      items = [selected];
     } else {
-      trails = [];
+      items = [];
     }
 
     this.updateState({
       ...this.state,
+      selected: items,
       selectedCardPosition: clickPx,
-      selectedTrails: trails,
     });
   }
 

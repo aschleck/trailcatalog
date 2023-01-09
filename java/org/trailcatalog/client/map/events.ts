@@ -2,12 +2,12 @@ import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { declareEvent } from 'js/corgi/events';
 
 import { LatLngRect, LatLngZoom, Vec2 } from '../common/types';
-import { Path, Trail } from '../models/types';
+import { Path, Point, Trail } from '../models/types';
 
 export const DATA_CHANGED = declareEvent<{}>('data_changed');
 
 export const HOVER_CHANGED = declareEvent<{
-  target: Path|Trail|undefined;
+  target: Path|Point|Trail|undefined;
 }>('hover_changed');
 
 export const MAP_MOVED = declareEvent<{

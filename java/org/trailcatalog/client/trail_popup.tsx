@@ -1,12 +1,13 @@
+import { checkExhaustive } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 
 import { metersToMiles } from './common/math';
 import { Vec2 } from './common/types';
-import { Trail } from './models/types';
+import { Path, Point, Trail } from './models/types';
 
-export function TrailPopup({ position, trails }: {
+export function TrailPopup({ items, position }: {
+  items: Array<Path|Point|Trail>,
   position: Vec2,
-  trails: Trail[],
 }) {
   return <div
       className="
@@ -20,12 +21,20 @@ export function TrailPopup({ position, trails }: {
       "
       style={`left: ${position[0]}px; top: ${position[1]}px`}
   >
-    {trails.map(trail =>
-      trail.id >= 0n
-          ? <TrailLink trail={trail} />
-          : <OsmWayLink id={-trail.id} />
-    )}
+    {items.map(item => <Link item={item} />)}
   </div>;
+}
+
+function Link({item}: {item: Path|Point|Trail}) {
+  if (item instanceof Path) {
+    return <OsmWayLink path={item} />;
+  } else if (item instanceof Point) {
+    return <OsmNodeLink point={item} />;
+  } else if (item instanceof Trail) {
+    return <TrailLink trail={item} />;
+  } else {
+    checkExhaustive(item);
+  }
 }
 
 function TrailLink({trail}: {trail: Trail}) {
@@ -59,15 +68,29 @@ function TrailLink({trail}: {trail: Trail}) {
   </>;
 }
 
-function OsmWayLink({id}: {id: bigint}) {
+function OsmNodeLink({point}: {point: Point}) {
   return <>
     <a
         className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
-        href={`https://www.openstreetmap.org/way/${id}`}
+        href={`https://www.openstreetmap.org/node/${point.sourceNode}`}
         target="_blank"
     >
       <header className="font-bold font-lg grow">
-        Way {id}
+        {point.name ?? `Node ${point.sourceNode}`}
+      </header>
+    </a>
+  </>;
+}
+
+function OsmWayLink({path}: {path: Path}) {
+  return <>
+    <a
+        className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
+        href={`https://www.openstreetmap.org/way/${path.sourceWay}`}
+        target="_blank"
+    >
+      <header className="font-bold font-lg grow">
+        Way {path.sourceWay}
       </header>
     </a>
   </>;

@@ -8,7 +8,7 @@ import { decodeBase64 } from './common/base64';
 import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng, s2LatLngRectToTc } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
 import { MapController } from './map/map_controller';
-import { Boundary, Path, Trail, TrailSearchResult } from './models/types';
+import { Boundary, Path, Point, Trail, TrailSearchResult } from './models/types';
 import { ViewsService } from './views/views_service';
 
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
@@ -31,7 +31,7 @@ export interface State extends VState {
     trail: Trail;
   };
   filterInBoundary: boolean;
-  hovering: Path|Trail|undefined;
+  hovering: Path|Point|Trail|undefined;
   mobileSidebarOpen: boolean;
   nearbyTrails: Trail[];
   trailsFilter: (id: bigint) => boolean;
@@ -217,20 +217,20 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   override selectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {
     super.selectionChanged(e);
 
-    const trails = this.state.selectedTrails;
+    const trails = this.state.selected;
     let clickCandidate;
     if (trails.length === 0) {
       // Hack to handle the reality of MapController's pointerdown handler clearing selection prior
       // to pointerup. See note there.
       clickCandidate = this.state.clickCandidate;
-    } else if (trails.length === 1) {
+    } else if (trails.length === 1 && trails[0] instanceof Trail) {
       const candidate = trails[0];
       const now = Date.now();
       if (this.state.clickCandidate?.trail === candidate
           && now - this.state.clickCandidate.lastClick < DOUBLE_CLICK_DETECTION_MS) {
-       this.views.showTrail(candidate.id);
-       return;
-      }
+        this.views.showTrail(candidate.id);
+        return;
+      } 
 
       clickCandidate = {
         lastClick: now,
