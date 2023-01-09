@@ -49,7 +49,7 @@ export class Path {
   ) {}
 
   get sourceWay(): bigint {
-    return this.id;
+    return this.id / 2n;
   }
 }
 
