@@ -187,19 +187,25 @@ class DataFetcher {
       let endpoint: string;
       let destination: Set<S2CellNumber>;
       let inFlight: Map<S2CellNumber, AbortController>;
+      let outOfFlight: Map<S2CellNumber, AbortController>;
       if (zoom >= FINE_ZOOM_THRESHOLD) {
         command = 'lcf';
         depth = SimpleS2.HIGHEST_FINE_INDEX_LEVEL;
         endpoint = 'fetch-fine';
         destination = this.fine;
         inFlight = this.fineInFlight;
+        outOfFlight = this.coarseInFlight;
       } else {
         command = 'lcc';
         depth = SimpleS2.HIGHEST_COARSE_INDEX_LEVEL;
         endpoint = 'fetch-coarse';
         destination = this.coarse;
         inFlight = this.coarseInFlight;
+        outOfFlight = this.fineInFlight;
       }
+
+      outOfFlight.forEach(a => { a.abort() });
+      outOfFlight.clear();
 
       const detailCellsInBound = SimpleS2.cover(bounds, depth);
       for (let i = 0; i < detailCellsInBound.size(); ++i) {
@@ -240,19 +246,17 @@ class DataFetcher {
               inFlight.delete(id);
             });
       }
+    } else {
+      this.coarseInFlight.forEach(a => { a.abort() });
+      this.coarseInFlight.clear();
+      this.fineInFlight.forEach(a => { a.abort() });
+      this.fineInFlight.clear();
     }
 
     for (const [id, abort] of this.overviewInFlight) {
       if (!used.has(id)) {
         abort.abort();
         this.overviewInFlight.delete(id);
-      }
-    }
-
-    for (const [id, abort] of this.coarseInFlight) {
-      if (!used.has(id)) {
-        abort.abort();
-        this.coarseInFlight.delete(id);
       }
     }
 
