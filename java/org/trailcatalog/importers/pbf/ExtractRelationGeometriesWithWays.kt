@@ -56,7 +56,7 @@ private fun inflate(
 
   used.push(id)
   val skeleton = relations[id] ?: return null
-  val geometry = RelationGeometry.newBuilder()
+  val geometry = RelationGeometry.newBuilder().setRelationId(id)
   for (member in skeleton.membersList) {
     when (member.valueCase) {
       NODE_ID -> geometry.addMembers(RelationMember.newBuilder().setNodeId(member.nodeId))
