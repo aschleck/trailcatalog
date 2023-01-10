@@ -1,5 +1,4 @@
 import * as corgi from 'js/corgi';
-import { FabricIcon } from 'js/dino/fabric';
 
 import { Boundary } from './models/types';
 
@@ -16,7 +15,7 @@ export function BoundaryCrumbs({boundaries}: {boundaries: SimpleBoundary[]}) {
           .map(b => <a href={`/boundary/${b.id}`}>{b.name}</a>)
           .flatMap(l => [
             l,
-            <FabricIcon name="ChevronRight" className="px-1 text-[0.75em]" />,
+            ' › ',
           ]);
   crumbs.pop();
   return <>{crumbs}</>;
