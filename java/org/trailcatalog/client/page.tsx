@@ -23,18 +23,20 @@ export function Header({query, extra}: {
         w-full
         max-md:flex-wrap
     ">
-      <a href="/" className="md:flex-1">
-        <img
-            alt="Trailcatalog logo"
-            src="/static/images/logo.svg"
-            className="hidden h-6 sm:block"
-        />
-        <img
-            alt="Trailcatalog logo"
-            src="/static/images/logomark.svg"
-            className="block h-6 sm:hidden"
-        />
-      </a>
+      <div className="md:flex-1">
+        <a href="/">
+          <img
+              alt="Trailcatalog logo"
+              src="/static/images/logo.svg"
+              className="hidden h-6 sm:block"
+          />
+          <img
+              alt="Trailcatalog logo"
+              src="/static/images/logomark.svg"
+              className="block h-6 sm:hidden"
+          />
+        </a>
+      </div>
       <SearchElement query={query} />
       {extra ? extra : ''}
       <div className="self-stretch md:flex-1">
