@@ -26,7 +26,7 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
   } else if (state.active.kind === 'search_results') {
     route = <SearchResultsOverviewElement />;
   } else if (state.active.kind === 'trail_detail') {
-    route = <TrailDetailElement trailId={{readable: state.active.trail}} />;
+    route = <TrailDetailElement trailId={state.active.trail} />;
   } else {
     checkExhaustive(state.active);
   }

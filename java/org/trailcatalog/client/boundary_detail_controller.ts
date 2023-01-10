@@ -12,24 +12,21 @@ import { ViewsService } from './views/views_service';
 import { DataResponses, fetchData } from './data';
 import { State as VState, ViewportController } from './viewport_controller';
 
-interface Args {
-  boundaryId: string;
-}
-
 export interface State extends VState {
   boundary?: Boundary;
+  boundaryId: string;
   containingBoundaries?: Boundary[];
   trailsInBoundary: Trail[]|undefined;
 }
 
 type Deps = typeof BoundaryDetailController.deps;
 
-export class LoadingController extends Controller<Args, EmptyDeps, HTMLElement, State> {
+export class LoadingController extends Controller<{}, EmptyDeps, HTMLElement, State> {
 
   constructor(response: Response<LoadingController>) {
     super(response);
 
-    const boundaryId = response.args.boundaryId;
+    const boundaryId = this.state.boundaryId;
     if (!this.state.boundary) {
       fetchData('boundary', {id: boundaryId}).then(raw => {
         const boundary = boundaryFromRaw(raw);

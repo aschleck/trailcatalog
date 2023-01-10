@@ -11,7 +11,7 @@ import { SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { initialData, TrailId } from './data';
+import { initialData } from './data';
 import { Header } from './page';
 import { setTitle } from './title';
 import { LoadingController, TrailDetailController, State } from './trail_detail_controller';
@@ -21,22 +21,23 @@ import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw }
 const GRAPH_TEXT_SPACE_PX = [64, 32] as const;
 
 export function TrailDetailElement({trailId}: {
-  trailId: TrailId;
+  trailId: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
-  if (!state) {
-    const rawTrail = initialData('trail', {trail_id: trailId});
+  if (!state || trailId !== state.trailId) {
+    const wrapped = {readable: trailId};
+    const rawTrail = initialData('trail', {trail_id: wrapped});
     let trail;
     if (rawTrail) {
       trail = trailFromRaw(rawTrail);
     }
 
-    const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: trailId});
+    const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: wrapped});
     let containingBoundaries;
     if (rawContainingBoundaries) {
       containingBoundaries = containingBoundariesFromRaw(rawContainingBoundaries);
     }
 
-    const rawPathProfiles = initialData('path_profiles_in_trail', {trail_id: trailId});
+    const rawPathProfiles = initialData('path_profiles_in_trail', {trail_id: wrapped});
     let pathProfiles;
     if (rawPathProfiles) {
       pathProfiles = pathProfilesInTrailFromRaw(rawPathProfiles);
@@ -48,6 +49,7 @@ export function TrailDetailElement({trailId}: {
       selected: [],
       selectedCardPosition: [-1, -1],
       trail,
+      trailId,
     };
   }
 
@@ -66,7 +68,7 @@ export function TrailDetailElement({trailId}: {
 }
 
 function Loading({trailId, state, updateState}: {
-  trailId: TrailId,
+  trailId: string,
   state: State,
   updateState: (newState: State) => void,
 }) {
@@ -74,7 +76,7 @@ function Loading({trailId, state, updateState}: {
     <div
         js={corgi.bind({
           controller: LoadingController,
-          args: {trailId},
+          key: JSON.stringify(trailId),
           events: {
             render: 'wakeup',
           },
@@ -88,7 +90,7 @@ function Loading({trailId, state, updateState}: {
 }
 
 function Content({trailId, state, updateState}: {
-  trailId: TrailId,
+  trailId: string,
   state: State,
   updateState: (newState: State) => void,
 }) {
@@ -137,13 +139,13 @@ function Content({trailId, state, updateState}: {
     <div
         js={corgi.bind({
           controller: TrailDetailController,
+          key: JSON.stringify(trailId),
           events: {
             corgi: [
               [SELECTION_CHANGED, 'selectionChanged'],
             ],
             render: 'wakeup',
           },
-          key: JSON.stringify(trailId),
           state: [state, updateState],
         })}
         className="h-full max-w-6xl px-4 my-6 w-full"

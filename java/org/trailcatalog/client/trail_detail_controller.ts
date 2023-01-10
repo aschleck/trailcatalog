@@ -12,15 +12,11 @@ import { unprojectS2LatLng } from './map/models/camera';
 import { Boundary, ElevationProfile, Path, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
-import { fetchData, TrailId } from './data';
+import { fetchData } from './data';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 import { State as VState, ViewportController } from './viewport_controller';
 
 const ELEVATION_GRAPH_RESOLUTION_WIDTH = 1200;
-
-interface Args {
-  trailId: TrailId;
-}
 
 export interface State extends VState {
   containingBoundaries?: Boundary[];
@@ -34,6 +30,7 @@ export interface State extends VState {
   }
   pathProfiles?: Map<bigint, ElevationProfile>;
   trail?: Trail;
+  trailId: string;
   weather?: {
     temperatureCelsius: number;
     weatherCode: number;
@@ -43,7 +40,7 @@ export interface State extends VState {
 type Deps = typeof TrailDetailController.deps;
 type LoadingDeps = typeof LoadingController.deps;
 
-export class LoadingController extends Controller<Args, LoadingDeps, HTMLElement, State> {
+export class LoadingController extends Controller<{}, LoadingDeps, HTMLElement, State> {
 
   static deps() {
     return {
@@ -56,7 +53,7 @@ export class LoadingController extends Controller<Args, LoadingDeps, HTMLElement
   constructor(response: Response<LoadingController>) {
     super(response);
 
-    const trailId = response.args.trailId;
+    const trailId = {readable: this.state.trailId};
     fetchData('trail', {trail_id: trailId}).then(raw => {
       const trail = trailFromRaw(raw);
       this.updateState({

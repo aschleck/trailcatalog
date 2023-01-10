@@ -19,7 +19,7 @@ import { TrailPopup } from './trail_popup';
 export function BoundaryDetailElement({boundaryId}: {
   boundaryId: string;
 }, state: State|undefined, updateState: (newState: State) => void) {
-  if (!state) {
+  if (!state || boundaryId !== state.boundaryId) {
     const rawBoundary = initialData('boundary', {id: boundaryId});
     let boundary;
     if (rawBoundary) {
@@ -40,6 +40,7 @@ export function BoundaryDetailElement({boundaryId}: {
 
     state = {
       boundary,
+      boundaryId,
       containingBoundaries,
       selected: [],
       selectedCardPosition: [-1, -1],
@@ -69,7 +70,6 @@ function Loading({boundaryId, state, updateState}: {
     <div
         js={corgi.bind({
           controller: LoadingController,
-          args: {boundaryId},
           events: {
             render: 'wakeup',
           },
