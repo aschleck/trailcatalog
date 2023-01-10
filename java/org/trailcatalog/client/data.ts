@@ -1,4 +1,4 @@
-import { fetchDataBatch as fetchDataBatchUnsafe } from './common/data';
+import { fetchDataBatch as fetchDataBatchUnsafe, putCache } from './common/data';
 import { initialData as initialDataUnsafe } from './common/ssr_aware';
 
 export type TrailId = {numeric: string}|{readable: string};
@@ -125,12 +125,12 @@ export function fetchData<K extends keyof DataRequests>(type: K, request: DataRe
     Promise<DataResponses[K]> {
   if (!fetchPromise || !fetchQueue) {
     fetchQueue = [];
-    const captured = fetchQueue;
+    const captured = fetchQueue as RequestTuples<(keyof DataRequests)[]>;
     fetchPromise =
         Promise.resolve().then(() => {
           fetchPromise = undefined;
           fetchQueue = undefined;
-          return fetchDataBatchUnsafe(captured);
+          return fetchDataBatch(captured);
         });
   }
 
@@ -141,7 +141,14 @@ export function fetchData<K extends keyof DataRequests>(type: K, request: DataRe
 
 export function fetchDataBatch<T extends (keyof DataRequests)[]>(tuples: RequestTuples<T>):
     Promise<ResponseBatch<T>> {
-  return fetchDataBatchUnsafe(tuples) as Promise<ResponseBatch<T>>;
+  return (fetchDataBatchUnsafe(tuples) as Promise<ResponseBatch<T>>)
+      .then(responses => {
+        for (let i = 0; i < tuples.length; ++i) {
+          const [type, request] = tuples[i];
+          middleware(type, request, responses[i]);
+        }
+        return responses;
+      });
 }
 
 export function initialData<K extends keyof DataRequests>(type: K, request: DataRequests[K]):
@@ -152,3 +159,16 @@ export function initialData<K extends keyof DataRequests>(type: K, request: Data
   }) as DataResponses[K];
 }
 
+function middleware<K extends keyof DataRequests>(
+    type: K, rawRequest: DataRequests[K], rawResponse: DataResponses[K]) {
+  if (type === 'trail') {
+    const request = rawRequest as DataRequests['trail'];
+    const response = rawResponse as DataResponses['trail'];
+    if ('numeric' in request.trail_id) {
+      putCache(type, {
+        ...request,
+        trail_id: {readable: response.readable_id},
+      }, response);
+    }
+  }
+}

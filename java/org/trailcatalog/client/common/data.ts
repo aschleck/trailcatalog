@@ -71,6 +71,10 @@ export function fetchDataBatch<T extends string[]>(tuples: KeyedTuples<T>):
   }
 }
 
+export function putCache(type: string, request: object, response: object) {
+  cache.push([{type, ...request}, response]);
+}
+
 export function latLngFromBase64E7(bytes: string): LatLng {
   const markerStream = new LittleEndianView(decodeBase64(bytes));
   return [
