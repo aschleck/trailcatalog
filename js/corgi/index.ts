@@ -39,21 +39,35 @@ export interface InputProperties extends Properties<HTMLInputElement> {
   value?: string;
 }
 
-export interface LineProperties extends Properties<SVGLineElement> {
+export interface SVGGraphicsProperties extends Properties<SVGGraphicsElement> {
+  vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
+}
+
+export interface CircleProperties extends SVGGraphicsProperties, Properties<SVGCircleElement> {
+  fill?: string;
   stroke?: string;
+  stroke_width?: number|string;
+  cx: number|string;
+  cy: number|string;
+  r: number|string;
+}
+
+export interface LineProperties extends SVGGraphicsProperties, Properties<SVGLineElement> {
+  stroke?: string;
+  stroke_linejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
+  stroke_width?: number|string;
   x1: number|string;
   y1: number|string;
   x2: number|string;
   y2: number|string;
-  vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
 }
 
-export interface PolylineProperties extends Properties<SVGPolylineElement> {
+export interface PolylineProperties extends SVGGraphicsProperties, Properties<SVGPolylineElement> {
   fill?: string;
   stroke?: string;
+  stroke_linejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
   stroke_width?: number|string;
   points: string;
-  vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
 }
 
 export interface SVGProperties extends Properties<SVGElement> {
@@ -62,12 +76,11 @@ export interface SVGProperties extends Properties<SVGElement> {
   width?: number|string;
 }
 
-export interface TextProperties extends Properties<SVGTextElement> {
+export interface TextProperties extends SVGGraphicsProperties, Properties<SVGTextElement> {
   dominant_baseline?:
       'auto'|'text-bottom'|'alphabetic'|'ideographic'|'middle'|'central'|'mathematical'|'hanging'
             |'text-top';
   text_anchor?: 'start'|'middle'|'end';
-  vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
   x?: number|string;
   y?: number|string;
   dx?: number|string;
@@ -529,6 +542,7 @@ function applyThroughFragments(
 }
 
 const TAG_TO_NAMESPACE = new Map([
+  ['circle', 'http://www.w3.org/2000/svg'],
   ['g', 'http://www.w3.org/2000/svg'],
   ['line', 'http://www.w3.org/2000/svg'],
   ['polyline', 'http://www.w3.org/2000/svg'],
@@ -704,6 +718,7 @@ declare global {
       aside: Properties<HTMLElement>;
       button: Properties<HTMLButtonElement>;
       canvas: Properties<HTMLCanvasElement>;
+      circle: CircleProperties;
       div: Properties<HTMLDivElement>;
       footer: Properties<HTMLElement>;
       g: GroupProperties;

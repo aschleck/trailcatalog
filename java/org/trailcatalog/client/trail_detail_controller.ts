@@ -18,14 +18,20 @@ import { State as VState, ViewportController } from './viewport_controller';
 
 const ELEVATION_GRAPH_RESOLUTION_WIDTH = 1200;
 
+interface LatLngAltitude {
+  lat: number;
+  lng: number;
+  altitude: number;
+};
+
 export interface State extends VState {
   containingBoundaries?: Boundary[];
   elevation?: {
-    cursor?: LatLng;
+    cursor?: LatLngAltitude;
     cursorFraction?: number;
     extremes: [number, number];
     heights: string;
-    points: LatLng[];
+    points: LatLngAltitude[];
     resolution: Vec2;
   }
   pathProfiles?: Map<bigint, ElevationProfile>;
@@ -191,7 +197,7 @@ export function calculateGraph(
     trail: Trail): {
   extremes: [number, number];
   heights: string;
-  points: LatLng[];
+  points: LatLngAltitude[];
   resolution: Vec2;
 } {
   const resolutionHeight = 300;
@@ -201,11 +207,11 @@ export function calculateGraph(
   let length = 0;
 
   const heights: Vec2[] = [];
-  const latLngs: LatLng[] = [];
+  const latLngs: LatLngAltitude[] = [];
   let lastPoint: S2Point|undefined = undefined;
   const process = (point: S2Point, sample: number) => {
     const ll = SimpleS2.pointToLatLng(point);
-    latLngs.push([ll.latDegrees(), ll.lngDegrees()] as LatLng);
+    latLngs.push({lat: ll.latDegrees(), lng: ll.lngDegrees(), altitude: sample});
     heights.push([length, sample]);
     min = Math.min(min, sample);
     max = Math.max(max, sample);

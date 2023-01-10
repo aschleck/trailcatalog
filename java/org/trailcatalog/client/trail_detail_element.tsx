@@ -6,6 +6,7 @@ import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 
 import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
 import { metersToFeet, metersToMiles } from './common/math';
+import { LatLng } from './common/types';
 import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
@@ -218,7 +219,10 @@ function Content({trailId, state, updateState}: {
             height="h-[32rem]"
             ref="map"
             overlays={{
-              point: state.elevation?.cursor
+              point:
+                  !!state.elevation?.cursor
+                      ? [state.elevation.cursor.lat, state.elevation.cursor.lng] as LatLng
+                      : undefined,
             }}
         />
         <div className="absolute flex flex-col gap-2 right-2 top-2">
@@ -231,7 +235,7 @@ function Content({trailId, state, updateState}: {
         </div>
         {trailDetails ?? <></>}
       </div>
-      {state.elevation ? <ElevationGraph {...state} /> : <svg></svg>}
+      {state.elevation ? <ElevationGraph className="mt-8" {...state} /> : <svg></svg>}
     </div>
   </>;
 }
@@ -265,7 +269,7 @@ function NumericDivider() {
   </>;
 }
 
-function ElevationGraph(state: State) {
+function ElevationGraph({className, ...state}: {className: string} & State) {
   const trail = checkExists(state.trail);
   const elevation = checkExists(state.elevation);
   const [resWidth, resHeight] = elevation.resolution;
@@ -328,17 +332,39 @@ function ElevationGraph(state: State) {
     );
   }
 
+  const sampleProjectionStyle = [
+    'transform:',
+    `translateY(${-max * scale}px)`,
+    `scaleY(${(max - min) / resHeight * scale})`,
+  ].join(' ');
+
   let indicator;
-  if (elevation.cursorFraction !== undefined && elevation.cursorFraction >= 0) {
+  if (!!elevation.cursor
+      && elevation.cursorFraction !== undefined
+      && elevation.cursorFraction >= 0) {
     const x = elevation.cursorFraction * resWidth;
-    indicator = <line x1={x} y1={-lowestGrid * scale} x2={x} y2={-highestGrid * scale} />;
+    const y = elevation.cursor.altitude;
+    // We follow the same projection routine as the samples do.
+    const fy = (maxMeters - y) / (maxMeters - minMeters) * resHeight;
+    const scaleY = (max - min) / resHeight * scale;
+    const translateY = -max * scale;
+    const ypx = scaleY * fy + translateY;
+    indicator =
+        <circle
+            fill="white"
+            stroke="black"
+            stroke_width={2}
+            cx={x}
+            cy={ypx}
+            r={7}
+        />;
   } else {
-    indicator = <line x1="0" y1="0" x2="0" y2="0" />;
+    indicator = <circle cx="0" cy="0" r="0" />;
   }
 
   return <>
     <svg
-        className="select-none touch-none"
+        className={`select-none touch-none ${className}`}
         unboundEvents={{
           'pointerleave': 'clearElevationCursor',
           'pointermove': 'moveElevationCursor',
@@ -355,7 +381,6 @@ function ElevationGraph(state: State) {
         <g style="stroke-dasharray: 4">
           {gridLines}
         </g>
-        {indicator}
       </g>
       <g className="fill-tc-gray-400">
         {gridText}
@@ -367,6 +392,7 @@ function ElevationGraph(state: State) {
           fill="none"
           points={elevation.heights}
           stroke="black"
+          stroke_linejoin="round"
           stroke_width={2}
           vector_effect="non-scaling-stroke"
           style={
@@ -377,6 +403,7 @@ function ElevationGraph(state: State) {
             ].join(' ')
           }
       />
+      {indicator}
     </svg>
   </>;
 }
