@@ -153,7 +153,7 @@ function Content({trailId, state, updateState}: {
     >
       <header className="flex gap-2 items-center">
         <div unboundEvents={{corgi: [[ACTION, 'goBack']]}}>
-          <FlatButton className="m-0 p-0" icon="ChromeBack" />
+          <FlatButton className="-m-2" icon="ChromeBack" />
         </div>
         <span className="font-bold font-sans text-3xl">
           {trail.name}

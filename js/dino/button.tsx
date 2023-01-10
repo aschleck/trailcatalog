@@ -51,7 +51,7 @@ export function Button(
         })}
         className={
           'inline-block leading-none rounded select-none space-x-2'
-              + ' active:bg-tc-gray-400 focus:bg-tc-gray-400'
+              + ' active:bg-tc-gray-400'
               + (!dense ? ' p-2 ' : '-m-1 p-1')
               + (className ? ` ${className}` : '')
         }
