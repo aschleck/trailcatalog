@@ -3,6 +3,7 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
+import { HistoryService } from 'js/corgi/history/history_service';
 
 import { decodeBase64 } from './common/base64';
 import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng, s2LatLngRectToTc } from './common/types';
@@ -97,17 +98,16 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
         map: MapController,
       },
       services: {
+        history: HistoryService,
         views: ViewsService,
       },
     };
   }
 
-  private readonly views: ViewsService;
   private query: string|undefined;
 
   constructor(response: Response<SearchResultsOverviewController>) {
     super(response);
-    this.views = response.deps.services.views;
     this.query = response.args.query;
 
     // We do this here to

@@ -1,10 +1,12 @@
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
+import { HistoryService } from 'js/corgi/history/history_service';
 
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from './common/types';
 import { SELECTION_CHANGED } from './map/events';
 import { MapController } from './map/map_controller';
 import { Path, Point, Trail } from './models/types';
+import { ViewsService } from './views/views_service';
 
 export interface State {
   selected: Array<Path|Point|Trail>;
@@ -21,14 +23,30 @@ export class ViewportController<A extends {}, D extends Deps, S extends State>
       controllers: {
         map: MapController,
       },
+      services: {
+        history: HistoryService,
+        views: ViewsService,
+      },
     };
   }
 
+  private readonly history: HistoryService;
   protected readonly mapController: MapController;
+  protected readonly views: ViewsService;
 
   constructor(response: Response<ViewportController<A, D, S>>) {
     super(response);
+    this.history = response.deps.services.history;
     this.mapController = response.deps.controllers.map;
+    this.views = response.deps.services.views;
+  }
+
+  goBack(): void {
+    if (this.history.backStaysInApp()) {
+      this.history.back();
+    } else {
+      this.views.showOverview(this.mapController.cameraLlz);
+    }
   }
 
   selectionChanged(e: CorgiEvent<typeof SELECTION_CHANGED>): void {

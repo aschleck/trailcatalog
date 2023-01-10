@@ -117,8 +117,13 @@ function Content({boundaryId, state, updateState}: {
         })}
         className="h-full max-w-6xl px-4 my-8 w-full"
     >
-      <header className="font-bold font-sans text-3xl">
-        {boundary.name}
+      <header className="flex gap-2 items-center">
+        <div unboundEvents={{corgi: [[ACTION, 'goBack']]}}>
+          <FlatButton className="m-0 p-0" icon="ChromeBack" />
+        </div>
+        <span className="font-bold font-sans text-3xl">
+          {boundary.name}
+        </span>
       </header>
       <aside className="flex gap-2 mt-2 text-tc-gray-400">
         <BoundaryCrumbs boundaries={containingBoundaries} />

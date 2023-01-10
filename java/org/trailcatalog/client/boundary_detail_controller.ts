@@ -2,6 +2,7 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
+import { HistoryService } from 'js/corgi/history/history_service';
 
 import { decodeBase64 } from './common/base64';
 import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng } from './common/types';
@@ -65,16 +66,14 @@ export class BoundaryDetailController extends ViewportController<{}, Deps, State
         map: MapController,
       },
       services: {
+        history: HistoryService,
         views: ViewsService,
       },
     };
   }
 
-  private readonly views: ViewsService;
-
   constructor(response: Response<BoundaryDetailController>) {
     super(response);
-    this.views = response.deps.services.views;
   }
 
   browseMap() {

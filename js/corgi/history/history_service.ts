@@ -5,6 +5,10 @@ interface Listener {
   urlChanged(active: URL): void;
 }
 
+interface State {
+  depth: number;
+}
+
 export class HistoryService extends Service<EmptyDeps> {
 
   private readonly listeners: Set<Listener>;
@@ -27,7 +31,7 @@ export class HistoryService extends Service<EmptyDeps> {
       }
     });
     window.addEventListener('popstate', (e: PopStateEvent) => {
-      this.notifyListeners(new URL(window.location.href));
+      this.notifyListeners();
     });
   }
 
@@ -35,30 +39,47 @@ export class HistoryService extends Service<EmptyDeps> {
     this.listeners.add(listener);
   }
 
+  back(): void {
+    window.history.back();
+  }
+
+  backStaysInApp(): boolean {
+    return getState().depth > 0;
+  }
+
   goTo(url: string, state?: object): void {
-    // url might just be a relative path, so we pull the real href from the window.
-    window.history.pushState(state, '', url);
-    this.notifyListeners(new URL(window.location.href));
+    const newState = {depth: getState().depth + 1};
+    window.history.pushState(newState, '', url);
+    this.notifyListeners();
   }
 
   reload(): void {
-    this.notifyListeners(new URL(window.location.href));
+    this.notifyListeners();
   }
 
-  replaceTo(url: string, state?: object): void {
-    // url might just be a relative path, so we pull the real href from the window.
-    window.history.replaceState(state, '', url);
-    this.notifyListeners(new URL(window.location.href));
+  replaceTo(url: string): void {
+    window.history.replaceState(getState(), '', url);
+    this.notifyListeners();
   }
 
   silentlyReplaceUrl(url: string, state?: object): void {
-    window.history.replaceState(state, '', url);
+    window.history.replaceState(getState(), '', url);
   }
 
-  private notifyListeners(active: URL) {
+  private notifyListeners() {
+    // url might just be a relative path, so we pull the real href from the window.
+    const active = new URL(window.location.href);
     for (const listener of this.listeners) {
       listener.urlChanged(active);
     }
+  }
+}
+
+function getState(): State {
+  if (window.history.state) {
+    return window.history.state as State;
+  } else {
+    return {depth: 0};
   }
 }
 

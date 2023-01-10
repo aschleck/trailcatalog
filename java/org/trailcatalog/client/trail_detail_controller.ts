@@ -103,11 +103,8 @@ export class TrailDetailController extends ViewportController<{}, Deps, State> {
     };
   }
 
-  private readonly views: ViewsService;
-
   constructor(response: Response<TrailDetailController>) {
     super(response);
-    this.views = response.deps.services.views;
 
     const history = response.deps.services.history;
     const trail = checkExists(this.state.trail);
