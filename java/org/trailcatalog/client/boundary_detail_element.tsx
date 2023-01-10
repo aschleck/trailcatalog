@@ -177,7 +177,7 @@ function TrailBlock({containingBoundaries, trail}: {
           'block border-2 border-tc-gray-200 flex rounded-lg w-[calc(100%_/_3_-_0.67rem)]'
         }
     >
-      <div className="bg-tc-gray-100 h-32 w-32" />
+      <div className="bg-tc-gray-100 h-32 shrink-0 w-32" />
       <div className="flex flex-col grow mx-5 my-2">
         <a className="font-semibold" href={`/goto/trail/${trail.id}`}>
           {trail.name}
