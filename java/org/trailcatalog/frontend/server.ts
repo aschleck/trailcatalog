@@ -138,6 +138,7 @@ function page(content: string, title: string, dataKeys: object, dataValues: obje
         name="viewport"
         content="height=height, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width" />
     <link rel="stylesheet" type="text/css" href="/static/client.css" />
+    <link rel="icon" href="/static/images/icons/favicon.ico" type="image/x-icon" />
   </head>
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
