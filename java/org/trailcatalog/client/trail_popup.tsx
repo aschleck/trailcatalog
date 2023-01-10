@@ -1,9 +1,46 @@
+import { PointCategory } from 'java/org/trailcatalog/models/categories';
 import { checkExhaustive } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 
 import { metersToMiles } from './common/math';
 import { Vec2 } from './common/types';
 import { Path, Point, Trail } from './models/types';
+
+const POINT_CATEGORY_TO_LABEL =
+    new Map([
+      [PointCategory.AMENITY, 'Amenity'],
+      [PointCategory.AMENITY_CAMP, 'Camp'],
+      [PointCategory.AMENITY_CAMP_PITCH, 'Camp pitch'],
+      [PointCategory.AMENITY_CAMP_SITE, 'Campsite'],
+      [PointCategory.AMENITY_FIRE, 'Fire'],
+      [PointCategory.AMENITY_FIRE_BARBECUE, 'Barbecue'],
+      [PointCategory.AMENITY_FIRE_PIT, 'Fire pit'],
+      [PointCategory.AMENITY_HUT, 'Hut'],
+      [PointCategory.AMENITY_HUT_ALPINE, 'Alpine hut'],
+      [PointCategory.AMENITY_HUT_WILDERNESS, 'Wilderness hut'],
+      [PointCategory.AMENITY_PARKING, 'Parking'],
+      [PointCategory.AMENITY_PICNIC, 'Picnic'],
+      [PointCategory.AMENITY_PICNIC_SITE, 'Picnic site'],
+      [PointCategory.AMENITY_PICNIC_TABLE, 'Picnic table'],
+      [PointCategory.AMENITY_SHELTER, 'Shelter'],
+      [PointCategory.AMENITY_TOILETS, 'Toilets'],
+      [PointCategory.AMENITY_WATER, 'Water'],
+      [PointCategory.AMENITY_WATER_DRINKING, 'Drinking water'],
+      [PointCategory.INFORMATION, 'Information'],
+      [PointCategory.INFORMATION_GUIDE_POST, 'Guide post'],
+      [PointCategory.INFORMATION_VISITOR_CENTER, 'Visitor center'],
+      [PointCategory.NATURAL, 'Natural'],
+      [PointCategory.NATURAL_CAVE_ENTRANCE, 'Cave entrance'],
+      [PointCategory.NATURAL_PEAK, 'Peak'],
+      [PointCategory.NATURAL_SADDLE, 'Saddle'],
+      [PointCategory.NATURAL_VOLCANO, 'Volcano'],
+      [PointCategory.NATURAL_WATERFALL, 'Waterfall'],
+      [PointCategory.WAY, 'Way'],
+      [PointCategory.WAY_MOUNTAIN_PASS, 'Mountain pass'],
+      [PointCategory.WAY_PATH, 'Path'],
+      [PointCategory.WAY_PATH_TRAILHEAD, 'Trailhead'],
+      [PointCategory.WAY_VIEWPOINT, 'Viewpoint'],
+    ]);
 
 export function TrailPopup({ items, position }: {
   items: Array<Path|Point|Trail>,
@@ -69,6 +106,8 @@ function TrailLink({trail}: {trail: Trail}) {
 }
 
 function OsmNodeLink({point}: {point: Point}) {
+  const label =
+      point.name ?? POINT_CATEGORY_TO_LABEL.get(point.type) ?? `Node ${point.sourceNode}`;
   return <>
     <a
         className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
@@ -76,7 +115,7 @@ function OsmNodeLink({point}: {point: Point}) {
         target="_blank"
     >
       <header className="font-bold font-lg grow">
-        {point.name ?? `Node ${point.sourceNode}`}
+        {label}
       </header>
     </a>
   </>;

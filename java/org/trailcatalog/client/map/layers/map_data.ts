@@ -49,11 +49,15 @@ const POINTS_ATLAS = new Map<PointCategory, number>([
   [PointCategory.WAY_PATH_TRAILHEAD, 16], // trailhead.svg
   [PointCategory.WAY_VIEWPOINT, 17], // viewpoint.svg
   [PointCategory.INFORMATION_VISITOR_CENTER, 18], // visitor_center.svg
-  // !!! This is a repeat of mountain pass
-  [PointCategory.NATURAL_PEAK, 10], // mountain_pass.svg
   [PointCategory.NATURAL_VOLCANO, 19], // volcano.svg
   [PointCategory.NATURAL_WATERFALL, 20], // waterfall.svg
   [PointCategory.AMENITY_HUT_WILDERNESS, 21], // wilderness_hut.svg
+
+  // Custom additions, do not remove
+  // !!! This is a repeat of picnic table
+  [PointCategory.AMENITY_PICNIC_SITE, 12], // picnic_table.svg
+  // !!! This is a repeat of mountain pass
+  [PointCategory.NATURAL_PEAK, 10], // mountain_pass.svg
 ]);
 const POINTS_ATLAS_SIZE = [8, 4] as Vec2;
 
