@@ -19,7 +19,7 @@ import { LoadingController, TrailDetailController, State } from './trail_detail_
 import { TrailPopup } from './trail_popup';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
-const GRAPH_TEXT_SPACE_PX = [64, 32] as const;
+const GRAPH_TEXT_SPACE_PX = [0, 32] as const;
 
 export function TrailDetailElement({trailId}: {
   trailId: string;
@@ -240,7 +240,7 @@ function Content({trailId, state, updateState}: {
         </div>
         {trailDetails ?? <></>}
       </div>
-      {state.elevation ? <ElevationGraph className="mt-8" {...state} /> : <svg></svg>}
+      {state.elevation ? <ElevationGraph className="mt-6" {...state} /> : <svg></svg>}
     </div>
   </>;
 }
@@ -259,7 +259,7 @@ function NumericCrumb({
   return <>
     <div className="min-w-[142px]">
       <div>{label}</div>
-      <div className="mt-2">
+      <div className="mt-1">
         <FabricIcon name={icon} className="mr-2" />
         <span className="mr-0.5 text-lg">{value}</span>
         <span className="text-sm">{unit}</span>
@@ -323,6 +323,8 @@ function ElevationGraph({className, ...state}: {className: string} & State) {
     );
   }
 
+  const estimatedTextWidth = 11 * Math.ceil(Math.log10(highestGrid));
+
   const indicateEvery = Math.ceil(length / 7 * 2) / 2;
   const distanceIndicators = [];
   for (let x = 0; x <= length; x += indicateEvery) {
@@ -376,9 +378,9 @@ function ElevationGraph({className, ...state}: {className: string} & State) {
         }}
         viewBox={
           [
-            -GRAPH_TEXT_SPACE_PX[0],
+            -GRAPH_TEXT_SPACE_PX[0] - estimatedTextWidth,
             -highestGrid * scale,
-            resWidth + GRAPH_TEXT_SPACE_PX[0],
+            resWidth + GRAPH_TEXT_SPACE_PX[0] + estimatedTextWidth,
             height + GRAPH_TEXT_SPACE_PX[1],
           ].join(' ')
         }>
