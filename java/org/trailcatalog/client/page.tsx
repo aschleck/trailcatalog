@@ -1,6 +1,7 @@
 import * as corgi from 'js/corgi';
 import { VElementOrPrimitive } from 'js/corgi';
 import { IconCheckbox } from 'js/dino/checkbox';
+import { FabricIcon } from 'js/dino/fabric';
 import { Radio } from 'js/dino/radio';
 
 import { SearchElement } from './search_element';
@@ -48,6 +49,12 @@ export function Header({query, extra}: {
                 src="/static/images/icons/github.png"
                 className="h-6"
             />
+          </a>
+          <a
+              href="https://docs.google.com/forms/d/e/1FAIpQLSd4RQWYpziXa5yns-lDk3U-4egwVL2AxFcQ2aW4gOBx5wdehw/viewform"
+              target="_blank"
+          >
+            <FabricIcon className="text-2xl" name="Feedback" title="Share feedback" />
           </a>
         </div>
       </div>

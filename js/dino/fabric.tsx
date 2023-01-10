@@ -8,12 +8,14 @@ const FABRIC_ICON_CODES = [
   'CharticulatorLine',
   'Checkbox',
   'CheckboxCompositeReversed',
-  'ChevronRight',
+  'ChevronDownMed',
+  'ChevronUpMed',
   'ChromeBack',
   'ChromeClose',
   'Cloudy',
   'CollapseMenu',
   'Fog',
+  'Feedback',
   'Globe',
   'LightSnow',
   'Location',
@@ -42,12 +44,14 @@ EA02
 E639
 E739
 E73D
-E76C
+E972
+E971
 E830
 E8BB
 E9BF
 EF66
 E9CB
+ED15
 E774
 EA02
 E81D
