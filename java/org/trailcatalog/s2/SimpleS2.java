@@ -26,10 +26,13 @@ import jsinterop.annotations.JsType;
 @JsType
 public final class SimpleS2 {
 
-  // These are the levels exposed to the client
+  // These are the levels exposed to the client as the highest level of the index. They must be kept
+  // equal between the two, or else they will give each other wrong data in the leaves.
+
   // Level 6 is the minimum because otherwise 47c4 is 7 MB with overview details.
   public static final int HIGHEST_OVERVIEW_INDEX_LEVEL = 6;
-  public static final int HIGHEST_COARSE_INDEX_LEVEL = 7;
+  // Level 8 is the minimum because otherwise 47b94 is 3 MB with coarse details.
+  public static final int HIGHEST_COARSE_INDEX_LEVEL = 8;
   // Level 12 is chosen because otherwise we pull in too many city streets in urban areas.
   public static final int HIGHEST_FINE_INDEX_LEVEL = 12;
   // This is the level at which the database gets indexed
