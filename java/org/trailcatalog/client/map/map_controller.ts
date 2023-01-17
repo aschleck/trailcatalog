@@ -251,6 +251,10 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
+    this.trigger(SELECTION_CHANGED, {
+      selected: undefined,
+      clickPx: [-1, -1],
+    });
   }
 
   private wheel(e: WheelEvent): void {
@@ -261,6 +265,10 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
+    this.trigger(SELECTION_CHANGED, {
+      selected: undefined,
+      clickPx: [-1, -1],
+    });
   }
 
   private enterIdle(): void {
