@@ -12,6 +12,7 @@
     {"file": "guidepost.svg", "key": "PointCategory.INFORMATION_GUIDE_POST"},
     {"file": "mountain_pass.svg", "key": "PointCategory.WAY_MOUNTAIN_PASS"},
     {"file": "parking.svg", "key": "PointCategory.AMENITY_PARKING"},
+    {"file": "peak.svg", "key": "PointCategory.NATURAL_PEAK"},
     {"file": "picnic_table.svg", "key": "PointCategory.AMENITY_PICNIC_TABLE"},
     {"file": "saddle.svg", "key": "PointCategory.NATURAL_SADDLE"},
     {"file": "shelter.svg", "key": "PointCategory.AMENITY_SHELTER"},
