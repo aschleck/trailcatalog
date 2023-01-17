@@ -3,9 +3,8 @@
   "images": [
     {"file": "point.svg"},
     {"file": "alpine_hut.svg", "key": "PointCategory.AMENITY_HUT_ALPINE"},
-    {"file": "barbeque.svg", "key": "PointCategory.AMENITY_FIRE_BARBECUE"},
-		{"file": "bridge.svg"},
-    {"file": "camp_pitch.svg", "key": "PointCategory.AMENITY_CAMP_PITCH"},
+    {"file": "barbecue.svg", "key": "PointCategory.AMENITY_FIRE_BARBECUE"},
+    {"file": "bridge.svg"},
     {"file": "camp_site.svg", "key": "PointCategory.AMENITY_CAMP_SITE"},
     {"file": "cave_entrance.svg", "key": "PointCategory.NATURAL_CAVE_ENTRANCE"},
     {"file": "drinking_water.svg", "key": "PointCategory.AMENITY_WATER_DRINKING"},

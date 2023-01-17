@@ -25,9 +25,11 @@ def main():
         defs = json.load(f)
 
     textures = []
+    commented = []
     keys = []
     for d in defs["images"]:
         textures.append(Path(defs_path.parent, d["file"]))
+        commented.append("key" not in d)
         keys.append(d.get("key", d["file"]))
 
     if args.cols * args.height < len(textures):
@@ -39,7 +41,10 @@ def main():
         name = textures[i]
         x = i % args.cols
         y = i // args.cols
-        print(f'  [{keys[i]}, {i}], // {name.name}')
+        if commented[i]:
+            print(f'  // [{keys[i]}, {i}], // {name.name}')
+        else:
+            print(f'  [{keys[i]}, {i}], // {name.name}')
 
         element = sg.fromfile(name)
         root = element.getroot()
