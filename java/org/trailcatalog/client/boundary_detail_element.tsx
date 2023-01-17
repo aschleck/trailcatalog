@@ -125,7 +125,7 @@ function Content({boundaryId, state, updateState}: {
           {boundary.name}
         </span>
       </header>
-      <aside className="flex gap-2 mt-2 text-tc-gray-400">
+      <aside className="flex flex-wrap gap-2 mt-2 text-tc-gray-400">
         <BoundaryCrumbs boundaries={containingBoundaries} />
         •
         <div>
