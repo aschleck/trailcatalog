@@ -1,4 +1,5 @@
 import { deepEqual } from 'js/common/comparisons';
+import { Memoized } from 'js/common/memoized';
 import { fetchGlobalDeps } from 'js/corgi/deps';
 import { HistoryService } from 'js/corgi/history/history_service';
 
@@ -50,9 +51,9 @@ export function getLanguage(): string {
   return window.SERVER_SIDE_RENDER?.language() ?? window.navigator.language;
 }
 
-export const UNIT_SYSTEM_COOKIE = 'unit_system';
+const UNIT_SYSTEM_COOKIE = 'unit_system';
 
-export function getUnitSystem(): UnitSystem {
+function calculateUnitSystem(): UnitSystem {
   const requested =
       (window.SERVER_SIDE_RENDER?.cookies() ?? window.document?.cookie)
           ?.split('; ')
@@ -64,6 +65,19 @@ export function getUnitSystem(): UnitSystem {
 
   const imperial = getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
   return imperial ? 'imperial' : 'metric';
+}
+
+const chosenUnitSystem = new Memoized<UnitSystem>(calculateUnitSystem);
+
+export function getUnitSystem(): UnitSystem {
+  return chosenUnitSystem.value;
+}
+
+export function setUnitSystem(system: UnitSystem) {
+  chosenUnitSystem.value = system;
+
+  // TODO(april): make this secure
+  document.cookie = `${UNIT_SYSTEM_COOKIE}=${system}; Path=/; SameSite=Strict`;
 }
 
 export function redirectTo(url: string): void {
@@ -85,3 +99,4 @@ export function setTitle(title: string): void {
     document.title = title;
   }
 }
+
