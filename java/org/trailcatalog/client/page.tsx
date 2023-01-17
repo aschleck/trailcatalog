@@ -16,10 +16,11 @@ export function Header({query, extra}: {
         align-middle
         bg-tc-gray-900
         flex
-        gap-4
+        gap-2
         items-center
         leading-none
-        p-4
+        px-4
+        py-3
         text-white
         w-full
         max-md:flex-wrap
@@ -41,20 +42,20 @@ export function Header({query, extra}: {
       <SearchElement query={query} />
       {extra ? extra : ''}
       <div className="self-stretch md:flex-1">
-        <div className="flex gap-4 h-full items-center justify-end">
-          <UnitSelector />
+        <div className="flex gap-4 items-center h-full justify-end">
+          <UnitSelector className="h-6" />
           <a href="https://github.com/aschleck/trailcatalog" target="_blank">
             <img
                 alt="Trailcatalog on GitHub"
                 src="/static/images/icons/github.png"
-                className="h-6"
+                className="h-4"
             />
           </a>
           <a
               href="https://docs.google.com/forms/d/e/1FAIpQLSd4RQWYpziXa5yns-lDk3U-4egwVL2AxFcQ2aW4gOBx5wdehw/viewform"
               target="_blank"
           >
-            <FabricIcon className="text-2xl" name="Feedback" title="Share feedback" />
+            <FabricIcon name="Feedback" title="Share feedback" />
           </a>
         </div>
       </div>
