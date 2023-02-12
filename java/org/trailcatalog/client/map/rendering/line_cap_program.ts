@@ -205,7 +205,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       void main() {
         vec4 center = side == 0u ? previous : next;
         vec4 location = -cameraCenter + center;
-        highp float actualRadius = radius - (renderBorder ? 0. : 2.);
+        highp float actualRadius = renderBorder ? radius : radius - 2.;
         vec4 worldCoord =
             location * halfWorldSize
                 + vec4(position.x, 0, position.y, 0) * actualRadius;
@@ -220,8 +220,6 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
     `;
   const fs = `#version 300 es
 
-      uniform bool renderBorder;
-
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
       in lowp float fragDistanceOrtho;
@@ -231,12 +229,14 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       out lowp vec4 fragColor;
 
       void main() {
-        mediump float o = abs(fragDistanceOrtho);
-        lowp float blend = min(max(0., o - 2.), 1.);
-        lowp vec4 color = mix(fragColorFill, fragColorStroke, blend);
+        // 0 - 0.5 is fill, 0.5 - 1 is stroke
+        mediump float m = 1. - (fragRadius - max(fragRadius - 2., abs(fragDistanceOrtho))) / 2.;
+        mediump float f = fragRadius - max(fragRadius - 1., abs(fragDistanceOrtho));
+
+        lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
         // This shader doesn't play well with stipples, so turn it off when stippling.
         lowp float stipple = fragStipple >= 1. ? 1. : 0.;
-        fragColor = stipple * vec4(color.rgb, color.a * (1. - clamp(o - 3., 0., 1.)));
+        fragColor = stipple * vec4(color.rgb, 1.);
       }
   `;
 

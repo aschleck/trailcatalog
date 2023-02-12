@@ -1,7 +1,7 @@
 import { rgbaU32ToHex, rgbaToUint32 } from '../../common/math';
 
 export const ACTIVE_PALETTE = {
-  fill: rgbaToUint32(1, 0.901, 0, 1),
+  fill: rgbaToUint32(1, 0.902, 0, 1),
   stroke: rgbaToUint32(0, 0, 0, 1),
 } as const;
 export const ACTIVE_HEX_PALETTE = {
@@ -10,7 +10,7 @@ export const ACTIVE_HEX_PALETTE = {
 } as const;
 
 export const BOUNDARY_PALETTE = {
-  fill: rgbaToUint32(1, 0, 0, 1),
+  fill: rgbaToUint32(1, 0.902, 0, 1),
   stroke: rgbaToUint32(0, 0, 0, 1),
 } as const;
 export const BOUNDARY_HEX_PALETTE = {

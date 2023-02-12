@@ -275,7 +275,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         vec4 direction = next - previous;
         vec4 perpendicular = perpendicular64(normalize64(direction));
         vec4 location = -cameraCenter + previous + direction * position.x;
-        highp float actualRadius = radius - (renderBorder ? 0. : 2.);
+        highp float actualRadius = renderBorder ? radius : radius - 2.;
         vec4 push = perpendicular * actualRadius * position.y;
         vec4 worldCoord = location * halfWorldSize + push;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);
@@ -291,8 +291,6 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       }
     `;
   const fs = `#version 300 es
-      uniform bool renderBorder;
-
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
       in lowp float fragDistanceAlong;
@@ -303,11 +301,13 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       out lowp vec4 fragColor;
 
       void main() {
-        mediump float o = abs(fragDistanceOrtho);
-        lowp float blend = min(max(0., o - 2.), 1.);
+        // 0 is fill, 1 is stroke
+        mediump float m = 1. - (fragRadius - max(fragRadius - 2., abs(fragDistanceOrtho))) / 2.;
+        mediump float f = fragRadius - max(fragRadius - 1., abs(fragDistanceOrtho));
+
+        lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
         lowp float stipple = fract(fragDistanceAlong / 8.) < fragStipple ? 1. : 0.;
-        lowp vec4 color = stipple * mix(fragColorFill, fragColorStroke, blend);
-        fragColor = vec4(color.rgb, color.a * (1. - clamp(o - 3., 0., 1.)));
+        fragColor = stipple * vec4(color.rgb, 1.);
       }
   `;
 

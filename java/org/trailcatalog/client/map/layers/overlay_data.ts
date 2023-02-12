@@ -16,7 +16,7 @@ export interface Overlays {
   polygon?: S2Polygon;
 }
 
-const BOUNDARY_RADIUS_PX = 1;
+const BOUNDARY_RADIUS_PX = 3;
 const NO_OFFSET: Vec2 = [0, 0];
 
 export class OverlayData extends Layer {

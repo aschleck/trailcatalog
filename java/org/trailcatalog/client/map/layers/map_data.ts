@@ -528,8 +528,9 @@ export class MapData extends Layer {
     const buffer = active || hover ? raised : lines;
     const fill =
         hover ? HOVER_PALETTE.fill : active ? ACTIVE_PALETTE.fill : DEFAULT_PALETTE.fill;
+    // Not a typo: since the non-hover non-active renders small we use the *fill* color here:
     const stroke =
-        hover ? HOVER_PALETTE.stroke : active ? ACTIVE_PALETTE.stroke : DEFAULT_PALETTE.stroke;
+        hover ? HOVER_PALETTE.stroke : active ? ACTIVE_PALETTE.stroke : DEFAULT_PALETTE.fill;
     buffer.push({
       colorFill: fill,
       colorStroke: stroke,
