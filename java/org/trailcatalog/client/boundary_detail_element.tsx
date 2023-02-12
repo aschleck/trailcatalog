@@ -1,6 +1,6 @@
 import { checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
-import { FlatButton } from 'js/dino/button';
+import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 
@@ -118,14 +118,14 @@ function Content({boundaryId, state, updateState}: {
         className="h-full max-w-6xl px-4 my-8 w-full"
     >
       <header className="flex gap-2 items-center">
-        <div unboundEvents={{corgi: [[ACTION, 'goBack']]}}>
-          <FlatButton className="-m-2" icon="ChromeBack" />
-        </div>
         <span className="font-bold font-sans text-3xl">
           {boundary.name}
         </span>
       </header>
-      <aside className="flex flex-wrap gap-2 mt-2 text-tc-gray-400">
+      <aside className="flex flex-wrap gap-2 items-center mt-2 text-tc-gray-400">
+        <div className="text-black" unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
+          <OutlinedButton dense={true} icon="Nav2DMapView" label="Browse map" />
+        </div>
         <BoundaryCrumbs boundaries={containingBoundaries} />
         •
         <div>

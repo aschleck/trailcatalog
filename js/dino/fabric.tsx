@@ -22,6 +22,7 @@ const FABRIC_ICON_CODES = [
   'Market',
   'MarketDown',
   'MostySunnyDay',
+  'Nav2DMapView',
   'PartlySunnyDay',
   'PartlySunnyFlurriesDay',
   'PartlySunnyShowersDay',
@@ -58,6 +59,7 @@ E81D
 EAFC
 EF42
 E468
+E800
 E469
 E472
 E46E
