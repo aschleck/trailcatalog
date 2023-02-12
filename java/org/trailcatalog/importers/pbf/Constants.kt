@@ -136,6 +136,7 @@ val HIGHWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
     .put(ByteString.copyFromUtf8("busway"), WayCategory.ROAD_BUSWAY)
 
     .put(ByteString.copyFromUtf8("path"), WayCategory.PATH)
+    .put(ByteString.copyFromUtf8("cycleway"), WayCategory.PATH_CYCLEWAY)
     .put(ByteString.copyFromUtf8("footway"), WayCategory.PATH_FOOTWAY)
     .put(ByteString.copyFromUtf8("bridleway"), WayCategory.PATH_BRIDLEWAY)
     .put(ByteString.copyFromUtf8("steps"), WayCategory.PATH_STEPS)

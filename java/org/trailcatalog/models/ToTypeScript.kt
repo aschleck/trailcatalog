@@ -7,7 +7,7 @@ fun main() {
 export function aDescendsB(a: number, b: number): boolean {
   let cursor = a;
   while (b < cursor) {
-    cursor = (cursor - 1) / ENUM_SIZE;
+    cursor = Math.floor((cursor - 1) / ENUM_SIZE);
   }
   return b === cursor;
 }

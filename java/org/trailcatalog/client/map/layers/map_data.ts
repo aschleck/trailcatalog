@@ -196,8 +196,7 @@ export class MapData extends Layer {
       let d2 = Number.MAX_VALUE;
       if (handle.entity instanceof Path && this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
         const path = handle.entity;
-        if (this.dataService.pathsToTrails.has(path.id)
-            || aDescendsB(path.type, WayCategory.PATH)) {
+        if (this.dataService.pathsToTrails.has(path.id) || isPath(path.type)) {
           const pathHandle = handle as PathHandle;
           d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
         }
@@ -520,8 +519,7 @@ export class MapData extends Layer {
     const active = this.active.has(id);
     const hover = this.hover.has(id);
     const onTrail = this.dataService.pathsToTrails.has(id);
-    const isPath = aDescendsB(type, WayCategory.PATH);
-    if (!onTrail && !isPath) {
+    if (!onTrail && !isPath(type)) {
       return;
     }
 
@@ -702,6 +700,10 @@ function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number
     }
   }
   return bestDistance2;
+}
+
+function isPath(type: number): boolean {
+  return aDescendsB(type, WayCategory.PATH) || aDescendsB(type, WayCategory.ROAD_TRACK);
 }
 
 function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableText {
