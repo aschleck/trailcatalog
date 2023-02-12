@@ -293,7 +293,7 @@ for preemptible in (True, False):
             run \\
             --name=importer \\
             --rm \\
-            --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog-next" \\
+            --env DATABASE_URL="postgresql://{args['pink_ip']}/trailcatalog" \\
             --env DATABASE_USERNAME_PASSWORD="${{auth_token}}" \\
             --env JAVA_TOOL_OPTIONS="-XX:InitialHeapSize=12g -XX:MaxHeapSize=12g -XX:MaxMetaspaceSize=1g" \\
             --mount type=bind,source=/mnt/disks/import_cache,target=/import_cache \\
