@@ -57,7 +57,7 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
   private async actuallySearch(): Promise<void> {
     const query = this.state.query;
     const bp = fetchData('search_boundaries', {query});
-    const tp = fetchData('search_trails', {query, limit: 5});
+    const tp = fetchData('search_trails', {query, limit: 100});
     const boundaries = await bp;
     const trails = await tp;
 

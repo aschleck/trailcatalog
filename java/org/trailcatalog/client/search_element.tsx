@@ -5,9 +5,11 @@ import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
 import { OutlinedInput } from 'js/dino/input';
 
+import { formatDistance } from './common/formatters';
 import { currentUrl } from './common/ssr_aware';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
+import { TrailSearchResult } from './models/types';
 import { SearchController, State } from './search_controller';
 
 export function SearchElement(
@@ -91,7 +93,7 @@ function SearchResults({boundaries, className, query, trails}: {
           inset-x-0
           overflow-y-scroll
           max-h-[85vh]
-          px-3
+          rounded
           text-black
           top-full
           z-50
@@ -102,8 +104,13 @@ function SearchResults({boundaries, className, query, trails}: {
       <SearchCategory
           icon="/static/images/icons/trail.svg"
           label="Trails"
+          limit={{
+            allHref: `/search?query=${query}`,
+            count: 5,
+          }}
           results={trails.map(trail => <>
             <ResultItem
+                aside={<TrailDistance trail={trail} />}
                 boundaries={trail.boundaries}
                 href={`/goto/trail/${trail.id}`}
                 text={trail.name}
@@ -111,6 +118,7 @@ function SearchResults({boundaries, className, query, trails}: {
             />
           </>)}
       />
+      <div className="border-t mt-4"></div>
       <SearchCategory
           icon="/static/images/icons/national-park.svg"
           label="National Parks"
@@ -123,6 +131,7 @@ function SearchResults({boundaries, className, query, trails}: {
             />
           </>)}
       />
+      <div className="border-t mt-4"></div>
       <SearchCategory
           icon="/static/images/icons/boundary-filled.svg"
           label="Areas"
@@ -139,7 +148,8 @@ function SearchResults({boundaries, className, query, trails}: {
   </>;
 }
 
-function ResultItem({boundaries, href, text, query}: {
+function ResultItem({aside, boundaries, href, text, query}: {
+  aside?: corgi.VElementOrPrimitive;
   boundaries: Array<{
     id: string;
     name: string;
@@ -150,37 +160,69 @@ function ResultItem({boundaries, href, text, query}: {
   query: string;
 }) {
   return <>
-    <div>
-      <a href={href}>
-        <HighlightText haystack={text} needle={query} />
-      </a>
-    </div>
-    <div className="font-normal text-sm text-tc-gray-400">
-      <BoundaryCrumbs boundaries={boundaries} />
+    <div className="flex">
+      <div className="basis-3/4">
+        <div>
+          <a href={href}>
+            <HighlightText haystack={text} needle={query} />
+          </a>
+        </div>
+        <div className="font-normal text-sm text-tc-gray-400">
+          <BoundaryCrumbs boundaries={boundaries} />
+        </div>
+      </div>
+      <div className="basis-1/4 text-end">
+        {aside ?? <div></div>}
+      </div>
     </div>
   </>;
 }
 
-function SearchCategory({icon, label, results}: {
+function SearchCategory({icon, label, limit, results}: {
   icon: string,
   label: string,
+  limit?: {
+    allHref: string;
+    count: number;
+  },
   results: corgi.VElementOrPrimitive[],
 }) {
+  const slice = results.slice(0, limit?.count ?? results.length);
   return <>
-    <div className="mt-3 space-y-3">
-      <div className="flex font-bold gap-2 items-center">
+    <div className="mt-4">
+      <div className="flex font-bold gap-2 items-center leading-none px-3">
         <img
             aria-hidden="true"
             src={icon}
-            className="h-5"
+            className="h-4"
         />
         {label}
       </div>
-      {results.map(c => <>
-        <div className="border-b font-header font-medium pb-2">
-          {c}
-        </div>
-      </>)}
+      {
+          slice.length > 0
+              ? slice.map((c, i) => <>
+                  {i > 0 ? <div className="border-t"></div> : <></>}
+                  <div className="font-header font-medium px-3 my-4">
+                    {c}
+                  </div>
+                </>)
+              : <>
+                <div className="font-xs font-medium italic ml-6 mt-2 px-3 text-tc-gray-400">
+                  No search results
+                </div>
+              </>
+      }
+      {
+          limit && slice.length < results.length
+              ? <>
+                <a
+                    className="font-xs font-medium px-3 text-tc-highlight-2 underline"
+                    href={limit.allHref}
+                >
+                  {results.length - slice.length} more results</a>
+                </>
+              : <></>
+      }
     </div>
   </>;
 }
@@ -197,6 +239,17 @@ function HighlightText({needle, haystack}: {needle: string, haystack: string}) {
       <span>{haystack.substr(index + length)}</span>
     </>;
   }
+}
+
+function TrailDistance({trail}: {trail: TrailSearchResult}) {
+  const distance = formatDistance(trail.lengthMeters);
+  return <>
+    <span className="font-lg">
+      {distance.value}
+    </span>
+    {' '}
+    <span className="font-xs text-tc-gray-400">{distance.unit}</span>
+  </>;
 }
 
 function isNationalParky(type: number): boolean {

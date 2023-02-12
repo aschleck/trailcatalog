@@ -254,7 +254,7 @@ function SearchFilter({state}: {state: State}) {
       >
         <img
             aria-hidden="true"
-            className="h-[1em]"
+            className="h-4"
             src="/static/images/icons/boundary-filled.svg" />
         {boundary.name}
       </a>

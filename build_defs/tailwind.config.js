@@ -13,7 +13,7 @@ module.exports = {
         },
         'tc-highlight': {
           1: '#ffe600',
-          2: '#9fe26b',
+          2: '#4f8d1f',
         },
         'tc-gray': {
           900: '#222222',
