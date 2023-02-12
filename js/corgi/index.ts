@@ -733,7 +733,13 @@ declare global {
       section: Properties<HTMLElement>;
       span: Properties<HTMLSpanElement>;
       svg: SVGProperties;
+      table: Properties<HTMLElement>;
+      tbody: Properties<HTMLElement>;
+      td: Properties<HTMLElement>;
       text: TextProperties;
+      th: Properties<HTMLElement>;
+      thead: Properties<HTMLElement>;
+      tr: Properties<HTMLElement>;
     }
   }
 }

@@ -169,7 +169,7 @@ function Content({trailId, state, updateState}: {
           >
             <img
                 alt="OpenStreetMap logo"
-                className="h-[1em] inline-block mr-1"
+                className="h-4 inline-block mr-1"
                 src="/static/images/icons/osm-logo.svg"
             />
             Relation {trail.sourceRelation}

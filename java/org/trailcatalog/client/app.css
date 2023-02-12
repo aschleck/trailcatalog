@@ -8,3 +8,8 @@ a:not(.no-underline):hover {
   @apply underline;
 }
 
+th {
+  font-weight: initial;
+  text-align: initial;
+}
+

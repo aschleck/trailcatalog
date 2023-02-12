@@ -4,7 +4,7 @@ import { FlatButton } from 'js/dino/button';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 
-import { formatDistance, formatHeight } from './common/formatters';
+import { formatCount, formatDistance, formatHeight } from './common/formatters';
 import { SELECTION_CHANGED } from './map/events';
 import { MapElement } from './map/map_element';
 import { Boundary, Trail } from './models/types';
@@ -135,17 +135,16 @@ function Content({boundaryId, state, updateState}: {
           >
             <img
                 alt="OpenStreetMap logo"
-                className="h-[1em] inline-block mr-1"
+                className="h-4 inline-block mr-1"
                 src="/static/images/icons/osm-logo.svg"
             />
             Relation {boundary.sourceRelation}
           </a>
         </div>
       </aside>
-      <div className="relative">
+      <div className="my-8 relative">
         <MapElement
             camera={boundary.bound}
-            className="my-8"
             height="h-[32rem]"
             overlays={{polygon: boundary.polygon}}
             ref="map"
@@ -160,19 +159,32 @@ function Content({boundaryId, state, updateState}: {
         </div>
         {trailDetails ?? <></>}
       </div>
-      <div className="flex flex-wrap gap-4">
-        {
-          trailsInBoundary.map(t => <>
-            <TrailBlock containingBoundaries={containingBoundaries} trail={t} />
-          </>)
-        }
+      <div className="mb-4 mt-8">
+        <span className="font-bold text-3xl">
+          {formatCount(trailsInBoundary.length)}
+        </span>
+        {' '}
+        trails
       </div>
+      <table className="border rounded table-auto w-full">
+        <thead className="font-medium text-tc-gray-400 text-xs">
+          <tr className="border">
+            <th className="pb-2 pt-4 px-5">Name</th>
+            <th className="pb-2 pt-4 px-5">Distance</th>
+            <th className="pb-2 pt-4 px-5">Ascent</th>
+            <th className="pb-2 pt-4 px-5">Descent</th>
+            <th className="pb-2 pt-4 px-5">OpenStreetMap Relation</th>
+          </tr>
+        </thead>
+        <tbody className="text-sm">
+          {trailsInBoundary.map(t => <TrailRow trail={t} />)}
+        </tbody>
+      </table>
     </div>
   </>;
 }
 
-function TrailBlock({containingBoundaries, trail}: {
-  containingBoundaries: Boundary[];
+function TrailRow({trail}: {
   trail: Trail;
 }) {
   const distance = formatDistance(trail.lengthMeters);
@@ -180,34 +192,38 @@ function TrailBlock({containingBoundaries, trail}: {
   const elevationUp = formatHeight(trail.elevationUpMeters);
 
   return <>
-    <div
-        className={
-          'block border-2 border-tc-gray-200 flex rounded-lg w-[calc(100%_/_3_-_0.67rem)]'
-        }
-    >
-      <div className="bg-tc-gray-100 h-32 shrink-0 w-32" />
-      <div className="flex flex-col grow mx-5 my-2">
-        <a className="font-semibold" href={`/goto/trail/${trail.id}`}>
+    <tr className="border">
+      <td className="px-5 py-4">
+        <a href={`/goto/trail/${trail.id}`}>
           {trail.name}
         </a>
-        <section className="grow text-sm text-tc-gray-400">
-          <BoundaryCrumbs boundaries={containingBoundaries} />
-        </section>
-        <section className="self-end space-x-2 text-sm">
-          <TrailNumericCrumb {...distance} />
-          <TrailNumericCrumb {...elevationUp} />
-        </section>
-      </div>
-    </div>
+      </td>
+      <td className="px-5 py-4"><TrailNumericCrumb {...distance} /></td>
+      <td className="px-5 py-4"><TrailNumericCrumb {...elevationUp} /></td>
+      <td className="px-5 py-4"><TrailNumericCrumb {...elevationDown} /></td>
+      <td className="px-5 py-4">
+        <a
+            href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
+            target="_blank"
+        >
+          <img
+              alt="OpenStreetMap logo"
+              className="h-4 inline-block mr-1"
+              src="/static/images/icons/osm-logo.svg"
+          />
+          {trail.sourceRelation}
+        </a>
+      </td>
+    </tr>
   </>;
 }
 
 function TrailNumericCrumb({value, unit}: {value: string; unit: string}) {
   return <>
     <span>
-      <span className="font-bold">{value}</span>
+      <span>{value}</span>
       {' '}
-      <span className="text-tc-gray-400">{unit}</span>
+      <span className="text-tc-gray-400 text-xs">{unit}</span>
     </span>
   </>;
 }
