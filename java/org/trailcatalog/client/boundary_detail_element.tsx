@@ -129,7 +129,10 @@ function Content({boundaryId, state, updateState}: {
         <BoundaryCrumbs boundaries={containingBoundaries} />
         •
         <div>
-          <a href={`https://www.openstreetmap.org/relation/${boundary.sourceRelation}`}>
+          <a
+              href={`https://www.openstreetmap.org/relation/${boundary.sourceRelation}`}
+              target="_blank"
+          >
             <img
                 alt="OpenStreetMap logo"
                 className="h-[1em] inline-block mr-1"

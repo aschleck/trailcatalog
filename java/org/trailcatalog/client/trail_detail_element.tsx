@@ -163,7 +163,10 @@ function Content({trailId, state, updateState}: {
         <BoundaryCrumbs boundaries={containingBoundaries} />
         •
         <div>
-          <a href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}>
+          <a
+              href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
+              target="_blank"
+          >
             <img
                 alt="OpenStreetMap logo"
                 className="h-[1em] inline-block mr-1"
