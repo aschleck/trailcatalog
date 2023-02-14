@@ -379,6 +379,79 @@ for preemptible in (True, False):
         ),
     )
 
+compute.InstanceTemplate(
+    "teal",
+    name="teal",
+    machine_type="n2-highmem-2",
+    opts=ResourceOptions(delete_before_replace=True),
+    disks=[
+        compute.InstanceTemplateDiskArgs(
+            boot=True,
+            disk_size_gb=10,
+            disk_type="pd-standard",
+            source_image="cos-cloud/cos-stable",
+        ),
+        compute.InstanceTemplateDiskArgs(
+            auto_delete=False,
+            device_name="import-cache",
+            source=import_cache_disk.name,
+        ),
+    ],
+    metadata={
+        "google-logging-enabled": "true",
+        "user-data": f"""\
+#cloud-config
+
+bootcmd:
+- mkdir -p /mnt/disks/import_cache
+- mount -t ext4 /dev/disk/by-id/google-import-cache-part1 /mnt/disks/import_cache
+- chmod a+rwx /mnt/disks/import_cache
+
+write_files:
+- path: /var/lib/cloud/download_planet.sh
+  permissions: 0755
+  owner: root
+  content: |
+    #!/bin/sh
+    set -euxo pipefail
+
+    /usr/bin/docker-credential-gcr configure-docker --registries=us-west1-docker.pkg.dev
+    /usr/bin/docker \\
+        run \\
+        --name=aria2c \\
+        --rm \\
+        --mount "type=bind,source=$1,target=/tmp" \\
+        us-west1-docker.pkg.dev/trailcatalog/containers/aria2c:latest \\
+        --dir /tmp \\
+        --max-upload-limit=1K \\
+        --seed-ratio=0.001 \\
+        --seed-time=0 \\
+        https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf.torrent
+""",
+    },
+    network_interfaces=[
+        compute.InstanceTemplateNetworkInterfaceArgs(
+            network=network.name,
+            access_configs=[
+                compute.InstanceNetworkInterfaceAccessConfigArgs(network_tier="STANDARD"),
+            ],
+        ),
+    ],
+    service_account=compute.InstanceTemplateServiceAccountArgs(
+        email=importer_account.email,
+        scopes=[
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/compute",
+            "https://www.googleapis.com/auth/devstorage.read_only",
+            "https://www.googleapis.com/auth/logging.write",
+            "https://www.googleapis.com/auth/monitoring.write",
+            "https://www.googleapis.com/auth/service.management.readonly",
+            "https://www.googleapis.com/auth/servicecontrol",
+            "https://www.googleapis.com/auth/trace.append",
+        ],
+    ),
+)
+
 registry = artifactregistry.Repository(
         "containers",
         repository_id="containers",

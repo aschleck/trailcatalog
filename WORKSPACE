@@ -3,6 +3,36 @@ workspace(name = "trailcatalog")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
+    name = "rules_python",
+    sha256 = "36362b4d54fcb17342f9071e4c38d63ce83e2e57d7d5599ebdde4670b9760664",
+    strip_prefix = "rules_python-0.18.0",
+    url = "https://github.com/bazelbuild/rules_python/releases/download/0.18.0/rules_python-0.18.0.tar.gz",
+)
+
+load("@rules_python//python:repositories.bzl", "py_repositories", "python_register_toolchains")
+
+py_repositories()
+
+python_register_toolchains(
+    name = "python3_11",
+    python_version = "3.11",
+)
+
+load("@python3_11//:defs.bzl", "interpreter")
+
+load("@rules_python//python:pip.bzl", "pip_parse")
+
+pip_parse(
+    name = "pip",
+    python_interpreter_target = interpreter,
+    requirements_lock = "//:requirements_lock.txt",
+)
+
+load("@pip//:requirements.bzl", "install_deps")
+
+install_deps()
+
+http_archive(
     name = "rules_java",
     url = "https://github.com/bazelbuild/rules_java/releases/download/5.4.0/rules_java-5.4.0.tar.gz",
     sha256 = "9b87757af5c77e9db5f7c000579309afae75cf6517da745de01ba0c6e4870951",
@@ -282,6 +312,10 @@ container_repositories()
 load("@io_bazel_rules_docker//java:image.bzl", _java_image_repos = "repositories")
 
 _java_image_repos()
+
+load("@io_bazel_rules_docker//python3:image.bzl", _py3_image_repos = "repositories")
+
+_py3_image_repos()
 
 load("@io_bazel_rules_docker//container:pull.bzl", "container_pull")
 

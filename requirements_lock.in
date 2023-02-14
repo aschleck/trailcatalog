@@ -1,0 +1,3 @@
+osmium==3.6.0
+reportlab==3.6.12
+svgutils==0.3.4
