@@ -54,7 +54,7 @@ db_authorization = secretmanager.Secret(
 
 import_cache_disk = compute.Disk(
     "import-cache",
-    size=100,
+    size=50,
     type="pd-standard",
     zone="us-west1-a",
 )
@@ -281,7 +281,20 @@ for preemptible in (True, False):
             --seed-time=0 \\
             https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf.torrent
 
-        mv /mnt/disks/scratch/planet-2*.osm.pbf /mnt/disks/scratch/planet-latest.osm.pbf
+        mv /mnt/disks/scratch/planet-2*.osm.pbf /mnt/disks/scratch/planet-weekly.osm.pbf
+
+        /usr/bin/docker-credential-gcr configure-docker --registries=us-west1-docker.pkg.dev
+        /usr/bin/docker \\
+            run \\
+            --mount type=bind,source=/mnt/disks/scratch,target=/tmp \\
+            us-west1-docker.pkg.dev/trailcatalog/containers/planet_update:latest \\
+            /tmp/planet-weekly.osm.pbf \\
+            --server "https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/replication/day/" \\
+            --size 8192 \\
+            -vvv \\
+            -o /tmp/planet-latest.osm.pbf
+
+        rm /mnt/disks/scratch/planet-weekly.osm.pbf
 
         auth_token="$(toolbox gcloud secrets versions access latest --secret {args['db_auth']} --quiet | tail -n 1)"
         echo "Got auth token: ${{auth_token}}"
