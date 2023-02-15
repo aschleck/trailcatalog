@@ -2,7 +2,7 @@ import { PointCategory } from 'java/org/trailcatalog/models/categories';
 import { checkExhaustive } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 
-import { metersToMiles } from './common/math';
+import { formatDistance } from './common/formatters';
 import { Vec2 } from './common/types';
 import { Path, Point, Trail } from './models/types';
 
@@ -75,6 +75,7 @@ function Link({item}: {item: Path|Point|Trail}) {
 }
 
 function TrailLink({trail}: {trail: Trail}) {
+  const distance = formatDistance(trail.lengthMeters);
   return <>
     <a
         className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
@@ -89,7 +90,7 @@ function TrailLink({trail}: {trail: Trail}) {
         {trail.name}
       </header>
       {[
-        ['Distance:', `${metersToMiles(trail.lengthMeters).toFixed(1)} miles`],
+        ['Distance:', `${distance.value} ${distance.unit}`],
       ].map(([label, content]) =>
         <section>
           <span className="font-medium text-tc-gray-400">
