@@ -28,6 +28,7 @@ podman run \
     --seed-ratio=0.001 \
     --seed-time=0 \
     https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf.torrent
+rm -f /mnt/ssd/planet-*.torrent
 mv /mnt/ssd/planet-2*.osm.pbf /mnt/ssd/planet-weekly.osm.pbf
 
 podman run \
@@ -40,13 +41,13 @@ podman run \
     --size 8192 \
     -vvv \
     -o /tmp/planet-latest.osm.pbf
-rm /mnt/ssd/planet-weekly.osm.pbf
+rm -f /mnt/ssd/planet-weekly.osm.pbf
 
-mkdir /mnt/ssd/dems
+mkdir -p /mnt/ssd/dems
 podman run \
     --name=importer \
     --rm \
-    --env DATABASE_URL="postgresql://localhost/trailcatalog?currentSchema=migration_3_faster" \
+    --env DATABASE_URL="postgresql://localhost/trailcatalog" \
     --env DATABASE_USERNAME_PASSWORD="trailcatalog:${pg_pwd}" \
     --env JAVA_TOOL_OPTIONS="-XX:InitialHeapSize=24g -XX:MaxHeapSize=24g -XX:MaxMetaspaceSize=1g" \
     --mount type=bind,source=/mnt/ssd,target=/tmp \
@@ -55,7 +56,7 @@ podman run \
     --block_size 4194304 \
     --buffer_size 500000000 \
     --elevation_profile /tmp/elevation_profile.pb \
-    --heap_dump_threshold 12048000000 \
+    --heap_dump_threshold 4048000000 \
     --pbf_path /tmp \
     --source planet
-rm -rf /mnt/ssd/dems
+rm -rf /mnt/ssd/dems /mnt/ssd/planet-latest.osm.pbf

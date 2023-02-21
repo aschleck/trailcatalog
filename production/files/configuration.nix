@@ -100,5 +100,37 @@
     ];
   };
 
+  systemd.services."tc-frontend" = {
+    wantedBy = [ "multi-user.target" ];
+
+    path = [
+      pkgs.bash
+      pkgs.google-cloud-sdk
+      pkgs.podman
+    ];
+
+    serviceConfig = {
+      ExecStart = "/home/april/frontend.sh";
+      Restart = "on-failure";
+      User = "april";
+    };
+  };
+
+  systemd.services."tc-import" = {
+    startAt = "Mon,Thu *-*-* 02:00:00";
+
+    path = [
+      pkgs.bash
+      pkgs.google-cloud-sdk
+      pkgs.podman
+    ];
+
+    serviceConfig = {
+      ExecStart = "/home/april/import.sh";
+      Type = "oneshot";
+      User = "april";
+    };
+  };
+
   system.stateVersion = "22.11";
 }
