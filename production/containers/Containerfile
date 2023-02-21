@@ -1,0 +1,22 @@
+FROM docker.io/debian:testing-slim
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes \
+        ca-certificates \
+        curl \
+        gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_19.x | bash - \
+    && apt-get update \
+    && apt-get install --no-install-recommends --yes \
+        nginx \
+        nodejs \
+        openjdk-17-jre-headless \
+    && apt-get clean
+COPY nginx.conf /app/nginx.conf
+COPY serve.sh /app/serve.sh
+COPY frontend_pkg.tar ./
+RUN tar -xvf ./frontend_pkg.tar && rm ./frontend_pkg.tar
+RUN useradd app --create-home
+RUN chown -R app:app /var/lib/nginx
+USER app:app
+EXPOSE 7060 7070 7080
+CMD /app/serve.sh
