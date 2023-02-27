@@ -1,7 +1,6 @@
+import { LatLngRect, LatLngZoom } from 'java/org/trailcatalog/client/common/types';
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
-
-import { LatLngRect, LatLngZoom } from '../common/types';
 
 import { MapController } from './map_controller';
 

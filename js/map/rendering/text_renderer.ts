@@ -1,7 +1,6 @@
+import { HashMap, HashSet } from 'java/org/trailcatalog/client/common/collections';
+import { Vec2 } from 'java/org/trailcatalog/client/common/types';
 import { checkExists } from 'js/common/asserts';
-
-import { HashMap, HashSet } from '../../common/collections';
-import { Vec2 } from '../../common/types';
 
 import { RenderPlanner } from './render_planner';
 import { Renderer } from './renderer';

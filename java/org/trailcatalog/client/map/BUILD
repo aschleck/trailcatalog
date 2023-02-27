@@ -6,13 +6,15 @@ tc_ts_project(
     name = "map",
     deps = [
         "//java/org/trailcatalog/client/common",
-        "//java/org/trailcatalog/client/map/models",
-        "//java/org/trailcatalog/client/map/rendering",
+        "//java/org/trailcatalog/client/data",
         "//java/org/trailcatalog/client/models",
         "//java/org/trailcatalog/client/workers:ts",
-        "//java/org/trailcatalog/s2",
+        "//java/org/trailcatalog/models:models-ts",
+        "//js/common",
         "//js/corgi",
-        "//js/corgi/history",
+        "//js/map",
+        "//js/map/models",
+        "//js/map/rendering",
     ],
 )
 

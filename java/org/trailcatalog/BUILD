@@ -9,6 +9,7 @@ package_group(
     packages = [
         "//java/org/trailcatalog/...",
         "//javatests/org/trailcatalog/...",
+        "//js/map/...",
         "//production/...",
     ],
 )

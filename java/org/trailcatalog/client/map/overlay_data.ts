@@ -1,14 +1,14 @@
 import { S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { Layer } from 'js/map/layer';
+import { projectS2LatLng } from 'js/map/models/camera';
+import { Line } from 'js/map/rendering/geometry';
+import { RenderPlanner } from 'js/map/rendering/render_planner';
+import { Renderer } from 'js/map/rendering/renderer';
+import { TexturePool } from 'js/map/rendering/texture_pool';
 
-import { LatLng, Vec2 } from '../../common/types';
-import { BOUNDARY_PALETTE } from '../common/colors';
-import { Layer } from '../layer';
-import { projectS2LatLng } from '../models/camera';
-import { Line } from '../rendering/geometry';
-import { RenderPlanner } from '../rendering/render_planner';
-import { Renderer } from '../rendering/renderer';
-import { TexturePool } from '../rendering/texture_pool';
+import { LatLng, Vec2 } from '../common/types';
+import { BOUNDARY_PALETTE } from './colors';
 
 export interface Overlays {
   point?: LatLng;

@@ -1,11 +1,12 @@
-import { HashMap } from '../../common/collections';
-import { TileId, Vec2 } from '../../common/types';
-import { TileDataService } from '../../data/tile_data_service';
-import { Layer } from '../layer';
-import { Camera } from '../models/camera';
-import { RenderPlanner } from '../rendering/render_planner';
-import { Renderer } from '../rendering/renderer';
-import { TexturePool } from '../rendering/texture_pool';
+import { Layer } from 'js/map/layer';
+import { Camera } from 'js/map/models/camera';
+import { RenderPlanner } from 'js/map/rendering/render_planner';
+import { Renderer } from 'js/map/rendering/renderer';
+import { TexturePool } from 'js/map/rendering/texture_pool';
+
+import { HashMap } from '../common/collections';
+import { TileId, Vec2 } from '../common/types';
+import { TileDataService } from '../data/tile_data_service';
 
 const NO_OFFSET: Vec2 = [0, 0];
 

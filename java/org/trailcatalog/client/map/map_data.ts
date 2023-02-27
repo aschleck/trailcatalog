@@ -2,25 +2,26 @@ import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/mo
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
+import { EventSource, Layer } from 'js/map/layer';
+import { Camera, projectLatLngRect } from 'js/map/models/camera';
+import { Line } from 'js/map/rendering/geometry';
+import { RenderPlanner } from 'js/map/rendering/render_planner';
+import { Renderer } from 'js/map/rendering/renderer';
+import { RenderableDiamond, RenderableText, TextRenderer } from 'js/map/rendering/text_renderer';
+import { TexturePool } from 'js/map/rendering/texture_pool';
 
-import { BoundsQuadtree, worldBounds } from '../../common/bounds_quadtree';
-import { DPI } from '../../common/dpi';
-import { formatDistance } from '../../common/formatters';
-import { LittleEndianView } from '../../common/little_endian_view';
-import { degreesE7ToLatLng, projectLatLng, reinterpretLong } from '../../common/math';
-import { LatLng, S2CellNumber, Vec2, Vec4 } from '../../common/types';
-import { MapDataService } from '../../data/map_data_service';
-import { ACTIVE_PALETTE, ACTIVE_HEX_PALETTE, DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, HOVER_HEX_PALETTE } from '../common/colors';
-import { HOVER_CHANGED, SELECTION_CHANGED } from '../events';
-import { EventSource, Layer } from '../layer';
-import { Camera, projectLatLngRect } from '../models/camera';
-import { Path, Point, Trail } from '../../models/types';
-import { Line } from '../rendering/geometry';
-import { RenderPlanner } from '../rendering/render_planner';
-import { Renderer } from '../rendering/renderer';
-import { RenderableDiamond, RenderableText, TextRenderer } from '../rendering/text_renderer';
-import { TexturePool } from '../rendering/texture_pool';
-import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../../workers/data_constants';
+import { BoundsQuadtree, worldBounds } from '../common/bounds_quadtree';
+import { DPI } from '../common/dpi';
+import { formatDistance } from '../common/formatters';
+import { LittleEndianView } from '../common/little_endian_view';
+import { degreesE7ToLatLng, projectLatLng, reinterpretLong } from '../common/math';
+import { LatLng, S2CellNumber, Vec2, Vec4 } from '../common/types';
+import { MapDataService } from '../data/map_data_service';
+import { Path, Point, Trail } from '../models/types';
+import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../workers/data_constants';
+
+import { ACTIVE_PALETTE, ACTIVE_HEX_PALETTE, DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, HOVER_HEX_PALETTE } from './colors';
+import { HOVER_CHANGED, SELECTION_CHANGED } from './events';
 
 export interface Filters {
   trail?: (id: bigint) => boolean;

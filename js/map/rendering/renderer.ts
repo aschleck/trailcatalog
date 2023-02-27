@@ -1,6 +1,5 @@
+import { Vec2 } from 'java/org/trailcatalog/client/common/types';
 import { checkExists } from 'js/common/asserts';
-
-import { Vec2 } from '../../common/types';
 
 export class Renderer {
 

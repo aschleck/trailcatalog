@@ -1,7 +1,7 @@
 import * as corgi from 'js/corgi';
 
 import { formatCount, formatDistance, formatHeight } from './common/formatters';
-import { HOVER_HEX_PALETTE } from './map/common/colors';
+import { HOVER_HEX_PALETTE } from './map/colors';
 import { Path, Point, Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';

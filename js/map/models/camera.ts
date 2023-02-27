@@ -1,7 +1,6 @@
+import { clamp } from 'java/org/trailcatalog/client/common/math';
+import { PixelRect, Vec2 } from 'java/org/trailcatalog/client/common/types';
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-
-import { clamp } from '../../common/math';
-import { PixelRect, Vec2 } from '../../common/types';
 
 const MERCATOR_MAX_LAT_RADIANS = 85 / 90 * Math.PI / 2;
 const ZOOM_MIN = 3; // we don't have tiles below 3

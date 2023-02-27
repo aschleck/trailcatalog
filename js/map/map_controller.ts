@@ -1,3 +1,6 @@
+import { DPI } from 'java/org/trailcatalog/client/common/dpi';
+import { screenLlz } from 'java/org/trailcatalog/client/common/math';
+import { LatLng, LatLngRect, LatLngZoom, Vec2 } from 'java/org/trailcatalog/client/common/types';
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
@@ -5,15 +8,12 @@ import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { EventSpec } from 'js/corgi/events';
 
-import { DPI } from '../common/dpi';
-import { screenLlz } from '../common/math';
-import { LatLng, LatLngRect, LatLngZoom, Vec2 } from '../common/types';
 import { Camera } from './models/camera';
 import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
-import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
+import { DATA_CHANGED, MAP_MOVED, SELECTION_CLEARED } from './events';
 import { Layer } from './layer';
 import { PointerInterpreter } from './pointer_interpreter';
 
@@ -99,8 +99,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
         // is to steal focus from inputs and close any popups for panning, which is noble. So for
         // now let's fix this up in the double click handlers until it gets too annoying.
         this.canvas.focus();
-        this.trigger(SELECTION_CHANGED, {
-          selected: undefined,
+        this.trigger(SELECTION_CLEARED, {
           clickPx: [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
         });
 
@@ -195,8 +194,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
-    this.trigger(SELECTION_CHANGED, {
-      selected: undefined,
+    this.trigger(SELECTION_CLEARED, {
       clickPx: [-1, -1],
     });
   }
@@ -209,8 +207,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
-    this.trigger(SELECTION_CHANGED, {
-      selected: undefined,
+    this.trigger(SELECTION_CLEARED, {
       clickPx: [-1, -1],
     });
   }

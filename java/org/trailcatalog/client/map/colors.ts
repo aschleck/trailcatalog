@@ -1,4 +1,4 @@
-import { rgbaU32ToHex, rgbaToUint32 } from '../../common/math';
+import { rgbaU32ToHex, rgbaToUint32 } from '../common/math';
 
 export const ACTIVE_PALETTE = {
   fill: rgbaToUint32(1, 0.902, 0, 1),

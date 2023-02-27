@@ -4,11 +4,12 @@ import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
+import { DATA_CHANGED, MAP_MOVED, SELECTION_CLEARED } from 'js/map/events';
+import { MapElement } from 'js/map/map_element';
 
 import { currentUrl } from './common/ssr_aware';
 import { emptyLatLngRect } from './common/types';
-import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
-import { MapElement } from './map/map_element';
+import { HOVER_CHANGED, SELECTION_CHANGED } from './map/events';
 import { Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
@@ -194,6 +195,7 @@ function Content({boundaryId, query, state, updateState}: {
               [HOVER_CHANGED, 'onHoverChanged'],
               [MAP_MOVED, 'onMove'],
               [SELECTION_CHANGED, 'selectionChanged'],
+              [SELECTION_CLEARED, 'selectionChanged'],
             ],
             render: 'wakeup',
           },
