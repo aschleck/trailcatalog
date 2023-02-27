@@ -141,6 +141,15 @@ function Content({trailId, state, updateState}: {
         js={corgi.bind({
           controller: TrailDetailController,
           key: JSON.stringify(trailId),
+          args: {
+            active: {trails: [trail]},
+            overlays: {
+              point:
+                  !!state.elevation?.cursor
+                      ? [state.elevation.cursor.lat, state.elevation.cursor.lng] as LatLng
+                      : undefined,
+            },
+          },
           events: {
             corgi: [
               [SELECTION_CHANGED, 'selectionChanged'],
@@ -222,16 +231,9 @@ function Content({trailId, state, updateState}: {
       </aside>
       <div className="mt-8 relative">
         <MapElement
-            active={{trails: [trail]}}
             camera={trail.bound}
             height="h-[32rem]"
             ref="map"
-            overlays={{
-              point:
-                  !!state.elevation?.cursor
-                      ? [state.elevation.cursor.lat, state.elevation.cursor.lng] as LatLng
-                      : undefined,
-            }}
         />
         <div className="absolute flex flex-col gap-2 right-2 top-2">
           <div unboundEvents={{corgi: [[ACTION, 'zoomToFit']]}}>

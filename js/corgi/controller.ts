@@ -1,50 +1,48 @@
 import { Debouncer } from 'js/common/debouncer';
 import { Disposable } from 'js/common/disposable';
 
+import { SupportedElement } from './dom';
 import { EventSpec, qualifiedName } from './events';
 import { ServiceDeps } from './service';
 import { DepsConstructed, DepsConstructorsFor } from './types';
 
 export type ControllerDeps = ServiceDeps & {
   controllers: {[ref: string]: Controller<any, any, any, any>};
+  controllerss: {[ref: string]: Array<Controller<any, any, any, any>>};
 };
 
 export type ControllerDepsMethod = () => DepsConstructorsFor<ControllerDeps>;
 
-export interface ControllerCtor<
-    A extends {},
-    D extends ControllerDepsMethod,
-    E extends HTMLElement|SVGElement,
-    S,
-    R extends ControllerResponse<A, D, E, S>,
-    C extends Controller<A, D, E, S>> {
-  deps?(): ReturnType<D>;
-  new (response: R): C;
+export interface ControllerCtor<C extends Controller<any, any, any, any>> {
+  deps?(): ReturnType<C['_D']>;
+  new (response: Response<C>): C;
 }
 
-export interface ControllerResponse<A, D extends ControllerDepsMethod, E, S> {
-  root: E;
-  args: A;
-  deps: DepsConstructed<ReturnType<D>>;
-  state: [S, (newState: S) => void];
-}
-
-export type Response<C extends Controller<any, any, any, any>> = C['_RT'];
+export type Response<out C extends Controller<any, any, any, any>> = {
+  root: C['_E'];
+  args: C['_A'];
+  deps: DepsConstructed<ReturnType<C['_D']>>;
+  state: [C['_S'], (newState: any) => void];
+};
 
 export class Controller<
     A extends {},
     D extends ControllerDepsMethod,
-    E extends HTMLElement|SVGElement,
+    E extends SupportedElement,
     S,
 > extends Disposable {
 
-  readonly _RT!: ControllerResponse<A, D, E, S>;
+  readonly _A!: A;
+  readonly _D!: D;
+  readonly _E!: E;
+  readonly _S!: S;
+  readonly _R!: typeof this;
 
   protected readonly root: E;
   protected state: S;
   private readonly updateStateDebouncer: Debouncer;
 
-  constructor(response: ControllerResponse<A, D, E, S>) {
+  constructor(response: Response<Controller<A, D, E, S>>) {
     super();
     this.root = response.root;
     this.state = response.state[0];

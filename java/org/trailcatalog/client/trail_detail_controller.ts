@@ -2,19 +2,17 @@ import { S2Point } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
+import { merge } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
-import { HistoryService } from 'js/corgi/history/history_service';
 
 import { LatLng, Vec2 } from './common/types';
 import { MapDataService } from './data/map_data_service';
-import { MapController } from './map/map_controller';
 import { unprojectS2LatLng } from './map/models/camera';
 import { Boundary, ElevationProfile, Path, Trail } from './models/types';
-import { ViewsService } from './views/views_service';
 
 import { fetchData } from './data';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
-import { State as VState, ViewportController } from './viewport_controller';
+import { Args, State as VState, ViewportController } from './viewport_controller';
 
 const ELEVATION_GRAPH_RESOLUTION_WIDTH = 1200;
 
@@ -88,19 +86,14 @@ export class LoadingController extends Controller<{}, LoadingDeps, HTMLElement, 
   }
 }
 
-export class TrailDetailController extends ViewportController<{}, Deps, State> {
+export class TrailDetailController extends ViewportController<Args, Deps, State> {
 
   static deps() {
-    return {
-      controllers: {
-        map: MapController,
-      },
+    return merge(ViewportController.deps(), {
       services: {
         data: MapDataService,
-        history: HistoryService,
-        views: ViewsService,
       },
-    };
+    });
   }
 
   constructor(response: Response<TrailDetailController>) {

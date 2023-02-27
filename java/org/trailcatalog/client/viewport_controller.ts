@@ -3,10 +3,23 @@ import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
 
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from './common/types';
+import { MapDataService } from './data/map_data_service';
+import { TileDataService } from './data/tile_data_service';
 import { SELECTION_CHANGED } from './map/events';
+import { Filters, MapData } from './map/layers/map_data';
+import { OverlayData, Overlays } from './map/layers/overlay_data';
+import { TileData } from './map/layers/tile_data';
 import { MapController } from './map/map_controller';
 import { Path, Point, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
+
+export interface Args {
+  active?: {
+    trails?: Trail[];
+  };
+  filters?: Filters;
+  overlays?: Overlays;
+}
 
 export interface State {
   selected: Array<Path|Point|Trail>;
@@ -15,7 +28,7 @@ export interface State {
 
 type Deps = typeof ViewportController.deps;
 
-export class ViewportController<A extends {}, D extends Deps, S extends State>
+export class ViewportController<A extends Args, D extends Deps, S extends State>
     extends Controller<A, D, HTMLDivElement, S> {
 
   static deps() {
@@ -25,12 +38,16 @@ export class ViewportController<A extends {}, D extends Deps, S extends State>
       },
       services: {
         history: HistoryService,
+        mapData: MapDataService,
+        tileData: TileDataService,
         views: ViewsService,
       },
     };
   }
 
   private readonly history: HistoryService;
+  private readonly mapData: MapData;
+  private readonly overlayData: OverlayData;
   protected readonly mapController: MapController;
   protected readonly views: ViewsService;
 
@@ -39,6 +56,23 @@ export class ViewportController<A extends {}, D extends Deps, S extends State>
     this.history = response.deps.services.history;
     this.mapController = response.deps.controllers.map;
     this.views = response.deps.services.views;
+
+    this.mapData =
+        new MapData(
+            this.mapController.camera,
+            response.deps.services.mapData,
+            response.args.filters ?? {},
+            this.mapController.renderer,
+            this.mapController.textRenderer);
+    this.overlayData = new OverlayData(response.args.overlays ?? {}, this.mapController.renderer);
+
+    this.mapController.setLayers([
+      this.mapData,
+      new TileData(this.mapController.camera, response.deps.services.tileData, this.mapController.renderer),
+      this.overlayData,
+    ]);
+
+    (response.args.active?.trails ?? []).forEach(t => this.setActive(t, true));
   }
 
   goBack(): void {
@@ -54,7 +88,7 @@ export class ViewportController<A extends {}, D extends Deps, S extends State>
 
     let items: Array<Path|Point|Trail>;
     if (selected instanceof Path) {
-      const trails = this.mapController.listTrailsOnPath(selected);
+      const trails = this.listTrailsOnPath(selected);
       if (trails.length === 0) {
         items = [selected];
       } else {
@@ -73,7 +107,37 @@ export class ViewportController<A extends {}, D extends Deps, S extends State>
     });
   }
 
+  getTrail(id: bigint): Trail|undefined {
+    return this.mapData.getTrail(id);
+  }
+
+  listTrailsInViewport(): Trail[] {
+    return this.mapData.queryInBounds(this.mapController.viewportBounds).filter(isTrail);
+  }
+
+  listTrailsOnPath(path: Path): Trail[] {
+    return this.mapData.listTrailsOnPath(path);
+  }
+
+  setActive(trail: Trail, state: boolean): void {
+    return this.mapData.setActive(trail, state);
+  }
+
+  setHover(trail: Trail, state: boolean): void {
+    return this.mapData.setHover(trail, state);
+  }
+
+  updateArgs(newArgs: Args): void {
+    // TODO(april): theoretically we should support the following, but it causes lots of thrashing:
+    // this.setCamera(newArgs.camera);
+    this.mapData.setFilters(newArgs.filters ?? {});
+    this.overlayData.setOverlay(newArgs.overlays ?? {});
+  }
+
   highlightTrail(e: MouseEvent): void {}
   unhighlightTrail(e: MouseEvent): void {}
 }
 
+function isTrail(e: Path|Point|Trail): e is Trail {
+  return e instanceof Trail;
+}

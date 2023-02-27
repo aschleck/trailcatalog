@@ -20,8 +20,10 @@ tc_ts_project(
         "//js/dino:css",
     ],
     deps = [
+        "//java/org/trailcatalog/client/data",
         "//java/org/trailcatalog/client/map",
         "//java/org/trailcatalog/client/map/common",
+        "//java/org/trailcatalog/client/map/layers",
         "//java/org/trailcatalog/client/views",
         "//js/common",
         "//js/corgi",

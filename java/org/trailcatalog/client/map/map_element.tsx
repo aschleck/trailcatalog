@@ -2,31 +2,20 @@ import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
 
 import { LatLngRect, LatLngZoom } from '../common/types';
-import { Filters } from './layers/map_data';
-import { Overlays } from './layers/overlay_data';
-import { Trail } from '../models/types';
 
 import { MapController } from './map_controller';
 
 export function MapElement({
-  active,
   camera,
   className,
-  filters,
   height,
   interactive,
-  overlays,
   ref,
 }: {
-  active?: {
-    trails?: Trail[];
-  };
   camera: LatLngRect|LatLngZoom;
   className?: string;
-  filters?: Filters;
   height?: string;
   interactive?: boolean;
-  overlays?: Overlays;
   ref?: string,
 }) {
   return <>
@@ -35,11 +24,8 @@ export function MapElement({
           controller: MapController,
           ref,
           args: {
-            active: active ?? {},
             camera,
-            filters: filters ?? {},
             interactive: interactive ?? true,
-            overlays: overlays ?? {},
           },
           events: {
             render: 'wakeup',

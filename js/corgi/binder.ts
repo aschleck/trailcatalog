@@ -1,7 +1,7 @@
 import { checkExists } from 'js/common/asserts';
 import { deepEqual } from 'js/common/comparisons';
 
-import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, ControllerResponse } from './controller';
+import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, Response as ControllerResponse } from './controller';
 import { elementFinder, SupportedElement } from './dom';
 import { EventSpec, qualifiedName } from './events';
 import { isAnchorContextClick } from './mouse';
@@ -39,30 +39,22 @@ interface PropertyKeyToHandlerMap<C> {
 
 type StateTuple<S> = [S, (newState: S) => void];
 
-interface BoundController<
-        A extends {},
-        D extends ControllerDepsMethod,
-        E extends SupportedElement,
-        S,
-        R extends ControllerResponse<A, D, E, S>,
-        C extends Controller<A, D, E, S>
-    > {
-  args: A;
-  controller: ControllerCtor<A, D, E, S, R, C>;
+interface BoundController<C extends Controller<any, any, any, any>> {
+  args: C['_A'];
+  controller: ControllerCtor<C>;
   events: Partial<PropertyKeyToHandlerMap<C>>;
   instance?: Promise<C>;
   key?: string; // controllers will only be reused if their keys match
   ref?: string;
-  state: StateTuple<S>,
+  state: StateTuple<C['_S']>,
 }
 
-export interface AnyBoundController<E extends SupportedElement>
-    extends BoundController<any, any, E, any, any, any> {}
+export interface AnyBoundController extends BoundController<any> {}
 
 export type UnboundEvents =
     Partial<
       Omit<{
-        [k in keyof PropertyKeyToHandlerMap<AnyBoundController<SupportedElement>>]: string
+        [k in keyof PropertyKeyToHandlerMap<AnyBoundController>]: string
       }, 'corgi'> & {
         corgi: Array<[EventSpec<unknown>, string]>;
       }
@@ -75,7 +67,7 @@ export interface InstantiationResult {
   unboundEventss: Array<[SupportedElement, UnboundEvents]>;
 }
 
-const elementsToControllerSpecs = new WeakMap<SupportedElement, AnyBoundController<SupportedElement>>();
+const elementsToControllerSpecs = new WeakMap<SupportedElement, AnyBoundController>();
 
 interface AnyServiceCtor {
   deps?(): DepsConstructorsFor<ServiceDeps>;
@@ -88,8 +80,8 @@ const unboundEventListeners =
 
 export function applyUpdate(
     root: SupportedElement,
-    from: AnyBoundController<SupportedElement>|undefined,
-    to: AnyBoundController<SupportedElement>|undefined): void {
+    from: AnyBoundController|undefined,
+    to: AnyBoundController|undefined): void {
   if (from === undefined || to === undefined) {
     throw new Error("Unable to update bound element with new js or remove old js");
   }
@@ -107,22 +99,22 @@ export function applyUpdate(
   }
 }
 
-export function bind<
-    A extends {},
-    D extends ControllerDepsMethod,
-    E extends SupportedElement,
-    S,
-    R extends ControllerResponse<A, D, E, S>,
-    C extends Controller<A, D, E, S>
->({args, controller, events, key, ref, state}: {
-  controller: ControllerCtor<A, D, E, S, R, C>,
+export function bind<C extends Controller<any, any, any, any>>({
+  args,
+  controller,
+  events,
+  key,
+  ref,
+  state,
+}: {
+  controller: ControllerCtor<C>,
   events?: Partial<PropertyKeyToHandlerMap<C>>,
   key?: string,
   ref?: string,
 }
-& ({} extends A ? {args?: never} : {args: A})
-& (S extends undefined ? {state?: never} : {state: StateTuple<S>})
-): BoundController<A, D, E, S, R, C> {
+& ({} extends C['_A'] ? {args?: {}} : {args: C['_A']})
+& (undefined extends C['_S'] ? {state?: never} : {state: StateTuple<C['_S']>})
+): BoundController<C> {
   return {
     args: args ?? {} as any,
     controller,
@@ -135,7 +127,7 @@ export function bind<
 
 export function bindElementToSpec(
     root: SupportedElement,
-    spec: AnyBoundController<SupportedElement>,
+    spec: AnyBoundController,
     unboundEventss: Array<[SupportedElement, UnboundEvents]>): Array<() => void> {
   elementsToControllerSpecs.set(root, spec);
 
@@ -268,16 +260,16 @@ export function applyInstantiationResult(result: InstantiationResult): void {
   }
 }
 
-function maybeInstantiateAndCall<E extends SupportedElement>(
+function maybeInstantiateAndCall<E extends SupportedElement, R>(
     root: E,
-    spec: AnyBoundController<E>,
-    fn: (controller: AnyBoundController<E>) => void): Promise<unknown> {
+    spec: AnyBoundController,
+    fn: (controller: AnyBoundController) => R): Promise<R> {
   if (!spec.instance) {
     let deps;
     if (spec.controller.deps) {
       deps = fetchControllerDeps(spec.controller.deps(), root);
     } else {
-      deps = Promise.resolve(() => ({}));
+      deps = Promise.resolve({});
     }
 
     spec.instance = deps.then(d => {
@@ -291,17 +283,16 @@ function maybeInstantiateAndCall<E extends SupportedElement>(
     });
   }
 
-  return spec.instance.then(instance => {
-    fn(instance);
-  });
+  return spec.instance.then(instance => fn(instance));
 }
 
 function fetchControllerDeps<D extends ControllerDeps>(
     deps: DepsConstructorsFor<D>, root: SupportedElement): Promise<D> {
-  const response: D = {controllers: {}, services: {}} as D;
+  const response: D = {controllers: {}, controllerss: {}, services: {}} as D;
   const promises: Array<Promise<unknown>> = [];
+
   for (const [key, untypedCtor] of Object.entries(deps.controllers ?? {})) {
-    const ctor = untypedCtor as ControllerCtor<any, any, any, any, any, any>;
+    const ctor = untypedCtor as ControllerCtor<any>;
 
     const elements =
         elementFinder(
@@ -324,6 +315,34 @@ function fetchControllerDeps<D extends ControllerDeps>(
           response.controllers[key] = controller;
         }));
   }
+
+  for (const [key, untypedCtor] of Object.entries(deps.controllerss ?? {})) {
+    const ctor = untypedCtor as ControllerCtor<any>;
+
+    const elements =
+        elementFinder(
+            root,
+            candidate => candidate.getAttribute('data-js-ref') === key,
+            parent => !parent.hasAttribute('data-js'));
+
+    const instances = [];
+    for (const element of elements) {
+      const spec = checkExists(elementsToControllerSpecs.get(element));
+      instances.push(
+          maybeInstantiateAndCall(element, spec, (controller: any) => {
+            if (ctor !== controller.constructor) {
+              throw new Error(`Key ${key} matched a non-${ctor.name} controller`);
+            }
+            return controller;
+          }));
+    }
+
+    promises.push(
+        Promise.all(instances).then(is => {
+          response.controllerss[key] = is;
+        }));
+  }
+
   return Promise.all(promises)
       .then(() => fetchServiceDeps(deps))
       .then(sr => Object.assign(response, sr));
@@ -378,7 +397,7 @@ function bindEventListener(
     event: string,
     handler: string,
     root: SupportedElement,
-    spec: AnyBoundController<SupportedElement>): (e: Event) => void {
+    spec: AnyBoundController): (e: Event) => void {
   const invoker = (e: Event) => {
     if (isAnchorContextClick(e)) {
       return;

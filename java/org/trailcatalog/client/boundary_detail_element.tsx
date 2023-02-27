@@ -106,13 +106,16 @@ function Content({boundaryId, state, updateState}: {
     <div
         js={corgi.bind({
           controller: BoundaryDetailController,
+          key: JSON.stringify(boundaryId),
+          args: {
+            overlays: {polygon: boundary.polygon},
+          },
           events: {
             corgi: [
               [SELECTION_CHANGED, 'selectionChanged'],
             ],
             render: 'wakeup',
           },
-          key: JSON.stringify(boundaryId),
           state: [state, updateState],
         })}
         className="h-full max-w-6xl px-4 my-8 w-full"
@@ -146,7 +149,6 @@ function Content({boundaryId, state, updateState}: {
         <MapElement
             camera={boundary.bound}
             height="h-[32rem]"
-            overlays={{polygon: boundary.polygon}}
             ref="map"
         />
         <div className="absolute flex flex-col gap-2 right-2 top-2">

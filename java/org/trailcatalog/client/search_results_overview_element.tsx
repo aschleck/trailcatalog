@@ -180,6 +180,12 @@ function Content({boundaryId, query, state, updateState}: {
           controller: SearchResultsOverviewController,
           args: {
             boundaryId,
+            filters: {
+              trail: filter,
+            },
+            overlays: {
+              polygon: state.boundary?.polygon,
+            },
             query,
           },
           events: {
@@ -224,12 +230,6 @@ function Content({boundaryId, query, state, updateState}: {
           <MapElement
               camera={llz ?? bound ?? {lat: 46.859369, lng: -121.747888, zoom: 12}}
               ref="map"
-              filters={{
-                trail: filter,
-              }}
-              overlays={{
-                polygon: state.boundary?.polygon,
-              }}
           />
           {trailDetails}
         </div>

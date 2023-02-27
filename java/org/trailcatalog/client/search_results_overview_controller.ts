@@ -3,21 +3,18 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
-import { HistoryService } from 'js/corgi/history/history_service';
 
 import { decodeBase64 } from './common/base64';
 import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng, s2LatLngRectToTc } from './common/types';
 import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './map/events';
-import { MapController } from './map/map_controller';
 import { Boundary, Path, Point, Trail, TrailSearchResult } from './models/types';
-import { ViewsService } from './views/views_service';
 
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
 import { DataResponses, fetchData } from './data';
 import { searchTrailsFromRaw } from './search_controller';
-import { State as VState, ViewportController } from './viewport_controller';
+import { Args as VArgs, State as VState, ViewportController } from './viewport_controller';
 
-interface Args {
+interface Args extends VArgs {
   boundaryId: string|undefined;
   query: string|undefined;
 }
@@ -93,15 +90,7 @@ export class LoadingController extends Controller<Args, EmptyDeps, HTMLElement, 
 export class SearchResultsOverviewController extends ViewportController<Args, Deps, State> {
 
   static deps() {
-    return {
-      controllers: {
-        map: MapController,
-      },
-      services: {
-        history: HistoryService,
-        views: ViewsService,
-      },
-    };
+    return ViewportController.deps();
   }
 
   private query: string|undefined;
@@ -180,7 +169,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     this.updateState({
       ...this.state,
       nearbyTrails:
-          this.mapController.listTrailsInViewport()
+          this.listTrailsInViewport()
               .sort((a, b) => b.lengthMeters - a.lengthMeters),
     });
   }
@@ -202,7 +191,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
 
     this.updateState({
       ...this.state,
-      nearbyTrails: this.mapController.listTrailsInViewport()
+      nearbyTrails: this.listTrailsInViewport()
           .sort((a, b) => b.lengthMeters - a.lengthMeters),
     });
   }
@@ -268,11 +257,11 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     if (!id) {
       return;
     }
-    const trail = this.mapController.getTrail(BigInt(id));
+    const trail = this.getTrail(BigInt(id));
     if (!trail) {
       return;
     }
-    this.mapController.setHover(trail, selected);
+    this.setHover(trail, selected);
     this.updateState({
       ...this.state,
       hovering: selected ? trail : undefined,

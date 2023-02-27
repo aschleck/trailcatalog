@@ -7,31 +7,31 @@ import { SupportedElement } from './dom';
 export const Fragment = Symbol();
 export { bind } from './binder';
 
-export interface Properties<E extends HTMLElement|SVGElement> {
+export interface Properties {
   children?: VElementOrPrimitive|VElementOrPrimitive[],
   className?: string;
-  js?: AnyBoundController<E|HTMLElement|SVGElement>;
+  js?: AnyBoundController;
   style?: string; // TODO(april): this is sad
   tabIndex?: string;
   title?: string;
   unboundEvents?: UnboundEvents;
 }
 
-export interface AnchorProperties extends Properties<HTMLAnchorElement> {
+export interface AnchorProperties extends Properties {
   href?: string;
   target?: '_self'|'_blank'|'_parent'|'_top';
 }
 
-export interface GroupProperties extends Properties<SVGGElement> {}
+export interface GroupProperties extends Properties {}
 
-export interface ImageProperties extends Properties<HTMLImageElement> {
+export interface ImageProperties extends Properties {
   alt?: string;
   height?: string;
   src?: string;
   width?: string;
 }
 
-export interface InputProperties extends Properties<HTMLInputElement> {
+export interface InputProperties extends Properties {
   checked?: boolean;
   name?: string;
   placeholder?: string;
@@ -39,11 +39,11 @@ export interface InputProperties extends Properties<HTMLInputElement> {
   value?: string;
 }
 
-export interface SVGGraphicsProperties extends Properties<SVGGraphicsElement> {
+export interface SVGGraphicsProperties extends Properties {
   vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
 }
 
-export interface CircleProperties extends SVGGraphicsProperties, Properties<SVGCircleElement> {
+export interface CircleProperties extends SVGGraphicsProperties, Properties {
   fill?: string;
   stroke?: string;
   stroke_width?: number|string;
@@ -52,7 +52,7 @@ export interface CircleProperties extends SVGGraphicsProperties, Properties<SVGC
   r: number|string;
 }
 
-export interface LineProperties extends SVGGraphicsProperties, Properties<SVGLineElement> {
+export interface LineProperties extends SVGGraphicsProperties, Properties {
   stroke?: string;
   stroke_linejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
   stroke_width?: number|string;
@@ -62,7 +62,7 @@ export interface LineProperties extends SVGGraphicsProperties, Properties<SVGLin
   y2: number|string;
 }
 
-export interface PolylineProperties extends SVGGraphicsProperties, Properties<SVGPolylineElement> {
+export interface PolylineProperties extends SVGGraphicsProperties, Properties {
   fill?: string;
   stroke?: string;
   stroke_linejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
@@ -70,13 +70,13 @@ export interface PolylineProperties extends SVGGraphicsProperties, Properties<SV
   points: string;
 }
 
-export interface SVGProperties extends Properties<SVGElement> {
+export interface SVGProperties extends Properties {
   height?: number|string;
   viewBox?: string;
   width?: number|string;
 }
 
-export interface TextProperties extends SVGGraphicsProperties, Properties<SVGTextElement> {
+export interface TextProperties extends SVGGraphicsProperties, Properties {
   dominant_baseline?:
       'auto'|'text-bottom'|'alphabetic'|'ideographic'|'middle'|'central'|'mathematical'|'hanging'
             |'text-top';
@@ -100,10 +100,10 @@ export const FRAGMENT_TAG = 'fragment';
 
 interface VElement {
   element: keyof HTMLElementTagNameMap|typeof FRAGMENT_TAG;
-  props: Properties<HTMLElement>;
+  props: Properties;
 
   factory?: ElementFactory;
-  factoryProps?: Properties<HTMLElement>;
+  factoryProps?: Properties;
   handle?: VHandle,
   state?: [object|undefined, (newState: object) => void];
   trace?: VElementOrPrimitive[];
@@ -114,7 +114,7 @@ interface VElement {
 export type VElementOrPrimitive = VElement|number|string;
 
 type ElementFactory = (
-    props: Properties<HTMLElement>|null,
+    props: Properties|null,
     state: unknown,
     updateState: (newState: object) => void,
 ) => VElement;
@@ -131,7 +131,7 @@ const vHandlesToElements = new WeakMap<VHandle, VElement>();
 
 export function createVirtualElement(
     element: keyof HTMLElementTagNameMap|ElementFactory|(typeof Fragment),
-    props: Properties<HTMLElement>|null,
+    props: Properties|null,
     ...children: Array<VElementOrPrimitive|VElementOrPrimitive[]>): VElementOrPrimitive {
   const allChildren = [];
   for (const c of children) {
@@ -365,8 +365,8 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
     unboundEventss: [],
   };
 
-  const oldPropKeys = Object.keys(from.props) as Array<keyof Properties<HTMLElement>>;
-  const newPropKeys = Object.keys(to.props) as Array<keyof Properties<HTMLElement>>;
+  const oldPropKeys = Object.keys(from.props) as Array<keyof Properties>;
+  const newPropKeys = Object.keys(to.props) as Array<keyof Properties>;
   for (const key of newPropKeys) {
     if (key === 'children') {
       continue;
@@ -566,7 +566,7 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
   const ns = TAG_TO_NAMESPACE.get(element.element) ?? 'http://www.w3.org/1999/xhtml';
   const root = document.createElementNS(ns, element.element) as HTMLElement|SVGElement;
   vElementsToNodes.set(element, root);
-  let maybeSpec: AnyBoundController<HTMLElement|SVGElement>|undefined;
+  let maybeSpec: AnyBoundController|undefined;
   let unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]> = [];
 
   const props = element.props;
@@ -675,7 +675,7 @@ function hydrateElement(root: ChildNode, element: VElementOrPrimitive): Instanti
   }
 
   vElementsToNodes.set(element, root);
-  let maybeSpec: AnyBoundController<HTMLElement|SVGElement>|undefined;
+  let maybeSpec: AnyBoundController|undefined;
   let unboundEventss: Array<[HTMLElement|SVGElement, UnboundEvents]> = [];
 
   const props = element.props;
@@ -715,31 +715,31 @@ declare global {
   namespace JSX {
     interface IntrinsicElements {
       a: AnchorProperties;
-      aside: Properties<HTMLElement>;
-      button: Properties<HTMLButtonElement>;
-      canvas: Properties<HTMLCanvasElement>;
+      aside: Properties;
+      button: Properties;
+      canvas: Properties;
       circle: CircleProperties;
-      div: Properties<HTMLDivElement>;
-      footer: Properties<HTMLElement>;
+      div: Properties;
+      footer: Properties;
       g: GroupProperties;
-      header: Properties<HTMLElement>;
-      i: Properties<HTMLElement>;
+      header: Properties;
+      i: Properties;
       img: ImageProperties;
       input: InputProperties;
-      label: Properties<HTMLElement>;
+      label: Properties;
       line: LineProperties;
-      main: Properties<HTMLElement>;
+      main: Properties;
       polyline: PolylineProperties;
-      section: Properties<HTMLElement>;
-      span: Properties<HTMLSpanElement>;
+      section: Properties;
+      span: Properties;
       svg: SVGProperties;
-      table: Properties<HTMLElement>;
-      tbody: Properties<HTMLElement>;
-      td: Properties<HTMLElement>;
+      table: Properties;
+      tbody: Properties;
+      td: Properties;
       text: TextProperties;
-      th: Properties<HTMLElement>;
-      thead: Properties<HTMLElement>;
-      tr: Properties<HTMLElement>;
+      th: Properties;
+      thead: Properties;
+      tr: Properties;
     }
   }
 }

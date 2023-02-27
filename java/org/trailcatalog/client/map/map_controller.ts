@@ -1,62 +1,40 @@
-import { S2Polygon } from 'java/org/trailcatalog/s2';
+import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
+import { EmptyDeps } from 'js/corgi/deps';
+import { EventSpec } from 'js/corgi/events';
 
 import { DPI } from '../common/dpi';
 import { screenLlz } from '../common/math';
 import { LatLng, LatLngRect, LatLngZoom, Vec2 } from '../common/types';
-import { MapDataService } from '../data/map_data_service';
-import { TileDataService } from '../data/tile_data_service';
-import { Path, Point, Trail } from '../models/types';
-import { Layer } from './layers/layer';
-import { Filters, MapData } from './layers/map_data';
-import { OverlayData, Overlays } from './layers/overlay_data';
-import { TileData } from './layers/tile_data';
 import { Camera } from './models/camera';
 import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
-import { DATA_CHANGED, HOVER_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
+import { DATA_CHANGED, MAP_MOVED, SELECTION_CHANGED } from './events';
+import { Layer } from './layer';
+import { PointerInterpreter } from './pointer_interpreter';
 
 interface Args {
-  active: {
-    trails?: Trail[];
-  };
   camera: LatLngRect|LatLngZoom;
-  filters: Filters;
   interactive: boolean;
-  overlays: Overlays;
 }
 
-type Deps = typeof MapController.deps;
+export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, undefined> {
 
-export class MapController extends Controller<Args, Deps, HTMLDivElement, undefined> {
-
-  static deps() {
-    return {
-      services: {
-        mapData: MapDataService,
-        tileData: TileDataService,
-      },
-    };
-  }
-
-  private readonly camera: Camera;
+  readonly camera: Camera;
   private readonly canvas: HTMLCanvasElement;
   private readonly dataChangedDebouncer: Debouncer;
   private readonly idleDebouncer: Debouncer;
-  private readonly renderer: Renderer;
+  readonly renderer: Renderer;
   private readonly renderPlanner: RenderPlanner;
 
-  private readonly layers: Layer[];
-  private readonly mapData: MapData;
-  private readonly overlayData: OverlayData;
-  private readonly textRenderer: TextRenderer;
+  private layers: Layer[];
+  readonly textRenderer: TextRenderer;
 
   private screenArea: DOMRect;
-  private lastHoverTarget: Path|Point|Trail|undefined;
   private lastMousePosition: Vec2|undefined;
   private lastRenderPlan: number;
   private nextRender: RenderType;
@@ -81,22 +59,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
-    this.mapData =
-        new MapData(
-            this.camera,
-            response.deps.services.mapData,
-            response.args.filters,
-            this.renderer,
-            this.textRenderer);
-    this.overlayData = new OverlayData(response.args.overlays, this.renderer);
-    this.layers = [
-      this.mapData,
-      new TileData(this.camera, response.deps.services.tileData, this.renderer),
-      this.overlayData,
-    ];
-    this.layers.forEach(layer => {
-      this.registerDisposable(layer);
-    });
+    this.layers = [];
 
     this.screenArea = new DOMRect();
     this.lastRenderPlan = 0;
@@ -119,8 +82,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
       this.render();
     };
     requestAnimationFrame(raf);
+  }
 
-    (response.args.active.trails ?? []).forEach(t => this.setActive(t, true));
+  // Re-export this so layers can call it
+  trigger<D>(spec: EventSpec<D>, detail: D): void {
+    super.trigger(spec, detail);
   }
 
   private registerInteractiveListeners() {
@@ -150,12 +116,13 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
   }
 
-  updateArgs(newArgs: Args): void {
-    // TODO(april): theoretically we should support the following, but it causes lots of thrashing:
-    // this.setCamera(newArgs.camera);
-    this.mapData.setFilters(newArgs.filters);
-    this.overlayData.setOverlay(newArgs.overlays);
-    this.nextRender = RenderType.DataChange;
+  setLayers(layers: Layer[]): void {
+    this.layers.forEach(layer => { layer.dispose(); });
+    this.layers = layers;
+    this.layers.forEach(layer => {
+      this.registerDisposable(layer);
+    });
+    this.enterIdle();
   }
 
   get cameraLlz(): LatLngZoom {
@@ -167,23 +134,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     };
   }
 
-  getTrail(id: bigint): Trail|undefined {
-    return this.mapData.getTrail(id);
-  }
-
-  listTrailsInViewport(): Trail[] {
-    return this.mapData
-        .queryInBounds(
-            this.camera.viewportBounds(this.screenArea.width, this.screenArea.height))
-        .filter(isTrail);
-  }
-
-  listTrailsOnPath(path: Path): Trail[] {
-    return this.mapData.listTrailsOnPath(path);
-  }
-
-  setActive(trail: Trail, state: boolean): void {
-    return this.mapData.setActive(trail, state);
+  get viewportBounds(): S2LatLngRect {
+    return this.camera.viewportBounds(this.screenArea.width, this.screenArea.height);
   }
 
   setCamera(camera: LatLngRect|LatLngZoom): void {
@@ -199,40 +151,32 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, undefi
     this.idle();
   }
 
-  setHover(trail: Trail, state: boolean): void {
-    return this.mapData.setHover(trail, state);
-  }
-
   click(pageX: number, pageY: number): void {
     const offsetX = pageX - this.screenArea.left;
     const offsetY = pageY - this.screenArea.top;
     const point = this.clientToWorld(offsetX, offsetY)
-    const entity = this.mapData.queryClosest(point);
     // On mobile we don't get hover events, so we won't have previously hovered.
-    this.actOnHover(entity);
-    this.trigger(SELECTION_CHANGED, {
-      selected: entity,
-      clickPx: [offsetX, offsetY],
-    });
+    for (const layer of this.layers) {
+      if (layer.hover(point, this)) {
+        break;
+      }
+    }
+
+    for (const layer of this.layers) {
+      if (layer.click(point, [offsetX, offsetY], this)) {
+        break;
+      }
+    }
   }
 
   hover(pageX: number, pageY: number): void {
     const offsetX = pageX - this.screenArea.left;
     const offsetY = pageY - this.screenArea.top;
-    const best = this.mapData.queryClosest(this.clientToWorld(offsetX, offsetY));
-    this.actOnHover(best);
-  }
-
-  private actOnHover(best: Path|Point|Trail|undefined): void {
-    if (this.lastHoverTarget !== best) {
-      if (this.lastHoverTarget) {
-        this.mapData.setHover(this.lastHoverTarget, false);
+    const point = this.clientToWorld(offsetX, offsetY);
+    for (const layer of this.layers) {
+      if (layer.hover(point, this)) {
+        break;
       }
-      this.trigger(HOVER_CHANGED, {target: best});
-    }
-    this.lastHoverTarget = best;
-    if (best) {
-      this.mapData.setHover(best, true);
     }
   }
 
@@ -357,134 +301,6 @@ enum RenderType {
   NoChange = 1,
   CameraChange = 2,
   DataChange = 3,
-}
-
-function isTrail(e: Path|Point|Trail): e is Trail {
-  return e instanceof Trail;
-}
-
-interface PointerListener {
-  click(pageX: number, pageY: number): void;
-  hover(pageX: number, pageY: number): void;
-  idle(): void;
-  pan(dx: number, dy: number): void;
-  zoom(amount: number, pageX: number, pageY: number): void;
-}
-
-// Firefox has a bug where after the event handler runs offsetX/offsetY are cleared, so we clone
-// events. What a mess.
-interface SimplePointerEvent {
-  pageX: number;
-  pageY: number;
-  pointerId: number;
-}
-
-class PointerInterpreter {
-
-  private readonly pointers: Map<number, SimplePointerEvent>;
-  private maybeClickStart: SimplePointerEvent|undefined;
-
-  // If the user is panning or zooming, we want to trigger an idle call when they stop.
-  private needIdle: boolean;
-
-  constructor(private readonly listener: PointerListener) {
-    this.pointers = new Map();
-    this.maybeClickStart = undefined;
-    this.needIdle = false;
-  }
-
-  pointerDown(e: PointerEvent): void {
-    e.preventDefault();
-    this.pointers.set(e.pointerId, {
-      pageX: e.pageX,
-      pageY: e.pageY,
-      pointerId: e.pointerId,
-    });
-
-    if (this.pointers.size === 1) {
-      this.maybeClickStart = {
-        pageX: e.pageX,
-        pageY: e.pageY,
-        pointerId: e.pointerId,
-      };
-    } else {
-      this.maybeClickStart = undefined;
-    }
-  }
-
-  pointerMove(e: PointerEvent, inCanvas: boolean): void {
-    if (!this.pointers.has(e.pointerId)) {
-      if (inCanvas) {
-        this.listener.hover(e.pageX, e.pageY);
-      }
-      return;
-    }
-
-    e.preventDefault();
-    this.needIdle = true;
-
-    if (this.pointers.size === 1) {
-      const [last] = this.pointers.values();
-      this.listener.pan(last.pageX - e.pageX, -(last.pageY - e.pageY));
-
-      if (this.maybeClickStart) {
-        const d2 = distance2(this.maybeClickStart, e);
-        if (d2 > 3 * 3) {
-          this.maybeClickStart = undefined;
-        }
-      }
-    } else if (this.pointers.size === 2) {
-      const [a, b] = this.pointers.values();
-      let pivot, handle;
-      if (a.pointerId === e.pointerId) {
-        pivot = b;
-        handle = a;
-      } else {
-        pivot = a;
-        handle = b;
-      }
-
-      const was = distance2(pivot, handle);
-      const is = distance2(pivot, e);
-      this.listener.zoom(
-          Math.sqrt(is / was),
-          (pivot.pageX + e.pageX) / 2,
-          (pivot.pageY + e.pageY) / 2);
-    }
-
-    this.pointers.set(e.pointerId, {
-      pageX: e.pageX,
-      pageY: e.pageY,
-      pointerId: e.pointerId,
-    });
-  }
-
-  pointerUp(e: PointerEvent): void {
-    if (!this.pointers.has(e.pointerId)) {
-      return;
-    }
-
-    e.preventDefault();
-    this.pointers.delete(e.pointerId);
-
-    if (this.pointers.size === 0) {
-      if (this.needIdle) {
-        this.listener.idle();
-        this.needIdle = false;
-      }
-
-      if (this.maybeClickStart) {
-        this.listener.click(this.maybeClickStart.pageX, this.maybeClickStart.pageY);
-        this.maybeClickStart = undefined;
-      }
-    }
-  }
-}
-
-function distance2(a: SimplePointerEvent, b: SimplePointerEvent): number {
-  const x = a.pageX - b.pageX;
-  const y = a.pageY - b.pageY;
-  return x * x + y * y;
 }
 
 function isLatLngRect(v: LatLngRect|LatLngZoom): v is LatLngRect {

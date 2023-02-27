@@ -11,6 +11,8 @@ import { degreesE7ToLatLng, projectLatLng, reinterpretLong } from '../../common/
 import { LatLng, S2CellNumber, Vec2, Vec4 } from '../../common/types';
 import { MapDataService } from '../../data/map_data_service';
 import { ACTIVE_PALETTE, ACTIVE_HEX_PALETTE, DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, HOVER_HEX_PALETTE } from '../common/colors';
+import { HOVER_CHANGED, SELECTION_CHANGED } from '../events';
+import { EventSource, Layer } from '../layer';
 import { Camera, projectLatLngRect } from '../models/camera';
 import { Path, Point, Trail } from '../../models/types';
 import { Line } from '../rendering/geometry';
@@ -19,8 +21,6 @@ import { Renderer } from '../rendering/renderer';
 import { RenderableDiamond, RenderableText, TextRenderer } from '../rendering/text_renderer';
 import { TexturePool } from '../rendering/texture_pool';
 import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../../workers/data_constants';
-
-import { Layer } from './layer';
 
 export interface Filters {
   trail?: (id: bigint) => boolean;
@@ -105,9 +105,10 @@ export class MapData extends Layer {
   private readonly fineBounds: BoundsQuadtree<Handle>;
   private readonly diamondPixelBounds: Vec4;
   private readonly active: Set<bigint>;
-  private readonly hover: Set<bigint>;
+  private readonly hovering: Set<bigint>;
   private readonly pointsAtlas: WebGLTexture;
   private lastChange: number;
+  private lastHoverTarget: Path|Point|Trail|undefined;
 
   constructor(
       private readonly camera: Camera,
@@ -121,7 +122,7 @@ export class MapData extends Layer {
     this.coarseBounds = worldBounds();
     this.fineBounds = worldBounds();
     this.active = new Set();
-    this.hover = new Set();
+    this.hovering = new Set();
     // Why don't we need to dispose?
     this.pointsAtlas = new TexturePool(renderer).acquire();
 
@@ -155,6 +156,29 @@ export class MapData extends Layer {
           renderer.uploadTexture(bitmap, this.pointsAtlas);
           this.lastChange = Date.now();
         });
+  }
+
+  click(point: Vec2, px: [number, number], source: EventSource): boolean {
+    source.trigger(SELECTION_CHANGED, {
+      selected: this.lastHoverTarget,
+      clickPx: px,
+    });
+    return true;
+  }
+
+  hover(point: Vec2, source: EventSource): boolean {
+    const best = this.queryClosest(point);
+    if (this.lastHoverTarget !== best) {
+      if (this.lastHoverTarget) {
+        this.setHover(this.lastHoverTarget, false);
+      }
+      source.trigger(HOVER_CHANGED, {target: best});
+    }
+    this.lastHoverTarget = best;
+    if (best) {
+      this.setHover(best, true);
+    }
+    return true;
   }
 
   getTrail(id: bigint): Trail|undefined {
@@ -269,10 +293,11 @@ export class MapData extends Layer {
 
   setFilters(filters: Filters): void {
     this.filters = filters;
+    this.lastChange = Date.now();
   }
 
   setHover(entity: Path|Point|Trail, state: boolean): void {
-    this.setColor(entity, this.hover, state);
+    this.setColor(entity, this.hovering, state);
   }
 
   private setColor(entity: Path|Point|Trail, set: Set<bigint>, state: boolean): void {
@@ -411,7 +436,7 @@ export class MapData extends Layer {
       data.skip(nameLength);
       const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
       const markerPx = projectLatLng(marker);
-      const hover = this.hover.has(id);
+      const hover = this.hovering.has(id);
       const icon = POINTS_ATLAS.get(type) ?? 0;
       planner.addAtlasedBillboard(
           markerPx,
@@ -460,7 +485,7 @@ export class MapData extends Layer {
       }
 
       const active = this.active.has(id);
-      const hover = this.hover.has(id);
+      const hover = this.hovering.has(id);
       const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
       const fill =
           hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
@@ -517,7 +542,7 @@ export class MapData extends Layer {
       lines: Line[],
       raised: Line[]): void {
     const active = this.active.has(id);
-    const hover = this.hover.has(id);
+    const hover = this.hovering.has(id);
     const onTrail = this.dataService.pathsToTrails.has(id);
     if (!onTrail && !isPath(type)) {
       return;

@@ -9,7 +9,7 @@ type ButtonProps = {
   dense?: boolean,
   icon?: FabricIconName,
   label?: string,
-} & corgi.Properties<HTMLButtonElement>;
+} & corgi.Properties;
 
 export function FlatButton({className, ...props}: ButtonProps) {
   return <>

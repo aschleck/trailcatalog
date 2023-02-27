@@ -85,7 +85,7 @@ export function FabricIcon({
 }: {
   name: FabricIconName,
   className?: string,
-} & corgi.Properties<HTMLElement>) {
+} & corgi.Properties) {
   return <>
     <i
         className={`ms-Icon ms-Icon--${String(name)} ${className ? className : ''}`}

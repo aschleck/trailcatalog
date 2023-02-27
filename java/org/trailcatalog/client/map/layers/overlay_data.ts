@@ -3,13 +3,12 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 
 import { LatLng, Vec2 } from '../../common/types';
 import { BOUNDARY_PALETTE } from '../common/colors';
+import { Layer } from '../layer';
 import { projectS2LatLng } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-
-import { Layer } from './layer';
 
 export interface Overlays {
   point?: LatLng;
@@ -28,10 +27,12 @@ export class OverlayData extends Layer {
   }>;
   private readonly lines: Line[];
   private bearIcon: WebGLTexture|undefined;
+  private lastChange: number;
 
   constructor(overlays: Overlays, renderer: Renderer) {
     super();
     this.billboards = [];
+    this.lastChange = Date.now();
     this.lines = [];
 
     fetch("/static/images/icons/bear-face.png")
@@ -85,10 +86,12 @@ export class OverlayData extends Layer {
         });
       }
     }
+
+    this.lastChange = Date.now();
   }
 
   hasDataNewerThan(time: number): boolean {
-    return false;
+    return this.lastChange > time;
   }
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {

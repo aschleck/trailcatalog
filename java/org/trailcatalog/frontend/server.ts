@@ -176,7 +176,7 @@ const ESCAPES = {
   '`': '&#96;',
 } as const;
 
-function renderProperties(props: Properties<HTMLElement>): string {
+function renderProperties(props: Properties): string {
   const attributes = [];
   for (const [key, value] of Object.entries(props)) {
     let actualKey;

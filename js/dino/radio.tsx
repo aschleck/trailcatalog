@@ -8,7 +8,7 @@ export function Radio({className, name, options, value, ...props}: {
     value: string;
   }>,
   value: string,
-} & corgi.Properties<HTMLElement>) {
+} & corgi.Properties) {
   return <>
     <div
         className={'border border-tc-gray-400 flex h-full rounded' + (className ? ` ${className}` : '')}

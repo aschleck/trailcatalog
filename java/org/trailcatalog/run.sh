@@ -2,7 +2,10 @@ set -e
 cd $(dirname "$0")
 cd ../../../
 bazel build java/org/trailcatalog:api_server java/org/trailcatalog/frontend:runner
-/usr/sbin/nginx -p "$(pwd)" -c "java/org/trailcatalog/nginx.conf" &
+/usr/sbin/nginx \
+    -c "$(pwd)/java/org/trailcatalog/nginx.conf" \
+    -e /dev/stderr \
+    -p "$(pwd)" &
 trap 'kill $(jobs -p)' EXIT
 BAZEL_BINDIR="." ./bazel-bin/java/org/trailcatalog/frontend/runner.sh &
 DATABASE_URL="postgresql://127.0.0.1:5432/trailcatalog?currentSchema=migration_3_faster" \
