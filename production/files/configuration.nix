@@ -28,6 +28,7 @@
 
   environment.systemPackages = with pkgs; [
     google-cloud-sdk
+    iotop
     tmux
     vim
     wget
@@ -68,6 +69,7 @@
     enable = true;
     enableTCPIP = true;
     package = pkgs.postgresql_15;
+    settings.shared_buffers = "16GB";
 
     authentication = pkgs.lib.mkForce ''
       # Generated file; do not edit!
