@@ -1,25 +1,26 @@
+import { rgbaToUint32 } from 'java/org/trailcatalog/client/common/math';
+import { Vec2 } from 'java/org/trailcatalog/client/common/types';
+import { TileData } from 'java/org/trailcatalog/client/map/tile_data';
+import { TileDataService } from 'java/org/trailcatalog/client/map/tile_data_service';
+import { S2CellId, S2Loop } from 'java/org/trailcatalog/s2';
+import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
+import { Layer } from 'js/map/layer';
+import { MapController } from 'js/map/map_controller';
+import { projectS2LatLng, unprojectS2LatLng } from 'js/map/models/camera';
+import { RenderPlanner } from 'js/map/rendering/render_planner';
 
-import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from './common/types';
-import { MapDataService } from './data/map_data_service';
-import { TileDataService } from './data/tile_data_service';
-import { SELECTION_CHANGED } from './map/events';
-import { Filters, MapData } from './map/layers/map_data';
-import { OverlayData, Overlays } from './map/layers/overlay_data';
-import { TileData } from './map/layers/tile_data';
-import { MapController } from './map/map_controller';
-import { Path, Point, Trail } from './models/types';
-import { ViewsService } from './views/views_service';
+const CELL_BORDER = rgbaToUint32(1, 1, 1, 1);
 
 export interface State {
+  cells: string[];
 }
 
 type Deps = typeof ViewerController.deps;
 
-export class ViewerController<A extends Args, D extends Deps, S extends State>
-    extends Controller<A, D, HTMLDivElement, S> {
+export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
   static deps() {
     return {
@@ -27,41 +28,83 @@ export class ViewerController<A extends Args, D extends Deps, S extends State>
         map: MapController,
       },
       services: {
-        history: HistoryService,
-        mapData: MapDataService,
         tileData: TileDataService,
-        views: ViewsService,
       },
     };
   }
 
-  private readonly history: HistoryService;
-  private readonly mapData: MapData;
-  private readonly overlayData: OverlayData;
-  protected readonly mapController: MapController;
-  protected readonly views: ViewsService;
+  private readonly layer: CellLayer;
+  private readonly mapController: MapController;
 
-  constructor(response: Response<ViewerController<A, D, S>>) {
+  constructor(response: Response<ViewerController>) {
     super(response);
-    this.history = response.deps.services.history;
+    this.layer = new CellLayer(this);
     this.mapController = response.deps.controllers.map;
-    this.views = response.deps.services.views;
-
-    this.mapData =
-        new MapData(
-            this.mapController.camera,
-            response.deps.services.mapData,
-            response.args.filters ?? {},
-            this.mapController.renderer,
-            this.mapController.textRenderer);
-    this.overlayData = new OverlayData(response.args.overlays ?? {}, this.mapController.renderer);
 
     this.mapController.setLayers([
-      this.mapData,
+      this.layer,
       new TileData(this.mapController.camera, response.deps.services.tileData, this.mapController.renderer),
-      this.overlayData,
     ]);
+  }
 
-    (response.args.active?.trails ?? []).forEach(t => this.setActive(t, true));
+  changed(): void {
+    this.updateState({
+      cells: [...this.layer.cells.keys()],
+    });
+  }
+}
+
+class CellLayer extends Layer {
+
+  readonly cells: Map<string, S2Loop>;
+  private lastChange: number;
+
+  constructor(private readonly controller: ViewerController) {
+    super();
+    this.cells = new Map<string, S2Loop>();
+    this.lastChange = Date.now();
+  }
+
+  click(point: Vec2, px: [number, number], source: MapController): boolean {
+    const zoom = source.camera.zoom;
+    const cell = S2CellId.fromLatLng(unprojectS2LatLng(point[0], point[1])).parentAtLevel(zoom);
+    const token = cell.toToken();
+    if (this.cells.has(token)) {
+      this.cells.delete(token);
+    } else {
+      this.cells.set(token, cell.toLoop(zoom));
+    }
+    this.controller.changed();
+    this.lastChange = Date.now();
+    return true;
+  }
+
+  hasDataNewerThan(time: number): boolean {
+    return this.lastChange > time;
+  }
+
+  plan(size: Vec2, zoom: number, planner: RenderPlanner): void {
+    const lines = [];
+    for (const loop of this.cells.values()) {
+      const vertexCount = loop.numVertices();
+      const vertices = new Float32Array(loop.numVertices() * 2 + 2);
+      for (let v = 0; v < vertexCount; ++v) {
+        const projected = projectS2LatLng(SimpleS2.pointToLatLng(loop.vertex(v)));
+        vertices[v * 2 + 0] = projected[0];
+        vertices[v * 2 + 1] = projected[1];
+      }
+      const projected = projectS2LatLng(SimpleS2.pointToLatLng(loop.vertex(0)));
+      vertices[vertexCount * 2 + 0] = projected[0];
+      vertices[vertexCount * 2 + 1] = projected[1];
+
+      lines.push({
+        colorFill: CELL_BORDER,
+        colorStroke: CELL_BORDER,
+        stipple: false,
+        vertices,
+      });
+    }
+
+    planner.addLines(lines, 1, 0);
   }
 }

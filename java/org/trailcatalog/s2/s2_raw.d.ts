@@ -10,8 +10,13 @@ export declare namespace com.google.common.geometry {
   }
   
   class S2CellId {
+    static fromLatLng(ll: S2LatLng): S2CellId;
+    static fromPoint(p: S2Point): S2CellId;
+    static fromToken(token: string): S2CellId;
     id(): nativebootstrap.Long;
     level(): number;
+    parentAtLevel(level: number): S2CellId;
+    toLoop(level: number): S2Loop;
     toToken(): string;
   }
 

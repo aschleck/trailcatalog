@@ -5,11 +5,11 @@ import { MapController } from 'js/map/map_controller';
 
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from './common/types';
 import { MapDataService } from './data/map_data_service';
-import { TileDataService } from './data/tile_data_service';
 import { SELECTION_CHANGED } from './map/events';
 import { Filters, MapData } from './map/map_data';
 import { OverlayData, Overlays } from './map/overlay_data';
 import { TileData } from './map/tile_data';
+import { TileDataService } from './map/tile_data_service';
 import { Path, Point, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 

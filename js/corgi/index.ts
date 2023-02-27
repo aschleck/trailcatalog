@@ -289,10 +289,15 @@ function updateToState(element: VElement, newState: object): void {
   let newElement;
   try {
     newElement = element.factory(element.factoryProps ?? null, newState, element.state[1]);
+    newElement.trace = vElementPath[0].trace;
   } finally {
     vElementPath.pop();
   }
 
+  newElement.factory = element.factory;
+  newElement.factoryProps = element.factoryProps;
+  newElement.handle = element.handle;
+  newElement.state = element.state;
   updateThroughFragments(element, newElement);
   element.state = [newState, checkExists(element.state)[1]];
 }
@@ -579,7 +584,9 @@ function createElement(element: VElementOrPrimitive): InstantiationResult {
         root.setAttribute('data-js-ref', value.ref);
       }
     } else if (key === 'unboundEvents') {
-      unboundEventss.push([root, value]);
+      if (value) {
+        unboundEventss.push([root, value]);
+      }
     } else if (key === 'className') {
       root.setAttribute('class', value);
     } else if (typeof value === 'boolean') {

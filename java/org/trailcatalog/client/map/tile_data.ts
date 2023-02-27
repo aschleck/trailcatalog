@@ -6,7 +6,8 @@ import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { HashMap } from '../common/collections';
 import { TileId, Vec2 } from '../common/types';
-import { TileDataService } from '../data/tile_data_service';
+
+import { TileDataService } from './tile_data_service';
 
 const NO_OFFSET: Vec2 = [0, 0];
 

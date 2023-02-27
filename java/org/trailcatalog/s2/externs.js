@@ -11,8 +11,13 @@ goog.exportProperty(S1Angle, 'degrees', S1Angle.degrees);
 
 const S2CellId = goog.require('com.google.common.geometry.S2CellId');
 goog.exportSymbol('com.google.common.geometry.S2CellId', S2CellId);
+goog.exportProperty(S2CellId, 'fromLatLng', S2CellId.fromLatLng);
+goog.exportProperty(S2CellId, 'fromPoint', S2CellId.fromPoint);
+goog.exportProperty(S2CellId, 'fromToken', S2CellId.fromToken);
 goog.exportProperty(S2CellId.prototype, 'id', S2CellId.prototype.id);
 goog.exportProperty(S2CellId.prototype, 'level', S2CellId.prototype.level);
+goog.exportProperty(S2CellId.prototype, 'parentAtLevel', S2CellId.prototype.parentAtLevel);
+goog.exportProperty(S2CellId.prototype, 'toLoop', S2CellId.prototype.toLoop);
 goog.exportProperty(S2CellId.prototype, 'toToken', S2CellId.prototype.toToken);
 
 const S1Interval = goog.require('com.google.common.geometry.S1Interval');

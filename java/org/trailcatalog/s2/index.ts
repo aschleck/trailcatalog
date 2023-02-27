@@ -11,9 +11,11 @@ const S2LatLng = raw.com.google.common.geometry.S2LatLng;
 type S2LatLng = raw.com.google.common.geometry.S2LatLng;
 const S2LatLngRect = raw.com.google.common.geometry.S2LatLngRect;
 type S2LatLngRect = raw.com.google.common.geometry.S2LatLngRect;
+const S2Loop = raw.com.google.common.geometry.S2Loop;
+type S2Loop = raw.com.google.common.geometry.S2Loop;
 const S2Point = raw.com.google.common.geometry.S2Point;
 type S2Point = raw.com.google.common.geometry.S2Point;
 const S2Polygon = raw.com.google.common.geometry.S2Polygon;
 type S2Polygon = raw.com.google.common.geometry.S2Polygon;
 
-export { Long, S1Angle, S2CellId, S2LatLng, S2LatLngRect, S2Point, S2Polygon }
+export { Long, S1Angle, S2CellId, S2LatLng, S2LatLngRect, S2Loop, S2Point, S2Polygon }

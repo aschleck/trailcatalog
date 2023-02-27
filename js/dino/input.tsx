@@ -38,7 +38,7 @@ function Input(
       {icon ? <FabricIcon name={icon} /> : <></>}
       <input
           className="bg-transparent grow outline-none placeholder-current"
-          placeholder={placeholder}
+          placeholder={placeholder ?? ''}
           unboundEvents={unboundEvents}
           value={value}
       />
