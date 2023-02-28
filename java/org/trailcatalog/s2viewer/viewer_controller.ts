@@ -86,12 +86,17 @@ class CellLayer extends Layer {
   plan(size: Vec2, zoom: number, planner: RenderPlanner): void {
     const lines = [];
     for (const loop of this.cells.values()) {
-      lines.push({
-        colorFill: CELL_BORDER,
-        colorStroke: CELL_BORDER,
-        stipple: false,
-        vertices: projectS2Loop(loop),
-      });
+      const {splits, vertices} = projectS2Loop(loop);
+      let last = 0;
+      for (const i of splits) {
+        lines.push({
+          colorFill: CELL_BORDER,
+          colorStroke: CELL_BORDER,
+          stipple: false,
+          vertices: vertices.slice(last, i),
+        });
+        last = i;
+      }
     }
 
     planner.addLines(lines, 1, 0);

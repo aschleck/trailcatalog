@@ -94,7 +94,7 @@ export function projectS2LatLng(ll: S2LatLng): Vec2 {
   return [x, Number.isFinite(y) ? y : 9999 * Math.sign(y)];
 }
 
-export function projectS2Loop(loop: S2Loop): Float32Array {
+export function projectS2Loop(loop: S2Loop): {splits: number[]; vertices: Float32Array;} {
   const vertexCount = loop.numVertices();
   const ps = [];
   let prev = loop.vertex(0);
@@ -112,29 +112,36 @@ export function projectS2Loop(loop: S2Loop): Float32Array {
     ps.push(next);
     prev = next;
   }
-  // Project everything
-  const vertices = new Float32Array(ps.length * 2 + 2);
-  for (let v = 0; v < ps.length; ++v) {
-    const projected = projectS2LatLng(SimpleS2.pointToLatLng(ps[v]));
-    vertices[v * 2 + 0] = projected[0];
-    vertices[v * 2 + 1] = projected[1];
-  }
-  vertices[ps.length * 2 + 0] = vertices[0];
-  vertices[ps.length * 2 + 1] = vertices[1];
-  // We can get weird longitude values when part of the edge lies on the antimeridian, fix it
-  for (let v = 0; v < ps.length; ++v) {
-    const i = v * 2;
-    const x = vertices[i + 0];
-    const xp = vertices[i + 2];
-    if (Math.abs(xp - x) > 1.5) {
-      if (xp === -1 || xp === 1) {
-        vertices[i + 2] = Math.sign(x);
+  // Project everything, duplicating vertices when we cross meridian and tracking splits
+  const projected = [projectS2LatLng(SimpleS2.pointToLatLng(ps[0]))];
+  const splits = [];
+  let pp = projected[0];
+  for (let v = 1; v < ps.length; ++v) {
+    const next = projectS2LatLng(SimpleS2.pointToLatLng(ps[v]));
+    if (Math.abs(next[0] - pp[0]) > 1.5) {
+      if (pp[0] === -1 || pp[0] === 1) {
+        splits.push(projected.length * 2);
+        projected.push([-pp[0], pp[1]]);
       } else {
-        vertices[i] = Math.sign(xp);
+        projected.push([-next[0], next[1]]);
+        splits.push(projected.length * 2);
       }
     }
+    projected.push(next);
+    pp = next;
   }
-  return vertices;
+  splits.push(projected.length * 2);
+  // Write out all the vertices
+  const vertices = new Float32Array(projected.length * 2);
+  for (let i = 0; i < projected.length; ++i) {
+    const point = projected[i];
+    vertices[i * 2 + 0] = point[0];
+    vertices[i * 2 + 1] = point[1];
+  }
+  return {
+    splits,
+    vertices,
+  };
 }
 
 export function unprojectS2LatLng(x: number, y: number): S2LatLng {

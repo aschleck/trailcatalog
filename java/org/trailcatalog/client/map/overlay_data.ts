@@ -67,12 +67,17 @@ export class OverlayData extends Layer {
     if (overlays.polygon) {
       for (let l = 0; l < overlays.polygon.numLoops(); ++l) {
         const loop = overlays.polygon.loop(l);
-        this.lines.push({
-          colorFill: BOUNDARY_PALETTE.fill,
-          colorStroke: BOUNDARY_PALETTE.stroke,
-          stipple: false,
-          vertices: projectS2Loop(loop),
-        });
+        const {splits, vertices} = projectS2Loop(loop);
+        let last = 0;
+        for (const i of splits) {
+          this.lines.push({
+            colorFill: BOUNDARY_PALETTE.fill,
+            colorStroke: BOUNDARY_PALETTE.stroke,
+            stipple: false,
+            vertices: vertices.slice(last, i),
+          });
+          last = i;
+        }
       }
     }
 

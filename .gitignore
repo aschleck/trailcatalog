@@ -8,6 +8,7 @@
 __pycache__
 bazel-*
 elevation_profiles.pb
+frontend_pkg.tar
 full_pkg.tar
 node_modules
 venv
