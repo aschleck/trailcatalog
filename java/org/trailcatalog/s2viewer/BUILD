@@ -3,7 +3,7 @@ package(default_visibility = ["//visibility:private"])
 load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
 
 esbuild_binary(
-    name = "s2client",
+    name = "s2viewer",
     entry_point = "app.js",
     deps = [
         ":css",
