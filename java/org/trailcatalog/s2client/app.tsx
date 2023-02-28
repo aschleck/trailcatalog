@@ -28,7 +28,7 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
           ref="map"
       />
       <div className="absolute top-4 right-4">
-        <OutlinedInput value={state.cells.join(', ')} />
+        <OutlinedInput className="bg-white text-xs" value={state.cells.join(',')} />
       </div>
     </div>
   </div>;

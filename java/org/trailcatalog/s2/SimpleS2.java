@@ -2,6 +2,7 @@ package org.trailcatalog.s2;
 
 import static java.lang.StrictMath.max;
 
+import com.google.common.geometry.S1Angle;
 import com.google.common.geometry.S1Interval;
 import com.google.common.geometry.S2CellId;
 import com.google.common.geometry.S2CellUnion;
@@ -39,8 +40,18 @@ public final class SimpleS2 {
   public static final int HIGHEST_INDEX_LEVEL = 13;
 
   @JsMethod
+  public static double angleToEarthMeters(S1Angle angle) {
+    return angle.radians() * 6371010.0;
+  }
+
+  @JsMethod
   public static int cellLevel(long id) {
     return S2CellId.MAX_LEVEL - (Long.numberOfTrailingZeros(id) >> 1);
+  }
+
+  @JsMethod
+  public static S1Angle earthMetersToAngle(double meters) {
+    return S1Angle.radians(meters / 6371010.0);
   }
 
   @JsMethod

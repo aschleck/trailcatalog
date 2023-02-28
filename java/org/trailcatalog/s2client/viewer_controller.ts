@@ -9,10 +9,10 @@ import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { Layer } from 'js/map/layer';
 import { MapController } from 'js/map/map_controller';
-import { projectS2LatLng, unprojectS2LatLng } from 'js/map/models/camera';
+import { projectS2Loop, unprojectS2LatLng } from 'js/map/models/camera';
 import { RenderPlanner } from 'js/map/rendering/render_planner';
 
-const CELL_BORDER = rgbaToUint32(1, 1, 1, 1);
+const CELL_BORDER = rgbaToUint32(1, 0, 0, 1);
 
 export interface State {
   cells: string[];
@@ -86,22 +86,11 @@ class CellLayer extends Layer {
   plan(size: Vec2, zoom: number, planner: RenderPlanner): void {
     const lines = [];
     for (const loop of this.cells.values()) {
-      const vertexCount = loop.numVertices();
-      const vertices = new Float32Array(loop.numVertices() * 2 + 2);
-      for (let v = 0; v < vertexCount; ++v) {
-        const projected = projectS2LatLng(SimpleS2.pointToLatLng(loop.vertex(v)));
-        vertices[v * 2 + 0] = projected[0];
-        vertices[v * 2 + 1] = projected[1];
-      }
-      const projected = projectS2LatLng(SimpleS2.pointToLatLng(loop.vertex(0)));
-      vertices[vertexCount * 2 + 0] = projected[0];
-      vertices[vertexCount * 2 + 1] = projected[1];
-
       lines.push({
         colorFill: CELL_BORDER,
         colorStroke: CELL_BORDER,
         stipple: false,
-        vertices,
+        vertices: projectS2Loop(loop),
       });
     }
 

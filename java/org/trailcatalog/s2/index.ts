@@ -1,5 +1,4 @@
-import * as raw from 'java/org/trailcatalog/s2/s2_raw';
-//import * as raw from './s2_raw';
+import * as raw from './s2_raw';
 
 const Long = raw.nativebootstrap.Long;
 type Long = raw.nativebootstrap.Long;

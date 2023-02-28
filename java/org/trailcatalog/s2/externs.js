@@ -8,6 +8,7 @@ goog.exportProperty(R1Interval.prototype, 'lo', R1Interval.prototype.lo);
 const S1Angle = goog.require('com.google.common.geometry.S1Angle');
 goog.exportSymbol('com.google.common.geometry.S1Angle', S1Angle);
 goog.exportProperty(S1Angle, 'degrees', S1Angle.degrees);
+goog.exportProperty(S1Angle.prototype, 'radians', S1Angle.prototype.radians);
 
 const S2CellId = goog.require('com.google.common.geometry.S2CellId');
 goog.exportSymbol('com.google.common.geometry.S2CellId', S2CellId);
@@ -87,7 +88,9 @@ goog.exportSymbol('org.trailcatalog.s2.SimpleS2', SimpleS2);
 goog.exportProperty(SimpleS2, 'HIGHEST_COARSE_INDEX_LEVEL', SimpleS2.HIGHEST_COARSE_INDEX_LEVEL);
 goog.exportProperty(SimpleS2, 'HIGHEST_FINE_INDEX_LEVEL', SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
 goog.exportProperty(SimpleS2, 'HIGHEST_OVERVIEW_INDEX_LEVEL', SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL);
+goog.exportProperty(SimpleS2, 'angleToEarthMeters', SimpleS2.angleToEarthMeters);
 goog.exportProperty(SimpleS2, 'cellLevel', SimpleS2.cellLevel);
 goog.exportProperty(SimpleS2, 'cover', SimpleS2.cover);
 goog.exportProperty(SimpleS2, 'decodePolygon', SimpleS2.decodePolygon);
+goog.exportProperty(SimpleS2, 'earthMetersToAngle', SimpleS2.earthMetersToAngle);
 goog.exportProperty(SimpleS2, 'pointToLatLng', SimpleS2.pointToLatLng);

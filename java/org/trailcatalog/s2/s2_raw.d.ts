@@ -7,6 +7,7 @@ export declare namespace com.google.common.geometry {
 
   class S1Angle {
     static degrees(n: number): S1Angle;
+    radians(): number;
   }
   
   class S2CellId {
@@ -90,10 +91,12 @@ export declare namespace org.trailcatalog.s2 {
     static HIGHEST_OVERVIEW_INDEX_LEVEL: number;
     static HIGHEST_COARSE_INDEX_LEVEL: number;
     static HIGHEST_FINE_INDEX_LEVEL: number;
+    static angleToEarthMeters(angle: com.google.common.geometry.S1Angle): number;
     static cellLevel(id: nativebootstrap.Long): number;
     static cover(viewport: com.google.common.geometry.S2LatLngRect, deepest: number):
         java.util.ArrayList<com.google.common.geometry.S2CellId>;
     static decodePolygon(bytes: ArrayBuffer): com.google.common.geometry.S2Polygon;
+    static earthMetersToAngle(meters: number): com.google.common.geometry.S1Angle;
     static pointToLatLng(point: com.google.common.geometry.S2Point):
         com.google.common.geometry.S2LatLng;
   }
