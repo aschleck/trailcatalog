@@ -26,7 +26,7 @@ export function Header({query, extra}: {
         max-md:flex-wrap
     ">
       <div className="md:flex-1">
-        <a href="/">
+        <a className="inline-block" href="/">
           <img
               alt="Trailcatalog logo"
               src="/static/images/logo.svg"
