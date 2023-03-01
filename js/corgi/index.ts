@@ -345,6 +345,7 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
   if (!from
       || from.element !== to.element
       || from.props.js?.controller !== to.props.js?.controller
+      || from.props.js?.disposer.isDisposed
       || from.props.js?.key !== to.props.js?.key
       || from.props.js?.ref !== to.props.js?.ref) {
     const element = createElement(to);

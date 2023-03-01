@@ -1,5 +1,6 @@
 import { checkExists } from 'js/common/asserts';
 import { deepEqual } from 'js/common/comparisons';
+import { Disposable } from 'js/common/disposable';
 
 import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, Response as ControllerResponse } from './controller';
 import { elementFinder, SupportedElement } from './dom';
@@ -42,6 +43,7 @@ type StateTuple<S> = [S, (newState: S) => void];
 interface BoundController<C extends Controller<any, any, any, any>> {
   args: C['_A'];
   controller: ControllerCtor<C>;
+  disposer: Disposable;
   events: Partial<PropertyKeyToHandlerMap<C>>;
   instance?: Promise<C>;
   key?: string; // controllers will only be reused if their keys match
@@ -118,6 +120,7 @@ export function bind<C extends Controller<any, any, any, any>>({
   return {
     args: args ?? {} as any,
     controller,
+    disposer: new Disposable(),
     events: events ?? {},
     key,
     ref,
@@ -140,8 +143,9 @@ export function bindElementToSpec(
   }
 
   for (const [eventSpec, handler] of spec.events.corgi ?? []) {
-    root.addEventListener(
-        qualifiedName(eventSpec),
+    spec.disposer.registerListener(
+        root,
+        qualifiedName(eventSpec) as any,
         e => {
           if (root === e.srcElement) {
             return;
@@ -166,8 +170,9 @@ export function bindElementToSpec(
     }
 
     for (const [eventSpec, handler] of events.corgi ?? []) {
-      element.addEventListener(
-          qualifiedName(eventSpec),
+      spec.disposer.registerListener(
+          element,
+          qualifiedName(eventSpec) as any,
           e => {
             if (root === e.srcElement) {
               return;
@@ -200,13 +205,6 @@ export function applyInstantiationResult(result: InstantiationResult): void {
   result.sideEffects.forEach(e => { e(); });
 
   for (const [element, events] of result.unboundEventss) {
-    const currentListeners = unboundEventListeners.get(element);
-    if (currentListeners) {
-      for (const [event, handler] of currentListeners) {
-        element.removeEventListener(event, handler);
-      }
-    }
-
     let cursor: SupportedElement|null = element;
     while (cursor !== null && !elementsToControllerSpecs.has(cursor)) {
       cursor = cursor.parentElement;
@@ -221,7 +219,6 @@ export function applyInstantiationResult(result: InstantiationResult): void {
     const root = cursor;
     const spec = checkExists(elementsToControllerSpecs.get(root));
 
-    const listeners: Array<[string, EventListenerOrEventListenerObject]> = [];
     for (const [event, handler] of Object.entries(events)) {
       if (event === 'corgi') {
         continue;
@@ -235,7 +232,6 @@ export function applyInstantiationResult(result: InstantiationResult): void {
       }
 
       const invoker = bindEventListener(element, event, shandler, root, spec);
-      listeners.push([event, invoker]);
     }
 
     for (const [eventSpec, handler] of events.corgi ?? []) {
@@ -252,11 +248,8 @@ export function applyInstantiationResult(result: InstantiationResult): void {
         });
       };
       const event = qualifiedName(eventSpec);
-      element.addEventListener(event, invoker);
-      listeners.push([event, invoker]);
+      spec.disposer.registerListener(element, event as any, invoker);
     }
-
-    unboundEventListeners.set(element, listeners);
   }
 }
 
@@ -279,6 +272,7 @@ function maybeInstantiateAndCall<E extends SupportedElement, R>(
         deps: d,
         state: spec.state,
       });
+      spec.disposer.registerDisposable(instance);
       return instance;
     });
   }
@@ -382,13 +376,9 @@ export function disposeBoundElementsIn(node: Node): void {
   if (!(node instanceof HTMLElement) && !(node instanceof SVGElement)) {
     return;
   }
-  for (const root of [node, ...node.querySelectorAll('[js]')]) {
+  for (const root of [node, ...node.querySelectorAll('[data-js]')]) {
     const spec = elementsToControllerSpecs.get(root as SupportedElement);
-    if (spec?.instance) {
-      spec.instance.then(instance => {
-        instance.dispose();
-      });
-    }
+    spec?.disposer.dispose();
   }
 }
 
@@ -411,6 +401,6 @@ function bindEventListener(
       method.call(controller, e);
     });
   };
-  element.addEventListener(event, invoker);
+  spec.disposer.registerListener(element, event as any, invoker);
   return invoker;
 }
