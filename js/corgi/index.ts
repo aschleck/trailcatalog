@@ -212,7 +212,7 @@ export function createVirtualElement(
       handle = h;
       updateState = (newState: object) => {
         const v = vHandlesToElements.get(h);
-        if (v && h === v.handle) {
+        if (v) {
           updateToState(v, newState);
         }
       };
