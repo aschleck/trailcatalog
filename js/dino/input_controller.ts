@@ -6,7 +6,9 @@ import { ACTION, CHANGED } from './events';
 
 interface Args {}
 
-export interface State {}
+export interface State {
+  managed: boolean;
+}
 
 export class InputController extends Controller<Args, EmptyDeps, HTMLInputElement, State> {
 
@@ -22,6 +24,11 @@ export class InputController extends Controller<Args, EmptyDeps, HTMLInputElemen
     if (e.key === 'Enter') {
       this.trigger(ACTION, {});
     } else {
+      if (this.state.managed) {
+        this.updateState({
+          managed: false,
+        });
+      }
       this.trigger(CHANGED, {});
     }
   }

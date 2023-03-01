@@ -31,7 +31,7 @@ function Input(
     state: State|undefined,
     updateState: (newState: State) => void) {
   if (!state) {
-    state = {};
+    state = {managed: true};
   }
 
   return <>
@@ -55,7 +55,7 @@ function Input(
           })}
           className="bg-transparent grow outline-none placeholder-current"
           placeholder={placeholder ?? ''}
-          value={value}
+          value={state.managed ? value : undefined}
       />
       {inset ?? ''}
     </label>
