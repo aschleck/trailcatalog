@@ -1,7 +1,7 @@
 import { aDescendsB, RelationCategory } from 'java/org/trailcatalog/models/categories';
 import * as corgi from 'js/corgi';
 import { FlatButton } from 'js/dino/button';
-import { ACTION } from 'js/dino/events';
+import { ACTION, CHANGED } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
 import { OutlinedInput } from 'js/dino/input';
 
@@ -34,6 +34,7 @@ export function SearchElement(
       <OutlinedInput
           className="peer w-full"
           icon="Search"
+          ref="input"
           inset={
             state.query
                 ? <>
@@ -56,7 +57,10 @@ export function SearchElement(
           placeholder="Search trails, national parks, or areas"
           value={state.query}
           unboundEvents={{
-            keyup: 'search',
+            corgi: [
+              [ACTION, 'search'],
+              [CHANGED, 'deferSearch'],
+            ],
           }}
       />
       {

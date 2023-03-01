@@ -1,6 +1,7 @@
 import { checkExists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
+import { InputController } from 'js/dino/input_controller';
 
 import { latLngFromBase64E7, latLngRectFromBase64E7 } from './common/data';
 import { currentUrl } from './common/ssr_aware';
@@ -22,6 +23,9 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
 
   static deps() {
     return {
+      controllers: {
+        input: InputController,
+      },
       services: {
         views: ViewsService,
       },
@@ -29,10 +33,12 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
   }
 
   private readonly debouncer: Debouncer;
+  private readonly input: InputController;
   private readonly views: ViewsService;
 
   constructor(response: Response<SearchController>) {
     super(response);
+    this.input = response.deps.controllers.input;
     this.views = response.deps.services.views;
 
     this.debouncer = new Debouncer(200 /* ms */, () => {
@@ -40,34 +46,29 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
     });
   }
 
-  search(e: KeyboardEvent): void {
-    const input = checkExists(e.srcElement) as HTMLInputElement;
-    this.updateState({
-      ...this.state,
-      query: input.value,
-    });
+  search(): void {
+    this.goToSearchPage(this.input.value);
+  }
 
-    if (e.key === "Enter") {
-      this.goToSearchPage(input.value);
-    } else {
-      this.debouncer.trigger();
-    }
+  deferSearch(): void {
+    this.debouncer.trigger();
   }
 
   private async actuallySearch(): Promise<void> {
-    const query = this.state.query;
+    const query = this.input.value;
     const bp = fetchData('search_boundaries', {query});
     const tp = fetchData('search_trails', {query, limit: 100});
     const boundaries = await bp;
     const trails = await tp;
 
-    if (query !== this.state.query) {
+    if (query !== this.input.value) {
       return;
     }
 
     this.updateState({
       ...this.state,
       boundaries: searchBoundariesFromRaw(boundaries),
+      query,
       trails: searchTrailsFromRaw(trails),
     });
   }

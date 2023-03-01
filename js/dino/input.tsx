@@ -2,6 +2,7 @@ import * as corgi from 'js/corgi';
 import { UnboundEvents } from 'js/corgi/binder';
 
 import { FabricIcon, FabricIconName } from './fabric';
+import { InputController, State } from './input_controller';
 
 type InputProps = {
   className?: string,
@@ -9,6 +10,7 @@ type InputProps = {
   icon?: FabricIconName,
   inset?: corgi.VElementOrPrimitive,
   placeholder?: string,
+  ref?: string,
 } & corgi.InputProperties;
 
 export function OutlinedInput({className, ...props}: {
@@ -25,7 +27,13 @@ export function OutlinedInput({className, ...props}: {
 }
 
 function Input(
-    {className, dense, icon, inset, placeholder, unboundEvents, value, ...props}: InputProps) {
+    {className, dense, icon, inset, placeholder, ref, value, ...props}: InputProps,
+    state: State|undefined,
+    updateState: (newState: State) => void) {
+  if (!state) {
+    state = {};
+  }
+
   return <>
     <label
         className={
@@ -37,9 +45,16 @@ function Input(
     >
       {icon ? <FabricIcon name={icon} /> : <></>}
       <input
+          js={corgi.bind({
+            controller: InputController,
+            events: {
+              'keyup': 'keyPressed',
+            },
+            ref,
+            state: [state, updateState],
+          })}
           className="bg-transparent grow outline-none placeholder-current"
           placeholder={placeholder ?? ''}
-          unboundEvents={unboundEvents}
           value={value}
       />
       {inset ?? ''}
