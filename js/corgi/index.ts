@@ -439,12 +439,13 @@ function applyThroughFragments(
     oldChildren: ChildNode[],
     result: InstantiationResult,
 ): number {
+  let firstIndex = currentChildIndex;
   for (let i = 0; i < toChildren.length; ++i) {
     const was = fromChildren[i];
     const is = toChildren[i];
 
     if (was === is) {
-      currentChildIndex += 1;
+      currentChildIndex += countNodes(was);
       continue;
     }
 
@@ -535,15 +536,33 @@ function applyThroughFragments(
       }
     }
   }
-  for (let i = toChildren.length; i < fromChildren.length; ++i) {
-    // Could we do this from the back...?
-    const old = oldChildren[currentChildIndex];
-    oldChildren.splice(currentChildIndex, 1);
+
+  // We have to be careful when deleting: we need to delete all elements corresponding to extra
+  // oldChildren, but because there may be sibling fragments that need to be applied into the same
+  // node after this we have to count the difference.
+  const extra =
+      fromChildren.slice(toChildren.length)
+              .reduce((count: number, child: VElementOrPrimitive) => count + countNodes(child), 0)
+          - (currentChildIndex - firstIndex);
+  for (let i = 0; i < extra; ++i) {
+    const old = oldChildren[currentChildIndex + i];
     old.remove();
     result.sideEffects.push(() => { disposeBoundElementsIn(old); });
   }
   fromChildren.length = toChildren.length;
   return currentChildIndex;
+}
+
+function countNodes(element: VElementOrPrimitive): number {
+  if (isVElement(element) && element.element === FRAGMENT_TAG) {
+    let count = 0;
+    for (const child of element.children) {
+      count += countNodes(child);
+    }
+    return count;
+  } else {
+    return 1;
+  }
 }
 
 const TAG_TO_NAMESPACE = new Map([
@@ -753,6 +772,10 @@ declare global {
 
 function isCorgiElement(v: unknown): v is CorgiElement {
   return v instanceof CorgiElement;
+}
+
+function isVElement(v: VElementOrPrimitive): v is VElement {
+  return typeof v === 'object';
 }
 
 function expandFragments(elements: VElementOrPrimitive[]): VElementOrPrimitive[] {
