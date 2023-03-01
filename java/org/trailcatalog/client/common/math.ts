@@ -27,6 +27,13 @@ export function screenLlz(bound: LatLngRect, screen: DOMRect): LatLngZoom {
     bound.low[0] + dLL[0] / 2,
     bound.low[1] + dLL[1] / 2,
   ];
+
+  // Bounds on the antimeridian appear to span the entire world, so correct them.
+  if (bound.high[1] < bound.low[1]) {
+    dLL[1] += 360;
+    center[1] = (bound.low[1] + dLL[1] / 2 + 180) % 360 - 180;
+  }
+
   // Ideal fit: screen / (256 * 2^zoom) = dLL[0] / 360
   // => 2^zoom = screen / 256 / (dLL[0] / 360)
   // => zoom = log(screen / 256 / (dLL[0] / 360)) / log(2)

@@ -12,7 +12,6 @@ export class Boundary {
 
   get bound(): LatLngRect {
     return s2LatLngRectToTc(this.polygon.getRectBound());
-
   }
 
   get sourceRelation(): bigint {
