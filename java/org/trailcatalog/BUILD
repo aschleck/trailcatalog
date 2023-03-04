@@ -10,6 +10,7 @@ package_group(
         "//java/org/trailcatalog/...",
         "//javatests/org/trailcatalog/...",
         "//js/map/...",
+        "//js/s2viewer/...",
         "//production/...",
     ],
 )
