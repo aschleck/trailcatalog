@@ -4,6 +4,7 @@ import { declareEvent } from 'js/corgi/events';
 
 export const CLICKED = declareEvent<{
   clickPx: Vec2;
+  contextual: boolean;
 }>('clicked');
 
 export const DATA_CHANGED = declareEvent<{}>('data_changed');

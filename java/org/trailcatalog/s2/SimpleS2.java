@@ -4,6 +4,7 @@ import static java.lang.StrictMath.max;
 
 import com.google.common.geometry.S1Angle;
 import com.google.common.geometry.S1Interval;
+import com.google.common.geometry.S2Cell;
 import com.google.common.geometry.S2CellId;
 import com.google.common.geometry.S2CellUnion;
 import com.google.common.geometry.S2LatLng;
@@ -27,6 +28,8 @@ import jsinterop.annotations.JsType;
 @JsType
 public final class SimpleS2 {
 
+  public static final int EARTH_RADIUS_METERS = 6371010;
+
   // These are the levels exposed to the client as the highest level of the index. They must be kept
   // equal between the two, or else they will give each other wrong data in the leaves.
 
@@ -41,7 +44,12 @@ public final class SimpleS2 {
 
   @JsMethod
   public static double angleToEarthMeters(S1Angle angle) {
-    return angle.radians() * 6371010.0;
+    return angle.radians() * EARTH_RADIUS_METERS;
+  }
+
+  @JsMethod
+  public static S2Cell cellIdToCell(S2CellId id) {
+    return new S2Cell(id);
   }
 
   @JsMethod
@@ -51,7 +59,7 @@ public final class SimpleS2 {
 
   @JsMethod
   public static S1Angle earthMetersToAngle(double meters) {
-    return S1Angle.radians(meters / 6371010.0);
+    return S1Angle.radians(meters / EARTH_RADIUS_METERS);
   }
 
   @JsMethod

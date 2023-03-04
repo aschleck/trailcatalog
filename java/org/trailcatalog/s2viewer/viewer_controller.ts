@@ -19,6 +19,10 @@ export const ZOOM_LEVEL = -1;
 export interface State {
   cells: string[];
   level: number;
+  selected?: {
+    cell: S2CellId,
+    clickPx: [number, number],
+  };
 }
 
 type Deps = typeof ViewerController.deps;
@@ -50,9 +54,6 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       this.layer,
       new TileData(this.mapController.camera, response.deps.services.tileData, this.mapController.renderer),
     ]);
-  }
-
-  changed(): void {
   }
 
   setLevel(e: CorgiEvent<typeof CHANGED>): void {
@@ -90,6 +91,29 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     }
   }
 
+  selectCell(point: S2LatLng, px: [number, number]): void {
+    const cell = S2CellId.fromLatLng(point);
+    let level = cell.level();
+    while (level >= 0 && !this.layer.cells.has(cell.parentAtLevel(level).toToken())) {
+      level -= 1;
+    }
+
+    if (level >= 0) {
+      this.updateState({
+        ...this.state,
+        selected: {
+          cell: cell.parentAtLevel(level),
+          clickPx: px,
+        },
+      });
+    } else {
+      this.updateState({
+        ...this.state,
+        selected: undefined,
+      });
+    }
+  }
+
   toggleCell(point: S2LatLng, currentZoom: number): void {
     const level = this.state.level === ZOOM_LEVEL ? currentZoom : this.state.level;
     const cell = S2CellId.fromLatLng(point).parentAtLevel(level);
@@ -107,6 +131,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     this.updateState({
       ...this.state,
       cells: [...this.layer.cells.keys()],
+      selected: undefined,
     });
     this.lastChange = Date.now();
   }
@@ -121,8 +146,12 @@ class CellLayer extends Layer {
     this.cells = new Map<string, S2Loop>();
   }
 
-  click(point: Vec2, px: [number, number], source: MapController): boolean {
-    this.controller.toggleCell(unprojectS2LatLng(point[0], point[1]), source.camera.zoom);
+  click(point: Vec2, px: [number, number], contextual: boolean, source: MapController): boolean {
+    if (contextual) {
+      this.controller.selectCell(unprojectS2LatLng(point[0], point[1]), px);
+    } else {
+      this.controller.toggleCell(unprojectS2LatLng(point[0], point[1]), source.camera.zoom);
+    }
     return true;
   }
 

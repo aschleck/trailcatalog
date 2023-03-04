@@ -8,7 +8,9 @@ export abstract class Layer extends Disposable {
   abstract hasDataNewerThan(time: number): boolean;
   abstract plan(size: Vec2, zoom: number, planner: RenderPlanner): void;
 
-  click(point: Vec2, px: [number, number], source: EventSource): boolean { return false; }
+  click(point: Vec2, px: [number, number], contextual: boolean, source: EventSource): boolean {
+    return false
+  }
   hover(point: Vec2, source: EventSource): boolean { return false; }
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {}
 }

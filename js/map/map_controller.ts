@@ -101,6 +101,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
         this.canvas.focus();
         this.trigger(CLICKED, {
           clickPx: [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
+          contextual: e.button === 2,
         });
 
         interpreter.pointerDown(e);
@@ -113,6 +114,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     });
     this.registerListener(document, 'pointerup', e => { interpreter.pointerUp(e); });
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
+    this.registerListener(this.canvas, 'contextmenu', e => { e.preventDefault(); });
   }
 
   setLayers(layers: Layer[]): void {
@@ -150,7 +152,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     this.idle();
   }
 
-  click(pageX: number, pageY: number): void {
+  click(pageX: number, pageY: number, contextual: boolean): void {
     const offsetX = pageX - this.screenArea.left;
     const offsetY = pageY - this.screenArea.top;
     const point = this.clientToWorld(offsetX, offsetY)
@@ -162,7 +164,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     }
 
     for (const layer of this.layers) {
-      if (layer.click(point, [offsetX, offsetY], this)) {
+      if (layer.click(point, [offsetX, offsetY], contextual, this)) {
         break;
       }
     }

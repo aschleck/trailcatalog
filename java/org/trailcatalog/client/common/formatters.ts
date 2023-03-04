@@ -1,6 +1,11 @@
 import { celsiusToFahrenheit, metersToFeet, metersToMiles } from './math';
 import { getUnitSystem } from './ssr_aware';
 
+const areaFormatter = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 0,
+  style: 'decimal',
+});
+
 const countFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
   style: 'decimal',
@@ -25,6 +30,16 @@ const temperatureFormatter = new Intl.NumberFormat(undefined, {
 interface FormattedScalar {
   value: string;
   unit: string;
+}
+
+export function formatArea(meters2: number): FormattedScalar {
+  const useImperial = shouldUseImperial();
+  return {
+    value:
+        areaFormatter.format(
+            useImperial ? metersToMiles(metersToMiles(meters2)) : meters2 / 1000_000),
+    unit: useImperial ? 'mi²' : 'km²',
+  };
 }
 
 export function formatCount(count: number): string {

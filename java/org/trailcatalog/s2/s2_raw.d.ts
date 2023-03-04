@@ -10,6 +10,10 @@ export declare namespace com.google.common.geometry {
     radians(): number;
   }
   
+  class S2Cell {
+    exactArea(): number;
+  }
+
   class S2CellId {
     static fromLatLng(ll: S2LatLng): S2CellId;
     static fromPoint(p: S2Point): S2CellId;
@@ -81,6 +85,7 @@ export declare namespace java.util {
 
 export declare namespace nativebootstrap {
   class Long {
+    static fromBits(low: number, high: number): Long;
     getHighBits(): number;
     getLowBits(): number;
   }
@@ -88,10 +93,12 @@ export declare namespace nativebootstrap {
 
 export declare namespace org.trailcatalog.s2 {
   class SimpleS2 {
+    static EARTH_RADIUS_METERS: number;
     static HIGHEST_OVERVIEW_INDEX_LEVEL: number;
     static HIGHEST_COARSE_INDEX_LEVEL: number;
     static HIGHEST_FINE_INDEX_LEVEL: number;
     static angleToEarthMeters(angle: com.google.common.geometry.S1Angle): number;
+    static cellIdToCell(id: com.google.common.geometry.S2CellId): com.google.common.geometry.S2Cell;
     static cellLevel(id: nativebootstrap.Long): number;
     static cover(viewport: com.google.common.geometry.S2LatLngRect, deepest: number):
         java.util.ArrayList<com.google.common.geometry.S2CellId>;

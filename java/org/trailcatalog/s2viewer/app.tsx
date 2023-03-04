@@ -1,3 +1,6 @@
+import { formatArea } from 'java/org/trailcatalog/client/common/formatters';
+import { S2CellId } from 'java/org/trailcatalog/s2';
+import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 import { CHANGED } from 'js/dino/events';
@@ -47,8 +50,38 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
             ]}
         />
       </div>
+      {
+        state.selected
+            ? <CellPopup cell={state.selected.cell} position={state.selected.clickPx} />
+            : <></>
+      }
     </div>
   </div>;
+}
+
+function CellPopup({cell, position}: {cell: S2CellId, position: [number, number]}) {
+  const area =
+      formatArea(
+          SimpleS2.cellIdToCell(cell).exactArea()
+              * SimpleS2.EARTH_RADIUS_METERS
+              * SimpleS2.EARTH_RADIUS_METERS);
+  return <>
+    <div
+        className="
+            absolute
+            bg-white
+            rounded
+            p-2
+            -translate-x-1/2
+            translate-y-[calc(-100%-0.75rem)]
+        "
+        style={`left: ${position[0]}px; top: ${position[1]}px`}
+    >
+      <div className="font-bold">{cell.toToken()}</div>
+      <div>level: {cell.level()}</div>
+      <div>area: {area.value} {area.unit}</div>
+    </div>
+  </>;
 }
 
 corgi.appendElement(checkExists(document.getElementById('root')), <App />);

@@ -439,6 +439,8 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
 // When applying updates, we need to compare using the fragment tree but never actually create
 // fragments in the DOM. So this recursive function processes `node`'s children and moves
 // `currentChildIndex` forward as it matches children.
+// TODO: this is really broken, we need to track which children came from which fragment. Or could
+// use snabdom.
 function applyThroughFragments(
     fromChildren: VElementOrPrimitive[],
     toChildren: VElementOrPrimitive[],

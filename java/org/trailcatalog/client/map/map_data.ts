@@ -159,7 +159,7 @@ export class MapData extends Layer {
         });
   }
 
-  click(point: Vec2, px: [number, number], source: EventSource): boolean {
+  click(point: Vec2, px: [number, number], _: boolean, source: EventSource): boolean {
     source.trigger(SELECTION_CHANGED, {
       selected: this.lastHoverTarget,
       clickPx: px,

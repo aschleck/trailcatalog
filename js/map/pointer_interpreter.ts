@@ -1,5 +1,5 @@
 interface PointerListener {
-  click(pageX: number, pageY: number): void;
+  click(pageX: number, pageY: number, contextual: boolean): void;
   hover(pageX: number, pageY: number): void;
   idle(): void;
   pan(dx: number, dy: number): void;
@@ -109,7 +109,7 @@ export class PointerInterpreter {
       }
 
       if (this.maybeClickStart) {
-        this.listener.click(this.maybeClickStart.pageX, this.maybeClickStart.pageY);
+        this.listener.click(this.maybeClickStart.pageX, this.maybeClickStart.pageY, e.button === 2);
         this.maybeClickStart = undefined;
       }
     }
