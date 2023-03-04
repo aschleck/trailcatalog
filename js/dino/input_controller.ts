@@ -29,7 +29,7 @@ export class InputController extends Controller<Args, EmptyDeps, HTMLInputElemen
           managed: false,
         });
       }
-      this.trigger(CHANGED, {});
+      this.trigger(CHANGED, {value: this.value});
     }
   }
 }

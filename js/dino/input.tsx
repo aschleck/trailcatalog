@@ -7,6 +7,7 @@ import { InputController, State } from './input_controller';
 type InputProps = {
   className?: string,
   dense?: boolean,
+  forceValue?: boolean,
   icon?: FabricIconName,
   inset?: corgi.VElementOrPrimitive,
   placeholder?: string,
@@ -27,7 +28,7 @@ export function OutlinedInput({className, ...props}: {
 }
 
 function Input(
-    {className, dense, icon, inset, placeholder, ref, value, ...props}: InputProps,
+    {className, dense, forceValue, icon, inset, placeholder, ref, value, ...props}: InputProps,
     state: State|undefined,
     updateState: (newState: State) => void) {
   if (!state) {
@@ -55,7 +56,7 @@ function Input(
           })}
           className="bg-transparent grow outline-none placeholder-current"
           placeholder={placeholder ?? ''}
-          value={state.managed ? value : undefined}
+          value={forceValue || state.managed ? value : undefined}
       />
       {inset ?? ''}
     </label>

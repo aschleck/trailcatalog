@@ -39,6 +39,10 @@ export interface InputProperties extends Properties {
   value?: string;
 }
 
+export interface OptionProperties extends Properties {
+  value?: string;
+}
+
 export interface SVGGraphicsProperties extends Properties {
   vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
 }
@@ -387,7 +391,10 @@ function applyUpdate(from: VElement|undefined, to: VElement): InstantiationResul
       } else if (key === 'unboundEvents') {
         result.unboundEventss.push([node, checkExists(to.props[key])]);
       } else if ((key as string) === 'value') {
-        (node as HTMLInputElement).value = checkExists(to.props[key]);
+        const value = to.props[key];
+        if (value !== undefined) {
+          (node as HTMLInputElement).value = value;
+        }
       } else {
         const canonical = key.replace('_', '-');
         const value = checkExists(to.props[key]);
@@ -755,9 +762,11 @@ declare global {
       input: InputProperties;
       label: Properties;
       line: LineProperties;
+      option: OptionProperties;
       main: Properties;
       polyline: PolylineProperties;
       section: Properties;
+      select: Properties;
       span: Properties;
       svg: SVGProperties;
       table: Properties;
