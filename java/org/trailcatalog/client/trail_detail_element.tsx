@@ -3,7 +3,7 @@ import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
-import { SELECTION_CLEARED } from 'js/map/events';
+import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
 import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
@@ -153,8 +153,9 @@ function Content({trailId, state, updateState}: {
           },
           events: {
             corgi: [
+              [CLICKED, 'selectionChanged'],
               [SELECTION_CHANGED, 'selectionChanged'],
-              [SELECTION_CLEARED, 'selectionChanged'],
+              [ZOOMED, 'selectionChanged'],
             ],
             render: 'wakeup',
           },

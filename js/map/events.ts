@@ -2,6 +2,10 @@ import { LatLngRect, LatLngZoom, Vec2 } from 'java/org/trailcatalog/client/commo
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { declareEvent } from 'js/corgi/events';
 
+export const CLICKED = declareEvent<{
+  clickPx: Vec2;
+}>('clicked');
+
 export const DATA_CHANGED = declareEvent<{}>('data_changed');
 
 export const MAP_MOVED = declareEvent<{
@@ -9,6 +13,4 @@ export const MAP_MOVED = declareEvent<{
   zoom: number;
 }>('map_moved');
 
-export const SELECTION_CLEARED = declareEvent<{
-  clickPx: Vec2;
-}>('selection_cleared');
+export const ZOOMED = declareEvent<{}>('zoomed');

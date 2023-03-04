@@ -13,7 +13,7 @@ import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
 
-import { DATA_CHANGED, MAP_MOVED, SELECTION_CLEARED } from './events';
+import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from './events';
 import { Layer } from './layer';
 import { PointerInterpreter } from './pointer_interpreter';
 
@@ -99,7 +99,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
         // is to steal focus from inputs and close any popups for panning, which is noble. So for
         // now let's fix this up in the double click handlers until it gets too annoying.
         this.canvas.focus();
-        this.trigger(SELECTION_CLEARED, {
+        this.trigger(CLICKED, {
           clickPx: [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
         });
 
@@ -194,9 +194,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
-    this.trigger(SELECTION_CLEARED, {
-      clickPx: [-1, -1],
-    });
+    this.trigger(ZOOMED, {});
   }
 
   private wheel(e: WheelEvent): void {
@@ -207,9 +205,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
-    this.trigger(SELECTION_CLEARED, {
-      clickPx: [-1, -1],
-    });
+    this.trigger(ZOOMED, {});
   }
 
   private enterIdle(): void {

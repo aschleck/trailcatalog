@@ -4,7 +4,7 @@ import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
-import { DATA_CHANGED, MAP_MOVED, SELECTION_CLEARED } from 'js/map/events';
+import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
 import { currentUrl } from './common/ssr_aware';
@@ -191,11 +191,12 @@ function Content({boundaryId, query, state, updateState}: {
           },
           events: {
             corgi: [
+              [CLICKED, 'selectionChanged'],
               [DATA_CHANGED, 'onDataChange'],
               [HOVER_CHANGED, 'onHoverChanged'],
               [MAP_MOVED, 'onMove'],
               [SELECTION_CHANGED, 'selectionChanged'],
-              [SELECTION_CLEARED, 'selectionChanged'],
+              [ZOOMED, 'selectionChanged'],
             ],
             render: 'wakeup',
           },
