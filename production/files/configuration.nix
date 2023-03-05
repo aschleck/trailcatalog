@@ -36,7 +36,7 @@
 
   security.acme = {
     acceptTerms = true;
-    certs."trailcatalog.org".email = "trailcatalog@exclusivelyducks.com";
+    defaults.email = "trailcatalog@exclusivelyducks.com";
   };
 
   services.nginx = {
@@ -56,6 +56,21 @@
       locations."/static/" = {
         proxyPass = "http://127.0.0.1:7060";
       };
+    };
+
+    virtualHosts."s2.trailcatalog.org" = {
+      enableACME = true;
+      forceSSL = true;
+
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:7061";
+      };
+    };
+
+    virtualHosts."www.trailcatalog.org" = {
+      enableACME = true;
+      forceSSL = true;
+      globalRedirect = "trailcatalog.org";
     };
   };
 

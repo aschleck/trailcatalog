@@ -5,9 +5,10 @@ pkg_tar(
     name = "frontend_pkg",
     package_dir = "app",
     srcs = [
-        "//java/org/trailcatalog:api_server_deploy.jar",
         "//java/org/trailcatalog/frontend:frontend.js",
         "//java/org/trailcatalog/frontend:frontend.js.map",
+        "//java/org/trailcatalog:api_server_deploy.jar",
+        "//js/s2viewer:s2_pkg",
         ":static_data",
     ],
     stamp = 1,
