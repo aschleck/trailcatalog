@@ -34,11 +34,14 @@ public final class SimpleS2 {
   // equal between the two, or else they will give each other wrong data in the leaves.
 
   // Level 6 is the minimum because otherwise 47c4 is 7 MB with overview details.
-  public static final int HIGHEST_OVERVIEW_INDEX_LEVEL = 6;
+  // Level 7 is a better minimum because otherwise the client slows down
+  public static final int HIGHEST_OVERVIEW_INDEX_LEVEL = 7;
   // Level 8 is the minimum because otherwise 47b94 is 3 MB with coarse details.
   public static final int HIGHEST_COARSE_INDEX_LEVEL = 8;
-  // Level 12 is chosen because otherwise we pull in too many city streets in urban areas.
-  public static final int HIGHEST_FINE_INDEX_LEVEL = 12;
+  // Level 10 is chosen because we can.
+  // If we allow pulling streets, level 12 is best because otherwise we pull in too many city
+  // streets in urban areas.
+  public static final int HIGHEST_FINE_INDEX_LEVEL = 10;
   // This is the level at which the database gets indexed
   public static final int HIGHEST_INDEX_LEVEL = 13;
 

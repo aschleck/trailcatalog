@@ -88,6 +88,7 @@ interface TrailHandle {
 
 type Handle = PathHandle|PointHandle|TrailHandle;
 
+const RENDER_POINT_ZOOM_THRESHOLD = 14;
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 
 const TRAIL_DIAMOND_REGULAR =
@@ -338,9 +339,9 @@ export class MapData extends Layer {
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     if (this.showDetail(zoom)) {
       if (this.showFine(zoom)) {
-        this.planFine(viewportSize, planner);
+        this.planFine(viewportSize, zoom, planner);
       } else {
-        this.planCoarse(viewportSize, planner);
+        this.planCoarse(viewportSize, zoom, planner);
       }
     }
 
@@ -348,7 +349,7 @@ export class MapData extends Layer {
     this.planPins(zoom, planner);
   }
 
-  private planCoarse(viewportSize: Vec2, planner: RenderPlanner): void {
+  private planCoarse(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     const cells = this.coarseCellsInView(viewportSize);
 
     for (const cell of cells) {
@@ -361,7 +362,7 @@ export class MapData extends Layer {
       } else {
         const fallback = this.dataService.fineCells.get(id);
         if (fallback) {
-          this.planFineCell(fallback, planner);
+          this.planFineCell(fallback, zoom, planner);
         }
       }
     }
@@ -389,7 +390,7 @@ export class MapData extends Layer {
     }
   }
 
-  private planFine(viewportSize: Vec2, planner: RenderPlanner): void {
+  private planFine(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     const cells = this.fineCellsInView(viewportSize);
 
     for (const cell of cells) {
@@ -397,7 +398,7 @@ export class MapData extends Layer {
       const buffer = this.dataService.fineCells.get(id);
       if (buffer !== undefined) {
         if (buffer) {
-          this.planFineCell(buffer, planner);
+          this.planFineCell(buffer, zoom, planner);
         }
       } else {
         const fallback = this.dataService.coarseCells.get(id);
@@ -408,7 +409,7 @@ export class MapData extends Layer {
     }
   }
 
-  private planFineCell(buffer: ArrayBuffer, planner: RenderPlanner): void {
+  private planFineCell(buffer: ArrayBuffer, zoom: number, planner: RenderPlanner): void {
     const data = new LittleEndianView(buffer);
 
     const pathCount = data.getVarInt32();
@@ -429,24 +430,26 @@ export class MapData extends Layer {
       planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
     }
 
-    const pointCount = data.getVarInt32();
-    for (let i = 0; i < pointCount; ++i) {
-      const id = data.getVarBigInt64();
-      const type = data.getVarInt32();
-      const nameLength = data.getVarInt32();
-      data.skip(nameLength);
-      const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-      const markerPx = projectLatLng(marker);
-      const hover = this.hovering.has(id);
-      const icon = POINTS_ATLAS.get(type) ?? 0;
-      planner.addAtlasedBillboard(
-          markerPx,
-          NO_OFFSET,
-          hover ? POINT_HOVER_BILLBOARD_SIZE_PX : POINT_BILLBOARD_SIZE_PX,
-          icon,
-          POINTS_ATLAS_SIZE,
-          this.pointsAtlas,
-          Z_POINT);
+    if (zoom >= RENDER_POINT_ZOOM_THRESHOLD) {
+      const pointCount = data.getVarInt32();
+      for (let i = 0; i < pointCount; ++i) {
+        const id = data.getVarBigInt64();
+        const type = data.getVarInt32();
+        const nameLength = data.getVarInt32();
+        data.skip(nameLength);
+        const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
+        const markerPx = projectLatLng(marker);
+        const hover = this.hovering.has(id);
+        const icon = POINTS_ATLAS.get(type) ?? 0;
+        planner.addAtlasedBillboard(
+            markerPx,
+            NO_OFFSET,
+            hover ? POINT_HOVER_BILLBOARD_SIZE_PX : POINT_BILLBOARD_SIZE_PX,
+            icon,
+            POINTS_ATLAS_SIZE,
+            this.pointsAtlas,
+            Z_POINT);
+      }
     }
   }
 

@@ -10,7 +10,7 @@ import { LineProgram } from './line_program';
 import { Drawable } from './program';
 import { Renderer } from './renderer';
 
-const MAX_GEOMETRY_BYTES = 48_000_000;
+const MAX_GEOMETRY_BYTES = 64_000_000;
 
 export class RenderPlanner {
 

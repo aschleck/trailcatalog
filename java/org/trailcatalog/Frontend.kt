@@ -525,7 +525,6 @@ private fun fetchCoarse(ctx: Context) {
         setLong(1, min.id())
         setLong(2, max.id())
         setInt(3, epochTracker.epoch)
-        setInt(4, epochTracker.epoch)
       }
     } else {
       it.prepareStatement(
