@@ -80,6 +80,8 @@ function CellPopup({cell, position}: {cell: S2CellId, position: [number, number]
       <div className="font-bold">{cell.toToken()}</div>
       <div>level: {cell.level()}</div>
       <div>area: {area.value} {area.unit}</div>
+      <div>min: {cell.rangeMin().id().toString(10)}</div>
+      <div>max: {cell.rangeMax().id().toString(10)}</div>
     </div>
   </>;
 }

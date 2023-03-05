@@ -21,6 +21,8 @@ export declare namespace com.google.common.geometry {
     id(): nativebootstrap.Long;
     level(): number;
     parentAtLevel(level: number): S2CellId;
+    rangeMax(): S2CellId;
+    rangeMin(): S2CellId;
     toLoop(level: number): S2Loop;
     toToken(): string;
   }
@@ -88,6 +90,7 @@ export declare namespace nativebootstrap {
     static fromBits(low: number, high: number): Long;
     getHighBits(): number;
     getLowBits(): number;
+    toString(radix: number): string;
   }
 }
 

@@ -519,23 +519,13 @@ private fun fetchCoarse(ctx: Context) {
               + "WHERE "
               + "(p.cell >= ? AND p.cell <= ?) "
               + "AND p.epoch = ? "
-              + "UNION ALL "
-              + "SELECT p.id, p.type, p.lat_lng_degrees "
-              + "FROM paths p "
-              + "JOIN paths_in_trails pit "
-              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
-              + "WHERE "
-              + "(p.cell >= ? AND p.cell <= ?) "
-              + "AND p.epoch = ? "
       ).apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
         setLong(1, min.id())
         setLong(2, max.id())
         setInt(3, epochTracker.epoch)
-        setLong(4, min.id() + Long.MIN_VALUE)
-        setLong(5, max.id() + Long.MIN_VALUE)
-        setInt(6, epochTracker.epoch)
+        setInt(4, epochTracker.epoch)
       }
     } else {
       it.prepareStatement(
@@ -582,35 +572,36 @@ private fun fetchFine(ctx: Context) {
       it.prepareStatement(
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
+              + "LEFT JOIN paths_in_trails pit "
+              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
               + "WHERE "
               + "(p.cell >= ? AND p.cell <= ?) "
               + "AND p.epoch = ? "
-              + "UNION ALL "
-              + "SELECT p.id, p.type, p.lat_lng_degrees "
-              + "FROM paths p "
-              + "WHERE "
-              + "(p.cell >= ? AND p.cell <= ?) "
-              + "AND p.epoch = ? "
+              + "AND (pit.path_id IS NOT NULL OR public.enumADescendsB(p.type, ?, ?)) "
       ).apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
         setLong(1, min.id())
         setLong(2, max.id())
         setInt(3, epochTracker.epoch)
-        setLong(4, min.id() + Long.MIN_VALUE)
-        setLong(5, max.id() + Long.MIN_VALUE)
-        setInt(6, epochTracker.epoch)
+        setInt(4, WayCategory.PATH.id)
+        setInt(5, ENUM_SIZE)
       }
     } else {
       it.prepareStatement(
           "SELECT p.id, p.type, p.lat_lng_degrees "
               + "FROM paths p "
+              + "LEFT JOIN paths_in_trails pit "
+              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
               + "WHERE "
               + "p.cell = ? "
               + "AND p.epoch = ? "
+              + "AND (pit.path_id IS NOT NULL OR public.enumADescendsB(p.type, ?, ?)) "
       ).apply {
         setLong(1, cell.id())
         setInt(2, epochTracker.epoch)
+        setInt(3, WayCategory.PATH.id)
+        setInt(4, ENUM_SIZE)
       }
     }
     val results = query.executeQuery()
@@ -634,21 +625,12 @@ private fun fetchFine(ctx: Context) {
               + "WHERE "
               + "(p.cell >= ? AND p.cell <= ?) "
               + "AND p.epoch = ? "
-              + "UNION ALL "
-              + "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
-              + "FROM points p "
-              + "WHERE "
-              + "(p.cell >= ? AND p.cell <= ?) "
-              + "AND p.epoch = ? "
       ).apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
         setLong(1, min.id())
         setLong(2, max.id())
         setInt(3, epochTracker.epoch)
-        setLong(4, min.id() + Long.MIN_VALUE)
-        setLong(5, max.id() + Long.MIN_VALUE)
-        setInt(6, epochTracker.epoch)
       }
     } else {
       it.prepareStatement(
@@ -837,30 +819,12 @@ private fun fetchTrails(cell: S2CellId, bottom: Int): List<WireTrail> {
               + "WHERE "
               + "(cell >= ? AND cell <= ?) "
               + "AND t.epoch = ? "
-              + "UNION ALL "
-              + "SELECT "
-              + "id, "
-              + "name, "
-              + "type, "
-              + "path_ids, "
-              + "bound_degrees_e7, "
-              + "marker_degrees_e7, "
-              + "elevation_down_meters, "
-              + "elevation_up_meters, "
-              + "length_meters "
-              + "FROM trails t "
-              + "WHERE "
-              + "(cell >= ? AND cell <= ?) "
-              + "AND t.epoch = ?"
       ).apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
         setLong(1, min.id())
         setLong(2, max.id())
         setInt(3, epochTracker.epoch)
-        setLong(4, min.id() + Long.MIN_VALUE)
-        setLong(5, max.id() + Long.MIN_VALUE)
-        setInt(6, epochTracker.epoch)
       }
     } else {
       it.prepareStatement(

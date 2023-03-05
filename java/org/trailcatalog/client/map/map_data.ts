@@ -729,7 +729,8 @@ function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number
 }
 
 function isPath(type: number): boolean {
-  return aDescendsB(type, WayCategory.PATH) || aDescendsB(type, WayCategory.ROAD_TRACK);
+  return (aDescendsB(type, WayCategory.PATH) && !aDescendsB(type, WayCategory.PATH_FOOTWAY))
+    || aDescendsB(type, WayCategory.ROAD_TRACK);
 }
 
 function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableText {

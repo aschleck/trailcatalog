@@ -22,6 +22,8 @@ goog.exportProperty(S2CellId, 'fromToken', S2CellId.fromToken);
 goog.exportProperty(S2CellId.prototype, 'id', S2CellId.prototype.id);
 goog.exportProperty(S2CellId.prototype, 'level', S2CellId.prototype.level);
 goog.exportProperty(S2CellId.prototype, 'parentAtLevel', S2CellId.prototype.parentAtLevel);
+goog.exportProperty(S2CellId.prototype, 'rangeMax', S2CellId.prototype.rangeMax);
+goog.exportProperty(S2CellId.prototype, 'rangeMin', S2CellId.prototype.rangeMin);
 goog.exportProperty(S2CellId.prototype, 'toLoop', S2CellId.prototype.toLoop);
 goog.exportProperty(S2CellId.prototype, 'toToken', S2CellId.prototype.toToken);
 
@@ -87,6 +89,7 @@ goog.exportSymbol('nativebootstrap.Long', Long);
 goog.exportProperty(Long, 'fromBits', Long.fromBits);
 goog.exportProperty(Long.prototype, 'getHighBits', Long.prototype.getHighBits);
 goog.exportProperty(Long.prototype, 'getLowBits', Long.prototype.getLowBits);
+goog.exportProperty(Long.prototype, 'toString', Long.prototype.toString);
 
 const SimpleS2 = goog.require('org.trailcatalog.s2.SimpleS2');
 goog.exportSymbol('org.trailcatalog.s2.SimpleS2', SimpleS2);

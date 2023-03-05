@@ -84,6 +84,7 @@
     enable = true;
     enableTCPIP = true;
     package = pkgs.postgresql_15;
+    settings.effective_cache_size = "32GB";
     settings.shared_buffers = "16GB";
 
     authentication = pkgs.lib.mkForce ''
