@@ -6,6 +6,7 @@
     ./network-ifs.nix
   ];
 
+  boot.initrd.services.swraid.mdadmConf = "ARRAY /dev/md0 metadata=1.2 name=pink:root0 UUID=92dd7dc4:a9fd64b0:96fedf9b:ca8548cf";
   boot.loader.systemd-boot.enable = false;
   boot.loader.grub = {
     enable = true;
