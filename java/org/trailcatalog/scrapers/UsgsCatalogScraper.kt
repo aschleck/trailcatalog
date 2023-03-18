@@ -1,4 +1,4 @@
-package org.trailcatalog.importers.elevation.metadata
+package org.trailcatalog.scrapers
 
 import com.google.gson.Gson
 import okhttp3.HttpUrl

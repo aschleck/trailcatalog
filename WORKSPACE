@@ -3,6 +3,32 @@ workspace(name = "trailcatalog")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
+    name = "io_tweag_rules_nixpkgs",
+    strip_prefix = "rules_nixpkgs-62d63740061dd94ecee3ec2c0cfc8a7ed409b98c",
+    urls = ["https://github.com/tweag/rules_nixpkgs/archive/62d63740061dd94ecee3ec2c0cfc8a7ed409b98c.tar.gz"],
+)
+
+load("@io_tweag_rules_nixpkgs//nixpkgs:repositories.bzl", "rules_nixpkgs_dependencies")
+rules_nixpkgs_dependencies()
+
+load("@io_tweag_rules_nixpkgs//nixpkgs:nixpkgs.bzl", "nixpkgs_git_repository")
+nixpkgs_git_repository(
+    name = "nixpkgs",
+    revision = "22.11",
+    sha256 = "ddc3428d9e1a381b7476750ac4dbea7a42885cbbe6e1af44b21d6447c9609a6f",
+)
+
+load("@io_tweag_rules_nixpkgs//nixpkgs:nixpkgs.bzl", "nixpkgs_java_configure")
+
+nixpkgs_java_configure(
+    attribute_path = "jdk17.home",
+    repository = "@nixpkgs",
+    toolchain = True,
+    toolchain_name = "nixpkgs_java",
+    toolchain_version = "17",
+)
+
+http_archive(
     name = "rules_python",
     sha256 = "36362b4d54fcb17342f9071e4c38d63ce83e2e57d7d5599ebdde4670b9760664",
     strip_prefix = "rules_python-0.18.0",
@@ -33,9 +59,18 @@ load("@pip//:requirements.bzl", "install_deps")
 install_deps()
 
 http_archive(
+    name = "remote_java_tools_darwin",
+    sha256 = "aed319892b638efabd08405b8f835770e13e2465d20459876c5f457f2b6426f3",
+    urls = [
+            "https://mirror.bazel.build/bazel_java_tools/releases/java/v11.12/java_tools_darwin-v11.12.zip",
+            "https://github.com/bazelbuild/java_tools/releases/download/java_v11.12/java_tools_darwin-v11.12.zip",
+    ],
+)
+
+http_archive(
     name = "rules_java",
-    url = "https://github.com/bazelbuild/rules_java/releases/download/5.4.0/rules_java-5.4.0.tar.gz",
-    sha256 = "9b87757af5c77e9db5f7c000579309afae75cf6517da745de01ba0c6e4870951",
+    urls = ["https://github.com/bazelbuild/rules_java/releases/download/5.4.1/rules_java-5.4.1.tar.gz"],
+    sha256 = "a1f82b730b9c6395d3653032bd7e3a660f9d5ddb1099f427c1e1fe768f92e396",
 )
 load("@rules_java//java:repositories.bzl", "rules_java_dependencies", "rules_java_toolchains")
 rules_java_dependencies()
@@ -218,7 +253,7 @@ load_j2cl_repo_deps()
 
 load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external", "setup_j2cl_workspace")
 
-setup_j2cl_workspace(omit_kotlin = True)
+setup_j2cl_workspace()
 
 http_archive(
     name = "com_google_elemental2",
@@ -281,9 +316,11 @@ j2cl_maven_import_external(
     ],
 )
 
-local_repository(
+http_archive(
     name = "com_google_geometry_s2",
-    path = "../s2-geometry-library-java",
+    sha256 = "61f159f82e91003199a8e2414b6715d9c63e1b621bd90d5e26e3546370db4bb6",
+    strip_prefix = "s2-geometry-library-java-cd30c406ea3d0c7fb76e11b13c3ecdaa7066d968",
+    urls = ["https://github.com/aschleck/s2-geometry-library-java/archive/cd30c406ea3d0c7fb76e11b13c3ecdaa7066d968.zip"],
 )
 
 http_archive(

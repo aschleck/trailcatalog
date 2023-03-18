@@ -1,7 +1,6 @@
 package org.trailcatalog.importers.pipeline
 
 import com.google.common.reflect.TypeToken
-import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.getSerializer

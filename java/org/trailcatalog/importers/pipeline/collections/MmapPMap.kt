@@ -3,7 +3,7 @@ package org.trailcatalog.importers.pipeline.collections
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
-import org.trailcatalog.importers.pipeline.io.EncodedInputStream
+import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.File
 import java.io.RandomAccessFile
@@ -17,7 +17,7 @@ var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024L
 private val BYTE_BUFFER = ByteBuffer.allocate(256 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
 
 class MmapPMap<K : Comparable<K>, V>(
-    private val maps: List<EncodedInputStream>,
+    private val maps: List<EncodedByteBufferInputStream>,
     private val keySerializer: Serializer<K>,
     private val valueSerializer: Serializer<V>,
     private val size: Long,
@@ -85,7 +85,7 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
     valueType: TypeToken<out V>,
     keySerializer: Serializer<K>,
     valueSerializer: Serializer<V>,
-    fn: (Emitter2<K, V>) -> Unit): Pair<File, List<EncodedInputStream>> {
+    fn: (Emitter2<K, V>) -> Unit): Pair<File, List<EncodedByteBufferInputStream>> {
   val sharded =
       File.createTempFile(cleanFilename("mmap-map-sharded-${keyType}-${valueType}"), null)
   sharded.deleteOnExit()
@@ -156,7 +156,7 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
 
   val fileChannel = FileChannel.open(sharded.toPath())
   return Pair(sharded, shards.map { s ->
-    EncodedInputStream(fileChannel.map(MapMode.READ_ONLY, s.start, s.length))
+    EncodedByteBufferInputStream(fileChannel.map(MapMode.READ_ONLY, s.start, s.length))
   })
 }
 
@@ -164,7 +164,7 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
     context: String,
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
-    unmergedShards: List<EncodedInputStream>,
+    unmergedShards: List<EncodedByteBufferInputStream>,
     keySerializer: Serializer<K>,
     valueSerializer: Serializer<V>,
     estimatedByteSize: Long,
@@ -242,7 +242,7 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
   return DisposableSupplier(fileReference) {
     val opened = FileChannel.open(merged.toPath()).use { postsortChannel ->
       shards.map { s ->
-        EncodedInputStream(postsortChannel.map(MapMode.READ_ONLY, s.start, s.length))
+        EncodedByteBufferInputStream(postsortChannel.map(MapMode.READ_ONLY, s.start, s.length))
       }
     }
     MmapPMap(
@@ -251,7 +251,7 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
 }
 
 private data class MergeKey<K : Comparable<K>>(
-    val key: K, val value: ByteArray, val source: EncodedInputStream)
+    val key: K, val value: ByteArray, val source: EncodedByteBufferInputStream)
   : Comparable<MergeKey<K>> {
 
   override fun compareTo(other: MergeKey<K>): Int {

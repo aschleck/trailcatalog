@@ -11,7 +11,7 @@ import org.locationtech.proj4j.CRSFactory
 import org.locationtech.proj4j.CoordinateTransform
 import org.locationtech.proj4j.CoordinateTransformFactory
 import org.locationtech.proj4j.ProjCoordinate
-import org.trailcatalog.importers.pipeline.io.EncodedInputStream
+import org.trailcatalog.common.EncodedByteBufferInputStream
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder.LITTLE_ENDIAN
@@ -39,7 +39,7 @@ class ConstantReader(private val value: Float?) : DemReader {
 
 class GeoTiffReader(private val path: Path) : DemReader {
 
-  private val stream: EncodedInputStream
+  private val stream: EncodedByteBufferInputStream
   private val decompressor: CompressionDecoder
   private val imageWidth: Int
   private val imageHeight: Int
@@ -60,7 +60,7 @@ class GeoTiffReader(private val path: Path) : DemReader {
 
   init {
     FileChannel.open(path).use { channel ->
-      stream = EncodedInputStream(channel.map(MapMode.READ_ONLY, 0, path.fileSize()))
+      stream = EncodedByteBufferInputStream(channel.map(MapMode.READ_ONLY, 0, path.fileSize()))
     }
 
     if (stream.readShort() != 0x4949.toShort()) {
@@ -118,11 +118,6 @@ class GeoTiffReader(private val path: Path) : DemReader {
         TiffTagType.SamplesPerPixel.id -> {
           if (assertSingleShort(type, valueCount, valueOffset) != 1.toUShort()) {
             throw IllegalArgumentException("Only support one-dimensional tiffs")
-          }
-        }
-        TiffTagType.SampleFormat.id -> {
-          if (assertSingleShort(type, valueCount, valueOffset) != SampleFormat.Float.id) {
-            throw IllegalArgumentException("Only support float tiffs")
           }
         }
 //        else -> {

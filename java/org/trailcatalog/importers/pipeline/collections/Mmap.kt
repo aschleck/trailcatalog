@@ -2,14 +2,14 @@ package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
-import org.trailcatalog.importers.pipeline.io.EncodedInputStream
+import org.trailcatalog.common.EncodedByteBufferInputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 
 open class MmapPList<T>(
-    private val maps: List<EncodedInputStream>,
+    private val maps: List<EncodedByteBufferInputStream>,
     private val serializer: Serializer<T>,
     private val size: Long,
 ) : PList<T> {
@@ -91,7 +91,7 @@ fun <T : Any> createMmapPList(
   return DisposableSupplier(fileReference) {
     val maps = FileChannel.open(file.toPath()).use { fileChannel ->
       shards.map { s ->
-        EncodedInputStream(fileChannel.map(MapMode.READ_ONLY, s.start, s.length))
+        EncodedByteBufferInputStream(fileChannel.map(MapMode.READ_ONLY, s.start, s.length))
       }
     }
     MmapPList(maps, serializer, size)

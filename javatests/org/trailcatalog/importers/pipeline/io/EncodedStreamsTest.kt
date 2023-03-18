@@ -2,6 +2,7 @@ package org.trailcatalog.importers.pipeline.io
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
+import org.trailcatalog.common.EncodedByteBufferInputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel.MapMode
@@ -31,7 +32,7 @@ class EncodedStreamsTest {
     }
 
     RandomAccessFile(file, "r").use {
-      val input = EncodedInputStream(it.channel.map(MapMode.READ_ONLY, 0, length))
+      val input = EncodedByteBufferInputStream(it.channel.map(MapMode.READ_ONLY, 0, length))
       assertThat(input.read()).isEqualTo(3)
       assertThat(input.readInt()).isEqualTo(30)
       assertThat(input.readInt()).isEqualTo(3_000)
