@@ -239,15 +239,15 @@ private class EncodedUrlInputStream(private val source: SeekingUrlInputStream) :
     return source.read().toByte()
   }
 
-  override fun seek(unsignedPosition: UInt) {
-    val to = unsignedPosition.toLong()
-    if (position <= to && to - position < 64 * 1024) {
-      while (position < to) {
-        val skipped = source.skip(to - position)
-        position += skipped
+  override fun seek(position: UInt) {
+    val to = position.toLong()
+    if (this.position <= to && to - this.position < 64 * 1024) {
+      while (this.position < to) {
+        val skipped = source.skip(to - this.position)
+        this.position += skipped
       }
     } else {
-      position = to
+      this.position = to
       source.seek(to)
     }
   }
