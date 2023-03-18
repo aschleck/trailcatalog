@@ -23,8 +23,8 @@ kt_jvm_library(
     ],
     deps = [
         "//java/org/trailcatalog:pg_support",
+        "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/importers/common",
-        "//java/org/trailcatalog/importers/elevation",
         "//java/org/trailcatalog/importers/pipeline/io",
         "//java/org/trailcatalog/s2:s2-kt",
         "@maven//:com_google_code_gson_gson",

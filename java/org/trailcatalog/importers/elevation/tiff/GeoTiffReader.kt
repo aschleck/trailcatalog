@@ -11,7 +11,7 @@ import org.locationtech.proj4j.CRSFactory
 import org.locationtech.proj4j.CoordinateTransform
 import org.locationtech.proj4j.CoordinateTransformFactory
 import org.locationtech.proj4j.ProjCoordinate
-import org.trailcatalog.common.EncodedByteBufferInputStream
+import org.trailcatalog.common.*
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder.LITTLE_ENDIAN

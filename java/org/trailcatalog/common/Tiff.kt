@@ -1,4 +1,4 @@
-package org.trailcatalog.importers.elevation.tiff
+package org.trailcatalog.common
 
 enum class TiffTagType(val id: UShort) {
   // https://www.awaresystems.be/imaging/tiff/tifftags/baseline.html

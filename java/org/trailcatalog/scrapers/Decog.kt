@@ -6,9 +6,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.common.EncodedInputStream
+import org.trailcatalog.common.TiffDataType
+import org.trailcatalog.common.TiffTagType
 import org.trailcatalog.importers.common.IORuntimeException
-import org.trailcatalog.importers.elevation.tiff.TiffDataType
-import org.trailcatalog.importers.elevation.tiff.TiffTagType
 import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
 import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
 import java.io.InputStream

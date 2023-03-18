@@ -6,6 +6,7 @@ kt_jvm_library(
     name = "tiff",
     srcs = glob(["*.kt"]),
     deps = [
+        "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/importers/pipeline/io",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:com_google_guava_guava",

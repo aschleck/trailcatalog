@@ -1,4 +1,4 @@
-package org.trailcatalog.importers.elevation.tiff
+package org.trailcatalog.common
 
 // https://docs.opengeospatial.org/is/19-008r4/19-008r4.html#_requirements_class_geodeticcrsgeokey
 
