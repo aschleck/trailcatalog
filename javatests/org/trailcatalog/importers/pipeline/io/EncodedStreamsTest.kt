@@ -2,6 +2,7 @@ package org.trailcatalog.importers.pipeline.io
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
+import org.trailcatalog.common.ChannelEncodedOutputStream
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import java.io.File
 import java.io.RandomAccessFile

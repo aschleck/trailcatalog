@@ -1,7 +1,7 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
-import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
+import org.trailcatalog.common.ChannelEncodedOutputStream
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import java.io.File
 import java.io.RandomAccessFile

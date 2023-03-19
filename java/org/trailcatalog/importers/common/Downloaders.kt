@@ -5,9 +5,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
+import org.trailcatalog.common.IORuntimeException
 import java.io.InputStreamReader
 import java.lang.Exception
-import java.lang.RuntimeException
 import java.net.SocketTimeoutException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
@@ -86,9 +86,6 @@ private fun downloadOnce(url: HttpUrl, to: Path) {
     }
   }
 }
-
-open class IORuntimeException(message: String, throwable: Throwable? = null)
-  : RuntimeException(message, throwable)
 
 class NotFoundException(message: String, throwable: Throwable? = null)
   : IORuntimeException(message, throwable)

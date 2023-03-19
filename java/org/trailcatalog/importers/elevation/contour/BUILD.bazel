@@ -1,0 +1,37 @@
+package(default_visibility = ["//java/org/trailcatalog:internal"])
+
+load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+load("@rules_java//java:defs.bzl", "java_binary", "java_library")
+
+java_binary(
+    name = "generate_contours",
+    main_class = "org.trailcatalog.importers.elevation.contour.GenerateContoursKt",
+    runtime_deps = [":contour"],
+)
+
+kt_jvm_library(
+    name = "contour",
+    srcs = glob(["*.kt"]),
+    data = [
+        "//java/org/trailcatalog/scrapers:decog",
+    ],
+    runtime_deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
+    ],
+    deps = [
+        ":runfiles",
+        "//java/org/trailcatalog/importers/elevation",
+        "@maven//:com_google_geometry_s2_geometry",
+        "@maven//:com_squareup_okhttp3_okhttp",
+        "@maven//:org_wololo_flatgeobuf",
+    ],
+)
+
+java_library(
+    name = "runfiles",
+    srcs = ["Runfiles.java"],
+    deps = [
+        "//java/org/trailcatalog/common",
+        "@bazel_tools//tools/java/runfiles",
+    ],
+)

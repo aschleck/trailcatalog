@@ -11,9 +11,9 @@ import org.trailcatalog.importers.pbf.registerPbfSerializers
 import org.trailcatalog.importers.pipeline.collections.HEAP_DUMP_THRESHOLD
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
-import org.trailcatalog.importers.pipeline.io.BUFFER_SIZE
+import org.trailcatalog.common.BUFFER_SIZE
 import org.trailcatalog.common.EncodedInputStream
-import org.trailcatalog.importers.pipeline.io.FLUSH_THRESHOLD
+import org.trailcatalog.common.FLUSH_THRESHOLD
 import org.trailcatalog.common.EncodedOutputStream
 import java.io.File
 import java.nio.file.Path

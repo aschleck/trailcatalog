@@ -7,7 +7,7 @@ import com.google.common.geometry.S2LatLngRect
 import com.zaxxer.hikari.HikariDataSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.slf4j.LoggerFactory
-import org.trailcatalog.importers.common.IORuntimeException
+import org.trailcatalog.common.IORuntimeException
 import org.trailcatalog.importers.common.NotFoundException
 import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.elevation.tiff.ConstantReader

@@ -6,6 +6,7 @@ import com.zaxxer.hikari.HikariDataSource
 import org.postgresql.util.PGobject
 import org.trailcatalog.importers.common.ClosedIntRange
 import org.trailcatalog.importers.common.toClosedIntRange
+import kotlin.math.abs
 
 fun getDemMetadata(area: S2LatLngRect, hikari: HikariDataSource): List<DemMetadata> {
   return /*getTargetedMetadata(area, hikari) +*/ getCopernicus30m(area)
@@ -15,10 +16,6 @@ private fun getCopernicus30m(area: S2LatLngRect): List<DemMetadata> {
   val metadata = ArrayList<DemMetadata>()
   for (lat in Math.floor(area.lo().latDegrees()).toInt() .. Math.ceil(area.hi().latDegrees()).toInt()) {
     for (lng in Math.floor(area.lo().lngDegrees()).toInt() .. Math.ceil(area.hi().lngDegrees()).toInt()) {
-      val pLat = Math.abs(lat).toString().padStart(2, '0')
-      val pLng = Math.abs(lng).toString().padStart(3, '0')
-      val fLat = (if (lat < 0) "S" else "N") + pLat
-      val fLng = (if (lng < 0) "W" else "E") + pLng
       metadata.add(
           DemMetadata(
               "copernicus/${lat}/${lng}",
@@ -26,14 +23,22 @@ private fun getCopernicus30m(area: S2LatLngRect): List<DemMetadata> {
                   S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
                   S2LatLng.fromDegrees(lat + 1.0, lng + 1.0),
               ),
-              "https://copernicus-dem-30m.s3.amazonaws.com/"
-                  + "Copernicus_DSM_COG_10_${fLat}_00_${fLng}_00_DEM/"
-                  + "Copernicus_DSM_COG_10_${fLat}_00_${fLng}_00_DEM.tif",
+              getCopernicus30mUrl(lat, lng),
               global = true,
           ))
     }
   }
   return metadata
+}
+
+public fun getCopernicus30mUrl(lat: Int, lng: Int): String {
+  val pLat = abs(lat).toString().padStart(2, '0')
+  val pLng = abs(lng).toString().padStart(3, '0')
+  val fLat = (if (lat < 0) "S" else "N") + pLat
+  val fLng = (if (lng < 0) "W" else "E") + pLng
+  return ("https://copernicus-dem-30m.s3.amazonaws.com/"
+              + "Copernicus_DSM_COG_10_${fLat}_00_${fLng}_00_DEM/"
+              + "Copernicus_DSM_COG_10_${fLat}_00_${fLng}_00_DEM.tif")
 }
 
 private fun getTargetedMetadata(area: S2LatLngRect, hikari: HikariDataSource): List<DemMetadata> {

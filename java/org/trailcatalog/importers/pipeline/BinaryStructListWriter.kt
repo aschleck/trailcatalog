@@ -4,7 +4,7 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.getSerializer
-import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
+import org.trailcatalog.common.ChannelEncodedOutputStream
 import java.io.File
 import java.io.RandomAccessFile
 

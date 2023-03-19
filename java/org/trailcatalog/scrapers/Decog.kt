@@ -8,9 +8,9 @@ import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.common.EncodedInputStream
 import org.trailcatalog.common.TiffDataType
 import org.trailcatalog.common.TiffTagType
-import org.trailcatalog.importers.common.IORuntimeException
+import org.trailcatalog.common.IORuntimeException
 import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
-import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
+import org.trailcatalog.common.ChannelEncodedOutputStream
 import java.io.InputStream
 import java.lang.UnsupportedOperationException
 import java.nio.ByteBuffer

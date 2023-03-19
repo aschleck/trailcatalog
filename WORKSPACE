@@ -9,9 +9,11 @@ http_archive(
 )
 
 load("@io_tweag_rules_nixpkgs//nixpkgs:repositories.bzl", "rules_nixpkgs_dependencies")
+
 rules_nixpkgs_dependencies()
 
 load("@io_tweag_rules_nixpkgs//nixpkgs:nixpkgs.bzl", "nixpkgs_git_repository")
+
 nixpkgs_git_repository(
     name = "nixpkgs",
     revision = "22.11",
@@ -45,7 +47,6 @@ python_register_toolchains(
 )
 
 load("@python3_11//:defs.bzl", "interpreter")
-
 load("@rules_python//python:pip.bzl", "pip_parse")
 
 pip_parse(
@@ -62,18 +63,21 @@ http_archive(
     name = "remote_java_tools_darwin",
     sha256 = "aed319892b638efabd08405b8f835770e13e2465d20459876c5f457f2b6426f3",
     urls = [
-            "https://mirror.bazel.build/bazel_java_tools/releases/java/v11.12/java_tools_darwin-v11.12.zip",
-            "https://github.com/bazelbuild/java_tools/releases/download/java_v11.12/java_tools_darwin-v11.12.zip",
+        "https://mirror.bazel.build/bazel_java_tools/releases/java/v11.12/java_tools_darwin-v11.12.zip",
+        "https://github.com/bazelbuild/java_tools/releases/download/java_v11.12/java_tools_darwin-v11.12.zip",
     ],
 )
 
 http_archive(
     name = "rules_java",
-    urls = ["https://github.com/bazelbuild/rules_java/releases/download/5.4.1/rules_java-5.4.1.tar.gz"],
     sha256 = "a1f82b730b9c6395d3653032bd7e3a660f9d5ddb1099f427c1e1fe768f92e396",
+    urls = ["https://github.com/bazelbuild/rules_java/releases/download/5.4.1/rules_java-5.4.1.tar.gz"],
 )
+
 load("@rules_java//java:repositories.bzl", "rules_java_dependencies", "rules_java_toolchains")
+
 rules_java_dependencies()
+
 rules_java_toolchains()
 
 http_archive(
@@ -83,7 +87,7 @@ http_archive(
     url = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v1.3.0.tar.gz",
 )
 
-load("@aspect_rules_ts//ts:repositories.bzl", LATEST_TS_VERSION="LATEST_VERSION", "rules_ts_dependencies")
+load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies", LATEST_TS_VERSION = "LATEST_VERSION")
 
 rules_ts_dependencies(
     ts_version = LATEST_TS_VERSION,
@@ -118,7 +122,7 @@ load("@aspect_rules_esbuild//esbuild:dependencies.bzl", "rules_esbuild_dependenc
 
 rules_esbuild_dependencies()
 
-load("@aspect_rules_esbuild//esbuild:repositories.bzl", LATEST_ESBUILD_VERSION="LATEST_VERSION", "esbuild_register_toolchains")
+load("@aspect_rules_esbuild//esbuild:repositories.bzl", "esbuild_register_toolchains", LATEST_ESBUILD_VERSION = "LATEST_VERSION")
 
 esbuild_register_toolchains(
     name = "esbuild",
@@ -221,6 +225,7 @@ maven_install(
         "org.locationtech.proj4j:proj4j:1.1.5",
         "org.postgresql:postgresql:42.3.1",
         "org.slf4j:slf4j-simple:2.0.0",
+        "org.wololo:flatgeobuf:3.25.0",
     ],
     repositories = [
         "https://repo1.maven.org/maven2",

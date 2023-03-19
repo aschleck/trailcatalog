@@ -2,7 +2,7 @@ package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
-import org.trailcatalog.importers.pipeline.io.ChannelEncodedOutputStream
+import org.trailcatalog.common.ChannelEncodedOutputStream
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.File
