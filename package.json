@@ -1,18 +1,19 @@
 {
   "//": "stack-chain is an undeclared dep of cls-hooked, yikes!",
   "devDependencies": {
-    "@types/jest": "^27.5.2",
-    "@types/node": "^18.14.2",
-    "autoprefixer": "^10.4.13",
-    "jest": "^27.5.1",
-    "jest-cli": "^27.5.1",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.15.3",
+    "autoprefixer": "^10.4.14",
+    "jest": "^29.5.0",
+    "jest-cli": "^29.5.0",
+    "jest-environment-jsdom": "^29.5.0",
     "postcss": "^8.4.21",
     "stack-chain": "^2.0.0",
     "tailwindcss": "^3.2.7"
   },
   "dependencies": {
     "@fastify/request-context": "^4.2.0",
-    "fastify": "^4.13.0",
-    "node-fetch": "^3.3.0"
+    "fastify": "^4.14.1",
+    "node-fetch": "^3.3.1"
   }
 }

@@ -32,7 +32,7 @@ def esbuild_binary(
 
 
 def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):
-    srcs = srcs or native.glob(["*.ts", "*.tsx"], exclude=["*.test.ts"])
+    srcs = srcs or native.glob(["*.ts", "*.tsx"], exclude=["*.test.ts", "*.test.tsx"])
 
     ts_project(
         name = name,
@@ -63,13 +63,14 @@ def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):
 
     ts_project(
         name = "tests",
-        srcs = native.glob(["*.test.ts"]),
+        srcs = native.glob(["*.test.ts", "*.test.tsx"]),
         allow_js = True,
         declaration = True,
         tsconfig = "//:tsconfig",
         deps = [
             ":%s" % name,
             "//:node_modules/@types/jest",
+            "//:node_modules/jest-environment-jsdom",
         ],
     )
 
