@@ -1,10 +1,16 @@
+export function checkArgument(v: any, message?: string): void {
+  if (!v) {
+    throw new Error(message ?? 'Argument was false-y');
+  }
+}
+
 export function checkExhaustive(v: never, message?: string): void {
   throw new Error(message ?? 'Value was not exhausted');
 }
 
-export function checkExists<V>(v: V|null|undefined): V {
+export function checkExists<V>(v: V|null|undefined, message?: string): V {
   if (v === null || v === undefined) {
-    throw new Error(`Argument is ${v}`);
+    throw new Error(message ?? `Argument is ${v}`);
   }
   return v;
 }
