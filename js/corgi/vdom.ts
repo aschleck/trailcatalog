@@ -63,11 +63,107 @@ export function createVirtualElement(
   }
 }
 
-export function appendElement(parent: HTMLElement|SVGElement, child: VElementOrPrimitive): void {
+export function appendElement(parent: Element, child: VElementOrPrimitive): void {
   appendChildrenToRoot([child], [maybeCreateHandle(child)], parent);
 }
 
-export function hydrateTree(parent: HTMLElement|SVGElement, tree: VElementOrPrimitive): void {
+export function hydrateElement(parent: Element, to: VElementOrPrimitive): void {
+  const children = [...parent.childNodes];
+  checkArgument(children.length < 2, 'Cannot have more than one child');
+  if (children.length === 0) {
+    parent.appendChild(new Text(''));
+  }
+
+  hydrateElementRecursively(to, maybeCreateHandle(to), parent, /** left= */ undefined);
+}
+
+function hydrateElementRecursively(
+    element: VElementOrPrimitive, handle: Handle, parent: Element, left: Node|undefined): {
+      childHandles: Handle[];
+      last: Node;
+    } {
+  if (!(element instanceof Object)) {
+    let node;
+    if (element === '') {
+      node = new Text('');
+      parent.insertBefore(node, left?.nextSibling ?? null);
+    } else {
+      node = checkExists(left?.nextSibling ?? parent.childNodes[0]);
+      checkArgument(node instanceof Text, 'Node should be text');
+      const need = String(element);
+      const current = node.textContent ?? '';
+      checkArgument(current.startsWith(need), 'Text should match');
+      if (current.length > need.length && current.startsWith(need)) {
+        const actual = new Text(need);
+        parent.insertBefore(actual, node);
+        node.textContent = current.substring(need.length);
+        node = actual;
+      }
+    }
+
+    createdElements.set(
+        handle, {
+          parent,
+          self: node,
+          placeholder: undefined,
+          childHandles: [],
+        });
+    return {
+      childHandles: [],
+      last: node,
+    };
+  }
+
+  if (element.tag === Fragment) {
+    const childHandles = [];
+    let childLeft = left;
+    for (const child of element.children) {
+      const handle = maybeCreateHandle(child);
+      const r = hydrateElementRecursively(child, handle, parent, childLeft);
+      childHandles.push(handle);
+      childLeft = r.last ?? childLeft;
+    }
+
+    const placeholder = new Text('');
+    if (childHandles.length === 0) {
+      parent.insertBefore(placeholder, left?.nextSibling ?? null);
+      childLeft = placeholder;
+    }
+
+    createdElements.set(
+        handle, {
+          parent,
+          self: undefined,
+          placeholder,
+          childHandles,
+        });
+    return {
+      childHandles,
+      last: checkExists(childLeft),
+    };
+  } else {
+    const node = checkExists(left?.nextSibling ?? parent.childNodes[0]) as Element;
+    const childHandles = [];
+    let childLeft = undefined;
+    for (const child of element.children) {
+      const handle = maybeCreateHandle(child);
+      const r = hydrateElementRecursively(child, handle, node, childLeft);
+      childHandles.push(handle);
+      childLeft = r.last ?? childLeft;
+    }
+
+    createdElements.set(
+        handle, {
+          parent,
+          self: node,
+          placeholder: undefined,
+          childHandles,
+        });
+    return {
+      childHandles,
+      last: node,
+    };
+  }
 }
 
 const TAG_TO_NAMESPACE = new Map([
@@ -223,7 +319,6 @@ function patchChildren(
     }
   }
 
-  // TODO: this causes bad fragment ordering. Sibling fragments can get confused
   const next = last?.nextSibling ?? placeholder ?? null;
   for (let i = was.length; i < is.length; ++i) {
     const isElement = is[i];
@@ -259,7 +354,7 @@ function patchChildren(
 
 function patchNode(physical: PhysicalElement, to: VElement): Node|undefined {
   const self = checkExists(physical.self, 'patchNode cannot patch fragments');
-  
+
   if (!(self instanceof Element) || to.tag !== self.tagName.toLowerCase()) {
     const parent = physical.parent;
     const replacements = [...createElement(to, to.handle, parent)];

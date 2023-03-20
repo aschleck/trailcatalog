@@ -1,1 +1,1 @@
-export { appendElement, createVirtualElement, Fragment } from './vdom';
+export { appendElement, createVirtualElement, Fragment, hydrateElement } from './vdom';

@@ -104,6 +104,27 @@ test('patches tree dom', (done: jest.DoneCallback) => {
   corgi.appendElement(document.body, <TreeFlipper done={verifier} />);
 });
 
+test('hydrates dom', (done: jest.DoneCallback) => {
+  document.body.innerHTML = '<div>Pushed: false</div>';
+  const verifier = () => {
+    expect(document.body.innerHTML).toBe('<div>Pushed: true</div>');
+    done();
+  };
+  corgi.hydrateElement(document.body, <Flipper done={verifier} />);
+});
+
+test('hydrates evil', (done: jest.DoneCallback) => {
+  const verifier = () => {
+    try {
+      expect(document.body.innerHTML).toBe('FirstSecondThird');
+      done();
+    } catch (error: unknown) {
+      done(error);
+    }
+  };
+  corgi.hydrateElement(document.body, <EvilCounter done={verifier} />);
+});
+
 function SimpleString() {
   return 'hello';
 }
