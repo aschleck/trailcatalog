@@ -8,6 +8,7 @@ import { EventSpec, qualifiedName } from './events';
 import { isAnchorContextClick } from './mouse';
 import { Service, ServiceDeps } from './service';
 import { DepsConstructorsFor } from './types';
+import { Listener, VElementOrPrimitive } from './vdom';
 
 type IsPrefix<P extends unknown[], T> = P extends [...P, ...unknown[]] ? P : never;
 type HasParameters<M, P extends unknown[], R> =
@@ -16,26 +17,26 @@ type IsMethodWithParameters<T, K extends keyof T, P extends unknown[]> = HasPara
 type AMethodOnWithParameters<T, P extends unknown[]> = keyof {[K in keyof T as IsMethodWithParameters<T, K, P>]: 'valid'};
 
 interface PropertyKeyToHandlerMap<C> {
-  change: AMethodOnWithParameters<C, [CustomEvent<Event>]>,
-  click: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
+  change: AMethodOnWithParameters<C, [CustomEvent<Event>]>;
+  click: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>;
   corgi: Array<[
     EventSpec<unknown>,
     AMethodOnWithParameters<C, [CustomEvent<unknown>]>,
   ]>;
-  keydown: AMethodOnWithParameters<C, [CustomEvent<KeyboardEvent>]>,
-  keyup: AMethodOnWithParameters<C, [CustomEvent<KeyboardEvent>]>,
+  keydown: AMethodOnWithParameters<C, [CustomEvent<KeyboardEvent>]>;
+  keyup: AMethodOnWithParameters<C, [CustomEvent<KeyboardEvent>]>;
   // This is wrong, it could also just be Event, but also I don't care
-  input: AMethodOnWithParameters<C, [CustomEvent<InputEvent>]>,
-  mousedown: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
-  mouseover: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
-  mouseout: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
-  mouseup: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>,
-  pointerdown: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
-  pointerleave: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
-  pointermove: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
-  pointerover: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
-  pointerup: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>,
-  render: AMethodOnWithParameters<C, []>,
+  input: AMethodOnWithParameters<C, [CustomEvent<InputEvent>]>;
+  mousedown: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>;
+  mouseover: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>;
+  mouseout: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>;
+  mouseup: AMethodOnWithParameters<C, [CustomEvent<MouseEvent>]>;
+  pointerdown: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>;
+  pointerleave: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>;
+  pointermove: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>;
+  pointerover: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>;
+  pointerup: AMethodOnWithParameters<C, [CustomEvent<PointerEvent>]>;
+  render: AMethodOnWithParameters<C, []>;
 }
 
 type StateTuple<S> = [S, (newState: S) => void];
@@ -48,7 +49,7 @@ interface BoundController<C extends Controller<any, any, any, any>> {
   instance?: Promise<C>;
   key?: string; // controllers will only be reused if their keys match
   ref?: string;
-  state: StateTuple<C['_S']>,
+  state: StateTuple<C['_S']>;
 }
 
 export interface AnyBoundController extends BoundController<any> {}
@@ -67,6 +68,30 @@ export interface InstantiationResult {
   root: Node;
   sideEffects: Array<() => void>;
   unboundEventss: Array<[SupportedElement, UnboundEvents]>;
+}
+
+export class Binder implements Listener {
+  createdNode(node: Node, element: VElementOrPrimitive): void {
+    if (!(element instanceof Object)) {
+      return;
+    }
+
+    if (element.props.js) {
+      console.log('created');
+      console.log(node);
+      console.log(element.props.js);
+    }
+  }
+
+  patchedNode(node: Node, element: VElementOrPrimitive): void {
+    console.log('patched');
+    console.log(node);
+  }
+
+  removedNode(node: Node): void {
+    console.log('removed');
+    console.log(node);
+  }
 }
 
 const elementsToControllerSpecs = new WeakMap<SupportedElement, AnyBoundController>();
@@ -109,10 +134,10 @@ export function bind<C extends Controller<any, any, any, any>>({
   ref,
   state,
 }: {
-  controller: ControllerCtor<C>,
-  events?: Partial<PropertyKeyToHandlerMap<C>>,
-  key?: string,
-  ref?: string,
+  controller: ControllerCtor<C>;
+  events?: Partial<PropertyKeyToHandlerMap<C>>;
+  key?: string;
+  ref?: string;
 }
 & ({} extends C['_A'] ? {args?: {}} : {args: C['_A']})
 & (undefined extends C['_S'] ? {state?: never} : {state: StateTuple<C['_S']>})

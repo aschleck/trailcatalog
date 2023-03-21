@@ -119,4 +119,4 @@ export interface TextProperties extends SVGGraphicsProperties, Properties {
   dy?: number|string;
 }
 
-
+export type AnyProperties = InputProperties & Properties;

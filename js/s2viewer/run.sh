@@ -2,7 +2,7 @@ set -e
 cd $(dirname "$0")
 cd ../../
 bazel build //js/s2viewer:s2_pkg
-/usr/sbin/nginx \
+nginx \
     -c "$(pwd)/js/s2viewer/nginx.conf" \
     -e /dev/stderr \
     -p "$(pwd)" &

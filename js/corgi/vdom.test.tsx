@@ -29,9 +29,35 @@ test('adds text to dom', () => {
   expect(document.body.innerHTML).toBe('hello world');
 });
 
-test('handles class attributes', () => {
+test('adds wapper to dom', () => {
+  corgi.appendElement(document.body, <WrapChildren><div>hi!</div><span>bye!</span></WrapChildren>);
+  expect(document.body.innerHTML).toBe('<div><div>hi!</div><span>bye!</span></div>');
+});
+
+test('adds true boolean attributes', () => {
+  corgi.appendElement(document.body, <input type="checkbox" checked={true} />);
+  expect(document.body.innerHTML).toBe('<input type=\"checkbox\" checked=\"\">');
+})
+
+test('skips false boolean attributes', () => {
+  corgi.appendElement(document.body, <input type="checkbox" checked={false} />);
+  expect(document.body.innerHTML).toBe('<input type=\"checkbox\">');
+})
+
+test('adds class attributes', () => {
   corgi.appendElement(document.body, <span className="moo">Hello</span>);
   expect(document.body.innerHTML).toBe('<span class="moo">Hello</span>');
+});
+
+test('adds underscore attributes', () => {
+  corgi.appendElement(document.body, <text text_anchor="middle" />);
+  expect(document.body.innerHTML).toBe('<text text-anchor=\"middle\"></text>');
+});
+
+test('sets value on inputs', () => {
+  corgi.appendElement(document.body, <input type="text" value="moo" />);
+  expect(document.body.innerHTML).toBe('<input type="text">');
+  expect((document.body.children[0] as HTMLInputElement).value).toBe('moo');
 });
 
 test('merges fragments', () => {
@@ -59,6 +85,42 @@ test('patches dom', (done: jest.DoneCallback) => {
     done();
   };
   corgi.appendElement(document.body, <Flipper done={verifier} />);
+});
+
+test('patch removes boolean attribute', (done: jest.DoneCallback) => {
+  const verifier = () => {
+    try {
+      expect(document.body.innerHTML).toBe('<input type="checkbox">');
+      done();
+    } catch (error: unknown) {
+      done(error);
+    }
+  };
+  corgi.appendElement(document.body, <BooleanRemover done={verifier} />);
+});
+
+test('patch removes string attribute', (done: jest.DoneCallback) => {
+  const verifier = () => {
+    try {
+      expect(document.body.innerHTML).toBe('<span></span>');
+      done();
+    } catch (error: unknown) {
+      done(error);
+    }
+  };
+  corgi.appendElement(document.body, <StringRemover done={verifier} />);
+});
+
+test('patch removes class attribute', (done: jest.DoneCallback) => {
+  const verifier = () => {
+    try {
+      expect(document.body.innerHTML).toBe('<div></div>');
+      done();
+    } catch (error: unknown) {
+      done(error);
+    }
+  };
+  corgi.appendElement(document.body, <ClassNameRemover done={verifier} />);
 });
 
 test('patches evil', (done: jest.DoneCallback) => {
@@ -129,6 +191,10 @@ function SimpleString() {
   return 'hello';
 }
 
+function WrapChildren({children}: {children?: corgi.VElementOrPrimitive[]}) {
+  return <div>{children}</div>;
+}
+
 function Tree() {
   return (
     <div>
@@ -140,6 +206,66 @@ function Tree() {
 
 interface FlipperState {
   pushed: boolean;
+}
+
+function BooleanRemover(
+    {done}: {done: () => void},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      updateState({pushed: true});
+      done();
+    });
+  }
+
+  return <input type="checkbox" checked={state.pushed ? undefined : true} />;
+}
+
+function StringRemover(
+    {done}: {done: () => void},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      updateState({pushed: true});
+      done();
+    });
+  }
+
+  return <span style={state.pushed ? undefined : 'text-align: middle'}></span>;
+}
+
+function ClassNameRemover(
+    {done}: {done: () => void},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      updateState({pushed: true});
+      done();
+    });
+  }
+
+  return <div className={state.pushed ? undefined : 'moo'}></div>;
 }
 
 function Flipper(

@@ -1,6 +1,7 @@
 import { checkArgument, checkExists } from 'js/common/asserts';
+import { deepEqual } from 'js/common/comparisons';
 
-import { Properties } from './elements';
+import { AnyProperties, Properties } from './elements';
 
 export const Fragment = Symbol();
 
@@ -15,12 +16,18 @@ interface VElement {
   props: Properties;
 }
 
-type VElementOrPrimitive = VElement|number|string;
+export type VElementOrPrimitive = VElement|number|string;
 
 type ElementFactory = (
   props: Properties,
   state: unknown|undefined,
   updateState: (newState: unknown) => void) => VElementOrPrimitive;
+
+export interface Listener {
+  createdNode(node: Node, element: VElementOrPrimitive): void;
+  patchedNode(node: Node, element: VElementOrPrimitive): void;
+  removedNode(node: Node): void;
+}
 
 // Physical elements track the actual DOM elements that were created based upon a virtual element.
 interface PhysicalElement {
@@ -28,12 +35,19 @@ interface PhysicalElement {
   self: Node|undefined; // undefined in the case of a fragment element
   placeholder: Node|undefined; // set in empty fragments
   childHandles: Handle[];
+  props: Properties;
+}
+
+const listeners: Listener[] = [];
+
+export function addListener(listener: Listener): void {
+  listeners.push(listener);
 }
 
 export function createVirtualElement(
     element: keyof HTMLElementTagNameMap|ElementFactory|(typeof Fragment),
     props: Properties|null,
-    ...children: VElementOrPrimitive[]): VElementOrPrimitive {
+    ...children: Array<VElementOrPrimitive|VElementOrPrimitive[]>): VElementOrPrimitive {
   const handle = createHandle();
   if (element instanceof Function) {
     const updateState = (newState: unknown) => {
@@ -46,7 +60,7 @@ export function createVirtualElement(
     const result =
         maybeWrapPrimitive(
             element({
-              children,
+              children: children.flat(),
               ...props,
             },
             undefined,
@@ -56,7 +70,7 @@ export function createVirtualElement(
   } else {
     return {
       tag: element,
-      children,
+      children: children.flat(),
       handle,
       props: props ?? {},
     };
@@ -83,7 +97,7 @@ function hydrateElementRecursively(
       last: Node;
     } {
   if (!(element instanceof Object)) {
-    let node;
+    let node: Node;
     if (element === '') {
       node = new Text('');
       parent.insertBefore(node, left?.nextSibling ?? null);
@@ -107,7 +121,9 @@ function hydrateElementRecursively(
           self: node,
           placeholder: undefined,
           childHandles: [],
+          props: {},
         });
+    listeners.forEach(l => { l.createdNode(node, element) });
     return {
       childHandles: [],
       last: node,
@@ -136,6 +152,7 @@ function hydrateElementRecursively(
           self: undefined,
           placeholder,
           childHandles,
+          props: element.props,
         });
     return {
       childHandles,
@@ -143,6 +160,8 @@ function hydrateElementRecursively(
     };
   } else {
     const node = checkExists(left?.nextSibling ?? parent.childNodes[0]) as Element;
+    checkArgument(element.tag === node.tagName.toLowerCase());
+
     const childHandles = [];
     let childLeft = undefined;
     for (const child of element.children) {
@@ -158,7 +177,9 @@ function hydrateElementRecursively(
           self: node,
           placeholder: undefined,
           childHandles,
+          props: element.props,
         });
+    listeners.forEach(l => { l.createdNode(node, element) });
     return {
       childHandles,
       last: node,
@@ -187,7 +208,9 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           self: node,
           placeholder: undefined,
           childHandles: [],
+          props: {},
         });
+    listeners.forEach(l => { l.createdNode(node, element) });
     yield node;
     return;
   }
@@ -213,6 +236,7 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           self: undefined,
           placeholder,
           childHandles,
+          props: element.props,
         });
     if (childHandles.length === 0) {
       yield placeholder;
@@ -225,14 +249,16 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
     const namespace = TAG_TO_NAMESPACE.get(element.tag) ?? 'http://www.w3.org/1999/xhtml';
     const root = document.createElementNS(namespace, element.tag);
     appendChildrenToRoot(element.children, childHandles, root);
-    patchProperties(root, element.props);
+    patchProperties(root, {}, element.props);
     createdElements.set(
         handle, {
           parent,
           self: root,
           placeholder: undefined,
           childHandles,
+          props: element.props,
         });
+    listeners.forEach(l => { l.createdNode(root, element) });
     yield root;
   }
 }
@@ -264,6 +290,7 @@ function updateElement(element: VElement) {
           self: undefined,
           placeholder,
           childHandles,
+          props: element.props,
         });
     return;
   }
@@ -282,6 +309,7 @@ function updateElement(element: VElement) {
           self: element.tag === Fragment ? undefined : last,
           placeholder: undefined,
           childHandles,
+          props: element.props,
         });
     return;
   }
@@ -310,6 +338,9 @@ function patchChildren(
       const replacements = [...createElement(isElement, handle, parent)];
       const sibling = wasElement.self.nextSibling;
       parent.replaceChild(replacements[0], wasElement.self);
+      for (const listener of listeners) {
+        listener.removedNode(wasElement.self);
+      }
       replacements.slice(1).forEach(r => {parent.insertBefore(r, sibling)});
       newHandles.push(handle);
       last = replacements[replacements.length - 1];
@@ -343,6 +374,9 @@ function patchChildren(
         parent.insertBefore(placeholder, wasElement.self);
       }
       parent.removeChild(wasElement.self);
+      for (const listener of listeners) {
+        listener.removedNode(wasElement.self);
+      }
     }
   }
 
@@ -360,28 +394,67 @@ function patchNode(physical: PhysicalElement, to: VElement): Node|undefined {
     const replacements = [...createElement(to, to.handle, parent)];
     if (replacements.length === 0) {
       parent.removeChild(self);
+      listeners.forEach(l => { l.removedNode(self) });
       return undefined;
     }
     const sibling = self.nextSibling;
     parent.replaceChild(replacements[0], self);
+    listeners.forEach(l => { l.removedNode(self) });
     replacements.slice(1).forEach(r => {parent.insertBefore(r, sibling)});
     return replacements[replacements.length - 1];
   }
 
-  patchProperties(self, to.props);
+  patchProperties(self, physical.props, to.props);
+  physical.props = to.props;
   const {childHandles} = patchChildren(self, physical.childHandles, to.children, undefined);
   physical.childHandles = childHandles;
+  listeners.forEach(l => { l.patchedNode(self, to) });
 
   return self;
 }
 
-function patchProperties(element: Element, props: Properties) {
-  // TODO: logic to remove old attributes
-  for (const [key, value] of Object.entries(props)) {
-    if (key === 'className') {
-      element.className = value;
-    } else {
-      element.setAttribute(key, value);
+function patchProperties(element: Element, from: AnyProperties, to: AnyProperties) {
+  const oldPropKeys = Object.keys(from) as Array<keyof AnyProperties>;
+  const newPropKeys = Object.keys(to) as Array<keyof AnyProperties>;
+  for (const key of newPropKeys) {
+    if (key === 'js' || key === 'unboundEvents') {
+      continue;
+    }
+
+    if (!deepEqual(from[key], to[key])) {
+      const value = to[key];
+      if (key === 'className') {
+        if (value) {
+          element.className = String(value);
+        } else {
+          element.removeAttribute('class');
+        }
+      } else if (key === 'value' && element instanceof HTMLInputElement) {
+        if (value !== undefined) { // don't clear value if we are no longer forcing it
+          element.value = String(value);
+        }
+      } else {
+        const canonical = key.replace('_', '-');
+        const value = to[key] as boolean|number|string|undefined;
+        if (value === undefined) {
+          element.removeAttribute(key);
+        } else if (typeof value === 'boolean') {
+          if (value) {
+            element.setAttribute(canonical, '');
+          }
+        } else {
+          element.setAttribute(canonical, String(value));
+        }
+      }
+    }
+  }
+
+  for (const key of oldPropKeys) {
+    const canonical = key.replace('_', '-');
+    if (!to.hasOwnProperty(key)) {
+      element.removeAttribute(key === 'className' ? 'class' : canonical);
+    } else if (typeof to[key] === 'boolean' && !to[key]) {
+      element.removeAttribute(canonical);
     }
   }
 }
