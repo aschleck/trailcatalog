@@ -14,6 +14,7 @@ interface VElement {
   children: VElementOrPrimitive[];
   handle: Handle;
   props: Properties;
+  factorySource: FactorySource|undefined;
 }
 
 export type VElementOrPrimitive = VElement|number|string;
@@ -22,6 +23,13 @@ type ElementFactory = (
   props: Properties,
   state: unknown|undefined,
   updateState: (newState: unknown) => void) => VElementOrPrimitive;
+
+interface FactorySource {
+  factory: ElementFactory;
+  children: VElementOrPrimitive[];
+  props: Properties;
+  state: unknown;
+};
 
 export interface Listener {
   createdElement(element: Element, props: Properties): void;
@@ -35,6 +43,7 @@ interface PhysicalElement {
   self: Node|undefined; // undefined in the case of a fragment element
   placeholder: Node|undefined; // set in empty fragments
   childHandles: Handle[];
+  factorySource: FactorySource|undefined;
   props: Properties;
 }
 
@@ -54,18 +63,31 @@ export function createVirtualElement(
       // TODO: check if still in DOM?
       const result = maybeWrapPrimitive(element({children, ...props}, newState, updateState));
       result.handle = handle;
+      result.factorySource = {
+        factory: element,
+        children: flatChildren,
+        props: result.props,
+        state: newState,
+      };
       updateElement(result);
     };
 
+    const flatChildren = children.flat();
     const result =
         maybeWrapPrimitive(
             element({
-              children: children.flat(),
+              children: flatChildren,
               ...props,
             },
             undefined,
             updateState));
     result.handle = handle;
+    result.factorySource = {
+      factory: element,
+      children: flatChildren,
+      props: result.props,
+      state: undefined,
+    };
     return result;
   } else {
     return {
@@ -73,6 +95,7 @@ export function createVirtualElement(
       children: children.flat(),
       handle,
       props: props ?? {},
+      factorySource: undefined,
     };
   }
 }
@@ -121,6 +144,7 @@ function hydrateElementRecursively(
           self: node,
           placeholder: undefined,
           childHandles: [],
+          factorySource: undefined,
           props: {},
         });
     return {
@@ -151,6 +175,7 @@ function hydrateElementRecursively(
           self: undefined,
           placeholder,
           childHandles,
+          factorySource: element.factorySource,
           props: element.props,
         });
     return {
@@ -176,6 +201,7 @@ function hydrateElementRecursively(
           self: node,
           placeholder: undefined,
           childHandles,
+          factorySource: element.factorySource,
           props: element.props,
         });
     listeners.forEach(l => { l.createdElement(node, element.props) });
@@ -207,6 +233,7 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           self: node,
           placeholder: undefined,
           childHandles: [],
+          factorySource: undefined,
           props: {},
         });
     yield node;
@@ -234,6 +261,7 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           self: undefined,
           placeholder,
           childHandles,
+          factorySource: element.factorySource,
           props: element.props,
         });
     if (childHandles.length === 0) {
@@ -254,6 +282,7 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           self: root,
           placeholder: undefined,
           childHandles,
+          factorySource: element.factorySource,
           props: element.props,
         });
     listeners.forEach(l => { l.createdElement(root, element.props) });
@@ -288,6 +317,7 @@ function updateElement(element: VElement) {
           self: undefined,
           placeholder,
           childHandles,
+          factorySource: element.factorySource,
           props: element.props,
         });
     return;
@@ -307,6 +337,7 @@ function updateElement(element: VElement) {
           self: element.tag === Fragment ? undefined : last,
           placeholder: undefined,
           childHandles,
+          factorySource: element.factorySource,
           props: element.props,
         });
     return;
@@ -340,6 +371,7 @@ function patchChildren(
             self: undefined,
             placeholder,
             childHandles: result.childHandles,
+            factorySource: isElement.factorySource,
             props: isElement.props,
           });
     } else if (wasElement.self === undefined) {
@@ -371,6 +403,7 @@ function patchChildren(
             self: undefined,
             placeholder,
             childHandles: result.childHandles,
+            factorySource: isElement.factorySource,
             props: isElement.props,
           });
     } else {
@@ -434,14 +467,17 @@ function patchNode(physical: PhysicalElement, to: VElement): Node|undefined {
     return replacements[replacements.length - 1];
   }
 
-  // TODO: check if equal and bail early
+  createdElements.set(to.handle, physical);
+
+  if (to.factorySource && deepEqual(physical.factorySource, to.factorySource)) {
+    return self;
+  }
 
   const oldProps = physical.props;
   patchProperties(self, oldProps, to.props);
   physical.props = to.props;
   const {childHandles} = patchChildren(self, physical.childHandles, to.children, undefined);
   physical.childHandles = childHandles;
-  createdElements.set(to.handle, physical);
   listeners.forEach(l => { l.patchedElement(self, oldProps, to.props) });
 
   return self;
@@ -515,6 +551,7 @@ function maybeWrapPrimitive(element: VElementOrPrimitive): VElement {
       tag: Fragment,
       children: [element],
       handle: createHandle(),
+      factorySource: undefined,
       props: {},
     };
   }
