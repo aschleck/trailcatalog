@@ -123,7 +123,7 @@ test('patch removes class attribute', (done: jest.DoneCallback) => {
   corgi.appendElement(document.body, <ClassNameRemover done={verifier} />);
 });
 
-test('patches evil', (done: jest.DoneCallback) => {
+test('patches evil counter', (done: jest.DoneCallback) => {
   const verifier = () => {
     try {
       expect(document.body.innerHTML).toBe('FirstSecondThird');
@@ -133,6 +133,18 @@ test('patches evil', (done: jest.DoneCallback) => {
     }
   };
   corgi.appendElement(document.body, <EvilCounter done={verifier} />);
+});
+
+test('patches evil reducer', (done: jest.DoneCallback) => {
+  const verifier = () => {
+    try {
+      expect(document.body.innerHTML).toBe('what');
+      done();
+    } catch (error: unknown) {
+      done(error);
+    }
+  };
+  corgi.appendElement(document.body, <EvilReducer done={verifier} />);
 });
 
 test('patches fragment dom in', (done: jest.DoneCallback) => {
@@ -343,6 +355,46 @@ function EvilCounter(
         <>First</>
         <>Second</>
         <>Third</>
+      </>
+    );
+  } else {
+    return 'what';
+  }
+}
+
+function EvilReducer(
+    {done}: {done: () => void},
+    state: {count: number}|undefined,
+    updateState: (newState: {count: number}) => void) {
+  if (!state) {
+    state = {
+      count: 0,
+    }
+  }
+
+  if (state.count === 0) {
+    Promise.resolve().then(() => {
+      debugger;
+      updateState({count: 1});
+    });
+  } else if (state.count === 1) {
+    Promise.resolve().then(() => {
+      updateState({count: 2});
+      done();
+    });
+  }
+
+  if (state.count === 0) {
+    return (
+      <>
+        <>A cow</>
+        <div>{'Something'}</div>
+      </>
+    );
+  } else if (state.count === 1) {
+    return (
+      <>
+        {'Nothing'}
       </>
     );
   } else {

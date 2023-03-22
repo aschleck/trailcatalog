@@ -375,10 +375,10 @@ function patchChildren(
             props: isElement.props,
           });
     } else if (wasElement.self === undefined) {
-      newHandles.push(maybeCreateHandle(isElement));
-      last =
-          patchChildren(parent, wasElement.childHandles, [isElement], wasElement.placeholder)?.last
-                ?? last;
+      const result =
+          patchChildren(parent, wasElement.childHandles, [isElement], wasElement.placeholder)
+      last = result?.last ?? last;
+      newHandles.push(...result.childHandles);
     } else if (!(isElement instanceof Object)) {
       const handle = createHandle();
       const replacements = [...createElement(isElement, handle, parent)];
@@ -475,6 +475,7 @@ function patchNode(physical: PhysicalElement, to: VElement): Node|undefined {
 
   const oldProps = physical.props;
   patchProperties(self, oldProps, to.props);
+  physical.factorySource = to.factorySource;
   physical.props = to.props;
   const {childHandles} = patchChildren(self, physical.childHandles, to.children, undefined);
   physical.childHandles = childHandles;
