@@ -120,6 +120,7 @@
   };
 
   systemd.services."tc-frontend" = {
+    enable = true;
     wantedBy = [ "multi-user.target" ];
 
     path = [
@@ -136,6 +137,7 @@
   };
 
   systemd.services."tc-import" = {
+    enable = true;
     startAt = "Mon,Thu *-*-* 02:00:00";
 
     path = [
