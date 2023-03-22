@@ -66,7 +66,7 @@ export function createVirtualElement(
       result.factorySource = {
         factory: element,
         children: flatChildren,
-        props: result.props,
+        props: props ?? {},
         state: newState,
       };
       updateElement(result);
@@ -85,7 +85,7 @@ export function createVirtualElement(
     result.factorySource = {
       factory: element,
       children: flatChildren,
-      props: result.props,
+      props: props ?? {},
       state: undefined,
     };
     return result;
@@ -305,6 +305,10 @@ function appendChildrenToRoot(
 function updateElement(element: VElement) {
   const physical = checkExists(createdElements.get(element.handle));
 
+  if (element.factorySource && deepEqual(physical.factorySource, element.factorySource)) {
+    return;
+  }
+
   // Check if this was and remains a fragment
   if (physical.self === undefined && element.tag === Fragment) {
     const placeholder = physical.placeholder;
@@ -361,6 +365,13 @@ function patchChildren(
         && (isElement instanceof Object && isElement.tag === Fragment)) {
       const handle = maybeCreateHandle(isElement);
       newHandles.push(handle);
+
+      if (isElement.factorySource && deepEqual(wasElement.factorySource, isElement.factorySource)) {
+        // TODO: do we need to create everything?
+        createdElements.set(handle, wasElement);
+        continue;
+      }
+
       const placeholder = wasElement.placeholder;
       const result =
           patchChildren(parent, wasElement.childHandles, isElement.children, placeholder);
