@@ -48,5 +48,5 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
 }
 
 if (!isServerSide()) {
-  corgi.hydrateTree(checkExists(document.getElementById('root')), <App />);
+  corgi.hydrateElement(checkExists(document.getElementById('root')), <App />);
 }
