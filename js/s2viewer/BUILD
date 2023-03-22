@@ -15,6 +15,9 @@ esbuild_binary(
 
 tc_ts_project(
     name = "ts",
+    css_deps = [
+        "//js/dino:css",
+    ],
     deps = [
         "//java/org/trailcatalog/client/map",
         "//js/common",
