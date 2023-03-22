@@ -326,7 +326,23 @@ function patchChildren(
     const wasElement = checkExists(createdElements.get(was[i]));
     const isElement = is[i];
 
-    if (wasElement.self === undefined) {
+    if (wasElement.self === undefined
+        && (isElement instanceof Object && isElement.tag === Fragment)) {
+      const handle = maybeCreateHandle(isElement);
+      newHandles.push(handle);
+      const placeholder = wasElement.placeholder;
+      const result =
+          patchChildren(parent, wasElement.childHandles, isElement.children, placeholder);
+      last = result?.last ?? last;
+      createdElements.set(
+          handle, {
+            parent,
+            self: undefined,
+            placeholder,
+            childHandles: result.childHandles,
+            props: isElement.props,
+          });
+    } else if (wasElement.self === undefined) {
       newHandles.push(maybeCreateHandle(isElement));
       last =
           patchChildren(parent, wasElement.childHandles, [isElement], wasElement.placeholder)?.last
@@ -342,6 +358,21 @@ function patchChildren(
       replacements.slice(1).forEach(r => {parent.insertBefore(r, sibling)});
       newHandles.push(handle);
       last = replacements[replacements.length - 1];
+    } else if (isElement.tag === Fragment) {
+      const handle = maybeCreateHandle(isElement);
+      newHandles.push(handle);
+      const placeholder = new Text('');
+      const result =
+          patchChildren(parent, [was[i]], isElement.children, placeholder);
+      last = result?.last ?? last;
+      createdElements.set(
+          handle, {
+            parent,
+            self: undefined,
+            placeholder,
+            childHandles: result.childHandles,
+            props: isElement.props,
+          });
     } else {
       newHandles.push(maybeCreateHandle(isElement));
       last = patchNode(wasElement, isElement) ?? last;
@@ -385,6 +416,7 @@ function patchChildren(
 }
 
 function patchNode(physical: PhysicalElement, to: VElement): Node|undefined {
+  checkArgument(to.tag !== Fragment, 'patchNode cannot patch fragments');
   const self = checkExists(physical.self, 'patchNode cannot patch fragments');
 
   if (!(self instanceof Element) || to.tag !== self.tagName.toLowerCase()) {
@@ -402,11 +434,14 @@ function patchNode(physical: PhysicalElement, to: VElement): Node|undefined {
     return replacements[replacements.length - 1];
   }
 
+  // TODO: check if equal and bail early
+
   const oldProps = physical.props;
   patchProperties(self, oldProps, to.props);
   physical.props = to.props;
   const {childHandles} = patchChildren(self, physical.childHandles, to.children, undefined);
   physical.childHandles = childHandles;
+  createdElements.set(to.handle, physical);
   listeners.forEach(l => { l.patchedElement(self, oldProps, to.props) });
 
   return self;
