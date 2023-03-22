@@ -24,8 +24,8 @@ type ElementFactory = (
   updateState: (newState: unknown) => void) => VElementOrPrimitive;
 
 export interface Listener {
-  createdNode(node: Node, element: VElementOrPrimitive): void;
-  patchedNode(node: Node, element: VElementOrPrimitive): void;
+  createdElement(element: Element, props: Properties): void;
+  patchedElement(element: Element, from: Properties, to: Properties): void;
   removedNode(node: Node): void;
 }
 
@@ -123,7 +123,6 @@ function hydrateElementRecursively(
           childHandles: [],
           props: {},
         });
-    listeners.forEach(l => { l.createdNode(node, element) });
     return {
       childHandles: [],
       last: node,
@@ -179,7 +178,7 @@ function hydrateElementRecursively(
           childHandles,
           props: element.props,
         });
-    listeners.forEach(l => { l.createdNode(node, element) });
+    listeners.forEach(l => { l.createdElement(node, element.props) });
     return {
       childHandles,
       last: node,
@@ -210,7 +209,6 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           childHandles: [],
           props: {},
         });
-    listeners.forEach(l => { l.createdNode(node, element) });
     yield node;
     return;
   }
@@ -258,7 +256,7 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           childHandles,
           props: element.props,
         });
-    listeners.forEach(l => { l.createdNode(root, element) });
+    listeners.forEach(l => { l.createdElement(root, element.props) });
     yield root;
   }
 }
@@ -404,11 +402,12 @@ function patchNode(physical: PhysicalElement, to: VElement): Node|undefined {
     return replacements[replacements.length - 1];
   }
 
-  patchProperties(self, physical.props, to.props);
+  const oldProps = physical.props;
+  patchProperties(self, oldProps, to.props);
   physical.props = to.props;
   const {childHandles} = patchChildren(self, physical.childHandles, to.children, undefined);
   physical.childHandles = childHandles;
-  listeners.forEach(l => { l.patchedNode(self, to) });
+  listeners.forEach(l => { l.patchedElement(self, oldProps, to.props) });
 
   return self;
 }

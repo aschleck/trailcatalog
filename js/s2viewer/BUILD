@@ -28,12 +28,12 @@ tc_ts_project(
 
 pkg_files(
     name = "s2_pkg",
-    prefix = "s2",
-    strip_prefix = strip_prefix.from_pkg(),
     srcs = [
         ":copy",
         ":static",
     ],
+    prefix = "s2",
+    strip_prefix = strip_prefix.from_pkg(),
     visibility = [
         "//production/containers:__subpackages__",
     ],
@@ -68,4 +68,3 @@ genrule(
         "done",
     ]),
 )
-

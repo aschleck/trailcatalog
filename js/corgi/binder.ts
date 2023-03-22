@@ -1,14 +1,15 @@
-import { checkExists } from 'js/common/asserts';
+import { checkArgument, checkExists, checkExhaustive } from 'js/common/asserts';
 import { deepEqual } from 'js/common/comparisons';
 import { Disposable } from 'js/common/disposable';
 
 import { Controller, ControllerCtor, ControllerDeps, ControllerDepsMethod, Response as ControllerResponse } from './controller';
-import { elementFinder, SupportedElement } from './dom';
+import { elementFinder, parentFinder, SupportedElement } from './dom';
+import { Properties } from './elements';
 import { EventSpec, qualifiedName } from './events';
 import { isAnchorContextClick } from './mouse';
 import { Service, ServiceDeps } from './service';
 import { DepsConstructorsFor } from './types';
-import { Listener, VElementOrPrimitive } from './vdom';
+import { Listener } from './vdom';
 
 type IsPrefix<P extends unknown[], T> = P extends [...P, ...unknown[]] ? P : never;
 type HasParameters<M, P extends unknown[], R> =
@@ -64,37 +65,257 @@ export type UnboundEvents =
     >;
 ;
 
-export interface InstantiationResult {
-  root: Node;
-  sideEffects: Array<() => void>;
-  unboundEventss: Array<[SupportedElement, UnboundEvents]>;
+export function bind<C extends Controller<any, any, any, any>>({
+  args,
+  controller,
+  events,
+  key,
+  ref,
+  state,
+}: {
+  controller: ControllerCtor<C>;
+  events?: Partial<PropertyKeyToHandlerMap<C>>;
+  key?: string;
+  ref?: string;
+}
+& ({} extends C['_A'] ? {args?: {}} : {args: C['_A']})
+& (undefined extends C['_S'] ? {state?: never} : {state: StateTuple<C['_S']>})
+): BoundController<C> {
+  return {
+    args: args ?? {} as any,
+    controller,
+    disposer: new Disposable(),
+    events: events ?? {},
+    key,
+    ref,
+    state: state ?? [undefined, () => {}] as any,
+  };
 }
 
+interface AddController {
+  kind: 'ac';
+  element: SupportedElement;
+  js: AnyBoundController;
+}
+
+interface AddUnbound {
+  kind: 'au';
+  element: SupportedElement;
+  unboundEvents: UnboundEvents;
+}
+
+interface DisposeElement {
+  kind: 'de';
+  element: SupportedElement;
+}
+
+type BinderAction = AddController|AddUnbound|DisposeElement;
+
 export class Binder implements Listener {
-  createdNode(node: Node, element: VElementOrPrimitive): void {
+
+  private readonly actions: BinderAction[] = [];
+  private promise: Promise<void>|undefined = undefined;
+
+  createdElement(element: Element, props: Properties): void {
     if (!(element instanceof Object)) {
       return;
     }
 
-    if (element.props.js) {
-      console.log('created');
-      console.log(node);
-      console.log(element.props.js);
+    if (props.js) {
+      element.setAttribute('data-js', '');
+      if (props.js.ref) {
+        element.setAttribute('data-js-ref', props.js.ref);
+      }
+
+      this.pushAction({
+        kind: 'ac',
+        element: element as SupportedElement,
+        js: props.js,
+      })
+    } else if (props.unboundEvents) {
+      this.pushAction({
+        kind: 'au',
+        element: element as SupportedElement,
+        unboundEvents: props.unboundEvents,
+      })
     }
   }
 
-  patchedNode(node: Node, element: VElementOrPrimitive): void {
-    console.log('patched');
-    console.log(node);
+  patchedElement(element: Element, from: Properties, to: Properties): void {
+    if (from.js || to.js) {
+      console.log('switching');
+      console.log(from);
+      console.log(to);
+    } else if (from.unboundEvents || to.unboundEvents) {
+      checkArgument(deepEqual(from.unboundEvents, to.unboundEvents), 'Cannot modify unboundEvents');
+    }
   }
 
   removedNode(node: Node): void {
-    console.log('removed');
-    console.log(node);
+    if (node instanceof Element) {
+      this.pushAction({
+        kind: 'de',
+        element: node as SupportedElement,
+      });
+    }
+  }
+
+  private pushAction(action: BinderAction): void {
+    this.actions.push(action);
+    this.ensurePromise();
+  }
+
+  private ensurePromise(): void {
+    if (this.promise) {
+      return;
+    }
+    this.promise = Promise.resolve().then(() => {
+      for (const action of this.actions) {
+        if (action.kind === 'ac') {
+          bindController(action.element, action.js);
+        } else if (action.kind === 'au') {
+          bindUnbound(action.element, action.unboundEvents);
+        } else if (action.kind === 'de') {
+          disposeBoundElementsIn(action.element);
+        } else {
+          checkExhaustive(action);
+        }
+      }
+      this.actions.length = 0;
+      this.promise = undefined;
+    });
   }
 }
 
 const elementsToControllerSpecs = new WeakMap<SupportedElement, AnyBoundController>();
+
+function bindController(root: SupportedElement, spec: AnyBoundController): void {
+  elementsToControllerSpecs.set(root, spec);
+
+  for (const [event, handler] of Object.entries(spec.events)) {
+    if (event === 'corgi') {
+      continue;
+    }
+
+    bindEventListener(root, event, handler as string);
+  }
+
+  for (const [eventSpec, handler] of spec.events.corgi ?? []) {
+    spec.disposer.registerListener(
+        root,
+        qualifiedName(eventSpec) as any,
+        e => {
+          if (root === e.srcElement) {
+            return;
+          }
+
+          e.preventDefault();
+          e.stopPropagation();
+          maybeInstantiateAndCall(root, spec, (controller: any) => {
+            const method = controller[handler] as (e: CustomEvent<any>) => unknown;
+            method.call(controller, e as CustomEvent<unknown>);
+          });
+        });
+  }
+
+  if (spec.events.render) {
+    const handler = spec.events.render;
+    maybeInstantiateAndCall(root, spec, (controller: any) => {
+      const method = controller[handler];
+      method.apply(controller, []);
+    });
+  }
+}
+
+function bindUnbound(element: SupportedElement, events: UnboundEvents): void {
+  for (const [event, handler] of Object.entries(events)) {
+    if (event === 'corgi') {
+      continue;
+    }
+
+    bindEventListener(element, event, handler as string);
+  }
+
+  for (const [eventSpec, handler] of events.corgi ?? []) {
+    // TODO: we used to check if root == e.srcElement and bail out if so. Why?
+    bindEventListener(element, qualifiedName(eventSpec), handler);
+  }
+}
+
+function bindEventListener(
+    element: SupportedElement,
+    event: string,
+    handler: string): void {
+  const cached: {
+    root: SupportedElement|undefined;
+    spec: AnyBoundController|undefined;
+  } = {
+    root: undefined,
+    spec: undefined,
+  };
+  const invoker = (e: Event) => {
+    if (isAnchorContextClick(e)) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!cached.root || !cached.spec) {
+      const root =
+          parentFinder(
+              element,
+              (candidate: SupportedElement) => elementsToControllerSpecs.has(candidate));
+      if (!root) {
+        throw new Error(`Unable to find controller for event ${event}`);
+      }
+      const spec = checkExists(elementsToControllerSpecs.get(root))
+      spec.disposer.registerDisposer(() => {
+        cached.root = undefined;
+        cached.spec = undefined;
+      });
+
+      cached.root = root;
+      cached.spec = spec;
+    }
+    const root = cached.root;
+    const spec = cached.spec;
+
+    maybeInstantiateAndCall(root, spec, (controller: any) => {
+      const method = controller[handler] as (e: any) => unknown;
+      method.call(controller, e);
+    });
+  };
+  // TODO: we should keep invoker around so we can remove events if the element is patched
+  element.addEventListener(event, invoker);
+}
+
+function maybeInstantiateAndCall<E extends SupportedElement, R>(
+    root: E,
+    spec: AnyBoundController,
+    fn: (controller: AnyBoundController) => R): Promise<R> {
+  if (!spec.instance) {
+    let deps;
+    if (spec.controller.deps) {
+      deps = fetchControllerDeps(spec.controller.deps(), root);
+    } else {
+      deps = Promise.resolve({});
+    }
+
+    spec.instance = deps.then(d => {
+      const instance = new spec.controller({
+        root,
+        args: spec.args,
+        deps: d,
+        state: spec.state,
+      });
+      spec.disposer.registerDisposable(instance);
+      return instance;
+    });
+  }
+
+  return spec.instance.then(instance => fn(instance));
+}
 
 interface AnyServiceCtor {
   deps?(): DepsConstructorsFor<ServiceDeps>;
@@ -124,185 +345,6 @@ export function applyUpdate(
       i.updateArgs(to.args);
     });
   }
-}
-
-export function bind<C extends Controller<any, any, any, any>>({
-  args,
-  controller,
-  events,
-  key,
-  ref,
-  state,
-}: {
-  controller: ControllerCtor<C>;
-  events?: Partial<PropertyKeyToHandlerMap<C>>;
-  key?: string;
-  ref?: string;
-}
-& ({} extends C['_A'] ? {args?: {}} : {args: C['_A']})
-& (undefined extends C['_S'] ? {state?: never} : {state: StateTuple<C['_S']>})
-): BoundController<C> {
-  return {
-    args: args ?? {} as any,
-    controller,
-    disposer: new Disposable(),
-    events: events ?? {},
-    key,
-    ref,
-    state: state ?? [undefined, () => {}] as any,
-  };
-}
-
-export function bindElementToSpec(
-    root: SupportedElement,
-    spec: AnyBoundController,
-    unboundEventss: Array<[SupportedElement, UnboundEvents]>): Array<() => void> {
-  elementsToControllerSpecs.set(root, spec);
-
-  for (const [event, handler] of Object.entries(spec.events)) {
-    if (event === 'corgi') {
-      continue;
-    }
-
-    bindEventListener(root, event, handler as string, root, spec);
-  }
-
-  for (const [eventSpec, handler] of spec.events.corgi ?? []) {
-    spec.disposer.registerListener(
-        root,
-        qualifiedName(eventSpec) as any,
-        e => {
-          if (root === e.srcElement) {
-            return;
-          }
-
-          e.preventDefault();
-          e.stopPropagation();
-          maybeInstantiateAndCall(root, spec, (controller: any) => {
-            const method = controller[handler] as (e: CustomEvent<any>) => unknown;
-            method.call(controller, e as CustomEvent<unknown>);
-          });
-        });
-  }
-
-  for (const [element, events] of unboundEventss) {
-    for (const [event, handler] of Object.entries(events)) {
-      if (event === 'corgi') {
-        continue;
-      }
-
-      bindEventListener(element, event, handler as string, root, spec);
-    }
-
-    for (const [eventSpec, handler] of events.corgi ?? []) {
-      spec.disposer.registerListener(
-          element,
-          qualifiedName(eventSpec) as any,
-          e => {
-            if (root === e.srcElement) {
-              return;
-            }
-
-            e.preventDefault();
-            e.stopPropagation();
-            maybeInstantiateAndCall(root, spec, (controller: any) => {
-              const method = controller[handler] as (e: CustomEvent<any>) => unknown;
-              method.call(controller, e as CustomEvent<unknown>);
-            });
-          });
-    }
-  }
-
-  const sideEffects = [];
-  if (spec.events.render) {
-    const handler = spec.events.render;
-    sideEffects.push(() => {
-      maybeInstantiateAndCall(root, spec, (controller: any) => {
-        const method = controller[handler];
-        method.apply(controller, []);
-      });
-    });
-  }
-  return sideEffects;
-}
-
-export function applyInstantiationResult(result: InstantiationResult): void {
-  result.sideEffects.forEach(e => { e(); });
-
-  for (const [element, events] of result.unboundEventss) {
-    let cursor: SupportedElement|null = element;
-    while (cursor !== null && !elementsToControllerSpecs.has(cursor)) {
-      cursor = cursor.parentElement;
-    }
-
-    if (cursor === null) {
-      console.error('Event spec was unbound:');
-      console.error(result.unboundEventss);
-      continue;
-    }
-
-    const root = cursor;
-    const spec = checkExists(elementsToControllerSpecs.get(root));
-
-    for (const [event, handler] of Object.entries(events)) {
-      if (event === 'corgi') {
-        continue;
-      }
-
-      const shandler = handler as string;
-
-      if (!(shandler in spec.controller.prototype)) {
-        console.error(`Unable to bind ${event} to ${handler}, method doesn't exist`);
-        continue;
-      }
-
-      const invoker = bindEventListener(element, event, shandler, root, spec);
-    }
-
-    for (const [eventSpec, handler] of events.corgi ?? []) {
-      const invoker = (e: Event) => {
-        if (root === e.srcElement) {
-          return;
-        }
-
-        e.preventDefault();
-        e.stopPropagation();
-        maybeInstantiateAndCall(root, spec, (controller: any) => {
-          const method = controller[handler] as (e: CustomEvent<any>) => unknown;
-          method.call(controller, e as CustomEvent<unknown>);
-        });
-      };
-      const event = qualifiedName(eventSpec);
-      spec.disposer.registerListener(element, event as any, invoker);
-    }
-  }
-}
-
-function maybeInstantiateAndCall<E extends SupportedElement, R>(
-    root: E,
-    spec: AnyBoundController,
-    fn: (controller: AnyBoundController) => R): Promise<R> {
-  if (!spec.instance) {
-    let deps;
-    if (spec.controller.deps) {
-      deps = fetchControllerDeps(spec.controller.deps(), root);
-    } else {
-      deps = Promise.resolve({});
-    }
-
-    spec.instance = deps.then(d => {
-      const instance = new spec.controller({
-        root,
-        args: spec.args,
-        deps: d,
-        state: spec.state,
-      });
-      spec.disposer.registerDisposable(instance);
-      return instance;
-    });
-  }
-
-  return spec.instance.then(instance => fn(instance));
 }
 
 function fetchControllerDeps<D extends ControllerDeps>(
@@ -407,25 +449,3 @@ export function disposeBoundElementsIn(node: Node): void {
   }
 }
 
-function bindEventListener(
-    element: SupportedElement,
-    event: string,
-    handler: string,
-    root: SupportedElement,
-    spec: AnyBoundController): (e: Event) => void {
-  const invoker = (e: Event) => {
-    if (isAnchorContextClick(e)) {
-      return;
-    }
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    maybeInstantiateAndCall(root, spec, (controller: any) => {
-      const method = controller[handler] as (e: any) => unknown;
-      method.call(controller, e);
-    });
-  };
-  spec.disposer.registerListener(element, event as any, invoker);
-  return invoker;
-}

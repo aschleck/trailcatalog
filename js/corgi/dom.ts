@@ -25,3 +25,12 @@ export function elementFinder(
   return selected;
 }
 
+export function parentFinder(
+    element: SupportedElement, matcher: (element: SupportedElement) => boolean):
+        SupportedElement|undefined {
+  let target = element;
+  while (!matcher(target)) {
+    target = target.parentElement as SupportedElement;
+  }
+  return target ?? undefined;
+}
