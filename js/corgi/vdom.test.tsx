@@ -99,6 +99,18 @@ test('patch removes boolean attribute', (done: jest.DoneCallback) => {
   corgi.appendElement(document.body, <BooleanRemover done={verifier} />);
 });
 
+test('patch adds string attribute', (done: jest.DoneCallback) => {
+  const verifier = () => {
+    try {
+      expect(document.body.innerHTML).toBe('<span>Good</span>bye');
+      done();
+    } catch (error: unknown) {
+      done(error);
+    }
+  };
+  corgi.appendElement(document.body, <StringAdder done={verifier} />);
+});
+
 test('patch removes string attribute', (done: jest.DoneCallback) => {
   const verifier = () => {
     try {
@@ -238,6 +250,30 @@ function BooleanRemover(
   }
 
   return <input type="checkbox" checked={state.pushed ? undefined : true} />;
+}
+
+function StringAdder(
+    {done}: {done: () => void},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      updateState({pushed: true});
+      done();
+    });
+  }
+
+  if (state.pushed) {
+    return <><span>Good</span>bye</>;
+  } else {
+    return <>Bye</>;
+  }
 }
 
 function StringRemover(
