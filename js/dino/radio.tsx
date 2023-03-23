@@ -11,7 +11,10 @@ export function Radio({className, name, options, value, ...props}: {
 } & corgi.Properties) {
   return <>
     <div
-        className={'border border-tc-gray-400 flex h-full rounded' + (className ? ` ${className}` : '')}
+        className={
+          'border border-tc-gray-400 flex h-full rounded select-none'
+              + (className ? ` ${className}` : '')
+        }
         {...props}
     >
       {options.map(o =>

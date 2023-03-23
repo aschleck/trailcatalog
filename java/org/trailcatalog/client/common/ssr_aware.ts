@@ -26,6 +26,15 @@ declare global {
   }
 }
 
+class FakeMemoized<T> {
+
+  constructor(private readonly fn: () => T) {}
+
+  get value(): T {
+    return this.fn();
+  }
+}
+
 export function currentUrl(): URL {
   return new URL(window.SERVER_SIDE_RENDER?.currentUrl() ?? window.location.href);
 }
@@ -67,7 +76,7 @@ function calculateUnitSystem(): UnitSystem {
   return imperial ? 'imperial' : 'metric';
 }
 
-const chosenUnitSystem = new Memoized<UnitSystem>(calculateUnitSystem);
+const chosenUnitSystem = maybeMemoized(calculateUnitSystem);
 
 export function getUnitSystem(): UnitSystem {
   return chosenUnitSystem.value;
@@ -97,6 +106,14 @@ export function setTitle(title: string): void {
     window.SERVER_SIDE_RENDER.setTitle(title);
   } else {
     document.title = title;
+  }
+}
+
+function maybeMemoized<T>(fn: () => T): {value: T} {
+  if (globalThis.window) {
+    return new Memoized<T>(fn);
+  } else {
+    return new FakeMemoized<T>(fn);
   }
 }
 

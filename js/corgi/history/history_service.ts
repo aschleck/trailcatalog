@@ -2,7 +2,7 @@ import { EmptyDeps } from '../deps';
 import { Service, ServiceResponse } from '../service';
 
 interface Listener {
-  urlChanged(active: URL): void;
+  urlChanged(active: URL): Promise<void>;
 }
 
 interface State {
@@ -53,8 +53,8 @@ export class HistoryService extends Service<EmptyDeps> {
     this.notifyListeners();
   }
 
-  reload(): void {
-    this.notifyListeners();
+  reload(): Promise<void> {
+    return this.notifyListeners();
   }
 
   replaceTo(url: string): void {
@@ -66,12 +66,14 @@ export class HistoryService extends Service<EmptyDeps> {
     window.history.replaceState(getState(), '', url);
   }
 
-  private notifyListeners() {
+  private notifyListeners(): Promise<void> {
     // url might just be a relative path, so we pull the real href from the window.
     const active = new URL(window.location.href);
+    const promises = [];
     for (const listener of this.listeners) {
-      listener.urlChanged(active);
+      promises.push(listener.urlChanged(active));
     }
+    return Promise.all(promises).then(() => {});
   }
 }
 

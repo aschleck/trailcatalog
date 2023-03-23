@@ -35,8 +35,8 @@ export class RouteController extends Controller<{}, Deps, HTMLDivElement, State>
     });
   }
 
-  routeChanged(active: Route): void {
-    this.updateState({
+  routeChanged(active: Route): Promise<void> {
+    return this.updateState({
       active,
     });
   }

@@ -1,4 +1,5 @@
 import { checkExists } from 'js/common/asserts';
+import * as corgi from 'js/corgi';
 import { Controller, Response } from 'js/corgi/controller';
 import { HistoryService } from 'js/corgi/history/history_service';
 
@@ -31,9 +32,10 @@ export class UnitSelectorController extends Controller<{}, Deps, HTMLElement, St
   select(e: Event): void {
     const value = (checkExists(e.target) as HTMLInputElement).value;
     setUnitSystem(value as UnitSystem);
-    // TODO(april): it's not clear to me that this works correctly or because of a state update bug.
-    // Theoretically the route didn't change so everything should be able to avoid being rendered.
-    this.history.reload();
+    corgi.vdomCaching.disable();
+    this.history.reload().then(() => {
+      corgi.vdomCaching.enable();
+    });
   }
 }
 

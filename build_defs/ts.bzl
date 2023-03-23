@@ -9,6 +9,7 @@ def esbuild_binary(
         entry_point = None,
         deps = None,
         platform = "browser",
+        minify = True,
 ):
     has_css = native.glob(["*.css"]) != []
     esbuild(
@@ -23,7 +24,7 @@ def esbuild_binary(
             "//build_defs:esbuild_config_deps",
             "//third_party/deanc-esbuild-plugin-postcss",
         ],
-        minify = True,
+        minify = minify,
         output_css = "%s.css" % name if has_css else None,
         platform = platform,
         sources_content = True,

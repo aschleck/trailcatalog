@@ -61,9 +61,9 @@ export class Controller<
     }));
   }
 
-  protected updateState(newState: S): void {
+  protected updateState(newState: S): Promise<void> {
     this.state = newState;
-    this.updateStateDebouncer.trigger();
+    return this.updateStateDebouncer.trigger();
   }
 
   wakeup(): void {}

@@ -33,7 +33,7 @@ const routes: {[k in Route['kind']]: RegExp} = {
 };
 
 interface Listener {
-  routeChanged(active: Route): void;
+  routeChanged(active: Route): Promise<void>;
 }
 
 type Deps = typeof ViewsService.deps;
@@ -64,14 +64,17 @@ export class ViewsService extends Service<Deps> {
     this.history.addListener(this);
   }
 
-  urlChanged(url: URL): void {
+  urlChanged(url: URL): Promise<void> {
     const active = checkExists(matchPath(url.pathname));
     if (active) {
+      const promises = [];
       for (const listener of this.listeners) {
-        listener.routeChanged(active);
+        promises.push(listener.routeChanged(active));
       }
+      return Promise.all(promises).then(() => {});
     } else {
       console.error(`Unable to find a route for ${url}`);
+      return Promise.resolve();
     }
   }
 

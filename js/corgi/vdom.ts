@@ -14,6 +14,7 @@ interface VElement {
   children: VElementOrPrimitive[];
   handle: Handle;
   props: Properties;
+  childTrace: Handle[];
   factorySource: FactorySource|undefined;
 }
 
@@ -43,6 +44,7 @@ interface PhysicalElement {
   self: Node|undefined; // undefined in the case of a fragment element
   placeholder: Node|undefined; // set in empty fragments
   childHandles: Handle[];
+  childTrace: Handle[];
   factorySource: FactorySource|undefined;
   props: Properties;
 }
@@ -58,35 +60,72 @@ export function createVirtualElement(
     props: Properties|null,
     ...children: Array<VElementOrPrimitive|VElementOrPrimitive[]>): VElementOrPrimitive {
   const handle = createHandle();
+
   if (element instanceof Function) {
     const updateState = (newState: unknown) => {
-      // TODO: check if still in DOM?
+      const physical = createdElements.get(handle);
+      if (!physical) {
+        return;
+      }
+
+      // Check to see if the element we're updating even still exists.
+      if (!physical.parent.contains(findLastChildOrPlaceholder(physical))) {
+        return;
+      }
+
+      if (creationTrace.length > 0) {
+        console.error("creationTrace already set");
+      }
+
+      creationTrace.push([]);
+      lastCreationTrace.push([...physical.childTrace]);
       const result = maybeWrapPrimitive(element({children, ...props}, newState, updateState));
+      lastCreationTrace.pop();
       result.handle = handle;
+      result.childTrace = checkExists(creationTrace.pop());
       result.factorySource = {
         factory: element,
         children: flatChildren,
         props: props ?? {},
         state: newState,
       };
-      updateElement(result);
+      patchChildren(physical.parent, [handle], [result], /* placeholder= */ undefined);
     };
 
     const flatChildren = children.flat();
+
+    const lastTrace = lastCreationTrace[lastCreationTrace.length - 1];
+    const lastHandle = lastTrace?.shift();
+    const lastPhysical = lastHandle ? createdElements.get(lastHandle) : undefined;
+    const lastFactorySource = lastPhysical?.factorySource;
+    const lastFactory = lastFactorySource?.factory;
+
+    let state;
+    if (lastFactory && deepEqual(lastFactory, element)) {
+      state = lastFactorySource.state;
+    } else {
+      state = undefined;
+    }
+
+    // Push ourselves into our parent's trace, if it exists.
+    creationTrace[creationTrace.length - 1]?.push(handle);
+
+    creationTrace.push([]);
     const result =
         maybeWrapPrimitive(
             element({
               children: flatChildren,
               ...props,
             },
-            undefined,
+            state,
             updateState));
+    result.childTrace = checkExists(creationTrace.pop());
     result.handle = handle;
     result.factorySource = {
       factory: element,
       children: flatChildren,
       props: props ?? {},
-      state: undefined,
+      state,
     };
     return result;
   } else {
@@ -95,6 +134,7 @@ export function createVirtualElement(
       children: children.flat(),
       handle,
       props: props ?? {},
+      childTrace: [],
       factorySource: undefined,
     };
   }
@@ -144,6 +184,7 @@ function hydrateElementRecursively(
           self: node,
           placeholder: undefined,
           childHandles: [],
+          childTrace: [],
           factorySource: undefined,
           props: {},
         });
@@ -175,6 +216,7 @@ function hydrateElementRecursively(
           self: undefined,
           placeholder,
           childHandles,
+          childTrace: element.childTrace,
           factorySource: element.factorySource,
           props: element.props,
         });
@@ -201,6 +243,7 @@ function hydrateElementRecursively(
           self: node,
           placeholder: undefined,
           childHandles,
+          childTrace: element.childTrace,
           factorySource: element.factorySource,
           props: element.props,
         });
@@ -212,6 +255,21 @@ function hydrateElementRecursively(
   }
 }
 
+class VdomCaching {
+
+  on: boolean = true;
+
+  disable(): void {
+    this.on = false;
+  }
+
+  enable(): void {
+    this.on = true;
+  }
+}
+
+export const vdomCaching = new VdomCaching();
+
 const TAG_TO_NAMESPACE = new Map([
   ['circle', 'http://www.w3.org/2000/svg'],
   ['g', 'http://www.w3.org/2000/svg'],
@@ -222,6 +280,8 @@ const TAG_TO_NAMESPACE = new Map([
 ]);
 
 const createdElements = new WeakMap<Handle, PhysicalElement>();
+const creationTrace: Array<Handle[]> = [];
+const lastCreationTrace: Array<Handle[]> = [];
 
 function* createElement(element: VElementOrPrimitive, handle: Handle, parent: Element):
     Generator<Node, void, void> {
@@ -233,6 +293,7 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           self: node,
           placeholder: undefined,
           childHandles: [],
+          childTrace: [],
           factorySource: undefined,
           props: {},
         });
@@ -261,6 +322,7 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           self: undefined,
           placeholder,
           childHandles,
+          childTrace: element.childTrace,
           factorySource: element.factorySource,
           props: element.props,
         });
@@ -282,6 +344,7 @@ function* createElement(element: VElementOrPrimitive, handle: Handle, parent: El
           self: root,
           placeholder: undefined,
           childHandles,
+          childTrace: element.childTrace,
           factorySource: element.factorySource,
           props: element.props,
         });
@@ -302,59 +365,6 @@ function appendChildrenToRoot(
   }
 }
 
-function updateElement(element: VElement) {
-  const physical = checkExists(createdElements.get(element.handle));
-
-  // Check to see if the element we're updating even still exists.
-  if (!physical.parent.contains(findLastChildOrPlaceholder(physical))) {
-    return;
-  }
-
-  if (element.factorySource && deepEqual(physical.factorySource, element.factorySource)) {
-    return;
-  }
-
-  // Check if this was and remains a fragment
-  if (physical.self === undefined && element.tag === Fragment) {
-    const placeholder = physical.placeholder;
-    const {childHandles} =
-        patchChildren(
-            physical.parent, physical.childHandles, element.children, placeholder);
-    createdElements.set(
-        element.handle, {
-          parent: physical.parent,
-          self: undefined,
-          placeholder,
-          childHandles,
-          factorySource: element.factorySource,
-          props: element.props,
-        });
-    return;
-  }
-
-  // Check if this is converting to or from a fragment or if the tags don't line up
-  if (physical.self === undefined || element.tag === Fragment) {
-    const {childHandles, last} =
-        patchChildren(
-            physical.parent,
-            physical.self ? [element.handle] : physical.childHandles,
-            [element],
-            physical.placeholder);
-    createdElements.set(
-        element.handle, {
-          parent: physical.parent,
-          self: element.tag === Fragment ? undefined : last,
-          placeholder: undefined,
-          childHandles,
-          factorySource: element.factorySource,
-          props: element.props,
-        });
-    return;
-  }
-
-  patchNode(physical, element);
-}
-
 function patchChildren(
     parent: Element, was: Handle[], is: VElementOrPrimitive[], placeholder: Node|undefined): {
       childHandles: Handle[];
@@ -371,7 +381,9 @@ function patchChildren(
       const handle = maybeCreateHandle(isElement);
       newHandles.push(handle);
 
-      if (isElement.factorySource && deepEqual(wasElement.factorySource, isElement.factorySource)) {
+      if (vdomCaching.on
+          && isElement.factorySource
+          && deepEqual(wasElement.factorySource, isElement.factorySource)) {
         // TODO: do we need to create everything?
         createdElements.set(handle, wasElement);
         last = findLastChildOrPlaceholder(wasElement);
@@ -388,6 +400,7 @@ function patchChildren(
             self: undefined,
             placeholder,
             childHandles: result.childHandles,
+            childTrace: isElement.childTrace,
             factorySource: isElement.factorySource,
             props: isElement.props,
           });
@@ -420,6 +433,7 @@ function patchChildren(
             self: undefined,
             placeholder,
             childHandles: result.childHandles,
+            childTrace: isElement.childTrace,
             factorySource: isElement.factorySource,
             props: isElement.props,
           });
@@ -490,7 +504,7 @@ function patchNode(physical: PhysicalElement, to: VElement): Node|undefined {
 
   createdElements.set(to.handle, physical);
 
-  if (to.factorySource && deepEqual(physical.factorySource, to.factorySource)) {
+  if (vdomCaching.on && to.factorySource && deepEqual(physical.factorySource, to.factorySource)) {
     return self;
   }
 
@@ -586,6 +600,7 @@ function maybeWrapPrimitive(element: VElementOrPrimitive): VElement {
     return {
       tag: Fragment,
       children: [element],
+      childTrace: [],
       handle: createHandle(),
       factorySource: undefined,
       props: {},

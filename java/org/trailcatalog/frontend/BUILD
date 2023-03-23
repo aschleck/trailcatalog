@@ -14,6 +14,7 @@ js_binary(
 esbuild_binary(
     name = "frontend",
     entry_point = "server.js",
+    minify = False,
     platform = "node",
     deps = [
         ":css",
