@@ -89,3 +89,79 @@ export function CookierClickerElement(
   </>;
 }
 ```
+
+## vdom
+
+This library has a vdom rendering, hydration, and patching implemention. The major source of
+complexity comes from handling fragments. As an example, consider the following.
+
+```tsx
+<>
+  <>Some</>
+  <>text</>
+  <></>
+  <>
+    <>that</>
+    <><span>needs patching</span></>
+  </>
+</>
+```
+
+will render as
+
+```html
+Sometextthat<span>needs patching</span>
+```
+
+which is exactly equivalent to the result of rendering
+
+```tsx
+<>
+  <>Sometext</>
+  <>that</>
+  <span>needs patching</span>
+</>
+```
+
+This ends up being challenging when patching because the DOM itself does not have enough information
+to know where a fragment begins or ends (consider especially the `<></>` fragment in the example
+above, if we patched elements into it you could only know where to place them by looking at its
+sibling fragments.) We deal with this by creating placeholder nodes (text nodes containing the
+string `''`) when a fragment is empty and placing those in the DOM so we can anchor future elements.
+An alternative approach would be to look at the adjacent fragments when processing a fragment, but
+it's challenging to write in a readable fashion because those fragments may be deeply nested (and
+they may also all be ultimately empty and so unable to provide any anchoring information.) The code
+that handles patching fragments is mostly contained by `binder.ts#patchChildren`.
+
+Hydration has a similar but easier problem where we need to map a fragment onto the DOM while also
+handling merged text nodes. For an example, consider the HTML above.
+
+```html
+Sometextthat<span>needs patching</span>
+```
+
+has the node structure
+
+```tsx
+<>
+  Sometextthat
+  <span>needs patching</span>
+</>
+```
+
+needs to be mapped into
+
+```tsx
+<>
+  <>Some</>
+  <>text</>
+  <></>
+  <>
+    <>that</>
+    <><span>needs patching</span></>
+  </>
+</>
+```
+
+This can only be performed by splitting the `Sometextthat` text node into multiple text nodes and
+recursively processing the fragments.
