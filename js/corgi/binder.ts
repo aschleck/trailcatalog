@@ -117,10 +117,6 @@ export class Binder implements Listener {
   private promise: Promise<void>|undefined = undefined;
 
   createdElement(element: Element, props: Properties): void {
-    if (!(element instanceof Object)) {
-      return;
-    }
-
     if (props.js) {
       element.setAttribute('data-js', '');
       if (props.js.ref) {

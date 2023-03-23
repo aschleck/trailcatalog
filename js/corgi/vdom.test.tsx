@@ -1,3 +1,4 @@
+import { waitTicks } from 'js/common/promises';
 import * as corgi from 'js/corgi';
 
 afterEach(() => {
@@ -79,136 +80,73 @@ test('skips fragment', () => {
   expect(document.body.innerHTML).toBe('<div><span>Hello</span></div>');
 });
 
-test('patches dom', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    expect(document.body.innerHTML).toBe('<div>Pushed: true</div>');
-    done();
-  };
-  corgi.appendElement(document.body, <Flipper done={verifier} />);
+test('patches dom', async () => {
+  corgi.appendElement(document.body, <Flipper />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('<div>Pushed: true</div>');
 });
 
-test('patch removes boolean attribute', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    try {
-      expect(document.body.innerHTML).toBe('<input type="checkbox">');
-      done();
-    } catch (error: unknown) {
-      done(error);
-    }
-  };
-  corgi.appendElement(document.body, <BooleanRemover done={verifier} />);
+test('patch removes boolean attribute', async () => {
+  corgi.appendElement(document.body, <BooleanRemover />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('<input type="checkbox">');
 });
 
-test('patch adds string attribute', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    try {
-      expect(document.body.innerHTML).toBe('<span>Good</span>bye');
-      done();
-    } catch (error: unknown) {
-      done(error);
-    }
-  };
-  corgi.appendElement(document.body, <StringAdder done={verifier} />);
+test('patch adds string attribute', async () => {
+  corgi.appendElement(document.body, <StringAdder />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('<span>Good</span>bye');
 });
 
-test('patch removes string attribute', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    try {
-      expect(document.body.innerHTML).toBe('<span></span>');
-      done();
-    } catch (error: unknown) {
-      done(error);
-    }
-  };
-  corgi.appendElement(document.body, <StringRemover done={verifier} />);
+test('patch removes string attribute', async () => {
+  corgi.appendElement(document.body, <StringRemover />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('<span></span>');
 });
 
-test('patch removes class attribute', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    try {
-      expect(document.body.innerHTML).toBe('<div></div>');
-      done();
-    } catch (error: unknown) {
-      done(error);
-    }
-  };
-  corgi.appendElement(document.body, <ClassNameRemover done={verifier} />);
+test('patch removes class attribute', async () => {
+  corgi.appendElement(document.body, <ClassNameRemover />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('<div></div>');
 });
 
-test('patches evil counter', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    try {
-      expect(document.body.innerHTML).toBe('FirstSecondThird');
-      done();
-    } catch (error: unknown) {
-      done(error);
-    }
-  };
-  corgi.appendElement(document.body, <EvilCounter done={verifier} />);
+test('patches evil counter', async () => {
+  corgi.appendElement(document.body, <EvilCounter />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('FirstSecondThird');
 });
 
-test('patches evil reducer', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    try {
-      expect(document.body.innerHTML).toBe('what');
-      done();
-    } catch (error: unknown) {
-      done(error);
-    }
-  };
-  corgi.appendElement(document.body, <EvilReducer done={verifier} />);
+test('patches evil reducer', async () => {
+  corgi.appendElement(document.body, <EvilReducer />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('what');
 });
 
-test('patches fragment dom in', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    try {
-      expect(document.body.innerHTML)
-          .toBe('<div><span>First</span><div>second</div><span>third</span></div>');
-      done();
-    } catch (error: unknown) {
-      done(error);
-    }
-  };
-  corgi.appendElement(document.body, <FragmentFlipper done={verifier} initial={false} />);
+test('patches fragment dom in', async () => {
+  corgi.appendElement(document.body, <FragmentFlipper initial={false} />);
+  await waitTicks(10);
+  expect(document.body.innerHTML)
+      .toBe('<div><span>First</span><div>second</div><span>third</span></div>');
 });
 
-test('patches fragment dom out', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    expect(document.body.innerHTML)
-        .toBe('<div><span>First</span><div>third</div></div>');
-    done();
-  };
-  corgi.appendElement(document.body, <FragmentFlipper done={verifier} initial={true} />);
+test('patches fragment dom out', async () => {
+  corgi.appendElement(document.body, <TreeFlipper />);
+  await waitTicks(10);
+  expect(document.body.innerHTML)
+      .toBe('<div><span>Good</span><div><span>job</span></div><span>you pressed it</span></div>');
 });
 
-test('patches tree dom', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    expect(document.body.innerHTML)
-        .toBe('<div><span>Good</span><div><span>job</span></div><span>you pressed it</span></div>');
-    done();
-  };
-  corgi.appendElement(document.body, <TreeFlipper done={verifier} />);
-});
-
-test('hydrates dom', (done: jest.DoneCallback) => {
+test('hydrates dom', async () => {
   document.body.innerHTML = '<div>Pushed: false</div>';
-  const verifier = () => {
-    expect(document.body.innerHTML).toBe('<div>Pushed: true</div>');
-    done();
-  };
-  corgi.hydrateElement(document.body, <Flipper done={verifier} />);
+  corgi.hydrateElement(document.body, <Flipper />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('<div>Pushed: true</div>');
 });
 
-test('hydrates evil', (done: jest.DoneCallback) => {
-  const verifier = () => {
-    try {
-      expect(document.body.innerHTML).toBe('FirstSecondThird');
-      done();
-    } catch (error: unknown) {
-      done(error);
-    }
-  };
-  corgi.hydrateElement(document.body, <EvilCounter done={verifier} />);
+test('hydrates evil', async () => {
+  corgi.hydrateElement(document.body, <EvilCounter />);
+  await waitTicks(10);
+  expect(document.body.innerHTML).toBe('FirstSecondThird');
 });
 
 function SimpleString() {
@@ -233,7 +171,7 @@ interface FlipperState {
 }
 
 function BooleanRemover(
-    {done}: {done: () => void},
+    {}: {},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {
   if (!state) {
@@ -245,7 +183,6 @@ function BooleanRemover(
   if (!state.pushed) {
     Promise.resolve().then(() => {
       updateState({pushed: true});
-      done();
     });
   }
 
@@ -253,7 +190,7 @@ function BooleanRemover(
 }
 
 function StringAdder(
-    {done}: {done: () => void},
+    {}: {},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {
   if (!state) {
@@ -265,7 +202,6 @@ function StringAdder(
   if (!state.pushed) {
     Promise.resolve().then(() => {
       updateState({pushed: true});
-      done();
     });
   }
 
@@ -277,7 +213,7 @@ function StringAdder(
 }
 
 function StringRemover(
-    {done}: {done: () => void},
+    {}: {},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {
   if (!state) {
@@ -289,7 +225,6 @@ function StringRemover(
   if (!state.pushed) {
     Promise.resolve().then(() => {
       updateState({pushed: true});
-      done();
     });
   }
 
@@ -297,7 +232,7 @@ function StringRemover(
 }
 
 function ClassNameRemover(
-    {done}: {done: () => void},
+    {}: {},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {
   if (!state) {
@@ -309,7 +244,6 @@ function ClassNameRemover(
   if (!state.pushed) {
     Promise.resolve().then(() => {
       updateState({pushed: true});
-      done();
     });
   }
 
@@ -317,7 +251,7 @@ function ClassNameRemover(
 }
 
 function Flipper(
-    {done}: {done: () => void},
+    {}: {},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {
   if (!state) {
@@ -329,7 +263,6 @@ function Flipper(
   if (!state.pushed) {
     Promise.resolve().then(() => {
       updateState({pushed: true});
-      done();
     });
   }
 
@@ -337,7 +270,7 @@ function Flipper(
 }
 
 function EvilCounter(
-    {done}: {done: () => void},
+    {}: {},
     state: {count: number}|undefined,
     updateState: (newState: {count: number}) => void) {
   if (!state) {
@@ -357,7 +290,6 @@ function EvilCounter(
   } else if (state.count === 2) {
     Promise.resolve().then(() => {
       updateState({count: 3});
-      done();
     });
   }
 
@@ -399,7 +331,7 @@ function EvilCounter(
 }
 
 function EvilReducer(
-    {done}: {done: () => void},
+    {}: {},
     state: {count: number}|undefined,
     updateState: (newState: {count: number}) => void) {
   if (!state) {
@@ -416,7 +348,6 @@ function EvilReducer(
   } else if (state.count === 1) {
     Promise.resolve().then(() => {
       updateState({count: 2});
-      done();
     });
   }
 
@@ -439,7 +370,7 @@ function EvilReducer(
 }
 
 function FragmentFlipper(
-    {done, initial}: {done: () => void, initial: boolean},
+    {initial}: {initial: boolean},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {
   if (!state) {
@@ -453,7 +384,6 @@ function FragmentFlipper(
   if (state.pushed === initial) {
     Promise.resolve().then(() => {
       updateState({pushed: !activeState.pushed});
-      done();
     });
   }
 
@@ -477,7 +407,7 @@ function FragmentFlipper(
 }
 
 function TreeFlipper(
-    {done}: {done: () => void},
+    {}: {},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {
   if (!state) {
@@ -489,7 +419,6 @@ function TreeFlipper(
   if (!state.pushed) {
     Promise.resolve().then(() => {
       updateState({pushed: true});
-      done();
     });
   }
 
