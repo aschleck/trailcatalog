@@ -116,7 +116,14 @@ interface PatchController {
   to: AnyBoundController|undefined;
 }
 
-type BinderAction = AddController|AddUnbound|DisposeElement|PatchController;
+interface PatchUnbound {
+  kind: 'pu';
+  element: SupportedElement;
+  from: UnboundEvents|undefined;
+  to: UnboundEvents|undefined;
+}
+
+type BinderAction = AddController|AddUnbound|DisposeElement|PatchController|PatchUnbound;
 
 export class Binder implements Listener {
 
@@ -153,7 +160,12 @@ export class Binder implements Listener {
         to: to.js,
       });
     } else if (from.unboundEvents || to.unboundEvents) {
-      checkArgument(deepEqual(from.unboundEvents, to.unboundEvents), 'Cannot modify unboundEvents');
+      this.pushAction({
+        kind: 'pu',
+        element: element as SupportedElement,
+        from: from.unboundEvents,
+        to: to.unboundEvents,
+      });
     }
   }
 
@@ -185,6 +197,8 @@ export class Binder implements Listener {
           disposeBoundElementsIn(action.element);
         } else if (action.kind === 'pc') {
           patchController(action.element, action.from, action.to);
+        } else if (action.kind === 'pu') {
+          patchUnbound(action.element, action.from, action.to);
         } else {
           checkExhaustive(action);
         }
@@ -196,8 +210,10 @@ export class Binder implements Listener {
 }
 
 const elementsToControllerSpecs = new WeakMap<SupportedElement, AnyBoundController>();
+const elementsToUnboundDisposers = new WeakMap<SupportedElement, Disposable>();
 
 function bindController(root: SupportedElement, spec: AnyBoundController): void {
+  const disposer = spec.disposer;
   elementsToControllerSpecs.set(root, spec);
 
   for (const [event, handler] of Object.entries(spec.events)) {
@@ -205,11 +221,11 @@ function bindController(root: SupportedElement, spec: AnyBoundController): void 
       continue;
     }
 
-    bindEventListener(root, event, handler as string);
+    bindEventListener(root, event, handler as string, disposer);
   }
 
   for (const [eventSpec, handler] of spec.events.corgi ?? []) {
-    spec.disposer.registerListener(
+    disposer.registerListener(
         root,
         qualifiedName(eventSpec) as any,
         e => {
@@ -236,24 +252,28 @@ function bindController(root: SupportedElement, spec: AnyBoundController): void 
 }
 
 function bindUnbound(element: SupportedElement, events: UnboundEvents): void {
+  const disposer = new Disposable();
+  elementsToUnboundDisposers.set(element, disposer);
+
   for (const [event, handler] of Object.entries(events)) {
     if (event === 'corgi') {
       continue;
     }
 
-    bindEventListener(element, event, handler as string);
+    bindEventListener(element, event, handler as string, disposer);
   }
 
   for (const [eventSpec, handler] of events.corgi ?? []) {
     // TODO: we used to check if root == e.srcElement and bail out if so. Why?
-    bindEventListener(element, qualifiedName(eventSpec), handler);
+    bindEventListener(element, qualifiedName(eventSpec), handler, disposer);
   }
 }
 
 function bindEventListener(
     element: SupportedElement,
     event: string,
-    handler: string): void {
+    handler: string,
+    disposer: Disposable): void {
   const cached: {
     root: SupportedElement|undefined;
     spec: AnyBoundController|undefined;
@@ -294,8 +314,7 @@ function bindEventListener(
       method.call(controller, e);
     });
   };
-  // TODO: we should keep invoker around so we can remove events if the element is patched
-  element.addEventListener(event, invoker);
+  disposer.registerListener(element, event as any, invoker);
 }
 
 function maybeInstantiateAndCall<E extends SupportedElement, R>(
@@ -353,35 +372,31 @@ function patchController(
   }
 }
 
+function patchUnbound(
+    element: SupportedElement,
+    from: UnboundEvents|undefined,
+    to: UnboundEvents|undefined) {
+  checkArgument(from ?? to, 'At least one of from or to must be defined');
+
+  if (deepEqual(from, to)) {
+    return;
+  }
+
+  const was = elementsToUnboundDisposers.get(element);
+  if (was) {
+    was.dispose();
+  }
+
+  if (to) {
+    bindUnbound(element, to);
+  }
+}
+
 interface AnyServiceCtor {
   deps?(): DepsConstructorsFor<ServiceDeps>;
   new (response: any): Service<any>;
 }
 const serviceSingletons = new Map<AnyServiceCtor, Promise<Service<any>>>();
-
-const unboundEventListeners =
-    new WeakMap<SupportedElement, Array<[string, EventListenerOrEventListenerObject]>>();
-
-export function applyUpdate(
-    root: SupportedElement,
-    from: AnyBoundController|undefined,
-    to: AnyBoundController|undefined): void {
-  if (from === undefined || to === undefined) {
-    throw new Error("Unable to update bound element with new js or remove old js");
-  }
-
-  if (deepEqual(from.args, to.args)) {
-    return;
-  }
-
-  from.args = to.args;
-  const spec = elementsToControllerSpecs.get(root);
-  if (spec?.instance) {
-    spec.instance.then(i => {
-      i.updateArgs(to.args);
-    });
-  }
-}
 
 function fetchControllerDeps<D extends ControllerDeps>(
     deps: DepsConstructorsFor<D>, root: SupportedElement): Promise<D> {

@@ -1,4 +1,4 @@
-import { waitTicks } from 'js/common/promises';
+import { waitSettled } from 'js/common/promises';
 import * as corgi from 'js/corgi';
 
 afterEach(() => {
@@ -82,56 +82,56 @@ test('skips fragment', () => {
 
 test('patches dom', async () => {
   corgi.appendElement(document.body, <Flipper />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('<div>Pushed: true</div>');
 });
 
 test('patch removes boolean attribute', async () => {
   corgi.appendElement(document.body, <BooleanRemover />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('<input type="checkbox">');
 });
 
 test('patch adds string attribute', async () => {
   corgi.appendElement(document.body, <StringAdder />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('<span>Good</span>bye');
 });
 
 test('patch removes string attribute', async () => {
   corgi.appendElement(document.body, <StringRemover />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('<span></span>');
 });
 
 test('patch removes class attribute', async () => {
   corgi.appendElement(document.body, <ClassNameRemover />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('<div></div>');
 });
 
 test('patches evil counter', async () => {
   corgi.appendElement(document.body, <EvilCounter />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('FirstSecondThird');
 });
 
 test('patches evil reducer', async () => {
   corgi.appendElement(document.body, <EvilReducer />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('what');
 });
 
 test('patches fragment dom in', async () => {
   corgi.appendElement(document.body, <FragmentFlipper initial={false} />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML)
       .toBe('<div><span>First</span><div>second</div><span>third</span></div>');
 });
 
 test('patches fragment dom out', async () => {
   corgi.appendElement(document.body, <TreeFlipper />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML)
       .toBe('<div><span>Good</span><div><span>job</span></div><span>you pressed it</span></div>');
 });
@@ -139,13 +139,13 @@ test('patches fragment dom out', async () => {
 test('hydrates dom', async () => {
   document.body.innerHTML = '<div>Pushed: false</div>';
   corgi.hydrateElement(document.body, <Flipper />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('<div>Pushed: true</div>');
 });
 
 test('hydrates evil', async () => {
   corgi.hydrateElement(document.body, <EvilCounter />);
-  await waitTicks(10);
+  await waitSettled();
   expect(document.body.innerHTML).toBe('FirstSecondThird');
 });
 
