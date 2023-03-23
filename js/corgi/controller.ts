@@ -63,9 +63,7 @@ export class Controller<
 
   protected updateState(newState: S): void {
     this.state = newState;
-    this.updateStateDebouncer.trigger().catch(error => {
-      console.error(error);
-    });
+    this.updateStateDebouncer.trigger();
   }
 
   wakeup(): void {}

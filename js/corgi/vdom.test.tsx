@@ -92,22 +92,16 @@ test('patch removes boolean attribute', async () => {
   expect(document.body.innerHTML).toBe('<input type="checkbox">');
 });
 
-test('patch modifies fragment after function', async () => {
-  corgi.appendElement(document.body, <FragmentModifier />);
+test('patch modifies fragment after removed child', async () => {
+  corgi.appendElement(document.body, <FragmentModifier1 />);
   await waitSettled();
-  expect(document.body.innerHTML).toBe('<div>Hello</div><div>Good</div><div>Bye</div>');
+  expect(document.body.innerHTML).toBe('<span>Bye</span>');
 });
 
-test('patch modifies fragment after removed child', async () => {
+test('patch handles obsolete state changes', async () => {
   corgi.appendElement(document.body, <FragmentModifier2 />);
   await waitSettled();
-  expect(document.body.innerHTML).toBe('<span>Bye</span>');
-});
-
-test('patch removes fragment after function', async () => {
-  corgi.appendElement(document.body, <FragmentModifier3 />);
-  await waitSettled();
-  expect(document.body.innerHTML).toBe('<span>Bye</span>');
+  expect(document.body.innerHTML).toBe('<span>Good</span>bye<span>Bye</span>');
 });
 
 test('patch adds string attribute', async () => {
@@ -213,36 +207,7 @@ function BooleanRemover(
   return <input type="checkbox" checked={state.pushed ? undefined : true} />;
 }
 
-function FragmentModifier(
-    {}: {},
-    state: FlipperState|undefined,
-    updateState: (newState: FlipperState) => void) {
-  if (!state) {
-    state = {
-      pushed: false,
-    }
-  }
-
-  if (!state.pushed) {
-    Promise.resolve().then(() => {
-      updateState({pushed: true});
-    });
-  }
-
-  if (state.pushed) {
-    return <>
-      <StringAdder />
-      <><span>Bye</span></>
-    </>;
-  } else {
-    return <>
-      <StringAdder />
-      <><div>Good</div></>
-    </>;
-  }
-}
-
-function FragmentModifier2(
+function FragmentModifier1(
     {}: {},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {
@@ -270,7 +235,7 @@ function FragmentModifier2(
   }
 }
 
-function FragmentModifier3(
+function FragmentModifier2(
     {}: {},
     state: FlipperState|undefined,
     updateState: (newState: FlipperState) => void) {

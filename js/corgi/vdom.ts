@@ -69,12 +69,7 @@ export function createVirtualElement(
         props: props ?? {},
         state: newState,
       };
-      try {
-        updateElement(result);
-      } catch (error: unknown) {
-        console.log(error);
-        console.log((error as any).stack);
-      }
+      updateElement(result);
     };
 
     const flatChildren = children.flat();
@@ -309,6 +304,11 @@ function appendChildrenToRoot(
 
 function updateElement(element: VElement) {
   const physical = checkExists(createdElements.get(element.handle));
+
+  // Check to see if the element we're updating even still exists.
+  if (!physical.parent.contains(findLastChildOrPlaceholder(physical))) {
+    return;
+  }
 
   if (element.factorySource && deepEqual(physical.factorySource, element.factorySource)) {
     return;
