@@ -507,7 +507,7 @@ function patchProperties(element: Element, from: AnyProperties, to: AnyPropertie
       const value = to[key];
       if (key === 'className') {
         if (value) {
-          element.className = String(value);
+          element.setAttribute('class', String(value));
         } else {
           element.removeAttribute('class');
         }

@@ -109,7 +109,14 @@ interface DisposeElement {
   element: SupportedElement;
 }
 
-type BinderAction = AddController|AddUnbound|DisposeElement;
+interface PatchController {
+  kind: 'pc';
+  element: SupportedElement;
+  from: AnyBoundController|undefined;
+  to: AnyBoundController|undefined;
+}
+
+type BinderAction = AddController|AddUnbound|DisposeElement|PatchController;
 
 export class Binder implements Listener {
 
@@ -139,9 +146,12 @@ export class Binder implements Listener {
 
   patchedElement(element: Element, from: Properties, to: Properties): void {
     if (from.js || to.js) {
-      console.log('switching');
-      console.log(from);
-      console.log(to);
+      this.pushAction({
+        kind: 'pc',
+        element: element as SupportedElement,
+        from: from.js,
+        to: to.js,
+      });
     } else if (from.unboundEvents || to.unboundEvents) {
       checkArgument(deepEqual(from.unboundEvents, to.unboundEvents), 'Cannot modify unboundEvents');
     }
@@ -173,6 +183,8 @@ export class Binder implements Listener {
           bindUnbound(action.element, action.unboundEvents);
         } else if (action.kind === 'de') {
           disposeBoundElementsIn(action.element);
+        } else if (action.kind === 'pc') {
+          patchController(action.element, action.from, action.to);
         } else {
           checkExhaustive(action);
         }
@@ -311,6 +323,34 @@ function maybeInstantiateAndCall<E extends SupportedElement, R>(
   }
 
   return spec.instance.then(instance => fn(instance));
+}
+
+function patchController(
+    element: SupportedElement,
+    from: AnyBoundController|undefined,
+    to: AnyBoundController|undefined) {
+  checkArgument(from ?? to, 'At least one of from or to must be defined');
+
+  const was = elementsToControllerSpecs.get(element);
+  if (was && from && to && from.controller === to.controller && from.key === to.key) {
+    checkArgument(deepEqual(from.events, to.events), 'Patching events is not supported');
+    checkArgument(deepEqual(from.ref, to.ref), 'Patching ref is not supported');
+    was.args = to.args;
+    if (was.instance) {
+      was.instance.then(c => { c.updateArgs(to.args); });
+    }
+  } else if (to) {
+    if (was) {
+      was.disposer.dispose();
+    }
+    bindController(element, to);
+  } else if (from) {
+    if (was) {
+      was.disposer.dispose();
+    }
+  } else {
+    throw new Error('Unexpected case');
+  }
 }
 
 interface AnyServiceCtor {
