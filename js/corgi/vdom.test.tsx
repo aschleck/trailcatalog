@@ -92,6 +92,24 @@ test('patch removes boolean attribute', async () => {
   expect(document.body.innerHTML).toBe('<input type="checkbox">');
 });
 
+test('patch modifies fragment after function', async () => {
+  corgi.appendElement(document.body, <FragmentModifier />);
+  await waitSettled();
+  expect(document.body.innerHTML).toBe('<div>Hello</div><div>Good</div><div>Bye</div>');
+});
+
+test('patch modifies fragment after removed child', async () => {
+  corgi.appendElement(document.body, <FragmentModifier2 />);
+  await waitSettled();
+  expect(document.body.innerHTML).toBe('<span>Bye</span>');
+});
+
+test('patch removes fragment after function', async () => {
+  corgi.appendElement(document.body, <FragmentModifier3 />);
+  await waitSettled();
+  expect(document.body.innerHTML).toBe('<span>Bye</span>');
+});
+
 test('patch adds string attribute', async () => {
   corgi.appendElement(document.body, <StringAdder />);
   await waitSettled();
@@ -193,6 +211,95 @@ function BooleanRemover(
   }
 
   return <input type="checkbox" checked={state.pushed ? undefined : true} />;
+}
+
+function FragmentModifier(
+    {}: {},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      updateState({pushed: true});
+    });
+  }
+
+  if (state.pushed) {
+    return <>
+      <StringAdder />
+      <><span>Bye</span></>
+    </>;
+  } else {
+    return <>
+      <StringAdder />
+      <><div>Good</div></>
+    </>;
+  }
+}
+
+function FragmentModifier2(
+    {}: {},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      return updateState({pushed: true});
+    });
+  }
+
+  if (state.pushed) {
+    return <>
+      <></>
+      <span>Bye</span>
+    </>;
+  } else {
+    return <>
+      <><div></div></>
+    </>;
+  }
+}
+
+function FragmentModifier3(
+    {}: {},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      updateState({pushed: true});
+    });
+  }
+
+  if (state.pushed) {
+    return <>
+      <>
+        <StringAdder />
+        <><span>Bye</span></>
+      </>
+    </>;
+  } else {
+    return <>
+      <>
+        <StringAdder />
+      </>
+    </>;
+  }
 }
 
 function StringAdder(

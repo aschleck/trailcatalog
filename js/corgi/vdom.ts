@@ -69,7 +69,12 @@ export function createVirtualElement(
         props: props ?? {},
         state: newState,
       };
-      updateElement(result);
+      try {
+        updateElement(result);
+      } catch (error: unknown) {
+        console.log(error);
+        console.log((error as any).stack);
+      }
     };
 
     const flatChildren = children.flat();
@@ -369,6 +374,7 @@ function patchChildren(
       if (isElement.factorySource && deepEqual(wasElement.factorySource, isElement.factorySource)) {
         // TODO: do we need to create everything?
         createdElements.set(handle, wasElement);
+        last = findLastChildOrPlaceholder(wasElement);
         continue;
       }
 
@@ -428,7 +434,10 @@ function patchChildren(
     const isElement = is[i];
     const handle = maybeCreateHandle(isElement);
     const adding = [...createElement(isElement, handle, parent)];
-    adding.forEach(a => {parent.insertBefore(a, next)});
+    for (const a of adding) {
+      parent.insertBefore(a, next);
+      last = a;
+    }
     newHandles.push(handle);
   }
 
@@ -440,10 +449,12 @@ function patchChildren(
     const wasElement = checkExists(createdElements.get(was[i]));
 
     if (wasElement.self === undefined) {
-      patchChildren(parent, wasElement.childHandles, [], placeholder);
+      patchChildren(parent, wasElement.childHandles, [], wasElement.placeholder);
+      last = wasElement.placeholder;
     } else {
       if (placeholder) {
         parent.insertBefore(placeholder, wasElement.self);
+        last = placeholder;
       }
       parent.removeChild(wasElement.self);
       for (const listener of listeners) {
@@ -544,6 +555,20 @@ let nextElementId = 0;
 
 function createHandle(): Handle {
   return {id: ++nextElementId} as Handle;
+}
+
+function findLastChildOrPlaceholder(element: PhysicalElement): Node {
+  if (element.self) {
+    return element.self;
+  } else {
+    if (element.childHandles.length > 0) {
+      const last = element.childHandles[element.childHandles.length - 1];
+      const child = checkExists(createdElements.get(last));
+      return findLastChildOrPlaceholder(child);
+    } else {
+      return checkExists(element.placeholder);
+    }
+  }
 }
 
 function maybeCreateHandle(element: VElementOrPrimitive): Handle {
