@@ -73,6 +73,30 @@ test('sets up controller ref', async () => {
   expect(div.getAttribute('data-js-ref')).toBe('cow');
 });
 
+test('cleans up controller and ref', async () => {
+  const div = document.createElement('div');
+  document.body.append(div);
+  const binder = new Binder();
+
+  const oldProps = {
+    js: corgi.bind({
+      controller: NoisyController,
+      ref: 'cow',
+      state: [{}, (newState: {}) => {}],
+    }),
+  };
+  binder.createdElement(div, oldProps);
+
+  await waitTicks(1);
+  expect(div.getAttribute('data-js')).toBe('');
+  expect(div.getAttribute('data-js-ref')).toBe('cow');
+
+  binder.patchedElement(div, oldProps, {});
+  await waitTicks(1);
+  expect(div.getAttribute('data-js')).toBeNull();
+  expect(div.getAttribute('data-js-ref')).toBeNull();
+});
+
 test('wakes up controller', async () => {
   const div = document.createElement('div');
   document.body.append(div);

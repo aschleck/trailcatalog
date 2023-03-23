@@ -215,6 +215,9 @@ const elementsToUnboundDisposers = new WeakMap<SupportedElement, Disposable>();
 function bindController(root: SupportedElement, spec: AnyBoundController): void {
   const disposer = spec.disposer;
   elementsToControllerSpecs.set(root, spec);
+  disposer.registerDisposer(() => {
+    elementsToControllerSpecs.delete(root);
+  });
 
   for (const [event, handler] of Object.entries(spec.events)) {
     if (event === 'corgi') {
@@ -254,6 +257,9 @@ function bindController(root: SupportedElement, spec: AnyBoundController): void 
 function bindUnbound(element: SupportedElement, events: UnboundEvents): void {
   const disposer = new Disposable();
   elementsToUnboundDisposers.set(element, disposer);
+  disposer.registerDisposer(() => {
+    elementsToUnboundDisposers.delete(element);
+  });
 
   for (const [event, handler] of Object.entries(events)) {
     if (event === 'corgi') {
@@ -358,17 +364,17 @@ function patchController(
     if (was.instance) {
       was.instance.then(c => { c.updateArgs(to.args); });
     }
-  } else if (to) {
-    if (was) {
-      was.disposer.dispose();
-    }
+    return;
+  }
+
+  if (was) {
+    was.disposer.dispose();
+    element.removeAttribute('data-js');
+    element.removeAttribute('data-js-ref');
+  }
+
+  if (to) {
     bindController(element, to);
-  } else if (from) {
-    if (was) {
-      was.disposer.dispose();
-    }
-  } else {
-    throw new Error('Unexpected case');
   }
 }
 
