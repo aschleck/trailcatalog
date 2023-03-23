@@ -98,6 +98,12 @@ test('patch adds string attribute', async () => {
   expect(document.body.innerHTML).toBe('<span>Good</span>bye');
 });
 
+test('patch adds string attribute opposite', async () => {
+  corgi.appendElement(document.body, <StringAdder2 />);
+  await waitSettled();
+  expect(document.body.innerHTML).toBe('Good<span>bye</span><span>friend</span>');
+});
+
 test('patch removes string attribute', async () => {
   corgi.appendElement(document.body, <StringRemover />);
   await waitSettled();
@@ -209,6 +215,29 @@ function StringAdder(
     return <><span>Good</span>bye</>;
   } else {
     return <>Bye</>;
+  }
+}
+
+function StringAdder2(
+    {}: {},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      updateState({pushed: true});
+    });
+  }
+
+  if (state.pushed) {
+    return <>Good<span>bye</span><span>friend</span></>;
+  } else {
+    return <>Good</>;
   }
 }
 

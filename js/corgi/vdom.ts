@@ -423,14 +423,13 @@ function patchChildren(
     }
   }
 
-  let next = last ? last.nextSibling : (placeholder ?? null);
+  const next = last ? last.nextSibling : (placeholder ?? null);
   for (let i = was.length; i < is.length; ++i) {
     const isElement = is[i];
     const handle = maybeCreateHandle(isElement);
     const adding = [...createElement(isElement, handle, parent)];
     adding.forEach(a => {parent.insertBefore(a, next)});
     newHandles.push(handle);
-    next = adding[adding.length - 1];
   }
 
   if (placeholder && was.length < is.length && was.length === 0) {
