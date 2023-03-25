@@ -47,7 +47,9 @@ export class Controller<
     this.root = response.root;
     this.state = response.state[0];
     this.updateStateDebouncer = new Debouncer(0, () => {
-      response.state[1](this.state);
+      if (!this.isDisposed) {
+        response.state[1](this.state);
+      }
     });
   }
 
