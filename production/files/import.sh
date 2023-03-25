@@ -32,6 +32,7 @@ podman run \
 rm -f /mnt/horse/planet-*.torrent
 mv /mnt/horse/planet-2*.osm.pbf /mnt/horse/planet-weekly.osm.pbf
 
+rm -f /mnt/horse/planet-latest.osm.pbf
 podman run \
     --name 'planet_update' \
     --pull always \
