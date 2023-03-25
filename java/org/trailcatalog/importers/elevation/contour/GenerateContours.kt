@@ -62,9 +62,9 @@ fun main(args: Array<String>) {
   val worldSize = 2.0.pow(zoomLevel)
   for (y in 0 until worldSize.toInt()) {
     for (x in 0 until worldSize.toInt()) {
-      val latLow = asin(tanh((y / worldSize - 0.5) * 2 * Math.PI)) / Math.PI * 180
+      val latLow = asin(tanh((0.5 - (y + 1) / worldSize) * 2 * Math.PI)) / Math.PI * 180
       val lngLow = x / worldSize * 360 - 180
-      val latHigh = asin(tanh(((y + 1) / worldSize - 0.5) * 2 * Math.PI)) / Math.PI * 180
+      val latHigh = asin(tanh((0.5 - y / worldSize) * 2 * Math.PI)) / Math.PI * 180
       val lngHigh = (x + 1) / worldSize * 360 - 180
 
       for (unit in listOf("ft", "m")) {
@@ -246,24 +246,25 @@ private fun cropAndDump(contour: Contour, view: S2LatLngRect): List<ByteArray> {
       j += 1
     }
 
-    if (j - i > 1) {
-      val buffer =
-          ByteBuffer.allocate(
-              EncodedOutputStream.varIntSize(contour.height)
-              + EncodedOutputStream.varIntSize(j - i)
-              + 2 * 4 * (j - i))
+    val first = max(0, i - 1)
+    val last = j
+    val count = last - first
+    val buffer =
+        ByteBuffer.allocate(
+            EncodedOutputStream.varIntSize(contour.height)
+            + EncodedOutputStream.varIntSize(count)
+            + 2 * 4 * count)
 
-      ByteBufferEncodedOutputStream(buffer).use {
-        it.writeVarInt(contour.height)
-        it.writeVarInt(j - i)
-        for (p in i until j) {
-          val ll = lls[p]
-          it.writeInt(ll.lat().e7())
-          it.writeInt(ll.lng().e7())
-        }
+    ByteBufferEncodedOutputStream(buffer).use {
+      it.writeVarInt(contour.height)
+      it.writeVarInt(count)
+      for (p in first until last) {
+        val ll = lls[p]
+        it.writeInt(ll.lat().e7())
+        it.writeInt(ll.lng().e7())
       }
-      out.add(buffer.array())
     }
+    out.add(buffer.array())
 
     i = j
   }

@@ -1,10 +1,10 @@
 import { checkExhaustive } from 'js/common/asserts';
 import { IdentitySetMultiMap } from 'js/common/collections';
+import { LittleEndianView } from 'js/common/little_endian_view';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
 import { LatLng, LatLngRect, PixelRect, Vec2 } from 'js/map/common/types';
 
-import { LittleEndianView } from '../common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng } from '../common/math';
 import { S2CellNumber } from '../common/types';
 import { Path, Point, Trail } from '../models/types';

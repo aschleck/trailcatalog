@@ -1,8 +1,8 @@
 import { deepEqual } from 'js/common/comparisons';
+import { LittleEndianView } from 'js/common/little_endian_view';
 import { LatLng, LatLngRect } from 'js/map/common/types';
 
 import { decodeBase64 } from './base64';
-import { LittleEndianView } from './little_endian_view';
 import { InitialDataKey, initialData } from './ssr_aware';
 
 type AsObjects<T extends string[]> = {[K in keyof T]: object};

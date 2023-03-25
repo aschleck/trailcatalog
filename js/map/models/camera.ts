@@ -89,6 +89,21 @@ export class Camera {
   }
 }
 
+export function projectE7Array(llE7: Int32Array): Float64Array {
+  const projected = new Float64Array(llE7.length);
+  for (let i = 0; i < llE7.length; i += 2) {
+    projected[i] = e7ToRadians(llE7[i + 1]) / Math.PI;
+    const lat = e7ToRadians(llE7[i]);
+    const y = Math.log((1 + Math.sin(lat)) / (1 - Math.sin(lat))) / (2 * Math.PI);
+    projected[i + 1] = Number.isFinite(y) ? y : 9999 * Math.sign(y);
+  }
+  return projected;
+}
+
+function e7ToRadians(degrees: number): number {
+  return Math.PI / 180 / 10_000_000 * degrees;
+}
+
 export function projectS2LatLng(ll: S2LatLng): Vec2 {
   const x = ll.lngRadians() / Math.PI;
   const y = Math.log((1 + Math.sin(ll.latRadians())) / (1 - Math.sin(ll.latRadians()))) / (2 * Math.PI);

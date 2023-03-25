@@ -2,6 +2,7 @@ import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/mo
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
+import { LittleEndianView } from 'js/common/little_endian_view';
 import { DPI } from 'js/map/common/dpi';
 import { LatLng, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
@@ -14,7 +15,6 @@ import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { BoundsQuadtree, worldBounds } from '../common/bounds_quadtree';
 import { formatDistance } from '../common/formatters';
-import { LittleEndianView } from '../common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng, reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 import { MapDataService } from '../data/map_data_service';

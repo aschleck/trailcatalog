@@ -1,8 +1,8 @@
+import { LittleEndianView } from 'js/common/little_endian_view';
 import { LatLng, LatLngRect } from 'js/map/common/types';
 
 import { decodeBase64 } from './common/base64';
 import { latLngFromBase64E7, latLngRectFromBase64E7 } from './common/data';
-import { LittleEndianView } from './common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng } from './common/math';
 import { emptyS2Polygon } from './common/types';
 import { Boundary, ElevationProfile, Trail } from './models/types';

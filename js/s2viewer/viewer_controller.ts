@@ -7,6 +7,7 @@ import { CHANGED } from 'js/dino/events';
 import { rgbaToUint32 } from 'js/map/common/math';
 import { Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
+import { ContourData } from 'js/map/layers/contour_data';
 import { TileData } from 'js/map/layers/tile_data';
 import { TileDataService } from 'js/map/layers/tile_data_service';
 import { MAPTILER_TOPO } from 'js/map/layers/tile_sources';
@@ -53,6 +54,10 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       this.layer,
+      new ContourData(
+          this.mapController.camera,
+          response.deps.services.tileData,
+          this.mapController.renderer),
       new TileData(
           this.mapController.camera,
           response.deps.services.tileData,

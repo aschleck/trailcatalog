@@ -1,4 +1,5 @@
 import { deepEqual } from 'js/common/comparisons';
+import { debugMode } from 'js/common/debug';
 import { Memoized } from 'js/common/memoized';
 import { fetchGlobalDeps } from 'js/corgi/deps';
 import { HistoryService } from 'js/corgi/history/history_service';
@@ -85,8 +86,14 @@ export function getUnitSystem(): UnitSystem {
 export function setUnitSystem(system: UnitSystem) {
   chosenUnitSystem.value = system;
 
-  // TODO(april): make this secure
-  document.cookie = `${UNIT_SYSTEM_COOKIE}=${system}; Path=/; SameSite=Strict`;
+  let secure;
+  if (debugMode()) {
+    secure = '';
+  } else {
+    secure =  '; Secure';
+  }
+
+  document.cookie = `${UNIT_SYSTEM_COOKIE}=${system}; Path=/; SameSite=Strict${secure}`;
 }
 
 export function redirectTo(url: string): void {

@@ -74,6 +74,12 @@ export class LittleEndianView {
     this.position += byteCount;
   }
 
+  slice(count: number): ArrayBuffer {
+    const r = this.buffer.slice(this.position, this.position + count);
+    this.position += count;
+    return r;
+  }
+
   sliceBigInt64(count: number): BigInt64Array {
     const r = new BigInt64Array(this.buffer, this.position, count);
     this.position += count * 8;
@@ -95,6 +101,12 @@ export class LittleEndianView {
   sliceInt8(count: number): Int8Array {
     const r = new Int8Array(this.buffer, this.position, count);
     this.position += count;
+    return r;
+  }
+
+  sliceInt32(count: number): Int32Array {
+    const r = new Int32Array(this.buffer, this.position, count);
+    this.position += count * 4;
     return r;
   }
 }

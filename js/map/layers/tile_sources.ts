@@ -1,17 +1,9 @@
 import { BitmapTileset, VectorTileset } from '../common/types';
 
-export const CONTOURS: VectorTileset = {
-  extraZoom: 0,
-  minZoom: 10,
-  maxZoom: 10,
-  tileUrl: 'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}_ft.cbf',
-  type: 'vector',
-} as const;
-
 export const MAPTILER_TOPO: BitmapTileset = {
   extraZoom: -1, // we're using the 512x512px tiles
   minZoom: 2,
-  maxZoom: 12,
+  maxZoom: 22,
   tileUrl: 'https://api.maptiler.com/maps/topo/${id.zoom}/${id.x}/${id.y}.png?' +
       'key=wWxlJy7a8SEPXS7AZ42l',
   type: 'bitmap',
