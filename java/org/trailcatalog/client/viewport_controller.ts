@@ -10,6 +10,7 @@ import { Filters, MapData } from './map/map_data';
 import { OverlayData, Overlays } from './map/overlay_data';
 import { TileData } from './map/tile_data';
 import { TileDataService } from './map/tile_data_service';
+import { MAPTILER_TOPO } from './map/tile_sources';
 import { Path, Point, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 
@@ -68,7 +69,11 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
 
     this.mapController.setLayers([
       this.mapData,
-      new TileData(this.mapController.camera, response.deps.services.tileData, this.mapController.renderer),
+      new TileData(
+          this.mapController.camera,
+          response.deps.services.tileData,
+          this.mapController.renderer,
+          MAPTILER_TOPO),
       this.overlayData,
     ]);
 

@@ -1,37 +1,35 @@
+import { checkExhaustive, checkExists } from 'js/common/asserts';
+
 import { HashSet } from '../common/collections';
-import { TileId, Vec2 } from '../common/types';
+import { clamp } from '../common/math';
+import { TileId, Tileset, Vec2 } from '../common/types';
 
 import { FetchThrottler } from './fetch_throttler';
 
-const TILE_SOURCES = {
-  maptiler: {
-    extraZoom: -1, // we're using the 512x512px tiles
-    getTileUrl: (id: TileId) =>
-        `https://api.maptiler.com/maps/topo/${id.zoom}/${id.x}/${id.y}.png?` +
-            `key=wWxlJy7a8SEPXS7AZ42l`,
-  },
-  thunderforest: {
-    extraZoom: 0,
-    getTileUrl: (id: TileId) =>
-        `https://tile.thunderforest.com/landscape/${id.zoom}/${id.x}/${id.y}.png?` +
-            `apikey=d72e980f5f1849fbb9fb3a113a119a6f`,
-  },
-} as const;
-
-const TILE_SET = TILE_SOURCES.maptiler;
-
-const WEB_MERCATOR_TILE_SIZE_PX = 256;
+export interface SetTilesetRequest {
+  type: 'str';
+  tileset: Tileset;
+}
 
 export interface UpdateViewportRequest {
+  type: 'uvr';
   cameraPosition: Vec2;
   cameraZoom: number;
   viewportSize: Vec2;
 }
 
-export interface LoadTileCommand {
-  type: 'ltc';
+export type FetcherRequest = SetTilesetRequest|UpdateViewportRequest;
+
+export interface LoadBitmapCommand {
+  type: 'lbc';
   id: TileId;
   bitmap: ImageBitmap;
+}
+
+export interface LoadVectorCommand {
+  type: 'lvc';
+  id: TileId;
+  data: ArrayBuffer;
 }
 
 export interface UnloadTilesCommand {
@@ -39,7 +37,9 @@ export interface UnloadTilesCommand {
   ids: TileId[];
 }
 
-export type FetcherCommand = LoadTileCommand|UnloadTilesCommand;
+export type FetcherCommand = LoadBitmapCommand|LoadVectorCommand|UnloadTilesCommand;
+
+const WEB_MERCATOR_TILE_SIZE_PX = 256;
 
 class TileFetcher {
 
@@ -47,6 +47,7 @@ class TileFetcher {
   private readonly loaded: HashSet<TileId>;
   private readonly throttler: FetchThrottler;
   private lastUsed: HashSet<TileId>;
+  private tileset: Tileset|undefined;
 
   constructor(
       private readonly mail:
@@ -55,12 +56,28 @@ class TileFetcher {
     this.loaded = createTileHashSet();
     this.throttler = new FetchThrottler();
     this.lastUsed = createTileHashSet();
+    this.tileset = undefined;
+  }
+
+  setTileset(request: SetTilesetRequest): void {
+    this.lastUsed.clear();
+    this.cull(this.lastUsed);
+    this.tileset = request.tileset;
   }
 
   updateViewport(request: UpdateViewportRequest): void {
     // World coordinates in this function are in tile pixels, not in screen pixels
 
-    const tz = Math.floor(request.cameraZoom + TILE_SET.extraZoom);
+    if (!this.tileset) {
+      return;
+    }
+
+    const tileset = this.tileset;
+    const tz =
+        clamp(
+            Math.floor(request.cameraZoom + tileset.extraZoom),
+            tileset.minZoom,
+            tileset.maxZoom);
     const worldSize = Math.pow(2, tz);
     const halfWorldSize = worldSize / 2;
     const center = request.cameraPosition;
@@ -98,19 +115,34 @@ class TileFetcher {
             y: halfWorldSize - y,
             zoom: tz,
           };
-          fetch(TILE_SET.getTileUrl(urlId))
+          fetch(this.getTileUrl(urlId))
               .then(response => {
                 if (response.ok) {
-                  return response.blob()
-                      .then(blob => createImageBitmap(blob))
-                      .then(bitmap => {
-                        this.loaded.add(id);
-                        this.mail({
-                          type: 'ltc',
-                          id,
-                          bitmap,
-                        }, [bitmap]);
-                      });
+                  if (tileset.type === 'bitmap') {
+                    return response.blob()
+                        .then(blob => createImageBitmap(blob))
+                        .then(bitmap => {
+                          this.loaded.add(id);
+                          this.mail({
+                            type: 'lbc',
+                            id,
+                            bitmap,
+                          }, [bitmap]);
+                        });
+                  } else if (tileset.type === 'vector') {
+                    return response.blob()
+                        .then(blob => blob.arrayBuffer())
+                        .then(data => {
+                          this.loaded.add(id);
+                          this.mail({
+                            type: 'lvc',
+                            id,
+                            data,
+                          }, [data]);
+                        });
+                  } else {
+                    checkExhaustive(tileset);
+                  }
                 } else if (response.status === 404) {
                   this.loaded.add(id);
                 } else {
@@ -159,12 +191,26 @@ class TileFetcher {
       });
     }
   }
+
+  private getTileUrl(id: TileId): string {
+    return checkExists(this.tileset)
+        .tileUrl
+        .replace('${id.x}', String(id.x))
+        .replace('${id.y}', String(id.y))
+        .replace('${id.zoom}', String(id.zoom));
+  }
 }
 
 const fetcher = new TileFetcher((self as any).postMessage.bind(self));
 self.onmessage = e => {
-  const request = e.data as UpdateViewportRequest;
-  fetcher.updateViewport(request);
+  const request = e.data as FetcherRequest;
+  if (request.type === 'str') {
+    fetcher.setTileset(request);
+  } else if (request.type === 'uvr') {
+    fetcher.updateViewport(request);
+  } else {
+    checkExhaustive(request);
+  }
 };
 
 function createTileHashSet(): HashSet<TileId> {

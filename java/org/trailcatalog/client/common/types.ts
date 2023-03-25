@@ -47,6 +47,24 @@ export interface TileId {
   zoom: number;
 };
 
+export interface BitmapTileset {
+  type: 'bitmap';
+  extraZoom: number; // some tiles are at 2x resolution, meaning -1
+  minZoom: number;
+  maxZoom: number;
+  tileUrl: string;
+}
+
+export interface VectorTileset {
+  type: 'vector';
+  extraZoom: number; // some tiles are at 2x resolution, meaning -1
+  minZoom: number;
+  maxZoom: number;
+  tileUrl: string;
+}
+
+export type Tileset = BitmapTileset|VectorTileset;
+
 export type UnitSystem = 'imperial'|'metric';
 
 export function s2LatLngRectToTc(rect: S2LatLngRect): LatLngRect {

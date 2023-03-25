@@ -1,69 +1,89 @@
 import { checkExhaustive } from 'js/common/asserts';
+import { Disposable } from 'js/common/disposable';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
 
 import { HashMap } from '../common/collections';
-import { TileId, Vec2 } from '../common/types';
+import { BitmapTileset, TileId, Tileset, Vec2 } from '../common/types';
 import { FetcherCommand } from '../workers/tile_fetcher';
 
-interface Listener {
+interface BitmapListener {
   loadTile(id: TileId, bitmap: ImageBitmap): void;
   unloadTiles(ids: TileId[]): void;
 }
 
+interface BitmapStream {
+  fetcher: Worker;
+  listener: BitmapListener|undefined;
+  tiles: HashMap<TileId, ImageBitmap>;
+}
+
 export class TileDataService extends Service<EmptyDeps> {
 
-  private readonly fetcher: Worker;
-  private readonly tiles: HashMap<TileId, ImageBitmap>;
-  private listener: Listener|undefined;
+  private readonly bitmapStreams: Map<Tileset, BitmapStream>;
 
   constructor(response: ServiceResponse<EmptyDeps>) {
     super(response);
-    this.fetcher = new Worker('/static/tile_fetcher_worker.js');
-    this.tiles = new HashMap(id => `${id.x},${id.y},${id.zoom}`);
+    this.bitmapStreams = new Map();
+  }
 
-    this.fetcher.onmessage = e => {
-      const command = e.data as FetcherCommand;
-      if (command.type === 'ltc') {
-        this.loadTile(command.id, command.bitmap);
-      } else if (command.type === 'utc') {
-        this.unloadTiles(command.ids);
-      } else {
-        checkExhaustive(command, 'Unknown type of command');
-      }
-    };
+  streamBitmaps(tileset: BitmapTileset, listener: BitmapListener): Disposable {
+    let stream = this.bitmapStreams.get(tileset);
+    if (!stream) {
+      const fetcher = new Worker('/static/tile_fetcher_worker.js');
+      fetcher.postMessage({
+        type: 'str',
+        tileset,
+      });
+
+      const tiles = new HashMap<TileId, ImageBitmap>(id => `${id.x},${id.y},${id.zoom}`);
+      const constStream = {
+        fetcher,
+        listener,
+        tiles,
+      };
+      stream = constStream;
+      this.bitmapStreams.set(tileset, stream);
+
+      fetcher.onmessage = e => {
+        const command = e.data as FetcherCommand;
+        if (command.type === 'lbc') {
+          tiles.set(command.id, command.bitmap);
+          constStream.listener?.loadTile(command.id, command.bitmap);
+        } else if (command.type === 'lvc') {
+          throw new Error('Unexpected vector tile');
+        } else if (command.type === 'utc') {
+          for (const id of command.ids) {
+            tiles.delete(id);
+          }
+          constStream.listener?.unloadTiles(command.ids);
+        } else {
+          checkExhaustive(command, 'Unknown type of command');
+        }
+      };
+    }
+
+    for (const [id, bitmap] of stream.tiles) {
+      listener.loadTile(id, bitmap);
+    }
+
+    const disposable = new Disposable();
+    const constStream = stream;
+    disposable.registerDisposer(() => {
+      constStream.listener = undefined;
+    });
+    return disposable;
   }
 
   updateViewport(center: Vec2, viewportSize: Vec2, zoom: number): void {
-    this.fetcher.postMessage({
-      cameraPosition: center,
-      cameraZoom: zoom,
-      viewportSize,
-    });
-  }
-
-  setListener(listener: Listener): void {
-    this.listener = listener;
-
-    for (const [id, bitmap] of this.tiles) {
-      this.listener.loadTile(id, bitmap);
+    for (const stream of this.bitmapStreams.values()) {
+      stream.fetcher.postMessage({
+        cameraPosition: center,
+        cameraZoom: zoom,
+        type: 'uvr',
+        viewportSize,
+      });
     }
-  }
-
-  clearListener(): void {
-    this.listener = undefined;
-  }
-
-  private loadTile(id: TileId, bitmap: ImageBitmap): void {
-    this.tiles.set(id, bitmap);
-    this.listener?.loadTile(id, bitmap);
-  }
-
-  private unloadTiles(ids: TileId[]): void {
-    for (const id of ids) {
-      this.tiles.delete(id);
-    }
-    this.listener?.unloadTiles(ids);
   }
 }
 

@@ -5,7 +5,7 @@ import { Renderer } from 'js/map/rendering/renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { HashMap } from '../common/collections';
-import { TileId, Vec2 } from '../common/types';
+import { BitmapTileset, TileId, Vec2 } from '../common/types';
 
 import { TileDataService } from './tile_data_service';
 
@@ -20,16 +20,14 @@ export class TileData extends Layer {
   constructor(
       private readonly camera: Camera,
       private readonly dataService: TileDataService,
-      private readonly renderer: Renderer) {
+      private readonly renderer: Renderer,
+      tileset: BitmapTileset) {
     super();
     this.lastChange = Date.now();
     this.pool = new TexturePool(renderer);
     this.tiles = new HashMap(id => `${id.x},${id.y},${id.zoom}`);
 
-    this.dataService.setListener(this);
-    this.registerDisposer(() => {
-      this.dataService.clearListener();
-    });
+    this.registerDisposable(this.dataService.streamBitmaps(tileset, this));
   }
 
   hasDataNewerThan(time: number): boolean {
@@ -72,17 +70,6 @@ export class TileData extends Layer {
       }
     }
     this.lastChange = Date.now();
-  }
-}
-
-interface Tileset {
-  urlFor(id: TileId): string;
-}
-
-class Landscape implements Tileset {
-  urlFor(id: TileId): string {
-    return `https://tile.thunderforest.com/landscape/${id.zoom}/${id.x}/${id.y}.png?` +
-        `apikey=d72e980f5f1849fbb9fb3a113a119a6f`;
   }
 }
 
