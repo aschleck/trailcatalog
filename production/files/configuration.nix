@@ -68,6 +68,15 @@
       };
     };
 
+    virtualHosts."tiles.trailcatalog.org" = {
+      enableACME = true;
+      forceSSL = true;
+
+      locations."/" = {
+        root = "/mnt/horse/tiles";
+      };
+    };
+
     virtualHosts."www.trailcatalog.org" = {
       enableACME = true;
       forceSSL = true;
