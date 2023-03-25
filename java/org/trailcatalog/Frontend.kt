@@ -7,9 +7,9 @@ import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Polygon
 import com.google.common.io.LittleEndianDataOutputStream
 import io.javalin.Javalin
-import io.javalin.core.util.Header
 import io.javalin.http.Context
-import io.javalin.http.HttpCode
+import io.javalin.http.Header
+import io.javalin.http.HttpStatus
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.models.ENUM_SIZE
 import org.trailcatalog.models.WayCategory
@@ -65,7 +65,7 @@ private fun fetchData(ctx: Context) {
   }
 
   val mapper = ObjectMapper()
-  val request = mapper.readTree(ctx.bodyAsInputStream())
+  val request = mapper.readTree(ctx.bodyInputStream())
   val keys = request.get("keys").elements()
   val responses = ArrayList<Any>()
   for (key in keys) {
@@ -88,7 +88,7 @@ private fun fetchData(ctx: Context) {
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           if (!results.next()) {
-            ctx.status(HttpCode.NOT_FOUND)
+            ctx.status(HttpStatus.NOT_FOUND)
             return@fetchData
           }
           data["id"] = id
@@ -210,7 +210,7 @@ private fun fetchData(ctx: Context) {
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           if (!results.next()) {
-            ctx.status(HttpCode.NOT_FOUND)
+            ctx.status(HttpStatus.NOT_FOUND)
             return@fetchData
           }
           data["id"] = results.getLong(1).toString()
@@ -669,7 +669,7 @@ private fun fetchDataPacked(ctx: Context) {
   }
 
   val mapper = ObjectMapper()
-  val request = mapper.readTree(ctx.bodyAsInputStream())
+  val request = mapper.readTree(ctx.bodyInputStream())
   val precise = request.get("precise").asBoolean()
   val trailId = request.get("trail_id").asLong()
 
@@ -694,7 +694,7 @@ private fun fetchDataPacked(ctx: Context) {
     }.executeQuery()
 
     if (!results.next()) {
-      ctx.status(HttpCode.NOT_FOUND)
+      ctx.status(HttpStatus.NOT_FOUND)
       return@fetchDataPacked
     }
 
@@ -879,7 +879,7 @@ private fun addETagAndCheckCached(ctx: Context): Boolean {
     val requestETag = ctx.header(Header.IF_NONE_MATCH)
     // nginx weakens etags when gzipping, so we have to also check if the user sent us a weak etag.
     if (etag == requestETag || "W/${etag}" == requestETag) {
-      ctx.status(HttpCode.NOT_MODIFIED)
+      ctx.status(HttpStatus.NOT_MODIFIED)
       return true
     }
   }
