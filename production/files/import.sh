@@ -19,6 +19,7 @@ pg_pwd="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
 
 podman run \
     --name 'aria2c' \
+    --pull always \
     --rm \
     --mount type=bind,source=/mnt/horse,target=/tmp \
     --network host \
@@ -33,6 +34,7 @@ mv /mnt/horse/planet-2*.osm.pbf /mnt/horse/planet-weekly.osm.pbf
 
 podman run \
     --name 'planet_update' \
+    --pull always \
     --rm \
     --mount type=bind,source=/mnt/horse,target=/tmp \
     us-west1-docker.pkg.dev/trailcatalog/containers/planet_update:latest \
@@ -46,6 +48,7 @@ rm -f /mnt/horse/planet-weekly.osm.pbf
 mkdir -p /mnt/horse/dems
 podman run \
     --name=importer \
+    --pull always \
     --rm \
     --env DATABASE_URL="postgresql://localhost/trailcatalog" \
     --env DATABASE_USERNAME_PASSWORD="trailcatalog:${pg_pwd}" \

@@ -19,6 +19,7 @@ pg_pwd="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
 
 podman run \
     --name frontend \
+    --pull always \
     --rm \
     --env DATABASE_URL="postgresql://localhost/trailcatalog?currentSchema=migration_3_faster" \
     --env DATABASE_USERNAME_PASSWORD="trailcatalog:${pg_pwd}" \
