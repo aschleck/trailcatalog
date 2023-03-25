@@ -1,7 +1,7 @@
-import { Vec2 } from 'java/org/trailcatalog/client/common/types';
 import { Disposable } from 'js/common/disposable';
 import { EventSpec } from 'js/corgi/events';
 
+import { Vec2 } from './common/types';
 import { RenderPlanner } from './rendering/render_planner';
 
 export abstract class Layer extends Disposable {

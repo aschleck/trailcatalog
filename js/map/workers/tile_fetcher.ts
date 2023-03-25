@@ -1,10 +1,9 @@
 import { checkExhaustive, checkExists } from 'js/common/asserts';
+import { HashSet } from 'js/common/collections';
+import { FetchThrottler } from 'js/common/fetch_throttler';
+import { clamp } from 'js/common/math';
 
-import { HashSet } from '../common/collections';
-import { clamp } from '../common/math';
 import { TileId, Tileset, Vec2 } from '../common/types';
-
-import { FetchThrottler } from './fetch_throttler';
 
 export interface SetTilesetRequest {
   type: 'str';

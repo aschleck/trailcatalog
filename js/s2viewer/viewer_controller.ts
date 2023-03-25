@@ -1,14 +1,15 @@
-import { rgbaToUint32 } from 'java/org/trailcatalog/client/common/math';
-import { Vec2 } from 'java/org/trailcatalog/client/common/types';
-import { TileData } from 'java/org/trailcatalog/client/map/tile_data';
-import { TileDataService } from 'java/org/trailcatalog/client/map/tile_data_service';
 import { S2CellId, S2LatLng, S2Loop } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { CHANGED } from 'js/dino/events';
+import { rgbaToUint32 } from 'js/map/common/math';
+import { Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
+import { TileData } from 'js/map/layers/tile_data';
+import { TileDataService } from 'js/map/layers/tile_data_service';
+import { MAPTILER_TOPO } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map/models/camera';
 import { RenderPlanner } from 'js/map/rendering/render_planner';
@@ -52,7 +53,11 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       this.layer,
-      new TileData(this.mapController.camera, response.deps.services.tileData, this.mapController.renderer),
+      new TileData(
+          this.mapController.camera,
+          response.deps.services.tileData,
+          this.mapController.renderer,
+          MAPTILER_TOPO),
     ]);
   }
 

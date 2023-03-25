@@ -1,9 +1,9 @@
 import { deepEqual } from 'js/common/comparisons';
+import { LatLng, LatLngRect } from 'js/map/common/types';
 
 import { decodeBase64 } from './base64';
 import { LittleEndianView } from './little_endian_view';
 import { InitialDataKey, initialData } from './ssr_aware';
-import { LatLng, LatLngRect } from './types';
 
 type AsObjects<T extends string[]> = {[K in keyof T]: object};
 type KeyedTuples<T extends string[]> = {[K in keyof T]: [T[K], object]};

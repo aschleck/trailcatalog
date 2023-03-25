@@ -2,6 +2,8 @@ import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/mo
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
+import { DPI } from 'js/map/common/dpi';
+import { LatLng, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { Camera, projectLatLngRect } from 'js/map/models/camera';
 import { Line } from 'js/map/rendering/geometry';
@@ -11,11 +13,10 @@ import { RenderableDiamond, RenderableText, TextRenderer } from 'js/map/renderin
 import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { BoundsQuadtree, worldBounds } from '../common/bounds_quadtree';
-import { DPI } from '../common/dpi';
 import { formatDistance } from '../common/formatters';
 import { LittleEndianView } from '../common/little_endian_view';
 import { degreesE7ToLatLng, projectLatLng, reinterpretLong } from '../common/math';
-import { LatLng, S2CellNumber, Vec2, Vec4 } from '../common/types';
+import { S2CellNumber } from '../common/types';
 import { MapDataService } from '../data/map_data_service';
 import { Path, Point, Trail } from '../models/types';
 import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../workers/data_constants';

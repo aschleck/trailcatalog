@@ -1,16 +1,16 @@
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
+import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from 'js/map/common/types';
+import { TileData } from 'js/map/layers/tile_data';
+import { TileDataService } from 'js/map/layers/tile_data_service';
+import { MAPTILER_TOPO } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 
-import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from './common/types';
 import { MapDataService } from './data/map_data_service';
 import { SELECTION_CHANGED } from './map/events';
 import { Filters, MapData } from './map/map_data';
 import { OverlayData, Overlays } from './map/overlay_data';
-import { TileData } from './map/tile_data';
-import { TileDataService } from './map/tile_data_service';
-import { MAPTILER_TOPO } from './map/tile_sources';
 import { Path, Point, Trail } from './models/types';
 import { ViewsService } from './views/views_service';
 

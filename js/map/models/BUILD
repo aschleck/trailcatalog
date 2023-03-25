@@ -5,8 +5,9 @@ load("//build_defs:ts.bzl", "tc_ts_project")
 tc_ts_project(
     name = "models",
     deps = [
-        "//java/org/trailcatalog/client/common",
         "//java/org/trailcatalog/s2",
+        "//js/common",
+        "//js/map/common",
     ],
 )
 

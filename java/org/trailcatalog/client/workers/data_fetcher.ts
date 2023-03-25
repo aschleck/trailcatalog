@@ -1,12 +1,12 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
+import { FetchThrottler } from 'js/common/fetch_throttler';
 
 import { reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 
 import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from './data_constants';
-import { FetchThrottler } from './fetch_throttler';
 
 export interface SetPinsRequest {
   kind: 'spr';

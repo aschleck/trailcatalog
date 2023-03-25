@@ -1,6 +1,7 @@
-import { LatLngRect, LatLngZoom, Vec2 } from 'java/org/trailcatalog/client/common/types';
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { declareEvent } from 'js/corgi/events';
+
+import { LatLngRect, LatLngZoom, Vec2 } from './common/types';
 
 export const CLICKED = declareEvent<{
   clickPx: Vec2;

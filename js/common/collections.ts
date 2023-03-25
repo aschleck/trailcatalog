@@ -1,4 +1,4 @@
-import { checkExists } from 'js/common/asserts';
+import { checkExists } from './asserts';
 
 export class HashMap<K, V> {
 

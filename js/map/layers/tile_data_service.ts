@@ -1,9 +1,9 @@
 import { checkExhaustive } from 'js/common/asserts';
+import { HashMap } from 'js/common/collections';
 import { Disposable } from 'js/common/disposable';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
 
-import { HashMap } from '../common/collections';
 import { BitmapTileset, TileId, Tileset, Vec2 } from '../common/types';
 import { FetcherCommand } from '../workers/tile_fetcher';
 

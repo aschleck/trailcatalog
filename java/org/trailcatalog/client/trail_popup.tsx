@@ -1,9 +1,9 @@
 import { PointCategory } from 'java/org/trailcatalog/models/categories';
 import { checkExhaustive } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
+import { Vec2 } from 'js/map/common/types';
 
 import { formatDistance } from './common/formatters';
-import { Vec2 } from './common/types';
 import { Path, Point, Trail } from './models/types';
 
 const POINT_CATEGORY_TO_LABEL =

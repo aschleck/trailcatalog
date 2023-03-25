@@ -12,7 +12,7 @@ genrule(
     srcs = [
         "//java/org/trailcatalog/client",
         "//java/org/trailcatalog/client/workers:data_fetcher_worker",
-        "//java/org/trailcatalog/client/workers:tile_fetcher_worker",
+        "//js/map/workers:tile_fetcher_worker",
     ],
     outs = [
         "client.css",

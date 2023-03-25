@@ -27,6 +27,7 @@ tc_ts_project(
         "//js/corgi",
         "//js/dino",
         "//js/map",
+        "//js/map/layers",
     ],
 )
 

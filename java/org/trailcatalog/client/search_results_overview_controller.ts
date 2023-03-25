@@ -3,10 +3,11 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
+import { emptyLatLngRect, emptyPixelRect, LatLng } from 'js/map/common/types';
 import { DATA_CHANGED, MAP_MOVED } from 'js/map/events';
 
 import { decodeBase64 } from './common/base64';
-import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng, s2LatLngRectToTc } from './common/types';
+import { emptyS2Polygon, s2LatLngRectToTc } from './common/types';
 import { HOVER_CHANGED, SELECTION_CHANGED } from './map/events';
 import { Boundary, Path, Point, Trail, TrailSearchResult } from './models/types';
 

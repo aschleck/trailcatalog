@@ -2,9 +2,10 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
+import { emptyLatLngRect, emptyPixelRect, LatLng } from 'js/map/common/types';
 
 import { decodeBase64 } from './common/base64';
-import { emptyLatLngRect, emptyPixelRect, emptyS2Polygon, LatLng } from './common/types';
+import { emptyS2Polygon } from './common/types';
 import { Boundary, Trail } from './models/types';
 
 import { DataResponses, fetchData } from './data';

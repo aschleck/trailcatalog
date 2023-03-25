@@ -10,14 +10,6 @@ esbuild_binary(
     ],
 )
 
-esbuild_binary(
-    name = "tile_fetcher_worker",
-    entry_point = "tile_fetcher.ts",
-    deps = [
-        ":ts",
-    ],
-)
-
 tc_ts_project(
     name = "ts",
     deps = [

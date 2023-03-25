@@ -1,6 +1,7 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
+import { LatLng, LatLngRect, PixelRect, Vec2 } from 'js/map/common/types';
 
-import { LatLng, LatLngRect, PixelRect, s2LatLngRectToTc, Vec2 } from '../common/types';
+import { s2LatLngRectToTc } from '../common/types';
 
 export class Boundary {
   constructor(

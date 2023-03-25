@@ -1,7 +1,8 @@
-import { clamp } from 'java/org/trailcatalog/client/common/math';
-import { PixelRect, Vec2 } from 'java/org/trailcatalog/client/common/types';
 import { S2LatLng, S2LatLngRect, S2Loop } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { clamp } from 'js/common/math';
+
+import { PixelRect, Vec2 } from '../common/types';
 
 const MAX_EDGE_ANGLE = SimpleS2.earthMetersToAngle(50000).radians();
 const MERCATOR_MAX_LAT_RADIANS = 85 / 90 * Math.PI / 2;

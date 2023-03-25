@@ -3,12 +3,12 @@ import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { ACTION } from 'js/dino/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
+import { LatLng } from 'js/map/common/types';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
 import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
 import { metersToFeet, metersToMiles } from './common/math';
-import { LatLng } from './common/types';
 import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
 

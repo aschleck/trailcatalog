@@ -19,10 +19,11 @@ tc_ts_project(
         "//js/dino:css",
     ],
     deps = [
-        "//java/org/trailcatalog/client/map",
+        "//java/org/trailcatalog/client/common",
         "//js/common",
         "//js/corgi",
         "//js/map",
+        "//js/map/layers",
     ],
 )
 
@@ -52,7 +53,7 @@ genrule(
         ":s2viewer.css",
         ":s2viewer.js",
         ":s2viewer.js.map",
-        "//java/org/trailcatalog/client/workers:tile_fetcher_worker",
+        "//js/map/workers:tile_fetcher_worker",
     ],
     outs = [
         "static/s2viewer.css",

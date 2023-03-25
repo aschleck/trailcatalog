@@ -1,6 +1,3 @@
-import { DPI } from 'java/org/trailcatalog/client/common/dpi';
-import { screenLlz } from 'java/org/trailcatalog/client/common/math';
-import { LatLng, LatLngRect, LatLngZoom, Vec2 } from 'java/org/trailcatalog/client/common/types';
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
@@ -8,6 +5,9 @@ import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { EventSpec } from 'js/corgi/events';
 
+import { DPI } from './common/dpi';
+import { screenLlz } from './common/math';
+import { LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
 import { Camera } from './models/camera';
 import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';

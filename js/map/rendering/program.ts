@@ -1,5 +1,6 @@
-import { Vec2, Vec4 } from 'java/org/trailcatalog/client/common/types';
 import { checkExists } from 'js/common/asserts';
+
+import { Vec2, Vec4 } from '../common/types';
 
 export interface Drawable {
   readonly buffer: WebGLBuffer;

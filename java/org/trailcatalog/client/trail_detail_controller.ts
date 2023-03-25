@@ -4,9 +4,9 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { merge } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
+import { LatLng, Vec2 } from 'js/map/common/types';
 import { unprojectS2LatLng } from 'js/map/models/camera';
 
-import { LatLng, Vec2 } from './common/types';
 import { MapDataService } from './data/map_data_service';
 import { Boundary, ElevationProfile, Path, Trail } from './models/types';
 

@@ -1,6 +1,5 @@
-import { splitVec2 } from 'java/org/trailcatalog/client/common/math';
-import { Vec2 } from 'java/org/trailcatalog/client/common/types';
-
+import { splitVec2 } from '../common/math';
+import { Vec2 } from '../common/types';
 import { Camera } from '../models/camera';
 
 import { BillboardProgram } from './billboard_program';

@@ -1,4 +1,4 @@
-import { RgbaU32 } from 'java/org/trailcatalog/client/common/types';
+import { RgbaU32 } from '../common/types';
 
 // TODO(april): do we want this?
 // export interface Billboard {
