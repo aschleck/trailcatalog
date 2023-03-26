@@ -216,6 +216,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
 
   private enterIdle(): void {
     this.nextRender = RenderType.DataChange;
+    // No DPI here because this controls the overdraw for panning
     const size: Vec2 = [this.canvas.width, this.canvas.height];
     for (const layer of this.layers) {
       layer.viewportBoundsChanged(size, this.camera.zoom);
@@ -260,7 +261,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
         this.renderPlanner.clear();
         this.pinRenderer.mark();
 
-        const size: Vec2 = [this.canvas.width, this.canvas.height];
+        const size: Vec2 = [this.canvas.width / DPI, this.canvas.height / DPI];
         const zoom = this.camera.zoom;
         for (const layer of this.layers) {
           layer.plan(size, zoom, this.renderPlanner);
@@ -286,12 +287,12 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
             viewportRect.top + window.scrollY,
             viewportRect.width,
             viewportRect.height);
-    const width = this.screenArea.width * DPI;
-    const height = this.screenArea.height * DPI;
-    this.canvas.width = width;
-    this.canvas.height = height;
+    const width = this.screenArea.width;
+    const height = this.screenArea.height;
+    this.canvas.width = width * DPI;
+    this.canvas.height = height * DPI;
     this.renderPlanner.resize([width, height]);
-    this.renderer.resize([width, height]);
+    this.renderer.resize([width * DPI, height * DPI]);
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();
   }

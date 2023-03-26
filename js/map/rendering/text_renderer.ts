@@ -10,40 +10,35 @@ import { Renderer } from './renderer';
 import { Glyph } from './sdf_program';
 import { TexturePool } from './texture_pool';
 
-const FONT_SIZE = 14;
+const FONT_SIZE = 24;
 const ATLAS_GLYPH_SIZE = FONT_SIZE + 2 * Math.ceil(FONT_SIZE / 8);
 
 export class TextRenderer {
 
   private readonly atlas: WebGLTexture;
   private readonly characters: Set<string>;
-  private readonly font: Promise<FontFace>;
   private readonly glyphs: Map<String, Glyph>;
   private readonly regenerator: Debouncer;
-  private tinySdf: TinySDF;
 
   constructor(private readonly renderer: Renderer) {
     this.atlas = this.renderer.createTexture();
     this.characters = new Set();
-    this.font =
-        new FontFace(
-                'Roboto',
-                "url(https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmEU9fBBc4AMP6lQ.woff2) "
-                    + "format('woff2')")
-            .load();
     this.glyphs = new Map();
     this.regenerator = new Debouncer(0, () => { this.regenerate(); });
-    this.tinySdf = new TinySDF({fontSize: FONT_SIZE, fontFamily: 'Roboto'});
 
     this.characters.add('e');
     for (let i = 32; i < 127; ++i) {
       this.characters.add(String.fromCharCode(i));
     }
 
-    this.font.then(font => {
-      document.fonts.add(font);
-      this.regenerate();
-    });
+    new FontFace(
+            'Roboto',
+            "url(https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmEU9fBBc4AMP6lQ.woff2) "
+                + "format('woff2')")
+        .load()
+        .then(font => {
+          this.regenerator.trigger();
+        });
   }
 
   measure(characters: string, scale: number): Vec2 {
@@ -93,10 +88,11 @@ export class TextRenderer {
       }
     }
 
-    offset[0] += -size[0] / 2;
-    offset[1] += -size[1] / 2;
-
     if (valid) {
+      // I don't understand the advance thing but qualitatively it looks good.
+      offset[0] += -size[0] / 2 - glyphs[glyphs.length - 1].glyphAdvance * scale / 4;
+      offset[1] += -size[1] / 2;
+
       planner.addGlyphs(glyphs, fill, stroke, scale, center, offset, this.atlas, ATLAS_GLYPH_SIZE);
       return size;
     } else {
@@ -107,9 +103,9 @@ export class TextRenderer {
 
   private regenerate(): void {
     this.glyphs.clear();
-    this.tinySdf = new TinySDF({
+    const tinySdf = new TinySDF({
       fontSize: FONT_SIZE,
-      fontFamily: 'Roboto',
+      fontFamily: 'Roboto,sans-serif',
       fontWeight: '500',
     });
 
@@ -124,11 +120,12 @@ export class TextRenderer {
     for (let y = 0; y + size <= atlasHeight && i < t; y += size) {
       for (let x = 0; x + size <= atlasWidth && i < t; x += size) {
         const character = characters[i];
-        const g = this.tinySdf.draw(character);
+        const g = tinySdf.draw(character);
         copyIntoImage(g.data, g.width, atlas, x, y, atlasWidth);
         this.glyphs.set(character, {
           index: i,
           glyphAdvance: g.glyphAdvance,
+          glyphWidth: g.glyphWidth,
           glyphHeight: g.glyphHeight,
           glyphTop: g.glyphTop,
           x: x / atlasWidth,

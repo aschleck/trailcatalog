@@ -40,7 +40,7 @@ export function TrailSidebar({hovering, mobileOpen, nearby}: {
     <div
         className={
           "bg-white overflow-y-scroll z-10"
-              + " absolute bottom-0 max-h-[50%] w-full"
+              + " absolute bottom-0 max-h-[50%] shrink-0 w-full"
               + " md:max-h-full md:relative md:w-80"
         }
     >

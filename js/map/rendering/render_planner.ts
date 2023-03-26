@@ -212,7 +212,7 @@ export class RenderPlanner {
       buffer: this.geometryBuffer,
       offset: this.geometryByteSize,
       program: this.sdfProgram,
-      z: 100,
+      z: 100, // ???
     });
     this.geometryByteSize += drawable.bytes;
   }

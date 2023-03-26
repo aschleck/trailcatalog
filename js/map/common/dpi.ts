@@ -1,5 +1,3 @@
-export const DPI =
-    new URLSearchParams(window.location.search).get('dpi') === 'true'
-        ? window.devicePixelRatio ?? 1
-        : 1;
+export const DPI = window.devicePixelRatio ?? 1;
 
+export const DPI_ZOOM = Math.log2(DPI);

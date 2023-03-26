@@ -506,10 +506,11 @@ export class MapData extends Layer {
       if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
         const {value, unit} = formatDistance(lengthMeters);
         const text = `${value} ${unit}`;
-        const size = this.textRenderer.measure(text, /* scale= */ 1);
+        const scale = 0.6;
+        const size = this.textRenderer.measure(text, scale);
         const offset =
             this.pinRenderer.planPill(renderableDiamond(fillHex, strokeHex), markerPx, size, z, planner);
-        this.textRenderer.plan(text, fill, stroke, /* scale= */ 1, markerPx, offset, planner);
+        this.textRenderer.plan(text, fill, stroke, scale, markerPx, offset, planner);
       } else if (active || hover) {
         this.pinRenderer.planDiamond(renderableDiamond(fillHex, strokeHex), markerPx, z, planner);
       } else {
@@ -611,8 +612,11 @@ export class MapData extends Layer {
     }
 
     for (const trail of trails) {
-      const detailScreenPixelSize = [12, 12];
-          //this.pinRenderer.measureText(renderableTrailPin(trail.lengthMeters, 'unused', 'unused'));
+      const {value, unit} = formatDistance(trail.lengthMeters);
+      const text = `${value} ${unit}`;
+      const scale = 0.6;
+      const size = this.textRenderer.measure(text, scale);
+      const detailScreenPixelSize = this.pinRenderer.measureText(size);
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
       this.coarseBounds.insert({
         entity: trail,

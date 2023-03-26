@@ -7,6 +7,7 @@ import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } fro
 export interface Glyph {
   index: number;
   glyphAdvance: number;
+  glyphWidth: number;
   glyphHeight: number;
   glyphTop: number;
   x: number;

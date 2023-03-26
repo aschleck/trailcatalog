@@ -73,6 +73,13 @@ export class PinRenderer {
     ];
   }
 
+  measureText(textSize: Vec2): Vec2 {
+    return [
+      textSize[0] + 2 * textSize[1] + 2 * DRAW_PADDING_PX + 2 * PIN_TEXT_PADDING_PX[0],
+      textSize[1] + PIN_POINT_RADIUS_PX[1] + 2 * DRAW_PADDING_PX + 2 * PIN_TEXT_PADDING_PX[1],
+    ];
+  }
+
   // Coordinate system: y=0 is the top
 
   planDiamond(diamond: RenderableDiamond, position: Vec2, z: number, planner: RenderPlanner): void {
@@ -122,7 +129,7 @@ export class PinRenderer {
     if (cached) {
       cached.generation = this.generation;
       planner.addBillboard(position, cached.offset, cached.size, cached.texture, z);
-      return [0, 12];
+      return [0, 9];
     }
 
     const ctx = this.context;
@@ -156,7 +163,7 @@ export class PinRenderer {
     });
     planner.addBillboard(position, offset, fullSize, texture, z);
 
-    return [0, 12];
+    return [0, 9];
   }
 }
 

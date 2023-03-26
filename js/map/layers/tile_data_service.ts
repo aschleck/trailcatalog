@@ -4,6 +4,7 @@ import { Disposable } from 'js/common/disposable';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
 
+import { DPI_ZOOM } from '../common/dpi';
 import { BitmapTileset, TileId, Tileset, Vec2, VectorTileset } from '../common/types';
 import { FetcherCommand } from '../workers/tile_fetcher';
 
@@ -76,14 +77,18 @@ export class TileDataService extends Service<EmptyDeps> {
       };
     }
 
+    stream.listener = listener;
     for (const [id, bitmap] of stream.tiles) {
       listener.loadTile(id, bitmap);
     }
 
     const disposable = new Disposable();
+    const constOriginalListener = listener;
     const constStream = stream;
     disposable.registerDisposer(() => {
-      constStream.listener = undefined;
+      if (constStream.listener === constOriginalListener) {
+        constStream.listener = undefined;
+      }
     });
     return disposable;
   }
@@ -140,7 +145,7 @@ export class TileDataService extends Service<EmptyDeps> {
     for (const stream of this.bitmapStreams.values()) {
       stream.fetcher.postMessage({
         cameraPosition: center,
-        cameraZoom: zoom,
+        cameraZoom: zoom + DPI_ZOOM,
         type: 'uvr',
         viewportSize,
       });
@@ -149,7 +154,7 @@ export class TileDataService extends Service<EmptyDeps> {
     for (const stream of this.vectorStreams.values()) {
       stream.fetcher.postMessage({
         cameraPosition: center,
-        cameraZoom: zoom,
+        cameraZoom: zoom + DPI_ZOOM,
         type: 'uvr',
         viewportSize,
       });
