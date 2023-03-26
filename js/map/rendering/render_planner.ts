@@ -1,5 +1,5 @@
 import { splitVec2 } from '../common/math';
-import { Vec2 } from '../common/types';
+import { RgbaU32, Vec2 } from '../common/types';
 import { Camera } from '../models/camera';
 
 import { BillboardProgram } from './billboard_program';
@@ -8,6 +8,7 @@ import { LineCapProgram } from './line_cap_program';
 import { LineProgram } from './line_program';
 import { Drawable } from './program';
 import { Renderer } from './renderer';
+import { Glyph, SdfProgram } from './sdf_program';
 
 const MAX_GEOMETRY_BYTES = 64_000_000;
 
@@ -21,6 +22,7 @@ export class RenderPlanner {
   private readonly billboardProgram: BillboardProgram;
   private readonly lineCapProgram: LineCapProgram;
   private readonly lineProgram: LineProgram;
+  private readonly sdfProgram: SdfProgram;
 
   constructor(private area: Vec2, private readonly renderer: Renderer) {
     this.drawables = [];
@@ -31,6 +33,7 @@ export class RenderPlanner {
     this.billboardProgram = new BillboardProgram(renderer.gl);
     this.lineCapProgram = new LineCapProgram(renderer.gl);
     this.lineProgram = new LineProgram(renderer.gl);
+    this.sdfProgram = new SdfProgram(renderer.gl);
   }
 
   clear(): void {
@@ -179,6 +182,37 @@ export class RenderPlanner {
       offset: this.geometryByteSize,
       program: this.lineProgram,
       z,
+    });
+    this.geometryByteSize += drawable.bytes;
+  }
+
+  addGlyphs(
+      glyphs: Glyph[],
+      fill: RgbaU32,
+      stroke: RgbaU32,
+      scale: number,
+      left: Vec2,
+      offset: Vec2,
+      atlas: WebGLTexture,
+      atlasGlyphSize: number) {
+    const drawable =
+        this.sdfProgram.plan(
+            glyphs,
+            fill,
+            stroke,
+            scale,
+            left,
+            offset,
+            atlas,
+            atlasGlyphSize,
+            this.geometry,
+            this.geometryByteSize);
+    this.drawables.push({
+      ...drawable,
+      buffer: this.geometryBuffer,
+      offset: this.geometryByteSize,
+      program: this.sdfProgram,
+      z: 100,
     });
     this.geometryByteSize += drawable.bytes;
   }

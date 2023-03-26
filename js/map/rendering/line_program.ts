@@ -274,6 +274,8 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       ${FP64_OPERATIONS}
 
       void main() {
+        // This is a load bearing ternary operator: it seems to defeat some bad optimizations that
+        // reduce our float precision.
         vec4 center = position.x < 0.5 ? previous : next;
         vec4 direction = next - previous;
         vec4 perpendicular = perpendicular64(normalize64(direction));

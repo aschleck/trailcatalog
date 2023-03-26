@@ -1,6 +1,6 @@
 import { checkExists } from 'js/common/asserts';
 
-import { Vec2, Vec4 } from '../common/types';
+import { RgbaU32, Vec2, Vec4 } from '../common/types';
 
 export interface Drawable {
   readonly buffer: WebGLBuffer;
@@ -10,6 +10,10 @@ export interface Drawable {
   readonly program: Program<ProgramData>;
   readonly texture?: WebGLTexture;
   readonly z: number;
+
+  // ???
+  readonly fill?: RgbaU32;
+  readonly stroke?: RgbaU32;
 }
 
 export interface ProgramData {
@@ -108,6 +112,14 @@ export abstract class Program<P extends ProgramData> {
 }
 
 export const COLOR_OPERATIONS = `
+    vec4 uint32ToVec4(uint uint32) {
+      return vec4(
+          float((uint32 & 0xff000000u) >> 24u) / 255.,
+          float((uint32 & 0x00ff0000u) >> 16u) / 255.,
+          float((uint32 & 0x0000ff00u) >>  8u) / 255.,
+          float((uint32 & 0x000000ffu) >>  0u) / 255.);
+    }
+
     vec4 uint32FToVec4(float v) {
       uint uint32 = floatBitsToUint(v);
       return vec4(
@@ -119,10 +131,6 @@ export const COLOR_OPERATIONS = `
 `;
 
 export const FP64_OPERATIONS = `
-    vec4 add64(vec4 a, vec4 b) {
-      return a + b;
-    }
-
     vec4 divide2Into64(vec4 v, vec2 divisor) {
       return vec4(v.xy / divisor.x, v.zw / divisor.y);
     }

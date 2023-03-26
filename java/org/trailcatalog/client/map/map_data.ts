@@ -10,7 +10,8 @@ import { Camera, projectLatLngRect } from 'js/map/models/camera';
 import { Line } from 'js/map/rendering/geometry';
 import { RenderPlanner } from 'js/map/rendering/render_planner';
 import { Renderer } from 'js/map/rendering/renderer';
-import { RenderableDiamond, RenderableText, TextRenderer } from 'js/map/rendering/text_renderer';
+import { RenderableDiamond, PinRenderer } from 'js/map/rendering/pin_renderer';
+import { TextRenderer } from 'js/map/rendering/text_renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { BoundsQuadtree, worldBounds } from '../common/bounds_quadtree';
@@ -118,6 +119,7 @@ export class MapData extends Layer {
       private readonly dataService: MapDataService,
       private filters: Filters,
       renderer: Renderer,
+      private readonly pinRenderer: PinRenderer,
       private readonly textRenderer: TextRenderer,
   ) {
     super();
@@ -129,7 +131,7 @@ export class MapData extends Layer {
     // Why don't we need to dispose?
     this.pointsAtlas = new TexturePool(renderer).acquire();
 
-    const diamondPixelSize = this.textRenderer.measureDiamond();
+    const diamondPixelSize = this.pinRenderer.measureDiamond();
     const halfDiamondWidth = diamondPixelSize[0] / 2;
     const halfDiamondHeight = diamondPixelSize[1] / 2;
     this.diamondPixelBounds = [
@@ -493,17 +495,25 @@ export class MapData extends Layer {
       const hover = this.hovering.has(id);
       const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
       const fill =
+          hover ? HOVER_PALETTE.fill : active ? ACTIVE_PALETTE.fill : DEFAULT_PALETTE.fill;
+      const fillHex =
           hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
       const stroke =
+          hover ? HOVER_PALETTE.stroke : active ? ACTIVE_PALETTE.stroke : DEFAULT_PALETTE.stroke;
+      const strokeHex =
           hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
       let diamond;
       if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
-        this.textRenderer.planText(
-            renderableTrailPin(lengthMeters, fill, stroke), markerPx, z, planner);
+        const {value, unit} = formatDistance(lengthMeters);
+        const text = `${value} ${unit}`;
+        const size = this.textRenderer.measure(text, /* scale= */ 1);
+        const offset =
+            this.pinRenderer.planPill(renderableDiamond(fillHex, strokeHex), markerPx, size, z, planner);
+        this.textRenderer.plan(text, fill, stroke, /* scale= */ 1, markerPx, offset, planner);
       } else if (active || hover) {
-        this.textRenderer.planDiamond(renderableDiamond(fill, stroke), markerPx, z, planner);
+        this.pinRenderer.planDiamond(renderableDiamond(fillHex, strokeHex), markerPx, z, planner);
       } else {
-        this.textRenderer.planDiamond(TRAIL_DIAMOND_REGULAR, markerPx, z, planner);
+        this.pinRenderer.planDiamond(TRAIL_DIAMOND_REGULAR, markerPx, z, planner);
       }
     }
   }
@@ -601,8 +611,8 @@ export class MapData extends Layer {
     }
 
     for (const trail of trails) {
-      const detailScreenPixelSize =
-          this.textRenderer.measureText(renderableTrailPin(trail.lengthMeters, 'unused', 'unused'));
+      const detailScreenPixelSize = [12, 12];
+          //this.pinRenderer.measureText(renderableTrailPin(trail.lengthMeters, 'unused', 'unused'));
       const halfDetailWidth = detailScreenPixelSize[0] / 2;
       this.coarseBounds.insert({
         entity: trail,
@@ -735,16 +745,6 @@ function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number
 function isPath(type: number): boolean {
   return (aDescendsB(type, WayCategory.PATH) && !aDescendsB(type, WayCategory.PATH_FOOTWAY))
     || aDescendsB(type, WayCategory.ROAD_TRACK);
-}
-
-function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableText {
-  const {value, unit} = formatDistance(lengthMeters);
-  return {
-    text: `${value} ${unit}`,
-    fillColor: fill,
-    strokeColor: stroke,
-    fontSize: 14,
-  };
 }
 
 function renderableDiamond(fill: string, stroke: string): RenderableDiamond {

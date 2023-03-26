@@ -7,6 +7,7 @@ tc_ts_project(
     deps = [
         "//js/map/common",
         "//js/map/models",
+        "//:node_modules/@mapbox/tiny-sdf",
     ],
 )
 

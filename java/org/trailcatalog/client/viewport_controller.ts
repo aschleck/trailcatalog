@@ -64,6 +64,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
             response.deps.services.mapData,
             response.args.filters ?? {},
             this.mapController.renderer,
+            this.mapController.pinRenderer,
             this.mapController.textRenderer);
     this.overlayData = new OverlayData(response.args.overlays ?? {}, this.mapController.renderer);
 

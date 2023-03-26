@@ -2,6 +2,7 @@ lockfileVersion: 5.4
 
 specifiers:
   '@fastify/request-context': ^4.2.0
+  '@mapbox/tiny-sdf': ^2.0.6
   '@types/jest': ^29.5.0
   '@types/node': ^18.15.3
   autoprefixer: ^10.4.14
@@ -16,6 +17,7 @@ specifiers:
 
 dependencies:
   '@fastify/request-context': 4.2.0
+  '@mapbox/tiny-sdf': 2.0.6
   fastify: 4.14.1
   node-fetch: 3.3.1
 
@@ -668,6 +670,10 @@ packages:
       '@jridgewell/resolve-uri': 3.1.0
       '@jridgewell/sourcemap-codec': 1.4.14
     dev: true
+
+  /@mapbox/tiny-sdf/2.0.6:
+    resolution: {integrity: sha512-qMqa27TLw+ZQz5Jk+RcwZGH7BQf5G/TrutJhspsca/3SHwmgKQ1iq+d3Jxz5oysPVYTGP6aXxCo5Lk9Er6YBAA==}
+    dev: false
 
   /@nodelib/fs.scandir/2.1.5:
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}

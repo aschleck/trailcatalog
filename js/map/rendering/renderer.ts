@@ -42,7 +42,27 @@ export class Renderer {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Uint8Array(source), 0, size);
   }
 
-  uploadTexture(source: HTMLCanvasElement|ImageBitmap, target: WebGLTexture): void {
+  uploadAlphaTexture(source: Uint8Array, size: Vec2, target: WebGLTexture): void {
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, target);
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        /* level= */ 0,
+        gl.ALPHA,
+        size[0],
+        size[1],
+        /* border= */ 0,
+        gl.ALPHA,
+        gl.UNSIGNED_BYTE,
+        source);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  uploadTexture(source: HTMLCanvasElement|ImageBitmap|ImageData, target: WebGLTexture): void {
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, target);
     gl.texImage2D(

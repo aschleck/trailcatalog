@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@fastify/request-context": "^4.2.0",
+    "@mapbox/tiny-sdf": "^2.0.6",
     "fastify": "^4.14.1",
     "node-fetch": "^3.3.1"
   }

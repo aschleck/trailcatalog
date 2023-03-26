@@ -9,6 +9,7 @@ import { DPI } from './common/dpi';
 import { screenLlz } from './common/math';
 import { LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
 import { Camera } from './models/camera';
+import { PinRenderer } from './rendering/pin_renderer';
 import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';
 import { TextRenderer } from './rendering/text_renderer';
@@ -32,6 +33,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
   private readonly renderPlanner: RenderPlanner;
 
   private layers: Layer[];
+  readonly pinRenderer: PinRenderer;
   readonly textRenderer: TextRenderer;
 
   private screenArea: DOMRect;
@@ -53,11 +55,13 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     });
     this.renderer =
         new Renderer(checkExists(this.canvas.getContext('webgl2', {
+          antialias: false,
           premultipliedAlpha: true,
           stencil: true,
         })));
     this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
 
+    this.pinRenderer = new PinRenderer(this.renderer);
     this.textRenderer = new TextRenderer(this.renderer);
     this.layers = [];
 
@@ -254,15 +258,16 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     if (this.nextRender >= RenderType.CameraChange) {
       if (this.nextRender >= RenderType.DataChange) {
         this.renderPlanner.clear();
-        this.textRenderer.mark();
+        this.pinRenderer.mark();
 
         const size: Vec2 = [this.canvas.width, this.canvas.height];
         const zoom = this.camera.zoom;
         for (const layer of this.layers) {
           layer.plan(size, zoom, this.renderPlanner);
         }
+
         this.renderPlanner.save();
-        this.textRenderer.sweep();
+        this.pinRenderer.sweep();
         this.lastRenderPlan = Date.now();
       }
       this.renderPlanner.render(this.camera);
