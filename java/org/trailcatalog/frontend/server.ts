@@ -1,6 +1,7 @@
 import fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import fetch from 'node-fetch';
 import { fastifyRequestContextPlugin, requestContext } from '@fastify/request-context';
+import process from 'process';
 
 import { deepEqual } from 'js/common/comparisons';
 import { Fragment, Properties, VElementOrPrimitive } from 'js/corgi';
@@ -142,7 +143,7 @@ function page(content: string, title: string, dataKeys: object, dataValues: obje
   </head>
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
-    <script>window.INITIAL_DATA=${escapedData}</script>
+    <script>${process.env.DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${escapedData}</script>
     <script src="/static/client.js"></script>
   </body>
 </html>

@@ -7,6 +7,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 esbuild_binary(
     name = "s2viewer",
     entry_point = "app.js",
+    minify = False,
     deps = [
         ":css",
         ":ts",

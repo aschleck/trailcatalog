@@ -1,11 +1,13 @@
 export class LittleEndianView {
 
   private readonly view: DataView;
+  private readonly limit: number;
   private position: number;
 
-  constructor(private readonly buffer: ArrayBuffer) {
+  constructor(private readonly buffer: ArrayBuffer, position: number = 0, limit: number = -1) {
     this.view = new DataView(this.buffer);
-    this.position = 0;
+    this.position = position;
+    this.limit = limit >= 0 ? limit : this.buffer.byteLength;
   }
 
   align(alignment: number): void {
@@ -27,6 +29,12 @@ export class LittleEndianView {
   getFloat64(): number {
     const r = this.view.getFloat64(this.position, /* littleEndian= */ true);
     this.position += 8;
+    return r;
+  }
+
+  getInt8(): number {
+    const r = this.view.getInt8(this.position);
+    this.position += 1;
     return r;
   }
 
@@ -67,7 +75,7 @@ export class LittleEndianView {
   }
 
   hasRemaining(): boolean {
-    return this.position < this.view.byteLength;
+    return this.position < this.limit;
   }
 
   skip(byteCount: number): void {
@@ -107,6 +115,12 @@ export class LittleEndianView {
   sliceInt32(count: number): Int32Array {
     const r = new Int32Array(this.buffer, this.position, count);
     this.position += count * 4;
+    return r;
+  }
+
+  viewSlice(count: number): LittleEndianView {
+    const r = new LittleEndianView(this.buffer, this.position, this.position + count);
+    this.position += count;
     return r;
   }
 }
