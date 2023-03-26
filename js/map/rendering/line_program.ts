@@ -307,7 +307,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
         lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
         lowp float stipple = fract(fragDistanceAlong / 8.) < fragStipple ? 1. : 0.;
-        fragColor = stipple * vec4(color.rgb, 1.);
+        fragColor = stipple * color;
       }
   `;
 

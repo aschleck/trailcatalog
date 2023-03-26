@@ -236,7 +236,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
         lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
         // This shader doesn't play well with stipples, so turn it off when stippling.
         lowp float stipple = fragStipple >= 1. ? 1. : 0.;
-        fragColor = stipple * vec4(color.rgb, 1.);
+        fragColor = stipple * color;
       }
   `;
 
