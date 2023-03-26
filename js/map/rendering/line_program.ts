@@ -180,15 +180,15 @@ export class LineProgram extends Program<LineProgramData> {
     const gl = this.gl;
 
     // Draw without the border, always replacing the stencil buffer if we're replacing
-    gl.stencilFunc(!!drawable.replace ? gl.ALWAYS : gl.NOTEQUAL, 1, 0xff);
+    gl.stencilFunc(!!drawable.replace ? gl.ALWAYS : gl.NOTEQUAL, 0xff, 0xff);
     gl.stencilMask(0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
 
     // Draw with the border only where we didn't already draw
-    gl.stencilFunc(gl.NOTEQUAL, 1, 0xff);
+    gl.stencilFunc(gl.NOTEQUAL, 0xff, 0xff);
     // Don't write to the stencil buffer so we don't overlap other lines
-    gl.stencilMask(0x00);
+    //gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
   }

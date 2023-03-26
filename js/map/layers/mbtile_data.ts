@@ -14,18 +14,21 @@ import { Renderer } from '../rendering/renderer';
 import { TileDataService } from './tile_data_service';
 import { MAPTILER_CONTOURS } from './tile_sources';
 
-const FILL = rgbaToUint32(0.4, 0.4, 0.4, 0.7);
-const STROKE = rgbaToUint32(0.4, 0.4, 0.4, 0.7);
+const FILL = rgbaToUint32(0, 0, 0, 0.5);
+const STROKE = rgbaToUint32(0.5, 0.5, 0.5, 0);
 const TEXT_DECODER = new TextDecoder();
 
 interface Feature {
   type: number;
+  tags: number[];
   geometry: number[];
   starts: number[];
 }
 
 interface Geometry {
-  lines: Line[];
+  lines: Array<Line & {
+    nthLine: number;
+  }>;
 }
 
 export class MbtileData extends Layer {
@@ -49,14 +52,20 @@ export class MbtileData extends Layer {
   }
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
-    if (zoom < 10) {
+    if (zoom < 11) {
       return;
     }
 
     const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
+    const lines = [];
     for (const [id, geometry] of sorted) {
-      planner.addLines(geometry.lines, 1, 20, /* replace= */ false, /* round= */ false);
+      for (const line of geometry.lines) {
+        if (line.nthLine % 1 === 0) {
+          lines.push(line);
+        }
+      }
     }
+    planner.addLines(lines, 2, 20, /* replace= */ false, /* round= */ false);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
@@ -101,8 +110,10 @@ export class MbtileData extends Layer {
 
 function loadLayer(id: TileId, data: LittleEndianView): Geometry {
   let version;
-  let name;
+  let name = '';
   let extent = 4096;
+  const keys = [];
+  const values = [];
   const features = [];
   while (data.hasRemaining()) {
     const tag = data.getInt8();
@@ -122,6 +133,10 @@ function loadLayer(id: TileId, data: LittleEndianView): Geometry {
         name = TEXT_DECODER.decode(data.sliceInt8(size));
       } else if (field === 2) {
         features.push(loadFeature(data.viewSlice(size)));
+      } else if (field === 3) {
+        keys.push(TEXT_DECODER.decode(data.sliceInt8(size)));
+      } else if (field === 4) {
+        values.push(loadValue(data.viewSlice(size)));
       } else {
         const embedded = data.viewSlice(size);
       }
@@ -130,11 +145,12 @@ function loadLayer(id: TileId, data: LittleEndianView): Geometry {
     }
   }
 
-  return project(id, name ?? '', features, extent);
+  return project(id, name, keys, values, features, extent);
 }
 
 function loadFeature(data: LittleEndianView): Feature {
   let type;
+  let tags;
   let geometry;
   let starts;
   while (data.hasRemaining()) {
@@ -149,7 +165,9 @@ function loadFeature(data: LittleEndianView): Feature {
       }
     } else if (wireType === 2) {
       const slice = data.viewSlice(data.getVarInt32());
-      if (field === 4) {
+      if (field === 2) {
+        tags = loadPackedInt32s(slice);
+      } else if (field === 4) {
         const result = decodeGeometry(loadPackedInt32s(slice));
         geometry = result.geometry;
         starts = result.starts;
@@ -161,9 +179,43 @@ function loadFeature(data: LittleEndianView): Feature {
 
   return {
     type: checkExists(type),
+    tags: tags ?? [],
     geometry: checkExists(geometry),
     starts: checkExists(starts),
   };
+}
+
+function loadValue(data: LittleEndianView): boolean|number|string {
+  let boolean;
+  let number;
+  let string;
+  while (data.hasRemaining()) {
+    const tag = data.getInt8();
+    const wireType = tag & 0x7;
+    const field = tag >> 3;
+
+    if (wireType === 0) {
+      const value = data.getVarInt32();
+      if (field === 4 || field === 5) {
+        number = value;
+      } else if (field === 6) {
+        number = deZigZag(value);
+      } else if (field === 7) {
+        boolean = !!value;
+      }
+    } else if (wireType === 2) {
+      const size = data.getVarInt32();
+      if (field === 1) {
+        string = TEXT_DECODER.decode(data.sliceInt8(size));
+      } else {
+        throw new Error(`Unknown field ${field}`);
+      }
+    } else {
+      throw new Error(`Unknown wire type ${wireType} for field ${field}`);
+    }
+  }
+
+  return boolean ?? number ?? string ?? 0;
 }
 
 function decodeGeometry(data: number[]): {
@@ -222,13 +274,26 @@ function deZigZag(u: number): number {
   return (u >>> 1) ^ -(u & 1);
 }
 
-function project(id: TileId, name: string, features: Feature[], extent: number): Geometry {
+function project(
+    id: TileId,
+    name: string,
+    keys: string[],
+    values: Array<boolean|number|string>,
+    features: Feature[],
+    extent: number): Geometry {
   const halfWorldSize = Math.pow(2, id.zoom - 1);
   const tx = id.x / halfWorldSize;
   const ty = (id.y - 1) / halfWorldSize;
   const increment = 1 / halfWorldSize / extent;
   const lines = [];
-  for (const {geometry, starts} of features) {
+  for (const {geometry, tags, starts} of features) {
+    let nthLine = 1;
+    for (let i = 0; i < tags.length; i += 2) {
+      if (keys[tags[i]] === 'nth_line') {
+        nthLine = values[tags[i + 1]] as number;
+      }
+    }
+
     starts.push(geometry.length);
     let cursor = starts[0];
     for (let i = 1; i < starts.length; ++i) {
@@ -242,6 +307,7 @@ function project(id: TileId, name: string, features: Feature[], extent: number):
       lines.push({
         colorFill: FILL,
         colorStroke: STROKE,
+        nthLine,
         stipple: false,
         vertices,
       });
