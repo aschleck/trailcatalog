@@ -6,6 +6,7 @@ export interface Drawable {
   readonly buffer: WebGLBuffer;
   readonly instances?: number;
   readonly offset: number;
+  readonly replace?: boolean;
   readonly program: Program<ProgramData>;
   readonly texture?: WebGLTexture;
   readonly z: number;

@@ -15,6 +15,7 @@ export const VERTEX_STRIDE =
 interface LineDrawable {
   bytes: number;
   instances: number;
+  replace: boolean;
 }
 
 /** Renders instanced lines as rectangles without mitering. */
@@ -34,7 +35,7 @@ export class LineProgram extends Program<LineProgramData> {
                 ]));
   }
 
-  plan(lines: Line[], radius: number, buffer: ArrayBuffer, offset: number): LineDrawable {
+  plan(lines: Line[], radius: number, replace: boolean, buffer: ArrayBuffer, offset: number): LineDrawable {
     const floats = new Float32Array(buffer, offset);
     // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
     // canonicalization. So we have to write them as uints to the same buffer.
@@ -83,6 +84,7 @@ export class LineProgram extends Program<LineProgramData> {
     return {
       bytes: vertexOffset * 4,
       instances: vertexOffset / stride,
+      replace,
     };
   }
 
@@ -177,8 +179,8 @@ export class LineProgram extends Program<LineProgramData> {
 
     const gl = this.gl;
 
-    // Draw without the border, always replacing the stencil buffer
-    gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+    // Draw without the border, always replacing the stencil buffer if we're replacing
+    gl.stencilFunc(!!drawable.replace ? gl.ALWAYS : gl.NOTEQUAL, 1, 0xff);
     gl.stencilMask(0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
@@ -272,9 +274,10 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       ${FP64_OPERATIONS}
 
       void main() {
+        vec4 center = position.x < 0.5 ? previous : next;
         vec4 direction = next - previous;
         vec4 perpendicular = perpendicular64(normalize64(direction));
-        vec4 location = -cameraCenter + previous + direction * position.x;
+        vec4 location = -cameraCenter + center;
         highp float actualRadius = renderBorder ? radius : radius - 2.;
         vec4 push = perpendicular * actualRadius * position.y;
         vec4 worldCoord = location * halfWorldSize + push;

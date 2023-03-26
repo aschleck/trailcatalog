@@ -14,8 +14,8 @@ import { Renderer } from '../rendering/renderer';
 import { TileDataService } from './tile_data_service';
 import { MAPTILER_CONTOURS } from './tile_sources';
 
-const FILL = rgbaToUint32(0.0, 0.0, 0.0, 0.7);
-const STROKE = rgbaToUint32(0.0, 0.0, 0.0, 0.7);
+const FILL = rgbaToUint32(0.4, 0.4, 0.4, 0.7);
+const STROKE = rgbaToUint32(0.4, 0.4, 0.4, 0.7);
 const TEXT_DECODER = new TextDecoder();
 
 interface Feature {
@@ -49,18 +49,13 @@ export class MbtileData extends Layer {
   }
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
-    let significance;
-    if (zoom > 14) {
-      significance = 40;
-    } else if (zoom > 10) {
-      significance = 100;
-    } else {
-      significance  = 150;
+    if (zoom < 10) {
+      return;
     }
 
     const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
     for (const [id, geometry] of sorted) {
-      planner.addLines(geometry.lines, 1, 20);
+      planner.addLines(geometry.lines, 1, 20, /* replace= */ false, /* round= */ false);
     }
   }
 

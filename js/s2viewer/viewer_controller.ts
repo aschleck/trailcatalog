@@ -10,7 +10,7 @@ import { Layer } from 'js/map/layer';
 import { MbtileData } from 'js/map/layers/mbtile_data';
 import { TileData } from 'js/map/layers/tile_data';
 import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_TOPO } from 'js/map/layers/tile_sources';
+import { MAPTILER_HILLSHADE, MAPTILER_TOPO } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map/models/camera';
 import { RenderPlanner } from 'js/map/rendering/render_planner';
@@ -54,15 +54,15 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       this.layer,
-      new MbtileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
-          this.mapController.renderer),
       new TileData(
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
-          MAPTILER_TOPO),
+          MAPTILER_HILLSHADE),
+      new MbtileData(
+          this.mapController.camera,
+          response.deps.services.tileData,
+          this.mapController.renderer),
     ]);
   }
 

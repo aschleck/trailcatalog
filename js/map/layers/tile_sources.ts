@@ -1,12 +1,21 @@
 import { BitmapTileset, VectorTileset } from '../common/types';
 
 export const MAPTILER_CONTOURS: VectorTileset = {
-  extraZoom: 0,
+  extraZoom: -2,
   minZoom: 9,
   maxZoom: 14,
   tileUrl: 'https://api.maptiler.com/tiles/contours/${id.zoom}/${id.x}/${id.y}.pbf?' +
       'key=wWxlJy7a8SEPXS7AZ42l',
   type: 'vector',
+} as const;
+
+export const MAPTILER_HILLSHADE: BitmapTileset = {
+  extraZoom: 0,
+  minZoom: 0,
+  maxZoom: 12,
+  tileUrl: 'https://api.maptiler.com/tiles/hillshade/${id.zoom}/${id.x}/${id.y}.webp?' +
+      'key=wWxlJy7a8SEPXS7AZ42l',
+  type: 'bitmap',
 } as const;
 
 export const MAPTILER_TOPO: BitmapTileset = {

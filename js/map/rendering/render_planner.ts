@@ -154,16 +154,26 @@ export class RenderPlanner {
     this.addAtlasedBillboard(center, offsetPx, size, 0, [1, 1], texture, z);
   }
 
-  addLines(lines: Line[], radius: number, z: number): void {
-    const drawable = this.lineProgram.plan(lines, radius, this.geometry, this.geometryByteSize);
+  addLines(
+      lines: Line[],
+      radius: number,
+      z: number,
+      replace: boolean = true,
+      round: boolean = true): void {
+    const drawable =
+        this.lineProgram.plan(lines, radius, replace, this.geometry, this.geometryByteSize);
+
+    if (round) {
+      this.drawables.push({
+        buffer: this.geometryBuffer,
+        instances: drawable.instances,
+        offset: this.geometryByteSize,
+        program: this.lineCapProgram,
+        z,
+      });
+    }
 
     this.drawables.push({
-      buffer: this.geometryBuffer,
-      instances: drawable.instances,
-      offset: this.geometryByteSize,
-      program: this.lineCapProgram,
-      z,
-    }, {
       buffer: this.geometryBuffer,
       instances: drawable.instances,
       offset: this.geometryByteSize,
