@@ -58,13 +58,17 @@ export class MbtileData extends Layer {
 
     const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
     const lines = [];
+    const boldLines = [];
     for (const [id, geometry] of sorted) {
       for (const line of geometry.lines) {
-        if (line.nthLine % 1 === 0) {
+        if (line.nthLine % 5 === 0) {
+          boldLines.push(line);
+        } else {
           lines.push(line);
         }
       }
     }
+    planner.addLines(boldLines, 2.5, 20, /* replace= */ false, /* round= */ false);
     planner.addLines(lines, 2, 20, /* replace= */ false, /* round= */ false);
   }
 
