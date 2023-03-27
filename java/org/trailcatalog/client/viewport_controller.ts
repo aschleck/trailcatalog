@@ -133,8 +133,6 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
   }
 
   updateArgs(newArgs: Args): void {
-    // TODO(april): theoretically we should support the following, but it causes lots of thrashing:
-    // this.setCamera(newArgs.camera);
     this.mapData.setFilters(newArgs.filters ?? {});
     this.overlayData.setOverlay(newArgs.overlays ?? {});
   }

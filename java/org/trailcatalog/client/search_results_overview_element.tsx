@@ -8,7 +8,6 @@ import { emptyLatLngRect } from 'js/map/common/types';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
-import { currentUrl } from './common/ssr_aware';
 import { HOVER_CHANGED, SELECTION_CHANGED } from './map/events';
 import { Trail, TrailSearchResult } from './models/types';
 
@@ -23,10 +22,11 @@ import { TrailSidebar } from './trail_list';
 import { TrailPopup } from './trail_popup';
 
 export function SearchResultsOverviewElement(
-    {}: {}, state: State|undefined, updateState: (newState: State) => void) {
-  const search = currentUrl().searchParams;
-  const boundaryId = search.get('boundary') ?? undefined;
-  const query = search.get('query') ?? undefined;
+    {parameters}: {parameters: {[key: string]: string};},
+    state: State|undefined,
+    updateState: (newState: State) => void) {
+  const boundaryId = parameters.boundary ?? undefined;
+  const query = parameters.query ?? undefined;
 
   setTitle(query);
 
@@ -79,7 +79,12 @@ export function SearchResultsOverviewElement(
 
   return <>
       {((!boundaryId || state.boundary) && (!query || state.searchTrails))
-          ? <Content boundaryId={boundaryId} query={query} state={state} updateState={updateState} />
+          ? <Content
+              boundaryId={boundaryId}
+              query={query}
+              parameters={parameters}
+              state={state}
+              updateState={updateState} />
           : <Loading boundaryId={boundaryId} query={query} state={state} updateState={updateState} />
       }
   </>;
@@ -107,11 +112,18 @@ function Loading({boundaryId, query, state, updateState}: {
   </>;
 }
 
-function Content({boundaryId, query, state, updateState}: {
-  boundaryId?: string,
-  query?: string,
-  state: State,
-  updateState: (newState: State) => void,
+function Content({
+  boundaryId,
+  query,
+  parameters,
+  state,
+  updateState,
+}: {
+  boundaryId?: string;
+  query?: string;
+  parameters: {[key: string]: string};
+  state: State;
+  updateState: (newState: State) => void;
 }) {
   const filter = state.filterInBoundary ? state.trailsInBoundaryFilter : state.trailsFilter;
 
@@ -150,17 +162,13 @@ function Content({boundaryId, query, state, updateState}: {
     filteredTrails = state.nearbyTrails;
   }
 
-  const url = currentUrl();
   let llz;
   if (
-      !bound
-          || url.searchParams.has('lat')
-          || url.searchParams.has('lng')
-          || url.searchParams.has('zoom')) {
+      !bound || parameters.lat || parameters.lng || parameters.zoom) {
     llz = {
-      lat: floatCoalesce(url.searchParams.get('lat'), 46.859369),
-      lng: floatCoalesce(url.searchParams.get('lng'), -121.747888),
-      zoom: floatCoalesce(url.searchParams.get('zoom'), 12),
+      lat: floatCoalesce(parameters.lat, 46.859369),
+      lng: floatCoalesce(parameters.lng, -121.747888),
+      zoom: floatCoalesce(parameters.zoom, 12),
     };
   }
 

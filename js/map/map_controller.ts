@@ -90,6 +90,11 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     super.trigger(spec, detail);
   }
 
+  updateArgs(newArgs: Args): void {
+    this.setCamera(newArgs.camera);
+    this.idleDebouncer.trigger();
+  }
+
   private registerInteractiveListeners() {
     // We track pointer events on document because it allows us to drag the mouse off-screen while
     // panning.

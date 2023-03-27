@@ -17,8 +17,9 @@ import { Header } from './page';
 import { setTitle } from './title';
 import { TrailPopup } from './trail_popup';
 
-export function BoundaryDetailElement({boundaryId}: {
+export function BoundaryDetailElement({boundaryId, parameters}: {
   boundaryId: string;
+  parameters: {[key: string]: string};
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state || boundaryId !== state.boundaryId) {
     const rawBoundary = initialData('boundary', {id: boundaryId});

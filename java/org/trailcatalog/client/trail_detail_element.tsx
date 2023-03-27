@@ -22,8 +22,9 @@ import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw }
 
 const GRAPH_TEXT_SPACE_PX = [0, 32] as const;
 
-export function TrailDetailElement({trailId}: {
+export function TrailDetailElement({trailId, parameters}: {
   trailId: string;
+  parameters: {[key: string]: string};
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state || trailId !== state.trailId) {
     const wrapped = {readable: trailId};

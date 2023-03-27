@@ -33,16 +33,22 @@ const routes: {[k in Route['kind']]: RegExp} = {
 };
 
 interface Listener {
-  routeChanged(active: Route): Promise<void>;
+  routeChanged(active: Route, parameters: {[key: string]: string}): Promise<void>;
 }
 
 type Deps = typeof ViewsService.deps;
 
 export class ViewsService extends Service<Deps> {
 
-  static getActiveRoute(): Route {
+  static getActiveRoute(): {
+    active: Route;
+    parameters: {[key: string]: string};
+  } {
     const url = currentUrl();
-    return checkExists(matchPath(url.pathname));
+    return {
+      active: checkExists(matchPath(url.pathname)),
+      parameters: Object.fromEntries(new URLSearchParams(url.search).entries()),
+    };
   }
 
   static deps() {
@@ -66,16 +72,12 @@ export class ViewsService extends Service<Deps> {
 
   urlChanged(url: URL): Promise<void> {
     const active = checkExists(matchPath(url.pathname));
-    if (active) {
-      const promises = [];
-      for (const listener of this.listeners) {
-        promises.push(listener.routeChanged(active));
-      }
-      return Promise.all(promises).then(() => {});
-    } else {
-      console.error(`Unable to find a route for ${url}`);
-      return Promise.resolve();
+    const parameters = Object.fromEntries(new URLSearchParams(url.search).entries());
+    const promises = [];
+    for (const listener of this.listeners) {
+      promises.push(listener.routeChanged(active, parameters));
     }
+    return Promise.all(promises).then(() => {});
   }
 
   addListener(listener: Listener): void {

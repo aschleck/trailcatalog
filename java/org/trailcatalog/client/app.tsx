@@ -20,13 +20,13 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
 
   let route;
   if (state.active.kind === 'boundary_detail') {
-    route = <BoundaryDetailElement boundaryId={state.active.id} />;
+    route = <BoundaryDetailElement boundaryId={state.active.id} parameters={state.parameters} />;
   } else if (state.active.kind === 'go_to_trail') {
-    route = <GoToTrailElement trailId={state.active.id} />;
+    route = <GoToTrailElement trailId={state.active.id} parameters={state.parameters} />;
   } else if (state.active.kind === 'search_results') {
-    route = <SearchResultsOverviewElement />;
+    route = <SearchResultsOverviewElement parameters={state.parameters} />;
   } else if (state.active.kind === 'trail_detail') {
-    route = <TrailDetailElement trailId={state.active.trail} />;
+    route = <TrailDetailElement trailId={state.active.trail} parameters={state.parameters} />;
   } else {
     checkExhaustive(state.active);
   }

@@ -4,6 +4,7 @@ import { Route, ViewsService } from './views/views_service';
 
 export interface State {
   active: Route;
+  parameters: {[key: string]: string};
 }
 
 type Deps = typeof RouteController.deps;
@@ -11,9 +12,7 @@ type Deps = typeof RouteController.deps;
 export class RouteController extends Controller<{}, Deps, HTMLDivElement, State> {
 
   static getInitialState(): State {
-    return {
-      active: ViewsService.getActiveRoute(),
-    };
+    return ViewsService.getActiveRoute();
   }
 
   static deps() {
@@ -35,9 +34,10 @@ export class RouteController extends Controller<{}, Deps, HTMLDivElement, State>
     });
   }
 
-  routeChanged(active: Route): Promise<void> {
+  routeChanged(active: Route, parameters: {[key: string]: string}): Promise<void> {
     return this.updateState({
       active,
+      parameters,
     });
   }
 }

@@ -6,8 +6,9 @@ import { initialData } from './data';
 import { GoToTrailController, State } from './go_to_trail_controller';
 import { trailFromRaw } from './trails';
 
-export function GoToTrailElement({trailId}: {
+export function GoToTrailElement({trailId, parameters}: {
   trailId: string;
+  parameters: {[key: string]: string};
 }, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     const rawTrail = initialData('trail', {trail_id: {numeric: trailId}});
