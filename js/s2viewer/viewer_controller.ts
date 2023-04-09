@@ -6,6 +6,7 @@ import { HistoryService } from 'js/corgi/history/history_service';
 import { CHANGED } from 'js/dino/events';
 import { rgbaToUint32 } from 'js/map/common/math';
 import { Vec2 } from 'js/map/common/types';
+import { MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { MbtileData } from 'js/map/layers/mbtile_data';
 import { TileData } from 'js/map/layers/tile_data';
@@ -64,6 +65,15 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           response.deps.services.tileData,
           this.mapController.renderer),
     ]);
+  }
+
+  onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
+    const {center, zoom} = e.detail;
+    const url = new URL(window.location.href);
+    url.searchParams.set('lat', center.latDegrees().toFixed(7));
+    url.searchParams.set('lng', center.lngDegrees().toFixed(7));
+    url.searchParams.set('zoom', zoom.toFixed(3));
+    window.history.replaceState(null, '', url);
   }
 
   setLevel(e: CorgiEvent<typeof CHANGED>): void {

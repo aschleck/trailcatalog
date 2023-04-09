@@ -1,4 +1,5 @@
 import { checkExists } from 'js/common/asserts';
+import { floatCoalesce } from 'js/common/math';
 import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
@@ -297,17 +298,3 @@ function SearchFilter({state}: {state: State}) {
     </aside>
   </>;
 }
-
-function floatCoalesce(...numbers: Array<string|number|null|undefined>): number {
-  for (const x of numbers) {
-    if (x === undefined || x === null) {
-      continue;
-    }
-    const n = Number(x);
-    if (!isNaN(n)) {
-      return n;
-    }
-  }
-  throw new Error('No valid floats');
-}
-
