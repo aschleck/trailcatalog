@@ -11,14 +11,16 @@ import { Camera, projectE7Array } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
 import { Renderer } from '../rendering/renderer';
-import { TextRenderer } from '../rendering/text_renderer';
+import { SdfPlanner } from '../rendering/sdf_planner';
 
 import { TileDataService } from './tile_data_service';
 import { MAPTILER_CONTOURS } from './tile_sources';
 
 const FILL = rgbaToUint32(0, 0, 0, 0.5);
-const LABEL_EVERY = 0.00005;
 const STROKE = rgbaToUint32(0.5, 0.5, 0.5, 0);
+const LABEL_EVERY = 0.00001;
+const LABEL_FILL = rgbaToUint32(0, 0, 0, 1);
+const LABEL_STROKE = rgbaToUint32(1, 1, 1, 1);
 const TEXT_DECODER = new TextDecoder();
 
 interface Feature {
@@ -50,16 +52,18 @@ export class MbtileData extends Layer {
 
   private lastChange: number;
   private readonly tiles: HashMap<TileId, Tile>;
+  private readonly sdfRenderer: SdfPlanner;
 
   constructor(
       private readonly camera: Camera,
       private readonly dataService: TileDataService,
       private readonly renderer: Renderer,
-      private readonly textRenderer: TextRenderer,
   ) {
     super();
     this.lastChange = Date.now();
     this.tiles = new HashMap(id => `${id.x},${id.y},${id.zoom}`);
+    this.sdfRenderer = new SdfPlanner(renderer);
+    this.registerDisposable(this.sdfRenderer);
 
     this.registerDisposable(this.dataService.streamVectors(MAPTILER_CONTOURS, this));
   }
@@ -86,20 +90,22 @@ export class MbtileData extends Layer {
         for (const line of geometry.lines) {
           if (line.nthLine % 5 === 0) {
             boldLines.push(line);
+
+            const skip = Math.max(1, Math.floor(80 - zoom * 4));
+            for (let i = 0; i < line.labels.length; i += skip) {
+              const label = line.labels[i];
+              this.sdfRenderer.plan(
+                String(line.height),
+                LABEL_FILL,
+                LABEL_STROKE,
+                0.5,
+                label.position,
+                [0, 0],
+                label.angle,
+                planner);
+            }
           } else {
             lines.push(line);
-          }
-
-          if (zoom >= 16) {
-            for (const label of line.labels) {
-              this.textRenderer.planText({
-                text: String(line.height),
-                fillColor: 'black',
-                strokeColor: 'black',
-                fontSize: 12,
-                weight: 700,
-              }, label.position, 21, planner, label.angle);
-            }
           }
         }
       }

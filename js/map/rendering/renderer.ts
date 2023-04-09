@@ -17,13 +17,17 @@ export class Renderer {
     const gl = this.gl;
     const buffer = checkExists(gl.createBuffer());
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, byteSize, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, byteSize, gl.STREAM_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     return buffer;
   }
 
   createTexture(): WebGLTexture {
     return checkExists(this.gl.createTexture());
+  }
+
+  deleteTexture(texture: WebGLTexture): void {
+    this.gl.deleteTexture(texture);
   }
 
   render(): void {

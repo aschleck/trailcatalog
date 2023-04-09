@@ -86,6 +86,19 @@ export class RenderPlanner {
     for (let i = 1; i < this.drawables.length; ++i) {
       const drawable = this.drawables[i];
       if (drawStart.program === drawable.program) {
+        if (
+            drawStart.instanced && drawable.instanced
+                && drawStart.texture === drawable.texture
+                && drawStart.offset + drawStart.instanced.bytes === drawable.offset) {
+          drawable.offset = drawStart.offset;
+          drawable.instanced.bytes += drawStart.instanced.bytes;
+          drawable.instanced.count += drawStart.instanced.count;
+          drawStart.instanced.bytes = 0;
+          drawStart.instanced.count = 0;
+          drawStart = drawable;
+          drawStartIndex = i;
+        }
+
         continue;
       }
 
@@ -146,7 +159,7 @@ export class RenderPlanner {
     if (round) {
       this.drawables.push({
         buffer: this.geometryBuffer,
-        instances: drawable.instances,
+        instanced: drawable.instanced,
         offset: this.geometryByteSize,
         program: this.lineCapProgram,
         z,
@@ -155,12 +168,12 @@ export class RenderPlanner {
 
     this.drawables.push({
       buffer: this.geometryBuffer,
-      instances: drawable.instances,
+      instanced: drawable.instanced,
       offset: this.geometryByteSize,
       program: this.lineProgram,
       z,
     });
-    this.geometryByteSize += drawable.bytes;
+    this.geometryByteSize += drawable.instanced.bytes;
   }
 
   addGlyphs(
@@ -170,6 +183,7 @@ export class RenderPlanner {
       scale: number,
       left: Vec2,
       offset: Vec2,
+      angle: number,
       atlas: WebGLTexture,
       atlasGlyphSize: number) {
     const drawable =
@@ -180,6 +194,7 @@ export class RenderPlanner {
             scale,
             left,
             offset,
+            angle,
             atlas,
             atlasGlyphSize,
             this.geometry,
@@ -191,7 +206,7 @@ export class RenderPlanner {
       program: this.sdfProgram,
       z: 100, // ???
     });
-    this.geometryByteSize += drawable.bytes;
+    this.geometryByteSize += drawable.instanced.bytes;
   }
 
   private align(alignment: number): void {

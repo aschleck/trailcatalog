@@ -100,7 +100,7 @@ export class LineCapProgram extends Program<LineCapProgramData> {
   }
 
   protected draw(drawable: Drawable): void {
-    if (drawable.instances === undefined) {
+    if (!drawable.instanced) {
       throw new Error('Expecting instances');
     }
 
@@ -111,9 +111,9 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     gl.stencilMask(0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.uniform1ui(this.program.uniforms.side, 0);
-    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
+    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instanced.count);
     gl.uniform1ui(this.program.uniforms.side, 1);
-    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
+    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instanced.count);
 
     // Draw with the border only where we didn't already draw
     gl.stencilFunc(gl.NOTEQUAL, 1, 0xff);
@@ -121,9 +121,9 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
     // side 1 was already set, so no need for uniform1ui
-    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
+    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instanced.count);
     gl.uniform1ui(this.program.uniforms.side, 0);
-    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instances);
+    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instanced.count);
   }
 
   protected deactivate(): void {

@@ -4,8 +4,11 @@ import { RgbaU32, Vec2, Vec4 } from '../common/types';
 
 export interface Drawable {
   readonly buffer: WebGLBuffer;
-  readonly instances?: number;
-  readonly offset: number;
+  readonly instanced?: {
+    bytes: number;
+    count: number;
+  };
+  offset: number;
   readonly replace?: boolean;
   readonly program: Program<ProgramData>;
   readonly texture?: WebGLTexture;
@@ -103,8 +106,8 @@ export abstract class Program<P extends ProgramData> {
 
   protected draw(drawable: Drawable): void {
     const gl = this.gl;
-    if (drawable.instances) {
-      gl.drawArraysInstanced(this.geometryType, 0, this.program.vertexCount, drawable.instances);
+    if (drawable.instanced) {
+      gl.drawArraysInstanced(this.geometryType, 0, this.program.vertexCount, drawable.instanced.count);
     } else {
       gl.drawArrays(this.geometryType, 0, this.program.vertexCount);
     }

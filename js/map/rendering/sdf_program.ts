@@ -17,8 +17,10 @@ export interface Glyph {
 }
 
 interface SdfDrawable {
-  bytes: number;
-  instances: number;
+  instanced: {
+    bytes: number;
+    count: number;
+  };
   texture: WebGLTexture;
   fill: RgbaU32,
   stroke: RgbaU32,
@@ -30,6 +32,7 @@ export const VERTEX_STRIDE =
             + /* center= */ 4
             + /* offset= */ 2
             + /* size= */ 2
+            + /* angle= */ 1
     );
 
 export class SdfProgram extends Program<SdfProgramData> {
@@ -55,6 +58,7 @@ export class SdfProgram extends Program<SdfProgramData> {
       scale: number,
       left: Vec2,
       offset: Vec2,
+      angle: number,
       atlas: WebGLTexture,
       atlasGlyphSize: number,
       buffer: ArrayBuffer,
@@ -84,14 +88,17 @@ export class SdfProgram extends Program<SdfProgramData> {
       floats[vertexOffset + 9] = offset[1] + glyph.glyphTop * scale;
       floats[vertexOffset + 10] = atlasGlyphSize * scale;
       floats[vertexOffset + 11] = atlasGlyphSize * scale;
+      floats[vertexOffset + 12] = angle;
 
       offset[0] += glyph.glyphAdvance * scale;
       vertexOffset += VERTEX_STRIDE / 4;
     }
 
     return {
-      bytes: vertexOffset * 4,
-      instances: glyphs.length,
+      instanced: {
+        bytes: vertexOffset * 4,
+        count: glyphs.length,
+      },
       texture: atlas,
       fill,
       stroke,
@@ -129,6 +136,8 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.offset, 1);
     gl.enableVertexAttribArray(this.program.attributes.size);
     gl.vertexAttribDivisor(this.program.attributes.size, 1);
+    gl.enableVertexAttribArray(this.program.attributes.angle);
+    gl.vertexAttribDivisor(this.program.attributes.angle, 1);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(this.program.uniforms.alphaSampler, 0);
@@ -165,10 +174,17 @@ export class SdfProgram extends Program<SdfProgramData> {
         /* normalize= */ false,
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 40);
+    gl.vertexAttribPointer(
+        this.program.attributes.angle,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 48);
   }
 
   protected draw(drawable: Drawable): void {
-    if (drawable.instances === undefined) {
+    if (!drawable.instanced) {
       throw new Error('Expecting instances');
     }
 
@@ -176,11 +192,11 @@ export class SdfProgram extends Program<SdfProgramData> {
 
     gl.uniform1f(this.program.uniforms.halo, 0.52);
     gl.uniform1ui(this.program.uniforms.textColor, drawable.fill ?? 0);
-    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
 
     gl.uniform1f(this.program.uniforms.halo, 0.75);
     gl.uniform1ui(this.program.uniforms.textColor, drawable.stroke ?? 0);
-    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
   }
 
   protected deactivate(): void {
@@ -197,6 +213,8 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.offset, 0);
     gl.disableVertexAttribArray(this.program.attributes.size);
     gl.vertexAttribDivisor(this.program.attributes.size, 0);
+    gl.disableVertexAttribArray(this.program.attributes.angle);
+    gl.vertexAttribDivisor(this.program.attributes.angle, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
@@ -214,6 +232,7 @@ interface SdfProgramData extends ProgramData {
     center: number;
     offset: number;
     size: number;
+    angle: number;
   };
 
   uniforms: {
@@ -246,6 +265,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       in highp vec4 center; // Mercator
       in mediump vec2 offset; // Pixels
       in mediump vec2 size; // Pixels
+      in mediump float angle; // Radians
 
       out mediump vec2 fragColorPosition;
       out mediump vec4 fragTextColor;
@@ -258,7 +278,9 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
         // reduce our float precision.
         vec4 alwaysCameraCenter = position.x < 1000.0 ? cameraCenter : center;
         vec4 relativeCenter = center - alwaysCameraCenter;
-        vec2 screenCoord = reduce64(relativeCenter * halfWorldSize) + position * size + offset;
+        mat2 rotation = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+        vec2 extents = rotation * (position * size + offset);
+        vec2 screenCoord = reduce64(relativeCenter * halfWorldSize) + extents;
         gl_Position = vec4(screenCoord / halfViewportSize, 0, 1);
 
         fragTextColor = uint32ToVec4(textColor);
@@ -311,6 +333,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       center: gl.getAttribLocation(programId, 'center'),
       offset: gl.getAttribLocation(programId, 'offset'),
       size: gl.getAttribLocation(programId, 'size'),
+      angle: gl.getAttribLocation(programId, 'angle'),
     },
     uniforms: {
       alphaSampler: checkExists(gl.getUniformLocation(programId, 'alphaSampler')),

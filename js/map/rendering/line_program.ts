@@ -13,8 +13,10 @@ export const VERTEX_STRIDE =
     );
 
 interface LineDrawable {
-  bytes: number;
-  instances: number;
+  instanced: {
+    bytes: number;
+    count: number;
+  };
   replace: boolean;
 }
 
@@ -82,8 +84,10 @@ export class LineProgram extends Program<LineProgramData> {
     }
 
     return {
-      bytes: vertexOffset * 4,
-      instances: vertexOffset / stride,
+      instanced: {
+        bytes: vertexOffset * 4,
+        count: vertexOffset / stride,
+      },
       replace,
     };
   }
@@ -173,7 +177,7 @@ export class LineProgram extends Program<LineProgramData> {
   }
 
   protected draw(drawable: Drawable): void {
-    if (drawable.instances === undefined) {
+    if (!drawable.instanced) {
       throw new Error('Expecting instances');
     }
 
@@ -183,14 +187,14 @@ export class LineProgram extends Program<LineProgramData> {
     gl.stencilFunc(!!drawable.replace ? gl.ALWAYS : gl.NOTEQUAL, 0xff, 0xff);
     gl.stencilMask(0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
-    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
 
     // Draw with the border only where we didn't already draw
     gl.stencilFunc(gl.NOTEQUAL, 0xff, 0xff);
     // Don't write to the stencil buffer so we don't overlap other lines
     //gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
-    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instances);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
   }
 
   protected deactivate(): void {
