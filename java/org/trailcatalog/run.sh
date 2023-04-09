@@ -2,7 +2,7 @@ set -e
 cd $(dirname "$0")
 cd ../../../
 bazel build java/org/trailcatalog:api_server java/org/trailcatalog/frontend:runner
-/usr/sbin/nginx \
+nginx \
     -c "$(pwd)/java/org/trailcatalog/nginx.conf" \
     -e /dev/stderr \
     -p "$(pwd)" &

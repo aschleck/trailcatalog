@@ -2,15 +2,14 @@ load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_jest//jest:defs.bzl", "jest_test")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@aspect_rules_ts//ts:defs.bzl", _ts_project = "ts_project")
 
 def esbuild_binary(
         name,
         entry_point = None,
         deps = None,
         platform = "browser",
-        minify = True,
-):
+        minify = True):
     has_css = native.glob(["*.css"]) != []
     esbuild(
         name = name,
@@ -31,18 +30,14 @@ def esbuild_binary(
         target = "es2020",
     )
 
-
 def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):
-    srcs = srcs or native.glob(["*.ts", "*.tsx"], exclude=["*.test.ts", "*.test.tsx"])
+    srcs = srcs or native.glob(["*.ts", "*.tsx"], exclude = ["*.test.ts", "*.test.tsx"])
 
     ts_project(
         name = name,
         srcs = srcs,
-        allow_js = True,
-        declaration = True,
-        tsconfig = "//:tsconfig",
-        data = data or [],
-        deps = deps or [],
+        data = data,
+        deps = deps,
     )
 
     if native.glob(["*.css"]):
@@ -65,9 +60,6 @@ def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):
     ts_project(
         name = "tests",
         srcs = native.glob(["*.test.ts", "*.test.tsx"]),
-        allow_js = True,
-        declaration = True,
-        tsconfig = "//:tsconfig",
         deps = [
             ":%s" % name,
             "//:node_modules/@types/jest",
@@ -83,3 +75,12 @@ def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):
         ],
     )
 
+def ts_project(name, deps = None, **kwargs):
+    _ts_project(
+        name = name,
+        allow_js = True,
+        declaration = True,
+        tsconfig = "//:tsconfig",
+        deps = deps or [],
+        **kwargs
+    )

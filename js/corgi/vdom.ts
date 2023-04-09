@@ -20,7 +20,7 @@ interface VElement {
 
 export type VElementOrPrimitive = VElement|number|string;
 
-type ElementFactory = (
+export type ElementFactory = (
   props: Properties,
   state: unknown|undefined,
   updateState: (newState: unknown) => void) => VElementOrPrimitive;

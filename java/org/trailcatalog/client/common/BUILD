@@ -10,6 +10,6 @@ tc_ts_project(
         "//js/corgi/history",
         "//js/dino",
         "//js/map/common",
+        "//js/server:data",
     ],
 )
-

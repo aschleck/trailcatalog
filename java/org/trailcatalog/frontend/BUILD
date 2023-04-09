@@ -5,10 +5,10 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary")
 
 js_binary(
     name = "runner",
-    entry_point = "frontend.js",
     data = [
         ":frontend.js",
     ],
+    entry_point = "frontend.js",
 )
 
 esbuild_binary(
@@ -29,12 +29,7 @@ tc_ts_project(
     ],
     deps = [
         "//java/org/trailcatalog/client:ts",
-        "//java/org/trailcatalog/client/common",
         "//js/corgi",
-        "//:node_modules/fastify",
-        "//:node_modules/node-fetch",
-        "//:node_modules/@fastify/request-context",
-        "//:node_modules/@types/node",
+        "//js/server",
     ],
 )
-

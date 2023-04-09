@@ -3,12 +3,9 @@ import { debugMode } from 'js/common/debug';
 import { Memoized } from 'js/common/memoized';
 import { fetchGlobalDeps } from 'js/corgi/deps';
 import { HistoryService } from 'js/corgi/history/history_service';
+import { InitialDataKey } from 'js/server/data';
 
 import { UnitSystem } from './types';
-
-export interface InitialDataKey {
-  type: string;
-}
 
 declare global {
   interface Window {
