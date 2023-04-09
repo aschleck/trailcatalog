@@ -32,6 +32,7 @@ import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.invert
 import org.trailcatalog.importers.pipeline.uniqueValues
+import org.trailcatalog.models.RelationCategory
 import java.io.InputStream
 import java.nio.file.Path
 
@@ -110,11 +111,11 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
           })
           .groupBy("GroupRelations") { it.id }
   val relationsToGeometriesWithWays = relations.then(ExtractRelationGeometriesWithWays())
-  val waysInTrailRelations =
+  val waysInRouteRelations =
       pipeline.join2("JoinOnRelation", relations, relationsToGeometriesWithWays)
-          .then(ExtractWaysFromTrailRelations())
+          .then(ExtractWaysFromFilteredRelations(RelationCategory.ROUTE))
   val waysNeedingElevations =
-      pipeline.join2("JoinForWaysNeedingElevations", waysWithGeometry, waysInTrailRelations)
+      pipeline.join2("JoinForWaysNeedingElevations", waysWithGeometry, waysInRouteRelations)
           .then(InnerJoinWays())
   val waysToElevations = calculateProfiles(hikari, pipeline, waysNeedingElevations)
 
@@ -132,7 +133,7 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   val relationsToWayGeometries =
       pipeline
           .join2(
-              "JoinOnWaysForRelationGeomeries",
+              "JoinOnWaysForRelationGeometries",
               relationsToGeometriesWithWays.then(ExtractWayRelationPairs()),
               waysWithElevationAndGeometry)
           .then(GatherRelationWays())

@@ -8,9 +8,9 @@ import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationGeometry
 
-class ExtractWaysFromTrailRelations
+class ExtractWaysFromFilteredRelations(private val category: RelationCategory)
   : PMapTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Long, Long>(
-    "ExtractWaysFromTrailRelations",
+    "ExtractWaysFromFilteredRelations",
     TypeToken.of(Long::class.java),
     TypeToken.of(Long::class.java)) {
 
@@ -18,7 +18,7 @@ class ExtractWaysFromTrailRelations
       input: PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>,
       emitter: Emitter2<Long, Long>) {
     for (value in input.values) {
-      val isTrail = value.first.any { RelationCategory.TRAIL.isParentOf(it.type) }
+      val isTrail = value.first.any { category.isParentOf(it.type) }
       if (isTrail) {
         value.second.forEach { emitWays(it, emitter) }
       }
