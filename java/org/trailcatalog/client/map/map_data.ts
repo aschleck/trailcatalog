@@ -10,7 +10,7 @@ import { Camera, projectLatLngRect } from 'js/map/models/camera';
 import { Line } from 'js/map/rendering/geometry';
 import { RenderPlanner } from 'js/map/rendering/render_planner';
 import { Renderer } from 'js/map/rendering/renderer';
-import { RenderableDiamond, RenderableText, TextRenderer } from 'js/map/rendering/text_renderer';
+import { RenderableDiamond, TextRenderer } from 'js/map/rendering/text_renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { BoundsQuadtree, worldBounds } from '../common/bounds_quadtree';
@@ -498,7 +498,7 @@ export class MapData extends Layer {
           hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
       let diamond;
       if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
-        this.textRenderer.planText(
+        this.textRenderer.planDiamond(
             renderableTrailPin(lengthMeters, fill, stroke), markerPx, z, planner);
       } else if (active || hover) {
         this.textRenderer.planDiamond(renderableDiamond(fill, stroke), markerPx, z, planner);
@@ -737,7 +737,7 @@ function isPath(type: number): boolean {
     || aDescendsB(type, WayCategory.ROAD_TRACK);
 }
 
-function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableText {
+function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableDiamond {
   const {value, unit} = formatDistance(lengthMeters);
   return {
     text: `${value} ${unit}`,
@@ -749,7 +749,9 @@ function renderableTrailPin(lengthMeters: number, fill: string, stroke: string):
 
 function renderableDiamond(fill: string, stroke: string): RenderableDiamond {
   return {
+    text: '',
     fillColor: fill,
     strokeColor: stroke,
+    fontSize: 0,
   };
 }

@@ -1,5 +1,6 @@
+import { getUnitSystem } from 'js/server/ssr_aware';
+
 import { celsiusToFahrenheit, metersToFeet, metersToMiles } from './math';
-import { getUnitSystem } from './ssr_aware';
 
 const areaFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,

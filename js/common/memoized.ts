@@ -13,3 +13,19 @@ export class Memoized<T> {
   }
 }
 
+class FakeMemoized<T> {
+
+  constructor(private readonly fn: () => T) {}
+
+  get value(): T {
+    return this.fn();
+  }
+}
+
+export function maybeMemoized<T>(fn: () => T): {value: T} {
+  if (globalThis.window) {
+    return new Memoized<T>(fn);
+  } else {
+    return new FakeMemoized<T>(fn);
+  }
+}

@@ -63,7 +63,8 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       new MbtileData(
           this.mapController.camera,
           response.deps.services.tileData,
-          this.mapController.renderer),
+          this.mapController.renderer,
+          this.mapController.textRenderer),
     ]);
   }
 

@@ -5,8 +5,6 @@ import { LatLngRect } from 'js/map/common/types';
 // A LatLng is a pair of *degrees*.
 export type S2CellNumber = number & {brand: 'S2CellNumber'};
 
-export type UnitSystem = 'imperial'|'metric';
-
 export function s2LatLngRectToTc(rect: S2LatLngRect): LatLngRect {
   const lo = rect.lo();
   const hi = rect.hi();

@@ -10,7 +10,7 @@ tc_ts_project(
         "//js/map/models",
         "//js/map/rendering",
         "//js/map/workers",
+        "//js/server:client",
     ],
 )
-
 

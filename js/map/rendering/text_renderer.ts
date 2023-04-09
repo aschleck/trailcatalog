@@ -14,15 +14,18 @@ const PIN_POINT_RADIUS_PX = [5, 5] as const;
 const PIN_TEXT_PADDING_PX = [-1, 4] as const;
 
 export interface RenderableDiamond {
-  fillColor: string,
-  strokeColor: string,
+  fontSize: number;
+  text: string;
+  fillColor: string;
+  strokeColor: string;
 }
 
 export interface RenderableText {
   text: string;
-  fillColor: string,
-  strokeColor: string,
+  fillColor: string;
+  strokeColor: string;
   fontSize: number;
+  weight?: number;
 }
 
 export class TextRenderer {
@@ -35,9 +38,10 @@ export class TextRenderer {
   private generation: number;
 
   constructor(private readonly renderer: Renderer) {
-    this.diamondCache = new HashMap((k: RenderableDiamond) => `${k.fillColor}${k.strokeColor}`);
+    this.diamondCache =
+        new HashMap((k: RenderableDiamond) => `${k.fontSize}${k.text}${k.fillColor}${k.strokeColor}`);
     this.textCache =
-        new HashMap((k: RenderableText) => `${k.fontSize}${k.text}${k.fillColor}${k.strokeColor}`);
+        new HashMap((k: RenderableText) => `${k.fontSize}${k.text}${k.strokeColor}`);
     this.canvas = document.createElement('canvas');
     this.context = checkExists(this.canvas.getContext('2d'));
     this.pool = new TexturePool(renderer);
@@ -101,6 +105,15 @@ export class TextRenderer {
       return;
     }
 
+    if (diamond.text) {
+      this.planLabeledPin(diamond, position, z, planner);
+    } else {
+      this.planUnlabeledPin(diamond, position, z, planner);
+    }
+  }
+
+  private planUnlabeledPin(
+      diamond: RenderableDiamond, position: Vec2, z: number, planner: RenderPlanner): void {
     const fullSize = [
       2 * DIAMOND_RADIUS_PX + 2 * DRAW_PADDING_PX,
       2 * DIAMOND_RADIUS_PX + 2 * DRAW_PADDING_PX,
@@ -131,8 +144,9 @@ export class TextRenderer {
     planner.addBillboard(position, offset, fullSize, texture, z);
   }
 
-  planText(text: RenderableText, position: Vec2, z: number, planner: RenderPlanner): void {
-    const cached = this.textCache.get(text);
+  private planLabeledPin(
+      text: RenderableDiamond, position: Vec2, z: number, planner: RenderPlanner): void {
+    const cached = this.diamondCache.get(text);
     if (cached) {
       cached.generation = this.generation;
       planner.addBillboard(position, cached.offset, cached.size, cached.texture, z);
@@ -175,13 +189,56 @@ export class TextRenderer {
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(this.canvas, texture);
     const offset = [0, fullSize[1] / 2] as Vec2;
-    this.textCache.set(text, {
+    this.diamondCache.set(text, {
       generation: this.generation,
       offset,
       size: fullSize,
       texture,
     });
     planner.addBillboard(position, offset, fullSize, texture, z);
+  }
+
+  planText(
+      text: RenderableText,
+      position: Vec2,
+      z: number,
+      planner: RenderPlanner,
+      angle: number = 0): void {
+    const cached = this.textCache.get(text);
+    if (cached) {
+      cached.generation = this.generation;
+      planner.addBillboard(position, cached.offset, cached.size, cached.texture, z, angle);
+      return;
+    }
+
+    const ctx = this.context;
+    ctx.font = font(text);
+    const metrics = ctx.measureText(text.text);
+    const textSize: Vec2 = [
+      Math.ceil(Math.abs(metrics.actualBoundingBoxLeft) + Math.abs(metrics.actualBoundingBoxRight)),
+      Math.ceil(Math.abs(metrics.actualBoundingBoxAscent) + Math.abs(metrics.actualBoundingBoxDescent)),
+    ];
+
+    this.canvas.width = textSize[0];
+    this.canvas.height = textSize[1];
+
+    ctx.font = font(text);
+    ctx.fillStyle = text.fillColor;
+    ctx.strokeStyle = text.strokeColor;
+    ctx.lineWidth = 4;
+    ctx.textBaseline = 'top';
+    ctx.fillText(text.text, 0, 0);
+
+    const texture = this.pool.acquire();
+    this.renderer.uploadTexture(this.canvas, texture);
+    const offset = [0, textSize[1] / 2] as Vec2;
+    this.textCache.set(text, {
+      generation: this.generation,
+      offset,
+      size: textSize,
+      texture,
+    });
+    planner.addBillboard(position, offset, textSize, texture, z, angle);
   }
 }
 
@@ -193,7 +250,7 @@ interface RenderedTexture {
 }
 
 function font(text: RenderableText): string {
-  return `500 ${text.fontSize}px Roboto,sans-serif`;
+  return `${text.weight ?? 500} ${text.fontSize}px Roboto,sans-serif`;
 }
 
 function renderDiamond(

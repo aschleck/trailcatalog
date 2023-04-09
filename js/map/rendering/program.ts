@@ -158,4 +158,10 @@ export const FP64_OPERATIONS = `
     vec2 reduce64(vec4 v) {
       return vec2(v.x + v.y, v.z + v.w);
     }
+
+    vec4 rotate64(vec4 v, float angle) {
+      float c = cos(angle);
+      float s = sin(angle);
+      return vec4(v.xy * c - v.zw * s, v.xy * s + v.zw * c);
+    }
 `;

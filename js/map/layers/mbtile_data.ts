@@ -2,6 +2,7 @@ import { checkArgument, checkExists } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
 import { debugMode } from 'js/common/debug';
 import { LittleEndianView } from 'js/common/little_endian_view';
+import { getUnitSystem, UnitSystem } from 'js/server/ssr_aware';
 
 import { rgbaToUint32 } from '../common/math';
 import { TileId, Vec2, VectorTileset } from '../common/types';
@@ -10,11 +11,13 @@ import { Camera, projectE7Array } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
 import { Renderer } from '../rendering/renderer';
+import { TextRenderer } from '../rendering/text_renderer';
 
 import { TileDataService } from './tile_data_service';
 import { MAPTILER_CONTOURS } from './tile_sources';
 
 const FILL = rgbaToUint32(0, 0, 0, 0.5);
+const LABEL_EVERY = 0.00005;
 const STROKE = rgbaToUint32(0.5, 0.5, 0.5, 0);
 const TEXT_DECODER = new TextDecoder();
 
@@ -25,21 +28,35 @@ interface Feature {
   starts: number[];
 }
 
-interface Geometry {
+interface Tile {
+  geometry: Contours[];
+}
+
+interface Contours {
+  unit: UnitSystem;
   lines: Array<Line & {
+    height: number;
+    labels: Label[];
     nthLine: number;
   }>;
+}
+
+interface Label {
+  angle: number;
+  position: Vec2;
 }
 
 export class MbtileData extends Layer {
 
   private lastChange: number;
-  private readonly tiles: HashMap<TileId, Geometry>;
+  private readonly tiles: HashMap<TileId, Tile>;
 
   constructor(
       private readonly camera: Camera,
       private readonly dataService: TileDataService,
-      private readonly renderer: Renderer) {
+      private readonly renderer: Renderer,
+      private readonly textRenderer: TextRenderer,
+  ) {
     super();
     this.lastChange = Date.now();
     this.tiles = new HashMap(id => `${id.x},${id.y},${id.zoom}`);
@@ -59,17 +76,36 @@ export class MbtileData extends Layer {
     const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
     const lines = [];
     const boldLines = [];
-    for (const [id, geometry] of sorted) {
-      for (const line of geometry.lines) {
-        if (line.nthLine % 5 === 0) {
-          boldLines.push(line);
-        } else {
-          lines.push(line);
+    const unit = getUnitSystem();
+    for (const [id, tile] of sorted) {
+      for (const geometry of tile.geometry) {
+        if (geometry.unit !== unit) {
+          continue;
+        }
+
+        for (const line of geometry.lines) {
+          if (line.nthLine % 5 === 0) {
+            boldLines.push(line);
+          } else {
+            lines.push(line);
+          }
+
+          if (zoom >= 16) {
+            for (const label of line.labels) {
+              this.textRenderer.planText({
+                text: String(line.height),
+                fillColor: 'black',
+                strokeColor: 'black',
+                fontSize: 12,
+                weight: 700,
+              }, label.position, 21, planner, label.angle);
+            }
+          }
         }
       }
     }
-    planner.addLines(boldLines, 2.5, 20, /* replace= */ false, /* round= */ false);
-    planner.addLines(lines, 2, 20, /* replace= */ false, /* round= */ false);
+    planner.addLines(boldLines, 2.5, 10, /* replace= */ false, /* round= */ false);
+    planner.addLines(lines, 2, 10, /* replace= */ false, /* round= */ false);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
@@ -82,8 +118,8 @@ export class MbtileData extends Layer {
     this.lastChange = Date.now();
 
     const data = new LittleEndianView(buffer);
-    const geometry: Geometry = {
-      lines: [],
+    const tile: Tile = {
+      geometry: [],
     };
     while (data.hasRemaining()) {
       const tag = data.getInt8();
@@ -94,14 +130,13 @@ export class MbtileData extends Layer {
         const size = data.getVarInt32();
         const embedded = data.viewSlice(size);
         if (field === 3) {
-          const {lines} = loadLayer(id, embedded);
-          geometry.lines.push(...lines);
+          tile.geometry.push(loadLayer(id, embedded));
         }
       } else {
         throw new Error(`Unknown wire type ${wireType} for field ${field}`);
       }
     }
-    this.tiles.set(id, geometry);
+    this.tiles.set(id, tile);
   }
 
   unloadTiles(ids: TileId[]): void {
@@ -112,7 +147,7 @@ export class MbtileData extends Layer {
   }
 }
 
-function loadLayer(id: TileId, data: LittleEndianView): Geometry {
+function loadLayer(id: TileId, data: LittleEndianView): Contours {
   let version;
   let name = '';
   let extent = 4096;
@@ -149,7 +184,8 @@ function loadLayer(id: TileId, data: LittleEndianView): Geometry {
     }
   }
 
-  return project(id, name, keys, values, features, extent);
+  const unit = name === 'contour' ? 'metric' : 'imperial'
+  return project(id, unit, keys, values, features, extent);
 }
 
 function loadFeature(data: LittleEndianView): Feature {
@@ -280,20 +316,23 @@ function deZigZag(u: number): number {
 
 function project(
     id: TileId,
-    name: string,
+    unit: UnitSystem,
     keys: string[],
     values: Array<boolean|number|string>,
     features: Feature[],
-    extent: number): Geometry {
+    extent: number): Contours {
   const halfWorldSize = Math.pow(2, id.zoom - 1);
   const tx = id.x / halfWorldSize;
   const ty = (id.y - 1) / halfWorldSize;
   const increment = 1 / halfWorldSize / extent;
   const lines = [];
   for (const {geometry, tags, starts} of features) {
+    let height = 0;
     let nthLine = 1;
     for (let i = 0; i < tags.length; i += 2) {
-      if (keys[tags[i]] === 'nth_line') {
+      if (keys[tags[i]] === 'height') {
+        height = values[tags[i + 1]] as number;
+      } else if (keys[tags[i]] === 'nth_line') {
         nthLine = values[tags[i + 1]] as number;
       }
     }
@@ -308,9 +347,28 @@ function project(
         vertices[j - cursor + 1] = ty + (extent - geometry[j + 1]) * increment;
       }
 
+      const labels: Label[] = [];
+      let distance = LABEL_EVERY;
+      for (let j = 2; j < vertices.length; j += 2) {
+        const dx = vertices[j + 0] - vertices[j + 0 - 2];
+        const dy = vertices[j + 1] - vertices[j + 1 - 2];
+        distance += Math.sqrt(dx * dx + dy * dy);
+
+        if (distance >= LABEL_EVERY) {
+          const direction = Math.atan2(dx, dy);
+          const angle = direction > 0 ? Math.PI / 2 - direction : 3 / 2 * Math.PI - direction;
+          labels.push({
+            angle,
+            position: [vertices[j], vertices[j + 1]],
+          });
+          distance = 0;
+        }
+      }
       lines.push({
         colorFill: FILL,
         colorStroke: STROKE,
+        height,
+        labels,
         nthLine,
         stipple: false,
         vertices,
@@ -318,5 +376,8 @@ function project(
       cursor = end;
     }
   }
-  return {lines};
+  return {
+    lines,
+    unit,
+  };
 }

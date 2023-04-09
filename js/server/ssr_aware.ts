@@ -1,11 +1,48 @@
 import { deepEqual } from 'js/common/comparisons';
 import { debugMode } from 'js/common/debug';
-import { Memoized } from 'js/common/memoized';
+import { maybeMemoized } from 'js/common/memoized';
 import { fetchGlobalDeps } from 'js/corgi/deps';
 import { HistoryService } from 'js/corgi/history/history_service';
-import { InitialDataKey } from 'js/server/data';
 
-import { UnitSystem } from './types';
+import { InitialDataKey } from './data';
+
+export type UnitSystem = 'imperial'|'metric';
+
+const UNIT_SYSTEM_COOKIE = 'unit_system';
+
+function calculateUnitSystem(): UnitSystem {
+  const requested =
+      (window.SERVER_SIDE_RENDER?.cookies() ?? window.document?.cookie)
+          ?.split('; ')
+          ?.find(c => c.startsWith(`${UNIT_SYSTEM_COOKIE}=`))
+          ?.split('=')[1];
+  if (requested === 'imperial' || requested === 'metric') {
+    return requested;
+  }
+
+  const imperial = getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
+  return imperial ? 'imperial' : 'metric';
+}
+
+const chosenUnitSystem = maybeMemoized(calculateUnitSystem);
+
+export function getUnitSystem(): UnitSystem {
+  return chosenUnitSystem.value;
+}
+
+export function setUnitSystem(system: UnitSystem) {
+  chosenUnitSystem.value = system;
+
+  let secure;
+  if (debugMode()) {
+    secure = '';
+  } else {
+    secure =  '; Secure';
+  }
+
+  document.cookie = `${UNIT_SYSTEM_COOKIE}=${system}; Path=/; SameSite=Strict${secure}`;
+}
+
 
 declare global {
   interface Window {
@@ -58,41 +95,6 @@ export function getLanguage(): string {
   return window.SERVER_SIDE_RENDER?.language() ?? window.navigator.language;
 }
 
-const UNIT_SYSTEM_COOKIE = 'unit_system';
-
-function calculateUnitSystem(): UnitSystem {
-  const requested =
-      (window.SERVER_SIDE_RENDER?.cookies() ?? window.document?.cookie)
-          ?.split('; ')
-          ?.find(c => c.startsWith(`${UNIT_SYSTEM_COOKIE}=`))
-          ?.split('=')[1];
-  if (requested === 'imperial' || requested === 'metric') {
-    return requested;
-  }
-
-  const imperial = getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
-  return imperial ? 'imperial' : 'metric';
-}
-
-const chosenUnitSystem = maybeMemoized(calculateUnitSystem);
-
-export function getUnitSystem(): UnitSystem {
-  return chosenUnitSystem.value;
-}
-
-export function setUnitSystem(system: UnitSystem) {
-  chosenUnitSystem.value = system;
-
-  let secure;
-  if (debugMode()) {
-    secure = '';
-  } else {
-    secure =  '; Secure';
-  }
-
-  document.cookie = `${UNIT_SYSTEM_COOKIE}=${system}; Path=/; SameSite=Strict${secure}`;
-}
-
 export function redirectTo(url: string): void {
   if (window.SERVER_SIDE_RENDER) {
     window.SERVER_SIDE_RENDER.redirectTo(url);
@@ -110,14 +112,6 @@ export function setTitle(title: string): void {
     window.SERVER_SIDE_RENDER.setTitle(title);
   } else {
     document.title = title;
-  }
-}
-
-function maybeMemoized<T>(fn: () => T): {value: T} {
-  if (globalThis.window) {
-    return new Memoized<T>(fn);
-  } else {
-    return new FakeMemoized<T>(fn);
   }
 }
 

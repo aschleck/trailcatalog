@@ -107,21 +107,8 @@ export class RenderPlanner {
       atlasIndex: number,
       atlasSize: Vec2,
       texture: WebGLTexture,
-      z: number): void {
-    const x = center[0];
-    const xF = Math.fround(x);
-    const xR = x - xF;
-    const y = center[1];
-    const yF = Math.fround(y);
-    const yR = y - yF;
-
-    const w = size[0];
-    const wF = Math.fround(w);
-    const wR = w - wF;
-    const h = size[1];
-    const hF = Math.fround(h);
-    const hR = h - hF;
-
+      z: number,
+      angle: number = 0): void {
     this.align(256);
     this.drawables.push({
       buffer: this.geometryBuffer,
@@ -131,30 +118,20 @@ export class RenderPlanner {
       z,
     });
 
-    const floats = new Float32Array(this.geometry, this.geometryByteSize);
-    const uint32s = new Uint32Array(this.geometry, this.geometryByteSize);
-
-    // It's wasteful to use 32-bit ints here (could use 8s) but we have 256 bytes anyway.
-    uint32s.set([
-      // We merge index and size because otherwise std140 gives index a uvec4.
-      /* atlasIndexAndSize= */ atlasIndex, atlasSize[0], atlasSize[1], 0,
-      /* sizeIsPixels= */ size[0] >= 1 ? 1 : 0, // well this is sketchy
-      /* pad out the boolean to clean stale data */ 0, 0, 0,
-    ], 0);
-    this.geometryByteSize += 2 * 4 * 4;
-
-    floats.set([
-      /* center= */ xF, xR, yF, yR,
-      /* offsetPx= */ offsetPx[0], offsetPx[1],
-      /* std140 padding= */ 0, 0,
-      /* size= */ wF, wR, hF, hR,
-    ], 2 * 4);
-    this.geometryByteSize += 4 * 4 + 4 * 4 + 4 * 4;
+    const bytes = this.billboardProgram.plan(
+        center, offsetPx, size, angle, atlasIndex, atlasSize, this.geometry, this.geometryByteSize);
+        this.geometryByteSize += bytes;
     this.align(256);
   }
 
-  addBillboard(center: Vec2, offsetPx: Vec2, size: Vec2, texture: WebGLTexture, z: number): void {
-    this.addAtlasedBillboard(center, offsetPx, size, 0, [1, 1], texture, z);
+  addBillboard(
+      center: Vec2,
+      offsetPx: Vec2,
+      size: Vec2,
+      texture: WebGLTexture,
+      z: number,
+      angle: number = 0): void {
+    this.addAtlasedBillboard(center, offsetPx, size, 0, [1, 1], texture, z, angle);
   }
 
   addLines(

@@ -4,7 +4,7 @@ import { LatLng, LatLngRect } from 'js/map/common/types';
 import { InitialDataKey } from 'js/server/data';
 
 import { decodeBase64 } from './base64';
-import { initialData } from './ssr_aware';
+import { initialData } from 'js/server/ssr_aware';
 
 type AsObjects<T extends string[]> = {[K in keyof T]: object};
 type KeyedTuples<T extends string[]> = {[K in keyof T]: [T[K], object]};

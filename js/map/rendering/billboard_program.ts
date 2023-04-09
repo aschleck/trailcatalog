@@ -1,5 +1,7 @@
 import { checkExists } from 'js/common/asserts';
 
+import { Vec2 } from '../common/types';
+
 import { FP64_OPERATIONS, Program, ProgramData } from './program';
 
 export class BillboardProgram extends Program<BillboardProgramData> {
@@ -16,6 +18,51 @@ export class BillboardProgram extends Program<BillboardProgramData> {
                   0.5, -0.5, 1, 1,
                   0.5, 0.5, 1, 0,
                 ]));
+  }
+
+  plan(
+      center: Vec2,
+      offsetPx: Vec2,
+      size: Vec2,
+      angle: number,
+      atlasIndex: number,
+      atlasSize: Vec2,
+      buffer: ArrayBuffer,
+      offset: number): number {
+    const floats = new Float32Array(buffer, offset);
+    const uint32s = new Uint32Array(buffer, offset);
+
+    const x = center[0];
+    const xF = Math.fround(x);
+    const xR = x - xF;
+    const y = center[1];
+    const yF = Math.fround(y);
+    const yR = y - yF;
+
+    const w = size[0];
+    const wF = Math.fround(w);
+    const wR = w - wF;
+    const h = size[1];
+    const hF = Math.fround(h);
+    const hR = h - hF;
+
+    // It's wasteful to use 32-bit ints here (could use 8s) but we have 256 bytes anyway.
+    uint32s.set([
+      // We merge index and size because otherwise std140 gives index a uvec4.
+      /* atlasIndexAndSize= */ atlasIndex, atlasSize[0], atlasSize[1], 0,
+      /* sizeIsPixels= */ size[0] >= 1 ? 1 : 0, // well this is sketchy
+      /* pad out the boolean to clean stale data */ 0, 0, 0,
+    ], 0);
+
+    floats.set([
+      /* center= */ xF, xR, yF, yR,
+      /* offsetPx= */ offsetPx[0], offsetPx[1],
+      /* std140 padding= */ 0, 0,
+      /* size= */ wF, wR, hF, hR,
+      /* angle= */ angle,
+    ], 2 * 4);
+
+    return 2 * 4 * 4 + 4 * 4 + 4 * 4 + 4 * 4 + 4;
   }
 
   protected activate(): void {
@@ -91,6 +138,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
         highp vec4 center; // Mercator
         highp vec2 offsetPx; // pixels
         highp vec4 size; // Mercator or pixels
+        highp float angle; // Radians
       };
 
       in highp vec2 position;
@@ -103,10 +151,11 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       void main() {
         vec4 relativeCenter = center - cameraCenter;
         vec4 extents = vec4(position.x * size.xy, position.y * size.zw);
+        vec4 rotated = rotate64(extents, angle);
         vec4 worldCoord =
             sizeIsPixels
-                ? relativeCenter * halfWorldSize + extents
-                : (relativeCenter + extents) * halfWorldSize;
+                ? relativeCenter * halfWorldSize + rotated
+                : (relativeCenter + rotated) * halfWorldSize;
         vec2 screenCoord = reduce64(worldCoord) + offsetPx;
         gl_Position = vec4(screenCoord / halfViewportSize, 0, 1);
 
