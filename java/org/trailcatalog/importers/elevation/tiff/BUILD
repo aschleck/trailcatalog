@@ -12,5 +12,6 @@ kt_jvm_library(
         "@maven//:com_google_guava_guava",
         "@maven//:mil_nga_tiff",
         "@maven//:org_locationtech_proj4j_proj4j",
+        "@maven//:org_locationtech_proj4j_proj4j_epsg",
     ],
 )

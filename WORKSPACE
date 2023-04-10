@@ -223,6 +223,7 @@ maven_install(
         "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.6.1",
         "org.junit.jupiter:junit-jupiter:5.8.2",
         "org.locationtech.proj4j:proj4j:1.2.3",
+        "org.locationtech.proj4j:proj4j-epsg:1.2.3",
         "org.postgresql:postgresql:42.6.0",
         "org.slf4j:slf4j-simple:2.0.0",
         "org.wololo:flatgeobuf:3.25.0",
