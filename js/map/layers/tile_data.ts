@@ -1,3 +1,4 @@
+import { checkExhaustive } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
 
 import { BitmapTileset, TileId, Vec2 } from '../common/types';
@@ -11,6 +12,11 @@ import { TileDataService } from './tile_data_service';
 
 const NO_OFFSET: Vec2 = [0, 0];
 
+export enum Style {
+  Hypsometry,
+  Rgb,
+}
+
 export class TileData extends Layer {
 
   private lastChange: number;
@@ -21,6 +27,7 @@ export class TileData extends Layer {
       private readonly camera: Camera,
       private readonly dataService: TileDataService,
       private readonly renderer: Renderer,
+      private readonly style: Style,
       tileset: BitmapTileset) {
     super();
     this.lastChange = Date.now();
@@ -43,10 +50,19 @@ export class TileData extends Layer {
 
       const halfWorldSize = Math.pow(2, id.zoom - 1);
       const size = 1 / halfWorldSize;
-      planner.addBillboard([
-          (id.x + 0.5) / halfWorldSize,
-          (id.y - 0.5) / halfWorldSize,
-      ], NO_OFFSET, [size, size], texture, /* z= */ -1);
+      if (this.style === Style.Hypsometry) {
+        planner.addHypsometry([
+            (id.x + 0.5) / halfWorldSize,
+            (id.y - 0.5) / halfWorldSize,
+        ], [size, size], texture, /* z= */ -1);
+      } else if (this.style === Style.Rgb) {
+        planner.addBillboard([
+            (id.x + 0.5) / halfWorldSize,
+            (id.y - 0.5) / halfWorldSize,
+        ], NO_OFFSET, [size, size], texture, /* z= */ -1);
+      } else {
+        checkExhaustive(this.style);
+      }
     }
   }
 
@@ -56,7 +72,7 @@ export class TileData extends Layer {
 
   loadTile(id: TileId, bitmap: ImageBitmap): void {
     const texture = this.pool.acquire();
-    this.renderer.uploadTexture(bitmap, texture);
+    this.renderer.uploadDataTexture(bitmap, texture);
     this.tiles.set(id, texture);
     this.lastChange = Date.now();
   }

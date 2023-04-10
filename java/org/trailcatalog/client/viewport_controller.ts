@@ -2,7 +2,7 @@ import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from 'js/map/common/types';
-import { TileData } from 'js/map/layers/tile_data';
+import { Style, TileData } from 'js/map/layers/tile_data';
 import { TileDataService } from 'js/map/layers/tile_data_service';
 import { MAPTILER_TOPO } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
@@ -72,6 +72,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
+          Style.Rgb,
           MAPTILER_TOPO),
       this.overlayData,
     ]);

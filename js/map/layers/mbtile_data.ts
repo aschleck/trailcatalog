@@ -14,13 +14,15 @@ import { Renderer } from '../rendering/renderer';
 import { SdfPlanner } from '../rendering/sdf_planner';
 
 import { TileDataService } from './tile_data_service';
-import { MAPTILER_CONTOURS } from './tile_sources';
 
-const FILL = rgbaToUint32(0, 0, 0, 0.5);
-const STROKE = rgbaToUint32(0.5, 0.5, 0.5, 0);
-const LABEL_EVERY = 0.00001;
-const LABEL_FILL = rgbaToUint32(0, 0, 0, 1);
-const LABEL_STROKE = rgbaToUint32(1, 1, 1, 1);
+const CONTOUR_FILL = rgbaToUint32(0, 0, 0, 0.5);
+const CONTOUR_STROKE = rgbaToUint32(0, 0, 0, 0.5);
+const CONTOUR_NORMAL_WIDTH = 0.75;
+const CONTOUR_EMPHASIZED_WIDTH = 1.5;
+const CONTOUR_LABEL_EVERY = 0.000007;
+const CONTOUR_LABEL_FILL = rgbaToUint32(0, 0, 0, 1);
+const CONTOUR_LABEL_STROKE = rgbaToUint32(1, 1, 1, 1);
+
 const TEXT_DECODER = new TextDecoder();
 
 interface Feature {
@@ -31,7 +33,7 @@ interface Feature {
 }
 
 interface Tile {
-  geometry: Contours[];
+  contours: Contours[];
 }
 
 interface Contours {
@@ -58,6 +60,7 @@ export class MbtileData extends Layer {
       private readonly camera: Camera,
       private readonly dataService: TileDataService,
       private readonly renderer: Renderer,
+      tileset: VectorTileset,
   ) {
     super();
     this.lastChange = Date.now();
@@ -65,7 +68,7 @@ export class MbtileData extends Layer {
     this.sdfRenderer = new SdfPlanner(renderer);
     this.registerDisposable(this.sdfRenderer);
 
-    this.registerDisposable(this.dataService.streamVectors(MAPTILER_CONTOURS, this));
+    this.registerDisposable(this.dataService.streamVectors(tileset, this));
   }
 
   hasDataNewerThan(time: number): boolean {
@@ -82,36 +85,54 @@ export class MbtileData extends Layer {
     const boldLines = [];
     const unit = getUnitSystem();
     for (const [id, tile] of sorted) {
-      for (const geometry of tile.geometry) {
+      for (const geometry of tile.contours) {
         if (geometry.unit !== unit) {
           continue;
         }
 
         for (const line of geometry.lines) {
-          if (line.nthLine % 5 === 0) {
-            boldLines.push(line);
+          if ((zoom >= 14 && line.nthLine % 5 === 0) || line.nthLine % 10 === 0) {
+            if (zoom >= 17) {
+              boldLines.push(line);
+            } else {
+              lines.push(line);
+            }
 
-            const skip = Math.max(1, Math.floor(80 - zoom * 4));
-            for (let i = 0; i < line.labels.length; i += skip) {
+            for (let i = 0; i < line.labels.length; ++i) {
+              const by2 = i % 2;
+              const by3 = i % 3;
+              const by5 = i % 5;
+              const by7 = i % 7;
+              if (zoom < 15.5) {
+                continue;
+              } else if (zoom < 17 && by2 > 0) {
+                continue;
+              } else if (zoom < 18 && by3 > 0) {
+                continue;
+              } else if (zoom < 19 && by5 > 0) {
+                continue;
+              }
+
               const label = line.labels[i];
               this.sdfRenderer.plan(
                 String(line.height),
-                LABEL_FILL,
-                LABEL_STROKE,
+                CONTOUR_LABEL_FILL,
+                CONTOUR_LABEL_STROKE,
                 0.5,
                 label.position,
                 [0, 0],
                 label.angle,
                 planner);
             }
-          } else {
+          } else if (zoom >= 17) {
             lines.push(line);
           }
         }
       }
     }
-    planner.addLines(boldLines, 2.5, 10, /* replace= */ false, /* round= */ false);
-    planner.addLines(lines, 2, 10, /* replace= */ false, /* round= */ false);
+    planner.addLines(
+        boldLines, CONTOUR_EMPHASIZED_WIDTH, 10, /* replace= */ false, /* round= */ false);
+    planner.addLines(lines, CONTOUR_NORMAL_WIDTH, 10, /* replace= */ false, /* round= */ false);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
@@ -125,7 +146,7 @@ export class MbtileData extends Layer {
 
     const data = new LittleEndianView(buffer);
     const tile: Tile = {
-      geometry: [],
+      contours: [],
     };
     while (data.hasRemaining()) {
       const tag = data.getInt8();
@@ -136,7 +157,7 @@ export class MbtileData extends Layer {
         const size = data.getVarInt32();
         const embedded = data.viewSlice(size);
         if (field === 3) {
-          tile.geometry.push(loadLayer(id, embedded));
+          loadLayer(id, embedded, tile);
         }
       } else {
         throw new Error(`Unknown wire type ${wireType} for field ${field}`);
@@ -153,7 +174,7 @@ export class MbtileData extends Layer {
   }
 }
 
-function loadLayer(id: TileId, data: LittleEndianView): Contours {
+function loadLayer(id: TileId, data: LittleEndianView, tile: Tile): void {
   let version;
   let name = '';
   let extent = 4096;
@@ -190,8 +211,12 @@ function loadLayer(id: TileId, data: LittleEndianView): Contours {
     }
   }
 
-  const unit = name === 'contour' ? 'metric' : 'imperial'
-  return project(id, unit, keys, values, features, extent);
+  if (name === 'contour' || name === 'contour_ft') {
+    const unit = name === 'contour' ? 'metric' : 'imperial'
+    tile.contours.push(projectContours(id, unit, keys, values, features, extent));
+  } else {
+    console.log(name);
+  }
 }
 
 function loadFeature(data: LittleEndianView): Feature {
@@ -320,7 +345,7 @@ function deZigZag(u: number): number {
   return (u >>> 1) ^ -(u & 1);
 }
 
-function project(
+function projectContours(
     id: TileId,
     unit: UnitSystem,
     keys: string[],
@@ -354,13 +379,13 @@ function project(
       }
 
       const labels: Label[] = [];
-      let distance = LABEL_EVERY;
-      for (let j = 2; j < vertices.length; j += 2) {
-        const dx = vertices[j + 0] - vertices[j + 0 - 2];
-        const dy = vertices[j + 1] - vertices[j + 1 - 2];
+      let distance = CONTOUR_LABEL_EVERY;
+      for (let j = 0; j < vertices.length - 2; j += 2) {
+        const dx = vertices[j + 0 + 2] - vertices[j + 0];
+        const dy = vertices[j + 1 + 2] - vertices[j + 1];
         distance += Math.sqrt(dx * dx + dy * dy);
 
-        if (distance >= LABEL_EVERY) {
+        if (distance >= CONTOUR_LABEL_EVERY) {
           const direction = Math.atan2(dx, dy);
           const angle = direction > 0 ? Math.PI / 2 - direction : 3 / 2 * Math.PI - direction;
           labels.push({
@@ -371,8 +396,8 @@ function project(
         }
       }
       lines.push({
-        colorFill: FILL,
-        colorStroke: STROKE,
+        colorFill: CONTOUR_FILL,
+        colorStroke: CONTOUR_STROKE,
         height,
         labels,
         nthLine,

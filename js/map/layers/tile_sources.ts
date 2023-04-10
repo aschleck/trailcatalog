@@ -9,6 +9,15 @@ export const MAPTILER_CONTOURS: VectorTileset = {
   type: 'vector',
 } as const;
 
+export const MAPTILER_DEM: BitmapTileset = {
+  extraZoom: -1, // we're using the 512x512px tiles
+  minZoom: 0,
+  maxZoom: 12,
+  tileUrl: 'https://api.maptiler.com/tiles/terrain-rgb-v2/${id.zoom}/${id.x}/${id.y}.webp?' +
+      'key=wWxlJy7a8SEPXS7AZ42l',
+  type: 'bitmap',
+} as const;
+
 export const MAPTILER_HILLSHADE: BitmapTileset = {
   extraZoom: 0,
   minZoom: 0,
@@ -16,6 +25,24 @@ export const MAPTILER_HILLSHADE: BitmapTileset = {
   tileUrl: 'https://api.maptiler.com/tiles/hillshade/${id.zoom}/${id.x}/${id.y}.webp?' +
       'key=wWxlJy7a8SEPXS7AZ42l',
   type: 'bitmap',
+} as const;
+
+export const MAPTILER_OUTDOOR: BitmapTileset = {
+  extraZoom: -1, // we're using the 512x512px tiles
+  minZoom: 2,
+  maxZoom: 22,
+  tileUrl: 'https://api.maptiler.com/maps/outdoor-v2/${id.zoom}/${id.x}/${id.y}.png?' +
+      'key=wWxlJy7a8SEPXS7AZ42l',
+  type: 'bitmap',
+} as const;
+
+export const MAPTILER_PLANET: VectorTileset = {
+  extraZoom: -2,
+  minZoom: 0,
+  maxZoom: 15,
+  tileUrl: 'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?' +
+      'key=wWxlJy7a8SEPXS7AZ42l',
+  type: 'vector',
 } as const;
 
 export const MAPTILER_TOPO: BitmapTileset = {

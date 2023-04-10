@@ -3,6 +3,7 @@ import { RgbaU32, Vec2 } from '../common/types';
 import { Camera } from '../models/camera';
 
 import { BillboardProgram } from './billboard_program';
+import { HypsometryProgram } from './hypsometry_program';
 import { Line } from './geometry';
 import { LineCapProgram } from './line_cap_program';
 import { LineProgram } from './line_program';
@@ -20,6 +21,7 @@ export class RenderPlanner {
   private geometryByteSize: number;
 
   private readonly billboardProgram: BillboardProgram;
+  private readonly hypsometryProgram: HypsometryProgram;
   private readonly lineCapProgram: LineCapProgram;
   private readonly lineProgram: LineProgram;
   private readonly sdfProgram: SdfProgram;
@@ -31,6 +33,7 @@ export class RenderPlanner {
     this.geometryByteSize = 0;
 
     this.billboardProgram = new BillboardProgram(renderer.gl);
+    this.hypsometryProgram = new HypsometryProgram(renderer.gl);
     this.lineCapProgram = new LineCapProgram(renderer.gl);
     this.lineProgram = new LineProgram(renderer.gl);
     this.sdfProgram = new SdfProgram(renderer.gl);
@@ -145,6 +148,22 @@ export class RenderPlanner {
       z: number,
       angle: number = 0): void {
     this.addAtlasedBillboard(center, offsetPx, size, 0, [1, 1], texture, z, angle);
+  }
+
+  addHypsometry(
+      center: Vec2,
+      size: Vec2,
+      texture: WebGLTexture,
+      z: number) {
+    const bytes = this.hypsometryProgram.plan(center, size, this.geometry, this.geometryByteSize);
+    this.drawables.push({
+      buffer: this.geometryBuffer,
+      offset: this.geometryByteSize,
+      program: this.hypsometryProgram,
+      texture,
+      z,
+    });
+    this.geometryByteSize += bytes;
   }
 
   addLines(

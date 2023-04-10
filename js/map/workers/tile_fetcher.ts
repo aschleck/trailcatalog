@@ -75,8 +75,13 @@ class TileFetcher {
     const tz =
         clamp(
             Math.floor(request.cameraZoom + tileset.extraZoom),
-            tileset.minZoom,
+            tileset.minZoom - 0.5,
             tileset.maxZoom);
+    if (tz < tileset.minZoom) {
+      request.viewportSize[0] = 0;
+      request.viewportSize[1] = 0;
+    }
+
     const worldSize = Math.pow(2, tz);
     const halfWorldSize = worldSize / 2;
     const center = request.cameraPosition;

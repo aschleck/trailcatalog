@@ -310,13 +310,15 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       out lowp vec4 fragColor;
 
       void main() {
+        mediump float a =
+            1. - smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 0.75 - fragRadius, 0., 1.));
         // 0 is fill, 1 is stroke
-        mediump float m = 1. - (fragRadius - max(fragRadius - 2., abs(fragDistanceOrtho))) / 2.;
-        mediump float f = fragRadius - max(fragRadius - 1., abs(fragDistanceOrtho));
+        mediump float m =
+            smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 1. - fragRadius, 0., 1.));
 
         lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
         lowp float stipple = fract(fragDistanceAlong / 8.) < fragStipple ? 1. : 0.;
-        fragColor = stipple * color;
+        fragColor = stipple * color * vec4(1, 1, 1, a);
       }
   `;
 
