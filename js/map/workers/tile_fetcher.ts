@@ -3,7 +3,9 @@ import { HashSet } from 'js/common/collections';
 import { FetchThrottler } from 'js/common/fetch_throttler';
 import { clamp } from 'js/common/math';
 
-import { TileId, Tileset, Vec2 } from '../common/types';
+import { MbtileTile, TileId, Tileset, Vec2 } from '../common/types';
+
+import { decodeMbtile } from './mbtile_decoder';
 
 export interface SetTilesetRequest {
   type: 'str';
@@ -25,10 +27,10 @@ export interface LoadBitmapCommand {
   bitmap: ImageBitmap;
 }
 
-export interface LoadVectorCommand {
-  type: 'lvc';
+export interface LoadMbtileCommand {
+  type: 'lmc';
   id: TileId;
-  data: ArrayBuffer;
+  tile: MbtileTile;
 }
 
 export interface UnloadTilesCommand {
@@ -36,7 +38,7 @@ export interface UnloadTilesCommand {
   ids: TileId[];
 }
 
-export type FetcherCommand = LoadBitmapCommand|LoadVectorCommand|UnloadTilesCommand;
+export type FetcherCommand = LoadBitmapCommand|LoadMbtileCommand|UnloadTilesCommand;
 
 const WEB_MERCATOR_TILE_SIZE_PX = 256;
 
@@ -133,15 +135,15 @@ class TileFetcher {
                             bitmap,
                           }, [bitmap]);
                         });
-                  } else if (tileset.type === 'vector') {
+                  } else if (tileset.type === 'mbtile') {
                     return response.blob()
                         .then(blob => blob.arrayBuffer())
                         .then(data => {
                           this.loaded.add(id);
                           this.mail({
-                            type: 'lvc',
+                            type: 'lmc',
                             id,
-                            data,
+                            tile: decodeMbtile(id, data),
                           }, [data]);
                         });
                   } else {

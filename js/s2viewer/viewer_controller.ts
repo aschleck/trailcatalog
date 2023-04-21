@@ -11,7 +11,7 @@ import { Layer } from 'js/map/layer';
 import { MbtileData } from 'js/map/layers/mbtile_data';
 import { Style, TileData } from 'js/map/layers/tile_data';
 import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_DEM, MAPTILER_OUTDOOR, MAPTILER_PLANET, MAPTILER_TOPO } from 'js/map/layers/tile_sources';
+import { MAPTILER_CONTOURS, MAPTILER_DEM, MAPTILER_OUTDOOR, MAPTILER_PLANET, MAPTILER_TOPO } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map/models/camera';
 import { RenderPlanner } from 'js/map/rendering/render_planner';
@@ -55,17 +55,28 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       this.layer,
-      new TileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
-          this.mapController.renderer,
-          Style.Hypsometry,
-          MAPTILER_DEM),
+      //new TileData(
+      //    this.mapController.camera,
+      //    response.deps.services.tileData,
+      //    this.mapController.renderer,
+      //    Style.Rgb,
+      //    MAPTILER_TOPO),
+      //new TileData(
+      //    this.mapController.camera,
+      //    response.deps.services.tileData,
+      //    this.mapController.renderer,
+      //    Style.Hypsometry,
+      //    MAPTILER_DEM),
       new MbtileData(
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
           MAPTILER_PLANET),
+      new MbtileData(
+          this.mapController.camera,
+          response.deps.services.tileData,
+          this.mapController.renderer,
+          MAPTILER_CONTOURS),
     ]);
   }
 

@@ -1,12 +1,12 @@
-import { BitmapTileset, VectorTileset } from '../common/types';
+import { BitmapTileset, MbtileTileset } from '../common/types';
 
-export const MAPTILER_CONTOURS: VectorTileset = {
+export const MAPTILER_CONTOURS: MbtileTileset = {
   extraZoom: -2,
   minZoom: 9,
   maxZoom: 14,
   tileUrl: 'https://api.maptiler.com/tiles/contours/${id.zoom}/${id.x}/${id.y}.pbf?' +
       'key=wWxlJy7a8SEPXS7AZ42l',
-  type: 'vector',
+  type: 'mbtile',
 } as const;
 
 export const MAPTILER_DEM: BitmapTileset = {
@@ -36,13 +36,13 @@ export const MAPTILER_OUTDOOR: BitmapTileset = {
   type: 'bitmap',
 } as const;
 
-export const MAPTILER_PLANET: VectorTileset = {
-  extraZoom: -2,
+export const MAPTILER_PLANET: MbtileTileset = {
+  extraZoom: -1.5, // Magic number: -1 renders too slow, -2 renders too blocky
   minZoom: 0,
   maxZoom: 15,
   tileUrl: 'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?' +
       'key=wWxlJy7a8SEPXS7AZ42l',
-  type: 'vector',
+  type: 'mbtile',
 } as const;
 
 export const MAPTILER_TOPO: BitmapTileset = {

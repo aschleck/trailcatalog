@@ -10,38 +10,53 @@ import { LineProgram } from './line_program';
 import { Drawable } from './program';
 import { Renderer } from './renderer';
 import { Glyph, SdfProgram } from './sdf_program';
+import { TriangleProgram } from './triangle_program';
 
 const MAX_GEOMETRY_BYTES = 64_000_000;
+const MAX_INDEX_BYTES = 16_000_000;
 
 export class RenderPlanner {
 
   private readonly drawables: Drawable[];
   private readonly geometry: ArrayBuffer;
-  private readonly geometryBuffer: WebGLBuffer;
+  private geometryBuffer: WebGLBuffer;
+  private geometryBufferAlternate: WebGLBuffer;
   private geometryByteSize: number;
+  private readonly index: ArrayBuffer;
+  private indexBuffer: WebGLBuffer;
+  private indexBufferAlternate: WebGLBuffer;
+  private indexByteSize: number;
 
   private readonly billboardProgram: BillboardProgram;
   private readonly hypsometryProgram: HypsometryProgram;
   private readonly lineCapProgram: LineCapProgram;
   private readonly lineProgram: LineProgram;
   private readonly sdfProgram: SdfProgram;
+  private readonly triangleProgram: TriangleProgram;
 
   constructor(private area: Vec2, private readonly renderer: Renderer) {
     this.drawables = [];
     this.geometry = new ArrayBuffer(MAX_GEOMETRY_BYTES);
-    this.geometryBuffer = renderer.createBuffer(MAX_GEOMETRY_BYTES);
+    this.geometryBuffer = renderer.createDataBuffer(MAX_GEOMETRY_BYTES);
+    this.geometryBufferAlternate = renderer.createDataBuffer(MAX_GEOMETRY_BYTES);
     this.geometryByteSize = 0;
+    this.index = new ArrayBuffer(MAX_INDEX_BYTES);
+    this.indexBuffer = renderer.createIndexBuffer(MAX_INDEX_BYTES);
+    this.indexBufferAlternate = renderer.createIndexBuffer(MAX_INDEX_BYTES);
+    this.indexByteSize = 0;
 
     this.billboardProgram = new BillboardProgram(renderer.gl);
     this.hypsometryProgram = new HypsometryProgram(renderer.gl);
     this.lineCapProgram = new LineCapProgram(renderer.gl);
     this.lineProgram = new LineProgram(renderer.gl);
     this.sdfProgram = new SdfProgram(renderer.gl);
+    this.triangleProgram = new TriangleProgram(renderer.gl);
   }
 
   clear(): void {
     this.drawables.length = 0;
     this.geometryByteSize = 0;
+    this.indexByteSize = 0;
   }
 
   resize(area: Vec2): void {
@@ -49,12 +64,25 @@ export class RenderPlanner {
   }
 
   save(): void {
-    this.renderer.uploadGeometry(this.geometry, this.geometryByteSize, this.geometryBuffer);
+    // We double-buffer in order to try and reduce stalls, ie time when the GPU is rendering the
+    // previous frame and has to flush before we can upload the next frame's data.
+    const alternateG = this.geometryBufferAlternate;
+    this.geometryBufferAlternate = this.geometryBuffer;
+    this.geometryBuffer = alternateG;
+    const alternateI = this.indexBufferAlternate;
+    this.indexBufferAlternate = this.indexBuffer;
+    this.indexBuffer = alternateI;
+
+    this.renderer.uploadData(this.geometry, this.geometryByteSize, this.geometryBuffer);
+    this.renderer.uploadIndices(this.index, this.indexByteSize, this.indexBuffer);
+
     this.drawables.sort((a, b) => {
       if (a.z !== b.z) {
         return a.z - b.z;
-      } else {
+      } else if (a.program.id !== b.program.id) {
         return a.program.id - b.program.id;
+      } else {
+        return a.geometryOffset - b.geometryOffset;
       }
     });
   }
@@ -64,7 +92,8 @@ export class RenderPlanner {
       return;
     }
 
-    this.renderer.uploadGeometry(this.geometry, this.geometryByteSize, this.geometryBuffer);
+    // ???
+    //this.renderer.uploadData(this.geometry, this.geometryByteSize, this.geometryBuffer);
 
     const bounds = camera.viewportBounds(this.area[0], this.area[1]);
 
@@ -83,6 +112,7 @@ export class RenderPlanner {
       centerPixels.push(splitVec2([centerPixel[0] - 2, centerPixel[1]]));
     }
 
+    this.renderer.render();
     let drawStart = this.drawables[0];
     let drawStartIndex = 0;
     // Gather sequential drawables that share the same program and draw them all at once
@@ -92,8 +122,9 @@ export class RenderPlanner {
         if (
             drawStart.instanced && drawable.instanced
                 && drawStart.texture === drawable.texture
-                && drawStart.offset + drawStart.instanced.bytes === drawable.offset) {
-          drawable.offset = drawStart.offset;
+                && drawStart.geometryOffset + drawStart.instanced.bytes
+                    === drawable.geometryOffset) {
+          drawable.geometryOffset = drawStart.geometryOffset;
           drawable.instanced.bytes += drawStart.instanced.bytes;
           drawable.instanced.count += drawStart.instanced.count;
           drawStart.instanced.bytes = 0;
@@ -113,7 +144,10 @@ export class RenderPlanner {
 
     // The last batch didn't actually draw, so draw it
     drawStart.program.render(
-        this.area, centerPixels, camera.worldRadius, this.drawables.slice(drawStartIndex, this.drawables.length));
+        this.area,
+        centerPixels,
+        camera.worldRadius,
+        this.drawables.slice(drawStartIndex, this.drawables.length));
   }
 
   addAtlasedBillboard(
@@ -127,8 +161,10 @@ export class RenderPlanner {
       angle: number = 0): void {
     this.align(256);
     this.drawables.push({
-      buffer: this.geometryBuffer,
-      offset: this.geometryByteSize,
+      geometryBuffer: this.geometryBuffer,
+      indexBuffer: this.indexBufferAlternate,
+      geometryOffset: this.geometryByteSize,
+      indexOffset: this.indexByteSize,
       program: this.billboardProgram,
       texture,
       z,
@@ -157,8 +193,10 @@ export class RenderPlanner {
       z: number) {
     const bytes = this.hypsometryProgram.plan(center, size, this.geometry, this.geometryByteSize);
     this.drawables.push({
-      buffer: this.geometryBuffer,
-      offset: this.geometryByteSize,
+      geometryBuffer: this.geometryBufferAlternate,
+      indexBuffer: this.indexBufferAlternate,
+      geometryOffset: this.geometryByteSize,
+      indexOffset: this.indexByteSize,
       program: this.hypsometryProgram,
       texture,
       z,
@@ -172,23 +210,32 @@ export class RenderPlanner {
       z: number,
       replace: boolean = true,
       round: boolean = true): void {
+    if (lines.length === 0) {
+      return;
+    }
+
     const drawable =
         this.lineProgram.plan(lines, radius, replace, this.geometry, this.geometryByteSize);
 
     if (round) {
       this.drawables.push({
-        buffer: this.geometryBuffer,
-        instanced: drawable.instanced,
-        offset: this.geometryByteSize,
+        ...drawable,
+        instanced: {...drawable.instanced}, // !!! Modify separate from the line drawable
+        geometryBuffer: this.geometryBufferAlternate,
+        indexBuffer: this.indexBufferAlternate,
+        geometryOffset: this.geometryByteSize,
+        indexOffset: this.indexByteSize,
         program: this.lineCapProgram,
         z,
       });
     }
 
     this.drawables.push({
-      buffer: this.geometryBuffer,
-      instanced: drawable.instanced,
-      offset: this.geometryByteSize,
+      ...drawable,
+      geometryBuffer: this.geometryBufferAlternate,
+      indexBuffer: this.indexBufferAlternate,
+      geometryOffset: this.geometryByteSize,
+      indexOffset: this.indexByteSize,
       program: this.lineProgram,
       z,
     });
@@ -220,12 +267,43 @@ export class RenderPlanner {
             this.geometryByteSize);
     this.drawables.push({
       ...drawable,
-      buffer: this.geometryBuffer,
-      offset: this.geometryByteSize,
+      geometryBuffer: this.geometryBufferAlternate,
+      indexBuffer: this.indexBufferAlternate,
+      geometryOffset: this.geometryByteSize,
+      indexOffset: this.indexByteSize,
       program: this.sdfProgram,
       z: 100, // ???
     });
     this.geometryByteSize += drawable.instanced.bytes;
+  }
+
+  addTriangles(
+      indices: ArrayLike<number>,
+      vertices: Float32Array|Float64Array,
+      fill: RgbaU32,
+      z: number) {
+    const drawable =
+        this.triangleProgram.plan(
+            indices,
+            vertices,
+            fill,
+            this.geometry,
+            this.geometryByteSize);
+
+    const uint32s = new Uint32Array(this.index, this.indexByteSize);
+    uint32s.set(indices);
+
+    this.drawables.push({
+      ...drawable,
+      geometryBuffer: this.geometryBufferAlternate,
+      indexBuffer: this.indexBufferAlternate,
+      geometryOffset: this.geometryByteSize,
+      indexOffset: this.indexByteSize,
+      program: this.triangleProgram,
+      z,
+    });
+    this.geometryByteSize += drawable.elements.bytes;
+    this.indexByteSize += indices.length * 4;
   }
 
   private align(alignment: number): void {

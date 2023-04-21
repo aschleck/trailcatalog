@@ -183,9 +183,10 @@ export class LineProgram extends Program<LineProgramData> {
 
     const gl = this.gl;
 
+    console.log(drawable);
     // Draw without the border, always replacing the stencil buffer if we're replacing
-    gl.stencilFunc(!!drawable.replace ? gl.ALWAYS : gl.NOTEQUAL, 0xff, 0xff);
-    gl.stencilMask(0xff);
+    gl.stencilFunc(!!drawable.replace ? gl.ALWAYS : gl.NOTEQUAL, drawable.z, 0xff);
+    gl.stencilMask(drawable.z);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
 
@@ -318,7 +319,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
         lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
         lowp float stipple = fract(fragDistanceAlong / 8.) < fragStipple ? 1. : 0.;
-        fragColor = stipple * color * vec4(1, 1, 1, a);
+        fragColor = stipple * vec4(color.rgb * color.a, color.a) * a;
       }
   `;
 

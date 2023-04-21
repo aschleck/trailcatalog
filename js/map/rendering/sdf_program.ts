@@ -22,8 +22,8 @@ interface SdfDrawable {
     count: number;
   };
   texture: WebGLTexture;
-  fill: RgbaU32,
-  stroke: RgbaU32,
+  fill: RgbaU32;
+  stroke: RgbaU32;
 }
 
 export const VERTEX_STRIDE =
@@ -299,7 +299,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
         highp float gamma = 0.022096875;
         mediump float distance = texture(alphaSampler, fragColorPosition).a;
         highp float alpha = smoothstep(halo - gamma, halo + gamma, distance);
-        fragColor = fragTextColor * vec4(1, 1, 1, alpha);
+        fragColor = fragTextColor * alpha;
       }
   `;
 

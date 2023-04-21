@@ -3,12 +3,18 @@ import { checkExists } from 'js/common/asserts';
 import { RgbaU32, Vec2, Vec4 } from '../common/types';
 
 export interface Drawable {
-  readonly buffer: WebGLBuffer;
+  readonly geometryBuffer: WebGLBuffer;
+  readonly indexBuffer: WebGLBuffer;
+  geometryOffset: number;
+  indexOffset: number;
+
+  readonly elements?: {
+    count: number;
+  };
   readonly instanced?: {
     bytes: number;
     count: number;
   };
-  offset: number;
   readonly replace?: boolean;
   readonly program: Program<ProgramData>;
   readonly texture?: WebGLTexture;
@@ -67,18 +73,28 @@ export abstract class Program<P extends ProgramData> {
     gl.uniform1f(this.program.uniforms.halfWorldSize, worldRadius);
 
     const uniforms = this.program.uniformBlock;
+    let lastArrayBuffer = undefined;
+    let lastElementArrayBuffer = undefined;
     for (const drawable of drawables) {
       if (uniforms) {
         gl.bindBufferRange(
             gl.UNIFORM_BUFFER,
             checkExists(uniforms.index),
-            drawable.buffer,
-            drawable.offset,
+            drawable.geometryBuffer,
+            drawable.geometryOffset,
             uniforms.size);
       }
 
-      gl.bindBuffer(gl.ARRAY_BUFFER, drawable.buffer);
-      this.bind(drawable.offset + (uniforms?.size ?? 0));
+      if (drawable.elements && drawable.indexBuffer !== lastElementArrayBuffer) {
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, drawable.indexBuffer);
+        lastElementArrayBuffer = drawable.indexBuffer;
+      }
+
+      if (drawable.geometryBuffer !== lastArrayBuffer) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, drawable.geometryBuffer);
+        lastArrayBuffer = drawable.geometryBuffer;
+      }
+      this.bind(drawable.geometryOffset + (uniforms?.size ?? 0));
 
       if (drawable.texture) {
         gl.bindTexture(gl.TEXTURE_2D, drawable.texture);
@@ -92,6 +108,7 @@ export abstract class Program<P extends ProgramData> {
 
     this.deactivate();
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     gl.bindBuffer(gl.UNIFORM_BUFFER, null);
   }
 
@@ -106,7 +123,10 @@ export abstract class Program<P extends ProgramData> {
 
   protected draw(drawable: Drawable): void {
     const gl = this.gl;
-    if (drawable.instanced) {
+    if (drawable.elements) {
+      gl.drawElements(
+          this.geometryType, drawable.elements.count, gl.UNSIGNED_INT, drawable.indexOffset);
+    } else if (drawable.instanced) {
       gl.drawArraysInstanced(this.geometryType, 0, this.program.vertexCount, drawable.instanced.count);
     } else {
       gl.drawArrays(this.geometryType, 0, this.program.vertexCount);

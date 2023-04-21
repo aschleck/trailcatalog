@@ -1,11 +1,12 @@
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
+import { deepEqual } from 'js/common/comparisons';
 import { Disposable } from 'js/common/disposable';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
 
 import { DPI_ZOOM } from '../common/dpi';
-import { BitmapTileset, TileId, Tileset, Vec2, VectorTileset } from '../common/types';
+import { BitmapTileset, MbtileTile, MbtileTileset, TileId, Tileset, Vec2 } from '../common/types';
 import { FetcherCommand } from '../workers/tile_fetcher';
 
 interface BitmapListener {
@@ -19,26 +20,28 @@ interface BitmapStream {
   tiles: HashMap<TileId, ImageBitmap>;
 }
 
-interface VectorListener {
-  loadTile(id: TileId, data: ArrayBuffer): void;
+interface MbtileListener {
+  loadTile(id: TileId, tile: MbtileTile): void;
   unloadTiles(ids: TileId[]): void;
 }
 
-interface VectorStream {
+interface MbtileStream {
   fetcher: Worker;
-  listener: VectorListener|undefined;
-  tiles: HashMap<TileId, ArrayBuffer>;
+  listener: MbtileListener|undefined;
+  tiles: HashMap<TileId, MbtileTile>;
 }
 
 export class TileDataService extends Service<EmptyDeps> {
 
   private readonly bitmapStreams: Map<Tileset, BitmapStream>;
-  private readonly vectorStreams: Map<Tileset, VectorStream>;
+  private readonly mbtileStreams: Map<Tileset, MbtileStream>;
+  private lastViewport: readonly [Vec2, Vec2, number];
 
   constructor(response: ServiceResponse<EmptyDeps>) {
     super(response);
     this.bitmapStreams = new Map();
-    this.vectorStreams = new Map();
+    this.mbtileStreams = new Map();
+    this.lastViewport = [[0, 0], [0, 0], -1];
   }
 
   streamBitmaps(tileset: BitmapTileset, listener: BitmapListener): Disposable {
@@ -64,8 +67,8 @@ export class TileDataService extends Service<EmptyDeps> {
         if (command.type === 'lbc') {
           tiles.set(command.id, command.bitmap);
           constStream.listener?.loadTile(command.id, command.bitmap);
-        } else if (command.type === 'lvc') {
-          throw new Error('Unexpected vector tile');
+        } else if (command.type === 'lmc') {
+          throw new Error('Unexpected mbtile tile');
         } else if (command.type === 'utc') {
           for (const id of command.ids) {
             tiles.delete(id);
@@ -93,8 +96,8 @@ export class TileDataService extends Service<EmptyDeps> {
     return disposable;
   }
 
-  streamVectors(tileset: VectorTileset, listener: VectorListener): Disposable {
-    let stream = this.vectorStreams.get(tileset);
+  streamMbtiles(tileset: MbtileTileset, listener: MbtileListener): Disposable {
+    let stream = this.mbtileStreams.get(tileset);
     if (!stream) {
       const fetcher = new Worker('/static/tile_fetcher_worker.js');
       fetcher.postMessage({
@@ -102,22 +105,22 @@ export class TileDataService extends Service<EmptyDeps> {
         tileset,
       });
 
-      const tiles = new HashMap<TileId, ArrayBuffer>(id => `${id.x},${id.y},${id.zoom}`);
+      const tiles = new HashMap<TileId, MbtileTile>(id => `${id.x},${id.y},${id.zoom}`);
       const constStream = {
         fetcher,
         listener,
         tiles,
       };
       stream = constStream;
-      this.vectorStreams.set(tileset, stream);
+      this.mbtileStreams.set(tileset, stream);
 
       fetcher.onmessage = e => {
         const command = e.data as FetcherCommand;
         if (command.type === 'lbc') {
           throw new Error('Unexpected bitmap tile');
-        } else if (command.type === 'lvc') {
-          tiles.set(command.id, command.data);
-          constStream.listener?.loadTile(command.id, command.data);
+        } else if (command.type === 'lmc') {
+          tiles.set(command.id, command.tile);
+          constStream.listener?.loadTile(command.id, command.tile);
         } else if (command.type === 'utc') {
           for (const id of command.ids) {
             tiles.delete(id);
@@ -129,8 +132,8 @@ export class TileDataService extends Service<EmptyDeps> {
       };
     }
 
-    for (const [id, vector] of stream.tiles) {
-      listener.loadTile(id, vector);
+    for (const [id, mbtile] of stream.tiles) {
+      listener.loadTile(id, mbtile);
     }
 
     const disposable = new Disposable();
@@ -142,6 +145,13 @@ export class TileDataService extends Service<EmptyDeps> {
   }
 
   updateViewport(center: Vec2, viewportSize: Vec2, zoom: number): void {
+    const current = [center, viewportSize, zoom] as const;
+    if (deepEqual(this.lastViewport, current)) {
+      return;
+    }
+
+    this.lastViewport = current;
+
     for (const stream of this.bitmapStreams.values()) {
       stream.fetcher.postMessage({
         cameraPosition: center,
@@ -151,7 +161,7 @@ export class TileDataService extends Service<EmptyDeps> {
       });
     }
 
-    for (const stream of this.vectorStreams.values()) {
+    for (const stream of this.mbtileStreams.values()) {
       stream.fetcher.postMessage({
         cameraPosition: center,
         cameraZoom: zoom + DPI_ZOOM,

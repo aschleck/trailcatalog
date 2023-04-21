@@ -13,6 +13,8 @@ esbuild_binary(
 tc_ts_project(
     name = "workers",
     deps = [
+        "//:node_modules/@types/earcut",
+        "//:node_modules/earcut",
         "//js/common",
         "//js/map/common",
         "//java/org/trailcatalog/s2",

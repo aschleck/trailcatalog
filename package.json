@@ -1,6 +1,7 @@
 {
   "//": "stack-chain is an undeclared dep of cls-hooked, yikes!",
   "devDependencies": {
+    "@types/earcut": "^2.1.1",
     "@types/jest": "^29.5.0",
     "@types/node": "^18.15.11",
     "autoprefixer": "^10.4.14",
@@ -14,6 +15,7 @@
   "dependencies": {
     "@fastify/request-context": "^4.2.0",
     "@mapbox/tiny-sdf": "^2.0.6",
+    "earcut": "^2.2.4",
     "fastify": "^4.15.0",
     "node-fetch": "^3.3.1"
   }
