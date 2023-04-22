@@ -33,6 +33,7 @@ import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.invert
 import org.trailcatalog.importers.pipeline.uniqueValues
 import org.trailcatalog.models.RelationCategory
+import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
 
@@ -212,6 +213,7 @@ private fun calculateProfiles(
     waysNeedingProfiles: BoundStage<*, PMap<Long, Way>>,
 ): BoundStage<*, PMap<Long, Profile>> {
   ELEVATION_PROFILES_FILE.createNewFile()
+  File(ELEVATION_PROFILES_FILE.path + ".shards").createNewFile()
   val existingProfiles =
       pipeline.read(binaryStructListReader<Profile>(ELEVATION_PROFILES_FILE))
           .groupBy("GroupProfiles") { it.id }
