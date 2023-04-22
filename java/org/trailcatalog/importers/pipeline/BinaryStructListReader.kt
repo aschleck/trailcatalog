@@ -1,9 +1,12 @@
 package org.trailcatalog.importers.pipeline
 
+import com.google.common.collect.ImmutableList
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.getSerializer
 import org.trailcatalog.common.EncodedByteBufferInputStream
+import org.trailcatalog.common.EncodedInputStream
+import org.trailcatalog.common.Extents
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel.MapMode
@@ -18,11 +21,24 @@ class BinaryStructListReader<T : Any>(
     private val serializer: Serializer<T>) : PSource<T>() {
 
   override fun read() = sequence {
-    RandomAccessFile(file, "r").use {
+    val shards = RandomAccessFile(file.path + ".shards", "r").use {
       val map = it.channel.map(MapMode.READ_ONLY, 0, file.length())
+      val shards = ImmutableList.builder<Extents>()
       EncodedByteBufferInputStream(map).use { input ->
         while (input.hasRemaining()) {
-          yield(serializer.read(input))
+          shards.add(Extents(input.readLong(), input.readLong()))
+        }
+      }
+      shards.build()
+    }
+
+    for (shard in shards) {
+      RandomAccessFile(file, "r").use {
+        val map = it.channel.map(MapMode.READ_ONLY, shard.start, shard.length)
+        EncodedByteBufferInputStream(map).use { input ->
+          while (input.hasRemaining()) {
+            yield(serializer.read(input))
+          }
         }
       }
     }
