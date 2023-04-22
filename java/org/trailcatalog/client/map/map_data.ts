@@ -63,12 +63,12 @@ const POINTS_ATLAS = new Map<PointCategory, number>([
 ]);
 const POINTS_ATLAS_SIZE = [8, 4] as Vec2;
 
-const Z_PATH = 1;
-const Z_RAISED_PATH = 2;
-const Z_POINT = 3;
-const Z_TRAIL_MARKER = 4;
-const Z_RAISED_TRAIL_MARKER = 5;
-const PATH_RADIUS_PX = 2;
+const Z_PATH = 10;
+const Z_RAISED_PATH = 11;
+const Z_POINT = 12;
+const Z_TRAIL_MARKER = 13;
+const Z_RAISED_TRAIL_MARKER = 14;
+const PATH_RADIUS_PX = 1;
 const RAISED_PATH_RADIUS_PX = 4;
 
 interface PathHandle {
@@ -338,6 +338,10 @@ export class MapData extends Layer {
   }
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+    if (zoom < 4) {
+      return;
+    }
+
     if (this.showDetail(zoom)) {
       if (this.showFine(zoom)) {
         this.planFine(viewportSize, zoom, planner);
@@ -384,10 +388,10 @@ export class MapData extends Layer {
     }
 
     if (lines.length > 0) {
-      planner.addLines(lines, PATH_RADIUS_PX, 0);
+      planner.addLines(lines, PATH_RADIUS_PX, Z_PATH);
     }
     if (raised.length > 0) {
-      planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
+      planner.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
     }
   }
 
@@ -425,10 +429,10 @@ export class MapData extends Layer {
     }
 
     if (lines.length > 0) {
-      planner.addLines(lines, PATH_RADIUS_PX, 0);
+      planner.addLines(lines, PATH_RADIUS_PX, Z_PATH);
     }
     if (raised.length > 0) {
-      planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
+      planner.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
     }
 
     if (zoom >= RENDER_POINT_ZOOM_THRESHOLD) {
@@ -533,10 +537,10 @@ export class MapData extends Layer {
     }
 
     if (lines.length > 0) {
-      planner.addLines(lines, PATH_RADIUS_PX, 0);
+      planner.addLines(lines, PATH_RADIUS_PX, Z_PATH);
     }
     if (raised.length > 0) {
-      planner.addLines(raised, RAISED_PATH_RADIUS_PX, 1);
+      planner.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
     }
   }
 

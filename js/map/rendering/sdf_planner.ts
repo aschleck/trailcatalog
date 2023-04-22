@@ -21,7 +21,9 @@ export class SdfPlanner extends Disposable {
   private readonly glyphs: Map<String, Glyph>;
   private readonly regenerator: Debouncer;
 
-  constructor(private readonly renderer: Renderer) {
+  constructor(
+      private readonly fontStyle: 'italic'|'normal',
+      private readonly renderer: Renderer) {
     super();
     this.atlas = this.renderer.createTexture();
     this.registerDisposer(() => {
@@ -79,6 +81,7 @@ export class SdfPlanner extends Disposable {
       center: Vec2,
       offset: Vec2,
       angle: number,
+      z: number,
       planner: RenderPlanner): Vec2 {
     let valid = true;
     const glyphs = [];
@@ -101,7 +104,7 @@ export class SdfPlanner extends Disposable {
       offset[1] += -size[1] / 2;
 
       planner.addGlyphs(
-          glyphs, fill, stroke, scale, center, offset, angle, this.atlas, ATLAS_GLYPH_SIZE);
+          glyphs, fill, stroke, scale, center, offset, angle, this.atlas, ATLAS_GLYPH_SIZE, z);
       return size;
     } else {
       this.regenerator.trigger();
@@ -114,7 +117,7 @@ export class SdfPlanner extends Disposable {
     const tinySdf = new TinySDF({
       fontSize: FONT_SIZE,
       fontFamily: 'Roboto,sans-serif',
-      fontStyle: 'italic',
+      fontStyle: this.fontStyle,
       fontWeight: '500',
     });
 

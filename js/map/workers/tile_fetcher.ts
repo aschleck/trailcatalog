@@ -77,7 +77,7 @@ class TileFetcher {
     const tz =
         clamp(
             Math.floor(request.cameraZoom + tileset.extraZoom),
-            tileset.minZoom - 0.5,
+            tileset.minZoom,
             tileset.maxZoom);
     if (tz < tileset.minZoom) {
       request.viewportSize[0] = 0;

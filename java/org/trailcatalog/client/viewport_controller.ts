@@ -2,9 +2,10 @@ import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from 'js/map/common/types';
+import { MbtileData } from 'js/map/layers/mbtile_data';
 import { Style, TileData } from 'js/map/layers/tile_data';
 import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_TOPO } from 'js/map/layers/tile_sources';
+import { MAPTILER_CONTOURS, MAPTILER_PLANET } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 
 import { MapDataService } from './data/map_data_service';
@@ -68,13 +69,17 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
     this.overlayData = new OverlayData(response.args.overlays ?? {}, this.mapController.renderer);
 
     this.mapController.setLayers([
-      this.mapData,
-      new TileData(
+      new MbtileData(
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
-          Style.Rgb,
-          MAPTILER_TOPO),
+          MAPTILER_PLANET),
+      new MbtileData(
+          this.mapController.camera,
+          response.deps.services.tileData,
+          this.mapController.renderer,
+          MAPTILER_CONTOURS),
+      this.mapData,
       this.overlayData,
     ]);
 

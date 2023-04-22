@@ -91,7 +91,7 @@ export class OverlayData extends Layer {
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     for (const billboard of this.billboards) {
       planner.addBillboard(
-          billboard.center, NO_OFFSET, billboard.size, billboard.texture, /* z= */ 10);
+          billboard.center, NO_OFFSET, billboard.size, billboard.texture, /* z= */ 20);
     }
     planner.addLines(this.lines, BOUNDARY_RADIUS_PX, 0);
   }

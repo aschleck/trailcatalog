@@ -251,7 +251,8 @@ export class RenderPlanner {
       offset: Vec2,
       angle: number,
       atlas: WebGLTexture,
-      atlasGlyphSize: number) {
+      atlasGlyphSize: number,
+      z: number) {
     const drawable =
         this.sdfProgram.plan(
             glyphs,
@@ -272,7 +273,7 @@ export class RenderPlanner {
       geometryOffset: this.geometryByteSize,
       indexOffset: this.indexByteSize,
       program: this.sdfProgram,
-      z: 100, // ???
+      z,
     });
     this.geometryByteSize += drawable.instanced.bytes;
   }

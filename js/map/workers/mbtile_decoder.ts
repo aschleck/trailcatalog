@@ -3,7 +3,7 @@ import earcut from 'earcut';
 import { checkArgument, checkExists } from 'js/common/asserts';
 import { LittleEndianView } from 'js/common/little_endian_view';
 
-import { Area, AreaType, Boundary, Contour, Highway, HighwayType, Label, MbtileTile, Polygon, TileId, Waterway } from '../common/types';
+import { Area, AreaType, Boundary, Contour, ContourLabel, Highway, HighwayType, Label, LabelType, MbtileTile, Polygon, TileId, Waterway } from '../common/types';
 
 // TODO(april): shouldn't need to put these here, but we only have one style anyway
 const CONTOUR_LABEL_EVERY = 0.000007;
@@ -18,6 +18,7 @@ interface Feature {
 }
 
 enum GeometryType {
+  Point = 1,
   Line = 2,
   Polygon = 3,
 }
@@ -32,6 +33,7 @@ export function decodeMbtile(id: TileId, buffer: ArrayBuffer): MbtileTile {
     contoursFt: [],
     contoursM: [],
     highways: [],
+    labels: [],
     waterways: [],
   };
   while (data.hasRemaining()) {
@@ -189,6 +191,9 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile): void {
         });
       }
     }
+  } else if (name === 'mountain_peak') {
+    const {labels} = projectLabels(id, keys, values, features, extent);
+    tile.labels.push(...labels);
   } else if (name === 'park') {
     for (const feature of features) {
       tile.areas.push({
@@ -197,6 +202,9 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile): void {
         priority: -1,
       });
     }
+  } else if (name === 'place') {
+    const {labels} = projectLabels(id, keys, values, features, extent);
+    tile.labels.push(...labels);
   } else if (name === 'transportation') {
     const {areas, highways} = projectTransportation(id, keys, values, features, extent);
     tile.areas.push(...areas);
@@ -443,7 +451,7 @@ function projectContours(
     }
 
     for (const vertices of liness[i]) {
-      const labels: Label[] = [];
+      const labels: ContourLabel[] = [];
       let distance = -CONTOUR_LABEL_EVERY;
       for (let j = 0; j < vertices.length - 2; j += 2) {
         const dx = vertices[j + 0 + 2] - vertices[j + 0];
@@ -469,6 +477,69 @@ function projectContours(
     }
   }
   return lines;
+}
+
+function projectLabels(
+    id: TileId,
+    keys: string[],
+    values: Array<boolean|number|string>,
+    features: Feature[],
+    extent: number): {
+  labels: Label[];
+} {
+  const {pointss} = projectGeometries(id, features, extent);
+
+  const labels: Label[] = [];
+  for (let i = 0; i < pointss.length; ++i) {
+    const tags = features[i].tags;
+
+    let type = undefined;
+    let text = undefined;
+    let rank = 255;
+    for (let i = 0; i < tags.length; i += 2) {
+      const key = keys[tags[i]];
+      if (key === 'class') {
+        const value = values[tags[i + 1]];
+        if (value === 'city') {
+          type = LabelType.City;
+        } else if (value === 'continent') {
+          type = LabelType.Continent;
+        } else if (value === 'country') {
+          type = LabelType.Country;
+        } else if (value === 'island') {
+          type = LabelType.Island;
+        } else if (value === 'peak') {
+          type = LabelType.Peak;
+        } else if (value === 'province') {
+          type = LabelType.Province;
+        } else if (value === 'region') {
+          type = LabelType.Region;
+        } else if (value === 'state') {
+          type = LabelType.State;
+        } else if (value === 'town') {
+          type = LabelType.Town;
+        }
+      } else if (key === 'name') {
+        text = String(values[tags[i + 1]]);
+      } else if (key === 'rank') {
+        rank = Number(values[tags[i + 1]]) || rank;
+      }
+    }
+
+    const constType = type;
+    const constText = text;
+    if (constType !== undefined && constText !== undefined && constText !== '') {
+      for (const vertices of pointss[i]) {
+        labels.push({
+          type: constType,
+          position: [vertices[0], vertices[1]],
+          rank,
+          text: constText,
+        });
+      }
+    }
+  }
+  return {labels};
 }
 
 function projectTransportation(
@@ -498,7 +569,6 @@ function projectTransportation(
 
   const highways: Highway[] = [];
   for (let i = 0; i < features.length; ++i) {
-    const projected = liness[i];
     const tags = features[i].tags;
 
     let type = undefined;
@@ -579,6 +649,7 @@ function projectWaterways(
 
 function projectGeometries(id: TileId, features: Feature[], extent: number): {
   liness: Array<Float64Array[]>;
+  pointss: Array<Float64Array[]>;
   // exterior ring followed by its interiors, combining into one feature, combining into all
   // features
   polygonsss: Array<Array<Float64Array[]>>;
@@ -588,6 +659,7 @@ function projectGeometries(id: TileId, features: Feature[], extent: number): {
   const ty = (id.y - 1) / halfWorldSize;
   const increment = 1 / halfWorldSize / extent;
   const liness = [];
+  const pointss = [];
   const polygonsss = [];
   for (const {type, geometry, starts} of features) {
     starts.push(geometry.length);
@@ -605,8 +677,13 @@ function projectGeometries(id: TileId, features: Feature[], extent: number): {
       cursor = end;
     }
 
-    if (type === GeometryType.Line) {
+    if (type === GeometryType.Point) {
+      liness.push([]);
+      pointss.push(verticess);
+      polygonsss.push([]);
+    } else if (type === GeometryType.Line) {
       liness.push(verticess);
+      pointss.push([]);
       polygonsss.push([]);
     } else if (type === GeometryType.Polygon) {
       const polygonss = [];
@@ -626,11 +703,13 @@ function projectGeometries(id: TileId, features: Feature[], extent: number): {
       }
       polygonsss.push(polygonss);
       liness.push([]);
+      pointss.push([]);
     }
   }
 
   return {
     liness,
+    pointss,
     polygonsss,
   };
 }

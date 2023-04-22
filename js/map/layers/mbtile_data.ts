@@ -4,7 +4,7 @@ import { debugMode } from 'js/common/debug';
 import { getUnitSystem, UnitSystem } from 'js/server/ssr_aware';
 
 import { rgbaToUint32 } from '../common/math';
-import { Area, AreaType, Boundary, Contour, Highway, HighwayType, MbtileTile, MbtileTileset, RgbaU32, TileId, Vec2, Waterway } from '../common/types';
+import { Area, AreaType, Boundary, Contour, Highway, HighwayType, Label, LabelType, MbtileTile, MbtileTileset, RgbaU32, TileId, Vec2, Waterway } from '../common/types';
 import { Camera } from '../models/camera';
 import { Line } from '../rendering/geometry';
 import { RenderPlanner } from '../rendering/render_planner';
@@ -23,9 +23,10 @@ const CONTOUR_FILL = rgbaToUint32(0, 0, 0, 0.1);
 const CONTOUR_STROKE = rgbaToUint32(0, 0, 0, 0.1);
 const CONTOUR_NORMAL_RADIUS = 0.75;
 const CONTOUR_EMPHASIZED_RADIUS = 1.5;
+const CONTOUR_Z = 1;
 const CONTOUR_LABEL_FILL = rgbaToUint32(0.1, 0.1, 0.1, 1);
 const CONTOUR_LABEL_STROKE = rgbaToUint32(1, 1, 1, 1);
-const CONTOUR_Z = 1;
+const CONTOUR_LABEL_Z = 1;
 const WATERWAY_FILL = rgbaToUint32(104 / 255, 167 / 255, 196 / 255, 1);
 const WATERWAY_STROKE = rgbaToUint32(104 / 255, 167 / 255, 196 / 255, 1);
 
@@ -49,6 +50,11 @@ const LANDUSE_HUMAN_FILL = rgbaToUint32(230 / 255, 230 / 255, 230 / 255, 1);
 const PARK_FILL = rgbaToUint32(227 / 255, 239 / 255, 190 / 255, 1);
 const WATER_FILL = rgbaToUint32(104 / 255, 167 / 255, 196 / 255, 1);
 
+const PEAK_LABEL_FILL = rgbaToUint32(0.1, 0.1, 0.1, 1);
+const PEAK_LABEL_STROKE = rgbaToUint32(1, 1, 1, 1);
+const PEAK_LABEL_Z = 4;
+const STATE_LABEL_FILL = rgbaToUint32(0.5, 0.5, 0.5, 1);
+const STATE_LABEL_STROKE = rgbaToUint32(0.95, 0.95, 0.95, 1);
 
 interface RenderableMbtileTile extends MbtileTile {
   areas: RenderedArea[];
@@ -60,11 +66,17 @@ interface RenderableMbtileTile extends MbtileTile {
     arterial: RenderedLine<Highway>[];
     minor: RenderedLine<Highway>[];
   };
+  labels: RenderedLabel[];
   waterways: RenderedLine<Waterway>[];
 }
 
 type RenderedArea = Area & {
   fill: RgbaU32;
+};
+
+type RenderedLabel = Label & {
+  fill: RgbaU32;
+  stroke: RgbaU32;
 };
 
 type RenderedLine<T> = Line & T;
@@ -73,7 +85,8 @@ export class MbtileData extends Layer {
 
   private lastChange: number;
   private readonly tiles: HashMap<TileId, RenderableMbtileTile>;
-  private readonly sdfRenderer: SdfPlanner;
+  private readonly sdfItalic: SdfPlanner;
+  private readonly sdfNormal: SdfPlanner;
 
   constructor(
       private readonly camera: Camera,
@@ -84,8 +97,10 @@ export class MbtileData extends Layer {
     super();
     this.lastChange = Date.now();
     this.tiles = new HashMap(id => `${id.x},${id.y},${id.zoom}`);
-    this.sdfRenderer = new SdfPlanner(renderer);
-    this.registerDisposable(this.sdfRenderer);
+    this.sdfItalic = new SdfPlanner('italic', renderer);
+    this.registerDisposable(this.sdfItalic);
+    this.sdfNormal = new SdfPlanner('normal', renderer);
+    this.registerDisposable(this.sdfNormal);
 
     this.registerDisposable(this.dataService.streamMbtiles(tileset, this));
   }
@@ -113,42 +128,45 @@ export class MbtileData extends Layer {
         throw checkExhaustive(unit);
       }
 
-      for (const line of contours) {
-        if ((zoom >= 14 && line.nthLine % 5 === 0) || line.nthLine % 10 === 0) {
-          if (zoom >= 17) {
-            boldLines.push(line);
-          } else {
-            lines.push(line);
-          }
-
-          for (let i = 0; i < line.labels.length; ++i) {
-            const by2 = i % 2;
-            const by3 = i % 3;
-            const by5 = i % 5;
-            const by7 = i % 7;
-            if (zoom < 15.5) {
-              continue;
-            } else if (zoom < 17 && by2 > 0) {
-              continue;
-            } else if (zoom < 18 && by3 > 0) {
-              continue;
-            } else if (zoom < 19 && by5 > 0) {
-              continue;
+      if (zoom >= 9) {
+        for (const line of contours) {
+          if ((zoom >= 14 && line.nthLine % 5 === 0) || line.nthLine % 10 === 0) {
+            if (zoom >= 17) {
+              boldLines.push(line);
+            } else {
+              lines.push(line);
             }
 
-            const label = line.labels[i];
-            this.sdfRenderer.plan(
-              String(line.height),
-              CONTOUR_LABEL_FILL,
-              CONTOUR_LABEL_STROKE,
-              0.5,
-              label.position,
-              [0, 0],
-              label.angle,
-              planner);
+            for (let i = 0; i < line.labels.length; ++i) {
+              const by2 = i % 2;
+              const by3 = i % 3;
+              const by5 = i % 5;
+              const by7 = i % 7;
+              if (zoom < 15.5) {
+                continue;
+              } else if (zoom < 17 && by2 > 0) {
+                continue;
+              } else if (zoom < 18 && by3 > 0) {
+                continue;
+              } else if (zoom < 19 && by5 > 0) {
+                continue;
+              }
+
+              const label = line.labels[i];
+              this.sdfItalic.plan(
+                String(line.height),
+                CONTOUR_LABEL_FILL,
+                CONTOUR_LABEL_STROKE,
+                0.5,
+                label.position,
+                [0, 0],
+                label.angle,
+                CONTOUR_LABEL_Z,
+                planner);
+            }
+          } else if (zoom >= 17) {
+            lines.push(line);
           }
-        } else if (zoom >= 17) {
-          lines.push(line);
         }
       }
 
@@ -172,6 +190,62 @@ export class MbtileData extends Layer {
         planner.addLines(tile.highwayss.minor, HIGHWAY_MINOR_RADIUS * zoom / 15, HIGHWAY_Z);
       }
       lines.push(...tile.waterways);
+
+      for (const label of tile.labels) {
+        if (label.type === LabelType.City || label.type === LabelType.Town) {
+          if (label.rank < zoom && zoom >= 6 && zoom < 16) {
+            this.sdfNormal.plan(
+                label.text,
+                label.fill,
+                label.stroke,
+                0.5,
+                label.position,
+                [0, 0],
+                0,
+                PEAK_LABEL_Z,
+                planner);
+          }
+        } else if (label.type === LabelType.Country) {
+          if (label.rank * 1.5 <= zoom - 1) {
+            this.sdfNormal.plan(
+                label.text,
+                label.fill,
+                label.stroke,
+                0.5,
+                label.position,
+                [0, 0],
+                0,
+                PEAK_LABEL_Z,
+                planner);
+          }
+        } else if (label.type === LabelType.Peak) {
+          if (zoom >= 13) {
+            this.sdfNormal.plan(
+                label.text,
+                label.fill,
+                label.stroke,
+                0.5,
+                label.position,
+                [0, 0],
+                0,
+                PEAK_LABEL_Z,
+                planner);
+          }
+        } else if (label.type === LabelType.State) {
+          if (label.rank * 2 < zoom && zoom >= 4 && zoom < 9) {
+            this.sdfNormal.plan(
+                label.text,
+                label.fill,
+                label.stroke,
+                0.5,
+                label.position,
+                [0, 0],
+                0,
+                PEAK_LABEL_Z,
+                planner);
+          }
+        }
+      }
     }
 
     planner.addLines(
@@ -194,6 +268,7 @@ export class MbtileData extends Layer {
       contoursM: renderLines(tile.contoursM, CONTOUR_FILL, CONTOUR_STROKE),
       highways: [], // awkward...
       highwayss: renderHighways(tile.highways),
+      labels: renderLabels(tile.labels),
       waterways: renderLines(tile.waterways, WATERWAY_FILL, WATERWAY_STROKE),
     });
   }
@@ -229,7 +304,8 @@ function renderAreas(areas: Area[]): RenderedArea[] {
     } else if (area.type === AreaType.LanduseHuman) {
       color = LANDUSE_HUMAN_FILL;
     } else if (area.type === AreaType.Park) {
-      color = PARK_FILL;
+      // Disable parks
+      //color = PARK_FILL;
     } else if (area.type === AreaType.Transportation) {
       color = HIGHWAY_FILL;
     } else if (area.type === AreaType.Water) {
@@ -275,6 +351,26 @@ function renderHighways(lines: Highway[]): {
     });
   }
   return {major, arterial, minor};
+}
+
+function renderLabels(labels: Label[]): RenderedLabel[] {
+  const rendered: RenderedLabel[] = [];
+  for (const label of labels) {
+    let fill = PEAK_LABEL_FILL;
+    let stroke = PEAK_LABEL_STROKE;
+
+    if (label.type === LabelType.State || label.type === LabelType.Town) {
+      fill = STATE_LABEL_FILL;
+      stroke = STATE_LABEL_STROKE;
+    }
+
+    rendered.push({
+      ...label,
+      fill,
+      stroke,
+    });
+  }
+  return rendered;
 }
 
 function renderLines<T extends {
