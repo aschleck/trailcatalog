@@ -111,6 +111,9 @@ export class MbtileData extends Layer {
 
   plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
     const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
+    const highwaysMajor = [];
+    const highwaysArterial = [];
+    const highwaysMinor = [];
     const lines = [];
     const boldLines = [];
     const unit = getUnitSystem();
@@ -189,12 +192,12 @@ export class MbtileData extends Layer {
         }
       }
 
-      planner.addLines(tile.highwayss.major, HIGHWAY_MAJOR_RADIUS * zoom / 15, HIGHWAY_Z);
+      highwaysMajor.push(...tile.highwayss.major);
       if (zoom >= 9) {
-        planner.addLines(tile.highwayss.arterial, HIGHWAY_ARTERIAL_RADIUS * zoom / 15, HIGHWAY_Z);
+        highwaysArterial.push(...tile.highwayss.arterial);
       }
       if (zoom >= 16) {
-        planner.addLines(tile.highwayss.minor, HIGHWAY_MINOR_RADIUS * zoom / 15, HIGHWAY_Z);
+        highwaysMinor.push(...tile.highwayss.minor);
       }
       lines.push(...tile.waterways);
 
@@ -259,6 +262,9 @@ export class MbtileData extends Layer {
         boldLines, CONTOUR_EMPHASIZED_RADIUS, CONTOUR_Z, /* replace= */ false, /* round= */ false);
     planner.addLines(
         lines, CONTOUR_NORMAL_RADIUS, CONTOUR_Z, /* replace= */ false, /* round= */ false);
+    planner.addLines(highwaysMajor, HIGHWAY_MAJOR_RADIUS * zoom / 15, HIGHWAY_Z);
+    planner.addLines(highwaysArterial, HIGHWAY_ARTERIAL_RADIUS * zoom / 15, HIGHWAY_Z);
+    planner.addLines(highwaysMinor, HIGHWAY_MINOR_RADIUS * zoom / 15, HIGHWAY_Z);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {
