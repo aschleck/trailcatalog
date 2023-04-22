@@ -5,7 +5,7 @@ import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from 'js/map/common/typ
 import { MbtileData } from 'js/map/layers/mbtile_data';
 import { Style, TileData } from 'js/map/layers/tile_data';
 import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_CONTOURS, MAPTILER_PLANET } from 'js/map/layers/tile_sources';
+import { MAPTILER_CONTOURS, MAPTILER_PLANET, STADIA_OMT } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 
 import { MapDataService } from './data/map_data_service';
@@ -73,7 +73,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
-          MAPTILER_PLANET),
+          STADIA_OMT),
       new MbtileData(
           this.mapController.camera,
           response.deps.services.tileData,

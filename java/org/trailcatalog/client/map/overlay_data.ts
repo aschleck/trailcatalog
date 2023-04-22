@@ -74,7 +74,9 @@ export class OverlayData extends Layer {
             colorFill: BOUNDARY_PALETTE.fill,
             colorStroke: BOUNDARY_PALETTE.stroke,
             stipple: false,
-            vertices: vertices.slice(last, i),
+            vertices,
+            verticesOffset: last,
+            verticesLength: i - last,
           });
           last = i;
         }

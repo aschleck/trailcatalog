@@ -54,6 +54,14 @@ export const MAPTILER_TOPO: BitmapTileset = {
   type: 'bitmap',
 } as const;
 
+export const STADIA_OMT: MbtileTileset = {
+  extraZoom: -1.5, // Magic number: -1 renders too slow, -2 renders too blocky
+  minZoom: 0,
+  maxZoom: 14,
+  tileUrl: 'https://tiles.stadiamaps.com/data/openmaptiles/${id.zoom}/${id.x}/${id.y}.pbf',
+  type: 'mbtile',
+} as const;
+
 export const THUNDERFOREST_TOPO: BitmapTileset = {
   extraZoom: 0,
   minZoom: 2, // TODO: who cares

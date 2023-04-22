@@ -53,6 +53,9 @@ export interface MbtileTile {
   highways: Highway[];
   labels: Label[];
   waterways: Waterway[];
+
+  geometry: Float64Array;
+  indices: Uint32Array;
 }
 
 export enum AreaType {
@@ -78,19 +81,17 @@ export interface Area {
 
 export interface Boundary {
   adminLevel: number;
-  vertices: Float64Array;
+  vertexOffset: number;
+  vertexLength: number;
 }
 
 export interface Contour {
   height: number;
-  labels: ContourLabel[];
+  labelLength: number;
+  labelOffset: number;
   nthLine: number;
-  vertices: Float64Array;
-}
-
-export interface ContourLabel {
-  angle: number;
-  position: Vec2;
+  vertexLength: number;
+  vertexOffset: number;
 }
 
 export enum HighwayType {
@@ -101,12 +102,13 @@ export enum HighwayType {
 
 export interface Highway {
   type: HighwayType;
-  vertices: Float64Array;
+  vertexLength: number;
+  vertexOffset: number;
 }
 
 export interface Label {
   type: LabelType;
-  position: Vec2;
+  positionOffset: number;
   rank: number;
   text: string;
 }
@@ -124,13 +126,16 @@ export enum LabelType {
 }
 
 export interface Polygon {
-  indices: number[];
-  vertices: Float64Array;
+  indexLength: number;
+  indexOffset: number;
+  vertexLength: number;
+  vertexOffset: number;
 }
 
 export interface Waterway {
   type: 'river';
-  vertices: Float64Array;
+  vertexLength: number;
+  vertexOffset: number;
 }
 
 export type Vec2 = [number, number];

@@ -17,5 +17,7 @@ export interface Line {
   colorStroke: RgbaU32;
   stipple: boolean;
   vertices: Float32Array|Float64Array;
+  verticesOffset: number;
+  verticesLength: number;
 }
 

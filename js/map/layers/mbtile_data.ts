@@ -137,7 +137,7 @@ export class MbtileData extends Layer {
               lines.push(line);
             }
 
-            for (let i = 0; i < line.labels.length; ++i) {
+            for (let i = 0; i < line.labelLength; i += 3) {
               const by2 = i % 2;
               const by3 = i % 3;
               const by5 = i % 5;
@@ -152,15 +152,14 @@ export class MbtileData extends Layer {
                 continue;
               }
 
-              const label = line.labels[i];
               this.sdfItalic.plan(
                 String(line.height),
                 CONTOUR_LABEL_FILL,
                 CONTOUR_LABEL_STROKE,
                 0.5,
-                label.position,
+                [tile.geometry[line.labelOffset + i + 1], tile.geometry[line.labelOffset + i + 2]],
                 [0, 0],
-                label.angle,
+                tile.geometry[line.labelOffset + i],
                 CONTOUR_LABEL_Z,
                 planner);
             }
@@ -172,7 +171,15 @@ export class MbtileData extends Layer {
 
       for (const {fill, polygons} of tile.areas) {
         for (const polygon of polygons) {
-          planner.addTriangles(polygon.indices, polygon.vertices, fill, AREA_Z);
+          planner.addTriangles(
+              tile.indices.subarray(
+                    polygon.indexOffset,
+                    polygon.indexOffset + polygon.indexLength),
+              tile.geometry.subarray(
+                    polygon.vertexOffset,
+                    polygon.vertexOffset + polygon.vertexLength),
+              fill,
+              AREA_Z);
         }
       }
 
@@ -199,7 +206,7 @@ export class MbtileData extends Layer {
                 label.fill,
                 label.stroke,
                 0.5,
-                label.position,
+                [tile.geometry[label.positionOffset], tile.geometry[label.positionOffset + 1]],
                 [0, 0],
                 0,
                 PEAK_LABEL_Z,
@@ -212,7 +219,7 @@ export class MbtileData extends Layer {
                 label.fill,
                 label.stroke,
                 0.5,
-                label.position,
+                [tile.geometry[label.positionOffset], tile.geometry[label.positionOffset + 1]],
                 [0, 0],
                 0,
                 PEAK_LABEL_Z,
@@ -225,7 +232,7 @@ export class MbtileData extends Layer {
                 label.fill,
                 label.stroke,
                 0.5,
-                label.position,
+                [tile.geometry[label.positionOffset], tile.geometry[label.positionOffset + 1]],
                 [0, 0],
                 0,
                 PEAK_LABEL_Z,
@@ -238,7 +245,7 @@ export class MbtileData extends Layer {
                 label.fill,
                 label.stroke,
                 0.5,
-                label.position,
+                [tile.geometry[label.positionOffset], tile.geometry[label.positionOffset + 1]],
                 [0, 0],
                 0,
                 PEAK_LABEL_Z,
@@ -263,13 +270,16 @@ export class MbtileData extends Layer {
 
     this.tiles.set(id, {
       areas: renderAreas(tile.areas),
-      boundaries: renderLines(tile.boundaries, BOUNDARY_FILL, BOUNDARY_STROKE),
-      contoursFt: renderLines(tile.contoursFt, CONTOUR_FILL, CONTOUR_STROKE),
-      contoursM: renderLines(tile.contoursM, CONTOUR_FILL, CONTOUR_STROKE),
+      boundaries: renderLines(tile.boundaries, BOUNDARY_FILL, BOUNDARY_STROKE, tile.geometry),
+      contoursFt: renderLines(tile.contoursFt, CONTOUR_FILL, CONTOUR_STROKE, tile.geometry),
+      contoursM: renderLines(tile.contoursM, CONTOUR_FILL, CONTOUR_STROKE, tile.geometry),
       highways: [], // awkward...
-      highwayss: renderHighways(tile.highways),
+      highwayss: renderHighways(tile.highways, tile.geometry),
       labels: renderLabels(tile.labels),
-      waterways: renderLines(tile.waterways, WATERWAY_FILL, WATERWAY_STROKE),
+      waterways: renderLines(tile.waterways, WATERWAY_FILL, WATERWAY_STROKE, tile.geometry),
+
+      geometry: tile.geometry,
+      indices: tile.indices,
     });
   }
 
@@ -323,7 +333,7 @@ function renderAreas(areas: Area[]): RenderedArea[] {
   return rendered;
 }
 
-function renderHighways(lines: Highway[]): {
+function renderHighways(lines: Highway[], geometry: Float64Array): {
   major: RenderedLine<Highway>[];
   arterial: RenderedLine<Highway>[];
   minor: RenderedLine<Highway>[];
@@ -348,6 +358,9 @@ function renderHighways(lines: Highway[]): {
       colorFill: HIGHWAY_FILL,
       colorStroke: HIGHWAY_STROKE,
       stipple: false,
+      vertices: geometry,
+      verticesOffset: line.vertexOffset,
+      verticesLength: line.vertexLength,
     });
   }
   return {major, arterial, minor};
@@ -374,8 +387,9 @@ function renderLabels(labels: Label[]): RenderedLabel[] {
 }
 
 function renderLines<T extends {
-  vertices: Float64Array;
-}>(lines: T[], fill: RgbaU32, stroke: RgbaU32): RenderedLine<T>[] {
+  vertexLength: number;
+  vertexOffset: number;
+}>(lines: T[], fill: RgbaU32, stroke: RgbaU32, geometry: Float64Array): RenderedLine<T>[] {
   const rendered = [];
   for (const line of lines) {
     rendered.push({
@@ -383,6 +397,9 @@ function renderLines<T extends {
       colorFill: fill,
       colorStroke: stroke,
       stipple: false,
+      vertices: geometry,
+      verticesOffset: line.vertexOffset,
+      verticesLength: line.vertexLength,
     });
   }
   return rendered;

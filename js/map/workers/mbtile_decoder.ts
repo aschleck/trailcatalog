@@ -3,18 +3,28 @@ import earcut from 'earcut';
 import { checkArgument, checkExists } from 'js/common/asserts';
 import { LittleEndianView } from 'js/common/little_endian_view';
 
-import { Area, AreaType, Boundary, Contour, ContourLabel, Highway, HighwayType, Label, LabelType, MbtileTile, Polygon, TileId, Waterway } from '../common/types';
+import { Area, AreaType, Boundary, Contour, Highway, HighwayType, Label, LabelType, MbtileTile, Polygon, TileId, Waterway } from '../common/types';
 
 // TODO(april): shouldn't need to put these here, but we only have one style anyway
 const CONTOUR_LABEL_EVERY = 0.000007;
 const MAX_POLYGONS_IN_AREA = 500;
 const TEXT_DECODER = new TextDecoder();
 
+const MAX_GEOMETRY_SIZE = 8_000_000;
+const MAX_INDICES_SIZE = 512_000;
+
 interface Feature {
   type: number;
   tags: number[];
   geometry: number[];
   starts: number[];
+}
+
+interface VertexBuffers {
+  geometry: Float64Array;
+  geometryOffset: number;
+  indices: Uint32Array;
+  indexOffset: number;
 }
 
 enum GeometryType {
@@ -27,7 +37,7 @@ export function decodeMbtile(id: TileId, buffer: ArrayBuffer): MbtileTile {
   // Who amonst us hasn't written a proto parser manually...
   // https://github.com/mapbox/vector-tile-spec/blob/master/2.1/vector_tile.proto
   const data = new LittleEndianView(buffer);
-  const tile: MbtileTile = {
+  const tile: MbtileTile & VertexBuffers = {
     areas: [],
     boundaries: [],
     contoursFt: [],
@@ -35,6 +45,11 @@ export function decodeMbtile(id: TileId, buffer: ArrayBuffer): MbtileTile {
     highways: [],
     labels: [],
     waterways: [],
+
+    geometry: new Float64Array(MAX_GEOMETRY_SIZE / Float64Array.BYTES_PER_ELEMENT),
+    geometryOffset: 0,
+    indices: new Uint32Array(MAX_INDICES_SIZE / Uint32Array.BYTES_PER_ELEMENT),
+    indexOffset: 0,
   };
   while (data.hasRemaining()) {
     const tag = data.getInt8();
@@ -52,11 +67,10 @@ export function decodeMbtile(id: TileId, buffer: ArrayBuffer): MbtileTile {
     }
   }
 
-  compressTile(tile);
   return tile;
 }
 
-function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile): void {
+function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile & VertexBuffers): void {
   let version;
   let name = '';
   let extent = 4096;
@@ -94,12 +108,13 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile): void {
   }
 
   if (name === 'boundary') {
-    tile.boundaries.push(...projectBoundaries(id, keys, values, features, extent));
+    tile.boundaries.push(...projectBoundaries(id, keys, values, features, extent, tile));
   } else if (name === 'contour') {
-    tile.contoursM = projectContours(id, keys, values, features, extent);
+    tile.contoursM = projectContours(id, keys, values, features, extent, tile);
   } else if (name === 'contour_ft') {
-    tile.contoursFt = projectContours(id, keys, values, features, extent);
+    tile.contoursFt = projectContours(id, keys, values, features, extent, tile);
   } else if (name === 'globallandcover') {
+    const areas = [];
     for (const feature of features) {
       const tags = feature.tags;
       let type = undefined;
@@ -128,13 +143,16 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile): void {
         continue;
       }
 
-      tile.areas.push({
+      areas.push({
         type,
-        polygons: projectPolygonalFeature(id, feature, extent),
+        polygons: projectPolygonalFeature(id, feature, extent, tile),
         priority,
       });
     }
+
+    tile.areas.push(...compressAreas(areas, tile));
   } else if (name === 'landcover') {
+    const areas = [];
     for (const feature of features) {
       const tags = feature.tags;
       let type = undefined;
@@ -160,14 +178,17 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile): void {
       }
 
       if (type) {
-        tile.areas.push({
+        areas.push({
           type,
-          polygons: projectPolygonalFeature(id, feature, extent),
+          polygons: projectPolygonalFeature(id, feature, extent, tile),
           priority,
         });
       }
     }
+
+    tile.areas.push(...compressAreas(areas, tile));
   } else if (name === 'landuse') {
+    const areas = [];
     for (const feature of features) {
       const tags = feature.tags;
       let type = undefined;
@@ -184,41 +205,47 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile): void {
       }
 
       if (type) {
-        tile.areas.push({
+        areas.push({
           type,
-          polygons: projectPolygonalFeature(id, feature, extent),
+          polygons: projectPolygonalFeature(id, feature, extent, tile),
           priority,
         });
       }
     }
+
+    tile.areas.push(...compressAreas(areas, tile));
   } else if (name === 'mountain_peak') {
-    const {labels} = projectLabels(id, keys, values, features, extent);
+    const {labels} = projectLabels(id, keys, values, features, extent, tile);
     tile.labels.push(...labels);
   } else if (name === 'park') {
+    const areas = [];
     for (const feature of features) {
-      tile.areas.push({
+      areas.push({
         type: AreaType.Park,
-        polygons: projectPolygonalFeature(id, feature, extent),
+        polygons: projectPolygonalFeature(id, feature, extent, tile),
         priority: -1,
       });
     }
+    tile.areas.push(...compressAreas(areas, tile));
   } else if (name === 'place') {
-    const {labels} = projectLabels(id, keys, values, features, extent);
+    const {labels} = projectLabels(id, keys, values, features, extent, tile);
     tile.labels.push(...labels);
   } else if (name === 'transportation') {
-    const {areas, highways} = projectTransportation(id, keys, values, features, extent);
+    const {areas, highways} = projectTransportation(id, keys, values, features, extent, tile);
     tile.areas.push(...areas);
     tile.highways.push(...highways);
   } else if (name === 'water') {
+    const areas = [];
     for (const feature of features) {
-      tile.areas.push({
+      areas.push({
         type: AreaType.Water,
-        polygons: projectPolygonalFeature(id, feature, extent),
+        polygons: projectPolygonalFeature(id, feature, extent, tile),
         priority: 4,
       });
     }
+    tile.areas.push(...compressAreas(areas, tile));
   } else if (name === 'waterway') {
-    const {areas, waterways} = projectWaterways(id, keys, values, features, extent);
+    const {areas, waterways} = projectWaterways(id, keys, values, features, extent, tile);
     tile.areas.push(...areas);
     tile.waterways.push(...waterways);
   } else {
@@ -354,7 +381,8 @@ function deZigZag(u: number): number {
 function projectPolygonalFeature(
     id: TileId,
     feature: Feature,
-    extent: number): Polygon[] {
+    extent: number,
+    buffers: VertexBuffers): Polygon[] {
   const {polygonsss} = projectGeometries(id, [feature], extent);
   if (polygonsss.length === 0) {
     return [];
@@ -362,12 +390,13 @@ function projectPolygonalFeature(
 
   const out: Polygon[] = [];
   for (const polygons of polygonsss[0]) {
-    projectPolygons(polygons, out);
+    projectPolygons(polygons, out, buffers);
   }
+
   return out;
 }
 
-function projectPolygons(polygons: Float64Array[], out: Polygon[]): void {
+function projectPolygons(polygons: Float64Array[], out: Polygon[], buffers: VertexBuffers): void {
   polygons.length = Math.min(polygons.length, MAX_POLYGONS_IN_AREA);
 
   const exteriorSize = polygons[0].length;
@@ -390,9 +419,16 @@ function projectPolygons(polygons: Float64Array[], out: Polygon[]): void {
 
   const indices = earcut(vertices, holes);
   out.push({
-    indices,
-    vertices,
+    indexLength: indices.length,
+    indexOffset: buffers.indexOffset,
+    vertexLength: vertices.length,
+    vertexOffset: buffers.geometryOffset,
   });
+
+  buffers.geometry.set(vertices, buffers.geometryOffset);
+  buffers.geometryOffset += vertices.length;
+  buffers.indices.set(indices, buffers.indexOffset);
+  buffers.indexOffset += indices.length;
 }
 
 function projectBoundaries(
@@ -400,7 +436,8 @@ function projectBoundaries(
     keys: string[],
     values: Array<boolean|number|string>,
     features: Feature[],
-    extent: number): Boundary[] {
+    extent: number,
+    buffers: VertexBuffers): Boundary[] {
   const {liness} = projectGeometries(id, features, extent);
   const lines = [];
   for (let i = 0; i < features.length; ++i) {
@@ -421,8 +458,11 @@ function projectBoundaries(
     for (const vertices of liness[i]) {
       lines.push({
         adminLevel,
-        vertices,
+        vertexLength: vertices.length,
+        vertexOffset: buffers.geometryOffset,
       });
+      buffers.geometry.set(vertices, buffers.geometryOffset);
+      buffers.geometryOffset += vertices.length;
     }
   }
   return lines;
@@ -433,7 +473,8 @@ function projectContours(
     keys: string[],
     values: Array<boolean|number|string>,
     features: Feature[],
-    extent: number): Contour[] {
+    extent: number,
+    buffers: VertexBuffers): Contour[] {
   const {liness} = projectGeometries(id, features, extent);
   const lines = [];
   for (let i = 0; i < features.length; ++i) {
@@ -451,8 +492,13 @@ function projectContours(
     }
 
     for (const vertices of liness[i]) {
-      const labels: ContourLabel[] = [];
+      const vertexOffset = buffers.geometryOffset;
+      buffers.geometry.set(vertices, vertexOffset);
+      buffers.geometryOffset += vertices.length;
+
       let distance = -CONTOUR_LABEL_EVERY;
+      const labelOffset = buffers.geometryOffset;
+      let labelLength = 0;
       for (let j = 0; j < vertices.length - 2; j += 2) {
         const dx = vertices[j + 0 + 2] - vertices[j + 0];
         const dy = vertices[j + 1 + 2] - vertices[j + 1];
@@ -461,18 +507,19 @@ function projectContours(
         if (distance >= CONTOUR_LABEL_EVERY) {
           const direction = Math.atan2(dx, dy);
           const angle = direction > 0 ? Math.PI / 2 - direction : 3 / 2 * Math.PI - direction;
-          labels.push({
-            angle,
-            position: [vertices[j], vertices[j + 1]],
-          });
+          buffers.geometry.set([angle, vertices[j], vertices[j + 1]], labelOffset + labelLength);
+          labelLength += 3;
           distance = 0;
         }
       }
+
       lines.push({
         height,
-        labels,
+        labelLength,
+        labelOffset,
         nthLine,
-        vertices,
+        vertexLength: vertices.length,
+        vertexOffset,
       });
     }
   }
@@ -484,7 +531,8 @@ function projectLabels(
     keys: string[],
     values: Array<boolean|number|string>,
     features: Feature[],
-    extent: number): {
+    extent: number,
+    buffers: VertexBuffers): {
   labels: Label[];
 } {
   const {pointss} = projectGeometries(id, features, extent);
@@ -532,10 +580,12 @@ function projectLabels(
       for (const vertices of pointss[i]) {
         labels.push({
           type: constType,
-          position: [vertices[0], vertices[1]],
+          positionOffset: buffers.geometryOffset,
           rank,
           text: constText,
         });
+        buffers.geometry.set([vertices[0], vertices[1]], buffers.geometryOffset);
+        buffers.geometryOffset += 2;
       }
     }
   }
@@ -547,7 +597,8 @@ function projectTransportation(
     keys: string[],
     values: Array<boolean|number|string>,
     features: Feature[],
-    extent: number): {
+    extent: number,
+    buffers: VertexBuffers): {
   areas: Area[];
   highways: Highway[];
 } {
@@ -557,14 +608,16 @@ function projectTransportation(
   for (let i = 0; i < polygonsss.length; ++i) {
     const out: Polygon[] = [];
     for (const polygons of polygonsss[i]) {
-      projectPolygons(polygons, out);
+      projectPolygons(polygons, out, buffers);
     }
 
-    areas.push({
-      type: AreaType.Transportation,
-      polygons: out,
-      priority: 5,
-    });
+    if (out.length > 0) {
+      areas.push({
+        type: AreaType.Transportation,
+        polygons: out,
+        priority: 5,
+      });
+    }
   }
 
   const highways: Highway[] = [];
@@ -599,8 +652,12 @@ function projectTransportation(
       for (const vertices of liness[i]) {
         highways.push({
           type: constType,
-          vertices,
+          vertexOffset: buffers.geometryOffset,
+          vertexLength: vertices.length,
         });
+
+        buffers.geometry.set(vertices, buffers.geometryOffset);
+        buffers.geometryOffset += vertices.length;
       }
     }
   }
@@ -612,7 +669,8 @@ function projectWaterways(
     keys: string[],
     values: Array<boolean|number|string>,
     features: Feature[],
-    extent: number): {
+    extent: number,
+    buffers: VertexBuffers): {
   areas: Area[];
   waterways: Waterway[];
 } {
@@ -622,14 +680,16 @@ function projectWaterways(
   for (let i = 0; i < polygonsss.length; ++i) {
     const out: Polygon[] = [];
     for (const polygons of polygonsss[i]) {
-      projectPolygons(polygons, out);
+      projectPolygons(polygons, out, buffers);
     }
 
-    areas.push({
-      type: AreaType.Water,
-      polygons: out,
-      priority: 5,
-    });
+    if (out.length > 0) {
+      areas.push({
+        type: AreaType.Water,
+        polygons: out,
+        priority: 5,
+      });
+    }
   }
 
   const waterways: Waterway[] = [];
@@ -640,8 +700,12 @@ function projectWaterways(
     for (const vertices of liness[i]) {
       waterways.push({
         type: 'river',
-        vertices,
+        vertexOffset: buffers.geometryOffset,
+        vertexLength: vertices.length,
       });
+
+      buffers.geometry.set(vertices, buffers.geometryOffset);
+      buffers.geometryOffset += vertices.length;
     }
   }
   return {areas, waterways};
@@ -714,56 +778,82 @@ function projectGeometries(id: TileId, features: Feature[], extent: number): {
   };
 }
 
-function compressTile(tile: MbtileTile): void {
-  tile.areas.sort((a, b) => a.priority - b.priority);
+const scratchGeometry = new Float64Array(MAX_GEOMETRY_SIZE / Float64Array.BYTES_PER_ELEMENT);
+const scratchIndices = new Uint32Array(MAX_INDICES_SIZE / Uint32Array.BYTES_PER_ELEMENT);
 
-  if (tile.areas.length > 1) {
-    let last = tile.areas[0];
-    const copied = [last];
-    for (let i = 1; i < tile.areas.length; ++i) {
-      const area = tile.areas[i];
+function compressAreas(areas: Area[], buffers: VertexBuffers): Area[] {
+  // ASSUMPTION: areas are all contiguous in the buffer arrays
 
-      if (area.polygons.length === 0) {
-        continue;
-      }
-
-      if (last.type === area.type) {
-        last.polygons.push(...area.polygons);
-      } else {
-        copied.push(area);
-        last = area;
-      }
+  let first = undefined;
+  for (const area of areas) {
+    for (const polygon of area.polygons) {
+      first = polygon;
+      break;
     }
 
-    for (const area of copied) {
-      if (area.polygons.length <= 1) {
-        continue;
-      }
-
-      let size = 0;
-      for (const polygon of area.polygons) {
-        size += polygon.vertices.length;
-      }
-
-      const indices = [];
-      const vertices = new Float64Array(size);
-      let offset = 0;
-      for (const polygon of area.polygons) {
-        for (const index of polygon.indices) {
-          indices.push(index + offset / 2);
-        }
-
-        vertices.set(polygon.vertices, offset);
-        offset += polygon.vertices.length;
-      }
-
-      area.polygons.length = 0;
-      area.polygons.push({
-        indices,
-        vertices,
-      });
+    if (first !== undefined) {
+      break;
     }
-
-    tile.areas = copied;
   }
+
+  if (!first) {
+    return areas;
+  }
+
+  const originalGOffset = first.vertexOffset;
+  const originalIOffset = first.indexOffset;
+
+  areas.sort((a, b) => a.priority - b.priority);
+
+  let last = areas[0];
+  const copied = [last];
+  for (let i = 1; i < areas.length; ++i) {
+    const area = areas[i];
+
+    if (area.polygons.length < 1) {
+      continue;
+    }
+
+    if (last.type === area.type) {
+      last.polygons.push(...area.polygons);
+    } else {
+      copied.push(area);
+      last = area;
+    }
+  }
+
+  let scratchGOffset = 0;
+  let scratchIOffset = 0;
+  for (const area of copied) {
+    let startI = scratchIOffset;
+    let startG = scratchGOffset;
+
+    for (const polygon of area.polygons) {
+      for (let i = 0; i < polygon.indexLength; ++i) {
+        scratchIndices[scratchIOffset + i] =
+            buffers.indices[polygon.indexOffset + i]
+                + (scratchGOffset - startG) / 2;
+      }
+      scratchIOffset += polygon.indexLength;
+
+      scratchGeometry.set(
+          buffers.geometry.subarray(
+                polygon.vertexOffset, polygon.vertexOffset + polygon.vertexLength),
+          scratchGOffset);
+      scratchGOffset += polygon.vertexLength;
+    }
+
+    area.polygons.length = 0;
+    area.polygons.push({
+      indexLength: scratchIOffset - startI,
+      indexOffset: originalIOffset + startI,
+      vertexLength: scratchGOffset - startG,
+      vertexOffset: originalGOffset + startG,
+    });
+  }
+
+  buffers.geometry.set(scratchGeometry.subarray(0, scratchGOffset), originalGOffset);
+  buffers.indices.set(scratchIndices.subarray(0, scratchIOffset), originalIOffset);
+
+  return copied;
 }

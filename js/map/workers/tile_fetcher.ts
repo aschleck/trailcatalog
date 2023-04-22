@@ -77,11 +77,11 @@ class TileFetcher {
     const tz =
         clamp(
             Math.floor(request.cameraZoom + tileset.extraZoom),
-            tileset.minZoom,
+            0,
             tileset.maxZoom);
     if (tz < tileset.minZoom) {
-      request.viewportSize[0] = 0;
-      request.viewportSize[1] = 0;
+      request.viewportSize[0] = -9999999;
+      request.viewportSize[1] = -9999999;
     }
 
     const worldSize = Math.pow(2, tz);
@@ -140,11 +140,12 @@ class TileFetcher {
                         .then(blob => blob.arrayBuffer())
                         .then(data => {
                           this.loaded.add(id);
+                          const tile = decodeMbtile(id, data);
                           this.mail({
                             type: 'lmc',
                             id,
-                            tile: decodeMbtile(id, data),
-                          }, [data]);
+                            tile,
+                          }, [tile.geometry.buffer, tile.indices.buffer]);
                         });
                   } else {
                     checkExhaustive(tileset);
@@ -157,6 +158,8 @@ class TileFetcher {
               })
               .catch(e => {
                 console.error(e);
+                // This is probably a CORS error, make sure we don't request it again.
+                this.loaded.add(id);
               })
               .finally(() => {
                 this.inFlight.delete(id);

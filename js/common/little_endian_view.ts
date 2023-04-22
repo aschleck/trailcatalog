@@ -2,7 +2,7 @@ export class LittleEndianView {
 
   private readonly view: DataView;
   private readonly limit: number;
-  private position: number;
+  position: number;
 
   constructor(private readonly buffer: ArrayBuffer, position: number = 0, limit: number = -1) {
     this.view = new DataView(this.buffer);
@@ -80,12 +80,6 @@ export class LittleEndianView {
 
   skip(byteCount: number): void {
     this.position += byteCount;
-  }
-
-  slice(count: number): ArrayBuffer {
-    const r = this.buffer.slice(this.position, this.position + count);
-    this.position += count;
-    return r;
   }
 
   sliceBigInt64(count: number): BigInt64Array {

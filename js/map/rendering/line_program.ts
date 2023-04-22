@@ -47,7 +47,8 @@ export class LineProgram extends Program<LineProgramData> {
     const stride = VERTEX_STRIDE / 4;
     for (const line of lines) {
       // TODO(april): do we need this precision?
-      const doubles = line.vertices;
+      const doubles =
+          line.vertices.subarray(line.verticesOffset, line.verticesOffset + line.verticesLength);
       let distanceAlong = 0;
       for (let i = 0; i < doubles.length - 2; i += 2) {
         const x = doubles[i + 0];

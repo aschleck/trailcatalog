@@ -375,6 +375,7 @@ export class MapData extends Layer {
 
   private planCoarseCell(buffer: ArrayBuffer, planner: RenderPlanner): void {
     const data = new LittleEndianView(buffer);
+    const vertices = new Float32Array(buffer, 0, Math.floor(buffer.byteLength / 4));
 
     const pathCount = data.getVarInt32();
     const lines: Line[] = [];
@@ -384,7 +385,8 @@ export class MapData extends Layer {
       const type = data.getVarInt32();
       const pathVertexCount = data.getVarInt32();
       data.align(4);
-      this.pushPath(id, type, data.sliceFloat32(pathVertexCount), lines, raised);
+      this.pushPath(id, type, vertices, data.position / 4, pathVertexCount, lines, raised);
+      data.skip(pathVertexCount * 4);
     }
 
     if (lines.length > 0) {
@@ -416,6 +418,7 @@ export class MapData extends Layer {
 
   private planFineCell(buffer: ArrayBuffer, zoom: number, planner: RenderPlanner): void {
     const data = new LittleEndianView(buffer);
+    const vertices = new Float32Array(buffer, 0, Math.floor(buffer.byteLength / 4));
 
     const pathCount = data.getVarInt32();
     const lines: Line[] = [];
@@ -425,7 +428,8 @@ export class MapData extends Layer {
       const type = data.getVarInt32();
       const pathVertexCount = data.getVarInt32();
       data.align(4);
-      this.pushPath(id, type, data.sliceFloat32(pathVertexCount), lines, raised);
+      this.pushPath(id, type, vertices, data.position / 4, pathVertexCount, lines, raised);
+      data.skip(pathVertexCount * 4);
     }
 
     if (lines.length > 0) {
@@ -522,6 +526,7 @@ export class MapData extends Layer {
     const raised: Line[] = [];
 
     const data = new LittleEndianView(buffer);
+    const vertices = new Float32Array(buffer, 0, Math.floor(buffer.byteLength / 4));
 
     const pathCount = data.getVarInt32();
     for (let i = 0; i < pathCount; ++i) {
@@ -532,7 +537,8 @@ export class MapData extends Layer {
       if (this.dataService.paths.has(id) && zoom >= COARSE_ZOOM_THRESHOLD) {
         data.skip(pathVertexCount * 4);
       } else {
-        this.pushPath(id, type, data.sliceFloat32(pathVertexCount), lines, raised);
+        this.pushPath(id, type, vertices, data.position / 4, pathVertexCount, lines, raised);
+        data.skip(pathVertexCount * 4);
       }
     }
 
@@ -548,6 +554,8 @@ export class MapData extends Layer {
       id: bigint,
       type: number,
       vertices: Float32Array,
+      verticesOffset: number,
+      verticesLength: number,
       lines: Line[],
       raised: Line[]): void {
     const active = this.active.has(id);
@@ -568,6 +576,8 @@ export class MapData extends Layer {
       colorStroke: stroke,
       stipple: !onTrail,
       vertices: vertices,
+      verticesOffset,
+      verticesLength,
     });
   }
 
