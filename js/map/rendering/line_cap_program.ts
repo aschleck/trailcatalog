@@ -107,7 +107,7 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     const gl = this.gl;
 
     // Draw without the border, always replacing the stencil buffer
-    gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+    gl.stencilFunc(gl.ALWAYS, drawable.z, 0xff);
     gl.stencilMask(0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.uniform1ui(this.program.uniforms.side, 0);
@@ -116,7 +116,7 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.program.vertexCount, drawable.instanced.count);
 
     // Draw with the border only where we didn't already draw
-    gl.stencilFunc(gl.NOTEQUAL, 1, 0xff);
+    gl.stencilFunc(gl.NOTEQUAL, drawable.z, 0xff);
     // Don't write to the stencil buffer so we don't overlap other lines
     gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
@@ -205,7 +205,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       void main() {
         vec4 center = side == 0u ? previous : next;
         vec4 location = -cameraCenter + center;
-        highp float actualRadius = renderBorder ? radius : radius - 2.;
+        highp float actualRadius = renderBorder ? radius : radius - 1.;
         vec4 worldCoord =
             location * halfWorldSize
                 + vec4(position.x, 0, position.y, 0) * actualRadius;
@@ -233,7 +233,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
             1. - smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 0.75 - fragRadius, 0., 1.));
         // 0 is fill, 1 is stroke
         mediump float m =
-            smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 0.5 - fragRadius, 0., 1.));
+            smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 1. - fragRadius, 0., 1.));
 
         lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
         // This shader doesn't play well with stipples, so turn it off when stippling.

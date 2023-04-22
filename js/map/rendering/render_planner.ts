@@ -161,7 +161,7 @@ export class RenderPlanner {
       angle: number = 0): void {
     this.align(256);
     this.drawables.push({
-      geometryBuffer: this.geometryBuffer,
+      geometryBuffer: this.geometryBufferAlternate,
       indexBuffer: this.indexBufferAlternate,
       geometryOffset: this.geometryByteSize,
       indexOffset: this.indexByteSize,

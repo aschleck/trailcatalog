@@ -183,7 +183,6 @@ export class LineProgram extends Program<LineProgramData> {
 
     const gl = this.gl;
 
-    console.log(drawable);
     // Draw without the border, always replacing the stencil buffer if we're replacing
     gl.stencilFunc(!!drawable.replace ? gl.ALWAYS : gl.NOTEQUAL, drawable.z, 0xff);
     gl.stencilMask(drawable.z);
@@ -191,7 +190,7 @@ export class LineProgram extends Program<LineProgramData> {
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
 
     // Draw with the border only where we didn't already draw
-    gl.stencilFunc(gl.NOTEQUAL, 0xff, 0xff);
+    gl.stencilFunc(gl.NOTEQUAL, drawable.z, 0xff);
     // Don't write to the stencil buffer so we don't overlap other lines
     //gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
@@ -285,7 +284,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         vec4 direction = next - previous;
         vec4 perpendicular = perpendicular64(normalize64(direction));
         vec4 location = -cameraCenter + center;
-        highp float actualRadius = renderBorder ? radius : radius - 2.;
+        highp float actualRadius = renderBorder ? radius : radius - 1.;
         vec4 push = perpendicular * actualRadius * position.y;
         vec4 worldCoord = location * halfWorldSize + push;
         gl_Position = vec4(reduce64(divide2Into64(worldCoord, halfViewportSize)), 0, 1);

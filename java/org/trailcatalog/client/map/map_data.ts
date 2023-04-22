@@ -68,7 +68,7 @@ const Z_RAISED_PATH = 2;
 const Z_POINT = 3;
 const Z_TRAIL_MARKER = 4;
 const Z_RAISED_TRAIL_MARKER = 5;
-const PATH_RADIUS_PX = 1;
+const PATH_RADIUS_PX = 2;
 const RAISED_PATH_RADIUS_PX = 4;
 
 interface PathHandle {
