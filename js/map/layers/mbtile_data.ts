@@ -15,16 +15,16 @@ import { Layer } from '../layer';
 
 import { TileDataService } from './tile_data_service';
 
-const BOUNDARY_FILL = rgbaToUint32(0, 0, 0, 0.2);
-const BOUNDARY_STROKE = rgbaToUint32(0, 0, 0, 0.2);
+const BOUNDARY_FILL = rgbaToUint32(0, 0, 0, 0.15);
+const BOUNDARY_STROKE = rgbaToUint32(0, 0, 0, 0.15);
 const BOUNDARY_RADIUS = 1;
 const BOUNDARY_Z = 2;
-const CONTOUR_FILL = rgbaToUint32(0, 0, 0, 0.2);
-const CONTOUR_STROKE = rgbaToUint32(0, 0, 0, 0.2);
+const CONTOUR_FILL = rgbaToUint32(0, 0, 0, 0.1);
+const CONTOUR_STROKE = rgbaToUint32(0, 0, 0, 0.1);
 const CONTOUR_NORMAL_RADIUS = 0.75;
 const CONTOUR_EMPHASIZED_RADIUS = 1.5;
-const CONTOUR_LABEL_FILL = rgbaToUint32(0, 0, 0, 0);
-const CONTOUR_LABEL_STROKE = rgbaToUint32(0, 0, 0, 1);
+const CONTOUR_LABEL_FILL = rgbaToUint32(0.1, 0.1, 0.1, 1);
+const CONTOUR_LABEL_STROKE = rgbaToUint32(1, 1, 1, 1);
 const CONTOUR_Z = 1;
 const WATERWAY_FILL = rgbaToUint32(104 / 255, 167 / 255, 196 / 255, 1);
 const WATERWAY_STROKE = rgbaToUint32(104 / 255, 167 / 255, 196 / 255, 1);
@@ -33,7 +33,7 @@ const HIGHWAY_FILL = rgbaToUint32(1, 1, 1, 1);
 const HIGHWAY_STROKE = rgbaToUint32(0.5, 0.5, 0.5, 1);
 const HIGHWAY_MAJOR_RADIUS = 3;
 const HIGHWAY_ARTERIAL_RADIUS = 2;
-const HIGHWAY_MINOR_RADIUS = 1;
+const HIGHWAY_MINOR_RADIUS = 1.5;
 const HIGHWAY_Z = 3;
 
 const AREA_Z = 0;
@@ -164,12 +164,12 @@ export class MbtileData extends Layer {
         }
       }
 
-      planner.addLines(tile.highwayss.major, HIGHWAY_MAJOR_RADIUS, HIGHWAY_Z);
+      planner.addLines(tile.highwayss.major, HIGHWAY_MAJOR_RADIUS * zoom / 15, HIGHWAY_Z);
       if (zoom >= 9) {
-        planner.addLines(tile.highwayss.arterial, HIGHWAY_ARTERIAL_RADIUS, HIGHWAY_Z);
+        planner.addLines(tile.highwayss.arterial, HIGHWAY_ARTERIAL_RADIUS * zoom / 15, HIGHWAY_Z);
       }
-      if (zoom >= 15) {
-        planner.addLines(tile.highwayss.minor, HIGHWAY_MINOR_RADIUS, HIGHWAY_Z);
+      if (zoom >= 16) {
+        planner.addLines(tile.highwayss.minor, HIGHWAY_MINOR_RADIUS * zoom / 15, HIGHWAY_Z);
       }
       lines.push(...tile.waterways);
     }

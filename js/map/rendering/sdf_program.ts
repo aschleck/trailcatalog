@@ -190,12 +190,12 @@ export class SdfProgram extends Program<SdfProgramData> {
 
     const gl = this.gl;
 
-    gl.uniform1f(this.program.uniforms.halo, 0.52);
-    gl.uniform1ui(this.program.uniforms.textColor, drawable.fill ?? 0);
+    gl.uniform1f(this.program.uniforms.halo, 0.2);
+    gl.uniform1ui(this.program.uniforms.textColor, drawable.stroke ?? 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
 
     gl.uniform1f(this.program.uniforms.halo, 0.75);
-    gl.uniform1ui(this.program.uniforms.textColor, drawable.stroke ?? 0);
+    gl.uniform1ui(this.program.uniforms.textColor, drawable.fill ?? 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
   }
 

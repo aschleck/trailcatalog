@@ -39,7 +39,7 @@ export class SdfPlanner extends Disposable {
 
     new FontFace(
             'Roboto',
-            "url(https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmSU5fBBc4AMP6lQ.woff2) "
+            "url(https://fonts.gstatic.com/s/roboto/v30/KFOkCnqEu92Fr1Mu51xIIzIXKMny.woff2) "
                 + "format('woff2')")
         .load()
         .then(font => {
@@ -115,7 +115,7 @@ export class SdfPlanner extends Disposable {
       fontSize: FONT_SIZE,
       fontFamily: 'Roboto,sans-serif',
       fontStyle: 'italic',
-      fontWeight: '300',
+      fontWeight: '500',
     });
 
     const atlasWidth = 1024;
