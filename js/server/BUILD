@@ -14,7 +14,7 @@ tc_ts_project(
         exclude = CLIENT_FILES,
     ),
     deps = [
-        ":data",
+        ":client",
         "//:node_modules/@fastify/request-context",
         "//:node_modules/@types/node",
         "//:node_modules/fastify",

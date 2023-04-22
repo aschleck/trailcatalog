@@ -28,6 +28,7 @@ tc_ts_project(
         "//js/dino",
         "//js/map",
         "//js/map/layers",
+        "//js/server:client",
     ],
 )
 

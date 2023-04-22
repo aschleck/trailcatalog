@@ -1,5 +1,6 @@
+import { initialData as initialDataUnsafe } from 'js/server/ssr_aware';
+
 import { fetchDataBatch as fetchDataBatchUnsafe, putCache } from './common/data';
-import { initialData as initialDataUnsafe } from './common/ssr_aware';
 
 export type TrailId = {numeric: string}|{readable: string};
 

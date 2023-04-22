@@ -1,6 +1,5 @@
 import * as corgi from 'js/corgi';
-
-import { redirectTo } from './common/ssr_aware';
+import { redirectTo } from 'js/server/ssr_aware';
 
 import { initialData } from './data';
 import { GoToTrailController, State } from './go_to_trail_controller';

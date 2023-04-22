@@ -63,7 +63,8 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
             this.mapController.camera,
             response.deps.services.mapData,
             response.args.filters ?? {},
-            this.mapController.renderer);
+            this.mapController.renderer,
+            this.mapController.textRenderer);
     this.overlayData = new OverlayData(response.args.overlays ?? {}, this.mapController.renderer);
 
     this.mapController.setLayers([

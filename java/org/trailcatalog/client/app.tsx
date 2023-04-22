@@ -1,7 +1,6 @@
 import { checkExhaustive, checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
-
-import { isServerSide } from './common/ssr_aware';
+import { isServerSide } from 'js/server/ssr_aware';
 
 import { BoundaryDetailElement } from './boundary_detail_element';
 import { GoToTrailElement } from './go_to_trail_element';

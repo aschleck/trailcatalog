@@ -2,9 +2,7 @@ import { checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 import { Controller, Response } from 'js/corgi/controller';
 import { HistoryService } from 'js/corgi/history/history_service';
-
-import { setUnitSystem } from './common/ssr_aware';
-import { UnitSystem } from './common/types';
+import { setUnitSystem, UnitSystem } from 'js/server/ssr_aware';
 
 export interface State {
   system: UnitSystem;

@@ -1,7 +1,6 @@
 import * as corgi from 'js/corgi';
 import { Radio } from 'js/dino/radio';
-
-import { getUnitSystem } from './common/ssr_aware';
+import { getUnitSystem } from 'js/server/ssr_aware';
 
 import { State, UnitSelectorController } from './unit_selector_controller';
 

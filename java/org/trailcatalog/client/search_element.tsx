@@ -4,9 +4,9 @@ import { FlatButton } from 'js/dino/button';
 import { ACTION, CHANGED } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
 import { OutlinedInput } from 'js/dino/input';
+import { currentUrl } from 'js/server/ssr_aware';
 
 import { formatDistance } from './common/formatters';
-import { currentUrl } from './common/ssr_aware';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { TrailSearchResult } from './models/types';

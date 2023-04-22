@@ -1,8 +1,7 @@
 import { checkExists, exists } from 'js/common/asserts';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { Service, ServiceResponse } from 'js/corgi/service';
-
-import { currentUrl } from '../common/ssr_aware';
+import { currentUrl } from 'js/server/ssr_aware';
 
 interface BoundaryDetail {
   kind: 'boundary_detail';
