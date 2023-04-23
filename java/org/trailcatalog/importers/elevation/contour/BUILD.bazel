@@ -9,6 +9,12 @@ java_binary(
     runtime_deps = [":contour"],
 )
 
+java_binary(
+    name = "tile_contours",
+    main_class = "org.trailcatalog.importers.elevation.contour.TileContoursKt",
+    runtime_deps = [":contour"],
+)
+
 kt_jvm_library(
     name = "contour",
     srcs = glob(["*.kt"]),
@@ -21,6 +27,7 @@ kt_jvm_library(
     deps = [
         ":runfiles",
         "//java/org/trailcatalog/importers/elevation",
+        "//third_party/mapbox-vector-tiles:vector_tile_java_proto",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:com_squareup_okhttp3_okhttp",
         "@maven//:org_wololo_flatgeobuf",

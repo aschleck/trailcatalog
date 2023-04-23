@@ -31,7 +31,7 @@ private fun getCopernicus30m(area: S2LatLngRect): List<DemMetadata> {
   return metadata
 }
 
-public fun getCopernicus30mUrl(lat: Int, lng: Int): String {
+fun getCopernicus30mUrl(lat: Int, lng: Int): String {
   val pLat = abs(lat).toString().padStart(2, '0')
   val pLng = abs(lng).toString().padStart(3, '0')
   val fLat = (if (lat < 0) "S" else "N") + pLat
