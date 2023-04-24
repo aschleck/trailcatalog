@@ -33,12 +33,12 @@ fun main(args: Array<String>) {
   val zoom = args[2].toInt()
   val size = 2.0.pow(zoom).toInt()
 
-  val low = if (args.size >= 7) Pair(args[3].toInt(), args[4].toInt()) else Pair(0, size)
-  val high = if (args.size >= 7) Pair(args[5].toInt(), args[6].toInt()) else Pair(0, size)
+  val low = if (args.size >= 7) Pair(args[3].toInt(), args[4].toInt()) else Pair(0, 0)
+  val high = if (args.size >= 7) Pair(args[5].toInt(), args[6].toInt()) else Pair(size, size)
   val tasks = ArrayList<ListenableFuture<*>>()
-  for (y in low.first until high.first) {
-    for (x in low.second until high.second) {
-      tasks.add(pool.submit { cropTile(x, y, size, source, dest) })
+  for (y in low.second until high.second) {
+    for (x in low.first until high.first) {
+      tasks.add(pool.submit { cropTile(x, y, zoom, source, dest) })
     }
     tasks.add(pool.submit {
       println(y)
@@ -54,7 +54,7 @@ private fun getCopernicusMvt(lat: Int, lng: Int): String {
 }
 
 private fun cropTile(x: Int, y: Int, z: Int, source: Path, dest: Path) {
-  val worldSize = 2.0.pow(z).toInt()
+  val worldSize = 2.0.pow(z)
   val latLow = asin(tanh((0.5 - (y + 1) / worldSize) * 2 * Math.PI)) / Math.PI * 180
   val lngLow = x.toDouble() / worldSize * 360 - 180
   val latHigh = asin(tanh((0.5 - y / worldSize) * 2 * Math.PI)) / Math.PI * 180
@@ -94,7 +94,7 @@ private fun cropTile(x: Int, y: Int, z: Int, source: Path, dest: Path) {
   }
 
   val tile = contoursToTile(cropFt, cropM, bound, EXTENT_TILE)
-  val output = dest.resolve("${z}/${x}/${y}/contours.pbf")
+  val output = dest.resolve("${z}/${x}/${y}.pbf")
   output.parent.toFile().mkdirs()
 
   FileOutputStream(output.toFile()).use {
@@ -220,6 +220,6 @@ private fun unproject(x: Int, y: Int, bound: S2LatLngRect, extent: Int): S2Point
   val dy = high.second - low.second
 
   val xw = low.first + dx * x / extent
-  val yw = low.second + dy * y / extent
+  val yw = high.second - dy * y / extent
   return S2LatLng.fromRadians(asin(tanh(yw * Math.PI)), Math.PI * xw).toPoint()
 }

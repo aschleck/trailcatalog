@@ -22,7 +22,7 @@ const val EXTENT_TILE = 4096
 fun contoursToTile(
     contoursFt: List<Contour>, contoursM: List<Contour>, bound: S2LatLngRect, extent: Int): Tile {
   return Tile.newBuilder()
-      .addLayers(contoursToLayer("contours_ft", contoursFt, 20, bound, extent))
+      .addLayers(contoursToLayer("contours_ft", contoursFt, 40, bound, extent))
       .addLayers(contoursToLayer("contours", contoursM, 10, bound, extent))
       .build()
 }
@@ -101,7 +101,7 @@ private fun project(points: List<S2Point>, bound: S2LatLngRect, extent: Int): Li
   for (point in points) {
     val (x, y) = project(S2LatLng(point))
     xys.add(((x - low.first) / dx * extent).roundToInt())
-    xys.add(((y - low.second) / dy * extent).roundToInt())
+    xys.add(((high.second - y) / dy * extent).roundToInt())
   }
   return xys
 }
