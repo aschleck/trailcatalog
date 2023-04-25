@@ -1,5 +1,8 @@
 package org.trailcatalog.importers.elevation.contour
 
+import com.google.common.cache.CacheBuilder
+import com.google.common.cache.CacheLoader
+import com.google.common.cache.LoadingCache
 import com.google.common.collect.Lists
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2LatLng
@@ -33,12 +36,35 @@ fun main(args: Array<String>) {
   val zoom = args[2].toInt()
   val size = 2.0.pow(zoom).toInt()
 
+  val cache =
+      CacheBuilder
+          .newBuilder()
+          .weakValues()
+          .build(object : CacheLoader<Pair<Int, Int>, Pair<List<Contour>, List<Contour>>>() {
+    override fun load(p0: Pair<Int, Int>): Pair<List<Contour>, List<Contour>> {
+      val (lat, lng) = p0
+      val mvt = source.resolve(getCopernicusMvt(lat, lng))
+      val contoursFt = ArrayList<Contour>()
+      val contoursM = ArrayList<Contour>()
+      if (mvt.exists()) {
+        loadContourMvt(
+            contoursFt,
+            contoursM,
+            mvt,
+            S2LatLngRect.fromPointPair(
+                S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
+                S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1)))
+      }
+      return Pair(contoursFt, contoursM)
+    }
+  })
+
   val low = if (args.size >= 7) Pair(args[3].toInt(), args[4].toInt()) else Pair(0, 0)
   val high = if (args.size >= 7) Pair(args[5].toInt(), args[6].toInt()) else Pair(size, size)
   val tasks = ArrayList<ListenableFuture<*>>()
   for (y in low.second until high.second) {
     for (x in low.first until high.first) {
-      tasks.add(pool.submit { cropTile(x, y, zoom, source, dest) })
+      tasks.add(pool.submit { cropTile(x, y, zoom, dest, cache) })
     }
     tasks.add(pool.submit {
       println(y)
@@ -53,7 +79,12 @@ private fun getCopernicusMvt(lat: Int, lng: Int): String {
   return getCopernicus30mUrl(lat, lng).toHttpUrl().pathSegments.last() + ".mvt"
 }
 
-private fun cropTile(x: Int, y: Int, z: Int, source: Path, dest: Path) {
+private fun cropTile(
+    x: Int,
+    y: Int,
+    z: Int,
+    dest: Path,
+    cache: LoadingCache<Pair<Int, Int>, Pair<List<Contour>, List<Contour>>>) {
   val worldSize = 2.0.pow(z)
   val latLow = asin(tanh((0.5 - (y + 1) / worldSize) * 2 * Math.PI)) / Math.PI * 180
   val lngLow = x.toDouble() / worldSize * 360 - 180
@@ -64,16 +95,9 @@ private fun cropTile(x: Int, y: Int, z: Int, source: Path, dest: Path) {
   val contoursM = ArrayList<Contour>()
   for (lat in floor(latLow).toInt() until ceil(latHigh).toInt()) {
     for (lng in floor(lngLow).toInt() until ceil(lngHigh).toInt()) {
-      val mvt = source.resolve(getCopernicusMvt(lat, lng))
-      if (mvt.exists()) {
-        loadContourMvt(
-            contoursFt,
-            contoursM,
-            mvt,
-            S2LatLngRect.fromPointPair(
-                S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
-                S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1)))
-      }
+      val result = cache[Pair(lat, lng)]
+      contoursFt.addAll(result.first)
+      contoursM.addAll(result.second)
     }
   }
 
@@ -93,7 +117,7 @@ private fun cropTile(x: Int, y: Int, z: Int, source: Path, dest: Path) {
     return
   }
 
-  val tile = contoursToTile(cropFt, cropM, bound, EXTENT_TILE)
+  val tile = contoursToTile(cropFt, cropM, bound, EXTENT_TILE, z)
   val output = dest.resolve("${z}/${x}/${y}.pbf")
   output.parent.toFile().mkdirs()
 
@@ -110,6 +134,9 @@ private fun loadContourMvt(
   val tile = FileInputStream(path.toFile()).use {
     Tile.parseFrom(it)
   }
+
+  val low = project(bound.lo())
+  val high = project(bound.hi())
 
   for (layer in tile.layersList) {
     val contours =
@@ -153,7 +180,7 @@ private fun loadContourMvt(
 
             x += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 0))
             y += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 1))
-            building.add(unproject(x, y, bound, layer.extent))
+            building.add(unproject(x, y, low, high, layer.extent))
             j += 1
             i += 2
           }
@@ -162,7 +189,7 @@ private fun loadContourMvt(
           while (j < count) {
             x += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 0))
             y += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 1))
-            building!!.add(unproject(x, y, bound, layer.extent))
+            building!!.add(unproject(x, y, low, high, layer.extent))
             j += 1
             i += 2
           }
@@ -213,9 +240,8 @@ private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>
   }
 }
 
-private fun unproject(x: Int, y: Int, bound: S2LatLngRect, extent: Int): S2Point {
-  val low = project(bound.lo())
-  val high = project(bound.hi())
+private fun unproject(
+    x: Int, y: Int, low: Pair<Double, Double>, high: Pair<Double, Double>, extent: Int): S2Point {
   val dx = high.first - low.first
   val dy = high.second - low.second
 

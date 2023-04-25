@@ -20,10 +20,28 @@ const val EXTENT_ONE_DEGREE = 4096
 const val EXTENT_TILE = 4096
 
 fun contoursToTile(
-    contoursFt: List<Contour>, contoursM: List<Contour>, bound: S2LatLngRect, extent: Int): Tile {
+    contoursFt: List<Contour>,
+    contoursM: List<Contour>,
+    bound: S2LatLngRect,
+    extent: Int,
+    z: Int): Tile {
+  val ftIncrement = zToFtIncrement(z)
+  val mIncrement = zToMIncrement(z)
   return Tile.newBuilder()
-      .addLayers(contoursToLayer("contour_ft", contoursFt, 40, bound, extent))
-      .addLayers(contoursToLayer("contour", contoursM, 10, bound, extent))
+      .addLayers(
+          contoursToLayer(
+              "contour",
+              contoursM.filter { it.height % mIncrement == 0 },
+              mIncrement,
+              bound,
+              extent))
+      .addLayers(
+          contoursToLayer(
+              "contour_ft",
+              contoursFt.filter { it.height % ftIncrement == 0 },
+              ftIncrement,
+              bound,
+              extent))
       .build()
 }
 
@@ -138,5 +156,31 @@ private tailrec fun douglasPeucker(
     douglasPeucker(start, split, points, tolerance, out)
     out.removeAt(out.size - 1)
     douglasPeucker(split, last, points, tolerance, out)
+  }
+}
+
+private fun zToFtIncrement(z: Int): Int {
+  return when (z) {
+    -1 -> 20
+    9 -> 500
+    10 -> 200
+    11 -> 100
+    12 -> 100
+    13 -> 20
+    14 -> 20
+    else -> throw IllegalArgumentException("Unhandled zoom")
+  }
+}
+
+private fun zToMIncrement(z: Int): Int {
+  return when (z) {
+    -1 -> 10
+    9 -> 500
+    10 -> 200
+    11 -> 100
+    12 -> 50
+    13 -> 20
+    14 -> 10
+    else -> throw IllegalArgumentException("Unhandled zoom")
   }
 }

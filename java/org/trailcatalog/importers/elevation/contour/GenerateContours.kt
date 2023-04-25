@@ -65,7 +65,7 @@ private fun generateAndSimplify(lat: Int, lng: Int, source: Path, dest: Path, te
 
   val fgbFt = temp.resolve("${filename}_ft.fgb")
   val fgbM = temp.resolve("${filename}_m.fgb")
-  runContour(from, fgbFt, 0.0, 12.192)
+  runContour(from, fgbFt, 0.0, 6.096)
   runContour(from, fgbM, 0.0, 10.0)
   val ft = readFgbAndSimplify(fgbFt, true)
   val m = readFgbAndSimplify(fgbM, false)
@@ -76,7 +76,7 @@ private fun generateAndSimplify(lat: Int, lng: Int, source: Path, dest: Path, te
       S2LatLngRect.fromPointPair(
           S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
           S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1))
-  val tile = contoursToTile(ft, m, bound, EXTENT_ONE_DEGREE)
+  val tile = contoursToTile(ft, m, bound, EXTENT_ONE_DEGREE, -1)
   FileOutputStream(dest.resolve("${filename}.mvt").toFile()).use {
     tile.writeTo(it)
   }
