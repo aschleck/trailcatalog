@@ -22,8 +22,8 @@ const val EXTENT_TILE = 4096
 fun contoursToTile(
     contoursFt: List<Contour>, contoursM: List<Contour>, bound: S2LatLngRect, extent: Int): Tile {
   return Tile.newBuilder()
-      .addLayers(contoursToLayer("contours_ft", contoursFt, 40, bound, extent))
-      .addLayers(contoursToLayer("contours", contoursM, 10, bound, extent))
+      .addLayers(contoursToLayer("contour_ft", contoursFt, 40, bound, extent))
+      .addLayers(contoursToLayer("contour", contoursM, 10, bound, extent))
       .build()
 }
 

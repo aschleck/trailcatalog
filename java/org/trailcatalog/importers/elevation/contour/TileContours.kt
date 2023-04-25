@@ -114,8 +114,8 @@ private fun loadContourMvt(
   for (layer in tile.layersList) {
     val contours =
         when (layer.name) {
-          "contours" -> contoursM
-          "contours_ft" -> contoursFt
+          "contour" -> contoursM
+          "contour_ft" -> contoursFt
           else -> throw IORuntimeException("Unknown layer name ${layer.name}")
         }
 

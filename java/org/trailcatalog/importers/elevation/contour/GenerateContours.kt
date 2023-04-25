@@ -91,8 +91,6 @@ private fun runContour(source: Path, destination: Path, offset: Double, interval
       offset.toString(),
       "-i",
       interval.toString(),
-      "-lco",
-      "SPATIAL_INDEX=NO",
       source.toString(),
       destination.toString(),
   )
