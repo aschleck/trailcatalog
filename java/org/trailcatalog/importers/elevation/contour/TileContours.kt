@@ -81,7 +81,7 @@ private fun cropTile(x: Int, y: Int, z: Int, source: Path, dest: Path) {
       S2LatLngRect.fromPointPair(
           S2LatLng.fromDegrees(latLow, lngLow),
           S2LatLng.fromDegrees(latHigh, lngHigh))
-  val tolerance = S1Angle.degrees(360.0 / worldSize / EXTENT_TILE / 2)
+  val tolerance = S1Angle.degrees(12.5 * 360.0 / worldSize / EXTENT_TILE)
   val cropFt =
       crop(contoursFt, bound)
           .map { Contour(it.height, simplifyContour(it.points, tolerance)) }
