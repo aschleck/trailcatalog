@@ -21,8 +21,9 @@ class BinaryStructListReader<T : Any>(
     private val serializer: Serializer<T>) : PSource<T>() {
 
   override fun read() = sequence {
-    val shards = RandomAccessFile(file.path + ".shards", "r").use {
-      val map = it.channel.map(MapMode.READ_ONLY, 0, file.length())
+    val shardsPath = File(file.path + ".shards")
+    val shards = RandomAccessFile(shardsPath, "r").use {
+      val map = it.channel.map(MapMode.READ_ONLY, 0, shardsPath.length())
       val shards = ImmutableList.builder<Extents>()
       EncodedByteBufferInputStream(map).use { input ->
         while (input.hasRemaining()) {
