@@ -27,7 +27,7 @@ import kotlin.math.pow
 import kotlin.math.tanh
 
 fun main(args: Array<String>) {
-  val pool = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(4))
+  val pool = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(6))
 
   val source = Path.of(args[0])
   val dest = Path.of(args[1])
@@ -46,7 +46,7 @@ fun main(args: Array<String>) {
   val cache =
       CacheBuilder
           .newBuilder()
-          .maximumSize(10)
+          .maximumSize(30)
           .build(object : CacheLoader<Pair<Int, Int>, Pair<List<Contour>, List<Contour>>>() {
             override fun load(p0: Pair<Int, Int>): Pair<List<Contour>, List<Contour>> {
               val (lat, lng) = p0
