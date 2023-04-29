@@ -22,8 +22,6 @@ interface SdfDrawable {
     count: number;
   };
   texture: WebGLTexture;
-  fill: RgbaU32;
-  stroke: RgbaU32;
 }
 
 export const VERTEX_STRIDE =
@@ -33,6 +31,8 @@ export const VERTEX_STRIDE =
             + /* offset= */ 2
             + /* size= */ 2
             + /* angle= */ 1
+            + /* fill= */ 1
+            + /* stroke= */ 1
     );
 
 export class SdfProgram extends Program<SdfProgramData> {
@@ -89,6 +89,8 @@ export class SdfProgram extends Program<SdfProgramData> {
       floats[vertexOffset + 10] = atlasGlyphSize * scale;
       floats[vertexOffset + 11] = atlasGlyphSize * scale;
       floats[vertexOffset + 12] = angle;
+      uint32s[vertexOffset + 13] = fill;
+      uint32s[vertexOffset + 14] = stroke;
 
       offset[0] += glyph.glyphAdvance * scale;
       vertexOffset += VERTEX_STRIDE / 4;
@@ -100,8 +102,6 @@ export class SdfProgram extends Program<SdfProgramData> {
         count: glyphs.length,
       },
       texture: atlas,
-      fill,
-      stroke,
     };
   }
 
@@ -138,6 +138,10 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.size, 1);
     gl.enableVertexAttribArray(this.program.attributes.angle);
     gl.vertexAttribDivisor(this.program.attributes.angle, 1);
+    gl.enableVertexAttribArray(this.program.attributes.colorFill);
+    gl.vertexAttribDivisor(this.program.attributes.colorFill, 1);
+    gl.enableVertexAttribArray(this.program.attributes.colorStroke);
+    gl.vertexAttribDivisor(this.program.attributes.colorStroke, 1);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(this.program.uniforms.alphaSampler, 0);
@@ -181,6 +185,18 @@ export class SdfProgram extends Program<SdfProgramData> {
         /* normalize= */ false,
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 48);
+    gl.vertexAttribIPointer(
+        this.program.attributes.colorFill,
+        1,
+        gl.UNSIGNED_INT,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 52);
+    gl.vertexAttribIPointer(
+        this.program.attributes.colorStroke,
+        1,
+        gl.UNSIGNED_INT,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 56);
   }
 
   protected draw(drawable: Drawable): void {
@@ -190,12 +206,12 @@ export class SdfProgram extends Program<SdfProgramData> {
 
     const gl = this.gl;
 
-    gl.uniform1f(this.program.uniforms.halo, 0.2);
-    gl.uniform1ui(this.program.uniforms.textColor, drawable.stroke ?? 0);
+    gl.uniform1f(this.program.uniforms.halo, 0.4);
+    gl.uniform1ui(this.program.uniforms.isFill, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
 
     gl.uniform1f(this.program.uniforms.halo, 0.75);
-    gl.uniform1ui(this.program.uniforms.textColor, drawable.fill ?? 0);
+    gl.uniform1ui(this.program.uniforms.isFill, 1);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, this.program.vertexCount, drawable.instanced.count);
   }
 
@@ -215,6 +231,10 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.size, 0);
     gl.disableVertexAttribArray(this.program.attributes.angle);
     gl.vertexAttribDivisor(this.program.attributes.angle, 0);
+    gl.disableVertexAttribArray(this.program.attributes.colorFill);
+    gl.vertexAttribDivisor(this.program.attributes.colorFill, 0);
+    gl.disableVertexAttribArray(this.program.attributes.colorStroke);
+    gl.vertexAttribDivisor(this.program.attributes.colorStroke, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
@@ -226,22 +246,24 @@ interface SdfProgramData extends ProgramData {
   id: WebGLProgram;
 
   attributes: {
-    position: number;
-    colorPosition: number;
+    angle: number;
     atlasPositionAndSize: number;
     center: number;
+    colorFill: number;
+    colorPosition: number;
+    colorStroke: number;
     offset: number;
+    position: number;
     size: number;
-    angle: number;
   };
 
   uniforms: {
-    cameraCenter: WebGLUniformLocation;
     alphaSampler: WebGLUniformLocation;
+    cameraCenter: WebGLUniformLocation;
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
     halo: WebGLUniformLocation;
-    textColor: WebGLUniformLocation;
+    isFill: WebGLUniformLocation;
   };
 }
 
@@ -256,10 +278,12 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       uniform highp vec4 cameraCenter; // Mercator
       uniform highp vec2 halfViewportSize; // pixels
       uniform highp float halfWorldSize; // pixels
-      uniform uint textColor;
+      uniform bool isFill;
 
       in highp vec2 position;
       in mediump vec2 colorPosition;
+      in uint colorFill;
+      in uint colorStroke;
 
       in mediump vec4 atlasPositionAndSize;
       in highp vec4 center; // Mercator
@@ -283,7 +307,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
         vec2 screenCoord = reduce64(relativeCenter * halfWorldSize) + extents;
         gl_Position = vec4(screenCoord / halfViewportSize, 0, 1);
 
-        fragTextColor = uint32ToVec4(textColor);
+        fragTextColor = uint32ToVec4(isFill ? colorFill : colorStroke);
         fragColorPosition = atlasPositionAndSize.xy + colorPosition * atlasPositionAndSize.zw;
       }
     `;
@@ -327,13 +351,15 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
   return {
     id: programId,
     attributes: {
-      position: gl.getAttribLocation(programId, 'position'),
-      colorPosition: gl.getAttribLocation(programId, 'colorPosition'),
+      angle: gl.getAttribLocation(programId, 'angle'),
       atlasPositionAndSize: gl.getAttribLocation(programId, 'atlasPositionAndSize'),
       center: gl.getAttribLocation(programId, 'center'),
+      colorFill: checkExists(gl.getAttribLocation(programId, 'colorFill')),
+      colorPosition: gl.getAttribLocation(programId, 'colorPosition'),
+      colorStroke: checkExists(gl.getAttribLocation(programId, 'colorStroke')),
       offset: gl.getAttribLocation(programId, 'offset'),
+      position: gl.getAttribLocation(programId, 'position'),
       size: gl.getAttribLocation(programId, 'size'),
-      angle: gl.getAttribLocation(programId, 'angle'),
     },
     uniforms: {
       alphaSampler: checkExists(gl.getUniformLocation(programId, 'alphaSampler')),
@@ -341,7 +367,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
       halo: checkExists(gl.getUniformLocation(programId, 'halo')),
-      textColor: checkExists(gl.getUniformLocation(programId, 'textColor')),
+      isFill: checkExists(gl.getUniformLocation(programId, 'isFill')),
     },
     vertexCount: 4,
   };

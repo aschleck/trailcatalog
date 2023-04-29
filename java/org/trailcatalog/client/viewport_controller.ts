@@ -73,11 +73,13 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
+          this.mapController.renderPlanner.baker,
           MAPTILER_PLANET),
       new MbtileData(
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
+          this.mapController.renderPlanner.baker,
           TRAILCATALOG_CONTOURS),
       this.mapData,
       this.overlayData,

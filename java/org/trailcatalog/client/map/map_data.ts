@@ -8,7 +8,7 @@ import { LatLng, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { Camera, projectLatLngRect } from 'js/map/models/camera';
 import { Line } from 'js/map/rendering/geometry';
-import { RenderPlanner } from 'js/map/rendering/render_planner';
+import { RenderBaker } from 'js/map/rendering/render_baker';
 import { Renderer } from 'js/map/rendering/renderer';
 import { RenderableDiamond, TextRenderer } from 'js/map/rendering/text_renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
@@ -337,24 +337,24 @@ export class MapData extends Layer {
     });
   }
 
-  plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+  plan(viewportSize: Vec2, zoom: number, baker: RenderBaker): void {
     if (zoom < 4) {
       return;
     }
 
     if (this.showDetail(zoom)) {
       if (this.showFine(zoom)) {
-        this.planFine(viewportSize, zoom, planner);
+        this.planFine(viewportSize, zoom, baker);
       } else {
-        this.planCoarse(viewportSize, zoom, planner);
+        this.planCoarse(viewportSize, zoom, baker);
       }
     }
 
-    this.planOverview(viewportSize, zoom, planner);
-    this.planPins(zoom, planner);
+    this.planOverview(viewportSize, zoom, baker);
+    this.planPins(zoom, baker);
   }
 
-  private planCoarse(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+  private planCoarse(viewportSize: Vec2, zoom: number, baker: RenderBaker): void {
     const cells = this.coarseCellsInView(viewportSize);
 
     for (const cell of cells) {
@@ -362,18 +362,18 @@ export class MapData extends Layer {
       const buffer = this.dataService.coarseCells.get(id);
       if (buffer !== undefined) {
         if (buffer) {
-          this.planCoarseCell(buffer, planner);
+          this.planCoarseCell(buffer, baker);
         }
       } else {
         const fallback = this.dataService.fineCells.get(id);
         if (fallback) {
-          this.planFineCell(fallback, zoom, planner);
+          this.planFineCell(fallback, zoom, baker);
         }
       }
     }
   }
 
-  private planCoarseCell(buffer: ArrayBuffer, planner: RenderPlanner): void {
+  private planCoarseCell(buffer: ArrayBuffer, baker: RenderBaker): void {
     const data = new LittleEndianView(buffer);
     const vertices = new Float32Array(buffer, 0, Math.floor(buffer.byteLength / 4));
 
@@ -390,14 +390,14 @@ export class MapData extends Layer {
     }
 
     if (lines.length > 0) {
-      planner.addLines(lines, PATH_RADIUS_PX, Z_PATH);
+      baker.addLines(lines, PATH_RADIUS_PX, Z_PATH);
     }
     if (raised.length > 0) {
-      planner.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
+      baker.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
     }
   }
 
-  private planFine(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+  private planFine(viewportSize: Vec2, zoom: number, baker: RenderBaker): void {
     const cells = this.fineCellsInView(viewportSize);
 
     for (const cell of cells) {
@@ -405,18 +405,18 @@ export class MapData extends Layer {
       const buffer = this.dataService.fineCells.get(id);
       if (buffer !== undefined) {
         if (buffer) {
-          this.planFineCell(buffer, zoom, planner);
+          this.planFineCell(buffer, zoom, baker);
         }
       } else {
         const fallback = this.dataService.coarseCells.get(id);
         if (fallback) {
-          this.planCoarseCell(fallback, planner);
+          this.planCoarseCell(fallback, baker);
         }
       }
     }
   }
 
-  private planFineCell(buffer: ArrayBuffer, zoom: number, planner: RenderPlanner): void {
+  private planFineCell(buffer: ArrayBuffer, zoom: number, baker: RenderBaker): void {
     const data = new LittleEndianView(buffer);
     const vertices = new Float32Array(buffer, 0, Math.floor(buffer.byteLength / 4));
 
@@ -433,10 +433,10 @@ export class MapData extends Layer {
     }
 
     if (lines.length > 0) {
-      planner.addLines(lines, PATH_RADIUS_PX, Z_PATH);
+      baker.addLines(lines, PATH_RADIUS_PX, Z_PATH);
     }
     if (raised.length > 0) {
-      planner.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
+      baker.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
     }
 
     if (zoom >= RENDER_POINT_ZOOM_THRESHOLD) {
@@ -450,7 +450,7 @@ export class MapData extends Layer {
         const markerPx = projectLatLng(marker);
         const hover = this.hovering.has(id);
         const icon = POINTS_ATLAS.get(type) ?? 0;
-        planner.addAtlasedBillboard(
+        baker.addAtlasedBillboard(
             markerPx,
             NO_OFFSET,
             hover ? POINT_HOVER_BILLBOARD_SIZE_PX : POINT_BILLBOARD_SIZE_PX,
@@ -462,16 +462,16 @@ export class MapData extends Layer {
     }
   }
 
-  private planOverview(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+  private planOverview(viewportSize: Vec2, zoom: number, baker: RenderBaker): void {
     const cells = this.overviewCellsInView(viewportSize);
 
     for (const cell of cells) {
       const id = reinterpretLong(cell.id()) as S2CellNumber;
-      this.planOverviewCell(id, zoom, planner);
+      this.planOverviewCell(id, zoom, baker);
     }
   }
 
-  private planOverviewCell(id: S2CellNumber, zoom: number, planner: RenderPlanner): void {
+  private planOverviewCell(id: S2CellNumber, zoom: number, baker: RenderBaker): void {
     const buffer = this.dataService.overviewCells.get(id);
     if (!buffer) {
       return;
@@ -507,16 +507,16 @@ export class MapData extends Layer {
       let diamond;
       if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
         this.textRenderer.planDiamond(
-            renderableTrailPin(lengthMeters, fill, stroke), markerPx, z, planner);
+            renderableTrailPin(lengthMeters, fill, stroke), markerPx, z, baker);
       } else if (active || hover) {
-        this.textRenderer.planDiamond(renderableDiamond(fill, stroke), markerPx, z, planner);
+        this.textRenderer.planDiamond(renderableDiamond(fill, stroke), markerPx, z, baker);
       } else {
-        this.textRenderer.planDiamond(TRAIL_DIAMOND_REGULAR, markerPx, z, planner);
+        this.textRenderer.planDiamond(TRAIL_DIAMOND_REGULAR, markerPx, z, baker);
       }
     }
   }
 
-  private planPins(zoom: number, planner: RenderPlanner): void {
+  private planPins(zoom: number, baker: RenderBaker): void {
     const buffer = this.dataService.coarseCells.get(PIN_CELL_ID);
     if (!buffer) {
       return;
@@ -543,10 +543,10 @@ export class MapData extends Layer {
     }
 
     if (lines.length > 0) {
-      planner.addLines(lines, PATH_RADIUS_PX, Z_PATH);
+      baker.addLines(lines, PATH_RADIUS_PX, Z_PATH);
     }
     if (raised.length > 0) {
-      planner.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
+      baker.addLines(raised, RAISED_PATH_RADIUS_PX, Z_RAISED_PATH);
     }
   }
 

@@ -4,7 +4,7 @@ import { HashMap } from 'js/common/collections';
 import { BitmapTileset, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { Camera } from '../models/camera';
-import { RenderPlanner } from '../rendering/render_planner';
+import { RenderBaker } from '../rendering/render_baker';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
 
@@ -41,7 +41,7 @@ export class TileData extends Layer {
     return this.lastChange > time;
   }
 
-  plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+  plan(viewportSize: Vec2, zoom: number, baker: RenderBaker): void {
     const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
     for (const [id, texture] of sorted) {
       if (!texture) {
@@ -51,12 +51,12 @@ export class TileData extends Layer {
       const halfWorldSize = Math.pow(2, id.zoom - 1);
       const size = 1 / halfWorldSize;
       if (this.style === Style.Hypsometry) {
-        planner.addHypsometry([
+        baker.addHypsometry([
             (id.x + 0.5) / halfWorldSize,
             (id.y - 0.5) / halfWorldSize,
         ], [size, size], texture, /* z= */ -1);
       } else if (this.style === Style.Rgb) {
-        planner.addBillboard([
+        baker.addBillboard([
             (id.x + 0.5) / halfWorldSize,
             (id.y - 0.5) / halfWorldSize,
         ], NO_OFFSET, [size, size], texture, /* z= */ -1);

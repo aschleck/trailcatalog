@@ -6,7 +6,7 @@ import { Disposable } from 'js/common/disposable';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { RenderPlanner } from './render_planner';
+import { RenderBaker } from './render_baker';
 import { Renderer } from './renderer';
 import { Glyph } from './sdf_program';
 import { TexturePool } from './texture_pool';
@@ -82,7 +82,7 @@ export class SdfPlanner extends Disposable {
       offset: Vec2,
       angle: number,
       z: number,
-      planner: RenderPlanner): Vec2 {
+      baker: RenderBaker): Vec2 {
     let valid = true;
     const glyphs = [];
     const size: Vec2 = [0, 0];
@@ -103,7 +103,7 @@ export class SdfPlanner extends Disposable {
       offset[0] += -size[0] / 2 - glyphs[glyphs.length - 1].glyphAdvance * scale / 4;
       offset[1] += -size[1] / 2;
 
-      planner.addGlyphs(
+      baker.addGlyphs(
           glyphs, fill, stroke, scale, center, offset, angle, this.atlas, ATLAS_GLYPH_SIZE, z);
       return size;
     } else {

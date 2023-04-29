@@ -541,7 +541,7 @@ function projectLabels(
 
     let type = undefined;
     let text = undefined;
-    let rank = 255;
+    let rank = -1;
     for (let i = 0; i < tags.length; i += 2) {
       const key = keys[tags[i]];
       if (key === 'class') {
@@ -568,7 +568,7 @@ function projectLabels(
       } else if (key === 'name') {
         text = String(values[tags[i + 1]]);
       } else if (key === 'rank') {
-        rank = Number(values[tags[i + 1]]) || rank;
+        rank = Number(values[tags[i + 1]]);
       }
     }
 

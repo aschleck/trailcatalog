@@ -3,8 +3,6 @@ import { checkExists } from 'js/common/asserts';
 import { RgbaU32, Vec2, Vec4 } from '../common/types';
 
 export interface Drawable {
-  readonly geometryBuffer: WebGLBuffer;
-  readonly indexBuffer: WebGLBuffer;
   geometryOffset: number;
   indexOffset: number;
 
@@ -63,37 +61,34 @@ export abstract class Program<P extends ProgramData> {
   protected abstract bind(offset: number): void;
   protected abstract deactivate(): void;
 
-  render(area: Vec2, centerPixels: Vec4[], worldRadius: number, drawables: Drawable[]): void {
+  render(
+      area: Vec2,
+      centerPixels: Vec4[],
+      worldRadius: number,
+      drawables: Drawable[],
+      geometryBuffer: WebGLBuffer,
+      indexBuffer: WebGLBuffer): void {
     const gl = this.gl;
 
     this.activate();
 
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, geometryBuffer);
     gl.uniform2f(
         this.program.uniforms.halfViewportSize, area[0] / 2, area[1] / 2);
     gl.uniform1f(this.program.uniforms.halfWorldSize, worldRadius);
 
     const uniforms = this.program.uniformBlock;
-    let lastArrayBuffer = undefined;
-    let lastElementArrayBuffer = undefined;
     for (const drawable of drawables) {
       if (uniforms) {
         gl.bindBufferRange(
             gl.UNIFORM_BUFFER,
             checkExists(uniforms.index),
-            drawable.geometryBuffer,
+            geometryBuffer,
             drawable.geometryOffset,
             uniforms.size);
       }
 
-      if (drawable.elements && drawable.indexBuffer !== lastElementArrayBuffer) {
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, drawable.indexBuffer);
-        lastElementArrayBuffer = drawable.indexBuffer;
-      }
-
-      if (drawable.geometryBuffer !== lastArrayBuffer) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, drawable.geometryBuffer);
-        lastArrayBuffer = drawable.geometryBuffer;
-      }
       this.bind(drawable.geometryOffset + (uniforms?.size ?? 0));
 
       if (drawable.texture) {

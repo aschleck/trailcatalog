@@ -4,7 +4,7 @@ import { LatLng, Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
 import { projectS2LatLng, projectS2Loop } from 'js/map/models/camera';
 import { Line } from 'js/map/rendering/geometry';
-import { RenderPlanner } from 'js/map/rendering/render_planner';
+import { RenderBaker } from 'js/map/rendering/render_baker';
 import { Renderer } from 'js/map/rendering/renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
 
@@ -90,12 +90,12 @@ export class OverlayData extends Layer {
     return this.lastChange > time;
   }
 
-  plan(viewportSize: Vec2, zoom: number, planner: RenderPlanner): void {
+  plan(viewportSize: Vec2, zoom: number, baker: RenderBaker): void {
     for (const billboard of this.billboards) {
-      planner.addBillboard(
+      baker.addBillboard(
           billboard.center, NO_OFFSET, billboard.size, billboard.texture, /* z= */ 20);
     }
-    planner.addLines(this.lines, BOUNDARY_RADIUS_PX, 0);
+    baker.addLines(this.lines, BOUNDARY_RADIUS_PX, 0);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {}

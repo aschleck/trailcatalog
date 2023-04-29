@@ -24,12 +24,13 @@ interface Args {
 
 export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, undefined> {
 
+  private area: Vec2;
   readonly camera: Camera;
   private readonly canvas: HTMLCanvasElement;
   private readonly dataChangedDebouncer: Debouncer;
   private readonly idleDebouncer: Debouncer;
   readonly renderer: Renderer;
-  private readonly renderPlanner: RenderPlanner;
+  readonly renderPlanner: RenderPlanner;
 
   private layers: Layer[];
   readonly textRenderer: TextRenderer;
@@ -43,6 +44,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     super(response);
 
     // We defer setting real coordinates until after we check our size below
+    this.area = [-1, -1];
     this.camera = new Camera(0, 0, -1);
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
@@ -57,7 +59,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
           premultipliedAlpha: true,
           stencil: true,
         })));
-    this.renderPlanner = new RenderPlanner([-1, -1], this.renderer);
+    this.renderPlanner = RenderPlanner.createPlannerAndPrograms(this.renderer);
 
     this.textRenderer = new TextRenderer(this.renderer);
     this.layers = [];
@@ -260,20 +262,20 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
 
     if (this.nextRender >= RenderType.CameraChange) {
       if (this.nextRender >= RenderType.DataChange) {
-        this.renderPlanner.clear();
+        this.renderPlanner.baker.clear();
         this.textRenderer.mark();
 
         const size: Vec2 = [this.canvas.width / DPI, this.canvas.height / DPI];
         const zoom = this.camera.zoom;
         for (const layer of this.layers) {
-          layer.plan(size, zoom, this.renderPlanner);
+          layer.plan(size, zoom, this.renderPlanner.baker);
         }
 
-        this.renderPlanner.save();
+        this.renderPlanner.upload();
         this.textRenderer.sweep();
         this.lastRenderPlan = Date.now();
       }
-      this.renderPlanner.render(this.camera);
+      this.renderPlanner.render(this.area, this.camera);
     }
     this.nextRender = RenderType.NoChange;
   }
@@ -293,7 +295,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     const height = this.screenArea.height;
     this.canvas.width = width * DPI;
     this.canvas.height = height * DPI;
-    this.renderPlanner.resize([width, height]);
+    this.area = [width, height];
     this.renderer.resize([width * DPI, height * DPI]);
     this.nextRender = RenderType.CameraChange;
     this.idleDebouncer.trigger();

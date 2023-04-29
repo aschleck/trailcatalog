@@ -2,11 +2,11 @@ import { Disposable } from 'js/common/disposable';
 import { EventSpec } from 'js/corgi/events';
 
 import { Vec2 } from './common/types';
-import { RenderPlanner } from './rendering/render_planner';
+import { RenderBaker } from './rendering/render_baker';
 
 export abstract class Layer extends Disposable {
   abstract hasDataNewerThan(time: number): boolean;
-  abstract plan(size: Vec2, zoom: number, planner: RenderPlanner): void;
+  abstract plan(size: Vec2, zoom: number, baker: RenderBaker): void;
 
   click(point: Vec2, px: [number, number], contextual: boolean, source: EventSource): boolean {
     return false

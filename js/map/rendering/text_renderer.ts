@@ -3,7 +3,7 @@ import { HashMap, HashSet } from 'js/common/collections';
 
 import { Vec2 } from '..//common/types';
 
-import { RenderPlanner } from './render_planner';
+import { RenderBaker } from './render_baker';
 import { Renderer } from './renderer';
 import { TexturePool } from './texture_pool';
 
@@ -97,23 +97,23 @@ export class TextRenderer {
 
   // Coordinate system: y=0 is the top
 
-  planDiamond(diamond: RenderableDiamond, position: Vec2, z: number, planner: RenderPlanner): void {
+  planDiamond(diamond: RenderableDiamond, position: Vec2, z: number, baker: RenderBaker): void {
     const cached = this.diamondCache.get(diamond);
     if (cached) {
       cached.generation = this.generation;
-      planner.addBillboard(position, cached.offset, cached.size, cached.texture, z);
+      baker.addBillboard(position, cached.offset, cached.size, cached.texture, z);
       return;
     }
 
     if (diamond.text) {
-      this.planLabeledPin(diamond, position, z, planner);
+      this.planLabeledPin(diamond, position, z, baker);
     } else {
-      this.planUnlabeledPin(diamond, position, z, planner);
+      this.planUnlabeledPin(diamond, position, z, baker);
     }
   }
 
   private planUnlabeledPin(
-      diamond: RenderableDiamond, position: Vec2, z: number, planner: RenderPlanner): void {
+      diamond: RenderableDiamond, position: Vec2, z: number, baker: RenderBaker): void {
     const fullSize = [
       2 * DIAMOND_RADIUS_PX + 2 * DRAW_PADDING_PX,
       2 * DIAMOND_RADIUS_PX + 2 * DRAW_PADDING_PX,
@@ -141,15 +141,15 @@ export class TextRenderer {
       size: fullSize,
       texture,
     });
-    planner.addBillboard(position, offset, fullSize, texture, z);
+    baker.addBillboard(position, offset, fullSize, texture, z);
   }
 
   private planLabeledPin(
-      text: RenderableDiamond, position: Vec2, z: number, planner: RenderPlanner): void {
+      text: RenderableDiamond, position: Vec2, z: number, baker: RenderBaker): void {
     const cached = this.diamondCache.get(text);
     if (cached) {
       cached.generation = this.generation;
-      planner.addBillboard(position, cached.offset, cached.size, cached.texture, z);
+      baker.addBillboard(position, cached.offset, cached.size, cached.texture, z);
       return;
     }
 
@@ -195,19 +195,19 @@ export class TextRenderer {
       size: fullSize,
       texture,
     });
-    planner.addBillboard(position, offset, fullSize, texture, z);
+    baker.addBillboard(position, offset, fullSize, texture, z);
   }
 
   planText(
       text: RenderableText,
       position: Vec2,
       z: number,
-      planner: RenderPlanner,
+      baker: RenderBaker,
       angle: number = 0): void {
     const cached = this.textCache.get(text);
     if (cached) {
       cached.generation = this.generation;
-      planner.addBillboard(position, cached.offset, cached.size, cached.texture, z, angle);
+      baker.addBillboard(position, cached.offset, cached.size, cached.texture, z, angle);
       return;
     }
 
@@ -238,7 +238,7 @@ export class TextRenderer {
       size: textSize,
       texture,
     });
-    planner.addBillboard(position, offset, textSize, texture, z, angle);
+    baker.addBillboard(position, offset, textSize, texture, z, angle);
   }
 }
 

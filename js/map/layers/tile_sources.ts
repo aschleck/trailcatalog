@@ -37,7 +37,7 @@ export const MAPTILER_OUTDOOR: BitmapTileset = {
 } as const;
 
 export const MAPTILER_PLANET: MbtileTileset = {
-  extraZoom: -1, // Magic number: -1 renders too slow, -2 renders too blocky
+  extraZoom: -1,
   minZoom: 0,
   maxZoom: 15,
   tileUrl: 'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?' +
@@ -74,7 +74,7 @@ export const THUNDERFOREST_TOPO: BitmapTileset = {
 export const TRAILCATALOG_CONTOURS: MbtileTileset = {
   extraZoom: -1,
   minZoom: 9,
-  maxZoom: 14,
+  maxZoom: 9,
   tileUrl: 'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
   type: 'mbtile',
 } as const;
