@@ -47,7 +47,6 @@ const LANDCOVER_ICE_FILL = rgbaToUint32(1, 1, 1, 1);
 const LANDCOVER_SAND_FILL = rgbaToUint32(252 / 255, 247 / 255, 204 / 255, 1);
 const LANDCOVER_WOOD_FILL = rgbaToUint32(191 / 255, 202 / 255, 155 / 255, 1);
 const LANDUSE_HUMAN_FILL = rgbaToUint32(230 / 255, 230 / 255, 230 / 255, 1);
-const PARK_FILL = rgbaToUint32(227 / 255, 239 / 255, 190 / 255, 1);
 const WATER_FILL = rgbaToUint32(104 / 255, 167 / 255, 196 / 255, 1);
 
 const LABEL_Z = 4;
@@ -61,33 +60,8 @@ const TERTIARY_LABEL_FILL = rgbaToUint32(0.5, 0.5, 0.5, 1);
 const TERTIARY_LABEL_STROKE = rgbaToUint32(0.95, 0.95, 0.95, 1);
 const TERTIARY_LABEL_SIZE = 0.5;
 
-const TILE_INDEX_BYTE_SIZE = 2_097_152;
+const TILE_INDEX_BYTE_SIZE = 512_000;
 const TILE_GEOMETRY_BYTE_SIZE = 4_194_304;
-
-interface RenderableMbtileTile extends MbtileTile {
-  areas: RenderedArea[];
-  boundaries: RenderedLine<Boundary>[];
-  contoursFt: RenderedLine<Contour>[];
-  contoursM: RenderedLine<Contour>[];
-  highwayss: {
-    major: RenderedLine<Highway>[];
-    arterial: RenderedLine<Highway>[];
-    minor: RenderedLine<Highway>[];
-  };
-  labels: RenderedLabel[];
-  waterways: RenderedLine<Waterway>[];
-}
-
-type RenderedArea = Area & {
-  fill: RgbaU32;
-};
-
-type RenderedLabel = Label & {
-  fill: RgbaU32;
-  stroke: RgbaU32;
-};
-
-type RenderedLine<T> = Line & T;
 
 export class MbtileData extends Layer {
 
@@ -192,9 +166,6 @@ export class MbtileData extends Layer {
         color = LANDCOVER_WOOD_FILL;
       } else if (area.type === AreaType.LanduseHuman) {
         color = LANDUSE_HUMAN_FILL;
-      } else if (area.type === AreaType.Park) {
-        // Disable parks
-        //color = PARK_FILL;
       } else if (area.type === AreaType.Transportation) {
         color = HIGHWAY_FILL;
       } else if (area.type === AreaType.Water) {
@@ -261,10 +232,14 @@ export class MbtileData extends Layer {
         verticesLength: contour.vertexLength,
       };
 
-      if (zoom >= 9) {
+      if (zoom >= 12) {
         if (contour.nthLine === 10) {
           bold.push(line);
         } else {
+          regular.push(line);
+        }
+      } else if (zoom >= 9) {
+        if (contour.nthLine >= 2) {
           regular.push(line);
         }
       }
@@ -309,9 +284,9 @@ export class MbtileData extends Layer {
   }
 
   private bakeHighways(tile: MbtileTile, zoom: number, baker: RenderBaker): void {
-    const major: RenderedLine<Highway>[] = [];
-    const arterial: RenderedLine<Highway>[] = [];
-    const minor: RenderedLine<Highway>[] = [];
+    const major: Line[] = [];
+    const arterial: Line[] = [];
+    const minor: Line[] = [];
     for (const line of tile.highways) {
       let list;
       if (line.type === HighwayType.Major) {
@@ -353,16 +328,7 @@ export class MbtileData extends Layer {
       let size;
       let z;
 
-      if (label.type === LabelType.Peak) {
-        if (zoom > 12) {
-          fill = TERTIARY_LABEL_FILL;
-          stroke = TERTIARY_LABEL_STROKE;
-          size = TERTIARY_LABEL_SIZE;
-          z = 0;
-        } else {
-          continue;
-        }
-      } else if (label.type === LabelType.Country) {
+      if (label.type === LabelType.Country) {
         if (zoom >= 7) {
           continue;
         } else if (zoom >= 6) {
@@ -426,6 +392,29 @@ export class MbtileData extends Layer {
         }
 
         z = 0.8;
+      } else if (label.type === LabelType.NationalForest || label.type === LabelType.NationalPark) {
+        if (zoom > 9) {
+          fill = SECONDARY_LABEL_FILL;
+          stroke = SECONDARY_LABEL_STROKE;
+          size = SECONDARY_LABEL_SIZE;
+        } else if (zoom > 8) {
+          fill = TERTIARY_LABEL_FILL;
+          stroke = TERTIARY_LABEL_STROKE;
+          size = TERTIARY_LABEL_SIZE;
+        } else {
+          continue;
+        }
+
+        z = 0;
+      } else if (label.type === LabelType.Peak) {
+        if (zoom > 12) {
+          fill = TERTIARY_LABEL_FILL;
+          stroke = TERTIARY_LABEL_STROKE;
+          size = TERTIARY_LABEL_SIZE;
+          z = 0;
+        } else {
+          continue;
+        }
       } else {
         continue;
       }

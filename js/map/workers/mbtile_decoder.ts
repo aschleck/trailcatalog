@@ -218,15 +218,9 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile & Vertex
     const {labels} = projectLabels(id, keys, values, features, extent, tile);
     tile.labels.push(...labels);
   } else if (name === 'park') {
-    const areas = [];
-    for (const feature of features) {
-      areas.push({
-        type: AreaType.Park,
-        polygons: projectPolygonalFeature(id, feature, extent, tile),
-        priority: -1,
-      });
-    }
-    tile.areas.push(...compressAreas(areas, tile));
+    const {areas, labels} = projectParks(id, keys, values, features, extent, tile);
+    tile.areas.push(...areas);
+    tile.labels.push(...labels);
   } else if (name === 'place') {
     const {labels} = projectLabels(id, keys, values, features, extent, tile);
     tile.labels.push(...labels);
@@ -588,6 +582,76 @@ function projectLabels(
     }
   }
   return {labels};
+}
+
+function projectParks(
+    id: TileId,
+    keys: string[],
+    values: Array<boolean|number|string>,
+    features: Feature[],
+    extent: number,
+    buffers: VertexBuffers): {
+  areas: Area[];
+  labels: Label[];
+} {
+  const {pointss, polygonsss} = projectGeometries(id, features, extent);
+
+  const areas: Area[] = [];
+  for (let i = 0; i < polygonsss.length; ++i) {
+    const out: Polygon[] = [];
+    for (const polygons of polygonsss[i]) {
+      projectPolygons(polygons, out, buffers);
+    }
+
+    if (out.length > 0) {
+      areas.push({
+        type: AreaType.Park,
+        polygons: out,
+        priority: -1,
+      });
+    }
+  }
+
+  const labels = [];
+  for (let i = 0; i < pointss.length; ++i) {
+    const tags = features[i].tags;
+
+    let type = undefined;
+    let text = undefined;
+    for (let i = 0; i < tags.length; i += 2) {
+      const key = keys[tags[i]];
+      if (key === 'class') {
+        const value = values[tags[i + 1]];
+        if (value === 'national_forest') {
+          type = LabelType.NationalForest;
+        } else if (value === 'national_park') {
+          type = LabelType.NationalPark;
+        }
+      } else if (key === 'name') {
+        text = String(values[tags[i + 1]]);
+      }
+    }
+
+    const constType = type;
+    const constText = text;
+    if (constType && constText) {
+      for (const vertices of pointss[i]) {
+        labels.push({
+          type: constType,
+          positionOffset: buffers.geometryOffset,
+          rank: -1,
+          text: constText,
+        });
+        buffers.geometry.set([vertices[0], vertices[1]], buffers.geometryOffset);
+        buffers.geometryOffset += 2;
+      }
+    }
+  }
+
+  return {
+    areas: compressAreas(areas, buffers),
+    labels,
+  };
 }
 
 function projectTransportation(

@@ -118,6 +118,8 @@ export enum LabelType {
   Continent,
   Country,
   Island,
+  NationalForest,
+  NationalPark,
   Peak,
   Province,
   Region,
