@@ -5,6 +5,8 @@
 Generate the URLs.
 
 ```
+nix-shell -p parallel
+
 for lat in range(-90, 90):
     for lng in range(-180, 180):
         y = f'S{-lat:02}' if lat < 0 else f'N{lat:02}'
@@ -21,6 +23,8 @@ Download them with `cat urls.txt | parallel -j16 wget`.
 ## Generating contours
 
 ```
+nix-shell -p gdal openjdk17
+
 java -jar ~/generate_contours_deploy.jar \
     /mnt/horse/copernicus /mnt/horse/contours/
 
@@ -31,3 +35,20 @@ for z in 9 10 11 12 13 14; do
         $z
 done
 ```
+
+## Making DEM tiles
+
+```
+nix-shell -p mbutil python310Packages.rasterio
+
+rio rgbify \
+    copernicus.vrt \
+    copernicus.mbtiles \
+    --co LOSSLESS=true \
+    --format webp \
+    --max-z 13 \
+    --min-z 13
+
+mb-util copernicus.mbtiles tiles/dem --image_format=webp
+```
+

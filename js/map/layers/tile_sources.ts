@@ -71,3 +71,10 @@ export const THUNDERFOREST_TOPO: BitmapTileset = {
   type: 'bitmap',
 } as const;
 
+export const TRAILCATALOG_CONTOURS: MbtileTileset = {
+  extraZoom: 0,
+  minZoom: 9,
+  maxZoom: 14,
+  tileUrl: 'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
+  type: 'mbtile',
+} as const;
