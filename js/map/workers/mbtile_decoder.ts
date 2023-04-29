@@ -248,8 +248,6 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile & Vertex
     const {areas, waterways} = projectWaterways(id, keys, values, features, extent, tile);
     tile.areas.push(...areas);
     tile.waterways.push(...waterways);
-  } else {
-    console.log(name);
   }
 }
 

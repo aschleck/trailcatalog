@@ -212,7 +212,7 @@ export class MbtileData extends Layer {
                 [tile.geometry[label.positionOffset], tile.geometry[label.positionOffset + 1]],
                 [0, 0],
                 0,
-                PEAK_LABEL_Z,
+                PEAK_LABEL_Z + 0.8 - label.rank / 50,
                 planner);
           }
         } else if (label.type === LabelType.Country) {
@@ -238,7 +238,7 @@ export class MbtileData extends Layer {
                 [tile.geometry[label.positionOffset], tile.geometry[label.positionOffset + 1]],
                 [0, 0],
                 0,
-                PEAK_LABEL_Z,
+                PEAK_LABEL_Z + 0.001,
                 planner);
           }
         } else if (label.type === LabelType.State) {
@@ -251,7 +251,7 @@ export class MbtileData extends Layer {
                 [tile.geometry[label.positionOffset], tile.geometry[label.positionOffset + 1]],
                 [0, 0],
                 0,
-                PEAK_LABEL_Z,
+                PEAK_LABEL_Z + 0.999,
                 planner);
           }
         }
