@@ -163,10 +163,12 @@ function Content({
     filteredTrails = state.nearbyTrails;
   }
 
-  let llz;
-  if (
-      !bound || parameters.lat || parameters.lng || parameters.zoom) {
-    llz = {
+  let camera = undefined;
+  if (bound) {
+    camera = bound;
+  } else if (!parameters._used) {
+    parameters._used = "true";
+    camera = {
       lat: floatCoalesce(parameters.lat, 46.859369),
       lng: floatCoalesce(parameters.lng, -121.747888),
       zoom: floatCoalesce(parameters.zoom, 12),
@@ -240,7 +242,7 @@ function Content({
         <div className="grow h-full relative">
           {state.boundary ? <SearchFilter state={state} /> : ''}
           <MapElement
-              camera={llz ?? bound ?? {lat: 46.859369, lng: -121.747888, zoom: 12}}
+              camera={camera}
               ref="map"
           />
           {trailDetails}

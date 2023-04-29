@@ -12,7 +12,7 @@ export function MapElement({
   interactive,
   ref,
 }: {
-  camera: LatLngRect|LatLngZoom;
+  camera: LatLngRect|LatLngZoom|undefined;
   className?: string;
   height?: string;
   interactive?: boolean;

@@ -132,6 +132,7 @@ export class TileDataService extends Service<EmptyDeps> {
       };
     }
 
+    stream.listener = listener;
     for (const [id, mbtile] of stream.tiles) {
       listener.loadTile(id, mbtile);
     }

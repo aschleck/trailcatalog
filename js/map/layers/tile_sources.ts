@@ -19,7 +19,7 @@ export const MAPTILER_DEM: BitmapTileset = {
 } as const;
 
 export const MAPTILER_HILLSHADE: BitmapTileset = {
-  extraZoom: 0,
+  extraZoom: -1, // we're using the 512x512px tiles
   minZoom: 0,
   maxZoom: 12,
   tileUrl: 'https://api.maptiler.com/tiles/hillshade/${id.zoom}/${id.x}/${id.y}.webp?' +
@@ -37,7 +37,7 @@ export const MAPTILER_OUTDOOR: BitmapTileset = {
 } as const;
 
 export const MAPTILER_PLANET: MbtileTileset = {
-  extraZoom: -1,
+  extraZoom: 0,
   minZoom: 0,
   maxZoom: 15,
   tileUrl: 'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?' +
@@ -55,7 +55,7 @@ export const MAPTILER_TOPO: BitmapTileset = {
 } as const;
 
 export const STADIA_OMT: MbtileTileset = {
-  extraZoom: -1.5, // Magic number: -1 renders too slow, -2 renders too blocky
+  extraZoom: 0,
   minZoom: 0,
   maxZoom: 14,
   tileUrl: 'https://tiles.stadiamaps.com/data/openmaptiles/${id.zoom}/${id.x}/${id.y}.pbf',
@@ -72,7 +72,7 @@ export const THUNDERFOREST_TOPO: BitmapTileset = {
 } as const;
 
 export const TRAILCATALOG_CONTOURS: MbtileTileset = {
-  extraZoom: -1,
+  extraZoom: 0,
   minZoom: 9,
   maxZoom: 9,
   tileUrl: 'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',

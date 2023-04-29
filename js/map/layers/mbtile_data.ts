@@ -165,6 +165,7 @@ export class MbtileData extends Layer {
 
   private bakeTile(id: TileId, tile: MbtileTile, baker: RenderBaker): void {
     this.bakeAreas(tile, baker);
+    this.bakeBoundaries(tile, id.zoom, baker);
     this.bakeContours(tile, id.zoom, baker);
     this.bakeHighways(tile, id.zoom, baker);
     this.bakeLabels(tile, id.zoom, baker);
@@ -217,6 +218,26 @@ export class MbtileData extends Layer {
     }
   }
 
+  private bakeBoundaries(tile: MbtileTile, zoom: number, baker: RenderBaker): void {
+    const lines = [];
+    for (const boundary of tile.boundaries) {
+      if (boundary.adminLevel > zoom) {
+        continue;
+      }
+
+      lines.push({
+        colorFill: BOUNDARY_FILL,
+        colorStroke: BOUNDARY_STROKE,
+        stipple: false,
+        vertices: tile.geometry,
+        verticesOffset: boundary.vertexOffset,
+        verticesLength: boundary.vertexLength,
+      });
+    }
+
+    baker.addLines(lines, CONTOUR_NORMAL_RADIUS, CONTOUR_Z);
+  }
+
   private bakeContours(tile: MbtileTile, zoom: number, baker: RenderBaker): void {
     let contours;
     const unit = getUnitSystem();
@@ -240,14 +261,12 @@ export class MbtileData extends Layer {
         verticesLength: contour.vertexLength,
       };
 
-      if (zoom > 14) {
+      if (zoom >= 9) {
         if (contour.nthLine === 10) {
           bold.push(line);
         } else {
           regular.push(line);
         }
-      } else if (contour.nthLine >= 5) {
-        regular.push(line);
       }
 
       if (contour.nthLine === 10 && zoom >= 14) {
@@ -322,7 +341,7 @@ export class MbtileData extends Layer {
     if (zoom > 7) {
       baker.addLines(arterial, HIGHWAY_ARTERIAL_RADIUS * zoom / 15, HIGHWAY_Z + 0.5);
     }
-    if (zoom > 10) {
+    if (zoom > 13) {
       baker.addLines(minor, HIGHWAY_MINOR_RADIUS * zoom / 15, HIGHWAY_Z);
     }
   }
@@ -423,24 +442,5 @@ export class MbtileData extends Layer {
           baker);
     }
   }
-}
-
-function renderLines<T extends {
-  vertexLength: number;
-  vertexOffset: number;
-}>(lines: T[], fill: RgbaU32, stroke: RgbaU32, geometry: Float64Array): RenderedLine<T>[] {
-  const rendered = [];
-  for (const line of lines) {
-    rendered.push({
-      ...line,
-      colorFill: fill,
-      colorStroke: stroke,
-      stipple: false,
-      vertices: geometry,
-      verticesOffset: line.vertexOffset,
-      verticesLength: line.vertexLength,
-    });
-  }
-  return rendered;
 }
 

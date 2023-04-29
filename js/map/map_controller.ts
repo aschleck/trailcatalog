@@ -18,7 +18,7 @@ import { Layer } from './layer';
 import { PointerInterpreter } from './pointer_interpreter';
 
 interface Args {
-  camera: LatLngRect|LatLngZoom;
+  camera: LatLngRect|LatLngZoom|undefined;
   interactive: boolean;
 }
 
@@ -70,7 +70,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
 
     this.registerListener(window, 'resize', () => this.resize());
     this.resize();
-    this.setCamera(response.args.camera);
+    this.setCamera(response.args.camera ?? {lat: 46.859369, lng: -121.747888, zoom: 12});
 
     if (response.args.interactive) {
       this.registerInteractiveListeners();
@@ -93,7 +93,9 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
   }
 
   updateArgs(newArgs: Args): void {
-    this.setCamera(newArgs.camera);
+    if (newArgs.camera) {
+      this.setCamera(newArgs.camera);
+    }
     this.idleDebouncer.trigger();
   }
 
