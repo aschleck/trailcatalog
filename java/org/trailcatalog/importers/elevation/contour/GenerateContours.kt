@@ -4,7 +4,6 @@ import com.google.common.base.Joiner
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
-import com.google.common.geometry.S2Point
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -106,7 +105,8 @@ private fun runContour(source: Path, destination: Path, offset: Double, interval
 private fun readFgbAndSimplify(source: Path, unitIsFeet: Boolean): List<Contour> {
   return readFgb(source, unitIsFeet)
       .sortedBy { it.height }
-      .map { Contour(it.height, simplifyContour(it.points, S1Angle.degrees(0.0001))) }
+      // Optimize for zoom level 17
+      .map { Contour(it.height, simplifyContour(it.points, S1Angle.degrees(0.003 / 256))) }
 }
 
 private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
@@ -152,10 +152,10 @@ private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
           continue
         }
 
-        val points = ArrayList<S2Point>()
+        val points = ArrayList<S2LatLng>()
         val xys = feature.geometry().xyVector()
         for (j in 0 until xys.length() step 2) {
-          points.add(S2LatLng.fromDegrees(xys[j + 1], xys[j]).toPoint())
+          points.add(S2LatLng.fromDegrees(xys[j + 1], xys[j]))
         }
         val heightInUnit = if (unitIsFeet) {
           height / 0.3048

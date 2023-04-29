@@ -1,4 +1,6 @@
-# Pulling Copernicus
+# Notes on stuff
+
+## Pulling Copernicus
 
 Generate the URLs.
 
@@ -15,3 +17,17 @@ for lat in range(-90, 90):
 ```
 
 Download them with `cat urls.txt | parallel -j16 wget`.
+
+## Generating contours
+
+```
+java -jar ~/generate_contours_deploy.jar \
+    /mnt/horse/copernicus /mnt/horse/contours/
+
+for z in 9 10 11 12 13 14; do
+    java -jar ~/tile_contours_deploy.jar \
+        /mnt/horse/contours/ \
+        /mnt/horse/tiles/contours/ \
+        $z
+done
+```

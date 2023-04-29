@@ -7,7 +7,6 @@ import com.google.common.collect.Lists
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
-import com.google.common.geometry.S2Point
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -34,33 +33,44 @@ fun main(args: Array<String>) {
   val dest = Path.of(args[1])
 
   val zoom = args[2].toInt()
-  val size = 2.0.pow(zoom).toInt()
+  val worldSize = 2.0.pow(zoom).toInt()
+  val tolerance =
+      S1Angle.degrees(
+          if (zoom < 14) {
+            12.5 * 360.0 / worldSize / EXTENT_TILE
+          } else {
+            0.003 / EXTENT_TILE
+          }
+      )
 
   val cache =
       CacheBuilder
           .newBuilder()
-          .weakValues()
+          .maximumSize(10)
           .build(object : CacheLoader<Pair<Int, Int>, Pair<List<Contour>, List<Contour>>>() {
-    override fun load(p0: Pair<Int, Int>): Pair<List<Contour>, List<Contour>> {
-      val (lat, lng) = p0
-      val mvt = source.resolve(getCopernicusMvt(lat, lng))
-      val contoursFt = ArrayList<Contour>()
-      val contoursM = ArrayList<Contour>()
-      if (mvt.exists()) {
-        loadContourMvt(
-            contoursFt,
-            contoursM,
-            mvt,
-            S2LatLngRect.fromPointPair(
-                S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
-                S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1)))
-      }
-      return Pair(contoursFt, contoursM)
-    }
-  })
+            override fun load(p0: Pair<Int, Int>): Pair<List<Contour>, List<Contour>> {
+              val (lat, lng) = p0
+              val mvt = source.resolve(getCopernicusMvt(lat, lng))
+              val contoursFt = ArrayList<Contour>()
+              val contoursM = ArrayList<Contour>()
+              if (mvt.exists()) {
+                loadContourMvt(
+                    contoursFt,
+                    contoursM,
+                    mvt,
+                    S2LatLngRect.fromPointPair(
+                        S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
+                        S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1)))
+              }
+              return Pair(
+                  contoursFt.map { Contour(it.height, simplifyContour(it.points, tolerance)) },
+                  contoursM.map { Contour(it.height, simplifyContour(it.points, tolerance)) })
+            }
+          })
 
   val low = if (args.size >= 7) Pair(args[3].toInt(), args[4].toInt()) else Pair(0, 0)
-  val high = if (args.size >= 7) Pair(args[5].toInt(), args[6].toInt()) else Pair(size, size)
+  val high =
+      if (args.size >= 7) Pair(args[5].toInt(), args[6].toInt()) else Pair(worldSize, worldSize)
   val tasks = ArrayList<ListenableFuture<*>>()
   for (y in low.second until high.second) {
     for (x in low.first until high.first) {
@@ -105,13 +115,8 @@ private fun cropTile(
       S2LatLngRect.fromPointPair(
           S2LatLng.fromDegrees(latLow, lngLow),
           S2LatLng.fromDegrees(latHigh, lngHigh))
-  val tolerance = S1Angle.degrees(12.5 * 360.0 / worldSize / EXTENT_TILE)
-  val cropFt =
-      crop(contoursFt, bound)
-          .map { Contour(it.height, simplifyContour(it.points, tolerance)) }
-  val cropM =
-      crop(contoursM, bound)
-          .map { Contour(it.height, simplifyContour(it.points, tolerance)) }
+  val cropFt = crop(contoursFt, bound)
+  val cropM = crop(contoursM, bound)
 
   if (cropFt.isEmpty() || cropM.isEmpty()) {
     return
@@ -165,7 +170,7 @@ private fun loadContourMvt(
       var i = 0
       var x = 0
       var y = 0
-      var building: ArrayList<S2Point>? = null
+      var building: ArrayList<S2LatLng>? = null
       while (i < feature.geometryCount) {
         val tag = feature.getGeometry(i)
         i += 1
@@ -211,7 +216,7 @@ private fun crop(contours: List<Contour>, view: S2LatLngRect): List<Contour> {
 
 private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>) {
   var i = 0
-  val lls = contour.points.map { S2LatLng(it) }
+  val lls = contour.points
 
   while (i < lls.size) {
     while (i < lls.size && !view.contains(lls[i])) {
@@ -230,9 +235,9 @@ private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>
     val first = Math.max(0, i - 1)
     val last = j
     val count = last - first
-    val span = Lists.newArrayListWithExpectedSize<S2Point>(count)
+    val span = Lists.newArrayListWithExpectedSize<S2LatLng>(count)
     for (p in first until last) {
-      span.add(lls[p].toPoint())
+      span.add(lls[p])
     }
     out.add(Contour(contour.height, span))
 
@@ -241,11 +246,11 @@ private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>
 }
 
 private fun unproject(
-    x: Int, y: Int, low: Pair<Double, Double>, high: Pair<Double, Double>, extent: Int): S2Point {
+    x: Int, y: Int, low: Pair<Double, Double>, high: Pair<Double, Double>, extent: Int): S2LatLng {
   val dx = high.first - low.first
   val dy = high.second - low.second
 
   val xw = low.first + dx * x / extent
   val yw = high.second - dy * y / extent
-  return S2LatLng.fromRadians(asin(tanh(yw * Math.PI)), Math.PI * xw).toPoint()
+  return S2LatLng.fromRadians(asin(tanh(yw * Math.PI)), Math.PI * xw)
 }

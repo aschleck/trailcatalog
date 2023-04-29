@@ -14,9 +14,9 @@ import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-data class Contour(val height: Int, val points: List<S2Point>)
+data class Contour(val height: Int, val points: List<S2LatLng>)
 
-const val EXTENT_ONE_DEGREE = 4096
+const val EXTENT_ONE_DEGREE = 4096 * 512
 const val EXTENT_TILE = 4096
 
 fun contoursToTile(
@@ -109,7 +109,7 @@ private fun contoursToLayer(
   return layer.build()
 }
 
-private fun project(points: List<S2Point>, bound: S2LatLngRect, extent: Int): List<Int> {
+private fun project(points: List<S2LatLng>, bound: S2LatLngRect, extent: Int): List<Int> {
   val low = project(bound.lo())
   val high = project(bound.hi())
   val dx = high.first - low.first
@@ -117,7 +117,7 @@ private fun project(points: List<S2Point>, bound: S2LatLngRect, extent: Int): Li
 
   val xys = Lists.newArrayListWithExpectedSize<Int>(points.size * 2)
   for (point in points) {
-    val (x, y) = project(S2LatLng(point))
+    val (x, y) = project(point)
     xys.add(((x - low.first) / dx * extent).roundToInt())
     xys.add(((high.second - y) / dy * extent).roundToInt())
   }
@@ -131,11 +131,12 @@ fun project(ll: S2LatLng): Pair<Double, Double> {
   return Pair(x, y)
 }
 
-fun simplifyContour(points: List<S2Point>, tolerance: S1Angle): List<S2Point> {
+fun simplifyContour(lls: List<S2LatLng>, tolerance: S1Angle): List<S2LatLng> {
   val chord = S1ChordAngle.fromS1Angle(tolerance)
+  val points = lls.map { it.toPoint() }
   val out = ArrayList<S2Point>()
   douglasPeucker(0, points.size - 1, points, chord, out)
-  return out
+  return out.map { S2LatLng(it) }
 }
 
 private tailrec fun douglasPeucker(
