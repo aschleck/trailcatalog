@@ -74,6 +74,33 @@
 
       locations."/" = {
         root = "/mnt/horse/tiles";
+
+        extraConfig = ''
+          add_header 'Vary' 'Origin' always;
+          valid_referers server_names
+              trailcatalog.org
+              *.trailcatalog.org
+              ~^\d+\.\d+\.\d+\.\d+(:\d+)?/
+              ~^[a-z]+:(\d+)?/;
+
+          if ($invalid_referer) {
+            return 403;
+          }
+
+          add_header 'Access-Control-Allow-Origin' $http_origin always;
+
+          if ($request_method = 'OPTIONS') {
+            # nginx doesn't inherit add_header from parent blocks so we duplicate
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Access-Control-Allow-Headers' $http_access_control_allow_headers always;
+            add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS' always;
+            add_header 'Access-Control-Allow-Origin' $http_origin always;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            add_header 'Vary' 'Origin' always;
+            return 204;
+          }
+        '';
       };
     };
 
