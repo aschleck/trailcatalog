@@ -14,7 +14,7 @@ import { TileDataService } from 'js/map/layers/tile_data_service';
 import { MAPTILER_CONTOURS, MAPTILER_DEM, MAPTILER_OUTDOOR, MAPTILER_PLANET, MAPTILER_TOPO, TRAILCATALOG_CONTOURS } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map/models/camera';
-import { RenderPlanner } from 'js/map/rendering/render_planner';
+import { RenderBaker } from 'js/map/rendering/render_baker';
 
 const CELL_BORDER = rgbaToUint32(1, 0, 0, 1);
 export const ZOOM_LEVEL = -1;
@@ -65,11 +65,13 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
+          this.mapController.renderPlanner.baker,
           MAPTILER_PLANET),
       new MbtileData(
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
+          this.mapController.renderPlanner.baker,
           TRAILCATALOG_CONTOURS),
     ]);
   }
@@ -186,7 +188,7 @@ class CellLayer extends Layer {
     return this.controller.lastChange > time;
   }
 
-  plan(size: Vec2, zoom: number, planner: RenderPlanner): void {
+  plan(size: Vec2, zoom: number, baker: RenderBaker): void {
     const lines = [];
     for (const loop of this.cells.values()) {
       const {splits, vertices} = projectS2Loop(loop);
@@ -204,6 +206,6 @@ class CellLayer extends Layer {
       }
     }
 
-    planner.addLines(lines, 1, 0);
+    baker.addLines(lines, 1, 0);
   }
 }

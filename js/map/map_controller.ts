@@ -35,8 +35,8 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
   private layers: Layer[];
   readonly textRenderer: TextRenderer;
 
+  private isIdle: boolean;
   private screenArea: DOMRect;
-  private lastMousePosition: Vec2|undefined;
   private lastRenderPlan: number;
   private nextRender: RenderType;
 
@@ -64,6 +64,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     this.textRenderer = new TextRenderer(this.renderer);
     this.layers = [];
 
+    this.isIdle = true;
     this.screenArea = new DOMRect();
     this.lastRenderPlan = 0;
     this.nextRender = RenderType.CameraChange;
@@ -196,11 +197,13 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
   }
 
   pan(dx: number, dy: number): void {
+    this.isIdle = false;
     this.camera.translate([dx, dy]);
     this.nextRender = RenderType.CameraChange;
   }
 
   zoom(amount: number, pageX: number, pageY: number): void {
+    this.isIdle = false;
     const offsetX = pageX - this.screenArea.left;
     const offsetY = pageY - this.screenArea.top;
     this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(offsetX, offsetY));
@@ -221,6 +224,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
   }
 
   private enterIdle(): void {
+    this.isIdle = true;
     this.nextRender = RenderType.DataChange;
     // No DPI here because this controls the overdraw for panning
     const size: Vec2 = [this.canvas.width, this.canvas.height];
@@ -254,7 +258,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
   }
 
   private render(): void {
-    if (!this.lastMousePosition) {
+    if (this.isIdle) {
       const hasNewData = this.layers.filter(l => l.hasDataNewerThan(this.lastRenderPlan));
       if (hasNewData.length > 0) {
         this.dataChangedDebouncer.trigger();

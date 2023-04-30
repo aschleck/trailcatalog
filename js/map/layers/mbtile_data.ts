@@ -393,11 +393,7 @@ export class MbtileData extends Layer {
 
         z = 0.8;
       } else if (label.type === LabelType.NationalForest || label.type === LabelType.NationalPark) {
-        if (zoom > 9) {
-          fill = SECONDARY_LABEL_FILL;
-          stroke = SECONDARY_LABEL_STROKE;
-          size = SECONDARY_LABEL_SIZE;
-        } else if (zoom > 8) {
+        if (zoom > 8) {
           fill = TERTIARY_LABEL_FILL;
           stroke = TERTIARY_LABEL_STROKE;
           size = TERTIARY_LABEL_SIZE;
