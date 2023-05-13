@@ -12,6 +12,7 @@ import { Glyph } from './sdf_program';
 import { TexturePool } from './texture_pool';
 
 const FONT_SIZE = 24;
+const LINE_HEIGHT = 1.6;
 const ATLAS_GLYPH_SIZE = FONT_SIZE + 2 * Math.ceil(FONT_SIZE / 8);
 
 export class SdfPlanner extends Disposable {
@@ -82,33 +83,46 @@ export class SdfPlanner extends Disposable {
       offset: Vec2,
       angle: number,
       z: number,
-      baker: RenderBaker): Vec2 {
+      baker: RenderBaker): void {
     let valid = true;
-    const glyphs = [];
-    const size: Vec2 = [0, 0];
     for (const c of characters) {
-      const glyph = this.glyphs.get(c);
-      if (glyph) {
-        glyphs.push(glyph);
-        size[0] += glyph.glyphAdvance * scale;
-        size[1] = Math.max(size[1], glyph.glyphHeight * scale);
-      } else {
+      if (c === '\n') {
+        continue;
+      }
+
+      if (!this.glyphs.has(c)) {
         this.characters.add(c);
         valid = false;
       }
     }
 
-    if (valid) {
+    if (!valid) {
+      this.regenerator.trigger();
+      return;
+    }
+
+    const lines = characters.split('\n');
+    let previousLinesHeight = 0;
+    for (let i = lines.length - 1; i >= 0; --i) {
+      const line = lines[i];
+      const glyphs = [];
+      const size: Vec2 = [0, 0];
+      for (const c of line) {
+        const glyph = checkExists(this.glyphs.get(c));
+        glyphs.push(glyph);
+        size[0] += glyph.glyphAdvance * scale;
+        size[1] = Math.max(size[1], glyph.glyphHeight * scale);
+      }
+
       // I don't understand the advance thing but qualitatively it looks good.
-      offset[0] += -size[0] / 2 - glyphs[glyphs.length - 1].glyphAdvance * scale / 4;
-      offset[1] += -size[1] / 2;
+      const lineOffset = [
+        offset[0] + -size[0] / 2 - glyphs[glyphs.length - 1].glyphAdvance * scale / 4,
+        offset[1] + -size[1] / 2 + previousLinesHeight * LINE_HEIGHT,
+      ] as Vec2;
+      previousLinesHeight += size[1];
 
       baker.addGlyphs(
-          glyphs, fill, stroke, scale, center, offset, angle, this.atlas, ATLAS_GLYPH_SIZE, z);
-      return size;
-    } else {
-      this.regenerator.trigger();
-      return [0, 0];
+          glyphs, fill, stroke, scale, center, lineOffset, angle, this.atlas, ATLAS_GLYPH_SIZE, z);
     }
   }
 

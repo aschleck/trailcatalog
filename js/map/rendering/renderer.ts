@@ -53,9 +53,8 @@ export class Renderer {
 
   uploadData(source: ArrayBuffer, size: number, to: WebGLBuffer): void {
     const gl = this.gl;
-    gl.bindBuffer(gl.COPY_WRITE_BUFFER, to);
-    gl.bufferSubData(gl.COPY_WRITE_BUFFER, 0, new Uint8Array(source), 0, size);
-    gl.bindBuffer(gl.COPY_WRITE_BUFFER, null);
+    gl.bindBuffer(gl.ARRAY_BUFFER, to);
+    gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(source), gl.STREAM_DRAW);
   }
 
   uploadIndices(source: ArrayBuffer, size: number, to: WebGLBuffer): void {
@@ -66,7 +65,6 @@ export class Renderer {
     const gl = this.gl;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, to);
     gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, new Uint8Array(source), 0, size);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
   }
 
   uploadAlphaTexture(source: Uint8Array, size: Vec2, target: WebGLTexture): void {

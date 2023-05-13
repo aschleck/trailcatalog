@@ -9,9 +9,12 @@ import { Area, AreaType, Boundary, Contour, Highway, HighwayType, Label, LabelTy
 const CONTOUR_LABEL_EVERY = 0.000007;
 const MAX_POLYGONS_IN_AREA = 500;
 const TEXT_DECODER = new TextDecoder();
+const LABEL_WRAP_WIDTH = 16;
 
 const MAX_GEOMETRY_SIZE = 8_000_000;
 const MAX_INDICES_SIZE = 512_000;
+
+const PREFERRED_LANGUAGE = navigator.language.split('-')[0];
 
 interface Feature {
   type: number;
@@ -66,6 +69,8 @@ export function decodeMbtile(id: TileId, buffer: ArrayBuffer): MbtileTile {
       throw new Error(`Unknown wire type ${wireType} for field ${field}`);
     }
   }
+
+  tile.labels = wrapLabels(tile.labels);
 
   return tile;
 }
@@ -534,7 +539,8 @@ function projectLabels(
     const tags = features[i].tags;
 
     let type = undefined;
-    let text = undefined;
+    let textPreferred = undefined;
+    let textFallback = undefined;
     let rank = -1;
     for (let i = 0; i < tags.length; i += 2) {
       const key = keys[tags[i]];
@@ -558,16 +564,20 @@ function projectLabels(
           type = LabelType.State;
         } else if (value === 'town') {
           type = LabelType.Town;
+        } else if (value === 'village') {
+          type = LabelType.Village;
         }
+      } else if (key === `name:${PREFERRED_LANGUAGE}`) {
+        textPreferred = String(values[tags[i + 1]]);
       } else if (key === 'name') {
-        text = String(values[tags[i + 1]]);
+        textFallback = String(values[tags[i + 1]]);
       } else if (key === 'rank') {
         rank = Number(values[tags[i + 1]]);
       }
     }
 
     const constType = type;
-    const constText = text;
+    const constText = textPreferred ?? textFallback;
     if (constType !== undefined && constText !== undefined && constText !== '') {
       for (const vertices of pointss[i]) {
         labels.push({
@@ -617,7 +627,8 @@ function projectParks(
     const tags = features[i].tags;
 
     let type = undefined;
-    let text = undefined;
+    let textPreferred = undefined;
+    let textFallback = undefined;
     for (let i = 0; i < tags.length; i += 2) {
       const key = keys[tags[i]];
       if (key === 'class') {
@@ -627,13 +638,15 @@ function projectParks(
         } else if (value === 'national_park') {
           type = LabelType.NationalPark;
         }
+      } else if (key === `name:${PREFERRED_LANGUAGE}`) {
+        textPreferred = String(values[tags[i + 1]]);
       } else if (key === 'name') {
-        text = String(values[tags[i + 1]]);
+        textFallback = String(values[tags[i + 1]]);
       }
     }
 
     const constType = type;
-    const constText = text;
+    const constText = textPreferred ?? textFallback;
     if (constType && constText) {
       for (const vertices of pointss[i]) {
         labels.push({
@@ -918,4 +931,31 @@ function compressAreas(areas: Area[], buffers: VertexBuffers): Area[] {
   buffers.indices.set(scratchIndices.subarray(0, scratchIOffset), originalIOffset);
 
   return copied;
+}
+
+function wrapLabels(labels: Label[]): Label[] {
+  const wrapped = [];
+  for (const label of labels) {
+    const split = label.text.split(' ');
+    let cumulative = '';
+    let length = 0;
+    for (const s of split) {
+      if (length === 0) {
+        cumulative += s;
+        length += s.length;
+      } else if (length + 1 + s.length < LABEL_WRAP_WIDTH) {
+        cumulative += ` ${s}`;
+        length += 1 + s.length;
+      } else {
+        cumulative += `\n${s}`;
+        length = s.length;
+      }
+    }
+
+    wrapped.push({
+      ...label,
+      text: cumulative,
+    });
+  }
+  return wrapped;
 }

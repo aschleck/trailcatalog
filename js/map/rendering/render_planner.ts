@@ -63,25 +63,26 @@ export class RenderPlanner {
   }
 
   upload(): void {
+    const [swapG, swapI] = this.baker.upload(this.renderer, this.geometryBuffer, this.indexBuffer);
+
     // We double-buffer in order to try and reduce stalls, ie time when the GPU is rendering the
     // previous frame and has to flush before we can upload the next frame's data.
-    const alternateG = this.geometryBufferAlternate;
-    this.geometryBufferAlternate = this.geometryBuffer;
-    this.geometryBuffer = alternateG;
-    const alternateI = this.indexBufferAlternate;
-    this.indexBufferAlternate = this.indexBuffer;
-    this.indexBuffer = alternateI;
-
-    this.baker.upload(this.renderer, this.geometryBuffer, this.indexBuffer);
+    if (swapG) {
+      const alternateG = this.geometryBufferAlternate;
+      this.geometryBufferAlternate = this.geometryBuffer;
+      this.geometryBuffer = alternateG;
+    }
+    if (swapI) {
+      const alternateI = this.indexBufferAlternate;
+      this.indexBufferAlternate = this.indexBuffer;
+      this.indexBuffer = alternateI;
+    }
   }
 
   render(area: Vec2, camera: Camera): void {
     if (this.baker.drawables.length === 0) {
       return;
     }
-
-    // ???
-    //this.renderer.uploadData(this.geometry, this.geometryByteSize, this.geometryBuffer);
 
     const bounds = camera.viewportBounds(area[0], area[1]);
 
@@ -115,8 +116,8 @@ export class RenderPlanner {
           centerPixels,
           camera.worldRadius,
           this.baker.drawables.slice(drawStartIndex, i),
-          this.geometryBuffer,
-          this.indexBuffer);
+          this.geometryBufferAlternate,
+          this.indexBufferAlternate);
       drawStart = drawable;
       drawStartIndex = i;
     }
@@ -127,8 +128,8 @@ export class RenderPlanner {
         centerPixels,
         camera.worldRadius,
         this.baker.drawables.slice(drawStartIndex, this.baker.drawables.length),
-        this.geometryBuffer,
-        this.indexBuffer);
+        this.geometryBufferAlternate,
+        this.indexBufferAlternate);
   }
 }
 

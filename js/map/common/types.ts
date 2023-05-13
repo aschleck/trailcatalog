@@ -125,6 +125,7 @@ export enum LabelType {
   Region,
   State,
   Town,
+  Village,
 }
 
 export interface Polygon {

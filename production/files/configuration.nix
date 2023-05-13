@@ -20,7 +20,7 @@
     allowedUDPPorts = [ 41641 ];
     checkReversePath = "loose"; # To make Nix shut up about Tailscale's possible functionality
 
-    interfaces."tailscale0".allowedTCPPorts = [ 22 5432 ];
+    interfaces."tailscale0".allowedTCPPorts = [ 22 5005 5432 ];
   };
 
   networking.hostName = "pink";

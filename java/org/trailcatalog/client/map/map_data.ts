@@ -463,10 +463,7 @@ export class MapData extends Layer {
   }
 
   private planOverview(viewportSize: Vec2, zoom: number, baker: RenderBaker): void {
-    const cells = this.overviewCellsInView(viewportSize);
-
-    for (const cell of cells) {
-      const id = reinterpretLong(cell.id()) as S2CellNumber;
+    for (const id of this.dataService.overviewCells.keys()) {
       this.planOverviewCell(id, zoom, baker);
     }
   }
@@ -587,10 +584,6 @@ export class MapData extends Layer {
 
   private fineCellsInView(viewportSize: Vec2): S2CellId[] {
     return this.cellsInView(viewportSize, SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
-  }
-
-  private overviewCellsInView(viewportSize: Vec2): S2CellId[] {
-    return this.cellsInView(viewportSize, SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL);
   }
 
   private cellsInView(viewportSize: Vec2, deepest: number): S2CellId[] {

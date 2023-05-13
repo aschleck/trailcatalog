@@ -111,6 +111,7 @@ export class MbtileData extends Layer {
 
     for (const [id, tile] of sorted) {
       baker.addPrebaked(tile.baked);
+      this.bakeLabels(tile.raw, zoom, baker);
     }
   }
 
@@ -142,7 +143,6 @@ export class MbtileData extends Layer {
     this.bakeBoundaries(tile, id.zoom, baker);
     this.bakeContours(tile, id.zoom, baker);
     this.bakeHighways(tile, id.zoom, baker);
-    this.bakeLabels(tile, id.zoom, baker);
   }
 
   private bakeAreas(tile: MbtileTile, baker: RenderBaker): void {
@@ -300,7 +300,6 @@ export class MbtileData extends Layer {
       }
 
       list.push({
-        ...line,
         colorFill: HIGHWAY_FILL,
         colorStroke: HIGHWAY_STROKE,
         stipple: false,
@@ -383,7 +382,11 @@ export class MbtileData extends Layer {
 
         z = 0.9 - label.rank / 50;
       } else if (label.type === LabelType.Town) {
-        if (zoom >= 10) {
+        if (zoom >= 11) {
+          fill = SECONDARY_LABEL_FILL;
+          stroke = SECONDARY_LABEL_STROKE;
+          size = SECONDARY_LABEL_SIZE;
+        } else if (zoom >= 10 && label.rank < 12) {
           fill = SECONDARY_LABEL_FILL;
           stroke = SECONDARY_LABEL_STROKE;
           size = SECONDARY_LABEL_SIZE;
@@ -392,6 +395,16 @@ export class MbtileData extends Layer {
         }
 
         z = 0.8;
+      } else if (label.type === LabelType.Village) {
+        if (zoom >= 11) {
+          fill = SECONDARY_LABEL_FILL;
+          stroke = SECONDARY_LABEL_STROKE;
+          size = SECONDARY_LABEL_SIZE;
+        } else {
+          continue;
+        }
+
+        z = 0.79;
       } else if (label.type === LabelType.NationalForest || label.type === LabelType.NationalPark) {
         if (zoom > 8) {
           fill = TERTIARY_LABEL_FILL;
@@ -403,7 +416,7 @@ export class MbtileData extends Layer {
 
         z = 0;
       } else if (label.type === LabelType.Peak) {
-        if (zoom > 12) {
+        if (zoom >= 12 && zoom < 14) {
           fill = TERTIARY_LABEL_FILL;
           stroke = TERTIARY_LABEL_STROKE;
           size = TERTIARY_LABEL_SIZE;

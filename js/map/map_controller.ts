@@ -51,6 +51,12 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
       this.notifyDataChanged();
     });
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
+      if (!this.idle) {
+        // It's okay to return here because we know that we'll get another idleDebouncer when idle()
+        // is called by the same interpreter that set us busy.
+        return;
+      }
+
       this.enterIdle();
     });
     this.renderer =
@@ -193,6 +199,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
   }
 
   idle(): void {
+    this.isIdle = true;
     this.idleDebouncer.trigger();
   }
 
@@ -208,7 +215,6 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     const offsetY = pageY - this.screenArea.top;
     this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
-    this.idleDebouncer.trigger();
     this.trigger(ZOOMED, {});
   }
 
