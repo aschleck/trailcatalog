@@ -15,7 +15,7 @@ import { Renderer } from './renderer';
 import { Glyph, SdfProgram } from './sdf_program';
 import { TriangleProgram } from './triangle_program';
 
-const MAX_GEOMETRY_BYTES = 64_000_000;
+const MAX_GEOMETRY_BYTES = 96_000_000;
 const MAX_INDEX_BYTES = 16_000_000;
 
 export class RenderPlanner {
