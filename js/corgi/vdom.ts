@@ -1,3 +1,4 @@
+import * as arrays from 'js/common/arrays';
 import { checkArgument, checkExists } from 'js/common/asserts';
 import { deepEqual } from 'js/common/comparisons';
 
@@ -408,7 +409,7 @@ function patchChildren(
       const result =
           patchChildren(parent, wasElement.childHandles, [isElement], wasElement.placeholder)
       last = result?.last ?? last;
-      newHandles.push(...result.childHandles);
+      arrays.pushInto(newHandles, result.childHandles);
     } else if (!(isElement instanceof Object)) {
       const handle = createHandle();
       const replacements = [...createElement(isElement, handle, parent)];

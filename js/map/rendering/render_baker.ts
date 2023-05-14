@@ -1,3 +1,4 @@
+import * as arrays from 'js/common/arrays';
 import { splitVec2 } from '../common/math';
 import { RgbaU32, Vec2 } from '../common/types';
 import { Camera } from '../models/camera';
@@ -95,7 +96,7 @@ export class RenderBaker {
     }
 
     this.drawables.length = 0;
-    this.drawables.push(...compressed);
+    arrays.pushInto(this.drawables, compressed);
 
     renderer.uploadData(this.geometry, this.geometryByteSize, geometryGl);
 

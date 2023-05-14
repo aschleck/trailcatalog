@@ -1,3 +1,4 @@
+import * as arrays from 'js/common/arrays';
 import { PixelRect, Vec2 } from 'js/map/common/types';
 
 export function worldBounds<V>(): BoundsQuadtree<V> {
@@ -168,7 +169,7 @@ export class BoundsQuadtree<V> {
   }
 
   private pushAllValuesInto(output: Array<[V, PixelRect]>): void {
-    output.push(...this.values);
+    arrays.pushInto(output, this.values);
     if (this.children) {
       this.children[0].pushAllValuesInto(output);
       this.children[1].pushAllValuesInto(output);

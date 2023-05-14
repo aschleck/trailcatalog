@@ -1,3 +1,4 @@
+import * as arrays from 'js/common/arrays';
 import { checkExhaustive } from 'js/common/asserts';
 import { IdentitySetMultiMap } from 'js/common/collections';
 import { LittleEndianView } from 'js/common/little_endian_view';
@@ -339,7 +340,7 @@ export class MapDataService extends Service<EmptyDeps> {
       let trail;
       if (existing) {
         if (existing.paths.length === 0) {
-          existing.paths.push(...paths);
+          arrays.pushInto(existing.paths, paths);
         }
         existing.bound = bound;
         trail = existing;

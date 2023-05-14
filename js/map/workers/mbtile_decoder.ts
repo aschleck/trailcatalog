@@ -1,5 +1,6 @@
 import earcut from 'earcut';
 
+import * as arrays from 'js/common/arrays';
 import { checkArgument, checkExists } from 'js/common/asserts';
 import { LittleEndianView } from 'js/common/little_endian_view';
 
@@ -113,7 +114,7 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile & Vertex
   }
 
   if (name === 'boundary') {
-    tile.boundaries.push(...projectBoundaries(id, keys, values, features, extent, tile));
+    arrays.pushInto(tile.boundaries, projectBoundaries(id, keys, values, features, extent, tile));
   } else if (name === 'contour') {
     tile.contoursM = projectContours(id, keys, values, features, extent, tile);
   } else if (name === 'contour_ft') {
@@ -155,7 +156,7 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile & Vertex
       });
     }
 
-    tile.areas.push(...compressAreas(areas, tile));
+    arrays.pushInto(tile.areas, compressAreas(areas, tile));
   } else if (name === 'landcover') {
     const areas = [];
     for (const feature of features) {
@@ -191,7 +192,7 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile & Vertex
       }
     }
 
-    tile.areas.push(...compressAreas(areas, tile));
+    arrays.pushInto(tile.areas, compressAreas(areas, tile));
   } else if (name === 'landuse') {
     const areas = [];
     for (const feature of features) {
@@ -218,21 +219,21 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile & Vertex
       }
     }
 
-    tile.areas.push(...compressAreas(areas, tile));
+    arrays.pushInto(tile.areas, compressAreas(areas, tile));
   } else if (name === 'mountain_peak') {
     const {labels} = projectLabels(id, keys, values, features, extent, tile);
-    tile.labels.push(...labels);
+    arrays.pushInto(tile.labels, labels);
   } else if (name === 'park') {
     const {areas, labels} = projectParks(id, keys, values, features, extent, tile);
-    tile.areas.push(...areas);
-    tile.labels.push(...labels);
+    arrays.pushInto(tile.areas, areas);
+    arrays.pushInto(tile.labels, labels);
   } else if (name === 'place') {
     const {labels} = projectLabels(id, keys, values, features, extent, tile);
-    tile.labels.push(...labels);
+    arrays.pushInto(tile.labels, labels);
   } else if (name === 'transportation') {
     const {areas, highways} = projectTransportation(id, keys, values, features, extent, tile);
-    tile.areas.push(...areas);
-    tile.highways.push(...highways);
+    arrays.pushInto(tile.areas, areas);
+    arrays.pushInto(tile.highways, highways);
   } else if (name === 'water') {
     const areas = [];
     for (const feature of features) {
@@ -242,11 +243,11 @@ function loadLayer(id: TileId, data: LittleEndianView, tile: MbtileTile & Vertex
         priority: 4,
       });
     }
-    tile.areas.push(...compressAreas(areas, tile));
+    arrays.pushInto(tile.areas, compressAreas(areas, tile));
   } else if (name === 'waterway') {
     const {areas, waterways} = projectWaterways(id, keys, values, features, extent, tile);
-    tile.areas.push(...areas);
-    tile.waterways.push(...waterways);
+    arrays.pushInto(tile.areas, areas);
+    arrays.pushInto(tile.waterways, waterways);
   }
 }
 
@@ -890,7 +891,7 @@ function compressAreas(areas: Area[], buffers: VertexBuffers): Area[] {
     }
 
     if (last.type === area.type) {
-      last.polygons.push(...area.polygons);
+      arrays.pushInto(last.polygons, area.polygons);
     } else {
       copied.push(area);
       last = area;
