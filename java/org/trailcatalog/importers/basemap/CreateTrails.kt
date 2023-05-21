@@ -12,6 +12,7 @@ import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.models.TrailFlag
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.proto.WayGeometry
 import java.util.Stack
@@ -41,7 +42,7 @@ class CreateTrails
     val mapped = HashMap<Long, List<LatLngE7>>()
     val ways = HashMap<Long, WayGeometry>()
     val ordered = flattenWays(geometries[0], mapped, ways, false)
-    val orderedArray = if (ordered == null) {
+    val (orderedArray, validGeometry) = if (ordered == null) {
       logger.warn("Unable to orient ${relation.id}")
 
       // If we bail here then we just lost basically all the big trails. But our distance
@@ -49,9 +50,9 @@ class CreateTrails
       // them wrong than lose them?
       val naive = ArrayList<Long>()
       naiveFlattenWays(geometries[0], naive)
-      naive.toLongArray()
+      Pair(naive.toLongArray(), false)
     } else {
-      ordered.toLongArray()
+      Pair(ordered.toLongArray(), true)
     }
 
     if (orderedArray.isEmpty()) {
@@ -87,7 +88,8 @@ class CreateTrails
             orderedArray,
             polyline,
             downMeters,
-            upMeters))
+            upMeters,
+            if (validGeometry) 0 else TrailFlag.BROKEN_GEOMETRY.id))
   }
 }
 

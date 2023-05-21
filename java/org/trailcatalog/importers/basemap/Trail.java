@@ -9,5 +9,6 @@ public record Trail(
     long[] paths,
     S2Polyline polyline,
     float downMeters,
-    float upMeters) {
+    float upMeters,
+    int flags) {
 }

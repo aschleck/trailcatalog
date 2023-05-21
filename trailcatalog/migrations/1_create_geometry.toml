@@ -229,11 +229,6 @@ primary_key = ["id", "epoch"]
   nullable = false
   type = "REAL"
 
-  [[actions.column]]
-  name = "flags"
-  nullable = false
-  type = "INTEGER"
-
   [[actions.columns]]
   name = "length_meters"
   nullable = false
@@ -243,6 +238,11 @@ primary_key = ["id", "epoch"]
   name = "source_relation"
   nullable = true
   type = "BIGINT"
+
+  [[actions.column]]
+  name = "flags"
+  nullable = false
+  type = "INTEGER"
 
   [actions.partition_by]
   list = ["epoch"]
