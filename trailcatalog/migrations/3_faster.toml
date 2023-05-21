@@ -1,3 +1,5 @@
+# TODO(april): delete this on next complete rebuild
+
 [[actions]]
 type = "add_index"
 table = "paths_in_trails"
@@ -6,4 +8,3 @@ table = "paths_in_trails"
   name = "paths_in_trails_by_trail_id_epoch_idx"
   columns = ["trail_id", "epoch"]
   concurrently = false
-

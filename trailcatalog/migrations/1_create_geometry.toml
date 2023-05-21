@@ -166,6 +166,15 @@ table = "paths_in_trails"
   concurrently = false
 
 [[actions]]
+type = "add_index"
+table = "paths_in_trails"
+
+  [actions.index]
+  name = "paths_in_trails_by_trail_id_epoch_idx"
+  columns = ["trail_id", "epoch"]
+  concurrently = false
+
+[[actions]]
 type = "create_table"
 name = "trails"
 primary_key = ["id", "epoch"]
@@ -219,6 +228,11 @@ primary_key = ["id", "epoch"]
   name = "elevation_up_meters"
   nullable = false
   type = "REAL"
+
+  [[actions.column]]
+  name = "flags"
+  nullable = false
+  type = "INTEGER"
 
   [[actions.columns]]
   name = "length_meters"

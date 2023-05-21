@@ -1,0 +1,11 @@
+# TODO(april): delete this on next complete rebuild
+
+[[actions]]
+type = "add_column"
+table = "trails"
+
+  [actions.column]
+  name = "flags"
+  default = "0"
+  nullable = false
+  type = "INTEGER"
