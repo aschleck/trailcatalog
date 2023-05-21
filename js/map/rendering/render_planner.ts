@@ -33,9 +33,7 @@ export class RenderPlanner {
 
   readonly baker: RenderBaker;
   private geometryBuffer: WebGLBuffer;
-  private geometryBufferAlternate: WebGLBuffer;
   private indexBuffer: WebGLBuffer;
-  private indexBufferAlternate: WebGLBuffer;
 
   constructor(
     private readonly renderer: Renderer,
@@ -57,26 +55,11 @@ export class RenderPlanner {
             MAX_GEOMETRY_BYTES,
             MAX_INDEX_BYTES);
     this.geometryBuffer = renderer.createDataBuffer(MAX_GEOMETRY_BYTES);
-    this.geometryBufferAlternate = renderer.createDataBuffer(MAX_GEOMETRY_BYTES);
     this.indexBuffer = renderer.createIndexBuffer(MAX_INDEX_BYTES);
-    this.indexBufferAlternate = renderer.createIndexBuffer(MAX_INDEX_BYTES);
   }
 
   upload(): void {
     const [swapG, swapI] = this.baker.upload(this.renderer, this.geometryBuffer, this.indexBuffer);
-
-    // We double-buffer in order to try and reduce stalls, ie time when the GPU is rendering the
-    // previous frame and has to flush before we can upload the next frame's data.
-    if (swapG) {
-      const alternateG = this.geometryBufferAlternate;
-      this.geometryBufferAlternate = this.geometryBuffer;
-      this.geometryBuffer = alternateG;
-    }
-    if (swapI) {
-      const alternateI = this.indexBufferAlternate;
-      this.indexBufferAlternate = this.indexBuffer;
-      this.indexBuffer = alternateI;
-    }
   }
 
   render(area: Vec2, camera: Camera): void {
@@ -116,8 +99,8 @@ export class RenderPlanner {
           centerPixels,
           camera.worldRadius,
           this.baker.drawables.slice(drawStartIndex, i),
-          this.geometryBufferAlternate,
-          this.indexBufferAlternate);
+          this.geometryBuffer,
+          this.indexBuffer);
       drawStart = drawable;
       drawStartIndex = i;
     }
@@ -128,8 +111,8 @@ export class RenderPlanner {
         centerPixels,
         camera.worldRadius,
         this.baker.drawables.slice(drawStartIndex, this.baker.drawables.length),
-        this.geometryBufferAlternate,
-        this.indexBufferAlternate);
+        this.geometryBuffer,
+        this.indexBuffer);
   }
 }
 

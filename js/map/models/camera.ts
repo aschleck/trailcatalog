@@ -6,7 +6,7 @@ import { PixelRect, Vec2 } from '../common/types';
 
 const MAX_EDGE_ANGLE = SimpleS2.earthMetersToAngle(50000).radians();
 const MERCATOR_MAX_LAT_RADIANS = 85 / 90 * Math.PI / 2;
-const ZOOM_MIN = 3; // we don't have tiles below 3
+const ZOOM_MIN = 2;
 const ZOOM_MAX = 22;
 
 export class Camera {

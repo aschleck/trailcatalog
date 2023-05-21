@@ -70,21 +70,21 @@ export class TileData extends Layer {
     this.dataService.updateViewport(this.camera.centerPixel, viewportSize, zoom);
   }
 
-  loadTile(id: TileId, bitmap: ImageBitmap): void {
-    const texture = this.pool.acquire();
-    this.renderer.uploadDataTexture(bitmap, texture);
-    this.tiles.set(id, texture);
-    this.lastChange = Date.now();
-  }
+  tilesChanged(load: Array<[TileId, ImageBitmap]>, unload: TileId[]): void {
+    for (const [id, bitmap] of load) {
+      const texture = this.pool.acquire();
+      this.renderer.uploadDataTexture(bitmap, texture);
+      this.tiles.set(id, texture);
+    }
 
-  unloadTiles(ids: TileId[]): void {
-    for (const id of ids) {
+    for (const id of unload) {
       const texture = this.tiles.get(id);
       if (texture) {
         this.tiles.delete(id);
         this.pool.release(texture);
       }
     }
+
     this.lastChange = Date.now();
   }
 }

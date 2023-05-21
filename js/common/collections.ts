@@ -2,28 +2,28 @@ import { checkExists } from './asserts';
 
 export class HashMap<K, V> {
 
-  private keys: Map<unknown, K>;
+  private _keys: Map<unknown, K>;
   private mapped: Map<unknown, V>;
 
   constructor(private readonly hashFn: (key: K) => unknown) {
-    this.keys = new Map();
+    this._keys = new Map();
     this.mapped = new Map();
   }
 
   clear(): void {
-    this.keys.clear();
+    this._keys.clear();
     this.mapped.clear();
   }
 
   set(key: K, value: V): void {
     const hash = this.hashFn(key);
-    this.keys.set(hash, key);
+    this._keys.set(hash, key);
     this.mapped.set(hash, value);
   }
 
   delete(key: K): void {
     const hash = this.hashFn(key);
-    this.keys.delete(hash);
+    this._keys.delete(hash);
     this.mapped.delete(hash);
   }
 
@@ -35,8 +35,12 @@ export class HashMap<K, V> {
     return this.mapped.has(this.hashFn(key));
   }
 
+  keys(): IterableIterator<K> {
+    return this._keys.values();
+  }
+
   [Symbol.iterator](): Iterator<[K, V]> {
-    const keyIterator = this.keys[Symbol.iterator]();
+    const keyIterator = this._keys[Symbol.iterator]();
     return {
       next: () => {
         const {value, done} = keyIterator.next();

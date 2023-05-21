@@ -10,8 +10,7 @@ import { BitmapTileset, MbtileTile, MbtileTileset, TileId, Tileset, Vec2 } from 
 import { FetcherCommand } from '../workers/tile_fetcher';
 
 interface BitmapListener {
-  loadTile(id: TileId, bitmap: ImageBitmap): void;
-  unloadTiles(ids: TileId[]): void;
+  tilesChanged(load: Array<[TileId, ImageBitmap]>, unload: TileId[]): void;
 }
 
 interface BitmapStream {
@@ -21,8 +20,7 @@ interface BitmapStream {
 }
 
 interface MbtileListener {
-  loadTile(id: TileId, tile: MbtileTile): void;
-  unloadTiles(ids: TileId[]): void;
+  tilesChanged(load: Array<[TileId, MbtileTile]>, unload: TileId[]): void;
 }
 
 interface MbtileStream {
@@ -64,16 +62,17 @@ export class TileDataService extends Service<EmptyDeps> {
 
       fetcher.onmessage = e => {
         const command = e.data as FetcherCommand;
-        if (command.type === 'lbc') {
-          tiles.set(command.id, command.bitmap);
-          constStream.listener?.loadTile(command.id, command.bitmap);
-        } else if (command.type === 'lmc') {
-          throw new Error('Unexpected mbtile tile');
-        } else if (command.type === 'utc') {
-          for (const id of command.ids) {
+        if (command.type === 'bc') {
+          for (const {id, bitmap} of command.bitmaps) {
+            tiles.set(id, bitmap);
+          }
+
+          for (const id of command.unload) {
             tiles.delete(id);
           }
-          constStream.listener?.unloadTiles(command.ids);
+
+          constStream.listener?.tilesChanged(
+              command.bitmaps.map(b => [b.id, b.bitmap]), command.unload);
         } else {
           checkExhaustive(command, 'Unknown type of command');
         }
@@ -81,9 +80,7 @@ export class TileDataService extends Service<EmptyDeps> {
     }
 
     stream.listener = listener;
-    for (const [id, bitmap] of stream.tiles) {
-      listener.loadTile(id, bitmap);
-    }
+    listener.tilesChanged([...stream.tiles], []);
 
     const disposable = new Disposable();
     const constOriginalListener = listener;
@@ -116,16 +113,17 @@ export class TileDataService extends Service<EmptyDeps> {
 
       fetcher.onmessage = e => {
         const command = e.data as FetcherCommand;
-        if (command.type === 'lbc') {
-          throw new Error('Unexpected bitmap tile');
-        } else if (command.type === 'lmc') {
-          tiles.set(command.id, command.tile);
-          constStream.listener?.loadTile(command.id, command.tile);
-        } else if (command.type === 'utc') {
-          for (const id of command.ids) {
+        if (command.type === 'bc') {
+          for (const {id, tile} of command.mbtiles) {
+            tiles.set(id, tile);
+          }
+
+          for (const id of command.unload) {
             tiles.delete(id);
           }
-          constStream.listener?.unloadTiles(command.ids);
+
+          constStream.listener?.tilesChanged(
+              command.mbtiles.map(b => [b.id, b.tile]), command.unload);
         } else {
           checkExhaustive(command, 'Unknown type of command');
         }
@@ -133,9 +131,7 @@ export class TileDataService extends Service<EmptyDeps> {
     }
 
     stream.listener = listener;
-    for (const [id, mbtile] of stream.tiles) {
-      listener.loadTile(id, mbtile);
-    }
+    listener.tilesChanged([...stream.tiles], []);
 
     const disposable = new Disposable();
     const constStream = stream;

@@ -1,9 +1,9 @@
 import { checkArgument, checkExhaustive, checkExists } from 'js/common/asserts';
-import { HashMap } from 'js/common/collections';
+import { HashSet, HashMap } from 'js/common/collections';
 import { debugMode } from 'js/common/debug';
 import { getUnitSystem, UnitSystem } from 'js/server/ssr_aware';
 
-import { rgbaToUint32 } from '../common/math';
+import { rgbaToUint32, tilesIntersect } from '../common/math';
 import { Area, AreaType, Boundary, Contour, Highway, HighwayType, Label, LabelType, MbtileTile, MbtileTileset, RgbaU32, TileId, Vec2, Waterway } from '../common/types';
 import { Camera } from '../models/camera';
 import { Line } from '../rendering/geometry';
@@ -79,7 +79,7 @@ export class MbtileData extends Layer {
       private readonly dataService: TileDataService,
       private readonly renderer: Renderer,
       private readonly renderBakerFactory: RenderBakerFactory,
-      tileset: MbtileTileset,
+      private readonly tileset: MbtileTileset,
   ) {
     super();
     this.lastChange = Date.now();
@@ -98,20 +98,80 @@ export class MbtileData extends Layer {
   }
 
   plan(viewportSize: Vec2, zoom: number, baker: RenderBaker): void {
-    const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
-
+    // Check if the unit system changed and we need to rebake.
     const unit = getUnitSystem();
     if (unit !== this.lastUnit) {
-      for (const [id, tile] of sorted) {
+      for (const [id, tile] of this.tiles) {
         tile.baked.clear();
         this.bakeTile(id, tile.raw, tile.baked);
       }
       this.lastUnit = unit;
     }
 
-    for (const [id, tile] of sorted) {
+    const tz = Math.floor(zoom);
+    const worldSize = Math.pow(2, tz);
+    const halfWorldSize = worldSize / 2;
+    const center = this.camera.centerPixel;
+    const doubleSize = 256 * Math.pow(2, zoom - tz + 1);
+    const halfViewportInWorldPx = [
+      viewportSize[0] / doubleSize,
+      viewportSize[1] / doubleSize,
+    ];
+
+    const scale = 3;
+    const needed = new HashSet((id: TileId) => `${id.x},${id.y},${id.zoom}`);
+
+    for (const offset of [-2, 0, 2]) {
+      const centerInWorldPx = [(center[0] + offset) * halfWorldSize, center[1] * halfWorldSize];
+      const xRange = [
+        Math.floor(centerInWorldPx[0] - scale * halfViewportInWorldPx[0]),
+        centerInWorldPx[0] + scale * halfViewportInWorldPx[0] + 1,
+      ] as const;
+      const yRange = [
+        Math.floor(centerInWorldPx[1] - scale * halfViewportInWorldPx[1]),
+        centerInWorldPx[1] + scale * halfViewportInWorldPx[1] + 1,
+      ] as const;
+      this.calculateNeededTiles(xRange, yRange, tz, needed);
+    }
+
+    const ordered = [...needed].sort((a, b) => a.zoom - b.zoom);
+    for (const id of ordered) {
+      const tile = checkExists(this.tiles.get(id));
       baker.addPrebaked(tile.baked);
+      this.bakeBoundaries(tile.raw, zoom, baker);
       this.bakeLabels(tile.raw, zoom, baker);
+    }
+  }
+
+  private calculateNeededTiles(
+    xRange: readonly [number, number],
+    yRange: readonly [number, number],
+    zoom: number,
+    needed: HashSet<TileId>): void {
+    const larger = [];
+    for (const id of this.tiles.keys()) {
+      if (id.zoom < zoom) {
+        larger.push(id);
+      } else if (id.zoom > zoom) {
+        needed.add(id);
+      }
+    }
+
+    const largerDescendingZoom = larger.sort((a, b) => b.zoom - a.zoom);
+    for (let y = yRange[0]; y < yRange[1]; ++y) {
+      for (let x = xRange[0]; x < xRange[1]; ++x) {
+        const id = {x, y, zoom};
+        if (this.tiles.has(id)) {
+          needed.add(id);
+        } else {
+          for (const candidate of largerDescendingZoom) {
+            if (tilesIntersect(id, candidate)) {
+              needed.add(candidate);
+              break;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -119,28 +179,26 @@ export class MbtileData extends Layer {
     this.dataService.updateViewport(this.camera.centerPixel, viewportSize, zoom);
   }
 
-  loadTile(id: TileId, tile: MbtileTile): void {
-    this.lastChange = Date.now();
+  tilesChanged(load: Array<[TileId, MbtileTile]>, unload: TileId[]): void {
+    for (const [id, tile] of load) {
+      const baker =
+          this.renderBakerFactory.createChild(TILE_GEOMETRY_BYTE_SIZE, TILE_INDEX_BYTE_SIZE);
+      this.bakeTile(id, tile, baker);
+      this.tiles.set(id, {
+        baked: baker,
+        raw: tile,
+      });
+    }
 
-    const baker =
-        this.renderBakerFactory.createChild(TILE_GEOMETRY_BYTE_SIZE, TILE_INDEX_BYTE_SIZE);
-    this.bakeTile(id, tile, baker);
-    this.tiles.set(id, {
-      baked: baker,
-      raw: tile,
-    });
-  }
-
-  unloadTiles(ids: TileId[]): void {
-    for (const id of ids) {
+    for (const id of unload) {
       this.tiles.delete(id);
     }
+
     this.lastChange = Date.now();
   }
 
   private bakeTile(id: TileId, tile: MbtileTile, baker: RenderBaker): void {
     this.bakeAreas(tile, baker);
-    this.bakeBoundaries(tile, id.zoom, baker);
     this.bakeContours(tile, id.zoom, baker);
     this.bakeHighways(tile, id.zoom, baker);
   }

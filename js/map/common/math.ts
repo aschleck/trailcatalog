@@ -1,4 +1,4 @@
-import { LatLngRect, LatLngZoom, RgbaU32, Vec2, Vec4 } from './types';
+import { LatLngRect, LatLngZoom, RgbaU32, TileId, Vec2, Vec4 } from './types';
 
 /**
  * Converts an rgba color in the range [0, 1] to an int.
@@ -48,5 +48,17 @@ export function splitVec2(v: Vec2): Vec4 {
   const y = v[1];
   const yF = Math.fround(y);
   return [xF, x - xF, yF, y - yF];
+}
+
+export function tilesIntersect(a: TileId, b: TileId): boolean {
+  if (a.zoom > b.zoom) {
+    return tilesIntersect(b, a);
+  }
+
+  const dz = a.zoom - b.zoom;
+  const p2 = Math.pow(2, dz);
+  const bx = Math.floor(b.x * p2);
+  const by = Math.ceil(b.y * p2);
+  return a.x === bx && a.y === by;
 }
 

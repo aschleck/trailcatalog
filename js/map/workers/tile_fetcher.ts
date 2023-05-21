@@ -2,7 +2,9 @@ import { checkExhaustive, checkExists } from 'js/common/asserts';
 import { HashSet } from 'js/common/collections';
 import { FetchThrottler } from 'js/common/fetch_throttler';
 import { clamp } from 'js/common/math';
+import { Timer } from 'js/common/timer';
 
+import { tilesIntersect } from '../common/math';
 import { MbtileTile, TileId, Tileset, Vec2 } from '../common/types';
 
 import { decodeMbtile } from './mbtile_decoder';
@@ -21,24 +23,28 @@ export interface UpdateViewportRequest {
 
 export type FetcherRequest = SetTilesetRequest|UpdateViewportRequest;
 
-export interface LoadBitmapCommand {
-  type: 'lbc';
+export interface Bitmap {
   id: TileId;
   bitmap: ImageBitmap;
 }
 
-export interface LoadMbtileCommand {
-  type: 'lmc';
+export interface Mbtile {
   id: TileId;
   tile: MbtileTile;
 }
 
-export interface UnloadTilesCommand {
-  type: 'utc';
-  ids: TileId[];
+export interface BatchedCommand {
+  type: 'bc';
+  bitmaps: Bitmap[];
+  mbtiles: Mbtile[];
+  unload: TileId[];
 }
 
-export type FetcherCommand = LoadBitmapCommand|LoadMbtileCommand|UnloadTilesCommand;
+export interface NeverCommand {
+  type: never;
+}
+
+export type FetcherCommand = BatchedCommand|NeverCommand;
 
 const WEB_MERCATOR_TILE_SIZE_PX = 256;
 
@@ -48,19 +54,53 @@ class TileFetcher {
   private readonly loaded: HashSet<TileId>;
   private readonly throttler: FetchThrottler;
   private lastUsed: HashSet<TileId>;
+  private queuedBitmaps: Bitmap[];
+  private queuedMbtiles: Mbtile[];
   private tileset: Tileset|undefined;
 
   constructor(
-      private readonly mail:
-          (response: FetcherCommand, transfer?: Transferable[]) => void) {
+      postMessage: (response: FetcherCommand, transfer?: Transferable[]) => void,
+  ) {
     this.inFlight = createTileHashSet();
     this.loaded = createTileHashSet();
     this.throttler = new FetchThrottler();
     this.lastUsed = createTileHashSet();
+    this.queuedBitmaps = [];
+    this.queuedMbtiles = [];
     this.tileset = undefined;
+
+    // We want to set this high enough that the main thread has time to fully upload geometry and
+    // render it. This prevents stalls.
+    const timer = new Timer(200 /* ms */, () => {
+      const unload = this.cull(this.lastUsed);
+      const bitmaps = this.queuedBitmaps.filter(t => this.loaded.has(t.id));
+      const mbtiles = this.queuedMbtiles.filter(t => this.loaded.has(t.id));
+
+      const transferables = [];
+      for (const bitmap of bitmaps) {
+        transferables.push(bitmap.bitmap);
+      }
+      for (const mbtile of mbtiles) {
+        transferables.push(mbtile.tile.geometry.buffer);
+        transferables.push(mbtile.tile.indices.buffer);
+      }
+
+      postMessage({
+        type: 'bc',
+        bitmaps,
+        mbtiles,
+        unload,
+      }, transferables);
+
+      this.queuedBitmaps = [];
+      this.queuedMbtiles = [];
+    });
+    timer.start();
   }
 
   setTileset(request: SetTilesetRequest): void {
+    this.queuedBitmaps = [];
+    this.queuedMbtiles = [];
     this.lastUsed.clear();
     this.cull(this.lastUsed);
     this.tileset = request.tileset;
@@ -129,11 +169,7 @@ class TileFetcher {
                         .then(blob => createImageBitmap(blob))
                         .then(bitmap => {
                           this.loaded.add(id);
-                          this.mail({
-                            type: 'lbc',
-                            id,
-                            bitmap,
-                          }, [bitmap]);
+                          this.queuedBitmaps.push({id, bitmap});
                         });
                   } else if (tileset.type === 'mbtile') {
                     return response.blob()
@@ -141,11 +177,7 @@ class TileFetcher {
                         .then(data => {
                           this.loaded.add(id);
                           const tile = decodeMbtile(id, data);
-                          this.mail({
-                            type: 'lmc',
-                            id,
-                            tile,
-                          }, [tile.geometry.buffer, tile.indices.buffer]);
+                          this.queuedMbtiles.push({id, tile});
                         });
                   } else {
                     checkExhaustive(tileset);
@@ -163,16 +195,14 @@ class TileFetcher {
               })
               .finally(() => {
                 this.inFlight.delete(id);
-                this.cull(this.lastUsed);
               });
       }
     }
 
     this.lastUsed = used;
-    this.cull(used);
   }
 
-  private cull(used: HashSet<TileId>): void {
+  private cull(used: HashSet<TileId>): TileId[] {
     const unloadIds = [];
     for (const id of this.loaded) {
       if (used.has(id)) {
@@ -193,12 +223,8 @@ class TileFetcher {
       this.loaded.delete(id);
       unloadIds.push(id);
     }
-    if (unloadIds.length > 0) {
-      this.mail({
-        type: 'utc',
-        ids: unloadIds,
-      });
-    }
+
+    return unloadIds;
   }
 
   private getTileUrl(id: TileId): string {
@@ -224,17 +250,5 @@ self.onmessage = e => {
 
 function createTileHashSet(): HashSet<TileId> {
   return new HashSet(id => `${id.x},${id.y},${id.zoom}`);
-}
-
-function tilesIntersect(a: TileId, b: TileId): boolean {
-  if (a.zoom > b.zoom) {
-    return tilesIntersect(b, a);
-  }
-
-  const dz = a.zoom - b.zoom;
-  const p2 = Math.pow(2, dz);
-  const bx = Math.floor(b.x * p2);
-  const by = Math.ceil(b.y * p2);
-  return a.x === bx && a.y === by;
 }
 

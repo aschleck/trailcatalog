@@ -24,7 +24,7 @@ export class RenderBaker {
   private geometryByteSize: number;
   private readonly index: ArrayBuffer;
   private indexByteSize: number;
-  private lastIndexByteSize: number;
+  private lastIndexChecksum: number;
 
   constructor(
     private readonly billboardProgram: BillboardProgram,
@@ -40,7 +40,7 @@ export class RenderBaker {
     this.geometryByteSize = 0;
     this.index = new ArrayBuffer(indexByteSize);
     this.indexByteSize = 0;
-    this.lastIndexByteSize = 0;
+    this.lastIndexChecksum = 0;
   }
 
   clear(): void {
@@ -100,11 +100,17 @@ export class RenderBaker {
 
     renderer.uploadData(this.geometry, this.geometryByteSize, geometryGl);
 
-    // HUGE hack! We only use indices for mbtile polygons, so if we assume that it's very unlikely
-    // to have the same index size for different data then we can detect changes like this.
-    if (this.indexByteSize !== this.lastIndexByteSize) {
+    // Uploading indices is very slow because WebGL does bounds checking. So calculate a simple
+    // checksum to hopefully avoid it.
+    let checksum = 0;
+    const indexUint32s = new Uint32Array(this.index, 0, this.indexByteSize / 4);
+    for (let i = 0; i < indexUint32s.length; ++i) {
+      checksum = (31 * checksum + indexUint32s[i]) | 0;
+    }
+
+    if (checksum !== this.lastIndexChecksum) {
       renderer.uploadIndices(this.index, this.indexByteSize, indexGl);
-      this.lastIndexByteSize = this.indexByteSize;
+      this.lastIndexChecksum = checksum;
       return [true, true];
     } else {
       return [true, false];
