@@ -12,7 +12,6 @@ import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory
-import org.trailcatalog.models.TrailFlag
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.proto.WayGeometry
 import java.util.Stack
@@ -89,7 +88,10 @@ class CreateTrails
             polyline,
             downMeters,
             upMeters,
-            if (validGeometry) 0 else TrailFlag.BROKEN_GEOMETRY.id))
+            if (validGeometry)
+              listOf()
+            else
+              listOf(Fact("DISCONTINUOUS", "true"))))
   }
 }
 

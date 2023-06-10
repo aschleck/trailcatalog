@@ -1,6 +1,7 @@
 package org.trailcatalog.importers.basemap;
 
 import com.google.common.geometry.S2Polyline;
+import java.util.List;
 
 public record Trail(
     long relationId,
@@ -10,5 +11,5 @@ public record Trail(
     S2Polyline polyline,
     float downMeters,
     float upMeters,
-    int flags) {
+    List<Fact> facts) {
 }

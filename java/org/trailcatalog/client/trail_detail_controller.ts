@@ -8,10 +8,10 @@ import { LatLng, Vec2 } from 'js/map/common/types';
 import { unprojectS2LatLng } from 'js/map/models/camera';
 
 import { MapDataService } from './data/map_data_service';
-import { Boundary, ElevationProfile, Path, Trail } from './models/types';
+import { Boundary, ElevationProfile, Path, Trail, TrailFact } from './models/types';
 
 import { fetchData } from './data';
-import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
+import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw, trailFactsFromRaw } from './trails';
 import { Args, State as VState, ViewportController } from './viewport_controller';
 
 const ELEVATION_GRAPH_RESOLUTION_WIDTH = 1200;
@@ -34,6 +34,7 @@ export interface State extends VState {
   }
   pathProfiles?: Map<bigint, ElevationProfile>;
   trail?: Trail;
+  trailFacts?: TrailFact[];
   trailId: string;
   weather?: {
     temperatureCelsius: number;

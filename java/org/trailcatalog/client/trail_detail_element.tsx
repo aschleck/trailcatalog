@@ -18,7 +18,7 @@ import { Header } from './page';
 import { setTitle } from './title';
 import { LoadingController, TrailDetailController, State } from './trail_detail_controller';
 import { TrailPopup } from './trail_popup';
-import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
+import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw, trailFactsFromRaw } from './trails';
 
 const GRAPH_TEXT_SPACE_PX = [0, 32] as const;
 
@@ -32,6 +32,12 @@ export function TrailDetailElement({trailId, parameters}: {
     let trail;
     if (rawTrail) {
       trail = trailFromRaw(rawTrail);
+    }
+
+    const rawTrailFacts = initialData('trail_facts', {trail_id: wrapped});
+    let trailFacts;
+    if (rawTrailFacts) {
+      trailFacts = trailFactsFromRaw(rawTrailFacts);
     }
 
     const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: wrapped});
@@ -52,6 +58,7 @@ export function TrailDetailElement({trailId, parameters}: {
       selected: [],
       selectedCardPosition: [-1, -1],
       trail,
+      trailFacts,
       trailId,
     };
   }

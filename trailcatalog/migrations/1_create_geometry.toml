@@ -239,11 +239,6 @@ primary_key = ["id", "epoch"]
   nullable = true
   type = "BIGINT"
 
-  [[actions.column]]
-  name = "flags"
-  nullable = false
-  type = "INTEGER"
-
   [actions.partition_by]
   list = ["epoch"]
 

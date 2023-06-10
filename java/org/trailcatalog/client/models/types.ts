@@ -89,6 +89,11 @@ export class Trail {
   }
 }
 
+export interface TrailFact {
+  predicate: string;
+  value: boolean|number|object|string;
+}
+
 export class TrailSearchResult {
   constructor(
       readonly id: bigint,

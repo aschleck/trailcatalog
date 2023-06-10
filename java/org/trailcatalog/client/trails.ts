@@ -5,7 +5,7 @@ import { decodeBase64 } from './common/base64';
 import { latLngFromBase64E7, latLngRectFromBase64E7 } from './common/data';
 import { degreesE7ToLatLng, projectLatLng } from './common/math';
 import { emptyS2Polygon } from './common/types';
-import { Boundary, ElevationProfile, Trail } from './models/types';
+import { Boundary, ElevationProfile, Trail, TrailFact } from './models/types';
 
 import { DataResponses } from './data';
 
@@ -59,5 +59,12 @@ export function trailFromRaw(raw: DataResponses['trail']): Trail {
       raw.elevation_down_meters,
       raw.elevation_up_meters,
       raw.length_meters);
+}
+
+export function trailFactsFromRaw(raw: DataResponses['trail_facts']): TrailFact[] {
+  return raw.facts.map(({predicate, value}) => ({
+    predicate,
+    value: JSON.parse(value),
+  }));
 }
 

@@ -22,7 +22,7 @@ class DumpTrails(private val epoch: Int, private val hikari: HikariDataSource)
             val lengthMeters = polylineToMeters(trail.polyline)
 
             // id,epoch,type,cell,name,path_ids,bound_degrees_e7,marker_degrees_e7,
-            // elevation_down_meters,elevation_up_meters,length_meters,source_relation, flags
+            // elevation_down_meters,elevation_up_meters,length_meters,source_relation
             csv.append(trail.relationId)
             csv.append(",")
             csv.append(epoch)
@@ -61,8 +61,6 @@ class DumpTrails(private val epoch: Int, private val hikari: HikariDataSource)
             csv.append(lengthMeters)
             csv.append(",")
             csv.append(trail.relationId)
-            csv.append(",")
-            csv.append(trail.flags)
             csv.append("\n")
           }
       copyStreamToPg("trails", stream, hikari)

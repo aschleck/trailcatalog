@@ -21,7 +21,7 @@ podman run \
     --name frontend \
     --pull always \
     --rm \
-    --env DATABASE_URL="postgresql://localhost/trailcatalog?currentSchema=migration_3_faster" \
+    --env DATABASE_URL="postgresql://localhost/trailcatalog?currentSchema=migration_4_trail_knowledge" \
     --env DATABASE_USERNAME_PASSWORD="trailcatalog:${pg_pwd}" \
     --network host \
     us-west1-docker.pkg.dev/trailcatalog/containers/frontend:latest

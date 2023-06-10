@@ -226,6 +226,31 @@ private fun fetchData(ctx: Context) {
         }
         responses.add(data)
       }
+      "trail_facts" -> {
+        val data = ArrayList<HashMap<String, Any>>()
+        val (idColumn, setId) = parseTrailId(key.get("trail_id"))
+        connectionSource.connection.use {
+          val results = it.prepareStatement(
+              "SELECT "
+                  + "tf.predicate, "
+                  + "tf.value "
+                  + "FROM trail_facts tf "
+                  + "JOIN trail_identifiers ti "
+                  + "ON tf.trail_id = ti.numeric_id AND tf.epoch = ti.epoch "
+                  + "WHERE ${idColumn} = ? AND tf.epoch = ?")
+              .apply {
+                setId(this, 1)
+                setInt(2, epochTracker.epoch)
+              }.executeQuery()
+          while (results.next()) {
+            val fact = HashMap<String, Any>()
+            fact["predicate"] = results.getString(1)
+            fact["value"] = results.getString(2)
+            data.add(fact)
+          }
+        }
+        responses.add(mapOf("facts" to data))
+      }
       "trails_in_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()
         val id = key.get("boundary_id").asLong()
