@@ -1,5 +1,6 @@
 package org.trailcatalog.importers.elevation.contour
 
+import com.google.common.base.Preconditions
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
 import com.google.common.cache.LoadingCache
@@ -10,13 +11,9 @@ import com.google.common.geometry.S2LatLngRect
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
-import com.google.protobuf.CodedInputStream
-import com.mapbox.proto.vectortiles.Tile
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import org.trailcatalog.common.IORuntimeException
 import org.trailcatalog.importers.common.ProgressBar
 import org.trailcatalog.importers.elevation.getCopernicus30mUrl
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.file.Path
 import java.util.concurrent.Executors
@@ -43,16 +40,18 @@ fun main(args: Array<String>) {
   val tolerance =
       S1Angle.degrees(
           if (zoom < 14) {
-            12.5 * 360.0 / worldSize / EXTENT_TILE
+            360.0 / worldSize / EXTENT_TILE
           } else {
-            0.003 / EXTENT_TILE
+            360.0 / 2.0.pow(18) / EXTENT_TILE
           }
       )
+
+  val glaciator = Glaciator(source.resolve("glaciers.json"))
 
   val cache =
       CacheBuilder
           .newBuilder()
-          .maximumSize(4)
+          .maximumSize(8)
           .build(object : CacheLoader<Pair<Int, Int>, Pair<RawTile, RawTile>>() {
             override fun load(p0: Pair<Int, Int>): Pair<RawTile, RawTile> {
               val (lat, lng) = p0
@@ -68,35 +67,29 @@ fun main(args: Array<String>) {
                         S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
                         S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1)))
               }
-              return Pair(makeRawTile(contoursFt, tolerance), makeRawTile(contoursM, tolerance))
+              return Pair(
+                  makeRawTile(glaciator.glaciate(contoursFt), tolerance),
+                  makeRawTile(glaciator.glaciate(contoursM), tolerance))
             }
           })
 
   val tasks = ArrayList<ListenableFuture<*>>()
+  val sequence =
+      if (args.size >= 7) {
+        val low = Pair(args[3].toInt(), args[4].toInt())
+        val high = Pair(args[5].toInt(), args[6].toInt())
+        hilbert(worldSize, low, high)
+      } else {
+        hilbert(worldSize, Pair(0, 0), Pair(worldSize, worldSize))
+      }
+
   ProgressBar("Generating tiles", "tiles", worldSize * worldSize).use {
-    if (args.size >= 7) {
-      val low = Pair(args[3].toInt(), args[4].toInt())
-      val high = Pair(args[5].toInt(), args[6].toInt())
-      for (y in low.second until high.second) {
-        for (x in low.first until high.first) {
-          tasks.add(
-              pool.submit {
-                cropTile(x, y, zoom, dest, cache)
-                it.increment()
-              })
-        }
-        tasks.add(pool.submit {
-          println(y)
-        })
-      }
-    } else {
-      for ((x, y) in hilbert(worldSize)) {
-        tasks.add(
-            pool.submit {
-              cropTile(x, y, zoom, dest, cache)
-              it.increment()
-            })
-      }
+    for ((x, y) in sequence) {
+      tasks.add(
+          pool.submit {
+            cropTile(x, y, zoom, dest, cache)
+            it.increment()
+          })
     }
 
     Futures.allAsList(tasks).get()
@@ -159,81 +152,6 @@ private fun cropTile(
   }
 }
 
-private fun loadContourMvt(
-    contoursFt: MutableList<Contour>,
-    contoursM: MutableList<Contour>,
-    path: Path,
-    bound: S2LatLngRect) {
-  val tile = FileInputStream(path.toFile()).use {
-    Tile.parseFrom(it)
-  }
-
-  val low = project(bound.lo())
-  val high = project(bound.hi())
-
-  for (layer in tile.layersList) {
-    val contours =
-        when (layer.name) {
-          "contour" -> contoursM
-          "contour_ft" -> contoursFt
-          else -> throw IORuntimeException("Unknown layer name ${layer.name}")
-        }
-
-    for (feature in layer.featuresList) {
-      if (feature.type != Tile.GeomType.LINESTRING) {
-        throw IORuntimeException("Cannot read anything but linestrings")
-      }
-
-      var height: Int? = null
-      for (i in 0 until feature.tagsCount step 2) {
-        if (layer.getKeys(feature.getTags(i)) == "height") {
-          height = layer.getValues(feature.getTags(i + 1)).intValue.toInt()
-        }
-      }
-
-      if (height == null) {
-        throw IORuntimeException("Unknown height")
-      }
-
-      var i = 0
-      var x = 0
-      var y = 0
-      var building: ArrayList<S2LatLng>? = null
-      while (i < feature.geometryCount) {
-        val tag = feature.getGeometry(i)
-        i += 1
-
-        val command = tag.and(7)
-        val count = tag.ushr(3)
-        if (command == 1) { // move to
-          var j = 0
-          while (j < count) {
-            building = ArrayList()
-            contours.add(Contour(height, building))
-
-            x += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 0))
-            y += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 1))
-            building.add(unproject(x, y, low, high, layer.extent))
-            j += 1
-            i += 2
-          }
-        } else if (command == 2) {
-          var j = 0
-          while (j < count) {
-            x += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 0))
-            y += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 1))
-            building!!.add(unproject(x, y, low, high, layer.extent))
-            j += 1
-            i += 2
-          }
-        } else {
-          throw IORuntimeException("Unknown command ${command}")
-        }
-      }
-    }
-  }
-}
-
 private fun crop(contours: List<Contour>, view: S2LatLngRect): List<Contour> {
   val out = ArrayList<Contour>()
   for (contour in contours) {
@@ -260,31 +178,26 @@ private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>
       j += 1
     }
 
-    val first = Math.max(0, i - 1)
+    val first = 0.coerceAtLeast(i - 1)
     val last = j
     val count = last - first
     val span = Lists.newArrayListWithExpectedSize<S2LatLng>(count)
     for (p in first until last) {
       span.add(lls[p])
     }
-    out.add(Contour(contour.height, span))
+    out.add(Contour(contour.height, contour.glacier, span))
 
     i = j
   }
 }
 
-private fun unproject(
-    x: Int, y: Int, low: Pair<Double, Double>, high: Pair<Double, Double>, extent: Int): S2LatLng {
+private fun hilbert(n: Int, low: Pair<Int, Int>, high: Pair<Int, Int>) = sequence {
   val dx = high.first - low.first
   val dy = high.second - low.second
+  Preconditions.checkArgument(dx == dy, "Must be square")
+  Preconditions.checkArgument((n and (n - 1)) == 0, "Must be a power of 2")
 
-  val xw = low.first + dx * x / extent
-  val yw = high.second - dy * y / extent
-  return S2LatLng.fromRadians(asin(tanh(yw * Math.PI)), Math.PI * xw)
-}
-
-private fun hilbert(n: Int) = sequence {
-  for (d in 0 until n * n) {
+  for (d in 0 until dx * dy) {
     var x = 0
     var y = 0
     var t = d
@@ -308,14 +221,15 @@ private fun hilbert(n: Int) = sequence {
       s *= 2
     }
 
-    yield(Pair(x, y))
+    yield(Pair(low.first + x, low.second + y))
   }
 }
 
 private fun makeRawTile(contours: List<Contour>, tolerance: S1Angle): RawTile {
   return RawTile(
       contours
-          .map { Contour(it.height, simplifyContour(it.points, tolerance)) }
+          .filter { it.points.size > 1 }
+          .map { Contour(it.height, it.glacier, simplifyContour(it.points, tolerance)) }
           .map { c ->
             ContourAndRect(
                 c,

@@ -106,7 +106,7 @@ private fun readFgbAndSimplify(source: Path, unitIsFeet: Boolean): List<Contour>
   return readFgb(source, unitIsFeet)
       .sortedBy { it.height }
       // Optimize for zoom level 17
-      .map { Contour(it.height, simplifyContour(it.points, S1Angle.degrees(0.003 / 256))) }
+      .map { Contour(it.height, false, simplifyContour(it.points, S1Angle.degrees(0.003 / 256))) }
 }
 
 private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
@@ -162,7 +162,7 @@ private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
         } else {
           height
         }
-        contours.add(Contour(heightInUnit.roundToInt(), points))
+        contours.add(Contour(heightInUnit.roundToInt(), false, points))
       }
       return contours
     }

@@ -8,13 +8,19 @@ import com.google.common.geometry.S2EdgeUtil
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Point
+import com.google.protobuf.CodedInputStream
 import com.google.protobuf.CodedOutputStream
 import com.mapbox.proto.vectortiles.Tile
+import org.trailcatalog.common.IORuntimeException
+import java.io.FileInputStream
+import java.nio.file.Path
+import kotlin.math.asin
 import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.tanh
 
-data class Contour(val height: Int, val points: List<S2LatLng>)
+data class Contour(val height: Int, val glacier: Boolean, val points: List<S2LatLng>)
 
 const val EXTENT_ONE_DEGREE = 4096 * 512
 const val EXTENT_TILE = 4096
@@ -51,7 +57,7 @@ private fun contoursToLayer(
     every: Int,
     bound: S2LatLngRect,
     extent: Int): Tile.Layer {
-  val grouped = contours.groupBy { it.height }
+  val grouped = contours.groupBy { Pair(it.height, it.glacier) }
 
   val layer =
       Tile.Layer.newBuilder()
@@ -60,11 +66,13 @@ private fun contoursToLayer(
           .setVersion(2)
           .addKeys("height")
           .addKeys("nth_line")
+          .addKeys("glacier")
           .addValues(Tile.Value.newBuilder().setIntValue(1))
           .addValues(Tile.Value.newBuilder().setIntValue(2))
           .addValues(Tile.Value.newBuilder().setIntValue(5))
           .addValues(Tile.Value.newBuilder().setIntValue(10))
-  for ((height, level) in grouped) {
+  for ((key, level) in grouped) {
+    val (height, glacier) = key
     val valueId = layer.valuesCount
     layer.addValuesBuilder().intValue = height.toLong()
 
@@ -86,6 +94,11 @@ private fun contoursToLayer(
               }
             }
         )
+
+    if (glacier) {
+      feature.addTags(2).addTags(0)
+    }
+
     var x = 0
     var y = 0
     for (contour in level) {
@@ -129,6 +142,91 @@ fun project(ll: S2LatLng): Pair<Double, Double> {
   val latRadians = ll.latRadians()
   val y = ln((1 + sin(latRadians)) / (1 - sin(latRadians))) / (2 * Math.PI)
   return Pair(x, y)
+}
+
+fun unproject(
+    x: Int, y: Int, low: Pair<Double, Double>, high: Pair<Double, Double>, extent: Int): S2LatLng {
+  val dx = high.first - low.first
+  val dy = high.second - low.second
+
+  val xw = low.first + dx * x / extent
+  val yw = high.second - dy * y / extent
+  return S2LatLng.fromRadians(asin(tanh(yw * Math.PI)), Math.PI * xw)
+}
+
+fun loadContourMvt(
+    contoursFt: MutableList<Contour>,
+    contoursM: MutableList<Contour>,
+    path: Path,
+    bound: S2LatLngRect) {
+  val tile = FileInputStream(path.toFile()).use {
+    Tile.parseFrom(it)
+  }
+
+  val low = project(bound.lo())
+  val high = project(bound.hi())
+
+  for (layer in tile.layersList) {
+    val contours =
+        when (layer.name) {
+          "contour" -> contoursM
+          "contour_ft" -> contoursFt
+          else -> throw IORuntimeException("Unknown layer name ${layer.name}")
+        }
+
+    for (feature in layer.featuresList) {
+      if (feature.type != Tile.GeomType.LINESTRING) {
+        throw IORuntimeException("Cannot read anything but linestrings")
+      }
+
+      var height: Int? = null
+      for (i in 0 until feature.tagsCount step 2) {
+        if (layer.getKeys(feature.getTags(i)) == "height") {
+          height = layer.getValues(feature.getTags(i + 1)).intValue.toInt()
+        }
+      }
+
+      if (height == null) {
+        throw IORuntimeException("Unknown height")
+      }
+
+      var i = 0
+      var x = 0
+      var y = 0
+      var building: ArrayList<S2LatLng>? = null
+      while (i < feature.geometryCount) {
+        val tag = feature.getGeometry(i)
+        i += 1
+
+        val command = tag.and(7)
+        val count = tag.ushr(3)
+        if (command == 1) { // move to
+          var j = 0
+          while (j < count) {
+            building = ArrayList()
+            contours.add(Contour(height, false, building))
+
+            x += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 0))
+            y += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 1))
+            building.add(unproject(x, y, low, high, layer.extent))
+            j += 1
+            i += 2
+          }
+        } else if (command == 2) {
+          var j = 0
+          while (j < count) {
+            x += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 0))
+            y += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 1))
+            building!!.add(unproject(x, y, low, high, layer.extent))
+            j += 1
+            i += 2
+          }
+        } else {
+          throw IORuntimeException("Unknown command ${command}")
+        }
+      }
+    }
+  }
 }
 
 fun simplifyContour(lls: List<S2LatLng>, tolerance: S1Angle): List<S2LatLng> {
@@ -176,10 +274,10 @@ private fun zToFtIncrement(z: Int): Int {
 private fun zToMIncrement(z: Int): Int {
   return when (z) {
     -1 -> 10
-    9 -> 500
-    10 -> 200
-    11 -> 100
-    12 -> 50
+    9 -> 200
+    10 -> 100
+    11 -> 50
+    12 -> 20
     13 -> 20
     14 -> 10
     else -> throw IllegalArgumentException("Unhandled zoom")
