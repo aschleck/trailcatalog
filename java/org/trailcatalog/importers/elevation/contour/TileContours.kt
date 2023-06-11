@@ -3,7 +3,6 @@ package org.trailcatalog.importers.elevation.contour
 import com.google.common.base.Preconditions
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
-import com.google.common.cache.LoadingCache
 import com.google.common.collect.Lists
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2LatLng
@@ -35,17 +34,6 @@ fun main(args: Array<String>) {
   val source = Path.of(args[0])
   val dest = Path.of(args[1])
 
-  val zoom = args[2].toInt()
-  val worldSize = 2.0.pow(zoom).toInt()
-  val tolerance =
-      S1Angle.degrees(
-          if (zoom < 14) {
-            5 * 360.0 / worldSize / EXTENT_TILE
-          } else {
-            5 * 360.0 / 2.0.pow(20) / EXTENT_TILE
-          }
-      )
-
   val cache =
       CacheBuilder
           .newBuilder()
@@ -65,15 +53,17 @@ fun main(args: Array<String>) {
                         S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
                         S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1)))
               }
-              return Pair(makeRawTile(contoursFt, tolerance), makeRawTile(contoursM, tolerance))
+              return Pair(makeRawTile(contoursFt), makeRawTile(contoursM))
             }
           })
 
   val tasks = ArrayList<ListenableFuture<*>>()
+  val base = 9
+  val worldSize = 2.0.pow(base).toInt()
   val sequence =
-      if (args.size >= 7) {
-        val low = Pair(args[3].toInt(), args[4].toInt())
-        val high = Pair(args[5].toInt(), args[6].toInt())
+      if (args.size >= 6) {
+        val low = Pair(args[2].toInt(), args[3].toInt())
+        val high = Pair(args[4].toInt(), args[5].toInt())
         hilbert(worldSize, low, high)
       } else {
         hilbert(worldSize, Pair(0, 0), Pair(worldSize, worldSize))
@@ -83,7 +73,31 @@ fun main(args: Array<String>) {
     for ((x, y) in sequence) {
       tasks.add(
           pool.submit {
-            cropTile(x, y, zoom, dest, cache)
+            val bound = tileToBound(x, y, base)
+            val tiles = sequence {
+              val latLow = floor(bound.latLo().degrees()).toInt()
+              val latHigh = ceil(bound.latHi().degrees()).toInt()
+              val lngLow = floor(bound.lngLo().degrees()).toInt()
+              val lngHigh = ceil(bound.lngHi().degrees()).toInt()
+              for (lat in latLow until latHigh) {
+                for (lng in lngLow until lngHigh) {
+                  yield(Pair(lat, lng))
+                }
+              }
+            }
+
+            // We shuffle this sequence so that worker threads don't all block waiting on the same tile
+            val contoursFt = ArrayList<Contour>()
+            val contoursM = ArrayList<Contour>()
+            tiles.shuffled().forEach { ll ->
+              val result = cache[ll]
+              contoursFt.addAll(
+                  result.first.contours.filter { bound.intersects(it.bound) }.map { it.contour })
+              contoursM.addAll(
+                  result.second.contours.filter { bound.intersects(it.bound) }.map { it.contour })
+            }
+
+            cropTile(x, y, base, dest, contoursFt, contoursM)
             it.increment()
           })
     }
@@ -98,40 +112,24 @@ private fun getCopernicusMvt(lat: Int, lng: Int): String {
   return getCopernicus30mUrl(lat, lng).toHttpUrl().pathSegments.last() + ".mvt"
 }
 
-private fun cropTile(
-    x: Int,
-    y: Int,
-    z: Int,
-    dest: Path,
-    cache: LoadingCache<Pair<Int, Int>, Pair<RawTile, RawTile>>) {
+private fun tileToBound(x: Int, y: Int, z: Int): S2LatLngRect {
   val worldSize = 2.0.pow(z)
   val latLow = asin(tanh((0.5 - (y + 1) / worldSize) * 2 * Math.PI)) / Math.PI * 180
   val lngLow = x / worldSize * 360 - 180
   val latHigh = asin(tanh((0.5 - y / worldSize) * 2 * Math.PI)) / Math.PI * 180
   val lngHigh = (x + 1) / worldSize * 360 - 180
-  val bound =
-      S2LatLngRect.fromPointPair(
-          S2LatLng.fromDegrees(latLow, lngLow), S2LatLng.fromDegrees(latHigh, lngHigh))
+  return S2LatLngRect.fromPointPair(
+      S2LatLng.fromDegrees(latLow, lngLow), S2LatLng.fromDegrees(latHigh, lngHigh))
+}
 
-  val tiles = sequence {
-    for (lat in floor(latLow).toInt() until ceil(latHigh).toInt()) {
-      for (lng in floor(lngLow).toInt() until ceil(lngHigh).toInt()) {
-        yield(Pair(lat, lng))
-      }
-    }
-  }
-
-  // We shuffle this sequence so that worker threads don't all block waiting on the same tile
-  val contoursFt = ArrayList<Contour>()
-  val contoursM = ArrayList<Contour>()
-  tiles.shuffled().forEach { ll ->
-    val result = cache[ll]
-    contoursFt.addAll(
-        result.first.contours.filter { bound.intersects(it.bound) }.map { it.contour })
-    contoursM.addAll(
-        result.second.contours.filter { bound.intersects(it.bound) }.map { it.contour })
-  }
-
+private fun cropTile(
+    x: Int,
+    y: Int,
+    z: Int,
+    dest: Path,
+    contoursFt: List<Contour>,
+    contoursM: List<Contour>) {
+  val bound = tileToBound(x, y, z)
   val cropFt = crop(contoursFt, bound)
   val cropM = crop(contoursM, bound)
 
@@ -139,12 +137,33 @@ private fun cropTile(
     return
   }
 
-  val tile = contoursToTile(cropFt, cropM, bound, EXTENT_TILE, z)
+  val tolerance =
+      S1Angle.degrees(
+          if (z < 14) {
+            5 * 360.0 / 2.0.pow(z) / EXTENT_TILE
+          } else {
+            5 * 360.0 / 2.0.pow(20) / EXTENT_TILE
+          }
+      )
+  val tile =
+      contoursToTile(
+          simplifyContours(cropFt, tolerance),
+          simplifyContours(cropM, tolerance),
+          bound,
+          EXTENT_TILE,
+          z)
   val output = dest.resolve("${z}/${x}/${y}.pbf")
   output.parent.toFile().mkdirs()
 
   FileOutputStream(output.toFile()).use {
     tile.writeTo(it)
+  }
+
+  if (z < 14) {
+    cropTile(x * 2 + 0, y * 2 + 0, z + 1, dest, cropFt, cropM)
+    cropTile(x * 2 + 0, y * 2 + 1, z + 1, dest, cropFt, cropM)
+    cropTile(x * 2 + 1, y * 2 + 0, z + 1, dest, cropFt, cropM)
+    cropTile(x * 2 + 1, y * 2 + 1, z + 1, dest, cropFt, cropM)
   }
 }
 
@@ -221,11 +240,10 @@ private fun hilbert(n: Int, low: Pair<Int, Int>, high: Pair<Int, Int>) = sequenc
   }
 }
 
-private fun makeRawTile(contours: List<Contour>, tolerance: S1Angle): RawTile {
+private fun makeRawTile(contours: List<Contour>): RawTile {
   return RawTile(
       contours
           .filter { it.points.size > 1 }
-          .map { Contour(it.height, it.glacier, simplifyContour(it.points, tolerance)) }
           .map { c ->
             ContourAndRect(
                 c,
@@ -233,4 +251,8 @@ private fun makeRawTile(contours: List<Contour>, tolerance: S1Angle): RawTile {
                   c.points.forEach { bound.addPoint(it) }
                 }.build())
           })
+}
+
+private fun simplifyContours(contour: List<Contour>, tolerance: S1Angle): List<Contour> {
+  return contour.map { Contour(it.height, it.glacier, simplifyContour(it.points, tolerance)) }
 }

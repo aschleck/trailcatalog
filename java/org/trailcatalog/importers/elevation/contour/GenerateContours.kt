@@ -2,12 +2,8 @@ package org.trailcatalog.importers.elevation.contour
 
 import com.google.common.base.Joiner
 import com.google.common.geometry.S1Angle
-import com.google.common.geometry.S1ChordAngle
-import com.google.common.geometry.S2Edge
-import com.google.common.geometry.S2EdgeUtil
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
-import com.google.common.geometry.S2Point
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
