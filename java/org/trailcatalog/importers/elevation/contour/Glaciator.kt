@@ -3,7 +3,6 @@ package org.trailcatalog.importers.elevation.contour
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2CellUnion
 import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Loop
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polygon
@@ -15,7 +14,7 @@ import java.nio.file.Path
 
 class Glaciator(path: Path) {
 
-  private var bounded: ArrayList<Pair<S2LatLngRect, S2Polygon>>
+  private var bounded: BoundsQuadtree<S2Polygon>
   private val inner: S2CellUnion
   private val outer: S2CellUnion
 
@@ -24,15 +23,15 @@ class Glaciator(path: Path) {
     println("${glaciers.size} glaciers found")
     val coverer =
         S2RegionCoverer.builder()
-            .setMaxCells(100)
+            .setMaxCells(32)
             .setMaxLevel(20)
             .build()
     val inners = HashSet<S2CellId>()
     val outers = HashSet<S2CellId>()
-    bounded = ArrayList()
+    bounded = worldBounds()
     ProgressBar("Generating coverings", "glaciers", glaciers.size).use {
       for (glacier in glaciers) {
-        bounded.add(Pair(glacier.rectBound, glacier))
+        bounded.insert(glacier, glacier.rectBound)
         inners.addAll(coverer.getInteriorCovering(glacier).cellIds())
         outers.addAll(coverer.getCovering(glacier).cellIds())
         it.increment()
@@ -40,9 +39,11 @@ class Glaciator(path: Path) {
     }
     inner = S2CellUnion().also {
       it.initRawSwap(inners.toMutableList())
+      it.normalize()
     }
     outer = S2CellUnion().also {
       it.initRawSwap(outers.toMutableList())
+      it.normalize()
     }
   }
 
@@ -51,28 +52,33 @@ class Glaciator(path: Path) {
     for (original in contours) {
       val points = original.points.map { it.toPoint() }
       var start = 0
-      var on = onGlacier(points[start])
-      for (i in points.indices.drop(1)) {
-        val now = onGlacier(points[i])
+      var on = onGlacier(original.points[start], points[start])
+      for (i in 1 until points.size) {
+        val now = onGlacier(original.points[i], points[i])
         if (on != now) {
           out.add(Contour(original.height, on, original.points.subList(start, i + 1)))
+          start = i
+          on = now
         }
+      }
 
-        start = i
-        on = now
+      if (start < original.points.size - 1) {
+        out.add(Contour(original.height, on, original.points.subList(start, original.points.size)))
       }
     }
     return out
   }
 
-  private fun onGlacier(point: S2Point): Boolean {
+  private fun onGlacier(ll: S2LatLng, point: S2Point): Boolean {
     if (!outer.contains(point)) {
       return false
     } else if (inner.contains(point)) {
       return true
     } else {
-      for ((bound, polygon) in bounded) {
-        if (bound.contains(point) && polygon.contains(point)) {
+      val list = ArrayList<S2Polygon>()
+      bounded.queryPoint(ll, list)
+      for (polygon in list) {
+        if (polygon.contains(point)) {
           return true
         }
       }

@@ -2,8 +2,12 @@ package org.trailcatalog.importers.elevation.contour
 
 import com.google.common.base.Joiner
 import com.google.common.geometry.S1Angle
+import com.google.common.geometry.S1ChordAngle
+import com.google.common.geometry.S2Edge
+import com.google.common.geometry.S2EdgeUtil
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
+import com.google.common.geometry.S2Point
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -34,6 +38,8 @@ fun main(args: Array<String>) {
   val dest = Path.of(args[1])
   val temp = Files.createTempDirectory("dems")
 
+  val glaciator = Glaciator(source.parent.resolve("glaciers.json"))
+
   val low = if (args.size >= 6) Pair(args[2].toInt(), args[3].toInt()) else Pair(-85, -180)
   val high = if (args.size >= 6) Pair(args[4].toInt(), args[5].toInt()) else Pair(85, 180)
   val tasks = ArrayList<ListenableFuture<*>>()
@@ -43,7 +49,7 @@ fun main(args: Array<String>) {
     })
     for (lng in low.second until high.second) {
       tasks.add(pool.submit {
-        generateAndSimplify(lat, lng, source, dest, temp)
+        generateAndSimplify(lat, lng, source, dest, temp, glaciator)
         print(".")
       })
     }
@@ -54,7 +60,8 @@ fun main(args: Array<String>) {
   temp.deleteExisting()
 }
 
-private fun generateAndSimplify(lat: Int, lng: Int, source: Path, dest: Path, temp: Path) {
+private fun generateAndSimplify(
+    lat: Int, lng: Int, source: Path, dest: Path, temp: Path, glaciator: Glaciator) {
   val filename = getCopernicus30mUrl(lat, lng).toHttpUrl().pathSegments.last()
   val from = source.resolve(filename)
 
@@ -66,8 +73,8 @@ private fun generateAndSimplify(lat: Int, lng: Int, source: Path, dest: Path, te
   val fgbM = temp.resolve("${filename}_m.fgb")
   runContour(from, fgbFt, 0.0, 6.096)
   runContour(from, fgbM, 0.0, 10.0)
-  val ft = readFgbAndSimplify(fgbFt, true)
-  val m = readFgbAndSimplify(fgbM, false)
+  val ft = readFgbAndSimplify(fgbFt, true, glaciator)
+  val m = readFgbAndSimplify(fgbM, false, glaciator)
   fgbFt.deleteExisting()
   fgbM.deleteExisting()
 
@@ -102,11 +109,14 @@ private fun runContour(source: Path, destination: Path, offset: Double, interval
   }
 }
 
-private fun readFgbAndSimplify(source: Path, unitIsFeet: Boolean): List<Contour> {
-  return readFgb(source, unitIsFeet)
+private fun readFgbAndSimplify(
+    source: Path, unitIsFeet: Boolean, glaciator: Glaciator): List<Contour> {
+  return glaciator.glaciate(readFgb(source, unitIsFeet))
       .sortedBy { it.height }
-      // Optimize for zoom level 17
-      .map { Contour(it.height, false, simplifyContour(it.points, S1Angle.degrees(0.003 / 256))) }
+      .map {
+        // Actually don't simplify...
+        Contour(it.height, it.glacier, simplifyContour(it.points, S1Angle.degrees(0.0)))
+      }
 }
 
 private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
@@ -168,3 +178,4 @@ private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
     }
   }
 }
+

@@ -40,13 +40,11 @@ fun main(args: Array<String>) {
   val tolerance =
       S1Angle.degrees(
           if (zoom < 14) {
-            360.0 / worldSize / EXTENT_TILE
+            5 * 360.0 / worldSize / EXTENT_TILE
           } else {
-            360.0 / 2.0.pow(18) / EXTENT_TILE
+            5 * 360.0 / 2.0.pow(20) / EXTENT_TILE
           }
       )
-
-  val glaciator = Glaciator(source.resolve("glaciers.json"))
 
   val cache =
       CacheBuilder
@@ -67,9 +65,7 @@ fun main(args: Array<String>) {
                         S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
                         S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1)))
               }
-              return Pair(
-                  makeRawTile(glaciator.glaciate(contoursFt), tolerance),
-                  makeRawTile(glaciator.glaciate(contoursM), tolerance))
+              return Pair(makeRawTile(contoursFt, tolerance), makeRawTile(contoursM, tolerance))
             }
           })
 
@@ -179,10 +175,10 @@ private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>
     }
 
     val first = 0.coerceAtLeast(i - 1)
-    val last = j
-    val count = last - first
+    val after = lls.size.coerceAtMost(j + 1)
+    val count = after - first
     val span = Lists.newArrayListWithExpectedSize<S2LatLng>(count)
-    for (p in first until last) {
+    for (p in first until after) {
       span.add(lls[p])
     }
     out.add(Contour(contour.height, contour.glacier, span))
@@ -195,7 +191,7 @@ private fun hilbert(n: Int, low: Pair<Int, Int>, high: Pair<Int, Int>) = sequenc
   val dx = high.first - low.first
   val dy = high.second - low.second
   Preconditions.checkArgument(dx == dy, "Must be square")
-  Preconditions.checkArgument((n and (n - 1)) == 0, "Must be a power of 2")
+  Preconditions.checkArgument((dx and (dx - 1)) == 0, "Must be a power of 2")
 
   for (d in 0 until dx * dy) {
     var x = 0

@@ -1,5 +1,6 @@
 package org.trailcatalog.importers.elevation.contour
 
+import com.google.common.base.Preconditions
 import com.google.common.collect.Lists
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S1ChordAngle
@@ -18,6 +19,7 @@ import kotlin.math.asin
 import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.math.tanh
 
 data class Contour(val height: Int, val glacier: Boolean, val points: List<S2LatLng>)
@@ -109,9 +111,10 @@ private fun contoursToLayer(
           .addGeometry(CodedOutputStream.encodeZigZag32(xys[1] - y))
       x = xys[0]
       y = xys[1]
+      Preconditions.checkState(xys.size / 2 < 536870912) // 2^29 is max count
+      feature.addGeometry(2 or (xys.size / 2 - 1 shl 3))
       for (i in 2 until xys.size step 2) {
         feature
-            .addGeometry(10)
             .addGeometry(CodedOutputStream.encodeZigZag32(xys[i + 0] - x))
             .addGeometry(CodedOutputStream.encodeZigZag32(xys[i + 1] - y))
         x = xys[i + 0]
@@ -179,10 +182,12 @@ fun loadContourMvt(
         throw IORuntimeException("Cannot read anything but linestrings")
       }
 
+      var glacier: Int? = null
       var height: Int? = null
       for (i in 0 until feature.tagsCount step 2) {
-        if (layer.getKeys(feature.getTags(i)) == "height") {
-          height = layer.getValues(feature.getTags(i + 1)).intValue.toInt()
+        when (layer.getKeys(feature.getTags(i))) {
+          "height" -> height = layer.getValues(feature.getTags(i + 1)).intValue.toInt()
+          "glacier" -> glacier = layer.getValues(feature.getTags(i + 1)).intValue.toInt()
         }
       }
 
@@ -204,7 +209,7 @@ fun loadContourMvt(
           var j = 0
           while (j < count) {
             building = ArrayList()
-            contours.add(Contour(height, false, building))
+            contours.add(Contour(height, (glacier ?: 0) > 0, building))
 
             x += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 0))
             y += CodedInputStream.decodeZigZag32(feature.getGeometry(i + 1))
@@ -274,7 +279,7 @@ private fun zToFtIncrement(z: Int): Int {
 private fun zToMIncrement(z: Int): Int {
   return when (z) {
     -1 -> 10
-    9 -> 200
+    9 -> 250
     10 -> 100
     11 -> 50
     12 -> 20
