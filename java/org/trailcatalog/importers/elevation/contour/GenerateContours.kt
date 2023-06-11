@@ -1,7 +1,6 @@
 package org.trailcatalog.importers.elevation.contour
 
 import com.google.common.base.Joiner
-import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.util.concurrent.Futures
@@ -45,7 +44,7 @@ fun main(args: Array<String>) {
     })
     for (lng in low.second until high.second) {
       tasks.add(pool.submit {
-        generateAndSimplify(lat, lng, source, dest, temp, glaciator)
+        generate(lat, lng, source, dest, temp, glaciator)
         print(".")
       })
     }
@@ -56,7 +55,7 @@ fun main(args: Array<String>) {
   temp.deleteExisting()
 }
 
-private fun generateAndSimplify(
+private fun generate(
     lat: Int, lng: Int, source: Path, dest: Path, temp: Path, glaciator: Glaciator) {
   val filename = getCopernicus30mUrl(lat, lng).toHttpUrl().pathSegments.last()
   val from = source.resolve(filename)
@@ -69,8 +68,8 @@ private fun generateAndSimplify(
   val fgbM = temp.resolve("${filename}_m.fgb")
   runContour(from, fgbFt, 0.0, 6.096)
   runContour(from, fgbM, 0.0, 10.0)
-  val ft = readFgbAndSimplify(fgbFt, true, glaciator)
-  val m = readFgbAndSimplify(fgbM, false, glaciator)
+  val ft = readFgbAndProcess(fgbFt, true, glaciator)
+  val m = readFgbAndProcess(fgbM, false, glaciator)
   fgbFt.deleteExisting()
   fgbM.deleteExisting()
 
@@ -78,7 +77,7 @@ private fun generateAndSimplify(
       S2LatLngRect.fromPointPair(
           S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
           S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1))
-  val tile = contoursToTile(ft, m, bound, EXTENT_ONE_DEGREE, -1)
+  val tile = contoursToTile(ft, m, bound, EXTENT_ONE_DEGREE, -1, false)
   FileOutputStream(dest.resolve("${filename}.mvt").toFile()).use {
     tile.writeTo(it)
   }
@@ -105,14 +104,9 @@ private fun runContour(source: Path, destination: Path, offset: Double, interval
   }
 }
 
-private fun readFgbAndSimplify(
+private fun readFgbAndProcess(
     source: Path, unitIsFeet: Boolean, glaciator: Glaciator): List<Contour> {
-  return glaciator.glaciate(readFgb(source, unitIsFeet))
-      .sortedBy { it.height }
-      .map {
-        // Actually don't simplify...
-        Contour(it.height, it.glacier, simplifyContour(it.points, S1Angle.degrees(0.0)))
-      }
+  return glaciator.glaciate(readFgb(source, unitIsFeet)).sortedBy { it.height }
 }
 
 private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
@@ -174,4 +168,3 @@ private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
     }
   }
 }
-

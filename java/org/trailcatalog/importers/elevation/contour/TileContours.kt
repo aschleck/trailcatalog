@@ -4,7 +4,6 @@ import com.google.common.base.Preconditions
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
 import com.google.common.collect.Lists
-import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.util.concurrent.Futures
@@ -137,21 +136,7 @@ private fun cropTile(
     return
   }
 
-  val tolerance =
-      S1Angle.degrees(
-          if (z < 14) {
-            5 * 360.0 / 2.0.pow(z) / EXTENT_TILE
-          } else {
-            5 * 360.0 / 2.0.pow(20) / EXTENT_TILE
-          }
-      )
-  val tile =
-      contoursToTile(
-          simplifyContours(cropFt, tolerance),
-          simplifyContours(cropM, tolerance),
-          bound,
-          EXTENT_TILE,
-          z)
+  val tile = contoursToTile(cropFt, cropM, bound, EXTENT_TILE, z, true)
   val output = dest.resolve("${z}/${x}/${y}.pbf")
   output.parent.toFile().mkdirs()
 
@@ -251,8 +236,4 @@ private fun makeRawTile(contours: List<Contour>): RawTile {
                   c.points.forEach { bound.addPoint(it) }
                 }.build())
           })
-}
-
-private fun simplifyContours(contour: List<Contour>, tolerance: S1Angle): List<Contour> {
-  return contour.map { Contour(it.height, it.glacier, simplifyContour(it.points, tolerance)) }
 }
