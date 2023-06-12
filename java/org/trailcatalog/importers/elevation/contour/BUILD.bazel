@@ -4,12 +4,6 @@ load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 
 java_binary(
-    name = "generate_contours",
-    main_class = "org.trailcatalog.importers.elevation.contour.GenerateContoursKt",
-    runtime_deps = [":contour"],
-)
-
-java_binary(
     name = "tile_contours",
     main_class = "org.trailcatalog.importers.elevation.contour.TileContoursKt",
     runtime_deps = [":contour"],

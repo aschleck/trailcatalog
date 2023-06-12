@@ -15,7 +15,6 @@ import org.trailcatalog.importers.elevation.getCopernicus30mUrl
 import java.io.FileOutputStream
 import java.nio.file.Path
 import java.util.concurrent.Executors
-import kotlin.io.path.exists
 import kotlin.math.asin
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -28,30 +27,20 @@ data class RawTile(val contours: List<ContourAndRect>)
 fun main(args: Array<String>) {
   val pool =
       MoreExecutors.listeningDecorator(
-          Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() / 2))
+          Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() - 2))
 
   val source = Path.of(args[0])
   val dest = Path.of(args[1])
+  val glaciator = Glaciator(source.parent.resolve("glaciers.json"))
 
   val cache =
       CacheBuilder
           .newBuilder()
-          .maximumSize(8)
+          .maximumSize(4)
           .build(object : CacheLoader<Pair<Int, Int>, Pair<RawTile, RawTile>>() {
             override fun load(p0: Pair<Int, Int>): Pair<RawTile, RawTile> {
               val (lat, lng) = p0
-              val mvt = source.resolve(getCopernicusMvt(lat, lng))
-              val contoursFt = ArrayList<Contour>()
-              val contoursM = ArrayList<Contour>()
-              if (mvt.exists()) {
-                loadContourMvt(
-                    contoursFt,
-                    contoursM,
-                    mvt,
-                    S2LatLngRect.fromPointPair(
-                        S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
-                        S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1)))
-              }
+              val (contoursFt, contoursM) = generateContours(lat, lng, source, glaciator)
               return Pair(makeRawTile(contoursFt), makeRawTile(contoursM))
             }
           })
@@ -105,10 +94,6 @@ fun main(args: Array<String>) {
   }
 
   pool.shutdown()
-}
-
-private fun getCopernicusMvt(lat: Int, lng: Int): String {
-  return getCopernicus30mUrl(lat, lng).toHttpUrl().pathSegments.last() + ".mvt"
 }
 
 private fun tileToBound(x: Int, y: Int, z: Int): S2LatLngRect {

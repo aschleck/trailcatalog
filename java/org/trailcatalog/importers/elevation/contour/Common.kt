@@ -19,7 +19,6 @@ import kotlin.math.tanh
 
 data class Contour(val height: Int, val glacier: Boolean, val points: List<S2LatLng>)
 
-const val EXTENT_ONE_DEGREE = 4096 * 512
 const val EXTENT_TILE = 4096
 
 fun contoursToTile(

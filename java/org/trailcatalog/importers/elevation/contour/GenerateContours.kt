@@ -2,10 +2,6 @@ package org.trailcatalog.importers.elevation.contour
 
 import com.google.common.base.Joiner
 import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2LatLngRect
-import com.google.common.util.concurrent.Futures
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.common.util.concurrent.MoreExecutors
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.common.IORuntimeException
@@ -14,58 +10,26 @@ import org.wololo.flatgeobuf.HeaderMeta
 import org.wololo.flatgeobuf.PackedRTree
 import org.wololo.flatgeobuf.generated.ColumnType
 import org.wololo.flatgeobuf.generated.Feature
-import java.io.FileOutputStream
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
-import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.deleteExisting
 import kotlin.io.path.exists
 import kotlin.io.path.fileSize
 import kotlin.math.roundToInt
 
-fun main(args: Array<String>) {
-  val pool = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(4))
-
-  val source = Path.of(args[0])
-  val dest = Path.of(args[1])
-  val temp = Files.createTempDirectory("dems")
-
-  val glaciator = Glaciator(source.parent.resolve("glaciers.json"))
-
-  val low = if (args.size >= 6) Pair(args[2].toInt(), args[3].toInt()) else Pair(-85, -180)
-  val high = if (args.size >= 6) Pair(args[4].toInt(), args[5].toInt()) else Pair(85, 180)
-  val tasks = ArrayList<ListenableFuture<*>>()
-  for (lat in low.first until high.first) {
-    tasks.add(pool.submit {
-      print("\n${lat}")
-    })
-    for (lng in low.second until high.second) {
-      tasks.add(pool.submit {
-        generate(lat, lng, source, dest, temp, glaciator)
-        print(".")
-      })
-    }
-  }
-
-  Futures.allAsList(tasks).get()
-  pool.shutdown()
-  temp.deleteExisting()
-}
-
-private fun generate(
-    lat: Int, lng: Int, source: Path, dest: Path, temp: Path, glaciator: Glaciator) {
+fun generateContours(lat: Int, lng: Int, source: Path, glaciator: Glaciator):
+    Pair<List<Contour>, List<Contour>> {
   val filename = getCopernicus30mUrl(lat, lng).toHttpUrl().pathSegments.last()
   val from = source.resolve(filename)
 
   if (!from.exists()) {
-    return
+    return Pair(listOf(), listOf())
   }
 
-  val fgbFt = temp.resolve("${filename}_ft.fgb")
-  val fgbM = temp.resolve("${filename}_m.fgb")
+  val fgbFt = source.resolve("${filename}_ft.fgb")
+  val fgbM = source.resolve("${filename}_m.fgb")
   runContour(from, fgbFt, 0.0, 6.096)
   runContour(from, fgbM, 0.0, 10.0)
   val ft = readFgbAndProcess(fgbFt, true, glaciator)
@@ -73,14 +37,7 @@ private fun generate(
   fgbFt.deleteExisting()
   fgbM.deleteExisting()
 
-  val bound =
-      S2LatLngRect.fromPointPair(
-          S2LatLng.fromDegrees(lat.toDouble(), lng.toDouble()),
-          S2LatLng.fromDegrees(lat.toDouble() + 1, lng.toDouble() + 1))
-  val tile = contoursToTile(ft, m, bound, EXTENT_ONE_DEGREE, -1, false)
-  FileOutputStream(dest.resolve("${filename}.mvt").toFile()).use {
-    tile.writeTo(it)
-  }
+  return Pair(ft, m)
 }
 
 private fun runContour(source: Path, destination: Path, offset: Double, interval: Double) {

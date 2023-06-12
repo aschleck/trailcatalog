@@ -30,11 +30,8 @@ curl \
      -o /mnt/horse/glaciers.json
 # Manually hack in way 229914265...
 
-java -jar ~/generate_contours_deploy.jar \
-    /mnt/horse/copernicus /mnt/horse/contours/
-
 java -jar ~/tile_contours_deploy.jar \
-    /mnt/horse/contours/ \
+    /mnt/horse/copernicus/ \
     /mnt/horse/tiles/contours/
 ```
 
