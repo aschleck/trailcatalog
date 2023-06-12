@@ -80,6 +80,8 @@
           valid_referers server_names
               trailcatalog.org
               *.trailcatalog.org
+              henrythasler.static.observableusercontent.com
+              stevage.github.io
               ~^\d+\.\d+\.\d+\.\d+(:\d+)?/
               ~^[a-z]+:(\d+)?/;
 
