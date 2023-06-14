@@ -161,8 +161,8 @@ j2cl_maven_import_external(
 http_archive(
   name = "com_google_geometry_s2",
   urls = [
-    "https://github.com/aschleck/s2-geometry-library-java/archive/cd30c406ea3d0c7fb76e11b13c3ecdaa7066d968.zip"
+    "https://github.com/aschleck/s2-geometry-library-java/archive/49806928469e490d175be0c88492aa5cea0e0f5e.zip"
   ],
-  sha256 = "61f159f82e91003199a8e2414b6715d9c63e1b621bd90d5e26e3546370db4bb6",
-  strip_prefix = "s2-geometry-library-java-cd30c406ea3d0c7fb76e11b13c3ecdaa7066d968",
+  sha256 = "147799a66199dd4f5732e5e05212390d04a9ce2f35f2828e9027e3eb2c6237fd",
+  strip_prefix = "s2-geometry-library-java-49806928469e490d175be0c88492aa5cea0e0f5e",
 )
