@@ -479,10 +479,13 @@ function projectContours(
     const projected = liness[i];
     const tags = features[i].tags;
 
+    let glacier = false;
     let height = 0;
     let nthLine = 1;
     for (let i = 0; i < tags.length; i += 2) {
-      if (keys[tags[i]] === 'height') {
+      if (keys[tags[i]] === 'glacier') {
+        glacier = (values[tags[i + 1]] as number) > 0;
+      } else if (keys[tags[i]] === 'height') {
         height = values[tags[i + 1]] as number;
       } else if (keys[tags[i]] === 'nth_line') {
         nthLine = values[tags[i + 1]] as number;
@@ -512,6 +515,7 @@ function projectContours(
       }
 
       lines.push({
+        glacier,
         height,
         labelLength,
         labelOffset,

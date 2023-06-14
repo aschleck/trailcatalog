@@ -19,8 +19,10 @@ const BOUNDARY_FILL = rgbaToUint32(0, 0, 0, 0.15);
 const BOUNDARY_STROKE = rgbaToUint32(0, 0, 0, 0.15);
 const BOUNDARY_RADIUS = 1;
 const BOUNDARY_Z = 2;
-const CONTOUR_FILL = rgbaToUint32(0, 0, 0, 0.1);
-const CONTOUR_STROKE = rgbaToUint32(0, 0, 0, 0.1);
+const CONTOUR_GLACIER_FILL = rgbaToUint32(4 / 255, 138 / 255, 185 / 255, 0.1);
+const CONTOUR_GLACIER_STROKE = rgbaToUint32(4 / 255, 138 / 255, 185 / 255, 0.1);
+const CONTOUR_GROUND_FILL = rgbaToUint32(0, 0, 0, 0.1);
+const CONTOUR_GROUND_STROKE = rgbaToUint32(0, 0, 0, 0.1);
 const CONTOUR_NORMAL_RADIUS = 0.75;
 const CONTOUR_EMPHASIZED_RADIUS = 1.5;
 const CONTOUR_Z = 1;
@@ -43,7 +45,7 @@ const GLOBAL_LANDCOVER_FOREST_FILL = rgbaToUint32(191 / 255, 202 / 255, 155 / 25
 const GLOBAL_LANDCOVER_GRASS_FILL = rgbaToUint32(222 / 255, 227 / 255, 192 / 255, 0.9);
 const GLOBAL_LANDCOVER_SCRUB_FILL = rgbaToUint32(203 / 255, 215 / 255, 168 / 255, 0.9);
 const LANDCOVER_GRASS_FILL = rgbaToUint32(213 / 255, 224 / 255, 190 / 255, 1);
-const LANDCOVER_ICE_FILL = rgbaToUint32(1, 1, 1, 1);
+const LANDCOVER_ICE_FILL = rgbaToUint32(250 / 255, 254 / 255, 255 / 255, 1);
 const LANDCOVER_SAND_FILL = rgbaToUint32(252 / 255, 247 / 255, 204 / 255, 1);
 const LANDCOVER_WOOD_FILL = rgbaToUint32(191 / 255, 202 / 255, 155 / 255, 1);
 const LANDUSE_HUMAN_FILL = rgbaToUint32(230 / 255, 230 / 255, 230 / 255, 1);
@@ -61,7 +63,7 @@ const TERTIARY_LABEL_STROKE = rgbaToUint32(0.95, 0.95, 0.95, 1);
 const TERTIARY_LABEL_SIZE = 0.5;
 
 const TILE_INDEX_BYTE_SIZE = 512_000;
-const TILE_GEOMETRY_BYTE_SIZE = 4_194_304;
+const TILE_GEOMETRY_BYTE_SIZE = 8_388_608;
 
 export class MbtileData extends Layer {
 
@@ -139,6 +141,7 @@ export class MbtileData extends Layer {
       const tile = checkExists(this.tiles.get(id));
       baker.addPrebaked(tile.baked);
       this.bakeBoundaries(tile.raw, zoom, baker);
+      this.bakeContourLabels(tile.raw, zoom, baker);
       this.bakeLabels(tile.raw, zoom, baker);
     }
   }
@@ -268,6 +271,10 @@ export class MbtileData extends Layer {
   }
 
   private bakeContours(tile: MbtileTile, zoom: number, baker: RenderBaker): void {
+    if (zoom < 9) {
+      return;
+    }
+
     let contours;
     const unit = getUnitSystem();
     if (unit === 'imperial') {
@@ -282,35 +289,50 @@ export class MbtileData extends Layer {
     const regular = [];
     for (const contour of contours) {
       const line = {
-        colorFill: CONTOUR_FILL,
-        colorStroke: CONTOUR_STROKE,
+        colorFill: contour.glacier ? CONTOUR_GLACIER_FILL : CONTOUR_GROUND_FILL,
+        colorStroke: contour.glacier ? CONTOUR_GLACIER_STROKE : CONTOUR_GROUND_STROKE,
         stipple: false,
         vertices: tile.geometry,
         verticesOffset: contour.vertexOffset,
         verticesLength: contour.vertexLength,
       };
 
-      if (zoom >= 12) {
-        if (contour.nthLine === 10) {
-          bold.push(line);
-        } else {
-          regular.push(line);
-        }
-      } else if (zoom >= 9) {
-        if (contour.nthLine >= 2) {
-          regular.push(line);
-        }
+      if (contour.nthLine >= 5) {
+        bold.push(line);
+      } else {
+        regular.push(line);
       }
+    }
 
-      if (contour.nthLine === 10 && zoom >= 14) {
+    baker.addLines(
+        bold, CONTOUR_EMPHASIZED_RADIUS, CONTOUR_Z, /* replace= */ false, /* round= */ false);
+    baker.addLines(
+        regular, CONTOUR_NORMAL_RADIUS, CONTOUR_Z, /* replace= */ false, /* round= */ false);
+  }
+
+  private bakeContourLabels(tile: MbtileTile, zoom: number, baker: RenderBaker): void {
+    if (zoom < 15.5) {
+      return;
+    }
+
+    let contours;
+    const unit = getUnitSystem();
+    if (unit === 'imperial') {
+      contours = tile.contoursFt;
+    } else if (unit === 'metric') {
+      contours = tile.contoursM;
+    } else {
+      throw checkExhaustive(unit);
+    }
+
+    for (const contour of contours) {
+      if (contour.nthLine >= 5) {
         for (let i = 0; i < contour.labelLength; i += 3) {
           const by2 = i % 2;
           const by3 = i % 3;
           const by5 = i % 5;
           const by7 = i % 7;
-          if (zoom < 15.5) {
-            continue;
-          } else if (zoom < 17 && by2 > 0) {
+          if (zoom < 17 && by2 > 0) {
             continue;
           } else if (zoom < 18 && by3 > 0) {
             continue;
@@ -334,11 +356,6 @@ export class MbtileData extends Layer {
         }
       }
     }
-
-    baker.addLines(
-        bold, CONTOUR_EMPHASIZED_RADIUS, CONTOUR_Z, /* replace= */ false, /* round= */ false);
-    baker.addLines(
-        regular, CONTOUR_NORMAL_RADIUS, CONTOUR_Z, /* replace= */ false, /* round= */ false);
   }
 
   private bakeHighways(tile: MbtileTile, zoom: number, baker: RenderBaker): void {

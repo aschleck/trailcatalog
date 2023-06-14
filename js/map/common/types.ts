@@ -86,6 +86,7 @@ export interface Boundary {
 }
 
 export interface Contour {
+  glacier: boolean;
   height: number;
   labelLength: number;
   labelOffset: number;
