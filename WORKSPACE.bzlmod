@@ -1,0 +1,168 @@
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "io_tweag_rules_nixpkgs",
+    strip_prefix = "rules_nixpkgs-62d63740061dd94ecee3ec2c0cfc8a7ed409b98c",
+    urls = ["https://github.com/tweag/rules_nixpkgs/archive/62d63740061dd94ecee3ec2c0cfc8a7ed409b98c.tar.gz"],
+)
+
+load("@io_tweag_rules_nixpkgs//nixpkgs:repositories.bzl", "rules_nixpkgs_dependencies")
+
+rules_nixpkgs_dependencies()
+
+load("@io_tweag_rules_nixpkgs//nixpkgs:nixpkgs.bzl", "nixpkgs_git_repository")
+
+nixpkgs_git_repository(
+    name = "nixpkgs",
+    revision = "22.11",
+    sha256 = "ddc3428d9e1a381b7476750ac4dbea7a42885cbbe6e1af44b21d6447c9609a6f",
+)
+
+load("@io_tweag_rules_nixpkgs//nixpkgs:nixpkgs.bzl", "nixpkgs_java_configure")
+
+nixpkgs_java_configure(
+    attribute_path = "jdk17.home",
+    repository = "@nixpkgs",
+    toolchain = True,
+    toolchain_name = "nixpkgs_java",
+    toolchain_version = "17",
+)
+
+# Why is this needed???
+http_archive(
+  name = "remote_java_tools",
+  urls = [
+    "https://mirror.bazel.build/bazel_java_tools/releases/java/v11.9/java_tools-v11.9.zip",
+    "https://github.com/bazelbuild/java_tools/releases/download/java_v11.9/java_tools-v11.9.zip"
+  ],
+  sha256 = "5cd59ea6bf938a1efc1e11ea562d37b39c82f76781211b7cd941a2346ea8484d",
+)
+
+http_archive(
+    name = "io_bazel_rules_kotlin",
+    sha256 = "fd92a98bd8a8f0e1cdcb490b93f5acef1f1727ed992571232d33de42395ca9b3",
+    urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/v1.7.1/rules_kotlin_release.tgz"],
+)
+
+load("@io_bazel_rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories")
+
+kotlin_repositories()
+
+load("@io_bazel_rules_kotlin//kotlin:core.bzl", "kt_register_toolchains")
+
+kt_register_toolchains()
+
+# TODO: Migrated to Bzlmod
+http_archive(
+  name = "io_bazel_rules_closure",
+  urls = [
+    "https://github.com/bazelbuild/rules_closure/archive/3ad6806fa6d4b296e8b268831348fb695ba14c8a.zip",
+  ],
+  sha256 = "854028c3b56d7cf9cca939a54945e521b52015688100ca6d31679277cbff99ad",
+  strip_prefix = "rules_closure-3ad6806fa6d4b296e8b268831348fb695ba14c8a",
+)
+
+load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies", "rules_closure_toolchains")
+
+rules_closure_dependencies(
+    omit_com_google_auto_common = True,
+)
+
+rules_closure_toolchains()
+
+# TODO: Migrated to Bzlmod
+local_repository(
+  name = "com_google_j2cl",
+  path = "../j2cl",
+)
+
+load("@com_google_j2cl//build_defs:repository.bzl", "load_j2cl_repo_deps")
+
+load_j2cl_repo_deps()
+
+load("@com_google_j2cl//build_defs:workspace.bzl", "setup_j2cl_workspace")
+
+setup_j2cl_workspace()
+
+# TODO: Migrated to Bzlmod
+http_archive(
+  name = "aspect_rules_jest",
+  url = "https://github.com/aspect-build/rules_jest/archive/refs/tags/v0.16.1.tar.gz",
+  sha256 = "fa103b278137738ef08fd23d3c8c9157897a7159af2aa22714bc71680da58583",
+  strip_prefix = "rules_jest-0.16.1",
+)
+
+# TODO: Migrated to Bzlmod
+http_archive(
+  name = "com_google_elemental2",
+  url = "https://github.com/google/elemental2/archive/5e650ebdd48e58aa89bb839c138c34d8a6778f2a.zip",
+  sha256 = "9d06a4113d7e5a68e1d14f9803644c37d8ba1a6d065f900baf9a59ad674ad92b",
+  strip_prefix = "elemental2-5e650ebdd48e58aa89bb839c138c34d8a6778f2a",
+)
+
+load("@com_google_elemental2//build_defs:repository.bzl", "load_elemental2_repo_deps")
+
+load_elemental2_repo_deps()
+
+load("@com_google_elemental2//build_defs:workspace.bzl", "setup_elemental2_workspace")
+
+setup_elemental2_workspace()
+
+load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external")
+
+j2cl_maven_import_external(
+    name = "com_google_code_findbugs_jsr305-j2cl",
+    annotation_only = True,
+    artifact = "com.google.code.findbugs:jsr305:3.0.2",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+
+j2cl_maven_import_external(
+    name = "com_google_errorprone_error_prone_annotations-j2cl",
+    annotation_only = True,
+    artifact = "com.google.errorprone:error_prone_annotations:2.11.0",
+    artifact_sha256 = "721cb91842b46fa056847d104d5225c8b8e1e8b62263b993051e1e5a0137b7ec",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+
+j2cl_maven_import_external(
+    name = "com_google_j2objc_annotations-j2cl",
+    annotation_only = True,
+    artifact = "com.google.j2objc:j2objc-annotations:jar:1.3",
+    artifact_sha256 = "21af30c92267bd6122c0e0b4d20cccb6641a37eaf956c6540ec471d584e64a7b",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+
+j2cl_maven_import_external(
+    name = "org_checkerframework_checker_qual-j2cl",
+    annotation_only = True,
+    artifact = "org.checkerframework:checker-qual:3.21.2",
+    artifact_sha256 = "7e8554c902b9b839e61396cfe3a64c84ecabfb8eb652c410bfd8e4f5c1a8ece8",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+)
+
+j2cl_maven_import_external(
+    name = "com_google_guava-j2cl",
+    artifact = "com.google.guava:guava-gwt:31.0.1-jre",
+    artifact_sha256 = "63c378abce1dc1de39312630630ee68b1578350af5907eab995833a0ba03ed35",
+    server_urls = ["https://repo1.maven.org/maven2/"],
+    deps = [
+        "@com_google_code_findbugs_jsr305-j2cl",
+        "@com_google_elemental2//:elemental2-promise-j2cl",
+        "@com_google_errorprone_error_prone_annotations-j2cl",
+        "@com_google_j2cl//:jsinterop-annotations-j2cl",
+        "@com_google_j2objc_annotations-j2cl",
+        "@org_checkerframework_checker_qual-j2cl",
+    ],
+)
+
+
+# TODO: Migrated to Bzlmod
+http_archive(
+  name = "com_google_geometry_s2",
+  urls = [
+    "https://github.com/aschleck/s2-geometry-library-java/archive/cd30c406ea3d0c7fb76e11b13c3ecdaa7066d968.zip"
+  ],
+  sha256 = "61f159f82e91003199a8e2414b6715d9c63e1b621bd90d5e26e3546370db4bb6",
+  strip_prefix = "s2-geometry-library-java-cd30c406ea3d0c7fb76e11b13c3ecdaa7066d968",
+)
