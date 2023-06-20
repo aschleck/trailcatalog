@@ -2,10 +2,9 @@ package org.trailcatalog.importers.elevation.contour
 
 import com.google.common.base.Joiner
 import com.google.common.geometry.S2LatLng
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import com.google.common.geometry.S2LatLngRect
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.common.IORuntimeException
-import org.trailcatalog.importers.elevation.getCopernicus30mUrl
 import org.wololo.flatgeobuf.HeaderMeta
 import org.wololo.flatgeobuf.PackedRTree
 import org.wololo.flatgeobuf.generated.ColumnType
@@ -15,29 +14,54 @@ import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.deleteExisting
-import kotlin.io.path.exists
 import kotlin.io.path.fileSize
 import kotlin.math.roundToInt
 
-fun generateContours(lat: Int, lng: Int, source: Path, glaciator: Glaciator):
+fun generateContours(bound: S2LatLngRect, source: Path, glaciator: Glaciator):
     Pair<List<Contour>, List<Contour>> {
-  val filename = getCopernicus30mUrl(lat, lng).toHttpUrl().pathSegments.last()
-  val from = source.resolve(filename)
-
-  if (!from.exists()) {
-    return Pair(listOf(), listOf())
-  }
-
+  val vrt = source.resolve("copernicus.vrt")
+  val filename = bound.hashCode()
+  val warped = source.resolve("${filename}_warp.tiff")
+  runWarp(bound, vrt, warped)
   val fgbFt = source.resolve("${filename}_ft.fgb")
   val fgbM = source.resolve("${filename}_m.fgb")
-  runContour(from, fgbFt, 0.0, 6.096)
-  runContour(from, fgbM, 0.0, 10.0)
+  runContour(warped, fgbFt, 0.0, 6.096)
+  runContour(warped, fgbM, 0.0, 10.0)
+  warped.deleteExisting()
   val ft = readFgbAndProcess(fgbFt, true, glaciator)
   val m = readFgbAndProcess(fgbM, false, glaciator)
   fgbFt.deleteExisting()
   fgbM.deleteExisting()
 
   return Pair(ft, m)
+}
+
+private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
+  val command = listOf(
+      "gdalwarp",
+      "-te_srs",
+      "EPSG:4326",
+      "-te",
+      // xMin yMin xMax yMax
+      (bound.lo().lngDegrees() - 0.1).toString(),
+      (bound.lo().latDegrees() - 0.1).toString(),
+      (bound.hi().lngDegrees() + 0.1).toString(),
+      (bound.hi().latDegrees() + 0.1).toString(),
+      "-r",
+      "lanczos",
+      "-tr",
+      "0.000277777777778",
+      "0.000277777777778",
+      source.toString(),
+      destination.toString(),
+  )
+  val process = ProcessBuilder(*command.toTypedArray()).start()
+  process.waitFor(5, TimeUnit.MINUTES)
+
+  if (process.exitValue() != 0) {
+    val errors = process.errorReader().readLines()
+    throw IORuntimeException("Failed\n\n" + Joiner.on("\n").join(errors))
+  }
 }
 
 private fun runContour(source: Path, destination: Path, offset: Double, interval: Double) {
@@ -104,6 +128,7 @@ private fun readFgb(source: Path, unitIsFeet: Boolean): List<Contour> {
             else -> throw IllegalArgumentException("Unknown type ${type}")
           }
         }
+
 
         if (height == null) {
           continue

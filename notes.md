@@ -30,6 +30,8 @@ curl \
      -o /mnt/horse/glaciers.json
 # Manually hack in way 229914265...
 
+gdalbuildvrt /mnt/horse/copernicus/copernicus.vrt /mnt/horse/copernicus/*.tif
+
 java -jar ~/tile_contours_deploy.jar \
     /mnt/horse/copernicus/ \
     /mnt/horse/tiles/contours/

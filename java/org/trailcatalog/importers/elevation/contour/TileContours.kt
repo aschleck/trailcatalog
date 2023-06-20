@@ -1,28 +1,19 @@
 package org.trailcatalog.importers.elevation.contour
 
-import com.google.common.base.Preconditions
-import com.google.common.cache.CacheBuilder
-import com.google.common.cache.CacheLoader
 import com.google.common.collect.Lists
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.trailcatalog.importers.common.ProgressBar
-import org.trailcatalog.importers.elevation.getCopernicus30mUrl
 import java.io.FileOutputStream
 import java.nio.file.Path
 import java.util.concurrent.Executors
+import kotlin.io.path.deleteIfExists
 import kotlin.math.asin
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.tanh
-
-data class ContourAndRect(val contour: Contour, val bound: S2LatLngRect)
-data class RawTile(val contours: List<ContourAndRect>)
 
 fun main(args: Array<String>) {
   val pool =
@@ -33,61 +24,27 @@ fun main(args: Array<String>) {
   val dest = Path.of(args[1])
   val glaciator = Glaciator(source.parent.resolve("glaciers.json"))
 
-  val cache =
-      CacheBuilder
-          .newBuilder()
-          .maximumSize(4)
-          .build(object : CacheLoader<Pair<Int, Int>, Pair<RawTile, RawTile>>() {
-            override fun load(p0: Pair<Int, Int>): Pair<RawTile, RawTile> {
-              val (lat, lng) = p0
-              val (contoursFt, contoursM) = generateContours(lat, lng, source, glaciator)
-              return Pair(makeRawTile(contoursFt), makeRawTile(contoursM))
-            }
-          })
-
   val tasks = ArrayList<ListenableFuture<*>>()
-  val base = 9
+  val base = 8
   val worldSize = 2.0.pow(base).toInt()
-  val sequence =
+  val (low, high) =
       if (args.size >= 6) {
-        val low = Pair(args[2].toInt(), args[3].toInt())
-        val high = Pair(args[4].toInt(), args[5].toInt())
-        hilbert(worldSize, low, high)
+        Pair(args[2].toInt(), args[3].toInt()) to Pair(args[4].toInt(), args[5].toInt())
       } else {
-        hilbert(worldSize, Pair(0, 0), Pair(worldSize, worldSize))
+        Pair(0, 0) to Pair(worldSize, worldSize)
       }
 
   ProgressBar("Generating tiles", "tiles", worldSize * worldSize).use {
-    for ((x, y) in sequence) {
-      tasks.add(
-          pool.submit {
-            val bound = tileToBound(x, y, base)
-            val tiles = sequence {
-              val latLow = floor(bound.latLo().degrees()).toInt()
-              val latHigh = ceil(bound.latHi().degrees()).toInt()
-              val lngLow = floor(bound.lngLo().degrees()).toInt()
-              val lngHigh = ceil(bound.lngHi().degrees()).toInt()
-              for (lat in latLow until latHigh) {
-                for (lng in lngLow until lngHigh) {
-                  yield(Pair(lat, lng))
-                }
-              }
-            }
-
-            // We shuffle this sequence so that worker threads don't all block waiting on the same tile
-            val contoursFt = ArrayList<Contour>()
-            val contoursM = ArrayList<Contour>()
-            tiles.shuffled().forEach { ll ->
-              val result = cache[ll]
-              contoursFt.addAll(
-                  result.first.contours.filter { bound.intersects(it.bound) }.map { it.contour })
-              contoursM.addAll(
-                  result.second.contours.filter { bound.intersects(it.bound) }.map { it.contour })
-            }
-
-            cropTile(x, y, base, dest, contoursFt, contoursM)
-            it.increment()
-          })
+    for (y in low.second until high.second) {
+      for (x in low.first until high.first) {
+        tasks.add(
+            pool.submit {
+              val bound = tileToBound(x, y, base)
+              val result = generateContours(bound, source, glaciator)
+              cropTile(x, y, base, dest, result.first, result.second)
+              it.increment()
+            })
+      }
     }
 
     Futures.allAsList(tasks).get()
@@ -117,16 +74,19 @@ private fun cropTile(
   val cropFt = crop(contoursFt, bound)
   val cropM = crop(contoursM, bound)
 
+  val output = dest.resolve("${z}/${x}/${y}.mvt")
   if (cropFt.isEmpty() || cropM.isEmpty()) {
+    output.deleteIfExists()
     return
   }
 
-  val tile = contoursToTile(cropFt, cropM, bound, EXTENT_TILE, z, true)
-  val output = dest.resolve("${z}/${x}/${y}.pbf")
-  output.parent.toFile().mkdirs()
+  if (z >= 9) {
+    val tile = contoursToTile(cropFt, cropM, bound, EXTENT_TILE, z)
+    output.parent.toFile().mkdirs()
 
-  FileOutputStream(output.toFile()).use {
-    tile.writeTo(it)
+    FileOutputStream(output.toFile()).use {
+      tile.writeTo(it)
+    }
   }
 
   if (z < 14) {
@@ -158,67 +118,26 @@ private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>
       break
     }
 
+    var length = 0.0
     var j = i + 1
     while (j < lls.size && view.contains(lls[j])) {
+      length += lls[j - 1].getDistance(lls[j]).radians()
       j += 1
     }
 
     val first = 0.coerceAtLeast(i - 1)
     val after = lls.size.coerceAtMost(j + 1)
+    i = j
+
+    if (length * 6371010.0 < 10) {
+      continue
+    }
+
     val count = after - first
     val span = Lists.newArrayListWithExpectedSize<S2LatLng>(count)
     for (p in first until after) {
       span.add(lls[p])
     }
     out.add(Contour(contour.height, contour.glacier, span))
-
-    i = j
   }
-}
-
-private fun hilbert(n: Int, low: Pair<Int, Int>, high: Pair<Int, Int>) = sequence {
-  val dx = high.first - low.first
-  val dy = high.second - low.second
-  Preconditions.checkArgument(dx == dy, "Must be square")
-  Preconditions.checkArgument((dx and (dx - 1)) == 0, "Must be a power of 2")
-
-  for (d in 0 until dx * dy) {
-    var x = 0
-    var y = 0
-    var t = d
-    var s = 1
-    while (s < n) {
-      val rx = 1 and (t / 2)
-      val ry = 1 and (t xor rx)
-      if (ry == 0) {
-        if (rx == 1) {
-          x = s - 1 - x
-          y = s - 1 - y
-        }
-
-        val tmp = x
-        x = y
-        y = tmp
-      }
-      x += s * rx
-      y += s * ry
-      t /= 4
-      s *= 2
-    }
-
-    yield(Pair(low.first + x, low.second + y))
-  }
-}
-
-private fun makeRawTile(contours: List<Contour>): RawTile {
-  return RawTile(
-      contours
-          .filter { it.points.size > 1 }
-          .map { c ->
-            ContourAndRect(
-                c,
-                S2LatLngRect.empty().toBuilder().also { bound ->
-                  c.points.forEach { bound.addPoint(it) }
-                }.build())
-          })
 }
