@@ -20,7 +20,7 @@ import kotlin.math.roundToInt
 fun generateContours(bound: S2LatLngRect, source: Path, glaciator: Glaciator):
     Pair<List<Contour>, List<Contour>> {
   val vrt = source.resolve("copernicus.vrt")
-  val filename = bound.hashCode()
+  val filename = (0..Integer.MAX_VALUE).random()
   val warped = source.resolve("${filename}_warp.tiff")
   runWarp(bound, vrt, warped)
   val fgbFt = source.resolve("${filename}_ft.fgb")
@@ -43,10 +43,10 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
       "EPSG:4326",
       "-te",
       // xMin yMin xMax yMax
-      (bound.lo().lngDegrees() - 0.1).toString(),
-      (bound.lo().latDegrees() - 0.1).toString(),
-      (bound.hi().lngDegrees() + 0.1).toString(),
-      (bound.hi().latDegrees() + 0.1).toString(),
+      if (bound.lo().lngDegrees() == 180.0) -180 else bound.lo().lngDegrees() - 0.1,
+      if (bound.lo().latDegrees() == 90.0) -90 else bound.lo().latDegrees() - 0.1,
+      if (bound.hi().lngDegrees() == -180.0) 180 else bound.hi().lngDegrees() + 0.1,
+      if (bound.hi().latDegrees() == -90.0) -0 else bound.hi().latDegrees() + 0.1,
       "-r",
       "lanczos",
       "-tr",
@@ -55,7 +55,7 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
       source.toString(),
       destination.toString(),
   )
-  val process = ProcessBuilder(*command.toTypedArray()).start()
+  val process = ProcessBuilder(*command.map { it.toString() }.toTypedArray()).start()
   process.waitFor(5, TimeUnit.MINUTES)
 
   if (process.exitValue() != 0) {

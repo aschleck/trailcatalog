@@ -12,6 +12,8 @@ import java.nio.file.Path
 import java.util.concurrent.Executors
 import kotlin.io.path.deleteIfExists
 import kotlin.math.asin
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.tanh
 
@@ -118,20 +120,14 @@ private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>
       break
     }
 
-    var length = 0.0
     var j = i + 1
     while (j < lls.size && view.contains(lls[j])) {
-      length += lls[j - 1].getDistance(lls[j]).radians()
       j += 1
     }
 
-    val first = 0.coerceAtLeast(i - 1)
-    val after = lls.size.coerceAtMost(j + 1)
+    val first = max(0, i - 1)
+    val after = min(lls.size, j + 1)
     i = j
-
-    if (length * 6371010.0 < 10) {
-      continue
-    }
 
     val count = after - first
     val span = Lists.newArrayListWithExpectedSize<S2LatLng>(count)
