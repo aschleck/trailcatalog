@@ -75,6 +75,6 @@ export const TRAILCATALOG_CONTOURS: MbtileTileset = {
   extraZoom: 0,
   minZoom: 9,
   maxZoom: 14,
-  tileUrl: 'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
+  tileUrl: 'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.mvt',
   type: 'mbtile',
 } as const;
