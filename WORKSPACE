@@ -169,11 +169,10 @@ rules_jvm_external_setup()
 
 http_archive(
     name = "rules_proto",
-    sha256 = "66bfdf8782796239d3875d37e7de19b1d94301e8972b3cbd2446b332429b4df1",
-    strip_prefix = "rules_proto-4.0.0",
+    sha256 = "5c71daa15e0088b2f4ca82e31ec6c4cc0b3473e9bad541b240691074dc8d69d2",
+    strip_prefix = "rules_proto-493169c1199dc21b9da860f7040a4502aa174676",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_proto/archive/refs/tags/4.0.0.tar.gz",
-        "https://github.com/bazelbuild/rules_proto/archive/refs/tags/4.0.0.tar.gz",
+        "https://github.com/bazelbuild/rules_proto/archive/493169c1199dc21b9da860f7040a4502aa174676.zip",
     ],
 )
 
@@ -208,8 +207,8 @@ maven_install(
         "org.apache.commons:commons-text:1.9",
         "com.fasterxml.jackson.core:jackson-databind:2.13.3",
         "com.google.geometry:s2-geometry:2.0.0",
-        "com.google.guava:guava:31.1-jre",
-        "com.google.guava:guava-gwt:31.1-jre",
+        "com.google.guava:guava:32.0.1-jre",
+        "com.google.guava:guava-gwt:32.0.1-jre",
         "com.google.javascript:closure-compiler-unshaded:jar:v20230228",
         "com.google.truth:truth:1.1.3",
         "com.google.truth.extensions:truth-java8-extension:1.1.3",
@@ -235,9 +234,9 @@ maven_install(
 
 http_archive(
     name = "io_bazel_rules_closure",
-    sha256 = "c4b3c84c908891a91a7ad4f17cb685167042795f72d0d5b7ba364bbb7850cc98",
-    strip_prefix = "rules_closure-d01ed25111e00e4e488db6a9213965df81b5b1ef",
-    urls = ["https://github.com/bazelbuild/rules_closure/archive/d01ed25111e00e4e488db6a9213965df81b5b1ef.zip"],
+    sha256 = "854028c3b56d7cf9cca939a54945e521b52015688100ca6d31679277cbff99ad",
+    strip_prefix = "rules_closure-3ad6806fa6d4b296e8b268831348fb695ba14c8a",
+    urls = ["https://github.com/bazelbuild/rules_closure/archive/3ad6806fa6d4b296e8b268831348fb695ba14c8a.zip"],
 )
 
 load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies", "rules_closure_toolchains")
@@ -257,15 +256,15 @@ load("@com_google_j2cl//build_defs:repository.bzl", "load_j2cl_repo_deps")
 
 load_j2cl_repo_deps()
 
-load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external", "setup_j2cl_workspace")
+load("@com_google_j2cl//build_defs:workspace.bzl", "setup_j2cl_workspace")
 
 setup_j2cl_workspace()
 
 http_archive(
     name = "com_google_elemental2",
-    sha256 = "35c1900143297a7ef96f8ea1e38c687e5592ea69e973b15030e01c9f8c839d7c",
-    strip_prefix = "elemental2-d5a43d684efb6acc5e8e805df2db7e5050f7dcea",
-    url = "https://github.com/google/elemental2/archive/d5a43d684efb6acc5e8e805df2db7e5050f7dcea.zip",
+    sha256 = "9d06a4113d7e5a68e1d14f9803644c37d8ba1a6d065f900baf9a59ad674ad92b",
+    strip_prefix = "elemental2-5e650ebdd48e58aa89bb839c138c34d8a6778f2a",
+    url = "https://github.com/google/elemental2/archive/5e650ebdd48e58aa89bb839c138c34d8a6778f2a.zip",
 )
 
 load("@com_google_elemental2//build_defs:repository.bzl", "load_elemental2_repo_deps")
@@ -275,6 +274,8 @@ load_elemental2_repo_deps()
 load("@com_google_elemental2//build_defs:workspace.bzl", "setup_elemental2_workspace")
 
 setup_elemental2_workspace()
+
+load("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external")
 
 j2cl_maven_import_external(
     name = "com_google_code_findbugs_jsr305-j2cl",
@@ -309,8 +310,8 @@ j2cl_maven_import_external(
 
 j2cl_maven_import_external(
     name = "com_google_guava-j2cl",
-    artifact = "com.google.guava:guava-gwt:31.0.1-jre",
-    artifact_sha256 = "63c378abce1dc1de39312630630ee68b1578350af5907eab995833a0ba03ed35",
+    artifact = "com.google.guava:guava-gwt:32.0.1-jre",
+    artifact_sha256 = "9b9293a0e5028adfc840862ffe905e355185c761dbc583de0fa2d1bf3df2be68",
     server_urls = ["https://repo1.maven.org/maven2/"],
     deps = [
         "@com_google_code_findbugs_jsr305-j2cl",
@@ -342,30 +343,3 @@ load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 
 rules_pkg_dependencies()
 
-http_archive(
-    name = "io_bazel_rules_docker",
-    sha256 = "b1e80761a8a8243d03ebca8845e9cc1ba6c82ce7c5179ce2b295cd36f7e394bf",
-    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.25.0/rules_docker-v0.25.0.tar.gz"],
-)
-
-load("@io_bazel_rules_docker//repositories:repositories.bzl", container_repositories = "repositories")
-
-container_repositories()
-
-load("@io_bazel_rules_docker//java:image.bzl", _java_image_repos = "repositories")
-
-_java_image_repos()
-
-load("@io_bazel_rules_docker//python3:image.bzl", _py3_image_repos = "repositories")
-
-_py3_image_repos()
-
-load("@io_bazel_rules_docker//container:pull.bzl", "container_pull")
-
-container_pull(
-    name = "container_java_17",
-    digest = "sha256:e05f955883625cc717c7251037db590f08e6e4a322e73db60ef1492a9b7ce33e",
-    registry = "gcr.io",
-    repository = "distroless/java17",
-    tag = "latest",
-)
