@@ -1,11 +1,14 @@
 package org.trailcatalog.importers.elevation.contour
 
+import com.google.common.base.Preconditions
 import com.google.common.collect.Lists
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.google.protobuf.CodedOutputStream
+import com.mapbox.proto.vectortiles.Tile
 import org.trailcatalog.importers.common.ProgressBar
 import java.io.FileOutputStream
 import java.nio.file.Path
@@ -16,6 +19,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.tanh
+
+private const val EXTENT_TILE = 4096
 
 fun main(args: Array<String>) {
   val pool =
@@ -36,7 +41,10 @@ fun main(args: Array<String>) {
         Pair(0, 0) to Pair(worldSize, worldSize)
       }
 
-  ProgressBar("Generating tiles", "tiles", worldSize * worldSize).use {
+  ProgressBar(
+      "Generating tiles",
+      "tiles",
+      (high.first - low.first) * (high.second - low.second)).use {
     for (y in low.second until high.second) {
       for (x in low.first until high.first) {
         tasks.add(
@@ -135,5 +143,131 @@ private fun crop(contour: Contour, view: S2LatLngRect, out: MutableList<Contour>
       span.add(lls[p])
     }
     out.add(Contour(contour.height, contour.glacier, span))
+  }
+}
+
+private fun contoursToTile(
+    contoursFt: List<Contour>,
+    contoursM: List<Contour>,
+    bound: S2LatLngRect,
+    extent: Int,
+    z: Int): Tile {
+  val ftIncrement = zToFtIncrement(z)
+  val mIncrement = zToMIncrement(z)
+  return Tile.newBuilder()
+      .addLayers(
+          contoursToLayer(
+              "contour",
+              contoursM.filter { it.height % mIncrement == 0 },
+              mIncrement,
+              bound,
+              extent))
+      .addLayers(
+          contoursToLayer(
+              "contour_ft",
+              contoursFt.filter { it.height % ftIncrement == 0 },
+              ftIncrement,
+              bound,
+              extent))
+      .build()
+}
+
+private fun contoursToLayer(
+    name: String,
+    contours: List<Contour>,
+    every: Int,
+    bound: S2LatLngRect,
+    extent: Int): Tile.Layer {
+  val grouped = contours.groupBy { Pair(it.height, it.glacier) }
+
+  val layer =
+      Tile.Layer.newBuilder()
+          .setName(name)
+          .setExtent(extent)
+          .setVersion(2)
+          .addKeys("height")
+          .addKeys("nth_line")
+          .addKeys("glacier")
+          .addValues(Tile.Value.newBuilder().setIntValue(1))
+          .addValues(Tile.Value.newBuilder().setIntValue(2))
+          .addValues(Tile.Value.newBuilder().setIntValue(5))
+          .addValues(Tile.Value.newBuilder().setIntValue(10))
+  for ((key, level) in grouped) {
+    val (height, glacier) = key
+    val valueId = layer.valuesCount
+    layer.addValuesBuilder().intValue = height.toLong()
+
+    val feature = layer.addFeaturesBuilder().setType(Tile.GeomType.LINESTRING)
+    feature
+        .addTags(0)
+        .addTags(valueId)
+        .addTags(1)
+        .addTags(
+            (height / every).let {
+              if (it % 10 == 0) {
+                3
+              } else if (it % 5 == 0) {
+                2
+              } else if (it % 2 == 0) {
+                1
+              } else {
+                0
+              }
+            }
+        )
+
+    if (glacier) {
+      feature.addTags(2).addTags(0)
+    }
+
+    var x = 0
+    var y = 0
+    for (contour in level) {
+      val projected = project(contour.points, bound, extent)
+      val smoothed = smooth(projected)
+      val xys = simplifyContour(smoothed)
+      feature
+          .addGeometry(9) // moveto
+          .addGeometry(CodedOutputStream.encodeZigZag32(xys[0] - x))
+          .addGeometry(CodedOutputStream.encodeZigZag32(xys[1] - y))
+      x = xys[0]
+      y = xys[1]
+      Preconditions.checkState(xys.size / 2 < 536870912) // 2^29 is max count
+      feature.addGeometry(2 or (xys.size / 2 - 1 shl 3))
+      for (i in 2 until xys.size step 2) {
+        feature
+            .addGeometry(CodedOutputStream.encodeZigZag32(xys[i + 0] - x))
+            .addGeometry(CodedOutputStream.encodeZigZag32(xys[i + 1] - y))
+        x = xys[i + 0]
+        y = xys[i + 1]
+      }
+    }
+  }
+  return layer.build()
+}
+
+private fun zToFtIncrement(z: Int): Int {
+  return when (z) {
+    -1 -> 20
+    9 -> 500
+    10 -> 200
+    11 -> 100
+    12 -> 100
+    13 -> 20
+    14 -> 20
+    else -> throw IllegalArgumentException("Unhandled zoom")
+  }
+}
+
+private fun zToMIncrement(z: Int): Int {
+  return when (z) {
+    -1 -> 10
+    9 -> 250
+    10 -> 100
+    11 -> 50
+    12 -> 20
+    13 -> 20
+    14 -> 10
+    else -> throw IllegalArgumentException("Unhandled zoom")
   }
 }
