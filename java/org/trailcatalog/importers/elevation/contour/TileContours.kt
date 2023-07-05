@@ -25,7 +25,7 @@ private const val EXTENT_TILE = 4096
 fun main(args: Array<String>) {
   val pool =
       MoreExecutors.listeningDecorator(
-          Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() - 2))
+          Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() / 2))
 
   val source = Path.of(args[0])
   val dest = Path.of(args[1])
