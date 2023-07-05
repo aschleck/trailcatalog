@@ -9,6 +9,9 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.google.protobuf.CodedOutputStream
 import com.mapbox.proto.vectortiles.Tile
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
+import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.common.ProgressBar
 import java.io.FileOutputStream
 import java.nio.file.Path
@@ -20,9 +23,12 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.tanh
 
-private const val EXTENT_TILE = 4096
+@FlagSpec("extent_tile")
+private val extentTile = createFlag(4096)
 
 fun main(args: Array<String>) {
+  parseFlags(args)
+
   val pool =
       MoreExecutors.listeningDecorator(
           Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() / 2))
@@ -91,7 +97,7 @@ private fun cropTile(
   }
 
   if (z >= 9) {
-    val tile = contoursToTile(cropFt, cropM, bound, EXTENT_TILE, z)
+    val tile = contoursToTile(cropFt, cropM, bound, extentTile.value, z)
     output.parent.toFile().mkdirs()
 
     FileOutputStream(output.toFile()).use {

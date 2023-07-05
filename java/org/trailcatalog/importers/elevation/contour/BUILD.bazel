@@ -20,6 +20,7 @@ kt_jvm_library(
     ],
     deps = [
         ":runfiles",
+        "//java/org/trailcatalog/flags",
         "//java/org/trailcatalog/importers/elevation",
         "//third_party/mapbox-vector-tiles:vector_tile_java_proto",
         "@maven//:com_google_code_gson_gson",

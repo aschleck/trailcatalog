@@ -3,16 +3,30 @@ package org.trailcatalog.importers.elevation.contour
 import com.google.common.collect.Lists
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
 import java.util.PriorityQueue
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.ln
-import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 data class Contour(val height: Int, val glacier: Boolean, val points: List<S2LatLng>)
+
+enum class SimplificationStrategy {
+  NONE,
+  DOUGLAS_PEUCKER,
+  VISVALINGAM_WHYATT,
+}
+
+@FlagSpec("simplification_strategy")
+private val simplificationStrategy = createFlag(SimplificationStrategy.VISVALINGAM_WHYATT)
+@FlagSpec("douglas_peucker_threshold")
+private val douglasPeuckerThreshold = createFlag(8)
+@FlagSpec("visvalingam_threshold")
+private val visvalingamThreshold = createFlag(75)
 
 fun project(points: List<S2LatLng>, bound: S2LatLngRect, extent: Int): List<Int> {
   val low = project(bound.lo())
@@ -37,10 +51,14 @@ private fun project(ll: S2LatLng): Pair<Double, Double> {
 }
 
 fun simplifyContour(xys: List<Int>): List<Int> {
-  return visvalingamWhyatt(xys)
-  //val out = ArrayList<Int>()
-  //douglasPeucker(0, xys.size / 2 - 1, xys, out)
-  //return out
+  return when (simplificationStrategy.value) {
+    SimplificationStrategy.NONE -> xys
+    SimplificationStrategy.DOUGLAS_PEUCKER ->
+      ArrayList<Int>().also {
+        douglasPeucker(0, xys.size / 2 - 1, xys, it)
+      }
+    SimplificationStrategy.VISVALINGAM_WHYATT -> visvalingamWhyatt(xys)
+  }
 }
 
 private data class Triangle(
@@ -78,7 +96,7 @@ private fun visvalingamWhyatt(xys: List<Int>): List<Int> {
 
   while (heap.isNotEmpty()) {
     val minimum = heap.poll()
-    if (minimum.value > 200) {
+    if (minimum.value > visvalingamThreshold.value) {
       break
     }
 
@@ -120,7 +138,7 @@ private tailrec fun douglasPeucker(
   var split = -1
   for (i in start + 1 until last) {
     val p = Pair(points[i * 2 + 0], points[i * 2 + 1])
-    if (pointSegmentDistance(p, p1, p2) > 8) {
+    if (pointSegmentDistance(p, p1, p2) > douglasPeuckerThreshold.value) {
       split = i
       break
     }
