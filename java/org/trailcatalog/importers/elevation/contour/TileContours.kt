@@ -23,6 +23,9 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.tanh
 
+@FlagSpec("base_zoom")
+private val baseZoom = createFlag(9)
+
 @FlagSpec("extent_tile")
 private val extentTile = createFlag(4096)
 
@@ -38,8 +41,7 @@ fun main(args: Array<String>) {
   val glaciator = Glaciator(source.parent.resolve("glaciers.json"))
 
   val tasks = ArrayList<ListenableFuture<*>>()
-  val base = 8
-  val worldSize = 2.0.pow(base).toInt()
+  val worldSize = 2.0.pow(baseZoom.value).toInt()
   val (low, high) =
       if (args.size >= 6) {
         Pair(args[2].toInt(), args[3].toInt()) to Pair(args[4].toInt(), args[5].toInt())
@@ -55,9 +57,9 @@ fun main(args: Array<String>) {
       for (x in low.first until high.first) {
         tasks.add(
             pool.submit {
-              val bound = tileToBound(x, y, base)
+              val bound = tileToBound(x, y, baseZoom.value)
               val result = generateContours(bound, source, glaciator)
-              cropTile(x, y, base, dest, result.first, result.second)
+              cropTile(x, y, baseZoom.value, dest, result.first, result.second)
               it.increment()
             })
       }
