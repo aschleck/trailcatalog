@@ -19,7 +19,6 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
     ],
     deps = [
-        ":runfiles",
         "//java/org/trailcatalog/flags",
         "//java/org/trailcatalog/importers/elevation",
         "//third_party/mapbox-vector-tiles:vector_tile_java_proto",
@@ -27,14 +26,5 @@ kt_jvm_library(
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:com_squareup_okhttp3_okhttp",
         "@maven//:org_wololo_flatgeobuf",
-    ],
-)
-
-java_library(
-    name = "runfiles",
-    srcs = ["Runfiles.java"],
-    deps = [
-        "//java/org/trailcatalog/common",
-        "@bazel_tools//tools/java/runfiles",
     ],
 )

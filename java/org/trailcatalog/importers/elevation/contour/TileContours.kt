@@ -18,9 +18,12 @@ import java.nio.file.Path
 import java.util.concurrent.Executors
 import kotlin.io.path.deleteIfExists
 import kotlin.math.asin
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.tanh
 
 @FlagSpec("base_zoom")
@@ -279,3 +282,26 @@ private fun zToMIncrement(z: Int): Int {
     else -> throw IllegalArgumentException("Unhandled zoom")
   }
 }
+
+private fun project(points: List<S2LatLng>, bound: S2LatLngRect, extent: Int): List<Int> {
+  val low = project(bound.lo())
+  val high = project(bound.hi())
+  val dx = high.first - low.first
+  val dy = high.second - low.second
+
+  val xys = Lists.newArrayListWithExpectedSize<Int>(points.size * 2)
+  for (point in points) {
+    val (x, y) = project(point)
+    xys.add(((x - low.first) / dx * extent).roundToInt())
+    xys.add(((high.second - y) / dy * extent).roundToInt())
+  }
+  return xys
+}
+
+private fun project(ll: S2LatLng): Pair<Double, Double> {
+  val x = ll.lngRadians() / Math.PI
+  val latRadians = ll.latRadians()
+  val y = ln((1 + sin(latRadians)) / (1 - sin(latRadians))) / (2 * Math.PI)
+  return Pair(x, y)
+}
+

@@ -2,15 +2,12 @@ package org.trailcatalog.importers.elevation.contour
 
 import com.google.common.collect.Lists
 import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2LatLngRect
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 import java.util.PriorityQueue
 import kotlin.math.abs
 import kotlin.math.hypot
-import kotlin.math.ln
 import kotlin.math.roundToInt
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 data class Contour(val height: Int, val glacier: Boolean, val points: List<S2LatLng>)
@@ -27,28 +24,6 @@ private val simplificationStrategy = createFlag(SimplificationStrategy.VISVALING
 private val douglasPeuckerThreshold = createFlag(8)
 @FlagSpec("visvalingam_threshold")
 private val visvalingamThreshold = createFlag(75)
-
-fun project(points: List<S2LatLng>, bound: S2LatLngRect, extent: Int): List<Int> {
-  val low = project(bound.lo())
-  val high = project(bound.hi())
-  val dx = high.first - low.first
-  val dy = high.second - low.second
-
-  val xys = Lists.newArrayListWithExpectedSize<Int>(points.size * 2)
-  for (point in points) {
-    val (x, y) = project(point)
-    xys.add(((x - low.first) / dx * extent).roundToInt())
-    xys.add(((high.second - y) / dy * extent).roundToInt())
-  }
-  return xys
-}
-
-private fun project(ll: S2LatLng): Pair<Double, Double> {
-  val x = ll.lngRadians() / Math.PI
-  val latRadians = ll.latRadians()
-  val y = ln((1 + sin(latRadians)) / (1 - sin(latRadians))) / (2 * Math.PI)
-  return Pair(x, y)
-}
 
 fun simplifyContour(xys: List<Int>): List<Int> {
   return when (simplificationStrategy.value) {
