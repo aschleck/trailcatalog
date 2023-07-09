@@ -39,6 +39,8 @@ java -jar ~/tile_contours_deploy.jar \
 
 ## Making DEM tiles
 
+<!-- doesn't work -->
+
 ```
 nix-shell -p mbutil python310Packages.rasterio
 
@@ -56,23 +58,11 @@ mb-util copernicus.mbtiles tiles/dem --image_format=webp
 ## Making hillshade tiles
 
 ```
-nix-shell -p gdal python311
+nix-shell -p gdal imagemagick
 
-# Make the color ramp
-tee colors.py <<EOF
-with open("colors.txt", "w") as f:
-  f.write("0 0 0 0 0\n")  # nodata
-  for i in range(1, 256):
-    v = int(min(255, i * 1.15))
-    f.write(f"{i} {v} {v} {v} 255\n")
-EOF
-python3 colors.py
+gdalbuildvrt /mnt/horse/copernicus/copernicus.vrt /mnt/horse/copernicus/*.tif
 
-for i in `ls copernicus/`; do
-  echo $i
-  gdaldem hillshade -s 111120 -z 2 copernicus/$i hillshade_raw.tif \
-      && gdaldem color-relief -alpha hillshade_raw.tif colors.txt hillshades/$i
-done
-
-gdalbuildvrt hillshades.vrt hillshades/*
+java -jar ~/hillshader_deploy.jar \
+    /mnt/horse/copernicus/ \
+    /mnt/horse/tiles/hillshades/
 ```

@@ -117,7 +117,9 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
 
   val closest =
       source.parent.resolve(
-          getCopernicus30mUrl(bound.center.latDegrees().toInt(), bound.center.lngDegrees().toInt())
+          getCopernicus30mUrl(
+                  floor(bound.center.latDegrees()).toInt(),
+                  floor(bound.center.lngDegrees()).toInt())
               .split("/")
               .last())
   if (!closest.exists()) {
@@ -228,10 +230,11 @@ private fun runCrop(bound: S2LatLngRect, source: Path, destination: Path) {
       "EPSG:4326",
       "-te",
       // xMin yMin xMax yMax
-      bound.lo().lngDegrees(),
-      bound.lo().latDegrees(),
-      bound.hi().lngDegrees(),
-      bound.hi().latDegrees(),
+      // Need the bounds checks to ensure wrapping is correct
+      if (bound.lo().lngDegrees() == 180.0) -180 else bound.lo().lngDegrees(),
+      if (bound.lo().latDegrees() == 90.0) -90 else bound.lo().latDegrees(),
+      if (bound.hi().lngDegrees() == -180.0) 180 else bound.hi().lngDegrees(),
+      if (bound.hi().latDegrees() == -90.0) -0 else bound.hi().latDegrees(),
       "-r",
       "cubic",
       "-ts",

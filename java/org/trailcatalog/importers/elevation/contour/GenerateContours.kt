@@ -5,10 +5,6 @@ import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.common.IORuntimeException
-import org.trailcatalog.importers.common.NotFoundException
-import org.trailcatalog.importers.elevation.getCopernicus30mUrl
-import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
-import org.trailcatalog.s2.SimpleS2
 import org.wololo.flatgeobuf.HeaderMeta
 import org.wololo.flatgeobuf.PackedRTree
 import org.wololo.flatgeobuf.generated.ColumnType
@@ -18,13 +14,8 @@ import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.deleteExisting
-import kotlin.io.path.exists
 import kotlin.io.path.fileSize
-import kotlin.math.asin
-import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 fun generateContours(bound: S2LatLngRect, source: Path, glaciator: Glaciator):
     Pair<List<Contour>, List<Contour>> {
@@ -46,25 +37,10 @@ fun generateContours(bound: S2LatLngRect, source: Path, glaciator: Glaciator):
 }
 
 private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
-  val zone = floor((bound.center.lngDegrees() + 180) / 6 + 1).toInt()
-  val projection = "EPSG:" + (if (bound.center.latDegrees() > 0) "326" else "327") + zone.toString().padStart(2, '0')
-
-  val closest =
-      source.parent.resolve(
-          getCopernicus30mUrl(bound.center.latDegrees().toInt(), bound.center.lngDegrees().toInt())
-              .split("/")
-              .last())
-  if (!closest.exists()) {
-    throw NotFoundException("no such tile")
-  }
-
-  val width = GeoTiffReader(closest).imageWidth
   val command = listOf(
       "gdalwarp",
       "-srcnodata",
       0,
-      "-t_srs",
-      projection,
       "-te_srs",
       "EPSG:4326",
       "-te",
@@ -76,17 +52,8 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
       "-r",
       "cubic",
       "-tr",
-      2
-          * SimpleS2.EARTH_RADIUS_METERS
-          / width * 3
-          * asin(
-          sqrt(
-              cos(bound.center.latRadians())
-                  * cos(bound.center.latRadians())
-                  * (1 - cos(1.0 / 360.0 * 2 * Math.PI))
-                  / 2
-          )),
-      1.0 / 180.0 * Math.PI * SimpleS2.EARTH_RADIUS_METERS / 3600,
+      "0.000277777777778",
+      "0.000277777777778",
       "--config",
       "GDAL_PAM_ENABLED",
       "no",
