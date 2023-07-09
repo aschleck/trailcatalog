@@ -4,6 +4,12 @@ load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 
 java_binary(
+    name = "hillshader",
+    main_class = "org.trailcatalog.importers.elevation.contour.HillshaderKt",
+    runtime_deps = [":contour"],
+)
+
+java_binary(
     name = "tile_contours",
     main_class = "org.trailcatalog.importers.elevation.contour.TileContoursKt",
     runtime_deps = [":contour"],
@@ -17,6 +23,7 @@ kt_jvm_library(
     ],
     runtime_deps = [
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
+        "@maven//:org_sejda_imageio_webp_imageio",
     ],
     deps = [
         "//java/org/trailcatalog/flags",

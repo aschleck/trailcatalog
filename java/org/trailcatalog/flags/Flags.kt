@@ -59,10 +59,13 @@ private fun collectFlags(): Map<String, Flag<*>> {
                   .addUrls(ClasspathHelper.forJavaClassPath())
                   .addScanners(Scanners.FieldsAnnotated))
           .getFieldsAnnotatedWith(FlagSpec::class.java)
-  return fields.associate {
-    it.isAccessible = true
-    val spec = it.getAnnotation(FlagSpec::class.java)
-    val flag = it.get(null) as Flag<*>
-    spec.name to flag
-  }
+  // Use ImmutableMap to catch duplicate keys
+  return ImmutableMap.builder<String, Flag<*>>().also {
+    for (field in fields) {
+      field.isAccessible = true
+      val spec = field.getAnnotation(FlagSpec::class.java)
+      val flag = field.get(null) as Flag<*>
+      it.put(spec.name, flag)
+    }
+  }.build()
 }

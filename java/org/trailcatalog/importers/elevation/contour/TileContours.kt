@@ -12,6 +12,7 @@ import com.mapbox.proto.vectortiles.Tile
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.parseFlags
+import org.trailcatalog.importers.common.NotFoundException
 import org.trailcatalog.importers.common.ProgressBar
 import java.io.FileOutputStream
 import java.nio.file.Path
@@ -27,17 +28,18 @@ import kotlin.math.sin
 import kotlin.math.tanh
 
 @FlagSpec("base_zoom")
-private val baseZoom = createFlag(9)
+private val baseZoom = createFlag(8)
 
 @FlagSpec("extent_tile")
 private val extentTile = createFlag(4096)
 
+@FlagSpec("worker_count")
+val workerCount = createFlag(2)
+
 fun main(args: Array<String>) {
   parseFlags(args)
 
-  val pool =
-      MoreExecutors.listeningDecorator(
-          Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() / 2))
+  val pool = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(workerCount.value))
 
   val source = Path.of(args[0])
   val dest = Path.of(args[1])
@@ -61,8 +63,12 @@ fun main(args: Array<String>) {
         tasks.add(
             pool.submit {
               val bound = tileToBound(x, y, baseZoom.value)
-              val result = generateContours(bound, source, glaciator)
-              cropTile(x, y, baseZoom.value, dest, result.first, result.second)
+              try {
+                val result = generateContours(bound, source, glaciator)
+                cropTile(x, y, baseZoom.value, dest, result.first, result.second)
+              } catch (e: NotFoundException) {
+                // who cares
+              }
               it.increment()
             })
       }
@@ -74,7 +80,7 @@ fun main(args: Array<String>) {
   pool.shutdown()
 }
 
-private fun tileToBound(x: Int, y: Int, z: Int): S2LatLngRect {
+fun tileToBound(x: Int, y: Int, z: Int): S2LatLngRect {
   val worldSize = 2.0.pow(z)
   val latLow = asin(tanh((0.5 - (y + 1) / worldSize) * 2 * Math.PI)) / Math.PI * 180
   val lngLow = x / worldSize * 360 - 180

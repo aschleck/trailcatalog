@@ -41,8 +41,8 @@ class GeoTiffReader(private val path: Path) : DemReader {
 
   private val stream: EncodedByteBufferInputStream
   private val decompressor: CompressionDecoder
-  private val imageWidth: Int
-  private val imageHeight: Int
+  val imageWidth: Int
+  val imageHeight: Int
   private var predictor = PredictorType.None.id
   private val tileWidth: Int
   private val tileHeight: Int

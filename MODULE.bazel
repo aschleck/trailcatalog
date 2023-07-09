@@ -36,6 +36,7 @@ maven.install(
         "org.locationtech.proj4j:proj4j:1.2.3",
         "org.postgresql:postgresql:42.6.0",
         "org.reflections:reflections:0.10.2",
+        "org.sejda.imageio:webp-imageio:0.1.6",
         "org.slf4j:slf4j-simple:2.0.0",
         "org.wololo:flatgeobuf:3.25.0",
     ],
