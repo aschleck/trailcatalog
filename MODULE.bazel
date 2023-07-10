@@ -39,6 +39,7 @@ maven.install(
         "org.sejda.imageio:webp-imageio:0.1.6",
         "org.slf4j:slf4j-simple:2.0.0",
         "org.wololo:flatgeobuf:3.25.0",
+        "org.xerial:sqlite-jdbc:3.42.0.0",
     ],
 )
 

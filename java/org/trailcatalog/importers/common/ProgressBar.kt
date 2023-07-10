@@ -30,7 +30,7 @@ class ProgressBar(
 
   override fun close() {
     active = false
-    println("\rFinished ${message()}")
+    println("\rFinished ${message()} in ${(System.currentTimeMillis() - start) / 1000.0} seconds")
   }
 
   fun increment() {

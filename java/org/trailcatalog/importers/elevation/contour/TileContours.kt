@@ -14,10 +14,8 @@ import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.common.NotFoundException
 import org.trailcatalog.importers.common.ProgressBar
-import java.io.FileOutputStream
 import java.nio.file.Path
 import java.util.concurrent.Executors
-import kotlin.io.path.deleteIfExists
 import kotlin.math.asin
 import kotlin.math.ln
 import kotlin.math.max
@@ -54,6 +52,8 @@ fun main(args: Array<String>) {
         Pair(0, 0) to Pair(worldSize, worldSize)
       }
 
+  val mbtiles = MbtilesWriter(dest)
+
   ProgressBar(
       "Generating tiles",
       "tiles",
@@ -65,7 +65,7 @@ fun main(args: Array<String>) {
               val bound = tileToBound(x, y, baseZoom.value)
               try {
                 val result = generateContours(bound, source, glaciator)
-                cropTile(x, y, baseZoom.value, dest, result.first, result.second)
+                cropTile(x, y, baseZoom.value, mbtiles, result.first, result.second)
               } catch (e: NotFoundException) {
                 // who cares
               }
@@ -77,6 +77,7 @@ fun main(args: Array<String>) {
     Futures.allAsList(tasks).get()
   }
 
+  mbtiles.close()
   pool.shutdown()
 }
 
@@ -94,33 +95,27 @@ private fun cropTile(
     x: Int,
     y: Int,
     z: Int,
-    dest: Path,
+    mbtiles: MbtilesWriter,
     contoursFt: List<Contour>,
     contoursM: List<Contour>) {
   val bound = tileToBound(x, y, z)
   val cropFt = crop(contoursFt, bound)
   val cropM = crop(contoursM, bound)
 
-  val output = dest.resolve("${z}/${x}/${y}.mvt")
   if (cropFt.isEmpty() || cropM.isEmpty()) {
-    output.deleteIfExists()
     return
   }
 
   if (z >= 9) {
     val tile = contoursToTile(cropFt, cropM, bound, extentTile.value, z)
-    output.parent.toFile().mkdirs()
-
-    FileOutputStream(output.toFile()).use {
-      tile.writeTo(it)
-    }
+    mbtiles.insertTile(x, y, z, tile.toByteArray())
   }
 
   if (z < 14) {
-    cropTile(x * 2 + 0, y * 2 + 0, z + 1, dest, cropFt, cropM)
-    cropTile(x * 2 + 0, y * 2 + 1, z + 1, dest, cropFt, cropM)
-    cropTile(x * 2 + 1, y * 2 + 0, z + 1, dest, cropFt, cropM)
-    cropTile(x * 2 + 1, y * 2 + 1, z + 1, dest, cropFt, cropM)
+    cropTile(x * 2 + 0, y * 2 + 0, z + 1, mbtiles, cropFt, cropM)
+    cropTile(x * 2 + 0, y * 2 + 1, z + 1, mbtiles, cropFt, cropM)
+    cropTile(x * 2 + 1, y * 2 + 0, z + 1, mbtiles, cropFt, cropM)
+    cropTile(x * 2 + 1, y * 2 + 1, z + 1, mbtiles, cropFt, cropM)
   }
 }
 

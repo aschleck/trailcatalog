@@ -1,7 +1,6 @@
 package org.trailcatalog.importers.elevation.contour
 
 import com.google.common.collect.Lists
-import com.google.common.geometry.S2LatLng
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 import java.util.PriorityQueue
@@ -9,8 +8,6 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
-
-data class Contour(val height: Int, val glacier: Boolean, val points: List<S2LatLng>)
 
 enum class SimplificationStrategy {
   NONE,
@@ -23,7 +20,7 @@ private val simplificationStrategy = createFlag(SimplificationStrategy.VISVALING
 @FlagSpec("douglas_peucker_threshold")
 private val douglasPeuckerThreshold = createFlag(8)
 @FlagSpec("visvalingam_threshold")
-private val visvalingamThreshold = createFlag(75)
+private val visvalingamThreshold = createFlag(60)
 
 fun simplifyContour(xys: List<Int>): List<Int> {
   return when (simplificationStrategy.value) {

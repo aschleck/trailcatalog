@@ -11,8 +11,6 @@ import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.common.NotFoundException
 import org.trailcatalog.importers.common.ProgressBar
-import org.trailcatalog.importers.elevation.getCopernicus30mUrl
-import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
 import org.trailcatalog.s2.SimpleS2
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -27,6 +25,7 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import java.awt.image.PixelGrabber
 import kotlin.io.path.exists
+import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.sqrt
@@ -115,18 +114,15 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
   val zone = floor((bound.center.lngDegrees() + 180) / 6 + 1).toInt()
   val projection = "EPSG:" + (if (bound.center.latDegrees() > 0) "326" else "327") + zone.toString().padStart(2, '0')
 
-  val closest =
-      source.parent.resolve(
-          getCopernicus30mUrl(
-                  floor(bound.center.latDegrees()).toInt(),
-                  floor(bound.center.lngDegrees()).toInt())
-              .split("/")
-              .last())
-  if (!closest.exists()) {
-    throw NotFoundException("no such tile")
+  val copernicusLat = abs(floor(bound.center.latDegrees())).toInt()
+  val width = when {
+    copernicusLat < 50 -> 3600
+    copernicusLat < 60 -> 2400
+    copernicusLat < 70 -> 1800
+    copernicusLat < 80 -> 1200
+    copernicusLat < 85 -> 720
+    else -> 360
   }
-
-  val width = GeoTiffReader(closest).imageWidth
 
   val command = listOf(
       "gdalwarp",
@@ -243,6 +239,7 @@ private fun runCrop(bound: S2LatLngRect, source: Path, destination: Path) {
       "--config",
       "GDAL_PAM_ENABLED",
       "no",
+      "-overwrite",
       source.toString(),
       destination.toString(),
   )

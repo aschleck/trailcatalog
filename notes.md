@@ -1,11 +1,13 @@
 # Notes on stuff
 
-## Pulling Copernicus
+## Pulling DEMs
+
+### Copernicus
 
 Generate the URLs.
 
 ```
-nix-shell -p parallel
+nix-shell -p parallel python3
 
 for lat in range(-90, 90):
     for lng in range(-180, 180):
@@ -18,7 +20,31 @@ for lat in range(-90, 90):
         )
 ```
 
-Download them with `cat urls.txt | parallel -j16 wget`.
+`cat urls.txt | parallel -j16 wget`
+
+### NASADEM
+```
+# Tiles specifically around Armenia and Azerbaijan
+for lat in range(38, 43):
+    for lng in range(42, 52):
+        y = f's{-lat:02}' if lat < 0 else f'n{lat:02}'
+        x = f'w{-lng:03}' if lng < 0 else f'e{lng:03}'
+        print(
+            'https://e4ftl01.cr.usgs.gov//DP132/MEASURES/'
+            f'NASADEM_HGT.001/2000.02.11/NASADEM_HGT_{y}{x}.zip'
+        )
+        print('-O')
+        print(f'{y}{x}.hgt.zip')
+```
+
+1. Sign up for Earthdata: https://urs.earthdata.nasa.gov/users/new
+2. Login and activate account
+3. `cat urls.txt | parallel -N 3 -j16 wget --user '<username>' --password '<password>'`
+
+### Merging them
+
+1. `for i in nasadem/*.zip; do gdal_translate -ot Float32 $i $i.tif; done`
+1. `gdalbuildvrt copernicus/copernicus.vrt copernicus/Copernicus_DSM_COG_10_* nasadem/*.zip.tif -resolution highest`
 
 ## Generating contours
 

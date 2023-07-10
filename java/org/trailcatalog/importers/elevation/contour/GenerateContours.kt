@@ -17,6 +17,8 @@ import kotlin.io.path.deleteExisting
 import kotlin.io.path.fileSize
 import kotlin.math.roundToInt
 
+data class Contour(val height: Int, val glacier: Boolean, val points: List<S2LatLng>)
+
 fun generateContours(bound: S2LatLngRect, source: Path, glaciator: Glaciator):
     Pair<List<Contour>, List<Contour>> {
   val vrt = source.resolve("copernicus.vrt")
@@ -52,8 +54,9 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
       "-r",
       "cubic",
       "-tr",
-      "0.000277777777778",
-      "0.000277777777778",
+      // ??? Not sure where I got 0.000277777777778 but it was too coarse, so 0.5x that...
+      "0.0001388888888889",
+      "0.0001388888888889",
       "--config",
       "GDAL_PAM_ENABLED",
       "no",
