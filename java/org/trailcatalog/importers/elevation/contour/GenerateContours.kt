@@ -5,6 +5,8 @@ import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.common.IORuntimeException
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
 import org.wololo.flatgeobuf.HeaderMeta
 import org.wololo.flatgeobuf.PackedRTree
 import org.wololo.flatgeobuf.generated.ColumnType
@@ -15,7 +17,12 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.deleteExisting
 import kotlin.io.path.fileSize
+import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.roundToInt
+
+@FlagSpec(name = "contour_scale")
+private val contourScale = createFlag(1.0)
 
 data class Contour(val height: Int, val glacier: Boolean, val points: List<S2LatLng>)
 
@@ -39,6 +46,16 @@ fun generateContours(bound: S2LatLngRect, source: Path, glaciator: Glaciator):
 }
 
 private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
+  val copernicusLat = abs(floor(bound.center.latDegrees())).toInt()
+  val width = when {
+    copernicusLat < 50 -> 3600
+    copernicusLat < 60 -> 2400
+    copernicusLat < 70 -> 1800
+    copernicusLat < 80 -> 1200
+    copernicusLat < 85 -> 720
+    else -> 360
+  }
+
   val command = listOf(
       "gdalwarp",
       "-srcnodata",
@@ -54,9 +71,8 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
       "-r",
       "cubic",
       "-tr",
-      // ??? Not sure where I got 0.000277777777778 but it was too coarse, so 0.5x that...
-      "0.0001388888888889",
-      "0.0001388888888889",
+      1.0 / width / contourScale.value,
+      1.0 / width / contourScale.value,
       "--config",
       "GDAL_PAM_ENABLED",
       "no",

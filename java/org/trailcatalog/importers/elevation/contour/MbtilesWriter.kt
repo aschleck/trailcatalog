@@ -26,7 +26,8 @@ class MbtilesWriter(path: Path) : Closeable {
       """)
       it.executeUpdate("CREATE TABLE metadata (name TEXT, value TEXT)")
       it.executeUpdate("CREATE UNIQUE INDEX name on metadata (name)")
-      it.executeUpdate("CREATE UNIQUE INDEX tile_index on tiles (zoom_level, tile_column, tile_row)")
+      it.executeUpdate(
+          "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)")
     }
 
     insertStatement =

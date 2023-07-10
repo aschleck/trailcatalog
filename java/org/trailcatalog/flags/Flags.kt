@@ -15,6 +15,12 @@ fun createFlag(initial: Boolean): Flag<Boolean> {
   }
 }
 
+fun createFlag(initial: Double): Flag<Double> {
+  return object : Flag<Double>(initial) {
+    override fun parseFrom(s: String) = s.toDouble()
+  }
+}
+
 inline fun <reified T : Enum<T>> createFlag(initial: T): Flag<T> {
   return object : Flag<T>(initial) {
     override fun parseFrom(s: String) = enumValueOf<T>(s)

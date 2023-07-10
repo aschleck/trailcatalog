@@ -177,8 +177,8 @@ fun smooth(xys: List<Int>): List<Int> {
     val t2 = tj(t1, p1, p2)
     val t3 = tj(t2, p2, p3)
 
-    for (f in 1 until 5) {
-      val t = (1 - f / 5.0) * t1 + f / 5.0 * t2
+    for (f in 1 until 10) {
+      val t = (1 - f / 10.0) * t1 + f / 10.0 * t2
       val a1 = (t1 - t) / (t1 - t0) * p0 + (t - t0) / (t1 - t0) * p1
       val a2 = (t2 - t) / (t2 - t1) * p1 + (t - t1) / (t2 - t1) * p2
       val a3 = (t3 - t) / (t3 - t2) * p2 + (t - t2) / (t3 - t2) * p3
