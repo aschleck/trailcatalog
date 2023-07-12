@@ -22,7 +22,6 @@ import kotlin.io.path.deleteIfExists
 import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.pow
-import kotlin.math.roundToInt
 import java.awt.image.PixelGrabber
 import kotlin.io.path.exists
 import kotlin.math.abs
@@ -33,11 +32,20 @@ import kotlin.math.sqrt
 @FlagSpec("detail_zoom")
 private val detailZoom = createFlag(9)
 
+@FlagSpec("hillshade_resolution")
+private val hillshadeResolution = createFlag(1.0)
+
 @FlagSpec("max_zoom")
 private val maxZoom = createFlag(12)
 
 @FlagSpec("tile_resolution")
 private val tileResolution = createFlag(512)
+
+@FlagSpec("webp_lossless")
+private val webpLossless = createFlag(false)
+
+@FlagSpec("webp_quality")
+private val webpQuality = createFlag(75)
 
 fun main(args: Array<String>) {
   parseFlags(args)
@@ -60,8 +68,9 @@ fun main(args: Array<String>) {
   colors.toFile().outputStream().bufferedWriter(StandardCharsets.US_ASCII).use {
     it.write("0 0 0 0 0\n") // nodata
     for (i in 1 until 256) {
-      val v = min(255.0, i.toDouble()).roundToInt()
-      it.write("${i} ${v} ${v} ${v} 255\n")
+      val v = i
+      val a = min(255, 275 - i)
+      it.write("${i} ${v} ${v} ${v} ${a}\n")
     }
   }
 
@@ -116,13 +125,25 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
 
   val copernicusLat = abs(floor(bound.center.latDegrees())).toInt()
   val width = when {
-    copernicusLat < 50 -> 3600
+    copernicusLat < 50 -> 3600 * 3
     copernicusLat < 60 -> 2400
     copernicusLat < 70 -> 1800
     copernicusLat < 80 -> 1200
     copernicusLat < 85 -> 720
     else -> 360
   }
+
+  val meterResolution =
+      2.0 / hillshadeResolution.value *
+          SimpleS2.EARTH_RADIUS_METERS /
+          width *
+          asin(
+              sqrt(
+                    cos(bound.center.latRadians())
+                      * cos(bound.center.latRadians())
+                      * (1 - cos(1.0 / 360.0 * 2 * Math.PI))
+                      / 2
+              ))
 
   val command = listOf(
       "gdalwarp",
@@ -140,22 +161,13 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
       if (bound.hi().latDegrees() == -90.0) -0 else bound.hi().latDegrees() + 0.1,
       "-r",
       "cubic",
+      "-tr",
       // We choose our resolution to match the 3600x3600 pixels per degree from Copernicus. If we
       // choose a resolution that has higher accuracy than we have, we get weird artifacts. If we
       // choose a resolution too small, we lose data. We'd expect the autoresolution stuff to work,
       // but for some reason it doesn't seem to with vrts.
-      "-tr",
-      2
-          * SimpleS2.EARTH_RADIUS_METERS
-          / width * 3
-          * asin(
-              sqrt(
-                  cos(bound.center.latRadians())
-                      * cos(bound.center.latRadians())
-                      * (1 - cos(1.0 / 360.0 * 2 * Math.PI))
-                      / 2
-              )),
-      1.0 / 180.0 * Math.PI * SimpleS2.EARTH_RADIUS_METERS / 3600,
+      meterResolution,
+      meterResolution,
       "--config",
       "GDAL_PAM_ENABLED",
       "no",
@@ -221,7 +233,7 @@ private fun runCrop(bound: S2LatLngRect, source: Path, destination: Path) {
       "-srcnodata",
       0,
       "-t_srs",
-      "EPSG:3857",
+      "EPSG:4326",
       "-te_srs",
       "EPSG:4326",
       "-te",
@@ -239,6 +251,10 @@ private fun runCrop(bound: S2LatLngRect, source: Path, destination: Path) {
       "--config",
       "GDAL_PAM_ENABLED",
       "no",
+      "-co",
+      "LOSSLESS=${if (webpLossless.value) "TRUE" else "FALSE"}",
+      "-co",
+      "QUALITY=${webpQuality.value}",
       "-overwrite",
       source.toString(),
       destination.toString(),
