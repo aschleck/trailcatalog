@@ -101,6 +101,7 @@ private fun runContour(source: Path, destination: Path, offset: Double, interval
       offset.toString(),
       "-i",
       interval.toString(),
+      "-inodata",
       source.toString(),
       destination.toString(),
   )

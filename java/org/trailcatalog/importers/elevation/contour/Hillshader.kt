@@ -125,12 +125,12 @@ private fun runWarp(bound: S2LatLngRect, source: Path, destination: Path) {
 
   val copernicusLat = abs(floor(bound.center.latDegrees())).toInt()
   val width = when {
-    copernicusLat < 50 -> 3600 * 3
-    copernicusLat < 60 -> 2400
-    copernicusLat < 70 -> 1800
-    copernicusLat < 80 -> 1200
-    copernicusLat < 85 -> 720
-    else -> 360
+    copernicusLat < 50 -> 3600 * 3.0
+    copernicusLat < 60 -> 2400.0
+    copernicusLat < 70 -> 1800 * 1.25
+    copernicusLat < 80 -> 1200.0
+    copernicusLat < 85 -> 720.0
+    else -> 360.0
   }
 
   val meterResolution =
