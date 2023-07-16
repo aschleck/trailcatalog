@@ -11,7 +11,7 @@ import { Layer } from 'js/map/layer';
 import { MbtileData } from 'js/map/layers/mbtile_data';
 import { Style, TileData } from 'js/map/layers/tile_data';
 import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_CONTOURS, MAPTILER_DEM, MAPTILER_OUTDOOR, MAPTILER_PLANET, MAPTILER_TOPO, TRAILCATALOG_CONTOURS } from 'js/map/layers/tile_sources';
+import { MAPTILER_CONTOURS, MAPTILER_DEM, MAPTILER_OUTDOOR, MAPTILER_PLANET, MAPTILER_TOPO, TRAILCATALOG_CONTOURS, TRAILCATALOG_HILLSHADES } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map/models/camera';
 import { RenderBaker } from 'js/map/rendering/render_baker';
@@ -55,24 +55,26 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       this.layer,
-      //new TileData(
+      //new MbtileData(
       //    this.mapController.camera,
       //    response.deps.services.tileData,
       //    this.mapController.renderer,
-      //    Style.Hypsometry,
-      //    MAPTILER_DEM),
-      new MbtileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
-          this.mapController.renderer,
-          this.mapController.renderPlanner.baker,
-          MAPTILER_PLANET),
+      //    this.mapController.renderPlanner.baker,
+      //    MAPTILER_PLANET),
       new MbtileData(
           this.mapController.camera,
           response.deps.services.tileData,
           this.mapController.renderer,
           this.mapController.renderPlanner.baker,
           TRAILCATALOG_CONTOURS),
+      new TileData(
+          this.mapController.camera,
+          response.deps.services.tileData,
+          this.mapController.renderer,
+          Style.Rgb,
+          rgbaToUint32(1, 1, 1, 0.3),
+          1,
+          TRAILCATALOG_HILLSHADES),
     ]);
   }
 
@@ -206,6 +208,6 @@ class CellLayer extends Layer {
       }
     }
 
-    baker.addLines(lines, 1, 0);
+    baker.addLines(lines, 1, 10);
   }
 }

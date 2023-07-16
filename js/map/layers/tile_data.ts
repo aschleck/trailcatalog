@@ -28,6 +28,8 @@ export class TileData extends Layer {
       private readonly dataService: TileDataService,
       private readonly renderer: Renderer,
       private readonly style: Style,
+      private readonly tint: number,
+      private readonly z: number,
       tileset: BitmapTileset) {
     super();
     this.lastChange = Date.now();
@@ -59,7 +61,7 @@ export class TileData extends Layer {
         baker.addBillboard([
             (id.x + 0.5) / halfWorldSize,
             (id.y - 0.5) / halfWorldSize,
-        ], NO_OFFSET, [size, size], texture, /* z= */ -1);
+        ], NO_OFFSET, [size, size], texture, this.z, /* angle= */ 0, this.tint);
       } else {
         checkExhaustive(this.style);
       }
@@ -73,7 +75,7 @@ export class TileData extends Layer {
   tilesChanged(load: Array<[TileId, ImageBitmap]>, unload: TileId[]): void {
     for (const [id, bitmap] of load) {
       const texture = this.pool.acquire();
-      this.renderer.uploadDataTexture(bitmap, texture);
+      this.renderer.uploadTexture(bitmap, texture);
       this.tiles.set(id, texture);
     }
 

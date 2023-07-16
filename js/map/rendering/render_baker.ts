@@ -146,7 +146,8 @@ export class RenderBaker {
       atlasSize: Vec2,
       texture: WebGLTexture,
       z: number,
-      angle: number = 0): void {
+      angle: number = 0,
+      tint: number = 0): void {
     this.align(256);
     this.drawables.push({
       geometryOffset: this.geometryByteSize,
@@ -156,9 +157,18 @@ export class RenderBaker {
       z,
     });
 
-    const bytes = this.billboardProgram.plan(
-        center, offsetPx, size, angle, atlasIndex, atlasSize, this.geometry, this.geometryByteSize);
-        this.geometryByteSize += bytes;
+    const bytes =
+        this.billboardProgram.plan(
+            center,
+            offsetPx,
+            size,
+            tint,
+            angle,
+            atlasIndex,
+            atlasSize,
+            this.geometry,
+            this.geometryByteSize);
+    this.geometryByteSize += bytes;
     this.align(256);
   }
 
@@ -168,8 +178,9 @@ export class RenderBaker {
       size: Vec2,
       texture: WebGLTexture,
       z: number,
-      angle: number = 0): void {
-    this.addAtlasedBillboard(center, offsetPx, size, 0, [1, 1], texture, z, angle);
+      angle: number = 0,
+      tint: number = 0): void {
+    this.addAtlasedBillboard(center, offsetPx, size, 0, [1, 1], texture, z, angle, tint);
   }
 
   addHypsometry(

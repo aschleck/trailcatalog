@@ -25,10 +25,10 @@ const CONTOUR_GROUND_FILL = rgbaToUint32(0, 0, 0, 0.1);
 const CONTOUR_GROUND_STROKE = rgbaToUint32(0, 0, 0, 0.1);
 const CONTOUR_NORMAL_RADIUS = 0.75;
 const CONTOUR_EMPHASIZED_RADIUS = 1.5;
-const CONTOUR_Z = 1;
+const CONTOUR_Z = 2;
 const CONTOUR_LABEL_FILL = rgbaToUint32(0.1, 0.1, 0.1, 1);
 const CONTOUR_LABEL_STROKE = rgbaToUint32(1, 1, 1, 1);
-const CONTOUR_LABEL_Z = 1;
+const CONTOUR_LABEL_Z = 2;
 const WATERWAY_FILL = rgbaToUint32(104 / 255, 167 / 255, 196 / 255, 1);
 const WATERWAY_STROKE = rgbaToUint32(104 / 255, 167 / 255, 196 / 255, 1);
 
@@ -62,6 +62,7 @@ const TERTIARY_LABEL_FILL = rgbaToUint32(0.5, 0.5, 0.5, 1);
 const TERTIARY_LABEL_STROKE = rgbaToUint32(0.95, 0.95, 0.95, 1);
 const TERTIARY_LABEL_SIZE = 0.5;
 
+const NO_OFFSET: Vec2 = [0, 0];
 const TILE_INDEX_BYTE_SIZE = 512_000;
 const TILE_GEOMETRY_BYTE_SIZE = 8_388_608;
 
@@ -297,10 +298,18 @@ export class MbtileData extends Layer {
         verticesLength: contour.vertexLength,
       };
 
-      if (contour.nthLine >= 5) {
-        bold.push(line);
+      if (zoom >= 14) {
+        if (contour.nthLine >= 5) {
+          bold.push(line);
+        } else {
+          regular.push(line);
+        }
       } else {
-        regular.push(line);
+        if (contour.nthLine >= 10) {
+          bold.push(line);
+        } else if (contour.nthLine >= 2) {
+          regular.push(line);
+        }
       }
     }
 
@@ -325,8 +334,10 @@ export class MbtileData extends Layer {
       throw checkExhaustive(unit);
     }
 
+    const scale = 0.5;
     for (const contour of contours) {
       if (contour.nthLine >= 5) {
+        const text = String(contour.height);
         for (let i = 0; i < contour.labelLength; i += 3) {
           const by2 = i % 2;
           const by3 = i % 3;
@@ -341,15 +352,15 @@ export class MbtileData extends Layer {
           }
 
           this.sdfItalic.plan(
-            String(contour.height),
+            text,
             CONTOUR_LABEL_FILL,
             CONTOUR_LABEL_STROKE,
-            0.5,
+            scale,
             [
               tile.geometry[contour.labelOffset + i + 1],
               tile.geometry[contour.labelOffset + i + 2],
             ],
-            [0, 0],
+            NO_OFFSET,
             tile.geometry[contour.labelOffset + i],
             CONTOUR_LABEL_Z,
             baker);

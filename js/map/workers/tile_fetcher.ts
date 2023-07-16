@@ -119,9 +119,11 @@ class TileFetcher {
             Math.floor(request.cameraZoom + tileset.extraZoom),
             0,
             tileset.maxZoom);
+    let viewportSize;
     if (tz < tileset.minZoom) {
-      request.viewportSize[0] = -9999999;
-      request.viewportSize[1] = -9999999;
+      viewportSize = [-9999999, -9999999];
+    } else {
+      viewportSize = request.viewportSize;
     }
 
     const worldSize = Math.pow(2, tz);
@@ -129,10 +131,7 @@ class TileFetcher {
     const center = request.cameraPosition;
     const centerInWorldPx = [center[0] * halfWorldSize, center[1] * halfWorldSize];
     const doubleSize = WEB_MERCATOR_TILE_SIZE_PX * Math.pow(2, request.cameraZoom - tz + 1);
-    const halfViewportInWorldPx = [
-      request.viewportSize[0] / doubleSize,
-      request.viewportSize[1] / doubleSize,
-    ];
+    const halfViewportInWorldPx = [viewportSize[0] / doubleSize, viewportSize[1] / doubleSize];
 
     const used = createTileHashSet();
     // We need to add 1 to y tiles because our coordinate system is flipped from the typical

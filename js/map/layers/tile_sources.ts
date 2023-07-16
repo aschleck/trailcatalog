@@ -18,7 +18,7 @@ export const MAPTILER_DEM: BitmapTileset = {
   type: 'bitmap',
 } as const;
 
-export const MAPTILER_HILLSHADE: BitmapTileset = {
+export const MAPTILER_HILLSHADES: BitmapTileset = {
   extraZoom: -1, // we're using the 512x512px tiles
   minZoom: 0,
   maxZoom: 12,
@@ -77,4 +77,12 @@ export const TRAILCATALOG_CONTOURS: MbtileTileset = {
   maxZoom: 14,
   tileUrl: 'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.mvt',
   type: 'mbtile',
+} as const;
+
+export const TRAILCATALOG_HILLSHADES: BitmapTileset = {
+  extraZoom: 0,
+  minZoom: 0,
+  maxZoom: 12,
+  tileUrl: 'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
+  type: 'bitmap',
 } as const;

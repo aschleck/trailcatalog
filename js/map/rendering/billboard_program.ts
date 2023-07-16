@@ -2,7 +2,7 @@ import { checkExists } from 'js/common/asserts';
 
 import { Vec2 } from '../common/types';
 
-import { FP64_OPERATIONS, Program, ProgramData } from './program';
+import { COLOR_OPERATIONS, FP64_OPERATIONS, Program, ProgramData } from './program';
 
 export class BillboardProgram extends Program<BillboardProgramData> {
 
@@ -24,6 +24,7 @@ export class BillboardProgram extends Program<BillboardProgramData> {
       center: Vec2,
       offsetPx: Vec2,
       size: Vec2,
+      tint: number,
       angle: number,
       atlasIndex: number,
       atlasSize: Vec2,
@@ -48,8 +49,8 @@ export class BillboardProgram extends Program<BillboardProgramData> {
 
     // It's wasteful to use 32-bit ints here (could use 8s) but we have 256 bytes anyway.
     uint32s.set([
-      // We merge index and size because otherwise std140 gives index a uvec4.
-      /* atlasIndexAndSize= */ atlasIndex, atlasSize[0], atlasSize[1], 0,
+      // We merge index, size, and tint because otherwise std140 gives index a uvec4.
+      /* atlasIndexSizeTint= */ atlasIndex, atlasSize[0], atlasSize[1], tint,
       /* sizeIsPixels= */ size[0] >= 1 ? 1 : 0, // well this is sketchy
       /* pad out the boolean to clean stale data */ 0, 0, 0,
     ], 0);
@@ -133,7 +134,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       uniform highp float halfWorldSize; // pixels
 
       layout(std140) uniform PerBillboardBlock {
-        mediump uvec4 atlasIndexAndSize;
+        mediump uvec4 atlasIndexSizeTint;
         bool sizeIsPixels;
         highp vec4 center; // Mercator
         highp vec2 offsetPx; // pixels
@@ -145,7 +146,9 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       in mediump vec2 colorPosition;
 
       out mediump vec2 fragColorPosition;
+      out mediump vec4 fragColorTint;
 
+      ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
 
       void main() {
@@ -160,20 +163,23 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
         gl_Position = vec4(screenCoord / halfViewportSize, 0, 1);
 
         uvec2 atlasXy = uvec2(
-            atlasIndexAndSize.x % atlasIndexAndSize.y, atlasIndexAndSize.x / atlasIndexAndSize.y);
-        vec2 scale = 1. / vec4(atlasIndexAndSize).yz;
+            atlasIndexSizeTint.x % atlasIndexSizeTint.y, atlasIndexSizeTint.x / atlasIndexSizeTint.y);
+        vec2 scale = 1. / vec4(atlasIndexSizeTint).yz;
         vec2 translate = vec2(atlasXy) * scale;
         fragColorPosition = translate + scale * colorPosition;
+        fragColorTint = uint32ToVec4(atlasIndexSizeTint.w);
       }
     `;
   const fs = `#version 300 es
       uniform sampler2D color;
 
       in mediump vec2 fragColorPosition;
+      in mediump vec4 fragColorTint;
       out mediump vec4 fragColor;
 
       void main() {
-        fragColor = texture(color, fragColorPosition);
+        fragColor =
+            texture(color, fragColorPosition) * vec4(fragColorTint.rgb, 1) * fragColorTint.a;
       }
   `;
 

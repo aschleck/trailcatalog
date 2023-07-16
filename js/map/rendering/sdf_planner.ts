@@ -84,6 +84,8 @@ export class SdfPlanner extends Disposable {
       angle: number,
       z: number,
       baker: RenderBaker): void {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
     let valid = true;
     for (const c of characters) {
       if (c === '\n') {
@@ -115,10 +117,10 @@ export class SdfPlanner extends Disposable {
       }
 
       // I don't understand the advance thing but qualitatively it looks good.
-      const lineOffset = [
+      const lineOffset: Vec2 = [
         offset[0] + -size[0] / 2 - glyphs[glyphs.length - 1].glyphAdvance * scale / 4,
         offset[1] + -size[1] / 2 + previousLinesHeight * LINE_HEIGHT,
-      ] as Vec2;
+      ];
       previousLinesHeight += size[1];
 
       baker.addGlyphs(

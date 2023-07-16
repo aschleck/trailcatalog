@@ -1,11 +1,12 @@
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
+import { rgbaToUint32 } from 'js/map/common/math';
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from 'js/map/common/types';
 import { MbtileData } from 'js/map/layers/mbtile_data';
 import { Style, TileData } from 'js/map/layers/tile_data';
 import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_PLANET, TRAILCATALOG_CONTOURS } from 'js/map/layers/tile_sources';
+import { MAPTILER_HILLSHADES, MAPTILER_PLANET, TRAILCATALOG_CONTOURS, TRAILCATALOG_HILLSHADES } from 'js/map/layers/tile_sources';
 import { MapController } from 'js/map/map_controller';
 
 import { MapDataService } from './data/map_data_service';
@@ -81,6 +82,14 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           this.mapController.renderer,
           this.mapController.renderPlanner.baker,
           TRAILCATALOG_CONTOURS),
+      new TileData(
+          this.mapController.camera,
+          response.deps.services.tileData,
+          this.mapController.renderer,
+          Style.Rgb,
+          rgbaToUint32(1, 1, 1, 0.3),
+          1,
+          TRAILCATALOG_HILLSHADES),
       this.mapData,
       this.overlayData,
     ]);

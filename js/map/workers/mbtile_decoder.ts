@@ -513,6 +513,7 @@ function projectContours(
           distance = 0;
         }
       }
+      buffers.geometryOffset += labelLength;
 
       lines.push({
         glacier,
