@@ -47,6 +47,7 @@ const S2LatLngRect = goog.require('com.google.common.geometry.S2LatLngRect');
 goog.exportSymbol('com.google.common.geometry.S2LatLngRect', S2LatLngRect);
 goog.exportProperty(S2LatLngRect, 'fromPoint', S2LatLngRect.fromPoint);
 goog.exportProperty(S2LatLngRect, 'fromPointPair', S2LatLngRect.fromPointPair);
+goog.exportProperty(S2LatLngRect.prototype, 'area', S2LatLngRect.prototype.area);
 goog.exportProperty(S2LatLngRect.prototype, 'expandedByDistance', S2LatLngRect.prototype.expandedByDistance);
 goog.exportProperty(S2LatLngRect.prototype, 'lo', S2LatLngRect.prototype.lo);
 goog.exportProperty(S2LatLngRect.prototype, 'hi', S2LatLngRect.prototype.hi);
@@ -74,10 +75,23 @@ goog.exportProperty(S2Point.prototype, 'getZ', S2Point.prototype.getZ);
 const S2Polygon = goog.require('com.google.common.geometry.S2Polygon');
 goog.exportSymbol('com.google.common.geometry.S2Polygon', S2Polygon);
 goog.exportProperty(S2Polygon.prototype, 'contains', S2Polygon.prototype.contains);
+goog.exportProperty(S2Polygon.prototype, 'getArea', S2Polygon.prototype.getArea);
 goog.exportProperty(S2Polygon.prototype, 'getLoops', S2Polygon.prototype.getLoops);
 goog.exportProperty(S2Polygon.prototype, 'getRectBound', S2Polygon.prototype.getRectBound);
 goog.exportProperty(S2Polygon.prototype, 'loop', S2Polygon.prototype.loop);
 goog.exportProperty(S2Polygon.prototype, 'numLoops', S2Polygon.prototype.numLoops);
+
+//const S2PolygonBuilder = goog.require('com.google.common.geometry.S2PolygonBuilder');
+//goog.exportSymbol('com.google.common.geometry.S2PolygonBuilder', S2PolygonBuilder);
+//goog.exportProperty(S2PolygonBuilder.prototype, 'addEdge', S2PolygonBuilder.prototype.addEdge);
+//goog.exportProperty(S2PolygonBuilder.prototype, 'getPolygon', S2PolygonBuilder.prototype.getPolygon);
+//
+//const S2PolygonBuilderOptions = goog.require('com.google.common.geometry.S2PolygonBuilder.Options');
+//goog.exportSymbol('com.google.common.geometry.S2PolygonBuilderOptions', S2PolygonBuilderOptions);
+//goog.exportProperty(S2PolygonBuilderOptions, 'DIRECTED_UNION', S2PolygonBuilderOptions.DIRECTED_UNION);
+//goog.exportProperty(S2PolygonBuilderOptions, 'DIRECTED_XOR', S2PolygonBuilderOptions.DIRECTED_XOR);
+//goog.exportProperty(S2PolygonBuilderOptions, 'UNDIRECTED_UNION', S2PolygonBuilderOptions.UNDIRECTED_UNION);
+//goog.exportProperty(S2PolygonBuilderOptions, 'UNDIRECTED_XOR', S2PolygonBuilderOptions.UNDIRECTED_XOR);
 
 const ArrayList = goog.require('java.util.ArrayList');
 goog.exportSymbol('java.util.ArrayList', ArrayList);

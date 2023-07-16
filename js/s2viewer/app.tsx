@@ -10,13 +10,14 @@ import { Select } from 'js/dino/select';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
-import { State, ViewerController, ZOOM_LEVEL } from './viewer_controller';
+import { State, ViewerController, MAX_S2_ZOOM, MAX_ZXY_ZOOM, ZOOM_LEVEL } from './viewer_controller';
 
 import './app.css';
 
 function App({}: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = {
+      cellType: 's2',
       cells: [],
       level: ZOOM_LEVEL,
     };
@@ -28,6 +29,15 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
     lng: floatCoalesce(parameters.lng, -121.747888),
     zoom: floatCoalesce(parameters.zoom, 12),
   };
+
+  let deepestZoom;
+  if (state.cellType === 's2') {
+    deepestZoom = MAX_S2_ZOOM;
+  } else if (state.cellType === 'z/x/y') {
+    deepestZoom = MAX_ZXY_ZOOM;
+  } else {
+    checkExhaustive(state.cellType);
+  }
 
   return <div className="h-full">
     <div
@@ -41,11 +51,19 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
         })}
         className="h-full"
     >
-      <MapElement 
+      <MapElement
           camera={llz}
           ref="map"
       />
       <div className="absolute flex gap-2 top-4 right-4">
+        <Select
+            className="bg-white text-xs"
+            unboundEvents={{corgi: [[CHANGED, 'setCellType']]}}
+            options={[
+              {label: 's2', value: 's2'},
+              {label: 'z/x/y', value: 'z/x/y'},
+            ]}
+        />
         <OutlinedInput
             className="bg-white text-xs"
             dense={true}
@@ -58,20 +76,30 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
             unboundEvents={{corgi: [[CHANGED, 'setLevel']]}}
             options={[
               {label: 'zoom', value: String(ZOOM_LEVEL)},
-              ...[...Array(31).keys()].map(i => ({label: String(i), value: String(i)})),
+              ...[...Array(deepestZoom).keys()].map(i => ({label: String(i), value: String(i)})),
             ]}
         />
       </div>
       {
-        state.selected
-            ? <CellPopup cell={state.selected.cell} position={state.selected.clickPx} />
+        state.selectedS2
+            ? <CellPopupS2 cell={state.selectedS2.cell} position={state.selectedS2.clickPx} />
+            : <></>
+      }
+      {
+        state.selectedZxy
+            ? <CellPopupZxy
+                areaRad={state.selectedZxy.area}
+                position={state.selectedZxy.clickPx}
+                token={state.selectedZxy.token}
+                xyz={state.selectedZxy.xyz}
+            />
             : <></>
       }
     </div>
   </div>;
 }
 
-function CellPopup({cell, position}: {cell: S2CellId, position: [number, number]}) {
+function CellPopupS2({cell, position}: {cell: S2CellId, position: [number, number]}) {
   const area =
       formatArea(
           SimpleS2.cellIdToCell(cell).exactArea()
@@ -94,6 +122,41 @@ function CellPopup({cell, position}: {cell: S2CellId, position: [number, number]
       <div>area: {area.value} {area.unit}</div>
       <div>min: {cell.rangeMin().id().toString(10)}</div>
       <div>max: {cell.rangeMax().id().toString(10)}</div>
+    </div>
+  </>;
+}
+
+function CellPopupZxy({
+  areaRad,
+  position,
+  token,
+  xyz,
+}: {
+  areaRad: number;
+  position: [number, number];
+  token: string;
+  xyz: [number, number, number];
+}) {
+  const area =
+      formatArea(
+          areaRad
+              * SimpleS2.EARTH_RADIUS_METERS
+              * SimpleS2.EARTH_RADIUS_METERS);
+  return <>
+    <div
+        className="
+            absolute
+            bg-white
+            rounded
+            p-2
+            -translate-x-1/2
+            translate-y-[calc(-100%-0.75rem)]
+        "
+        style={`left: ${position[0]}px; top: ${position[1]}px`}
+    >
+      <div className="font-bold">{token}</div>
+      <div>area: {area.value} {area.unit}</div>
+      <div>world size: {Math.pow(2, xyz[2])}</div>
     </div>
   </>;
 }

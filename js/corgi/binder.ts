@@ -317,7 +317,8 @@ function bindEventListener(
 
     maybeInstantiateAndCall(root, spec, (controller: any) => {
       const method = controller[handler] as (e: any) => unknown;
-      method.call(controller, e);
+      checkExists(method, `Cannot find method ${handler} on ${controller.constructor.name}`)
+          .call(controller, e);
     });
   };
   disposer.registerListener(element, event as any, invoker);

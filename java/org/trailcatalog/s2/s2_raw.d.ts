@@ -41,6 +41,7 @@ export declare namespace com.google.common.geometry {
   class S2LatLngRect {
     static fromPoint(point: S2LatLng): S2LatLngRect;
     static fromPointPair(p1: S2LatLng, p2: S2LatLng): S2LatLngRect;
+    area(): number;
     expandedByDistance(distance: S1Angle): S2LatLngRect;
     lo(): S2LatLng;
     hi(): S2LatLng;
@@ -68,19 +69,33 @@ export declare namespace com.google.common.geometry {
 
   class S2Polygon {
     contains(polygon: S2Polygon): boolean;
+    getArea(): number;
     getLoops(): java.util.List<S2Loop>;
     getRectBound(): S2LatLngRect;
     loop(k: number): S2Loop;
     numLoops(): number;
   }
+
+  //class S2PolygonBuilder {
+  //  constructor(options: S2PolygonBuilderOptions);
+  //  addEdge(v0: S2Point, v1: S2Point): boolean;
+  //  getPolygon(): S2Polygon;
+  //}
+
+  //class S2PolygonBuilderOptions {
+  //  static DIRECTED_UNION: S2PolygonBuilderOptions;
+  //  static DIRECTED_XOR: S2PolygonBuilderOptions;
+  //  static UNDIRECTED_UNION: S2PolygonBuilderOptions;
+  //  static UNDIRECTED_XOR: S2PolygonBuilderOptions;
+  //}
 }
 
 export declare namespace java.util {
-  class ArrayList<V> extends List<V> {
+  class ArrayList<E> extends List<E> {
   }
 
-  class List<V> {
-    getAtIndex(i: number): V;
+  class List<E> {
+    getAtIndex(i: number): E;
     size(): number;
   }
 }

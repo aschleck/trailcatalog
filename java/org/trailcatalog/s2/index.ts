@@ -18,5 +18,21 @@ const S2Point = raw.com.google.common.geometry.S2Point;
 type S2Point = raw.com.google.common.geometry.S2Point;
 const S2Polygon = raw.com.google.common.geometry.S2Polygon;
 type S2Polygon = raw.com.google.common.geometry.S2Polygon;
+//const S2PolygonBuilder = raw.com.google.common.geometry.S2PolygonBuilder;
+//type S2PolygonBuilder = raw.com.google.common.geometry.S2PolygonBuilder;
+//const S2PolygonBuilderOptions = raw.com.google.common.geometry.S2PolygonBuilderOptions;
+//type S2PolygonBuilderOptions = raw.com.google.common.geometry.S2PolygonBuilderOptions;
 
-export { Long, S1Angle, S2Cell, S2CellId, S2LatLng, S2LatLngRect, S2Loop, S2Point, S2Polygon }
+export {
+  Long,
+  S1Angle,
+  S2Cell,
+  S2CellId,
+  S2LatLng,
+  S2LatLngRect,
+  S2Loop,
+  S2Point,
+  S2Polygon,
+  //S2PolygonBuilder,
+  //S2PolygonBuilderOptions,
+}
