@@ -106,7 +106,7 @@ private fun runContour(source: Path, destination: Path, offset: Double, interval
       destination.toString(),
   )
   val process = ProcessBuilder(*command.toTypedArray()).start()
-  process.waitFor(5, TimeUnit.MINUTES)
+  process.waitFor(15, TimeUnit.MINUTES)
 
   if (process.exitValue() != 0) {
     val errors = process.errorReader().readLines()
