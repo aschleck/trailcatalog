@@ -8,6 +8,7 @@ bazel_dep(name = "rules_jvm_external", version = "4.5")
 bazel_dep(name = "rules_nodejs", version = "5.8.2")
 bazel_dep(name = "rules_pkg", version = "0.9.1")
 bazel_dep(name = "rules_proto", version = "5.3.0-21.7")
+bazel_dep(name = "rules_oci", version = "1.2.0")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 
@@ -63,3 +64,13 @@ rules_ts_ext = use_extension(
 rules_ts_ext.deps()
 
 use_repo(rules_ts_ext, "npm_typescript")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+oci.pull(
+    name = "distroless_java",
+    digest = "sha256:052076466984fd56979c15a9c3b7433262b0ad9aae55bc0c53d1da8ffdd829c3",
+    image = "gcr.io/distroless/java17",
+)
+
+use_repo(oci, "distroless_java")

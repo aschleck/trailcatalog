@@ -1,9 +1,9 @@
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
-load("@io_bazel_rules_docker//container:push.bzl", "container_push")
-load("@io_bazel_rules_docker//java:image.bzl", "java_image")
 load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push", "oci_tarball")
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
 
 java_binary(
     name = "importer",
@@ -11,20 +11,35 @@ java_binary(
     runtime_deps = [":basemap"],
 )
 
-java_image(
-    name = "container",
-    base = "@container_java_17//image",
-    main_class = "org.trailcatalog.importers.basemap.ImporterKt",
-    runtime_deps = [":importer"],
+pkg_tar(
+    name = "tar",
+    srcs = [":importer_deploy.jar"],
+    include_runfiles = True,
+    strip_prefix = ".",
 )
 
-container_push(
-    name = "container_push",
-    format = "OCI",
+oci_image(
+    name = "container",
+    base = "@distroless_java",
+    entrypoint = [
+        "java",
+        "-jar",
+        "importer_deploy.jar",
+    ],
+    tars = [":tar"],
+)
+
+oci_tarball(
+    name = "container_tarball",
     image = ":container",
-    registry = "us-west1-docker.pkg.dev",
-    repository = "trailcatalog/containers/importer",
-    tag = "latest",
+    repo_tags = ["latest"],
+)
+
+oci_push(
+    name = "container_push",
+    image = ":container",
+    repository = "us-west1-docker.pkg.dev/trailcatalog/containers/importer",
+    remote_tags = ["latest"],
 )
 
 kt_jvm_library(
