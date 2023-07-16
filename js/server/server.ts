@@ -2,11 +2,23 @@ import fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import fetch from 'node-fetch';
 import { fastifyRequestContextPlugin, requestContext } from '@fastify/request-context';
 
+import { checkExists } from 'js/common/asserts';
 import { deepEqual } from 'js/common/comparisons';
 import { Fragment, Properties, VElementOrPrimitive } from 'js/corgi';
 import { ElementFactory } from 'js/corgi/vdom';
 
 import { InitialDataKey } from './data';
+
+declare module '@fastify/request-context' {
+  interface RequestContextData {
+    cookies: string|undefined;
+    initialData: (key: InitialDataKey) => undefined|unknown;
+    language: string|undefined;
+    redirectTo: string;
+    title: string;
+    url: string;
+  }
+}
 
 global.window = {
   SERVER_SIDE_RENDER: {
@@ -17,7 +29,7 @@ global.window = {
       return requestContext.get('url');
     },
     initialData: (key: InitialDataKey) => {
-      return requestContext.get('initialData')(key);
+      return checkExists(requestContext.get('initialData'))(key);
     },
     language: function() {
       return requestContext.get('language');

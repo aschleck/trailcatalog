@@ -4,13 +4,12 @@ RUN apt-get update \
         ca-certificates \
         curl \
         gnupg \
-    && curl -fsSL https://deb.nodesource.com/setup_19.x | bash - \
-    && apt-get update \
-    && apt-get install --no-install-recommends --yes \
         nginx \
-        nodejs \
         openjdk-17-jre-headless \
-    && apt-get clean
+        xz-utils \
+    && apt-get clean \
+    && curl -L https://nodejs.org/dist/v20.4.0/node-v20.4.0-linux-x64.tar.xz | tar -xvJf -
+ENV NODEJS_DIR /node-v20.4.0-linux-x64
 COPY nginx.conf /app/nginx.conf
 COPY serve.sh /app/serve.sh
 COPY frontend_pkg.tar ./
