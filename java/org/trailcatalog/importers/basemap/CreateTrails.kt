@@ -88,10 +88,8 @@ class CreateTrails
             polyline,
             downMeters,
             upMeters,
-            if (validGeometry)
-              listOf()
-            else
-              listOf(Fact("DISCONTINUOUS", "true"))))
+            validGeometry,
+        ))
   }
 }
 

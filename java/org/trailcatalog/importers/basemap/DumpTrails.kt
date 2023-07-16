@@ -19,7 +19,7 @@ class DumpTrails(private val epoch: Int, private val hikari: HikariDataSource)
             val bound = LatLngRectE7.from(trail.polyline.rectBound)
             val cell = polylineToCell(trail.polyline).id()
             val marker = trail.polyline.interpolate(0.5).toLatLngE7()
-            val lengthMeters = polylineToMeters(trail.polyline)
+            val lengthMeters = if (trail.validGeometry) polylineToMeters(trail.polyline) else -1
 
             // id,epoch,type,cell,name,path_ids,bound_degrees_e7,marker_degrees_e7,
             // elevation_down_meters,elevation_up_meters,length_meters,source_relation

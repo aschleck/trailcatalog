@@ -109,20 +109,8 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       val polyline = S2Polyline(points)
       val downMeters = from.readFloat()
       val upMeters = from.readFloat()
-
-      val factCount = from.readVarInt()
-      val facts = ArrayList<Fact>(factCount)
-      repeat(factCount) {
-        val predicate = ByteArray(from.readVarInt()).also {
-          from.read(it)
-        }.decodeToString()
-        val value = ByteArray(from.readVarInt()).also {
-          from.read(it)
-        }.decodeToString()
-        facts.add(Fact(predicate, value))
-      }
-
-      return Trail(id, type, name, paths, polyline, downMeters, upMeters, facts)
+      val validGeometry = from.readBoolean()
+      return Trail(id, type, name, paths, polyline, downMeters, upMeters, validGeometry)
     }
 
     override fun write(v: Trail, to: EncodedOutputStream) {
@@ -141,16 +129,7 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       }
       to.writeFloat(v.downMeters)
       to.writeFloat(v.upMeters)
-
-      to.writeVarInt(v.facts.size)
-      v.facts.forEach {
-        val predicate = it.predicate.encodeToByteArray()
-        to.writeVarInt(predicate.size)
-        to.write(predicate)
-        val value = it.value.encodeToByteArray()
-        to.writeVarInt(value.size)
-        to.write(value)
-      }
+      to.writeBoolean(v.validGeometry)
     }
   })
 

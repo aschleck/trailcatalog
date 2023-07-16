@@ -11,5 +11,5 @@ public record Trail(
     S2Polyline polyline,
     float downMeters,
     float upMeters,
-    List<Fact> facts) {
+    boolean validGeometry) {
 }

@@ -31,6 +31,10 @@ abstract class EncodedInputStream : InputStream() {
     return got
   }
 
+  fun readBoolean(): Boolean {
+    return if (readUnsafe() == 1.toByte()) true else false
+  }
+
   fun readDouble(): Double {
     return Double.fromBits(readLong())
   }

@@ -19,6 +19,10 @@ abstract class EncodedOutputStream : OutputStream() {
     write(buffer.array(), buffer.arrayOffset() + buffer.position(), buffer.limit())
   }
 
+  fun writeBoolean(b: Boolean) {
+    write(if (b) 1 else 0)
+  }
+
   fun writeDouble(d: Double) {
     writeLong(d.toRawBits())
   }

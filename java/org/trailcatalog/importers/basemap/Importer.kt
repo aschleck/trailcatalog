@@ -55,7 +55,6 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
           "paths_in_trails",
           "points",
           "trail_identifiers",
-          "trail_facts",
           "trails",
           "trails_in_boundaries",
       )
@@ -152,7 +151,6 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   boundaries.write(DumpBoundaries(epoch, hikari))
   val trails = relationsWithGeometry.then(CreateTrails())
   trails.write(DumpPathsInTrails(epoch, hikari))
-  trails.write(DumpTrailFacts(epoch, hikari))
   trails.write(DumpTrails(epoch, hikari))
   val byCells = pipeline
       .join2(
