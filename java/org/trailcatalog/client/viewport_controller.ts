@@ -10,6 +10,7 @@ import { MAPTILER_HILLSHADES, MAPTILER_PLANET, TRAILCATALOG_CONTOURS, TRAILCATAL
 import { MapController } from 'js/map/map_controller';
 
 import { MapDataService } from './data/map_data_service';
+import { ACTIVE_PALETTE, ERROR_PALETTE, LinePalette } from './map/colors';
 import { SELECTION_CHANGED } from './map/events';
 import { Filters, MapData } from './map/map_data';
 import { OverlayData, Overlays } from './map/overlay_data';
@@ -94,7 +95,8 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       this.overlayData,
     ]);
 
-    (response.args.active?.trails ?? []).forEach(t => this.setActive(t, true));
+    (response.args.active?.trails ?? [])
+        .forEach(t => this.setActive(t, true, t.lengthMeters >= 0 ? ACTIVE_PALETTE : ERROR_PALETTE));
   }
 
   goBack(): void {
@@ -141,8 +143,8 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
     return this.mapData.listTrailsOnPath(path);
   }
 
-  setActive(trail: Trail, state: boolean): void {
-    return this.mapData.setActive(trail, state);
+  setActive(trail: Trail, state: boolean, color: LinePalette): void {
+    return this.mapData.setActive(trail, state, color);
   }
 
   setHover(trail: Trail, state: boolean): void {

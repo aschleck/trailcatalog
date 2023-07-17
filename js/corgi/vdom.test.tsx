@@ -167,6 +167,13 @@ test('hydrates evil', async () => {
   expect(document.body.innerHTML).toBe('FirstSecondThird');
 });
 
+test('hydrates order correctly', async () => {
+  document.body.innerHTML = '<div><span>Goodbye</span></div>';
+  corgi.hydrateElement(document.body, <FlipperHidden />);
+  await waitSettled();
+  expect(document.body.innerHTML).toBe('<div>Hi<span>Goodbye</span></div>');
+});
+
 function SimpleString() {
   return 'hello';
 }
@@ -368,6 +375,25 @@ function Flipper(
   }
 
   return <div>Pushed: {state.pushed}</div>;
+}
+
+function FlipperHidden(
+    {}: {},
+    state: FlipperState|undefined,
+    updateState: (newState: FlipperState) => void) {
+  if (!state) {
+    state = {
+      pushed: false,
+    }
+  }
+
+  if (!state.pushed) {
+    Promise.resolve().then(() => {
+      updateState({pushed: true});
+    });
+  }
+
+  return <div>{state.pushed ? 'Hi' : ''}<span>Goodbye</span></div>;
 }
 
 function EvilCounter(

@@ -11,10 +11,10 @@ import { MapDataService } from './data/map_data_service';
 import { Boundary, ElevationProfile, Path, Trail, TrailFact } from './models/types';
 
 import { fetchData } from './data';
-import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw, trailFactsFromRaw } from './trails';
+import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 import { Args, State as VState, ViewportController } from './viewport_controller';
 
-const ELEVATION_GRAPH_RESOLUTION_WIDTH = 1200;
+const ELEVATION_GRAPH_RESOLUTION_WIDTH = 400;
 
 interface LatLngAltitude {
   lat: number;
@@ -32,9 +32,9 @@ export interface State extends VState {
     points: LatLngAltitude[];
     resolution: Vec2;
   }
+  epochDate: Date|undefined;
   pathProfiles?: Map<bigint, ElevationProfile>;
   trail?: Trail;
-  trailFacts?: TrailFact[];
   trailId: string;
   weather?: {
     temperatureCelsius: number;
@@ -66,6 +66,15 @@ export class LoadingController extends Controller<{}, LoadingDeps, HTMLElement, 
         trail,
       });
     });
+
+    if (!this.state.epochDate) {
+      fetchData('epoch', {}).then(raw => {
+        this.updateState({
+          ...this.state,
+          epochDate: new Date(raw.timestampS * 1000),
+        });
+      });
+    }
 
     if (!this.state.containingBoundaries) {
       fetchData('boundaries_containing_trail', {trail_id: trailId}).then(raw => {
@@ -159,9 +168,12 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     }
 
     const elevation = this.state.elevation;
-    const svg = e.currentTarget as SVGGraphicsElement;
-    const transform = checkExists(svg.getScreenCTM());
-    const fraction = (e.clientX - transform.e) / transform.d / ELEVATION_GRAPH_RESOLUTION_WIDTH;
+    const svg = e.currentTarget as SVGSVGElement;
+    const transform = checkExists(svg.getScreenCTM()).inverse();
+    const p = svg.createSVGPoint();
+    p.x = e.clientX;
+    p.y = e.clientY;
+    const fraction = p.matrixTransform(transform).x / ELEVATION_GRAPH_RESOLUTION_WIDTH;
     // Not exactly accurate (points might be very close at the path edges) but I don't care.
     const point = elevation.points[Math.floor(fraction * elevation.points.length)];
 
@@ -192,7 +204,6 @@ export function calculateGraph(
   resolution: Vec2;
 } {
   const resolutionHeight = 300;
-  const ELEVATION_GRAPH_RESOLUTION_WIDTH = 1200;
   let min = Number.MAX_VALUE;
   let max = Number.MIN_VALUE;
   let length = 0;

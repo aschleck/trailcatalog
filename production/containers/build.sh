@@ -3,7 +3,7 @@
 set -ex
 
 cd "$(dirname $0)"
-bazel build '//production/containers:frontend_pkg.tar'
+bazelisk build '//production/containers:frontend_pkg.tar'
 cp --no-preserve=mode \
     ../../bazel-bin/production/containers/frontend_pkg.tar \
     .

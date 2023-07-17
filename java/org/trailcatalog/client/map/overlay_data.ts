@@ -95,7 +95,7 @@ export class OverlayData extends Layer {
       baker.addBillboard(
           billboard.center, NO_OFFSET, billboard.size, billboard.texture, /* z= */ 20);
     }
-    baker.addLines(this.lines, BOUNDARY_RADIUS_PX, 0);
+    baker.addLines(this.lines, BOUNDARY_RADIUS_PX, /* z= */ 5);
   }
 
   viewportBoundsChanged(viewportSize: Vec2, zoom: number): void {}

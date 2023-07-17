@@ -164,7 +164,7 @@ function hydrateElementRecursively(
     let node: Node;
     if (element === '') {
       node = new Text('');
-      parent.insertBefore(node, left?.nextSibling ?? null);
+      parent.insertBefore(node, left?.nextSibling ?? parent.childNodes[0]);
     } else {
       node = checkExists(left?.nextSibling ?? parent.childNodes[0]);
       checkArgument(node instanceof Text, 'Node should be text');

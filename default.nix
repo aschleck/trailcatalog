@@ -7,6 +7,7 @@ pkgs.mkShell {
     google-cloud-sdk
     imagemagick
     jdk19_headless
+    neovim
     nginx
     nodePackages.pnpm
     nodejs-slim_20
@@ -15,5 +16,6 @@ pkgs.mkShell {
 
   shellHook = ''
     alias bazel=bazelisk
+    alias vim=nvim
   '';
 }

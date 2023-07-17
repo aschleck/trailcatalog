@@ -75,6 +75,7 @@ function Link({item}: {item: Path|Point|Trail}) {
 }
 
 function TrailLink({trail}: {trail: Trail}) {
+  const valid = trail.lengthMeters >= 0;
   const distance = formatDistance(trail.lengthMeters);
   return <>
     <a
@@ -89,19 +90,15 @@ function TrailLink({trail}: {trail: Trail}) {
       <header className="font-bold font-lg grow">
         {trail.name}
       </header>
-      {[
-        ['Distance:', `${distance.value} ${distance.unit}`],
-      ].map(([label, content]) =>
-        <section>
-          <span className="font-medium text-tc-gray-400">
-            {label}
-          </span>
-          {' '}
-          <span>
-            {content}
-          </span>
-        </section>
-      )}
+      <section>
+        <span className="font-medium text-tc-gray-400">
+          Distance:
+        </span>
+        {' '}
+        <span className={valid ? '' : 'text-tc-error-500'}>
+          {valid ? `${distance.value} ${distance.unit}` : 'bad OSM data'}
+        </span>
+      </section>
     </a>
   </>;
 }

@@ -179,7 +179,7 @@ export class RenderBaker {
       texture: WebGLTexture,
       z: number,
       angle: number = 0,
-      tint: number = 0): void {
+      tint: number = 0xffffffff): void {
     this.addAtlasedBillboard(center, offsetPx, size, 0, [1, 1], texture, z, angle, tint);
   }
 

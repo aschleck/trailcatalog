@@ -20,6 +20,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.sql.PreparedStatement
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Base64
 import java.util.Stack
 import kotlin.math.abs
@@ -151,6 +153,13 @@ private fun fetchData(ctx: Context) {
         }
         responses.add(ImmutableMap.of("boundaries", data))
       }
+      "epoch" -> {
+        val year = epochTracker.epoch / 100_00
+        val month = epochTracker.epoch / 100 - year * 100
+        val day = epochTracker.epoch - year * 100_00 - month * 100 + 1
+        val date = LocalDate.of(2000 + year, month, day).atStartOfDay(ZoneId.systemDefault());
+        responses.add(ImmutableMap.of("timestampS", date.toEpochSecond()))
+      };
       "path_profiles_in_trail" -> {
         val data = ArrayList<HashMap<String, Any>>()
         val (idColumn, setId) = parseTrailId(key.get("trail_id"))
@@ -225,31 +234,6 @@ private fun fetchData(ctx: Context) {
           data["length_meters"] = results.getFloat(10)
         }
         responses.add(data)
-      }
-      "trail_facts" -> {
-        val data = ArrayList<HashMap<String, Any>>()
-        val (idColumn, setId) = parseTrailId(key.get("trail_id"))
-        connectionSource.connection.use {
-          val results = it.prepareStatement(
-              "SELECT "
-                  + "tf.predicate, "
-                  + "tf.value "
-                  + "FROM trail_facts tf "
-                  + "JOIN trail_identifiers ti "
-                  + "ON tf.trail_id = ti.numeric_id AND tf.epoch = ti.epoch "
-                  + "WHERE ${idColumn} = ? AND tf.epoch = ?")
-              .apply {
-                setId(this, 1)
-                setInt(2, epochTracker.epoch)
-              }.executeQuery()
-          while (results.next()) {
-            val fact = HashMap<String, Any>()
-            fact["predicate"] = results.getString(1)
-            fact["value"] = results.getString(2)
-            data.add(fact)
-          }
-        }
-        responses.add(mapOf("facts" to data))
       }
       "trails_in_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()

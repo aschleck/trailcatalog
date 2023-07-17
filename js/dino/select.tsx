@@ -20,7 +20,10 @@ export function Select(
   return <>
     <label className={className} {...props}>
       <select
-          className={'border border-tc-gray-400 p-1 rounded' + (className ? ` ${className}` : '')}
+          className={
+            'border border-tc-gray-400 overflow-hidden p-1 rounded'
+                + (className ? ` ${className}` : '')
+          }
           js={corgi.bind({
             controller: SelectController,
             events: {

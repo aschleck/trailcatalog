@@ -172,7 +172,10 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
       ...this.state,
       nearbyTrails:
           this.listTrailsInViewport()
-              .sort((a, b) => b.lengthMeters - a.lengthMeters),
+              .sort(
+                  (a, b) =>
+                      (b.lengthMeters >= 0 ? b.lengthMeters : Number.MAX_VALUE)
+                          - (a.lengthMeters >= 0 ? a.lengthMeters : Number.MAX_VALUE)),
     });
   }
 

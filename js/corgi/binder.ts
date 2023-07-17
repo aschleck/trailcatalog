@@ -376,6 +376,9 @@ function patchController(
 
   if (to) {
     bindController(element, to);
+    if (to.ref) {
+      element.setAttribute('data-js-ref', to.ref);
+    }
   }
 }
 

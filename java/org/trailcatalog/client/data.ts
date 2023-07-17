@@ -14,6 +14,7 @@ interface DataRequests {
   boundaries_containing_trail: {
     trail_id: TrailId;
   };
+  epoch: {};
   path_profiles_in_trail: {
     trail_id: TrailId;
   };
@@ -25,9 +26,6 @@ interface DataRequests {
     limit: number;
   };
   trail: {
-    trail_id: TrailId;
-  };
-  trail_facts: {
     trail_id: TrailId;
   };
   trails_in_boundary: {
@@ -55,6 +53,9 @@ export interface DataResponses {
       name: string;
       type: number;
     }>;
+  };
+  epoch: {
+    timestampS: number;
   };
   path_profiles_in_trail: {
     profiles: Array<{
@@ -106,12 +107,6 @@ export interface DataResponses {
     elevation_down_meters: number;
     elevation_up_meters: number;
     length_meters: number;
-  };
-  trail_facts: {
-    facts: Array<{
-      predicate: string;
-      value: string;
-    }>;
   };
   trails_in_boundary: {
     trails: Array<{

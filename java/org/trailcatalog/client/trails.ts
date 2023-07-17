@@ -61,10 +61,3 @@ export function trailFromRaw(raw: DataResponses['trail']): Trail {
       raw.length_meters);
 }
 
-export function trailFactsFromRaw(raw: DataResponses['trail_facts']): TrailFact[] {
-  return raw.facts.map(({predicate, value}) => ({
-    predicate,
-    value: JSON.parse(value),
-  }));
-}
-

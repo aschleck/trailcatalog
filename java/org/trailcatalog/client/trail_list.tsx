@@ -1,7 +1,6 @@
 import * as corgi from 'js/corgi';
 
 import { formatCount, formatDistance, formatHeight } from './common/formatters';
-import { HOVER_HEX_PALETTE } from './map/colors';
 import { Path, Point, Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
@@ -41,39 +40,58 @@ export function TrailSidebar({hovering, mobileOpen, nearby}: {
         className={
           "bg-white overflow-y-scroll z-10"
               + " absolute bottom-0 max-h-[50%] shrink-0 w-full"
-              + " md:max-h-full md:relative md:w-80"
+              + " md:max-h-full md:relative md:w-96"
         }
     >
-      <header
-          className="border-b px-3 py-4"
+      <table
+          className="my-4 w-full"
           unboundEvents={{click: 'toggleSidebar'}}
       >
-        <span className="font-bold text-xl">{formatCount(nearby.length)}</span>
-        {' '}trails found
-      </header>
-      <div className={
-        'border-t'
-            + (mobileOpen ? ' block' : ' hidden md:block')
-      }>
-        {filteredTrails.map(trail =>
-            <TrailListItem
-                highlight={hovering?.id === trail.id}
-                trail={trail}
-            />
-        )}
-        {hiddenTrailCount > 0 ? <footer>{hiddenTrailCount} hidden trails</footer> : ''}
-      </div>
+        <thead>
+          <tr className="border-b h-8">
+            <th className="w-1"></th>
+            <th className="w-3"></th>
+            <th>
+              <span className="font-bold text-2xl">{formatCount(nearby.length)}</span>
+              {' '}trails
+            </th>
+            <th>Distance</th>
+            <th className="w-1"></th>
+            <th>Gain</th>
+            <th className="w-1"></th>
+          </tr>
+        </thead>
+        <tbody
+            className={'text-sm' + (mobileOpen ? ' table-row-group' : ' hidden md:table-row-group')}
+        >
+          {filteredTrails.map(trail =>
+              <TrailListItem
+                  highlight={hovering?.id === trail.id}
+                  trail={trail}
+              />
+          )}
+        </tbody>
+      </table>
+      {hiddenTrailCount > 0
+        ?
+            <footer className="m-4">
+              <span className="font-medium">{hiddenTrailCount}</span>
+              {' '}hidden trails
+            </footer>
+        : ''}
     </div>
   </>;
 }
 
 export function TrailListItem({ highlight, trail }: { highlight: boolean, trail: SimpleTrail }) {
+  const valid = trail.lengthMeters >= 0;
   const distance = formatDistance(trail.lengthMeters);
   const elevationUp = formatHeight(trail.elevationUpMeters);
   return <>
-    <div
+    <tr
         className={
-          'border-b cursor-pointer flex gap-2 items-stretch pr-2 py-3'
+          'border-b cursor-pointer'
+              + (valid ? '' : ' text-tc-error-500')
               + (highlight ? ' bg-tc-gray-100' : '')
         }
         data-trail-id={`${trail.id}`}
@@ -82,12 +100,17 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
           mouseover: 'highlightTrail',
           mouseout: 'unhighlightTrail',
         }}>
-      <div
-          className="my-1 rounded-r-lg shrink-0 w-1"
-          style={highlight ? `background-color: ${HOVER_HEX_PALETTE.stroke}` : ''}
+      <td
+          className={
+            'h-12 rounded-r-lg'
+                + (
+                    highlight ? (valid ? ' bg-black' : ' bg-tc-error-500') : ''
+                )
+          }
       >
-      </div>
-      <div className="font-lg grow">
+      </td>
+      <td></td>
+      <td>
         <a href={`/goto/trail/${trail.id}`}>
           {trail.name}
         </a>
@@ -98,24 +121,36 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
               </div>
               : ''
         }
-      </div>
-      <div className="shrink-[0.1] w-24">
-        <div>
-          <span className="font-lg">
-            {distance.value}
-          </span>
-          {' '}
-          <span className="font-xs text-tc-gray-400">{distance.unit}</span>
-        </div>
-        <div>
-          <span className="font-lg">
-            {elevationUp.value}
-          </span>
-          {' '}
-          <span className="font-xs text-tc-gray-400">{elevationUp.unit}</span>
-        </div>
-      </div>
-    </div>
+      </td>
+      <td>
+        {
+          valid
+              ? <>
+                  <span className="font-medium text-md">
+                    {distance.value}
+                  </span>
+                  {' '}
+                  <span className="text-xs text-tc-gray-400">{distance.unit}</span>
+                </>
+              : '!'
+        }
+      </td>
+      <td></td>
+      <td>
+        {
+          valid
+              ? <>
+                  <span className="font-medium text-md">
+                    {elevationUp.value}
+                  </span>
+                  {' '}
+                  <span className="text-xs text-tc-gray-400">{elevationUp.unit}</span>
+                </>
+              : '!'
+        }
+      </td>
+      <td></td>
+    </tr>
   </>;
 }
 

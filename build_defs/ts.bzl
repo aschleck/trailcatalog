@@ -70,6 +70,7 @@ def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):
     jest_test(
         name = "jest",
         config = "//build_defs:jest_config",
+        node_modules = "//:node_modules",
         data = [
             ":tests",
         ],

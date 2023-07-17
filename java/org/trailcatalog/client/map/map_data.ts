@@ -21,7 +21,7 @@ import { MapDataService } from '../data/map_data_service';
 import { Path, Point, Trail } from '../models/types';
 import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../workers/data_constants';
 
-import { ACTIVE_PALETTE, ACTIVE_HEX_PALETTE, DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, HOVER_HEX_PALETTE } from './colors';
+import { DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, LinePalette } from './colors';
 import { HOVER_CHANGED, SELECTION_CHANGED } from './events';
 
 export interface Filters {
@@ -107,8 +107,8 @@ export class MapData extends Layer {
   private readonly coarseBounds: BoundsQuadtree<Handle>;
   private readonly fineBounds: BoundsQuadtree<Handle>;
   private readonly diamondPixelBounds: Vec4;
-  private readonly active: Set<bigint>;
-  private readonly hovering: Set<bigint>;
+  private readonly active: Map<bigint, LinePalette>;
+  private readonly hovering: Map<bigint, LinePalette>;
   private readonly pointsAtlas: WebGLTexture;
   private lastChange: number;
   private lastHoverTarget: Path|Point|Trail|undefined;
@@ -124,8 +124,8 @@ export class MapData extends Layer {
     this.overviewBounds = worldBounds();
     this.coarseBounds = worldBounds();
     this.fineBounds = worldBounds();
-    this.active = new Set();
-    this.hovering = new Set();
+    this.active = new Map();
+    this.hovering = new Map();
     // Why don't we need to dispose?
     this.pointsAtlas = new TexturePool(renderer).acquire();
 
@@ -290,8 +290,8 @@ export class MapData extends Layer {
     }
   }
 
-  setActive(entity: Path|Trail, state: boolean): void {
-    this.setColor(entity, this.active, state);
+  setActive(entity: Path|Trail, state: boolean, color: LinePalette): void {
+    this.setColor(entity, this.active, state, color);
   }
 
   setFilters(filters: Filters): void {
@@ -300,10 +300,14 @@ export class MapData extends Layer {
   }
 
   setHover(entity: Path|Point|Trail, state: boolean): void {
-    this.setColor(entity, this.hovering, state);
+    this.setColor(entity, this.hovering, state, HOVER_PALETTE);
   }
 
-  private setColor(entity: Path|Point|Trail, set: Set<bigint>, state: boolean): void {
+  private setColor(
+      entity: Path|Point|Trail,
+      set: Map<bigint, LinePalette>,
+      state: boolean,
+      color: LinePalette): void {
     let ids;
     if (entity instanceof Path) {
       ids = [entity.id];
@@ -318,7 +322,7 @@ export class MapData extends Layer {
 
     if (state) {
       for (const id of ids) {
-        set.add(id);
+        set.set(id, color);
       }
     } else {
       for (const id of ids) {
@@ -494,13 +498,11 @@ export class MapData extends Layer {
         continue;
       }
 
-      const active = this.active.has(id);
-      const hover = this.hovering.has(id);
+      const active = this.active.get(id);
+      const hover = this.hovering.get(id);
       const z = active || hover ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
-      const fill =
-          hover ? HOVER_HEX_PALETTE.fill : active ? ACTIVE_HEX_PALETTE.fill : DEFAULT_HEX_PALETTE.fill;
-      const stroke =
-          hover ? HOVER_HEX_PALETTE.stroke : active ? ACTIVE_HEX_PALETTE.stroke : DEFAULT_HEX_PALETTE.stroke;
+      const fill = hover?.hex?.fill ?? active?.hex?.fill ?? DEFAULT_HEX_PALETTE.fill;
+      const stroke = hover?.hex?.stroke ?? active?.hex?.stroke ?? DEFAULT_HEX_PALETTE.stroke;
       let diamond;
       if (zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
         this.textRenderer.planDiamond(
@@ -555,19 +557,17 @@ export class MapData extends Layer {
       verticesLength: number,
       lines: Line[],
       raised: Line[]): void {
-    const active = this.active.has(id);
-    const hover = this.hovering.has(id);
+    const active = this.active.get(id);
+    const hover = this.hovering.get(id);
     const onTrail = this.dataService.pathsToTrails.has(id);
     if (!onTrail && !isPath(type)) {
       return;
     }
 
     const buffer = active || hover ? raised : lines;
-    const fill =
-        hover ? HOVER_PALETTE.fill : active ? ACTIVE_PALETTE.fill : DEFAULT_PALETTE.fill;
+    const fill = hover?.raw?.fill ?? active?.raw?.fill ?? DEFAULT_PALETTE.fill;
     // Not a typo: since the non-hover non-active renders small we use the *fill* color here:
-    const stroke =
-        hover ? HOVER_PALETTE.stroke : active ? ACTIVE_PALETTE.stroke : DEFAULT_PALETTE.fill;
+    const stroke = hover?.raw?.stroke ?? active?.raw?.stroke ?? DEFAULT_PALETTE.fill;
     buffer.push({
       colorFill: fill,
       colorStroke: stroke,

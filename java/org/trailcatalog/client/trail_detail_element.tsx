@@ -18,7 +18,7 @@ import { Header } from './page';
 import { setTitle } from './title';
 import { LoadingController, TrailDetailController, State } from './trail_detail_controller';
 import { TrailPopup } from './trail_popup';
-import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw, trailFactsFromRaw } from './trails';
+import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
 const GRAPH_TEXT_SPACE_PX = [0, 32] as const;
 
@@ -34,11 +34,7 @@ export function TrailDetailElement({trailId, parameters}: {
       trail = trailFromRaw(rawTrail);
     }
 
-    const rawTrailFacts = initialData('trail_facts', {trail_id: wrapped});
-    let trailFacts;
-    if (rawTrailFacts) {
-      trailFacts = trailFactsFromRaw(rawTrailFacts);
-    }
+    const rawEpoch = initialData('epoch', {});
 
     const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: wrapped});
     let containingBoundaries;
@@ -54,11 +50,11 @@ export function TrailDetailElement({trailId, parameters}: {
 
     state = {
       containingBoundaries,
+      epochDate: rawEpoch ? new Date(rawEpoch.timestampS * 1000) : undefined,
       pathProfiles,
       selected: [],
       selectedCardPosition: [-1, -1],
       trail,
-      trailFacts,
       trailId,
     };
   }
@@ -66,7 +62,7 @@ export function TrailDetailElement({trailId, parameters}: {
   setTitle(state.trail?.name);
 
   return <>
-    <div className="flex flex-col items-center min-h-full">
+    <div className="flex flex-col h-full">
       <Header />
 
       {state.containingBoundaries && state.trail
@@ -104,36 +100,7 @@ function Content({trailId, state, updateState}: {
   state: State,
   updateState: (newState: State) => void,
 }) {
-  const containingBoundaries = checkExists(state.containingBoundaries);
   const trail = checkExists(state.trail);
-  const distance = formatDistance(trail.lengthMeters);
-  const elevationDown = formatHeight(trail.elevationDownMeters);
-  const elevationUp = formatHeight(trail.elevationUpMeters);
-  let elevationHigh;
-  let elevationLow;
-  if (state.elevation) {
-    const [minMeters, maxMeters] = state.elevation.extremes;
-    elevationHigh = formatHeight(maxMeters);
-    elevationLow = formatHeight(minMeters);
-  }
-  let temperature;
-  let weather;
-  if (state.weather) {
-    temperature = formatTemperature(state.weather.temperatureCelsius);
-    const wc = formatWeatherCode(state.weather.weatherCode);
-    weather = {
-      icon: wc.icon,
-      label: `${wc.label} • ${temperature.value}`,
-    };
-  }
-
-  let isOneWay;
-  if (trail.paths.length === 1) {
-    isOneWay = true;
-  } else {
-    isOneWay = (trail.paths[0] & ~1n) !== (trail.paths[trail.paths.length - 1] & ~1n);
-  }
-
   let trailDetails;
   if (state.selected.length > 0) {
     trailDetails =
@@ -169,83 +136,11 @@ function Content({trailId, state, updateState}: {
           },
           state: [state, updateState],
         })}
-        className="h-full max-w-6xl px-4 my-6 w-full"
+        className="flex grow overflow-hidden"
     >
-      <header className="flex gap-2 items-center">
-        <span className="font-bold font-sans text-3xl">
-          {trail.name}
-        </span>
-      </header>
-      <aside className="flex flex-wrap gap-2 items-center mt-2 text-tc-gray-400">
-        <div className="text-black" unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
-          <OutlinedButton dense={true} icon="Nav2DMapView" label="Browse map" />
-        </div>
-        <BoundaryCrumbs boundaries={containingBoundaries} />
-        •
-        <div>
-          <a
-              href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
-              target="_blank"
-          >
-            <img
-                alt="OpenStreetMap logo"
-                className="h-4 inline-block mr-1"
-                src="/static/images/icons/osm-logo.svg"
-            />
-            Relation {trail.sourceRelation}
-          </a>
-        </div>
-      </aside>
-      <div className="bg-tc-gray-100 h-0.5 mt-4 w-full" />
-      <aside className="flex flex-wrap items-stretch mt-4">
-        <NumericCrumb
-            icon="CharticulatorLine"
-            label={isOneWay ? "One-way distance" : "Round-trip distance"}
-            value={distance.value}
-            unit={distance.unit}
-        />
-        <NumericDivider />
-        <NumericCrumb
-            icon="Market"
-            label="Ascent"
-            value={elevationUp.value}
-            unit={elevationUp.unit}
-        />
-        <NumericDivider />
-        <NumericCrumb
-            icon="MarketDown"
-            label="Descent"
-            value={elevationDown.value}
-            unit={elevationDown.unit}
-        />
-        <NumericDivider />
-        <NumericCrumb
-            icon="SortUp"
-            label="Highest point"
-            value={elevationHigh?.value ?? ''}
-            unit={elevationHigh?.unit ?? ''}
-        />
-        <NumericDivider />
-        <NumericCrumb
-            icon="SortDown"
-            label="Lowest point"
-            value={elevationLow?.value ?? ''}
-            unit={elevationLow?.unit ?? ''}
-        />
-        <NumericDivider />
-        <NumericCrumb
-            icon={weather?.icon ?? 'Checkbox'}
-            label="Current weather"
-            value={weather?.label ?? ''}
-            unit={temperature?.unit ?? ''}
-        />
-      </aside>
-      <div className="mt-8 relative">
-        <MapElement
-            camera={trail.bound}
-            height="h-[32rem]"
-            ref="map"
-        />
+      <TrailSidebar state={state} />
+      <div className="grow h-full relative">
+        <MapElement camera={trail.bound} ref="map" />
         <div className="absolute flex flex-col gap-2 right-2 top-2">
           <div unboundEvents={{corgi: [[ACTION, 'zoomToFit']]}}>
             <FlatButton ariaLabel="Zoom to trail" className="bg-white" icon="ZoomToFit" />
@@ -256,41 +151,152 @@ function Content({trailId, state, updateState}: {
         </div>
         {trailDetails ?? <></>}
       </div>
-      {state.elevation ? <ElevationGraph className="mt-6" {...state} /> : <svg></svg>}
     </div>
   </>;
 }
 
-function NumericCrumb({
-  icon,
-  label,
-  value,
-  unit,
-}: {
-  icon: FabricIconName,
-  label: corgi.VElementOrPrimitive,
-  value: string,
-  unit: string,
-}) {
+function TrailSidebar({state}: {state: State}) {
+  const containingBoundaries = checkExists(state.containingBoundaries);
+  const trail = checkExists(state.trail);
+  const valid = trail.lengthMeters >= 0;
+  const distance = formatDistance(trail.lengthMeters);
+  const elevationDown = formatHeight(trail.elevationDownMeters);
+  const elevationUp = formatHeight(trail.elevationUpMeters);
+  let elevationHigh;
+  let elevationLow;
+  if (state.elevation) {
+    const [minMeters, maxMeters] = state.elevation.extremes;
+    elevationHigh = formatHeight(maxMeters);
+    elevationLow = formatHeight(minMeters);
+  }
+  let temperature;
+  let weather;
+  if (state.weather) {
+    temperature = formatTemperature(state.weather.temperatureCelsius);
+    const wc = formatWeatherCode(state.weather.weatherCode);
+    weather = {
+      icon: wc.icon,
+      label: `${wc.label} • ${temperature.value}`,
+    };
+  }
+
+  let isOneWay;
+  if (trail.paths.length === 1) {
+    isOneWay = true;
+  } else {
+    isOneWay = (trail.paths[0] & ~1n) !== (trail.paths[trail.paths.length - 1] & ~1n);
+  }
+
+  const badData =
+      <span
+          className="
+              bg-tc-error-100
+              inline-block
+              px-3
+              py-1
+              rounded
+              text-tc-error-500
+          ">
+        OSM data issue
+      </span>;
+
   return <>
-    <div className="min-w-[142px]">
-      <div>{label}</div>
-      <div className="mt-1">
-        <FabricIcon name={icon} className="mr-2" />
-        <span className="mr-0.5 text-lg">{value}</span>
-        <span className="text-sm">{unit}</span>
+    <div className="overflow-y-scroll p-4 text-sm md:w-[32rem]">
+      <header className="flex gap-2 items-center">
+        <span className="font-bold font-sans text-3xl">
+          {trail.name}
+        </span>
+      </header>
+      <aside className="flex flex-wrap gap-2 items-center mt-2 text-tc-gray-400">
+        <div className="text-black" unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
+          <OutlinedButton dense={true} icon="Nav2DMapView" label="Browse map" />
+        </div>
+        <BoundaryCrumbs boundaries={containingBoundaries} />
+      </aside>
+      <div className="border gap-x-8 gap-y-2 grid p-2 mt-4 [grid-template-columns:_auto_1fr]">
+        <div>{isOneWay ? "One-way distance" : "Round-trip distance"}</div>
+        <div>
+          {valid
+              ? <>
+                  <FabricIcon name="CharticulatorLine" className="mr-2" />
+                  <NumericCrumb value={distance.value} unit={distance.unit} />
+                </>
+              : badData
+          }
+        </div>
+        <div className="border-b col-span-2 -mx-2"></div>
+        <div>Gain and loss</div>
+        <div>
+          {valid
+              ? <>
+                  <FabricIcon name="Market" className="mr-2" />
+                  <NumericCrumb value={elevationUp.value} unit={elevationUp.unit} />
+                  <FabricIcon name="MarketDown" className="ml-4 mr-2" />
+                  <NumericCrumb value={elevationDown.value} unit={elevationDown.unit} />
+                </>
+              : badData
+          }
+        </div>
+        <div className="border-b col-span-2 -mx-2"></div>
+        <div>Highest and lowest</div>
+        <div>
+          <FabricIcon name="SortUp" className="mr-2" />
+          <NumericCrumb value={elevationHigh?.value ?? ''} unit={elevationHigh?.unit ?? ''} />
+          <FabricIcon name="SortDown" className="ml-4 mr-2" />
+          <NumericCrumb value={elevationLow?.value ?? ''} unit={elevationLow?.unit ?? ''} />
+        </div>
+        <div className="border-b col-span-2 -mx-2"></div>
+        <div>Weather</div>
+        <div>
+          {weather?.icon ? <FabricIcon name={weather.icon} className="mr-2" /> : ''}
+          <span>
+            <NumericCrumb value={weather?.label ?? ''} unit={temperature?.unit ?? ''} />
+          </span>
+        </div>
+        <div className="border-b col-span-2 -mx-2"></div>
+        <div>
+          OSM relation
+        </div>
+        <div>
+          <a
+              href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
+              target="_blank"
+          >
+            <img
+                alt="OpenStreetMap logo"
+                className="h-4 inline-block mr-1"
+                src="/static/images/icons/osm-logo.svg"
+            />
+            {trail.sourceRelation}
+          </a>
+        </div>
+        <div className="border-b col-span-2 -mx-2"></div>
+        <div>
+          Synced
+        </div>
+        <div>
+          {state.epochDate ? state.epochDate.toLocaleDateString() : 'unknown'}
+        </div>
       </div>
+      {state.elevation
+          ? <section className="mt-4">
+              <div className="font-medium text-lg">Elevation</div>
+              <ElevationGraph {...state} />
+            </section>
+          : <></>
+      }
     </div>
   </>;
 }
 
-function NumericDivider() {
+function NumericCrumb({value, unit}: {value: string; unit: string;}) {
   return <>
-    <div className="bg-tc-gray-100 mx-2 w-0.5"></div>
+    <span className="font-medium mr-0.5">{value}</span>
+    <span className="text-tc-gray-400 text-xs">{unit}</span>
   </>;
 }
 
-function ElevationGraph({className, ...state}: {className: string} & State) {
+function ElevationGraph(state: State) {
   const trail = checkExists(state.trail);
   const elevation = checkExists(state.elevation);
   const [resWidth, resHeight] = elevation.resolution;
@@ -386,48 +392,50 @@ function ElevationGraph({className, ...state}: {className: string} & State) {
   }
 
   return <>
-    <svg
-        className={`select-none touch-none ${className}`}
-        unboundEvents={{
-          'pointerleave': 'clearElevationCursor',
-          'pointermove': 'moveElevationCursor',
-        }}
-        viewBox={
-          [
-            -GRAPH_TEXT_SPACE_PX[0] - estimatedTextWidth,
-            -highestGrid * scale,
-            resWidth + GRAPH_TEXT_SPACE_PX[0] + estimatedTextWidth,
-            height + GRAPH_TEXT_SPACE_PX[1],
-          ].join(' ')
-        }>
-      <g className="stroke-tc-gray-400">
-        <g style="stroke-dasharray: 4">
-          {gridLines}
-        </g>
-      </g>
-      <g className="fill-tc-gray-400">
-        {gridText}
-      </g>
-      <g className="fill-black">
-        {distanceIndicators}
-      </g>
-      <polyline
-          fill="none"
-          points={elevation.heights}
-          stroke="black"
-          stroke_linejoin="round"
-          stroke_width={2}
-          vector_effect="non-scaling-stroke"
-          style={
+    <div className="border py-2 mt-4 rounded">
+      <svg
+          className={`relative select-none touch-none w-full`}
+          unboundEvents={{
+            'pointerleave': 'clearElevationCursor',
+            'pointermove': 'moveElevationCursor',
+          }}
+          viewBox={
             [
-              'transform:',
-              `translateY(${-max * scale}px)`,
-              `scaleY(${(max - min) / resHeight * scale})`,
+              -GRAPH_TEXT_SPACE_PX[0] - estimatedTextWidth,
+              -highestGrid * scale,
+              resWidth + GRAPH_TEXT_SPACE_PX[0] + estimatedTextWidth,
+              height + GRAPH_TEXT_SPACE_PX[1],
             ].join(' ')
-          }
-      />
-      {indicator}
-    </svg>
+          }>
+        <g className="stroke-tc-gray-400">
+          <g style="stroke-dasharray: 4">
+            {gridLines}
+          </g>
+        </g>
+        <g className="fill-tc-gray-400">
+          {gridText}
+        </g>
+        <g className="fill-black">
+          {distanceIndicators}
+        </g>
+        <polyline
+            fill="none"
+            points={elevation.heights}
+            stroke="black"
+            stroke_linejoin="round"
+            stroke_width={2}
+            vector_effect="non-scaling-stroke"
+            style={
+              [
+                'transform:',
+                `translateY(${-max * scale}px)`,
+                `scaleY(${(max - min) / resHeight * scale})`,
+              ].join(' ')
+            }
+        />
+        {indicator}
+      </svg>
+    </div>
   </>;
 }
 

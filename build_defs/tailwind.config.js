@@ -11,9 +11,16 @@ module.exports = {
         'black-opaque': {
           20: '#00000014',
         },
+        'tc-error': {
+          900: '#ac0000',
+          500: '#e93636',
+          200: '#ffcccc',
+          100: '#ffeeee',
+        },
         'tc-highlight': {
           1: '#ffe600',
-          2: '#4f8d1f',
+          2: '#9fe26b',
+          3: '#4f8d1f',
         },
         'tc-gray': {
           900: '#222222',
