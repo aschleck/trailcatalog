@@ -60,6 +60,7 @@ export function SearchResultsOverviewElement(
     }
 
     state = {
+      blueDot: undefined,
       boundary,
       boundaryId,
       filterInBoundary: !!boundary,
@@ -196,6 +197,7 @@ function Content({
               trail: filter,
             },
             overlays: {
+              blueDot: state.blueDot,
               polygon: state.boundary?.polygon,
             },
             query,

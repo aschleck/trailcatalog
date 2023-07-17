@@ -24,6 +24,7 @@ interface Args extends VArgs {
 type Deps = typeof SearchResultsOverviewController.deps;
 
 export interface State extends VState {
+  blueDot: LatLng|undefined;
   boundaryId: string|undefined;
   boundary: Boundary|undefined;
   clickCandidate?: {
@@ -149,14 +150,32 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   }
 
   locateMe(): void {
+    const options = {enableHighAccuracy: true, maximumAge: 10_000};
     navigator.geolocation.getCurrentPosition(position => {
+      const ll = [position.coords.latitude, position.coords.longitude] as LatLng;
       this.mapController.setCamera({
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
+        lat: ll[0],
+        lng: ll[1],
         zoom: 12,
       });
+
+      this.updateState({
+        ...this.state,
+        blueDot: ll,
+      });
+
+      if (!this.state.blueDot) {
+        navigator.geolocation.watchPosition(this.locationUpdated.bind(this), undefined, options);
+      }
     }, e => {
       console.error(e);
+    }, options);
+  }
+
+  private locationUpdated(position: GeolocationPosition) {
+    this.updateState({
+      ...this.state,
+      blueDot: [position.coords.latitude, position.coords.longitude] as LatLng,
     });
   }
 

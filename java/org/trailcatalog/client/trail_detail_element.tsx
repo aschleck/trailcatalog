@@ -120,7 +120,7 @@ function Content({trailId, state, updateState}: {
           args: {
             active: {trails: [trail]},
             overlays: {
-              point:
+              bear:
                   !!state.elevation?.cursor
                       ? [state.elevation.cursor.lat, state.elevation.cursor.lng] as LatLng
                       : undefined,
@@ -275,7 +275,12 @@ function TrailSidebar({state}: {state: State}) {
           Synced
         </div>
         <div>
-          {state.epochDate ? state.epochDate.toLocaleDateString() : 'unknown'}
+          {state.epochDate
+              // We *need* this be in the pacific time because the client and server generated text
+              // *must* match.
+              ? state.epochDate.toLocaleDateString(undefined, {timeZone: 'America/Los_Angeles'})
+              : 'unknown'
+          }
         </div>
       </div>
       {state.elevation

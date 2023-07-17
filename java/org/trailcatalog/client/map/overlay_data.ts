@@ -11,7 +11,8 @@ import { TexturePool } from 'js/map/rendering/texture_pool';
 import { BOUNDARY_PALETTE } from './colors';
 
 export interface Overlays {
-  point?: LatLng;
+  bear?: LatLng;
+  blueDot?: LatLng;
   polygon?: S2Polygon;
 }
 
@@ -27,6 +28,7 @@ export class OverlayData extends Layer {
   }>;
   private readonly lines: Line[];
   private bearIcon: WebGLTexture|undefined;
+  private blueIcon: WebGLTexture|undefined;
   private lastChange: number;
 
   constructor(overlays: Overlays, renderer: Renderer) {
@@ -48,18 +50,43 @@ export class OverlayData extends Layer {
           }
         });
 
+    fetch("/static/images/icons/blue-dot.png")
+        .then(response => {
+          if (response.ok) {
+            return response.blob()
+                .then(blob => createImageBitmap(blob))
+                .then(bitmap => {
+                  const pool = new TexturePool(renderer);
+                  this.blueIcon = pool.acquire();
+                  renderer.uploadTexture(bitmap, this.blueIcon);
+                });
+          }
+        });
+
     this.setOverlay(overlays);
   }
 
   setOverlay(overlays: Overlays) {
     this.billboards.length = 0;
+
     // TODO(april): need to have listeners for icon loads or else this can get lost
-    if (overlays.point && this.bearIcon) {
-      const center = projectS2LatLng(S2LatLng.fromDegrees(overlays.point[0], overlays.point[1]));
+    if (overlays.bear && this.bearIcon) {
+      const center = projectS2LatLng(S2LatLng.fromDegrees(overlays.bear[0], overlays.bear[1]));
       this.billboards.push({
         center,
         size: [32, 32],
         texture: this.bearIcon,
+      });
+    }
+
+    // TODO(april): need to have listeners for icon loads or else this can get lost
+    if (overlays.blueDot && this.blueIcon) {
+      const center =
+          projectS2LatLng(S2LatLng.fromDegrees(overlays.blueDot[0], overlays.blueDot[1]));
+      this.billboards.push({
+        center,
+        size: [16, 16],
+        texture: this.blueIcon,
       });
     }
 
