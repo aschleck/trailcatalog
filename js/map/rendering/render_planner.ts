@@ -63,6 +63,8 @@ export class RenderPlanner {
   }
 
   render(area: Vec2, camera: Camera): void {
+    this.renderer.render();
+
     if (this.baker.drawables.length === 0) {
       return;
     }
@@ -84,7 +86,6 @@ export class RenderPlanner {
       centerPixels.push(splitVec2([centerPixel[0] - 2, centerPixel[1]]));
     }
 
-    this.renderer.render();
     let drawStart = this.baker.drawables[0];
     let drawStartIndex = 0;
     // Gather sequential drawables that share the same program and draw them all at once
