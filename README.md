@@ -1,6 +1,6 @@
 # Trailcatalog
 
-Trailcatalog’s mission is to organize OpenStreetMaps trails into a searchable and editable catalog.
+Trailcatalog organizes OpenStreetMaps trail relations into a searchable catalog. It syncs to OSM every Monday and Thursday at 2am PST. 
 https://trailcatalog.org
 
 ## S2
