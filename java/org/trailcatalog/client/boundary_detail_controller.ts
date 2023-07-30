@@ -9,6 +9,7 @@ import { emptyS2Polygon } from './common/types';
 import { Boundary, Trail } from './models/types';
 
 import { DataResponses, fetchData } from './data';
+import * as routes from './routes';
 import { Args, State as VState, ViewportController } from './viewport_controller';
 
 export interface State extends VState {
@@ -67,10 +68,10 @@ export class BoundaryDetailController extends ViewportController<Args, Deps, Sta
   }
 
   browseMap() {
-    this.views.showSearchResults({
+    routes.showSearchResults({
       boundary: this.state.boundary?.id,
       camera: this.mapController.cameraLlz,
-    });
+    }, this.views);
   }
 
   zoomToFit(): void {

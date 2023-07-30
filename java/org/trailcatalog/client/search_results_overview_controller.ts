@@ -13,6 +13,7 @@ import { Boundary, Path, Point, Trail, TrailSearchResult } from './models/types'
 
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
 import { DataResponses, fetchData } from './data';
+import * as routes from './routes';
 import { searchTrailsFromRaw } from './search_controller';
 import { Args as VArgs, State as VState, ViewportController } from './viewport_controller';
 
@@ -140,12 +141,12 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
 
   clearBoundary(): void {
     if (this.query) {
-      this.views.showSearchResults({
+      routes.showSearchResults({
         camera: this.mapController.cameraLlz,
         query: this.query,
-      });
+      }, this.views);
     } else {
-      this.views.showOverview(this.mapController.cameraLlz);
+      routes.showOverview({camera: this.mapController.cameraLlz}, this.views);
     }
   }
 
@@ -241,7 +242,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
       const now = Date.now();
       if (this.state.clickCandidate?.trail === candidate
           && now - this.state.clickCandidate.lastClick < DOUBLE_CLICK_DETECTION_MS) {
-        this.views.showTrail(candidate.id);
+        routes.showTrail(candidate.id, this.views);
         return;
       } 
 
@@ -265,7 +266,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     }
 
     const id = BigInt(raw);
-    this.views.showTrail(id);
+    routes.showTrail(id, this.views);
   }
 
   override highlightTrail(e: MouseEvent): void {

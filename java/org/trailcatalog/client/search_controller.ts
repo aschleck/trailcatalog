@@ -1,14 +1,15 @@
 import { checkExists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
+import { ViewsService } from 'js/corgi/history/views_service';
 import { InputController } from 'js/dino/input_controller';
 import { currentUrl } from 'js/server/ssr_aware';
 
 import { latLngFromBase64E7, latLngRectFromBase64E7 } from './common/data';
 import { BoundarySearchResult, TrailSearchResult } from './models/types';
-import { ViewsService } from './views/views_service';
 
 import { DataResponses, fetchData } from './data';
+import * as routes from './routes';
 
 type Deps = typeof SearchController.deps;
 
@@ -27,14 +28,14 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
         input: InputController,
       },
       services: {
-        views: ViewsService,
+        views: ViewsService<routes.Routes>,
       },
     };
   }
 
   private readonly debouncer: Debouncer;
   private readonly input: InputController;
-  private readonly views: ViewsService;
+  private readonly views: ViewsService<routes.Routes>;
 
   constructor(response: Response<SearchController>) {
     super(response);
@@ -86,7 +87,7 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
           zoom: Number(url.searchParams.get('zoom')),
         };
       }
-      this.views.showOverview(camera);
+      routes.showOverview({camera}, this.views);
     } else {
       this.updateState({
         ...this.state,
@@ -96,7 +97,7 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
   }
 
   private goToSearchPage(query: string): void {
-    this.views.showSearchResults({query});
+    routes.showSearchResults({query}, this.views);
   }
 }
 

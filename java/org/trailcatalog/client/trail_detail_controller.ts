@@ -11,6 +11,7 @@ import { MapDataService } from './data/map_data_service';
 import { Boundary, ElevationProfile, Path, Trail, TrailFact } from './models/types';
 
 import { fetchData } from './data';
+import * as routes from './routes';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 import { Args, State as VState, ViewportController } from './viewport_controller';
 
@@ -144,7 +145,7 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
   }
 
   browseMap() {
-    this.views.showOverview(this.mapController.cameraLlz);
+    routes.showOverview({camera: this.mapController.cameraLlz}, this.views);
   }
 
   clearElevationCursor(e: PointerEvent) {

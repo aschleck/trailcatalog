@@ -1,6 +1,7 @@
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
+import { ViewsService } from 'js/corgi/history/views_service';
 import { rgbaToUint32 } from 'js/map/common/math';
 import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from 'js/map/common/types';
 import { MbtileData } from 'js/map/layers/mbtile_data';
@@ -15,7 +16,8 @@ import { SELECTION_CHANGED } from './map/events';
 import { Filters, MapData } from './map/map_data';
 import { OverlayData, Overlays } from './map/overlay_data';
 import { Path, Point, Trail } from './models/types';
-import { ViewsService } from './views/views_service';
+
+import * as routes from './routes';
 
 export interface Args {
   active?: {
@@ -44,7 +46,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
         history: HistoryService,
         mapData: MapDataService,
         tileData: TileDataService,
-        views: ViewsService,
+        views: ViewsService<routes.Routes>,
       },
     };
   }
@@ -53,7 +55,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
   private readonly mapData: MapData;
   private readonly overlayData: OverlayData;
   protected readonly mapController: MapController;
-  protected readonly views: ViewsService;
+  protected readonly views: ViewsService<routes.Routes>;
 
   constructor(response: Response<ViewportController<A, D, S>>) {
     super(response);
@@ -103,7 +105,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
     if (this.history.backStaysInApp()) {
       this.history.back();
     } else {
-      this.views.showOverview(this.mapController.cameraLlz);
+      routes.showOverview({camera: this.mapController.cameraLlz}, this.views);
     }
   }
 
