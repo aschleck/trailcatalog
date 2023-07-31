@@ -7,6 +7,7 @@ load("@rules_java//java:defs.bzl", "java_binary")
 package_group(
     name = "internal",
     packages = [
+        "//java/lat/trails/...",
         "//java/org/trailcatalog/...",
         "//javatests/org/trailcatalog/...",
         "//js/map/...",

@@ -73,23 +73,30 @@ export function serve(app: ElementFactory, page: PageFn): void {
     });
     app({}, undefined, () => {});
 
-    const response = await fetch('http://127.0.0.1:7070/api/data', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'If-None-Match': request.headers['if-none-match'] ?? '',
-      },
-      body: JSON.stringify({
-        keys: requestedData,
-      }),
-    });
+    let etag: string|null|undefined;
+    let responseData: unknown[];
+    if (requestedData.length > 0) {
+      const response = await fetch('http://127.0.0.1:7070/api/data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-None-Match': request.headers['if-none-match'] ?? '',
+        },
+        body: JSON.stringify({
+          keys: requestedData,
+        }),
+      });
 
-    if (!response.ok) {
-      reply.type('text/plain').code(response.status);
-      reply.send(response.statusText);
+      if (!response.ok) {
+        reply.type('text/plain').code(response.status);
+        reply.send(response.statusText);
+      }
+
+      etag = response.headers.get('ETag');
+      responseData = (await response.json() as {values: unknown[]}).values;
+    } else {
+      responseData = [];
     }
-
-    const responseData = (await response.json() as {values: unknown[]}).values;
 
     // Finally we re-render with our data
     requestContext.set('initialData', (key: InitialDataKey) => {
@@ -108,7 +115,6 @@ export function serve(app: ElementFactory, page: PageFn): void {
     }
 
     reply.type('text/html').code(200);
-    const etag = response.headers.get('ETag');
     if (etag) {
       reply.header('ETag', etag);
     }

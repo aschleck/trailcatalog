@@ -7,7 +7,7 @@ import { LittleEndianView } from 'js/common/little_endian_view';
 import { Area, AreaType, Boundary, Contour, Highway, HighwayType, Label, LabelType, MbtileTile, Polygon, TileId, Waterway } from '../common/types';
 
 // TODO(april): shouldn't need to put these here, but we only have one style anyway
-const CONTOUR_LABEL_EVERY = 0.000007;
+const CONTOUR_LABEL_EVERY = 0.000014;
 const MAX_POLYGONS_IN_AREA = 500;
 const TEXT_DECODER = new TextDecoder();
 const LABEL_WRAP_WIDTH = 16;

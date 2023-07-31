@@ -305,7 +305,7 @@ export class MbtileData extends Layer {
           regular.push(line);
         }
       } else {
-        if (contour.nthLine >= 10) {
+        if (contour.nthLine >= 5) {
           regular.push(line);
         }
       }

@@ -1,4 +1,4 @@
-package(default_visibility = ["//java/org/trailcatalog:internal"])
+package(default_visibility = ["//visibility:public"])
 
 load("//build_defs:ts.bzl", "tc_ts_project")
 

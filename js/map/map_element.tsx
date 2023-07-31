@@ -8,12 +8,14 @@ import { MapController } from './map_controller';
 export function MapElement({
   camera,
   className,
+  copyright,
   height,
   interactive,
   ref,
 }: {
   camera: LatLngRect|LatLngZoom|undefined;
   className?: string;
+  copyright?: corgi.VElementOrPrimitive,
   height?: string;
   interactive?: boolean;
   ref?: string,
@@ -50,35 +52,41 @@ export function MapElement({
           text-[0.625rem]
           z-20
       ">
-        {'Data ©'}
-        <a
-            className="pointer-events-auto"
-            href="https://www.openstreetmap.org/copyright"
-            target="_blank">
-          OpenStreetMap contributors
-        </a>
-        {', Elevation ©'}
-        <a
-            className="pointer-events-auto"
-            href="https://spacedata.copernicus.eu/documents/20126/0/CSCDA_ESA_Mission-specific+Annex.pdf"
-            target="_blank">
-          Copernicus
-        </a>
-        {', Maps ©'}
-        <a
-            className="pointer-events-auto"
-            href="https://www.maptiler.com/copyright/"
-            target="_blank">
-          MapTiler
-        </a>
-        {', Weather ©'}
-        <a
-            className="pointer-events-auto"
-            href="https://open-meteo.com/"
-            target="_blank">
-          OpenMeteo
-        </a>
+        {copyright ? copyright : <Copyright />}
       </div>
     </div>
+  </>;
+}
+
+function Copyright() {
+  return <>
+    {'Data ©'}
+    <a
+        className="pointer-events-auto"
+        href="https://www.openstreetmap.org/copyright"
+        target="_blank">
+      OpenStreetMap contributors
+    </a>
+    {', Elevation ©'}
+    <a
+        className="pointer-events-auto"
+        href="https://spacedata.copernicus.eu/documents/20126/0/CSCDA_ESA_Mission-specific+Annex.pdf"
+        target="_blank">
+      Copernicus
+    </a>
+    {', Maps ©'}
+    <a
+        className="pointer-events-auto"
+        href="https://www.maptiler.com/copyright/"
+        target="_blank">
+      MapTiler
+    </a>
+    {', Weather ©'}
+    <a
+        className="pointer-events-auto"
+        href="https://open-meteo.com/"
+        target="_blank">
+      OpenMeteo
+    </a>
   </>;
 }
