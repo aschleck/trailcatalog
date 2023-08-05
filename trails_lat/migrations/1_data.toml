@@ -1,0 +1,152 @@
+[[actions]]
+type = "create_table"
+name = "users"
+primary_key = ["id"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "oauth2_issuer"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "oauth2_id"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "display_name"
+  nullable = false
+  type = "TEXT"
+
+[[actions]]
+type = "add_index"
+table = "users"
+
+  [actions.index]
+  name = "users_by_oauth2_issuer_oauth2_id"
+  columns = ["oauth2_issuer", "oauth2_id"]
+  unique = true
+
+[[actions]]
+type = "create_table"
+name = "collections"
+primary_key = ["id"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "creator"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "name"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.foreign_keys]]
+  columns = ["creator"]
+  referenced_table = "users"
+  referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "collections"
+
+  [actions.index]
+  name = "collections_by_creator"
+  columns = ["creator"]
+
+[[actions]]
+type = "create_table"
+name = "lines"
+primary_key = ["id"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "collection"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "cell"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "data"
+  nullable = false
+  type = "JSONB"
+
+  [[actions.columns]]
+  name = "lat_lng_degrees"
+  nullable = false
+  type = "BYTEA"
+
+  [[actions.foreign_keys]]
+  columns = ["collection"]
+  referenced_table = "collections"
+  referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "lines"
+
+  [actions.index]
+  name = "lines_by_collection"
+  columns = ["collection"]
+
+[[actions]]
+type = "create_table"
+name = "polygons"
+primary_key = ["id"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "collection"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "cell"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "data"
+  nullable = false
+  type = "JSONB"
+
+  [[actions.columns]]
+  name = "s2_polygon"
+  nullable = false
+  type = "BYTEA"
+
+  [[actions.foreign_keys]]
+  columns = ["collection"]
+  referenced_table = "collections"
+  referenced_columns = ["id"]
+
+[[actions]]
+  type = "add_index"
+  table = "polygons"
+
+  [actions.index]
+  name = "polygons_by_collection"
+  columns = ["collection"]

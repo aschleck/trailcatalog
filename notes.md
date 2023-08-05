@@ -93,7 +93,7 @@ java -jar ~/hillshader_deploy.jar \
     /mnt/horse/tiles/hillshades/
 ```
 
-## Making a public access dataset layer
+## Public access datasets
 
-* Download "National GeoPackage" from
+* Download the "national geopackage" from
   https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-download
