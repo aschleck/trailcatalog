@@ -1,10 +1,18 @@
 package(default_visibility = ["//java/lat/trails:internal"])
 
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
 filegroup(
     name = "static",
     srcs = [
         ":copies",
+        ":glob",
     ],
+)
+
+js_library(
+    name = "glob",
+    srcs = glob(["*.webp"]),
 )
 
 genrule(

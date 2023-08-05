@@ -42,6 +42,9 @@ export function OverviewElement(
           copyright={<Copyright />}
           ref="map"
       />
+      <Rail>
+        <CatJump />
+      </Rail>
     </div>
   </>;
 }
@@ -69,5 +72,40 @@ function Copyright() {
         target="_blank">
       trails.lat
     </a>
+  </>;
+}
+
+function Rail({children}: {children?: corgi.VElementOrPrimitive}) {
+  return <>
+    <div className="
+        absolute
+        bg-tc-black-800
+        border
+        border-tc-black-800
+        left-4
+        rounded
+        top-4
+        ">
+      {children}
+    </div>
+  </>;
+}
+
+function CatJump() {
+  return <>
+    <img
+        alt="A cat's face"
+        className="w-12"
+        src="/static/cat_face.webp" />
+    <span>trails.lat</span>
+  </>;
+}
+
+function Logo() {
+  return <>
+    <img
+        alt="An illustration of a cat looking at the moon"
+        className="w-72"
+        src="/static/cat_moon.webp" />
   </>;
 }
