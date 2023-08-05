@@ -1,6 +1,9 @@
 package org.trailcatalog.flags
 
-abstract class Flag<T>(private var _value: T) {
+abstract class Flag<T>(
+    private var _value: T,
+    val defaultMissingValue: String? = null,
+    val requireValue: Boolean = true) {
 
   val value: T get() = this._value
 
