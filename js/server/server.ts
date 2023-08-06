@@ -20,6 +20,12 @@ declare module '@fastify/request-context' {
   }
 }
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    userId: string;
+  }
+}
+
 global.window = {
   SERVER_SIDE_RENDER: {
     cookies: function() {
@@ -57,6 +63,7 @@ export async function serve(
   });
 
   server.register(fastifyRequestContextPlugin);
+  server.decorateRequest('userId', '');
 
   if (initialize) {
     await initialize(server);
@@ -87,6 +94,7 @@ export async function serve(
         headers: {
           'Content-Type': 'application/json',
           'If-None-Match': request.headers['if-none-match'] ?? '',
+          'X-User-ID': request.userId,
         },
         body: JSON.stringify({
           keys: requestedData,

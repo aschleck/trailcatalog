@@ -19,8 +19,8 @@ const encrypter = new Encrypter(COOKIE_SECRET);
 const loginEnforcer = new LoginEnforcer(encrypter);
 const pgPool = new Pool();
 
-async function initialize(fastify: FastifyInstance): Promise<void> {
-  fastify.register(fastifyCookie, {
+async function initialize(server: FastifyInstance): Promise<void> {
+  server.register(fastifyCookie, {
     secret: COOKIE_SECRET,
     parseOptions: {
       httpOnly: true,
@@ -29,10 +29,11 @@ async function initialize(fastify: FastifyInstance): Promise<void> {
     },
   });
 
-  fastify.addHook('preHandler', async (request, reply) => {
-    console.log('moo');
+  server.addHook('preHandler', async (request, reply) => {
+    let maybeUserId;
     try {
-      loginEnforcer.checkLogin(request);
+      maybeUserId = loginEnforcer.checkLogin(request);
+      // TODO(april): we should check the user against the database
     } catch (e: unknown) {
       if (e instanceof ExpiredCredentialError) {
         console.log('expired');
@@ -42,9 +43,11 @@ async function initialize(fastify: FastifyInstance): Promise<void> {
         throw e;
       }
     }
+
+    request.userId = maybeUserId ?? '';
   });
 
-  await oidc.addGoogle(fastify, encrypter, loginEnforcer, pgPool);
+  await oidc.addGoogle(server, encrypter, loginEnforcer, pgPool);
 }
 
 function page(content: string, title: string, initialData: string): string {
