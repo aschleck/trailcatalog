@@ -17,8 +17,8 @@ import './app.css';
 function App({}: {}, state: State|undefined, updateState: (newState: State) => void) {
   if (!state) {
     state = {
+      cellInput: '',
       cellType: 's2',
-      cells: [],
       level: ZOOM_LEVEL,
     };
   }
@@ -69,7 +69,7 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
             dense={true}
             forceValue={true}
             unboundEvents={{corgi: [[CHANGED, 'showCells']]}}
-            value={state.cells.join(',')}
+            value={state.cellInput}
         />
         <Select
             className="bg-white text-xs"
@@ -120,8 +120,9 @@ function CellPopupS2({cell, position}: {cell: S2CellId, position: [number, numbe
       <div className="font-bold">{cell.toToken()}</div>
       <div>level: {cell.level()}</div>
       <div>area: {area.value} {area.unit}</div>
-      <div>min: {cell.rangeMin().id().toString(10)}</div>
-      <div>max: {cell.rangeMax().id().toString(10)}</div>
+      <div>id: {cell.id().toString()}</div>
+      <div>min: {cell.rangeMin().id().toString()}</div>
+      <div>max: {cell.rangeMax().id().toString()}</div>
     </div>
   </>;
 }

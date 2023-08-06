@@ -1,4 +1,4 @@
-import { S2CellId, S2LatLng, S2LatLngRect, S2Loop, S2Polygon } from 'java/org/trailcatalog/s2';
+import { Long, S2CellId, S2LatLng, S2LatLngRect, S2Loop, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
@@ -23,8 +23,8 @@ export const MAX_ZXY_ZOOM = 21;
 export const ZOOM_LEVEL = -1;
 
 export interface State {
+  cellInput: string;
   cellType: 's2'|'z/x/y';
-  cells: string[];
   level: number;
   selectedS2?: {
     cell: S2CellId;
@@ -123,27 +123,47 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
   }
 
   showCells(e: CorgiEvent<typeof CHANGED>): void {
-    if (e.detail.value.trim().length === 0) {
-      this.layer.s2Cells.clear();
-      this.layer.zxys.clear();
-      this.layerUpdated();
+    this.updateState({
+      ...this.state,
+      cellInput: e.detail.value,
+    });
+
+    let values: string[];
+    if (e.detail.value.trim() === '') {
+      values = [];
+    } else {
+      values = e.detail.value.split(',').map(t => t.trim());
     }
 
-    const values = e.detail.value.split(',').map(t => t.trim());
     const s2Cells = [];
     const zxys = [];
     let valid = true;
     for (const value of values) {
       if (value.match(/\d+\/\d+\/\d+/)) {
         zxys.push(value);
-      } else {
-        try {
-          s2Cells.push(S2CellId.fromToken(value));
-        } catch (e) {
-          valid = false;
-          break;
-        }
+        continue;
       }
+
+      try {
+        const fromToken = S2CellId.fromToken(value);
+        if (value === fromToken.toToken()) {
+          s2Cells.push(fromToken);
+          continue;
+        }
+      } catch (e) {}
+
+      if (value.match(/\d+/)) {
+        try {
+          const parsed = Long.fromString(value);
+          if (value === parsed.toString()) {
+            s2Cells.push(new S2CellId(parsed));
+            continue;
+          }
+        } catch (e) {}
+      }
+
+      valid = false;
+      break;
     }
 
     if (valid) {
@@ -247,6 +267,18 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       this.layer.s2Cells.set(token, cell.toLoop(cell.level()));
     }
 
+    if (this.state.cellInput.trim() === '') {
+      this.updateState({
+        ...this.state,
+        cellInput: token,
+      });
+    } else {
+      this.updateState({
+        ...this.state,
+        cellInput: this.state.cellInput + ',' + token,
+      });
+    }
+
     this.layerUpdated();
   }
 
@@ -261,13 +293,24 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       this.layer.zxys.set(token, [z, x, y]);
     }
 
+    if (this.state.cellInput.trim() === '') {
+      this.updateState({
+        ...this.state,
+        cellInput: token,
+      });
+    } else {
+      this.updateState({
+        ...this.state,
+        cellInput: this.state.cellInput + ',' + token,
+      });
+    }
+
     this.layerUpdated();
   }
 
   private layerUpdated() {
     this.updateState({
       ...this.state,
-      cells: [...this.layer.s2Cells.keys(), ...this.layer.zxys.keys()],
       selectedS2: undefined,
       selectedZxy: undefined,
     });
