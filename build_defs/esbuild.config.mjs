@@ -1,5 +1,4 @@
-import postCssPlugin from 'third_party/deanc-esbuild-plugin-postcss/index.js';
-
+import postCssPlugin from './index.js';
 import * as postCssConfig from './postcss.config.mjs';
 
 export default {

@@ -22,6 +22,7 @@ def esbuild_binary(
         ],
         deps = (css_deps or []) + (deps or []) + [
             ":" + name + "_esbuild_config",
+            "//third_party/deanc-esbuild-plugin-postcss",
         ],
         minify = minify,
         output_css = "%s.css" % name if has_css else None,
@@ -30,32 +31,39 @@ def esbuild_binary(
         target = "es2020",
     )
 
-    esbuild(
+    js_library(
         name = name + "_esbuild_config",
-        entry_point = name + "/esbuild.config.mjs",
-        format = "esm",
-        platform = "node",
-        target = "esnext",
-        tsconfig = "//:tsconfig",
-        srcs = [":" + name + "_esbuild_config_copy"],
+        srcs = [
+            ":" + name + "_esbuild_config_copy",
+            "tailwind.theme.mjs",
+        ],
         deps = [
-            "//:node_modules/autoprefixer",
-            "//:node_modules/tailwindcss",
             "//third_party/deanc-esbuild-plugin-postcss",
         ],
     )
 
+    if len(native.glob(["tailwind.theme.mjs"])) == 0:
+        native.genrule(
+            name = name + "_tailwind_theme",
+            outs = ["tailwind.theme.mjs"],
+            cmd = "echo 'export default {};' > $@",
+        )
+
     native.genrule(
         name = name + "_esbuild_config_copy",
         srcs = [
+            "tailwind.theme.mjs",
             "//build_defs:esbuild.config.mjs",
             "//build_defs:postcss.config.mjs",
             "//build_defs:tailwind.config.mjs",
+            "//third_party/deanc-esbuild-plugin-postcss:index.js",
         ],
         outs = [
             name + "/esbuild.config.mjs",
+            name + "/index.js",
             name + "/postcss.config.mjs",
             name + "/tailwind.config.mjs",
+            name + "/tailwind.theme.mjs",
         ],
         cmd = "\n".join([
             "mkdir -p \"$(@D)/" + name + "\"",
