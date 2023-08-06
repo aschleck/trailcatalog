@@ -24,7 +24,8 @@ export class HistoryService extends Service<EmptyDeps> {
       }
       if (cursor) {
         const href = cursor.getAttribute('href');
-        if (href && href.startsWith('/')) {
+        const target = cursor.getAttribute('target');
+        if (href && href.startsWith('/') && target !== '_blank') {
           e.preventDefault();
           this.goTo(href);
         }

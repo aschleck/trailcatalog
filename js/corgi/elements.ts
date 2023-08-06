@@ -16,9 +16,11 @@ declare global {
       img: ImageProperties;
       input: InputProperties;
       label: Properties;
+      li: Properties;
       line: LineProperties;
-      option: OptionProperties;
       main: Properties;
+      option: OptionProperties;
+      p: Properties;
       polyline: PolylineProperties;
       section: Properties;
       select: Properties;
@@ -31,6 +33,7 @@ declare global {
       th: Properties;
       thead: Properties;
       tr: Properties;
+      ul: Properties;
     }
   }
 }

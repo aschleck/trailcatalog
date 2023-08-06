@@ -4,8 +4,6 @@ import { serve } from 'js/server/server';
 
 import { App } from '../client/app';
 
-serve(App as any, page);
-
 function page(content: string, title: string, initialData: string): string {
   return `
 <!DOCTYPE html>
@@ -28,3 +26,6 @@ function page(content: string, title: string, initialData: string): string {
 </html>
 `;
 }
+
+(async () => { await serve(App as any, page); })();
+

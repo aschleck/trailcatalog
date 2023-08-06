@@ -1,4 +1,4 @@
-import fastify, { FastifyRequest, FastifyReply } from 'fastify';
+import fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import fetch from 'node-fetch';
 import { fastifyRequestContextPlugin, requestContext } from '@fastify/request-context';
 
@@ -49,12 +49,18 @@ global.window = {
 
 type PageFn = (content: string, title: string, escapedData: string) => string;
 
-export function serve(app: ElementFactory, page: PageFn): void {
+export async function serve(
+        app: ElementFactory, page: PageFn, initialize?: (f: FastifyInstance) => Promise<void>):
+    Promise<void> {
   const server = fastify({
     logger: true,
   });
 
   server.register(fastifyRequestContextPlugin);
+
+  if (initialize) {
+    await initialize(server);
+  }
 
   server.get('/*', async (request: FastifyRequest, reply: FastifyReply) => {
     requestContext.set('cookies', request.headers['cookie']);

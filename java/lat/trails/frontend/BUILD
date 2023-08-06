@@ -31,6 +31,10 @@ tc_ts_project(
         "//java/lat/trails/client:css",
     ],
     deps = [
+        "//:node_modules/@fastify/cookie",
+        "//:node_modules/@types/pg",
+        "//:node_modules/openid-client",
+        "//:node_modules/pg",
         "//java/lat/trails/client:ts",
         "//js/corgi",
         "//js/server",

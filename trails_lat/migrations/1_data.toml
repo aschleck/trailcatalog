@@ -9,12 +9,12 @@ primary_key = ["id"]
   type = "UUID"
 
   [[actions.columns]]
-  name = "oauth2_issuer"
+  name = "oidc_issuer"
   nullable = false
   type = "TEXT"
 
   [[actions.columns]]
-  name = "oauth2_id"
+  name = "oidc_id"
   nullable = false
   type = "TEXT"
 
@@ -23,13 +23,23 @@ primary_key = ["id"]
   nullable = false
   type = "TEXT"
 
+  [[actions.columns]]
+  name = "enabled"
+  nullable = false
+  type = "BOOLEAN"
+
+  [[actions.columns]]
+  name = "last_login"
+  nullable = false
+  type = "TIMESTAMPTZ"
+
 [[actions]]
 type = "add_index"
 table = "users"
 
   [actions.index]
-  name = "users_by_oauth2_issuer_oauth2_id"
-  columns = ["oauth2_issuer", "oauth2_id"]
+  name = "users_by_oidc_issuer_oidc_id"
+  columns = ["oidc_issuer", "oidc_id"]
   unique = true
 
 [[actions]]
@@ -144,9 +154,28 @@ primary_key = ["id"]
   referenced_columns = ["id"]
 
 [[actions]]
-  type = "add_index"
-  table = "polygons"
+type = "add_index"
+table = "polygons"
 
   [actions.index]
   name = "polygons_by_collection"
   columns = ["collection"]
+
+[[actions]]
+type = "custom"
+
+start = """
+  INSERT INTO users (id, oidc_issuer, oidc_id, display_name, enabled, last_login)
+  VALUES (
+    '00000000-0000-0000-0000-000000000000',
+    'https://trails.lat',
+    '0',
+    'trails.lat',
+    FALSE,
+    '1969-12-31 23:00:00-08'
+  );
+"""
+
+abort = """
+  DELETE FROM users WHERE id = '00000000-0000-0000-0000-000000000000';
+"""

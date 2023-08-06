@@ -1,10 +1,51 @@
 import process from 'process';
 
+import { FastifyInstance, FastifyRequest } from 'fastify';
+import fastifyCookie, { FastifyCookieOptions } from '@fastify/cookie';
+import { Pool } from 'pg'
+
+import { checkExists } from 'js/common/asserts';
 import { serve } from 'js/server/server';
 
 import { App } from '../client/app';
+import { ExpiredCredentialError, LoginEnforcer } from './auth';
+import { Encrypter } from './encrypter';
+import * as oidc from './oidc';
 
-serve(App as any, page);
+const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
+const DEBUG = process.env.DEBUG !== 'false';
+
+const encrypter = new Encrypter(COOKIE_SECRET);
+const loginEnforcer = new LoginEnforcer(encrypter);
+const pgPool = new Pool();
+
+async function initialize(fastify: FastifyInstance): Promise<void> {
+  fastify.register(fastifyCookie, {
+    secret: COOKIE_SECRET,
+    parseOptions: {
+      httpOnly: true,
+      path: '/',
+      secure: !DEBUG,
+    },
+  });
+
+  fastify.addHook('preHandler', async (request, reply) => {
+    console.log('moo');
+    try {
+      loginEnforcer.checkLogin(request);
+    } catch (e: unknown) {
+      if (e instanceof ExpiredCredentialError) {
+        console.log('expired');
+        reply.redirect(`/login/${e.issuerEndpoint}`);
+        return reply;
+      } else {
+        throw e;
+      }
+    }
+  });
+
+  await oidc.addGoogle(fastify, encrypter, loginEnforcer, pgPool);
+}
 
 function page(content: string, title: string, initialData: string): string {
   return `
@@ -28,3 +69,7 @@ function page(content: string, title: string, initialData: string): string {
 </html>
 `;
 }
+
+(async () => {
+  await serve(App as any, page, initialize);
+})();

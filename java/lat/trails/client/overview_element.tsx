@@ -51,26 +51,26 @@ export function OverviewElement(
 
 function Copyright() {
   return <>
-    {'Maps ©'}
+    {'Maps © '}
     <a
         className="pointer-events-auto"
         href="https://www.maptiler.com/copyright/"
         target="_blank">
       MapTiler
     </a>
-    {', ©'}
+    {' © '}
     <a
         className="pointer-events-auto"
         href="https://www.openstreetmap.org/copyright"
         target="_blank">
       OpenStreetMap contributors
     </a>
-    {', ©'}
+    {' © '}
     <a
         className="pointer-events-auto"
         href="/citations"
         target="_blank">
-      trails.lat
+      more
     </a>
   </>;
 }
