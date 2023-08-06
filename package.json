@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "^9.0.4",
+    "@fastify/reply-from": "^9.4.0",
     "@fastify/request-context": "^5.0.0",
     "@mapbox/tiny-sdf": "^2.0.6",
     "earcut": "^2.2.4",

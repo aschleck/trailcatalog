@@ -32,6 +32,7 @@ tc_ts_project(
     ],
     deps = [
         "//:node_modules/@fastify/cookie",
+        "//:node_modules/@fastify/reply-from",
         "//:node_modules/@types/pg",
         "//:node_modules/openid-client",
         "//:node_modules/pg",

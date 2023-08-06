@@ -71,6 +71,7 @@ private fun fetchData(ctx: Context) {
 private data class WirePolygon(val id: UUID, val data: String, val s2Polygon: ByteArray)
 
 private fun fetchCollectionObjects(ctx: Context) {
+  println(ctx.headerMap())
   val allowed = arrayListOf(UUID.fromString("00000000-0000-0000-0000-000000000000"))
   ctx.header("X-User-ID").let {
     if (!it.isNullOrEmpty()) {

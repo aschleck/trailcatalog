@@ -1,7 +1,8 @@
 import process from 'process';
 
-import { FastifyInstance, FastifyRequest } from 'fastify';
 import fastifyCookie, { FastifyCookieOptions } from '@fastify/cookie';
+import fastifyReplyFrom from '@fastify/reply-from';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { Pool } from 'pg'
 
 import { checkExists } from 'js/common/asserts';
@@ -26,6 +27,30 @@ async function initialize(server: FastifyInstance): Promise<void> {
       httpOnly: true,
       path: '/',
       secure: !DEBUG,
+    },
+  });
+
+  server.register(fastifyReplyFrom, {
+    base: 'http://127.0.0.1:7070',
+  });
+
+  server.route({
+    url: '/api/*',
+    method: ['GET', 'HEAD', 'POST'],
+    handler: (request, reply) => {
+      reply.from(request.url, {
+        rewriteRequestHeaders: (request, headers) => {
+          return {
+            'accept': headers['accept'],
+            'accept-encoding': headers['accept-encoding'],
+            'accept-language': headers['accept-language'],
+            'cache-control': headers['cache-control'],
+            'pragma': headers['pragma'],
+            'user-agent': headers['user-agent'],
+            'x-user-id': request.userId,
+          };
+        },
+      });
     },
   });
 

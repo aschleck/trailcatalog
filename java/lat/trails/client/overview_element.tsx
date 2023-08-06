@@ -4,6 +4,7 @@ import * as corgi from 'js/corgi';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
+import { IndeterminantCircular, IndeterminantLinear } from './progress';
 import { State, ViewerController } from './viewer_controller';
 
 export function OverviewElement(
@@ -42,7 +43,9 @@ export function OverviewElement(
           copyright={<Copyright />}
           ref="map"
       />
+      <IndeterminantLinear />
       <Rail>
+        <IndeterminantCircular />
         <CatJump />
       </Rail>
     </div>
