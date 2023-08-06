@@ -1,3 +1,4 @@
+load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_jest//jest:defs.bzl", "jest_test")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
@@ -13,22 +14,55 @@ def esbuild_binary(
     has_css = len(native.glob(["*.css"])) > 0 or len(css_deps or []) > 0
     esbuild(
         name = name,
-        config = "//build_defs:esbuild_config",
+        config = ":" + name + "/esbuild.config.mjs",
         entry_point = entry_point,
         tsconfig = "//:tsconfig",
         srcs = [
             entry_point,
         ],
         deps = (css_deps or []) + (deps or []) + [
-            # No idea why these are required here, it's in the deps of the esbuild config.
-            "//build_defs:esbuild_config_deps",
-            "//third_party/deanc-esbuild-plugin-postcss",
+            ":" + name + "_esbuild_config",
         ],
         minify = minify,
         output_css = "%s.css" % name if has_css else None,
         platform = platform,
         sources_content = True,
         target = "es2020",
+    )
+
+    esbuild(
+        name = name + "_esbuild_config",
+        entry_point = name + "/esbuild.config.mjs",
+        format = "esm",
+        platform = "node",
+        target = "esnext",
+        tsconfig = "//:tsconfig",
+        srcs = [":" + name + "_esbuild_config_copy"],
+        deps = [
+            "//:node_modules/autoprefixer",
+            "//:node_modules/tailwindcss",
+            "//third_party/deanc-esbuild-plugin-postcss",
+        ],
+    )
+
+    native.genrule(
+        name = name + "_esbuild_config_copy",
+        srcs = [
+            "//build_defs:esbuild.config.mjs",
+            "//build_defs:postcss.config.mjs",
+            "//build_defs:tailwind.config.mjs",
+        ],
+        outs = [
+            name + "/esbuild.config.mjs",
+            name + "/postcss.config.mjs",
+            name + "/tailwind.config.mjs",
+        ],
+        cmd = "\n".join([
+            "mkdir -p \"$(@D)/" + name + "\"",
+            "for i in $(SRCS); do",
+            "  cp \"$${i}\" \"$(@D)/" + name + "/$$(basename \"$${i}\")\"",
+            "done",
+        ]),
     )
 
 def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):

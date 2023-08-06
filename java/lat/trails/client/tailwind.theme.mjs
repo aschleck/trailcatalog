@@ -1,8 +1,6 @@
-require('process');
+import defaultTheme from 'tailwindcss/defaultTheme';
 
-const defaultTheme = require('tailwindcss/defaultTheme')
-
-const TRAILCATALOG_THEME = {
+export default {
   extend: {
     colors: {
       'black-opaque': {
@@ -39,35 +37,3 @@ const TRAILCATALOG_THEME = {
   },
 };
 
-const TRAILS_LAT_THEME = {
-  extend: {
-    colors: {
-      'tc-black': {
-        800: '#000003',
-      },
-      'white-opaque': {
-        160: '#ffffffa0',
-      },
-    },
-    fontFamily: {
-      'sans': ['"Source Sans 3"', ...defaultTheme.fontFamily.sans],
-    },
-  },
-};
-
-let theme = TRAILCATALOG_THEME;
-for (const arg of process.argv) {
-  if (arg.indexOf("java/lat/trails/frontend/")) {
-    theme = TRAILS_LAT_THEME;
-    break;
-  }
-}
-
-module.exports = {
-  content: [
-    `bazel-out/*-fastbuild/bin/{java,js}/**/*.{js,ts,jsx,tsx}`,
-    `{java,js}/**/*.{js,ts,jsx,tsx}`,
-  ],
-  theme,
-  plugins: [],
-};
