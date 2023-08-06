@@ -18,6 +18,7 @@ export declare namespace com.google.common.geometry {
     static fromLatLng(ll: S2LatLng): S2CellId;
     static fromPoint(p: S2Point): S2CellId;
     static fromToken(token: string): S2CellId;
+    constructor(id: nativebootstrap.Long);
     id(): nativebootstrap.Long;
     level(): number;
     parentAtLevel(level: number): S2CellId;
@@ -103,9 +104,10 @@ export declare namespace java.util {
 export declare namespace nativebootstrap {
   class Long {
     static fromBits(low: number, high: number): Long;
+    static fromString(str: string, opt_radix?: number): Long;
     getHighBits(): number;
     getLowBits(): number;
-    toString(radix: number): string;
+    toString(radix?: number): string;
   }
 }
 

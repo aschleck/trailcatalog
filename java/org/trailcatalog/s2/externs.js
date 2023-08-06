@@ -101,6 +101,7 @@ goog.exportProperty(ArrayList.prototype, 'size', ArrayList.prototype.size);
 const Long = goog.require('nativebootstrap.Long');
 goog.exportSymbol('nativebootstrap.Long', Long);
 goog.exportProperty(Long, 'fromBits', Long.fromBits);
+goog.exportProperty(Long, 'fromString', Long.fromString);
 goog.exportProperty(Long.prototype, 'getHighBits', Long.prototype.getHighBits);
 goog.exportProperty(Long.prototype, 'getLowBits', Long.prototype.getLowBits);
 goog.exportProperty(Long.prototype, 'toString', Long.prototype.toString);
