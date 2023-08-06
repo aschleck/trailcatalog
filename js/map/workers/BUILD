@@ -4,7 +4,7 @@ load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
 
 esbuild_binary(
     name = "tile_fetcher_worker",
-    entry_point = "tile_fetcher.ts",
+    entry_point = "tile_fetcher.js",
     deps = [
         ":workers",
     ],

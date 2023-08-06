@@ -15,6 +15,7 @@ def esbuild_binary(
         name = name,
         config = "//build_defs:esbuild_config",
         entry_point = entry_point,
+        tsconfig = "//:tsconfig",
         srcs = [
             entry_point,
         ],
@@ -76,7 +77,8 @@ def ts_project(name, deps = None, **kwargs):
         name = name,
         allow_js = True,
         declaration = True,
-        tsconfig = "//:tsconfig",
         deps = deps or [],
+        tsconfig = "//:tsconfig",
         **kwargs
     )
+
