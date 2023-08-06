@@ -4,18 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.collect.ImmutableMap
 import com.google.common.geometry.S2CellId
-import com.google.common.geometry.S2Polygon
-import com.google.common.io.LittleEndianDataOutputStream
 import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.Header
 import io.javalin.http.HttpStatus
+import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.models.ENUM_SIZE
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.sql.PreparedStatement
@@ -872,14 +869,6 @@ private fun fetchTrails(cell: S2CellId, bottom: Int): List<WireTrail> {
     }
   }
   return trails
-}
-
-private class AlignableByteArrayOutputStream : ByteArrayOutputStream() {
-
-  fun align(alignment: Int) {
-    count = (count + alignment - 1) / alignment * alignment
-    // No need to grow because the next write will catch up
-  }
 }
 
 private fun addETagAndCheckCached(ctx: Context): Boolean {

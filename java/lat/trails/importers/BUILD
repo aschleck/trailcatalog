@@ -13,10 +13,16 @@ kt_jvm_library(
     name = "importers",
     srcs = glob(["*.kt"]),
     deps = [
+        "//java/lat/trails/common",
         "//java/org/trailcatalog/flags",
+        "//java/org/trailcatalog/importers/basemap",
+        "@maven//:com_fasterxml_jackson_core_jackson_databind",
+        "@maven//:com_google_geometry_s2_geometry",
         "@maven//:mil_nga_geopackage_geopackage",
+        "@maven//:mil_nga_sf",
         "@maven//:mil_nga_tiff",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
+        "@maven//:org_locationtech_proj4j_proj4j_epsg",
         "@maven//:org_slf4j_slf4j_simple",
     ],
 )

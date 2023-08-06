@@ -35,6 +35,12 @@ fun createFlag(initial: Int): Flag<Int> {
   }
 }
 
+fun createFlag(initial: String): Flag<String> {
+  return object : Flag<String>(initial) {
+    override fun parseFrom(s: String) = s
+  }
+}
+
 fun createNullableFlag(initial: Path? = null): Flag<Path?> {
   return object : Flag<Path?>(initial) {
     override fun parseFrom(s: String) = Path.of(s)
