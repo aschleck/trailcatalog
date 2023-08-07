@@ -260,23 +260,35 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
   private toggleS2Cell(point: S2LatLng, currentZoom: number): void {
     const level = this.state.level === ZOOM_LEVEL ? currentZoom : this.state.level;
     const cell = S2CellId.fromLatLng(point).parentAtLevel(level);
+    const id = cell.id().toString();
     const token = cell.toToken();
     if (this.layer.s2Cells.has(token)) {
       this.layer.s2Cells.delete(token);
+
+      this.updateState({
+        ...this.state,
+        cellInput:
+            // Progressively get more aggressive in removing it
+            this.state.cellInput
+                .replace(new RegExp(`^(.+),${id}$`), '$1')
+                .replace(new RegExp(`^(.+,)?${id}(?:,(.+))?$`), '$1$2')
+                .replace(new RegExp(`^(.+),${token}$`), '$1')
+                .replace(new RegExp(`^(.+,)?${token}(?:,(.+))?$`), '$1$2'),
+      });
     } else {
       this.layer.s2Cells.set(token, cell.toLoop(cell.level()));
-    }
 
-    if (this.state.cellInput.trim() === '') {
-      this.updateState({
-        ...this.state,
-        cellInput: token,
-      });
-    } else {
-      this.updateState({
-        ...this.state,
-        cellInput: this.state.cellInput + ',' + token,
-      });
+      if (this.state.cellInput.trim() === '') {
+        this.updateState({
+          ...this.state,
+          cellInput: token,
+        });
+      } else {
+        this.updateState({
+          ...this.state,
+          cellInput: this.state.cellInput + ',' + token,
+        });
+      }
     }
 
     this.layerUpdated();

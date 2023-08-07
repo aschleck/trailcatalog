@@ -12,8 +12,11 @@ export interface State {
 
 export class InputController extends Controller<Args, EmptyDeps, HTMLInputElement, State> {
 
+  private lastValue: string;
+
   constructor(response: Response<InputController>) {
     super(response);
+    this.lastValue = this.root.value;
   }
 
   get value(): string {
@@ -23,7 +26,8 @@ export class InputController extends Controller<Args, EmptyDeps, HTMLInputElemen
   keyPressed(e: KeyboardEvent): void {
     if (e.key === 'Enter') {
       this.trigger(ACTION, {});
-    } else {
+    } else if (this.lastValue !== this.value) {
+      this.lastValue = this.value;
       if (this.state.managed) {
         this.updateState({
           managed: false,
