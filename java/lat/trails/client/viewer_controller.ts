@@ -1,12 +1,10 @@
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
-import { rgbaToUint32 } from 'js/map/common/math';
-import { MAP_MOVED } from 'js/map/events';
-import { MbtileData } from 'js/map/layers/mbtile_data';
-import { Style, TileData } from 'js/map/layers/tile_data';
-import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_CONTOURS, MAPTILER_DEM, MAPTILER_OUTDOOR, MAPTILER_PLANET, MAPTILER_TOPO, TRAILCATALOG_CONTOURS, TRAILCATALOG_HILLSHADES } from 'js/map/layers/tile_sources';
-import { MapController } from 'js/map/map_controller';
+import { rgbaToUint32 } from 'js/map2/common/math';
+import { MAP_MOVED } from 'js/map2/events';
+import { MapController } from 'js/map2/map_controller';
+
+import { RasterTileLayer } from './raster_tile_layer';
 
 export interface State {
 }
@@ -21,7 +19,6 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         map: MapController,
       },
       services: {
-        tileData: TileDataService,
       },
     };
   }
@@ -35,26 +32,13 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     this.lastChange = Date.now();
 
     this.mapController.setLayers([
-      new MbtileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
-          this.mapController.renderer,
-          this.mapController.renderPlanner.baker,
-          MAPTILER_PLANET),
-      new MbtileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
-          this.mapController.renderer,
-          this.mapController.renderPlanner.baker,
-          TRAILCATALOG_CONTOURS),
-      new TileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
-          this.mapController.renderer,
-          Style.Rgb,
-          rgbaToUint32(1, 1, 1, 0.4),
-          1,
-          TRAILCATALOG_HILLSHADES),
+      new RasterTileLayer(
+          'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
+          0,
+          0,
+          12,
+          this.mapController.renderer
+      ),
     ]);
   }
 

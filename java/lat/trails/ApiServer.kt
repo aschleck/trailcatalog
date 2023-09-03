@@ -8,10 +8,11 @@ import io.javalin.http.Context
 import java.util.UUID
 import kotlin.collections.ArrayList
 import lat.trails.common.createConnection
+import java.nio.charset.StandardCharsets
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.flags.parseFlags
-import java.nio.charset.StandardCharsets
+import org.trailcatalog.s2.SimpleS2
 
 private lateinit var hikari: HikariDataSource
 
@@ -80,7 +81,7 @@ private fun fetchCollectionObjects(ctx: Context) {
   }
 
   val collection = ctx.pathParam("id")
-  val cell = S2CellId.fromToken(ctx.pathParam("cell")).id()
+  val cell = S2CellId.fromToken(ctx.pathParam("cell"))
   val bytes = AlignableByteArrayOutputStream()
   DelegatingEncodedOutputStream(bytes).use {
     // version
@@ -88,16 +89,26 @@ private fun fetchCollectionObjects(ctx: Context) {
 
     // polygons
     hikari.connection.use { connection ->
+      val single = cell.level() < SimpleS2.HIGHEST_COARSE_INDEX_LEVEL
       connection
           .prepareStatement(
               "SELECT p.id, p.data, p.s2_polygon "
                       + "FROM collections c "
                       + "JOIN polygons p ON c.id = p.collection "
-                      + "WHERE c.id = ? AND c.creator = ANY (?) AND p.cell = ?")
+                      + "WHERE "
+                      + "c.id = ? AND "
+                      + "c.creator = ANY (?) AND "
+                      + (if (single) "p.cell = ?" else "(p.cell >= ? AND p.cell <= ?) ")
+          )
           .apply {
             setObject(1, UUID.fromString(collection))
             setArray(2, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
-            setLong(3, cell)
+            if (single) {
+              setLong(3, cell.id())
+            } else {
+              setLong(3, cell.rangeMin().id())
+              setLong(4, cell.rangeMax().id())
+            }
           }
           .executeQuery()
           .use { results ->

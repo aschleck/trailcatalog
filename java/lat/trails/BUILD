@@ -25,6 +25,7 @@ kt_jvm_library(
         "//java/lat/trails/common",
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/flags",
+        "//java/org/trailcatalog/s2:s2-kt",
         "@maven//:com_fasterxml_jackson_core_jackson_databind",
         "@maven//:com_google_geometry_s2_geometry",
         "@maven//:io_javalin_javalin",

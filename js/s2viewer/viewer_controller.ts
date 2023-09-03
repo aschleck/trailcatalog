@@ -31,8 +31,8 @@ export interface State {
     clickPx: [number, number];
   };
   selectedZxy?: {
-    area: number;
     clickPx: [number, number];
+    llr: S2LatLngRect;
     token: string;
     xyz: [number, number, number];
   };
@@ -184,15 +184,19 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
   selectCell(point: S2LatLng, px: [number, number]): void {
     if (this.state.cellType === 's2') {
-      this.selectS2Cell(point, px);
+      if (!this.selectS2Cell(point, px)) {
+        this.selectZxyCell(point, px);
+      }
     } else if (this.state.cellType === 'z/x/y') {
-      this.selectZxyCell(point, px);
+      if (!this.selectZxyCell(point, px)) {
+        this.selectS2Cell(point, px);
+      }
     } else {
       checkExhaustive(this.state.cellType);
     }
   }
 
-  private selectS2Cell(point: S2LatLng, px: [number, number]): void {
+  private selectS2Cell(point: S2LatLng, px: [number, number]): boolean {
     const cell = S2CellId.fromLatLng(point);
     let level = cell.level();
     while (level >= 0 && !this.layer.s2Cells.has(cell.parentAtLevel(level).toToken())) {
@@ -208,16 +212,18 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         },
         selectedZxy: undefined,
       });
+      return true;
     } else {
       this.updateState({
         ...this.state,
         selectedS2: undefined,
         selectedZxy: undefined,
       });
+      return false;
     }
   }
 
-  private selectZxyCell(point: S2LatLng, px: [number, number]): void {
+  private selectZxyCell(point: S2LatLng, px: [number, number]): boolean {
     let z = MAX_ZXY_ZOOM;
     let [x, y] = latLngToXyTile(point, z);
     while (z >= 0 && !this.layer.zxys.has(`${z}/${x}/${y}`)) {
@@ -227,23 +233,25 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     }
 
     if (z >= 0) {
-      const area = xyzToLlr(x, y, z).area();
+      const llr = xyzToLlr(x, y, z);
       this.updateState({
         ...this.state,
         selectedZxy: {
-          area,
           clickPx: px,
+          llr,
           token: `${z}/${x}/${y}`,
           xyz: [x, y, z],
         },
         selectedS2: undefined,
       });
+      return true;
     } else {
       this.updateState({
         ...this.state,
         selectedS2: undefined,
         selectedZxy: undefined,
       });
+      return false;
     }
   }
 

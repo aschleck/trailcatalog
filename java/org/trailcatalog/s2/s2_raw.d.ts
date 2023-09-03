@@ -44,6 +44,7 @@ export declare namespace com.google.common.geometry {
     static fromPointPair(p1: S2LatLng, p2: S2LatLng): S2LatLngRect;
     area(): number;
     expandedByDistance(distance: S1Angle): S2LatLngRect;
+    getCenter(): S2LatLng;
     lo(): S2LatLng;
     hi(): S2LatLng;
     lat(): R1Interval;

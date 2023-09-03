@@ -1,17 +1,14 @@
+import { Disposable } from 'js/common/disposable';
+
 import { Renderer } from './renderer';
 
-export class TexturePool {
+export class TexturePool extends Disposable {
 
   private readonly free: WebGLTexture[];
 
   constructor(private readonly renderer: Renderer) {
+    super();
     this.free = [];
-
-    this.registerDisposer(() => {
-      for (const texture of this.free) {
-        this.renderer.deleteTexture(texture);
-      }
-    });
   }
 
   acquire(): WebGLTexture {

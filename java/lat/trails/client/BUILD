@@ -14,10 +14,11 @@ esbuild_binary(
 tc_ts_project(
     name = "ts",
     deps = [
+        "//java/lat/trails/client/workers",
         "//js/common",
         "//js/corgi",
-        "//js/map",
-        "//js/map/layers",
+        "//js/map2",
+        "//js/map2/workers",
         "//js/server:client",
     ],
 )

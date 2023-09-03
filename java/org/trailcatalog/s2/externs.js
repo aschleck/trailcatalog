@@ -49,6 +49,7 @@ goog.exportProperty(S2LatLngRect, 'fromPoint', S2LatLngRect.fromPoint);
 goog.exportProperty(S2LatLngRect, 'fromPointPair', S2LatLngRect.fromPointPair);
 goog.exportProperty(S2LatLngRect.prototype, 'area', S2LatLngRect.prototype.area);
 goog.exportProperty(S2LatLngRect.prototype, 'expandedByDistance', S2LatLngRect.prototype.expandedByDistance);
+goog.exportProperty(S2LatLngRect.prototype, 'getCenter', S2LatLngRect.prototype.getCenter);
 goog.exportProperty(S2LatLngRect.prototype, 'lo', S2LatLngRect.prototype.lo);
 goog.exportProperty(S2LatLngRect.prototype, 'hi', S2LatLngRect.prototype.hi);
 goog.exportProperty(S2LatLngRect.prototype, 'lat', S2LatLngRect.prototype.lat);

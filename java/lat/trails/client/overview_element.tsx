@@ -1,8 +1,8 @@
 import { floatCoalesce } from 'js/common/math';
 import * as corgi from 'js/corgi';
 
-import { MAP_MOVED } from 'js/map/events';
-import { MapElement } from 'js/map/map_element';
+import { MAP_MOVED } from 'js/map2/events';
+import { MapElement } from 'js/map2/map_element';
 
 import { IndeterminantCircular, IndeterminantLinear } from './progress';
 import { State, ViewerController } from './viewer_controller';
@@ -40,7 +40,6 @@ export function OverviewElement(
     >
       <MapElement
           camera={camera}
-          copyright={<Copyright />}
           ref="map"
       />
       <IndeterminantLinear />

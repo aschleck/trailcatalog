@@ -1,5 +1,5 @@
 import { formatArea } from 'java/org/trailcatalog/client/common/formatters';
-import { S2CellId } from 'java/org/trailcatalog/s2';
+import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
 import { floatCoalesce } from 'js/common/math';
@@ -88,7 +88,7 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
       {
         state.selectedZxy
             ? <CellPopupZxy
-                areaRad={state.selectedZxy.area}
+                llr={state.selectedZxy.llr}
                 position={state.selectedZxy.clickPx}
                 token={state.selectedZxy.token}
                 xyz={state.selectedZxy.xyz}
@@ -128,16 +128,18 @@ function CellPopupS2({cell, position}: {cell: S2CellId, position: [number, numbe
 }
 
 function CellPopupZxy({
-  areaRad,
+  llr,
   position,
   token,
   xyz,
 }: {
-  areaRad: number;
+  llr: S2LatLngRect,
   position: [number, number];
   token: string;
   xyz: [number, number, number];
 }) {
+  const areaRad = llr.area();
+  const center = llr.getCenter();
   const area =
       formatArea(
           areaRad
@@ -157,6 +159,7 @@ function CellPopupZxy({
     >
       <div className="font-bold">{token}</div>
       <div>area: {area.value} {area.unit}</div>
+      <div>center: {center.latDegrees()},{center.lngDegrees()}</div>
       <div>world size: {Math.pow(2, xyz[2])}</div>
     </div>
   </>;
