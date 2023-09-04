@@ -25,6 +25,7 @@ export class LineCapProgram extends Program<LineCapProgramData> {
 
   protected activate(): void {
     const gl = this.gl;
+    gl.clear(gl.STENCIL_BUFFER_BIT);
     gl.enable(gl.STENCIL_TEST);
     gl.useProgram(this.program.id);
 

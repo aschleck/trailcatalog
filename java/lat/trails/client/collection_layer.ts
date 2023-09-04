@@ -1,6 +1,7 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
+import { WorkerPool } from 'js/common/worker_pool';
 import { TileId, S2CellToken, Vec2 } from 'js/map2/common/types';
 import { Layer } from 'js/map2/layer';
 import { Planner } from 'js/map2/rendering/planner';
@@ -20,7 +21,7 @@ interface LoadedCell {
 export class CollectionLayer extends Layer {
 
   private readonly fetcher: Worker;
-  private readonly loader: Worker;
+  private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
   private readonly cells: Map<S2CellToken, LoadedCell|undefined>;
   private generation: number;
   private lastRenderGeneration: number;
@@ -31,7 +32,7 @@ export class CollectionLayer extends Layer {
   ) {
     super();
     this.fetcher = new Worker('/static/s2_data_fetcher_worker.js');
-    this.loader = new Worker('/static/collection_loader_worker.js');
+    this.loader = new WorkerPool('/static/collection_loader_worker.js', 6);
     this.cells = new Map();
     this.registerDisposer(() => {
       for (const response of this.cells.values()) {
@@ -57,8 +58,7 @@ export class CollectionLayer extends Layer {
       }
     };
 
-    this.loader.onmessage = e => {
-      const response = e.data as LoaderResponse;
+    this.loader.onresponse = response => {
       if (response.kind === 'lr') {
         this.loadProcessedCell(response);
       } else {
@@ -70,7 +70,7 @@ export class CollectionLayer extends Layer {
       kind: 'ir',
       url: url + '/objects',
     });
-    this.postLoaderRequest({
+    this.loader.broadcast({
       kind: 'ir',
     });
   }
@@ -110,7 +110,7 @@ export class CollectionLayer extends Layer {
     }
 
     this.cells.set(command.token, undefined);
-    this.postLoaderRequest({
+    this.loader.post({
       kind: 'lr',
       token: command.token,
       data: command.data,
@@ -168,10 +168,6 @@ export class CollectionLayer extends Layer {
 
   private postFetcherRequest(request: FetcherRequest, transfer?: Transferable[]) {
     this.fetcher.postMessage(request, transfer ?? []);
-  }
-
-  private postLoaderRequest(request: LoaderRequest, transfer?: Transferable[]) {
-    this.loader.postMessage(request, transfer ?? []);
   }
 }
 

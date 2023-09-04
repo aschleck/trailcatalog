@@ -43,6 +43,7 @@ export function rgbaU32ToHex(color: RgbaU32): string {
 }
 
 export function tilesIntersect(a: TileId, b: TileId): boolean {
+  // This function works for tiles in normal (0-2^zoom) coordinates.
   if (a.zoom > b.zoom) {
     return tilesIntersect(b, a);
   }
@@ -50,7 +51,7 @@ export function tilesIntersect(a: TileId, b: TileId): boolean {
   const dz = a.zoom - b.zoom;
   const p2 = Math.pow(2, dz);
   const bx = Math.floor(b.x * p2);
-  const by = Math.ceil(b.y * p2);
+  const by = Math.floor(b.y * p2);
   return a.x === bx && a.y === by;
 }
 

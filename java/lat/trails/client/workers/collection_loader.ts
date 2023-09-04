@@ -7,6 +7,7 @@ import { FetchThrottler } from 'js/common/fetch_throttler';
 import { LittleEndianView } from 'js/common/little_endian_view';
 import { projectS2Loop } from 'js/map2/camera';
 import { RgbaU32, S2CellToken } from 'js/map2/common/types';
+import { Z_USER_DATA } from 'js/map2/z';
 
 interface InitializeRequest {
   kind: 'ir';
@@ -97,7 +98,7 @@ class CollectionLoader {
       geometryOffset: 4 * geometryOffset,
       indexCount: indexCount,
       indexOffset: 4 * indexOffset,
-      z: 1,
+      z: Z_USER_DATA,
     });
 
     // Add the color

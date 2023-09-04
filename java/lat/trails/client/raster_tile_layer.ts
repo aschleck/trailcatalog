@@ -1,8 +1,11 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
-import { HashMap } from 'js/common/collections';
+import { HashMap, HashSet } from 'js/common/collections';
+import { Debouncer } from 'js/common/debouncer';
+import { WorkerPool } from 'js/common/worker_pool';
 import { RgbaU32, TileId, Vec2 } from 'js/map2/common/types';
 import { Layer } from 'js/map2/layer';
+import { Z_BASE_TILE } from 'js/map2/z';
 import { Planner } from 'js/map2/rendering/planner';
 import { Drawable } from 'js/map2/rendering/program';
 import { Renderer } from 'js/map2/rendering/renderer';
@@ -16,9 +19,11 @@ export class RasterTileLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
   private readonly fetcher: Worker;
-  private readonly loader: Worker;
+  private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture|undefined>;
+  private readonly unloader: Debouncer;
+  private readonly unloading: HashSet<TileId>;
   private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
 
@@ -33,10 +38,15 @@ export class RasterTileLayer extends Layer {
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
     this.fetcher = new Worker('/static/xyz_data_fetcher_worker.js');
-    this.loader = new Worker('/static/raster_loader_worker.js');
+    this.loader = new WorkerPool('/static/raster_loader_worker.js', 1);
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
+    // Give ourselves at least 50ms to decode and load a tile into the GPU.
+    this.unloader = new Debouncer(/* ms= */ 50, () => {
+      this.unloadTiles();
+    });
+    this.unloading = new HashSet(id => `${id.zoom},${id.x},${id.y}`);
     this.generation = 0;
     this.plan = {
       generation: -1,
@@ -48,14 +58,14 @@ export class RasterTileLayer extends Layer {
       if (command.kind === 'ltc') {
         this.loadTile(command);
       } else if (command.kind === 'utc') {
-        this.unloadTiles(command);
+        command.ids.forEach(id => { this.unloading.add(id); });
+        this.unloader.trigger();
       } else {
         checkExhaustive(command);
       }
     };
 
-    this.loader.onmessage = e => {
-      const response = e.data as LoaderResponse;
+    this.loader.onresponse = response => {
       if (response.kind === 'lr') {
         this.loadBitmap(response);
       } else {
@@ -70,7 +80,7 @@ export class RasterTileLayer extends Layer {
       minZoom,
       maxZoom,
     });
-    this.postLoaderRequest({
+    this.loader.broadcast({
       kind: 'ir',
     });
   }
@@ -85,7 +95,8 @@ export class RasterTileLayer extends Layer {
       const drawables = [];
       let offset = 0;
 
-      const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
+      // Draw highest detail to lowest, we use the stencil buffer to avoid overdraw.
+      const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
       for (const [id, texture] of sorted) {
         if (!texture) {
           continue;
@@ -103,7 +114,7 @@ export class RasterTileLayer extends Layer {
                 [size, size],
                 /* angle= */ 0,
                 /* tint= */ 0xFFFFFFFF as RgbaU32,
-                /* z= */ 0,
+                /* z= */ Z_BASE_TILE,
                 /* atlasIndex= */ 0,
                 /* atlasSize= */ [1, 1],
                 buffer,
@@ -142,10 +153,12 @@ export class RasterTileLayer extends Layer {
       return;
     }
 
-    this.tiles.set(command.id, undefined);
-    this.postLoaderRequest({
+    const id = command.id;
+    this.tiles.set(id, undefined);
+    this.unloading.delete(id);
+    this.loader.post({
       kind: 'lr',
-      id: command.id,
+      id,
       data: command.data,
     }, [command.data]);
   }
@@ -162,23 +175,20 @@ export class RasterTileLayer extends Layer {
     this.generation += 1;
   }
 
-  private unloadTiles(command: UnloadTilesCommand): void {
-    for (const id of command.ids) {
+  private unloadTiles(): void {
+    for (const id of this.unloading) {
       const texture = this.tiles.get(id);
       if (texture) {
         this.tiles.delete(id);
         this.pool.release(texture);
       }
     }
-    this.generation += 1;
+    this.unloading.clear();
+    // no need to bump the generation
   }
 
   private postFetcherRequest(request: FetcherRequest, transfer?: Transferable[]) {
     this.fetcher.postMessage(request, transfer ?? []);
-  }
-
-  private postLoaderRequest(request: LoaderRequest, transfer?: Transferable[]) {
-    this.loader.postMessage(request, transfer ?? []);
   }
 }
 

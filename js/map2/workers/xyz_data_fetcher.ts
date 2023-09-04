@@ -78,10 +78,8 @@ class XyzDataFetcher {
     const halfWorldSize = worldSize / 2;
 
     const used = createTileHashSet();
-    // We need to add 1 to y tiles because our coordinate system is flipped from the typical
-    // coordinates.
     for (let y = Math.floor(worldSize * (-projected.high[1] / 2 + 0.5));
-         y < worldSize * (-projected.low[1] / 2 + 0.5) + 1;
+         y < worldSize * (-projected.low[1] / 2 + 0.5);
          ++y) {
       for (let x = Math.floor(worldSize * (projected.low[0] / 2 + 0.5));
           x < worldSize * (projected.high[0] / 2 + 0.5);

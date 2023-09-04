@@ -138,7 +138,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
     this.deactivate();
   }
 
-  private draw(drawable: Drawable): void {
+  protected draw(drawable: Drawable): void {
     const gl = this.gl;
 
     this.bindAttributes(drawable.geometryOffset);

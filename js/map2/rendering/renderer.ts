@@ -28,7 +28,7 @@ export class Renderer extends Disposable {
 
   clear(): void {
     const gl = this.gl;
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT);
   }
 
   createDataBuffer(byteSize: number, usage?: number): WebGLBuffer {
