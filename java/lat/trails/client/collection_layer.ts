@@ -2,7 +2,7 @@ import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
 import { WorkerPool } from 'js/common/worker_pool';
-import { TileId, S2CellToken, Vec2 } from 'js/map2/common/types';
+import { RgbaU32, S2CellToken, TileId, Vec2 } from 'js/map2/common/types';
 import { Layer } from 'js/map2/layer';
 import { Planner } from 'js/map2/rendering/planner';
 import { Drawable } from 'js/map2/rendering/program';
@@ -72,6 +72,26 @@ export class CollectionLayer extends Layer {
     });
     this.loader.broadcast({
       kind: 'ir',
+      style: {
+        polygons: [
+          {
+            filters: [{match: 'string_equals', key: 'owner', value: 'BLM/BR'}],
+            fill: 0xFFFF00FF as RgbaU32,
+          },
+          {
+            filters: [{match: 'string_equals', key: 'owner', value: 'NPS'}],
+            fill: 0x00FF00FF as RgbaU32,
+          },
+          {
+            filters: [{match: 'string_equals', key: 'owner', value: 'USFS'}],
+            fill: 0x0000FFFF as RgbaU32,
+          },
+          {
+            filters: [{match: 'always'}],
+            fill: 0xFF0000FF as RgbaU32,
+          },
+        ],
+      },
     });
   }
 
@@ -123,13 +143,17 @@ export class CollectionLayer extends Layer {
       return;
     }
 
+    if (response.polygons.length === 0) {
+      return;
+    }
+
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
     this.renderer.uploadData(response.geometry, response.geometry.byteLength, geometry);
     this.renderer.uploadIndices(response.index, response.index.byteLength, index);
     const drawables = [];
 
-    for (const polygon of response.polygons) {
+    for (const polygon of response.polygonalGeometries) {
       drawables.push({
         elements: {
           count: polygon.indexCount,

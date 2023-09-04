@@ -139,6 +139,8 @@ public final class SimpleS2 {
 
   private static class ArrayBufferInputStream extends InputStream {
 
+    // TODO(april): Is this solution better? https://stackoverflow.com/a/75393795
+
     private final JsIteratorIterable<Double> values;
 
     ArrayBufferInputStream(ArrayBuffer buffer) {

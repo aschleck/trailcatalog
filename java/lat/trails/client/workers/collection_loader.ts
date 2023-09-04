@@ -11,7 +11,29 @@ import { Z_USER_DATA } from 'js/map2/z';
 
 interface InitializeRequest {
   kind: 'ir';
+  style: Style;
 }
+
+interface Style {
+  polygons: PolygonStyle[];
+}
+
+interface PolygonStyle {
+  filters: Match[];
+  fill: RgbaU32;
+}
+
+interface AlwaysMatch {
+  match: 'always';
+}
+
+interface StringEqualsMatch {
+  match: 'string_equals';
+  key: string;
+  value: string;
+}
+
+type Match = AlwaysMatch|StringEqualsMatch;
 
 interface LoadRequest {
   kind: 'lr';
@@ -27,9 +49,20 @@ export interface LoadResponse {
   geometry: ArrayBuffer;
   index: ArrayBuffer;
   polygons: Polygon[];
+  polygonalGeometries: PolygonalGeometry[];
 }
 
 export interface Polygon {
+  data: Data;
+  geometryByteLength: number;
+  // relative the start of the polygon geometry
+  geometryOffset: number;
+  indexCount: number;
+  // relative the start of the polygon indices
+  indexOffset: number;
+}
+
+export interface PolygonalGeometry {
   geometryByteLength: number;
   geometryOffset: number;
   indexCount: number;
@@ -39,11 +72,19 @@ export interface Polygon {
 
 export type Response = LoadResponse;
 
+type Data = {[key: string]: boolean|number|string};
+
+interface Triangles {
+  geometry: Float32Array;
+  index: number[];
+}
+
 const TEXT_DECODER = new TextDecoder();
 
 class CollectionLoader {
 
   constructor(
+      private readonly style: Style,
       private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
   ) {}
 
@@ -55,7 +96,10 @@ class CollectionLoader {
     }
 
     const polygonCount = source.getVarInt32();
-    const polygons = [];
+    const byFill = new Map<RgbaU32, Array<{
+      data: Data;
+      triangles: Triangles;
+    }>>();
     let geometryCount = 0;
     let indexCount = 0;
     for (let i = 0; i < polygonCount; ++i) {
@@ -65,55 +109,78 @@ class CollectionLoader {
       const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
       const polygonByteSize = source.getVarInt32();
       const polygon = SimpleS2.decodePolygon(source.sliceInt8(polygonByteSize).slice().buffer);
-      const triangulated = triangulate(polygon);
-      polygons.push({
-        ...triangulated,
+
+      const style = findStyle(data, this.style.polygons);
+      if (!style) {
+        continue;
+      }
+
+      const triangles = triangulate(polygon);
+      geometryCount += triangles.geometry.length;
+      indexCount += triangles.index.length;
+
+      let bucket = byFill.get(style.fill);
+      if (!bucket) {
+        bucket = [];
+        byFill.set(style.fill, bucket);
+      }
+
+      bucket.push({
         data,
+        triangles,
       });
-      geometryCount += triangulated.geometry.length;
-      indexCount += triangulated.index.length;
     }
 
-    if (polygons.length === 0) {
-      return;
-    }
-
-    // Add a float per polygon to include the color
-    const geometry = new Float32Array(polygons.length + geometryCount);
+    // Add a float per color to include the colors
+    const geometry = new Float32Array(byFill.size + geometryCount);
     const geometryUints = new Uint32Array(geometry.buffer);
     const index = new Uint32Array(indexCount);
+    let geometryOffset = 0;
+    let indexOffset = 0;
+
     const response: LoadResponse = {
       kind: 'lr',
       token: request.token,
       geometry: geometry.buffer,
       index: index.buffer,
       polygons: [],
+      polygonalGeometries: [],
     };
 
-    // Push all the polygons as one polygon.
-    let geometryOffset = 0;
-    let indexOffset = 0;
-    response.polygons.push({
-      geometryByteLength: 4 * (1 + geometryCount),
-      geometryOffset: 4 * geometryOffset,
-      indexCount: indexCount,
-      indexOffset: 4 * indexOffset,
-      z: Z_USER_DATA,
-    });
+    for (const [fill, polygons] of byFill) {
+      const geometryStart = geometryOffset;
+      const indexStart = indexOffset;
 
-    // Add the color
-    geometryUints[geometryOffset] = 0xFF0000FF;
-    geometryOffset += 1;
+      geometryUints[geometryOffset] = fill;
+      geometryOffset += 1;
 
-    // Add the vertices
-    for (const polygon of polygons) {
-      geometry.set(polygon.geometry, geometryOffset);
-      for (let i = 0; i < polygon.index.length; ++i) {
-        index[indexOffset + i] = polygon.index[i] + (geometryOffset - 1) / 2;
+      for (const polygon of polygons) {
+        const {data, triangles} = polygon;
+        geometry.set(triangles.geometry, geometryOffset);
+        for (let i = 0; i < triangles.index.length; ++i) {
+          index[indexOffset + i] = triangles.index[i] + (geometryOffset - geometryStart - 1) / 2;
+        }
+
+        response.polygons.push({
+          data,
+          geometryByteLength: triangles.geometry.byteLength,
+          geometryOffset,
+          indexCount: triangles.index.length,
+          indexOffset,
+        });
+
+        geometryOffset += triangles.geometry.length;
+        indexOffset += triangles.index.length;
       }
 
-      geometryOffset += polygon.geometry.length;
-      indexOffset += polygon.index.length;
+      response.polygonalGeometries.push({
+        geometryByteLength: 4 * (geometryOffset - geometryStart),
+        geometryOffset: 4 * geometryStart,
+        // same here
+        indexCount: indexOffset - indexStart,
+        indexOffset: 4 * indexStart,
+        z: Z_USER_DATA,
+      });
     }
 
     this.postMessage(response, [geometry.buffer, index.buffer]);
@@ -121,7 +188,7 @@ class CollectionLoader {
 }
 
 function start(ir: InitializeRequest) {
-  const fetcher = new CollectionLoader((self as any).postMessage.bind(self));
+  const fetcher = new CollectionLoader(ir.style, (self as any).postMessage.bind(self));
   self.onmessage = e => {
     const request = e.data as Request;
     if (request.kind === 'ir') {
@@ -143,7 +210,7 @@ self.onmessage = e => {
   start(request);
 };
 
-function triangulate(polygon: S2Polygon): {geometry: Float32Array; index: number[];} {
+function triangulate(polygon: S2Polygon): Triangles {
   const loopsList = polygon.getLoops();
   const loops = [];
   for (let i = 0; i < loopsList.size(); ++i) {
@@ -286,3 +353,21 @@ function triangulate(polygon: S2Polygon): {geometry: Float32Array; index: number
   };
 }
 
+function findStyle(data: Data, styles: PolygonStyle[]): PolygonStyle|undefined {
+  for (const style of styles) {
+    if (matches(data, style.filters)) {
+      return style;
+    }
+  }
+  return undefined;
+}
+
+function matches(data: Data, filters: Match[]): boolean {
+  for (const filter of filters) {
+    switch (filter.match) {
+      case "string_equals": return data[filter.key] === filter.value;
+      case "always": return true;
+    }
+  }
+  return false;
+}
