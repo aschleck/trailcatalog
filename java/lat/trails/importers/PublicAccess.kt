@@ -158,12 +158,13 @@ fun main(args: Array<String>) {
 }
 
 private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform): S2Polygon {
-  val builder = S2PolygonBuilder()
+  val builder = S2PolygonBuilder(S2PolygonBuilder.Options.DIRECTED_UNION)
   for (polygon in geometry.polygons) {
     var exterior = true
     for (ring in polygon.rings) {
       val loop =
-          S2Loop(ring.points.map {
+          // The first and last points are the same
+          S2Loop(ring.points.drop(1).map {
             val source = ProjCoordinate(it.x, it.y)
             val destination = transform.transform(source, ProjCoordinate())
             S2LatLng.fromDegrees(destination.y, destination.x).toPoint()
