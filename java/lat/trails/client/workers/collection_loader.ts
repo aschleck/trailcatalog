@@ -73,6 +73,10 @@ class CollectionLoader {
       indexCount += triangulated.index.length;
     }
 
+    if (polygons.length === 0) {
+      return;
+    }
+
     // Add a float per polygon to include the color
     const geometry = new Float32Array(polygons.length + geometryCount);
     const geometryUints = new Uint32Array(geometry.buffer);
@@ -85,25 +89,27 @@ class CollectionLoader {
       polygons: [],
     };
 
+    // Push all the polygons as one polygon.
     let geometryOffset = 0;
     let indexOffset = 0;
+    response.polygons.push({
+      geometryByteLength: 4 * (1 + geometryCount),
+      geometryOffset: 4 * geometryOffset,
+      indexCount: indexCount,
+      indexOffset: 4 * indexOffset,
+      z: 1,
+    });
+
+    // Add the color
+    geometryUints[geometryOffset] = 0xFF0000FF;
+    geometryOffset += 1;
+
+    // Add the vertices
     for (const polygon of polygons) {
-      // Push the polygon
-      response.polygons.push({
-        geometryByteLength: polygon.geometry.byteLength,
-        geometryOffset: 4 * geometryOffset,
-        indexCount: polygon.index.length,
-        indexOffset: 4 * indexOffset,
-        z: 1,
-      });
-
-      // Add the color
-      geometryUints[geometryOffset] = 0xFF0000FF;
-      geometryOffset += 1;
-
-      // Add the vertices
       geometry.set(polygon.geometry, geometryOffset);
-      index.set(polygon.index, indexOffset);
+      for (let i = 0; i < polygon.index.length; ++i) {
+        index[indexOffset + i] = polygon.index[i] + (geometryOffset - 1) / 2;
+      }
 
       geometryOffset += polygon.geometry.length;
       indexOffset += polygon.index.length;
