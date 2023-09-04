@@ -26,10 +26,10 @@ export class Planner {
         return a.z - b.z;
       } else if (a.program.id !== b.program.id) {
         return a.program.id - b.program.id;
+      } else if (a.geometry !== b.geometry) {
+        return a.geometry < b.geometry ? -1 : 1;
       } else {
-        // TODO: yolo
-        // return a.geometryOffset - b.geometryOffset;
-        return 0;
+        return a.geometryOffset - b.geometryOffset;
       }
     });
 

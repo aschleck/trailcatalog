@@ -37,10 +37,10 @@ export class TriangleProgram extends Program<TriangleProgramData> {
     const indices = new Uint32Array(indexBuffer, indexOffset);
     indices.set(index, 0);
 
-    const floats = new Float32Array(geometry, geometryOffset);
+    const floats = new Float32Array(geometryBuffer, geometryOffset);
     // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
     // canonicalization. So we have to write them as uints to the same buffer.
-    const uint32s = new Uint32Array(geometry, geometryOffset);
+    const uint32s = new Uint32Array(geometryBuffer, geometryOffset);
 
     uint32s[0] = fill;
     floats.set(geometry, 1);
@@ -55,7 +55,8 @@ export class TriangleProgram extends Program<TriangleProgramData> {
           offset: indexOffset,
         },
         geometry: glGeometryBuffer,
-        offset: geometryOffset,
+        geometryByteLength: 4 + geometry.byteLength,
+        geometryOffset,
         program: this,
         texture: undefined,
         vertexCount: geometry.length / 2,

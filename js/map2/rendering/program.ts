@@ -10,7 +10,8 @@ export interface Drawable {
     offset: number;
   }|undefined;
   readonly geometry: WebGLBuffer;
-  readonly offset: number;
+  readonly geometryByteLength: number;
+  readonly geometryOffset: number;
   readonly program: Program<ProgramData>;
   readonly texture: WebGLTexture|undefined;
   readonly vertexCount: number|undefined;
@@ -51,28 +52,96 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         this.program.uniforms.halfViewportSize, area[0] / 2, area[1] / 2);
     gl.uniform1f(this.program.uniforms.halfWorldSize, worldRadius);
 
-    // TODO(april): yikes!
-    for (const drawable of drawables) {
-      for (const centerPixel of centerPixels) {
-        gl.uniform2fv(this.program.uniforms.cameraCenter, centerPixel);
-        this.draw(drawable);
+    this.activate();
+    let lastGeometry = undefined;
+    let lastIndex = undefined;
+    let lastTexture = undefined;
+    // TODO(april): support merging drawables?
+    for (const centerPixel of centerPixels) {
+      gl.uniform2fv(this.program.uniforms.cameraCenter, centerPixel);
+
+      let drawStart = drawables[0];
+      let drawStartIndex = 0;
+      let pendingGeometryByteLength = drawStart.geometryByteLength;
+      let pendingVertexCount = drawStart.vertexCount ?? 0;
+      for (let i = 1; i < drawables.length; ++i) {
+        const drawable = drawables[i];
+
+        if (
+            drawStart.elements === undefined
+                && drawable.elements === undefined
+                && drawStart.geometry === drawable.geometry
+                && drawStart.texture === drawable.texture
+                && drawStart.geometryOffset + pendingGeometryByteLength === drawable.geometryOffset
+        ) {
+          pendingGeometryByteLength += drawable.geometryByteLength;
+          pendingVertexCount += drawable.vertexCount ?? 0;
+          continue;
+        }
+
+        if (lastGeometry !== drawStart.geometry) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
+          lastGeometry = drawStart.geometry;
+        }
+        const thisIndex = drawStart.elements?.index;
+        if (lastIndex !== thisIndex && thisIndex) {
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, thisIndex);
+          lastIndex = thisIndex;
+        }
+        if (lastTexture !== drawStart.texture && drawStart.texture) {
+          gl.bindTexture(gl.TEXTURE_2D, drawStart.texture);
+          lastTexture = drawStart.texture;
+        }
+
+        this.draw({
+          elements: drawStart.elements,
+          geometry: drawStart.geometry,
+          geometryByteLength: pendingGeometryByteLength,
+          geometryOffset: drawStart.geometryOffset,
+          program: drawStart.program,
+          texture: drawStart.texture,
+          vertexCount: pendingVertexCount,
+          z: drawStart.z,
+        });
+
+        drawStart = drawable;
+        drawStartIndex = i;
+        pendingGeometryByteLength = drawStart.geometryByteLength;
+        pendingVertexCount = drawStart.vertexCount ?? 0;
       }
+
+      if (lastGeometry !== drawStart.geometry) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
+        lastGeometry = drawStart.geometry;
+      }
+      const thisIndex = drawStart.elements?.index;
+      if (lastIndex !== thisIndex && thisIndex) {
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, thisIndex);
+        lastIndex = thisIndex;
+      }
+      if (lastTexture !== drawStart.texture && drawStart.texture) {
+        gl.bindTexture(gl.TEXTURE_2D, drawStart.texture);
+        lastTexture = drawStart.texture;
+      }
+
+      this.draw({
+        elements: drawStart.elements,
+        geometry: drawStart.geometry,
+        geometryByteLength: pendingGeometryByteLength,
+        geometryOffset: drawStart.geometryOffset,
+        program: drawStart.program,
+        texture: drawStart.texture,
+        vertexCount: pendingVertexCount,
+        z: drawStart.z,
+      });
     }
+    this.deactivate();
   }
 
   private draw(drawable: Drawable): void {
     const gl = this.gl;
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, drawable.geometry);
-    if (drawable.elements?.index) {
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, drawable.elements.index);
-    }
-    if (drawable.texture) {
-      gl.bindTexture(gl.TEXTURE_2D, drawable.texture);
-    }
-
-    this.activate();
-    this.bindAttributes(drawable.offset);
+    this.bindAttributes(drawable.geometryOffset);
     if (drawable.elements) {
       gl.drawElements(
           this.geometryType, drawable.elements.count, gl.UNSIGNED_INT, drawable.elements.offset);
@@ -81,7 +150,6 @@ export abstract class Program<P extends ProgramData> extends Disposable {
     } else {
       throw new Error("Expected either elements or raw vertices");
     }
-    this.deactivate();
   }
 
   protected activate(): void {}

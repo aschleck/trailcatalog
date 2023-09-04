@@ -90,7 +90,7 @@ private fun fetchCollectionObjects(ctx: Context) {
     hikari.connection.use { connection ->
       // TODO(april): make this a constant!
       // TRAILS_LAT_S2_INDEX_LEVEL
-      val single = cell.level() < 6
+      val single = cell.level() < 4
       connection
           .prepareStatement(
               "SELECT p.id, p.data, p.s2_polygon "

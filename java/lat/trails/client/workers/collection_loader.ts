@@ -29,6 +29,7 @@ export interface LoadResponse {
 }
 
 export interface Polygon {
+  geometryByteLength: number;
   geometryOffset: number;
   indexCount: number;
   indexOffset: number;
@@ -89,9 +90,10 @@ class CollectionLoader {
     for (const polygon of polygons) {
       // Push the polygon
       response.polygons.push({
+        geometryByteLength: polygon.geometry.byteLength,
         geometryOffset: 4 * geometryOffset,
         indexCount: polygon.index.length,
-        indexOffset:  4 * indexOffset,
+        indexOffset: 4 * indexOffset,
         z: 1,
       });
 
@@ -152,7 +154,7 @@ function triangulate(polygon: S2Polygon): {geometry: Float32Array; index: number
   }
 
   // Let's play a fun game: https://github.com/mapbox/earcut/issues/161
-  // ... so it turns out we need to filter loops but what holes actually intersect.
+  // ... so it turns out we need to filter loops by what holes actually intersect.
   const relevantHoles = [];
   for (const exterior of exteriors) {
     const intersecting = [];

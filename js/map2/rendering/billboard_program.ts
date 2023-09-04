@@ -70,7 +70,8 @@ export class BillboardProgram extends Program<BillboardProgramData> {
       drawable: {
         elements: undefined,
         geometry: glBuffer,
-        offset,
+        geometryByteLength: 4 * count,
+        geometryOffset: offset,
         program: this,
         texture: glTexture,
         vertexCount: this.billboardData.length / 4,

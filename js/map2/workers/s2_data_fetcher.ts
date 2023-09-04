@@ -60,7 +60,7 @@ class S2DataFetcher {
     const used = new Set<S2CellToken>();
     // TODO(april): make this a constant!
     // TRAILS_LAT_S2_INDEX_LEVEL
-    const cells = SimpleS2.cover(bounds, 6);
+    const cells = SimpleS2.cover(bounds, 4);
     for (let i = 0; i < cells.size(); ++i) {
       const cell = cells.getAtIndex(i);
       const token = cell.toToken() as S2CellToken;
