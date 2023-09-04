@@ -1,3 +1,9 @@
+export interface Copyright {
+  long: string;
+  short?: string;
+  url?: string;
+}
+
 export type Vec2 = Readonly<[number, number]>;
 export type Vec4 = Readonly<[number, number, number, number]>;
 

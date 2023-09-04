@@ -34,6 +34,10 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       new RasterTileLayer(
+          {
+            long: 'Contains modified Copernicus Sentinel data 2021',
+            short: 'Copernicus 2021',
+          },
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
           0,
           0,

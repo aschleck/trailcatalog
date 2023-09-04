@@ -2,10 +2,15 @@ import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { Disposable } from 'js/common/disposable';
 import { EventSpec } from 'js/corgi/events';
 
-import { Vec2 } from './common/types';
+import { Copyright, Vec2 } from './common/types';
 import { Planner } from './rendering/planner';
 
 export abstract class Layer extends Disposable {
+
+  constructor(readonly copyright: Copyright|undefined) {
+    super();
+  }
+
   click(point: Vec2, px: [number, number], contextual: boolean, source: EventSource): boolean {
     return false
   }

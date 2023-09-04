@@ -3,7 +3,7 @@ import { checkExhaustive } from 'js/common/asserts';
 import { HashMap, HashSet } from 'js/common/collections';
 import { Debouncer } from 'js/common/debouncer';
 import { WorkerPool } from 'js/common/worker_pool';
-import { RgbaU32, TileId, Vec2 } from 'js/map2/common/types';
+import { Copyright, RgbaU32, TileId, Vec2 } from 'js/map2/common/types';
 import { Layer } from 'js/map2/layer';
 import { Z_BASE_TILE } from 'js/map2/z';
 import { Planner } from 'js/map2/rendering/planner';
@@ -28,13 +28,14 @@ export class RasterTileLayer extends Layer {
   private plan: {generation: number; drawables: Drawable[]};
 
   constructor(
+      copyright: Copyright|undefined,
       url: string,
       extraZoom: number,
       minZoom: number,
       maxZoom: number,
       private readonly renderer: Renderer,
   ) {
-    super();
+    super(copyright);
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
     this.fetcher = new Worker('/static/xyz_data_fetcher_worker.js');

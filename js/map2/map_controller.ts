@@ -1,5 +1,5 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { checkExists } from 'js/common/asserts';
+import { checkExists, exists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
@@ -7,7 +7,7 @@ import { EventSpec } from 'js/corgi/events';
 
 import { DPI } from './common/dpi';
 import { fitBoundInScreen } from './common/math';
-import { LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
+import { Copyright, LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
 import { Planner } from './rendering/planner';
 import { Renderer } from './rendering/renderer';
 
@@ -19,12 +19,6 @@ import { PointerInterpreter } from './pointer_interpreter';
 interface Args {
   camera: LatLngRect|LatLngZoom|undefined;
   interactive: boolean;
-}
-
-export interface Copyright {
-  contribution: string;
-  source: string;
-  url: string;
 }
 
 export interface State {
@@ -145,6 +139,11 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
       this.registerDisposable(layer);
     });
     this.enterIdle();
+
+    this.updateState({
+      ...this.state,
+      copyrights: this.layers.map(l => l.copyright).filter(exists),
+    });
   }
 
   get cameraLlz(): LatLngZoom {
@@ -340,3 +339,4 @@ enum RenderType {
 function isLatLngRect(v: LatLngRect|LatLngZoom): v is LatLngRect {
   return 'brand' in v;
 }
+

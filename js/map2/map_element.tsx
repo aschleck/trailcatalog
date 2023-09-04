@@ -1,9 +1,9 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
 
-import { LatLngRect, LatLngZoom } from './common/types';
+import { Copyright, LatLngRect, LatLngZoom } from './common/types';
 
-import { Copyright, MapController, State } from './map_controller';
+import { MapController, State } from './map_controller';
 
 export function MapElement({
     camera,
@@ -57,7 +57,7 @@ export function MapElement({
           right-0
           select-none
           text-slate-700
-          text-[0.625rem]
+          text-xs
           z-20
       ">
         <CopyrightNotices copyrights={state.copyrights} />
@@ -67,16 +67,40 @@ export function MapElement({
 }
 
 function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
-  const notices = copyrights.flatMap(c => [
-    `${c.contribution} ©`,
-    <a
-        className="pointer-events-auto"
-        href={c.url}
-        target="_blank">
-      {c.source}
-    </a>,
+  const shorts =
+      copyrights
+          .filter(hasShort)
+          .map(c => ({
+            source: c.short,
+            url: c.url,
+          }));
+  // TODO(april): a link for long form copyright information
+  const notices = shorts.flatMap(c => [
+    `©`,
+    c.url
+        ? <>
+            <a
+                className="pointer-events-auto"
+                href={c.url}
+                target="_blank">
+              {c.source}
+            </a>
+          </>
+        : c.source,
     ', ',
   ]);
   notices.pop();
   return notices;
+}
+
+function hasShort(c: Copyright): c is {
+  long: string;
+  short: string;
+  url: string|undefined;
+} {
+  if (c.short === undefined) {
+    return false;
+  } else {
+    return true;
+  }
 }
