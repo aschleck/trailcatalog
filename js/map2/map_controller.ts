@@ -39,7 +39,6 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
   private readonly dataChangedDebouncer: Debouncer;
   private readonly idleDebouncer: Debouncer;
   readonly renderer: Renderer;
-  private readonly planner: Planner;
 
   private layers: Layer[];
 
@@ -72,8 +71,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
           premultipliedAlpha: true,
           stencil: true,
         })));
-    this.planner = new Planner(this.renderer);
-    this.registerDisposable(this.planner);
+    this.registerDisposable(this.renderer);
 
     this.layers = [];
 
@@ -284,8 +282,9 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     if (this.nextRender !== RenderType.NoChange) {
       this.renderer.clear();
 
+      const planner = new Planner();
       for (const layer of this.layers) {
-        layer.render(this.planner);
+        layer.render(planner);
       }
 
       const centerPixel = this.camera.centerPixel;
@@ -304,8 +303,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
         centerPixels.push([centerPixel[0] - 2, centerPixel[1]]);
       }
 
-      this.planner.render(this.area, centerPixels, this.camera.worldRadius);
-      this.planner.clear();
+      planner.render(this.area, centerPixels, this.camera.worldRadius);
 
       this.nextRender = RenderType.NoChange;
     }

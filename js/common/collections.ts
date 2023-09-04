@@ -1,5 +1,3 @@
-import { checkExists } from './asserts';
-
 export class HashMap<K, V> {
 
   private _keys: Map<unknown, K>;
@@ -52,7 +50,9 @@ export class HashMap<K, V> {
         } else {
           const [hash, key] = value;
           return {
-            value: [key, checkExists(this.mapped.get(hash))],
+            // We need to cast to V because the type from get is V|undefined, and we can't
+            // checkExists because V itself might include undefined.
+            value: [key, this.mapped.get(hash) as V],
             done: false,
           };
         }

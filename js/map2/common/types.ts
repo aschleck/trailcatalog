@@ -22,3 +22,5 @@ export type TileId = Readonly<{
   y: number;
   zoom: number;
 }>;
+
+export type S2CellToken = string & {brand: 'S2CellToken'};

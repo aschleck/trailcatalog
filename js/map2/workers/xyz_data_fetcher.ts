@@ -1,6 +1,7 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap, HashSet } from 'js/common/collections';
+import { Debouncer } from 'js/common/debouncer';
 import { FetchThrottler } from 'js/common/fetch_throttler';
 import { clamp } from 'js/common/math';
 

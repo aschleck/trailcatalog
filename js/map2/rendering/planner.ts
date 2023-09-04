@@ -1,20 +1,12 @@
-import { Disposable } from 'js/common/disposable';
-
 import { Vec2 } from '../common/types';
 
-import { BillboardProgram } from './billboard_program';
-import { Drawable, Program, ProgramData } from './program';
-import { Renderer } from './renderer';
+import { Drawable } from './program';
 
-export class Planner extends Disposable {
+export class Planner {
 
-  readonly billboardProgram: BillboardProgram;
   private readonly drawables: Drawable[];
 
-  constructor(private readonly renderer: Renderer) {
-    super();
-    this.billboardProgram = new BillboardProgram(this.renderer);
-    this.registerDisposable(this.billboardProgram);
+  constructor() {
     this.drawables = [];
   }
 
@@ -22,10 +14,6 @@ export class Planner extends Disposable {
     for (const drawable of drawables) {
       this.drawables.push(drawable);
     }
-  }
-
-  clear(): void {
-    this.drawables.length = 0;
   }
 
   render(area: Vec2, centerPixels: Vec2[], worldRadius: number): void {

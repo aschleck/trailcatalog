@@ -57,6 +57,8 @@ goog.exportProperty(S2LatLngRect.prototype, 'lng', S2LatLngRect.prototype.lng);
 
 const S2Loop = goog.require('com.google.common.geometry.S2Loop');
 goog.exportSymbol('com.google.common.geometry.S2Loop', S2Loop);
+goog.exportProperty(S2Loop.prototype, 'intersects', S2Loop.prototype.intersects);
+goog.exportProperty(S2Loop.prototype, 'isHole', S2Loop.prototype.isHole);
 goog.exportProperty(S2Loop.prototype, 'sign', S2Loop.prototype.sign);
 goog.exportProperty(S2Loop.prototype, 'numVertices', S2Loop.prototype.numVertices);
 goog.exportProperty(S2Loop.prototype, 'vertex', S2Loop.prototype.vertex);
@@ -93,6 +95,12 @@ goog.exportProperty(S2Polygon.prototype, 'numLoops', S2Polygon.prototype.numLoop
 //goog.exportProperty(S2PolygonBuilderOptions, 'DIRECTED_XOR', S2PolygonBuilderOptions.DIRECTED_XOR);
 //goog.exportProperty(S2PolygonBuilderOptions, 'UNDIRECTED_UNION', S2PolygonBuilderOptions.UNDIRECTED_UNION);
 //goog.exportProperty(S2PolygonBuilderOptions, 'UNDIRECTED_XOR', S2PolygonBuilderOptions.UNDIRECTED_XOR);
+
+// This is insane but yolo!
+const GetLoopsList = goog.require('com.google.common.geometry.S2Polygon.$3$impl');
+goog.exportSymbol('com.google.common.geometry.S2Polygon.$3$impl', GetLoopsList);
+goog.exportProperty(GetLoopsList.prototype, 'getAtIndex', GetLoopsList.prototype.getAtIndex);
+goog.exportProperty(GetLoopsList.prototype, 'size', GetLoopsList.prototype.size);
 
 const ArrayList = goog.require('java.util.ArrayList');
 goog.exportSymbol('java.util.ArrayList', ArrayList);

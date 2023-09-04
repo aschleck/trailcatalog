@@ -1,7 +1,7 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
-import { TileId, Vec2 } from 'js/map2/common/types';
+import { RgbaU32, TileId, Vec2 } from 'js/map2/common/types';
 import { Layer } from 'js/map2/layer';
 import { Planner } from 'js/map2/rendering/planner';
 import { Drawable } from 'js/map2/rendering/program';
@@ -18,7 +18,7 @@ export class RasterTileLayer extends Layer {
   private readonly fetcher: Worker;
   private readonly loader: Worker;
   private readonly pool: TexturePool;
-  private readonly tiles: HashMap<TileId, WebGLTexture>;
+  private readonly tiles: HashMap<TileId, WebGLTexture|undefined>;
   private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
 
@@ -87,10 +87,14 @@ export class RasterTileLayer extends Layer {
 
       const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
       for (const [id, texture] of sorted) {
+        if (!texture) {
+          continue;
+        }
+
         const halfWorldSize = Math.pow(2, id.zoom - 1);
         const size = 1 / halfWorldSize;
         const {byteSize, drawable} =
-            planner.billboardProgram.plan(
+            this.renderer.billboardProgram.plan(
                 [
                   (id.x + 0.5 - halfWorldSize) / halfWorldSize,
                   (halfWorldSize - (id.y + 0.5)) / halfWorldSize,
@@ -98,7 +102,7 @@ export class RasterTileLayer extends Layer {
                 NO_OFFSET,
                 [size, size],
                 /* angle= */ 0,
-                /* tint= */ 0xFFFFFFFF,
+                /* tint= */ 0xFFFFFFFF as RgbaU32,
                 /* z= */ 0,
                 /* atlasIndex= */ 0,
                 /* atlasSize= */ [1, 1],
@@ -138,6 +142,7 @@ export class RasterTileLayer extends Layer {
       return;
     }
 
+    this.tiles.set(command.id, undefined);
     this.postLoaderRequest({
       kind: 'lr',
       id: command.id,
@@ -146,6 +151,11 @@ export class RasterTileLayer extends Layer {
   }
 
   private loadBitmap(response: LoadResponse): void {
+    // Has this already been unloaded?
+    if (!this.tiles.has(response.id)) {
+      return;
+    }
+
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(response.bitmap, texture);
     this.tiles.set(response.id, texture);

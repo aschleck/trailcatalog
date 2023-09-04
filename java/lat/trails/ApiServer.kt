@@ -12,7 +12,6 @@ import java.nio.charset.StandardCharsets
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.flags.parseFlags
-import org.trailcatalog.s2.SimpleS2
 
 private lateinit var hikari: HikariDataSource
 
@@ -89,7 +88,9 @@ private fun fetchCollectionObjects(ctx: Context) {
 
     // polygons
     hikari.connection.use { connection ->
-      val single = cell.level() < SimpleS2.HIGHEST_COARSE_INDEX_LEVEL
+      // TODO(april): make this a constant!
+      // TRAILS_LAT_S2_INDEX_LEVEL
+      val single = cell.level() < 6
       connection
           .prepareStatement(
               "SELECT p.id, p.data, p.s2_polygon "

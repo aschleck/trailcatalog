@@ -1,10 +1,23 @@
 import { checkExists } from 'js/common/asserts';
+import { Disposable } from 'js/common/disposable';
 
 import { Vec2 } from '../common/types';
 
-export class Renderer {
+import { BillboardProgram } from './billboard_program';
+import { TriangleProgram } from './triangle_program';
+
+export class Renderer extends Disposable {
+
+  readonly billboardProgram: BillboardProgram;
+  readonly triangleProgram: TriangleProgram;
 
   constructor(readonly gl: WebGL2RenderingContext) {
+    super();
+    this.billboardProgram = new BillboardProgram(this.gl);
+    this.registerDisposable(this.billboardProgram);
+    this.triangleProgram = new TriangleProgram(this.gl);
+    this.registerDisposable(this.triangleProgram);
+
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
@@ -57,7 +70,7 @@ export class Renderer {
   uploadData(source: ArrayBuffer, size: number, to: WebGLBuffer, usage?: number): void {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, to);
-    gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(source, 0, size), usage ?? gl.STREAM_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(source, 0, size), usage ?? gl.STATIC_DRAW);
   }
 
   uploadIndices(source: ArrayBuffer, size: number, to: WebGLBuffer): void {
@@ -67,7 +80,7 @@ export class Renderer {
 
     const gl = this.gl;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, to);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array(source, 0, size), gl.STREAM_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array(source, 0, size), gl.STATIC_DRAW);
   }
 
   uploadAlphaTexture(source: Uint8Array, size: Vec2, target: WebGLTexture): void {

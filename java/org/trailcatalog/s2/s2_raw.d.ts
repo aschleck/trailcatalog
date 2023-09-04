@@ -52,6 +52,8 @@ export declare namespace com.google.common.geometry {
   }
 
   class S2Loop {
+    intersects(loop: S2Loop): boolean;
+    isHole(): boolean;
     sign(): number;
     numVertices(): number;
     vertex(i: number): S2Point;

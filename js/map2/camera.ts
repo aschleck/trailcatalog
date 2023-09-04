@@ -128,6 +128,7 @@ export function projectS2Loop(loop: S2Loop): {splits: number[]; vertices: Float3
     ps.push(next);
     prev = next;
   }
+  ps.pop(); // We added the first vertex a second time, so pop it off.
   // Project everything, duplicating vertices when we cross meridian and tracking splits
   const projected = [projectS2LatLng(SimpleS2.pointToLatLng(ps[0]))];
   const splits = [];

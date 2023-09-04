@@ -1,16 +1,19 @@
 import { checkExists } from 'js/common/asserts';
 
-import { Vec2 } from '../common/types';
+import { RgbaU32, Vec2 } from '../common/types';
 
 import { COLOR_OPERATIONS, Drawable, Program, ProgramData } from './program';
-import { Renderer } from './renderer';
 
 export class BillboardProgram extends Program<BillboardProgramData> {
 
   private readonly billboardData: Float32Array;
 
-  constructor(renderer: Renderer) {
-    super(createBillboardProgram(renderer.gl), renderer, renderer.gl.TRIANGLE_STRIP);
+  constructor(gl: WebGL2RenderingContext) {
+    super(createBillboardProgram(gl), gl, gl.TRIANGLE_STRIP);
+    this.registerDisposer(() => {
+      gl.deleteProgram(this.program.handle);
+    });
+
     this.billboardData = new Float32Array([
       -0.5, -0.5, 0, 1,
       -0.5, 0.5, 0, 0,
@@ -24,14 +27,14 @@ export class BillboardProgram extends Program<BillboardProgramData> {
       offsetPx: Vec2,
       size: Vec2,
       angle: number,
-      tint: number,
+      tint: RgbaU32,
       z: number,
       atlasIndex: number,
       atlasSize: Vec2,
       buffer: ArrayBuffer,
       offset: number,
       glBuffer: WebGLBuffer,
-      glTexture: WebGLTexture
+      glTexture: WebGLTexture,
   ): {byteSize: number; drawable: Drawable;} {
     const floats = new Float32Array(buffer, offset);
     const uint32s = new Uint32Array(buffer, offset);
@@ -65,7 +68,8 @@ export class BillboardProgram extends Program<BillboardProgramData> {
     return {
       byteSize: count * 4,
       drawable: {
-        buffer: glBuffer,
+        elements: undefined,
+        geometry: glBuffer,
         offset,
         program: this,
         texture: glTexture,
@@ -76,16 +80,26 @@ export class BillboardProgram extends Program<BillboardProgramData> {
   }
 
   protected activate(): void {
-    const gl = this.renderer.gl;
+    const gl = this.gl;
 
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(this.program.uniforms.color, 0);
+
+    gl.enableVertexAttribArray(this.program.attributes.position);
+    gl.enableVertexAttribArray(this.program.attributes.colorPosition);
+    gl.enableVertexAttribArray(this.program.attributes.center);
+    gl.enableVertexAttribArray(this.program.attributes.offsetPx);
+    gl.enableVertexAttribArray(this.program.attributes.size);
+    gl.enableVertexAttribArray(this.program.attributes.angle);
+    gl.enableVertexAttribArray(this.program.attributes.atlasIndex);
+    gl.enableVertexAttribArray(this.program.attributes.atlasSize);
+    gl.enableVertexAttribArray(this.program.attributes.tint);
+    gl.enableVertexAttribArray(this.program.attributes.sizeIsPixels);
   }
 
   protected bindAttributes(offset: number): void {
-    const gl = this.renderer.gl;
+    const gl = this.gl;
 
-    gl.enableVertexAttribArray(this.program.attributes.position);
     gl.vertexAttribPointer(
         this.program.attributes.position,
         2,
@@ -93,7 +107,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         /* normalize= */ false,
         /* stride= */ 64,
         /* offset= */ offset + 0);
-    gl.enableVertexAttribArray(this.program.attributes.colorPosition);
     gl.vertexAttribPointer(
         this.program.attributes.colorPosition,
         2,
@@ -101,7 +114,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         /* normalize= */ false,
         /* stride= */ 64,
         /* offset= */ offset + 8);
-    gl.enableVertexAttribArray(this.program.attributes.center);
     gl.vertexAttribPointer(
         this.program.attributes.center,
         2,
@@ -109,7 +121,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         /* normalize= */ false,
         /* stride= */ 64,
         /* offset= */ offset + 16);
-    gl.enableVertexAttribArray(this.program.attributes.offsetPx);
     gl.vertexAttribPointer(
         this.program.attributes.offsetPx,
         2,
@@ -117,7 +128,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         /* normalize= */ false,
         /* stride= */ 64,
         /* offset= */ offset + 24);
-    gl.enableVertexAttribArray(this.program.attributes.size);
     gl.vertexAttribPointer(
         this.program.attributes.size,
         2,
@@ -125,7 +135,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         /* normalize= */ false,
         /* stride= */ 64,
         /* offset= */ offset + 32);
-    gl.enableVertexAttribArray(this.program.attributes.angle);
     gl.vertexAttribPointer(
         this.program.attributes.angle,
         1,
@@ -133,28 +142,24 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         /* normalize= */ false,
         /* stride= */ 64,
         /* offset= */ offset + 40);
-    gl.enableVertexAttribArray(this.program.attributes.atlasIndex);
     gl.vertexAttribIPointer(
         this.program.attributes.atlasIndex,
         1,
         gl.UNSIGNED_INT,
         /* stride= */ 64,
         /* offset= */ offset + 44);
-    gl.enableVertexAttribArray(this.program.attributes.atlasSize);
     gl.vertexAttribIPointer(
         this.program.attributes.atlasSize,
         2,
         gl.UNSIGNED_INT,
         /* stride= */ 64,
         /* offset= */ offset + 48);
-    gl.enableVertexAttribArray(this.program.attributes.tint);
     gl.vertexAttribIPointer(
         this.program.attributes.tint,
         1,
         gl.UNSIGNED_INT,
         /* stride= */ 64,
         /* offset= */ offset + 56);
-    gl.enableVertexAttribArray(this.program.attributes.sizeIsPixels);
     gl.vertexAttribIPointer(
         this.program.attributes.sizeIsPixels,
         1,
@@ -164,7 +169,7 @@ export class BillboardProgram extends Program<BillboardProgramData> {
   }
 
   protected deactivate(): void {
-    const gl = this.renderer.gl;
+    const gl = this.gl;
 
     gl.disableVertexAttribArray(this.program.attributes.position);
     gl.disableVertexAttribArray(this.program.attributes.colorPosition);
@@ -180,8 +185,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
 }
 
 interface BillboardProgramData extends ProgramData {
-  handle: WebGLProgram;
-
   attributes: {
     position: number;
     colorPosition: number;

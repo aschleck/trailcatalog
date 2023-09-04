@@ -4,6 +4,7 @@ import { rgbaToUint32 } from 'js/map2/common/math';
 import { MAP_MOVED } from 'js/map2/events';
 import { MapController } from 'js/map2/map_controller';
 
+import { CollectionLayer } from './collection_layer';
 import { RasterTileLayer } from './raster_tile_layer';
 
 export interface State {
@@ -37,7 +38,11 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           0,
           0,
           12,
-          this.mapController.renderer
+          this.mapController.renderer,
+      ),
+      new CollectionLayer(
+          '/api/collections/55474cfd-f13f-4033-84e0-28384ba9119a',
+          this.mapController.renderer,
       ),
     ]);
   }

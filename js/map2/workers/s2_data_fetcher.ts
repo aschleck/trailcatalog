@@ -3,6 +3,8 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
 import { FetchThrottler } from 'js/common/fetch_throttler';
 
+import { S2CellToken } from '../common/types';
+
 interface InitializeRequest {
   kind: 'ir';
   url: string;
@@ -29,12 +31,10 @@ export interface LoadCellCommand {
 
 export interface UnloadCellsCommand {
   kind: 'ucc';
-  cells: S2CellToken[];
+  tokens: S2CellToken[];
 }
 
 export type Command = LoadCellCommand|UnloadCellsCommand;
-
-type S2CellToken = string & {brand: 'S2CellToken'};
 
 class S2DataFetcher {
 
@@ -58,7 +58,9 @@ class S2DataFetcher {
     const bounds = S2LatLngRect.fromPointPair(low, high);
 
     const used = new Set<S2CellToken>();
-    const cells = SimpleS2.cover(bounds, SimpleS2.HIGHEST_COARSE_INDEX_LEVEL);
+    // TODO(april): make this a constant!
+    // TRAILS_LAT_S2_INDEX_LEVEL
+    const cells = SimpleS2.cover(bounds, 6);
     for (let i = 0; i < cells.size(); ++i) {
       const cell = cells.getAtIndex(i);
       const token = cell.toToken() as S2CellToken;
@@ -117,7 +119,7 @@ class S2DataFetcher {
     if (unload.length > 0) {
       this.postMessage({
         kind: 'ucc',
-        cells: unload,
+        tokens: unload,
       });
     }
   }

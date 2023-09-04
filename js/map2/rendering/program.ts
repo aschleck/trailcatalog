@@ -3,14 +3,17 @@ import { Disposable } from 'js/common/disposable';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { Renderer } from './renderer';
-
 export interface Drawable {
-  readonly buffer: WebGLBuffer;
+  readonly elements: {
+    count: number;
+    index: WebGLBuffer;
+    offset: number;
+  }|undefined;
+  readonly geometry: WebGLBuffer;
   readonly offset: number;
   readonly program: Program<ProgramData>;
-  readonly texture?: WebGLTexture;
-  readonly vertexCount: number;
+  readonly texture: WebGLTexture|undefined;
+  readonly vertexCount: number|undefined;
   readonly z: number;
 }
 
@@ -32,7 +35,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
 
   constructor(
       protected readonly program: P,
-      protected readonly renderer: Renderer,
+      protected readonly gl: WebGL2RenderingContext,
       private readonly geometryType: number,
   ) {
     super();
@@ -41,7 +44,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
   }
 
   render(drawables: Drawable[], area: Vec2, centerPixels: Vec2[], worldRadius: number): void {
-    const gl = this.renderer.gl;
+    const gl = this.gl;
 
     gl.useProgram(this.program.handle);
     gl.uniform2f(
@@ -58,16 +61,26 @@ export abstract class Program<P extends ProgramData> extends Disposable {
   }
 
   private draw(drawable: Drawable): void {
-    const gl = this.renderer.gl;
+    const gl = this.gl;
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, drawable.buffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, drawable.geometry);
+    if (drawable.elements?.index) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, drawable.elements.index);
+    }
     if (drawable.texture) {
       gl.bindTexture(gl.TEXTURE_2D, drawable.texture);
     }
 
     this.activate();
     this.bindAttributes(drawable.offset);
-    gl.drawArrays(this.geometryType, 0, drawable.vertexCount);
+    if (drawable.elements) {
+      gl.drawElements(
+          this.geometryType, drawable.elements.count, gl.UNSIGNED_INT, drawable.elements.offset);
+    } else if (drawable.vertexCount !== undefined) {
+      gl.drawArrays(this.geometryType, 0, drawable.vertexCount);
+    } else {
+      throw new Error("Expected either elements or raw vertices");
+    }
     this.deactivate();
   }
 
