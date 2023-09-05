@@ -84,6 +84,15 @@ load("@com_google_j2cl//build_defs:workspace.bzl", "setup_j2cl_workspace")
 
 setup_j2cl_workspace()
 
+http_archive(
+  name = "com_google_jsinterop_base",
+  urls = [
+    "https://github.com/google/jsinterop-base/archive/82f373901b33dc5464bbfaf9de00ab3f0a016055.zip",
+  ],
+  sha256 = "7c852b795fdea0f5febaf1e8ee42a119155406c8d4c878a5404397e3cbe247a9",
+  strip_prefix = "jsinterop-base-82f373901b33dc5464bbfaf9de00ab3f0a016055",
+)
+
 # TODO: Migrated to Bzlmod
 http_archive(
   name = "aspect_rules_jest",
