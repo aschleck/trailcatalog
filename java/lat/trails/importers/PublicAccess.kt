@@ -2,16 +2,20 @@ package lat.trails.importers
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S1Angle
+import com.google.common.geometry.S2CellId
+import com.google.common.geometry.S2CellUnion
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Loop
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2Projections
+import com.google.common.geometry.S2RegionCoverer
+import lat.trails.common.COLLECTION_COVERING_MAX_LEVEL
+import lat.trails.common.FEATURE_COVERING_MAX_LEVEL
 import lat.trails.common.createConnection
 import java.nio.file.Path
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
-import mil.nga.sf.Polygon
 import org.apache.commons.text.StringEscapeUtils
 import org.locationtech.proj4j.CRSFactory
 import org.locationtech.proj4j.CoordinateReferenceSystem
@@ -35,6 +39,8 @@ private val logger = LoggerFactory.getLogger("PublicAccess")
 
 @FlagSpec(name = "source")
 private val source = createNullableFlag(null as Path?)
+
+data class Feature(val data: Map<String, String>, val covering: S2CellUnion, val polygon: S2Polygon)
 
 fun main(args: Array<String>) {
   parseFlags(args)
@@ -104,7 +110,8 @@ fun main(args: Array<String>) {
       factory.createFromParameters(
           "WGS84", "+title=long/lat:WGS84 +proj=longlat +datum=WGS84 +units=degrees")
 
-  val polygons = ArrayList<Pair<HashMap<String, String>, S2Polygon>>()
+  val polygons = ArrayList<Feature>()
+  val coverer = S2RegionCoverer.builder().setMaxLevel(FEATURE_COVERING_MAX_LEVEL).build()
   for (table in listOf("PADUS3_0Combined_DOD_TRIB_Fee_Designation_Easement", "PADUS3_0Marine")) {
     for (result in manager.getFeatureDao(table).queryForAll()) {
       if (ignoreCategory.contains(result.getValue("Category"))) {
@@ -141,8 +148,9 @@ fun main(args: Array<String>) {
       if (geometry is MultiPolygon) {
         executors.submit {
           val polygon = toS2Polygon(geometry, transform)
+          val covering = coverer.getCovering(polygon)
           synchronized (polygons) {
-            polygons.add(data to polygon)
+            polygons.add(Feature(data, covering, polygon))
           }
         }
       } else {
@@ -156,7 +164,15 @@ fun main(args: Array<String>) {
 
   // Does this work...? Too bad I gave away Java Concurrency in Practice...
   synchronized (polygons) {
-    dumpPolygons(polygons)
+    val covering = HashSet<S2CellId>()
+    for (feature in polygons) {
+      for (cell in feature.covering) {
+        covering.add(cell.parent(COLLECTION_COVERING_MAX_LEVEL.coerceAtMost(cell.level())))
+      }
+    }
+    val union = S2CellUnion()
+    union.initFromCellIds(ArrayList(covering))
+    dumpPolygons(union, polygons)
   }
 }
 
@@ -190,17 +206,22 @@ private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform):
   return snapped
 }
 
-private fun dumpPolygons(polygons: List<Pair<HashMap<String, String>, S2Polygon>>) {
+private fun dumpPolygons(covering: S2CellUnion, polygons: List<Feature>) {
   createConnection().use { hikari ->
     val collection =
         hikari.connection
             .prepareStatement(
-                "INSERT INTO collections (id, creator, name) "
-                    + "VALUES (gen_random_uuid(), ?, ?) "
+                "INSERT INTO collections (id, creator, name, covering) "
+                    + "VALUES (gen_random_uuid(), ?, ?, ?) "
                     + "RETURNING id")
             .apply {
               setObject(1, UUID.fromString("00000000-0000-0000-0000-000000000000"))
               setString(2, "Public Land")
+              setBytes(
+                  3,
+                  ByteArrayOutputStream().also {
+                    covering.encode(it)
+                  }.toByteArray())
             }
             .executeQuery()
             .use {
@@ -209,18 +230,22 @@ private fun dumpPolygons(polygons: List<Pair<HashMap<String, String>, S2Polygon>
             }
 
     val mapper = ObjectMapper()
-    val stream = StringifyingInputStream(polygons.iterator()) { (data, polygon), csv ->
-      // id,collection,cell,data,s2_polygon
+    val stream = StringifyingInputStream(polygons.iterator()) { feature, csv ->
+      // id,collection,cell,covering,data,s2_polygon
       csv.append(UUID.randomUUID())
       csv.append(",")
       csv.append(collection)
       csv.append(",")
-      csv.append(polygonToCell(polygon).id())
-      csv.append(",")
-      csv.append(StringEscapeUtils.escapeCsv(mapper.writeValueAsString(data)))
+      csv.append(polygonToCell(feature.polygon).id())
       csv.append(",")
       appendByteArray(ByteArrayOutputStream().also {
-        polygon.encode(it)
+        feature.covering.encode(it)
+      }.toByteArray(), csv)
+      csv.append(",")
+      csv.append(StringEscapeUtils.escapeCsv(mapper.writeValueAsString(feature.data)))
+      csv.append(",")
+      appendByteArray(ByteArrayOutputStream().also {
+        feature.polygon.encode(it)
       }.toByteArray(), csv)
       csv.append("\n")
     }
