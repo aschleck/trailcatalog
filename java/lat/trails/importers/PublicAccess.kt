@@ -11,6 +11,7 @@ import lat.trails.common.createConnection
 import java.nio.file.Path
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
+import mil.nga.sf.Polygon
 import org.apache.commons.text.StringEscapeUtils
 import org.locationtech.proj4j.CRSFactory
 import org.locationtech.proj4j.CoordinateReferenceSystem
@@ -28,6 +29,7 @@ import org.trailcatalog.s2.polygonToCell
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 private val logger = LoggerFactory.getLogger("PublicAccess")
 
@@ -150,6 +152,7 @@ fun main(args: Array<String>) {
   }
 
   executors.shutdown()
+  executors.awaitTermination(1, TimeUnit.HOURS)
 
   // Does this work...? Too bad I gave away Java Concurrency in Practice...
   synchronized (polygons) {
