@@ -1,4 +1,4 @@
 package lat.trails.common
 
-public val COLLECTION_COVERING_MAX_LEVEL = 7
-public val FEATURE_COVERING_MAX_LEVEL = 14
+const val COLLECTION_COVERING_MAX_LEVEL = 7
+const val FEATURE_COVERING_MAX_LEVEL = 14
