@@ -1,7 +1,5 @@
 package org.trailcatalog.s2;
 
-import static java.lang.StrictMath.max;
-
 import com.google.common.geometry.S1Angle;
 import com.google.common.geometry.S1Interval;
 import com.google.common.geometry.S2Cell;
@@ -16,6 +14,7 @@ import elemental2.core.ArrayBuffer;
 import elemental2.core.Uint8Array;
 import elemental2.core.JsIIterableResult;
 import elemental2.core.JsIteratorIterable;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -24,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
+import jsinterop.base.Js;
 
 @JsType
 public final class SimpleS2 {
@@ -121,6 +121,15 @@ public final class SimpleS2 {
       }
     }
     return cells;
+  }
+
+  @JsMethod
+  public static S2CellUnion decodeCellUnion(Uint8Array array) {
+    try {
+      return S2CellUnion.decode(new ByteArrayInputStream(Js.uncheckedCast(array)));
+    } catch (IOException e) {
+      throw new RuntimeException("Unable to decode covering", e);
+    }
   }
 
   @JsMethod
