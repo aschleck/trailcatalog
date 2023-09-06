@@ -1,5 +1,6 @@
 package org.trailcatalog.s2;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.geometry.S1Angle;
 import com.google.common.geometry.S1Interval;
 import com.google.common.geometry.S2Cell;
@@ -18,9 +19,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
 import jsinterop.base.Js;
@@ -95,32 +94,31 @@ public final class SimpleS2 {
               new S1Interval(-2 * Math.PI, highLng - 2 * Math.PI)));
     }
 
-    // Then do the covering
-    ArrayList<S2CellId> cells = new ArrayList<>();
+    // Compute the base covering cells
     S2CellUnion union = new S2CellUnion();
-    ArrayList<S2CellId> atLevel = new ArrayList<>();
-    Set<S2CellId> seen = new HashSet<S2CellId>();
-    for (int level = deepest; level >= 0; --level) {
-      S2RegionCoverer coverer =
-          S2RegionCoverer.builder().setMaxCells(1000).setMinLevel(level).setMaxLevel(level).build();
-      for (S2LatLngRect view : expanded) {
-        coverer.getCovering(view, union);
-        union.expand(level);
-        union.denormalize(level, /* levelMod= */ 1, atLevel);
+    S2RegionCoverer coverer =
+        S2RegionCoverer.builder()
+            .setMaxCells(1000)
+            .setMinLevel(deepest)
+            .setMaxLevel(deepest)
+            .build();
+    ImmutableSet.Builder<S2CellId> all = ImmutableSet.builder(); // for insertion iteration order
+    ArrayList<S2CellId> cells = new ArrayList<>();
+    for (S2LatLngRect view : expanded) {
+      coverer.getCovering(view, union);
+      union.expand(deepest);
+      union.denormalize(deepest, /* levelMod= */ 1, cells);
+      all.addAll(cells);
+    }
 
-        // Prematurely optimize this because it makes me scared
-        if (expanded.size() > 1) {
-          seen.addAll(atLevel);
-        } else {
-          cells.addAll(atLevel);
-        }
-      }
-      if (expanded.size() > 1) {
-        cells.addAll(seen);
-        seen.clear();
+    // Now come up the hierarchy
+    for (int level = deepest - 1; level >= 0; --level) {
+      for (S2CellId cell : cells) {
+        all.add(cell.parent(level));
       }
     }
-    return cells;
+
+    return new ArrayList<>(all.build());
   }
 
   @JsMethod
