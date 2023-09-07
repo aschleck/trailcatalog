@@ -142,7 +142,8 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
 
     this.updateState({
       ...this.state,
-      copyrights: this.layers.map(l => l.copyright).filter(exists),
+      // TODO(april): deduplicate
+      copyrights: this.layers.flatMap(l => l.copyrights).filter(exists),
     });
   }
 

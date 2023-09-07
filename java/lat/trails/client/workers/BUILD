@@ -18,6 +18,7 @@ tc_ts_project(
         "//js/common",
         "//js/map2",
         "//js/map2/common",
+        "//js/map2/workers",
         "//java/org/trailcatalog/s2",
     ],
 )

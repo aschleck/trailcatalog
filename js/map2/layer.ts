@@ -7,7 +7,7 @@ import { Planner } from './rendering/planner';
 
 export abstract class Layer extends Disposable {
 
-  constructor(readonly copyright: Copyright|undefined) {
+  constructor(readonly copyrights: Copyright[]) {
     super();
   }
 

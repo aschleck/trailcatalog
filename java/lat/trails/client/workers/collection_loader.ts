@@ -1,11 +1,8 @@
-import earcut from 'earcut';
-
-import { S2LatLng, S2LatLngRect, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
 import { LittleEndianView } from 'js/common/little_endian_view';
-import { projectS2Loop } from 'js/map2/camera';
 import { RgbaU32, S2CellToken } from 'js/map2/common/types';
+import { Triangles, triangulateS2 } from 'js/map2/workers/triangulate';
 import { Z_USER_DATA } from 'js/map2/z';
 
 interface InitializeRequest {
@@ -73,11 +70,6 @@ export type Response = LoadResponse;
 
 type Data = {[key: string]: boolean|number|string};
 
-interface Triangles {
-  geometry: Float32Array;
-  index: number[];
-}
-
 const TEXT_DECODER = new TextDecoder();
 
 class CollectionLoader {
@@ -114,7 +106,7 @@ class CollectionLoader {
         continue;
       }
 
-      const triangles = triangulate(polygon);
+      const triangles = triangulateS2(polygon);
       geometryCount += triangles.geometry.length;
       indexCount += triangles.index.length;
 
@@ -208,149 +200,6 @@ self.onmessage = e => {
 
   start(request);
 };
-
-function triangulate(polygon: S2Polygon): Triangles {
-  const loopsList = polygon.getLoops();
-  const loops = [];
-  for (let i = 0; i < loopsList.size(); ++i) {
-    loops.push(loopsList.getAtIndex(i));
-  }
-
-  const exteriors = [];
-  const holes = [];
-  for (const loop of loops) {
-    if (loop.isHole()) {
-      holes.push(loop);
-    } else {
-      exteriors.push(loop);
-    }
-  }
-
-  // Let's play a fun game: https://github.com/mapbox/earcut/issues/161
-  // ... so it turns out we need to filter loops by what holes actually intersect.
-  const relevantHoles = [];
-  for (const exterior of exteriors) {
-    const intersecting = [];
-    for (let i = 0; i < holes.length; ++i) {
-      if (exterior.intersects(holes[i])) {
-        intersecting.push(i);
-      }
-    }
-    relevantHoles.push(intersecting);
-  }
-
-  // Project all the exteriors. We track the offset because at the end we're going to jam all the
-  // exteriors into the same array and we need to know where it will end up.
-  let exteriorVertexLength = 0;
-  const projectedExteriors = [];
-  for (const exterior of exteriors) {
-    const projected = projectS2Loop(exterior);
-    projectedExteriors.push({
-      offset: exteriorVertexLength,
-      ...projected,
-    });
-    exteriorVertexLength += projected.vertices.length;
-  }
-
-  // Project all the holes. Track the offset for the same reason as above.
-  let holeVertexLength = 0;
-  const projectedHoles = [];
-  for (const hole of holes) {
-    const projected = projectS2Loop(hole);
-    projectedHoles.push({
-      offset: holeVertexLength,
-      ...projected,
-    });
-    holeVertexLength += projected.vertices.length;
-  }
-
-  // We need to earcut *per* split *per* exterior ring. Lord have mercy on us if there's some
-  // degenerate nonsense.
-  const geometry = new Float32Array(exteriorVertexLength + holeVertexLength);
-  let geometryOffset = 0;
-  const index = [];
-  for (let i = 0; i < projectedExteriors.length; ++i) {
-    const {offset, splits, vertices} = projectedExteriors[i];
-
-    // Jam all relevant holes into one buffer. Note that this is not necessarily sufficient to avoid
-    // the earcut bug: we may have a multipolygon where the exterior has two disjoint loops (if it
-    // crosses the meridian for example) and then there are two disjoint holes.
-    let holesToCheck = [];
-    let holeSize = 0;
-    for (const holeI of relevantHoles[i]) {
-      const hole = projectedHoles[holeI];
-      holesToCheck.push(hole);
-      holeSize += hole.vertices.length;
-    }
-    const holes = [];
-    const holeVertices = new Float32Array(holeSize);
-    holeSize = 0;
-    for (const {splits, vertices} of holesToCheck) {
-      holes.push(holeSize);
-      for (const split of splits) {
-        holes.push(holeSize + split);
-      }
-      // earcut doesn't need the last vertex since it assumes everything but the first loop is a
-      // hole.
-      holes.pop();
-      holeVertices.set(vertices, holeSize);
-      holeSize += vertices.length;
-    }
-
-    // Now we can check each exterior split against the holes.
-    let start = 0;
-    for (const split of splits) {
-      const length = split - start;
-      const allVertices = new Float32Array(length + holeSize);
-      allVertices.set(vertices.subarray(start, length), 0);
-      allVertices.set(holeVertices, length);
-
-      // Figure out the hole positions relative to the loop vertices.
-      const offsetHoles = [];
-      for (const offset of holes) {
-        offsetHoles.push((length + offset) / 2);
-      }
-
-      const triangulatedIndices = earcut(allVertices, offsetHoles);
-      for (const indice of triangulatedIndices) {
-        let trueIndice = -1;
-        if (indice < length / 2) {
-          trueIndice = (geometryOffset + start) / 2 + indice;
-        } else {
-          const offsetInHoles = 2 * indice - length;
-          let holeOffset = 0;
-          for (const {offset, vertices} of holesToCheck) {
-            if (offsetInHoles < holeOffset + vertices.length) {
-              trueIndice = (exteriorVertexLength + offset + offsetInHoles - holeOffset) / 2;
-              break;
-            }
-            holeOffset += vertices.length;
-          }
-
-          if (trueIndice < 0) {
-            throw new Error('Failed to find correct hole offset');
-          }
-        }
-        index.push(trueIndice);
-      }
-
-      start = split;
-    }
-
-    geometry.set(vertices, geometryOffset);
-    geometryOffset += vertices.length;
-  }
-
-  for (const {vertices} of projectedHoles) {
-    geometry.set(vertices, geometryOffset);
-    geometryOffset += vertices.length;
-  }
-
-  return {
-    geometry,
-    index,
-  };
-}
 
 function findStyle(data: Data, styles: PolygonStyle[]): PolygonStyle|undefined {
   for (const style of styles) {

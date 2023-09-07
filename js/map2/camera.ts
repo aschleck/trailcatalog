@@ -82,7 +82,7 @@ export class Camera {
     const dY = heightPx * this._inverseWorldRadius / 2;
     const lowLat = Math.asin(Math.tanh((centerPixel[1] - dY) * Math.PI));
     const highLat = Math.asin(Math.tanh((centerPixel[1] + dY) * Math.PI));
-    const dLng = Math.min(Math.PI * widthPx * this._inverseWorldRadius / 2, Math.PI);
+    const dLng = Math.PI * widthPx * this._inverseWorldRadius / 2;
     return S2LatLngRect.fromPointPair(
         S2LatLng.fromRadians(lowLat, this._center.lngRadians() - dLng),
         S2LatLng.fromRadians(highLat, this._center.lngRadians() + dLng));

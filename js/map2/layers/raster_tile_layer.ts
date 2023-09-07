@@ -29,14 +29,14 @@ export class RasterTileLayer extends Layer {
   private plan: {generation: number; drawables: Drawable[]};
 
   constructor(
-      copyright: Copyright|undefined,
+      copyrights: Copyright[],
       url: string,
       extraZoom: number,
       minZoom: number,
       maxZoom: number,
       private readonly renderer: Renderer,
   ) {
-    super(copyright);
+    super(copyrights);
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
     this.fetcher = new Worker('/static/xyz_data_fetcher_worker.js');

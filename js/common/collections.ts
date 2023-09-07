@@ -1,11 +1,63 @@
+export class DefaultMap<K, V> {
+
+  readonly map: Map<K, V>;
+
+  constructor(private readonly factory: (key: K) => V) {
+    this.map = new Map();
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  set(key: K, value: V): void {
+    this.map.set(key, value);
+  }
+
+  delete(key: K): void {
+    this.map.delete(key);
+  }
+
+  get(key: K): V {
+    if (!this.map.has(key)) {
+      this.map.set(key, this.factory(key));
+    }
+    return this.map.get(key) as V; // we can't use checkExists because V may include undefined
+  }
+
+  has(key: K): boolean {
+    return this.map.has(key);
+  }
+
+  keys(): IterableIterator<K> {
+    return this.map.keys();
+  }
+
+  values(): IterableIterator<V> {
+    return this.map.values();
+  }
+
+  [Symbol.iterator](): Iterator<[K, V]> {
+    return this.map[Symbol.iterator]();
+  }
+}
+
 export class HashMap<K, V> {
 
-  private _keys: Map<unknown, K>;
-  private mapped: Map<unknown, V>;
+  private readonly _keys: Map<unknown, K>;
+  private readonly mapped: Map<unknown, V>;
 
   constructor(private readonly hashFn: (key: K) => unknown) {
     this._keys = new Map();
     this.mapped = new Map();
+  }
+
+  get size(): number {
+    return this._keys.size;
   }
 
   clear(): void {
@@ -37,6 +89,10 @@ export class HashMap<K, V> {
     return this._keys.values();
   }
 
+  values(): IterableIterator<V> {
+    return this.mapped.values();
+  }
+
   [Symbol.iterator](): Iterator<[K, V]> {
     const keyIterator = this._keys[Symbol.iterator]();
     return {
@@ -63,12 +119,16 @@ export class HashMap<K, V> {
 
 export class HashSet<V> {
 
-  private mapped: Set<unknown>;
-  private values: Map<unknown, V>;
+  private readonly mapped: Set<unknown>;
+  private readonly values: Map<unknown, V>;
 
   constructor(private readonly hashFn: (value: V) => unknown) {
     this.mapped = new Set();
     this.values = new Map();
+  }
+
+  get size(): number {
+    return this.mapped.size;
   }
 
   add(value: V): void {

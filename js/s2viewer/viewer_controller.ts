@@ -10,6 +10,7 @@ import { rgbaToUint32 } from 'js/map2/common/math';
 import { Vec2 } from 'js/map2/common/types';
 import { MAP_MOVED } from 'js/map2/events';
 import { Layer } from 'js/map2/layer';
+import { MbtileLayer, NATURE } from 'js/map2/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
 import { MapController } from 'js/map2/map_controller';
 import { Planner } from 'js/map2/rendering/planner';
@@ -62,11 +63,32 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     this.mapController.setLayers([
       this.layer,
       new RasterTileLayer(
-          /* copyright= */ undefined,
+          /* copyright= */ [],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 12,
+          this.mapController.renderer,
+      ),
+      new MbtileLayer(
+          [
+            {
+              long: 'Base political and transportation packaged and served by MapTiler',
+              short: 'MapTiler',
+              url: 'https://www.maptiler.com/copyright/',
+            },
+            {
+              long: 'Base political and transportation data provided by the OpenStreetMap project',
+              short: 'OpenStreetMap contributors',
+              url: 'https://www.openstreetmap.org/copyright',
+            },
+          ],
+          'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
+              + 'key=wWxlJy7a8SEPXS7AZ42l',
+          NATURE,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 15,
           this.mapController.renderer,
       ),
     ]);
@@ -332,7 +354,7 @@ class CellLayer extends Layer {
       private readonly controller: ViewerController,
       private readonly renderer: Renderer,
   ) {
-    super(/* copyright= */ undefined);
+    super(/* copyright= */ []);
     this.glBuffer = renderer.createDataBuffer(0);
     this.s2Cells = new Map<string, S2Loop>();
     this.zxys = new Map<string, [number, number, number]>();

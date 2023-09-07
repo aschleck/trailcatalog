@@ -50,7 +50,7 @@ export function MapElement({
       <canvas className="h-full w-full focus-visible:outline-none" tabIndex="-1" />
       <div className="
           absolute
-          bg-white-opaque-160
+          bg-[#fffffffa]
           bottom-0
           p-0.5
           pointer-events-none
