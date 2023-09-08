@@ -5,17 +5,16 @@ import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { CHANGED } from 'js/dino/events';
-import { rgbaToUint32 } from 'js/map/common/math';
-import { Vec2 } from 'js/map/common/types';
-import { MAP_MOVED } from 'js/map/events';
-import { Layer } from 'js/map/layer';
-import { MbtileData } from 'js/map/layers/mbtile_data';
-import { Style, TileData } from 'js/map/layers/tile_data';
-import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_CONTOURS, MAPTILER_DEM, MAPTILER_OUTDOOR, MAPTILER_PLANET, MAPTILER_TOPO, TRAILCATALOG_CONTOURS, TRAILCATALOG_HILLSHADES } from 'js/map/layers/tile_sources';
-import { MapController } from 'js/map/map_controller';
-import { projectS2Loop, unprojectS2LatLng } from 'js/map/models/camera';
-import { RenderBaker } from 'js/map/rendering/render_baker';
+import { projectS2Loop, unprojectS2LatLng } from 'js/map2/camera';
+import { rgbaToUint32 } from 'js/map2/common/math';
+import { Vec2 } from 'js/map2/common/types';
+import { MAP_MOVED } from 'js/map2/events';
+import { Layer } from 'js/map2/layer';
+import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
+import { MapController } from 'js/map2/map_controller';
+import { Planner } from 'js/map2/rendering/planner';
+import { Renderer } from 'js/map2/rendering/renderer';
+import { Z_USER_DATA } from 'js/map2/z';
 
 const CELL_BORDER = rgbaToUint32(1, 0, 0, 1);
 export const MAX_S2_ZOOM = 31;
@@ -47,9 +46,6 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       controllers: {
         map: MapController,
       },
-      services: {
-        tileData: TileDataService,
-      },
     };
   }
 
@@ -59,32 +55,20 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
   constructor(response: Response<ViewerController>) {
     super(response);
-    this.layer = new CellLayer(this);
+    this.layer = new CellLayer(this, response.deps.controllers.map.renderer);
     this.mapController = response.deps.controllers.map;
     this.lastChange = Date.now();
 
     this.mapController.setLayers([
       this.layer,
-      //new MbtileData(
-      //    this.mapController.camera,
-      //    response.deps.services.tileData,
-      //    this.mapController.renderer,
-      //    this.mapController.renderPlanner.baker,
-      //    MAPTILER_PLANET),
-      new MbtileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
+      new RasterTileLayer(
+          /* copyright= */ undefined,
+          'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 12,
           this.mapController.renderer,
-          this.mapController.renderPlanner.baker,
-          TRAILCATALOG_CONTOURS),
-      new TileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
-          this.mapController.renderer,
-          Style.Rgb,
-          rgbaToUint32(1, 1, 1, 0.3),
-          1,
-          TRAILCATALOG_HILLSHADES),
+      ),
     ]);
   }
 
@@ -340,11 +324,16 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
 class CellLayer extends Layer {
 
+  private readonly glBuffer: WebGLBuffer;
   readonly s2Cells: Map<string, S2Loop>;
   readonly zxys: Map<string, [number, number, number]>;
 
-  constructor(private readonly controller: ViewerController) {
-    super();
+  constructor(
+      private readonly controller: ViewerController,
+      private readonly renderer: Renderer,
+  ) {
+    super(/* copyright= */ undefined);
+    this.glBuffer = renderer.createDataBuffer(0);
     this.s2Cells = new Map<string, S2Loop>();
     this.zxys = new Map<string, [number, number, number]>();
   }
@@ -362,21 +351,34 @@ class CellLayer extends Layer {
     return this.controller.lastChange > time;
   }
 
-  plan(size: Vec2, zoom: number, baker: RenderBaker): void {
-    const lines = [];
-
+  render(planner: Planner): void {
+    const geometry = new ArrayBuffer(16384);
+    let offset = 0;
+    const drawables = [];
     for (const loop of this.s2Cells.values()) {
       const {splits, vertices} = projectS2Loop(loop);
       let last = 0;
       for (const i of splits) {
-        lines.push({
-          colorFill: CELL_BORDER,
-          colorStroke: CELL_BORDER,
-          stipple: false,
-          vertices: vertices,
-          verticesOffset: last,
-          verticesLength: i - last,
-        });
+        // TODO(april): make this a polygon?
+        const connected = new Float32Array(i - last + 2);
+        connected.set(vertices.subarray(last, last + i - last), 0);
+        connected[i - last + 0] = connected[0];
+        connected[i - last + 1] = connected[1];
+
+        const {byteSize, drawable} =
+            this.renderer.lineProgram.plan(
+                CELL_BORDER,
+                CELL_BORDER,
+                1,
+                false,
+                Z_USER_DATA,
+                connected,
+                geometry,
+                offset,
+                this.glBuffer,
+            );
+        offset += byteSize;
+        drawables.push(drawable);
         last = i;
       }
     }
@@ -390,17 +392,24 @@ class CellLayer extends Layer {
         (x + 0) / halfWorldSize - 1, 1 - (y + 1) / halfWorldSize,
         (x + 0) / halfWorldSize - 1, 1 - (y + 0) / halfWorldSize,
       ]);
-      lines.push({
-        colorFill: CELL_BORDER,
-        colorStroke: CELL_BORDER,
-        stipple: false,
-        vertices: vertices,
-        verticesOffset: 0,
-        verticesLength: 10,
-      });
+      const {byteSize, drawable} =
+          this.renderer.lineProgram.plan(
+              CELL_BORDER,
+              CELL_BORDER,
+              1,
+              false,
+              Z_USER_DATA,
+              vertices,
+              geometry,
+              offset,
+              this.glBuffer,
+          );
+      offset += byteSize;
+      drawables.push(drawable);
     }
 
-    baker.addLines(lines, 1, 10);
+    this.renderer.uploadData(geometry, offset, this.glBuffer, this.renderer.gl.STREAM_DRAW);
+    planner.add(drawables);
   }
 }
 

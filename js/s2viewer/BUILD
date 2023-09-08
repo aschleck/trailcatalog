@@ -23,8 +23,8 @@ tc_ts_project(
         "//java/org/trailcatalog/client/common",
         "//js/common",
         "//js/corgi",
-        "//js/map",
-        "//js/map/layers",
+        "//js/map2",
+        "//js/map2/layers",
     ],
 )
 
@@ -54,14 +54,17 @@ genrule(
         ":s2viewer.css",
         ":s2viewer.js",
         ":s2viewer.js.map",
-        "//js/map/workers:tile_fetcher_worker",
+        "//js/map2/workers:raster_loader_worker",
+        "//js/map2/workers:xyz_data_fetcher_worker",
     ],
     outs = [
         "static/s2viewer.css",
         "static/s2viewer.js",
         "static/s2viewer.js.map",
-        "static/tile_fetcher_worker.js",
-        "static/tile_fetcher_worker.js.map",
+        "static/raster_loader_worker.js",
+        "static/raster_loader_worker.js.map",
+        "static/xyz_data_fetcher_worker.js",
+        "static/xyz_data_fetcher_worker.js.map",
     ],
     cmd = "\n".join([
         "mkdir -p \"$(@D)/static\"",

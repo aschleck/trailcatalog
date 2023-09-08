@@ -72,6 +72,7 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         geometry: glBuffer,
         geometryByteLength: 4 * count,
         geometryOffset: offset,
+        instanced: undefined,
         program: this,
         texture: glTexture,
         vertexCount: this.billboardData.length / 4,
@@ -102,7 +103,7 @@ export class BillboardProgram extends Program<BillboardProgramData> {
     gl.enableVertexAttribArray(this.program.attributes.sizeIsPixels);
   }
 
-  protected bindAttributes(offset: number): void {
+  protected override bindAttributes(offset: number): void {
     const gl = this.gl;
 
     gl.vertexAttribPointer(

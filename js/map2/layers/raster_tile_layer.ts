@@ -3,15 +3,16 @@ import { checkExhaustive } from 'js/common/asserts';
 import { HashMap, HashSet } from 'js/common/collections';
 import { Debouncer } from 'js/common/debouncer';
 import { WorkerPool } from 'js/common/worker_pool';
-import { Copyright, RgbaU32, TileId, Vec2 } from 'js/map2/common/types';
-import { Layer } from 'js/map2/layer';
-import { Z_BASE_TILE } from 'js/map2/z';
-import { Planner } from 'js/map2/rendering/planner';
-import { Drawable } from 'js/map2/rendering/program';
-import { Renderer } from 'js/map2/rendering/renderer';
-import { TexturePool } from 'js/map2/rendering/texture_pool';
-import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from 'js/map2/workers/raster_loader';
-import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from 'js/map2/workers/xyz_data_fetcher';
+
+import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
+import { Layer } from '../layer';
+import { Planner } from '../rendering/planner';
+import { Drawable } from '../rendering/program';
+import { Renderer } from '../rendering/renderer';
+import { TexturePool } from '../rendering/texture_pool';
+import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
+import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
+import { Z_BASE_TILE } from '../z';
 
 const NO_OFFSET: Vec2 = [0, 0];
 

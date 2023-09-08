@@ -66,7 +66,13 @@ class XyzDataFetcher {
     const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
     const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
     const bounds = S2LatLngRect.fromPointPair(low, high);
-    const projected = projectLatLngRect(bounds);
+    let projected = projectLatLngRect(bounds);
+    if (projected.low[0] > projected.high[0]) {
+      projected = {
+        low: [projected.high[0], projected.low[1]],
+        high: [projected.low[0], projected.high[1]],
+      };
+    }
 
     const tz =
         clamp(
@@ -85,8 +91,8 @@ class XyzDataFetcher {
           x < worldSize * (projected.high[0] / 2 + 0.5);
           ++x) {
         const id = {
-          // Handle world wrap
-          x: (x + 3 * halfWorldSize) % worldSize - halfWorldSize,
+          // Handle world wrap. 3 is just a number that seems large enough to force x positive.
+          x: (x + 3 * worldSize) % worldSize,
           y,
           zoom: tz,
         };

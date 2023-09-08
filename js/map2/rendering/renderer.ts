@@ -4,17 +4,21 @@ import { Disposable } from 'js/common/disposable';
 import { Vec2 } from '../common/types';
 
 import { BillboardProgram } from './billboard_program';
+import { LineProgram } from './line_program';
 import { TriangleProgram } from './triangle_program';
 
 export class Renderer extends Disposable {
 
   readonly billboardProgram: BillboardProgram;
+  readonly lineProgram: LineProgram;
   readonly triangleProgram: TriangleProgram;
 
   constructor(readonly gl: WebGL2RenderingContext) {
     super();
     this.billboardProgram = new BillboardProgram(this.gl);
     this.registerDisposable(this.billboardProgram);
+    this.lineProgram = new LineProgram(this.gl);
+    this.registerDisposable(this.lineProgram);
     this.triangleProgram = new TriangleProgram(this.gl);
     this.registerDisposable(this.triangleProgram);
 
@@ -70,7 +74,7 @@ export class Renderer extends Disposable {
   uploadData(source: ArrayBuffer, size: number, to: WebGLBuffer, usage?: number): void {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, to);
-    gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(source, 0, size), usage ?? gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(source), usage ?? gl.STATIC_DRAW, 0, size);
   }
 
   uploadIndices(source: ArrayBuffer, size: number, to: WebGLBuffer): void {

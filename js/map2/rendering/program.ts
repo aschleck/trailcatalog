@@ -12,6 +12,9 @@ export interface Drawable {
   readonly geometry: WebGLBuffer;
   readonly geometryByteLength: number;
   readonly geometryOffset: number;
+  readonly instanced: {
+    count: number;
+  }|undefined,
   readonly program: Program<ProgramData>;
   readonly texture: WebGLTexture|undefined;
   readonly vertexCount: number|undefined;
@@ -70,6 +73,8 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         if (
             drawStart.elements === undefined
                 && drawable.elements === undefined
+                && drawStart.instanced === undefined
+                && drawable.instanced === undefined
                 && drawStart.geometry === drawable.geometry
                 && drawStart.texture === drawable.texture
                 && drawStart.geometryOffset + pendingGeometryByteLength === drawable.geometryOffset
@@ -78,6 +83,8 @@ export abstract class Program<P extends ProgramData> extends Disposable {
           pendingVertexCount += drawable.vertexCount ?? 0;
           continue;
         }
+
+        // TODO(april): should we merge instance calls? Maybe
 
         if (lastGeometry !== drawStart.geometry) {
           gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
@@ -98,6 +105,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
           geometry: drawStart.geometry,
           geometryByteLength: pendingGeometryByteLength,
           geometryOffset: drawStart.geometryOffset,
+          instanced: drawStart.instanced,
           program: drawStart.program,
           texture: drawStart.texture,
           vertexCount: pendingVertexCount,
@@ -129,6 +137,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         geometry: drawStart.geometry,
         geometryByteLength: pendingGeometryByteLength,
         geometryOffset: drawStart.geometryOffset,
+        instanced: drawStart.instanced,
         program: drawStart.program,
         texture: drawStart.texture,
         vertexCount: pendingVertexCount,
@@ -140,11 +149,13 @@ export abstract class Program<P extends ProgramData> extends Disposable {
 
   protected draw(drawable: Drawable): void {
     const gl = this.gl;
-
     this.bindAttributes(drawable.geometryOffset);
+
     if (drawable.elements) {
       gl.drawElements(
           this.geometryType, drawable.elements.count, gl.UNSIGNED_INT, drawable.elements.offset);
+    } else if (drawable.instanced) {
+      throw new Error('unimplemented');
     } else if (drawable.vertexCount !== undefined) {
       gl.drawArrays(this.geometryType, 0, drawable.vertexCount);
     } else {

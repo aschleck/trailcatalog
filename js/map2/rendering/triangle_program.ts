@@ -57,6 +57,7 @@ export class TriangleProgram extends Program<TriangleProgramData> {
         geometry: glGeometryBuffer,
         geometryByteLength: 4 + geometry.byteLength,
         geometryOffset,
+        instanced: undefined,
         program: this,
         texture: undefined,
         vertexCount: geometry.length / 2,

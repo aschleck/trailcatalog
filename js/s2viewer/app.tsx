@@ -7,8 +7,8 @@ import * as corgi from 'js/corgi';
 import { CHANGED } from 'js/dino/events';
 import { OutlinedInput } from 'js/dino/input';
 import { Select } from 'js/dino/select';
-import { MAP_MOVED } from 'js/map/events';
-import { MapElement } from 'js/map/map_element';
+import { MAP_MOVED } from 'js/map2/events';
+import { MapElement } from 'js/map2/map_element';
 
 import { State, ViewerController, MAX_S2_ZOOM, MAX_ZXY_ZOOM, ZOOM_LEVEL } from './viewer_controller';
 
