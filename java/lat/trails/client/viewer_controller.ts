@@ -3,9 +3,9 @@ import { CorgiEvent } from 'js/corgi/events';
 import { rgbaToUint32 } from 'js/map2/common/math';
 import { MAP_MOVED } from 'js/map2/events';
 import { MapController } from 'js/map2/map_controller';
+import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
 
 import { CollectionLayer } from './collection_layer';
-import { RasterTileLayer } from './raster_tile_layer';
 
 export interface State {
 }
@@ -45,7 +45,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           this.mapController.renderer,
       ),
       new CollectionLayer(
-          '/api/collections/4c441d76-b804-4275-a6b8-b0e00cb9e2e2',
+          '/api/collections/ff6aa028-221a-4917-9f81-0fed46af12f4',
           this.mapController.renderer,
       ),
     ]);

@@ -4,11 +4,9 @@ import { S2LatLng, S2LatLngRect, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
 import { LittleEndianView } from 'js/common/little_endian_view';
-
-import { RgbaU32, S2CellToken } from '../common/types';
-
-import { projectS2Loop } from '../camera';
-import { Z_USER_DATA } from '../z';
+import { projectS2Loop } from 'js/map2/camera';
+import { RgbaU32, S2CellToken } from 'js/map2/common/types';
+import { Z_USER_DATA } from 'js/map2/z';
 
 interface InitializeRequest {
   kind: 'ir';

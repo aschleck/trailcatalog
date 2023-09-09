@@ -164,6 +164,7 @@ export class CollectionLayer extends Layer {
         geometry,
         geometryByteLength: polygon.geometryByteLength,
         geometryOffset: polygon.geometryOffset,
+        instanced: undefined,
         program: this.renderer.triangleProgram,
         texture: undefined,
         vertexCount: undefined,

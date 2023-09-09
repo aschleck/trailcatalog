@@ -18,6 +18,7 @@ tc_ts_project(
         "//js/common",
         "//js/corgi",
         "//js/map2",
+        "//js/map2/layers",
         "//js/map2/workers",
         "//js/server:client",
     ],
