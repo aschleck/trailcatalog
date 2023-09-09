@@ -19,7 +19,9 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
 import jsinterop.base.Js;
@@ -95,29 +97,30 @@ public final class SimpleS2 {
     }
 
     // Compute the base covering cells
-    S2CellUnion union = new S2CellUnion();
     S2RegionCoverer coverer =
         S2RegionCoverer.builder()
             .setMaxCells(1000)
             .setMinLevel(deepest)
             .setMaxLevel(deepest)
             .build();
-    ImmutableSet.Builder<S2CellId> all = ImmutableSet.builder(); // for insertion iteration order
+    Set<S2CellId> base = new HashSet<>();
+    S2CellUnion union = new S2CellUnion();
     ArrayList<S2CellId> cells = new ArrayList<>();
     for (S2LatLngRect view : expanded) {
       coverer.getCovering(view, union);
       union.expand(deepest);
       union.denormalize(deepest, /* levelMod= */ 1, cells);
-      all.addAll(cells);
+      base.addAll(cells);
     }
 
     // Now come up the hierarchy
+    ImmutableSet.Builder<S2CellId> all = ImmutableSet.builder(); // for insertion iteration order
+    all.addAll(base);
     for (int level = deepest - 1; level >= 0; --level) {
-      for (S2CellId cell : cells) {
+      for (S2CellId cell : base) {
         all.add(cell.parent(level));
       }
     }
-
     return new ArrayList<>(all.build());
   }
 
