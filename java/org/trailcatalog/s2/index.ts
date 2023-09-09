@@ -8,6 +8,8 @@ const S2Cell = raw.com.google.common.geometry.S2Cell;
 type S2Cell = raw.com.google.common.geometry.S2Cell;
 const S2CellId = raw.com.google.common.geometry.S2CellId;
 type S2CellId = raw.com.google.common.geometry.S2CellId;
+const S2CellUnion = raw.com.google.common.geometry.S2CellUnion;
+type S2CellUnion = raw.com.google.common.geometry.S2CellUnion;
 const S2LatLng = raw.com.google.common.geometry.S2LatLng;
 type S2LatLng = raw.com.google.common.geometry.S2LatLng;
 const S2LatLngRect = raw.com.google.common.geometry.S2LatLngRect;
@@ -28,6 +30,7 @@ export {
   S1Angle,
   S2Cell,
   S2CellId,
+  S2CellUnion,
   S2LatLng,
   S2LatLngRect,
   S2Loop,

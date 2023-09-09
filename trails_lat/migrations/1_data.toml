@@ -62,6 +62,11 @@ primary_key = ["id"]
   nullable = false
   type = "TEXT"
 
+  [[actions.columns]]
+  name = "covering"
+  nullable = false
+  type = "BYTEA"
+
   [[actions.foreign_keys]]
   columns = ["creator"]
   referenced_table = "users"
@@ -94,6 +99,11 @@ primary_key = ["id"]
   name = "cell"
   nullable = false
   type = "BIGINT"
+
+  [[actions.columns]]
+  name = "covering"
+  nullable = false
+  type = "BYTEA"
 
   [[actions.columns]]
   name = "data"
@@ -137,6 +147,11 @@ primary_key = ["id"]
   name = "cell"
   nullable = false
   type = "BIGINT"
+
+  [[actions.columns]]
+  name = "covering"
+  nullable = false
+  type = "BYTEA"
 
   [[actions.columns]]
   name = "data"

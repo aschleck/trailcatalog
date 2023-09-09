@@ -10,6 +10,11 @@ goog.exportSymbol('com.google.common.geometry.S1Angle', S1Angle);
 goog.exportProperty(S1Angle, 'degrees', S1Angle.degrees);
 goog.exportProperty(S1Angle.prototype, 'radians', S1Angle.prototype.radians);
 
+const S1Interval = goog.require('com.google.common.geometry.S1Interval');
+goog.exportSymbol('com.google.common.geometry.S1Interval', S1Interval);
+goog.exportProperty(S1Interval.prototype, 'hi', S1Interval.prototype.hi);
+goog.exportProperty(S1Interval.prototype, 'lo', S1Interval.prototype.lo);
+
 const S2Cell = goog.require('com.google.common.geometry.S2Cell');
 goog.exportSymbol('com.google.common.geometry.S2Cell', S2Cell);
 goog.exportProperty(S2Cell.prototype, 'exactArea', S2Cell.prototype.exactArea);
@@ -27,10 +32,13 @@ goog.exportProperty(S2CellId.prototype, 'rangeMin', S2CellId.prototype.rangeMin)
 goog.exportProperty(S2CellId.prototype, 'toLoop', S2CellId.prototype.toLoop);
 goog.exportProperty(S2CellId.prototype, 'toToken', S2CellId.prototype.toToken);
 
-const S1Interval = goog.require('com.google.common.geometry.S1Interval');
-goog.exportSymbol('com.google.common.geometry.S1Interval', S1Interval);
-goog.exportProperty(S1Interval.prototype, 'hi', S1Interval.prototype.hi);
-goog.exportProperty(S1Interval.prototype, 'lo', S1Interval.prototype.lo);
+const S2CellUnion = goog.require('com.google.common.geometry.S2CellUnion');
+goog.exportSymbol('com.google.common.geometry.S2CellUnion', S2CellUnion);
+goog.exportProperty(S2CellUnion.prototype, 'cellIds', S2CellUnion.prototype.cellIds);
+goog.exportProperty(S2CellUnion.prototype, 'containsCellId', S2CellUnion.prototype.containsCellId);
+goog.exportProperty(S2CellUnion.prototype, 'initRawCellIds', S2CellUnion.prototype.initRawCellIds);
+goog.exportProperty(S2CellUnion.prototype, 'intersectsCellId', S2CellUnion.prototype.intersectsCellId);
+goog.exportProperty(S2CellUnion.prototype, 'size', S2CellUnion.prototype.size);
 
 const S2LatLng = goog.require('com.google.common.geometry.S2LatLng');
 goog.exportSymbol('com.google.common.geometry.S2LatLng', S2LatLng);
@@ -125,6 +133,7 @@ goog.exportProperty(SimpleS2, 'angleToEarthMeters', SimpleS2.angleToEarthMeters)
 goog.exportProperty(SimpleS2, 'cellIdToCell', SimpleS2.cellIdToCell);
 goog.exportProperty(SimpleS2, 'cellLevel', SimpleS2.cellLevel);
 goog.exportProperty(SimpleS2, 'cover', SimpleS2.cover);
+goog.exportProperty(SimpleS2, 'decodeCellUnion', SimpleS2.decodeCellUnion);
 goog.exportProperty(SimpleS2, 'decodePolygon', SimpleS2.decodePolygon);
 goog.exportProperty(SimpleS2, 'earthMetersToAngle', SimpleS2.earthMetersToAngle);
 goog.exportProperty(SimpleS2, 'pointToLatLng', SimpleS2.pointToLatLng);

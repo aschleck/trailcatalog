@@ -28,6 +28,15 @@ export declare namespace com.google.common.geometry {
     toToken(): string;
   }
 
+  class S2CellUnion {
+    constructor();
+    cellIds(): java.util.ArrayList<S2CellId>;
+    containsCellId(id: S2CellId): boolean;
+    initRawCellIds(cellIds: java.util.ArrayList<S2CellId>): void;
+    intersectsCellId(id: S2CellId): boolean;
+    size(): number;
+  }
+
   class S2LatLng {
     static fromDegrees(lat: number, lon: number): S2LatLng;
     static fromRadians(lat: number, lon: number): S2LatLng;
@@ -125,6 +134,7 @@ export declare namespace org.trailcatalog.s2 {
     static cellLevel(id: nativebootstrap.Long): number;
     static cover(viewport: com.google.common.geometry.S2LatLngRect, deepest: number):
         java.util.ArrayList<com.google.common.geometry.S2CellId>;
+    static decodeCellUnion(data: Uint8Array): com.google.common.geometry.S2CellUnion;
     static decodePolygon(bytes: ArrayBuffer): com.google.common.geometry.S2Polygon;
     static earthMetersToAngle(meters: number): com.google.common.geometry.S1Angle;
     static pointToLatLng(point: com.google.common.geometry.S2Point):

@@ -68,6 +68,7 @@ export class CollectionLayer extends Layer {
 
     this.postFetcherRequest({
       kind: 'ir',
+      covering: url + '/covering',
       url: url + '/objects',
     });
     this.loader.broadcast({

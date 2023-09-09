@@ -5,6 +5,7 @@ import com.google.common.geometry.S2CellId
 import com.zaxxer.hikari.HikariDataSource
 import io.javalin.Javalin
 import io.javalin.http.Context
+import io.javalin.http.HttpStatus
 import java.util.UUID
 import kotlin.collections.ArrayList
 import lat.trails.common.createConnection
@@ -21,6 +22,7 @@ fun main(args: Array<String>) {
   hikari = createConnection()
   val app = Javalin.create {}.start(7070)
   app.post("/api/data", ::fetchData)
+  app.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
   app.get("/api/collections/{id}/objects/{cell}", ::fetchCollectionObjects)
 }
 
@@ -70,8 +72,51 @@ private fun fetchData(ctx: Context) {
 
 private data class WirePolygon(val id: UUID, val data: String, val s2Polygon: ByteArray)
 
+private fun fetchCollectionCovering(ctx: Context) {
+  val allowed = arrayListOf(UUID.fromString("00000000-0000-0000-0000-000000000000"))
+  ctx.header("X-User-ID").let {
+    if (!it.isNullOrEmpty()) {
+      allowed.add(UUID.fromString(it))
+    }
+  }
+
+  val collection = ctx.pathParam("id")
+  val bytes = AlignableByteArrayOutputStream()
+  DelegatingEncodedOutputStream(bytes).use {
+    // version
+    it.writeVarInt(1)
+
+    // covering
+    hikari.connection.use { connection ->
+      connection
+          .prepareStatement(
+              "SELECT c.covering "
+                      + "FROM collections c "
+                      + "WHERE "
+                      + "c.id = ? AND "
+                      + "c.creator = ANY (?)"
+          )
+          .apply {
+            setObject(1, UUID.fromString(collection))
+            setArray(2, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
+          }
+          .executeQuery()
+          .use { results ->
+            if (!results.next()) {
+              ctx.status(HttpStatus.NOT_FOUND)
+              return@fetchCollectionCovering
+            }
+
+            val covering = results.getBytes(1)
+            it.writeVarInt(covering.size)
+            it.write(covering)
+          }
+    }
+  }
+  ctx.result(bytes.toByteArray())
+}
+
 private fun fetchCollectionObjects(ctx: Context) {
-  println(ctx.headerMap())
   val allowed = arrayListOf(UUID.fromString("00000000-0000-0000-0000-000000000000"))
   ctx.header("X-User-ID").let {
     if (!it.isNullOrEmpty()) {
@@ -90,7 +135,7 @@ private fun fetchCollectionObjects(ctx: Context) {
     hikari.connection.use { connection ->
       // TODO(april): make this a constant!
       // TRAILS_LAT_S2_INDEX_LEVEL
-      val single = cell.level() < 4
+      val single = cell.level() < 6
       connection
           .prepareStatement(
               "SELECT p.id, p.data, p.s2_polygon "

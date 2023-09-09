@@ -112,6 +112,12 @@ export class LittleEndianView {
     return r;
   }
 
+  sliceUint8(count: number): Uint8Array {
+    const r = new Uint8Array(this.buffer, this.position, count);
+    this.position += count;
+    return r;
+  }
+
   viewSlice(count: number): LittleEndianView {
     const r = new LittleEndianView(this.buffer, this.position, this.position + count);
     this.position += count;
