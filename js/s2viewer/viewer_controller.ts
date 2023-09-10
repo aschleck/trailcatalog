@@ -7,7 +7,7 @@ import { HistoryService } from 'js/corgi/history/history_service';
 import { CHANGED } from 'js/dino/events';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map2/camera';
 import { rgbaToUint32 } from 'js/map2/common/math';
-import { Vec2 } from 'js/map2/common/types';
+import { RgbaU32, Vec2 } from 'js/map2/common/types';
 import { MAP_MOVED } from 'js/map2/events';
 import { Layer } from 'js/map2/layer';
 import { MbtileLayer, NATURE } from 'js/map2/layers/mbtile_layer';
@@ -15,7 +15,7 @@ import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
 import { MapController } from 'js/map2/map_controller';
 import { Planner } from 'js/map2/rendering/planner';
 import { Renderer } from 'js/map2/rendering/renderer';
-import { Z_USER_DATA } from 'js/map2/z';
+import { Z_OVERLAY_TILE, Z_USER_DATA } from 'js/map2/z';
 
 const CELL_BORDER = rgbaToUint32(1, 0, 0, 1);
 export const MAX_S2_ZOOM = 31;
@@ -62,14 +62,6 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       this.layer,
-      new RasterTileLayer(
-          /* copyright= */ [],
-          'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          /* maxZoom= */ 12,
-          this.mapController.renderer,
-      ),
       new MbtileLayer(
           [
             {
@@ -89,6 +81,16 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 15,
+          this.mapController.renderer,
+      ),
+      new RasterTileLayer(
+          /* copyright= */ [],
+          'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
+          /* tint= */ 0xFFFFFF8F as RgbaU32,
+          Z_OVERLAY_TILE,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 12,
           this.mapController.renderer,
       ),
     ]);
@@ -387,7 +389,7 @@ class CellLayer extends Layer {
         connected[i - last + 0] = connected[0];
         connected[i - last + 1] = connected[1];
 
-        const {byteSize, drawable} =
+        const drawable =
             this.renderer.lineProgram.plan(
                 CELL_BORDER,
                 CELL_BORDER,
@@ -399,7 +401,7 @@ class CellLayer extends Layer {
                 offset,
                 this.glBuffer,
             );
-        offset += byteSize;
+        offset += drawable.geometryByteLength;
         drawables.push(drawable);
         last = i;
       }
@@ -414,7 +416,7 @@ class CellLayer extends Layer {
         (x + 0) / halfWorldSize - 1, 1 - (y + 1) / halfWorldSize,
         (x + 0) / halfWorldSize - 1, 1 - (y + 0) / halfWorldSize,
       ]);
-      const {byteSize, drawable} =
+      const drawable =
           this.renderer.lineProgram.plan(
               CELL_BORDER,
               CELL_BORDER,
@@ -426,7 +428,7 @@ class CellLayer extends Layer {
               offset,
               this.glBuffer,
           );
-      offset += byteSize;
+      offset += drawable.geometryByteLength;
       drawables.push(drawable);
     }
 

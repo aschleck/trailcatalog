@@ -277,8 +277,8 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       out mediump vec4 fragColor;
 
       void main() {
-        fragColor =
-            texture(color, fragColorPosition) * vec4(fragColorTint.rgb, 1) * fragColorTint.a;
+        mediump vec4 tex = texture(color, fragColorPosition);
+        fragColor = tex * vec4(fragColorTint.rgb, 1) * fragColorTint.a;
       }
   `;
 

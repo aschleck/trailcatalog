@@ -25,237 +25,237 @@ export const NATURE: Readonly<Style> = {
     {
       filters: [{match: 'string_equals', key: 'class', value: 'beach'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'rock'}],
       fill: 0xD0D0D0FF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'sand'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'forest'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'grass'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     // Citylike
     {
       filters: [{match: 'string_equals', key: 'class', value: 'bridge'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'pier'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'residential'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     // Cultivation
     {
       filters: [{match: 'string_equals', key: 'class', value: 'crop'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'farmland'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'grass'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     // Protected
     {
       filters: [{match: 'string_equals', key: 'class', value: 'city_park'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'county_park'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'ecological_reserve'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'habitat_preserve'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'national_forest'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'national_monument'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'national_park'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'national_recreation_area'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'national_recreational_area'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'national_wildlife_refuge'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'natural_preserve'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'nature_preserve'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'nature_reserve'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'open_space'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'open_space_preserve'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'protected_area'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'protected_land'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'regional_park'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'regional_preserve'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'state_park'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'state_wilderness'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'wilderness_area'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'wilderness_study_area'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'wildlife_area'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     // Nature-y?
     {
       filters: [{match: 'string_equals', key: 'class', value: 'scrub'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'tree'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'wood'}],
       fill: 0x5D543EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     // Water
     {
       filters: [{match: 'string_equals', key: 'class', value: 'lake'}],
       fill: 0x1D354EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'national_marine_sanctuary'}],
       fill: 0x1D354EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'ocean'}],
       fill: 0x1D354EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'river'}],
       fill: 0x1D354EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'state_marine_conservation_area'}],
       fill: 0x1D354EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'state_marine_reserve'}],
       fill: 0x1D354EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'water'}],
       fill: 0x1D354EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
     {
       filters: [{match: 'string_equals', key: 'class', value: 'wetland'}],
       fill: 0x1D354EFF as RgbaU32,
-      z: Z_BASE_TILE + 1,
+      z: Z_BASE_TILE,
     },
   ],
 };
@@ -381,7 +381,7 @@ export class MbtileLayer extends Layer {
     this.renderer.uploadIndices(response.index, response.index.byteLength, index);
     const drawables = [];
 
-    for (const polygon of response.polygonalGeometries) {
+    for (const polygon of response.polygons) {
       drawables.push({
         elements: {
           count: polygon.indexCount,

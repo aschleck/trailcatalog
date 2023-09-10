@@ -18,6 +18,56 @@ const VERTEX_STRIDE =
 /** Renders instanced lines as rectangles without mitering. */
 export class LineProgram extends Program<LineProgramData> {
 
+  static push(
+      colorFill: RgbaU32,
+      colorStroke: RgbaU32,
+      radius: number,
+      stipple: boolean,
+      points: ArrayLike<number>,
+      buffer: ArrayBuffer,
+      offset: number,
+  ): {
+    geometryByteLength: number;
+    geometryOffset: number;
+    instanceCount: number;
+    vertexCount: number;
+  } {
+    const floats = new Float32Array(buffer, offset);
+    // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
+    // canonicalization. So we have to write them as uints to the same buffer.
+    const uint32s = new Uint32Array(buffer, offset);
+
+    let vertexOffset = 0;
+    const stride = VERTEX_STRIDE / 4;
+    let distanceAlong = 0;
+    for (let i = 0; i < points.length - 2; i += 2) {
+      const x = points[i + 0];
+      const y = points[i + 1];
+      const xp = points[i + 2];
+      const yp = points[i + 3];
+      floats[vertexOffset + 0] = x;
+      floats[vertexOffset + 1] = y;
+      floats[vertexOffset + 2] = xp;
+      floats[vertexOffset + 3] = yp;
+
+      uint32s[vertexOffset + 4] = colorFill;
+      uint32s[vertexOffset + 5] = colorStroke;
+      floats[vertexOffset + 6] = distanceAlong;
+      floats[vertexOffset + 7] = radius;
+      uint32s[vertexOffset + 8] = stipple ? 1 : 0;
+
+      distanceAlong += Math.sqrt((xp - x) * (xp - x) + (yp - y) * (yp - y));
+      vertexOffset += stride;
+    }
+
+    return {
+      geometryByteLength: vertexOffset * 4,
+      geometryOffset: offset,
+      instanceCount: vertexOffset / stride,
+      vertexCount: 4,
+    };
+  }
+
   private readonly lineBuffer: WebGLBuffer;
 
   constructor(gl: WebGL2RenderingContext) {
@@ -49,50 +99,22 @@ export class LineProgram extends Program<LineProgramData> {
       buffer: ArrayBuffer,
       offset: number,
       glBuffer: WebGLBuffer,
-  ): {byteSize: number; drawable: Drawable;} {
-    const floats = new Float32Array(buffer, offset);
-    // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
-    // canonicalization. So we have to write them as uints to the same buffer.
-    const uint32s = new Uint32Array(buffer, offset);
-
-    let vertexOffset = 0;
-    const stride = VERTEX_STRIDE / 4;
-    let distanceAlong = 0;
-    for (let i = 0; i < points.length - 2; i += 2) {
-      const x = points[i + 0];
-      const y = points[i + 1];
-      const xp = points[i + 2];
-      const yp = points[i + 3];
-      floats[vertexOffset + 0] = x;
-      floats[vertexOffset + 1] = y;
-      floats[vertexOffset + 2] = xp;
-      floats[vertexOffset + 3] = yp;
-
-      uint32s[vertexOffset + 4] = colorFill;
-      uint32s[vertexOffset + 5] = colorStroke;
-      floats[vertexOffset + 6] = distanceAlong;
-      floats[vertexOffset + 7] = radius;
-      uint32s[vertexOffset + 8] = stipple ? 1 : 0;
-
-      distanceAlong += Math.sqrt((xp - x) * (xp - x) + (yp - y) * (yp - y));
-      vertexOffset += stride;
-    }
+  ): Drawable {
+    const result =
+        LineProgram.push(colorFill, colorStroke, radius, stipple, points, buffer, offset);
 
     return {
-      byteSize: vertexOffset * 4,
-      drawable: {
-        elements: undefined,
-        geometry: glBuffer,
-        geometryByteLength: vertexOffset * 4,
-        geometryOffset: offset,
-        instanced: {
-          count: vertexOffset / stride,
-        },
-        program: this,
-        texture: undefined,
-        vertexCount: 4,
-        z,
+      elements: undefined,
+      geometry: glBuffer,
+      geometryByteLength: result.geometryByteLength,
+      geometryOffset: result.geometryOffset,
+      instanced: {
+        count: result.instanceCount,
       },
+      program: this,
+      texture: undefined,
+      vertexCount: result.vertexCount,
+      z,
     };
   }
 

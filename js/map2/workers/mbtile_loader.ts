@@ -49,10 +49,20 @@ export interface LoadResponse {
   id: TileId;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
-  polygonalGeometries: PolygonalGeometry[];
+  lines: InstanceGeometry[];
+  points: InstanceGeometry[];
+  polygons: ElementGeometry[];
 }
 
-export interface PolygonalGeometry {
+export interface ElementGeometry {
+  geometryByteLength: number;
+  geometryOffset: number;
+  indexCount: number;
+  indexOffset: number;
+  z: number;
+}
+
+export interface InstanceGeometry {
   geometryByteLength: number;
   geometryOffset: number;
   indexCount: number;
@@ -145,7 +155,9 @@ class MbtileLoader {
       id: request.id,
       geometry: geometry.buffer,
       index: index.buffer,
-      polygonalGeometries: [],
+      lines: [],
+      points: [],
+      polygons: [],
     };
 
     for (const [style, triangless] of triangulated) {
@@ -164,7 +176,7 @@ class MbtileLoader {
         indexOffset += triangles.index.length;
       }
 
-      response.polygonalGeometries.push({
+      response.polygons.push({
         geometryByteLength: 4 * (geometryOffset - geometryStart),
         geometryOffset: 4 * geometryStart,
         indexCount: indexOffset - indexStart,

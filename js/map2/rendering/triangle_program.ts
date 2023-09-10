@@ -11,6 +11,41 @@ const VERTEX_STRIDE =
 
 export class TriangleProgram extends Program<TriangleProgramData> {
 
+  static push(
+      geometry: Float32Array|Float64Array,
+      index: ArrayLike<number>,
+      fill: RgbaU32,
+      geometryBuffer: ArrayBuffer,
+      geometryOffset: number,
+      indexBuffer: ArrayBuffer,
+      indexOffset: number,
+  ): {
+    geometryByteLength: number;
+    geometryOffset: number;
+    indexByteLength: number;
+    indexOffset: number;
+    elementCount: number,
+  } {
+    const indices = new Uint32Array(indexBuffer, indexOffset);
+    indices.set(index, 0);
+
+    const floats = new Float32Array(geometryBuffer, geometryOffset);
+    // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
+    // canonicalization. So we have to write them as uints to the same buffer.
+    const uint32s = new Uint32Array(geometryBuffer, geometryOffset);
+
+    uint32s[0] = fill;
+    floats.set(geometry, 1);
+
+    return {
+      geometryByteLength: 4 + geometry.byteLength,
+      geometryOffset,
+      indexByteLength: index.length * 4,
+      indexOffset,
+      elementCount: indices.length,
+    };
+  }
+
   constructor(gl: WebGL2RenderingContext) {
     super(createTriangleProgram(gl), gl, gl.TRIANGLES);
     this.registerDisposer(() => {
@@ -29,40 +64,31 @@ export class TriangleProgram extends Program<TriangleProgramData> {
       indexOffset: number,
       glGeometryBuffer: WebGLBuffer,
       glIndexBuffer: WebGLBuffer,
-  ): {
-    geometryByteSize: number;
-    indexByteSize: number;
-    drawable: Drawable;
-  } {
-    const indices = new Uint32Array(indexBuffer, indexOffset);
-    indices.set(index, 0);
-
-    const floats = new Float32Array(geometryBuffer, geometryOffset);
-    // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
-    // canonicalization. So we have to write them as uints to the same buffer.
-    const uint32s = new Uint32Array(geometryBuffer, geometryOffset);
-
-    uint32s[0] = fill;
-    floats.set(geometry, 1);
+  ): Drawable {
+    const result =
+        TriangleProgram.push(
+            geometry,
+            index,
+            fill,
+            geometryBuffer,
+            geometryOffset,
+            indexBuffer,
+            indexOffset);
 
     return {
-      geometryByteSize: geometry.length * 4,
-      indexByteSize: index.length * 4,
-      drawable: {
-        elements: {
-          count: indices.length,
-          index: glIndexBuffer,
-          offset: indexOffset,
-        },
-        geometry: glGeometryBuffer,
-        geometryByteLength: 4 + geometry.byteLength,
-        geometryOffset,
-        instanced: undefined,
-        program: this,
-        texture: undefined,
-        vertexCount: geometry.length / 2,
-        z,
+      elements: {
+        count: result.elementCount,
+        index: glIndexBuffer,
+        offset: result.indexOffset,
       },
+      geometry: glGeometryBuffer,
+      geometryByteLength: result.geometryByteLength,
+      geometryOffset: result.geometryOffset,
+      instanced: undefined,
+      program: this,
+      texture: undefined,
+      vertexCount: -1,
+      z,
     };
   }
 

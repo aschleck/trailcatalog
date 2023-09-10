@@ -24,7 +24,7 @@ export class Renderer extends Disposable {
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 
     gl.clearColor(0.95, 0.95, 0.95, 1);
     gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);

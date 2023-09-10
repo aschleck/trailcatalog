@@ -12,7 +12,6 @@ import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
 import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
 import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
-import { Z_BASE_TILE } from '../z';
 
 const NO_OFFSET: Vec2 = [0, 0];
 
@@ -31,6 +30,8 @@ export class RasterTileLayer extends Layer {
   constructor(
       copyrights: Copyright[],
       url: string,
+      private readonly tint: RgbaU32,
+      private readonly z: number,
       extraZoom: number,
       minZoom: number,
       maxZoom: number,
@@ -93,7 +94,7 @@ export class RasterTileLayer extends Layer {
 
   render(planner: Planner): void {
     if (this.hasNewData()) {
-      const buffer = new ArrayBuffer(65536);
+      const buffer = new ArrayBuffer(4 * 256 * 256);
       const drawables = [];
       let offset = 0;
 
@@ -115,8 +116,8 @@ export class RasterTileLayer extends Layer {
                 NO_OFFSET,
                 [size, size],
                 /* angle= */ 0,
-                /* tint= */ 0xFFFFFFFF as RgbaU32,
-                /* z= */ Z_BASE_TILE,
+                this.tint,
+                this.z,
                 /* atlasIndex= */ 0,
                 /* atlasSize= */ [1, 1],
                 buffer,
