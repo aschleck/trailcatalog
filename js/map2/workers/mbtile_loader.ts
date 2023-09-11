@@ -3,6 +3,7 @@ import { DefaultMap } from 'js/common/collections';
 import { LittleEndianView } from 'js/common/little_endian_view';
 
 import { RgbaU32, TileId } from '../common/types';
+import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
 
 import { GeometryType } from './mbtile_types';
 import { Triangles, triangulateMb } from './triangulate';
@@ -13,10 +14,25 @@ interface InitializeRequest {
 }
 
 export interface Style {
+  layers: LayerStyle[];
+}
+
+interface LayerStyle {
+  layerName: string;
+  lines: LineStyle[];
   polygons: PolygonStyle[];
 }
 
-type GeometryStyle = PolygonStyle;
+type GeometryStyle = LineStyle|PolygonStyle;
+
+interface LineStyle {
+  filters: Match[];
+  fill: RgbaU32;
+  stroke: RgbaU32;
+  radius: number;
+  stipple: boolean;
+  z: number;
+}
 
 interface PolygonStyle {
   filters: Match[];
@@ -34,7 +50,13 @@ interface StringEqualsMatch {
   value: string;
 }
 
-type Match = AlwaysMatch|StringEqualsMatch;
+interface StringInMatch {
+  match: 'string_in';
+  key: string;
+  value: string[];
+}
+
+type Match = AlwaysMatch|StringEqualsMatch|StringInMatch;
 
 interface LoadRequest {
   kind: 'lr';
@@ -65,8 +87,8 @@ export interface ElementGeometry {
 export interface InstanceGeometry {
   geometryByteLength: number;
   geometryOffset: number;
-  indexCount: number;
-  indexOffset: number;
+  instanceCount: number;
+  vertexCount: number;
   z: number;
 }
 
@@ -75,6 +97,7 @@ export type Response = LoadResponse;
 type ValueType = boolean|number|string;
 
 interface Layer {
+  name: string;
   keys: string[];
   values: ValueType[];
   lines: Feature[];
@@ -120,20 +143,69 @@ class MbtileLoader {
       }
     }
 
-    const grouped = new DefaultMap<PolygonStyle, Feature[]>(() => []);
+    const lineGroups = new DefaultMap<LineStyle, Feature[]>(() => []);
+    const polygonGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     for (const layer of layers) {
-      for (const polygon of layer.polygons) {
-        const style = findStyle(polygon.tags, layer.keys, layer.values, this.style.polygons);
-        if (style) {
-          grouped.get(style).push(polygon);
+      let layerStyle;
+      for (const ls of this.style.layers) {
+        if (layer.name === ls.layerName) {
+          layerStyle = ls;
+          break;
         }
+      }
+
+      if (!layerStyle) {
+        console.log(`skipped layer ${layer.name}`);
+        continue;
+      }
+
+      const lineUnstyled = new Set<unknown>();
+      const polygonUnstyled = new Set<unknown>();
+      for (const line of layer.lines) {
+        const style = findStyle(line.tags, layer.keys, layer.values, layerStyle.lines);
+        if (style) {
+          lineGroups.get(style).push(line);
+        } else {
+          for (let i = 0; i < line.tags.length; i += 2) {
+            if (layer.keys[line.tags[i + 0]] === 'class') {
+              lineUnstyled.add(layer.values[line.tags[i + 1]]);
+            }
+          }
+        }
+      }
+
+      for (const polygon of layer.polygons) {
+        const style = findStyle(polygon.tags, layer.keys, layer.values, layerStyle.polygons);
+        if (style) {
+          polygonGroups.get(style).push(polygon);
+        } else {
+          for (let i = 0; i < polygon.tags.length; i += 2) {
+            if (layer.keys[polygon.tags[i + 0]] === 'class') {
+              polygonUnstyled.add(layer.values[polygon.tags[i + 1]]);
+            }
+          }
+        }
+      }
+
+      if (lineUnstyled.size > 0) {
+        console.log(`${layer.name} lines`);
+        console.log(lineUnstyled);
+      }
+      if (polygonUnstyled.size > 0) {
+        console.log(`${layer.name} polygons`);
+        console.log(polygonUnstyled);
       }
     }
 
     const triangulated = new Map<PolygonStyle, Triangles[]>();
     let geometryCount = 0;
     let indexCount = 0;
-    for (const [style, polygons] of grouped) {
+    for (const lines of lineGroups.values()) {
+      for (const line of lines) {
+        geometryCount += LINE_VERTEX_STRIDE / 4 * (line.geometry.length - 2) / 2;
+      }
+    }
+    for (const [style, polygons] of polygonGroups) {
       const triangless = [];
       for (const polygon of polygons) {
         const triangles = triangulateMb(polygon.geometry, polygon.starts)
@@ -159,6 +231,39 @@ class MbtileLoader {
       points: [],
       polygons: [],
     };
+
+    // TODO(april): support points
+
+    for (const [style, lines] of lineGroups) {
+      const geometryStart = geometryOffset;
+      let instanceCount = 0;
+      let vertexCount = 0;
+      for (const line of lines) {
+        line.starts.push(line.geometry.length);
+        for (let i = 0; i < line.starts.length - 1; i++) {
+          const result =
+              LineProgram.push(
+                style.fill,
+                style.stroke,
+                style.radius,
+                style.stipple,
+                line.geometry.slice(line.starts[i], line.starts[i + 1]),
+                geometry.buffer,
+                4 * geometryOffset);
+          geometryOffset += result.geometryByteLength / 4;
+          instanceCount += result.instanceCount;
+          vertexCount = result.vertexCount;
+        }
+      }
+
+      response.lines.push({
+        geometryByteLength: 4 * (geometryOffset - geometryStart),
+        geometryOffset: 4 * geometryStart,
+        instanceCount,
+        vertexCount,
+        z: style.z,
+      });
+    }
 
     for (const [style, triangless] of triangulated) {
       const geometryStart = geometryOffset;
@@ -214,9 +319,9 @@ self.onmessage = e => {
 
 function loadLayer(source: LittleEndianView, tile: TileId): Layer {
   let version;
-  let name = '';
   let extent = 4096;
   const layer: Layer = {
+    name: '',
     keys: [],
     values: [],
     lines: [],
@@ -239,7 +344,7 @@ function loadLayer(source: LittleEndianView, tile: TileId): Layer {
     } else if (wireType === 2) {
       const size = source.getVarInt32();
       if (field === 1) {
-        name = TEXT_DECODER.decode(source.sliceInt8(size));
+        layer.name = TEXT_DECODER.decode(source.sliceInt8(size));
       } else if (field === 2) {
         loadFeature(source.viewSlice(size), layer);
       } else if (field === 3) {
@@ -430,6 +535,21 @@ function matches(tags: number[], keys: string[], values: ValueType[], filters: M
           const value = values[tags[i + 1]];
           if (key === filter.key && value === filter.value) {
             return true;
+          }
+        }
+        break;
+      }
+      case "string_in": {
+        for (let i = 0; i < tags.length; i += 2) {
+          const key = keys[tags[i + 0]];
+          const value = values[tags[i + 1]];
+          if (key !== filter.key) {
+            continue;
+          }
+          for (const candidate of filter.value) {
+            if (value === candidate) {
+              return true;
+            }
           }
         }
         break;

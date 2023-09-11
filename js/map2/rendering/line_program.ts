@@ -5,7 +5,7 @@ import { RgbaU32 } from '../common/types';
 import { COLOR_OPERATIONS, Drawable, Program, ProgramData } from './program';
 
 // We write the stipple with 4 bytes to keep the 32bit numbers aligned.
-const VERTEX_STRIDE =
+export const VERTEX_STRIDE =
     4 * (
         2 + 2
             + /* fill= */ 1

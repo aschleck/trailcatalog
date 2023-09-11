@@ -87,7 +87,7 @@ export class TriangleProgram extends Program<TriangleProgramData> {
       instanced: undefined,
       program: this,
       texture: undefined,
-      vertexCount: -1,
+      vertexCount: undefined,
       z,
     };
   }

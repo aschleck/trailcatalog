@@ -15,7 +15,7 @@ import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
 import { MapController } from 'js/map2/map_controller';
 import { Planner } from 'js/map2/rendering/planner';
 import { Renderer } from 'js/map2/rendering/renderer';
-import { Z_OVERLAY_TILE, Z_USER_DATA } from 'js/map2/z';
+import { Z_OVERLAY_TERRAIN, Z_USER_DATA } from 'js/map2/z';
 
 const CELL_BORDER = rgbaToUint32(1, 0, 0, 1);
 export const MAX_S2_ZOOM = 31;
@@ -86,8 +86,8 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       new RasterTileLayer(
           /* copyright= */ [],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
-          /* tint= */ 0xFFFFFF8F as RgbaU32,
-          Z_OVERLAY_TILE,
+          /* tint= */ 0xFFFFFF40 as RgbaU32,
+          Z_OVERLAY_TERRAIN,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 12,
