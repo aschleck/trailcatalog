@@ -76,6 +76,15 @@ local_repository(
   path = "../j2cl",
 )
 
+http_archive(
+  name = "com_google_jsinterop_generator",
+  urls = [
+    "https://github.com/google/jsinterop-generator/archive/3fb7a57db11cfffd6e0e9e2242706d4e48f2d471.zip",
+  ],
+  sha256 = "e9ad72a81253a968bcf70ef39db95fef2feab468ac65ffaaf80894d99376b980",
+  strip_prefix = "jsinterop-generator-3fb7a57db11cfffd6e0e9e2242706d4e48f2d471",
+)
+
 load("@com_google_j2cl//build_defs:repository.bzl", "load_j2cl_repo_deps")
 
 load_j2cl_repo_deps()
@@ -83,15 +92,6 @@ load_j2cl_repo_deps()
 load("@com_google_j2cl//build_defs:workspace.bzl", "setup_j2cl_workspace")
 
 setup_j2cl_workspace()
-
-http_archive(
-  name = "com_google_jsinterop_base",
-  urls = [
-    "https://github.com/google/jsinterop-base/archive/82f373901b33dc5464bbfaf9de00ab3f0a016055.zip",
-  ],
-  sha256 = "7c852b795fdea0f5febaf1e8ee42a119155406c8d4c878a5404397e3cbe247a9",
-  strip_prefix = "jsinterop-base-82f373901b33dc5464bbfaf9de00ab3f0a016055",
-)
 
 # TODO: Migrated to Bzlmod
 http_archive(

@@ -5,6 +5,7 @@ import { RgbaU32 } from 'js/map2/common/types';
 import { MAP_MOVED } from 'js/map2/events';
 import { MapController } from 'js/map2/map_controller';
 import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
+import { Z_BASE_TERRAIN } from 'js/map2/z';
 
 import { CollectionLayer } from './collection_layer';
 
@@ -41,14 +42,14 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           }],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
           /* tint= */ 0xFFFFFFFF as RgbaU32,
-          /* z= */ 0,
+          /* z= */ Z_BASE_TERRAIN,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 12,
           this.mapController.renderer,
       ),
       new CollectionLayer(
-          '/api/collections/e82606a0-9ce6-4256-ba69-217753f69d34',
+          '/api/collections/177f7460-08da-4d0d-b898-e3c6eac96046',
           this.mapController.renderer,
       ),
     ]);
