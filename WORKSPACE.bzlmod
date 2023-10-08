@@ -104,9 +104,9 @@ http_archive(
 # TODO: Migrated to Bzlmod
 http_archive(
   name = "com_google_elemental2",
-  url = "https://github.com/google/elemental2/archive/5e650ebdd48e58aa89bb839c138c34d8a6778f2a.zip",
-  sha256 = "9d06a4113d7e5a68e1d14f9803644c37d8ba1a6d065f900baf9a59ad674ad92b",
-  strip_prefix = "elemental2-5e650ebdd48e58aa89bb839c138c34d8a6778f2a",
+  url = "https://github.com/google/elemental2/archive/0e35857ab7a9125d2cf84bdbfad0dff7ca370ef7.zip",
+  sha256 = "21c6ab15edfb832406a7d747d8664d3f6b16bb06352be491554c411871e13b5c",
+  strip_prefix = "elemental2-0e35857ab7a9125d2cf84bdbfad0dff7ca370ef7",
 )
 
 load("@com_google_elemental2//build_defs:repository.bzl", "load_elemental2_repo_deps")

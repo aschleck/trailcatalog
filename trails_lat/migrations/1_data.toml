@@ -58,6 +58,12 @@ primary_key = ["id"]
   type = "UUID"
 
   [[actions.columns]]
+  name = "created"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+  [[actions.columns]]
   name = "name"
   nullable = false
   type = "TEXT"

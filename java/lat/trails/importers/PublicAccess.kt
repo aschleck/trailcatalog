@@ -10,10 +10,15 @@ import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2Projections
 import com.google.common.geometry.S2RegionCoverer
+import java.io.ByteArrayOutputStream
+import java.nio.file.Path
+import java.util.Comparator
+import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import lat.trails.common.COLLECTION_COVERING_MAX_LEVEL
 import lat.trails.common.FEATURE_COVERING_MAX_LEVEL
 import lat.trails.common.createConnection
-import java.nio.file.Path
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
 import org.apache.commons.text.StringEscapeUtils
@@ -23,6 +28,7 @@ import org.locationtech.proj4j.CoordinateTransform
 import org.locationtech.proj4j.CoordinateTransformFactory
 import org.locationtech.proj4j.ProjCoordinate
 import org.slf4j.LoggerFactory
+import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createNullableFlag
 import org.trailcatalog.flags.parseFlags
@@ -30,10 +36,6 @@ import org.trailcatalog.importers.basemap.StringifyingInputStream
 import org.trailcatalog.importers.basemap.appendByteArray
 import org.trailcatalog.importers.basemap.copyStreamToPg
 import org.trailcatalog.s2.polygonToCell
-import java.io.ByteArrayOutputStream
-import java.util.UUID
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 private val logger = LoggerFactory.getLogger("PublicAccess")
 
@@ -170,9 +172,7 @@ fun main(args: Array<String>) {
         covering.add(cell.parent(COLLECTION_COVERING_MAX_LEVEL.coerceAtMost(cell.level())))
       }
     }
-    val union = S2CellUnion()
-    union.initFromCellIds(ArrayList(covering))
-    dumpPolygons(union, polygons)
+    dumpPolygons(ArrayList(covering), polygons)
   }
 }
 
@@ -206,7 +206,7 @@ private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform):
   return snapped
 }
 
-private fun dumpPolygons(covering: S2CellUnion, polygons: List<Feature>) {
+private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature>) {
   createConnection().use { hikari ->
     val collection =
         hikari.connection
@@ -220,7 +220,13 @@ private fun dumpPolygons(covering: S2CellUnion, polygons: List<Feature>) {
               setBytes(
                   3,
                   ByteArrayOutputStream().also {
-                    covering.encode(it)
+                    DelegatingEncodedOutputStream(it).use {
+                      covering.sortWith(Comparator.naturalOrder())
+                      it.writeVarInt(covering.size)
+                      for (cell in covering) {
+                        it.writeLong(cell.id())
+                      }
+                    }
                   }.toByteArray())
             }
             .executeQuery()
