@@ -28,6 +28,7 @@ export interface ProgramData {
     cameraCenter: WebGLUniformLocation;
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    z: WebGLUniformLocation;
   };
 }
 
@@ -59,6 +60,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
     let lastGeometry = undefined;
     let lastIndex = undefined;
     let lastTexture = undefined;
+    let lastZ = 9999; // random large number
     // TODO(april): support merging drawables?
     for (const centerPixel of centerPixels) {
       gl.uniform2fv(this.program.uniforms.cameraCenter, centerPixel);
@@ -77,6 +79,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
                 && drawable.instanced === undefined
                 && drawStart.geometry === drawable.geometry
                 && drawStart.texture === drawable.texture
+                && drawStart.z === drawable.z
                 && drawStart.geometryOffset + pendingGeometryByteLength === drawable.geometryOffset
         ) {
           pendingGeometryByteLength += drawable.geometryByteLength;
@@ -98,6 +101,10 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         if (lastTexture !== drawStart.texture && drawStart.texture) {
           gl.bindTexture(gl.TEXTURE_2D, drawStart.texture);
           lastTexture = drawStart.texture;
+        }
+        if (lastZ !== drawStart.z) {
+          gl.uniform1f(this.program.uniforms.z, 1 - drawStart.z / 1000);
+          lastZ = drawStart.z;
         }
 
         this.draw({
@@ -130,6 +137,10 @@ export abstract class Program<P extends ProgramData> extends Disposable {
       if (lastTexture !== drawStart.texture && drawStart.texture) {
         gl.bindTexture(gl.TEXTURE_2D, drawStart.texture);
         lastTexture = drawStart.texture;
+      }
+      if (lastZ !== drawStart.z) {
+        gl.uniform1f(this.program.uniforms.z, 1 - drawStart.z / 1000);
+        lastZ = drawStart.z;
       }
 
       this.draw({

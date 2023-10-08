@@ -84,10 +84,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
   protected activate(): void {
     const gl = this.gl;
 
-    // TODO(april): is this a good idea?
-    gl.clear(gl.STENCIL_BUFFER_BIT);
-    gl.enable(gl.STENCIL_TEST);
-
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(this.program.uniforms.color, 0);
 
@@ -174,14 +170,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         /* offset= */ offset + 60);
   }
 
-  protected override draw(drawable: Drawable): void {
-    const gl = this.gl;
-    // We add 1 because the stencil buffer initializes to 0, so by default zoom 0 wouldn't draw.
-    gl.stencilFunc(gl.GREATER, drawable.z + 1, 0xFF);
-    gl.stencilMask(0xFF);
-    super.draw(drawable);
-  }
-
   protected deactivate(): void {
     const gl = this.gl;
 
@@ -195,7 +183,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.atlasSize);
     gl.disableVertexAttribArray(this.program.attributes.tint);
     gl.disableVertexAttribArray(this.program.attributes.sizeIsPixels);
-    gl.disable(gl.STENCIL_TEST);
   }
 }
 
@@ -218,6 +205,7 @@ interface BillboardProgramData extends ProgramData {
     color: WebGLUniformLocation;
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    z: WebGLUniformLocation;
   };
 }
 
@@ -231,6 +219,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       uniform highp vec2 cameraCenter; // Mercator
       uniform highp vec2 halfViewportSize; // pixels
       uniform highp float halfWorldSize; // pixels
+      uniform highp float z;
 
       in highp vec2 position;
       in mediump vec2 colorPosition;
@@ -259,7 +248,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
                 ? relativeCenter * halfWorldSize + rotated
                 : (relativeCenter + rotated) * halfWorldSize;
         vec2 screenCoord = worldCoord + offsetPx;
-        gl_Position = vec4(screenCoord / halfViewportSize, 0, 1);
+        gl_Position = vec4(screenCoord / halfViewportSize, z, 1);
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.y);
@@ -322,6 +311,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       color: checkExists(gl.getUniformLocation(programId, 'color')),
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+      z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };
 }

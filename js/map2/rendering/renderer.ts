@@ -25,6 +25,7 @@ export class Renderer extends Disposable {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.enable(gl.DEPTH_TEST);
 
     gl.clearColor(0.95, 0.95, 0.95, 1);
     gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
@@ -32,7 +33,7 @@ export class Renderer extends Disposable {
 
   clear(): void {
     const gl = this.gl;
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
 
   createDataBuffer(byteSize: number, usage?: number): WebGLBuffer {

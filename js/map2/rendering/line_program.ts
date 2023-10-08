@@ -211,6 +211,7 @@ export class LineProgram extends Program<LineProgramData> {
     this.bindAttributes(drawable.geometryOffset);
 
     // Draw without the border, always replacing the stencil buffer if we're replacing
+    // TODO(april): migrate this to the depth buffer?
     gl.stencilFunc(gl.NOTEQUAL, drawable.z, 0xff);
     gl.stencilMask(drawable.z);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
@@ -263,6 +264,7 @@ interface LineProgramData extends ProgramData {
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
     renderBorder: WebGLUniformLocation;
+    z: WebGLUniformLocation;
   };
 }
 
@@ -275,6 +277,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
       uniform bool renderBorder;
+      uniform highp float z;
 
       // x is either 0 or 1, y is either -1 or 1.
       in highp vec2 position;
@@ -315,7 +318,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         highp float actualRadius = renderBorder ? radius : radius - 1.;
         vec2 push = perp * actualRadius * position.y;
         vec2 worldCoord = location * halfWorldSize + push;
-        gl_Position = vec4(worldCoord / halfViewportSize, 0, 1);
+        gl_Position = vec4(worldCoord / halfViewportSize, z, 1);
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
@@ -390,6 +393,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
       renderBorder: checkExists(gl.getUniformLocation(programId, 'renderBorder')),
+      z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };
 }

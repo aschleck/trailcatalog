@@ -35,8 +35,8 @@ export const NATURE: Readonly<Style> = {
               'scrub',
             ],
           }],
-          fill: 0x6fd19588 as RgbaU32,
-          z: Z_BASE_TERRAIN + 0.01,
+          fill: 0x6fd1954C as RgbaU32,
+          z: Z_BASE_TERRAIN + 0.2,
         },
         {
           filters: [{
@@ -47,20 +47,20 @@ export const NATURE: Readonly<Style> = {
               'tree',
             ],
           }],
-          fill: 0x21ad5788 as RgbaU32,
-          z: Z_BASE_TERRAIN,
+          fill: 0x21ad574C as RgbaU32,
+          z: Z_BASE_TERRAIN + 0.1,
         },
-        //{
-        //  filters: [{
-        //    match: 'string_in',
-        //    key: 'class',
-        //    value: [
-        //      'snow',
-        //    ],
-        //  }],
-        //  fill: 0xFFFFFFFFF as RgbaU32,
-        //  z: Z_BASE_TERRAIN,
-        //},
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'snow',
+            ],
+          }],
+          fill: 0xFFFFFFF80 as RgbaU32,
+          z: Z_BASE_TERRAIN + 0.1,
+        },
       ],
     },
     {
@@ -72,11 +72,22 @@ export const NATURE: Readonly<Style> = {
             match: 'string_in',
             key: 'class',
             value: [
+              'wetland',
+            ],
+          }],
+          fill: 0x6fd1954C as RgbaU32,
+          z: Z_BASE_TERRAIN + 0.5,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
               'grass',
               'wood',
             ],
           }],
-          fill: 0x21AD57AA as RgbaU32,
+          fill: 0x21AD574C as RgbaU32,
           z: Z_BASE_TERRAIN + 0.5,
         },
         {
@@ -99,7 +110,7 @@ export const NATURE: Readonly<Style> = {
               'ice',
             ],
           }],
-          fill: 0xFFFFFFFFF as RgbaU32,
+          fill: 0xFFFFFFF80 as RgbaU32,
           z: Z_BASE_TERRAIN + 0.5,
         },
       ],
@@ -113,14 +124,15 @@ export const NATURE: Readonly<Style> = {
             match: 'string_in',
             key: 'class',
             value: [
-              'city_park',
-              'county_park',
-              'national_park',
-              'nature_reserve',
-              'open_space_preserve',
-              'regional_park',
-              'state_park',
-              'state_wilderness',
+              //'city_park',
+              //'county_park',
+              // TODO(april): this looks gross at the nortern tip of Greenland
+              //'national_park',
+              //'nature_reserve',
+              //'open_space_preserve',
+              //'regional_park',
+              //'state_park',
+              //'state_wilderness',
             ],
           }],
           fill: 0x21ad57aa as RgbaU32,

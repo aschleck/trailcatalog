@@ -137,6 +137,7 @@ interface TriangleProgramData extends ProgramData {
     cameraCenter: WebGLUniformLocation;
     halfViewportSize: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    z: WebGLUniformLocation;
   };
 }
 
@@ -151,6 +152,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       uniform highp vec2 cameraCenter; // Mercator
       uniform highp vec2 halfViewportSize; // pixels
       uniform highp float halfWorldSize; // pixels
+      uniform highp float z;
 
       in uint fillColor;
       in highp vec2 position; // Mercator
@@ -165,7 +167,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
         vec2 alwaysCameraCenter = position.x < 1000.0 ? cameraCenter : position;
         vec2 relativeCenter = position - alwaysCameraCenter;
         vec2 screenCoord = relativeCenter * halfWorldSize;
-        gl_Position = vec4(screenCoord / halfViewportSize, 0, 1);
+        gl_Position = vec4(screenCoord / halfViewportSize, z, 1);
 
         fragFillColor = uint32ToVec4(fillColor);
         fragFillColor = vec4(fragFillColor.rgb * fragFillColor.a, fragFillColor.a);
@@ -213,6 +215,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
       halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+      z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };
 }
