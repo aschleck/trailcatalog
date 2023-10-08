@@ -56,10 +56,10 @@ kt_register_toolchains()
 http_archive(
   name = "io_bazel_rules_closure",
   urls = [
-    "https://github.com/bazelbuild/rules_closure/archive/3ad6806fa6d4b296e8b268831348fb695ba14c8a.zip",
+    "https://github.com/bazelbuild/rules_closure/archive/7a2c91f9519c301f5adc072e5e18c4bae5273404.zip",
   ],
-  sha256 = "854028c3b56d7cf9cca939a54945e521b52015688100ca6d31679277cbff99ad",
-  strip_prefix = "rules_closure-3ad6806fa6d4b296e8b268831348fb695ba14c8a",
+  sha256 = "228f016d9e669ab4fb2b7f31c4fb010d3ccd0a64987eb4dc47fe1e55433cbf06",
+  strip_prefix = "rules_closure-7a2c91f9519c301f5adc072e5e18c4bae5273404",
 )
 
 load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies", "rules_closure_toolchains")
@@ -152,8 +152,8 @@ j2cl_maven_import_external(
 
 j2cl_maven_import_external(
     name = "com_google_guava-j2cl",
-    artifact = "com.google.guava:guava-gwt:31.0.1-jre",
-    artifact_sha256 = "63c378abce1dc1de39312630630ee68b1578350af5907eab995833a0ba03ed35",
+    artifact = "com.google.guava:guava-gwt:32.1.2-jre",
+    artifact_sha256 = "6ad2a74884e91e800e0bd55db335b989d1375bd5f3b0be9bc60f05ffb4d91cfd",
     server_urls = ["https://repo1.maven.org/maven2/"],
     deps = [
         "@com_google_code_findbugs_jsr305-j2cl",
