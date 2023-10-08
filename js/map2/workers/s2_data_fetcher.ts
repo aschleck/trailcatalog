@@ -1,4 +1,4 @@
-import { S2CellUnion, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { Long, S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
 import { FetchThrottler } from 'js/common/fetch_throttler';
@@ -40,7 +40,7 @@ export type Command = LoadCellCommand|UnloadCellsCommand;
 
 class S2DataFetcher {
 
-  private readonly covering: S2CellUnion;
+  private readonly covering: Set<string>;
   private readonly inFlight: Map<S2CellToken, AbortController>;
   private readonly loaded: Set<S2CellToken>;
   private readonly throttler: FetchThrottler;
@@ -51,7 +51,7 @@ class S2DataFetcher {
       private readonly url: string,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
-    this.covering = new S2CellUnion();
+    this.covering = new Set();
     this.inFlight = new Map();
     this.loaded = new Set();
     this.throttler = new FetchThrottler();
@@ -77,8 +77,17 @@ class S2DataFetcher {
           }
 
           const coveringByteLength = source.getVarInt32();
-          const read = SimpleS2.decodeCellUnion(source.sliceUint8(coveringByteLength));
-          this.covering.initRawCellIds(read.cellIds());
+          const coveringVersion = source.getVarInt32();
+          if (coveringVersion === 1) {
+            const coveringLength = source.getVarInt32();
+            for (let i = 0; i < coveringLength; ++i) {
+              this.covering.add(
+                  new S2CellId(Long.fromBits(source.getInt32(), source.getInt32()))
+                      .toToken());
+            }
+          } else {
+            throw new Error(`Unhandled covering version ${coveringVersion}`);
+          }
           this.updateViewport({
             kind: 'uvr',
             viewport: this.lastViewport,
@@ -90,7 +99,7 @@ class S2DataFetcher {
     const viewport = request.viewport;
     this.lastViewport = viewport;
 
-    if (this.covering.size() === 0) {
+    if (this.covering.size === 0) {
       return;
     }
 
@@ -111,7 +120,7 @@ class S2DataFetcher {
         continue;
       }
 
-      if (!this.covering.intersectsCellId(cell)) {
+      if (!this.covering.has(token)) {
         this.loaded.add(token);
         continue;
       }

@@ -30,7 +30,7 @@ export class CollectionLayer extends Layer {
       url: string,
       private readonly renderer: Renderer,
   ) {
-    super(/* copyright= */ undefined);
+    super(/* copyright= */ []);
     this.fetcher = new Worker('/static/s2_data_fetcher_worker.js');
     this.loader = new WorkerPool('/static/collection_loader_worker.js', 6);
     this.cells = new Map();

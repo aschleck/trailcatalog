@@ -1,6 +1,7 @@
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { rgbaToUint32 } from 'js/map2/common/math';
+import { RgbaU32 } from 'js/map2/common/types';
 import { MAP_MOVED } from 'js/map2/events';
 import { MapController } from 'js/map2/map_controller';
 import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
@@ -34,14 +35,16 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       new RasterTileLayer(
-          {
+          [{
             long: 'Contains modified Copernicus Sentinel data 2021',
             short: 'Copernicus 2021',
-          },
+          }],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
-          0,
-          0,
-          12,
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ 0,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 12,
           this.mapController.renderer,
       ),
       new CollectionLayer(

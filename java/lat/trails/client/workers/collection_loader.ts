@@ -154,7 +154,7 @@ class CollectionLoader {
 
         response.polygons.push({
           data,
-          geometryByteLength: triangles.geometry.byteLength,
+          geometryByteLength: 4 * triangles.geometry.length,
           geometryOffset,
           indexCount: triangles.index.length,
           indexOffset,

@@ -222,6 +222,7 @@ private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature
                   ByteArrayOutputStream().also {
                     DelegatingEncodedOutputStream(it).use {
                       covering.sortWith(Comparator.naturalOrder())
+                      it.writeVarInt(1)
                       it.writeVarInt(covering.size)
                       for (cell in covering) {
                         it.writeLong(cell.id())
