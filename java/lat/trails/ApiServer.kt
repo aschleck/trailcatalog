@@ -5,7 +5,11 @@ import com.google.common.geometry.S2CellId
 import com.zaxxer.hikari.HikariDataSource
 import io.javalin.Javalin
 import io.javalin.http.Context
+import io.javalin.http.Header
 import io.javalin.http.HttpStatus
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.collections.ArrayList
 import lat.trails.common.createConnection
@@ -127,6 +131,7 @@ private fun fetchCollectionObjects(ctx: Context) {
   val collection = ctx.pathParam("id")
   val cell = S2CellId.fromToken(ctx.pathParam("cell"))
   val bytes = AlignableByteArrayOutputStream()
+  var mostRecent = Instant.EPOCH
   DelegatingEncodedOutputStream(bytes).use {
     // version
     it.writeVarInt(1)
@@ -138,7 +143,7 @@ private fun fetchCollectionObjects(ctx: Context) {
       val single = cell.level() < 6
       connection
           .prepareStatement(
-              "SELECT p.id, p.data, p.s2_polygon "
+              "SELECT p.id, p.data, p.s2_polygon, p.created "
                       + "FROM collections c "
                       + "JOIN polygons p ON c.id = p.collection "
                       + "WHERE "
@@ -165,6 +170,7 @@ private fun fetchCollectionObjects(ctx: Context) {
                       results.getObject(1) as UUID,
                       results.getString(2),
                       results.getBytes(3)))
+              mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
             }
             it.writeVarInt(polygons.size)
             for (polygon in polygons) {
@@ -180,5 +186,26 @@ private fun fetchCollectionObjects(ctx: Context) {
           }
     }
   }
-  ctx.result(bytes.toByteArray())
+
+  if (!contentIsCached(ctx, mostRecent)) {
+    ctx.result(bytes.toByteArray())
+  }
 }
+
+private fun contentIsCached(ctx: Context, version: Instant): Boolean {
+  "\"${version.hashCode()}\"".let { etag ->
+    ctx.header("Cache-Control", "no-cache,private")
+    ctx.header("ETag", etag)
+    val modSince = DateTimeFormatter.RFC_1123_DATE_TIME.format(version.atZone(ZoneId.of("GMT")))
+    ctx.header("Last-Modified", modSince)
+    val requestModSince = ctx.header(Header.IF_MODIFIED_SINCE)
+    val requestETag = ctx.header(Header.IF_NONE_MATCH)
+    // nginx weakens etags when gzipping, so we have to also check if the user sent us a weak etag.
+    if (modSince == requestModSince || etag == requestETag || "W/${etag}" == requestETag) {
+      ctx.status(HttpStatus.NOT_MODIFIED)
+      return true
+    }
+  }
+  return false
+}
+

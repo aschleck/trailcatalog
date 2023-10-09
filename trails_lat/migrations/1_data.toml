@@ -107,9 +107,10 @@ primary_key = ["id"]
   type = "BIGINT"
 
   [[actions.columns]]
-  name = "covering"
+  name = "created"
   nullable = false
-  type = "BYTEA"
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
 
   [[actions.columns]]
   name = "data"
@@ -136,6 +137,55 @@ table = "lines"
 
 [[actions]]
 type = "create_table"
+name = "points"
+primary_key = ["id"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "collection"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "cell"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "created"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+  [[actions.columns]]
+  name = "data"
+  nullable = false
+  type = "JSONB"
+
+  [[actions.columns]]
+  name = "lat_lng_degrees"
+  nullable = false
+  type = "BYTEA"
+
+  [[actions.foreign_keys]]
+  columns = ["collection"]
+  referenced_table = "collections"
+  referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "points"
+
+  [actions.index]
+  name = "points_by_collection"
+  columns = ["collection"]
+
+[[actions]]
+type = "create_table"
 name = "polygons"
 primary_key = ["id"]
 
@@ -155,9 +205,10 @@ primary_key = ["id"]
   type = "BIGINT"
 
   [[actions.columns]]
-  name = "covering"
+  name = "created"
   nullable = false
-  type = "BYTEA"
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
 
   [[actions.columns]]
   name = "data"

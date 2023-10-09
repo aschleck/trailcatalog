@@ -238,17 +238,13 @@ private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature
 
     val mapper = ObjectMapper()
     val stream = StringifyingInputStream(polygons.iterator()) { feature, csv ->
-      // id,collection,cell,covering,data,s2_polygon
+      // id,collection,cell,created,data,s2_polygon
       csv.append(UUID.randomUUID())
       csv.append(",")
       csv.append(collection)
       csv.append(",")
       csv.append(polygonToCell(feature.polygon).id())
-      csv.append(",")
-      appendByteArray(ByteArrayOutputStream().also {
-        feature.covering.encode(it)
-      }.toByteArray(), csv)
-      csv.append(",")
+      csv.append(",now(),")
       csv.append(StringEscapeUtils.escapeCsv(mapper.writeValueAsString(feature.data)))
       csv.append(",")
       appendByteArray(ByteArrayOutputStream().also {

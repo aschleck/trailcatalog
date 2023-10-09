@@ -45,6 +45,8 @@ async function initialize(server: FastifyInstance): Promise<void> {
             'accept-encoding': headers['accept-encoding'],
             'accept-language': headers['accept-language'],
             'cache-control': headers['cache-control'],
+            'if-modified-since': headers['if-modified-since'],
+            'if-none-match': headers['if-none-match'],
             'pragma': headers['pragma'],
             'user-agent': headers['user-agent'],
             'x-user-id': request.userId,
