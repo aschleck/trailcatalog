@@ -12,8 +12,8 @@ export type Rect = Readonly<{
   high: Vec2;
 }>;
 
-export type LatLng = Vec2 & {brand: 'LatLng'};
-export type LatLngRect = Rect & {brand: 'LatLngRect'};
+export type LatLng = Vec2 & {brand: 'LatLng'}; // in degrees, not radians
+export type LatLngRect = Rect & {brand: 'LatLngRect'}; // in degrees, not radians
 
 export type LatLngZoom = Readonly<{
   lat: number;

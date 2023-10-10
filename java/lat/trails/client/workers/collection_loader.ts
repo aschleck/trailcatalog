@@ -1,7 +1,8 @@
+import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
 import { LittleEndianView } from 'js/common/little_endian_view';
-import { RgbaU32, S2CellToken } from 'js/map2/common/types';
+import { LatLngRect, RgbaU32, S2CellToken } from 'js/map2/common/types';
 import { Triangles, triangulateS2 } from 'js/map2/workers/triangulate';
 import { Z_USER_DATA } from 'js/map2/z';
 
@@ -56,6 +57,7 @@ export interface Polygon {
   indexCount: number;
   // relative the start of the polygon indices
   indexOffset: number;
+  s2: ArrayBuffer;
 }
 
 export interface PolygonalGeometry {
@@ -89,6 +91,7 @@ class CollectionLoader {
     const polygonCount = source.getVarInt32();
     const byFill = new Map<RgbaU32, Array<{
       data: Data;
+      rawPolygon: ArrayBuffer;
       triangles: Triangles;
     }>>();
     let geometryCount = 0;
@@ -99,7 +102,8 @@ class CollectionLoader {
       const dataByteSize = source.getVarInt32();
       const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
       const polygonByteSize = source.getVarInt32();
-      const polygon = SimpleS2.decodePolygon(source.sliceInt8(polygonByteSize).slice().buffer);
+      const rawPolygon = source.sliceInt8(polygonByteSize).slice().buffer;
+      const polygon = SimpleS2.decodePolygon(rawPolygon);
 
       const style = findStyle(data, this.style.polygons);
       if (!style) {
@@ -118,6 +122,7 @@ class CollectionLoader {
 
       bucket.push({
         data,
+        rawPolygon,
         triangles,
       });
     }
@@ -146,7 +151,7 @@ class CollectionLoader {
       geometryOffset += 1;
 
       for (const polygon of polygons) {
-        const {data, triangles} = polygon;
+        const {data, rawPolygon, triangles} = polygon;
         geometry.set(triangles.geometry, geometryOffset);
         for (let i = 0; i < triangles.index.length; ++i) {
           index[indexOffset + i] = triangles.index[i] + (geometryOffset - geometryStart - 1) / 2;
@@ -158,6 +163,7 @@ class CollectionLoader {
           geometryOffset,
           indexCount: triangles.index.length,
           indexOffset,
+          s2: rawPolygon,
         });
 
         geometryOffset += triangles.geometry.length;
@@ -219,3 +225,4 @@ function matches(data: Data, filters: Match[]): boolean {
   }
   return false;
 }
+

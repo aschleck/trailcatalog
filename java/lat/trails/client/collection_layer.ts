@@ -1,13 +1,14 @@
-import { S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
 import { WorkerPool } from 'js/common/worker_pool';
-import { RgbaU32, S2CellToken, TileId, Vec2 } from 'js/map2/common/types';
-import { Layer } from 'js/map2/layer';
+import { LatLng, RgbaU32, S2CellToken, TileId } from 'js/map2/common/types';
+import { EventSource, Layer } from 'js/map2/layer';
 import { Planner } from 'js/map2/rendering/planner';
 import { Drawable } from 'js/map2/rendering/program';
 import { Renderer } from 'js/map2/rendering/renderer';
 import { TexturePool } from 'js/map2/rendering/texture_pool';
+import { Request as QuerierRequest, Response as QuerierResponse } from 'js/map2/workers/location_querier';
 import { Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, UnloadCellsCommand } from 'js/map2/workers/s2_data_fetcher';
 
 import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from './workers/collection_loader';
@@ -20,8 +21,9 @@ interface LoadedCell {
 
 export class CollectionLayer extends Layer {
 
-  private readonly fetcher: Worker;
+  private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
   private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
+  private readonly querier: WorkerPool<QuerierRequest, QuerierResponse>;
   private readonly cells: Map<S2CellToken, LoadedCell|undefined>;
   private generation: number;
   private lastRenderGeneration: number;
@@ -31,8 +33,9 @@ export class CollectionLayer extends Layer {
       private readonly renderer: Renderer,
   ) {
     super(/* copyright= */ []);
-    this.fetcher = new Worker('/static/s2_data_fetcher_worker.js');
+    this.fetcher = new WorkerPool('/static/s2_data_fetcher_worker.js', 1);
     this.loader = new WorkerPool('/static/collection_loader_worker.js', 6);
+    this.querier = new WorkerPool('/static/location_querier_worker.js', 1);
     this.cells = new Map();
     this.registerDisposer(() => {
       for (const response of this.cells.values()) {
@@ -47,8 +50,7 @@ export class CollectionLayer extends Layer {
     this.generation = 0;
     this.lastRenderGeneration = -1;
 
-    this.fetcher.onmessage = e => {
-      const command = e.data as FetcherCommand;
+    this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
         this.loadRawCell(command);
       } else if (command.kind === 'ucc') {
@@ -66,7 +68,7 @@ export class CollectionLayer extends Layer {
       }
     };
 
-    this.postFetcherRequest({
+    this.fetcher.broadcast({
       kind: 'ir',
       covering: url + '/covering',
       url: url + '/objects',
@@ -94,6 +96,15 @@ export class CollectionLayer extends Layer {
         ],
       },
     });
+    this.querier.broadcast({kind: 'ir'});
+  }
+
+  click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
+    this.querier.post({
+      kind: 'qpr',
+      point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
+    });
+    return false;
   }
 
   hasNewData(): boolean {
@@ -114,7 +125,7 @@ export class CollectionLayer extends Layer {
   viewportChanged(bounds: S2LatLngRect, zoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
-    this.postFetcherRequest({
+    this.fetcher.post({
       kind: 'uvr',
       viewport: {
         lat: [lat.lo(), lat.hi()],
@@ -154,6 +165,12 @@ export class CollectionLayer extends Layer {
     this.renderer.uploadIndices(response.index, response.index.byteLength, index);
     const drawables = [];
 
+    this.querier.post({
+      kind: 'lr',
+      groupId: response.token,
+      polygons: response.polygons,
+    });
+
     for (const polygon of response.polygonalGeometries) {
       drawables.push({
         elements: {
@@ -181,6 +198,11 @@ export class CollectionLayer extends Layer {
   }
 
   private unloadCells(command: UnloadCellsCommand): void {
+    this.querier.post({
+      kind: 'ur',
+      groupIds: command.tokens,
+    });
+
     for (const token of command.tokens) {
       const response = this.cells.get(token);
       if (response) {
@@ -190,10 +212,6 @@ export class CollectionLayer extends Layer {
       }
     }
     this.generation += 1;
-  }
-
-  private postFetcherRequest(request: FetcherRequest, transfer?: Transferable[]) {
-    this.fetcher.postMessage(request, transfer ?? []);
   }
 }
 

@@ -16,6 +16,7 @@ import elemental2.core.Uint8Array;
 import elemental2.core.JsIIterableResult;
 import elemental2.core.JsIteratorIterable;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ import java.util.Set;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
 import jsinterop.base.Js;
+import jsinterop.base.JsArrayLike;
 
 @JsType
 public final class SimpleS2 {
@@ -137,6 +139,17 @@ public final class SimpleS2 {
   public static S2Polygon decodePolygon(ArrayBuffer buffer) {
     try {
       return S2Polygon.decode(new ArrayBufferInputStream(buffer));
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  @JsMethod
+  public static ArrayBuffer encodePolygon(S2Polygon polygon) {
+    try {
+      ByteArrayOutputStream stream = new ByteArrayOutputStream();
+      polygon.encode(stream);
+      return Uint8Array.from(Js.<JsArrayLike<Double>>uncheckedCast(stream.toByteArray())).buffer;
     } catch (IOException e) {
       throw new RuntimeException(e);
     }

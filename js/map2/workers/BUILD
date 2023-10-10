@@ -3,6 +3,14 @@ package(default_visibility = ["//visibility:public"])
 load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
 
 esbuild_binary(
+    name = "location_querier_worker",
+    entry_point = "location_querier.js",
+    deps = [
+        ":workers",
+    ],
+)
+
+esbuild_binary(
     name = "mbtile_loader_worker",
     entry_point = "mbtile_loader.js",
     deps = [

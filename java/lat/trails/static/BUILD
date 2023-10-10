@@ -20,6 +20,7 @@ genrule(
     srcs = [
         "//java/lat/trails/client",
         "//java/lat/trails/client/workers:collection_loader_worker",
+        "//js/map2/workers:location_querier_worker",
         "//js/map2/workers:raster_loader_worker",
         "//js/map2/workers:s2_data_fetcher_worker",
         "//js/map2/workers:xyz_data_fetcher_worker",
@@ -30,6 +31,8 @@ genrule(
         "client.js.map",
         "collection_loader_worker.js",
         "collection_loader_worker.js.map",
+        "location_querier_worker.js",
+        "location_querier_worker.js.map",
         "raster_loader_worker.js",
         "raster_loader_worker.js.map",
         "s2_data_fetcher_worker.js",

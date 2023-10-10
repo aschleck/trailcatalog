@@ -82,6 +82,7 @@ export declare namespace com.google.common.geometry {
 
   class S2Polygon {
     contains(polygon: S2Polygon): boolean;
+    containsPoint(point: S2Point): boolean;
     getArea(): number;
     getLoops(): java.util.List<S2Loop>;
     getRectBound(): S2LatLngRect;
@@ -137,6 +138,7 @@ export declare namespace org.trailcatalog.s2 {
     static decodeCellUnion(data: Uint8Array): com.google.common.geometry.S2CellUnion;
     static decodePolygon(bytes: ArrayBuffer): com.google.common.geometry.S2Polygon;
     static earthMetersToAngle(meters: number): com.google.common.geometry.S1Angle;
+    static encodePolygon(polygon: com.google.common.geometry.S2Polygon): ArrayBuffer;
     static pointToLatLng(point: com.google.common.geometry.S2Point):
         com.google.common.geometry.S2LatLng;
   }

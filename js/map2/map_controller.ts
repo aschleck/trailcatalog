@@ -11,7 +11,7 @@ import { Copyright, LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types'
 import { Planner } from './rendering/planner';
 import { Renderer } from './rendering/renderer';
 
-import { Camera } from './camera';
+import { Camera, unprojectS2LatLng } from './camera';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from './events';
 import { Layer } from './layer';
 import { PointerInterpreter } from './pointer_interpreter';
@@ -180,15 +180,16 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     const offsetX = pageX - this.screenArea.left;
     const offsetY = pageY - this.screenArea.top;
     const point = this.clientToWorld(offsetX, offsetY)
+    const ll = unprojectS2LatLng(point[0], point[1]);
     // On mobile we don't get hover events, so we won't have previously hovered.
     for (const layer of this.layers) {
-      if (layer.hover(point, this)) {
+      if (layer.hover(ll, this)) {
         break;
       }
     }
 
     for (const layer of this.layers) {
-      if (layer.click(point, [offsetX, offsetY], contextual, this)) {
+      if (layer.click(ll, [offsetX, offsetY], contextual, this)) {
         break;
       }
     }
@@ -198,8 +199,9 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     const offsetX = pageX - this.screenArea.left;
     const offsetY = pageY - this.screenArea.top;
     const point = this.clientToWorld(offsetX, offsetY);
+    const ll = unprojectS2LatLng(point[0], point[1]);
     for (const layer of this.layers) {
-      if (layer.hover(point, this)) {
+      if (layer.hover(ll, this)) {
         break;
       }
     }
