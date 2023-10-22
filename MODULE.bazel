@@ -9,6 +9,7 @@ bazel_dep(name = "rules_jvm_external", version = "4.5")
 bazel_dep(name = "rules_nodejs", version = "6.0.0")
 bazel_dep(name = "rules_pkg", version = "0.9.1")
 bazel_dep(name = "rules_proto", version = "5.3.0-21.7")
+bazel_dep(name = "rules_python", version = "0.26.0")
 bazel_dep(name = "rules_oci", version = "1.2.0")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
@@ -76,3 +77,12 @@ oci.pull(
 )
 
 use_repo(oci, "distroless_java")
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+pip.parse(
+    name = "pip",
+    requirements_lock = "//:requirements_lock.txt",
+)
+
+use_repo(pip, "pip")

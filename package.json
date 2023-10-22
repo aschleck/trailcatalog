@@ -1,27 +1,27 @@
 {
   "//": "stack-chain is an undeclared dep of cls-hooked, yikes!",
   "devDependencies": {
-    "@types/earcut": "^2.1.1",
-    "@types/jest": "^29.5.3",
-    "@types/node": "^20.4.8",
-    "@types/pg": "^8.10.2",
-    "autoprefixer": "^10.4.14",
-    "jest-cli": "^29.6.2",
-    "jest-environment-jsdom": "^29.6.2",
+    "@types/earcut": "^2.1.3",
+    "@types/jest": "^29.5.6",
+    "@types/node": "^20.8.7",
+    "@types/pg": "^8.10.7",
+    "autoprefixer": "^10.4.16",
+    "jest-cli": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "jest-junit": "^16.0.0",
-    "postcss": "^8.4.27",
+    "postcss": "^8.4.31",
     "stack-chain": "^2.0.0",
     "tailwindcss": "^3.3.3"
   },
   "dependencies": {
-    "@fastify/cookie": "^9.0.4",
+    "@fastify/cookie": "^9.1.0",
     "@fastify/reply-from": "^9.4.0",
     "@fastify/request-context": "^5.0.0",
     "@mapbox/tiny-sdf": "^2.0.6",
     "earcut": "^2.2.4",
-    "fastify": "^4.21.0",
+    "fastify": "^4.24.3",
     "node-fetch": "^3.3.2",
-    "openid-client": "^5.4.3",
-    "pg": "^8.11.2"
+    "openid-client": "^5.6.1",
+    "pg": "^8.11.3"
   }
 }
