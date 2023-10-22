@@ -362,11 +362,11 @@ class CellLayer extends Layer {
     this.zxys = new Map<string, [number, number, number]>();
   }
 
-  click(point: Vec2, px: [number, number], contextual: boolean, source: MapController): boolean {
+  click(point: S2LatLng, px: [number, number], contextual: boolean, source: MapController): boolean {
     if (contextual) {
-      this.controller.selectCell(unprojectS2LatLng(point[0], point[1]), px);
+      this.controller.selectCell(point, px);
     } else {
-      this.controller.toggleCell(unprojectS2LatLng(point[0], point[1]), source.camera.zoom);
+      this.controller.toggleCell(point, source.camera.zoom);
     }
     return true;
   }
