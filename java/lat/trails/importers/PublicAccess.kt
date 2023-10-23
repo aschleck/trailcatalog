@@ -203,7 +203,10 @@ private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform):
       builder.assemblePolygon(),
       S1Angle.radians(S2Projections.PROJ.maxDiag.getValue(21) / 2.0 + 1e-15),
       /* snapToCellCenters= */ true)
-  return snapped
+
+  val normalized = S2PolygonBuilder()
+  normalized.addPolygon(snapped)
+  return normalized.assemblePolygon()
 }
 
 private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature>) {
