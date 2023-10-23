@@ -10,6 +10,7 @@ import { Renderer } from 'js/map2/rendering/renderer';
 import { TexturePool } from 'js/map2/rendering/texture_pool';
 import { Request as QuerierRequest, Response as QuerierResponse } from 'js/map2/workers/location_querier';
 import { Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, UnloadCellsCommand } from 'js/map2/workers/s2_data_fetcher';
+import { Z_USER_DATA } from 'js/map2/z';
 
 import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from './workers/collection_loader';
 
@@ -30,6 +31,8 @@ export class CollectionLayer extends Layer {
 
   constructor(
       url: string,
+      indexBottom: number,
+      snap: number|undefined,
       private readonly renderer: Renderer,
   ) {
     super(/* copyright= */ []);
@@ -71,6 +74,8 @@ export class CollectionLayer extends Layer {
     this.fetcher.broadcast({
       kind: 'ir',
       covering: url + '/covering',
+      indexBottom,
+      snap,
       url: url + '/objects',
     });
     this.loader.broadcast({
@@ -79,19 +84,23 @@ export class CollectionLayer extends Layer {
         polygons: [
           {
             filters: [{match: 'string_equals', key: 'owner', value: 'BLM/BR'}],
-            fill: 0xFFFF00FF as RgbaU32,
+            fill: 0xFFFF0088 as RgbaU32,
+            z: Z_USER_DATA,
           },
           {
             filters: [{match: 'string_equals', key: 'owner', value: 'NPS'}],
-            fill: 0x00FF00FF as RgbaU32,
+            fill: 0x00FF0088 as RgbaU32,
+            z: Z_USER_DATA,
           },
           {
             filters: [{match: 'string_equals', key: 'owner', value: 'USFS'}],
-            fill: 0x0000FFFF as RgbaU32,
+            fill: 0x0000FF88 as RgbaU32,
+            z: Z_USER_DATA,
           },
           {
             filters: [{match: 'always'}],
-            fill: 0xFF0000FF as RgbaU32,
+            fill: 0xFF000088 as RgbaU32,
+            z: Z_USER_DATA,
           },
         ],
       },

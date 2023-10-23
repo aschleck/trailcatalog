@@ -7,12 +7,16 @@ import { Planner } from './rendering/planner';
 
 export abstract class Layer extends Disposable {
 
-  constructor(readonly copyrights: Copyright[]) {
+  constructor(private readonly _copyrights: Copyright[]|undefined = undefined) {
     super();
   }
 
+  get copyrights(): Copyright[] {
+    return this._copyrights ?? [];
+  }
+
   click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
-    return false
+    return false;
   }
 
   hasNewData(): boolean {

@@ -1,12 +1,17 @@
 package lat.trails
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2CellId
+import com.google.common.geometry.S2Polygon
+import com.google.common.geometry.S2Projections
 import com.zaxxer.hikari.HikariDataSource
 import io.javalin.Javalin
 import io.javalin.http.Context
 import io.javalin.http.Header
 import io.javalin.http.HttpStatus
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -131,6 +136,8 @@ private fun fetchCollectionObjects(ctx: Context) {
   val collection = ctx.pathParam("id")
   val cell = S2CellId.fromToken(ctx.pathParam("cell"))
   val bytes = AlignableByteArrayOutputStream()
+  val indexBottom = ctx.queryParam("bottom")!!.toInt()
+  val snap = ctx.queryParam("snap")?.toInt()
   var mostRecent = Instant.EPOCH
   DelegatingEncodedOutputStream(bytes).use {
     // version
@@ -138,9 +145,7 @@ private fun fetchCollectionObjects(ctx: Context) {
 
     // polygons
     hikari.connection.use { connection ->
-      // TODO(april): make this a constant!
-      // TRAILS_LAT_S2_INDEX_LEVEL
-      val single = cell.level() < 6
+      val single = cell.level() < indexBottom
       connection
           .prepareStatement(
               "SELECT p.id, p.data, p.s2_polygon, p.created "
@@ -165,11 +170,27 @@ private fun fetchCollectionObjects(ctx: Context) {
           .use { results ->
             val polygons = ArrayList<WirePolygon>()
             while (results.next()) {
+              val raw = results.getBytes(3)
+              val simplified =
+                if (snap == null) {
+                  raw
+                } else {
+                  S2Polygon().apply {
+                    initToSimplified(
+                        S2Polygon.decode(ByteArrayInputStream(raw)),
+                        S1Angle.radians(S2Projections.PROJ.maxDiag.getValue(snap) / 2.0 + 1e-15),
+                        /* snapToCellCenters= */ false)
+                  }.let {
+                    val output = ByteArrayOutputStream()
+                    it.encode(output)
+                    output.toByteArray()
+                  }
+                }
               polygons.add(
                   WirePolygon(
                       results.getObject(1) as UUID,
                       results.getString(2),
-                      results.getBytes(3)))
+                      simplified))
               mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
             }
             it.writeVarInt(polygons.size)

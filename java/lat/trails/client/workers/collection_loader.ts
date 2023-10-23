@@ -18,6 +18,7 @@ interface Style {
 interface PolygonStyle {
   filters: Match[];
   fill: RgbaU32;
+  z: number;
 }
 
 interface AlwaysMatch {
@@ -89,11 +90,13 @@ class CollectionLoader {
     }
 
     const polygonCount = source.getVarInt32();
-    const byFill = new Map<RgbaU32, Array<{
+    const triangulated: Array<{
       data: Data;
+      fill: RgbaU32;
       rawPolygon: ArrayBuffer;
       triangles: Triangles;
-    }>>();
+      z: number;
+    }> = [];
     let geometryCount = 0;
     let indexCount = 0;
     for (let i = 0; i < polygonCount; ++i) {
@@ -114,21 +117,37 @@ class CollectionLoader {
       geometryCount += triangles.geometry.length;
       indexCount += triangles.index.length;
 
-      let bucket = byFill.get(style.fill);
-      if (!bucket) {
-        bucket = [];
-        byFill.set(style.fill, bucket);
-      }
-
-      bucket.push({
+      triangulated.push({
         data,
+        fill: style.fill,
         rawPolygon,
         triangles,
+        z: style.z,
       });
     }
 
-    // Add a float per color to include the colors
-    const geometry = new Float32Array(byFill.size + geometryCount);
+    triangulated.sort((a, b) => {
+      if (a.z !== b.z) {
+        return a.z - b.z;
+      } else {
+        return a.fill - b.fill;
+      }
+    });
+
+    const merged = [];
+    let last = 0;
+    for (let i = 1; i < triangulated.length; ++i) {
+      if (triangulated[last].fill === triangulated[i].fill) {
+        continue;
+      }
+
+      merged.push(triangulated.slice(last, i));
+      last = i;
+    }
+    merged.push(triangulated.slice(last, triangulated.length));
+
+    // Add a float per color group to include the colors
+    const geometry = new Float32Array(merged.length + geometryCount);
     const geometryUints = new Uint32Array(geometry.buffer);
     const index = new Uint32Array(indexCount);
     let geometryOffset = 0;
@@ -143,14 +162,14 @@ class CollectionLoader {
       polygonalGeometries: [],
     };
 
-    for (const [fill, polygons] of byFill) {
+    for (const group of merged) {
       const geometryStart = geometryOffset;
       const indexStart = indexOffset;
 
-      geometryUints[geometryOffset] = fill;
+      geometryUints[geometryOffset] = group[0].fill;
       geometryOffset += 1;
 
-      for (const polygon of polygons) {
+      for (const polygon of group) {
         const {data, rawPolygon, triangles} = polygon;
         geometry.set(triangles.geometry, geometryOffset);
         for (let i = 0; i < triangles.index.length; ++i) {

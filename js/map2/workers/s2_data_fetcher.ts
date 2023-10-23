@@ -10,6 +10,8 @@ import { S2CellToken } from '../common/types';
 interface InitializeRequest {
   kind: 'ir';
   covering: string;
+  indexBottom: number;
+  snap: number|undefined;
   url: string;
 }
 
@@ -50,6 +52,8 @@ class S2DataFetcher {
 
   constructor(
       coveringUrl: string,
+      private readonly indexBottom: number,
+      private readonly snap: number|undefined,
       private readonly url: string,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
@@ -88,6 +92,7 @@ class S2DataFetcher {
             for (let i = 0; i < coveringLength; ++i) {
               this.covering.add(
                   new S2CellId(Long.fromBits(source.getInt32(), source.getInt32()))
+                      .parentAtLevel(this.indexBottom)
                       .toToken());
             }
           } else {
@@ -115,9 +120,7 @@ class S2DataFetcher {
     const bounds = S2LatLngRect.fromPointPair(low, high);
 
     const used = new Set<S2CellToken>();
-    // TODO(april): make this a constant!
-    // TRAILS_LAT_S2_INDEX_LEVEL
-    const cells = SimpleS2.cover(bounds, 6);
+    const cells = SimpleS2.cover(bounds, this.indexBottom);
     for (let i = 0; i < cells.size(); ++i) {
       const cell = cells.getAtIndex(i);
       const token = cell.toToken() as S2CellToken;
@@ -135,9 +138,11 @@ class S2DataFetcher {
       const abort = new AbortController();
       this.inFlight.set(token, abort);
 
-      this.throttler.fetch(
-              `${this.url}/${token}`,
-              { mode: 'cors', signal: abort.signal })
+      const url =
+          this.snap
+              ? `${this.url}/${token}?bottom=${this.indexBottom}&snap=${this.snap}`
+              : `${this.url}/${token}?bottom=${this.indexBottom}`;
+      this.throttler.fetch(url, { mode: 'cors', signal: abort.signal })
           .then(response => {
             if (response.ok) {
               return response.arrayBuffer();
@@ -179,9 +184,7 @@ class S2DataFetcher {
     const bounds = S2LatLngRect.fromPointPair(low, high);
 
     const used = new Set<S2CellToken>();
-    // TODO(april): make this a constant!
-    // TRAILS_LAT_S2_INDEX_LEVEL
-    const cells = SimpleS2.cover(bounds, 6);
+    const cells = SimpleS2.cover(bounds, this.indexBottom);
     for (let i = 0; i < cells.size(); ++i) {
       const cell = cells.getAtIndex(i);
       const token = cell.toToken() as S2CellToken;
@@ -206,7 +209,13 @@ class S2DataFetcher {
 }
 
 async function start(ir: InitializeRequest) {
-  const fetcher = new S2DataFetcher(ir.covering, ir.url, (self as any).postMessage.bind(self));
+  const fetcher =
+      new S2DataFetcher(
+          ir.covering,
+          ir.indexBottom,
+          ir.snap,
+          ir.url,
+          (self as any).postMessage.bind(self));
   self.onmessage = e => {
     const request = e.data as Request;
     if (request.kind === 'ir') {
