@@ -49,7 +49,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           this.mapController.renderer,
       ),
       new CollectionLayer(
-          '/api/collections/41de271d-7cef-47e2-bd07-1dc474be27ed',
+          '/api/collections/d06e3048-a112-4cdd-bc27-440ea9637adf',
           this.mapController.renderer,
       ),
     ]);
