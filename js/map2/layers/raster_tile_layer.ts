@@ -41,12 +41,12 @@ export class RasterTileLayer extends Layer {
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
     this.fetcher = new Worker('/static/xyz_data_fetcher_worker.js');
-    this.loader = new WorkerPool('/static/raster_loader_worker.js', 1);
+    this.loader = new WorkerPool('/static/raster_loader_worker.js', 6);
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
-    // Give ourselves at least 50ms to decode and load a tile into the GPU.
-    this.unloader = new Debouncer(/* ms= */ 50, () => {
+    // Give ourselves at least 250ms to decode and load a tile into the GPU.
+    this.unloader = new Debouncer(/* ms= */ 250, () => {
       this.unloadTiles();
     });
     this.unloading = new HashSet(id => `${id.zoom},${id.x},${id.y}`);
@@ -60,6 +60,8 @@ export class RasterTileLayer extends Layer {
       const command = e.data as FetcherCommand;
       if (command.kind === 'ltc') {
         this.loadTile(command);
+        // We need to push unloading *back* in case it is already scheduled.
+        this.unloader.trigger();
       } else if (command.kind === 'utc') {
         command.ids.forEach(id => { this.unloading.add(id); });
         this.unloader.trigger();

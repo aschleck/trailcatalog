@@ -349,6 +349,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 class CellLayer extends Layer {
 
   private readonly glBuffer: WebGLBuffer;
+  private lastRenderTime: number;
   readonly s2Cells: Map<string, S2Loop>;
   readonly zxys: Map<string, [number, number, number]>;
 
@@ -358,11 +359,13 @@ class CellLayer extends Layer {
   ) {
     super(/* copyright= */ []);
     this.glBuffer = renderer.createDataBuffer(0);
+    this.lastRenderTime = -1;
     this.s2Cells = new Map<string, S2Loop>();
     this.zxys = new Map<string, [number, number, number]>();
   }
 
-  click(point: S2LatLng, px: [number, number], contextual: boolean, source: MapController): boolean {
+  override click(point: S2LatLng, px: [number, number], contextual: boolean, source: MapController):
+      boolean {
     if (contextual) {
       this.controller.selectCell(point, px);
     } else {
@@ -371,11 +374,11 @@ class CellLayer extends Layer {
     return true;
   }
 
-  hasDataNewerThan(time: number): boolean {
-    return this.controller.lastChange > time;
+  override hasNewData(): boolean {
+    return this.controller.lastChange > this.lastRenderTime;
   }
 
-  render(planner: Planner): void {
+  override render(planner: Planner): void {
     const geometry = new ArrayBuffer(16384);
     let offset = 0;
     const drawables = [];
@@ -434,6 +437,7 @@ class CellLayer extends Layer {
 
     this.renderer.uploadData(geometry, offset, this.glBuffer, this.renderer.gl.STREAM_DRAW);
     planner.add(drawables);
+    this.lastRenderTime = Date.now();
   }
 }
 

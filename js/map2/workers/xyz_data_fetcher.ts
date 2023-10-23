@@ -45,9 +45,11 @@ export type Command = LoadTileCommand|UnloadTilesCommand;
 
 class XyzDataFetcher {
 
+  private readonly culler: Debouncer;
   private readonly inFlight: HashMap<TileId, AbortController>;
   private readonly loaded: HashSet<TileId>;
   private readonly throttler: FetchThrottler;
+  private lastViewport: Viewport;
 
   constructor(
       private readonly url: string,
@@ -56,13 +58,23 @@ class XyzDataFetcher {
       private readonly maxZoom: number,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
+    this.culler = new Debouncer(100 /* ms */, () => {
+      this.cull();
+    });
     this.inFlight = createTileHashMap();
     this.loaded = createTileHashSet();
     this.throttler = new FetchThrottler();
+    this.lastViewport = {
+      lat: [1, -1],
+      lng: [1, -1],
+      zoom: 31,
+    };
   }
 
-  updateViewport(request: UpdateViewportRequest) {
+  updateViewport(request: UpdateViewportRequest): void {
     const viewport = request.viewport;
+    this.lastViewport = viewport;
+
     const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
     const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
     const bounds = S2LatLngRect.fromPointPair(low, high);
@@ -74,12 +86,7 @@ class XyzDataFetcher {
       };
     }
 
-    const tz =
-        clamp(
-            Math.floor(request.viewport.zoom + this.extraZoom),
-            0,
-            this.maxZoom);
-
+    const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
     const worldSize = Math.pow(2, tz);
     const halfWorldSize = worldSize / 2;
 
@@ -121,6 +128,7 @@ class XyzDataFetcher {
                 id,
                 data,
               }, [data]);
+              this.culler.trigger();
             })
             .catch(e => {
               if (e.name !== 'AbortError') {
@@ -137,6 +145,43 @@ class XyzDataFetcher {
       if (!used.has(id)) {
         abort.abort();
         this.inFlight.delete(id);
+      }
+    }
+  }
+
+  private cull(): void {
+    const viewport = this.lastViewport;
+
+    const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
+    const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
+    const bounds = S2LatLngRect.fromPointPair(low, high);
+    let projected = projectLatLngRect(bounds);
+    if (projected.low[0] > projected.high[0]) {
+      projected = {
+        low: [projected.high[0], projected.low[1]],
+        high: [projected.low[0], projected.high[1]],
+      };
+    }
+
+    const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
+    const worldSize = Math.pow(2, tz);
+    const halfWorldSize = worldSize / 2;
+
+    const used = createTileHashSet();
+    // projected goes from -1 to 1, so we divide by 2 and add 0.5 to make it 0 to 1.
+    for (let y = Math.floor(worldSize * (-projected.high[1] / 2 + 0.5));
+         y < worldSize * (-projected.low[1] / 2 + 0.5);
+         ++y) {
+      for (let x = Math.floor(worldSize * (projected.low[0] / 2 + 0.5));
+          x < worldSize * (projected.high[0] / 2 + 0.5);
+          ++x) {
+        const id = {
+          // Handle world wrap. 3 is just a number that seems large enough to force x positive.
+          x: (x + 3 * worldSize) % worldSize,
+          y,
+          zoom: tz,
+        };
+        used.add(id);
       }
     }
 

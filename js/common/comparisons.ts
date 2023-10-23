@@ -1,3 +1,7 @@
+export function approxEqual(a: number, b: number, epsilon: number): boolean {
+  return Math.abs(a - b) < epsilon;
+}
+
 export function deepEqual(a: unknown|undefined, b: unknown|undefined): boolean {
   if (a === b) {
     return true;

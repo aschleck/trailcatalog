@@ -1,6 +1,7 @@
 import { Long, S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
+import { Debouncer } from 'js/common/debouncer';
 import { FetchThrottler } from 'js/common/fetch_throttler';
 import { LittleEndianView } from 'js/common/little_endian_view';
 
@@ -41,6 +42,7 @@ export type Command = LoadCellCommand|UnloadCellsCommand;
 class S2DataFetcher {
 
   private readonly covering: Set<string>;
+  private readonly culler: Debouncer;
   private readonly inFlight: Map<S2CellToken, AbortController>;
   private readonly loaded: Set<S2CellToken>;
   private readonly throttler: FetchThrottler;
@@ -52,6 +54,9 @@ class S2DataFetcher {
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
     this.covering = new Set();
+    this.culler = new Debouncer(100 /* ms */, () => {
+      this.cull();
+    });
     this.inFlight = new Map();
     this.loaded = new Set();
     this.throttler = new FetchThrottler();
@@ -88,6 +93,8 @@ class S2DataFetcher {
           } else {
             throw new Error(`Unhandled covering version ${coveringVersion}`);
           }
+
+          // It's possible we got a viewport before this covering, so force an update just in case.
           this.updateViewport({
             kind: 'uvr',
             viewport: this.lastViewport,
@@ -95,7 +102,7 @@ class S2DataFetcher {
         });
   }
 
-  updateViewport(request: UpdateViewportRequest) {
+  updateViewport(request: UpdateViewportRequest): void {
     const viewport = request.viewport;
     this.lastViewport = viewport;
 
@@ -145,6 +152,7 @@ class S2DataFetcher {
               token,
               data,
             }, [data]);
+            this.culler.trigger();
           })
           .catch(e => {
             if (e.name !== 'AbortError') {
@@ -161,6 +169,23 @@ class S2DataFetcher {
         abort.abort();
         this.inFlight.delete(id);
       }
+    }
+  }
+
+  private cull(): void {
+    const viewport = this.lastViewport;
+    const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
+    const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
+    const bounds = S2LatLngRect.fromPointPair(low, high);
+
+    const used = new Set<S2CellToken>();
+    // TODO(april): make this a constant!
+    // TRAILS_LAT_S2_INDEX_LEVEL
+    const cells = SimpleS2.cover(bounds, 6);
+    for (let i = 0; i < cells.size(); ++i) {
+      const cell = cells.getAtIndex(i);
+      const token = cell.toToken() as S2CellToken;
+      used.add(token);
     }
 
     const unload = [];

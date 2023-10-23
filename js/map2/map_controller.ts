@@ -1,5 +1,6 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExists, exists } from 'js/common/asserts';
+import { approxEqual } from 'js/common/comparisons';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
@@ -32,6 +33,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
   private readonly canvas: HTMLCanvasElement;
   private readonly dataChangedDebouncer: Debouncer;
   private readonly idleDebouncer: Debouncer;
+  private readonly wheelDebouncer: Debouncer;
   readonly renderer: Renderer;
 
   private layers: Layer[];
@@ -51,12 +53,17 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
       this.notifyDataChanged();
     });
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
-      if (!this.idle) {
+      if (!this.isIdle) {
         // It's okay to return here because we know that we'll get another idleDebouncer when idle()
         // is called by the same interpreter that set us busy.
         return;
       }
 
+      this.enterIdle();
+    });
+    this.wheelDebouncer = new Debouncer(/* delayMs= */ 100, () => {
+      // Yikes! We need to force idle so we re-render even though another pointer thing may have set
+      // us non idle.
       this.enterIdle();
     });
     this.renderer =
@@ -101,7 +108,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     if (newArgs.camera) {
       this.setCamera(newArgs.camera);
     }
-    this.idleDebouncer.trigger();
+    this.enterIdle();
   }
 
   private registerInteractiveListeners() {
@@ -172,8 +179,15 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     } else {
       llz = camera;
     }
-    this.camera.set(llz.lat, llz.lng, llz.zoom);
-    this.idle();
+
+    const current = this.camera.center;
+    if (
+        !approxEqual(llz.lat, current.latDegrees(), 0.000001)
+            || !approxEqual(llz.lng, current.lngDegrees(), 0.000001)
+            || !approxEqual(llz.zoom, this.camera.zoom, 0.001)) {
+      this.camera.set(llz.lat, llz.lng, llz.zoom);
+      this.idle();
+    }
   }
 
   click(pageX: number, pageY: number, contextual: boolean): void {
@@ -208,8 +222,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
   }
 
   idle(): void {
-    this.isIdle = true;
-    this.idleDebouncer.trigger();
+    this.enterIdle();
   }
 
   pan(dx: number, dy: number): void {
@@ -234,7 +247,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     const offsetY = e.pageY - this.screenArea.top;
     this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(offsetX, offsetY));
     this.nextRender = RenderType.CameraChange;
-    this.idleDebouncer.trigger();
+    this.wheelDebouncer.trigger();
     this.trigger(ZOOMED, {});
   }
 
@@ -274,7 +287,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
 
   private render(): void {
     if (this.isIdle) {
-      const hasNewData = this.layers.filter(l => l.hasNewData);
+      const hasNewData = this.layers.filter(l => l.hasNewData());
       if (hasNewData.length > 0) {
         this.dataChangedDebouncer.trigger();
         this.nextRender = RenderType.DataChange;
@@ -329,7 +342,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     this.area = [width, height];
     this.renderer.resize([width * DPI, height * DPI]);
     this.nextRender = RenderType.CameraChange;
-    this.idleDebouncer.trigger();
+    this.enterIdle();
   }
 }
 

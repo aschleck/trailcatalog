@@ -23,6 +23,8 @@ export const NATURE: Readonly<Style> = {
   layers: [
     {
       layerName: 'globallandcover',
+      minZoom: 0,
+      maxZoom: 31,
       lines: [],
       polygons: [
         {
@@ -65,6 +67,8 @@ export const NATURE: Readonly<Style> = {
     },
     {
       layerName: 'landcover',
+      minZoom: 0,
+      maxZoom: 31,
       lines: [],
       polygons: [
         {
@@ -117,6 +121,8 @@ export const NATURE: Readonly<Style> = {
     },
     {
       layerName: 'park',
+      minZoom: 0,
+      maxZoom: 31,
       lines: [],
       polygons: [
         {
@@ -142,6 +148,49 @@ export const NATURE: Readonly<Style> = {
     },
     {
       layerName: 'transportation',
+      minZoom: 0,
+      maxZoom: 11,
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'primary',
+              'primary_construction',
+              'secondary',
+              'secondary_construction',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 1,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'motorway_construction',
+              'trunk',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 1,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+      ],
+      polygons: [],
+    },
+    {
+      layerName: 'transportation',
+      minZoom: 11,
+      maxZoom: 31,
       lines: [
         {
           filters: [{
@@ -164,6 +213,7 @@ export const NATURE: Readonly<Style> = {
             key: 'class',
             value: [
               'rail',
+              'transit',
             ],
           }],
           fill: 0xAAAAAAAA as RgbaU32,
@@ -227,6 +277,8 @@ export const NATURE: Readonly<Style> = {
     },
     {
       layerName: 'water',
+      minZoom: 0,
+      maxZoom: 31,
       lines: [
         {
           filters: [{
@@ -265,6 +317,8 @@ export const NATURE: Readonly<Style> = {
     },
     {
       layerName: 'waterway',
+      minZoom: 0,
+      maxZoom: 31,
       lines: [
         {
           filters: [{
@@ -292,6 +346,8 @@ export class MbtileLayer extends Layer {
   private readonly fetcher: Worker;
   private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
   private readonly tiles: HashMap<TileId, LoadedTile|undefined>;
+  private readonly unloader: Debouncer;
+  private readonly unloading: HashSet<TileId>;
   private generation: number;
   private lastRenderGeneration: number;
 
@@ -306,7 +362,7 @@ export class MbtileLayer extends Layer {
   ) {
     super(copyrights);
     this.fetcher = new Worker('/static/xyz_data_fetcher_worker.js');
-    this.loader = new WorkerPool('/static/mbtile_loader_worker.js', 1);
+    this.loader = new WorkerPool('/static/mbtile_loader_worker.js', 6);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.registerDisposer(() => {
       for (const response of this.tiles.values()) {
@@ -318,6 +374,11 @@ export class MbtileLayer extends Layer {
         this.renderer.deleteBuffer(response.glIndexBuffer);
       }
     });
+    // Give ourselves at least 250ms to decode and load a tile into the GPU.
+    this.unloader = new Debouncer(/* ms= */ 250, () => {
+      this.unloadTiles();
+    });
+    this.unloading = new HashSet(id => `${id.zoom},${id.x},${id.y}`);
     this.generation = 0;
     this.lastRenderGeneration = -1;
 
@@ -325,8 +386,11 @@ export class MbtileLayer extends Layer {
       const command = e.data as FetcherCommand;
       if (command.kind === 'ltc') {
         this.loadRawTile(command);
+        // We need to push unloading *back* in case it is already scheduled.
+        this.unloader.trigger();
       } else if (command.kind === 'utc') {
-        this.unloadTiles(command);
+        command.ids.forEach(id => { this.unloading.add(id); });
+        this.unloader.trigger();
       } else {
         checkExhaustive(command);
       }
@@ -353,22 +417,25 @@ export class MbtileLayer extends Layer {
     });
   }
 
-  hasNewData(): boolean {
+  override hasNewData(): boolean {
     return this.generation !== this.lastRenderGeneration;
   }
 
-  render(planner: Planner): void {
-    for (const response of this.tiles.values()) {
+  override render(planner: Planner): void {
+    // Draw highest detail to lowest, we use the stencil buffer to avoid overdraw.
+    const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
+    for (const [id, response] of sorted) {
       if (!response) {
         continue;
       }
 
       planner.add(response.drawables);
-      this.lastRenderGeneration = this.generation;
     }
+
+    this.lastRenderGeneration = this.generation;
   }
 
-  viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+  override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.postFetcherRequest({
@@ -386,10 +453,12 @@ export class MbtileLayer extends Layer {
       return;
     }
 
-    this.tiles.set(command.id, undefined);
+    const id = command.id;
+    this.tiles.set(id, undefined);
+    this.unloading.delete(id);
     this.loader.post({
       kind: 'lr',
-      id: command.id,
+      id,
       data: command.data,
     }, [command.data]);
   }
@@ -450,8 +519,8 @@ export class MbtileLayer extends Layer {
     this.generation += 1;
   }
 
-  private unloadTiles(command: UnloadTilesCommand): void {
-    for (const id of command.ids) {
+  private unloadTiles(): void {
+    for (const id of this.unloading) {
       const response = this.tiles.get(id);
       if (response) {
         this.tiles.delete(id);
@@ -459,6 +528,7 @@ export class MbtileLayer extends Layer {
         this.renderer.deleteBuffer(response.glIndexBuffer);
       }
     }
+    this.unloading.clear();
     this.generation += 1;
   }
 
