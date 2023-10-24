@@ -1,7 +1,7 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap, HashSet } from 'js/common/collections';
-import { Debouncer } from 'js/common/debouncer';
+import { QueuedWorkerPool, Task } from 'js/common/queued_worker_pool';
 import { WorkerPool } from 'js/common/worker_pool';
 
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
@@ -18,12 +18,11 @@ const NO_OFFSET: Vec2 = [0, 0];
 export class RasterTileLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
-  private readonly fetcher: Worker;
-  private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
+  private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
+  private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private readonly pool: TexturePool;
-  private readonly tiles: HashMap<TileId, WebGLTexture|undefined>;
-  private readonly unloader: Debouncer;
-  private readonly unloading: HashSet<TileId>;
+  private readonly tiles: HashMap<TileId, WebGLTexture>;
   private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
 
@@ -40,31 +39,23 @@ export class RasterTileLayer extends Layer {
     super(copyrights);
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
-    this.fetcher = new Worker('/static/xyz_data_fetcher_worker.js');
-    this.loader = new WorkerPool('/static/raster_loader_worker.js', 6);
+    this.fetcher = new WorkerPool('/static/xyz_data_fetcher_worker.js', 1);
+    this.loader = new QueuedWorkerPool('/static/raster_loader_worker.js', 6);
+    this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
-    // Give ourselves at least 250ms to decode and load a tile into the GPU.
-    this.unloader = new Debouncer(/* ms= */ 250, () => {
-      this.unloadTiles();
-    });
-    this.unloading = new HashSet(id => `${id.zoom},${id.x},${id.y}`);
     this.generation = 0;
     this.plan = {
       generation: -1,
       drawables: [],
     };
 
-    this.fetcher.onmessage = e => {
-      const command = e.data as FetcherCommand;
+    this.fetcher.onresponse = command => {
       if (command.kind === 'ltc') {
         this.loadTile(command);
-        // We need to push unloading *back* in case it is already scheduled.
-        this.unloader.trigger();
       } else if (command.kind === 'utc') {
-        command.ids.forEach(id => { this.unloading.add(id); });
-        this.unloader.trigger();
+        this.unloadTiles(command.ids);
       } else {
         checkExhaustive(command);
       }
@@ -78,7 +69,7 @@ export class RasterTileLayer extends Layer {
       }
     };
 
-    this.postFetcherRequest({
+    this.fetcher.broadcast({
       kind: 'ir',
       url,
       extraZoom,
@@ -103,10 +94,6 @@ export class RasterTileLayer extends Layer {
       // Draw highest detail to lowest, we use the stencil buffer to avoid overdraw.
       const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
       for (const [id, texture] of sorted) {
-        if (!texture) {
-          continue;
-        }
-
         const halfWorldSize = Math.pow(2, id.zoom - 1);
         const size = 1 / halfWorldSize;
         const {byteSize, drawable} =
@@ -143,7 +130,7 @@ export class RasterTileLayer extends Layer {
   viewportChanged(bounds: S2LatLngRect, zoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
-    this.postFetcherRequest({
+    this.fetcher.post({
       kind: 'uvr',
       viewport: {
         lat: [lat.lo(), lat.hi()],
@@ -159,41 +146,44 @@ export class RasterTileLayer extends Layer {
     }
 
     const id = command.id;
-    this.tiles.set(id, undefined);
-    this.unloading.delete(id);
-    this.loader.post({
+    const task = this.loader.post({
       kind: 'lr',
       id,
       data: command.data,
     }, [command.data]);
+    this.loading.set(id, task);
   }
 
   private loadBitmap(response: LoadResponse): void {
-    // Has this already been unloaded?
-    if (!this.tiles.has(response.id)) {
-      return;
-    }
-
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(response.bitmap, texture);
+
+    this.loading.delete(response.id);
     this.tiles.set(response.id, texture);
     this.generation += 1;
+
+    this.fetcher.broadcast({
+      kind: 'tlr',
+      id: response.id,
+    });
   }
 
-  private unloadTiles(): void {
-    for (const id of this.unloading) {
+  private unloadTiles(ids: TileId[]): void {
+    for (const id of ids) {
+      const task = this.loading.get(id);
+      if (task) {
+        this.loading.delete(id);
+        task.cancel();
+      }
+
       const texture = this.tiles.get(id);
       if (texture) {
         this.tiles.delete(id);
         this.pool.release(texture);
       }
     }
-    this.unloading.clear();
-    // no need to bump the generation
-  }
 
-  private postFetcherRequest(request: FetcherRequest, transfer?: Transferable[]) {
-    this.fetcher.postMessage(request, transfer ?? []);
+    this.generation += 1;
   }
 }
 

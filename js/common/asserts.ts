@@ -15,6 +15,12 @@ export function checkExists<V>(v: V|null|undefined, message?: string): V {
   return v;
 }
 
+export function checkState(v: any, message?: string): void {
+  if (!v) {
+    throw new Error(message ?? 'Unexpected state was false-y');
+  }
+}
+
 export function exists<T>(v: T|null|undefined): v is T {
   if (v === null || v === undefined) {
     return false;

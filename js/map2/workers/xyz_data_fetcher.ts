@@ -17,6 +17,11 @@ interface InitializeRequest {
   maxZoom: number;
 }
 
+interface TileLoadedRequest {
+  kind: 'tlr';
+  id: TileId;
+}
+
 interface Viewport {
   lat: [number, number];
   lng: [number, number];
@@ -28,7 +33,7 @@ interface UpdateViewportRequest {
   viewport: Viewport;
 }
 
-export type Request = InitializeRequest|UpdateViewportRequest;
+export type Request = InitializeRequest|TileLoadedRequest|UpdateViewportRequest;
 
 export interface LoadTileCommand {
   kind: 'ltc';
@@ -45,8 +50,8 @@ export type Command = LoadTileCommand|UnloadTilesCommand;
 
 class XyzDataFetcher {
 
-  private readonly culler: Debouncer;
   private readonly inFlight: HashMap<TileId, AbortController>;
+  private readonly pending: HashSet<TileId>;
   private readonly loaded: HashSet<TileId>;
   private readonly throttler: FetchThrottler;
   private lastViewport: Viewport;
@@ -58,10 +63,8 @@ class XyzDataFetcher {
       private readonly maxZoom: number,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
-    this.culler = new Debouncer(100 /* ms */, () => {
-      this.cull();
-    });
     this.inFlight = createTileHashMap();
+    this.pending = createTileHashSet();
     this.loaded = createTileHashSet();
     this.throttler = new FetchThrottler();
     this.lastViewport = {
@@ -69,6 +72,13 @@ class XyzDataFetcher {
       lng: [1, -1],
       zoom: 31,
     };
+  }
+
+  tileLoaded(request: TileLoadedRequest): void {
+    if (this.pending.has(request.id)) {
+      this.pending.delete(request.id);
+      this.loaded.add(request.id);
+    }
   }
 
   updateViewport(request: UpdateViewportRequest): void {
@@ -106,7 +116,7 @@ class XyzDataFetcher {
         };
         used.add(id);
 
-        if (this.loaded.has(id) || this.inFlight.has(id)) {
+        if (this.inFlight.has(id) || this.pending.has(id) || this.loaded.has(id)) {
           continue;
         }
 
@@ -122,13 +132,13 @@ class XyzDataFetcher {
               }
             })
             .then(data => {
-              this.loaded.add(id);
+              this.pending.add(id);
               this.postMessage({
                 kind: 'ltc',
                 id,
                 data,
               }, [data]);
-              this.culler.trigger();
+              this.cull();
             })
             .catch(e => {
               if (e.name !== 'AbortError') {
@@ -186,6 +196,26 @@ class XyzDataFetcher {
     }
 
     const unload = [];
+    for (const id of this.pending) {
+      if (used.has(id)) {
+        continue;
+      }
+
+      let useful = false;
+      for (const missing of this.inFlight.keys()) {
+        if (tilesIntersect(id, missing)) {
+          useful = true;
+          break;
+        }
+      }
+      if (useful) {
+        continue;
+      }
+
+      this.pending.delete(id);
+      unload.push(id);
+    }
+
     for (const id of this.loaded) {
       if (used.has(id)) {
         continue;
@@ -193,6 +223,15 @@ class XyzDataFetcher {
 
       let useful = false;
       for (const missing of this.inFlight.keys()) {
+        if (tilesIntersect(id, missing)) {
+          useful = true;
+          break;
+        }
+      }
+      if (useful) {
+        continue;
+      }
+      for (const missing of this.pending) {
         if (tilesIntersect(id, missing)) {
           useful = true;
           break;
@@ -234,6 +273,8 @@ function start(ir: InitializeRequest) {
     const request = e.data as Request;
     if (request.kind === 'ir') {
       throw new Error('Already initialized');
+    } else if (request.kind === 'tlr') {
+      fetcher.tileLoaded(request);
     } else if (request.kind === 'uvr') {
       fetcher.updateViewport(request);
     } else {
