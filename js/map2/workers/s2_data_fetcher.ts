@@ -39,7 +39,12 @@ export interface UnloadCellsCommand {
   tokens: S2CellToken[];
 }
 
-export type Command = LoadCellCommand|UnloadCellsCommand;
+export interface UpdateStateCommand {
+  kind: 'usc';
+  fetching: boolean;
+}
+
+export type Command = LoadCellCommand|UnloadCellsCommand|UpdateStateCommand;
 
 class S2DataFetcher {
 
@@ -166,6 +171,13 @@ class S2DataFetcher {
           })
           .finally(() => {
             this.inFlight.delete(token);
+
+            if (this.inFlight.size === 0) {
+              this.postMessage({
+                kind: 'usc',
+                fetching: this.inFlight.size > 0,
+              });
+            }
           });
     }
 
@@ -175,6 +187,11 @@ class S2DataFetcher {
         this.inFlight.delete(id);
       }
     }
+
+    this.postMessage({
+      kind: 'usc',
+      fetching: this.inFlight.size > 0,
+    });
   }
 
   private cull(): void {

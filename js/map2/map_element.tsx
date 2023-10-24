@@ -1,5 +1,6 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
+import { IndeterminantLinear } from 'js/dino/progress';
 
 import { Copyright, LatLngRect, LatLngZoom } from './common/types';
 
@@ -24,6 +25,7 @@ export function MapElement({
   if (!state) {
     state = {
       copyrights: [],
+      loadingData: false,
     };
   }
 
@@ -48,6 +50,7 @@ export function MapElement({
     >
       {/* We set tabIndex so the canvas can pull focus off of inputs */}
       <canvas className="h-full w-full focus-visible:outline-none" tabIndex="-1" />
+      {state.loadingData ? <IndeterminantLinear /> : <></>}
       <div className="
           absolute
           bg-[#fffffffa]

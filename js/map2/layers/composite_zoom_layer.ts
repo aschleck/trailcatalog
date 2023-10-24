@@ -51,6 +51,15 @@ export class CompositeZoomLayer extends Layer {
     }
   }
 
+  override loadingData(): boolean {
+    const layer = this.findActive();
+    if (layer) {
+      return layer.loadingData();
+    } else {
+      return false;
+    }
+  }
+
   override render(planner: Planner): void {
     this.findActive()?.render(planner);
   }

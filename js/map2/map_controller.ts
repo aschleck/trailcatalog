@@ -24,12 +24,14 @@ interface Args {
 
 export interface State {
   copyrights: Copyright[];
+  loadingData: boolean;
 }
 
 export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, State> {
 
   private area: Vec2;
   readonly camera: Camera;
+  private lastCameraArgs: LatLngRect|LatLngZoom|undefined;
   private readonly canvas: HTMLCanvasElement;
   private readonly dataChangedDebouncer: Debouncer;
   private readonly idleDebouncer: Debouncer;
@@ -48,6 +50,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     // We defer setting real coordinates until after we check our size below
     this.area = [-1, -1];
     this.camera = new Camera(0, 0, -1);
+    this.lastCameraArgs = response.args.camera;
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.notifyDataChanged();
@@ -105,7 +108,8 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
   }
 
   updateArgs(newArgs: Args): void {
-    if (newArgs.camera) {
+    if (newArgs.camera && newArgs.camera !== this.lastCameraArgs) {
+      this.lastCameraArgs = newArgs.camera;
       this.setCamera(newArgs.camera);
     }
     this.enterIdle();
@@ -286,9 +290,17 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
   }
 
   private render(): void {
+    const loadingData = this.layers.filter(l => l.loadingData()).length > 0;
+    if (loadingData !== this.state.loadingData) {
+      this.updateState({
+        ...this.state,
+        loadingData,
+      });
+    }
+
     if (this.isIdle) {
-      const hasNewData = this.layers.filter(l => l.hasNewData());
-      if (hasNewData.length > 0) {
+      const hasNewData = this.layers.filter(l => l.hasNewData()).length > 0;
+      if (hasNewData) {
         this.dataChangedDebouncer.trigger();
         this.nextRender = RenderType.DataChange;
       }

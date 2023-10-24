@@ -320,6 +320,7 @@ export const NATURE: Readonly<Style> = {
 export class MbtileLayer extends Layer {
 
   private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private fetching: boolean;
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private readonly tiles: HashMap<TileId, LoadedTile>;
@@ -337,6 +338,7 @@ export class MbtileLayer extends Layer {
   ) {
     super(copyrights);
     this.fetcher = new WorkerPool('/static/xyz_data_fetcher_worker.js', 1);
+    this.fetching = false;
     this.loader = new QueuedWorkerPool('/static/mbtile_loader_worker.js', 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
@@ -354,6 +356,8 @@ export class MbtileLayer extends Layer {
         this.loadRawTile(command);
       } else if (command.kind === 'utc') {
         this.unloadTiles(command.ids);
+      } else if (command.kind === 'usc') {
+        this.fetching = command.fetching;
       } else {
         checkExhaustive(command);
       }
@@ -382,6 +386,10 @@ export class MbtileLayer extends Layer {
 
   override hasNewData(): boolean {
     return this.generation !== this.lastRenderGeneration;
+  }
+
+  override loadingData(): boolean {
+    return this.fetching || this.loading.size > 0;
   }
 
   override render(planner: Planner): void {

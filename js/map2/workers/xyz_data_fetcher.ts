@@ -46,7 +46,12 @@ export interface UnloadTilesCommand {
   ids: TileId[];
 }
 
-export type Command = LoadTileCommand|UnloadTilesCommand;
+export interface UpdateStateCommand {
+  kind: 'usc';
+  fetching: boolean;
+}
+
+export type Command = LoadTileCommand|UnloadTilesCommand|UpdateStateCommand;
 
 class XyzDataFetcher {
 
@@ -147,6 +152,13 @@ class XyzDataFetcher {
             })
             .finally(() => {
               this.inFlight.delete(id);
+
+              if (this.inFlight.size === 0) {
+                this.postMessage({
+                  kind: 'usc',
+                  fetching: this.inFlight.size > 0,
+                });
+              }
             });
       }
     }
@@ -157,6 +169,11 @@ class XyzDataFetcher {
         this.inFlight.delete(id);
       }
     }
+
+    this.postMessage({
+      kind: 'usc',
+      fetching: this.inFlight.size > 0,
+    });
   }
 
   private cull(): void {

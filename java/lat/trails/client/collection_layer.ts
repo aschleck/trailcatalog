@@ -23,6 +23,7 @@ interface LoadedCell {
 export class CollectionLayer extends Layer {
 
   private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private fetching: boolean;
   private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
   private readonly querier: WorkerPool<QuerierRequest, QuerierResponse>;
   private readonly cells: Map<S2CellToken, LoadedCell|undefined>;
@@ -37,6 +38,7 @@ export class CollectionLayer extends Layer {
   ) {
     super(/* copyright= */ []);
     this.fetcher = new WorkerPool('/static/s2_data_fetcher_worker.js', 1);
+    this.fetching = false;
     this.loader = new WorkerPool('/static/collection_loader_worker.js', 6);
     this.querier = new WorkerPool('/static/location_querier_worker.js', 1);
     this.cells = new Map();
@@ -58,6 +60,8 @@ export class CollectionLayer extends Layer {
         this.loadRawCell(command);
       } else if (command.kind === 'ucc') {
         this.unloadCells(command);
+      } else if (command.kind === 'usc') {
+        this.fetching = command.fetching;
       } else {
         checkExhaustive(command);
       }
@@ -108,7 +112,7 @@ export class CollectionLayer extends Layer {
     this.querier.broadcast({kind: 'ir'});
   }
 
-  click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
+  override click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
     this.querier.post({
       kind: 'qpr',
       point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
@@ -116,11 +120,24 @@ export class CollectionLayer extends Layer {
     return false;
   }
 
-  hasNewData(): boolean {
+  override hasNewData(): boolean {
     return this.generation !== this.lastRenderGeneration;
   }
 
-  render(planner: Planner): void {
+  override loadingData(): boolean {
+    if (this.fetching) {
+      return true;
+    }
+
+    for (const response of this.cells.values()) {
+      if (!response) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  override render(planner: Planner): void {
     for (const response of this.cells.values()) {
       if (!response) {
         continue;
@@ -131,7 +148,7 @@ export class CollectionLayer extends Layer {
     }
   }
 
-  viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+  override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({

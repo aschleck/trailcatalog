@@ -3,6 +3,9 @@ import defaultTheme from 'tailwindcss/defaultTheme';
 export default {
   extend: {
     colors: {
+      'gray': {
+        900: '#212121',
+      },
       'white-opaque': {
         160: '#ffffffa0',
         250: '#fffffffa',

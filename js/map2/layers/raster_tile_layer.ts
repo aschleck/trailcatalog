@@ -19,6 +19,7 @@ export class RasterTileLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
   private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private fetching: boolean;
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private readonly pool: TexturePool;
@@ -40,6 +41,7 @@ export class RasterTileLayer extends Layer {
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
     this.fetcher = new WorkerPool('/static/xyz_data_fetcher_worker.js', 1);
+    this.fetching = false;
     this.loader = new QueuedWorkerPool('/static/raster_loader_worker.js', 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.pool = new TexturePool(this.renderer);
@@ -56,6 +58,8 @@ export class RasterTileLayer extends Layer {
         this.loadTile(command);
       } else if (command.kind === 'utc') {
         this.unloadTiles(command.ids);
+      } else if (command.kind === 'usc') {
+        this.fetching = command.fetching;
       } else {
         checkExhaustive(command);
       }
@@ -81,11 +85,15 @@ export class RasterTileLayer extends Layer {
     });
   }
 
-  hasNewData(): boolean {
+  override hasNewData(): boolean {
     return this.generation !== this.plan.generation;
   }
 
-  render(planner: Planner): void {
+  override loadingData(): boolean {
+    return this.fetching || this.loading.size > 0;
+  }
+
+  override render(planner: Planner): void {
     if (this.hasNewData()) {
       const buffer = new ArrayBuffer(4 * 256 * 256);
       const drawables = [];
@@ -127,7 +135,7 @@ export class RasterTileLayer extends Layer {
     planner.add(this.plan.drawables);
   }
 
-  viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+  override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({

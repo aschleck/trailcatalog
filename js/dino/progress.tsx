@@ -35,7 +35,7 @@ export function IndeterminantLinear() {
             top-0
             touch-none
             before:animate-slide
-            before:bg-tc-black-800
+            before:bg-gray-900
             before:bottom-0
             before:content-['']
             before:left-0
