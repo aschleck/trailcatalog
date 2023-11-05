@@ -48,6 +48,7 @@ function Input(
       <input
           js={corgi.bind({
             controller: InputController,
+            args: {value},
             events: {
               'keyup': 'keyPressed',
             },
