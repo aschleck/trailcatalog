@@ -113,6 +113,10 @@ class XyzDataFetcher {
       for (let x = Math.floor(worldSize * (projected.low[0] / 2 + 0.5));
           x < worldSize * (projected.high[0] / 2 + 0.5);
           ++x) {
+        if (x < 0 || x >= worldSize || y < 0 || y >= worldSize) {
+          continue;
+        }
+
         const id = {
           // Handle world wrap. 3 is just a number that seems large enough to force x positive.
           x: (x + 3 * worldSize) % worldSize,
@@ -133,8 +137,16 @@ class XyzDataFetcher {
               if (response.ok) {
                 return response.arrayBuffer();
               } else {
-                throw new Error(`Failed to download tile ${id.x},${id.y} at ${id.zoom}`);
+                throw new Error(
+                    `Failed to download tile ${id.x},${id.y} at ${id.zoom} `
+                        + `(status ${response.status}`);
               }
+            })
+            .catch(e => {
+              if (e.name !== 'AbortError') {
+                console.error(e);
+              }
+              return new ArrayBuffer(0);
             })
             .then(data => {
               this.pending.add(id);
@@ -144,11 +156,6 @@ class XyzDataFetcher {
                 data,
               }, [data]);
               this.cull();
-            })
-            .catch(e => {
-              if (e.name !== 'AbortError') {
-                throw e;
-              }
             })
             .finally(() => {
               this.inFlight.delete(id);
