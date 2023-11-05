@@ -31,6 +31,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
 
   private area: Vec2;
   readonly camera: Camera;
+  private initialCameraArgs: LatLngRect|LatLngZoom|undefined;
   private lastCameraArgs: LatLngRect|LatLngZoom|undefined;
   private readonly canvas: HTMLCanvasElement;
   private readonly dataChangedDebouncer: Debouncer;
@@ -50,6 +51,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     // We defer setting real coordinates until after we check our size below
     this.area = [-1, -1];
     this.camera = new Camera(0, 0, -1);
+    this.initialCameraArgs = response.args.camera;
     this.lastCameraArgs = response.args.camera;
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
@@ -108,8 +110,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
   }
 
   updateArgs(newArgs: Args): void {
-    if (newArgs.camera && newArgs.camera !== this.lastCameraArgs) {
-      this.lastCameraArgs = newArgs.camera;
+    if (newArgs.camera && newArgs.camera !== this.initialCameraArgs) {
       this.setCamera(newArgs.camera);
     }
     this.enterIdle();

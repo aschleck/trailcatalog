@@ -107,3 +107,4 @@ function hasShort(c: Copyright): c is {
     return true;
   }
 }
+
