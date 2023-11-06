@@ -4,9 +4,9 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
 import { floatCoalesce } from 'js/common/math';
 import * as corgi from 'js/corgi';
-import { CHANGED } from 'js/dino/events';
-import { OutlinedInput } from 'js/dino/input';
-import { Select } from 'js/dino/select';
+import { CHANGED } from 'js/emu/events';
+import { Input } from 'js/emu/input';
+import { Select } from 'js/emu/select';
 import { MAP_MOVED } from 'js/map2/events';
 import { MapElement } from 'js/map2/map_element';
 
@@ -55,7 +55,7 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
           camera={llz}
           ref="map"
       />
-      <div className="absolute flex gap-2 top-4 right-4">
+      <div className="absolute flex gap-2 h-6 top-4 right-4">
         <Select
             className="bg-white text-xs"
             unboundEvents={{corgi: [[CHANGED, 'setCellType']]}}
@@ -64,9 +64,8 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
               {label: 'z/x/y', value: 'z/x/y'},
             ]}
         />
-        <OutlinedInput
+        <Input
             className="bg-white text-xs"
-            dense={true}
             forceValue={true}
             unboundEvents={{corgi: [[CHANGED, 'showCells']]}}
             value={state.cellInput}

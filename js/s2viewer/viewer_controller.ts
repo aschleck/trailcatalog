@@ -4,7 +4,7 @@ import { checkExhaustive } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
-import { CHANGED } from 'js/dino/events';
+import { CHANGED } from 'js/emu/events';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map2/camera';
 import { rgbaToUint32 } from 'js/map2/common/math';
 import { RgbaU32, Vec2 } from 'js/map2/common/types';
@@ -302,7 +302,11 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       } else {
         this.updateState({
           ...this.state,
-          cellInput: this.state.cellInput + ',' + token,
+          cellInput:
+              this.state.cellInput
+                      .replace(/^,+/, '')
+                      .replace(/,+$/, '')
+                  + ',' + token,
         });
       }
     }
@@ -329,7 +333,11 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     } else {
       this.updateState({
         ...this.state,
-        cellInput: this.state.cellInput + ',' + token,
+        cellInput:
+            this.state.cellInput
+                    .replace(/^,+/, '')
+                    .replace(/,+$/, '')
+                + ',' + token,
       });
     }
 
@@ -379,7 +387,7 @@ class CellLayer extends Layer {
   }
 
   override render(planner: Planner): void {
-    const geometry = new ArrayBuffer(16384);
+    const geometry = new ArrayBuffer(65536);
     let offset = 0;
     const drawables = [];
     for (const loop of this.s2Cells.values()) {

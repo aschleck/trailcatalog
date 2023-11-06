@@ -1,7 +1,7 @@
 import { checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
-import { ACTION } from 'js/dino/events';
+import { ACTION } from 'js/emu/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';

@@ -1,8 +1,8 @@
 import { checkExists } from 'js/common/asserts';
 import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
-import { ACTION } from 'js/dino/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
+import { ACTION } from 'js/emu/events';
 import { LatLng } from 'js/map/common/types';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
@@ -340,8 +340,8 @@ function ElevationGraph(state: State) {
     gridLines.push(<line x1="0" y1={-y * scale} x2={resWidth} y2={-y * scale} />);
     gridText.push(
         <text
-            dominant_baseline="hanging"
-            text_anchor="end"
+            dominantBaseline="hanging"
+            textAnchor="end"
             x="-8"
             y={-y * scale}
         >
@@ -357,7 +357,7 @@ function ElevationGraph(state: State) {
   for (let x = 0; x <= length; x += indicateEvery) {
     distanceIndicators.push(
         <text
-            dominant_baseline="hanging"
+            dominantBaseline="hanging"
             x={x / length * resWidth}
             y={-lowestGrid * scale + 8}
         >
@@ -387,7 +387,7 @@ function ElevationGraph(state: State) {
         <circle
             fill="white"
             stroke="black"
-            stroke_width={2}
+            strokeWidth={2}
             cx={x}
             cy={ypx}
             r={7}
@@ -427,9 +427,9 @@ function ElevationGraph(state: State) {
             fill="none"
             points={elevation.heights}
             stroke="black"
-            stroke_linejoin="round"
-            stroke_width={2}
-            vector_effect="non-scaling-stroke"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            vectorEffect="non-scaling-stroke"
             style={
               [
                 'transform:',

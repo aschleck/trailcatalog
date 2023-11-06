@@ -2,7 +2,7 @@ import { checkExists } from 'js/common/asserts';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 import { ViewsService } from 'js/corgi/history/views_service';
-import { InputController } from 'js/dino/input_controller';
+import { InputController } from 'js/emu/input_controller';
 import { currentUrl } from 'js/server/ssr_aware';
 
 import { latLngFromBase64E7, latLngRectFromBase64E7 } from './common/data';

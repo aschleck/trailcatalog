@@ -1,6 +1,8 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import * as corgi from 'js/corgi';
-import { IndeterminantLinear } from 'js/dino/progress';
+import { Link } from 'js/emu/button';
+import { ACTION } from 'js/emu/events';
+import { IndeterminantLinear } from 'js/emu/progress';
 
 import { Copyright, LatLngRect, LatLngZoom } from './common/types';
 
@@ -77,7 +79,6 @@ function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
             source: c.short,
             url: c.url,
           }));
-  // TODO(april): a link for long form copyright information
   const notices = shorts.flatMap(c => [
     `©`,
     c.url
@@ -93,7 +94,20 @@ function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
     ', ',
   ]);
   notices.pop();
-  return notices;
+  return <>
+    {notices}
+    {' '}
+    <Link
+        className="pointer-events-auto"
+        unboundEvents={{
+          corgi: [
+            [ACTION, 'showCopyrights'],
+          ],
+        }}
+    >
+      (more)
+    </Link>
+  </>;
 }
 
 function hasShort(c: Copyright): c is {

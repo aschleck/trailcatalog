@@ -1,6 +1,6 @@
 import * as corgi from 'js/corgi';
 
-import { ButtonController, State } from './button_controller';
+import { Button as EmuButton } from 'js/emu/button';
 import { FabricIcon, FabricIconName } from './fabric';
 
 type ButtonProps = {
@@ -31,36 +31,19 @@ export function OutlinedButton({className, ...props}: ButtonProps) {
   </>;
 }
 
-export function Button(
-    {ariaLabel, className, dense, icon, label, ...props}: ButtonProps,
-    state: State|undefined,
-    updateState: (newState: State) => void) {
-  if (!state) {
-    state = {};
-  }
-
+export function Button({className, dense, icon, label, ...props}: ButtonProps) {
   return <>
-    <button
-        js={corgi.bind({
-          controller: ButtonController,
-          events: {
-            'click': 'clicked',
-            'keyup': 'keyPressed',
-          },
-          state: [state, updateState],
-        })}
+    <EmuButton
         className={
           'inline-block leading-none rounded select-none space-x-2'
               + ' active:bg-tc-gray-400'
               + (!dense ? ' p-2 ' : '-m-1 p-1')
               + (className ? ` ${className}` : '')
         }
-        {...props}
     >
-      {icon ? <FabricIcon name={icon} className="align-bottom" /> : ''}
-      {ariaLabel ? <span className="sr-only">{ariaLabel}</span> : ''}
+      {icon ? <><FabricIcon name={icon} className="align-bottom" />{' '}</> : ''}
       {label ? <span>{label}</span> : ''}
-    </button>
+    </EmuButton>
   </>;
 }
 

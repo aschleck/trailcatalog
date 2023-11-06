@@ -1,9 +1,9 @@
 import { aDescendsB, RelationCategory } from 'java/org/trailcatalog/models/categories';
 import * as corgi from 'js/corgi';
 import { FlatButton } from 'js/dino/button';
-import { ACTION, CHANGED } from 'js/dino/events';
 import { FabricIcon } from 'js/dino/fabric';
 import { OutlinedInput } from 'js/dino/input';
+import { ACTION, CHANGED } from 'js/emu/events';
 import { currentUrl } from 'js/server/ssr_aware';
 
 import { formatDistance } from './common/formatters';

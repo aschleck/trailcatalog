@@ -25,6 +25,7 @@ tc_ts_project(
         "//js/common",
         "//js/corgi",
         "//js/dino",
+        "//js/emu",
         "//js/map",
         "//js/map/layers",
         "//js/server:client",

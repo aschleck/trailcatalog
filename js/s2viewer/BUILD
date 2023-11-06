@@ -20,6 +20,7 @@ tc_ts_project(
         "//java/org/trailcatalog/client/common",
         "//js/common",
         "//js/corgi",
+        "//js/emu",
         "//js/map2",
         "//js/map2/layers",
     ],

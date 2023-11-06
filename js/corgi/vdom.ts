@@ -275,6 +275,7 @@ const TAG_TO_NAMESPACE = new Map([
   ['circle', 'http://www.w3.org/2000/svg'],
   ['g', 'http://www.w3.org/2000/svg'],
   ['line', 'http://www.w3.org/2000/svg'],
+  ['path', 'http://www.w3.org/2000/svg'],
   ['polyline', 'http://www.w3.org/2000/svg'],
   ['svg', 'http://www.w3.org/2000/svg'],
   ['text', 'http://www.w3.org/2000/svg'],
@@ -541,7 +542,7 @@ function patchProperties(element: Element, from: AnyProperties, to: AnyPropertie
           element.value = String(value);
         }
       } else {
-        const canonical = key.replace('_', '-');
+        const canonical = canonicalize(key);
         const value = to[key] as boolean|number|string|undefined;
         if (value === undefined) {
           element.removeAttribute(key);
@@ -557,7 +558,7 @@ function patchProperties(element: Element, from: AnyProperties, to: AnyPropertie
   }
 
   for (const key of oldPropKeys) {
-    const canonical = key.replace('_', '-');
+    const canonical = canonicalize(key);
     if (!to.hasOwnProperty(key)) {
       element.removeAttribute(key === 'className' ? 'class' : canonical);
     } else if (typeof to[key] === 'boolean' && !to[key]) {
@@ -567,6 +568,22 @@ function patchProperties(element: Element, from: AnyProperties, to: AnyPropertie
 }
 
 let nextElementId = 0;
+
+function canonicalize(key: string): string {
+  if (key === 'viewBox') {
+    return key;
+  } else {
+    let k = '';
+    for (let c of key) {
+      if ('A' <= c && c <= 'Z') {
+        k = `${k}-${c.toLowerCase()}`;
+      } else {
+        k = `${k}${c}`;
+      }
+    }
+    return k;
+  }
+}
 
 function createHandle(): Handle {
   return {id: ++nextElementId} as Handle;

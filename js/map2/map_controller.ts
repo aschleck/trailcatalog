@@ -5,6 +5,7 @@ import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { EventSpec } from 'js/corgi/events';
+import { DialogService } from 'js/emu/dialog';
 
 import { DPI } from './common/dpi';
 import { fitBoundInScreen } from './common/math';
@@ -13,6 +14,7 @@ import { Planner } from './rendering/planner';
 import { Renderer } from './rendering/renderer';
 
 import { Camera, unprojectS2LatLng } from './camera';
+import { CopyrightDialog } from './copyright_dialog';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from './events';
 import { Layer } from './layer';
 import { PointerInterpreter } from './pointer_interpreter';
@@ -27,10 +29,21 @@ export interface State {
   loadingData: boolean;
 }
 
-export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, State> {
+type Deps = typeof MapController.deps;
+
+export class MapController extends Controller<Args, Deps, HTMLDivElement, State> {
+
+  static deps() {
+    return {
+      services: {
+        dialog: DialogService,
+      },
+    };
+  }
 
   private area: Vec2;
   readonly camera: Camera;
+  private readonly dialog: DialogService;
   private initialCameraArgs: LatLngRect|LatLngZoom|undefined;
   private lastCameraArgs: LatLngRect|LatLngZoom|undefined;
   private readonly canvas: HTMLCanvasElement;
@@ -51,6 +64,7 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
     // We defer setting real coordinates until after we check our size below
     this.area = [-1, -1];
     this.camera = new Camera(0, 0, -1);
+    this.dialog = response.deps.services.dialog;
     this.initialCameraArgs = response.args.camera;
     this.lastCameraArgs = response.args.camera;
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
@@ -228,6 +242,10 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, S
 
   idle(): void {
     this.enterIdle();
+  }
+
+  showCopyrights(): void {
+    this.dialog.display(CopyrightDialog({copyrights: this.state.copyrights}));
   }
 
   pan(dx: number, dy: number): void {

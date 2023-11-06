@@ -21,6 +21,7 @@ declare global {
       main: Properties;
       option: OptionProperties;
       p: Properties;
+      path: PathProperties;
       polyline: PolylineProperties;
       section: Properties;
       select: Properties;
@@ -39,6 +40,7 @@ declare global {
 }
 
 export interface Properties {
+  ariaLabel?: string;
   children?: unknown[],
   className?: string;
   js?: AnyBoundController;
@@ -75,13 +77,13 @@ export interface OptionProperties extends Properties {
 }
 
 export interface SVGGraphicsProperties extends Properties {
-  vector_effect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
+  vectorEffect?: 'none'|'non-scaling-stroke'|'non-scaling-size'|'non-rotation'|'fixed-position';
 }
 
 export interface CircleProperties extends SVGGraphicsProperties, Properties {
   fill?: string;
   stroke?: string;
-  stroke_width?: number|string;
+  strokeWidth?: number|string;
   cx: number|string;
   cy: number|string;
   r: number|string;
@@ -89,19 +91,27 @@ export interface CircleProperties extends SVGGraphicsProperties, Properties {
 
 export interface LineProperties extends SVGGraphicsProperties, Properties {
   stroke?: string;
-  stroke_linejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
-  stroke_width?: number|string;
+  strokeLinejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
+  strokeWidth?: number|string;
   x1: number|string;
   y1: number|string;
   x2: number|string;
   y2: number|string;
 }
 
+export interface PathProperties extends SVGGraphicsProperties, Properties {
+  d: string;
+  fill?: string;
+  stroke?: string;
+  strokeLinejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
+  strokeWidth?: number|string;
+}
+
 export interface PolylineProperties extends SVGGraphicsProperties, Properties {
   fill?: string;
   stroke?: string;
-  stroke_linejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
-  stroke_width?: number|string;
+  strokeLinejoin?: 'arcs'|'bevel'|'miter'|'miter-clip'|'round';
+  strokeWidth?: number|string;
   points: string;
 }
 
@@ -112,10 +122,10 @@ export interface SVGProperties extends Properties {
 }
 
 export interface TextProperties extends SVGGraphicsProperties, Properties {
-  dominant_baseline?:
+  dominantBaseline?:
       'auto'|'text-bottom'|'alphabetic'|'ideographic'|'middle'|'central'|'mathematical'|'hanging'
             |'text-top';
-  text_anchor?: 'start'|'middle'|'end';
+  textAnchor?: 'start'|'middle'|'end';
   x?: number|string;
   y?: number|string;
   dx?: number|string;

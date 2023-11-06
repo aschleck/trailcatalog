@@ -1,8 +1,8 @@
 import * as corgi from 'js/corgi';
-import { UnboundEvents } from 'js/corgi/binder';
+
+import { Input as EmuInput } from 'js/emu/input';
 
 import { FabricIcon, FabricIconName } from './fabric';
-import { InputController, State } from './input_controller';
 
 type InputProps = {
   className?: string,
@@ -27,39 +27,14 @@ export function OutlinedInput({className, ...props}: {
   </>;
 }
 
-function Input(
-    {className, dense, forceValue, icon, inset, placeholder, ref, value, ...props}: InputProps,
-    state: State|undefined,
-    updateState: (newState: State) => void) {
-  if (!state) {
-    state = {managed: true};
-  }
-
+function Input({className, dense, icon, ...props}: InputProps) {
   return <>
-    <label
+    <EmuInput
         className={
-            'flex font-input gap-3 items-center'
-                + (dense !== true ? ' px-3 py-1' : '')
-                + (className ? ` ${className} ` : '')
+          (dense !== true ? ' px-3 py-1' : '') + (className ? ` ${className} ` : '')
         }
+        icon={icon ? <FabricIcon name={icon} /> : <></>}
         {...props}
-    >
-      {icon ? <FabricIcon name={icon} /> : <></>}
-      <input
-          js={corgi.bind({
-            controller: InputController,
-            args: {value},
-            events: {
-              'keyup': 'keyPressed',
-            },
-            ref,
-            state: [state, updateState],
-          })}
-          className="bg-transparent grow outline-none placeholder-current"
-          placeholder={placeholder ?? ''}
-          value={forceValue || state.managed ? value : undefined}
-      />
-      {inset ?? ''}
-    </label>
+    />
   </>;
 }

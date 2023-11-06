@@ -21,6 +21,12 @@ class DialogController extends Controller<{}, EmptyDeps, HTMLDivElement, State> 
   close(): void {
     this.root.remove();
   }
+
+  outsideClose(e: MouseEvent): void {
+    if (e.target === this.root) {
+      this.close();
+    }
+  }
 }
 
 function Dialog(
@@ -37,8 +43,14 @@ function Dialog(
         js={corgi.bind({
           controller: DialogController,
           state: [state, updateState],
-        })}>
-      {children}
+          events: {
+            click: 'outsideClose',
+          },
+        })}
+        className="absolute bg-black/25 inset-0 z-50">
+      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+        {children}
+      </div>
     </div>
   </>;
 }
