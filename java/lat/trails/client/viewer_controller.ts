@@ -75,7 +75,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         [
           0,
           new CollectionLayer(
-              '/api/collections/d06e3048-a112-4cdd-bc27-440ea9637adf',
+              '/api/collections/f09f5d2e-f163-4271-8ac2-34c44c75f99a',
               /* indexBottom= */ 4,
               /* snap= */ 11,
               this.mapController.renderer,
@@ -84,7 +84,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         [
           7,
           new CollectionLayer(
-              '/api/collections/d06e3048-a112-4cdd-bc27-440ea9637adf',
+              '/api/collections/f09f5d2e-f163-4271-8ac2-34c44c75f99a',
               /* indexBottom= */ 6,
               /* snap= */ 14,
               this.mapController.renderer,
@@ -93,7 +93,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         [
           10,
           new CollectionLayer(
-              '/api/collections/d06e3048-a112-4cdd-bc27-440ea9637adf',
+              '/api/collections/f09f5d2e-f163-4271-8ac2-34c44c75f99a',
               /* indexBottom= */ 6,
               /* snap= */ undefined,
               this.mapController.renderer,

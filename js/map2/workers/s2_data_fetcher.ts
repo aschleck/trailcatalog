@@ -95,20 +95,24 @@ class S2DataFetcher {
           if (coveringVersion === 1) {
             const coveringLength = source.getVarInt32();
             for (let i = 0; i < coveringLength; ++i) {
+              const cell = new S2CellId(Long.fromBits(source.getInt32(), source.getInt32()));
               this.covering.add(
-                  new S2CellId(Long.fromBits(source.getInt32(), source.getInt32()))
-                      .parentAtLevel(this.indexBottom)
+                  cell
+                      .parentAtLevel(
+                          this.indexBottom < cell.level() ? this.indexBottom : cell.level())
                       .toToken());
             }
           } else {
             throw new Error(`Unhandled covering version ${coveringVersion}`);
           }
 
-          // It's possible we got a viewport before this covering, so force an update just in case.
-          this.updateViewport({
-            kind: 'uvr',
-            viewport: this.lastViewport,
-          });
+          // It's possible we got a viewport before this covering
+          if (this.lastViewport.zoom !== 31) {
+            this.updateViewport({
+              kind: 'uvr',
+              viewport: this.lastViewport,
+            });
+          }
         });
   }
 
