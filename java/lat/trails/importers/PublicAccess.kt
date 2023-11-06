@@ -42,7 +42,12 @@ private val logger = LoggerFactory.getLogger("PublicAccess")
 @FlagSpec(name = "source")
 private val source = createNullableFlag(null as Path?)
 
-data class Feature(val data: Map<String, String>, val covering: S2CellUnion, val polygon: S2Polygon)
+data class Feature(
+    val data: Map<String, String>,
+    val cell: S2CellId,
+    val covering: S2CellUnion,
+    val polygon: S2Polygon,
+)
 
 fun main(args: Array<String>) {
   parseFlags(args)
@@ -152,7 +157,7 @@ fun main(args: Array<String>) {
           val polygon = toS2Polygon(geometry, transform)
           val covering = coverer.getCovering(polygon)
           synchronized (polygons) {
-            polygons.add(Feature(data, covering, polygon))
+            polygons.add(Feature(data, polygonToCell(polygon), covering, polygon))
           }
         }
       } else {
@@ -168,9 +173,8 @@ fun main(args: Array<String>) {
   synchronized (polygons) {
     val covering = HashSet<S2CellId>()
     for (feature in polygons) {
-      for (cell in feature.covering) {
-        covering.add(cell.parent(COLLECTION_COVERING_MAX_LEVEL.coerceAtMost(cell.level())))
-      }
+      val cell = feature.cell;
+      covering.add(cell.parent(COLLECTION_COVERING_MAX_LEVEL.coerceAtMost(cell.level())))
     }
     dumpPolygons(ArrayList(covering), polygons)
   }
