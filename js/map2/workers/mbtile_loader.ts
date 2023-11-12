@@ -56,6 +56,12 @@ interface AlwaysMatch {
   match: 'always';
 }
 
+interface LessThanMatch {
+  match: 'less_than';
+  key: string;
+  value: number;
+}
+
 interface StringEqualsMatch {
   match: 'string_equals';
   key: string;
@@ -68,7 +74,7 @@ interface StringInMatch {
   value: string[];
 }
 
-type Match = AlwaysMatch|StringEqualsMatch|StringInMatch;
+type Match = AlwaysMatch|LessThanMatch|StringEqualsMatch|StringInMatch;
 
 interface LoadRequest {
   kind: 'lr';
@@ -309,8 +315,6 @@ class MbtileLoader {
     }
 
     for (const [style, points] of pointGroups) {
-      console.log(style);
-      console.log(points);
       for (const point of points) {
         let text;
         for (let i = 0; i < point.tags.length; i += 2) {
@@ -595,34 +599,61 @@ function findStyle<S extends GeometryStyle>(
 
 function matches(tags: number[], keys: string[], values: ValueType[], filters: Match[]): boolean {
   for (const filter of filters) {
-    switch (filter.match) {
-      case "string_equals": {
-        for (let i = 0; i < tags.length; i += 2) {
-          const key = keys[tags[i + 0]];
-          const value = values[tags[i + 1]];
-          if (key === filter.key && value === filter.value) {
-            return true;
+    if (filter.match === 'less_than') {
+      let matched = false;
+      for (let i = 0; i < tags.length; i += 2) {
+        const key = keys[tags[i + 0]];
+        if (key !== filter.key) {
+          continue;
+        }
+        const value = values[tags[i + 1]] as number;
+        if (value < filter.value) {
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        return false;
+      }
+    } else if (filter.match === 'string_equals') {
+      let matched = false;
+      for (let i = 0; i < tags.length; i += 2) {
+        const key = keys[tags[i + 0]];
+        const value = values[tags[i + 1]];
+        if (key === filter.key && value === filter.value) {
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        return false;
+      }
+    } else if (filter.match === 'string_in') {
+      let matched = false;
+      for (let i = 0; i < tags.length; i += 2) {
+        const key = keys[tags[i + 0]];
+        const value = values[tags[i + 1]];
+        if (key !== filter.key) {
+          continue;
+        }
+        for (const candidate of filter.value) {
+          if (value === candidate) {
+            matched = true;
+            break;
           }
         }
-        break;
       }
-      case "string_in": {
-        for (let i = 0; i < tags.length; i += 2) {
-          const key = keys[tags[i + 0]];
-          const value = values[tags[i + 1]];
-          if (key !== filter.key) {
-            continue;
-          }
-          for (const candidate of filter.value) {
-            if (value === candidate) {
-              return true;
-            }
-          }
-        }
-        break;
+      if (!matched) {
+        return false;
       }
-      case "always": return true;
+    } else if (filter.match === 'always') {
+      // Who cares!
+    } else {
+      checkExhaustive(filter);
     }
   }
-  return false;
+
+  return true;
 }

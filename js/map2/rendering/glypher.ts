@@ -20,8 +20,8 @@ const FONT_SIZE = 24;
 const LINE_HEIGHT = 1.6;
 const ATLAS_GLYPH_SIZE = 32;
 
-const ATLAS_WIDTH = 1024;
-const ATLAS_HEIGHT = 1024;
+const ATLAS_WIDTH = 2048;
+const ATLAS_HEIGHT = 2048;
 const SPLITTER = new GraphemeSplitter();
 
 class Glypher {

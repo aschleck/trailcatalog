@@ -154,22 +154,27 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'place',
       minZoom: 0,
-      maxZoom: 8,
+      maxZoom: 4,
       lines: [],
       points: [
         {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
-              'continent',
-              'province',
-              'state',
-            ],
-          }],
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'country',
+              ],
+            },
+            {
+              match: 'less_than',
+              key: 'rank',
+              value: 3,
+            },
+          ],
           textFill: 0x000000FF as RgbaU32,
-          textStroke: 0xFFFFFFFF as RgbaU32,
-          textScale: 0.7,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.5,
           z: Z_OVERLAY_TEXT,
         },
       ],
@@ -177,7 +182,57 @@ export const NATURE: Readonly<Style> = {
     },
     {
       layerName: 'place',
-      minZoom: 8,
+      minZoom: 4,
+      maxZoom: 7,
+      lines: [],
+      points: [
+        {
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'country',
+              ],
+            },
+            {
+              match: 'less_than',
+              key: 'rank',
+              value: 4,
+            },
+          ],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.5,
+          z: Z_OVERLAY_TEXT + 0.1,
+        },
+        {
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'province',
+                'state',
+              ],
+            },
+            {
+              match: 'less_than',
+              key: 'rank',
+              value: 3,
+            },
+          ],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.45,
+          z: Z_OVERLAY_TEXT,
+        },
+      ],
+      polygons: [],
+    },
+    {
+      layerName: 'place',
+      minZoom: 7,
       maxZoom: 11,
       lines: [],
       points: [
@@ -186,15 +241,26 @@ export const NATURE: Readonly<Style> = {
             match: 'string_in',
             key: 'class',
             value: [
-              'city',
-              'continent',
               'province',
               'state',
             ],
           }],
           textFill: 0x000000FF as RgbaU32,
-          textStroke: 0xFFFFFFFF as RgbaU32,
-          textScale: 0.7,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.6,
+          z: Z_OVERLAY_TEXT,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'city',
+            ],
+          }],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.4,
           z: Z_OVERLAY_TEXT,
         },
       ],
@@ -219,8 +285,8 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           textFill: 0x000000FF as RgbaU32,
-          textStroke: 0xFFFFFFFF as RgbaU32,
-          textScale: 0.7,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.5,
           z: Z_OVERLAY_TEXT,
         },
       ],
