@@ -9,174 +9,217 @@ export function unitWorldBounds<V>(): BoundsQuadtree<V> {
 const SPLIT_THRESHOLD = 100;
 const MIN_HALF_RADIUS = 1 / Math.pow(2, 15);
 
-export class BoundsQuadtree<V> {
-  private readonly values: Array<[V, Rect]>;
-  private children: [
-    BoundsQuadtree<V>,
-    BoundsQuadtree<V>,
-    BoundsQuadtree<V>,
-    BoundsQuadtree<V>,
+interface Node<V> {
+  center: Vec2;
+  halfRadius: number;
+  values: Array<[V, Rect]>;
+  children: [
+    Node<V>,
+    Node<V>,
+    Node<V>,
+    Node<V>,
   ]|undefined;
-  private valueCount: number;
+  valueCount: number;
+}
 
-  constructor(private readonly center: Vec2, private readonly halfRadius: number) {
-    this.values = [];
-    this.valueCount = 0;
+export class BoundsQuadtree<V> {
+  private readonly root: Node<V>;
+
+  constructor(center: Vec2, halfRadius: number) {
+    this.root = {
+      center,
+      halfRadius,
+      values: [],
+      children: undefined,
+      valueCount: 0,
+    };
   }
 
   delete(bound: Rect): boolean {
-    if ((bound.low[0] <= this.center[0] && this.center[0] <= bound.high[0]) ||
-        (bound.low[1] <= this.center[1] && this.center[1] <= bound.high[1])) {
-      for (let i = 0; i < this.values.length; ++i) {
-        if (this.values[i][1] === bound) {
-          this.values.splice(i, 1);
-          this.valueCount -= 1;
-          return true;
-        }
-      }
-      return false;
-    }
-
-    if (this.children) {
-      // We know that the bound is fully contained by a child, so we can just test any point.
-      const xi = (bound.low[0] <= this.center[0]) as unknown as number;
-      const yi = (bound.low[1] <= this.center[1]) as unknown as number;
-      const child = this.children[(xi << 1) + yi];
-      const deleted = child.delete(bound);
-      if (deleted) {
-        this.valueCount -= 1;
-      }
-
-      if (this.valueCount < SPLIT_THRESHOLD) {
-        this.pushAllValuesInto(this.values);
-        this.children = undefined;
-      }
-
-      return deleted;
-    } else {
-      for (let i = 0; i < this.values.length; ++i) {
-        if (this.values[i][1] === bound) {
-          this.values.splice(i, 1);
-          this.valueCount -= 1;
-          return true;
-        }
-      }
-      return false;
-    }
+    return _delete(this.root, bound);
   }
 
   insert(value: V, bound: Rect): void {
-    this.valueCount += 1;
-
-    if ((bound.low[0] <= this.center[0] && this.center[0] <= bound.high[0]) ||
-        (bound.low[1] <= this.center[1] && this.center[1] <= bound.high[1])) {
-      this.values.push([value, bound]);
-      return;
-    }
-
-    if (this.children) {
-      // We know that the bound is fully contained by a child, so we can just test any point.
-      const xi = (bound.low[0] <= this.center[0]) as unknown as number;
-      const yi = (bound.low[1] <= this.center[1]) as unknown as number;
-      const child = this.children[(xi << 1) + yi];
-      child.insert(value, bound);
-      return;
-    }
-
-    if (this.halfRadius > MIN_HALF_RADIUS && this.values.length + 1 >= SPLIT_THRESHOLD) {
-      const halfHalfRadius = this.halfRadius / 2;
-      this.children = [
-          new BoundsQuadtree<V>(
-              [this.center[0] + this.halfRadius, this.center[1] + this.halfRadius],
-              halfHalfRadius),
-          new BoundsQuadtree<V>(
-              [this.center[0] + this.halfRadius, this.center[1] - this.halfRadius],
-              halfHalfRadius),
-          new BoundsQuadtree<V>(
-              [this.center[0] - this.halfRadius, this.center[1] + this.halfRadius],
-              halfHalfRadius),
-          new BoundsQuadtree<V>(
-              [this.center[0] - this.halfRadius, this.center[1] - this.halfRadius],
-              halfHalfRadius),
-      ];
-
-      const items = [...this.values];
-      this.values.length = 0;
-      for (const [sv, sb] of items) {
-        this.insert(sv, sb);
-      }
-      this.insert(value, bound);
-    } else {
-      this.values.push([value, bound]);
-    }
+    insert(this.root, value, bound);
   }
 
   queryCircle(point: Vec2, radius: number, output: V[]): void {
-    for (const [value, bound] of this.values) {
-      if (intersectCircleAabb(point, radius, bound)) {
-        output.push(value);
-      }
-    }
-
-    if (this.children) {
-      const cx = this.center[0];
-      const cy = this.center[1];
-      if (point[0] - radius <= cx) {
-        if (point[1] - radius <= cy) {
-          this.children[3].queryCircle(point, radius, output);
-        }
-        if (point[1] + radius > cy) {
-          this.children[2].queryCircle(point, radius, output);
-        }
-      }
-      if (point[0] + radius > cx) {
-        if (point[1] - radius <= cy) {
-          this.children[1].queryCircle(point, radius, output);
-        }
-        if (point[1] + radius > cy) {
-          this.children[0].queryCircle(point, radius, output);
-        }
-      }
-    }
+    queryCircle(this.root, point, radius, output);
   }
 
   queryRect(rect: Rect, output: V[]): void {
-    for (const [value, bound] of this.values) {
-      if (intersectAabbAabb(rect, bound)) {
-        output.push(value);
+    queryRect(this.root, rect, output);
+  }
+}
+
+function _delete<V>(node: Node<V>, bound: Rect): boolean {
+  if ((bound.low[0] <= node.center[0] && node.center[0] <= bound.high[0]) ||
+      (bound.low[1] <= node.center[1] && node.center[1] <= bound.high[1])) {
+    for (let i = 0; i < node.values.length; ++i) {
+      if (node.values[i][1] === bound) {
+        node.values.splice(i, 1);
+        node.valueCount -= 1;
+        return true;
       }
     }
+    return false;
+  }
 
-    if (this.children) {
-      const cx = this.center[0];
-      const cy = this.center[1];
-      if (rect.low[0] <= cx) {
-        if (rect.low[1] <= cy) {
-          this.children[3].queryRect(rect, output);
-        }
-        if (rect.high[1] > cy) {
-          this.children[2].queryRect(rect, output);
-        }
+  if (node.children) {
+    // We know that the bound is fully contained by a child, so we can just test any point.
+    const xi = (bound.low[0] <= node.center[0]) as unknown as number;
+    const yi = (bound.low[1] <= node.center[1]) as unknown as number;
+    const child = node.children[(xi << 1) + yi];
+    const deleted = _delete(child, bound);
+    if (deleted) {
+      node.valueCount -= 1;
+    }
+
+    if (node.valueCount < SPLIT_THRESHOLD) {
+      pushAllValuesInto(node, node.values);
+      node.children = undefined;
+    }
+
+    return deleted;
+  } else {
+    for (let i = 0; i < node.values.length; ++i) {
+      if (node.values[i][1] === bound) {
+        node.values.splice(i, 1);
+        node.valueCount -= 1;
+        return true;
       }
-      if (rect.high[0] > cx) {
-        if (rect.low[1] <= cy) {
-          this.children[1].queryRect(rect, output);
-        }
-        if (rect.high[1] > cy) {
-          this.children[0].queryRect(rect, output);
-        }
-      }
+    }
+    return false;
+  }
+}
+
+function insert<V>(node: Node<V>, value: V, bound: Rect): void {
+  node.valueCount += 1;
+
+  if ((bound.low[0] <= node.center[0] && node.center[0] <= bound.high[0]) ||
+      (bound.low[1] <= node.center[1] && node.center[1] <= bound.high[1])) {
+    node.values.push([value, bound]);
+    return;
+  }
+
+  if (node.children) {
+    // We know that the bound is fully contained by a child, so we can just test any point.
+    const xi = (bound.low[0] <= node.center[0]) as unknown as number;
+    const yi = (bound.low[1] <= node.center[1]) as unknown as number;
+    const child = node.children[(xi << 1) + yi];
+    insert(child, value, bound);
+    return;
+  }
+
+  if (node.halfRadius > MIN_HALF_RADIUS && node.values.length + 1 >= SPLIT_THRESHOLD) {
+    const halfHalfRadius = node.halfRadius / 2;
+    node.children = [
+      {
+        center: [node.center[0] + node.halfRadius, node.center[1] + node.halfRadius],
+        halfRadius: halfHalfRadius,
+        values: [],
+        children: undefined,
+        valueCount: 0,
+      },
+      {
+        center: [node.center[0] + node.halfRadius, node.center[1] - node.halfRadius],
+        halfRadius: halfHalfRadius,
+        values: [],
+        children: undefined,
+        valueCount: 0,
+      },
+      {
+        center: [node.center[0] - node.halfRadius, node.center[1] + node.halfRadius],
+        halfRadius: halfHalfRadius,
+        values: [],
+        children: undefined,
+        valueCount: 0,
+      },
+      {
+        center: [node.center[0] - node.halfRadius, node.center[1] - node.halfRadius],
+        halfRadius: halfHalfRadius,
+        values: [],
+        children: undefined,
+        valueCount: 0,
+      },
+    ];
+
+    const items = [...node.values];
+    node.values.length = 0;
+    for (const [sv, sb] of items) {
+      insert(node, sv, sb);
+    }
+    insert(node, value, bound);
+  } else {
+    node.values.push([value, bound]);
+  }
+}
+
+function queryCircle<V>(node: Node<V>, point: Vec2, radius: number, output: V[]): void {
+  for (const [value, bound] of node.values) {
+    if (intersectCircleAabb(point, radius, bound)) {
+      output.push(value);
     }
   }
 
-  private pushAllValuesInto(output: Array<[V, Rect]>): void {
-    arrays.pushInto(output, this.values);
-    if (this.children) {
-      this.children[0].pushAllValuesInto(output);
-      this.children[1].pushAllValuesInto(output);
-      this.children[2].pushAllValuesInto(output);
-      this.children[3].pushAllValuesInto(output);
+  if (node.children) {
+    const cx = node.center[0];
+    const cy = node.center[1];
+    if (point[0] - radius <= cx) {
+      if (point[1] - radius <= cy) {
+        queryCircle(node.children[3], point, radius, output);
+      }
+      if (point[1] + radius > cy) {
+        queryCircle(node.children[2], point, radius, output);
+      }
     }
+    if (point[0] + radius > cx) {
+      if (point[1] - radius <= cy) {
+        queryCircle(node.children[1], point, radius, output);
+      }
+      if (point[1] + radius > cy) {
+        queryCircle(node.children[0], point, radius, output);
+      }
+    }
+  }
+}
+
+function queryRect<V>(node: Node<V>, rect: Rect, output: V[]): void {
+  for (const [value, bound] of node.values) {
+    if (intersectAabbAabb(rect, bound)) {
+      output.push(value);
+    }
+  }
+
+  if (node.children) {
+    const cx = node.center[0];
+    const cy = node.center[1];
+    if (rect.low[0] <= cx) {
+      if (rect.low[1] <= cy) {
+        queryRect(node.children[3], rect, output);
+      }
+      if (rect.high[1] > cy) {
+        queryRect(node.children[2], rect, output);
+      }
+    }
+    if (rect.high[0] > cx) {
+      if (rect.low[1] <= cy) {
+        queryRect(node.children[1], rect, output);
+      }
+      if (rect.high[1] > cy) {
+        queryRect(node.children[0], rect, output);
+      }
+    }
+  }
+}
+
+function pushAllValuesInto<V>(node: Node<V>, output: Array<[V, Rect]>): void {
+  arrays.pushInto(output, node.values);
+  if (node.children) {
+    pushAllValuesInto(node.children[0], output);
+    pushAllValuesInto(node.children[1], output);
+    pushAllValuesInto(node.children[2], output);
+    pushAllValuesInto(node.children[3], output);
   }
 }
 
