@@ -51,7 +51,7 @@ class Glypher {
   }
 
   plan(
-      text: string,
+      graphemes: string[],
       center: Vec2,
       offsetPx: Vec2,
       scale: number,
@@ -63,20 +63,25 @@ class Glypher {
       offset: number,
       glBuffer: WebGLBuffer,
       renderer: Renderer): {byteSize: number; drawables: Drawable[];} {
+    if (this.generation < 0) {
+      this.regenerate();
+    }
+
     let regenerate = false;
-    for (const character of SPLITTER.splitGraphemes(text)) {
+    for (const character of graphemes) {
       if (character === '\n') {
         continue;
       }
 
-      if (!this.characters.has(character)) {
+      if (!this.glyphs.has(character)) {
         this.characters.add(character);
         regenerate = true;
       }
     }
 
-    if (this.generation < 0 || regenerate) {
-      this.regenerate();
+    if (regenerate) {
+      this.regenerator.trigger();
+      return {byteSize: 0, drawables: []};
     }
 
     if (this.atlasUploads.get(renderer) !== this.generation) {
@@ -90,9 +95,15 @@ class Glypher {
     let totalByteSize = 0;
     let lineHeight = 0;
     let yOffset = 0;
-    text += '\n';
-    for (const character of SPLITTER.splitGraphemes(text)) {
-      if (character === '\n') {
+    for (let i = 0; i < graphemes.length; ++i) {
+      const character = graphemes[i];
+      if (character !== '\n') {
+        const glyph = checkExists(this.glyphs.get(character));
+        lineHeight = Math.max(lineHeight, glyph.glyphHeight * scale);
+        pending.push(glyph);
+      }
+
+      if (i === graphemes.length - 1 || character === '\n') {
         const {byteSize, drawable} = renderer.sdfProgram.plan(
             pending,
             center,
@@ -112,10 +123,6 @@ class Glypher {
         pending.length = 0;
         yOffset += lineHeight;
         lineHeight = 0;
-      } else {
-        const glyph = checkExists(this.glyphs.get(character));
-        lineHeight = Math.max(lineHeight, glyph.glyphHeight * scale);
-        pending.push(glyph);
       }
     }
 
@@ -215,3 +222,6 @@ function copyIntoImage(
   }
 }
 
+export function toGraphemes(text: string): string[] {
+  return SPLITTER.splitGraphemes(text);
+}

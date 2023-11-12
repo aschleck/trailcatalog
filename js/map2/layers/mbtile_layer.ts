@@ -427,7 +427,7 @@ export class MbtileLayer extends Layer {
     this.fetching = false;
     this.loader = new QueuedWorkerPool('/static/mbtile_loader_worker.js', 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
-    this.textBuffer = new ArrayBuffer(2097152);
+    this.textBuffer = new ArrayBuffer(4194304);
     this.textGlBuffer = renderer.createDataBuffer(this.textBuffer.byteLength);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.registerDisposer(() => {
@@ -491,7 +491,7 @@ export class MbtileLayer extends Layer {
 
       for (const label of response.labels) {
         const {byteSize, drawables} = GLYPHER.plan(
-            label.text,
+            label.graphemes,
             label.center,
             [0, 0],
             label.scale,

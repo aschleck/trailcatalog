@@ -4,6 +4,7 @@ import { LittleEndianView } from 'js/common/little_endian_view';
 
 import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
+import { toGraphemes } from '../rendering/glypher';
 
 import { GeometryType } from './mbtile_types';
 import { Triangles, triangulateMb } from './triangulate';
@@ -106,7 +107,7 @@ export interface InstanceGeometry {
 
 export interface Label {
   center: Vec2;
-  text: string;
+  graphemes: string[];
   fill: RgbaU32;
   stroke: RgbaU32;
   scale: number;
@@ -321,7 +322,7 @@ class MbtileLoader {
         if (text) {
           response.labels.push({
             center: point.geometry as unknown as Vec2,
-            text,
+            graphemes: toGraphemes(text),
             fill: style.textFill,
             stroke: style.textStroke,
             scale: style.textScale,
