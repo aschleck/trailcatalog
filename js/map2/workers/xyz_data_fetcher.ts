@@ -113,7 +113,7 @@ class XyzDataFetcher {
       for (let x = Math.floor(worldSize * (projected.low[0] / 2 + 0.5));
           x < worldSize * (projected.high[0] / 2 + 0.5);
           ++x) {
-        if (x < 0 || x >= worldSize || y < 0 || y >= worldSize) {
+        if (y < 0 || y >= worldSize) {
           continue;
         }
 
