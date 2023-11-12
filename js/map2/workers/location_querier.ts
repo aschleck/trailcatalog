@@ -1,6 +1,8 @@
 import { S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkArgument, checkExhaustive, checkExists } from 'js/common/asserts';
+// TODO(april): why is RBush slower than my quadtree...?
+//import { BBox, RBush } from 'third_party/rbush/rbush';
 
 import { BoundsQuadtree, unitWorldBounds } from '../common/bounds_quadtree';
 import { LatLng, Rect, Vec2 } from '../common/types';
@@ -36,6 +38,7 @@ export interface QueryPointResponse {
 export type Response = QueryPointResponse;
 
 interface Entry {
+//interface Entry extends BBox {
   polygon: S2Polygon;
 }
 
@@ -43,12 +46,14 @@ class LocationQuerier {
 
   private readonly groups: Map<string, LoadRequest>;
   private readonly tree: BoundsQuadtree<Entry>;
+  //private readonly tree: RBush<Entry>;
 
   constructor(
       private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
   ) {
     this.groups = new Map();
     this.tree = unitWorldBounds();
+    //this.tree = new RBush();
   }
 
   load(request: LoadRequest) {
@@ -59,6 +64,11 @@ class LocationQuerier {
       const bound = llrBound(s2);
       this.tree.insert({polygon: s2}, bound);
     }
+    //this.tree.load(request.polygons.map(p => {
+    //  const s2 = SimpleS2.decodePolygon(p.s2);
+    //  const bound = llrBound(s2);
+    //  return {...bound, polygon: s2};
+    //}));
   }
 
   unload(request: UnloadRequest) {
@@ -68,14 +78,23 @@ class LocationQuerier {
   }
 
   queryPoint(request: QueryPointRequest) {
+    const start = performance.now();
     const point = S2LatLng.fromDegrees(request.point[0], request.point[1]).toPoint();
     const output: Entry[] = [];
     this.tree.queryCircle(normalize(request.point), 0.0001, output);
+    //const output = this.tree.search({
+    //  minX: request.point[1] / 180 - 0.0001,
+    //  minY: request.point[0] / 90 - 0.0001,
+    //  maxX: request.point[1] / 180 + 0.0001,
+    //  maxY: request.point[0] / 90 + 0.0001,
+    //});
     for (const {polygon} of output) {
       if (polygon.containsPoint(point)) {
         console.log(polygon);
       }
     }
+    const end = performance.now();
+    console.log(end - start);
   }
 }
 
@@ -106,6 +125,7 @@ self.onmessage = e => {
   start(request);
 };
 
+// TODO(april): do we care about curvature?
 function llrBound(polygon: S2Polygon): Rect {
   const bound = polygon.getRectBound();
   const low = bound.lo();
@@ -115,6 +135,17 @@ function llrBound(polygon: S2Polygon): Rect {
     high: [high.latDegrees() / 90, high.lngDegrees() / 180],
   } as const as Rect;
 }
+//function llrBound(polygon: S2Polygon): BBox {
+//  const bound = polygon.getRectBound();
+//  const low = bound.lo();
+//  const high = bound.hi();
+//  return {
+//    minY: low.latDegrees() / 90,
+//    minX: low.lngDegrees() / 180,
+//    maxY: high.latDegrees() / 90,
+//    maxX: high.lngDegrees() / 180,
+//  };
+//}
 
 function normalize(ll: LatLng): Vec2 {
   return [ll[0] / 90, ll[1] / 180];
