@@ -316,13 +316,18 @@ class MbtileLoader {
 
     for (const [style, points] of pointGroups) {
       for (const point of points) {
-        let text;
+        let textFallback;
+        let textPreferred;
         for (let i = 0; i < point.tags.length; i += 2) {
-          if (point.layer.keys[point.tags[i + 0]] === 'name') {
-            text = point.layer.values[point.tags[i + 1]] as string;
+          const key = point.layer.keys[point.tags[i + 0]];
+          if (key === 'name') {
+            textFallback = point.layer.values[point.tags[i + 1]] as string;
+          } else if (key === `name:${PREFERRED_LANGUAGE}`) {
+            textPreferred = point.layer.values[point.tags[i + 1]] as string;
           }
         }
 
+        const text = textPreferred ?? textFallback;
         if (text) {
           response.labels.push({
             center: point.geometry as unknown as Vec2,
