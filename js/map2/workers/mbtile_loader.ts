@@ -2,7 +2,7 @@ import { checkArgument, checkExhaustive, checkExists } from 'js/common/asserts';
 import { DefaultMap } from 'js/common/collections';
 import { LittleEndianView } from 'js/common/little_endian_view';
 
-import { RgbaU32, TileId } from '../common/types';
+import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
 
 import { GeometryType } from './mbtile_types';
@@ -22,10 +22,11 @@ interface LayerStyle {
   minZoom: number;
   maxZoom: number;
   lines: LineStyle[];
+  points: PointStyle[];
   polygons: PolygonStyle[];
 }
 
-type GeometryStyle = LineStyle|PolygonStyle;
+type GeometryStyle = LineStyle|PointStyle|PolygonStyle;
 
 interface LineStyle {
   filters: Match[];
@@ -33,6 +34,14 @@ interface LineStyle {
   stroke: RgbaU32;
   radius: number;
   stipple: boolean;
+  z: number;
+}
+
+interface PointStyle {
+  filters: Match[];
+  textFill: RgbaU32;
+  textStroke: RgbaU32;
+  textScale: number;
   z: number;
 }
 
@@ -73,6 +82,7 @@ export interface LoadResponse {
   id: TileId;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
+  labels: Label[];
   lines: InstanceGeometry[];
   points: InstanceGeometry[];
   polygons: ElementGeometry[];
@@ -91,6 +101,15 @@ export interface InstanceGeometry {
   geometryOffset: number;
   instanceCount: number;
   vertexCount: number;
+  z: number;
+}
+
+export interface Label {
+  center: Vec2;
+  text: string;
+  fill: RgbaU32;
+  stroke: RgbaU32;
+  scale: number;
   z: number;
 }
 
@@ -146,6 +165,7 @@ class MbtileLoader {
     }
 
     const lineGroups = new DefaultMap<LineStyle, Feature[]>(() => []);
+    const pointGroups = new DefaultMap<PointStyle, Array<Feature & {layer: Layer}>>(() => []);
     const polygonGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     for (const layer of layers) {
       let layerStyle;
@@ -153,7 +173,7 @@ class MbtileLoader {
         if (
             layer.name === ls.layerName
                 && ls.minZoom <= request.id.zoom
-                && request.id.zoom <= ls.maxZoom) {
+                && request.id.zoom < ls.maxZoom) {
           layerStyle = ls;
           break;
         }
@@ -165,6 +185,7 @@ class MbtileLoader {
       }
 
       const lineUnstyled = new Set<unknown>();
+      const pointUnstyled = new Set<unknown>();
       const polygonUnstyled = new Set<unknown>();
       for (const line of layer.lines) {
         const style = findStyle(line.tags, layer.keys, layer.values, layerStyle.lines);
@@ -174,6 +195,19 @@ class MbtileLoader {
           for (let i = 0; i < line.tags.length; i += 2) {
             if (layer.keys[line.tags[i + 0]] === 'class') {
               lineUnstyled.add(layer.values[line.tags[i + 1]]);
+            }
+          }
+        }
+      }
+
+      for (const point of layer.points) {
+        const style = findStyle(point.tags, layer.keys, layer.values, layerStyle.points);
+        if (style) {
+          pointGroups.get(style).push({...point, layer});
+        } else {
+          for (let i = 0; i < point.tags.length; i += 2) {
+            if (layer.keys[point.tags[i + 0]] === 'class') {
+              pointUnstyled.add(layer.values[point.tags[i + 1]]);
             }
           }
         }
@@ -195,6 +229,10 @@ class MbtileLoader {
       if (lineUnstyled.size > 0) {
         console.log(`${layer.name} lines`);
         console.log(lineUnstyled);
+      }
+      if (pointUnstyled.size > 0) {
+        console.log(`${layer.name} points`);
+        console.log(pointUnstyled);
       }
       if (polygonUnstyled.size > 0) {
         console.log(`${layer.name} polygons`);
@@ -232,12 +270,11 @@ class MbtileLoader {
       id: request.id,
       geometry: geometry.buffer,
       index: index.buffer,
+      labels: [],
       lines: [],
       points: [],
       polygons: [],
     };
-
-    // TODO(april): support points
 
     for (const [style, lines] of lineGroups) {
       const geometryStart = geometryOffset;
@@ -268,6 +305,30 @@ class MbtileLoader {
         vertexCount,
         z: style.z,
       });
+    }
+
+    for (const [style, points] of pointGroups) {
+      console.log(style);
+      console.log(points);
+      for (const point of points) {
+        let text;
+        for (let i = 0; i < point.tags.length; i += 2) {
+          if (point.layer.keys[point.tags[i + 0]] === 'name') {
+            text = point.layer.values[point.tags[i + 1]] as string;
+          }
+        }
+
+        if (text) {
+          response.labels.push({
+            center: point.geometry as unknown as Vec2,
+            text,
+            fill: style.textFill,
+            stroke: style.textStroke,
+            scale: style.textScale,
+            z: style.z,
+          });
+        }
+      }
     }
 
     for (const [style, triangless] of triangulated) {

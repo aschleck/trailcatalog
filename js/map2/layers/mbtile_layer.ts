@@ -6,17 +6,19 @@ import { WorkerPool } from 'js/common/worker_pool';
 
 import { Copyright, RgbaU32, TileId } from '../common/types';
 import { Layer } from '../layer';
+import { GLYPHER } from '../rendering/glypher';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
-import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Style } from '../workers/mbtile_loader';
+import { Label, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Style } from '../workers/mbtile_loader';
 import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
-import { Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TRANSPORTATION } from '../z';
+import { Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
 
 interface LoadedTile {
   drawables: Drawable[];
   glGeometryBuffer: WebGLBuffer;
   glIndexBuffer: WebGLBuffer;
+  labels: Label[];
 }
 
 export const NATURE: Readonly<Style> = {
@@ -26,6 +28,7 @@ export const NATURE: Readonly<Style> = {
       minZoom: 0,
       maxZoom: 31,
       lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
@@ -70,6 +73,7 @@ export const NATURE: Readonly<Style> = {
       minZoom: 0,
       maxZoom: 31,
       lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
@@ -124,6 +128,7 @@ export const NATURE: Readonly<Style> = {
       minZoom: 0,
       maxZoom: 31,
       lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
@@ -145,6 +150,81 @@ export const NATURE: Readonly<Style> = {
           z: Z_BASE_TERRAIN + 0.75,
         },
       ],
+    },
+    {
+      layerName: 'place',
+      minZoom: 0,
+      maxZoom: 8,
+      lines: [],
+      points: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'continent',
+              'province',
+              'state',
+            ],
+          }],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xFFFFFFFF as RgbaU32,
+          textScale: 0.7,
+          z: Z_OVERLAY_TEXT,
+        },
+      ],
+      polygons: [],
+    },
+    {
+      layerName: 'place',
+      minZoom: 8,
+      maxZoom: 11,
+      lines: [],
+      points: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'city',
+              'continent',
+              'province',
+              'state',
+            ],
+          }],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xFFFFFFFF as RgbaU32,
+          textScale: 0.7,
+          z: Z_OVERLAY_TEXT,
+        },
+      ],
+      polygons: [],
+    },
+    {
+      layerName: 'place',
+      minZoom: 11,
+      maxZoom: 31,
+      lines: [],
+      points: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'city',
+              'continent',
+              'province',
+              'state',
+              'town',
+            ],
+          }],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xFFFFFFFF as RgbaU32,
+          textScale: 0.7,
+          z: Z_OVERLAY_TEXT,
+        },
+      ],
+      polygons: [],
     },
     {
       layerName: 'transportation',
@@ -185,6 +265,7 @@ export const NATURE: Readonly<Style> = {
           z: Z_OVERLAY_TRANSPORTATION,
         },
       ],
+      points: [],
       polygons: [],
     },
     {
@@ -273,6 +354,7 @@ export const NATURE: Readonly<Style> = {
           z: Z_OVERLAY_TRANSPORTATION,
         },
       ],
+      points: [],
       polygons: [],
     },
     {
@@ -280,6 +362,7 @@ export const NATURE: Readonly<Style> = {
       minZoom: 0,
       maxZoom: 31,
       lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
@@ -312,6 +395,7 @@ export const NATURE: Readonly<Style> = {
           z: Z_BASE_WATER,
         },
       ],
+      points: [],
       polygons: [],
     },
   ],
@@ -323,6 +407,8 @@ export class MbtileLayer extends Layer {
   private fetching: boolean;
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
+  private readonly textBuffer: ArrayBuffer;
+  private readonly textGlBuffer: WebGLBuffer;
   private readonly tiles: HashMap<TileId, LoadedTile>;
   private generation: number;
   private lastRenderGeneration: number;
@@ -341,8 +427,12 @@ export class MbtileLayer extends Layer {
     this.fetching = false;
     this.loader = new QueuedWorkerPool('/static/mbtile_loader_worker.js', 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
+    this.textBuffer = new ArrayBuffer(2097152);
+    this.textGlBuffer = renderer.createDataBuffer(this.textBuffer.byteLength);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.registerDisposer(() => {
+      this.renderer.deleteBuffer(this.textGlBuffer);
+
       for (const response of this.tiles.values()) {
         this.renderer.deleteBuffer(response.glGeometryBuffer);
         this.renderer.deleteBuffer(response.glIndexBuffer);
@@ -395,9 +485,29 @@ export class MbtileLayer extends Layer {
   override render(planner: Planner): void {
     // Draw highest detail to lowest, we use the stencil buffer to avoid overdraw.
     const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
+    let textByteSize = 0;
     for (const [id, response] of sorted) {
       planner.add(response.drawables);
+
+      for (const label of response.labels) {
+        const {byteSize, drawables} = GLYPHER.plan(
+            label.text,
+            label.center,
+            [0, 0],
+            label.scale,
+            0,
+            label.fill,
+            label.stroke,
+            label.z,
+            this.textBuffer,
+            textByteSize,
+            this.textGlBuffer,
+            this.renderer);
+        planner.add(drawables);
+        textByteSize += byteSize;
+      }
     }
+    this.renderer.uploadData(this.textBuffer, textByteSize, this.textGlBuffer);
 
     this.lastRenderGeneration = this.generation;
   }
@@ -477,6 +587,7 @@ export class MbtileLayer extends Layer {
       glGeometryBuffer: geometry,
       glIndexBuffer: index,
       drawables,
+      labels: response.labels,
     });
     this.generation += 1;
 

@@ -5,12 +5,14 @@ import { Vec2 } from '../common/types';
 
 import { BillboardProgram } from './billboard_program';
 import { LineProgram } from './line_program';
+import { SdfProgram } from './sdf_program';
 import { TriangleProgram } from './triangle_program';
 
 export class Renderer extends Disposable {
 
   readonly billboardProgram: BillboardProgram;
   readonly lineProgram: LineProgram;
+  readonly sdfProgram: SdfProgram;
   readonly triangleProgram: TriangleProgram;
 
   constructor(readonly gl: WebGL2RenderingContext) {
@@ -19,6 +21,8 @@ export class Renderer extends Disposable {
     this.registerDisposable(this.billboardProgram);
     this.lineProgram = new LineProgram(this.gl);
     this.registerDisposable(this.lineProgram);
+    this.sdfProgram = new SdfProgram(this.gl);
+    this.registerDisposable(this.sdfProgram);
     this.triangleProgram = new TriangleProgram(this.gl);
     this.registerDisposable(this.triangleProgram);
 
