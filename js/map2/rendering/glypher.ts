@@ -16,7 +16,7 @@ interface LoadAwareFontFace extends FontFace {
   loaded?: boolean;
 }
 
-const FONT_SIZE = 24;
+const FONT_SIZE = 28;
 const LINE_HEIGHT = 1.6;
 const ATLAS_GLYPH_SIZE = 32;
 
@@ -68,16 +68,24 @@ class Glypher {
     }
 
     let regenerate = false;
+    let lineHeight = 0;
+    let yHeight = 0;
     for (const character of graphemes) {
       if (character === '\n') {
+        yHeight += lineHeight;
+        lineHeight = 0;
         continue;
       }
 
-      if (!this.glyphs.has(character)) {
+      const glyph = this.glyphs.get(character);
+      if (glyph) {
+        lineHeight = Math.max(lineHeight, glyph.glyphHeight * scale);
+      } else {
         this.characters.add(character);
         regenerate = true;
       }
     }
+    yHeight += lineHeight;
 
     if (regenerate) {
       this.regenerator.trigger();
@@ -93,7 +101,6 @@ class Glypher {
     const drawables = [];
     const pending = [];
     let totalByteSize = 0;
-    let lineHeight = 0;
     let yOffset = 0;
     for (let i = 0; i < graphemes.length; ++i) {
       const character = graphemes[i];
@@ -107,7 +114,7 @@ class Glypher {
         const {byteSize, drawable} = renderer.sdfProgram.plan(
             pending,
             center,
-            [offsetPx[0], offsetPx[1] + yOffset],
+            [offsetPx[0], offsetPx[1] - yHeight / 2 + yOffset],
             scale,
             angle,
             fill,
@@ -121,7 +128,7 @@ class Glypher {
         totalByteSize += byteSize;
 
         pending.length = 0;
-        yOffset += lineHeight;
+        yOffset -= lineHeight * LINE_HEIGHT;
         lineHeight = 0;
       }
     }

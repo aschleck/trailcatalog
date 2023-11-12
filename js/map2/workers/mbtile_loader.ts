@@ -331,7 +331,7 @@ class MbtileLoader {
         if (text) {
           response.labels.push({
             center: point.geometry as unknown as Vec2,
-            graphemes: toGraphemes(text),
+            graphemes: wrap(toGraphemes(text)),
             fill: style.textFill,
             stroke: style.textStroke,
             scale: style.textScale,
@@ -661,4 +661,18 @@ function matches(tags: number[], keys: string[], values: ValueType[], filters: M
   }
 
   return true;
+}
+
+function wrap(text: string[]): string[] {
+  const wrapped = [];
+  let lastWrap = 0;
+  for (let i = 0; i < text.length; ++i) {
+    if (i - lastWrap > 8 && text[i] === ' ') {
+      wrapped.push('\n');
+      lastWrap = i;
+    } else {
+      wrapped.push(text[i]);
+    }
+  }
+  return wrapped;
 }

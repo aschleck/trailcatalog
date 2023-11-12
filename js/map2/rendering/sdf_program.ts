@@ -330,7 +330,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       void main() {
         highp float gamma = 0.022096875;
         mediump float distance = texture(color, fragColorPosition).a;
-        highp float alpha = smoothstep(halo - gamma, halo + gamma, distance);
+        mediump float alpha = smoothstep(halo - gamma, halo + gamma, distance);
         fragColor = fragColorFill * alpha;
       }
   `;
