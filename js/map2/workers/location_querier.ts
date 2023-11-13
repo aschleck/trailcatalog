@@ -2,7 +2,7 @@ import { S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkArgument, checkExhaustive, checkExists } from 'js/common/asserts';
 
-import { BoundsQuadtree, unitWorldBounds } from '../common/bounds_quadtree';
+import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
 import { LatLng, Rect, Vec2 } from '../common/types';
 
 interface InitializeRequest {
@@ -42,13 +42,13 @@ interface Entry {
 class LocationQuerier {
 
   private readonly groups: Map<string, LoadRequest>;
-  private readonly tree: BoundsQuadtree<Entry>;
+  private readonly tree: WorldBoundsQuadtree<Entry>;
 
   constructor(
       private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
   ) {
     this.groups = new Map();
-    this.tree = unitWorldBounds();
+    this.tree = new WorldBoundsQuadtree<Entry>();
   }
 
   load(request: LoadRequest) {

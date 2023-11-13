@@ -64,7 +64,7 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0xFFFFFFF80 as RgbaU32,
-          z: Z_BASE_TERRAIN + 0.1,
+          z: Z_BASE_TERRAIN + 0.8,
         },
       ],
     },
@@ -138,7 +138,7 @@ export const NATURE: Readonly<Style> = {
               //'city_park',
               //'county_park',
               // TODO(april): this looks gross at the nortern tip of Greenland
-              //'national_park',
+              'national_park',
               //'nature_reserve',
               //'open_space_preserve',
               //'regional_park',
@@ -146,7 +146,7 @@ export const NATURE: Readonly<Style> = {
               //'state_wilderness',
             ],
           }],
-          fill: 0x21ad57aa as RgbaU32,
+          fill: 0x21ad5780 as RgbaU32,
           z: Z_BASE_TERRAIN + 0.75,
         },
       ],
@@ -549,7 +549,9 @@ export class MbtileLayer extends Layer {
   }
 
   override render(planner: Planner): void {
-    // Draw highest detail to lowest, we use the stencil buffer to avoid overdraw.
+    // TODO(april): this results in bad behavior like low zoom tiles drawing over what should be
+    // background at high zoom. We need to drop the depth buffer and just be careful about overdraw
+    // with xyz tiles. Sad.
     const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
     let textByteSize = 0;
     for (const [id, response] of sorted) {

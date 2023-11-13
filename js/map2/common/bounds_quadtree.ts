@@ -2,10 +2,6 @@ import * as arrays from 'js/common/arrays';
 
 import { Rect, Vec2 } from './types';
 
-export function unitWorldBounds<V>(): BoundsQuadtree<V> {
-  return new BoundsQuadtree([0, 0], 1);
-}
-
 const SPLIT_THRESHOLD = 100;
 const MIN_HALF_RADIUS = 1 / Math.pow(2, 15);
 
@@ -49,6 +45,38 @@ export class BoundsQuadtree<V> {
 
   queryRect(rect: Rect, output: V[]): void {
     queryRect(this.root, rect, output);
+  }
+}
+
+export class WorldBoundsQuadtree<V> extends BoundsQuadtree<V> {
+  constructor() {
+    super([0, 0], 1);
+  }
+
+  queryCircle(point: Vec2, radius: number, output: V[]): void {
+    super.queryCircle(point, radius, output);
+    if (point[1] - radius < -1) {
+      super.queryCircle([point[0], point[1] + 2], radius, output);
+    }
+    if (point[1] + radius > 1) {
+      super.queryCircle([point[0], point[1] - 2], radius, output);
+    }
+  }
+
+  queryRect(rect: Rect, output: V[]): void {
+    super.queryRect(rect, output);
+    if (rect.low[1] < -1) {
+      super.queryRect({
+        low: [rect.low[0], rect.low[1] + 2],
+        high: [rect.high[0], rect.high[1] + 2],
+      }, output);
+    }
+    if (rect.high[1] > 1) {
+      super.queryRect({
+        low: [rect.low[0], rect.low[1] - 2],
+        high: [rect.high[0], rect.high[1] - 2],
+      }, output);
+    }
   }
 }
 
