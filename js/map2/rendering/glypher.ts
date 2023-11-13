@@ -13,6 +13,7 @@ import { Glyph } from './sdf_program';
 import { TexturePool } from './texture_pool';
 
 interface LoadAwareFontFace extends FontFace {
+  requested?: boolean;
   loaded?: boolean;
 }
 
@@ -156,9 +157,52 @@ class Glypher {
           .catch(e => {
             console.error(e);
           });
+      return;
+    }
 
-      // We don't bail out because we likely have at least sans-serif. Better to draw something
-      // than nothing.
+    if (this.fonts.length === 0) {
+      return;
+    }
+
+    let missing = false;
+    for (const character of this.characters) {
+      for (const code of Array.from(character)) {
+        const codepoint = code.codePointAt(0) ?? 0;
+        if (codepoint === 0x200D) {
+          // Zero width joiner
+          continue;
+        } else if (codepoint === 0xFE0E || codepoint === 0xFE0F) {
+          // Variational selector
+          continue;
+        }
+
+        for (const [start, end, font] of this.fonts) {
+          if (codepoint >= end) {
+            continue;
+          }
+          if (codepoint < start) {
+            break;
+          }
+
+          if (!font.loaded) {
+            missing = true;
+            if (!font.requested) {
+              const face = new FontFace(font.family, font.src);
+              document.fonts.add(face);
+              face.load()
+                  .then(() => {
+                    font.loaded = true;
+                    this.regenerator.trigger();
+                  });
+              font.requested = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (missing) {
+      return;
     }
 
     const tinySdf = new TinySDF({
@@ -169,26 +213,9 @@ class Glypher {
     });
 
     const size = ATLAS_GLYPH_SIZE;
-
     let i = 0;
     this.glyphs.clear();
     for (const character of this.characters) {
-      const codepoint = character.codePointAt(0) ?? 0;
-      for (const [start, end, font] of this.fonts) {
-        if (codepoint < start) {
-          continue;
-        }
-
-        if (codepoint >= end) {
-          break;
-        }
-
-        if (!font.loaded) {
-          new FontFace(font.family, font.src).load().then(() => { this.regenerator.trigger(); });
-          font.loaded = true;
-        }
-      }
-
       const x = i % (ATLAS_WIDTH / size) * size;
       const y = Math.floor(i / (ATLAS_WIDTH / size)) * size;
       const g = tinySdf.draw(character);
