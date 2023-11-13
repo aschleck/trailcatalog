@@ -552,6 +552,9 @@ export class MbtileLayer extends Layer {
     // TODO(april): this results in bad behavior like low zoom tiles drawing over what should be
     // background at high zoom. We need to drop the depth buffer and just be careful about overdraw
     // with xyz tiles. Sad.
+    //
+    // Orrrr we could add a tile wide quad at the start of every tile...? But then we need the
+    // stencil buffer not depth.
     const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
     let textByteSize = 0;
     for (const [id, response] of sorted) {
