@@ -330,7 +330,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
 
       const planner = new Planner();
       for (const layer of this.layers) {
-        layer.render(planner);
+        layer.render(planner, this.camera.zoom);
       }
 
       const centerPixel = this.camera.centerPixel;

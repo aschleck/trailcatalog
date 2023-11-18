@@ -60,8 +60,8 @@ export class CompositeZoomLayer extends Layer {
     }
   }
 
-  override render(planner: Planner): void {
-    this.findActive()?.render(planner);
+  override render(planner: Planner, zoom: number): void {
+    this.findActive()?.render(planner, zoom);
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number): void {

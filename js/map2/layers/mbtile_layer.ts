@@ -1,10 +1,12 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
+import * as arrays from 'js/common/arrays';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap, HashSet } from 'js/common/collections';
 import { QueuedWorkerPool, Task } from 'js/common/queued_worker_pool';
 import { WorkerPool } from 'js/common/worker_pool';
 
-import { Copyright, RgbaU32, TileId } from '../common/types';
+import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
+import { Copyright, Rect, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { GLYPHER } from '../rendering/glypher';
 import { Planner } from '../rendering/planner';
@@ -18,7 +20,13 @@ interface LoadedTile {
   drawables: Drawable[];
   glGeometryBuffer: WebGLBuffer;
   glIndexBuffer: WebGLBuffer;
-  labels: Label[];
+  labels: IndexedLabel[];
+  labelBounds: Rect[];
+}
+
+interface IndexedLabel extends Label {
+  collidedMinZoom: number;
+  radius: Vec2;
 }
 
 export const NATURE: Readonly<Style> = {
@@ -471,6 +479,7 @@ export class MbtileLayer extends Layer {
 
   private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
   private fetching: boolean;
+  private readonly labelIndex: WorldBoundsQuadtree<IndexedLabel>;
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private readonly textBuffer: ArrayBuffer;
@@ -491,6 +500,7 @@ export class MbtileLayer extends Layer {
     super(copyrights);
     this.fetcher = new WorkerPool('/static/xyz_data_fetcher_worker.js', 1);
     this.fetching = false;
+    this.labelIndex = new WorldBoundsQuadtree();
     this.loader = new QueuedWorkerPool('/static/mbtile_loader_worker.js', 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.textBuffer = new ArrayBuffer(4194304);
@@ -548,7 +558,9 @@ export class MbtileLayer extends Layer {
     return this.fetching || this.loading.size > 0;
   }
 
-  override render(planner: Planner): void {
+  override render(planner: Planner, zoom: number): void {
+    const zoomFloor = Math.floor(zoom);
+
     // TODO(april): this results in bad behavior like low zoom tiles drawing over what should be
     // background at high zoom. We need to drop the depth buffer and just be careful about overdraw
     // with xyz tiles. Sad.
@@ -561,6 +573,10 @@ export class MbtileLayer extends Layer {
       planner.add(response.drawables);
 
       for (const label of response.labels) {
+        if (label.maxZoom <= zoom || label.collidedMinZoom > zoom) {
+          continue;
+        }
+
         const {byteSize, drawables} = GLYPHER.plan(
             label.graphemes,
             label.center,
@@ -611,13 +627,93 @@ export class MbtileLayer extends Layer {
   }
 
   private loadProcessedTile(response: LoadResponse): void {
-    //console.log(response);
-
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
     this.renderer.uploadData(response.geometry, response.geometry.byteLength, geometry);
     this.renderer.uploadIndices(response.index, response.index.byteLength, index);
     const drawables = [];
+
+    const labels = [];
+    const labelBounds = [];
+    const padding = 2;
+    for (const label of response.labels) {
+      const [wr, hr] = GLYPHER.measurePx(label.graphemes, label.scale);
+      const w = wr + 2 * padding;
+      const h = hr + 2 * padding;
+      const mzWorldSize = 256 * Math.pow(2, label.minZoom);
+      const hwWorld = w / 2 / mzWorldSize;
+      const hhWorld = h / 2 / mzWorldSize;
+      const maximalBound = {
+        low: [label.center[0] - hwWorld, label.center[1] - hhWorld],
+        high: [label.center[0] + hwWorld, label.center[1] + hhWorld],
+      } as const;
+
+      const affected: IndexedLabel[] = [];
+      this.labelIndex.queryRect(maximalBound, affected);
+
+      // First we calculate our minimal zoom, ie when *we* can show up.
+      let ourMinZoom = label.minZoom;
+      for (const other of affected) {
+        if (label.maxZoom <= other.collidedMinZoom || label.minZoom >= other.maxZoom) {
+          continue;
+        }
+
+        if (label.z <= other.z) {
+          const collisionZoom = Math.max(ourMinZoom, other.collidedMinZoom);
+          if (arrays.equals(label.graphemes, other.graphemes)) {
+            // Go away. The main reason to do this is because it's possible A blocks B but B blocks
+            // A' and you get weird effects.
+            ourMinZoom = 9999;
+            break;
+          }
+
+          console.log(`${label.graphemes.join("")} vs ${other.graphemes.join("")} at zl ${collisionZoom}`);
+          const worldSize = 256 * Math.pow(2, collisionZoom);
+          const ourRadius = [w / 2 / worldSize, h / 2 / worldSize];
+          const theirRadius = [other.radius[0] / worldSize, other.radius[1] / worldSize];
+          const overlapX =
+              Math.abs(label.center[0] - other.center[0]) - ourRadius[0] - theirRadius[0];
+          const overlapY =
+              Math.abs(label.center[1] - other.center[1]) - ourRadius[1] - theirRadius[1];
+          if (overlapX >= 0 || overlapY >= 0) {
+            continue;
+          }
+
+          // |labelCenter - otherCenter| * 256 * 2^(labelMinZoom + dz)
+          //     = ourRadius + theirRadius
+          // =>
+          // 2^(labelMZ + dz) = (ourRadius + theirRadius) / |labelCenter - otherCenter| / 256
+          // labelMZ + dz = log2((ourRadius + theirRadius) / |labelCenter - otherCenter| / 256)
+          const minimalZoomX =
+              Math.log2((w / 2 + other.radius[0]) / Math.abs(label.center[0] - other.center[0]) / 256);
+          const minimalZoomY =
+              Math.log2((h / 2 + other.radius[1]) / Math.abs(label.center[1] - other.center[1]) / 256);
+          const minimalZoom = Math.max(minimalZoomX, minimalZoomY);
+          console.log(minimalZoom);
+          ourMinZoom = Math.max(ourMinZoom, minimalZoom);
+        }
+      }
+
+      // Then we affect our neighbors' minimal zooms.
+      for (const other of affected) {
+        if (label.maxZoom <= other.minZoom || ourMinZoom >= other.maxZoom) {
+          continue;
+        }
+
+        if (label.z > other.z) {
+          const collisionZoom = Math.max(ourMinZoom, other.collidedMinZoom);
+        }
+      }
+
+      const indexed = {
+        ...label,
+        collidedMinZoom: ourMinZoom,
+        radius: [w / 2, h / 2] as const,
+      };
+      labels.push(indexed);
+      labelBounds.push(maximalBound);
+      this.labelIndex.insert(indexed, maximalBound);
+    }
 
     for (const line of response.lines) {
       drawables.push({
@@ -658,7 +754,8 @@ export class MbtileLayer extends Layer {
       glGeometryBuffer: geometry,
       glIndexBuffer: index,
       drawables,
-      labels: response.labels,
+      labels,
+      labelBounds,
     });
     this.generation += 1;
 
@@ -681,6 +778,12 @@ export class MbtileLayer extends Layer {
         this.tiles.delete(id);
         this.renderer.deleteBuffer(response.glGeometryBuffer);
         this.renderer.deleteBuffer(response.glIndexBuffer);
+        
+        // TODO(april): if we make delete take an array this would probably be faster
+        for (const bound of response.labelBounds) {
+          // TODO(april): unhide affected labels?
+          this.labelIndex.delete(bound);
+        }
       }
     }
 

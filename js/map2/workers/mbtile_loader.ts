@@ -118,6 +118,8 @@ export interface Label {
   stroke: RgbaU32;
   scale: number;
   z: number;
+  minZoom: number;
+  maxZoom: number;
 }
 
 export type Response = LoadResponse;
@@ -172,7 +174,10 @@ class MbtileLoader {
     }
 
     const lineGroups = new DefaultMap<LineStyle, Feature[]>(() => []);
-    const pointGroups = new DefaultMap<PointStyle, Array<Feature & {layer: Layer}>>(() => []);
+    const pointGroups = new DefaultMap<PointStyle, Array<Feature & {
+      layer: Layer;
+      layerStyle: LayerStyle;
+    }>>(() => []);
     const polygonGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     for (const layer of layers) {
       let layerStyle;
@@ -210,7 +215,7 @@ class MbtileLoader {
       for (const point of layer.points) {
         const style = findStyle(point.tags, layer.keys, layer.values, layerStyle.points);
         if (style) {
-          pointGroups.get(style).push({...point, layer});
+          pointGroups.get(style).push({...point, layer, layerStyle});
         } else {
           for (let i = 0; i < point.tags.length; i += 2) {
             if (layer.keys[point.tags[i + 0]] === 'class') {
@@ -336,6 +341,8 @@ class MbtileLoader {
             stroke: style.textStroke,
             scale: style.textScale,
             z: style.z,
+            minZoom: point.layerStyle.minZoom,
+            maxZoom: point.layerStyle.maxZoom,
           });
         }
       }

@@ -4,6 +4,7 @@ import GraphemeSplitter from 'grapheme-splitter';
 import { checkExists } from 'js/common/asserts';
 import { FontFace, parseCss } from 'js/common/css';
 import { Debouncer } from 'js/common/debouncer';
+import { isServerSide } from 'js/server/ssr_aware';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
@@ -18,7 +19,7 @@ interface LoadAwareFontFace extends FontFace {
 }
 
 const FONT_SIZE = 28;
-const LINE_HEIGHT = 1.6;
+const LINE_HEIGHT = 1.2;
 const ATLAS_GLYPH_SIZE = 32;
 
 const ATLAS_WIDTH = 2048;
@@ -33,6 +34,7 @@ class Glypher {
   private readonly fonts: Array<[start: number, end: number, font: LoadAwareFontFace]>;
   private readonly glyphs: Map<String, Glyph>;
   private readonly regenerator: Debouncer;
+  private readonly tinySdf: TinySDF;
   private cssFetched: boolean;
   private generation: number;
 
@@ -46,9 +48,54 @@ class Glypher {
     this.cssFetched = false;
     this.generation = -1;
 
+    // Avoid both ssr and web workers.
+    this.tinySdf =
+      typeof window === 'undefined' || isServerSide()
+          ? undefined as unknown as TinySDF
+          : new TinySDF({
+            fontSize: FONT_SIZE,
+            fontFamily: 'Roboto,"Noto Emoji",sans-serif',
+            fontStyle: 'normal',
+            fontWeight: '400',
+          });
+
     for (let i = 32; i < 127; ++i) {
       this.characters.add(String.fromCodePoint(i));
     }
+  }
+
+  measurePx(graphemes: string[], scale: number): Vec2 {
+    let regenerate = false;
+    let lineWidth = 0;
+    let yHeight = 0;
+    let xWidth = 0;
+    for (const character of graphemes) {
+      if (character === '\n') {
+        xWidth = Math.max(lineWidth, xWidth);
+        yHeight += FONT_SIZE * scale * LINE_HEIGHT;
+        lineWidth = 0;
+        continue;
+      }
+
+      const glyph = this.glyphs.get(character);
+      if (glyph) {
+        lineWidth += glyph.glyphAdvance * scale;
+      } else {
+        this.characters.add(character);
+        regenerate = true;
+
+        // Make something reasonable up
+        lineWidth += FONT_SIZE * 0.6 * scale;
+      }
+    }
+    xWidth = Math.max(lineWidth, xWidth);
+    yHeight += FONT_SIZE * scale;
+
+    if (regenerate) {
+      this.regenerator.trigger();
+    }
+
+    return [xWidth, yHeight];
   }
 
   plan(
@@ -64,29 +111,21 @@ class Glypher {
       offset: number,
       glBuffer: WebGLBuffer,
       renderer: Renderer): {byteSize: number; drawables: Drawable[];} {
-    if (this.generation < 0) {
-      this.regenerate();
-    }
-
     let regenerate = false;
-    let lineHeight = 0;
     let yHeight = 0;
     for (const character of graphemes) {
       if (character === '\n') {
-        yHeight += lineHeight;
-        lineHeight = 0;
+        yHeight += FONT_SIZE * scale * LINE_HEIGHT;
         continue;
       }
 
       const glyph = this.glyphs.get(character);
-      if (glyph) {
-        lineHeight = Math.max(lineHeight, glyph.glyphHeight * scale);
-      } else {
+      if (!glyph) {
         this.characters.add(character);
         regenerate = true;
       }
     }
-    yHeight += lineHeight;
+    yHeight += FONT_SIZE * scale;
 
     if (regenerate) {
       this.regenerator.trigger();
@@ -107,7 +146,6 @@ class Glypher {
       const character = graphemes[i];
       if (character !== '\n') {
         const glyph = checkExists(this.glyphs.get(character));
-        lineHeight = Math.max(lineHeight, glyph.glyphHeight * scale);
         pending.push(glyph);
       }
 
@@ -115,7 +153,7 @@ class Glypher {
         const {byteSize, drawable} = renderer.sdfProgram.plan(
             pending,
             center,
-            [offsetPx[0], offsetPx[1] - yHeight / 2 + yOffset],
+            [offsetPx[0], offsetPx[1] + yHeight / 2 - yOffset],
             scale,
             angle,
             fill,
@@ -129,8 +167,7 @@ class Glypher {
         totalByteSize += byteSize;
 
         pending.length = 0;
-        yOffset -= lineHeight * LINE_HEIGHT;
-        lineHeight = 0;
+        yOffset += FONT_SIZE * scale * LINE_HEIGHT;
       }
     }
 
@@ -205,20 +242,13 @@ class Glypher {
       return;
     }
 
-    const tinySdf = new TinySDF({
-      fontSize: FONT_SIZE,
-      fontFamily: 'Roboto,"Noto Emoji",sans-serif',
-      fontStyle: 'normal',
-      fontWeight: '400',
-    });
-
     const size = ATLAS_GLYPH_SIZE;
     let i = 0;
     this.glyphs.clear();
     for (const character of this.characters) {
       const x = i % (ATLAS_WIDTH / size) * size;
       const y = Math.floor(i / (ATLAS_WIDTH / size)) * size;
-      const g = tinySdf.draw(character);
+      const g = this.tinySdf.draw(character);
       copyIntoImage(g.data, g.width, this.atlas, x, y, ATLAS_WIDTH);
       this.glyphs.set(character, {
         index: i,

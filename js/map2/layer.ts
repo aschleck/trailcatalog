@@ -31,7 +31,7 @@ export abstract class Layer extends Disposable {
     return false;
   }
 
-  render(planner: Planner): void {}
+  render(planner: Planner, zoom: number): void {}
 
   viewportChanged(bounds: S2LatLngRect, zoom: number): void {}
 }

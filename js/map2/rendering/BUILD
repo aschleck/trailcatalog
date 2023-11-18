@@ -9,6 +9,7 @@ tc_ts_project(
         "//:node_modules/grapheme-splitter",
         "//js/common",
         "//js/map2/common",
+        "//js/server:client",
     ],
 )
 
