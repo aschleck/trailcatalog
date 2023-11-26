@@ -71,9 +71,16 @@ rules_closure_dependencies(
 rules_closure_toolchains()
 
 # TODO: Migrated to Bzlmod
-local_repository(
+http_archive(
   name = "com_google_j2cl",
-  path = "../j2cl",
+  patches = [
+    "//:j2cl.patch",
+  ],
+  urls = [
+    "https://github.com/google/j2cl/archive/b8f107dbe15c1c8d22cb345634b5b5a264cee0da.zip",
+  ],
+  sha256 = "eff07f6a3efc9e0bf466d1088bade8d458185f32b06f2a7293c59c8cb7011239",
+  strip_prefix = "j2cl-b8f107dbe15c1c8d22cb345634b5b5a264cee0da",
 )
 
 http_archive(
@@ -164,7 +171,6 @@ j2cl_maven_import_external(
         "@org_checkerframework_checker_qual-j2cl",
     ],
 )
-
 
 # TODO: Migrated to Bzlmod
 http_archive(
