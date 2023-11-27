@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "allowJs": true,
-    "baseUrl": "./",
+    "baseUrl": ".",
     "declaration": true,
     "esModuleInterop": true, // recommended by esbuild
     "isolatedModules": true, // recommended by esbuild

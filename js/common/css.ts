@@ -4,7 +4,7 @@
 
 import { checkArgument, checkExists } from 'js/common/asserts';
 
-export interface FontFace {
+export interface TFontFace {
   family: string;
   style: string;
   weight: number;
@@ -12,7 +12,7 @@ export interface FontFace {
   ranges: Array<[number, number]>;
 }
 
-export function parseCss(css: string): FontFace[] {
+export function parseCss(css: string): TFontFace[] {
   const stream = {position: 0, text: css, line: 1, column: 1};
   let token;
   const fontFaces = [];
@@ -35,7 +35,7 @@ export function parseCss(css: string): FontFace[] {
   return fontFaces;
 }
 
-function parseCssFontFace(stream: CssStream): FontFace {
+function parseCssFontFace(stream: CssStream): TFontFace {
   expect('block_begin', stream);
 
   let next = nextToken(stream);

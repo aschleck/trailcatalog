@@ -114,12 +114,15 @@ def tc_ts_project(name, srcs = None, css_deps = None, data = None, deps = None):
         ],
     )
 
-def ts_project(name, deps = None, **kwargs):
+def ts_project(name, srcs, deps = None, **kwargs):
     _ts_project(
         name = name,
+        assets = srcs,
         allow_js = True,
         declaration = True,
         deps = deps or [],
+        srcs = srcs,
+        transpiler = "tsc",
         tsconfig = "//:tsconfig",
         **kwargs
     )

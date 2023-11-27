@@ -10,11 +10,14 @@ js_binary(
         "//java/lat/trails/static",
     ],
     entry_point = "frontend.js",
+    node_options = [
+        "--enable-source-maps",
+    ],
 )
 
 esbuild_binary(
     name = "frontend",
-    entry_point = "server.js",
+    entry_point = "server.ts",
     minify = False,
     platform = "node",
     css_deps = [

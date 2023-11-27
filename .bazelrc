@@ -6,3 +6,8 @@ build --java_language_version=17
 build --tool_java_language_version=17
 build --incompatible_strict_action_env
 test --test_output=errors
+
+# Recommended by aspect_rules_ts
+build --@aspect_rules_ts//ts:skipLibCheck=always
+fetch --@aspect_rules_ts//ts:skipLibCheck=always
+query --@aspect_rules_ts//ts:skipLibCheck=always

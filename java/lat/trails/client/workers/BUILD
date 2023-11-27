@@ -4,7 +4,7 @@ load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
 
 esbuild_binary(
     name = "collection_loader_worker",
-    entry_point = "collection_loader.js",
+    entry_point = "collection_loader.ts",
     deps = [
         ":workers",
     ],

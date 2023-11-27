@@ -4,7 +4,7 @@ load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
 
 esbuild_binary(
     name = "client",
-    entry_point = "app.js",
+    entry_point = "app.tsx",
     deps = [
         ":css",
         ":ts",

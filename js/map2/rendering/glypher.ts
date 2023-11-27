@@ -2,7 +2,7 @@ import TinySDF from '@mapbox/tiny-sdf';
 import GraphemeSplitter from 'grapheme-splitter';
 
 import { checkExists } from 'js/common/asserts';
-import { FontFace, parseCss } from 'js/common/css';
+import { TFontFace, parseCss } from 'js/common/css';
 import { Debouncer } from 'js/common/debouncer';
 import { isServerSide } from 'js/server/ssr_aware';
 
@@ -13,7 +13,7 @@ import { Renderer } from './renderer';
 import { Glyph } from './sdf_program';
 import { TexturePool } from './texture_pool';
 
-interface LoadAwareFontFace extends FontFace {
+interface LoadAwareFontFace extends TFontFace {
   requested?: boolean;
   loaded?: boolean;
 }
