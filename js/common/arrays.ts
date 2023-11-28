@@ -1,3 +1,20 @@
+export function compare<E>(a: readonly E[], b: readonly E[]): number {
+  const common = Math.min(a.length, b.length);
+  for (let i = 0; i < common; ++i) {
+    if (a[i] !== b[i]) {
+      return a[i] < b[i] ? -1 : 1;
+    }
+  }
+
+  if (a.length === b.length) {
+    return 0;
+  } else if (a.length < b.length) {
+    return -1;
+  } else {
+    return 1;
+  }
+}
+
 export function equals<E>(a: readonly E[], b: readonly E[]): boolean {
   if (a.length !== b.length) {
     return false;

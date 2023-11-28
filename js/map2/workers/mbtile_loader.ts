@@ -192,7 +192,7 @@ class MbtileLoader {
       }
 
       if (!layerStyle) {
-        console.log(`skipped layer ${layer.name}`);
+        //console.log(`skipped layer ${layer.name}`);
         continue;
       }
 
@@ -238,18 +238,18 @@ class MbtileLoader {
         }
       }
 
-      if (lineUnstyled.size > 0) {
-        console.log(`${layer.name} lines`);
-        console.log(lineUnstyled);
-      }
-      if (pointUnstyled.size > 0) {
-        console.log(`${layer.name} points`);
-        console.log(pointUnstyled);
-      }
-      if (polygonUnstyled.size > 0) {
-        console.log(`${layer.name} polygons`);
-        console.log(polygonUnstyled);
-      }
+      //if (lineUnstyled.size > 0) {
+      //  console.log(`${layer.name} lines`);
+      //  console.log(lineUnstyled);
+      //}
+      //if (pointUnstyled.size > 0) {
+      //  console.log(`${layer.name} points`);
+      //  console.log(pointUnstyled);
+      //}
+      //if (polygonUnstyled.size > 0) {
+      //  console.log(`${layer.name} polygons`);
+      //  console.log(polygonUnstyled);
+      //}
     }
 
     const triangulated = new Map<PolygonStyle, Triangles[]>();

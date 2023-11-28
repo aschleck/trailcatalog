@@ -21,10 +21,10 @@ interface LoadedTile {
   glGeometryBuffer: WebGLBuffer;
   glIndexBuffer: WebGLBuffer;
   labels: IndexedLabel[];
-  labelBounds: Rect[];
 }
 
 interface IndexedLabel extends Label {
+  bound: Rect;
   collidedMinZoom: number;
   radius: Vec2;
 }
@@ -634,84 +634,28 @@ export class MbtileLayer extends Layer {
     const drawables = [];
 
     const labels = [];
-    const labelBounds = [];
     const padding = 2;
     for (const label of response.labels) {
       const [wr, hr] = GLYPHER.measurePx(label.graphemes, label.scale);
       const w = wr + 2 * padding;
       const h = hr + 2 * padding;
       const mzWorldSize = 256 * Math.pow(2, label.minZoom);
-      const hwWorld = w / 2 / mzWorldSize;
-      const hhWorld = h / 2 / mzWorldSize;
+      const hwWorld = w / mzWorldSize; // no divide by 2 because the world is -1 to 1
+      const hhWorld = h / mzWorldSize;
       const maximalBound = {
         low: [label.center[0] - hwWorld, label.center[1] - hhWorld],
         high: [label.center[0] + hwWorld, label.center[1] + hhWorld],
       } as const;
 
-      const affected: IndexedLabel[] = [];
-      this.labelIndex.queryRect(maximalBound, affected);
-
-      // First we calculate our minimal zoom, ie when *we* can show up.
-      let ourMinZoom = label.minZoom;
-      for (const other of affected) {
-        if (label.maxZoom <= other.collidedMinZoom || label.minZoom >= other.maxZoom) {
-          continue;
-        }
-
-        if (label.z <= other.z) {
-          const collisionZoom = Math.max(ourMinZoom, other.collidedMinZoom);
-          if (arrays.equals(label.graphemes, other.graphemes)) {
-            // Go away. The main reason to do this is because it's possible A blocks B but B blocks
-            // A' and you get weird effects.
-            ourMinZoom = 9999;
-            break;
-          }
-
-          console.log(`${label.graphemes.join("")} vs ${other.graphemes.join("")} at zl ${collisionZoom}`);
-          const worldSize = 256 * Math.pow(2, collisionZoom);
-          const ourRadius = [w / 2 / worldSize, h / 2 / worldSize];
-          const theirRadius = [other.radius[0] / worldSize, other.radius[1] / worldSize];
-          const overlapX =
-              Math.abs(label.center[0] - other.center[0]) - ourRadius[0] - theirRadius[0];
-          const overlapY =
-              Math.abs(label.center[1] - other.center[1]) - ourRadius[1] - theirRadius[1];
-          if (overlapX >= 0 || overlapY >= 0) {
-            continue;
-          }
-
-          // |labelCenter - otherCenter| * 256 * 2^(labelMinZoom + dz)
-          //     = ourRadius + theirRadius
-          // =>
-          // 2^(labelMZ + dz) = (ourRadius + theirRadius) / |labelCenter - otherCenter| / 256
-          // labelMZ + dz = log2((ourRadius + theirRadius) / |labelCenter - otherCenter| / 256)
-          const minimalZoomX =
-              Math.log2((w / 2 + other.radius[0]) / Math.abs(label.center[0] - other.center[0]) / 256);
-          const minimalZoomY =
-              Math.log2((h / 2 + other.radius[1]) / Math.abs(label.center[1] - other.center[1]) / 256);
-          const minimalZoom = Math.max(minimalZoomX, minimalZoomY);
-          console.log(minimalZoom);
-          ourMinZoom = Math.max(ourMinZoom, minimalZoom);
-        }
-      }
-
-      // Then we affect our neighbors' minimal zooms.
-      for (const other of affected) {
-        if (label.maxZoom <= other.minZoom || ourMinZoom >= other.maxZoom) {
-          continue;
-        }
-
-        if (label.z > other.z) {
-          const collisionZoom = Math.max(ourMinZoom, other.collidedMinZoom);
-        }
-      }
-
       const indexed = {
         ...label,
-        collidedMinZoom: ourMinZoom,
-        radius: [w / 2, h / 2] as const,
+        bound: maximalBound,
+        collidedMinZoom: label.minZoom,
+        radius: [w, h] as const, // no divide by 2 because the world is -1 to 1
       };
+      this.recalculateCollisionZoom(indexed);
+
       labels.push(indexed);
-      labelBounds.push(maximalBound);
       this.labelIndex.insert(indexed, maximalBound);
     }
 
@@ -755,7 +699,6 @@ export class MbtileLayer extends Layer {
       glIndexBuffer: index,
       drawables,
       labels,
-      labelBounds,
     });
     this.generation += 1;
 
@@ -779,15 +722,68 @@ export class MbtileLayer extends Layer {
         this.renderer.deleteBuffer(response.glGeometryBuffer);
         this.renderer.deleteBuffer(response.glIndexBuffer);
         
-        // TODO(april): if we make delete take an array this would probably be faster
-        for (const bound of response.labelBounds) {
-          // TODO(april): unhide affected labels?
-          this.labelIndex.delete(bound);
+        for (const label of response.labels) {
+          this.labelIndex.delete(label.bound);
+
+          const affected: IndexedLabel[] = [];
+          this.labelIndex.queryRect(label.bound, affected);
+          for (const other of affected) {
+            if (label.collidedMinZoom >= other.collidedMinZoom) {
+              // We didn't affect other, so skip recalculating it
+              continue;
+            }
+
+            this.recalculateCollisionZoom(other);
+          }
         }
       }
     }
 
     this.generation += 1;
+  }
+
+  private recalculateCollisionZoom(label: IndexedLabel): void {
+    const neighbors: IndexedLabel[] = [];
+    this.labelIndex.queryRect(label.bound, neighbors);
+
+    let ourMinZoom = label.minZoom;
+    const [wr, hr] = label.radius;
+    for (const other of neighbors) {
+      if (label.maxZoom <= other.collidedMinZoom || label.minZoom >= other.maxZoom) {
+        continue;
+      }
+      if (arrays.equals(label.graphemes, other.graphemes)) {
+        continue;
+      }
+
+      const collisionZoom = Math.max(ourMinZoom, other.collidedMinZoom);
+      const worldSize = 256 * Math.pow(2, collisionZoom);
+      const ourRadius = [wr / worldSize, hr / worldSize];
+      const theirRadius = [other.radius[0] / worldSize, other.radius[1] / worldSize];
+      const overlapX =
+          Math.abs(label.center[0] - other.center[0]) - ourRadius[0] - theirRadius[0];
+      const overlapY =
+          Math.abs(label.center[1] - other.center[1]) - ourRadius[1] - theirRadius[1];
+      if (overlapX >= 0 || overlapY >= 0) {
+        continue;
+      }
+
+      const minimalZoomX =
+          Math.log2((wr + other.radius[0]) / Math.abs(label.center[0] - other.center[0]) / 512);
+      const minimalZoomY =
+          Math.log2((hr + other.radius[1]) / Math.abs(label.center[1] - other.center[1]) / 512);
+      const minimalZoom = Math.max(minimalZoomX, minimalZoomY);
+
+      if (label.z === other.z && arrays.compare(label.graphemes, other.graphemes) < 0) {
+        other.collidedMinZoom = Math.max(minimalZoom, other.collidedMinZoom);
+      } else if (label.z > other.z) {
+        other.collidedMinZoom = Math.max(minimalZoom, other.collidedMinZoom);
+      } else {
+        ourMinZoom = Math.max(ourMinZoom, minimalZoom);
+      }
+    }
+
+    label.collidedMinZoom = ourMinZoom;
   }
 }
 
