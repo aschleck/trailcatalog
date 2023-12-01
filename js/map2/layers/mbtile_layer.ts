@@ -709,6 +709,7 @@ export class MbtileLayer extends Layer {
   }
 
   private unloadTiles(ids: TileId[]): void {
+    const affectedLabels = new Set<IndexedLabel>();
     for (const id of ids) {
       const task = this.loading.get(id);
       if (task) {
@@ -723,6 +724,7 @@ export class MbtileLayer extends Layer {
         this.renderer.deleteBuffer(response.glIndexBuffer);
         
         for (const label of response.labels) {
+          affectedLabels.delete(label);
           this.labelIndex.delete(label.bound);
 
           const affected: IndexedLabel[] = [];
@@ -733,10 +735,15 @@ export class MbtileLayer extends Layer {
               continue;
             }
 
-            this.recalculateCollisionZoom(other);
+            affectedLabels.add(other);
           }
         }
       }
+    }
+
+    // We recalculate after all tiles are unloaded because we may be unloading every label.
+    for (const label of affectedLabels) {
+      this.recalculateCollisionZoom(label);
     }
 
     this.generation += 1;
