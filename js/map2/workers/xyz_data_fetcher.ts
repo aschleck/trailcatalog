@@ -177,6 +177,10 @@ class XyzDataFetcher {
       }
     }
 
+    // For reasons I don't care to understand, when the user zooms all the way out and then all the
+    // way in we don't unload the low zoom tiles. This seems to help, albeit late.
+    this.cull();
+
     this.postMessage({
       kind: 'usc',
       fetching: this.inFlight.size > 0,
