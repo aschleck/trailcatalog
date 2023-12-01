@@ -32,6 +32,43 @@ interface IndexedLabel extends Label {
 export const NATURE: Readonly<Style> = {
   layers: [
     {
+      layerName: 'aeroway',
+      minZoom: 11,
+      maxZoom: 31,
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'runway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 4,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'taxiway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 2,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
       layerName: 'globallandcover',
       minZoom: 0,
       maxZoom: 31,
@@ -347,21 +384,6 @@ export const NATURE: Readonly<Style> = {
       minZoom: 11,
       maxZoom: 31,
       lines: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
-              'runway',
-              'taxiway',
-            ],
-          }],
-          fill: 0xFFFFFFFF as RgbaU32,
-          stroke: 0xFFFFFFFF as RgbaU32,
-          radius: 1,
-          stipple: false,
-          z: Z_OVERLAY_TRANSPORTATION,
-        },
         {
           filters: [{
             match: 'string_in',
