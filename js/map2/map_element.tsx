@@ -1,4 +1,5 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
+import { HashSet } from 'js/common/collections';
 import * as corgi from 'js/corgi';
 import { Link } from 'js/emu/button';
 import { ACTION } from 'js/emu/events';
@@ -76,8 +77,9 @@ function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
     return <></>;
   }
 
+  const unique = [...new HashSet(c => `${c.short}|${c.url}`, copyrights)];
   const shorts =
-      copyrights
+      unique
           .filter(hasShort)
           .map(c => ({
             source: c.short,

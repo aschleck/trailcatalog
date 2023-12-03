@@ -1,5 +1,6 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExists, exists } from 'js/common/asserts';
+import { HashSet } from 'js/common/collections';
 import { approxEqual } from 'js/common/comparisons';
 import { Debouncer } from 'js/common/debouncer';
 import { Controller, Response } from 'js/corgi/controller';
@@ -241,7 +242,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   }
 
   showCopyrights(): void {
-    this.dialog.display(CopyrightDialog({copyrights: this.state.copyrights}));
+    const unique = [...new HashSet(c => `${c.long}|${c.url}`, this.state.copyrights)];
+    this.dialog.display(CopyrightDialog({copyrights: unique}));
   }
 
   pan(dx: number, dy: number): void {

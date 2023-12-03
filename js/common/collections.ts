@@ -2,8 +2,8 @@ export class DefaultMap<K, V> {
 
   readonly map: Map<K, V>;
 
-  constructor(private readonly factory: (key: K) => V) {
-    this.map = new Map();
+  constructor(private readonly factory: (key: K) => V, elements?: Array<[K, V]>) {
+    this.map = new Map(elements);
   }
 
   get size(): number {
@@ -122,9 +122,13 @@ export class HashSet<V> {
   private readonly mapped: Set<unknown>;
   private readonly values: Map<unknown, V>;
 
-  constructor(private readonly hashFn: (value: V) => unknown) {
+  constructor(private readonly hashFn: (value: V) => unknown, elements?: V[]) {
     this.mapped = new Set();
     this.values = new Map();
+
+    for (const element of elements ?? []) {
+      this.add(element);
+    }
   }
 
   get size(): number {
