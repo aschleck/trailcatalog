@@ -77,7 +77,8 @@ function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
     return <></>;
   }
 
-  const unique = [...new HashSet(c => `${c.short}|${c.url}`, copyrights)];
+  const unique =
+      [...new HashSet(c => `${c.short}|${c.url}`, copyrights)];
   const shorts =
       unique
           .filter(hasShort)
@@ -85,6 +86,7 @@ function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
             source: c.short,
             url: c.url,
           }));
+  shorts.sort((a, b) => a.source < b.source ? -1 : a.source === b.source ? 0 : 1);
   const notices = shorts.flatMap(c => [
     `©`,
     c.url

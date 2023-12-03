@@ -243,6 +243,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
 
   showCopyrights(): void {
     const unique = [...new HashSet(c => `${c.long}|${c.url}`, this.state.copyrights)];
+    unique.sort((a, b) => a.long < b.long ? -1 : a.long === b.long ? 0 : 1);
     this.dialog.display(CopyrightDialog({copyrights: unique}));
   }
 
