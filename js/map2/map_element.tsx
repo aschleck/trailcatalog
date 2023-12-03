@@ -72,6 +72,10 @@ export function MapElement({
 }
 
 function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
+  if (copyrights.length === 0) {
+    return <></>;
+  }
+
   const shorts =
       copyrights
           .filter(hasShort)

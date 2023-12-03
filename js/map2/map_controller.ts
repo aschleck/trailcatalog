@@ -159,11 +159,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   }
 
   setLayers(layers: Layer[]): void {
-    this.layers.forEach(layer => { layer.dispose(); });
     this.layers = layers;
-    this.layers.forEach(layer => {
-      this.registerDisposable(layer);
-    });
     this.enterIdle();
 
     this.updateState({

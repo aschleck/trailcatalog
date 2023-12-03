@@ -4,6 +4,7 @@ export default {
   extend: {
     colors: {
       'gray': {
+        800: '#424242',
         900: '#212121',
       },
       'white-opaque': {

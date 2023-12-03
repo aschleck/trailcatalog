@@ -8,6 +8,7 @@ declare global {
       button: Properties;
       canvas: Properties;
       circle: CircleProperties;
+      details: Properties;
       div: Properties;
       footer: Properties;
       g: GroupProperties;
@@ -26,6 +27,7 @@ declare global {
       section: Properties;
       select: Properties;
       span: Properties;
+      summary: Properties;
       svg: SVGProperties;
       table: Properties;
       tbody: Properties;

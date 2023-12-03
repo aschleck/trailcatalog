@@ -547,8 +547,13 @@ function patchProperties(element: Element, from: AnyProperties, to: AnyPropertie
         if (value === undefined) {
           element.removeAttribute(key);
         } else if (typeof value === 'boolean') {
-          if (value) {
+          if (canonical === 'checked') {
+            (element as HTMLInputElement).checked = value;
+          } else if (value) {
             element.setAttribute(canonical, '');
+          } else {
+            // TODO(april): is there a reason we shouldn't do this?
+            element.removeAttribute(canonical);
           }
         } else {
           element.setAttribute(canonical, String(value));

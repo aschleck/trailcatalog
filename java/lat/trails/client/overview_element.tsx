@@ -1,10 +1,11 @@
 import { floatCoalesce } from 'js/common/math';
 import * as corgi from 'js/corgi';
-
+import { Checkbox } from 'js/emu/checkbox';
+import { ACTION } from 'js/emu/events';
 import { MAP_MOVED } from 'js/map2/events';
 import { MapElement } from 'js/map2/map_element';
 
-import { State, ViewerController } from './viewer_controller';
+import { LayerState, State, ViewerController } from './viewer_controller';
 
 export function OverviewElement(
   {parameters}: {parameters: {[key: string]: string};},
@@ -12,7 +13,9 @@ export function OverviewElement(
   updateState: (newState: State) => void,
 ) {
   if (!state) {
-    state = {};
+    state = {
+      layers: [],
+    };
   }
 
   let camera = undefined;
@@ -42,35 +45,9 @@ export function OverviewElement(
           ref="map"
       />
       <Rail>
-        <CatJump />
+        <Layers layers={state.layers} />
       </Rail>
     </div>
-  </>;
-}
-
-function Copyright() {
-  return <>
-    {'Maps © '}
-    <a
-        className="pointer-events-auto"
-        href="https://www.maptiler.com/copyright/"
-        target="_blank">
-      MapTiler
-    </a>
-    {' © '}
-    <a
-        className="pointer-events-auto"
-        href="https://www.openstreetmap.org/copyright"
-        target="_blank">
-      OpenStreetMap contributors
-    </a>
-    {' © '}
-    <a
-        className="pointer-events-auto"
-        href="/citations"
-        target="_blank">
-      more
-    </a>
   </>;
 }
 
@@ -78,11 +55,12 @@ function Rail({children}: {children?: corgi.VElementOrPrimitive}) {
   return <>
     <div className="
         absolute
-        bg-tc-black-800
+        bg-gray-900
         border
-        border-tc-black-800
+        border-gray-900
         left-4
         rounded
+        text-white
         top-4
         ">
       {children}
@@ -90,13 +68,30 @@ function Rail({children}: {children?: corgi.VElementOrPrimitive}) {
   </>;
 }
 
-function CatJump() {
+function Layers({layers}: {layers: LayerState[];}) {
+  const reversed = [];
+  for (let i = layers.length - 1; i >= 0; --i) {
+    reversed.push(layers[i]);
+  }
   return <>
-    <img
-        alt="A cat's face"
-        className="w-12"
-        src="/static/cat_face.webp" />
-    <span>trails.lat</span>
+    <details>
+      <summary>Layers</summary>
+      <ul
+          unboundEvents={{
+            corgi: [
+              [ACTION, 'setLayerVisible'],
+            ],
+          }}
+      >
+        {reversed.map(l => <>
+          <li>
+            <Checkbox ariaLabel={l.name} checked={l.enabled}>
+              {l.name}
+            </Checkbox>
+          </li>
+        </>)}
+      </ul>
+    </details>
   </>;
 }
 
