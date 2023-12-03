@@ -611,7 +611,7 @@ export class MbtileLayer extends Layer {
       planner.add(response.drawables);
 
       for (const label of response.labels) {
-        if (label.maxZoom <= zoom || label.collidedMinZoom > zoom) {
+        if (label.collidedMinZoom > zoom) {
           continue;
         }
 
