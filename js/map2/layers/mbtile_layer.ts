@@ -173,7 +173,23 @@ export const NATURE: Readonly<Style> = {
       minZoom: 0,
       maxZoom: 31,
       lines: [],
-      points: [],
+      points: [
+        {
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'wilderness_area',
+              ],
+            },
+          ],
+          textFill: 0x007D25FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.4,
+          z: Z_OVERLAY_TEXT,
+        },
+      ],
       polygons: [
         {
           filters: [{
@@ -220,7 +236,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.5,
-          z: Z_OVERLAY_TEXT,
+          z: Z_OVERLAY_TEXT + 0.1,
         },
       ],
       polygons: [],
@@ -249,7 +265,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.5,
-          z: Z_OVERLAY_TEXT + 0.1,
+          z: Z_OVERLAY_TEXT + 0.2,
         },
         {
           filters: [
@@ -270,7 +286,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.45,
-          z: Z_OVERLAY_TEXT,
+          z: Z_OVERLAY_TEXT + 0.1,
         },
       ],
       polygons: [],
@@ -286,20 +302,6 @@ export const NATURE: Readonly<Style> = {
             match: 'string_in',
             key: 'class',
             value: [
-              'province',
-              'state',
-            ],
-          }],
-          textFill: 0x000000FF as RgbaU32,
-          textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.6,
-          z: Z_OVERLAY_TEXT,
-        },
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
               'city',
             ],
           }],
@@ -307,6 +309,20 @@ export const NATURE: Readonly<Style> = {
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.4,
           z: Z_OVERLAY_TEXT,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'province',
+              'state',
+            ],
+          }],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.6,
+          z: Z_OVERLAY_TEXT + 0.01,
         },
       ],
       polygons: [],
@@ -331,8 +347,8 @@ export const NATURE: Readonly<Style> = {
           }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.5,
-          z: Z_OVERLAY_TEXT,
+          textScale: 0.4,
+          z: Z_OVERLAY_TEXT + 0.01,
         },
       ],
       polygons: [],
