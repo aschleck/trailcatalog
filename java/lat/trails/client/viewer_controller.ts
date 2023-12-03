@@ -10,7 +10,7 @@ import { MapController } from 'js/map2/map_controller';
 import { CompositeZoomLayer } from 'js/map2/layers/composite_zoom_layer';
 import { MbtileLayer, NATURE } from 'js/map2/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
-import { Z_BASE_TERRAIN } from 'js/map2/z';
+import { Z_BASE_SATELLITE, Z_BASE_TERRAIN } from 'js/map2/z';
 
 import { CollectionLayer } from './collection_layer';
 
@@ -84,6 +84,30 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 15,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'Maptiler Satellite',
+      enabled: false,
+      layer: new RasterTileLayer(
+          [
+            {
+              long: 'Satellite imagery packaged and served by MapTiler',
+              short: 'MapTiler',
+              url: 'https://www.maptiler.com/copyright/',
+            },
+            {
+              long: 'Base political and transportation data provided by the OpenStreetMap project',
+              short: 'OpenStreetMap contributors',
+              url: 'https://www.openstreetmap.org/copyright',
+            },
+          ],
+          'https://api.maptiler.com/tiles/satellite-mediumres-2021/${id.zoom}/${id.x}/${id.y}.jpg?key=wWxlJy7a8SEPXS7AZ42l',
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ Z_BASE_SATELLITE,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 14,
           this.mapController.renderer,
       ),
     }, {
