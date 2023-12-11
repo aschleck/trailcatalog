@@ -8,6 +8,7 @@ import com.google.common.geometry.S2CellId;
 import com.google.common.geometry.S2CellUnion;
 import com.google.common.geometry.S2LatLng;
 import com.google.common.geometry.S2LatLngRect;
+import com.google.common.geometry.S2Loop;
 import com.google.common.geometry.S2Point;
 import com.google.common.geometry.S2Polygon;
 import com.google.common.geometry.S2RegionCoverer;
@@ -158,6 +159,22 @@ public final class SimpleS2 {
   @JsMethod
   public static S2LatLng pointToLatLng(S2Point point) {
     return new S2LatLng(point);
+  }
+
+  @JsMethod
+  public static S2Polygon pointsToPolygon(ArrayList<S2Point> points) {
+    return new S2Polygon(new S2Loop(points));
+  }
+
+  @JsMethod
+  public static <E> ArrayList<E> newArrayList() {
+    // Not sure why we can't just do `new ArrayList<E>()` in JS but the constructor isn't compiled.
+    return new ArrayList<>();
+  }
+
+  @JsMethod
+  public static S2Polygon newPolygon() {
+    return new S2Polygon();
   }
 
   private static class ArrayBufferInputStream extends InputStream {

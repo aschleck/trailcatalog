@@ -3,6 +3,14 @@ package(default_visibility = ["//visibility:public"])
 load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
 
 esbuild_binary(
+    name = "earth_search_loader_worker",
+    entry_point = "earth_search_loader.ts",
+    deps = [
+        ":workers",
+    ],
+)
+
+esbuild_binary(
     name = "location_querier_worker",
     entry_point = "location_querier.ts",
     deps = [
@@ -47,6 +55,7 @@ tc_ts_project(
     deps = [
         "//:node_modules/@types/earcut",
         "//:node_modules/earcut",
+        "//:node_modules/geotiff",
         "//java/org/trailcatalog/s2",
         "//js/common",
         "//js/map2",

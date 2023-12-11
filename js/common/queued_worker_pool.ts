@@ -67,6 +67,10 @@ export class QueuedWorkerPool<I, O> {
         if (task && !task.cancelled) {
           task.complete(e.data);
           fn(e.data);
+        } else if (!task) {
+          // For usecases that aren't 1:1 responses that use broadcast instead of post, still return
+          // data.
+          fn(e.data);
         }
       };
     }

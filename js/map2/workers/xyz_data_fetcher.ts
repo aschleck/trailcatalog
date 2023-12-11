@@ -103,10 +103,10 @@ class XyzDataFetcher {
 
     const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
     const worldSize = Math.pow(2, tz);
-    const halfWorldSize = worldSize / 2;
 
     const used = createTileHashSet();
     // projected goes from -1 to 1, so we divide by 2 and add 0.5 to make it 0 to 1.
+    // We also flip y because tile indices increase top-to-bottom.
     for (let y = Math.floor(worldSize * (-projected.high[1] / 2 + 0.5));
          y < worldSize * (-projected.low[1] / 2 + 0.5);
          ++y) {
@@ -203,7 +203,6 @@ class XyzDataFetcher {
 
     const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
     const worldSize = Math.pow(2, tz);
-    const halfWorldSize = worldSize / 2;
 
     const used = createTileHashSet();
     // projected goes from -1 to 1, so we divide by 2 and add 0.5 to make it 0 to 1.

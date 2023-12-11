@@ -8,6 +8,7 @@ import { MAP_MOVED } from 'js/map2/events';
 import { Layer } from 'js/map2/layer';
 import { MapController } from 'js/map2/map_controller';
 import { CompositeZoomLayer } from 'js/map2/layers/composite_zoom_layer';
+import { EarthSearchLayer } from 'js/map2/layers/earth_search_layer';
 import { MbtileLayer, NATURE } from 'js/map2/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN } from 'js/map2/z';
@@ -111,8 +112,26 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           this.mapController.renderer,
       ),
     }, {
+      name: 'Sentinel L2A (last 7 days)',
+      enabled: false,
+      layer: new EarthSearchLayer(
+        'sentinel-2-l2a',
+        7 /* days */,
+        {},
+        Z_BASE_SATELLITE,
+        this.mapController.renderer),
+    }, {
+      name: 'Sentinel L2A (cloud-free)',
+      enabled: false,
+      layer: new EarthSearchLayer(
+        'sentinel-2-l2a',
+        14 /* days */,
+        {'eo:cloud_cover': {'gte': 0, 'lte': 5}},
+        Z_BASE_SATELLITE,
+        this.mapController.renderer),
+    }, {
       name: 'Public Land',
-      enabled: true,
+      enabled: false,
       layer: new CompositeZoomLayer([
         [
           0,

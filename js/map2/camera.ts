@@ -104,6 +104,7 @@ function e7ToRadians(degrees: number): number {
   return Math.PI / 180 / 10_000_000 * degrees;
 }
 
+// Returns in the range [-1, 1]
 export function projectS2LatLng(ll: S2LatLng): Vec2 {
   const x = ll.lngRadians() / Math.PI;
   const y = Math.log((1 + Math.sin(ll.latRadians())) / (1 - Math.sin(ll.latRadians()))) / (2 * Math.PI);
@@ -161,7 +162,10 @@ export function projectS2Loop(loop: S2Loop): {splits: number[]; vertices: Float3
   };
 }
 
+// Takes x, y in the range [-1, 1]
 export function unprojectS2LatLng(x: number, y: number): S2LatLng {
+  // If you compare the output of this with EPSG outputs it seems we should multiply latitude with
+  // 1.0005718154680088. Yolo
   const lngRadians = Math.PI * x;
   const latRadians = Math.asin(Math.tanh(y * Math.PI));
   return S2LatLng.fromRadians(latRadians, lngRadians);

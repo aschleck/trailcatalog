@@ -8,6 +8,7 @@ goog.exportProperty(R1Interval.prototype, 'lo', R1Interval.prototype.lo);
 const S1Angle = goog.require('com.google.common.geometry.S1Angle');
 goog.exportSymbol('com.google.common.geometry.S1Angle', S1Angle);
 goog.exportProperty(S1Angle, 'degrees', S1Angle.degrees);
+goog.exportProperty(S1Angle, 'e7', S1Angle.e7);
 goog.exportProperty(S1Angle.prototype, 'radians', S1Angle.prototype.radians);
 
 const S1Interval = goog.require('com.google.common.geometry.S1Interval');
@@ -45,23 +46,31 @@ goog.exportSymbol('com.google.common.geometry.S2LatLng', S2LatLng);
 goog.exportProperty(S2LatLng, 'fromDegrees', S2LatLng.fromDegrees);
 goog.exportProperty(S2LatLng, 'fromRadians', S2LatLng.fromRadians);
 goog.exportProperty(S2LatLng.prototype, 'equals', S2LatLng.prototype.equals);
+goog.exportProperty(S2LatLng.prototype, 'getDistance', S2LatLng.prototype.getDistance);
 goog.exportProperty(S2LatLng.prototype, 'latDegrees', S2LatLng.prototype.latDegrees);
 goog.exportProperty(S2LatLng.prototype, 'lngDegrees', S2LatLng.prototype.lngDegrees);
 goog.exportProperty(S2LatLng.prototype, 'latRadians', S2LatLng.prototype.latRadians);
 goog.exportProperty(S2LatLng.prototype, 'lngRadians', S2LatLng.prototype.lngRadians);
 goog.exportProperty(S2LatLng.prototype, 'toPoint', S2LatLng.prototype.toPoint);
+goog.exportProperty(S2LatLng.prototype, 'toStringDegrees', S2LatLng.prototype.toStringDegrees);
 
 const S2LatLngRect = goog.require('com.google.common.geometry.S2LatLngRect');
 goog.exportSymbol('com.google.common.geometry.S2LatLngRect', S2LatLngRect);
+goog.exportProperty(S2LatLngRect, 'empty', S2LatLngRect.empty);
 goog.exportProperty(S2LatLngRect, 'fromPoint', S2LatLngRect.fromPoint);
 goog.exportProperty(S2LatLngRect, 'fromPointPair', S2LatLngRect.fromPointPair);
 goog.exportProperty(S2LatLngRect.prototype, 'area', S2LatLngRect.prototype.area);
+goog.exportProperty(S2LatLngRect.prototype, 'contains', S2LatLngRect.prototype.contains);
+goog.exportProperty(S2LatLngRect.prototype, 'expanded', S2LatLngRect.prototype.expanded);
 goog.exportProperty(S2LatLngRect.prototype, 'expandedByDistance', S2LatLngRect.prototype.expandedByDistance);
 goog.exportProperty(S2LatLngRect.prototype, 'getCenter', S2LatLngRect.prototype.getCenter);
+goog.exportProperty(S2LatLngRect.prototype, 'getSize', S2LatLngRect.prototype.getSize);
+goog.exportProperty(S2LatLngRect.prototype, 'intersects', S2LatLngRect.prototype.intersects);
 goog.exportProperty(S2LatLngRect.prototype, 'lo', S2LatLngRect.prototype.lo);
 goog.exportProperty(S2LatLngRect.prototype, 'hi', S2LatLngRect.prototype.hi);
 goog.exportProperty(S2LatLngRect.prototype, 'lat', S2LatLngRect.prototype.lat);
 goog.exportProperty(S2LatLngRect.prototype, 'lng', S2LatLngRect.prototype.lng);
+goog.exportProperty(S2LatLngRect.prototype, 'toStringDegrees', S2LatLngRect.prototype.toStringDegrees);
 
 const S2Loop = goog.require('com.google.common.geometry.S2Loop');
 goog.exportSymbol('com.google.common.geometry.S2Loop', S2Loop);
@@ -90,6 +99,11 @@ goog.exportProperty(S2Polygon.prototype, 'containsPoint', S2Polygon.prototype.co
 goog.exportProperty(S2Polygon.prototype, 'getArea', S2Polygon.prototype.getArea);
 goog.exportProperty(S2Polygon.prototype, 'getLoops', S2Polygon.prototype.getLoops);
 goog.exportProperty(S2Polygon.prototype, 'getRectBound', S2Polygon.prototype.getRectBound);
+goog.exportProperty(S2Polygon.prototype, 'initToIntersection', S2Polygon.prototype.initToIntersection);
+goog.exportProperty(S2Polygon.prototype, 'initToIntersectionSloppy', S2Polygon.prototype.initToIntersectionSloppy);
+goog.exportProperty(S2Polygon.prototype, 'initToUnion', S2Polygon.prototype.initToUnion);
+goog.exportProperty(S2Polygon.prototype, 'initToUnionSloppy', S2Polygon.prototype.initToUnionSloppy);
+goog.exportProperty(S2Polygon.prototype, 'intersects', S2Polygon.prototype.intersects);
 goog.exportProperty(S2Polygon.prototype, 'loop', S2Polygon.prototype.loop);
 goog.exportProperty(S2Polygon.prototype, 'numLoops', S2Polygon.prototype.numLoops);
 
@@ -113,6 +127,7 @@ goog.exportProperty(GetLoopsList.prototype, 'size', GetLoopsList.prototype.size)
 
 const ArrayList = goog.require('java.util.ArrayList');
 goog.exportSymbol('java.util.ArrayList', ArrayList);
+goog.exportProperty(ArrayList.prototype, 'add', ArrayList.prototype.add);
 goog.exportProperty(ArrayList.prototype, 'getAtIndex', ArrayList.prototype.getAtIndex);
 goog.exportProperty(ArrayList.prototype, 'size', ArrayList.prototype.size);
 
@@ -139,3 +154,6 @@ goog.exportProperty(SimpleS2, 'decodePolygon', SimpleS2.decodePolygon);
 goog.exportProperty(SimpleS2, 'encodePolygon', SimpleS2.encodePolygon);
 goog.exportProperty(SimpleS2, 'earthMetersToAngle', SimpleS2.earthMetersToAngle);
 goog.exportProperty(SimpleS2, 'pointToLatLng', SimpleS2.pointToLatLng);
+goog.exportProperty(SimpleS2, 'pointsToPolygon', SimpleS2.pointsToPolygon);
+goog.exportProperty(SimpleS2, 'newArrayList', SimpleS2.newArrayList);
+goog.exportProperty(SimpleS2, 'newPolygon', SimpleS2.newPolygon);

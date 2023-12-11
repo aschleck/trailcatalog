@@ -1,5 +1,7 @@
 import * as raw from './s2_raw';
 
+const ArrayList = raw.java.util.ArrayList;
+type ArrayList<E> = raw.java.util.ArrayList<E>;
 const Long = raw.nativebootstrap.Long;
 type Long = raw.nativebootstrap.Long;
 const S1Angle = raw.com.google.common.geometry.S1Angle;
@@ -26,6 +28,7 @@ type S2Polygon = raw.com.google.common.geometry.S2Polygon;
 //type S2PolygonBuilderOptions = raw.com.google.common.geometry.S2PolygonBuilderOptions;
 
 export {
+  ArrayList,
   Long,
   S1Angle,
   S2Cell,

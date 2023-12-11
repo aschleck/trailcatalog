@@ -2,48 +2,45 @@ import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
 import { QueuedWorkerPool, Task } from 'js/common/queued_worker_pool';
-import { WorkerPool } from 'js/common/worker_pool';
 
-import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
+import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
-import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
+import { Command as LoaderCommand, LoadTileCommand, Request as LoaderRequest } from '../workers/earth_search_loader';
 
 const NO_OFFSET: Vec2 = [0, 0];
 
-export class RasterTileLayer extends Layer {
+export class EarthSearchLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
-  private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
-  private fetching: boolean;
-  private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
-  private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
+  private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderCommand>;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
+  private fetching: boolean;
   private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
 
   constructor(
-      copyrights: Copyright[],
-      url: string,
-      private readonly tint: RgbaU32,
+      collection: string,
+      daysToFetch: number,
+      query: object,
       private readonly z: number,
-      extraZoom: number,
-      minZoom: number,
-      maxZoom: number,
       private readonly renderer: Renderer,
   ) {
-    super(copyrights);
+    super(
+      [{
+        long: 'Copernicus Sentinel data 2021',
+        short: 'Copernicus 2021',
+      }],
+    );
+
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
-    this.fetcher = new WorkerPool('/static/xyz_data_fetcher_worker.js', 1);
+    this.loader = new QueuedWorkerPool('/static/earth_search_loader_worker.js', 1);
     this.fetching = false;
-    this.loader = new QueuedWorkerPool('/static/raster_loader_worker.js', 6);
-    this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
@@ -53,7 +50,7 @@ export class RasterTileLayer extends Layer {
       drawables: [],
     };
 
-    this.fetcher.onresponse = command => {
+    this.loader.onresponse = command => {
       if (command.kind === 'ltc') {
         this.loadTile(command);
       } else if (command.kind === 'utc') {
@@ -65,23 +62,11 @@ export class RasterTileLayer extends Layer {
       }
     };
 
-    this.loader.onresponse = response => {
-      if (response.kind === 'lr') {
-        this.loadBitmap(response);
-      } else {
-        checkExhaustive(response.kind);
-      }
-    };
-
-    this.fetcher.broadcast({
-      kind: 'ir',
-      url,
-      extraZoom,
-      minZoom,
-      maxZoom,
-    });
     this.loader.broadcast({
       kind: 'ir',
+      collection,
+      daysToFetch,
+      query,
     });
   }
 
@@ -90,7 +75,7 @@ export class RasterTileLayer extends Layer {
   }
 
   override loadingData(): boolean {
-    return this.fetching || this.loading.size > 0;
+    return this.fetching;
   }
 
   override render(planner: Planner): void {
@@ -113,7 +98,7 @@ export class RasterTileLayer extends Layer {
                 NO_OFFSET,
                 [size, size],
                 /* angle= */ 0,
-                this.tint,
+                0xFFFFFFFF as RgbaU32,
                 this.z,
                 /* atlasIndex= */ 0,
                 /* atlasSize= */ [1, 1],
@@ -138,7 +123,7 @@ export class RasterTileLayer extends Layer {
   override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
-    this.fetcher.post({
+    this.loader.broadcast({
       kind: 'uvr',
       viewport: {
         lat: [lat.lo(), lat.hi()],
@@ -149,41 +134,15 @@ export class RasterTileLayer extends Layer {
   }
 
   private loadTile(command: LoadTileCommand): void {
-    if (command.data.byteLength === 0) {
-      return;
-    }
-
-    const id = command.id;
-    const task = this.loader.post({
-      kind: 'lr',
-      id,
-      data: command.data,
-    }, [command.data]);
-    this.loading.set(id, task);
-  }
-
-  private loadBitmap(response: LoadResponse): void {
     const texture = this.pool.acquire();
-    this.renderer.uploadTexture(response.bitmap, texture);
+    this.renderer.uploadTexture(command.bitmap, texture);
 
-    this.loading.delete(response.id);
-    this.tiles.set(response.id, texture);
+    this.tiles.set(command.id, texture);
     this.generation += 1;
-
-    this.fetcher.broadcast({
-      kind: 'tlr',
-      id: response.id,
-    });
   }
 
   private unloadTiles(ids: TileId[]): void {
     for (const id of ids) {
-      const task = this.loading.get(id);
-      if (task) {
-        this.loading.delete(id);
-        task.cancel();
-      }
-
       const texture = this.tiles.get(id);
       if (texture) {
         this.tiles.delete(id);
@@ -194,4 +153,3 @@ export class RasterTileLayer extends Layer {
     this.generation += 1;
   }
 }
-
