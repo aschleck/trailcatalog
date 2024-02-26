@@ -138,6 +138,8 @@ function CellPopupZxy({
   xyz: [number, number, number];
 }) {
   const areaRad = llr.area();
+  const low = llr.lo();
+  const high = llr.lo();
   const center = llr.getCenter();
   const area =
       formatArea(
@@ -159,6 +161,8 @@ function CellPopupZxy({
       <div className="font-bold">{token}</div>
       <div>area: {area.value} {area.unit}</div>
       <div>center: {center.latDegrees()},{center.lngDegrees()}</div>
+      <div>low: {low.latDegrees()},{low.lngDegrees()}</div>
+      <div>high: {low.latDegrees()},{high.lngDegrees()}</div>
       <div>world size: {Math.pow(2, xyz[2])}</div>
     </div>
   </>;

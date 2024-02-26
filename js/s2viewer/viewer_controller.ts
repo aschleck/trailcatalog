@@ -321,24 +321,35 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     const token = `${z}/${x}/${y}`;
     if (this.layer.zxys.has(token)) {
       this.layer.zxys.delete(token);
-    } else {
-      this.layer.zxys.set(token, [z, x, y]);
-    }
 
-    if (this.state.cellInput.trim() === '') {
-      this.updateState({
-        ...this.state,
-        cellInput: token,
-      });
-    } else {
       this.updateState({
         ...this.state,
         cellInput:
+            // Progressively get more aggressive in removing it
             this.state.cellInput
-                    .replace(/^,+/, '')
-                    .replace(/,+$/, '')
-                + ',' + token,
+                .replace(new RegExp(`^(.+),${token}$`), '$1')
+                .replace(new RegExp(`^(.+,)?${token}(?:,(.+))?$`), '$1$2')
+                .replace(new RegExp(`^(.+),${token}$`), '$1')
+                .replace(new RegExp(`^(.+,)?${token}(?:,(.+))?$`), '$1$2'),
       });
+    } else {
+      this.layer.zxys.set(token, [z, x, y]);
+
+      if (this.state.cellInput.trim() === '') {
+        this.updateState({
+          ...this.state,
+          cellInput: token,
+        });
+      } else {
+        this.updateState({
+          ...this.state,
+          cellInput:
+              this.state.cellInput
+                      .replace(/^,+/, '')
+                      .replace(/,+$/, '')
+                  + ',' + token,
+        });
+      }
     }
 
     this.layerUpdated();
