@@ -1,16 +1,38 @@
 bazel_dep(name = "aspect_bazel_lib", version = "2.0.1")
-bazel_dep(name = "aspect_rules_esbuild", version = "0.16.0")
-bazel_dep(name = "aspect_rules_jest", version = "0.19.6")
-bazel_dep(name = "aspect_rules_js", version = "1.34.1")
-bazel_dep(name = "aspect_rules_ts", version = "2.1.0")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.18.0")
+bazel_dep(name = "aspect_rules_jest", version = "0.20.0")
+bazel_dep(name = "aspect_rules_js", version = "1.38.0")
+bazel_dep(name = "aspect_rules_ts", version = "2.2.0")
+bazel_dep(name = "bazel_skylib", version = "1.5.0")
+bazel_dep(name = "platforms", version = "0.0.8")
 bazel_dep(name = "protobuf", version = "21.7")
-bazel_dep(name = "rules_java", version = "5.4.0")
-bazel_dep(name = "rules_jvm_external", version = "4.5")
+bazel_dep(name = "rules_java", version = "7.4.0")
+bazel_dep(name = "rules_jvm_external", version = "5.3")
+bazel_dep(name = "rules_kotlin", version = "1.9.0")
+bazel_dep(name = "rules_nixpkgs_core", version = "0.10.0")
 bazel_dep(name = "rules_nodejs", version = "6.0.2")
 bazel_dep(name = "rules_pkg", version = "0.9.1")
 bazel_dep(name = "rules_proto", version = "5.3.0-21.7")
 bazel_dep(name = "rules_python", version = "0.26.0")
 bazel_dep(name = "rules_oci", version = "1.2.0")
+
+bazel_dep(name = "rules_nixpkgs_java")
+archive_override(
+    module_name = "rules_nixpkgs_java",
+    integrity = "sha256-mA7fzu8uWeESLZvmxSQTvCmENfCj1FJTK4pI11Yv/Wc=",
+    patches = ["build_defs/bzlmod/nixpkgs_java.patch"],
+    strip_prefix = "rules_nixpkgs-0.10.0/toolchains/java",
+    urls = "https://github.com/tweag/rules_nixpkgs/releases/download/v0.10.0/rules_nixpkgs-0.10.0.tar.gz",
+)
+
+java_toolchains = use_extension("@rules_java//java:extensions.bzl", "toolchains")
+use_repo(java_toolchains, "remote_java_tools")
+
+non_module_deps = use_extension("//build_defs/bzlmod:non_module_deps.bzl", "non_module_deps")
+use_repo(non_module_deps, "nixpkgs")
+use_repo(non_module_deps, "nixpkgs_java_runtime")
+use_repo(non_module_deps, "nixpkgs_java_runtime_toolchain")
+register_toolchains("@nixpkgs_java_runtime_toolchain//:all")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 

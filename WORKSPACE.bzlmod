@@ -1,65 +1,14 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-http_archive(
-    name = "io_tweag_rules_nixpkgs",
-    strip_prefix = "rules_nixpkgs-62d63740061dd94ecee3ec2c0cfc8a7ed409b98c",
-    urls = ["https://github.com/tweag/rules_nixpkgs/archive/62d63740061dd94ecee3ec2c0cfc8a7ed409b98c.tar.gz"],
-)
-
-load("@io_tweag_rules_nixpkgs//nixpkgs:repositories.bzl", "rules_nixpkgs_dependencies")
-
-rules_nixpkgs_dependencies()
-
-load("@io_tweag_rules_nixpkgs//nixpkgs:nixpkgs.bzl", "nixpkgs_git_repository")
-
-nixpkgs_git_repository(
-    name = "nixpkgs",
-    revision = "22.11",
-    sha256 = "ddc3428d9e1a381b7476750ac4dbea7a42885cbbe6e1af44b21d6447c9609a6f",
-)
-
-load("@io_tweag_rules_nixpkgs//nixpkgs:nixpkgs.bzl", "nixpkgs_java_configure")
-
-nixpkgs_java_configure(
-    attribute_path = "jdk17.home",
-    repository = "@nixpkgs",
-    toolchain = True,
-    toolchain_name = "nixpkgs_java",
-    toolchain_version = "17",
-)
-
-# Why is this needed???
-http_archive(
-  name = "remote_java_tools",
-  urls = [
-    "https://mirror.bazel.build/bazel_java_tools/releases/java/v11.9/java_tools-v11.9.zip",
-    "https://github.com/bazelbuild/java_tools/releases/download/java_v11.9/java_tools-v11.9.zip"
-  ],
-  sha256 = "5cd59ea6bf938a1efc1e11ea562d37b39c82f76781211b7cd941a2346ea8484d",
-)
-
-http_archive(
-    name = "io_bazel_rules_kotlin",
-    sha256 = "fd92a98bd8a8f0e1cdcb490b93f5acef1f1727ed992571232d33de42395ca9b3",
-    urls = ["https://github.com/bazelbuild/rules_kotlin/releases/download/v1.7.1/rules_kotlin_release.tgz"],
-)
-
-load("@io_bazel_rules_kotlin//kotlin:repositories.bzl", "kotlin_repositories")
-
-kotlin_repositories()
-
-load("@io_bazel_rules_kotlin//kotlin:core.bzl", "kt_register_toolchains")
-
-kt_register_toolchains()
-
 # TODO: Migrated to Bzlmod
 http_archive(
   name = "io_bazel_rules_closure",
   urls = [
-    "https://github.com/bazelbuild/rules_closure/archive/7a2c91f9519c301f5adc072e5e18c4bae5273404.zip",
+    "https://github.com/bazelbuild/rules_closure/archive/72d30840a08605447766e650d519a500dfb08019.zip",
   ],
-  sha256 = "228f016d9e669ab4fb2b7f31c4fb010d3ccd0a64987eb4dc47fe1e55433cbf06",
-  strip_prefix = "rules_closure-7a2c91f9519c301f5adc072e5e18c4bae5273404",
+  sha256 = "f20dd5bc4859d9d7e365fd639c3a218750a274622a240876568b70842cb0e7f1",
+  strip_prefix = "rules_closure-72d30840a08605447766e650d519a500dfb08019",
+  patches = ["//build_defs/bzlmod:rules_closure.patch"],
 )
 
 load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies", "rules_closure_toolchains")
@@ -74,13 +23,13 @@ rules_closure_toolchains()
 http_archive(
   name = "com_google_j2cl",
   patches = [
-    "//:j2cl.patch",
+    "//build_defs/bzlmod:com_google_j2cl.patch",
   ],
   urls = [
-    "https://github.com/google/j2cl/archive/b8f107dbe15c1c8d22cb345634b5b5a264cee0da.zip",
+    "https://github.com/google/j2cl/archive/6344eaf8f0916dbe6de871fa73c68d0f1cb30a14.zip",
   ],
-  sha256 = "eff07f6a3efc9e0bf466d1088bade8d458185f32b06f2a7293c59c8cb7011239",
-  strip_prefix = "j2cl-b8f107dbe15c1c8d22cb345634b5b5a264cee0da",
+  sha256 = "9c769a24f37ed88614b3bcd1f5d15e095b9fd6604bcbcc736ea00a059c00485e",
+  strip_prefix = "j2cl-6344eaf8f0916dbe6de871fa73c68d0f1cb30a14",
 )
 
 http_archive(
@@ -90,6 +39,9 @@ http_archive(
   ],
   sha256 = "e9ad72a81253a968bcf70ef39db95fef2feab468ac65ffaaf80894d99376b980",
   strip_prefix = "jsinterop-generator-3fb7a57db11cfffd6e0e9e2242706d4e48f2d471",
+  patches = [
+    "//build_defs/bzlmod:jsinterop_generator.patch",
+  ],
 )
 
 load("@com_google_j2cl//build_defs:repository.bzl", "load_j2cl_repo_deps")
@@ -102,18 +54,11 @@ setup_j2cl_workspace()
 
 # TODO: Migrated to Bzlmod
 http_archive(
-  name = "aspect_rules_jest",
-  url = "https://github.com/aspect-build/rules_jest/archive/refs/tags/v0.16.1.tar.gz",
-  sha256 = "fa103b278137738ef08fd23d3c8c9157897a7159af2aa22714bc71680da58583",
-  strip_prefix = "rules_jest-0.16.1",
-)
-
-# TODO: Migrated to Bzlmod
-http_archive(
   name = "com_google_elemental2",
   url = "https://github.com/google/elemental2/archive/0e35857ab7a9125d2cf84bdbfad0dff7ca370ef7.zip",
   sha256 = "21c6ab15edfb832406a7d747d8664d3f6b16bb06352be491554c411871e13b5c",
   strip_prefix = "elemental2-0e35857ab7a9125d2cf84bdbfad0dff7ca370ef7",
+  patches = ["//build_defs/bzlmod:com_google_elemental2.patch"],
 )
 
 load("@com_google_elemental2//build_defs:repository.bzl", "load_elemental2_repo_deps")

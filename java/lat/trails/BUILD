@@ -1,7 +1,7 @@
 package(default_visibility = [":internal"])
 
-load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 
 package_group(
     name = "internal",

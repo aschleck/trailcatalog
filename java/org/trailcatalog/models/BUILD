@@ -1,8 +1,8 @@
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 load("//build_defs:ts.bzl", "tc_ts_project")
-load("@io_bazel_rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 
 kt_jvm_library(
     name = "models",

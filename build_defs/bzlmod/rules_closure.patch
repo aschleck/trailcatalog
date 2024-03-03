@@ -1,0 +1,14 @@
+diff closure/repositories.bzl closure/repositories.bzl
+index b903e37..4c568b2 100644
+--- closure/repositories.bzl
++++ closure/repositories.bzl
+@@ -704,8 +704,7 @@ def com_google_javascript_closure_compiler():
+             "    name = \"externs\",",
+             "    srcs = [\"%s\"]," % jar,
+             "    outs = [\"externs.zip\"],",
+-            "    tools = [\"@bazel_tools//tools/jdk:jar\"],",
+-            "    cmd = \"$(location @bazel_tools//tools/jdk:jar) -xf $(location :%s) externs.zip; mv externs.zip $@\"," % jar,
++            "    cmd = \"unzip -p $(location :%s) externs.zip > $@\"," % jar,
+             ")",
+             "",
+         ]),

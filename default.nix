@@ -3,6 +3,7 @@
 pkgs.mkShell {
   buildInputs = with pkgs; [
     bazelisk
+    buildifier
     gdal
     google-cloud-sdk
     imagemagick

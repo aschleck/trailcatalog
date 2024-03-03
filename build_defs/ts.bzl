@@ -14,6 +14,8 @@ def esbuild_binary(
     has_css = len(native.glob(["*.css"])) > 0 or len(css_deps or []) > 0
     esbuild(
         name = name,
+        # Some problem with the bazel-sandbox plugin not namespacing nodejs modules like 'fs'
+        bazel_sandbox_plugin = False,
         config = ":" + name + "/esbuild.config.mjs",
         entry_point = entry_point,
         tsconfig = "//:tsconfig",

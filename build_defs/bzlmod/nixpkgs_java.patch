@@ -1,0 +1,21 @@
+diff -Naur local_java_repository.bzl local_java_repository.bzl 
+--- local_java_repository.bzl
++++ local_java_repository.bzl
+@@ -94,6 +94,12 @@
+         toolchain_type = "@bazel_tools//tools/jdk:runtime_toolchain_type",
+         toolchain = runtime_name,
+     )
++    native.toolchain(
++        name = "bootstrap_runtime_toolchain_definition",
++        target_settings = [":%s_settings_alias" % name],
++        toolchain_type = "@bazel_tools//tools/jdk:bootstrap_runtime_toolchain_type",
++        toolchain = runtime_name,
++    )
+ 
+     if type(version) == type("") and version.isdigit() and int(version) > 8:
+         for version in range(8, int(version) + 1):
+@@ -225,3 +232,4 @@
+     """
+     _local_java_repository_rule(name = name, java_home = java_home, version = version, build_file = build_file)
+     native.register_toolchains("@" + name + "//:runtime_toolchain_definition")
++    native.register_toolchains("@" + name + "//:bootstrap_runtime_toolchain_definition")
