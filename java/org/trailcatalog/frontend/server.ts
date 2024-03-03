@@ -27,5 +27,10 @@ function page(content: string, title: string, initialData: string): string {
 `;
 }
 
-(async () => { await serve(App as any, page); })();
+(async () => {
+  await serve(App as any, page, {
+    defaultTitle: 'Trailcatalog',
+    port: 7080,
+  });
+})();
 

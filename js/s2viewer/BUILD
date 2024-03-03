@@ -35,7 +35,7 @@ pkg_files(
     prefix = "s2",
     strip_prefix = strip_prefix.from_pkg(),
     visibility = [
-        "//production/containers:__subpackages__",
+        "//java/org/trailcatalog:__subpackages__",
     ],
 )
 

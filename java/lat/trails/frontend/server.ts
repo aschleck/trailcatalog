@@ -31,7 +31,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
   });
 
   server.register(fastifyReplyFrom, {
-    base: 'http://127.0.0.1:7070',
+    base: 'http://127.0.0.1:7051',
   });
 
   server.route({
@@ -101,5 +101,9 @@ function page(content: string, title: string, initialData: string): string {
 }
 
 (async () => {
-  await serve(App as any, page, initialize);
+  await serve(App as any, page, {
+    defaultTitle: 'trails.lat',
+    initialize,
+    port: 7050,
+  });
 })();

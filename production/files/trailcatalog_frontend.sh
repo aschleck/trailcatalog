@@ -18,10 +18,10 @@ pg_pwd="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     | sed 's/^[^:]*://' | tail -n 1)"
 
 podman run \
-    --name frontend \
+    --name trailcatalog-frontend \
     --pull always \
     --rm \
-    --env DATABASE_URL="postgresql://localhost/trailcatalog?currentSchema=migration_4_trail_knowledge" \
+    --env DATABASE_URL="postgresql://localhost/trailcatalog?currentSchema=migration_3_faster" \
     --env DATABASE_USERNAME_PASSWORD="trailcatalog:${pg_pwd}" \
     --network host \
     us-west1-docker.pkg.dev/trailcatalog/containers/frontend:latest

@@ -1,8 +1,10 @@
 package(default_visibility = [":internal"])
 
 load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
-load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package_group(
     name = "internal",
@@ -15,6 +17,28 @@ package_group(
         "//js/s2viewer/...",
         "//production/...",
     ],
+)
+
+pkg_tar(
+    name = "frontend_pkg",
+    package_dir = "app",
+    srcs = [
+        "//java/org/trailcatalog/frontend:frontend.js",
+        "//java/org/trailcatalog/frontend:frontend.js.map",
+        "//js/s2viewer:s2_pkg",
+        ":api_server_deploy.jar",
+        ":static_data",
+    ],
+    stamp = 1,
+)
+
+pkg_files(
+    name = "static_data",
+    srcs = [
+        "//java/org/trailcatalog/static",
+    ],
+    prefix = "static",
+    strip_prefix = strip_prefix.from_pkg(),
 )
 
 java_binary(

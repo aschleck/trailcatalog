@@ -29,7 +29,7 @@ fun main(args: Array<String>) {
   parseFlags(args)
 
   hikari = createConnection()
-  val app = Javalin.create {}.start(7070)
+  val app = Javalin.create {}.start(7051)
   app.post("/api/data", ::fetchData)
   app.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
   app.get("/api/collections/{id}/objects/{cell}", ::fetchCollectionObjects)

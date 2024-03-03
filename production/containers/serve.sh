@@ -3,10 +3,15 @@
 set -ex
 
 nginx -c '/app/nginx.conf' -e '/dev/stderr' &
-${NODEJS_DIR}/bin/node '/app/frontend.js' &
-java -jar '/app/api_server_deploy.jar' &
+nginx_pid="$!"
+${NODEJS_DIR}/bin/node --enable-source-maps '/app/frontend.js' &
+node_pid="$!"
+java -jar '/app/api_server_deploy.jar' "$@" &
+fe_pid="$!"
 
 # Wait for the first process to exit
-wait -n
-exit $?
+wait -n "${nginx_pid}" "${node_pid}" "${fe_pid}"
+exit_code="$?"
+kill "${nginx_pid}" "${node_pid}" "${fe_pid}"
+exit "${exit_code}"
 

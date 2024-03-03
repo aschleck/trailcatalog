@@ -56,7 +56,13 @@ global.window = {
 type PageFn = (content: string, title: string, escapedData: string) => string;
 
 export async function serve(
-        app: ElementFactory, page: PageFn, initialize?: (f: FastifyInstance) => Promise<void>):
+        app: ElementFactory,
+        page: PageFn,
+        {defaultTitle, initialize, port}: {
+          defaultTitle: string;
+          initialize?: (f: FastifyInstance) => Promise<void>,
+          port: number;
+        }):
     Promise<void> {
   const server = fastify({
     logger: true,
@@ -141,11 +147,11 @@ export async function serve(
     reply.send(
         page(
             render(content),
-            renderText(requestContext.get('title') ?? 'Trailcatalog'),
+            renderText(requestContext.get('title') ?? defaultTitle),
             escapedData));
   });
 
-  server.listen({ port: 7080 }, (err, address) => {
+  server.listen({ port }, (err, address) => {
     if (err) {
       throw err;
     }
