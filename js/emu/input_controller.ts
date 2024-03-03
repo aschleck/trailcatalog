@@ -22,7 +22,7 @@ export class InputController extends Controller<Args, EmptyDeps, HTMLInputElemen
 
     // In most cases this controller will wake up when the value changes, so root.value will already
     // be updated and we need to trigger a change.
-    if (this.lastValue !== response.args.value ?? '') {
+    if (this.lastValue !== (response.args.value ?? '')) {
       this.trigger(CHANGED, {value: this.value});
     }
   }
