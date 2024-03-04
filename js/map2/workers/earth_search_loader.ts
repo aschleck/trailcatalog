@@ -101,7 +101,7 @@ interface Feature {
 }
 
 const MIN_ZOOM = 7;
-const MAX_ZOOM = 14;
+const MAX_ZOOM = 15;
 const RESULTS_LIMIT = 1024;
 const TILE_SIZE = 512;
 
