@@ -56,6 +56,12 @@ interface AlwaysMatch {
   match: 'always';
 }
 
+interface GreaterThanMatch {
+  match: 'greater_than';
+  key: string;
+  value: number;
+}
+
 interface LessThanMatch {
   match: 'less_than';
   key: string;
@@ -74,7 +80,7 @@ interface StringInMatch {
   value: string[];
 }
 
-type Match = AlwaysMatch|LessThanMatch|StringEqualsMatch|StringInMatch;
+type Match = AlwaysMatch|GreaterThanMatch|LessThanMatch|StringEqualsMatch|StringInMatch;
 
 interface LoadRequest {
   kind: 'lr';
@@ -611,7 +617,24 @@ function findStyle<S extends GeometryStyle>(
 
 function matches(tags: number[], keys: string[], values: ValueType[], filters: Match[]): boolean {
   for (const filter of filters) {
-    if (filter.match === 'less_than') {
+    if (filter.match === 'greater_than') {
+      let matched = false;
+      for (let i = 0; i < tags.length; i += 2) {
+        const key = keys[tags[i + 0]];
+        if (key !== filter.key) {
+          continue;
+        }
+        const value = values[tags[i + 1]] as number;
+        if (value > filter.value) {
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        return false;
+      }
+    } else if (filter.match === 'less_than') {
       let matched = false;
       for (let i = 0; i < tags.length; i += 2) {
         const key = keys[tags[i + 0]];

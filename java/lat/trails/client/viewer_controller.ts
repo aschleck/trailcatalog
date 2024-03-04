@@ -9,7 +9,7 @@ import { Layer } from 'js/map2/layer';
 import { MapController } from 'js/map2/map_controller';
 import { CompositeZoomLayer } from 'js/map2/layers/composite_zoom_layer';
 import { EarthSearchLayer } from 'js/map2/layers/earth_search_layer';
-import { MbtileLayer, NATURE } from 'js/map2/layers/mbtile_layer';
+import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map2/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN } from 'js/map2/z';
 
@@ -54,6 +54,8 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           [{
             long: 'Contains modified Copernicus Sentinel data 2021',
             short: 'Copernicus 2021',
+          }, {
+            long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
           /* tint= */ 0xFFFFFF88 as RgbaU32,
@@ -61,6 +63,40 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 12,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'Contours (feet)',
+      enabled: true,
+      layer: new MbtileLayer(
+          [{
+            long: 'Contains modified Copernicus Sentinel data 2021',
+            short: 'Copernicus 2021',
+          }, {
+            long: 'Contains modified NASADEM data 2000',
+          }],
+          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.webp',
+          CONTOURS_FEET,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 9,
+          /* maxZoom= */ 14,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'Contours (meters)',
+      enabled: false,
+      layer: new MbtileLayer(
+          [{
+            long: 'Contains modified Copernicus Sentinel data 2021',
+            short: 'Copernicus 2021',
+          }, {
+            long: 'Contains modified NASADEM data 2000',
+          }],
+          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.webp',
+          CONTOURS_METERS,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 9,
+          /* maxZoom= */ 14,
           this.mapController.renderer,
       ),
     }, {

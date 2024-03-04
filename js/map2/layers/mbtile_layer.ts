@@ -14,7 +14,7 @@ import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { Label, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Style } from '../workers/mbtile_loader';
 import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
-import { Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
+import { Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
 
 interface LoadedTile {
   drawables: Drawable[];
@@ -28,6 +28,58 @@ interface IndexedLabel extends Label {
   collidedMinZoom: number;
   radius: Vec2;
 }
+
+export const CONTOURS_FEET: Readonly<Style> = {
+  layers: [
+    {
+      layerName: 'contour_ft',
+      minZoom: 0,
+      maxZoom: 31,
+      lines: [
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 2,
+          }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+  ],
+};
+
+export const CONTOURS_METERS: Readonly<Style> = {
+  layers: [
+    {
+      layerName: 'contour',
+      minZoom: 0,
+      maxZoom: 31,
+      lines: [
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 2,
+          }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+  ],
+};
 
 export const NATURE: Readonly<Style> = {
   layers: [
@@ -63,6 +115,27 @@ export const NATURE: Readonly<Style> = {
           radius: 2,
           stipple: false,
           z: Z_OVERLAY_TRANSPORTATION,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'contour_ft',
+      minZoom: 0,
+      maxZoom: 31,
+      lines: [
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 2,
+          }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
         },
       ],
       points: [],
@@ -140,7 +213,7 @@ export const NATURE: Readonly<Style> = {
               'wood',
             ],
           }],
-          fill: 0x21AD574C as RgbaU32,
+          fill: 0x51C5874C as RgbaU32,
           z: Z_BASE_TERRAIN + 0.5,
         },
         {
@@ -171,7 +244,7 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'park',
       minZoom: 0,
-      maxZoom: 31,
+      maxZoom: 11,
       lines: [],
       points: [
         {
@@ -180,6 +253,7 @@ export const NATURE: Readonly<Style> = {
               match: 'string_in',
               key: 'class',
               value: [
+                'national_park',
                 'wilderness_area',
               ],
             },
@@ -200,6 +274,7 @@ export const NATURE: Readonly<Style> = {
               //'county_park',
               // TODO(april): this looks gross at the nortern tip of Greenland
               'national_park',
+              'wilderness_area',
               //'nature_reserve',
               //'open_space_preserve',
               //'regional_park',
@@ -208,6 +283,52 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0x21ad5780 as RgbaU32,
+          z: Z_BASE_TERRAIN + 0.75,
+        },
+      ],
+    },
+    {
+      layerName: 'park',
+      minZoom: 11,
+      maxZoom: 31,
+      lines: [],
+      points: [
+        {
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'national_park',
+                'wilderness_area',
+              ],
+            },
+          ],
+          textFill: 0x007D25FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.4,
+          z: Z_OVERLAY_TEXT,
+        },
+      ],
+      polygons: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              //'city_park',
+              //'county_park',
+              // TODO(april): this looks gross at the nortern tip of Greenland
+              'national_park',
+              'wilderness_area',
+              //'nature_reserve',
+              //'open_space_preserve',
+              //'regional_park',
+              //'state_park',
+              //'state_wilderness',
+            ],
+          }],
+          fill: 0x13653220 as RgbaU32,
           z: Z_BASE_TERRAIN + 0.75,
         },
       ],
