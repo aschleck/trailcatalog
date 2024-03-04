@@ -102,6 +102,7 @@ interface Feature {
 
 const MIN_ZOOM = 7;
 const MAX_ZOOM = 14;
+const RESULTS_LIMIT = 1024;
 const TILE_SIZE = 512;
 
 class EarthSearchLoader {
@@ -332,11 +333,11 @@ class EarthSearchLoader {
         .then(response => {
           // TODO(april): unload stuff
           this.activeFeatures.length = 0;
-          return this.processFeatures(response);
+          return this.processFeatures(response, RESULTS_LIMIT);
         });
   }
 
-  private processFeatures(response: EarthSearchFeatureCollection): Promise<void> {
+  private processFeatures(response: EarthSearchFeatureCollection, limit: number): Promise<void> {
     for (const feature of response.features) {
       if (feature.geometry.type !== 'Polygon') {
         console.error(`Unexpected ${feature.geometry.type} shape for asset`);
@@ -374,11 +375,14 @@ class EarthSearchLoader {
       });
     }
 
-    for (const link of response.links) {
-      if (link.rel === "next") {
-        return fetch(link.href)
-            .then(response => response.json() as Promise<EarthSearchFeatureCollection>)
-            .then(response => this.processFeatures(response));
+    const remaining = limit - response.features.length;
+    if (remaining > 0) {
+      for (const link of response.links) {
+        if (link.rel === "next") {
+          return fetch(link.href)
+              .then(response => response.json() as Promise<EarthSearchFeatureCollection>)
+              .then(response => this.processFeatures(response, remaining));
+        }
       }
     }
     return Promise.resolve();

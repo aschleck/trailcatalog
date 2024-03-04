@@ -125,7 +125,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       enabled: false,
       layer: new EarthSearchLayer(
         'sentinel-2-l2a',
-        14 /* days */,
+        365 /* days */,
         {'eo:cloud_cover': {'gte': 0, 'lte': 5}},
         Z_BASE_SATELLITE,
         this.mapController.renderer),
