@@ -100,7 +100,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           this.mapController.renderer,
       ),
     }, {
-      name: 'Maptiler Vector',
+      name: 'MapTiler vector',
       enabled: true,
       layer: new MbtileLayer(
           [
@@ -124,7 +124,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           this.mapController.renderer,
       ),
     }, {
-      name: 'Maptiler Satellite',
+      name: 'MapTiler satellite',
       enabled: false,
       layer: new RasterTileLayer(
           [
@@ -166,7 +166,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         Z_BASE_SATELLITE,
         this.mapController.renderer),
     }, {
-      name: 'Public Land',
+      name: 'Public land',
       enabled: false,
       layer: new CompositeZoomLayer([
         [

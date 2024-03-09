@@ -59,6 +59,7 @@ function Rail({children}: {children?: corgi.VElementOrPrimitive}) {
         border
         border-gray-900
         left-4
+        p-1
         rounded
         text-white
         top-4

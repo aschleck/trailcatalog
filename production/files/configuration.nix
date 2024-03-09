@@ -216,8 +216,7 @@
 
     serviceConfig = {
       ExecStart = "/home/april/trails_lat_frontend.sh";
-      Restart = "on-failure";
-      User = "april";
+      Restart = "always";
     };
   };
 
@@ -233,8 +232,7 @@
 
     serviceConfig = {
       ExecStart = "/home/april/trailcatalog_frontend.sh";
-      Restart = "on-failure";
-      User = "april";
+      Restart = "always";
     };
   };
 
@@ -260,8 +258,7 @@
 
     serviceConfig = {
       ExecStart = "/mnt/horse/tiles/pmtiles serve --port 9999 /mnt/horse/tiles";
-      Restart = "on-failure";
-      User = "april";
+      Restart = "always";
     };
   };
 

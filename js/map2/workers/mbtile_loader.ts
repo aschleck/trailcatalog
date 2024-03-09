@@ -188,10 +188,9 @@ class MbtileLoader {
     for (const layer of layers) {
       let layerStyle;
       for (const ls of this.style.layers) {
-        if (
-            layer.name === ls.layerName
-                && ls.minZoom <= request.id.zoom
-                && request.id.zoom < ls.maxZoom) {
+        if (ls.minZoom <= request.id.zoom
+            && request.id.zoom < ls.maxZoom
+            && layer.name === ls.layerName) {
           layerStyle = ls;
           break;
         }

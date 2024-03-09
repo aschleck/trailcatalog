@@ -34,7 +34,7 @@ export const CONTOURS_FEET: Readonly<Style> = {
     {
       layerName: 'contour_ft',
       minZoom: 0,
-      maxZoom: 31,
+      maxZoom: 14,
       lines: [
         {
           filters: [{
@@ -42,6 +42,23 @@ export const CONTOURS_FEET: Readonly<Style> = {
             key: 'nth_line',
             value: 2,
           }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'contour_ft',
+      minZoom: 14,
+      maxZoom: 31,
+      lines: [
+        {
+          filters: [],
           fill: 0x00000040 as RgbaU32,
           stroke: 0x00000040 as RgbaU32,
           radius: 0.5,
@@ -60,7 +77,7 @@ export const CONTOURS_METERS: Readonly<Style> = {
     {
       layerName: 'contour',
       minZoom: 0,
-      maxZoom: 31,
+      maxZoom: 13,
       lines: [
         {
           filters: [{
@@ -68,6 +85,23 @@ export const CONTOURS_METERS: Readonly<Style> = {
             key: 'nth_line',
             value: 2,
           }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'contour',
+      minZoom: 13,
+      maxZoom: 31,
+      lines: [
+        {
+          filters: [],
           fill: 0x00000040 as RgbaU32,
           stroke: 0x00000040 as RgbaU32,
           radius: 0.5,
@@ -86,7 +120,67 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'aeroway',
       minZoom: 11,
-      maxZoom: 31,
+      maxZoom: 12,
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'runway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 1.5,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'aeroway',
+      minZoom: 12,
+      maxZoom: 13,
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'runway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 3,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'taxiway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 1.5,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'aeroway',
+      minZoom: 13,
+      maxZoom: 14,
       lines: [
         {
           filters: [{
@@ -113,6 +207,80 @@ export const NATURE: Readonly<Style> = {
           fill: 0xFFFFFFFF as RgbaU32,
           stroke: 0xFFFFFFFF as RgbaU32,
           radius: 2,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'aeroway',
+      minZoom: 14,
+      maxZoom: 15,
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'runway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 6,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'taxiway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 3,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'aeroway',
+      minZoom: 15,
+      maxZoom: 31,
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'runway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 8,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'taxiway',
+            ],
+          }],
+          fill: 0xFFFFFFFF as RgbaU32,
+          stroke: 0xFFFFFFFF as RgbaU32,
+          radius: 4,
           stipple: false,
           z: Z_OVERLAY_TRANSPORTATION,
         },
