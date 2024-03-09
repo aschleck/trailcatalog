@@ -75,7 +75,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           }, {
             long: 'Contains modified NASADEM data 2000',
           }],
-          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.webp',
+          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
           CONTOURS_FEET,
           /* extraZoom= */ 0,
           /* minZoom= */ 9,
@@ -92,7 +92,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           }, {
             long: 'Contains modified NASADEM data 2000',
           }],
-          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.webp',
+          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
           CONTOURS_METERS,
           /* extraZoom= */ 0,
           /* minZoom= */ 9,

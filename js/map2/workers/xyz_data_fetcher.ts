@@ -102,6 +102,9 @@ class XyzDataFetcher {
     }
 
     const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
+    if (tz < this.minZoom) {
+      projected = {low: [1, 1], high: [-1, -1]};
+    }
     const worldSize = Math.pow(2, tz);
 
     const used = createTileHashSet();
