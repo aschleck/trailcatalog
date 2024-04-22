@@ -22,7 +22,7 @@ interface LayerStyle {
   layerName: string;
   minZoom: number;
   maxZoom: number;
-  line_texts: LineTextStyle[];
+  lineTexts: LineTextStyle[];
   lines: LineStyle[];
   points: PointStyle[];
   polygons: PolygonStyle[];
@@ -221,7 +221,7 @@ class MbtileLoader {
       const pointUnstyled = new Set<unknown>();
       const polygonUnstyled = new Set<unknown>();
       for (const line of layer.lines) {
-        const style = findStyle(line.tags, layer.keys, layer.values, layerStyle.line_texts);
+        const style = findStyle(line.tags, layer.keys, layer.values, layerStyle.lineTexts);
         if (style) {
           lineTextGroups.get(style).push({...line, layer, layerStyle});
         }
@@ -617,19 +617,66 @@ function decodeGeometry(source: LittleEndianView): {
 
 function projectLayer(tile: TileId, extent: number, layer: Layer): void {
   const halfWorldSize = Math.pow(2, tile.zoom - 1);
-  const tx = tile.x / halfWorldSize;
+  const tx = tile.x / halfWorldSize - 1;
   const ty = 1 - tile.y / halfWorldSize;
   const increment = 1 / halfWorldSize / extent;
+
+  // TODO(april): cropping is okay but not necessary. And we need to interpolate crop to ensure we
+  // get edges at the border rathern than starting inside the tile as the current crop routine does.
+  // TODO(april): we can fully crop out some features, so we should either remove them here or skip
+  // them later.
+  //
+  // for (const source of [layer.lines, layer.points]) {
+  //   for (const feature of source) {
+  //     const [geometry, starts] = crop(feature.geometry, feature.starts, extent);
+  //     feature.geometry = geometry;
+  //     feature.starts = starts;
+  //   }
+  // }
 
   for (const source of [layer.lines, layer.points, layer.polygons]) {
     for (const feature of source) {
       const g = feature.geometry;
       for (let i = 0; i < g.length; i += 2) {
-        g[i + 0] = tx + g[i + 0] * increment - 1;
+        g[i + 0] = tx + g[i + 0] * increment;
         g[i + 1] = ty - g[i + 1] * increment;
       }
     }
   }
+}
+
+function crop(geometry: number[], starts: number[], extent: number): [number[], number[]] {
+  const cGeometry = [];
+  const cStarts = [];
+  for (let i = 0; i < starts.length; ++i) {
+    let start = starts[i];
+    let end = i < starts.length - 1 ? starts[i + 1] : geometry.length;
+
+    for (; start < end; start += 2) {
+      if (
+          (geometry[start + 0] >= 0 && geometry[start + 0] < extent)
+              && (geometry[start + 1] >= 0 && geometry[start + 1] < extent)) {
+        break;
+      }
+    }
+
+    for (; end > start; end -= 2) {
+      if (
+          (geometry[end - 2] >= 0 && geometry[end - 2] < extent)
+              && (geometry[end - 1] >= 0 && geometry[end - 1] < extent)) {
+        break;
+      }
+    }
+
+    if (start < end) {
+      cStarts.push(cGeometry.length);
+      for (let j = start; j < end; j++) {
+        cGeometry.push(geometry[j]);
+      }
+    }
+  }
+
+  return [cGeometry, cStarts];
 }
 
 function deZigZag(u: number): number {

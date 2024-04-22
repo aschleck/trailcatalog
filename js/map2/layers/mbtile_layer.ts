@@ -38,7 +38,7 @@ export const CONTOURS_FEET: Readonly<Style> = {
       layerName: 'contour_ft',
       minZoom: 0,
       maxZoom: 14,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -60,7 +60,7 @@ export const CONTOURS_FEET: Readonly<Style> = {
       layerName: 'contour_ft',
       minZoom: 14,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [],
@@ -83,7 +83,7 @@ export const CONTOURS_METERS: Readonly<Style> = {
       layerName: 'contour',
       minZoom: 0,
       maxZoom: 13,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -105,7 +105,7 @@ export const CONTOURS_METERS: Readonly<Style> = {
       layerName: 'contour',
       minZoom: 13,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [],
@@ -128,7 +128,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'aeroway',
       minZoom: 11,
       maxZoom: 12,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -152,7 +152,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'aeroway',
       minZoom: 12,
       maxZoom: 13,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -190,7 +190,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'aeroway',
       minZoom: 13,
       maxZoom: 14,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -228,7 +228,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'aeroway',
       minZoom: 14,
       maxZoom: 15,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -266,7 +266,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'aeroway',
       minZoom: 15,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -304,7 +304,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'contour_ft',
       minZoom: 0,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -326,7 +326,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'globallandcover',
       minZoom: 0,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [],
       points: [],
       polygons: [
@@ -372,7 +372,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'landcover',
       minZoom: 0,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [],
       points: [],
       polygons: [
@@ -428,7 +428,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'park',
       minZoom: 0,
       maxZoom: 11,
-      line_texts: [],
+      lineTexts: [],
       lines: [],
       points: [
         {
@@ -445,7 +445,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x007D25FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.4,
-          z: Z_OVERLAY_TEXT,
+          z: Z_OVERLAY_TEXT + 0.1,
         },
       ],
       polygons: [
@@ -475,7 +475,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'park',
       minZoom: 11,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [],
       points: [
         {
@@ -492,7 +492,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x007D25FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.4,
-          z: Z_OVERLAY_TEXT,
+          z: Z_OVERLAY_TEXT + 0.1,
         },
       ],
       polygons: [
@@ -522,7 +522,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'place',
       minZoom: 0,
       maxZoom: 4,
-      line_texts: [],
+      lineTexts: [],
       lines: [],
       points: [
         {
@@ -543,7 +543,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.5,
-          z: Z_OVERLAY_TEXT + 0.1,
+          z: Z_OVERLAY_TEXT + 0.2,
         },
       ],
       polygons: [],
@@ -552,7 +552,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'place',
       minZoom: 4,
       maxZoom: 7,
-      line_texts: [],
+      lineTexts: [],
       lines: [],
       points: [
         {
@@ -573,7 +573,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.5,
-          z: Z_OVERLAY_TEXT + 0.2,
+          z: Z_OVERLAY_TEXT + 0.3,
         },
         {
           filters: [
@@ -594,7 +594,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.45,
-          z: Z_OVERLAY_TEXT + 0.1,
+          z: Z_OVERLAY_TEXT + 0.2,
         },
       ],
       polygons: [],
@@ -602,8 +602,8 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'place',
       minZoom: 7,
-      maxZoom: 11,
-      line_texts: [],
+      maxZoom: 10,
+      lineTexts: [],
       lines: [],
       points: [
         {
@@ -617,7 +617,7 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.4,
-          z: Z_OVERLAY_TEXT,
+          z: Z_OVERLAY_TEXT + 0.1,
         },
         {
           filters: [{
@@ -631,16 +631,16 @@ export const NATURE: Readonly<Style> = {
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.6,
-          z: Z_OVERLAY_TEXT + 0.01,
+          z: Z_OVERLAY_TEXT + 0.11,
         },
       ],
       polygons: [],
     },
     {
       layerName: 'place',
-      minZoom: 11,
+      minZoom: 10,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [],
       points: [
         {
@@ -649,16 +649,13 @@ export const NATURE: Readonly<Style> = {
             key: 'class',
             value: [
               'city',
-              'continent',
-              'province',
-              'state',
               'town',
             ],
           }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.4,
-          z: Z_OVERLAY_TEXT + 0.01,
+          z: Z_OVERLAY_TEXT + 0.11,
         },
       ],
       polygons: [],
@@ -667,7 +664,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'transportation',
       minZoom: 0,
       maxZoom: 11,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -710,7 +707,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'transportation',
       minZoom: 11,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -785,7 +782,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'water',
       minZoom: 0,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [],
       points: [],
       polygons: [
@@ -800,12 +797,12 @@ export const NATURE: Readonly<Style> = {
       layerName: 'water_name',
       minZoom: 0,
       maxZoom: 31,
-      line_texts: [{
+      lineTexts: [{
         filters: [],
         preferred: `name:${PREFERRED_LANGUAGE}`,
         fallback: 'name',
-        fill: 0xFFFFFFFF as RgbaU32,
-        stroke: 0x000000FF as RgbaU32,
+        fill: 0x1288E6FF as RgbaU32,
+        stroke: 0xD0DCE5FF as RgbaU32,
         scale: 0.4,
         z: Z_OVERLAY_TEXT,
       }],
@@ -817,7 +814,7 @@ export const NATURE: Readonly<Style> = {
       layerName: 'waterway',
       minZoom: 0,
       maxZoom: 31,
-      line_texts: [],
+      lineTexts: [],
       lines: [
         {
           filters: [{
@@ -1004,8 +1001,13 @@ export class MbtileLayer extends Layer {
     const padding = 2;
     for (const label of response.labels) {
       const [wr, hr] = GLYPHER.measurePx(label.graphemes, label.scale);
-      const w = wr + 2 * padding;
-      const h = hr + 2 * padding;
+      const sin = Math.sin(label.angle);
+      const cos = Math.cos(label.angle);
+      // TODO(april): this isn't quite right. I think you can rotate the top right corner in such a
+      // way that it's no longer representative of the actual rotated width. I think need a Math.max
+      // on another corner here.
+      const w = Math.abs(wr * cos - hr * sin) + 2 * padding;
+      const h = Math.abs(wr * sin + hr * cos) + 2 * padding;
       const mzWorldSize = 256 * Math.pow(2, label.minZoom);
       const hwWorld = w / mzWorldSize; // no divide by 2 because the world is -1 to 1
       const hhWorld = h / mzWorldSize;
@@ -1124,9 +1126,6 @@ export class MbtileLayer extends Layer {
     const [wr, hr] = label.radius;
     for (const other of neighbors) {
       if (label.maxZoom <= other.collidedMinZoom || label.minZoom >= other.maxZoom) {
-        continue;
-      }
-      if (arrays.equals(label.graphemes, other.graphemes)) {
         continue;
       }
 

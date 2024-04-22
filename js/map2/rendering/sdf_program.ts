@@ -58,22 +58,24 @@ export class SdfProgram extends Program<SdfProgramData> {
   ): {byteSize: number; drawable: Drawable;} {
     const floats = new Float32Array(buffer, offset);
     const uint32s = new Uint32Array(buffer, offset);
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
 
-    // TODO(april): we don't account for the angle at all.
     let width = 0;
     for (const glyph of glyphs) {
       width += glyph.glyphAdvance * scale;
     }
-    let xOffset = offsetPx[0] - width / 2;
-    let yOffset = offsetPx[1];
+    let xOffset = offsetPx[0] - width / 2 * cos;
+    let yOffset = offsetPx[1] - width / 2 * sin;
 
     let count = 0;
     for (const glyph of glyphs) {
-      const charYOffset = yOffset + glyph.glyphTop * scale;
+      const charXOffset = xOffset - glyph.glyphTop * scale * sin;
+      const charYOffset = yOffset + glyph.glyphTop * scale * cos;
 
       floats.set([
         /* center= */ center[0], center[1],
-        /* offsetPx= */ xOffset, charYOffset,
+        /* offsetPx= */ charXOffset, charYOffset,
         /* size= */ glyph.width * scale, glyph.height * scale,
         /* angle= */ angle,
       ], count);
@@ -88,8 +90,8 @@ export class SdfProgram extends Program<SdfProgramData> {
       count += 5;
 
       const xAdvance = glyph.glyphAdvance * scale;
-      xOffset += Math.cos(angle) * xAdvance;
-      yOffset += Math.sin(angle) * xAdvance;
+      xOffset += cos * xAdvance;
+      yOffset += sin * xAdvance;
     }
 
     return {

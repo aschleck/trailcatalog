@@ -125,7 +125,8 @@ class Glypher {
         regenerate = true;
       }
     }
-    yHeight += FONT_SIZE * scale;
+    // TODO(april): no idea why this is negative...
+    yHeight -= FONT_SIZE * scale;
 
     if (regenerate) {
       this.regenerator.trigger();
@@ -141,7 +142,9 @@ class Glypher {
     const drawables = [];
     const pending = [];
     let totalByteSize = 0;
-    let yOffset = 0;
+    let yOffset = yHeight / 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
     for (let i = 0; i < graphemes.length; ++i) {
       const character = graphemes[i];
       if (character !== '\n') {
@@ -153,7 +156,7 @@ class Glypher {
         const {byteSize, drawable} = renderer.sdfProgram.plan(
             pending,
             center,
-            [offsetPx[0], offsetPx[1] + yHeight / 2 - yOffset],
+            [offsetPx[0] - yOffset * sin, offsetPx[1] + yOffset * cos],
             scale,
             angle,
             fill,
@@ -167,7 +170,7 @@ class Glypher {
         totalByteSize += byteSize;
 
         pending.length = 0;
-        yOffset += FONT_SIZE * scale * LINE_HEIGHT;
+        yOffset -= FONT_SIZE * scale * LINE_HEIGHT;
       }
     }
 
