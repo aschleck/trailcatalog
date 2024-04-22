@@ -1,30 +1,30 @@
 {
   "//": "stack-chain is an undeclared dep of cls-hooked, yikes!",
   "devDependencies": {
-    "@types/earcut": "^2.1.3",
-    "@types/jest": "^29.5.6",
-    "@types/node": "^20.8.7",
-    "@types/pg": "^8.10.7",
-    "autoprefixer": "^10.4.16",
+    "@types/earcut": "^2.1.4",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.12.7",
+    "@types/pg": "^8.11.5",
+    "autoprefixer": "^10.4.19",
     "jest-cli": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "jest-junit": "^16.0.0",
-    "postcss": "^8.4.31",
+    "postcss": "^8.4.38",
     "stack-chain": "^2.0.0",
     "supports-color": "^9.4.0",
-    "tailwindcss": "^3.3.3"
+    "tailwindcss": "^3.4.3"
   },
   "dependencies": {
-    "@fastify/cookie": "^9.1.0",
-    "@fastify/reply-from": "^9.4.0",
-    "@fastify/request-context": "^5.0.0",
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/reply-from": "^9.7.0",
+    "@fastify/request-context": "^5.1.0",
     "@mapbox/tiny-sdf": "^2.0.6",
     "earcut": "^2.2.4",
-    "fastify": "^4.24.3",
+    "fastify": "^4.26.2",
     "geotiff": "^2.1.3",
     "grapheme-splitter": "^1.0.4",
     "node-fetch": "^3.3.2",
-    "openid-client": "^5.6.1",
-    "pg": "^8.11.3"
+    "openid-client": "^5.6.5",
+    "pg": "^8.11.5"
   }
 }
