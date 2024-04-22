@@ -25,6 +25,7 @@ interface LoadedTile {
 }
 
 interface IndexedLabel extends Label {
+  id: number;
   bound: Rect;
   collidedMinZoom: number;
   radius: Vec2;
@@ -851,6 +852,7 @@ export class MbtileLayer extends Layer {
   private readonly tiles: HashMap<TileId, LoadedTile>;
   private generation: number;
   private lastRenderGeneration: number;
+  private lastLabelId: number;
 
   constructor(
       copyrights: Copyright[],
@@ -880,6 +882,7 @@ export class MbtileLayer extends Layer {
     });
     this.generation = 0;
     this.lastRenderGeneration = -1;
+    this.lastLabelId = -1;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'ltc') {
@@ -938,6 +941,8 @@ export class MbtileLayer extends Layer {
 
       for (const label of response.labels) {
         if (label.collidedMinZoom > zoom) {
+          continue;
+        } else if (label.maxZoom < zoom) {
           continue;
         }
 
@@ -1018,6 +1023,7 @@ export class MbtileLayer extends Layer {
 
       const indexed = {
         ...label,
+        id: ++this.lastLabelId,
         bound: maximalBound,
         collidedMinZoom: label.minZoom,
         radius: [w, h] as const, // no divide by 2 because the world is -1 to 1
@@ -1097,13 +1103,10 @@ export class MbtileLayer extends Layer {
           this.labelIndex.delete(label.bound);
 
           const affected: IndexedLabel[] = [];
+          // TODO(april): we have an extra pad elsewhere...
           this.labelIndex.queryRect(label.bound, affected);
           for (const other of affected) {
-            if (label.collidedMinZoom >= other.collidedMinZoom) {
-              // We didn't affect other, so skip recalculating it
-              continue;
-            }
-
+            // TODO(april): can we skip labels we know we didn't affect?
             affectedLabels.add(other);
           }
         }
@@ -1125,32 +1128,52 @@ export class MbtileLayer extends Layer {
     let ourMinZoom = label.minZoom;
     const [wr, hr] = label.radius;
     for (const other of neighbors) {
-      if (label.maxZoom <= other.collidedMinZoom || label.minZoom >= other.maxZoom) {
+      if (label.maxZoom < other.minZoom || label.minZoom > other.maxZoom) {
         continue;
       }
 
+
       const collisionZoom = Math.max(ourMinZoom, other.collidedMinZoom);
       const worldSize = 256 * Math.pow(2, collisionZoom);
+
+      let extraPad;
+      if (arrays.equals(label.graphemes, other.graphemes)) {
+        extraPad = 384;
+      } else {
+        extraPad = 0;
+      }
+
       const ourRadius = [wr / worldSize, hr / worldSize];
       const theirRadius = [other.radius[0] / worldSize, other.radius[1] / worldSize];
       const overlapX =
-          Math.abs(label.center[0] - other.center[0]) - ourRadius[0] - theirRadius[0];
+          Math.abs(label.center[0] - other.center[0])
+              - ourRadius[0] - theirRadius[0] - extraPad / worldSize;
       const overlapY =
-          Math.abs(label.center[1] - other.center[1]) - ourRadius[1] - theirRadius[1];
+          Math.abs(label.center[1] - other.center[1])
+              - ourRadius[1] - theirRadius[1] - extraPad / worldSize;
       if (overlapX >= 0 || overlapY >= 0) {
         continue;
       }
 
       const minimalZoomX =
-          Math.log2((wr + other.radius[0]) / Math.abs(label.center[0] - other.center[0]) / 512);
+          Math.log2(
+              (wr + other.radius[0] + extraPad)
+                  / Math.abs(label.center[0] - other.center[0]) / 512);
       const minimalZoomY =
-          Math.log2((hr + other.radius[1]) / Math.abs(label.center[1] - other.center[1]) / 512);
+          Math.log2(
+              (hr + other.radius[1] + extraPad)
+                  / Math.abs(label.center[1] - other.center[1]) / 512);
       const minimalZoom = Math.max(minimalZoomX, minimalZoomY);
 
-      if (label.z === other.z && arrays.compare(label.graphemes, other.graphemes) < 0) {
+      if (label.z > other.z) {
         other.collidedMinZoom = Math.max(minimalZoom, other.collidedMinZoom);
-      } else if (label.z > other.z) {
-        other.collidedMinZoom = Math.max(minimalZoom, other.collidedMinZoom);
+      } else if (label.z === other.z) {
+        const compare = arrays.compare(label.graphemes, other.graphemes);
+        if (compare < 0 || (compare === 0 && label.id < other.id)) {
+          other.collidedMinZoom = Math.max(minimalZoom, other.collidedMinZoom);
+        } else {
+          ourMinZoom = Math.max(ourMinZoom, minimalZoom);
+        }
       } else {
         ourMinZoom = Math.max(ourMinZoom, minimalZoom);
       }
