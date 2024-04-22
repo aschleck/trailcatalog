@@ -9,6 +9,7 @@ tc_ts_project(
         "//js/map2/common",
         "//js/map2/rendering",
         "//js/map2/workers",
+        "//js/server:client",
     ],
 )
 

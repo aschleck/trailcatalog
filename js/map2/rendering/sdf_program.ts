@@ -65,14 +65,15 @@ export class SdfProgram extends Program<SdfProgramData> {
       width += glyph.glyphAdvance * scale;
     }
     let xOffset = offsetPx[0] - width / 2;
+    let yOffset = offsetPx[1];
 
     let count = 0;
     for (const glyph of glyphs) {
-      const yOffset = offsetPx[1] + glyph.glyphTop * scale;
+      const charYOffset = yOffset + glyph.glyphTop * scale;
 
       floats.set([
         /* center= */ center[0], center[1],
-        /* offsetPx= */ xOffset, yOffset,
+        /* offsetPx= */ xOffset, charYOffset,
         /* size= */ glyph.width * scale, glyph.height * scale,
         /* angle= */ angle,
       ], count);
@@ -86,7 +87,9 @@ export class SdfProgram extends Program<SdfProgramData> {
       ], count);
       count += 5;
 
-      xOffset += glyph.glyphAdvance * scale;
+      const xAdvance = glyph.glyphAdvance * scale;
+      xOffset += Math.cos(angle) * xAdvance;
+      yOffset += Math.sin(angle) * xAdvance;
     }
 
     return {

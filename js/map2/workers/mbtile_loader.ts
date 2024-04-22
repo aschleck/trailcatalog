@@ -22,12 +22,13 @@ interface LayerStyle {
   layerName: string;
   minZoom: number;
   maxZoom: number;
+  line_texts: LineTextStyle[];
   lines: LineStyle[];
   points: PointStyle[];
   polygons: PolygonStyle[];
 }
 
-type GeometryStyle = LineStyle|PointStyle|PolygonStyle;
+type GeometryStyle = LineStyle|LineTextStyle|PointStyle|PolygonStyle;
 
 interface LineStyle {
   filters: Match[];
@@ -35,6 +36,16 @@ interface LineStyle {
   stroke: RgbaU32;
   radius: number;
   stipple: boolean;
+  z: number;
+}
+
+interface LineTextStyle {
+  filters: Match[];
+  preferred: string;
+  fallback: string;
+  fill: RgbaU32;
+  stroke: RgbaU32;
+  scale: number;
   z: number;
 }
 
@@ -118,6 +129,7 @@ export interface InstanceGeometry {
 }
 
 export interface Label {
+  angle: number;
   center: Vec2;
   graphemes: string[];
   fill: RgbaU32;
@@ -180,6 +192,10 @@ class MbtileLoader {
     }
 
     const lineGroups = new DefaultMap<LineStyle, Feature[]>(() => []);
+    const lineTextGroups = new DefaultMap<LineTextStyle, Array<Feature & {
+      layer: Layer;
+      layerStyle: LayerStyle;
+    }>>(() => []);
     const pointGroups = new DefaultMap<PointStyle, Array<Feature & {
       layer: Layer;
       layerStyle: LayerStyle;
@@ -204,6 +220,13 @@ class MbtileLoader {
       const lineUnstyled = new Set<unknown>();
       const pointUnstyled = new Set<unknown>();
       const polygonUnstyled = new Set<unknown>();
+      for (const line of layer.lines) {
+        const style = findStyle(line.tags, layer.keys, layer.values, layerStyle.line_texts);
+        if (style) {
+          lineTextGroups.get(style).push({...line, layer, layerStyle});
+        }
+      }
+
       for (const line of layer.lines) {
         const style = findStyle(line.tags, layer.keys, layer.values, layerStyle.lines);
         if (style) {
@@ -324,6 +347,48 @@ class MbtileLoader {
       });
     }
 
+    for (const [style, lineTexts] of lineTextGroups) {
+      for (const lineText of lineTexts) {
+        let textFallback;
+        let textPreferred;
+        for (let i = 0; i < lineText.tags.length; i += 2) {
+          const key = lineText.layer.keys[lineText.tags[i + 0]];
+          if (key === style.fallback) {
+            textFallback = lineText.layer.values[lineText.tags[i + 1]] as string;
+          } else if (key === style.preferred) {
+            textPreferred = lineText.layer.values[lineText.tags[i + 1]] as string;
+          }
+        }
+
+        const text = textPreferred ?? textFallback;
+        if (text) {
+          const i = Math.floor(lineText.geometry.length / 4);
+          const center = [lineText.geometry[i * 2 + 0], lineText.geometry[i * 2 + 1]] as Vec2;
+          let angle =
+              Math.atan2(
+                  center[1] - lineText.geometry[i * 2 - 1],
+                  center[0] - lineText.geometry[i * 2 - 2]);
+          if (angle < -Math.PI / 2) {
+            angle = angle + Math.PI;
+          } else if (angle > Math.PI / 2) {
+            angle = angle - Math.PI;
+          }
+
+          response.labels.push({
+            angle,
+            center,
+            graphemes: wrap(toGraphemes(text)),
+            fill: style.fill,
+            stroke: style.stroke,
+            scale: style.scale,
+            z: style.z,
+            minZoom: lineText.layerStyle.minZoom,
+            maxZoom: lineText.layerStyle.maxZoom,
+          });
+        }
+      }
+    }
+
     for (const [style, points] of pointGroups) {
       for (const point of points) {
         let textFallback;
@@ -340,6 +405,7 @@ class MbtileLoader {
         const text = textPreferred ?? textFallback;
         if (text) {
           response.labels.push({
+            angle: 0,
             center: point.geometry as unknown as Vec2,
             graphemes: wrap(toGraphemes(text)),
             fill: style.textFill,

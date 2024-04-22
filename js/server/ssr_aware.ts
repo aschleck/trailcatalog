@@ -92,7 +92,7 @@ export function isServerSide(): boolean {
 }
 
 export function getLanguage(): string {
-  return window.SERVER_SIDE_RENDER?.language() ?? window.navigator.language;
+  return window.SERVER_SIDE_RENDER?.language() ?? window.navigator?.language ?? 'unknown';
 }
 
 export function redirectTo(url: string): void {
