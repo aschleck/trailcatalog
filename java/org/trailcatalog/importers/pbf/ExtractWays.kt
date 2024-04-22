@@ -49,7 +49,7 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
       NAME_BS ->
         name = stringTable.getS(way.getVals(i)).toStringUtf8()
       NATURAL_BS ->
-        // Note: we do this or else it wont be dumped
+        // Note: we do this or else it won't be dumped
         // Prefer road categories to naturals
         if (!WayCategory.ROAD.isParentOf(category)) {
           category = category.coerceAtLeast(WayCategory.HIGHWAY)
@@ -63,9 +63,9 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
                   .coerceAtLeast(PISTE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
         }
       RAILWAY_BS ->
-        // Note: we do this or else it wont be dumped
+        // It seems fun to dump all rails just in case...
         // TODO(april): but do trails really depend on railways?
-        category = category.coerceAtLeast(WayCategory.HIGHWAY)
+        category = category.coerceAtLeast(WayCategory.RAIL)
     }
   }
   val refs = LongArray(way.refsCount)

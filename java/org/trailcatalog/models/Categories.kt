@@ -117,7 +117,9 @@ enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
 enum class WayCategory(override val id: Int) : Category<WayCategory> {
   ANY(0),
     HIGHWAY(ANY.id * ENUM_SIZE + 1),
-      ROAD(HIGHWAY.id * ENUM_SIZE + 1),
+      RAIL(HIGHWAY.id * ENUM_SIZE + 1),
+
+      ROAD(HIGHWAY.id * ENUM_SIZE + 2),
         // Normal roads
         ROAD_MOTORWAY(ROAD.id * ENUM_SIZE + 1),
         ROAD_TRUNK(ROAD.id * ENUM_SIZE + 2),
@@ -144,7 +146,7 @@ enum class WayCategory(override val id: Int) : Category<WayCategory> {
         ROAD_RACEWAY(ROAD.id * ENUM_SIZE + 19),
         ROAD_BUSWAY(ROAD.id * ENUM_SIZE + 20),
 
-      PATH(HIGHWAY.id * ENUM_SIZE + 2),
+      PATH(HIGHWAY.id * ENUM_SIZE + 3),
         PATH_FOOTWAY(PATH.id * ENUM_SIZE + 1),
         PATH_BRIDLEWAY(PATH.id * ENUM_SIZE + 2),
         PATH_STEPS(PATH.id * ENUM_SIZE + 3),

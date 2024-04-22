@@ -553,7 +553,7 @@ private fun fetchCoarse(ctx: Context) {
           WirePath(
               id = id,
               type = results.getInt(2),
-              vertices = project(results.getBytes(3)),
+              vertices = results.getBytes(3),
           ))
     }
   }
@@ -616,7 +616,7 @@ private fun fetchFine(ctx: Context) {
           WirePath(
               id = id,
               type = results.getInt(2),
-              vertices = project(results.getBytes(3)),
+              vertices = results.getBytes(3),
           ))
     }
   }
@@ -738,7 +738,7 @@ private fun fetchDataPacked(ctx: Context) {
               id = id,
               type = results.getInt(2),
               vertices = results.getBytes(3).let {
-                if (precise) project(it) else projectSimplified(it)
+                if (precise) it else simplify(it)
               }
           ))
     }
@@ -884,22 +884,7 @@ private fun addETagAndCheckCached(ctx: Context): Boolean {
   return false
 }
 
-private fun project(latLngDegrees: ByteArray): ByteArray {
-  val degrees = ByteBuffer.wrap(latLngDegrees).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer()
-  val projected = ByteBuffer.allocate(latLngDegrees.size).order(ByteOrder.LITTLE_ENDIAN)
-  projected.asFloatBuffer().let {
-    for (i in (0 until it.capacity()).step(2)) {
-      // TODO(april): I think we get better precision with int E7 so we should probably do the
-      // double projection clientside instead.
-      val mercator = project(degrees.get(i), degrees.get(i + 1))
-      it.put(i, mercator.first.toFloat())
-      it.put(i + 1, mercator.second.toFloat())
-    }
-  }
-  return projected.array()
-}
-
-private fun projectSimplified(latLngDegrees: ByteArray): ByteArray {
+private fun simplify(latLngDegrees: ByteArray): ByteArray {
   val degrees = ByteBuffer.wrap(latLngDegrees).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer()
   val spans = Stack<Pair<Int, Int>>()
   spans.add(Pair(0, degrees.limit() / 2 - 1))
@@ -937,15 +922,14 @@ private fun projectSimplified(latLngDegrees: ByteArray): ByteArray {
     }
   }
 
-  val projected = ByteBuffer.allocate(points.size * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
-  projected.asFloatBuffer().let {
+  val simplified = ByteBuffer.allocate(points.size * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
+  simplified.asIntBuffer().let {
     for (i in points) {
-      val mercator = project(degrees.get(i * 2), degrees.get(i * 2 + 1))
-      it.put(mercator.first.toFloat())
-      it.put(mercator.second.toFloat())
+      it.put(degrees.get(i * 2))
+      it.put(degrees.get(i * 2 + 1))
     }
   }
-  return projected.array()
+  return simplified.array()
 }
 
 /** Projects into Mercator space from -1 to 1. */
