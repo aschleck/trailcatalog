@@ -9,7 +9,7 @@ tc_ts_project(
         "//js/corgi",
         "//js/corgi/history",
         "//js/dino",
-        "//js/map/common",
+        "//js/map2/common",
         "//js/server:client",
     ],
 )

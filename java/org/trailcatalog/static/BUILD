@@ -12,7 +12,9 @@ genrule(
     srcs = [
         "//java/org/trailcatalog/client",
         "//java/org/trailcatalog/client/workers:data_fetcher_worker",
-        "//js/map/workers:tile_fetcher_worker",
+        "//js/map2/workers:mbtile_loader_worker",
+        "//js/map2/workers:raster_loader_worker",
+        "//js/map2/workers:xyz_data_fetcher_worker",
     ],
     outs = [
         "client.css",
@@ -20,8 +22,12 @@ genrule(
         "client.js.map",
         "data_fetcher_worker.js",
         "data_fetcher_worker.js.map",
-        "tile_fetcher_worker.js",
-        "tile_fetcher_worker.js.map",
+        "mbtile_loader_worker.js",
+        "mbtile_loader_worker.js.map",
+        "raster_loader_worker.js",
+        "raster_loader_worker.js.map",
+        "xyz_data_fetcher_worker.js",
+        "xyz_data_fetcher_worker.js.map",
     ],
     cmd = "\n".join([
         "for i in $(SRCS); do",

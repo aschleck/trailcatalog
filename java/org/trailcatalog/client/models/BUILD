@@ -7,6 +7,7 @@ tc_ts_project(
     deps = [
         "//java/org/trailcatalog/client/common",
         "//js/map/common",
+        "//js/map2/common",
     ],
 )
 

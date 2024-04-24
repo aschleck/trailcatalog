@@ -1,6 +1,6 @@
 import { deepEqual } from 'js/common/comparisons';
 import { LittleEndianView } from 'js/common/little_endian_view';
-import { LatLng, LatLngRect } from 'js/map/common/types';
+import { LatLng, LatLngRect } from 'js/map2/common/types';
 import { InitialDataKey } from 'js/server/data';
 
 import { decodeBase64 } from './base64';
@@ -81,7 +81,7 @@ export function latLngFromBase64E7(bytes: string): LatLng {
   return [
     markerStream.getInt32() / 10_000_000,
     markerStream.getInt32() / 10_000_000,
-  ] as LatLng;
+  ] as const as LatLng;
 }
 
 export function latLngRectFromBase64E7(bytes: string): LatLngRect {

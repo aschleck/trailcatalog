@@ -1,5 +1,5 @@
 import { Long } from 'java/org/trailcatalog/s2';
-import { LatLng, LatLngRect, LatLngZoom, RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
+import { LatLng, LatLngRect, LatLngZoom, RgbaU32, Vec2, Vec4 } from 'js/map2/common/types';
 
 export function celsiusToFahrenheit(celsius: number): number {
   return 1.8 * celsius + 32;
@@ -17,7 +17,7 @@ export function degreesE7ToLatLng(lat: number, lng: number): LatLng {
   return [
     lat / 10_000_000,
     lng / 10_000_000,
-  ] as LatLng;
+  ] as const as LatLng;
 }
 
 export function projectLatLng(latLng: LatLng): Vec2 {

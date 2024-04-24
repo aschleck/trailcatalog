@@ -3,8 +3,8 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
-import { emptyLatLngRect, emptyPixelRect, LatLng } from 'js/map/common/types';
-import { DATA_CHANGED, MAP_MOVED } from 'js/map/events';
+import { LatLng } from 'js/map2/common/types';
+import { DATA_CHANGED, MAP_MOVED } from 'js/map2/events';
 
 import { decodeBase64 } from './common/base64';
 import { emptyS2Polygon, s2LatLngRectToTc } from './common/types';
@@ -153,7 +153,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   locateMe(): void {
     const options = {enableHighAccuracy: true, maximumAge: 10_000};
     navigator.geolocation.getCurrentPosition(position => {
-      const ll = [position.coords.latitude, position.coords.longitude] as LatLng;
+      const ll = [position.coords.latitude, position.coords.longitude] as const as LatLng;
       this.mapController.setCamera({
         lat: ll[0],
         lng: ll[1],
@@ -176,7 +176,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   private locationUpdated(position: GeolocationPosition) {
     this.updateState({
       ...this.state,
-      blueDot: [position.coords.latitude, position.coords.longitude] as LatLng,
+      blueDot: [position.coords.latitude, position.coords.longitude] as const as LatLng,
     });
   }
 

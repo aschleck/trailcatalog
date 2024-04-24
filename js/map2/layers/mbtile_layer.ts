@@ -33,6 +33,7 @@ interface IndexedLabel extends Label {
 
 const PREFERRED_LANGUAGE = getLanguage().split('-')[0];
 
+// TODO(april): we should glaciate the contours if it looks good
 export const CONTOURS_FEET: Readonly<Style> = {
   layers: [
     {

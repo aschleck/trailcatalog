@@ -2,19 +2,19 @@ import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { ViewsService } from 'js/corgi/history/views_service';
-import { rgbaToUint32 } from 'js/map/common/math';
-import { emptyLatLngRect, emptyPixelRect, LatLng, Vec2 } from 'js/map/common/types';
-import { MbtileData } from 'js/map/layers/mbtile_data';
-import { Style, TileData } from 'js/map/layers/tile_data';
-import { TileDataService } from 'js/map/layers/tile_data_service';
-import { MAPTILER_HILLSHADES, MAPTILER_PLANET, TRAILCATALOG_CONTOURS, TRAILCATALOG_HILLSHADES } from 'js/map/layers/tile_sources';
-import { MapController } from 'js/map/map_controller';
+import { emptyPixelRect } from 'js/map/common/types';
+import { rgbaToUint32 } from 'js/map2/common/math';
+import { RgbaU32, Vec2 } from 'js/map2/common/types';
+import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map2/layers/mbtile_layer';
+import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
+import { MapController } from 'js/map2/map_controller';
+import { Z_BASE_TERRAIN } from 'js/map2/z';
 
 import { MapDataService } from './data/map_data_service';
 import { ACTIVE_PALETTE, ERROR_PALETTE, LinePalette } from './map/colors';
 import { SELECTION_CHANGED } from './map/events';
-import { Filters, MapData } from './map/map_data';
-import { OverlayData, Overlays } from './map/overlay_data';
+import { OverlayLayer, Overlays } from './map/overlay_layer';
+import { Filters, TrailLayer } from './map/trail_layer';
 import { Path, Point, Trail } from './models/types';
 
 import * as routes from './routes';
@@ -45,15 +45,14 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       services: {
         history: HistoryService,
         mapData: MapDataService,
-        tileData: TileDataService,
         views: ViewsService<routes.Routes>,
       },
     };
   }
 
   private readonly history: HistoryService;
-  private readonly mapData: MapData;
-  private readonly overlayData: OverlayData;
+  private readonly mapData: TrailLayer;
+  private readonly overlayData: OverlayLayer;
   protected readonly mapController: MapController;
   protected readonly views: ViewsService<routes.Routes>;
 
@@ -64,38 +63,110 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
     this.views = response.deps.services.views;
 
     this.mapData =
-        new MapData(
+        new TrailLayer(
             this.mapController.camera,
             response.deps.services.mapData,
             response.args.filters ?? {},
-            this.mapController.renderer,
-            this.mapController.textRenderer);
-    this.overlayData = new OverlayData(response.args.overlays ?? {}, this.mapController.renderer);
+            this.mapController.renderer);
+    this.overlayData =
+        new OverlayLayer(
+            response.args.overlays ?? {},
+            this.mapController.renderer);
 
-    this.mapController.setLayers([
-      new MbtileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
+    const allLayers = [{
+      name: 'Hillshades',
+      enabled: true,
+      layer: new RasterTileLayer(
+          [{
+            long: 'Contains modified Copernicus Sentinel data 2021',
+            short: 'Copernicus 2021',
+          }, {
+            long: 'Contains modified NASADEM data 2000',
+          }],
+          'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
+          /* tint= */ 0xFFFFFF88 as RgbaU32,
+          /* z= */ Z_BASE_TERRAIN,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 12,
           this.mapController.renderer,
-          this.mapController.renderPlanner.baker,
-          MAPTILER_PLANET),
-      new MbtileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
+      ),
+    }, {
+      // TODO(april): allow toggling feet to meters and back
+      name: 'Contours (feet)',
+      enabled: true,
+      layer: new MbtileLayer(
+          [{
+            long: 'Contains modified Copernicus Sentinel data 2021',
+            short: 'Copernicus 2021',
+          }, {
+            long: 'Contains modified NASADEM data 2000',
+          }],
+          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
+          CONTOURS_FEET,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 9,
+          /* maxZoom= */ 14,
           this.mapController.renderer,
-          this.mapController.renderPlanner.baker,
-          TRAILCATALOG_CONTOURS),
-      new TileData(
-          this.mapController.camera,
-          response.deps.services.tileData,
+      ),
+    }, {
+      name: 'Contours (meters)',
+      enabled: false,
+      layer: new MbtileLayer(
+          [{
+            long: 'Contains modified Copernicus Sentinel data 2021',
+            short: 'Copernicus 2021',
+          }, {
+            long: 'Contains modified NASADEM data 2000',
+          }],
+          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
+          CONTOURS_METERS,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 9,
+          /* maxZoom= */ 14,
           this.mapController.renderer,
-          Style.Rgb,
-          rgbaToUint32(1, 1, 1, 0.3),
-          1,
-          TRAILCATALOG_HILLSHADES),
-      this.mapData,
-      this.overlayData,
-    ]);
+      ),
+    }, {
+      name: 'MapTiler vector',
+      enabled: true,
+      layer: new MbtileLayer(
+          [
+            {
+              long: 'Base political and transportation packaged and served by MapTiler',
+              short: 'MapTiler',
+              url: 'https://www.maptiler.com/copyright/',
+            },
+            {
+              long: 'Base political and transportation data provided by the OpenStreetMap project',
+              short: 'OpenStreetMap contributors',
+              url: 'https://www.openstreetmap.org/copyright',
+            },
+          ],
+          'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
+              + 'key=wWxlJy7a8SEPXS7AZ42l',
+          NATURE,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 15,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'Trails',
+      enabled: true,
+      layer: this.mapData,
+    }, {
+      name: 'Overlay',
+      enabled: true,
+      layer: this.overlayData,
+    }];
+    for (const layer of allLayers) {
+      this.registerDisposable(layer.layer);
+    }
+    this.updateState({
+      ...this.state,
+      layers: allLayers,
+    });
+    this.mapController.setLayers(allLayers.filter(l => l.enabled).map(l => l.layer));
 
     (response.args.active?.trails ?? [])
         .forEach(t => this.setActive(t, true, t.lengthMeters >= 0 ? ACTIVE_PALETTE : ERROR_PALETTE));

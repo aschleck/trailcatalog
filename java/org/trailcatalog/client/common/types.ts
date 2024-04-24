@@ -1,6 +1,6 @@
 import { S2LatLngRect, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { LatLngRect } from 'js/map/common/types';
+import { LatLngRect } from 'js/map2/common/types';
 
 // A LatLng is a pair of *degrees*.
 export type S2CellNumber = number & {brand: 'S2CellNumber'};

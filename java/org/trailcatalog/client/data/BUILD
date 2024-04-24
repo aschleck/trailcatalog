@@ -10,6 +10,8 @@ tc_ts_project(
         "//js/common",
         "//js/corgi",
         "//js/map/common",
+        "//js/map2",
+        "//js/map2/common",
     ],
 )
 

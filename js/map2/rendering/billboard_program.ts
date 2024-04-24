@@ -9,7 +9,7 @@ export class BillboardProgram extends Program<BillboardProgramData> {
   private readonly billboardData: Float32Array;
 
   constructor(gl: WebGL2RenderingContext) {
-    super(createBillboardProgram(gl), gl, gl.TRIANGLE_STRIP);
+    super(createBillboardProgram(gl), gl, gl.TRIANGLES);
     this.registerDisposer(() => {
       gl.deleteProgram(this.program.handle);
     });
@@ -18,6 +18,9 @@ export class BillboardProgram extends Program<BillboardProgramData> {
       -0.5, -0.5, 0, 1,
       -0.5, 0.5, 0, 0,
       0.5, -0.5, 1, 1,
+      
+      0.5, -0.5, 1, 1,
+      -0.5, 0.5, 0, 0,
       0.5, 0.5, 1, 0,
     ]);
   }
@@ -251,7 +254,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
         gl_Position = vec4(screenCoord / halfViewportSize, z, 1);
 
         uvec2 atlasXy = uvec2(
-            atlasIndex % atlasSize.x, atlasIndex / atlasSize.y);
+            atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);
         vec2 scale = 1. / vec2(atlasSize);
         vec2 translate = vec2(atlasXy) * scale;
         fragColorPosition = translate + scale * colorPosition;

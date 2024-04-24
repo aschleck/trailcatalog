@@ -2,7 +2,8 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
-import { emptyLatLngRect, emptyPixelRect, LatLng } from 'js/map/common/types';
+import { emptyPixelRect } from 'js/map/common/types';
+import { LatLng, LatLngRect } from 'js/map2/common/types';
 
 import { decodeBase64 } from './common/base64';
 import { emptyS2Polygon } from './common/types';
@@ -109,8 +110,12 @@ export function trailsInBoundaryFromRaw(raw: DataResponses['trails_in_boundary']
               t.type,
               emptyPixelRect(),
               [],
-              emptyLatLngRect(),
-              [0, 0] as LatLng,
+              {
+                low: [90, 180],
+                high: [-90, -180],
+                brand: 'LatLngRect',
+              },
+              [0, 0] as const as LatLng,
               [0, 0],
               t.elevation_down_meters,
               t.elevation_up_meters,

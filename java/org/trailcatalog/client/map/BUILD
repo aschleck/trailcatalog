@@ -12,9 +12,9 @@ tc_ts_project(
         "//java/org/trailcatalog/models:models-ts",
         "//js/common",
         "//js/corgi",
-        "//js/map",
-        "//js/map/models",
+        "//js/map2",
         "//js/map/rendering",
+        "//js/map2/rendering",
     ],
 )
 

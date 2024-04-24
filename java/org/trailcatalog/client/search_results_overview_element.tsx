@@ -5,9 +5,9 @@ import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 import { FabricIcon } from 'js/dino/fabric';
 import { ACTION } from 'js/emu/events';
-import { emptyLatLngRect } from 'js/map/common/types';
-import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map/events';
-import { MapElement } from 'js/map/map_element';
+import { LatLngRect, Vec2 } from 'js/map2/common/types';
+import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map2/events';
+import { MapElement } from 'js/map2/map_element';
 
 import { HOVER_CHANGED, SELECTION_CHANGED } from './map/events';
 import { Trail, TrailSearchResult } from './models/types';
@@ -135,21 +135,28 @@ function Content({
     if (state.searchTrails) {
       filteredTrails = state.searchTrails.filter(t => filter(t.id));
 
-      bound = emptyLatLngRect();
+      let lowLat = 90;
+      let lowLng = 180;
+      let highLat = -90;
+      let highLng = -180;
       for (const trail of filteredTrails) {
-        if (trail.bound.low[0] < bound.low[0]) {
-          bound.low[0] = trail.bound.low[0];
+        if (trail.bound.low[0] < lowLat) {
+          lowLat = trail.bound.low[0];
         }
-        if (trail.bound.high[0] > bound.high[0]) {
-          bound.high[0] = trail.bound.high[0];
+        if (trail.bound.high[0] > highLat) {
+          highLat = trail.bound.high[0];
         }
-        if (trail.bound.low[1] < bound.low[1]) {
-          bound.low[1] = trail.bound.low[1];
+        if (trail.bound.low[1] < lowLng) {
+          lowLng = trail.bound.low[1];
         }
-        if (trail.bound.high[1] > bound.high[1]) {
-          bound.high[1] = trail.bound.high[1];
+        if (trail.bound.high[1] > highLng) {
+          highLng = trail.bound.high[1];
         }
       }
+      bound = {
+        low: [lowLat, lowLng] as Vec2,
+        high: [highLat, highLng] as Vec2,
+      } as LatLngRect;
     }
   } else if (boundaryId) {
     if (state.boundary && state.trailsInBoundary) {

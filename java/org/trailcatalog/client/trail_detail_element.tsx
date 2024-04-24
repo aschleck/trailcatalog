@@ -3,9 +3,9 @@ import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 import { ACTION } from 'js/emu/events';
-import { LatLng } from 'js/map/common/types';
-import { CLICKED, ZOOMED } from 'js/map/events';
-import { MapElement } from 'js/map/map_element';
+import { LatLng } from 'js/map2/common/types';
+import { CLICKED, ZOOMED } from 'js/map2/events';
+import { MapElement } from 'js/map2/map_element';
 
 import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
 import { metersToFeet, metersToMiles } from './common/math';
@@ -112,6 +112,13 @@ function Content({trailId, state, updateState}: {
     trailDetails = <></>;
   }
 
+  let bear;
+  if (state.elevation?.cursor) {
+    bear = [state.elevation.cursor.lat, state.elevation.cursor.lng];
+  } else {
+    bear = undefined;
+  }
+
   return <>
     <div
         js={corgi.bind({
@@ -120,10 +127,7 @@ function Content({trailId, state, updateState}: {
           args: {
             active: {trails: [trail]},
             overlays: {
-              bear:
-                  !!state.elevation?.cursor
-                      ? [state.elevation.cursor.lat, state.elevation.cursor.lng] as LatLng
-                      : undefined,
+              bear,
             },
           },
           events: {

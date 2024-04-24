@@ -3,8 +3,8 @@ import * as corgi from 'js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { ACTION } from 'js/emu/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
-import { CLICKED, ZOOMED } from 'js/map/events';
-import { MapElement } from 'js/map/map_element';
+import { CLICKED, ZOOMED } from 'js/map2/events';
+import { MapElement } from 'js/map2/map_element';
 
 import { formatCount, formatDistance, formatHeight } from './common/formatters';
 import { SELECTION_CHANGED } from './map/events';

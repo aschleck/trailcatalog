@@ -4,7 +4,9 @@ import { IdentitySetMultiMap } from 'js/common/collections';
 import { LittleEndianView } from 'js/common/little_endian_view';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
-import { LatLng, LatLngRect, PixelRect, Vec2 } from 'js/map/common/types';
+import { PixelRect } from 'js/map/common/types';
+import { projectE7Array } from 'js/map2/camera';
+import { LatLng, LatLngRect, Vec2 } from 'js/map2/common/types';
 
 import { degreesE7ToLatLng, projectLatLng } from '../common/math';
 import { S2CellNumber } from '../common/types';
@@ -12,14 +14,14 @@ import { Path, Point, Trail } from '../models/types';
 import { PIN_CELL_ID } from '../workers/data_constants';
 import { FetcherCommand, Viewport } from '../workers/data_fetcher';
 
-interface Listener {
-  loadOverviewCell(trails: Iterable<Trail>): void;
-  loadCoarseCell(paths: Iterable<Path>): void;
-  loadFineCell(paths: Iterable<Path>, points: Iterable<Point>): void;
+export interface Listener {
+  loadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void;
+  loadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void;
+  loadFineCell(id: S2CellNumber, paths: Iterable<Path>, points: Iterable<Point>): void;
   loadPinned(): void;
-  unloadCoarseCell(paths: Iterable<Path>): void;
-  unloadFineCell(paths: Iterable<Path>, points: Iterable<Point>): void;
-  unloadOverviewCell(trails: Iterable<Trail>): void;
+  unloadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void;
+  unloadFineCell(id: S2CellNumber, paths: Iterable<Path>, points: Iterable<Point>): void;
+  unloadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void;
 }
 
 const DATA_ZOOM_THRESHOLD = 4;
@@ -96,8 +98,32 @@ export class MapDataService extends Service<EmptyDeps> {
   setListener(listener: Listener): void {
     this.listener = listener;
 
-    // Is this a TypeScript bug? It says values() is Iterable.
-    listener.loadOverviewCell([...this.trails.values()]);
+    for (const [id, buffer] of this.overviewCells) {
+      if (!buffer) {
+        continue;
+      }
+
+      const data = new LittleEndianView(buffer);
+
+      const trailCount = data.getVarInt32();
+      const trails = [];
+      for (let i = 0; i < trailCount; ++i) {
+        const id = data.getVarBigInt64();
+        const nameLength = data.getVarInt32();
+        data.skip(nameLength);
+        data.getVarInt32();
+        const pathCount = data.getVarInt32();
+        data.align(8);
+        data.skip(8 * pathCount);
+        data.skip(5 * 4);
+        const trail = this.trails.get(id);
+        if (trail) {
+          trails.push(trail);
+        }
+      }
+
+      listener.loadOverviewCell(id, trails);
+    }
 
     for (const [id, buffer] of this.coarseCells) {
       if (!buffer) {
@@ -121,10 +147,10 @@ export class MapDataService extends Service<EmptyDeps> {
           paths.push(path);
         }
       }
-      listener.loadCoarseCell(paths);
+      listener.loadCoarseCell(id, paths);
     }
 
-    for (const buffer of this.fineCells.values()) {
+    for (const [id, buffer] of this.fineCells) {
       if (!buffer) {
         continue;
       }
@@ -154,7 +180,7 @@ export class MapDataService extends Service<EmptyDeps> {
           points.push(point);
         }
       }
-      listener.loadFineCell(paths, points);
+      listener.loadFineCell(id, paths, points);
     }
   }
 
@@ -197,6 +223,10 @@ export class MapDataService extends Service<EmptyDeps> {
 
   clearListener(): void {
     this.listener = undefined;
+  }
+
+  getPath(id: bigint): Path|undefined {
+    return this.paths.get(id);
   }
 
   getTrail(id: bigint): Trail|undefined {
@@ -253,7 +283,7 @@ export class MapDataService extends Service<EmptyDeps> {
                 name,
                 type,
                 paths,
-                {low: [0, 0], high: [0, 0]} as LatLngRect,
+                {low: [0, 0], high: [0, 0]} as const as LatLngRect,
                 marker,
                 elevationDownMeters,
                 elevationUpMeters,
@@ -267,7 +297,7 @@ export class MapDataService extends Service<EmptyDeps> {
     }
 
     this.overviewCells.set(id, buffer);
-    this.listener?.loadOverviewCell(trails);
+    this.listener?.loadOverviewCell(id, trails);
   }
 
   private loadCoarseCell(id: S2CellNumber, buffer: ArrayBuffer): void {
@@ -316,7 +346,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const type = data.getVarInt32();
       const pathVertexCount = data.getVarInt32();
       data.align(4);
-      const points = data.sliceFloat32(pathVertexCount);
+      const points = projectE7Array(data.sliceInt32(pathVertexCount));
       this.pinnedPaths.set(id, new Path(id, type, bound, points));
     }
 
@@ -380,7 +410,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const type = data.getVarInt32();
       const pathVertexCount = data.getVarInt32();
       data.align(4);
-      const points = data.sliceFloat32(pathVertexCount);
+      const points = projectE7Array(data.sliceInt32(pathVertexCount));
       const bound = {
         low: [1, 1],
         high: [-1, -1],
@@ -399,7 +429,7 @@ export class MapDataService extends Service<EmptyDeps> {
     }
 
     this.coarseCells.set(id, buffer);
-    this.listener?.loadCoarseCell(paths);
+    this.listener?.loadCoarseCell(id, paths);
   }
 
   private loadFineCell(id: S2CellNumber, buffer: ArrayBuffer): void {
@@ -418,7 +448,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const type = data.getVarInt32();
       const pathVertexCount = data.getVarInt32();
       data.align(4);
-      const points = data.sliceFloat32(pathVertexCount);
+      const points = projectE7Array(data.sliceInt32(pathVertexCount));
       const bound = {
         low: [1, 1],
         high: [-1, -1],
@@ -460,7 +490,7 @@ export class MapDataService extends Service<EmptyDeps> {
     }
 
     this.fineCells.set(id, buffer);
-    this.listener?.loadFineCell(paths, points);
+    this.listener?.loadFineCell(id, paths, points);
   }
 
   private unloadCoarseCell(id: S2CellNumber): void {
@@ -488,7 +518,7 @@ export class MapDataService extends Service<EmptyDeps> {
       }
     }
 
-    this.listener?.unloadCoarseCell(paths);
+    this.listener?.unloadCoarseCell(id, paths);
   }
 
   private unloadFineCell(id: S2CellNumber): void {
@@ -530,7 +560,7 @@ export class MapDataService extends Service<EmptyDeps> {
       }
     }
 
-    this.listener?.unloadFineCell(paths, points);
+    this.listener?.unloadFineCell(id, paths, points);
   }
 
   private unloadOverviewCell(id: S2CellNumber): void {
@@ -564,7 +594,7 @@ export class MapDataService extends Service<EmptyDeps> {
       }
     }
 
-    this.listener?.unloadOverviewCell(trails);
+    this.listener?.unloadOverviewCell(id, trails);
   }
 }
 
