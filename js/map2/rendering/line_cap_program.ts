@@ -242,7 +242,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
         // change.
         fragDistanceAlong =
             exp2(floor(2. * log2(halfWorldSize)) / 2.)
-                * (distanceAlong + position.x * dot(direction, direction));
+                * (distanceAlong + position.x * length(direction));
         fragDistanceOrtho = actualRadius;
         fragRadius = radius;
         fragStipple = stipple > 0u ? 0.5 : 1.0;
