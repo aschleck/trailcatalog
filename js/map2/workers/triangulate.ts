@@ -34,10 +34,16 @@ export function triangulateMb(geometry: number[], starts: number[]): Triangles {
       }
       // push on a new exterior ring
       groupedStarts.push([begin]);
-    } else {
+    } else if (groupedStarts.length > 0 && area < 0) {
+      // if we haven't pushed any starts then there's no point making a hole
       groupedStarts[groupedStarts.length - 1].push(begin);
     }
   }
+
+  if (groupedStarts.length === 0) {
+    return {geometry: [], index: []};
+  }
+
   // close the last exterior group
   groupedStarts[groupedStarts.length - 1].push(geometry.length);
 

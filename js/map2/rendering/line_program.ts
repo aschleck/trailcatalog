@@ -211,18 +211,15 @@ export class LineProgram extends Program<LineProgramData> {
     this.bindAttributes(drawable.geometryOffset);
 
     // Draw without the border, always replacing the stencil buffer if we're replacing
-    // TODO(april): migrate this to the depth buffer?
     gl.stencilFunc(gl.GREATER, drawable.z, 0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
 
-    // Don't write to the depth or stencil buffer so we don't block line caps
-    gl.depthMask(false);
+    // Don't write to the stencil buffer so we don't block line caps
     gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
     gl.stencilMask(0xff);
-    gl.depthMask(true);
   }
 
   protected deactivate(): void {

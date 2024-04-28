@@ -103,7 +103,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
           lastTexture = drawStart.texture;
         }
         if (lastZ !== drawStart.z) {
-          gl.uniform1f(this.program.uniforms.z, 1 - drawStart.z / 1000);
+          gl.uniform1f(this.program.uniforms.z, drawStart.z / 1000);
           lastZ = drawStart.z;
         }
 
@@ -139,7 +139,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         lastTexture = drawStart.texture;
       }
       if (lastZ !== drawStart.z) {
-        gl.uniform1f(this.program.uniforms.z, 1 - drawStart.z / 1000);
+        gl.uniform1f(this.program.uniforms.z, drawStart.z / 1000);
         lastZ = drawStart.z;
       }
 

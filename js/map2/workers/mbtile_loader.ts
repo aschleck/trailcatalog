@@ -1,6 +1,7 @@
-import { checkArgument, checkExhaustive, checkExists } from 'js/common/asserts';
+import { checkArgument, checkExhaustive, checkExists, exists } from 'js/common/asserts';
 import { DefaultMap } from 'js/common/collections';
 import { LittleEndianView } from 'js/common/little_endian_view';
+import { clamp } from 'js/common/math';
 
 import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
@@ -621,18 +622,21 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
   const ty = 1 - tile.y / halfWorldSize;
   const increment = 1 / halfWorldSize / extent;
 
-  // TODO(april): cropping is okay but not necessary. And we need to interpolate crop to ensure we
-  // get edges at the border rathern than starting inside the tile as the current crop routine does.
-  // TODO(april): we can fully crop out some features, so we should either remove them here or skip
-  // them later.
-  //
-  // for (const source of [layer.lines, layer.points]) {
-  //   for (const feature of source) {
-  //     const [geometry, starts] = crop(feature.geometry, feature.starts, extent);
-  //     feature.geometry = geometry;
-  //     feature.starts = starts;
-  //   }
-  // }
+   for (const [loop, source] of [
+      [false, layer.lines],
+      [false, layer.points],
+      [true, layer.polygons],
+   ] as const) {
+     for (const feature of source) {
+       const [geometry, starts] = crop(feature.geometry, feature.starts, extent, loop);
+       feature.geometry = geometry;
+       feature.starts = starts;
+     }
+   }
+
+   layer.lines = layer.lines.filter(f => f.geometry.length > 0 && f.starts.length > 0);
+   layer.points = layer.points.filter(f => f.geometry.length > 0 && f.starts.length > 0);
+   layer.polygons = layer.polygons.filter(f => f.geometry.length > 0 && f.starts.length > 0);
 
   for (const source of [layer.lines, layer.points, layer.polygons]) {
     for (const feature of source) {
@@ -645,38 +649,185 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
   }
 }
 
-function crop(geometry: number[], starts: number[], extent: number): [number[], number[]] {
+function crop(geometry: number[], starts: number[], extent: number, loop: boolean):
+    [number[], number[]] {
   const cGeometry = [];
   const cStarts = [];
   for (let i = 0; i < starts.length; ++i) {
-    let start = starts[i];
-    let end = i < starts.length - 1 ? starts[i + 1] : geometry.length;
+    const start = starts[i];
+    const end = i < starts.length - 1 ? starts[i + 1] : geometry.length;
+    cStarts.push(cGeometry.length);
 
-    for (; start < end; start += 2) {
-      if (
-          (geometry[start + 0] >= 0 && geometry[start + 0] < extent)
-              && (geometry[start + 1] >= 0 && geometry[start + 1] < extent)) {
-        break;
+    let everInside = false;
+    let outside = true;
+    let lastPushedX = undefined;
+    let lastPushedY = undefined;
+    for (let i = start; i < end; i += 2) {
+      const px = geometry[i + 0];
+      const py = geometry[i + 1];
+
+      if ((px >= 0 && px < extent) && (py >= 0 && py < extent)) {
+        everInside = true;
+        if (i > start && outside) {
+          const lx = geometry[i - 2 + 0];
+          const ly = geometry[i - 2 + 1];
+          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          if (ix !== lastPushedX || iy !== lastPushedY) {
+            cGeometry.push(ix, iy);
+            lastPushedX = ix;
+            lastPushedY = iy;
+          }
+        }
+
+        if (px !== lastPushedX || py !== lastPushedY) {
+          cGeometry.push(px, py);
+          lastPushedX = px;
+          lastPushedY = py;
+        }
+        outside = false;
+      } else {
+        if (i > start) {
+          const lx = geometry[i - 2 + 0];
+          const ly = geometry[i - 2 + 1];
+
+          if (outside) {
+            const intersections =
+                intersectInfiniteTile(lx, ly, px, py, extent)
+                    .map(([x, y]) => [clamp(x, 0, extent), clamp(y, 0, extent)]);
+            for (const [ix, iy] of intersections) {
+              if (ix !== lastPushedX || iy !== lastPushedY) {
+                cGeometry.push(ix, iy);
+                lastPushedX = ix;
+                lastPushedY = iy;
+              }
+            }
+          } else {
+            const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+            if (ix !== lastPushedX || iy !== lastPushedY) {
+              cGeometry.push(ix, iy);
+              lastPushedX = ix;
+              lastPushedY = iy;
+            }
+          }
+        }
+
+        outside = true;
       }
     }
 
-    for (; end > start; end -= 2) {
-      if (
-          (geometry[end - 2] >= 0 && geometry[end - 2] < extent)
-              && (geometry[end - 1] >= 0 && geometry[end - 1] < extent)) {
-        break;
+    // Also check for intersections on the way back to the start point
+    if (loop) {
+      const px = geometry[start + 0];
+      const py = geometry[start + 1];
+
+      if ((px >= 0 && px < extent) && (py >= 0 && py < extent)) {
+        everInside = true;
+        if (outside) {
+          const lx = geometry[end - 2 + 0];
+          const ly = geometry[end - 2 + 1];
+          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          if (ix !== lastPushedX || iy !== lastPushedY) {
+            cGeometry.push(ix, iy);
+          }
+        }
+      } else {
+        const lx = geometry[end - 2 + 0];
+        const ly = geometry[end - 2 + 1];
+
+        if (outside) {
+          const intersections =
+              intersectInfiniteTile(lx, ly, px, py, extent)
+                  .map(([x, y]) => [clamp(x, 0, extent), clamp(y, 0, extent)]);
+          for (const [ix, iy] of intersections) {
+            if (ix !== lastPushedX || iy !== lastPushedY) {
+              cGeometry.push(ix, iy);
+              lastPushedX = ix;
+              lastPushedY = iy;
+            }
+          }
+        } else {
+          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          if (ix !== lastPushedX || iy !== lastPushedY) {
+            cGeometry.push(ix, iy);
+            lastPushedX = ix;
+            lastPushedY = iy;
+          }
+        }
       }
     }
 
-    if (start < end) {
-      cStarts.push(cGeometry.length);
-      for (let j = start; j < end; j++) {
-        cGeometry.push(geometry[j]);
-      }
+    // Check if we failed to push any geometry and skip it if so.
+    if ((!everInside && !loop) || cStarts[cStarts.length - 1] === cGeometry.length) {
+      cGeometry.length = checkExists(cStarts.pop());
     }
   }
 
   return [cGeometry, cStarts];
+}
+
+function intersectFiniteTile(
+    x1: number, y1: number, x2: number, y2: number, extent: number): Vec2|undefined {
+  const l = intersectSegments(x1, y1, x2, y2, 0, 0, 0, extent);
+  if (l) {
+    return [l[1], l[2]];
+  }
+  const t = intersectSegments(x1, y1, x2, y2, 0, extent, extent, extent);
+  if (t) {
+    return [t[1], t[2]];
+  }
+  const r = intersectSegments(x1, y1, x2, y2, extent, extent, extent, 0);
+  if (r) {
+    return [r[1], r[2]];
+  }
+  const b = intersectSegments(x1, y1, x2, y2, extent, 0, 0, 0);
+  if (b) {
+    return [b[1], b[2]];
+  }
+  return undefined;
+}
+
+function intersectInfiniteTile(
+    x1: number, y1: number, x2: number, y2: number, extent: number): Vec2[] {
+  const huge = 1024 * extent;
+
+  const points = [
+    intersectSegments(x1, y1, x2, y2, -huge, 0, huge, 0),
+    intersectSegments(x1, y1, x2, y2, extent, -huge, extent, huge),
+    intersectSegments(x1, y1, x2, y2, huge, extent, -huge, extent),
+    intersectSegments(x1, y1, x2, y2, 0, huge, 0, -huge),
+  ];
+  // sort by t value
+  return points.filter(exists).sort((a, b) => a[0] - b[0]).map(([t, x, y]) => [x, y]);
+}
+
+function intersectSegments(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    x3: number,
+    y3: number,
+    x4: number,
+    y4: number): [t: number, x: number, y: number]|undefined {
+  const tn = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4);
+  const td = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (td === 0) {
+    return undefined;
+  }
+  const t = tn / td;
+
+  const un = (x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3);
+  const ud = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (ud === 0) {
+    return undefined;
+  }
+  const u = -un / ud;
+
+  if (0 <= t && t <= 1 && 0 <= u && u <= 1) {
+    return [t, x1 + t * (x2 - x1), y1 + t * (y2 - y1)];
+  } else {
+    return undefined;
+  }
 }
 
 function deZigZag(u: number): number {

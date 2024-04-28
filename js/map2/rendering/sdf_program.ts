@@ -115,7 +115,6 @@ export class SdfProgram extends Program<SdfProgramData> {
   protected activate(): void {
     const gl = this.gl;
 
-    gl.disable(gl.DEPTH_TEST);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(this.program.uniforms.color, 0);
 
@@ -248,8 +247,6 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.fill, 0);
     gl.disableVertexAttribArray(this.program.attributes.stroke);
     gl.vertexAttribDivisor(this.program.attributes.stroke, 0);
-
-    gl.enable(gl.DEPTH_TEST);
   }
 }
 
