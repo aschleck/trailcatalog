@@ -369,6 +369,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     const height = this.screenArea.height;
     this.canvas.width = width * DPI;
     this.canvas.height = height * DPI;
+    this.canvas.style.width = `${width}px`;
+    this.canvas.style.height = `${height}px`;
     this.area = [width, height];
     this.renderer.resize([width * DPI, height * DPI]);
     this.nextRender = RenderType.CameraChange;
