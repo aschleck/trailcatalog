@@ -23,7 +23,7 @@ class FakeMemoized<T> {
 }
 
 export function maybeMemoized<T>(fn: () => T): {value: T} {
-  if (globalThis.window) {
+  if (globalThis.window && !('SERVER_SIDE_RENDER' in globalThis.window)) {
     return new Memoized<T>(fn);
   } else {
     return new FakeMemoized<T>(fn);

@@ -8,6 +8,7 @@ import { ACTION } from 'js/emu/events';
 import { LatLngRect, Vec2 } from 'js/map2/common/types';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map2/events';
 import { MapElement } from 'js/map2/map_element';
+import { getUnitSystem } from 'js/server/ssr_aware';
 
 import { HOVER_CHANGED, SELECTION_CHANGED } from './map/events';
 import { Trail, TrailSearchResult } from './models/types';
@@ -64,6 +65,7 @@ export function SearchResultsOverviewElement(
       boundary,
       boundaryId,
       filterInBoundary: !!boundary,
+      layers: [],
       mobileSidebarOpen: false,
       searchQuery: query,
       searchTrails,
@@ -102,7 +104,7 @@ function Loading({boundaryId, query, state, updateState}: {
     <div
         js={corgi.bind({
           controller: LoadingController,
-          args: {boundaryId, query},
+          args: {boundaryId, query, units: getUnitSystem()},
           events: {
             render: 'wakeup',
           },
@@ -208,6 +210,7 @@ function Content({
               polygon: state.boundary?.polygon,
             },
             query,
+            units: getUnitSystem(),
           },
           events: {
             corgi: [

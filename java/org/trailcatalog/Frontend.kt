@@ -59,10 +59,6 @@ private data class WireTrail(
 )
 
 private fun fetchData(ctx: Context) {
-  if (addETagAndCheckCached(ctx)) {
-    return
-  }
-
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyInputStream())
   val keys = request.get("keys").elements()

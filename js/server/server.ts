@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import fetch from 'node-fetch';
 import { fastifyRequestContextPlugin, requestContext } from '@fastify/request-context';
@@ -92,7 +93,6 @@ export async function serve(
     });
     app({}, undefined, () => {});
 
-    let etag: string|null|undefined;
     let responseData: unknown[];
     if (requestedData.length > 0) {
       const response = await fetch('http://127.0.0.1:7070/api/data', {
@@ -112,7 +112,6 @@ export async function serve(
         reply.send(response.statusText);
       }
 
-      etag = response.headers.get('ETag');
       responseData = (await response.json() as {values: unknown[]}).values;
     } else {
       responseData = [];
@@ -135,20 +134,26 @@ export async function serve(
     }
 
     reply.type('text/html').code(200);
-    if (etag) {
-      reply.header('ETag', etag);
-    }
 
     const data = {
       keys: requestedData,
       values: responseData,
     };
     const escapedData = JSON.stringify(data).replace(/\//g, '\\/');
-    reply.send(
+    const result =
         page(
             render(content),
             renderText(requestContext.get('title') ?? defaultTitle),
-            escapedData));
+            escapedData);
+
+    const ifNoneMatch = request.headers['if-none-match'];
+    const etag = '"' + crypto.createHash('md5').update(result).digest('base64') + '"';
+    if (ifNoneMatch === etag || ifNoneMatch === `W/${etag}`) {
+      reply.code(304);
+    }
+
+    reply.header('ETag', etag);
+    reply.send(result);
   });
 
   server.listen({ port }, (err, address) => {

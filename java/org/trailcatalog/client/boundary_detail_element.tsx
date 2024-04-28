@@ -5,6 +5,7 @@ import { ACTION } from 'js/emu/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 import { CLICKED, ZOOMED } from 'js/map2/events';
 import { MapElement } from 'js/map2/map_element';
+import { getUnitSystem } from 'js/server/ssr_aware';
 
 import { formatCount, formatDistance, formatHeight } from './common/formatters';
 import { SELECTION_CHANGED } from './map/events';
@@ -44,6 +45,7 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
       boundary,
       boundaryId,
       containingBoundaries,
+      layers: [],
       selected: [],
       selectedCardPosition: [-1, -1],
 			trailsInBoundary,
@@ -111,6 +113,7 @@ function Content({boundaryId, state, updateState}: {
           key: JSON.stringify(boundaryId),
           args: {
             overlays: {polygon: boundary.polygon},
+            units: getUnitSystem(),
           },
           events: {
             corgi: [

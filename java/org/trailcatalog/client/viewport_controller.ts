@@ -5,10 +5,12 @@ import { ViewsService } from 'js/corgi/history/views_service';
 import { emptyPixelRect } from 'js/map/common/types';
 import { rgbaToUint32 } from 'js/map2/common/math';
 import { RgbaU32, Vec2 } from 'js/map2/common/types';
+import { Layer } from 'js/map2/layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map2/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
 import { MapController } from 'js/map2/map_controller';
 import { Z_BASE_TERRAIN } from 'js/map2/z';
+import { UnitSystem } from 'js/server/ssr_aware';
 
 import { MapDataService } from './data/map_data_service';
 import { ACTIVE_PALETTE, ERROR_PALETTE, LinePalette } from './map/colors';
@@ -25,9 +27,17 @@ export interface Args {
   };
   filters?: Filters;
   overlays?: Overlays;
+  units: UnitSystem;
+}
+
+export interface LayerState {
+  name: string;
+  enabled: boolean;
+  layer: Layer;
 }
 
 export interface State {
+  layers: LayerState[];
   selected: Array<Path|Point|Trail>;
   selectedCardPosition: Vec2;
 }
@@ -92,9 +102,8 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           this.mapController.renderer,
       ),
     }, {
-      // TODO(april): allow toggling feet to meters and back
-      name: 'Contours (feet)',
-      enabled: true,
+      name: 'Contours (imperial)',
+      enabled: response.args.units === 'imperial',
       layer: new MbtileLayer(
           [{
             long: 'Contains modified Copernicus Sentinel data 2021',
@@ -110,8 +119,8 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           this.mapController.renderer,
       ),
     }, {
-      name: 'Contours (meters)',
-      enabled: false,
+      name: 'Contours (metric)',
+      enabled: response.args.units === 'metric',
       layer: new MbtileLayer(
           [{
             long: 'Contains modified Copernicus Sentinel data 2021',
@@ -227,6 +236,29 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
   updateArgs(newArgs: Args): void {
     this.mapData.setFilters(newArgs.filters ?? {});
     this.overlayData.setOverlay(newArgs.overlays ?? {});
+
+    const newLayers = [];
+    for (const layer of this.state.layers) {
+      if (layer.name === `Contours (${newArgs.units})`) {
+        newLayers.push({
+          ...layer,
+          enabled: true,
+        });
+      } else if (layer.name.startsWith('Contours ')) {
+        newLayers.push({
+          ...layer,
+          enabled: false,
+        });
+      } else {
+        newLayers.push(layer);
+      }
+    }
+
+    this.updateState({
+      ...this.state,
+      layers: newLayers,
+    });
+    this.mapController.setLayers(newLayers.filter(l => l.enabled).map(l => l.layer));
   }
 
   highlightTrail(e: MouseEvent): void {}

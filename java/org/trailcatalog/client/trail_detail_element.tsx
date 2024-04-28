@@ -6,6 +6,7 @@ import { ACTION } from 'js/emu/events';
 import { LatLng } from 'js/map2/common/types';
 import { CLICKED, ZOOMED } from 'js/map2/events';
 import { MapElement } from 'js/map2/map_element';
+import { getUnitSystem } from 'js/server/ssr_aware';
 
 import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
 import { metersToFeet, metersToMiles } from './common/math';
@@ -51,6 +52,7 @@ export function TrailDetailElement({trailId, parameters}: {
     state = {
       containingBoundaries,
       epochDate: rawEpoch ? new Date(rawEpoch.timestampS * 1000) : undefined,
+      layers: [],
       pathProfiles,
       selected: [],
       selectedCardPosition: [-1, -1],
@@ -114,7 +116,7 @@ function Content({trailId, state, updateState}: {
 
   let bear;
   if (state.elevation?.cursor) {
-    bear = [state.elevation.cursor.lat, state.elevation.cursor.lng];
+    bear = [state.elevation.cursor.lat, state.elevation.cursor.lng] as const as LatLng;
   } else {
     bear = undefined;
   }
@@ -129,6 +131,7 @@ function Content({trailId, state, updateState}: {
             overlays: {
               bear,
             },
+            units: getUnitSystem(),
           },
           events: {
             corgi: [
