@@ -238,13 +238,22 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
     this.overlayData.setOverlay(newArgs.overlays ?? {});
 
     const newLayers = [];
+    let changed = false;
     for (const layer of this.state.layers) {
       if (layer.name === `Contours (${newArgs.units})`) {
+        if (!layer.enabled) {
+          changed = true;
+        }
+
         newLayers.push({
           ...layer,
           enabled: true,
         });
       } else if (layer.name.startsWith('Contours ')) {
+        if (layer.enabled) {
+          changed = true;
+        }
+
         newLayers.push({
           ...layer,
           enabled: false,
@@ -254,11 +263,13 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       }
     }
 
-    this.updateState({
-      ...this.state,
-      layers: newLayers,
-    });
-    this.mapController.setLayers(newLayers.filter(l => l.enabled).map(l => l.layer));
+    if (changed) {
+      this.updateState({
+        ...this.state,
+        layers: newLayers,
+      });
+      this.mapController.setLayers(newLayers.filter(l => l.enabled).map(l => l.layer));
+    }
   }
 
   highlightTrail(e: MouseEvent): void {}
