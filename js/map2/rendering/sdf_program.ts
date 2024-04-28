@@ -220,7 +220,7 @@ export class SdfProgram extends Program<SdfProgramData> {
     const gl = this.gl;
     this.bindAttributes(drawable.geometryOffset);
 
-    gl.uniform1f(this.program.uniforms.halo, 0.4);
+    gl.uniform1f(this.program.uniforms.halo, 0.35);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
     gl.uniform1f(this.program.uniforms.halo, 0.75);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);

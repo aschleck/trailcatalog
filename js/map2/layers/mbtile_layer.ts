@@ -493,7 +493,7 @@ export const NATURE: Readonly<Style> = {
           ],
           textFill: 0x007D25FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.4,
+          textScale: 0.45,
           z: Z_OVERLAY_TEXT + 0.1,
         },
       ],
