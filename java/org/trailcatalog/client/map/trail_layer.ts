@@ -230,8 +230,7 @@ export class TrailLayer extends Layer implements Listener {
     for (const source of [
       new Map([['', this.interactivePlan]]),
       this.overviewPlans,
-      this.coarsePlans,
-      this.finePlans,
+      this.camera.zoom >= FINE_ZOOM_THRESHOLD ? this.finePlans : this.coarsePlans,
     ]) {
       for (const {paths, pinsLabeled, pinsUnlabeled, points} of source.values()) {
         if (this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
