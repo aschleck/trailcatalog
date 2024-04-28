@@ -384,7 +384,9 @@ export class TrailLayer extends Layer implements Listener {
     this.interactivePlan.points.length = 0;
     let offset = 0;
 
-    for (const source of [this.active, this.hovering]) {
+    // Order matters here! We want to draw active things *before* hovered things because they draw
+    // at the same Z and the first thing drawn will win.
+    for (const source of [this.hovering, this.active]) {
       for (const [id, palette] of source) {
         const path = this.dataService.getPath(id);
         if (path) {
