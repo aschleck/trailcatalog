@@ -26,7 +26,7 @@ export const BOUNDARY_HEX_PALETTE = {
 
 export const DEFAULT_PALETTE = {
   fill: rgbaToUint32(0, 0, 0, 1),
-  stroke: rgbaToUint32(1, 1, 1, 1),
+  stroke: rgbaToUint32(1, 1, 1, 0),
 } as const;
 export const DEFAULT_HEX_PALETTE = {
   fill: rgbaU32ToHex(DEFAULT_PALETTE.fill),

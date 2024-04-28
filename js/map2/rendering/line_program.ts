@@ -212,17 +212,17 @@ export class LineProgram extends Program<LineProgramData> {
 
     // Draw without the border, always replacing the stencil buffer if we're replacing
     // TODO(april): migrate this to the depth buffer?
-    gl.stencilFunc(gl.NOTEQUAL, drawable.z, 0xff);
-    gl.stencilMask(drawable.z);
+    gl.stencilFunc(gl.GREATER, drawable.z, 0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
 
-    // Draw with the border only where we didn't already draw
-    gl.stencilFunc(gl.NOTEQUAL, drawable.z, 0xff);
-    // Don't write to the stencil buffer so we don't overlap other lines
-    //gl.stencilMask(0x00);
+    // Don't write to the depth or stencil buffer so we don't block line caps
+    gl.depthMask(false);
+    gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
+    gl.stencilMask(0xff);
+    gl.depthMask(true);
   }
 
   protected deactivate(): void {
@@ -350,7 +350,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
             smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 1. - fragRadius, 0., 1.));
 
         lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
-        lowp float stipple = fract(fragDistanceAlong / 8.) < fragStipple ? 1. : 0.;
+        lowp float stipple = fract(fragDistanceAlong / 8.) <= fragStipple ? 1. : 0.;
         fragColor = stipple * vec4(color.rgb * color.a, color.a) * a;
       }
   `;
