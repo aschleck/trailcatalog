@@ -120,8 +120,6 @@ export class LineProgram extends Program<LineProgramData> {
 
   protected activate(): void {
     const gl = this.gl;
-    gl.clear(gl.STENCIL_BUFFER_BIT);
-    gl.enable(gl.STENCIL_TEST);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
     gl.enableVertexAttribArray(this.program.attributes.position);
@@ -210,16 +208,15 @@ export class LineProgram extends Program<LineProgramData> {
     const gl = this.gl;
     this.bindAttributes(drawable.geometryOffset);
 
-    // Draw without the border, always replacing the stencil buffer if we're replacing
-    gl.stencilFunc(gl.GREATER, drawable.z, 0xff);
-    gl.stencilMask(0xff);
+    // Draw without the border
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
 
-    // Don't write to the stencil buffer so we don't block line caps
-    gl.stencilMask(0x00);
+    // Lower the z slightly so we draw under fill
+    gl.uniform1f(this.program.uniforms.z, (drawable.z - 0.1) / 1000);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
+    gl.uniform1f(this.program.uniforms.z, drawable.z / 1000);
   }
 
   protected deactivate(): void {
@@ -241,7 +238,6 @@ export class LineProgram extends Program<LineProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.radius);
     gl.vertexAttribDivisor(this.program.attributes.stipple, 0);
     gl.disableVertexAttribArray(this.program.attributes.stipple);
-    gl.disable(gl.STENCIL_TEST);
   }
 }
 

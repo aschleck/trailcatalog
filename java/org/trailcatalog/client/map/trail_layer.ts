@@ -412,9 +412,8 @@ export class TrailLayer extends Layer implements Listener {
     this.interactivePlan.points.length = 0;
     let offset = 0;
 
-    // Order matters here! We want to draw active things *before* hovered things because they draw
-    // at the same Z and the first thing drawn will win.
-    for (const source of [this.hovering, this.active]) {
+    // Order matters here! We want to draw hovered things above active things so we draw them after.
+    for (const source of [this.active, this.hovering]) {
       for (const [id, palette] of source) {
         const path = this.dataService.getPath(id);
         if (path) {
@@ -495,7 +494,7 @@ export class TrailLayer extends Layer implements Listener {
                     /* angle= */ 0,
                     palette.raw.stroke,
                     palette.raw.fill,
-                    Z_RAISED_TRAIL_MARKER + 0.1,
+                    Z_RAISED_TRAIL_MARKER,
                     buffer,
                     offset,
                     this.interactivePlan.buffer,
@@ -520,6 +519,17 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   loadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void {
+    for (const trail of trails) {
+      const {value, unit} = formatDistance(trail.lengthMeters);
+      const text = `${value} ${unit}`;
+      const graphemes = toGraphemes(text);
+      if (!GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE)) {
+        // yolo!
+        setTimeout(() => { this.loadOverviewCell(id, trails); });
+        return;
+      }
+    }
+
     const buffer = new ArrayBuffer(1024 * 1024 * 1024);
     const pinsLabeled = [];
     const pinsUnlabeled = [];
@@ -545,16 +555,12 @@ export class TrailLayer extends Layer implements Listener {
       }, trail.mouseBound);
     }
 
+    let zEpsilon = 0;
     for (const trail of trails) {
       const {value, unit} = formatDistance(trail.lengthMeters);
       const text = `${value} ${unit}`;
       const graphemes = toGraphemes(text);
-      // TODO(april): if the glyphs aren't loaded then we cache a broken tile...
-      const textSize = GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE);
-      if (!textSize) {
-        continue;
-      }
-
+      const textSize = checkExists(GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE));
       const pinSize = this.pinRenderer.measureLabeledPin(textSize);
 
       const pin = {
@@ -567,7 +573,7 @@ export class TrailLayer extends Layer implements Listener {
           this.pinRenderer.planPin(
               pin,
               trail.markerPx,
-              Z_TRAIL_MARKER,
+              Z_TRAIL_MARKER + zEpsilon,
               buffer,
               offset,
               glBuffer);
@@ -585,7 +591,7 @@ export class TrailLayer extends Layer implements Listener {
                 /* angle= */ 0,
                 DEFAULT_PALETTE.stroke,
                 DEFAULT_PALETTE.fill,
-                Z_TRAIL_MARKER + 0.1,
+                Z_TRAIL_MARKER + zEpsilon + 0.0000001,
                 buffer,
                 offset,
                 glBuffer,
@@ -593,6 +599,8 @@ export class TrailLayer extends Layer implements Listener {
         pinsLabeled.push(...drawables);
         offset += byteSize;
       }
+
+      zEpsilon += 0.0000002;
 
       const halfDetailWidth = pinSize[0] / 2;
       this.coarseBounds.insert({

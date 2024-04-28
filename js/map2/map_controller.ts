@@ -90,7 +90,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         new Renderer(checkExists(this.canvas.getContext('webgl2', {
           antialias: false,
           premultipliedAlpha: true,
-          stencil: true,
         })));
     this.registerDisposable(this.renderer);
 

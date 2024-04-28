@@ -1,6 +1,6 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import * as arrays from 'js/common/arrays';
-import { checkExhaustive } from 'js/common/asserts';
+import { checkExhaustive, checkExists } from 'js/common/asserts';
 import { HashMap, HashSet } from 'js/common/collections';
 import { QueuedWorkerPool, Task } from 'js/common/queued_worker_pool';
 import { WorkerPool } from 'js/common/worker_pool';
@@ -997,6 +997,14 @@ export class MbtileLayer extends Layer {
   }
 
   private loadProcessedTile(response: LoadResponse): void {
+    for (const label of response.labels) {
+      if (!GLYPHER.measurePx(label.graphemes, label.scale)) {
+        // yolo!
+        setTimeout(() => { this.loadProcessedTile(response); });
+        return;
+      }
+    }
+
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
     this.renderer.uploadData(response.geometry, response.geometry.byteLength, geometry);
@@ -1006,12 +1014,7 @@ export class MbtileLayer extends Layer {
     const labels = [];
     const padding = 2;
     for (const label of response.labels) {
-      const textSize = GLYPHER.measurePx(label.graphemes, label.scale);
-      // If the glyphs aren't loaded then we cache a broken tile...
-      if (!textSize) {
-        continue;
-      }
-      const [wr, hr] = textSize;
+      const [wr, hr] = checkExists(GLYPHER.measurePx(label.graphemes, label.scale));
       const sin = Math.sin(label.angle);
       const cos = Math.cos(label.angle);
       // TODO(april): this isn't quite right. I think you can rotate the top right corner in such a
