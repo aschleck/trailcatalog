@@ -126,6 +126,7 @@ export class LineCapProgram extends Program<LineCapProgramData> {
 
     // Draw without the border, always replacing the stencil buffer if we're replacing
     gl.stencilFunc(gl.GREATER, drawable.z, 0xff);
+    gl.stencilMask(0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.uniform1ui(this.program.uniforms.side, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, CIRCLE_VERTEX_COUNT, drawable.instanced.count);
@@ -138,7 +139,6 @@ export class LineCapProgram extends Program<LineCapProgramData> {
     gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, CIRCLE_VERTEX_COUNT, drawable.instanced.count);
     gl.uniform1ui(this.program.uniforms.side, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, CIRCLE_VERTEX_COUNT, drawable.instanced.count);
-    gl.stencilMask(0xff);
   }
 
   protected deactivate(): void {

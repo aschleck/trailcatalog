@@ -212,6 +212,7 @@ export class LineProgram extends Program<LineProgramData> {
 
     // Draw without the border, always replacing the stencil buffer if we're replacing
     gl.stencilFunc(gl.GREATER, drawable.z, 0xff);
+    gl.stencilMask(0xff);
     gl.uniform1i(this.program.uniforms.renderBorder, 0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
 
@@ -219,7 +220,6 @@ export class LineProgram extends Program<LineProgramData> {
     gl.stencilMask(0x00);
     gl.uniform1i(this.program.uniforms.renderBorder, 1);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
-    gl.stencilMask(0xff);
   }
 
   protected deactivate(): void {

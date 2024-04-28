@@ -64,7 +64,7 @@ class Glypher {
     }
   }
 
-  measurePx(graphemes: string[], scale: number): Vec2 {
+  measurePx(graphemes: string[], scale: number): Vec2|undefined {
     let regenerate = false;
     let lineWidth = 0;
     let yHeight = 0;
@@ -93,6 +93,7 @@ class Glypher {
 
     if (regenerate) {
       this.regenerator.trigger();
+      return undefined;
     }
 
     return [xWidth, yHeight];

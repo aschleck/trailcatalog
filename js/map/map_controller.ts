@@ -11,7 +11,6 @@ import { LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
 import { Camera } from './models/camera';
 import { Renderer } from './rendering/renderer';
 import { RenderPlanner } from './rendering/render_planner';
-import { TextRenderer } from './rendering/text_renderer';
 
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from './events';
 import { Layer } from './layer';
@@ -33,7 +32,6 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
   readonly renderPlanner: RenderPlanner;
 
   private layers: Layer[];
-  readonly textRenderer: TextRenderer;
 
   private isIdle: boolean;
   private screenArea: DOMRect;
@@ -67,7 +65,6 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
         })));
     this.renderPlanner = RenderPlanner.createPlannerAndPrograms(this.renderer);
 
-    this.textRenderer = new TextRenderer(this.renderer);
     this.layers = [];
 
     this.isIdle = true;
@@ -275,7 +272,6 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
     if (this.nextRender >= RenderType.CameraChange) {
       if (this.nextRender >= RenderType.DataChange) {
         this.renderPlanner.baker.clear();
-        this.textRenderer.mark();
 
         const size: Vec2 = [this.canvas.width / DPI, this.canvas.height / DPI];
         const zoom = this.camera.zoom;
@@ -284,7 +280,6 @@ export class MapController extends Controller<Args, EmptyDeps, HTMLDivElement, u
         }
 
         this.renderPlanner.upload();
-        this.textRenderer.sweep();
         this.lastRenderPlan = Date.now();
       }
       this.renderPlanner.render(this.area, this.camera);

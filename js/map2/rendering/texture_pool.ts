@@ -9,6 +9,12 @@ export class TexturePool extends Disposable {
   constructor(private readonly renderer: Renderer) {
     super();
     this.free = [];
+
+    this.registerDisposer(() => {
+      for (const texture of this.free) {
+        this.renderer.deleteTexture(texture);
+      }
+    });
   }
 
   acquire(): WebGLTexture {

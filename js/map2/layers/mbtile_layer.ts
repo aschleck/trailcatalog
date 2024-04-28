@@ -1006,7 +1006,12 @@ export class MbtileLayer extends Layer {
     const labels = [];
     const padding = 2;
     for (const label of response.labels) {
-      const [wr, hr] = GLYPHER.measurePx(label.graphemes, label.scale);
+      const textSize = GLYPHER.measurePx(label.graphemes, label.scale);
+      // If the glyphs aren't loaded then we cache a broken tile...
+      if (!textSize) {
+        continue;
+      }
+      const [wr, hr] = textSize;
       const sin = Math.sin(label.angle);
       const cos = Math.cos(label.angle);
       // TODO(april): this isn't quite right. I think you can rotate the top right corner in such a

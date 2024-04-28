@@ -3,12 +3,12 @@ import { S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive, checkExists } from 'js/common/asserts';
 import { LittleEndianView } from 'js/common/little_endian_view';
-import { RenderableDiamond } from 'js/map/rendering/text_renderer';
 import { Camera, projectLatLngRect, projectS2LatLng } from 'js/map2/camera';
 import { WorldBoundsQuadtree } from 'js/map2/common/bounds_quadtree';
 import { DPI } from 'js/map2/common/dpi';
 import { LatLng, RgbaU32, Vec2, Vec4 } from 'js/map2/common/types';
 import { EventSource, Layer } from 'js/map2/layer';
+import { GLYPHER, toGraphemes } from 'js/map2/rendering/glypher';
 import { Planner } from 'js/map2/rendering/planner';
 import { Drawable } from 'js/map2/rendering/program';
 import { Renderer } from 'js/map2/rendering/renderer';
@@ -23,6 +23,7 @@ import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../work
 
 import { DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, LinePalette } from './colors';
 import { HOVER_CHANGED, SELECTION_CHANGED } from './events';
+import { PinRenderer } from './pin_renderer';
 
 export interface Filters {
   trail?: (id: bigint) => boolean;
@@ -70,6 +71,7 @@ const Z_TRAIL_MARKER = 113;
 const Z_RAISED_TRAIL_MARKER = 114;
 const PATH_RADIUS_PX = 1.5;
 const RAISED_PATH_RADIUS_PX = 4;
+const TRAIL_MARKER_TEXT_SCALE = 0.5;
 
 interface PathHandle {
   readonly entity: Path;
@@ -92,14 +94,19 @@ type Handle = PathHandle|PointHandle|TrailHandle;
 interface CellPlan {
   buffer: WebGLBuffer;
   paths: Drawable[];
+  pinsLabeled: Drawable[];
+  pinsUnlabeled: Drawable[];
   points: Drawable[];
 }
 
 const RENDER_POINT_ZOOM_THRESHOLD = 14;
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 
-//const TRAIL_DIAMOND_REGULAR =
-//    renderableDiamond(DEFAULT_HEX_PALETTE.fill, DEFAULT_HEX_PALETTE.stroke);
+const UNLABELED_PIN_REGULAR = {
+  textSize: [0, 0] as const,
+  fillColor: DEFAULT_HEX_PALETTE.fill,
+  strokeColor: '#ffffffff',
+};
 
 // 35px is a larger than the full height of a trail marker (full not half
 // because they are not centered vertically.)
@@ -116,9 +123,10 @@ export class TrailLayer extends Layer implements Listener {
   private readonly coarsePlans: Map<S2CellNumber, CellPlan>;
   private readonly finePlans: Map<S2CellNumber, CellPlan>;
   private readonly interactivePlan: CellPlan;
-  //private readonly diamondPixelBounds: Vec4;
+  private readonly pinPixelBounds: Vec4;
   private readonly active: Map<bigint, LinePalette>;
   private readonly hovering: Map<bigint, LinePalette>;
+  private readonly pinRenderer: PinRenderer;
   private readonly pointsAtlas: WebGLTexture;
   private generation: number;
   private lastGeneration: number;
@@ -140,6 +148,8 @@ export class TrailLayer extends Layer implements Listener {
     this.interactivePlan = {
       buffer: this.renderer.createDataBuffer(0),
       paths: [],
+      pinsLabeled: [],
+      pinsUnlabeled: [],
       points: [],
     };
     this.registerDisposer(() => {
@@ -153,18 +163,20 @@ export class TrailLayer extends Layer implements Listener {
     });
     this.active = new Map();
     this.hovering = new Map();
+    this.pinRenderer = new PinRenderer(renderer);
+    this.registerDisposable(this.pinRenderer);
     // Why don't we need to dispose?
     this.pointsAtlas = new TexturePool(renderer).acquire();
 
-    //const diamondPixelSize = this.textRenderer.measureDiamond();
-    //const halfDiamondWidth = diamondPixelSize[0] / 2;
-    //const halfDiamondHeight = diamondPixelSize[1] / 2;
-    //this.diamondPixelBounds = [
-    //  -halfDiamondWidth,
-    //  -halfDiamondHeight,
-    //  halfDiamondWidth,
-    //  halfDiamondHeight,
-    //];
+    const pinPixelSize = this.pinRenderer.measureUnlabeledPin();
+    const halfPinWidth = pinPixelSize[0] / 2;
+    const halfPinHeight = pinPixelSize[1] / 2;
+    this.pinPixelBounds = [
+      -halfPinWidth,
+      -halfPinHeight,
+      halfPinWidth,
+      halfPinHeight,
+    ];
 
     this.generation = -1;
     this.lastGeneration = -1;
@@ -213,12 +225,27 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   override render(planner: Planner): void {
-    for (const source of [this.overviewPlans, this.coarsePlans, this.finePlans]) {
-      for (const {paths, points} of source.values()) {
-        planner.add(paths);
+    // TODO(april): we don't mark and sweep the pin renderer and it's not clear how we would
+
+    for (const source of [
+      new Map([['', this.interactivePlan]]),
+      this.overviewPlans,
+      this.coarsePlans,
+      this.finePlans,
+    ]) {
+      for (const {paths, pinsLabeled, pinsUnlabeled, points} of source.values()) {
+        if (this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
+          planner.add(paths);
+        }
 
         if (this.camera.zoom >= RENDER_POINT_ZOOM_THRESHOLD) {
           planner.add(points);
+        }
+
+        if (this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
+          planner.add(pinsLabeled);
+        } else {
+          planner.add(pinsUnlabeled);
         }
       }
     }
@@ -297,22 +324,22 @@ export class TrailLayer extends Layer implements Listener {
 
         const trailHandle = handle as TrailHandle;
         const p = trailHandle.markerPx;
-        //const bound =
-        //    this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD
-        //        ? trailHandle.screenPixelBound : this.diamondPixelBounds;
-        //const lowX = p[0] + bound[0] * screenToWorldPx;
-        //const lowY = p[1] + bound[1] * screenToWorldPx;
-        //const highX = p[0] + bound[2] * screenToWorldPx;
-        //const highY = p[1] + bound[3] * screenToWorldPx;
-        //if (lowX <= point[0]
-        //    && point[0] <= highX
-        //    && lowY <= point[1]
-        //    && point[1] <= highY) {
-        //  // Labels can overlap each other, so we pick the one most centered
-        //  const dx = highX / 2 + lowX / 2 - point[0];
-        //  const dy = highY / 2 + lowY / 2 - point[1];
-        //  d2 = (dx * dx + dy * dy) / trailBias2;
-        //}
+        const bound =
+            this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD
+                ? trailHandle.screenPixelBound : this.pinPixelBounds;
+        const lowX = p[0] + bound[0] * screenToWorldPx;
+        const lowY = p[1] + bound[1] * screenToWorldPx;
+        const highX = p[0] + bound[2] * screenToWorldPx;
+        const highY = p[1] + bound[3] * screenToWorldPx;
+        if (lowX <= point[0]
+            && point[0] <= highX
+            && lowY <= point[1]
+            && point[1] <= highY) {
+          // Labels can overlap each other, so we pick the one most centered
+          const dx = highX / 2 + lowX / 2 - point[0];
+          const dy = highY / 2 + lowY / 2 - point[1];
+          d2 = (dx * dx + dy * dy) / trailBias2;
+        }
       } else {
         continue;
       }
@@ -381,6 +408,8 @@ export class TrailLayer extends Layer implements Listener {
   private updateInteractive(): void {
     const buffer = new ArrayBuffer(1024 * 1024 * 1024);
     this.interactivePlan.paths.length = 0;
+    this.interactivePlan.pinsLabeled.length = 0;
+    this.interactivePlan.pinsUnlabeled.length = 0;
     this.interactivePlan.points.length = 0;
     let offset = 0;
 
@@ -413,6 +442,69 @@ export class TrailLayer extends Layer implements Listener {
           });
           offset += drawable.geometryByteLength;
         }
+
+        const trail = this.dataService.getTrail(id);
+        if (trail) {
+          {
+            const {byteSize, drawable} =
+                this.pinRenderer.planPin(
+                    {
+                      textSize: [0, 0] as const,
+                      fillColor: palette.hex.fill,
+                      strokeColor: palette.hex.stroke,
+                    },
+                    trail.markerPx,
+                    Z_RAISED_TRAIL_MARKER,
+                    buffer,
+                    offset,
+                    this.interactivePlan.buffer);
+            this.interactivePlan.pinsUnlabeled.push(drawable);
+            offset += byteSize;
+          }
+
+          {
+            const {value, unit} = formatDistance(trail.lengthMeters);
+            const text = `${value} ${unit}`;
+            const graphemes = toGraphemes(text);
+            const textSize = GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE);
+            if (!textSize) {
+              continue;
+            }
+
+            const pinPlan =
+                this.pinRenderer.planPin(
+                    {
+                      textSize,
+                      fillColor: palette.hex.fill,
+                      strokeColor: palette.hex.stroke,
+                    },
+                    trail.markerPx,
+                    Z_RAISED_TRAIL_MARKER,
+                    buffer,
+                    offset,
+                    this.interactivePlan.buffer);
+            this.interactivePlan.pinsLabeled.push(pinPlan.drawable);
+            offset += pinPlan.byteSize;
+            const textOffset = pinPlan.textOffset;
+
+            const {byteSize, drawables} =
+                GLYPHER.plan(
+                    graphemes,
+                    trail.markerPx,
+                    textOffset,
+                    TRAIL_MARKER_TEXT_SCALE,
+                    /* angle= */ 0,
+                    palette.raw.stroke,
+                    palette.raw.fill,
+                    Z_RAISED_TRAIL_MARKER + 0.1,
+                    buffer,
+                    offset,
+                    this.interactivePlan.buffer,
+                    this.renderer);
+            this.interactivePlan.pinsLabeled.push(...drawables);
+            offset += byteSize;
+          }
+        }
       }
     }
 
@@ -430,44 +522,110 @@ export class TrailLayer extends Layer implements Listener {
 
   loadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void {
     const buffer = new ArrayBuffer(1024 * 1024 * 1024);
-    const drawables = [];
+    const pinsLabeled = [];
+    const pinsUnlabeled = [];
+    const glBuffer = this.renderer.createDataBuffer(0);
     let offset = 0;
 
     for (const trail of trails) {
-      // Draw a pin?
+      const {byteSize, drawable} =
+          this.pinRenderer.planPin(
+              UNLABELED_PIN_REGULAR,
+              trail.markerPx,
+              Z_TRAIL_MARKER,
+              buffer,
+              offset,
+              glBuffer);
+      pinsUnlabeled.push(drawable);
+      offset += byteSize;
 
-      //this.overviewBounds.insert({
-      //  entity: trail,
-      //  markerPx: trail.markerPx,
-      //  screenPixelBound: this.diamondPixelBounds,
-      //}, trail.mouseBound);
+      this.overviewBounds.insert({
+        entity: trail,
+        markerPx: trail.markerPx,
+        screenPixelBound: this.pinPixelBounds,
+      }, trail.mouseBound);
     }
 
     for (const trail of trails) {
-      //const detailScreenPixelSize =
-      //    this.textRenderer.measureText(renderableTrailPin(trail.lengthMeters, 'unused', 'unused'));
-      //const halfDetailWidth = detailScreenPixelSize[0] / 2;
-      //this.coarseBounds.insert({
-      //  entity: trail,
-      //  markerPx: trail.markerPx,
-      //  screenPixelBound: [
-      //    -halfDetailWidth,
-      //    0,
-      //    halfDetailWidth,
-      //    detailScreenPixelSize[1],
-      //  ],
-      //}, trail.mouseBound);
-      //this.fineBounds.insert({
-      //  entity: trail,
-      //  markerPx: trail.markerPx,
-      //  screenPixelBound: [
-      //    -halfDetailWidth,
-      //    0,
-      //    halfDetailWidth,
-      //    detailScreenPixelSize[1],
-      //  ],
-      //}, trail.mouseBound);
+      const {value, unit} = formatDistance(trail.lengthMeters);
+      const text = `${value} ${unit}`;
+      const graphemes = toGraphemes(text);
+      // TODO(april): if the glyphs aren't loaded then we cache a broken tile...
+      const textSize = GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE);
+      if (!textSize) {
+        continue;
+      }
+
+      const pinSize = this.pinRenderer.measureLabeledPin(textSize);
+
+      const pin = {
+        textSize,
+        fillColor: DEFAULT_HEX_PALETTE.fill,
+        strokeColor: '#ffffffff',
+      };
+
+      const pinPlan =
+          this.pinRenderer.planPin(
+              pin,
+              trail.markerPx,
+              Z_TRAIL_MARKER,
+              buffer,
+              offset,
+              glBuffer);
+      pinsLabeled.push(pinPlan.drawable);
+      offset += pinPlan.byteSize;
+      const textOffset = pinPlan.textOffset;
+
+      {
+        const {byteSize, drawables} =
+            GLYPHER.plan(
+                graphemes,
+                trail.markerPx,
+                textOffset,
+                TRAIL_MARKER_TEXT_SCALE,
+                /* angle= */ 0,
+                DEFAULT_PALETTE.stroke,
+                DEFAULT_PALETTE.fill,
+                Z_TRAIL_MARKER + 0.1,
+                buffer,
+                offset,
+                glBuffer,
+                this.renderer);
+        pinsLabeled.push(...drawables);
+        offset += byteSize;
+      }
+
+      const halfDetailWidth = pinSize[0] / 2;
+      this.coarseBounds.insert({
+        entity: trail,
+        markerPx: trail.markerPx,
+        screenPixelBound: [
+          -halfDetailWidth,
+          0,
+          halfDetailWidth,
+          pinSize[1],
+        ],
+      }, trail.mouseBound);
+      this.fineBounds.insert({
+        entity: trail,
+        markerPx: trail.markerPx,
+        screenPixelBound: [
+          -halfDetailWidth,
+          0,
+          halfDetailWidth,
+          pinSize[1],
+        ],
+      }, trail.mouseBound);
     }
+
+    this.renderer.uploadData(buffer, offset, glBuffer);
+    this.overviewPlans.set(id, {
+      buffer: glBuffer,
+      paths: [],
+      pinsLabeled,
+      pinsUnlabeled,
+      points: [],
+    });
 
     this.updateInteractive();
     this.generation += 1;
@@ -513,6 +671,8 @@ export class TrailLayer extends Layer implements Listener {
     this.coarsePlans.set(id, {
       buffer: glBuffer,
       paths: drawables,
+      pinsLabeled: [],
+      pinsUnlabeled: [],
       points: [],
     });
 
@@ -586,6 +746,8 @@ export class TrailLayer extends Layer implements Listener {
     this.finePlans.set(id, {
       buffer: glBuffer,
       paths: pathDrawables,
+      pinsLabeled: [],
+      pinsUnlabeled: [],
       points: pointDrawables,
     });
 
@@ -691,21 +853,3 @@ function isPath(type: number): boolean {
     || aDescendsB(type, WayCategory.ROAD_TRACK);
 }
 
-function renderableTrailPin(lengthMeters: number, fill: string, stroke: string): RenderableDiamond {
-  const {value, unit} = formatDistance(lengthMeters);
-  return {
-    text: `${value} ${unit}`,
-    fillColor: fill,
-    strokeColor: stroke,
-    fontSize: 14,
-  };
-}
-
-function renderableDiamond(fill: string, stroke: string): RenderableDiamond {
-  return {
-    text: '',
-    fillColor: fill,
-    strokeColor: stroke,
-    fontSize: 0,
-  };
-}
