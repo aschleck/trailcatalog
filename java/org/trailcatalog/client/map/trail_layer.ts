@@ -503,6 +503,27 @@ export class TrailLayer extends Layer implements Listener {
             offset += byteSize;
           }
         }
+
+        const point = this.dataService.getPoint(id);
+        if (point) {
+          const icon = POINTS_ATLAS.get(point.type) ?? 0;
+          const {byteSize, drawable} =
+              this.renderer.billboardProgram.plan(
+                  point.markerPx,
+                  NO_OFFSET,
+                  POINT_HOVER_BILLBOARD_SIZE_PX,
+                  /* angle= */ 0,
+                  0xFFFFFFFF as RgbaU32,
+                  Z_RAISED_TRAIL_MARKER,
+                  icon,
+                  POINTS_ATLAS_SIZE,
+                  buffer,
+                  offset,
+                  this.interactivePlan.buffer,
+                  this.pointsAtlas);
+          this.interactivePlan.points.push(drawable);
+          offset += byteSize;
+        }
       }
     }
 

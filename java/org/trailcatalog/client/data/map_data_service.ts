@@ -229,6 +229,10 @@ export class MapDataService extends Service<EmptyDeps> {
     return this.paths.get(id);
   }
 
+  getPoint(id: bigint): Point|undefined {
+    return this.points.get(id);
+  }
+
   getTrail(id: bigint): Trail|undefined {
     return this.trails.get(id);
   }
