@@ -131,6 +131,7 @@ export class TrailLayer extends Layer implements Listener {
   private generation: number;
   private lastGeneration: number;
   private lastHoverTarget: Path|Point|Trail|undefined;
+  private viewportBounds: S2LatLngRect;
 
   constructor(
       private readonly camera: Camera,
@@ -180,6 +181,7 @@ export class TrailLayer extends Layer implements Listener {
 
     this.generation = -1;
     this.lastGeneration = -1;
+    this.viewportBounds = S2LatLngRect.empty();
 
     this.dataService.setListener(this);
     this.registerDisposer(() => {
@@ -227,10 +229,27 @@ export class TrailLayer extends Layer implements Listener {
   override render(planner: Planner): void {
     // TODO(april): we don't mark and sweep the pin renderer and it's not clear how we would
 
+    let detailPlans;
+    if (this.showDetail(this.camera.zoom)) {
+      let cells: Set<S2CellNumber>;
+      let source;
+      if (this.showFine(this.camera.zoom)) {
+        cells = this.cellsInView(SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
+        source = this.finePlans;
+      } else {
+        cells = this.cellsInView(SimpleS2.HIGHEST_COARSE_INDEX_LEVEL);
+        source = this.coarsePlans;
+      }
+
+      detailPlans = new Map([...source.entries()].filter(([id, _]) => cells.has(id)));
+    } else {
+      detailPlans = new Map();
+    }
+
     for (const source of [
       new Map([['', this.interactivePlan]]),
       this.overviewPlans,
-      this.camera.zoom >= FINE_ZOOM_THRESHOLD ? this.finePlans : this.coarsePlans,
+      detailPlans,
     ]) {
       for (const {paths, pinsLabeled, pinsUnlabeled, points} of source.values()) {
         if (this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
@@ -298,7 +317,8 @@ export class TrailLayer extends Layer implements Listener {
           const pathHandle = handle as PathHandle;
           d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
         }
-      } else if (handle.entity instanceof Point && this.camera.zoom >= FINE_ZOOM_THRESHOLD) {
+      } else if (
+          handle.entity instanceof Point && this.camera.zoom >= RENDER_POINT_ZOOM_THRESHOLD) {
         const pointHandle = handle as PointHandle;
         const p = pointHandle.markerPx;
         const halfX = POINT_BILLBOARD_SIZE_PX[0] / 2;
@@ -372,6 +392,15 @@ export class TrailLayer extends Layer implements Listener {
 
   setHover(entity: Path|Point|Trail, state: boolean): void {
     this.setColor(entity, this.hovering, state, HOVER_PALETTE);
+  }
+
+  private cellsInView(deepest: number): Set<S2CellNumber> {
+    const cellsInArrayList = SimpleS2.cover(this.viewportBounds, deepest);
+    const cells = [];
+    for (let i = 0; i < cellsInArrayList.size(); ++i) {
+      cells.push(reinterpretLong(cellsInArrayList.getAtIndex(i).id()) as S2CellNumber);
+    }
+    return new Set(cells);
   }
 
   private setColor(
@@ -532,6 +561,7 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+    this.viewportBounds = bounds;
     this.dataService.updateViewport({
       lat: [bounds.lat().lo(), bounds.lat().hi()],
       lng: [bounds.lng().lo(), bounds.lng().hi()],
