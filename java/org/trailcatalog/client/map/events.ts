@@ -1,5 +1,5 @@
 import { declareEvent } from 'js/corgi/events';
-import { Vec2 } from 'js/map2/common/types';
+import { Vec2 } from 'js/map/common/types';
 
 import { Path, Point, Trail } from '../models/types';
 

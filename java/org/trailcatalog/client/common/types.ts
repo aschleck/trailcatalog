@@ -1,6 +1,6 @@
 import { S2LatLngRect, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { LatLngRect, Vec2 } from 'js/map2/common/types';
+import { LatLngRect, Vec2 } from 'js/map/common/types';
 
 export type PixelRect = {
   low: Vec2;

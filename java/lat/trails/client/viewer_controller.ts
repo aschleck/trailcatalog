@@ -2,16 +2,16 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { ACTION } from 'js/emu/events';
-import { rgbaToUint32 } from 'js/map2/common/math';
-import { RgbaU32 } from 'js/map2/common/types';
-import { MAP_MOVED } from 'js/map2/events';
-import { Layer } from 'js/map2/layer';
-import { MapController } from 'js/map2/map_controller';
-import { CompositeZoomLayer } from 'js/map2/layers/composite_zoom_layer';
-import { EarthSearchLayer } from 'js/map2/layers/earth_search_layer';
-import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map2/layers/mbtile_layer';
-import { RasterTileLayer } from 'js/map2/layers/raster_tile_layer';
-import { Z_BASE_SATELLITE, Z_BASE_TERRAIN } from 'js/map2/z';
+import { rgbaToUint32 } from 'js/map/common/math';
+import { RgbaU32 } from 'js/map/common/types';
+import { MAP_MOVED } from 'js/map/events';
+import { Layer } from 'js/map/layer';
+import { MapController } from 'js/map/map_controller';
+import { CompositeZoomLayer } from 'js/map/layers/composite_zoom_layer';
+import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
+import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/layers/mbtile_layer';
+import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
+import { Z_BASE_SATELLITE, Z_BASE_TERRAIN } from 'js/map/z';
 
 import { CollectionLayer } from './collection_layer';
 

@@ -58,9 +58,9 @@ tc_ts_project(
         "//:node_modules/geotiff",
         "//java/org/trailcatalog/s2",
         "//js/common",
-        "//js/map2",
-        "//js/map2/common",
-        "//js/map2/rendering",
+        "//js/map",
+        "//js/map/common",
+        "//js/map/rendering",
     ],
 )
 

@@ -2,15 +2,15 @@ import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'js/common/asserts';
 import { HashMap } from 'js/common/collections';
 import { WorkerPool } from 'js/common/worker_pool';
-import { LatLng, RgbaU32, S2CellToken, TileId } from 'js/map2/common/types';
-import { EventSource, Layer } from 'js/map2/layer';
-import { Planner } from 'js/map2/rendering/planner';
-import { Drawable } from 'js/map2/rendering/program';
-import { Renderer } from 'js/map2/rendering/renderer';
-import { TexturePool } from 'js/map2/rendering/texture_pool';
-import { Request as QuerierRequest, Response as QuerierResponse } from 'js/map2/workers/location_querier';
-import { Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, UnloadCellsCommand } from 'js/map2/workers/s2_data_fetcher';
-import { Z_USER_DATA } from 'js/map2/z';
+import { LatLng, RgbaU32, S2CellToken, TileId } from 'js/map/common/types';
+import { EventSource, Layer } from 'js/map/layer';
+import { Planner } from 'js/map/rendering/planner';
+import { Drawable } from 'js/map/rendering/program';
+import { Renderer } from 'js/map/rendering/renderer';
+import { TexturePool } from 'js/map/rendering/texture_pool';
+import { Request as QuerierRequest, Response as QuerierResponse } from 'js/map/workers/location_querier';
+import { Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
+import { Z_USER_DATA } from 'js/map/z';
 
 import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from './workers/collection_loader';
 

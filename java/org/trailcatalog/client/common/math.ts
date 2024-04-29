@@ -1,5 +1,5 @@
 import { Long } from 'java/org/trailcatalog/s2';
-import { LatLng, LatLngRect, LatLngZoom, RgbaU32, Vec2, Vec4 } from 'js/map2/common/types';
+import { LatLng, LatLngRect, LatLngZoom, RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
 
 export function celsiusToFahrenheit(celsius: number): number {
   return 1.8 * celsius + 32;

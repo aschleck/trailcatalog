@@ -9,8 +9,8 @@ tc_ts_project(
         "//java/org/trailcatalog/client/workers:ts",
         "//js/common",
         "//js/corgi",
-        "//js/map2",
-        "//js/map2/common",
+        "//js/map",
+        "//js/map/common",
     ],
 )
 

@@ -16,9 +16,9 @@ tc_ts_project(
         "//:node_modules/@types/earcut",
         "//:node_modules/earcut",
         "//js/common",
-        "//js/map2",
-        "//js/map2/common",
-        "//js/map2/workers",
+        "//js/map",
+        "//js/map/common",
+        "//js/map/workers",
         "//java/org/trailcatalog/s2",
     ],
 )

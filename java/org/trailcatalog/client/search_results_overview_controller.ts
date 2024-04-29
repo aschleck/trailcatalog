@@ -3,8 +3,8 @@ import { checkExists } from 'js/common/asserts';
 import { Controller, Response } from 'js/corgi/controller';
 import { EmptyDeps } from 'js/corgi/deps';
 import { CorgiEvent } from 'js/corgi/events';
-import { LatLng } from 'js/map2/common/types';
-import { DATA_CHANGED, MAP_MOVED } from 'js/map2/events';
+import { LatLng } from 'js/map/common/types';
+import { DATA_CHANGED, MAP_MOVED } from 'js/map/events';
 
 import { decodeBase64 } from './common/base64';
 import { emptyS2Polygon, s2LatLngRectToTc } from './common/types';

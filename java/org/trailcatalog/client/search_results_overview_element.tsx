@@ -5,9 +5,9 @@ import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 import { FabricIcon } from 'js/dino/fabric';
 import { ACTION } from 'js/emu/events';
-import { LatLngRect, Vec2 } from 'js/map2/common/types';
-import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map2/events';
-import { MapElement } from 'js/map2/map_element';
+import { LatLngRect, Vec2 } from 'js/map/common/types';
+import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map/events';
+import { MapElement } from 'js/map/map_element';
 import { getUnitSystem } from 'js/server/ssr_aware';
 
 import { HOVER_CHANGED, SELECTION_CHANGED } from './map/events';

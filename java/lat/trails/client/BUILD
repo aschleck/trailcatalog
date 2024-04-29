@@ -17,9 +17,9 @@ tc_ts_project(
         "//java/lat/trails/client/workers",
         "//js/common",
         "//js/corgi",
-        "//js/map2",
-        "//js/map2/layers",
-        "//js/map2/workers",
+        "//js/map",
+        "//js/map/layers",
+        "//js/map/workers",
         "//js/server:client",
     ],
 )

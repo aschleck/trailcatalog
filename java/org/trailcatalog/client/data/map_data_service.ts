@@ -4,8 +4,8 @@ import { IdentitySetMultiMap } from 'js/common/collections';
 import { LittleEndianView } from 'js/common/little_endian_view';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
-import { projectE7Array } from 'js/map2/camera';
-import { LatLng, LatLngRect, Vec2 } from 'js/map2/common/types';
+import { projectE7Array } from 'js/map/camera';
+import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 
 import { degreesE7ToLatLng, projectLatLng } from '../common/math';
 import { PixelRect, S2CellNumber } from '../common/types';

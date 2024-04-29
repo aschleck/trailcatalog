@@ -1,10 +1,10 @@
 import { checkExists } from 'js/common/asserts';
 import { HashMap, HashSet } from 'js/common/collections';
 import { Disposable } from 'js/common/disposable';
-import { RgbaU32, Vec2 } from 'js/map2/common/types';
-import { Drawable } from 'js/map2/rendering/program';
-import { Renderer } from 'js/map2/rendering/renderer';
-import { TexturePool } from 'js/map2/rendering/texture_pool';
+import { RgbaU32, Vec2 } from 'js/map/common/types';
+import { Drawable } from 'js/map/rendering/program';
+import { Renderer } from 'js/map/rendering/renderer';
+import { TexturePool } from 'js/map/rendering/texture_pool';
 
 const DRAW_PADDING_PX = 1;
 const NO_ATLAS = [1, 1] as const;

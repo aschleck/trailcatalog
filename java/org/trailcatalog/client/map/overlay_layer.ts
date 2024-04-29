@@ -1,12 +1,12 @@
 import { S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { projectS2LatLng, projectS2Loop } from 'js/map2/camera';
-import { LatLng, RgbaU32, Vec2 } from 'js/map2/common/types';
-import { Layer } from 'js/map2/layer';
-import { Planner } from 'js/map2/rendering/planner';
-import { Drawable } from 'js/map2/rendering/program';
-import { Renderer } from 'js/map2/rendering/renderer';
-import { TexturePool } from 'js/map2/rendering/texture_pool';
+import { projectS2LatLng, projectS2Loop } from 'js/map/camera';
+import { LatLng, RgbaU32, Vec2 } from 'js/map/common/types';
+import { Layer } from 'js/map/layer';
+import { Planner } from 'js/map/rendering/planner';
+import { Drawable } from 'js/map/rendering/program';
+import { Renderer } from 'js/map/rendering/renderer';
+import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { BOUNDARY_PALETTE } from './colors';
 

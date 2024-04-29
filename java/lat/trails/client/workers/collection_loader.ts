@@ -2,9 +2,9 @@ import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'js/common/asserts';
 import { LittleEndianView } from 'js/common/little_endian_view';
-import { LatLngRect, RgbaU32, S2CellToken } from 'js/map2/common/types';
-import { Triangles, triangulateS2 } from 'js/map2/workers/triangulate';
-import { Z_USER_DATA } from 'js/map2/z';
+import { LatLngRect, RgbaU32, S2CellToken } from 'js/map/common/types';
+import { Triangles, triangulateS2 } from 'js/map/workers/triangulate';
+import { Z_USER_DATA } from 'js/map/z';
 
 interface InitializeRequest {
   kind: 'ir';

@@ -12,8 +12,8 @@ tc_ts_project(
         "//java/org/trailcatalog/models:models-ts",
         "//js/common",
         "//js/corgi",
-        "//js/map2",
-        "//js/map2/rendering",
+        "//js/map",
+        "//js/map/rendering",
     ],
 )
 

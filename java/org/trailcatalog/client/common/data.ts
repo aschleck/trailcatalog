@@ -1,6 +1,6 @@
 import { deepEqual } from 'js/common/comparisons';
 import { LittleEndianView } from 'js/common/little_endian_view';
-import { LatLng, LatLngRect } from 'js/map2/common/types';
+import { LatLng, LatLngRect } from 'js/map/common/types';
 import { InitialDataKey } from 'js/server/data';
 
 import { decodeBase64 } from './base64';

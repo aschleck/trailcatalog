@@ -20,12 +20,12 @@ genrule(
     srcs = [
         "//java/lat/trails/client",
         "//java/lat/trails/client/workers:collection_loader_worker",
-        "//js/map2/workers:earth_search_loader_worker",
-        "//js/map2/workers:location_querier_worker",
-        "//js/map2/workers:mbtile_loader_worker",
-        "//js/map2/workers:raster_loader_worker",
-        "//js/map2/workers:s2_data_fetcher_worker",
-        "//js/map2/workers:xyz_data_fetcher_worker",
+        "//js/map/workers:earth_search_loader_worker",
+        "//js/map/workers:location_querier_worker",
+        "//js/map/workers:mbtile_loader_worker",
+        "//js/map/workers:raster_loader_worker",
+        "//js/map/workers:s2_data_fetcher_worker",
+        "//js/map/workers:xyz_data_fetcher_worker",
     ],
     outs = [
         "client.css",

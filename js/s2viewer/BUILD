@@ -21,8 +21,8 @@ tc_ts_project(
         "//js/common",
         "//js/corgi",
         "//js/emu",
-        "//js/map2",
-        "//js/map2/layers",
+        "//js/map",
+        "//js/map/layers",
     ],
 )
 
@@ -52,9 +52,9 @@ genrule(
         ":s2viewer.css",
         ":s2viewer.js",
         ":s2viewer.js.map",
-        "//js/map2/workers:mbtile_loader_worker",
-        "//js/map2/workers:raster_loader_worker",
-        "//js/map2/workers:xyz_data_fetcher_worker",
+        "//js/map/workers:mbtile_loader_worker",
+        "//js/map/workers:raster_loader_worker",
+        "//js/map/workers:xyz_data_fetcher_worker",
     ],
     outs = [
         "static/s2viewer.css",

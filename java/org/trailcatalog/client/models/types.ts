@@ -1,5 +1,5 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
-import { LatLng, LatLngRect, Vec2 } from 'js/map2/common/types';
+import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 
 import { PixelRect, s2LatLngRectToTc } from '../common/types';
 
