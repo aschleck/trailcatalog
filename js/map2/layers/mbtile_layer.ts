@@ -39,9 +39,25 @@ export const CONTOURS_FEET: Readonly<Style> = {
     {
       layerName: 'contour_ft',
       minZoom: 0,
-      maxZoom: 14,
+      maxZoom: 13,
       lineTexts: [],
       lines: [
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 2,
+          }, {
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
         {
           filters: [{
             match: 'greater_than',
@@ -60,10 +76,88 @@ export const CONTOURS_FEET: Readonly<Style> = {
     },
     {
       layerName: 'contour_ft',
+      minZoom: 13,
+      maxZoom: 14,
+      lineTexts: [],
+      lines: [
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 5,
+          }, {
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 5,
+          }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'contour_ft',
       minZoom: 14,
       maxZoom: 31,
       lineTexts: [],
       lines: [
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 5,
+          }, {
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.75,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 5,
+          }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.75,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
         {
           filters: [],
           fill: 0x00000040 as RgbaU32,
@@ -92,6 +186,22 @@ export const CONTOURS_METERS: Readonly<Style> = {
             match: 'greater_than',
             key: 'nth_line',
             value: 2,
+          }, {
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 2,
           }],
           fill: 0x00000040 as RgbaU32,
           stroke: 0x00000040 as RgbaU32,
@@ -106,9 +216,115 @@ export const CONTOURS_METERS: Readonly<Style> = {
     {
       layerName: 'contour',
       minZoom: 13,
+      maxZoom: 14,
+      lineTexts: [],
+      lines: [
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 5,
+          }, {
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.75,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 5,
+          }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.75,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 1,
+          }, {
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 1,
+          }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'contour',
+      minZoom: 14,
       maxZoom: 31,
       lineTexts: [],
       lines: [
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 5,
+          }, {
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.75,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'greater_than',
+            key: 'nth_line',
+            value: 5,
+          }],
+          fill: 0x00000040 as RgbaU32,
+          stroke: 0x00000040 as RgbaU32,
+          radius: 0.75,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
+        {
+          filters: [{
+            match: 'number_equals',
+            key: 'glacier',
+            value: 1,
+          }],
+          fill: 0x048AB960 as RgbaU32,
+          stroke: 0x048AB960 as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN,
+        },
         {
           filters: [],
           fill: 0x00000040 as RgbaU32,
@@ -343,6 +559,9 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0x6fd1954C as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.2,
         },
         {
@@ -355,6 +574,9 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0x21ad574C as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.1,
         },
         {
@@ -366,6 +588,9 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0xFFFFFFF80 as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.8,
         },
       ],
@@ -387,6 +612,9 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0x6fd1954C as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.5,
         },
         {
@@ -399,6 +627,9 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0x51C5874C as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.5,
         },
         {
@@ -411,6 +642,9 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0xf5e1bccc as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.5,
         },
         {
@@ -422,6 +656,9 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0xFFFFFFF80 as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.5,
         },
       ],
@@ -469,6 +706,9 @@ export const NATURE: Readonly<Style> = {
             ],
           }],
           fill: 0x21ad5780 as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.75,
         },
       ],
@@ -515,7 +755,10 @@ export const NATURE: Readonly<Style> = {
               //'state_wilderness',
             ],
           }],
-          fill: 0x13653220 as RgbaU32,
+          fill: 0 as RgbaU32,
+          stroke: 0x13653288 as RgbaU32,
+          strokeRadius: 1,
+          strokeStipple: false,
           z: Z_BASE_TERRAIN + 0.75,
         },
       ],
@@ -791,6 +1034,9 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [],
           fill: 0x52BAEBFF as RgbaU32,
+          stroke: 0 as RgbaU32,
+          strokeRadius: 0,
+          strokeStipple: false,
           z: Z_BASE_WATER + 0.1, // put polygons above lines
         },
       ],
@@ -1147,7 +1393,7 @@ export class MbtileLayer extends Layer {
 
       let extraPad;
       if (arrays.equals(label.graphemes, other.graphemes)) {
-        extraPad = 384;
+        extraPad = 128;
       } else {
         extraPad = 0;
       }

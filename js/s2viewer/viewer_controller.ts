@@ -86,7 +86,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       new RasterTileLayer(
           /* copyright= */ [],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
-          /* tint= */ 0xFFFFFF4C as RgbaU32,
+          /* tint= */ 0xFFFFFF88 as RgbaU32,
           Z_BASE_TERRAIN,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,

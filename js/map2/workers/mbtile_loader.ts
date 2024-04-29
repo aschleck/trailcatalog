@@ -61,6 +61,9 @@ interface PointStyle {
 interface PolygonStyle {
   filters: Match[];
   fill: RgbaU32;
+  stroke: RgbaU32;
+  strokeRadius: number;
+  strokeStipple: boolean;
   z: number;
 }
 
@@ -80,6 +83,12 @@ interface LessThanMatch {
   value: number;
 }
 
+interface NumberEqualsMatch {
+  match: 'number_equals';
+  key: string;
+  value: number;
+}
+
 interface StringEqualsMatch {
   match: 'string_equals';
   key: string;
@@ -92,7 +101,13 @@ interface StringInMatch {
   value: string[];
 }
 
-type Match = AlwaysMatch|GreaterThanMatch|LessThanMatch|StringEqualsMatch|StringInMatch;
+type Match =
+    AlwaysMatch
+        |GreaterThanMatch
+        |LessThanMatch
+        |NumberEqualsMatch
+        |StringEqualsMatch
+        |StringInMatch;
 
 interface LoadRequest {
   kind: 'lr';
@@ -152,6 +167,7 @@ interface Layer {
   lines: Feature[];
   points: Feature[];
   polygons: Feature[];
+  polygonBounds: Feature[];
 }
 
 interface Feature {
@@ -202,6 +218,7 @@ class MbtileLoader {
       layerStyle: LayerStyle;
     }>>(() => []);
     const polygonGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
+    const polygonBoundGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     for (const layer of layers) {
       let layerStyle;
       for (const ls of this.style.layers) {
@@ -256,9 +273,24 @@ class MbtileLoader {
 
       for (const polygon of layer.polygons) {
         const style = findStyle(polygon.tags, layer.keys, layer.values, layerStyle.polygons);
-        if (style) {
+        if (style && style.fill) {
           polygonGroups.get(style).push(polygon);
         } else {
+          // TODO(april): double counts with polygonBounds but who cares
+          for (let i = 0; i < polygon.tags.length; i += 2) {
+            if (layer.keys[polygon.tags[i + 0]] === 'class') {
+              polygonUnstyled.add(layer.values[polygon.tags[i + 1]]);
+            }
+          }
+        }
+      }
+
+      for (const polygon of layer.polygonBounds) {
+        const style = findStyle(polygon.tags, layer.keys, layer.values, layerStyle.polygons);
+        if (style && style.stroke && style.strokeRadius) {
+          polygonBoundGroups.get(style).push(polygon);
+        } else {
+          // TODO(april): double counts with polygons but who cares
           for (let i = 0; i < polygon.tags.length; i += 2) {
             if (layer.keys[polygon.tags[i + 0]] === 'class') {
               polygonUnstyled.add(layer.values[polygon.tags[i + 1]]);
@@ -298,6 +330,17 @@ class MbtileLoader {
         triangless.push(triangles);
       }
       triangulated.set(style, triangless);
+    }
+    for (const [style, polygons] of polygonBoundGroups) {
+      const triangless = [];
+      for (const polygon of polygons) {
+        for (let i = 0; i < polygon.starts.length; ++i) {
+          const start = polygon.starts[i];
+          const end =
+              i < polygon.starts.length - 1 ? polygon.starts[i + 1] : polygon.geometry.length;
+          geometryCount += LINE_VERTEX_STRIDE / 4 * (end - start - 2) / 2;
+        }
+      }
     }
 
     const geometry = new Float32Array(triangulated.size + geometryCount);
@@ -420,6 +463,38 @@ class MbtileLoader {
       }
     }
 
+    for (const [style, polygons] of polygonBoundGroups) {
+      const geometryStart = geometryOffset;
+      const indexStart = indexOffset;
+      let instanceCount = 0;
+      let vertexCount = 0;
+      for (const polygon of polygons) {
+        polygon.starts.push(polygon.geometry.length);
+        for (let i = 0; i < polygon.starts.length; ++i) {
+          const result =
+              LineProgram.push(
+                style.stroke, // TODO(april): should we allow stroke fills?
+                style.stroke,
+                style.strokeRadius,
+                style.strokeStipple,
+                polygon.geometry.slice(polygon.starts[i], polygon.starts[i + 1]),
+                geometry.buffer,
+                4 * geometryOffset);
+          geometryOffset += result.geometryByteLength / 4;
+          instanceCount += result.instanceCount;
+          vertexCount = result.vertexCount;
+        }
+      }
+
+      response.lines.push({
+        geometryByteLength: 4 * (geometryOffset - geometryStart),
+        geometryOffset: 4 * geometryStart,
+        instanceCount,
+        vertexCount,
+        z: style.z,
+      });
+    }
+
     for (const [style, triangless] of triangulated) {
       const geometryStart = geometryOffset;
       const indexStart = indexOffset;
@@ -482,6 +557,7 @@ function loadLayer(source: LittleEndianView, tile: TileId): Layer {
     lines: [],
     points: [],
     polygons: [],
+    polygonBounds: [],
   };
 
   while (source.hasRemaining()) {
@@ -570,6 +646,11 @@ function loadFeature(source: LittleEndianView, layer: Layer): void {
       geometry: checkExists(geometry),
       starts: checkExists(starts),
     });
+    layer.polygonBounds.push({
+      tags: tags ?? [],
+      geometry: checkExists(geometry),
+      starts: checkExists(starts),
+    });
   }
 }
 
@@ -622,10 +703,11 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
   const ty = 1 - tile.y / halfWorldSize;
   const increment = 1 / halfWorldSize / extent;
 
-   for (const [loop, source] of [
-      [false, layer.lines],
-      [false, layer.points],
-      [true, layer.polygons],
+   for (const [crop, loop, source] of [
+      [cropLine, false, layer.lines],
+      [cropLine, false, layer.points],
+      [cropLine, true, layer.polygonBounds],
+      [cropPolygon, true, layer.polygons],
    ] as const) {
      for (const feature of source) {
        const [geometry, starts] = crop(feature.geometry, feature.starts, extent, loop);
@@ -637,8 +719,10 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
    layer.lines = layer.lines.filter(f => f.geometry.length > 0 && f.starts.length > 0);
    layer.points = layer.points.filter(f => f.geometry.length > 0 && f.starts.length > 0);
    layer.polygons = layer.polygons.filter(f => f.geometry.length > 0 && f.starts.length > 0);
+   layer.polygonBounds =
+      layer.polygonBounds.filter(f => f.geometry.length > 0 && f.starts.length > 0);
 
-  for (const source of [layer.lines, layer.points, layer.polygons]) {
+  for (const source of [layer.lines, layer.points, layer.polygons, layer.polygonBounds]) {
     for (const feature of source) {
       const g = feature.geometry;
       for (let i = 0; i < g.length; i += 2) {
@@ -649,7 +733,135 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
   }
 }
 
-function crop(geometry: number[], starts: number[], extent: number, loop: boolean):
+function cropLine(geometry: number[], starts: number[], extent: number, loop: boolean):
+    [number[], number[]] {
+  const cGeometry = [];
+  const cStarts = [];
+  for (let i = 0; i < starts.length; ++i) {
+    const start = starts[i];
+    const end = i < starts.length - 1 ? starts[i + 1] : geometry.length;
+
+    let outside = true;
+    let lastPushedX = undefined;
+    let lastPushedY = undefined;
+    for (let i = start; i < end; i += 2) {
+      const px = geometry[i + 0];
+      const py = geometry[i + 1];
+
+      if ((px >= 0 && px < extent) && (py >= 0 && py < extent)) {
+        if (outside) {
+          cStarts.push(cGeometry.length);
+        }
+
+        if (i > start && outside) {
+          const lx = geometry[i - 2 + 0];
+          const ly = geometry[i - 2 + 1];
+          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          if (ix !== lastPushedX || iy !== lastPushedY) {
+            cGeometry.push(ix, iy);
+            lastPushedX = ix;
+            lastPushedY = iy;
+          }
+        }
+
+        if (px !== lastPushedX || py !== lastPushedY) {
+          cGeometry.push(px, py);
+          lastPushedX = px;
+          lastPushedY = py;
+        }
+        outside = false;
+      } else {
+        if (i > start) {
+          const lx = geometry[i - 2 + 0];
+          const ly = geometry[i - 2 + 1];
+
+          if (outside) {
+            const intersections =
+                intersectInfiniteTile(lx, ly, px, py, extent)
+                    .filter(([x, y]) => 0 <= x && x <= extent && 0 <= y && y <= extent);
+            let started = false;
+            for (const [ix, iy] of intersections) {
+              if (ix !== lastPushedX || iy !== lastPushedY) {
+                if (!started) {
+                  cStarts.push(cGeometry.length);
+                  started = true;
+                }
+
+                cGeometry.push(ix, iy);
+                lastPushedX = ix;
+                lastPushedY = iy;
+              }
+            }
+          } else {
+            const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+            if (ix !== lastPushedX || iy !== lastPushedY) {
+              cGeometry.push(ix, iy);
+              lastPushedX = undefined;
+              lastPushedY = undefined;
+            }
+          }
+        }
+
+        outside = true;
+      }
+    }
+
+    // Also check for intersections on the way back to the start point
+    if (loop) {
+      const px = geometry[start + 0];
+      const py = geometry[start + 1];
+
+      if ((px >= 0 && px < extent) && (py >= 0 && py < extent)) {
+        if (outside) {
+          cStarts.push(cGeometry.length);
+
+          const lx = geometry[end - 2 + 0];
+          const ly = geometry[end - 2 + 1];
+          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          if (ix !== lastPushedX || iy !== lastPushedY) {
+            cGeometry.push(ix, iy);
+          }
+          if (px !== lastPushedX || py !== lastPushedY) {
+            cGeometry.push(px, py);
+          }
+        }
+      } else {
+        const lx = geometry[end - 2 + 0];
+        const ly = geometry[end - 2 + 1];
+
+        if (outside) {
+          const intersections =
+              intersectInfiniteTile(lx, ly, px, py, extent)
+                  .filter(([x, y]) => 0 <= x && x <= extent && 0 <= y && y <= extent);
+          let started = false;
+          for (const [ix, iy] of intersections) {
+            if (ix !== lastPushedX || iy !== lastPushedY) {
+              if (!started) {
+                cStarts.push(cGeometry.length);
+                started = true;
+              }
+
+              cGeometry.push(ix, iy);
+              lastPushedX = ix;
+              lastPushedY = iy;
+            }
+          }
+        } else {
+          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          if (ix !== lastPushedX || iy !== lastPushedY) {
+            cGeometry.push(ix, iy);
+            lastPushedX = undefined;
+            lastPushedY = undefined;
+          }
+        }
+      }
+    }
+  }
+
+  return [cGeometry, cStarts];
+}
+
+function cropPolygon(geometry: number[], starts: number[], extent: number, loop: boolean):
     [number[], number[]] {
   const cGeometry = [];
   const cStarts = [];
@@ -906,6 +1118,23 @@ function matches(tags: number[], keys: string[], values: ValueType[], filters: M
         }
         const value = values[tags[i + 1]] as number;
         if (value < filter.value) {
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        return false;
+      }
+    } else if (filter.match === 'number_equals') {
+      let matched = false;
+      for (let i = 0; i < tags.length; i += 2) {
+        const key = keys[tags[i + 0]];
+        if (key !== filter.key) {
+          continue;
+        }
+        const value = values[tags[i + 1]] as number;
+        if (value === filter.value) {
           matched = true;
           break;
         }
