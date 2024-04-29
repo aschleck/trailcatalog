@@ -2,7 +2,6 @@ import { Controller, Response } from 'js/corgi/controller';
 import { CorgiEvent } from 'js/corgi/events';
 import { HistoryService } from 'js/corgi/history/history_service';
 import { ViewsService } from 'js/corgi/history/views_service';
-import { emptyPixelRect } from 'js/map/common/types';
 import { rgbaToUint32 } from 'js/map2/common/math';
 import { RgbaU32, Vec2 } from 'js/map2/common/types';
 import { Layer } from 'js/map2/layer';

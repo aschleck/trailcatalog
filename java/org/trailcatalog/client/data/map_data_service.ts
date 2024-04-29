@@ -4,12 +4,11 @@ import { IdentitySetMultiMap } from 'js/common/collections';
 import { LittleEndianView } from 'js/common/little_endian_view';
 import { EmptyDeps } from 'js/corgi/deps';
 import { Service, ServiceResponse } from 'js/corgi/service';
-import { PixelRect } from 'js/map/common/types';
 import { projectE7Array } from 'js/map2/camera';
 import { LatLng, LatLngRect, Vec2 } from 'js/map2/common/types';
 
 import { degreesE7ToLatLng, projectLatLng } from '../common/math';
-import { S2CellNumber } from '../common/types';
+import { PixelRect, S2CellNumber } from '../common/types';
 import { Path, Point, Trail } from '../models/types';
 import { PIN_CELL_ID } from '../workers/data_constants';
 import { FetcherCommand, Viewport } from '../workers/data_fetcher';
@@ -344,7 +343,7 @@ export class MapDataService extends Service<EmptyDeps> {
     const bound = {
       low: [1, 1],
       high: [-1, -1],
-    } as PixelRect;
+    } as const as PixelRect;
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getVarBigInt64();
       const type = data.getVarInt32();
@@ -418,7 +417,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const bound = {
         low: [1, 1],
         high: [-1, -1],
-      } as PixelRect;
+      };
       for (let i = 0; i < pathVertexCount; i += 2) {
         const x = points[i + 0];
         const y = points[i + 1];
@@ -427,7 +426,7 @@ export class MapDataService extends Service<EmptyDeps> {
         bound.high[0] = Math.max(bound.high[0], x);
         bound.high[1] = Math.max(bound.high[1], y);
       }
-      const built = new Path(id, type, bound, points);
+      const built = new Path(id, type, bound as unknown as PixelRect, points);
       this.paths.set(id, built);
       paths.push(built);
     }
@@ -456,7 +455,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const bound = {
         low: [1, 1],
         high: [-1, -1],
-      } as PixelRect;
+      };
       for (let i = 0; i < pathVertexCount; i += 2) {
         const x = points[i + 0];
         const y = points[i + 1];
@@ -465,7 +464,7 @@ export class MapDataService extends Service<EmptyDeps> {
         bound.high[0] = Math.max(bound.high[0], x);
         bound.high[1] = Math.max(bound.high[1], y);
       }
-      const built = new Path(id, type, bound, points);
+      const built = new Path(id, type, bound as unknown as PixelRect, points);
       this.paths.set(id, built);
       paths.push(built);
     }
@@ -487,7 +486,7 @@ export class MapDataService extends Service<EmptyDeps> {
       const bound = {
         low: [markerPx[0] - EPSILON, markerPx[1] - EPSILON],
         high: [markerPx[0] + EPSILON, markerPx[1] + EPSILON],
-      } as PixelRect;
+      } as const as PixelRect;
       const built = new Point(id, type, name, markerPx, bound);
       this.points.set(id, built);
       points.push(built);

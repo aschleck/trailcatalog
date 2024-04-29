@@ -1,5 +1,5 @@
-import { rgbaU32ToHex, rgbaToUint32 } from 'js/map/common/math';
-import { RgbaU32 } from 'js/map/common/types';
+import { rgbaU32ToHex, rgbaToUint32 } from 'js/map2/common/math';
+import { RgbaU32 } from 'js/map2/common/types';
 
 export interface LinePalette {
   hex: {
