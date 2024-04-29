@@ -148,12 +148,12 @@ export async function serve(
 
     const ifNoneMatch = request.headers['if-none-match'];
     const etag = '"' + crypto.createHash('md5').update(result).digest('base64') + '"';
+    reply.header('ETag', etag);
     if (ifNoneMatch === etag || ifNoneMatch === `W/${etag}`) {
       reply.code(304);
+    } else {
+      reply.send(result);
     }
-
-    reply.header('ETag', etag);
-    reply.send(result);
   });
 
   server.listen({ port }, (err, address) => {
