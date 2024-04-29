@@ -143,10 +143,10 @@ function Content({trailId, state, updateState}: {
           },
           state: [state, updateState],
         })}
-        className="flex grow overflow-hidden"
+        className="flex flex-col-reverse grow md:flex-row md:overflow-hidden"
     >
       <TrailSidebar state={state} />
-      <div className="grow h-full relative">
+      <div className="grow min-h-[50vh] relative md:h-full">
         <MapElement camera={trail.bound} ref="map" />
         <div className="absolute flex flex-col gap-2 right-2 top-2">
           <div unboundEvents={{corgi: [[ACTION, 'zoomToFit']]}}>
@@ -208,7 +208,7 @@ function TrailSidebar({state}: {state: State}) {
       </span>;
 
   return <>
-    <div className="overflow-y-scroll p-4 text-sm md:w-[32rem]">
+    <div className="p-4 text-sm md:overflow-y-scroll md:w-[32rem]">
       <header className="flex gap-2 items-center">
         <span className="font-bold font-sans text-3xl">
           {trail.name}
