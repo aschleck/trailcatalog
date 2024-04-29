@@ -824,6 +824,10 @@ function cropLine(geometry: number[], starts: number[], extent: number, loop: bo
           if (px !== lastPushedX || py !== lastPushedY) {
             cGeometry.push(px, py);
           }
+        } else {
+          if (px !== lastPushedX || py !== lastPushedY) {
+            cGeometry.push(px, py);
+          }
         }
       } else {
         const lx = geometry[end - 2 + 0];
