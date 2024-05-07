@@ -22,7 +22,7 @@ bazel_dep(name = "rules_proto", version = "5.3.0-21.7")
 bazel_dep(name = "rules_python", version = "0.26.0")
 bazel_dep(name = "rules_oci", version = "1.2.0")
 
-bazel_dep(name = "rules_nixpkgs_java")
+bazel_dep(name = "rules_nixpkgs_java", version = "0.10.0")
 archive_override(
     module_name = "rules_nixpkgs_java",
     integrity = "sha256-mA7fzu8uWeESLZvmxSQTvCmENfCj1FJTK4pI11Yv/Wc=",

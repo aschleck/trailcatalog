@@ -9,8 +9,8 @@ is reinvoked and patched into the page. This framework also allows controllers t
 singleton classes, called services. Finally, when a controller's element is removed from the page,
 it is disposed.
 
-This framework, corgi, and the supporting //js/common library, are BSD 3-clause licensed separately
-from the rest of this repository (which is AGPL.)
+This framework, corgi, and the supporting //js/common, //js/server, and //js/emu libraries, are BSD
+3-clause licensed separately from the rest of this repository (which is AGPL.)
 
 ## Example snippet
 
