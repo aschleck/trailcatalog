@@ -288,6 +288,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       // We treat this as a boolean for now
       in uint stipple;
 
+      // See https://github.com/visgl/luma.gl/issues/1764
+      invariant gl_Position;
+
       out lowp vec4 fragColorFill;
       out lowp vec4 fragColorStroke;
       out lowp float fragDistanceAlong;
@@ -302,8 +305,6 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       }
 
       void main() {
-        // This is a load bearing ternary operator: it seems to defeat some bad optimizations that
-        // reduce our float precision.
         vec2 center = position.x < 0.5 ? previous : next;
         vec2 direction = next - previous;
         vec2 perp = perpendicular(normalize(direction));

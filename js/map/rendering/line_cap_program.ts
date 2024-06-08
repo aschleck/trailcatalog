@@ -210,6 +210,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       // We treat this as a boolean for now
       in uint stipple;
 
+      // See https://github.com/visgl/luma.gl/issues/1764
+      invariant gl_Position;
+
       out lowp vec4 fragColorFill;
       out lowp vec4 fragColorStroke;
       out lowp float fragDistanceAlong;
@@ -220,8 +223,6 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       ${COLOR_OPERATIONS}
 
       void main() {
-        // This is a load bearing ternary operator: it seems to defeat some bad optimizations that
-        // reduce our float precision.
         vec2 center = side == 0u ? previous : next;
         vec2 direction = next - previous;
         vec2 location = -cameraCenter + center;

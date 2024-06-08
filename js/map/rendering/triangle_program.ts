@@ -157,15 +157,15 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       in uint fillColor;
       in highp vec2 position; // Mercator
 
+      // See https://github.com/visgl/luma.gl/issues/1764
+      invariant gl_Position;
+
       out mediump vec4 fragFillColor;
 
       ${COLOR_OPERATIONS}
 
       void main() {
-        // This is a load bearing ternary operator: it seems to defeat some bad optimizations that
-        // reduce our float precision.
-        vec2 alwaysCameraCenter = position.x < 1000.0 ? cameraCenter : position;
-        vec2 relativeCenter = position - alwaysCameraCenter;
+        vec2 relativeCenter = position - cameraCenter;
         vec2 screenCoord = relativeCenter * halfWorldSize;
         gl_Position = vec4(screenCoord / halfViewportSize, z, 1);
 

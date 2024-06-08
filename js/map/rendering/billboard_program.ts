@@ -235,6 +235,9 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       in uint tint;
       in uint sizeIsPixels;
 
+      // See https://github.com/visgl/luma.gl/issues/1764
+      invariant gl_Position;
+
       out mediump vec2 fragColorPosition;
       out mediump vec4 fragColorTint;
 
