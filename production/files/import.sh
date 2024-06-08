@@ -38,6 +38,7 @@ podman run \
     --pull always \
     --rm \
     --mount type=bind,source=/mnt/horse,target=/tmp \
+    --network slirp4netns \
     us-west1-docker.pkg.dev/trailcatalog/containers/planet_update:latest \
     /tmp/planet-weekly.osm.pbf \
     --server "https://ftp5.gwdg.de/pub/misc/openstreetmap/planet.openstreetmap.org/replication/day/" \
