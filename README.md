@@ -1,7 +1,12 @@
 # Trailcatalog
 
-Trailcatalog organizes OpenStreetMaps trail relations into a searchable catalog. It syncs to OSM every Monday and Thursday at 2am PST. 
-https://trailcatalog.org
+Trailcatalog organizes OpenStreetMaps trail relations into a searchable catalog. It syncs to OSM
+every Monday and Thursday at 2am PST. https://trailcatalog.org
+
+## Corgi
+
+This uses my JS framework [Corgi](https://github.com/aschleck/corgi/tree/main/js/corgi). I think
+it's cool and I hope you do too.
 
 ## S2
 
