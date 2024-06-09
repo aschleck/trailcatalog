@@ -15,11 +15,11 @@ tc_ts_project(
     deps = [
         "//:node_modules/@types/earcut",
         "//:node_modules/earcut",
-        "//js/common",
         "//js/map",
         "//js/map/common",
         "//js/map/workers",
         "//java/org/trailcatalog/s2",
+        "@dev_april_corgi//js/common",
     ],
 )
 

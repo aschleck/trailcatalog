@@ -1,7 +1,9 @@
+import { Future } from 'external/dev_april_corgi~/js/common/futures';
+import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
+import { EmptyDeps } from 'external/dev_april_corgi~/js/corgi/deps';
+import { CorgiEvent } from 'external/dev_april_corgi~/js/corgi/events';
+
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { Controller, Response } from 'js/corgi/controller';
-import { EmptyDeps } from 'js/corgi/deps';
-import { CorgiEvent } from 'js/corgi/events';
 import { LatLng, LatLngRect } from 'js/map/common/types';
 
 import { decodeBase64 } from './common/base64';
@@ -13,49 +15,13 @@ import * as routes from './routes';
 import { Args, State as VState, ViewportController } from './viewport_controller';
 
 export interface State extends VState {
-  boundary?: Boundary;
+  boundary: Future<Boundary>;
   boundaryId: string;
-  containingBoundaries?: Boundary[];
-  trailsInBoundary: Trail[]|undefined;
+  containingBoundaries: Future<Boundary[]>;
+  trailsInBoundary: Future<Trail[]>;
 }
 
 type Deps = typeof BoundaryDetailController.deps;
-
-export class LoadingController extends Controller<{}, EmptyDeps, HTMLElement, State> {
-
-  constructor(response: Response<LoadingController>) {
-    super(response);
-
-    const boundaryId = this.state.boundaryId;
-    if (!this.state.boundary) {
-      fetchData('boundary', {id: boundaryId}).then(raw => {
-        const boundary = boundaryFromRaw(raw);
-        this.updateState({
-          ...this.state,
-          boundary,
-        });
-      });
-    }
-
-    if (!this.state.containingBoundaries) {
-      fetchData('boundaries_containing_boundary', {child_id: boundaryId}).then(raw => {
-        this.updateState({
-          ...this.state,
-          containingBoundaries: containingBoundariesFromRaw(raw),
-        });
-      });
-    }
-
-    if (!this.state.trailsInBoundary) {
-      fetchData('trails_in_boundary', {boundary_id: boundaryId}).then(raw => {
-        this.updateState({
-          ...this.state,
-          trailsInBoundary: trailsInBoundaryFromRaw(raw),
-        });
-      });
-    }
-  }
-}
 
 export class BoundaryDetailController extends ViewportController<Args, Deps, State> {
 
@@ -69,15 +35,13 @@ export class BoundaryDetailController extends ViewportController<Args, Deps, Sta
 
   browseMap() {
     routes.showSearchResults({
-      boundary: this.state.boundary?.id,
+      boundary: this.state.boundary.value().id,
       camera: this.mapController.cameraLlz,
     }, this.views);
   }
 
   zoomToFit(): void {
-    if (this.state.boundary) {
-      this.mapController?.setCamera(this.state.boundary.bound);
-    }
+    this.mapController?.setCamera(this.state.boundary.value().bound);
   }
 }
 

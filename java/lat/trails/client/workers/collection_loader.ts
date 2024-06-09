@@ -1,7 +1,8 @@
+import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
+import { LittleEndianView } from 'external/dev_april_corgi~/js/common/little_endian_view';
+
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExhaustive } from 'js/common/asserts';
-import { LittleEndianView } from 'js/common/little_endian_view';
 import { LatLngRect, RgbaU32, S2CellToken } from 'js/map/common/types';
 import { Triangles, triangulateS2 } from 'js/map/workers/triangulate';
 import { Z_USER_DATA } from 'js/map/z';

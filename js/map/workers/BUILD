@@ -57,10 +57,10 @@ tc_ts_project(
         "//:node_modules/earcut",
         "//:node_modules/geotiff",
         "//java/org/trailcatalog/s2",
-        "//js/common",
         "//js/map",
         "//js/map/common",
         "//js/map/rendering",
+        "@dev_april_corgi//js/common",
     ],
 )
 

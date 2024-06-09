@@ -1,6 +1,46 @@
-import { getUnitSystem } from 'js/server/ssr_aware';
+import { debugMode } from 'external/dev_april_corgi~/js/common/debug';
+import { maybeMemoized } from 'external/dev_april_corgi~/js/common/memoized';
+import { getLanguage } from 'external/dev_april_corgi~/js/server/ssr_aware';
 
 import { celsiusToFahrenheit, metersToFeet, metersToMiles } from './math';
+
+export type UnitSystem = 'imperial'|'metric';
+
+const UNIT_SYSTEM_COOKIE = 'unit_system';
+
+function calculateUnitSystem(): UnitSystem {
+  const requested =
+      (window.SERVER_SIDE_RENDER?.cookies() ?? window.document?.cookie)
+          ?.split('; ')
+          ?.find(c => c.startsWith(`${UNIT_SYSTEM_COOKIE}=`))
+          ?.split('=')[1];
+  if (requested === 'imperial' || requested === 'metric') {
+    return requested;
+  }
+
+  const imperial = getLanguage() === 'en-LR' || getLanguage() === 'en-US' || getLanguage() === 'my';
+  return imperial ? 'imperial' : 'metric';
+}
+
+const chosenUnitSystem = maybeMemoized(calculateUnitSystem);
+
+export function getUnitSystem(): UnitSystem {
+  return chosenUnitSystem.value;
+}
+
+export function setUnitSystem(system: UnitSystem) {
+  chosenUnitSystem.value = system;
+
+  let secure;
+  if (debugMode()) {
+    secure = '';
+  } else {
+    secure =  '; Secure';
+  }
+
+  document.cookie = `${UNIT_SYSTEM_COOKIE}=${system}; Path=/; SameSite=Strict${secure}`;
+}
+
 
 const areaFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,

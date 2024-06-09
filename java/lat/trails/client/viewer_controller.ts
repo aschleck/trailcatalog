@@ -1,7 +1,8 @@
-import { checkExists } from 'js/common/asserts';
-import { Controller, Response } from 'js/corgi/controller';
-import { CorgiEvent } from 'js/corgi/events';
-import { ACTION } from 'js/emu/events';
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
+import { CorgiEvent } from 'external/dev_april_corgi~/js/corgi/events';
+import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+
 import { rgbaToUint32 } from 'js/map/common/math';
 import { RgbaU32 } from 'js/map/common/types';
 import { MAP_MOVED } from 'js/map/events';
@@ -218,8 +219,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
   }
 
   setLayerVisible(e: CorgiEvent<typeof ACTION>): void {
-    const target = checkExists(e.target) as HTMLElement;
-    const name = target.getAttribute('aria-label');
+    const name = checkExists(e.targetElement.attr('aria-label')).string();
 
     const newLayers = [];
     for (const layer of this.state.layers) {

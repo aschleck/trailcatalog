@@ -1,19 +1,19 @@
-import { checkExists } from 'js/common/asserts';
-import * as corgi from 'js/corgi';
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+
 import { FlatButton, OutlinedButton } from 'js/dino/button';
-import { ACTION } from 'js/emu/events';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
-import { getUnitSystem } from 'js/server/ssr_aware';
 
-import { formatCount, formatDistance, formatHeight } from './common/formatters';
+import { formatCount, formatDistance, formatHeight, getUnitSystem } from './common/formatters';
 import { SELECTION_CHANGED } from './map/events';
 import { Boundary, Trail } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { BoundaryDetailController, boundaryFromRaw, containingBoundariesFromRaw, LoadingController, State, trailsInBoundaryFromRaw } from './boundary_detail_controller';
-import { initialData } from './data';
+import { BoundaryDetailController, boundaryFromRaw, containingBoundariesFromRaw, State, trailsInBoundaryFromRaw } from './boundary_detail_controller';
+import { fetchData } from './data';
 import { Header } from './page';
 import { setTitle } from './title';
 import { TrailPopup } from './trail_popup';
@@ -21,67 +21,48 @@ import { TrailPopup } from './trail_popup';
 export function BoundaryDetailElement({boundaryId, parameters}: {
   boundaryId: string;
   parameters: {[key: string]: string};
-}, state: State|undefined, updateState: (newState: State) => void) {
-  if (!state || boundaryId !== state.boundaryId) {
-    const rawBoundary = initialData('boundary', {id: boundaryId});
-    let boundary;
-    if (rawBoundary) {
-      boundary = boundaryFromRaw(rawBoundary);
-    }
-
-    const rawContainingBoundaries = initialData('boundaries_containing_boundary', {child_id: boundaryId});
-    let containingBoundaries;
-    if (rawContainingBoundaries) {
-      containingBoundaries = containingBoundariesFromRaw(rawContainingBoundaries);
-    }
-
-    const rawTrailsInBoundary = initialData('trails_in_boundary', {boundary_id: boundaryId});
-    let trailsInBoundary;
-    if (rawTrailsInBoundary) {
-      trailsInBoundary = trailsInBoundaryFromRaw(rawTrailsInBoundary);
-    }
-
-    state = {
-      boundary,
+}, inState: State|undefined, updateState: (newState: State) => void) {
+  if (!inState || boundaryId !== inState.boundaryId) {
+    inState = {
+      boundary: fetchData('boundary', {id: boundaryId}).then(boundaryFromRaw),
       boundaryId,
-      containingBoundaries,
+      containingBoundaries:
+          fetchData('boundaries_containing_boundary', {child_id: boundaryId})
+              .then(containingBoundariesFromRaw),
       layers: [],
       selected: [],
       selectedCardPosition: [-1, -1],
-			trailsInBoundary,
+			trailsInBoundary:
+          fetchData('trails_in_boundary', {boundary_id: boundaryId})
+              .then(trailsInBoundaryFromRaw),
     };
   }
+  const state = inState;
 
-  setTitle(state.boundary?.name);
+  setTitle(state.boundary.finished ? state.boundary.value().name : undefined);
+
+  const futures = [
+    state.boundary,
+    state.containingBoundaries,
+    state.trailsInBoundary,
+  ];
+  let ready;
+  if (futures.filter(f => !f.finished).length > 0) {
+    Promise.all(futures).then(() => {
+      updateState(state);
+    });
+    ready = false;
+  } else {
+    ready = true;
+  }
 
   return <>
     <div className="flex flex-col h-full items-center">
       <Header />
-      {state.boundary && state.containingBoundaries && state.trailsInBoundary
+      {ready
         ? <Content boundaryId={boundaryId} state={state} updateState={updateState} />
-        : <Loading boundaryId={boundaryId} state={state} updateState={updateState} />
+        : 'Loading...'
       }
-    </div>
-  </>;
-}
-
-function Loading({boundaryId, state, updateState}: {
-  boundaryId: string,
-  state: State,
-  updateState: (newState: State) => void,
-}) {
-  return <>
-    <div
-        js={corgi.bind({
-          controller: LoadingController,
-          events: {
-            render: 'wakeup',
-          },
-          state: [state, updateState],
-        })}
-        className="h-full max-w-6xl px-4 my-8 w-full"
-    >
-      Loading...
     </div>
   </>;
 }
@@ -91,9 +72,9 @@ function Content({boundaryId, state, updateState}: {
   state: State,
   updateState: (newState: State) => void,
 }) {
-  const containingBoundaries = checkExists(state.containingBoundaries);
-  const boundary = checkExists(state.boundary);
-  const trailsInBoundary = checkExists(state.trailsInBoundary);
+  const containingBoundaries = state.containingBoundaries.value();
+  const boundary = state.boundary.value();
+  const trailsInBoundary = state.trailsInBoundary.value();
 
   let trailDetails;
   if (state.selected.length > 0) {

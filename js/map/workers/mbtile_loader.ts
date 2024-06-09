@@ -1,7 +1,7 @@
-import { checkArgument, checkExhaustive, checkExists, exists } from 'js/common/asserts';
-import { DefaultMap } from 'js/common/collections';
-import { LittleEndianView } from 'js/common/little_endian_view';
-import { clamp } from 'js/common/math';
+import { checkArgument, checkExhaustive, checkExists, exists } from 'external/dev_april_corgi~/js/common/asserts';
+import { DefaultMap } from 'external/dev_april_corgi~/js/common/collections';
+import { LittleEndianView } from 'external/dev_april_corgi~/js/common/little_endian_view';
+import { clamp } from 'external/dev_april_corgi~/js/common/math';
 
 import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';

@@ -1,8 +1,8 @@
 import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExhaustive, checkExists } from 'js/common/asserts';
-import { LittleEndianView } from 'js/common/little_endian_view';
+import { checkExhaustive, checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { LittleEndianView } from 'external/dev_april_corgi~/js/common/little_endian_view';
 import { Camera, projectLatLngRect, projectS2LatLng } from 'js/map/camera';
 import { WorldBoundsQuadtree } from 'js/map/common/bounds_quadtree';
 import { DPI } from 'js/map/common/dpi';

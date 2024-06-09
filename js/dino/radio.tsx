@@ -1,4 +1,4 @@
-import * as corgi from 'js/corgi';
+import * as corgi from 'external/dev_april_corgi~/js/corgi';
 
 export function Radio({className, name, options, value, ...props}: {
   className?: string,

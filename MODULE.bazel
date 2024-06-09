@@ -5,10 +5,15 @@ module(
 )
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.0.1")
-bazel_dep(name = "aspect_rules_esbuild", version = "0.18.0")
-bazel_dep(name = "aspect_rules_jest", version = "0.20.0")
 bazel_dep(name = "aspect_rules_js", version = "1.38.0")
 bazel_dep(name = "aspect_rules_ts", version = "2.2.0")
+archive_override(
+    module_name = "aspect_rules_ts",
+    integrity = "sha256-x38N+njEB4k4BkkSI8EmTCiQdP7vv3BnIXQ6NVb6fOo=",
+    patches = ["build_defs/bzlmod/aspect_rules_ts.patch"],
+    strip_prefix = "rules_ts-2.2.0",
+    urls = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v2.2.0.tar.gz",
+)
 bazel_dep(name = "bazel_skylib", version = "1.5.0")
 bazel_dep(name = "platforms", version = "0.0.8")
 bazel_dep(name = "protobuf", version = "21.7")
@@ -114,3 +119,12 @@ pip.parse(
 )
 
 use_repo(pip, "pip")
+
+bazel_dep(name = "dev_april_corgi")
+
+archive_override(
+    module_name = "dev_april_corgi",
+    integrity = "sha256-UImtcJxt5dtXQLKleLiYJyA8ZxexX6q5xFcAdL4duY4=",
+    strip_prefix = "corgi-2d9e01bfae3036dd1008f001588902abdb2b6f84",
+    urls = "https://github.com/aschleck/corgi/archive/2d9e01bfae3036dd1008f001588902abdb2b6f84.tar.gz",
+)

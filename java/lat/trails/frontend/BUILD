@@ -37,10 +37,11 @@ tc_ts_project(
         "//:node_modules/@fastify/cookie",
         "//:node_modules/@fastify/reply-from",
         "//:node_modules/@types/pg",
+        "//:node_modules/fastify",
         "//:node_modules/openid-client",
         "//:node_modules/pg",
         "//java/lat/trails/client:ts",
-        "//js/corgi",
-        "//js/server",
+        "@dev_april_corgi//js/common",
+        "@dev_april_corgi//js/server",
     ],
 )

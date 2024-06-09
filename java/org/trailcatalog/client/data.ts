@@ -1,6 +1,14 @@
-import { initialData as initialDataUnsafe } from 'js/server/ssr_aware';
-
-import { fetchDataBatch as fetchDataBatchUnsafe, putCache } from './common/data';
+import {
+  Future,
+  asFuture,
+  resolvedFuture,
+} from 'external/dev_april_corgi~/js/common/futures';
+import {
+  fetchDataBatch as fetchDataBatchUnsafe,
+  getCache,
+  putCache,
+} from 'external/dev_april_corgi~/js/server/data';
+import {isServerSide} from 'external/dev_april_corgi~/js/server/ssr_aware';
 
 export type TrailId = {numeric: string}|{readable: string};
 
@@ -123,45 +131,51 @@ export interface DataResponses {
 type RequestTuples<T extends (keyof DataRequests)[]> = {[K in keyof T]: [T[K], DataRequests[T[K]]]}
 type ResponseBatch<T extends (keyof DataRequests)[]> = {[K in keyof T]: DataResponses[T[K]]}
 
-let fetchPromise: Promise<object[]>|undefined;
-let fetchQueue: Array<[string, object]>|undefined;
+let fetchFuture: Future<Array<object | null>> | undefined;
+let fetchQueue: Array<[string, object | null]> | undefined;
 
-export function fetchData<K extends keyof DataRequests>(type: K, request: DataRequests[K]):
-    Promise<DataResponses[K]> {
-  if (!fetchPromise || !fetchQueue) {
+export function fetchData<K extends keyof DataRequests>(
+  type: K,
+  request: DataRequests[K]
+): Future<DataResponses[K]> {
+  // We wait a tick to gather multiple keys before making the request. But if we're rendering on
+  // the server we really just want to send it out now. Yolo.
+  if (isServerSide()) {
+    return fetchDataBatch([[type, request]]).then(
+      r => r[0] as DataResponses[K]
+    );
+  }
+
+  const cached = getCache({...request, type});
+  if (cached) {
+    return resolvedFuture(cached as DataResponses[K]);
+  }
+
+  if (!fetchFuture || !fetchQueue) {
     fetchQueue = [];
     const captured = fetchQueue as RequestTuples<(keyof DataRequests)[]>;
-    fetchPromise =
-        Promise.resolve().then(() => {
-          fetchPromise = undefined;
-          fetchQueue = undefined;
-          return fetchDataBatch(captured);
-        });
+    fetchFuture = asFuture(Promise.resolve()).then(() => {
+      fetchFuture = undefined;
+      fetchQueue = undefined;
+      return fetchDataBatch(captured);
+    });
   }
 
   const i = fetchQueue.length;
   fetchQueue.push([type, request]);
-  return fetchPromise.then(r => r[i] as DataResponses[K]);
+  return fetchFuture.then(r => r[i] as DataResponses[K]);
 }
 
-export function fetchDataBatch<T extends (keyof DataRequests)[]>(tuples: RequestTuples<T>):
-    Promise<ResponseBatch<T>> {
-  return (fetchDataBatchUnsafe(tuples) as Promise<ResponseBatch<T>>)
-      .then(responses => {
-        for (let i = 0; i < tuples.length; ++i) {
-          const [type, request] = tuples[i];
-          middleware(type, request, responses[i]);
-        }
-        return responses;
-      });
-}
-
-export function initialData<K extends keyof DataRequests>(type: K, request: DataRequests[K]):
-    DataResponses[K]|undefined {
-  return initialDataUnsafe({
-    ...request,
-    type,
-  }) as DataResponses[K];
+export function fetchDataBatch<T extends (keyof DataRequests)[]>(
+  tuples: RequestTuples<T>
+): Future<ResponseBatch<T>> {
+  return (fetchDataBatchUnsafe(tuples) as Future<ResponseBatch<T>>).then(responses => {
+    for (let i = 0; i < tuples.length; ++i) {
+      const [type, request] = tuples[i];
+      middleware(type, request, responses[i]);
+    }
+    return responses;
+  });
 }
 
 function middleware<K extends keyof DataRequests>(

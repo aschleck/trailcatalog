@@ -1,4 +1,4 @@
-import { declareEvent } from 'js/corgi/events';
+import { declareEvent } from 'external/dev_april_corgi~/js/corgi/events';
 import { Vec2 } from 'js/map/common/types';
 
 import { Path, Point, Trail } from '../models/types';

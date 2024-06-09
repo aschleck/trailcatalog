@@ -18,11 +18,11 @@ tc_ts_project(
     name = "ts",
     deps = [
         "//java/org/trailcatalog/client/common",
-        "//js/common",
-        "//js/corgi",
-        "//js/emu",
         "//js/map",
         "//js/map/layers",
+        "@dev_april_corgi//js/common",
+        "@dev_april_corgi//js/corgi",
+        "@dev_april_corgi//js/emu",
     ],
 )
 

@@ -1,6 +1,6 @@
-import * as corgi from 'js/corgi';
+import * as corgi from 'external/dev_april_corgi~/js/corgi';
 
-import { Button as EmuButton } from 'js/emu/button';
+import { Button as EmuButton } from 'external/dev_april_corgi~/js/emu/button';
 import { FabricIcon, FabricIconName } from './fabric';
 
 type ButtonProps = {

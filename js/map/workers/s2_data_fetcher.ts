@@ -1,9 +1,9 @@
 import { Long, S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExhaustive } from 'js/common/asserts';
-import { Debouncer } from 'js/common/debouncer';
-import { FetchThrottler } from 'js/common/fetch_throttler';
-import { LittleEndianView } from 'js/common/little_endian_view';
+import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
+import { Debouncer } from 'external/dev_april_corgi~/js/common/debouncer';
+import { FetchThrottler } from 'external/dev_april_corgi~/js/common/fetch_throttler';
+import { LittleEndianView } from 'external/dev_april_corgi~/js/common/little_endian_view';
 
 import { S2CellToken } from '../common/types';
 

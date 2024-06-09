@@ -1,9 +1,11 @@
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { Future } from 'external/dev_april_corgi~/js/common/futures';
+import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
+import { merge } from 'external/dev_april_corgi~/js/corgi/deps';
+import { CorgiEvent, DOM_POINTER } from 'external/dev_april_corgi~/js/corgi/events';
+
 import { S2Point } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExists } from 'js/common/asserts';
-import { Controller, Response } from 'js/corgi/controller';
-import { merge } from 'js/corgi/deps';
-import { CorgiEvent } from 'js/corgi/events';
 import { unprojectS2LatLng } from 'js/map/camera';
 import { LatLng, Vec2 } from 'js/map/common/types';
 
@@ -24,7 +26,7 @@ interface LatLngAltitude {
 };
 
 export interface State extends VState {
-  containingBoundaries?: Boundary[];
+  containingBoundaries: Future<Boundary[]>;
   elevation?: {
     cursor?: LatLngAltitude;
     cursorFraction?: number;
@@ -32,10 +34,10 @@ export interface State extends VState {
     heights: string;
     points: LatLngAltitude[];
     resolution: Vec2;
-  }
-  epochDate: Date|undefined;
-  pathProfiles?: Map<bigint, ElevationProfile>;
-  trail?: Trail;
+  },
+  epochDate: Future<Date>;
+  pathProfiles: Future<Map<bigint, ElevationProfile>>;
+  trail: Future<Trail>;
   trailId: string;
   weather?: {
     temperatureCelsius: number;
@@ -44,58 +46,6 @@ export interface State extends VState {
 }
 
 type Deps = typeof TrailDetailController.deps;
-type LoadingDeps = typeof LoadingController.deps;
-
-export class LoadingController extends Controller<{}, LoadingDeps, HTMLElement, State> {
-
-  static deps() {
-    return {
-      services: {
-        data: MapDataService,
-      },
-    };
-  }
-
-  constructor(response: Response<LoadingController>) {
-    super(response);
-
-    const trailId = {readable: this.state.trailId};
-    fetchData('trail', {trail_id: trailId}).then(raw => {
-      const trail = trailFromRaw(raw);
-      this.updateState({
-        ...this.state,
-        trail,
-      });
-    });
-
-    if (!this.state.epochDate) {
-      fetchData('epoch', {}).then(raw => {
-        this.updateState({
-          ...this.state,
-          epochDate: new Date(raw.timestampS * 1000),
-        });
-      });
-    }
-
-    if (!this.state.containingBoundaries) {
-      fetchData('boundaries_containing_trail', {trail_id: trailId}).then(raw => {
-        this.updateState({
-          ...this.state,
-          containingBoundaries: containingBoundariesFromRaw(raw),
-        });
-      });
-    }
-
-    if (!this.state.pathProfiles) {
-      fetchData('path_profiles_in_trail', {trail_id: trailId}).then(raw => {
-        this.updateState({
-          ...this.state,
-          pathProfiles: pathProfilesInTrailFromRaw(raw),
-        });
-      });
-    }
-  }
-}
 
 export class TrailDetailController extends ViewportController<Args, Deps, State> {
 
@@ -111,7 +61,7 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     super(response);
 
     const history = response.deps.services.history;
-    const trail = checkExists(this.state.trail);
+    const trail = this.state.trail.value();
     history.silentlyReplaceUrl(`/trail/${trail.readableId}`);
 
     const data = response.deps.services.data;
@@ -121,8 +71,8 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
         elevation:
             calculateGraph(
                 data,
-                checkExists(this.state.pathProfiles),
-                checkExists(this.state.trail)),
+                this.state.pathProfiles.value(),
+                this.state.trail.value()),
       });
     });
 
@@ -148,7 +98,7 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     routes.showOverview({camera: this.mapController.cameraLlz}, this.views);
   }
 
-  clearElevationCursor(e: PointerEvent) {
+  clearElevationCursor(e: CorgiEvent<typeof DOM_POINTER>) {
     if (!this.state.elevation) {
       return;
     }
@@ -163,17 +113,17 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     });
   }
 
-  moveElevationCursor(e: PointerEvent) {
+  moveElevationCursor(e: CorgiEvent<typeof DOM_POINTER>) {
     if (!this.state.elevation) {
       return;
     }
 
     const elevation = this.state.elevation;
-    const svg = e.currentTarget as SVGSVGElement;
+    const svg = e.actionElement.element() as SVGSVGElement;
     const transform = checkExists(svg.getScreenCTM()).inverse();
     const p = svg.createSVGPoint();
-    p.x = e.clientX;
-    p.y = e.clientY;
+    p.x = e.detail.clientX;
+    p.y = e.detail.clientY;
     const fraction = p.matrixTransform(transform).x / ELEVATION_GRAPH_RESOLUTION_WIDTH;
     // Not exactly accurate (points might be very close at the path edges) but I don't care.
     const point = elevation.points[Math.floor(fraction * elevation.points.length)];
@@ -189,9 +139,7 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
   }
 
   zoomToFit(): void {
-    if (this.state.trail) {
-      this.mapController?.setCamera(this.state.trail.bound);
-    }
+    this.mapController?.setCamera(this.state.trail.value().bound);
   }
 }
 

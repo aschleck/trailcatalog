@@ -1,66 +1,61 @@
-import { checkExists } from 'js/common/asserts';
-import { floatCoalesce } from 'js/common/math';
-import * as corgi from 'js/corgi';
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { resolvedFuture } from 'external/dev_april_corgi~/js/common/futures';
+import { floatCoalesce } from 'external/dev_april_corgi~/js/common/math';
+import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 import { FabricIcon } from 'js/dino/fabric';
-import { ACTION } from 'js/emu/events';
 import { LatLngRect, Vec2 } from 'js/map/common/types';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
-import { getUnitSystem } from 'js/server/ssr_aware';
 
+import { getUnitSystem } from './common/formatters';
 import { HOVER_CHANGED, SELECTION_CHANGED } from './map/events';
 import { Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
-import { initialData } from './data';
+import { fetchData } from './data';
 import { Header } from './page';
 import { searchTrailsFromRaw } from './search_controller';
-import { LIMIT, LoadingController, SearchResultsOverviewController, State } from './search_results_overview_controller';
+import { LIMIT, SearchResultsOverviewController, State } from './search_results_overview_controller';
 import { setTitle } from './title';
 import { TrailSidebar } from './trail_list';
 import { TrailPopup } from './trail_popup';
 
 export function SearchResultsOverviewElement(
     {parameters}: {parameters: {[key: string]: string};},
-    state: State|undefined,
+    inState: State|undefined,
     updateState: (newState: State) => void) {
   const boundaryId = parameters.boundary ?? undefined;
   const query = parameters.query ?? undefined;
 
   setTitle(query);
 
-  if (!state || boundaryId !== state.boundaryId || query !== state.searchQuery) {
+  if (!inState || boundaryId !== inState.boundaryId || query !== inState.searchQuery) {
     let boundary;
     let trailsInBoundary;
     let trailsInBoundaryIds;
 
     if (boundaryId) {
-      const rawBoundary = initialData('boundary', {id: boundaryId});
-      if (rawBoundary) {
-        boundary = boundaryFromRaw(rawBoundary);
-      }
+      boundary = fetchData('boundary', {id: boundaryId}).then(boundaryFromRaw);
 
-      const rawTrailsInBoundary = initialData('trails_in_boundary', {boundary_id: boundaryId});
-      if (rawTrailsInBoundary) {
-        trailsInBoundary = trailsInBoundaryFromRaw(rawTrailsInBoundary);
-        trailsInBoundaryIds = new Set(trailsInBoundary.map(t => t.id));
-      }
+      trailsInBoundary =
+          fetchData('trails_in_boundary', {boundary_id: boundaryId})
+              .then(trailsInBoundaryFromRaw);
+      trailsInBoundaryIds = trailsInBoundary.then(raw => new Set(raw.map(t => t.id)));
     }
 
     let searchTrails;
     let searchTrailsIds;
     if (query) {
-      const rawSearchTrails = initialData('search_trails', {query, limit: LIMIT});
-      if (rawSearchTrails) {
-        searchTrails = searchTrailsFromRaw(rawSearchTrails);
-        searchTrailsIds = new Set(searchTrails.map(t => t.id));
-      }
+      searchTrails = fetchData('search_trails', {query, limit: LIMIT}).then(searchTrailsFromRaw);
+      searchTrailsIds = searchTrails.then(raw => new Set(raw.map(t => t.id)));
     }
 
-    state = {
+    inState = {
       blueDot: undefined,
       boundary,
       boundaryId,
@@ -80,39 +75,35 @@ export function SearchResultsOverviewElement(
       selectedCardPosition: [-1, -1],
     };
   }
+  const state = inState;
+
+  const futures = [
+    state.boundary ?? resolvedFuture(undefined),
+    state.trailsInBoundary ?? resolvedFuture(undefined),
+    state.trailsInBoundaryIds ?? resolvedFuture(undefined),
+    state.searchTrails ?? resolvedFuture(undefined),
+    state.searchTrailsIds ?? resolvedFuture(undefined),
+  ];
+  let ready;
+  if (futures.filter(f => !f.finished).length > 0) {
+    Promise.all(futures).then(() => {
+      updateState(state);
+    });
+    ready = false;
+  } else {
+    ready = true;
+  }
 
   return <>
-      {((!boundaryId || state.boundary) && (!query || state.searchTrails))
+      {ready
           ? <Content
               boundaryId={boundaryId}
               query={query}
               parameters={parameters}
               state={state}
               updateState={updateState} />
-          : <Loading boundaryId={boundaryId} query={query} state={state} updateState={updateState} />
+          : 'Loading...'
       }
-  </>;
-}
-
-function Loading({boundaryId, query, state, updateState}: {
-  boundaryId?: string,
-  query?: string,
-  state: State,
-  updateState: (newState: State) => void,
-}) {
-  return <>
-    <div
-        js={corgi.bind({
-          controller: LoadingController,
-          args: {boundaryId, query, units: getUnitSystem()},
-          events: {
-            render: 'wakeup',
-          },
-          state: [state, updateState],
-        })}
-    >
-      Loading...
-    </div>
   </>;
 }
 
@@ -135,7 +126,7 @@ function Content({
   let bound;
   if (query) {
     if (state.searchTrails) {
-      filteredTrails = state.searchTrails.filter(t => filter(t.id));
+      filteredTrails = state.searchTrails.value().filter(t => filter(t.id));
 
       let lowLat = 90;
       let lowLng = 180;
@@ -162,9 +153,9 @@ function Content({
     }
   } else if (boundaryId) {
     if (state.boundary && state.trailsInBoundary) {
-      bound = state.boundary.bound;
+      bound = state.boundary.value().bound;
       if (state.filterInBoundary) {
-        filteredTrails = state.trailsInBoundary;
+        filteredTrails = state.trailsInBoundary.value();
       } else {
         filteredTrails = state.nearbyTrails;
       }
@@ -207,7 +198,7 @@ function Content({
             },
             overlays: {
               blueDot: state.blueDot,
-              polygon: state.boundary?.polygon,
+              polygon: state.boundary?.value().polygon,
             },
             query,
             units: getUnitSystem(),
@@ -265,7 +256,7 @@ function Content({
 }
 
 function SearchFilter({state}: {state: State}) {
-  const boundary = checkExists(state.boundary);
+  const boundary = checkExists(state.boundary).value();
   const divider = <div className="bg-black-opaque-20 self-stretch w-px" />;
   return <>
     <aside

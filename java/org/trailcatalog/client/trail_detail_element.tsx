@@ -1,23 +1,22 @@
-import { checkExists } from 'js/common/asserts';
-import * as corgi from 'js/corgi';
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import * as corgi from 'external/dev_april_corgi~/js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
-import { ACTION } from 'js/emu/events';
+import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
 import { LatLng } from 'js/map/common/types';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
-import { getUnitSystem } from 'js/server/ssr_aware';
 
-import { formatDistance, formatHeight, formatTemperature, shouldUseImperial } from './common/formatters';
+import { formatDistance, formatHeight, formatTemperature, getUnitSystem, shouldUseImperial } from './common/formatters';
 import { metersToFeet, metersToMiles } from './common/math';
 import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { initialData } from './data';
+import { fetchData } from './data';
 import { Header } from './page';
 import { setTitle } from './title';
-import { LoadingController, TrailDetailController, State } from './trail_detail_controller';
+import { TrailDetailController, State } from './trail_detail_controller';
 import { TrailPopup } from './trail_popup';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
@@ -26,73 +25,52 @@ const GRAPH_TEXT_SPACE_PX = [0, 32] as const;
 export function TrailDetailElement({trailId, parameters}: {
   trailId: string;
   parameters: {[key: string]: string};
-}, state: State|undefined, updateState: (newState: State) => void) {
-  if (!state || trailId !== state.trailId) {
+}, inState: State|undefined, updateState: (newState: State) => void) {
+  if (!inState || trailId !== inState.trailId) {
     const wrapped = {readable: trailId};
-    const rawTrail = initialData('trail', {trail_id: wrapped});
-    let trail;
-    if (rawTrail) {
-      trail = trailFromRaw(rawTrail);
-    }
-
-    const rawEpoch = initialData('epoch', {});
-
-    const rawContainingBoundaries = initialData('boundaries_containing_trail', {trail_id: wrapped});
-    let containingBoundaries;
-    if (rawContainingBoundaries) {
-      containingBoundaries = containingBoundariesFromRaw(rawContainingBoundaries);
-    }
-
-    const rawPathProfiles = initialData('path_profiles_in_trail', {trail_id: wrapped});
-    let pathProfiles;
-    if (rawPathProfiles) {
-      pathProfiles = pathProfilesInTrailFromRaw(rawPathProfiles);
-    }
-
-    state = {
-      containingBoundaries,
-      epochDate: rawEpoch ? new Date(rawEpoch.timestampS * 1000) : undefined,
+    inState = {
+      containingBoundaries:
+          fetchData('boundaries_containing_trail', {trail_id: wrapped})
+              .then(containingBoundariesFromRaw),
+      epochDate: fetchData('epoch', {}).then(raw => new Date(raw.timestampS * 1000)),
       layers: [],
-      pathProfiles,
+      pathProfiles:
+          fetchData('path_profiles_in_trail', {trail_id: wrapped})
+              .then(pathProfilesInTrailFromRaw),
       selected: [],
       selectedCardPosition: [-1, -1],
-      trail,
+      trail: fetchData('trail', {trail_id: wrapped}).then(trailFromRaw),
       trailId,
     };
   }
+  const state = inState;
 
-  setTitle(state.trail?.name);
+  setTitle(state.trail.finished ? state.trail.value().name : undefined);
+
+  const futures = [
+    state.containingBoundaries,
+    state.epochDate,
+    state.pathProfiles,
+    state.trail,
+  ];
+  let ready;
+  if (futures.filter(f => !f.finished).length > 0) {
+    Promise.all(futures).then(() => {
+      updateState(state);
+    });
+    ready = false;
+  } else {
+    ready = true;
+  }
 
   return <>
     <div className="flex flex-col h-full">
       <Header />
 
-      {state.containingBoundaries && state.trail
+      {ready
           ? <Content trailId={trailId} state={state} updateState={updateState} />
-          : <Loading trailId={trailId} state={state} updateState={updateState} />
+          : 'Loading...'
       }
-    </div>
-  </>;
-}
-
-function Loading({trailId, state, updateState}: {
-  trailId: string,
-  state: State,
-  updateState: (newState: State) => void,
-}) {
-  return <>
-    <div
-        js={corgi.bind({
-          controller: LoadingController,
-          key: JSON.stringify(trailId),
-          events: {
-            render: 'wakeup',
-          },
-          state: [state, updateState],
-        })}
-        className="h-full max-w-6xl px-4 my-8 w-full"
-    >
-      Loading...
     </div>
   </>;
 }
@@ -102,7 +80,7 @@ function Content({trailId, state, updateState}: {
   state: State,
   updateState: (newState: State) => void,
 }) {
-  const trail = checkExists(state.trail);
+  const trail = state.trail.value();
   let trailDetails;
   if (state.selected.length > 0) {
     trailDetails =
@@ -163,8 +141,8 @@ function Content({trailId, state, updateState}: {
 }
 
 function TrailSidebar({state}: {state: State}) {
-  const containingBoundaries = checkExists(state.containingBoundaries);
-  const trail = checkExists(state.trail);
+  const containingBoundaries = state.containingBoundaries.value();
+  const trail = state.trail.value();
   const valid = trail.lengthMeters >= 0;
   const distance = formatDistance(trail.lengthMeters);
   const elevationDown = formatHeight(trail.elevationDownMeters);
@@ -282,21 +260,24 @@ function TrailSidebar({state}: {state: State}) {
           Synced
         </div>
         <div>
-          {state.epochDate
+          {
               // We *need* this be in the pacific time because the client and server generated text
               // *must* match.
-              ? state.epochDate.toLocaleDateString(undefined, {timeZone: 'America/Los_Angeles'})
-              : 'unknown'
+              state.epochDate.value()
+                  .toLocaleDateString(undefined, {timeZone: 'America/Los_Angeles'})
           }
         </div>
       </div>
-      {state.elevation
-          ? <section className="mt-4">
-              <div className="font-medium text-lg">Elevation</div>
-              <ElevationGraph {...state} />
-            </section>
-          : <></>
-      }
+      <section className="mt-4">
+        <div className="font-medium text-lg">Elevation</div>
+        {state.elevation
+            ? <section className="mt-4">
+                <div className="font-medium text-lg">Elevation</div>
+                <ElevationGraph {...state} />
+              </section>
+            : <></>
+        }
+      </section>
     </div>
   </>;
 }
@@ -309,7 +290,7 @@ function NumericCrumb({value, unit}: {value: string; unit: string;}) {
 }
 
 function ElevationGraph(state: State) {
-  const trail = checkExists(state.trail);
+  const trail = state.trail.value();
   const elevation = checkExists(state.elevation);
   const [resWidth, resHeight] = elevation.resolution;
 

@@ -22,13 +22,13 @@ tc_ts_project(
     deps = [
         "//java/org/trailcatalog/client/data",
         "//java/org/trailcatalog/client/map",
-        "//js/common",
-        "//js/corgi",
         "//js/dino",
-        "//js/emu",
         "//js/map",
         "//js/map/layers",
-        "//js/server:client",
+        "@dev_april_corgi//js/common",
+        "@dev_april_corgi//js/corgi",
+        "@dev_april_corgi//js/emu",
+        "@dev_april_corgi//js/server:client",
     ],
 )
 

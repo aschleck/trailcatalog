@@ -1,10 +1,11 @@
+import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
+import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
+import { CorgiEvent } from 'external/dev_april_corgi~/js/corgi/events';
+import { HistoryService } from 'external/dev_april_corgi~/js/corgi/history/history_service';
+import { CHANGED } from 'external/dev_april_corgi~/js/emu/events';
+
 import { Long, S2CellId, S2LatLng, S2LatLngRect, S2Loop, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExhaustive } from 'js/common/asserts';
-import { Controller, Response } from 'js/corgi/controller';
-import { CorgiEvent } from 'js/corgi/events';
-import { HistoryService } from 'js/corgi/history/history_service';
-import { CHANGED } from 'js/emu/events';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map/camera';
 import { rgbaToUint32 } from 'js/map/common/math';
 import { RgbaU32, Vec2 } from 'js/map/common/types';

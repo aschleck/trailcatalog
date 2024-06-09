@@ -1,8 +1,8 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { checkExhaustive } from 'js/common/asserts';
-import { HashMap } from 'js/common/collections';
-import { QueuedWorkerPool, Task } from 'js/common/queued_worker_pool';
-import { WorkerPool } from 'js/common/worker_pool';
+import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
+import { HashMap } from 'external/dev_april_corgi~/js/common/collections';
+import { QueuedWorkerPool, Task } from 'external/dev_april_corgi~/js/common/queued_worker_pool';
+import { WorkerPool } from 'external/dev_april_corgi~/js/common/worker_pool';
 
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';

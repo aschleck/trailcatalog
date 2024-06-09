@@ -1,6 +1,6 @@
 import process from 'process';
 
-import { serve } from 'js/server/server';
+import { serve } from 'external/dev_april_corgi~/js/server/server';
 
 import { App } from '../client/app';
 

@@ -5,10 +5,11 @@ import fastifyReplyFrom from '@fastify/reply-from';
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { Pool } from 'pg'
 
-import { checkExists } from 'js/common/asserts';
-import { serve } from 'js/server/server';
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { serve } from 'external/dev_april_corgi~/js/server/server';
 
 import { App } from '../client/app';
+
 import { ExpiredCredentialError, LoginEnforcer } from './auth';
 import { Encrypter } from './encrypter';
 import * as oidc from './oidc';
@@ -49,7 +50,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
             'if-none-match': headers['if-none-match'],
             'pragma': headers['pragma'],
             'user-agent': headers['user-agent'],
-            'x-user-id': request.userId,
+            'x-user-id': (request as unknown as {userId?: string}).userId ?? '',
           };
         },
       });
@@ -71,7 +72,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
       }
     }
 
-    request.userId = maybeUserId ?? '';
+    (request as unknown as {userId: string}).userId = maybeUserId ?? '';
   });
 
   await oidc.addGoogle(server, encrypter, loginEnforcer, pgPool);
@@ -102,8 +103,10 @@ function page(content: string, title: string, initialData: string): string {
 
 (async () => {
   await serve(App as any, page, {
+    dataServer: 'http://127.0.0.1:7070/api/data',
     defaultTitle: 'trails.lat',
-    initialize,
+    // I don't get why this needs an any at all
+    initialize: initialize as any,
     port: 7050,
   });
 })();

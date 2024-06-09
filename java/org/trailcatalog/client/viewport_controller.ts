@@ -1,7 +1,8 @@
-import { Controller, Response } from 'js/corgi/controller';
-import { CorgiEvent } from 'js/corgi/events';
-import { HistoryService } from 'js/corgi/history/history_service';
-import { ViewsService } from 'js/corgi/history/views_service';
+import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
+import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi~/js/corgi/events';
+import { HistoryService } from 'external/dev_april_corgi~/js/corgi/history/history_service';
+import { ViewsService } from 'external/dev_april_corgi~/js/corgi/history/views_service';
+
 import { rgbaToUint32 } from 'js/map/common/math';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
@@ -9,8 +10,8 @@ import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/laye
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { MapController } from 'js/map/map_controller';
 import { Z_BASE_TERRAIN } from 'js/map/z';
-import { UnitSystem } from 'js/server/ssr_aware';
 
+import { UnitSystem } from './common/formatters';
 import { MapDataService } from './data/map_data_service';
 import { ACTIVE_PALETTE, ERROR_PALETTE, LinePalette } from './map/colors';
 import { SELECTION_CHANGED } from './map/events';
@@ -271,8 +272,8 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
     }
   }
 
-  highlightTrail(e: MouseEvent): void {}
-  unhighlightTrail(e: MouseEvent): void {}
+  highlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {}
+  unhighlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {}
 }
 
 function isTrail(e: Path|Point|Trail): e is Trail {

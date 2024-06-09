@@ -1,6 +1,7 @@
+import { clamp } from 'external/dev_april_corgi~/js/common/math';
+
 import { S2LatLng, S2LatLngRect, S2Loop } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { clamp } from 'js/common/math';
 
 import { Rect, Vec2 } from './common/types';
 

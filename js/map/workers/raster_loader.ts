@@ -1,4 +1,4 @@
-import { checkExhaustive } from 'js/common/asserts';
+import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
 
 import { TileId } from '../common/types';
 

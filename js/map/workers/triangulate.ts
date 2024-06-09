@@ -1,7 +1,7 @@
 import earcut from 'earcut';
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
-import { checkExists } from 'js/common/asserts';
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
 
 import { projectS2Loop } from '../camera';
 

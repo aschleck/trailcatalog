@@ -1,6 +1,6 @@
-import * as corgi from 'js/corgi';
+import * as corgi from 'external/dev_april_corgi~/js/corgi';
 
-import { Select as EmuSelect } from 'js/emu/select';
+import { Select as EmuSelect } from 'external/dev_april_corgi~/js/emu/select';
 
 export function Select(
     {className, ...props}: {

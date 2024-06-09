@@ -7,9 +7,9 @@ tc_ts_project(
     deps = [
         "//:node_modules/@mapbox/tiny-sdf",
         "//:node_modules/grapheme-splitter",
-        "//js/common",
         "//js/map/common",
-        "//js/server:client",
+        "@dev_april_corgi//js/common",
+        "@dev_april_corgi//js/server:client",
     ],
 )
 

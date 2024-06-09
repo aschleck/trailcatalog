@@ -6,10 +6,10 @@ tc_ts_project(
     name = "common",
     deps = [
         "//java/org/trailcatalog/s2",
-        "//js/corgi",
-        "//js/corgi/history",
         "//js/dino",
         "//js/map/common",
-        "//js/server:client",
+        "@dev_april_corgi//js/corgi",
+        "@dev_april_corgi//js/corgi/history",
+        "@dev_april_corgi//js/server:client",
     ],
 )

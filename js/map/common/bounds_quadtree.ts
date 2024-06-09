@@ -1,4 +1,4 @@
-import * as arrays from 'js/common/arrays';
+import * as arrays from 'external/dev_april_corgi~/js/common/arrays';
 
 import { Rect, Vec2 } from './types';
 

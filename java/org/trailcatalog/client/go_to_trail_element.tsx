@@ -1,47 +1,40 @@
-import * as corgi from 'js/corgi';
-import { redirectTo } from 'js/server/ssr_aware';
+import { Future } from 'external/dev_april_corgi~/js/common/futures';
+import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import { redirectTo } from 'external/dev_april_corgi~/js/server/ssr_aware';
 
-import { initialData } from './data';
-import { GoToTrailController, State } from './go_to_trail_controller';
+import { Trail } from './models/types';
+
+import { fetchData } from './data';
 import { trailFromRaw } from './trails';
+
+interface State {
+  trail: Future<Trail>;
+}
 
 export function GoToTrailElement({trailId, parameters}: {
   trailId: string;
   parameters: {[key: string]: string};
-}, state: State|undefined, updateState: (newState: State) => void) {
-  if (!state) {
-    const rawTrail = initialData('trail', {trail_id: {numeric: trailId}});
-    let trail;
-    if (rawTrail) {
-      trail = trailFromRaw(rawTrail);
-    }
-
-    state = {
-      trail,
+}, inState: State|undefined, updateState: (newState: State) => void) {
+  if (!inState) {
+    inState = {
+      trail: fetchData('trail', {trail_id: {numeric: trailId}}).then(trailFromRaw),
     };
   }
+  const state = inState;
 
-  if (state.trail) {
-    redirectTo(`/trail/${state.trail.readableId}`);
+  if (state.trail.finished) {
+    const trail = state.trail.value();
+    redirectTo(`/trail/${trail.readableId}`);
     return <>
-      <a href={`/trail/${state.trail.readableId}`}>
+      <a href={`/trail/${trail.readableId}`}>
         Click here if you are not automatically redirected
       </a>
     </>;
   } else {
-    return <>
-      <div
-          js={corgi.bind({
-            controller: GoToTrailController,
-            args: {trailId},
-            events: {
-              render: 'wakeup',
-            },
-            state: [state, updateState],
-          })}
-      >
-        Redirecting...
-      </div>
-    </>;
+    state.trail.then(() => {
+      updateState(state);
+    });
+
+    return <>Redirecting...</>;
   }
 }

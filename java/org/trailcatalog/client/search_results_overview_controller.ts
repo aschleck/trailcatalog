@@ -1,8 +1,9 @@
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { Future } from 'external/dev_april_corgi~/js/common/futures';
+import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
+import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi~/js/corgi/events';
+
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExists } from 'js/common/asserts';
-import { Controller, Response } from 'js/corgi/controller';
-import { EmptyDeps } from 'js/corgi/deps';
-import { CorgiEvent } from 'js/corgi/events';
 import { LatLng } from 'js/map/common/types';
 import { DATA_CHANGED, MAP_MOVED } from 'js/map/events';
 
@@ -27,7 +28,7 @@ type Deps = typeof SearchResultsOverviewController.deps;
 export interface State extends VState {
   blueDot: LatLng|undefined;
   boundaryId: string|undefined;
-  boundary: Boundary|undefined;
+  boundary: Future<Boundary>|undefined;
   clickCandidate?: {
     lastClick: number;
     trail: Trail;
@@ -37,59 +38,16 @@ export interface State extends VState {
   mobileSidebarOpen: boolean;
   nearbyTrails: Trail[];
   trailsFilter: (id: bigint) => boolean;
-  trailsInBoundary: Trail[]|undefined;
+  trailsInBoundary: Future<Trail[]>|undefined;
   trailsInBoundaryFilter: (id: bigint) => boolean;
-  trailsInBoundaryIds: Set<bigint>|undefined;
+  trailsInBoundaryIds: Future<Set<bigint>>|undefined;
   searchQuery?: string;
-  searchTrails: TrailSearchResult[]|undefined;
-  searchTrailsIds: Set<bigint>|undefined;
+  searchTrails: Future<TrailSearchResult[]>|undefined;
+  searchTrailsIds: Future<Set<bigint>>|undefined;
 }
 
 const DOUBLE_CLICK_DETECTION_MS = 250;
 export const LIMIT = 100;
-
-export class LoadingController extends Controller<Args, EmptyDeps, HTMLElement, State> {
-
-  constructor(response: Response<LoadingController>) {
-    super(response);
-
-    if (response.args.boundaryId) {
-      const id = response.args.boundaryId;
-      if (!this.state.boundary) {
-        fetchData('boundary', {id}).then(raw => {
-          this.updateState({
-            ...this.state,
-            boundary: boundaryFromRaw(raw),
-            filterInBoundary: true,
-          });
-        });
-      }
-
-      if (!this.state.trailsInBoundary) {
-        fetchData('trails_in_boundary', {boundary_id: id}).then(raw => {
-          const trailsInBoundary = trailsInBoundaryFromRaw(raw);
-          this.updateState({
-            ...this.state,
-            trailsInBoundary,
-            trailsInBoundaryIds: new Set(trailsInBoundary.map(t => t.id)),
-          });
-        });
-      }
-    }
-
-    const query = response.args.query;
-    if (query && !this.state.searchTrails) {
-      fetchData('search_trails', {query, limit: LIMIT}).then(raw => {
-        const searchTrails = searchTrailsFromRaw(raw);
-        this.updateState({
-          ...this.state,
-          searchTrails,
-          searchTrailsIds: new Set(searchTrails.map(t => t.id)),
-        });
-      });
-    }
-  }
-}
 
 export class SearchResultsOverviewController extends ViewportController<Args, Deps, State> {
 
@@ -97,11 +55,11 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     return ViewportController.deps();
   }
 
-  private query: string|undefined;
+  private searchQuery: string|undefined;
 
   constructor(response: Response<SearchResultsOverviewController>) {
     super(response);
-    this.query = response.args.query;
+    this.searchQuery = response.args.query;
 
     // We do this here to
     // a) avoid making filter functions every time the TSX re-renders
@@ -110,7 +68,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
       ...this.state,
       trailsFilter: (id: bigint) => {
         const searchTrailsIds = this.state.searchTrailsIds;
-        if (searchTrailsIds && !searchTrailsIds.has(id)) {
+        if (searchTrailsIds && !searchTrailsIds.value().has(id)) {
           return false;
         }
 
@@ -118,13 +76,13 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
       },
       trailsInBoundaryFilter: (id: bigint) => {
         const searchTrailsIds = this.state.searchTrailsIds;
-        if (searchTrailsIds && !searchTrailsIds.has(id)) {
+        if (searchTrailsIds && !searchTrailsIds.value().has(id)) {
           return false;
         }
 
         const trailsInBoundaryIds = this.state.trailsInBoundaryIds;
         if (trailsInBoundaryIds) {
-          return trailsInBoundaryIds.has(id);
+          return trailsInBoundaryIds.value().has(id);
         }
 
         return true;
@@ -134,16 +92,16 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
 
   centerBoundary(): void {
     if (this.state.boundary) {
-      const bound = this.state.boundary.polygon.getRectBound();
+      const bound = this.state.boundary.value().polygon.getRectBound();
       this.mapController.setCamera(s2LatLngRectToTc(bound));
     }
   }
 
   clearBoundary(): void {
-    if (this.query) {
+    if (this.searchQuery) {
       routes.showSearchResults({
         camera: this.mapController.cameraLlz,
-        query: this.query,
+        query: this.searchQuery,
       }, this.views);
     } else {
       routes.showOverview({camera: this.mapController.cameraLlz}, this.views);
@@ -258,8 +216,8 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     });
   }
 
-  viewTrail(e: MouseEvent): void {
-    const raw = (e.currentTarget as HTMLElement|undefined)?.dataset?.trailId;
+  viewTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const raw = e.actionElement.data('trailId')?.string();
     if (raw === undefined) {
       console.error('Unable to find trail ID');
       return;
@@ -269,16 +227,16 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     routes.showTrail(id, this.views);
   }
 
-  override highlightTrail(e: MouseEvent): void {
+  override highlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.setTrailHighlighted(e, true);
   }
 
-  override unhighlightTrail(e: MouseEvent): void {
+  override unhighlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.setTrailHighlighted(e, false);
   }
 
-  private setTrailHighlighted(e: MouseEvent, selected: boolean): void {
-    const id = (checkExists(e.currentTarget) as HTMLElement).dataset.trailId;
+  private setTrailHighlighted(e: CorgiEvent<typeof DOM_MOUSE>, selected: boolean): void {
+    const id = e.actionElement.data('trailId')?.string();
     if (!id) {
       return;
     }

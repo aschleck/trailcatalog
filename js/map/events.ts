@@ -1,5 +1,5 @@
 import { S2LatLng } from 'java/org/trailcatalog/s2';
-import { declareEvent } from 'js/corgi/events';
+import { declareEvent } from 'external/dev_april_corgi~/js/corgi/events';
 
 import { LatLngRect, LatLngZoom, Vec2 } from './common/types';
 

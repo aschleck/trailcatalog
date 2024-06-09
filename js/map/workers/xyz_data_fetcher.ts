@@ -1,9 +1,9 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { checkExhaustive } from 'js/common/asserts';
-import { HashMap, HashSet } from 'js/common/collections';
-import { Debouncer } from 'js/common/debouncer';
-import { FetchThrottler } from 'js/common/fetch_throttler';
-import { clamp } from 'js/common/math';
+import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
+import { HashMap, HashSet } from 'external/dev_april_corgi~/js/common/collections';
+import { Debouncer } from 'external/dev_april_corgi~/js/common/debouncer';
+import { FetchThrottler } from 'external/dev_april_corgi~/js/common/fetch_throttler';
+import { clamp } from 'external/dev_april_corgi~/js/common/math';
 
 import { projectLatLngRect } from '../camera';
 import { tilesIntersect } from '../common/math';

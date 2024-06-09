@@ -3,10 +3,10 @@ import { GeoTIFF } from 'geotiff';
 
 import { S1Angle, S2LatLng, S2LatLngRect, S2Point, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExhaustive, checkExists } from 'js/common/asserts';
-import { HashMap, HashSet } from 'js/common/collections';
-import { Debouncer } from 'js/common/debouncer';
-import { clamp } from 'js/common/math';
+import { checkExhaustive, checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { HashMap, HashSet } from 'external/dev_april_corgi~/js/common/collections';
+import { Debouncer } from 'external/dev_april_corgi~/js/common/debouncer';
+import { clamp } from 'external/dev_april_corgi~/js/common/math';
 
 import { projectLatLngRect, unprojectS2LatLng } from '../camera';
 import { tilesIntersect } from '../common/math';

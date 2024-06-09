@@ -1,12 +1,12 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { checkExists, exists } from 'js/common/asserts';
-import { HashSet } from 'js/common/collections';
-import { approxEqual } from 'js/common/comparisons';
-import { Debouncer } from 'js/common/debouncer';
-import { Controller, Response } from 'js/corgi/controller';
-import { EmptyDeps } from 'js/corgi/deps';
-import { EventSpec } from 'js/corgi/events';
-import { DialogService } from 'js/emu/dialog';
+import { checkExists, exists } from 'external/dev_april_corgi~/js/common/asserts';
+import { HashSet } from 'external/dev_april_corgi~/js/common/collections';
+import { approxEqual } from 'external/dev_april_corgi~/js/common/comparisons';
+import { Debouncer } from 'external/dev_april_corgi~/js/common/debouncer';
+import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
+import { EmptyDeps } from 'external/dev_april_corgi~/js/corgi/deps';
+import { EventSpec } from 'external/dev_april_corgi~/js/corgi/events';
+import { DialogService } from 'external/dev_april_corgi~/js/emu/dialog';
 
 import { DPI } from './common/dpi';
 import { fitBoundInScreen } from './common/math';

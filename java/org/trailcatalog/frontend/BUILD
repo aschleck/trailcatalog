@@ -29,7 +29,7 @@ tc_ts_project(
     ],
     deps = [
         "//java/org/trailcatalog/client:ts",
-        "//js/corgi",
-        "//js/server",
+        "@dev_april_corgi//js/corgi",
+        "@dev_april_corgi//js/server",
     ],
 )

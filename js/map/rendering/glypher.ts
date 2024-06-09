@@ -1,10 +1,10 @@
 import TinySDF from '@mapbox/tiny-sdf';
 import GraphemeSplitter from 'grapheme-splitter';
 
-import { checkExists } from 'js/common/asserts';
-import { TFontFace, parseCss } from 'js/common/css';
-import { Debouncer } from 'js/common/debouncer';
-import { isServerSide } from 'js/server/ssr_aware';
+import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { TFontFace, parseCss } from 'external/dev_april_corgi~/js/common/css';
+import { Debouncer } from 'external/dev_april_corgi~/js/common/debouncer';
+import { isServerSide } from 'external/dev_april_corgi~/js/server/ssr_aware';
 
 import { RgbaU32, Vec2 } from '../common/types';
 

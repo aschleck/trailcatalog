@@ -7,8 +7,8 @@ tc_ts_project(
     deps = [
         "//java/org/trailcatalog/client/models",
         "//java/org/trailcatalog/client/workers:ts",
-        "//js/common",
-        "//js/corgi",
+        "@dev_april_corgi//js/common",
+        "@dev_april_corgi//js/corgi",
         "//js/map",
         "//js/map/common",
     ],

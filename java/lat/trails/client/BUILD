@@ -15,12 +15,13 @@ tc_ts_project(
     name = "ts",
     deps = [
         "//java/lat/trails/client/workers",
-        "//js/common",
-        "//js/corgi",
         "//js/map",
         "//js/map/layers",
         "//js/map/workers",
-        "//js/server:client",
+        "@dev_april_corgi//js/common",
+        "@dev_april_corgi//js/corgi",
+        "@dev_april_corgi//js/emu",
+        "@dev_april_corgi//js/server:client",
     ],
 )
 
