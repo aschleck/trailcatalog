@@ -2,7 +2,7 @@ import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, Program, ProgramData } from './program';
+import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 
 export interface Glyph {
   index: number;
@@ -281,7 +281,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       // Mercator coordinates range from -1 to 1 on both x and y
       // Pixels are in screen space (eg -320px to 320px for a 640px width)
 
-      uniform highp vec2 cameraCenter; // Mercator
+      uniform highp vec4 cameraCenter; // Mercator
       uniform highp vec2 halfViewportSize; // pixels
       uniform highp float halfWorldSize; // pixels
       uniform mediump float halo;
@@ -305,16 +305,24 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       out mediump vec4 fragColorFill;
 
       ${COLOR_OPERATIONS}
+      ${FP64_OPERATIONS}
 
       void main() {
-        vec2 relativeCenter = center - cameraCenter;
-        vec2 extents = position * size;
-        float c = cos(angle);
-        float s = sin(angle);
-        vec2 rotated = vec2(extents.x * c - extents.y * s, extents.x * s + extents.y * c);
-        vec2 worldCoord = relativeCenter * halfWorldSize + rotated;
-        vec2 screenCoord = worldCoord + offsetPx;
-        gl_Position = vec4(screenCoord / halfViewportSize, z, 1);
+        vec4 relativeCenter = sub_fp64(split(center), cameraCenter);
+        vec4 extents = mul_fp64(split(position), split(size));
+        vec2 c = split(cos(angle));
+        vec2 s = split(sin(angle));
+        vec4 rotated =
+            vec4(
+                sub_fp64(mul_fp64(extents.xy, c), mul_fp64(extents.zw, s)),
+                sum_fp64(mul_fp64(extents.xy, s), mul_fp64(extents.zw, c)));
+        vec4 worldCoord =
+            sum_fp64(
+                mul_fp64(relativeCenter, vec4(split(halfWorldSize), split(halfWorldSize))),
+                rotated);
+        vec4 screenCoord = sum_fp64(worldCoord, split(offsetPx));
+        vec4 p = div_fp64(screenCoord, split(halfViewportSize));
+        gl_Position = vec4(p.x + p.y, p.z + p.w, z, 1);
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);
@@ -344,7 +352,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
   gl.shaderSource(vertexId, vs);
   gl.compileShader(vertexId);
   if (!gl.getShaderParameter(vertexId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile billboard vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
+    throw new Error(`Unable to compile sdf vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
   }
   gl.attachShader(programId, vertexId);
 
@@ -352,13 +360,13 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
   gl.shaderSource(fragmentId, fs);
   gl.compileShader(fragmentId);
   if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile billboard fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
+    throw new Error(`Unable to compile sdf fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
   }
   gl.attachShader(programId, fragmentId);
 
   gl.linkProgram(programId);
   if (!gl.getProgramParameter(programId, gl.LINK_STATUS)) {
-    throw new Error(`Unable to link billboard program: ${gl.getProgramInfoLog(programId)}`);
+    throw new Error(`Unable to link sdf program: ${gl.getProgramInfoLog(programId)}`);
   }
 
   return {

@@ -2,7 +2,7 @@ import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, Program, ProgramData } from './program';
+import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 
 const VERTEX_STRIDE =
     4 * (
@@ -149,7 +149,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       // Mercator coordinates range from -1 to 1 on both x and y
       // Pixels are in screen space (eg -320px to 320px for a 640px width)
 
-      uniform highp vec2 cameraCenter; // Mercator
+      uniform highp vec4 cameraCenter; // Mercator
       uniform highp vec2 halfViewportSize; // pixels
       uniform highp float halfWorldSize; // pixels
       uniform highp float z;
@@ -163,11 +163,14 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       out mediump vec4 fragFillColor;
 
       ${COLOR_OPERATIONS}
+      ${FP64_OPERATIONS}
 
       void main() {
-        vec2 relativeCenter = position - cameraCenter;
-        vec2 screenCoord = relativeCenter * halfWorldSize;
-        gl_Position = vec4(screenCoord / halfViewportSize, z, 1);
+        vec4 relativeCenter = sub_fp64(split(position), cameraCenter);
+        vec4 screenCoord =
+            mul_fp64(relativeCenter, vec4(split(halfWorldSize), split(halfWorldSize)));
+        vec4 p = div_fp64(screenCoord, split(halfViewportSize));
+        gl_Position = vec4(p.x + p.y, p.z + p.w, z, 1);
 
         fragFillColor = uint32ToVec4(fillColor);
         fragFillColor = vec4(fragFillColor.rgb * fragFillColor.a, fragFillColor.a);

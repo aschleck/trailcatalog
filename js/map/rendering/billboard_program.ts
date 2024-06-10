@@ -2,7 +2,7 @@ import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, Program, ProgramData } from './program';
+import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 
 export class BillboardProgram extends Program<BillboardProgramData> {
 
@@ -18,7 +18,7 @@ export class BillboardProgram extends Program<BillboardProgramData> {
       -0.5, -0.5, 0, 1,
       -0.5, 0.5, 0, 0,
       0.5, -0.5, 1, 1,
-      
+
       0.5, -0.5, 1, 1,
       -0.5, 0.5, 0, 0,
       0.5, 0.5, 1, 0,
@@ -219,7 +219,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       // Mercator coordinates range from -1 to 1 on both x and y
       // Pixels are in screen space (eg -320px to 320px for a 640px width)
 
-      uniform highp vec2 cameraCenter; // Mercator
+      uniform highp vec4 cameraCenter; // Mercator
       uniform highp vec2 halfViewportSize; // pixels
       uniform highp float halfWorldSize; // pixels
       uniform highp float z;
@@ -242,19 +242,30 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       out mediump vec4 fragColorTint;
 
       ${COLOR_OPERATIONS}
+      ${FP64_OPERATIONS}
 
       void main() {
-        vec2 relativeCenter = center - cameraCenter;
-        vec2 extents = position * size;
-        float c = cos(angle);
-        float s = sin(angle);
-        vec2 rotated = vec2(extents.x * c - extents.y * s, extents.x * s + extents.y * c);
-        vec2 worldCoord =
+        vec4 relativeCenter = sub_fp64(split(center), cameraCenter);
+        vec4 extents = mul_fp64(split(position), split(size));
+        vec2 c = split(cos(angle));
+        vec2 s = split(sin(angle));
+        vec4 rotated =
+            vec4(
+                sub_fp64(mul_fp64(extents.xy, c), mul_fp64(extents.zw, s)),
+                sum_fp64(mul_fp64(extents.xy, s), mul_fp64(extents.zw, c)));
+        vec4 worldCoord =
             sizeIsPixels > 0u
-                ? relativeCenter * halfWorldSize + rotated
-                : (relativeCenter + rotated) * halfWorldSize;
-        vec2 screenCoord = worldCoord + offsetPx;
-        gl_Position = vec4(screenCoord / halfViewportSize, z, 1);
+                ?
+                    sum_fp64(
+                        mul_fp64(relativeCenter, vec4(split(halfWorldSize), split(halfWorldSize))),
+                        rotated)
+                :
+                    mul_fp64(
+                        sum_fp64(relativeCenter, rotated),
+                        vec4(split(halfWorldSize), split(halfWorldSize)));
+        vec4 screenCoord = sum_fp64(worldCoord, split(offsetPx));
+        vec4 p = div_fp64(screenCoord, split(halfViewportSize));
+        gl_Position = vec4(p.x + p.y, p.z + p.w, z, 1);
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);

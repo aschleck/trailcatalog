@@ -2,7 +2,7 @@ import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
 
 import { RgbaU32 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, Program, ProgramData } from './program';
+import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 import { VERTEX_STRIDE } from './line_program';
 
 const CIRCLE_STEPS = 8;
@@ -187,7 +187,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
 
   const vs = `#version 300 es
       // This is a Mercator coordinate ranging from -1 to 1 on both x and y
-      uniform highp vec2 cameraCenter;
+      uniform highp vec4 cameraCenter;
       uniform highp vec2 halfViewportSize;
       uniform highp float halfWorldSize;
       uniform bool renderBorder;
@@ -221,15 +221,20 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       out lowp float fragDistanceOrtho;
 
       ${COLOR_OPERATIONS}
+      ${FP64_OPERATIONS}
 
       void main() {
         vec2 center = side == 0u ? previous : next;
         vec2 direction = next - previous;
-        vec2 location = -cameraCenter + center;
+        vec4 location = sub_fp64(split(center), cameraCenter);
         highp float actualRadius = renderBorder ? radius : radius - 1.;
         vec2 push = actualRadius * position;
-        vec2 worldCoord = location * halfWorldSize + push;
-        gl_Position = vec4(worldCoord / halfViewportSize, z, 1);
+        vec4 worldCoord =
+            sum_fp64(
+                mul_fp64(location, vec4(split(halfWorldSize), split(halfWorldSize))),
+                split(push));
+        vec4 p = div_fp64(worldCoord, split(halfViewportSize));
+        gl_Position = vec4(p.x + p.y, p.z + p.w, z, 1);
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
