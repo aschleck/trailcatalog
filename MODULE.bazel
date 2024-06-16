@@ -26,7 +26,7 @@ bazel_dep(name = "rules_nixpkgs_core", version = "0.10.0")
 bazel_dep(name = "rules_nodejs", version = "6.0.2")
 bazel_dep(name = "rules_pkg", version = "0.9.1")
 bazel_dep(name = "rules_proto", version = "5.3.0-21.7")
-bazel_dep(name = "rules_python", version = "0.26.0")
+bazel_dep(name = "rules_python", version = "0.33.1")
 bazel_dep(name = "rules_oci", version = "1.2.0")
 bazel_dep(name = "rules_nixpkgs_java")
 archive_override(
@@ -62,6 +62,7 @@ maven.install(
         "com.squareup.okhttp3:okhttp:4.10.0",
         "com.wolt.osm:parallelpbf:0.3.1",
         "com.zaxxer:HikariCP:5.0.1",
+        "de.westnordost:osmapi:5.1",
         "io.javalin:javalin:5.4.2",
         "mil.nga.geopackage:geopackage:6.6.0",
         "mil.nga:sf:2.2.1",
@@ -111,7 +112,8 @@ use_repo(oci, "distroless_java")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
-    name = "pip",
+    hub_name = "pip",
+    python_version = "3.11",
     requirements_lock = "//:requirements_lock.txt",
 )
 use_repo(pip, "pip")

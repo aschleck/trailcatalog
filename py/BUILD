@@ -8,8 +8,8 @@ py_binary(
     name = "svgs_to_atlas",
     srcs = ["svgs_to_atlas.py"],
     deps = [
-        "@pip_reportlab//:pkg",
-        "@pip_svgutils//:pkg",
+        "@pip//reportlab",
+        "@pip//svgutils",
     ],
 )
 
@@ -17,7 +17,7 @@ py_binary(
     name = "planet_update",
     srcs = ["planet_update.py"],
     deps = [
-        "@pip_osmium//:pkg",
+        "@pip//osmium",
     ],
 )
 
