@@ -106,7 +106,7 @@ class CreateTrails
  * Because we need to get every present way into mapped, we also pass in whether the parent relation
  * failed flattening to the child. This enables skipping sorting on stuff we know will fail.
  */
-private fun flattenWays(
+fun flattenWays(
     geometry: RelationGeometry,
     mapped: MutableMap<Long, List<LatLngE7>>,
     ways: MutableMap<Long, WayGeometry>,
@@ -143,8 +143,7 @@ private fun flattenWays(
           points.reversed()
         }
         val startOffset = if (i == 0) 0 else 1
-        val endOffset = if (i == direction.size - 1) 0 else 1
-        val subset = direction.subList(startOffset, direction.size - endOffset)
+        val subset = direction.subList(startOffset, direction.size)
         childLatLngs.addAll(subset)
       }
       mapped[id] = childLatLngs

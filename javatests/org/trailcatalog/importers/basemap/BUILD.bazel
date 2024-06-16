@@ -1,0 +1,39 @@
+package(default_visibility = ["//java/org/trailcatalog:internal"])
+
+load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
+
+kt_jvm_test(
+    name = "basemap",
+    srcs = glob(["*.kt"]),
+    test_class = "org.trailcatalog.importers.basemap.CreateTrailsTest",
+    deps = [
+        ":relation_orientation_checker_lib",
+        "//java/org/trailcatalog/importers/basemap",
+        "//trailcatalog/proto:encoding_java_proto",
+        "@maven//:com_google_truth_truth",
+        "@maven//:org_junit_jupiter_junit_jupiter",
+    ],
+)
+
+java_binary(
+    name = "relation_orientation_checker",
+    main_class = "org.trailcatalog.importers.basemap.RelationOrientationCheckerKt",
+    runtime_deps = [":relation_orientation_checker_lib"],
+)
+
+kt_jvm_library(
+    name = "relation_orientation_checker_lib",
+    srcs = ["RelationOrientationChecker.kt"],
+    runtime_deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
+    ],
+    deps = [
+        "//java/org/trailcatalog/common",
+        "//java/org/trailcatalog/importers/basemap",
+        "//java/org/trailcatalog/importers/pbf",
+        "//java/org/trailcatalog/s2:s2-kt",
+        "//trailcatalog/proto:encoding_java_proto",
+        "@maven//:de_westnordost_osmapi",
+    ],
+)
