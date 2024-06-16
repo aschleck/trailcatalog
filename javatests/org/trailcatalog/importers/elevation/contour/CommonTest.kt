@@ -1,71 +1,42 @@
 package org.trailcatalog.importers.elevation.contour
 
 import com.google.common.base.Preconditions
-import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2LatLng
 import com.google.common.truth.Fact
 import com.google.common.truth.FailureMetadata
 import com.google.common.truth.Subject
 import com.google.common.truth.Truth.assertAbout
+import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class CommonTest {
 
   @Test
   fun testSimplifyContourShouldKeepTwoPoints() {
-    val points =
-        listOf(
-            S2LatLng.fromDegrees(0.0, 0.0),
-            S2LatLng.fromDegrees(0.0, 1.0))
-    val simplified = simplifyContour(points, S1Angle.degrees(0.5))
-    assertThat(simplified).isEqualToApproximately(points)
+    val points = listOf(0, 0, 0, 4096)
+    val simplified = simplifyContour(points)
+    assertThat(simplified).isEqualTo(points)
   }
 
   @Test
   fun testSimplifyContourShouldElideMiddle() {
-    val points =
-        listOf(
-          S2LatLng.fromDegrees(0.0, 0.0),
-          S2LatLng.fromDegrees(0.0, 1.0),
-          S2LatLng.fromDegrees(0.0, 2.0))
-    val simplified = simplifyContour(points, S1Angle.degrees(0.5))
-    assertThat(simplified).isEqualToApproximately(
-        listOf(
-            S2LatLng.fromDegrees(0.0, 0.0),
-            S2LatLng.fromDegrees(0.0, 2.0)))
+    val points = listOf(0, 0, 0, 2048, 0, 4096);
+    val simplified = simplifyContour(points)
+    assertThat(simplified).isEqualTo(listOf(0, 0, 0, 4096))
   }
 
   @Test
   fun testSimplifyContourShouldKeepMiddle() {
-    val points =
-        listOf(
-            S2LatLng.fromDegrees(0.0, 0.0),
-            S2LatLng.fromDegrees(1.0, 1.0),
-            S2LatLng.fromDegrees(0.0, 2.0))
-    val simplified = simplifyContour(points, S1Angle.degrees(0.5))
-    assertThat(simplified).isEqualToApproximately(
-        listOf(
-            S2LatLng.fromDegrees(0.0, 0.0),
-            S2LatLng.fromDegrees(1.0, 1.0),
-            S2LatLng.fromDegrees(0.0, 2.0)))
+    val points = listOf(0, 0, 2048, 2048, 0, 4096)
+    val simplified = simplifyContour(points)
+    assertThat(simplified).isEqualTo(points)
   }
 
   @Test
   fun testSimplifyContourShouldDropOne() {
-    val points =
-        listOf(
-            S2LatLng.fromDegrees(0.0, 0.0),
-            S2LatLng.fromDegrees(0.0, 0.5),
-            S2LatLng.fromDegrees(0.0, 1.0),
-            S2LatLng.fromDegrees(1.0, 1.5),
-            S2LatLng.fromDegrees(0.0, 2.0))
-    val simplified = simplifyContour(points, S1Angle.degrees(0.5))
-    assertThat(simplified).isEqualToApproximately(
-        listOf(
-            S2LatLng.fromDegrees(0.0, 0.0),
-            S2LatLng.fromDegrees(0.0, 1.0),
-            S2LatLng.fromDegrees(1.0, 1.5),
-            S2LatLng.fromDegrees(0.0, 2.0)))
+    val points = listOf(0, 0, 0, 1024, 0, 2048, 2048, 3864, 0, 4096)
+    val simplified = simplifyContour(points)
+    assertThat(simplified).isEqualTo(listOf(0, 0, 0, 2048, 2048, 3864, 0, 4096))
   }
 }
 

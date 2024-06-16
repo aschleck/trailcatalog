@@ -19,6 +19,7 @@ import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
+// TODO(april): this is dead code and also I think was buggy. Delete it?
 fun main(args: Array<String>) {
   val url = args[0].toHttpUrl()
   val destination = args[1]

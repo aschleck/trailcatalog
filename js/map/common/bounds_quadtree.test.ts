@@ -1,12 +1,12 @@
-import { worldBounds } from './bounds_quadtree';
-import { PixelRect } from './types';
+import { WorldBoundsQuadtree } from './bounds_quadtree';
+import { Rect } from './types';
 
 test('finds intersecting bound', () => {
-  const qt = worldBounds<string>();
+  const qt = new WorldBoundsQuadtree<string>();
   qt.insert('a bound', {
     low: [-0.676188353888889, 0.29574154468566277],
     high: [-0.6759365516666668, 0.29587655213844616],
-  } as PixelRect);
+  } as Rect);
 
   const results: string[] = [];
   const query =

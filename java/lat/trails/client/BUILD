@@ -24,4 +24,3 @@ tc_ts_project(
         "@dev_april_corgi//js/server:client",
     ],
 )
-

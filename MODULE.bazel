@@ -5,6 +5,7 @@ module(
 )
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.0.1")
+bazel_dep(name = "aspect_rules_jest", version = "0.21.0")
 bazel_dep(name = "aspect_rules_js", version = "1.38.0")
 bazel_dep(name = "aspect_rules_ts", version = "2.2.0")
 archive_override(
@@ -14,6 +15,7 @@ archive_override(
     strip_prefix = "rules_ts-2.2.0",
     urls = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v2.2.0.tar.gz",
 )
+
 bazel_dep(name = "bazel_skylib", version = "1.5.0")
 bazel_dep(name = "platforms", version = "0.0.8")
 bazel_dep(name = "protobuf", version = "21.7")
@@ -26,7 +28,6 @@ bazel_dep(name = "rules_pkg", version = "0.9.1")
 bazel_dep(name = "rules_proto", version = "5.3.0-21.7")
 bazel_dep(name = "rules_python", version = "0.26.0")
 bazel_dep(name = "rules_oci", version = "1.2.0")
-
 bazel_dep(name = "rules_nixpkgs_java")
 archive_override(
     module_name = "rules_nixpkgs_java",
@@ -43,10 +44,10 @@ non_module_deps = use_extension("//build_defs/bzlmod:non_module_deps.bzl", "non_
 use_repo(non_module_deps, "nixpkgs")
 use_repo(non_module_deps, "nixpkgs_java_runtime")
 use_repo(non_module_deps, "nixpkgs_java_runtime_toolchain")
+
 register_toolchains("@nixpkgs_java_runtime_toolchain//:all")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
-
 maven.install(
     artifacts = [
         "args4j:args4j:2.33",
@@ -79,16 +80,17 @@ maven.install(
         "org.xerial:sqlite-jdbc:3.42.0.0",
     ],
 )
-
 use_repo(maven, "maven")
 
-npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
-
+npm = use_extension(
+    "@aspect_rules_js//npm:extensions.bzl",
+    "npm",
+    dev_dependency = True,
+)
 npm.npm_translate_lock(
     name = "npm",
     pnpm_lock = "//:pnpm-lock.yaml",
 )
-
 use_repo(npm, "npm")
 
 rules_ts_ext = use_extension(
@@ -96,35 +98,28 @@ rules_ts_ext = use_extension(
     "ext",
     dev_dependency = True,
 )
-
 rules_ts_ext.deps()
-
 use_repo(rules_ts_ext, "npm_typescript")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
-
 oci.pull(
     name = "distroless_java",
     digest = "sha256:052076466984fd56979c15a9c3b7433262b0ad9aae55bc0c53d1da8ffdd829c3",
     image = "gcr.io/distroless/java17",
 )
-
 use_repo(oci, "distroless_java")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-
 pip.parse(
     name = "pip",
     requirements_lock = "//:requirements_lock.txt",
 )
-
 use_repo(pip, "pip")
 
 bazel_dep(name = "dev_april_corgi")
-
 archive_override(
     module_name = "dev_april_corgi",
-    integrity = "sha256-UImtcJxt5dtXQLKleLiYJyA8ZxexX6q5xFcAdL4duY4=",
-    strip_prefix = "corgi-2d9e01bfae3036dd1008f001588902abdb2b6f84",
-    urls = "https://github.com/aschleck/corgi/archive/2d9e01bfae3036dd1008f001588902abdb2b6f84.tar.gz",
+    integrity = "sha256-sBVkFg/5niwgByquEt0dM2jD1yL5u9rgXHNz0ddofrc=",
+    strip_prefix = "corgi-8b05c7bc3382f032ddf19edbc31b93549c4bf8c9",
+    urls = "https://github.com/aschleck/corgi/archive/8b05c7bc3382f032ddf19edbc31b93549c4bf8c9.tar.gz",
 )
