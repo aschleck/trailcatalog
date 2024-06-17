@@ -121,7 +121,7 @@ use_repo(pip, "pip")
 bazel_dep(name = "dev_april_corgi")
 archive_override(
     module_name = "dev_april_corgi",
-    integrity = "sha256-sBVkFg/5niwgByquEt0dM2jD1yL5u9rgXHNz0ddofrc=",
-    strip_prefix = "corgi-8b05c7bc3382f032ddf19edbc31b93549c4bf8c9",
-    urls = "https://github.com/aschleck/corgi/archive/8b05c7bc3382f032ddf19edbc31b93549c4bf8c9.tar.gz",
+    integrity = "sha256-gQlkI4Y6ba/tUnHEZ8Hdv+emfZxsw6Rubry1ppDi8r4=",
+    strip_prefix = "corgi-3b36fa72f20c4276b0db8642a34d60f79c339f9e",
+    urls = "https://github.com/aschleck/corgi/archive/3b36fa72f20c4276b0db8642a34d60f79c339f9e.tar.gz",
 )
