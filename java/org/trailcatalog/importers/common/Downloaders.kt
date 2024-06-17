@@ -9,6 +9,7 @@ import org.trailcatalog.common.IORuntimeException
 import java.io.InputStreamReader
 import java.lang.Exception
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -40,7 +41,9 @@ fun <R> fetch(url: HttpUrl, action: (body: ResponseBody, response: Response) -> 
 }
 
 fun download(url: HttpUrl, to: Path) {
-  retry(3, SocketTimeoutException::class) { downloadOnce(url, to) }
+  retry(3, listOf(SocketTimeoutException::class, UnknownHostException::class)) {
+    downloadOnce(url, to)
+  }
 }
 
 private fun downloadOnce(url: HttpUrl, to: Path) {
@@ -90,23 +93,27 @@ private fun downloadOnce(url: HttpUrl, to: Path) {
 class NotFoundException(message: String, throwable: Throwable? = null)
   : IORuntimeException(message, throwable)
 
-private fun <E : Exception, T> retry(limit: Int, expect: KClass<E>, fn: () -> T): T {
+private fun <E : Exception, T> retry(limit: Int, expect: List<KClass<in E>>, fn: () -> T): T {
   var backoffMs = 500L
   var failures = 0
   while (true) {
     try {
       return fn()
     } catch (e: Exception) {
-      if (expect.isInstance(e)) {
-        if (failures < limit) {
-          failures += 1
-          Thread.sleep(backoffMs)
-          backoffMs *= 2
-        } else {
-          throw IORuntimeException("Out of retries", e)
+      var retryable = false
+      for (clazz in expect) {
+        if (clazz.isInstance(e)) {
+          retryable = true
+          break
         }
+      }
+
+      if (retryable && failures < limit) {
+        failures += 1
+        Thread.sleep(backoffMs)
+        backoffMs *= 2
       } else {
-        throw e
+        throw IORuntimeException("Out of retries", e)
       }
     }
   }
