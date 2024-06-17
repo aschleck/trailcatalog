@@ -23,6 +23,10 @@ function page(content: string, title: string, initialData: string): string {
     <script>${process.env.DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${initialData}</script>
     <script src="/static/client.js"></script>
   </body>
+  <script
+      async
+      data-goatcounter="https://trailcatalog.goatcounter.com/count"
+      src="//gc.zgo.at/count.js"></script>
 </html>
 `;
 }

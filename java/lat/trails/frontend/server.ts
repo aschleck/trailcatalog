@@ -96,6 +96,10 @@ function page(content: string, title: string, initialData: string): string {
     <div id="root" class="h-full">${content}</div>
     <script>${process.env.DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${initialData}</script>
     <script src="/static/client.js"></script>
+    <script
+        async
+        data-goatcounter="https://trails-lat.goatcounter.com/count"
+        src="//gc.zgo.at/count.js"></script>
   </body>
 </html>
 `;
