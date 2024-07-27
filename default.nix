@@ -7,7 +7,7 @@ pkgs.mkShell {
     gdal
     google-cloud-sdk
     imagemagick
-    jdk19_headless
+    jdk22_headless
     neovim
     nginx
     nodePackages.pnpm
