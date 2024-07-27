@@ -578,7 +578,11 @@ private fun fetchFine(ctx: Context) {
               + "WHERE "
               + "(p.cell >= ? AND p.cell <= ?) "
               + "AND p.epoch = ? "
-              + "AND (pit.path_id IS NOT NULL OR public.enumADescendsB(p.type, ?, ?)) "
+              + "AND ("
+              + "  pit.path_id IS NOT NULL "
+              + "  OR public.enumADescendsB(p.type, ?, ?) "
+              + "  OR public.enumADescendsB(p.type, ?, ?) "
+              + ") "
       ).apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
@@ -587,6 +591,8 @@ private fun fetchFine(ctx: Context) {
         setInt(3, epochTracker.epoch)
         setInt(4, WayCategory.PATH.id)
         setInt(5, ENUM_SIZE)
+        setInt(6, WayCategory.PISTE.id)
+        setInt(7, ENUM_SIZE)
       }
     } else {
       it.prepareStatement(
@@ -597,12 +603,18 @@ private fun fetchFine(ctx: Context) {
               + "WHERE "
               + "p.cell = ? "
               + "AND p.epoch = ? "
-              + "AND (pit.path_id IS NOT NULL OR public.enumADescendsB(p.type, ?, ?)) "
+              + "AND ("
+              + "  pit.path_id IS NOT NULL "
+              + "  OR public.enumADescendsB(p.type, ?, ?) "
+              + "  OR public.enumADescendsB(p.type, ?, ?) "
+              + ") "
       ).apply {
         setLong(1, cell.id())
         setInt(2, epochTracker.epoch)
         setInt(3, WayCategory.PATH.id)
         setInt(4, ENUM_SIZE)
+        setInt(5, WayCategory.PISTE.id)
+        setInt(6, ENUM_SIZE)
       }
     }
     val results = query.executeQuery()

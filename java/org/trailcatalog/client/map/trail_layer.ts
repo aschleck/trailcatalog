@@ -908,6 +908,7 @@ function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number
 
 function isPath(type: number): boolean {
   return (aDescendsB(type, WayCategory.PATH) && !aDescendsB(type, WayCategory.PATH_FOOTWAY))
+    || aDescendsB(type, WayCategory.PISTE)
     || aDescendsB(type, WayCategory.ROAD_TRACK);
 }
 
