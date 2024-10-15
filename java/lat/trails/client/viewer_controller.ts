@@ -218,7 +218,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     window.history.replaceState(null, '', url);
   }
 
-  setLayerVisible(e: CorgiEvent<typeof ACTION>): void {
+  setLayerVisible(e: CorgiEvent<typeof CHANGED>): void {
     const name = checkExists(e.targetElement.attr('aria-label')).string();
 
     const newLayers = [];

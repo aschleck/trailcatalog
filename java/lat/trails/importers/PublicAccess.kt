@@ -30,6 +30,7 @@ import org.locationtech.proj4j.ProjCoordinate
 import org.slf4j.LoggerFactory
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.createNullableFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.basemap.StringifyingInputStream
@@ -38,6 +39,9 @@ import org.trailcatalog.importers.basemap.copyStreamToPg
 import org.trailcatalog.s2.polygonToCell
 
 private val logger = LoggerFactory.getLogger("PublicAccess")
+
+@FlagSpec(name = "collection_id")
+private val collectionId = createNullableFlag(null as String)
 
 @FlagSpec(name = "source")
 private val source = createNullableFlag(null as Path?)
@@ -219,10 +223,15 @@ private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature
         hikari.connection
             .prepareStatement(
                 "INSERT INTO collections (id, creator, name, covering) "
-                    + "VALUES (gen_random_uuid(), ?, ?, ?) "
+                    + "VALUES (COALESCE(?, gen_random_uuid()), ?, ?, ?) "
                     + "RETURNING id")
             .apply {
-              setObject(1, UUID.fromString("00000000-0000-0000-0000-000000000000"))
+              setObject(
+                1,
+                if (collectionId.value != null)
+                  UUID.fromString(collectionId.value)
+                else
+                  null)
               setString(2, "Public Land")
               setBytes(
                   3,
