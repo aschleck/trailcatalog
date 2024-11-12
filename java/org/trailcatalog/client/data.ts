@@ -8,7 +8,6 @@ import {
   getCache,
   putCache,
 } from 'external/dev_april_corgi~/js/server/data';
-import {isServerSide} from 'external/dev_april_corgi~/js/server/ssr_aware';
 
 export type TrailId = {numeric: string}|{readable: string};
 
@@ -140,13 +139,13 @@ export function fetchData<K extends keyof DataRequests>(
 ): Future<DataResponses[K]> {
   // We wait a tick to gather multiple keys before making the request. But if we're rendering on
   // the server we really just want to send it out now. Yolo.
-  if (isServerSide()) {
+  if (!process.env.CORGI_FOR_BROWSER) {
     return fetchDataBatch([[type, request]]).then(
       r => r[0] as DataResponses[K]
     );
   }
 
-  const cached = getCache({...request, type});
+  const cached = getCache(type, request);
   if (cached) {
     return resolvedFuture(cached as DataResponses[K]);
   }

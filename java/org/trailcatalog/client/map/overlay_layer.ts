@@ -47,6 +47,8 @@ export class OverlayLayer extends Layer {
                   this.bearIcon = pool.acquire();
                   renderer.uploadTexture(bitmap, this.bearIcon);
                 });
+          } else {
+            return undefined;
           }
         });
 
@@ -60,6 +62,8 @@ export class OverlayLayer extends Layer {
                   this.blueIcon = pool.acquire();
                   renderer.uploadTexture(bitmap, this.blueIcon);
                 });
+          } else {
+            return undefined;
           }
         });
 

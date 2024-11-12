@@ -2,7 +2,7 @@ package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push", "oci_tarball")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//:pkg.bzl", "pkg_tar")
 
 java_binary(
@@ -29,8 +29,8 @@ oci_image(
     tars = [":tar"],
 )
 
-oci_tarball(
-    name = "container_tarball",
+oci_load(
+    name = "container_load",
     image = ":container",
     repo_tags = ["latest"],
 )

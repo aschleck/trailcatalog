@@ -4,7 +4,6 @@ import GraphemeSplitter from 'grapheme-splitter';
 import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
 import { TFontFace, parseCss } from 'external/dev_april_corgi~/js/common/css';
 import { Debouncer } from 'external/dev_april_corgi~/js/common/debouncer';
-import { isServerSide } from 'external/dev_april_corgi~/js/server/ssr_aware';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
@@ -50,7 +49,7 @@ class Glypher {
 
     // Avoid both ssr and web workers.
     this.tinySdf =
-      typeof window === 'undefined' || isServerSide()
+      typeof window === 'undefined' || !process.env.CORGI_FOR_BROWSER
           ? undefined as unknown as TinySDF
           : new TinySDF({
             fontSize: FONT_SIZE,

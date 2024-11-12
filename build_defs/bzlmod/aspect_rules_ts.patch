@@ -1,12 +1,12 @@
 diff -Naur ts/private/ts_lib.bzl ts/private/ts_lib.bzl
 --- ts/private/ts_lib.bzl
 +++ ts/private/ts_lib.bzl
-@@ -167,7 +167,7 @@ def _join(*elements):
+@@ -193,7 +193,7 @@ def _join(*elements):
+ 
  def _relative_to_package(path, ctx):
-     # TODO: "external/" should only be needed to be removed once
-     path = path.removeprefix("external/").removeprefix(ctx.bin_dir.path + "/")
--    path = path.removeprefix("external/").removeprefix(ctx.label.workspace_name + "/")
-+    path = path.removeprefix("../").removeprefix("external/").removeprefix(ctx.label.workspace_name + "/")
+     path = path.removeprefix(ctx.bin_dir.path + "/")
+-    path = path.removeprefix("external/")
++    path = path.removeprefix("../").removeprefix("external/")
+     path = path.removeprefix(ctx.label.workspace_name + "/")
      if ctx.label.package:
-         path = path.removeprefix("external/").removeprefix(ctx.label.package + "/")
-     return path
+         path = path.removeprefix(ctx.label.package + "/")

@@ -1,4 +1,7 @@
+build --cxxopt=-std=c++20
+build --host_cxxopt=-std=c++20
 build --host_platform=@rules_nixpkgs_core//platforms:host
+build --crosstool_top=@nixpkgs_config_cc//:toolchain
 build --java_runtime_version=nixpkgs_java_17
 build --tool_java_runtime_version=nixpkgs_java_17
 build --java_language_version=17

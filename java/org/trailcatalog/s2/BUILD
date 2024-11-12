@@ -12,6 +12,7 @@ tc_ts_project(
         "index.ts",
     ],
     deps = [
+        "//:node_modules/@types/node",
         ":s2_typed",
     ],
 )

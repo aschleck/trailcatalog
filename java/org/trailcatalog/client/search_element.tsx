@@ -103,7 +103,7 @@ function SearchResults({boundaries, className, query, trails}: {
           z-50
           ${className}
       `}
-      tabIndex="-1"
+      tabindex="-1"
     >
       <SearchCategory
           icon="/static/images/icons/trail.svg"

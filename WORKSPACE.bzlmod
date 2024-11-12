@@ -1,13 +1,36 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+http_archive(
+    name = "rules_proto",
+    sha256 = "33e496a2b3fe925d5247d848535cb0371890f3e9514a13fd79b0ac9a60a5fc41",
+    strip_prefix = "rules_proto-7.0.1",
+    url = "https://github.com/bazelbuild/rules_proto/releases/download/7.0.1/rules_proto-7.0.1.tar.gz",
+)
+load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
+rules_proto_dependencies()
+
+load("@rules_proto//proto:setup.bzl", "rules_proto_setup")
+rules_proto_setup()
+
+http_archive(
+    name = "rules_java",
+    urls = [
+        "https://github.com/bazelbuild/rules_java/releases/download/8.3.2/rules_java-8.3.2.tar.gz",
+    ],
+    sha256 = "9b9614f8a7f7b7ed93cb7975d227ece30fe7daed2c0a76f03a5ee37f69e437de",
+)
+load("@rules_java//java:repositories.bzl", "rules_java_dependencies", "rules_java_toolchains")
+rules_java_dependencies()
+#rules_java_toolchains()
+
 # TODO: Migrated to Bzlmod
 http_archive(
   name = "io_bazel_rules_closure",
   urls = [
-    "https://github.com/bazelbuild/rules_closure/archive/72d30840a08605447766e650d519a500dfb08019.zip",
+    "https://github.com/bazelbuild/rules_closure/archive/071b519a5dda47ef451aa62393749fa764360471.zip",
   ],
-  sha256 = "f20dd5bc4859d9d7e365fd639c3a218750a274622a240876568b70842cb0e7f1",
-  strip_prefix = "rules_closure-72d30840a08605447766e650d519a500dfb08019",
+  sha256 = "e7554ab97743bee8627a750d4f19754f3c6c81cf4cb823a2afe7e9653c0304fa",
+  strip_prefix = "rules_closure-071b519a5dda47ef451aa62393749fa764360471",
   patches = ["//build_defs/bzlmod:rules_closure.patch"],
 )
 
@@ -15,6 +38,9 @@ load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_depende
 
 rules_closure_dependencies(
     omit_com_google_auto_common = True,
+    omit_com_google_protobuf = True,
+    omit_rules_java = True,
+    omit_rules_proto = True,
 )
 
 rules_closure_toolchains()
@@ -26,22 +52,19 @@ http_archive(
     "//build_defs/bzlmod:com_google_j2cl.patch",
   ],
   urls = [
-    "https://github.com/google/j2cl/archive/6344eaf8f0916dbe6de871fa73c68d0f1cb30a14.zip",
+    "https://github.com/google/j2cl/archive/268b71b49232aa47fc78c4123152799dc2bd458e.zip",
   ],
-  sha256 = "9c769a24f37ed88614b3bcd1f5d15e095b9fd6604bcbcc736ea00a059c00485e",
-  strip_prefix = "j2cl-6344eaf8f0916dbe6de871fa73c68d0f1cb30a14",
+  sha256 = "cef7b05ed4d45f05aabacabe88cfc57f239fedf411ef6750e72e92abcd927633",
+  strip_prefix = "j2cl-268b71b49232aa47fc78c4123152799dc2bd458e",
 )
 
 http_archive(
   name = "com_google_jsinterop_generator",
   urls = [
-    "https://github.com/google/jsinterop-generator/archive/3fb7a57db11cfffd6e0e9e2242706d4e48f2d471.zip",
+    "https://github.com/google/jsinterop-generator/archive/0f7d4b4cb92f3cc3401fd5f6149ebdd58cc667ea.zip",
   ],
-  sha256 = "e9ad72a81253a968bcf70ef39db95fef2feab468ac65ffaaf80894d99376b980",
-  strip_prefix = "jsinterop-generator-3fb7a57db11cfffd6e0e9e2242706d4e48f2d471",
-  patches = [
-    "//build_defs/bzlmod:jsinterop_generator.patch",
-  ],
+  sha256 = "c129e0ad6aaa229877437df6172d71ea46c8ffafd658da7b4e2ecf624733a05d",
+  strip_prefix = "jsinterop-generator-0f7d4b4cb92f3cc3401fd5f6149ebdd58cc667ea",
 )
 
 load("@com_google_j2cl//build_defs:repository.bzl", "load_j2cl_repo_deps")
@@ -55,9 +78,9 @@ setup_j2cl_workspace()
 # TODO: Migrated to Bzlmod
 http_archive(
   name = "com_google_elemental2",
-  url = "https://github.com/google/elemental2/archive/0e35857ab7a9125d2cf84bdbfad0dff7ca370ef7.zip",
-  sha256 = "21c6ab15edfb832406a7d747d8664d3f6b16bb06352be491554c411871e13b5c",
-  strip_prefix = "elemental2-0e35857ab7a9125d2cf84bdbfad0dff7ca370ef7",
+  url = "https://github.com/google/elemental2/archive/adfe7fac5ee70067bc66bff3ec51cb0682e238a4.zip",
+  sha256 = "cb7f59fdcaeebf681a9044a87985d8c2259ec2a175c21bb1d56ae6722762109c",
+  strip_prefix = "elemental2-adfe7fac5ee70067bc66bff3ec51cb0682e238a4",
   patches = ["//build_defs/bzlmod:com_google_elemental2.patch"],
 )
 

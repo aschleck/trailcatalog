@@ -1,20 +1,3 @@
-diff build_defs/internal_do_not_use/j2cl_common.bzl build_defs/internal_do_not_use/j2cl_common.bzl
-index 63a12df27f..70ac58fd56 100644
---- build_defs/internal_do_not_use/j2cl_common.bzl
-+++ build_defs/internal_do_not_use/j2cl_common.bzl
-@@ -367,11 +367,6 @@ J2CL_TOOLCHAIN_ATTRS = {
-         cfg = "exec",
-         executable = True,
-     ),
--    "_jar": attr.label(
--        cfg = "exec",
--        executable = True,
--        default = Label("@bazel_tools//tools/jdk:jar"),
--    ),
-     "_java_frontend": attr.label(
-         default = Label("//:experimental_java_frontend"),
-     ),
-
 diff build_defs/repository.bzl build_defs/repository.bzl
 index 5351b9e82d..4fa6cf9bed 100644
 --- build_defs/repository.bzl
@@ -37,16 +20,27 @@ diff build_defs/workspace.bzl build_defs/workspace.bzl
 index 67f776bc8e..f4562e6a9e 100644
 --- build_defs/workspace.bzl
 +++ build_defs/workspace.bzl
-@@ -4,7 +4,6 @@ load("@bazel_skylib//lib:versions.bzl", "versions")
+@@ -4,7 +4,5 @@ load("@bazel_skylib//lib:versions.bzl", "versions")
  load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_jar")
  load("@bazel_tools//tools/build_defs/repo:jvm.bzl", "jvm_maven_import_external")
- load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies")
+-load("@io_bazel_rules_closure//closure:repositories.bzl", "rules_closure_dependencies")
 -load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kotlin_repositories", "kt_register_toolchains")
  
  _MAVEN_CENTRAL_URLS = ["https://repo1.maven.org/maven2/"]
  
-@@ -196,15 +197,6 @@ def setup_j2cl_workspace(**kwargs):
-         sha256 = "83ce07ec2058d8d629feb4e269216e286560b0e4587dea883f4e16b64ea51cad",
+@@ -13,11 +11,6 @@ 
+
+     versions.check("5.4.0")  # The version J2CL currently have a CI setup for.
+ 
+-    rules_closure_dependencies(
+-        omit_com_google_auto_common = True,
+-        **kwargs
+-    )
+ 
+     jvm_maven_import_external(
+         name = "com_google_auto_common",
+@@ -204,15 +205,6 @@ def setup_j2cl_workspace(**kwargs):
+         licenses = ["notice"],
      )
  
 -    kotlin_repositories(

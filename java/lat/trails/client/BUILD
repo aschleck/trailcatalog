@@ -14,6 +14,7 @@ esbuild_binary(
 tc_ts_project(
     name = "ts",
     deps = [
+        "//:node_modules/@types/node",
         "//java/lat/trails/client/workers",
         "//js/map",
         "//js/map/layers",

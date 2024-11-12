@@ -1,7 +1,7 @@
 import { floatCoalesce } from 'external/dev_april_corgi~/js/common/math';
 import * as corgi from 'external/dev_april_corgi~/js/corgi';
 import { Checkbox } from 'external/dev_april_corgi~/js/emu/checkbox';
-import { CHANGED } from 'external/dev_april_corgi~/js/emu/events';
+import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
@@ -80,7 +80,7 @@ function Layers({layers}: {layers: LayerState[];}) {
       <ul
           unboundEvents={{
             corgi: [
-              [CHANGED, 'setLayerVisible'],
+              [ACTION, 'setLayerVisible'],
             ],
           }}
       >

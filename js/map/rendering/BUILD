@@ -6,6 +6,7 @@ tc_ts_project(
     name = "rendering",
     deps = [
         "//:node_modules/@mapbox/tiny-sdf",
+        "//:node_modules/@types/node",
         "//:node_modules/grapheme-splitter",
         "//js/map/common",
         "@dev_april_corgi//js/common",

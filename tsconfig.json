@@ -1,16 +1,20 @@
 {
+  "extends": "./node_modules/gts/tsconfig-google.json",
   "compilerOptions": {
     "allowJs": true,
     "baseUrl": ".",
+    "composite": false,
     "declaration": true,
     "esModuleInterop": true, // recommended by esbuild
     "isolatedModules": true, // recommended by esbuild
     "jsx": "react",
     "jsxFactory": "corgi.createVirtualElement",
     "jsxFragmentFactory": "corgi.Fragment",
-    "module": "commonjs", // for Jest
-    "moduleResolution": "node",
-    "strict": true,
+    "lib": ["DOM", "DOM.Iterable", "es2022"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "sourceMap": false,
     "target": "es2020",
-  },
+    "rootDir": "."
+  }
 }

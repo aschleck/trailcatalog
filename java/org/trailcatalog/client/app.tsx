@@ -1,6 +1,5 @@
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi~/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi~/js/corgi';
-import { isServerSide } from 'external/dev_april_corgi~/js/server/ssr_aware';
 
 import { BoundaryDetailElement } from './boundary_detail_element';
 import { GoToTrailElement } from './go_to_trail_element';
@@ -46,6 +45,6 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
   </>;
 }
 
-if (!isServerSide()) {
+if (process.env.CORGI_FOR_BROWSER) {
   corgi.hydrateElement(checkExists(document.getElementById('root')), <App />);
 }

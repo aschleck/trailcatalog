@@ -4,37 +4,45 @@ module(
     compatibility_level = 1,
 )
 
-bazel_dep(name = "aspect_bazel_lib", version = "2.0.1")
-bazel_dep(name = "aspect_rules_jest", version = "0.21.0")
-bazel_dep(name = "aspect_rules_js", version = "1.38.0")
-bazel_dep(name = "aspect_rules_ts", version = "2.2.0")
+bazel_dep(name = "aspect_bazel_lib", version = "2.9.3")
+bazel_dep(name = "aspect_rules_jest", version = "0.22.0")
+bazel_dep(name = "aspect_rules_js", version = "2.1.0")
+bazel_dep(name = "aspect_rules_ts", version = "3.3.1")
 archive_override(
     module_name = "aspect_rules_ts",
-    integrity = "sha256-x38N+njEB4k4BkkSI8EmTCiQdP7vv3BnIXQ6NVb6fOo=",
+    integrity = "sha256-ms0Sir53OXUFFI6qaJX67VeDlWDb8hd91iheUSNeJyQ=",
     patches = ["build_defs/bzlmod/aspect_rules_ts.patch"],
-    strip_prefix = "rules_ts-2.2.0",
-    urls = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v2.2.0.tar.gz",
+    strip_prefix = "rules_ts-3.3.1",
+    urls = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v3.3.1.tar.gz",
 )
 
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "protobuf", version = "21.7")
-bazel_dep(name = "rules_java", version = "7.8.0")
-bazel_dep(name = "rules_jvm_external", version = "6.2")
-bazel_dep(name = "rules_kotlin", version = "1.9.6")
-bazel_dep(name = "rules_nixpkgs_core", version = "0.10.0")
-bazel_dep(name = "rules_nodejs", version = "6.0.2")
-bazel_dep(name = "rules_pkg", version = "0.9.1")
-bazel_dep(name = "rules_proto", version = "6.0.0-rc1")
-bazel_dep(name = "rules_python", version = "0.33.1")
-bazel_dep(name = "rules_oci", version = "1.2.0")
+bazel_dep(name = "protobuf", version = "27.1")
+bazel_dep(name = "rules_cc", version = "0.1.0")
+bazel_dep(name = "rules_java", version = "8.3.2")
+bazel_dep(name = "rules_jvm_external", version = "6.5")
+bazel_dep(name = "rules_kotlin", version = "2.0.0")
+bazel_dep(name = "rules_nixpkgs_core", version = "0.12.0")
+bazel_dep(name = "rules_nodejs", version = "6.3.2")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_proto", version = "7.0.1")
+bazel_dep(name = "rules_python", version = "0.38.0")
+bazel_dep(name = "rules_oci", version = "2.0.1")
+bazel_dep(name = "rules_nixpkgs_cc")
+archive_override(
+    module_name = "rules_nixpkgs_cc",
+    integrity = "sha256-duH7jyiDeh4i6cWqWMJlfBI6kxwaN2fTgcqg15N6jjA=",
+    strip_prefix = "rules_nixpkgs-12b2ee3fab549e7673f2d554c434f6ab1173dbb9/toolchains/cc",
+    urls = "https://github.com/tweag/rules_nixpkgs/archive/12b2ee3fab549e7673f2d554c434f6ab1173dbb9.zip",
+)
 bazel_dep(name = "rules_nixpkgs_java")
 archive_override(
     module_name = "rules_nixpkgs_java",
-    integrity = "sha256-mA7fzu8uWeESLZvmxSQTvCmENfCj1FJTK4pI11Yv/Wc=",
+    integrity = "sha256-GtsE3AQWkV/vQndX9CcsT32s7+zu78UPaDrsf36beHo=",
     patches = ["build_defs/bzlmod/nixpkgs_java.patch"],
-    strip_prefix = "rules_nixpkgs-0.10.0/toolchains/java",
-    urls = "https://github.com/tweag/rules_nixpkgs/releases/download/v0.10.0/rules_nixpkgs-0.10.0.tar.gz",
+    strip_prefix = "rules_nixpkgs-0.12.0/toolchains/java",
+    urls = "https://github.com/tweag/rules_nixpkgs/releases/download/v0.12.0/rules_nixpkgs-0.12.0.tar.gz",
 )
 
 java_toolchains = use_extension("@rules_java//java:extensions.bzl", "toolchains")
@@ -42,6 +50,12 @@ use_repo(java_toolchains, "remote_java_tools")
 
 non_module_deps = use_extension("//build_defs/bzlmod:non_module_deps.bzl", "non_module_deps")
 use_repo(non_module_deps, "nixpkgs")
+use_repo(non_module_deps, "nixpkgs_config_cc")
+use_repo(non_module_deps, "nixpkgs_config_cc_info")
+use_repo(non_module_deps, "nixpkgs_config_cc_toolchains")
+
+register_toolchains("@nixpkgs_config_cc_toolchains//:all")
+
 use_repo(non_module_deps, "nixpkgs_java_runtime")
 use_repo(non_module_deps, "nixpkgs_java_runtime_toolchain")
 
@@ -83,6 +97,13 @@ maven.install(
 )
 use_repo(maven, "maven")
 
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(
+    name = "nodejs",
+    node_version = "20.14.0",
+)
+use_repo(node, "nodejs")
+
 npm = use_extension(
     "@aspect_rules_js//npm:extensions.bzl",
     "npm",
@@ -121,7 +142,7 @@ use_repo(pip, "pip")
 bazel_dep(name = "dev_april_corgi")
 archive_override(
     module_name = "dev_april_corgi",
-    integrity = "sha256-gQlkI4Y6ba/tUnHEZ8Hdv+emfZxsw6Rubry1ppDi8r4=",
-    strip_prefix = "corgi-3b36fa72f20c4276b0db8642a34d60f79c339f9e",
-    urls = "https://github.com/aschleck/corgi/archive/3b36fa72f20c4276b0db8642a34d60f79c339f9e.tar.gz",
+    integrity = "sha256-fm5mcGNvitihWiaV+qL2i5G0ci8NLS6d9kZMdiIJ0fY=",
+    strip_prefix = "corgi-39e66df503c7434a9c5c2b7f20d2eecb8e47e263",
+    urls = "https://github.com/aschleck/corgi/archive/39e66df503c7434a9c5c2b7f20d2eecb8e47e263.tar.gz",
 )

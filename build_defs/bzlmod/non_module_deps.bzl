@@ -1,3 +1,4 @@
+load("@rules_nixpkgs_cc//:cc.bzl", "nixpkgs_cc_configure")
 load("@rules_nixpkgs_core//:nixpkgs.bzl", "nixpkgs_git_repository")
 load("@rules_nixpkgs_java//:java.bzl", "nixpkgs_java_configure")
 
@@ -6,6 +7,12 @@ def _nixpkgs_repositories():
         name = "nixpkgs",
         revision = "22.11",
         sha256 = "ddc3428d9e1a381b7476750ac4dbea7a42885cbbe6e1af44b21d6447c9609a6f",
+    )
+
+    nixpkgs_cc_configure(
+        name = "nixpkgs_config_cc",
+        register = False,
+        repository = "@nixpkgs",
     )
 
     nixpkgs_java_configure(
