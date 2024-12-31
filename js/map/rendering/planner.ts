@@ -16,7 +16,7 @@ export class Planner {
     }
   }
 
-  render(area: Vec2, centerPixels: Vec2[], worldRadius: number): void {
+  render(area: Vec2, centerPixel: Vec2, mvpMatrix: Float32Array, worldRadius: number): void {
     if (this.drawables.length === 0) {
       return;
     }
@@ -35,6 +35,7 @@ export class Planner {
 
     let drawStart = this.drawables[0];
     let drawStartIndex = 0;
+    const inverseArea = [1 / area[0], 1 / area[1]] as Vec2;
     // Gather sequential drawables that share the same program and draw them all at once
     for (let i = 1; i < this.drawables.length; ++i) {
       const drawable = this.drawables[i];
@@ -44,8 +45,9 @@ export class Planner {
 
       drawStart.program.render(
           this.drawables.slice(drawStartIndex, i),
-          area,
-          centerPixels,
+          inverseArea,
+          centerPixel,
+          mvpMatrix,
           worldRadius);
       drawStart = drawable;
       drawStartIndex = i;
@@ -54,8 +56,9 @@ export class Planner {
     // The last batch didn't actually draw, so draw it
     drawStart.program.render(
         this.drawables.slice(drawStartIndex, this.drawables.length),
-        area,
-        centerPixels,
+        inverseArea,
+        centerPixel,
+        mvpMatrix,
         worldRadius);
   }
 }

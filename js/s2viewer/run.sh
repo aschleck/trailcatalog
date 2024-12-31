@@ -7,4 +7,4 @@ nginx \
     -e /dev/stderr \
     -p "$(pwd)" &
 trap 'kill $(jobs -p)' EXIT
-ibazel build //js/s2viewer:static
+sleep 200d

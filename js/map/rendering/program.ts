@@ -26,8 +26,10 @@ export interface ProgramData {
 
   readonly uniforms: {
     cameraCenter: WebGLUniformLocation;
-    halfViewportSize: WebGLUniformLocation;
+    flattenFactor: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    inverseHalfViewportSize: WebGLUniformLocation;
+    sphericalMvp: WebGLUniformLocation;
     z: WebGLUniformLocation;
   };
 }
@@ -48,85 +50,55 @@ export abstract class Program<P extends ProgramData> extends Disposable {
     nextProgramId += 1;
   }
 
-  render(drawables: Drawable[], area: Vec2, centerPixels: Vec2[], worldRadius: number): void {
+  render(
+    drawables: Drawable[],
+    inverseArea: Vec2,
+    centerPixel: Vec2,
+    sphericalMvp: Float32Array,
+    worldRadius: number,
+  ): void {
     const gl = this.gl;
 
     gl.useProgram(this.program.handle);
-    gl.uniform2f(
-        this.program.uniforms.halfViewportSize, area[0] / 2, area[1] / 2);
+    gl.uniform1f(this.program.uniforms.flattenFactor, worldRadius > (1 << 7) * 256 ? 1. : 0.);
     gl.uniform1f(this.program.uniforms.halfWorldSize, worldRadius);
+    gl.uniform2f(
+        this.program.uniforms.inverseHalfViewportSize, 2 * inverseArea[0], 2 * inverseArea[1]);
+    gl.uniformMatrix4fv(this.program.uniforms.sphericalMvp, false, sphericalMvp);
 
     this.activate();
     let lastGeometry = undefined;
     let lastIndex = undefined;
     let lastTexture = undefined;
     let lastZ = 9999; // random large number
-    // TODO(april): support merging drawables?
-    for (const centerPixel of centerPixels) {
-      const cxh = Math.fround(centerPixel[0]);
-      const cyh = Math.fround(centerPixel[1]);
-      gl.uniform4f(
-          this.program.uniforms.cameraCenter, cxh, centerPixel[0] - cxh, cyh, centerPixel[1] - cyh);
+    const cxh = Math.fround(centerPixel[0]);
+    const cyh = Math.fround(centerPixel[1]);
+    gl.uniform4f(
+        this.program.uniforms.cameraCenter, cxh, centerPixel[0] - cxh, cyh, centerPixel[1] - cyh);
 
-      let drawStart = drawables[0];
-      let drawStartIndex = 0;
-      let pendingGeometryByteLength = drawStart.geometryByteLength;
-      let pendingVertexCount = drawStart.vertexCount ?? 0;
-      for (let i = 1; i < drawables.length; ++i) {
-        const drawable = drawables[i];
+    let drawStart = drawables[0];
+    let drawStartIndex = 0;
+    let pendingGeometryByteLength = drawStart.geometryByteLength;
+    let pendingVertexCount = drawStart.vertexCount ?? 0;
+    for (let i = 1; i < drawables.length; ++i) {
+      const drawable = drawables[i];
 
-        if (
-            drawStart.elements === undefined
-                && drawable.elements === undefined
-                && drawStart.instanced === undefined
-                && drawable.instanced === undefined
-                && drawStart.geometry === drawable.geometry
-                && drawStart.texture === drawable.texture
-                && drawStart.z === drawable.z
-                && drawStart.geometryOffset + pendingGeometryByteLength === drawable.geometryOffset
-        ) {
-          pendingGeometryByteLength += drawable.geometryByteLength;
-          pendingVertexCount += drawable.vertexCount ?? 0;
-          continue;
-        }
-
-        // TODO(april): should we merge instance calls? Maybe
-
-        if (lastGeometry !== drawStart.geometry) {
-          gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
-          lastGeometry = drawStart.geometry;
-        }
-        const thisIndex = drawStart.elements?.index;
-        if (lastIndex !== thisIndex && thisIndex) {
-          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, thisIndex);
-          lastIndex = thisIndex;
-        }
-        if (lastTexture !== drawStart.texture && drawStart.texture) {
-          gl.bindTexture(gl.TEXTURE_2D, drawStart.texture);
-          lastTexture = drawStart.texture;
-        }
-        if (lastZ !== drawStart.z) {
-          gl.uniform1f(this.program.uniforms.z, drawStart.z / 1000);
-          lastZ = drawStart.z;
-        }
-
-        this.draw({
-          elements: drawStart.elements,
-          geometry: drawStart.geometry,
-          geometryByteLength: pendingGeometryByteLength,
-          geometryOffset: drawStart.geometryOffset,
-          instanced: drawStart.instanced,
-          program: drawStart.program,
-          texture: drawStart.texture,
-          vertexCount: pendingVertexCount,
-          z: drawStart.z,
-        });
-
-        drawStart = drawable;
-        drawStartIndex = i;
-        pendingGeometryByteLength = drawStart.geometryByteLength;
-        pendingVertexCount = drawStart.vertexCount ?? 0;
+      if (
+          drawStart.elements === undefined
+              && drawable.elements === undefined
+              && drawStart.instanced === undefined
+              && drawable.instanced === undefined
+              && drawStart.geometry === drawable.geometry
+              && drawStart.texture === drawable.texture
+              && drawStart.z === drawable.z
+              && drawStart.geometryOffset + pendingGeometryByteLength === drawable.geometryOffset
+      ) {
+        pendingGeometryByteLength += drawable.geometryByteLength;
+        pendingVertexCount += drawable.vertexCount ?? 0;
+        continue;
       }
+
+      // TODO(april): should we merge instance calls? Maybe
 
       if (lastGeometry !== drawStart.geometry) {
         gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
@@ -157,7 +129,43 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         vertexCount: pendingVertexCount,
         z: drawStart.z,
       });
+
+      drawStart = drawable;
+      drawStartIndex = i;
+      pendingGeometryByteLength = drawStart.geometryByteLength;
+      pendingVertexCount = drawStart.vertexCount ?? 0;
     }
+
+    if (lastGeometry !== drawStart.geometry) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
+      lastGeometry = drawStart.geometry;
+    }
+    const thisIndex = drawStart.elements?.index;
+    if (lastIndex !== thisIndex && thisIndex) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, thisIndex);
+      lastIndex = thisIndex;
+    }
+    if (lastTexture !== drawStart.texture && drawStart.texture) {
+      gl.bindTexture(gl.TEXTURE_2D, drawStart.texture);
+      lastTexture = drawStart.texture;
+    }
+    if (lastZ !== drawStart.z) {
+      gl.uniform1f(this.program.uniforms.z, drawStart.z / 1000);
+      lastZ = drawStart.z;
+    }
+
+    this.draw({
+      elements: drawStart.elements,
+      geometry: drawStart.geometry,
+      geometryByteLength: pendingGeometryByteLength,
+      geometryOffset: drawStart.geometryOffset,
+      instanced: drawStart.instanced,
+      program: drawStart.program,
+      texture: drawStart.texture,
+      vertexCount: pendingVertexCount,
+      z: drawStart.z,
+    });
+
     this.deactivate();
   }
 

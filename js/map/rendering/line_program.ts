@@ -254,9 +254,11 @@ interface LineProgramData extends ProgramData {
   };
   uniforms: {
     cameraCenter: WebGLUniformLocation;
-    halfViewportSize: WebGLUniformLocation;
+    flattenFactor: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    inverseHalfViewportSize: WebGLUniformLocation;
     renderBorder: WebGLUniformLocation;
+    sphericalMvp: WebGLUniformLocation;
     z: WebGLUniformLocation;
   };
 }
@@ -267,9 +269,11 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
   const vs = `#version 300 es
       // This is a Mercator coordinate ranging from -1 to 1 on both x and y
       uniform highp vec4 cameraCenter;
-      uniform highp vec2 halfViewportSize;
+      uniform mediump float flattenFactor; // 0 to 1
       uniform highp float halfWorldSize;
+      uniform highp vec2 inverseHalfViewportSize;
       uniform bool renderBorder;
+      uniform highp mat4 sphericalMvp;
       uniform highp float z;
 
       // x is either 0 or 1, y is either -1 or 1.
@@ -301,6 +305,8 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
 
+      const float PI = 3.141592653589793;
+
       vec2 perpendicular(vec2 v) {
         return vec2(-v.y, v.x);
       }
@@ -310,6 +316,11 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         vec2 direction = next - previous;
         vec2 perp = perpendicular(normalize(direction));
         vec4 location = sub_fp64(split(center), cameraCenter);
+        if (location.x + location.y > 1.) {
+          location.x -= 2.;
+        } else if (location.x + location.y < -1.) {
+          location.x += 2.;
+        }
         highp float actualRadius = renderBorder ? radius : radius - 1.;
         vec2 push = perp * actualRadius * position.y;
         vec4 worldCoord =
@@ -317,8 +328,24 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
                 mul_fp64(location, vec4(split(halfWorldSize), split(halfWorldSize))),
                 split(push));
 
-        vec4 p = div_fp64(worldCoord, split(halfViewportSize));
-        gl_Position = vec4(p.x + p.y, p.z + p.w, z, 1);
+        vec4 p = mul_fp64(worldCoord, split(inverseHalfViewportSize));
+        vec4 mercator = vec4(p.x + p.y, p.z + p.w, z, 1);
+
+        // Calculate the spherical projection
+        float sinLat = tanh(center.y * PI);
+        float lat = asin(sinLat);
+        float cosLat = cos(lat);
+        float lng = center.x * PI;
+        vec4 spherical = sphericalMvp * vec4(
+            cosLat * cos(lng), // x
+            sinLat,            // y
+            cosLat * sin(lng), // z
+            1.0                // w
+        );
+
+        gl_Position = mix(spherical, mercator, flattenFactor);
+        gl_Position /= gl_Position.w;
+        gl_Position.z = -spherical.z * z;
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
@@ -390,9 +417,12 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
-      halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
+      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+      inverseHalfViewportSize:
+        checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
       renderBorder: checkExists(gl.getUniformLocation(programId, 'renderBorder')),
+      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
       z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };

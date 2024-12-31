@@ -174,10 +174,12 @@ interface LineCapProgramData extends ProgramData {
   };
   uniforms: {
     cameraCenter: WebGLUniformLocation;
-    halfViewportSize: WebGLUniformLocation;
+    flattenFactor: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    inverseHalfViewportSize: WebGLUniformLocation;
     renderBorder: WebGLUniformLocation;
     side: WebGLUniformLocation;
+    sphericalMvp: WebGLUniformLocation;
     z: WebGLUniformLocation;
   };
 }
@@ -188,10 +190,12 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
   const vs = `#version 300 es
       // This is a Mercator coordinate ranging from -1 to 1 on both x and y
       uniform highp vec4 cameraCenter;
-      uniform highp vec2 halfViewportSize;
+      uniform mediump float flattenFactor; // 0 to 1
       uniform highp float halfWorldSize;
+      uniform highp vec2 inverseHalfViewportSize;
       uniform bool renderBorder;
       uniform uint side;
+      uniform highp mat4 sphericalMvp;
       uniform highp float z;
 
       // either [0, 0] or x^2 + y^2 = 1
@@ -223,18 +227,41 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
 
+      const float PI = 3.141592653589793;
+
       void main() {
         vec2 center = side == 0u ? previous : next;
         vec2 direction = next - previous;
         vec4 location = sub_fp64(split(center), cameraCenter);
+        if (location.x + location.y > 1.) {
+          location.x -= 2.;
+        } else if (location.x + location.y < -1.) {
+          location.x += 2.;
+        }
         highp float actualRadius = renderBorder ? radius : radius - 1.;
         vec2 push = actualRadius * position;
         vec4 worldCoord =
             sum_fp64(
                 mul_fp64(location, vec4(split(halfWorldSize), split(halfWorldSize))),
                 split(push));
-        vec4 p = div_fp64(worldCoord, split(halfViewportSize));
-        gl_Position = vec4(p.x + p.y, p.z + p.w, z, 1);
+        vec4 p = mul_fp64(worldCoord, split(inverseHalfViewportSize));
+        vec4 mercator = vec4(p.x + p.y, p.z + p.w, z, 1);
+
+        // Calculate the spherical projection
+        float sinLat = tanh(center.y * PI);
+        float lat = asin(sinLat);
+        float cosLat = cos(lat);
+        float lng = center.x * PI;
+        vec4 spherical = sphericalMvp * vec4(
+            cosLat * cos(lng), // x
+            sinLat,            // y
+            cosLat * sin(lng), // z
+            1.0                // w
+        );
+
+        gl_Position = mix(spherical, mercator, flattenFactor);
+        gl_Position /= gl_Position.w;
+        gl_Position.z = -spherical.z * z;
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
@@ -306,9 +333,12 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
-      halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
+      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+      inverseHalfViewportSize:
+        checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
       renderBorder: checkExists(gl.getUniformLocation(programId, 'renderBorder')),
+      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
       side: checkExists(gl.getUniformLocation(programId, 'side')),
       z: checkExists(gl.getUniformLocation(programId, 'z')),
     },

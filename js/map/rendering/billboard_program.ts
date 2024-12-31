@@ -206,8 +206,10 @@ interface BillboardProgramData extends ProgramData {
   uniforms: {
     cameraCenter: WebGLUniformLocation;
     color: WebGLUniformLocation;
-    halfViewportSize: WebGLUniformLocation;
+    flattenFactor: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    inverseHalfViewportSize: WebGLUniformLocation;
+    sphericalMvp: WebGLUniformLocation;
     z: WebGLUniformLocation;
   };
 }
@@ -220,8 +222,10 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       // Pixels are in screen space (eg -320px to 320px for a 640px width)
 
       uniform highp vec4 cameraCenter; // Mercator
-      uniform highp vec2 halfViewportSize; // pixels
+      uniform mediump float flattenFactor; // 0 to 1
       uniform highp float halfWorldSize; // pixels
+      uniform highp vec2 inverseHalfViewportSize; // 1/pixels
+      uniform highp mat4 sphericalMvp;
       uniform highp float z;
 
       in highp vec2 position;
@@ -244,8 +248,15 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
 
+      const float PI = 3.141592653589793;
+
       void main() {
         vec4 relativeCenter = sub_fp64(split(center), cameraCenter);
+        if (relativeCenter.x + relativeCenter.y > 1.) {
+          relativeCenter.x -= 2.;
+        } else if (relativeCenter.x + relativeCenter.y < -1.) {
+          relativeCenter.x += 2.;
+        }
         vec4 extents = mul_fp64(split(position), split(size));
         vec2 c = split(cos(angle));
         vec2 s = split(sin(angle));
@@ -264,8 +275,42 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
                         sum_fp64(relativeCenter, rotated),
                         vec4(split(halfWorldSize), split(halfWorldSize)));
         vec4 screenCoord = sum_fp64(worldCoord, split(offsetPx));
-        vec4 p = div_fp64(screenCoord, split(halfViewportSize));
-        gl_Position = vec4(p.x + p.y, p.z + p.w, z, 1);
+        vec4 p = mul_fp64(screenCoord, split(inverseHalfViewportSize));
+        vec4 mercator = vec4(p.x + p.y, p.z + p.w, z, 1);
+
+        // Calculate the spherical projection
+        vec4 sphericalOrigin = split(center) + (sizeIsPixels > 0u ? vec4(0) : rotated);
+        float sinLat = tanh((sphericalOrigin.z + sphericalOrigin.w) * PI);
+        float lat = asin(sinLat);
+        float cosLat = cos(lat);
+        float lng = (sphericalOrigin.x + sphericalOrigin.y) * PI;
+        vec4 sphericalCenter = sphericalMvp * vec4(
+            cosLat * cos(lng), // x
+            sinLat,            // y
+            cosLat * sin(lng), // z
+            1.0                // w
+        );
+        vec4 sphericalSplit =
+          sum_fp64(
+            split(sphericalCenter.xy),
+            sizeIsPixels > 0u
+              ?
+                mul_fp64(
+                    sum_fp64(rotated, split(offsetPx)), split(inverseHalfViewportSize))
+                  * sphericalCenter.w
+              : vec4(0));
+        vec2 sphericalXy =
+          vec2(sphericalSplit.x + sphericalSplit.y, sphericalSplit.z + sphericalSplit.w);
+        vec4 spherical =
+          vec4(
+            sphericalXy.x,
+            sphericalXy.y,
+            sphericalCenter.z,
+            sphericalCenter.w);
+
+        gl_Position = mix(spherical, mercator, flattenFactor);
+        gl_Position /= gl_Position.w;
+        gl_Position.z = -spherical.z * z;
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);
@@ -326,8 +371,10 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
       color: checkExists(gl.getUniformLocation(programId, 'color')),
-      halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
+      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+      inverseHalfViewportSize: checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
+      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
       z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };

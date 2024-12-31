@@ -135,8 +135,10 @@ interface TriangleProgramData extends ProgramData {
 
   uniforms: {
     cameraCenter: WebGLUniformLocation;
-    halfViewportSize: WebGLUniformLocation;
+    flattenFactor: WebGLUniformLocation;
     halfWorldSize: WebGLUniformLocation;
+    inverseHalfViewportSize: WebGLUniformLocation;
+    sphericalMvp: WebGLUniformLocation;
     z: WebGLUniformLocation;
   };
 }
@@ -150,8 +152,10 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       // Pixels are in screen space (eg -320px to 320px for a 640px width)
 
       uniform highp vec4 cameraCenter; // Mercator
-      uniform highp vec2 halfViewportSize; // pixels
+      uniform mediump float flattenFactor; // 0 to 1
       uniform highp float halfWorldSize; // pixels
+      uniform highp vec2 inverseHalfViewportSize; // 1/pixels
+      uniform highp mat4 sphericalMvp;
       uniform highp float z;
 
       in uint fillColor;
@@ -165,12 +169,36 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
 
+      const float PI = 3.141592653589793;
+
       void main() {
+        // Calculate the Mercator projection
         vec4 relativeCenter = sub_fp64(split(position), cameraCenter);
+        if (relativeCenter.x + relativeCenter.y > 1.) {
+          relativeCenter.x -= 2.;
+        } else if (relativeCenter.x + relativeCenter.y < -1.) {
+          relativeCenter.x += 2.;
+        }
         vec4 screenCoord =
             mul_fp64(relativeCenter, vec4(split(halfWorldSize), split(halfWorldSize)));
-        vec4 p = div_fp64(screenCoord, split(halfViewportSize));
-        gl_Position = vec4(p.x + p.y, p.z + p.w, z, 1);
+        vec4 p = mul_fp64(screenCoord, split(inverseHalfViewportSize));
+        vec4 mercator = vec4(p.x + p.y, p.z + p.w, z, 1);
+
+        // Calculate the spherical projection
+        float sinLat = tanh(position.y * PI);
+        float lat = asin(sinLat);
+        float cosLat = cos(lat);
+        float lng = position.x * PI;
+        vec4 spherical = sphericalMvp * vec4(
+            cosLat * cos(lng), // x
+            sinLat,            // y
+            cosLat * sin(lng), // z
+            1.0                // w
+        );
+ 
+        gl_Position = mix(spherical, mercator, flattenFactor);
+        gl_Position /= gl_Position.w;
+        gl_Position.z = -spherical.z * z;
 
         fragFillColor = uint32ToVec4(fillColor);
         fragFillColor = vec4(fragFillColor.rgb * fragFillColor.a, fragFillColor.a);
@@ -216,8 +244,11 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
-      halfViewportSize: checkExists(gl.getUniformLocation(programId, 'halfViewportSize')),
+      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
       halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
+      inverseHalfViewportSize:
+        checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
+      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
       z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };

@@ -4,6 +4,7 @@ import { LittleEndianView } from 'external/dev_april_corgi~/js/common/little_end
 import { clamp } from 'external/dev_april_corgi~/js/common/math';
 
 import { RgbaU32, TileId, Vec2 } from '../common/types';
+import { rgbaToUint32 } from '../common/math';
 import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
 import { toGraphemes } from '../rendering/glypher';
 
@@ -28,6 +29,32 @@ interface LayerStyle {
   points: PointStyle[];
   polygons: PolygonStyle[];
 }
+
+// https://medialab.github.io/iwanthue/
+const RANDOM_COLORS_RGB = [
+  [109,188,123],
+  [186,83,185],
+  [81,195,95],
+  [113,102,217],
+  [145,186,53],
+  [110,112,187],
+  [202,165,58],
+  [93,157,214],
+  [207,73,51],
+  [77,193,180],
+  [214,68,117],
+  [73,138,50],
+  [215,141,201],
+  [55,131,93],
+  [159,74,115],
+  [176,174,98],
+  [212,119,111],
+  [112,113,41],
+  [226,137,58],
+  [163,104,52],
+];
+
+const RANDOM_COLORS_UINT32 = RANDOM_COLORS_RGB.map(([r,g,b]) => rgbaToUint32(r,g,b,1));
 
 type GeometryStyle = LineStyle|LineTextStyle|PointStyle|PolygonStyle;
 
@@ -189,6 +216,7 @@ class MbtileLoader {
   load(request: LoadRequest) {
     // Who amonst us hasn't written a proto parser manually...
     // https://github.com/mapbox/vector-tile-spec/blob/master/2.1/vector_tile.proto
+    // I (Josh) have nothing really to back this up but I feel like this would be like 10x faster in WASM.
     const source = new LittleEndianView(request.data);
 
     const layers = [];
@@ -209,14 +237,13 @@ class MbtileLoader {
     }
 
     const lineGroups = new DefaultMap<LineStyle, Feature[]>(() => []);
-    const lineTextGroups = new DefaultMap<LineTextStyle, Array<Feature & {
+    // Stupid vscode
+    type T1 = Feature & {
       layer: Layer;
       layerStyle: LayerStyle;
-    }>>(() => []);
-    const pointGroups = new DefaultMap<PointStyle, Array<Feature & {
-      layer: Layer;
-      layerStyle: LayerStyle;
-    }>>(() => []);
+    };
+    const lineTextGroups = new DefaultMap<LineTextStyle, Array<T1>>(() => []);
+    const pointGroups = new DefaultMap<PointStyle, Array<T1>>(() => []);
     const polygonGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     const polygonBoundGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     for (const layer of layers) {
@@ -324,7 +351,8 @@ class MbtileLoader {
     for (const [style, polygons] of polygonGroups) {
       const triangless = [];
       for (const polygon of polygons) {
-        const triangles = triangulateMb(polygon.geometry, polygon.starts)
+        const triangles =
+          triangulateMb(polygon.geometry, polygon.starts, /* maxTriangleLengthMeters= */ 400_000);
         geometryCount += triangles.geometry.length;
         indexCount += triangles.index.length;
         triangless.push(triangles);
@@ -500,6 +528,7 @@ class MbtileLoader {
       const indexStart = indexOffset;
 
       geometryUints[geometryOffset] = style.fill;
+      // geometryUints[geometryOffset] = RANDOM_COLORS_UINT32[Math.floor(Math.random() * RANDOM_COLORS_UINT32.length)];
       geometryOffset += 1;
 
       for (const triangles of triangless) {

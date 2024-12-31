@@ -10,6 +10,7 @@ import { DialogService } from 'external/dev_april_corgi~/js/emu/dialog';
 
 import { DPI } from './common/dpi';
 import { fitBoundInScreen } from './common/math';
+import { createPerspectiveProjectionMatrix } from './common/matrix';
 import { Copyright, LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
 import { Planner } from './rendering/planner';
 import { Renderer } from './rendering/renderer';
@@ -332,22 +333,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       }
 
       const centerPixel = this.camera.centerPixel;
-      const centerPixels = [centerPixel];
-      // Add extra camera positions for wrapping the world
-      //
-      // There's some weird normalization bug at
-      // lat=42.3389265&lng=177.6919189&zoom=3.020
-      // where tiles don't show up around the wrap. Seems like S2 sometimes normalizes and sometimes
-      // doesn't depending on the size of the range. So we check the max/min.
-      const bounds = this.camera.viewportBounds(this.area[0], this.area[1]);
-      if (Math.min(bounds.lng().lo(), bounds.lng().hi()) < -Math.PI) {
-        centerPixels.push([centerPixel[0] + 2, centerPixel[1]]);
-      }
-      if (Math.max(bounds.lng().lo(), bounds.lng().hi()) > Math.PI) {
-        centerPixels.push([centerPixel[0] - 2, centerPixel[1]]);
-      }
-
-      planner.render(this.area, centerPixels, this.camera.worldRadius);
+      const mvpMatrix = this.camera.sphericalMvp(this.screenArea.height, this.screenArea.width);
+      planner.render(this.area, this.camera.centerPixel, mvpMatrix, this.camera.worldRadius);
 
       this.nextRender = RenderType.NoChange;
     }
