@@ -344,7 +344,8 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         );
 
         gl_Position = mix(spherical, mercator, flattenFactor);
-        gl_Position.z = 1. - z * sign(gl_Position.z) * gl_Position.w;
+        gl_Position /= gl_Position.w;
+        gl_Position.z = z * gl_Position.z + 1.;
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);

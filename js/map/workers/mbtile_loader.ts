@@ -351,8 +351,10 @@ class MbtileLoader {
     for (const [style, polygons] of polygonGroups) {
       const triangless = [];
       for (const polygon of polygons) {
+        // Among other things, the max triangle length affects the amount of overdraw we see at the
+        // edge of the globe.
         const triangles =
-          triangulateMb(polygon.geometry, polygon.starts, /* maxTriangleLengthMeters= */ 400_000);
+          triangulateMb(polygon.geometry, polygon.starts, /* maxTriangleLengthMeters= */ 200_000);
         geometryCount += triangles.geometry.length;
         indexCount += triangles.index.length;
         triangless.push(triangles);
