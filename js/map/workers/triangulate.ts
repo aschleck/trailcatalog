@@ -10,7 +10,11 @@ export interface Triangles {
   index: number[];
 }
 
-export function triangulateMb(geometry: number[], starts: number[], maxTriangleLengthMeters?: number): Triangles {
+export function triangulateMb(
+  geometry: number[],
+  starts: number[],
+  maxTriangleLengthMeters: number,
+): Triangles {
   // We need to figure out what's an exterior and what's a ring. We do so by calculating the sign of
   // the polygon's area.
   starts.push(geometry.length);
@@ -63,12 +67,6 @@ export function triangulateMb(geometry: number[], starts: number[], maxTriangleL
     }
   }
 
-  if (maxTriangleLengthMeters === undefined) {
-    return {
-      geometry,
-      index: allIndices,
-    };
-  }
   const maxLengthRadians = maxTriangleLengthMeters / 6371010;
   return subdivideBigTriangles(
     geometry,
@@ -126,7 +124,17 @@ function subdivideTriangleIfBig(
 
   // If none of the edges are too long, keep the triangle as it is.
   if (!edge0TooLong && !edge1TooLong && !edge2TooLong) {
-    indices.push(a, b, c);
+    // Sort the edges to ensure the winding order is correct. earcut mostly gives us ccw winding but
+    // not always (for example pacific ocean west of California at zoom level 7)
+    const sign =
+      (geometry[2 * a] - geometry[2 * c]) * (geometry[2 * a + 1] + geometry[2 * c + 1])
+        + (geometry[2 * b] - geometry[2 * a]) * (geometry[2 * b + 1] + geometry[2 * a + 1])
+        + (geometry[2 * c] - geometry[2 * b]) * (geometry[2 * c + 1] + geometry[2 * b + 1]);
+    if (sign < 0) {
+      indices.push(a, b, c);
+    } else {
+      indices.push(c, b, a);
+    }
     return;
   }
 
@@ -183,8 +191,7 @@ function subdivideTriangleIfBig(
     subdivideTriangleIfBig(a, b, ca, geometry, indices, midpointIndices, maxLengthRadiansSq);
     subdivideTriangleIfBig(b, c, ca, geometry, indices, midpointIndices, maxLengthRadiansSq);
   } else {
-    // Should not reach here
-    indices.push(a, b, c);
+    throw new Error('Failed to find too long edge');
   }
 }
 

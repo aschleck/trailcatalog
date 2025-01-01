@@ -195,10 +195,10 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
             cosLat * sin(lng), // z
             1.0                // w
         );
+        spherical.z *= -1.;
  
         gl_Position = mix(spherical, mercator, flattenFactor);
-        gl_Position /= gl_Position.w;
-        gl_Position.z = -spherical.z * z;
+        gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;
 
         fragFillColor = uint32ToVec4(fillColor);
         fragFillColor = vec4(fragFillColor.rgb * fragFillColor.a, fragFillColor.a);
