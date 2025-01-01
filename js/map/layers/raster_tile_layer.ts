@@ -95,7 +95,7 @@ export class RasterTileLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.hasNewData()) {
-      const buffer = new ArrayBuffer(8 * 256 * 256);
+      const buffer = new ArrayBuffer(16 * 256 * 256);
       const drawables = [];
       let offset = 0;
 

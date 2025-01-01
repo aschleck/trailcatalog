@@ -314,7 +314,8 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
             sphericalCenter.w);
 
         gl_Position = mix(spherical, mercator, flattenFactor);
-        gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;
+        gl_Position /= gl_Position.w;
+        gl_Position.z = z * gl_Position.z + 1.;
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);

@@ -115,6 +115,7 @@ export class SdfProgram extends Program<SdfProgramData> {
   protected activate(): void {
     const gl = this.gl;
 
+    gl.disable(gl.DEPTH_TEST);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(this.program.uniforms.color, 0);
 
@@ -247,6 +248,7 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.fill, 0);
     gl.disableVertexAttribArray(this.program.attributes.stroke);
     gl.vertexAttribDivisor(this.program.attributes.stroke, 0);
+    gl.enable(gl.DEPTH_TEST);
   }
 }
 
@@ -359,7 +361,8 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
             sphericalCenter.w);
 
         gl_Position = mix(spherical, mercator, flattenFactor);
-        gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;
+        gl_Position /= gl_Position.w;
+        gl_Position.z = z * gl_Position.z + 1.;
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);
