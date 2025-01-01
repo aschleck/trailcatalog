@@ -9,7 +9,7 @@ import { Rect, Vec2 } from './common/types';
 const FOV = Math.PI / 4;
 const MAX_EDGE_ANGLE = SimpleS2.earthMetersToAngle(50000).radians();
 const MERCATOR_MAX_LAT_RADIANS = 85 / 90 * Math.PI / 2;
-const ZOOM_MIN = 2;
+const ZOOM_MIN = 4;
 const ZOOM_MAX = 22;
 
 export class Camera {
@@ -29,6 +29,10 @@ export class Camera {
 
   get centerPixel(): Vec2 {
     return projectS2LatLng(this._center);
+  }
+
+  get flattenFactor(): number {
+    return clamp((this.worldRadius - 65536) / 32768, 0, 1);
   }
 
   get inverseWorldRadius(): number {
@@ -70,11 +74,10 @@ export class Camera {
   }
 
   sphericalMvp(viewportHeightPx: number, viewportWidthPx: number): Float32Array {
-    const aspectRatio = viewportHeightPx / viewportWidthPx;
     const lat = this.center.latRadians();
     const lng = this.center.lngRadians();
     const viewportRadiusWorldUnitsAtLat =
-      Math.PI * Math.cos(lat) * this.inverseWorldRadius * viewportHeightPx / 2;
+      Math.PI * Math.cos(0) * this.inverseWorldRadius * viewportHeightPx / 2;
     const distanceCameraToGlobeSurface = viewportRadiusWorldUnitsAtLat / Math.tan(FOV / 2);
     const scale = 1 + distanceCameraToGlobeSurface;
     const x = scale * Math.cos(lat) * Math.cos(lng);
@@ -83,7 +86,7 @@ export class Camera {
     const viewMatrix = createViewMatrix([x, y, z], [0, 0, 0], [0, -1, 0]);
     const distanceToHorizon = Math.sqrt(scale * scale - 1);
     const projectionMatrix = createPerspectiveProjectionMatrix(
-      aspectRatio,
+      viewportHeightPx / viewportWidthPx,
       FOV,
       distanceCameraToGlobeSurface * 0.99,
       distanceToHorizon * 1.001);

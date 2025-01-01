@@ -1,6 +1,5 @@
 import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
 import { Disposable } from 'external/dev_april_corgi~/js/common/disposable';
-import { clamp } from 'external/dev_april_corgi~/js/common/math';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
@@ -53,15 +52,16 @@ export abstract class Program<P extends ProgramData> extends Disposable {
 
   render(
     drawables: Drawable[],
-    inverseArea: Vec2,
     centerPixel: Vec2,
+    flattenFactor: number,
+    inverseArea: Vec2,
     sphericalMvp: Float32Array,
     worldRadius: number,
   ): void {
     const gl = this.gl;
 
     gl.useProgram(this.program.handle);
-    gl.uniform1f(this.program.uniforms.flattenFactor, clamp((worldRadius - 65536) / 32768, 0, 1));
+    gl.uniform1f(this.program.uniforms.flattenFactor, flattenFactor);
     gl.uniform1f(this.program.uniforms.halfWorldSize, worldRadius);
     gl.uniform2f(
         this.program.uniforms.inverseHalfViewportSize, 2 * inverseArea[0], 2 * inverseArea[1]);
