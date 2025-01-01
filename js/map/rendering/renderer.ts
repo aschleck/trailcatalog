@@ -35,11 +35,10 @@ export class Renderer extends Disposable {
     gl.enable(gl.CULL_FACE);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.GEQUAL);
+    gl.depthFunc(gl.LEQUAL);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 
     gl.clearColor(1, 1, 1, 1);
-    gl.clearDepth(0);
   }
 
   clear(): void {
