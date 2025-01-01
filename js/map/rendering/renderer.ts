@@ -32,6 +32,7 @@ export class Renderer extends Disposable {
     this.registerDisposable(this.triangleProgram);
 
     gl.enable(gl.BLEND);
+    gl.enable(gl.CULL_FACE);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.GEQUAL);

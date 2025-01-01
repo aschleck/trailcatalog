@@ -14,15 +14,22 @@ export class BillboardProgram extends Program<BillboardProgramData> {
       gl.deleteProgram(this.program.handle);
     });
 
-    this.billboardData = new Float32Array([
-      -0.5, -0.5, 0, 1,
-      -0.5, 0.5, 0, 0,
-      0.5, -0.5, 1, 1,
+    const vertices = [];
+    const step = 1 / 4;
+    for (let y = -0.5; y < 0.5; y += step) {
+      for (let x = -0.5; x < 0.5; x += step) {
+        vertices.push(...[
+          x, y, 0.5 + x, 0.5 - y,
+          x + step, y, 0.5 + x + step, 0.5 - y,
+          x, y + step, 0.5 + x, 0.5 - (y + step),
 
-      0.5, -0.5, 1, 1,
-      -0.5, 0.5, 0, 0,
-      0.5, 0.5, 1, 0,
-    ]);
+          x + step, y, 0.5 + x + step, 0.5 - y,
+          x + step, y + step, 0.5 + x + step, 0.5 - (y + step),
+          x, y + step, 0.5 + x, 0.5 - (y + step),
+        ]);
+      }
+    }
+    this.billboardData = new Float32Array(vertices);
   }
 
   plan(
@@ -299,18 +306,16 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
                     sum_fp64(rotated, split(offsetPx)), split(inverseHalfViewportSize))
                   * sphericalCenter.w
               : vec4(0));
-        vec2 sphericalXy =
-          vec2(sphericalSplit.x + sphericalSplit.y, sphericalSplit.z + sphericalSplit.w);
         vec4 spherical =
           vec4(
-            sphericalXy.x,
-            sphericalXy.y,
+            sphericalSplit.x + sphericalSplit.y,
+            sphericalSplit.z + sphericalSplit.w,
             sphericalCenter.z,
             sphericalCenter.w);
+        spherical.z *= -1.;
 
         gl_Position = mix(spherical, mercator, flattenFactor);
-        gl_Position /= gl_Position.w;
-        gl_Position.z = -spherical.z * z;
+        gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);

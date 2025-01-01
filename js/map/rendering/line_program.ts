@@ -342,10 +342,10 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
             cosLat * sin(lng), // z
             1.0                // w
         );
+        spherical.z *= -1.;
 
         gl_Position = mix(spherical, mercator, flattenFactor);
-        gl_Position /= gl_Position.w;
-        gl_Position.z = -spherical.z * z;
+        gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);

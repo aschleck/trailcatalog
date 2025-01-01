@@ -34,8 +34,8 @@ export class SdfProgram extends Program<SdfProgramData> {
     const square =
         new Float32Array([
           -0.5, -0.5, 0, 1,
-          -0.5, 0.5, 0, 0,
           0.5, -0.5, 1, 1,
+          -0.5, 0.5, 0, 0,
           0.5, 0.5, 1, 0,
         ]);
     gl.bufferData(gl.COPY_WRITE_BUFFER, square, gl.STATIC_DRAW);
@@ -351,18 +351,16 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
             split(sphericalCenter.xy),
             mul_fp64(sum_fp64(rotated, split(offsetPx)), split(inverseHalfViewportSize))
               * sphericalCenter.w);
-        vec2 sphericalXy =
-          vec2(sphericalSplit.x + sphericalSplit.y, sphericalSplit.z + sphericalSplit.w);
         vec4 spherical =
           vec4(
-            sphericalXy.x,
-            sphericalXy.y,
+            sphericalSplit.x + sphericalSplit.y,
+            sphericalSplit.z + sphericalSplit.w,
             sphericalCenter.z,
             sphericalCenter.w);
+        spherical.z *= -1.;
 
         gl_Position = mix(spherical, mercator, flattenFactor);
-        gl_Position /= gl_Position.w;
-        gl_Position.z = -spherical.z * z;
+        gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);
