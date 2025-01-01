@@ -182,7 +182,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
         vec4 screenCoord =
             mul_fp64(relativeCenter, vec4(split(halfWorldSize), split(halfWorldSize)));
         vec4 p = mul_fp64(screenCoord, split(inverseHalfViewportSize));
-        vec4 mercator = vec4(p.x + p.y, p.z + p.w, z, 1);
+        vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
         // Calculate the spherical projection
         float sinLat = tanh(position.y * PI);
@@ -195,7 +195,6 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
             cosLat * sin(lng), // z
             1.0                // w
         );
-        spherical.z *= -1.;
  
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;

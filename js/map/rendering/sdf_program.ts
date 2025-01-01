@@ -333,7 +333,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
                 rotated);
         vec4 screenCoord = sum_fp64(worldCoord, split(offsetPx));
         vec4 p = mul_fp64(screenCoord, split(inverseHalfViewportSize));
-        vec4 mercator = vec4(p.x + p.y, p.z + p.w, z, 1);
+        vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
         // Calculate the spherical projection
         float sinLat = tanh(center.y * PI);
@@ -357,7 +357,6 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
             sphericalSplit.z + sphericalSplit.w,
             sphericalCenter.z,
             sphericalCenter.w);
-        spherical.z *= -1.;
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;

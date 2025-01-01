@@ -245,7 +245,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
                 mul_fp64(location, vec4(split(halfWorldSize), split(halfWorldSize))),
                 split(push));
         vec4 p = mul_fp64(worldCoord, split(inverseHalfViewportSize));
-        vec4 mercator = vec4(p.x + p.y, p.z + p.w, z, 1);
+        vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
         // Calculate the spherical projection
         float sinLat = tanh(center.y * PI);
@@ -258,10 +258,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
             cosLat * sin(lng), // z
             1.0                // w
         );
-        spherical.z *= -1.;
 
         gl_Position = mix(spherical, mercator, flattenFactor);
-        gl_Position.z = z * sign(gl_Position.z) * gl_Position.w;
+        gl_Position.z = 1. - z * sign(gl_Position.z) * gl_Position.w;
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
