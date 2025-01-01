@@ -16,7 +16,13 @@ export class Planner {
     }
   }
 
-  render(area: Vec2, centerPixel: Vec2, mvpMatrix: Float32Array, worldRadius: number): void {
+  render(
+    area: Vec2,
+    centerPixel: Vec2,
+    flattenFactor: number,
+    mvpMatrix: Float32Array,
+    worldRadius: number,
+  ): void {
     if (this.drawables.length === 0) {
       return;
     }
@@ -45,8 +51,9 @@ export class Planner {
 
       drawStart.program.render(
           this.drawables.slice(drawStartIndex, i),
-          inverseArea,
           centerPixel,
+          flattenFactor,
+          inverseArea,
           mvpMatrix,
           worldRadius);
       drawStart = drawable;
@@ -56,8 +63,9 @@ export class Planner {
     // The last batch didn't actually draw, so draw it
     drawStart.program.render(
         this.drawables.slice(drawStartIndex, this.drawables.length),
-        inverseArea,
         centerPixel,
+        flattenFactor,
+        inverseArea,
         mvpMatrix,
         worldRadius);
   }

@@ -334,7 +334,12 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
 
       const centerPixel = this.camera.centerPixel;
       const mvpMatrix = this.camera.sphericalMvp(this.screenArea.height, this.screenArea.width);
-      planner.render(this.area, this.camera.centerPixel, mvpMatrix, this.camera.worldRadius);
+      planner.render(
+        this.area,
+        this.camera.centerPixel,
+        this.camera.flattenFactor,
+        mvpMatrix,
+        this.camera.worldRadius);
 
       this.nextRender = RenderType.NoChange;
     }
