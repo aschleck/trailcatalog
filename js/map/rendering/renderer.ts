@@ -7,14 +7,16 @@ import { BillboardProgram } from './billboard_program';
 import { LineProgram } from './line_program';
 import { LineCapProgram } from './line_cap_program';
 import { SdfProgram } from './sdf_program';
+import { SkyboxProgram } from './skybox_program';
 import { TriangleProgram } from './triangle_program';
 
 export class Renderer extends Disposable {
 
   readonly billboardProgram: BillboardProgram;
-  readonly lineProgram: LineProgram;
   readonly lineCapProgram: LineCapProgram;
+  readonly lineProgram: LineProgram;
   readonly sdfProgram: SdfProgram;
+  readonly skyboxProgram: SkyboxProgram;
   readonly triangleProgram: TriangleProgram;
 
   constructor(readonly gl: WebGL2RenderingContext) {
@@ -28,6 +30,8 @@ export class Renderer extends Disposable {
     this.registerDisposable(this.lineCapProgram);
     this.sdfProgram = new SdfProgram(this.gl);
     this.registerDisposable(this.sdfProgram);
+    this.skyboxProgram = new SkyboxProgram(this.gl);
+    this.registerDisposable(this.skyboxProgram);
     this.triangleProgram = new TriangleProgram(this.gl);
     this.registerDisposable(this.triangleProgram);
 
