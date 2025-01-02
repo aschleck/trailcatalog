@@ -13,10 +13,11 @@ import { MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { MbtileLayer, NATURE } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
+import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
 import { Planner } from 'js/map/rendering/planner';
 import { Renderer } from 'js/map/rendering/renderer';
-import { Z_BASE_TERRAIN, Z_USER_DATA } from 'js/map/z';
+import { Z_BASE_TERRAIN, Z_BOTTOM, Z_USER_DATA } from 'js/map/z';
 
 const CELL_BORDER = rgbaToUint32(1, 0, 0, 1);
 export const MAX_S2_ZOOM = 31;
@@ -63,6 +64,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
     this.mapController.setLayers([
       this.layer,
+      new SkyboxLayer(Z_BOTTOM, this.mapController.renderer),
       new MbtileLayer(
           [
             {

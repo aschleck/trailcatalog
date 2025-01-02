@@ -1,3 +1,4 @@
+export const Z_BOTTOM = 0;
 export const Z_BASE_TERRAIN = 1;
 export const Z_BASE_WATER = 2;
 export const Z_BASE_SATELLITE = 3;
