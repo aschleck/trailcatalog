@@ -4,16 +4,6 @@ import { RgbaU32, Vec2 } from '../common/types';
 
 import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 
-export interface Glyph {
-  index: number;
-  glyphAdvance: number;
-  glyphWidth: number;
-  glyphHeight: number;
-  glyphTop: number;
-  width: number;
-  height: number;
-}
-
 export class SkyboxProgram extends Program<SkyboxProgramData> {
 
   private readonly boxData: Float32Array;
@@ -119,30 +109,36 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
       out mediump vec2 fragRadius;
 
       const float PI = 3.141592653589793;
+      // TODO(april): share FOV constant?
+      const float FOV = PI / 4.;
 
       void main() {
-        gl_Position = vec4(position, z + 1., 1.) + 0. * cameraCenter * halfWorldSize;
+        gl_Position = vec4(position, z + 1., 1.) + 0. * sphericalMvp * cameraCenter * halfWorldSize;
 
         vec2 mercator = vec2(0);
 
-        // Try to figure out the maximum x value of the globe in screenspace. We use the point on
-        // the equator longitude rotated by 90 degrees.
-        float sinLat = tanh(0.);
+        float viewportRadiusWorldUnitsAtLat =
+          PI * cos(0.) / halfWorldSize / inverseHalfViewportSize.y;
+        float distanceCameraToGlobeSurface = viewportRadiusWorldUnitsAtLat / tan(FOV / 2.);
+        float scale = 1. + distanceCameraToGlobeSurface;
+
+        float angleOriginGlobeEdge = asin(1. / scale);
+        float angleCenterGlobeEdge = PI / 2. - angleOriginGlobeEdge;
+
+        float sinLat = tanh(0. * PI);
         float lat = asin(sinLat);
         float cosLat = cos(lat);
-        float lng = (cameraCenter.x + cameraCenter.y + 0.5) * PI;
-        vec4 projected = sphericalMvp * vec4(
+        float lng = (cameraCenter.x + cameraCenter.y) * PI + angleCenterGlobeEdge;
+        vec4 p = sphericalMvp * vec4(
             cosLat * cos(lng), // x
             sinLat,            // y
             cosLat * sin(lng), // z
             1.0                // w
         );
-        float trueRadius = abs(projected.x / projected.w);
+        vec2 trueRadius = p.xy / p.w;
 
         // Try to figure out the screen coordinate of position in units of trueRadius
-        float aspect = inverseHalfViewportSize.x / inverseHalfViewportSize.y;
-        vec2 xy = vec2(position.x, position.y * aspect);
-        vec2 spherical = xy / trueRadius;
+        vec2 spherical = position / trueRadius;
         fragPosition = mix(spherical, mercator, flattenFactor);
       }
     `;
