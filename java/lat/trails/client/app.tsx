@@ -1,5 +1,5 @@
-import { checkExhaustive, checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { CitationsElement } from './citations_element';
 import { RouteController, State } from './route_controller';

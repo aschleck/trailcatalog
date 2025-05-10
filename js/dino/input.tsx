@@ -1,6 +1,6 @@
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
-import { Input as EmuInput } from 'external/dev_april_corgi~/js/emu/input';
+import { Input as EmuInput } from 'external/dev_april_corgi+/js/emu/input';
 
 import { FabricIcon, FabricIconName } from './fabric';
 

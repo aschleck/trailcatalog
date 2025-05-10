@@ -5,8 +5,8 @@ import fastifyReplyFrom from '@fastify/reply-from';
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { Pool } from 'pg'
 
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { serve } from 'external/dev_april_corgi~/js/server/server';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { serve } from 'external/dev_april_corgi+/js/server/server';
 
 import { App } from '../client/app';
 

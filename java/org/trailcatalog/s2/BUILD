@@ -46,8 +46,8 @@ j2cl_library(
     ]),
     deps = [
         "@com_google_elemental2//:elemental2-core-j2cl",
+        "@com_google_geometry_s2//:com_google_guava-j2cl",
         "@com_google_geometry_s2//:s2-j2cl",
-        "@com_google_guava-j2cl",
         "@com_google_j2cl//:jsinterop-annotations-j2cl",
         "@com_google_jsinterop_base//:jsinterop-base-j2cl",
     ],
@@ -58,10 +58,10 @@ java_library(
     srcs = glob(["*.java"]),
     deps = [
         "@com_google_elemental2//:elemental2-core",
-        "@com_google_guava",
+        "@com_google_geometry_s2//:s2",
         "@com_google_j2cl//:jsinterop-annotations",
         "@com_google_jsinterop_base//:jsinterop-base",
-        "@maven//:com_google_geometry_s2_geometry",
+        "@maven//:com_google_guava_guava",
     ],
 )
 
@@ -70,6 +70,6 @@ kt_jvm_library(
     srcs = glob(["*.kt"]),
     deps = [
         ":s2-java",
-        "@maven//:com_google_geometry_s2_geometry",
+        "@com_google_geometry_s2//:s2",
     ],
 )

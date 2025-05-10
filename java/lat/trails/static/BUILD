@@ -12,7 +12,7 @@ filegroup(
 
 js_library(
     name = "glob",
-    srcs = glob(["*.webp"]),
+    srcs = glob(["*.webp"], allow_empty=True),
 )
 
 genrule(

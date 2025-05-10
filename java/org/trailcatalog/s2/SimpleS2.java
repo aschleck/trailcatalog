@@ -181,7 +181,7 @@ public final class SimpleS2 {
 
     // TODO(april): Is this solution better? https://stackoverflow.com/a/75393795
 
-    private final JsIteratorIterable<Double> values;
+    private final JsIteratorIterable<Double, Object, Object> values;
 
     ArrayBufferInputStream(ArrayBuffer buffer) {
       values = new Uint8Array(buffer).values();

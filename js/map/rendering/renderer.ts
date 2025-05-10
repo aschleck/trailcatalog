@@ -1,5 +1,5 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { Disposable } from 'external/dev_april_corgi~/js/common/disposable';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 
 import { Vec2 } from '../common/types';
 

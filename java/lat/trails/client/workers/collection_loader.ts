@@ -1,5 +1,5 @@
-import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
-import { LittleEndianView } from 'external/dev_april_corgi~/js/common/little_endian_view';
+import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
+import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';

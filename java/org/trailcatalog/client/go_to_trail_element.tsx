@@ -1,6 +1,6 @@
-import { Future } from 'external/dev_april_corgi~/js/common/futures';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
-import { redirectTo } from 'external/dev_april_corgi~/js/server/ssr_aware';
+import { Future } from 'external/dev_april_corgi+/js/common/futures';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { redirectTo } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { Trail } from './models/types';
 

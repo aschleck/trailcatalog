@@ -2,12 +2,12 @@ import {
   Future,
   asFuture,
   resolvedFuture,
-} from 'external/dev_april_corgi~/js/common/futures';
+} from 'external/dev_april_corgi+/js/common/futures';
 import {
   fetchDataBatch as fetchDataBatchUnsafe,
   getCache,
   putCache,
-} from 'external/dev_april_corgi~/js/server/data';
+} from 'external/dev_april_corgi+/js/server/data';
 
 export type TrailId = {numeric: string}|{readable: string};
 

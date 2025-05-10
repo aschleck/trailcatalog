@@ -20,10 +20,8 @@ esbuild_binary(
     entry_point = "server.ts",
     minify = False,
     platform = "node",
-    css_deps = [
-        ":css",
-    ],
     deps = [
+        ":css",
         ":ts",
     ],
 )

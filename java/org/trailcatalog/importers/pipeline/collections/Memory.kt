@@ -81,7 +81,8 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
         override fun write(v: List<*>, to: EncodedOutputStream) {
           to.writeVarInt(v.size)
           for (item in v) {
-            value.write(item, to)
+            // TODO(april): can we avoid this type assertion?
+            value.write(item!!, to)
           }
         }
       }
@@ -95,8 +96,9 @@ fun <T : Any> getSerializer(type: TypeToken<out T>): Serializer<T> {
         }
 
         override fun write(v: Pair<*, *>, to: EncodedOutputStream) {
-          left.write(v.first, to)
-          right.write(v.second, to)
+          // TODO(april): can we avoid these assertions?
+          left.write(v.first!!, to)
+          right.write(v.second!!, to)
         }
       }
     } else if (type.isSubtypeOf(TypeToken.of(MessageLite::class.java))) {

@@ -1,4 +1,4 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 

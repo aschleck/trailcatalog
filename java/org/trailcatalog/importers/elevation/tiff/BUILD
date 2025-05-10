@@ -8,7 +8,7 @@ kt_jvm_library(
     deps = [
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/importers/pipeline/io",
-        "@maven//:com_google_geometry_s2_geometry",
+        "@com_google_geometry_s2//:s2",
         "@maven//:com_google_guava_guava",
         "@maven//:mil_nga_tiff",
         "@maven//:org_locationtech_proj4j_proj4j",

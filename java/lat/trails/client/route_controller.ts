@@ -1,7 +1,7 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
-import { DiscriminatedRoute, matchPath, ViewsService } from 'external/dev_april_corgi~/js/corgi/history/views_service';
-import { currentUrl } from 'external/dev_april_corgi~/js/server/ssr_aware';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { DiscriminatedRoute, matchPath, ViewsService } from 'external/dev_april_corgi+/js/corgi/history/views_service';
+import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 export interface Routes {
   citations: {};

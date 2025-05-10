@@ -1,6 +1,6 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { HashMap, HashSet } from 'external/dev_april_corgi~/js/common/collections';
-import { Disposable } from 'external/dev_april_corgi~/js/common/disposable';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
+import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';

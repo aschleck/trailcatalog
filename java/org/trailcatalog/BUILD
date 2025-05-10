@@ -62,8 +62,8 @@ kt_jvm_library(
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
         "@bazel_tools//tools/java/runfiles",
+        "@com_google_geometry_s2//:s2",
         "@maven//:com_fasterxml_jackson_core_jackson_databind",
-        "@maven//:com_google_geometry_s2_geometry",
         "@maven//:io_javalin_javalin",
         "@maven//:org_slf4j_slf4j_simple",
     ],
@@ -80,7 +80,3 @@ kt_jvm_library(
     ],
 )
 
-copy_to_bin(
-    name = "assets",
-    srcs = glob(["*.html"]),
-)

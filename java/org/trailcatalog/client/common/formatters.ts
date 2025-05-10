@@ -1,6 +1,6 @@
-import { debugMode } from 'external/dev_april_corgi~/js/common/debug';
-import { maybeMemoized } from 'external/dev_april_corgi~/js/common/memoized';
-import { getLanguage } from 'external/dev_april_corgi~/js/server/ssr_aware';
+import { debugMode } from 'external/dev_april_corgi+/js/common/debug';
+import { maybeMemoized } from 'external/dev_april_corgi+/js/common/memoized';
+import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { celsiusToFahrenheit, metersToFeet, metersToMiles } from './math';
 

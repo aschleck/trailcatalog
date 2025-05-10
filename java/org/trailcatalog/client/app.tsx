@@ -1,5 +1,5 @@
-import { checkExhaustive, checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { BoundaryDetailElement } from './boundary_detail_element';
 import { GoToTrailElement } from './go_to_trail_element';

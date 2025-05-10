@@ -1,10 +1,10 @@
 import { aDescendsB, RelationCategory } from 'java/org/trailcatalog/models/categories';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { FlatButton } from 'js/dino/button';
 import { FabricIcon } from 'js/dino/fabric';
 import { OutlinedInput } from 'js/dino/input';
-import { ACTION, CHANGED } from 'external/dev_april_corgi~/js/emu/events';
-import { currentUrl } from 'external/dev_april_corgi~/js/server/ssr_aware';
+import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
+import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { formatDistance } from './common/formatters';
 

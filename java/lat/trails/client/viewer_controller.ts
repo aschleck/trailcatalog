@@ -1,7 +1,7 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
-import { CorgiEvent } from 'external/dev_april_corgi~/js/corgi/events';
-import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { CorgiEvent } from 'external/dev_april_corgi+/js/corgi/events';
+import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { rgbaToUint32 } from 'js/map/common/math';
 import { RgbaU32 } from 'js/map/common/types';

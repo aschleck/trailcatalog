@@ -4,7 +4,7 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import { generators, Issuer } from 'openid-client';
 import { Pool } from 'pg'
 
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { LoginEnforcer } from './auth';
 import { Encrypter } from './encrypter';

@@ -1,9 +1,9 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
-import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
-import { CorgiEvent } from 'external/dev_april_corgi~/js/corgi/events';
-import { HistoryService } from 'external/dev_april_corgi~/js/corgi/history/history_service';
-import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { CorgiEvent } from 'external/dev_april_corgi+/js/corgi/events';
+import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
+import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { setUnitSystem, UnitSystem } from './common/formatters';
 

@@ -1,7 +1,7 @@
-import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
-import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi~/js/corgi/events';
-import { HistoryService } from 'external/dev_april_corgi~/js/corgi/history/history_service';
-import { ViewsService } from 'external/dev_april_corgi~/js/corgi/history/views_service';
+import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
+import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
+import { ViewsService } from 'external/dev_april_corgi+/js/corgi/history/views_service';
 
 import { rgbaToUint32 } from 'js/map/common/math';
 import { RgbaU32, Vec2 } from 'js/map/common/types';

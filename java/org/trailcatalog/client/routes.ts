@@ -1,5 +1,5 @@
-import { exists } from 'external/dev_april_corgi~/js/common/asserts';
-import { ViewsService } from 'external/dev_april_corgi~/js/corgi/history/views_service';
+import { exists } from 'external/dev_april_corgi+/js/common/asserts';
+import { ViewsService } from 'external/dev_april_corgi+/js/corgi/history/views_service';
 
 export interface Routes {
   boundary_detail: {

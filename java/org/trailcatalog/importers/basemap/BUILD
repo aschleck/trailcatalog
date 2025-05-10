@@ -58,7 +58,7 @@ kt_jvm_library(
         "//java/org/trailcatalog/s2:s2-java",
         "//trailcatalog/proto:encoding_java_proto",
         "@bazel_tools//tools/java/runfiles",
-        "@maven//:com_google_geometry_s2_geometry",
+        "@com_google_geometry_s2//:s2",
         "@maven//:com_wolt_osm_parallelpbf",
         "@maven//:mil_nga_tiff",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
@@ -73,6 +73,6 @@ java_library(
     srcs = glob(["*.java"]),
     deps = [
         "//java/org/trailcatalog/importers/pbf:pbf_java",
-        "@maven//:com_google_geometry_s2_geometry",
+        "@com_google_geometry_s2//:s2",
     ],
 )

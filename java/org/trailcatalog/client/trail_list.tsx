@@ -1,4 +1,4 @@
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { formatCount, formatDistance, formatHeight } from './common/formatters';
 import { Path, Point, Trail, TrailSearchResult } from './models/types';

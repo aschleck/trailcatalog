@@ -1,6 +1,6 @@
 import process from 'process';
 
-import { serve } from 'external/dev_april_corgi~/js/server/server';
+import { serve } from 'external/dev_april_corgi+/js/server/server';
 
 import { App } from '../client/app';
 
@@ -21,7 +21,7 @@ function page(content: string, title: string, initialData: string): string {
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
     <script>${process.env.DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${initialData}</script>
-    <script src="/static/client.js"></script>
+    <script type="module" src="/static/client.js"></script>
   </body>
   <script
       async

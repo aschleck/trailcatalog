@@ -1,9 +1,9 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
-import { HashSet } from 'external/dev_april_corgi~/js/common/collections';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
-import { Link } from 'external/dev_april_corgi~/js/emu/button';
-import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
-import { IndeterminantLinear } from 'external/dev_april_corgi~/js/emu/progress';
+import { HashSet } from 'external/dev_april_corgi+/js/common/collections';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { Link } from 'external/dev_april_corgi+/js/emu/button';
+import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
+import { IndeterminantLinear } from 'external/dev_april_corgi+/js/emu/progress';
 
 import { Copyright, LatLngRect, LatLngZoom } from './common/types';
 

@@ -1,9 +1,9 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { Debouncer } from 'external/dev_april_corgi~/js/common/debouncer';
-import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
-import { ViewsService } from 'external/dev_april_corgi~/js/corgi/history/views_service';
-import { InputController } from 'external/dev_april_corgi~/js/emu/input_controller';
-import { currentUrl } from 'external/dev_april_corgi~/js/server/ssr_aware';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
+import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { ViewsService } from 'external/dev_april_corgi+/js/corgi/history/views_service';
+import { InputController } from 'external/dev_april_corgi+/js/emu/input_controller';
+import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { latLngFromBase64E7, latLngRectFromBase64E7 } from './common/data';
 import { BoundarySearchResult, TrailSearchResult } from './models/types';

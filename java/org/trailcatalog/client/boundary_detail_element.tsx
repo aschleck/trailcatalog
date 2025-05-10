@@ -1,6 +1,6 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
-import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';

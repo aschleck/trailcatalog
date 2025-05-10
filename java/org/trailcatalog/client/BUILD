@@ -13,9 +13,6 @@ esbuild_binary(
 
 tc_ts_project(
     name = "ts",
-    data = [
-        "//java/org/trailcatalog:assets",
-    ],
     css_deps = [
         "//js/dino:css",
     ],

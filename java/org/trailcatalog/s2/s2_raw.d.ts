@@ -1,18 +1,18 @@
 declare global {
   namespace com.google.common.geometry {
 
-    class R1Interval {
+    export class R1Interval {
       lo(): number;
       hi(): number;
     }
 
-    class S1Angle {
+    export class S1Angle {
       static degrees(n: number): S1Angle;
       static e7(e7: number): S1Angle;
       radians(): number;
     }
 
-    class S2Cell {
+    export class S2Cell {
       exactArea(): number;
     }
 
@@ -125,7 +125,7 @@ declare global {
     }
 
     class List<E> {
-      add(element: E);
+      add(element: E): boolean;
       getAtIndex(i: number): E;
       size(): number;
     }
@@ -142,7 +142,7 @@ declare global {
   }
 
   namespace org.trailcatalog.s2 {
-    class SimpleS2 {
+    export class SimpleS2 {
       static EARTH_RADIUS_METERS: number;
       static HIGHEST_OVERVIEW_INDEX_LEVEL: number;
       static HIGHEST_COARSE_INDEX_LEVEL: number;
@@ -160,10 +160,10 @@ declare global {
           com.google.common.geometry.S2LatLng;
       static pointsToPolygon(points: java.util.ArrayList<com.google.common.geometry.S2Point>):
           com.google.common.geometry.S2Polygon;
-      static newArrayList<E>(): ArrayList<E>;
-      static newPolygon(): S2Polygon;
+      static newArrayList<E>(): java.util.ArrayList<E>;
+      static newPolygon(): com.google.common.geometry.S2Polygon;
     }
   }
 }
 
-export {};
+export = global;

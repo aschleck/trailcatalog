@@ -1,6 +1,6 @@
 import { PointCategory } from 'java/org/trailcatalog/models/categories';
-import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Vec2 } from 'js/map/common/types';
 
 import { formatDistance } from './common/formatters';

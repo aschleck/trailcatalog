@@ -26,6 +26,6 @@ java_library(
     srcs = glob(["*.java"]),
     deps = [
         "//trailcatalog/proto:encoding_java_proto",
-        "@maven//:com_google_geometry_s2_geometry",
+        "@com_google_geometry_s2//:s2",
     ],
 )

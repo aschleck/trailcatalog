@@ -1,7 +1,7 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { Future } from 'external/dev_april_corgi~/js/common/futures';
-import { Controller, Response } from 'external/dev_april_corgi~/js/corgi/controller';
-import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi~/js/corgi/events';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { Future } from 'external/dev_april_corgi+/js/common/futures';
+import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
 
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { LatLng } from 'js/map/common/types';

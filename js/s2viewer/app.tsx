@@ -1,9 +1,9 @@
-import { checkExhaustive, checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { floatCoalesce } from 'external/dev_april_corgi~/js/common/math';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
-import { CHANGED } from 'external/dev_april_corgi~/js/emu/events';
-import { Input } from 'external/dev_april_corgi~/js/emu/input';
-import { Select } from 'external/dev_april_corgi~/js/emu/select';
+import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { floatCoalesce } from 'external/dev_april_corgi+/js/common/math';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { CHANGED } from 'external/dev_april_corgi+/js/emu/events';
+import { Input } from 'external/dev_april_corgi+/js/emu/input';
+import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
 import { formatArea } from 'java/org/trailcatalog/client/common/formatters';
 import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';

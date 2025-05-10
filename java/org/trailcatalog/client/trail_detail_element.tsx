@@ -1,8 +1,8 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
-import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 import { LatLng } from 'js/map/common/types';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';

@@ -1,10 +1,10 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
-import * as arrays from 'external/dev_april_corgi~/js/common/arrays';
-import { checkExhaustive, checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { HashMap, HashSet } from 'external/dev_april_corgi~/js/common/collections';
-import { QueuedWorkerPool, Task } from 'external/dev_april_corgi~/js/common/queued_worker_pool';
-import { WorkerPool } from 'external/dev_april_corgi~/js/common/worker_pool';
-import { getLanguage } from 'external/dev_april_corgi~/js/server/ssr_aware';
+import * as arrays from 'external/dev_april_corgi+/js/common/arrays';
+import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
+import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
+import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
+import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
 import { Copyright, Rect, RgbaU32, TileId, Vec2 } from '../common/types';

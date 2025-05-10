@@ -1,4 +1,4 @@
-import { LittleEndianView } from 'external/dev_april_corgi~/js/common/little_endian_view';
+import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
 import { LatLng, LatLngRect } from 'js/map/common/types';
 

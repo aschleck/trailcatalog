@@ -1,4 +1,4 @@
-import { Disposable } from 'external/dev_april_corgi~/js/common/disposable';
+import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 
 import { Renderer } from './renderer';
 

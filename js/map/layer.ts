@@ -1,6 +1,6 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { Disposable } from 'external/dev_april_corgi~/js/common/disposable';
-import { EventSpec } from 'external/dev_april_corgi~/js/corgi/events';
+import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
+import { EventSpec } from 'external/dev_april_corgi+/js/corgi/events';
 
 import { Copyright } from './common/types';
 import { Planner } from './rendering/planner';

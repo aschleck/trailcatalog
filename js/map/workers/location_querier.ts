@@ -1,6 +1,6 @@
 import { S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_corgi~/js/common/asserts';
+import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
 import { LatLng, Rect, Vec2 } from '../common/types';

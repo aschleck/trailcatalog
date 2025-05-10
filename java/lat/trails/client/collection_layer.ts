@@ -1,7 +1,7 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
-import { HashMap } from 'external/dev_april_corgi~/js/common/collections';
-import { WorkerPool } from 'external/dev_april_corgi~/js/common/worker_pool';
+import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
+import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
+import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { LatLng, RgbaU32, S2CellToken, TileId } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { Planner } from 'js/map/rendering/planner';

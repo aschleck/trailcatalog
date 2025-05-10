@@ -1,8 +1,8 @@
-import { checkExists } from 'external/dev_april_corgi~/js/common/asserts';
-import { resolvedFuture } from 'external/dev_april_corgi~/js/common/futures';
-import { floatCoalesce } from 'external/dev_april_corgi~/js/common/math';
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
-import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
+import { floatCoalesce } from 'external/dev_april_corgi+/js/common/math';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';

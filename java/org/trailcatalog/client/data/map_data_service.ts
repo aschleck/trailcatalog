@@ -1,9 +1,9 @@
-import * as arrays from 'external/dev_april_corgi~/js/common/arrays';
-import { checkExhaustive } from 'external/dev_april_corgi~/js/common/asserts';
-import { IdentitySetMultiMap } from 'external/dev_april_corgi~/js/common/collections';
-import { LittleEndianView } from 'external/dev_april_corgi~/js/common/little_endian_view';
-import { EmptyDeps } from 'external/dev_april_corgi~/js/corgi/deps';
-import { Service, ServiceResponse } from 'external/dev_april_corgi~/js/corgi/service';
+import * as arrays from 'external/dev_april_corgi+/js/common/arrays';
+import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
+import { IdentitySetMultiMap } from 'external/dev_april_corgi+/js/common/collections';
+import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
+import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
+import { Service, ServiceResponse } from 'external/dev_april_corgi+/js/corgi/service';
 import { projectE7Array } from 'js/map/camera';
 import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 

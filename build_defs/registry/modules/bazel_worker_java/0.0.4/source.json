@@ -1,0 +1,6 @@
+{
+    "integrity": "sha256-ebMLzauMsNzhUjso/3mAZ0GXFfVUCopEa7zPOT5et5w=",
+    "strip_prefix": "bazel-worker-api-0.0.4/java",
+    "url": "https://github.com/bazelbuild/bazel-worker-api/releases/download/v0.0.4/bazel-worker-api-v0.0.4.tar.gz",
+    "patch_strip": 1
+}

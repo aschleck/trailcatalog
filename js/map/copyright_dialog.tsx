@@ -1,7 +1,7 @@
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
-import { Button } from 'external/dev_april_corgi~/js/emu/button';
-import { ACTION } from 'external/dev_april_corgi~/js/emu/events';
+import { Button } from 'external/dev_april_corgi+/js/emu/button';
+import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { Copyright } from './common/types';
 

@@ -1,5 +1,5 @@
-import * as corgi from 'external/dev_april_corgi~/js/corgi';
-import { VElementOrPrimitive } from 'external/dev_april_corgi~/js/corgi';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { VElementOrPrimitive } from 'external/dev_april_corgi+/js/corgi';
 import { IconCheckbox } from 'js/dino/checkbox';
 import { FabricIcon } from 'js/dino/fabric';
 import { Radio } from 'js/dino/radio';
