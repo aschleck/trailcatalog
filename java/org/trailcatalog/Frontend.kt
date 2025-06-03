@@ -64,12 +64,13 @@ private fun fetchData(ctx: Context) {
   val keys = request.get("keys").elements()
   val responses = ArrayList<Any>()
   for (key in keys) {
-    val type = key.get("type").asText()
+    val type = key.get("method").asText()
+    val request = key.get("request")
     when (type) {
       null -> throw IllegalArgumentException("Key has no type")
       "boundary" -> {
         val data = HashMap<String, Any>()
-        val id = key.get("id").asLong()
+        val id = request.get("id").asLong()
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
@@ -95,7 +96,7 @@ private fun fetchData(ctx: Context) {
       }
       "boundaries_containing_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()
-        val id = key.get("child_id").asLong()
+        val id = request.get("child_id").asLong()
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
@@ -121,7 +122,7 @@ private fun fetchData(ctx: Context) {
       }
       "boundaries_containing_trail" -> {
         val data = ArrayList<HashMap<String, Any>>()
-        val (idColumn, setId) = parseTrailId(key.get("trail_id"))
+        val (idColumn, setId) = parseTrailId(request.get("trail_id"))
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
@@ -155,7 +156,7 @@ private fun fetchData(ctx: Context) {
       };
       "path_profiles_in_trail" -> {
         val data = ArrayList<HashMap<String, Any>>()
-        val (idColumn, setId) = parseTrailId(key.get("trail_id"))
+        val (idColumn, setId) = parseTrailId(request.get("trail_id"))
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
@@ -180,17 +181,17 @@ private fun fetchData(ctx: Context) {
         }
       }
       "search_boundaries" -> {
-        responses.add(executeSearchBoundaries(key.get("query").asText(), 10))
+        responses.add(executeSearchBoundaries(request.get("query").asText(), 10))
       }
       "search_trails" -> {
         responses.add(
             executeSearchTrails(
-                key.get("query").asText(),
-                key.get("limit").asInt().coerceIn(1, 100)))
+                request.get("query").asText(),
+                request.get("limit").asInt().coerceIn(1, 100)))
       }
       "trail" -> {
         val data = HashMap<String, Any>()
-        val (idColumn, setId) = parseTrailId(key.get("trail_id"))
+        val (idColumn, setId) = parseTrailId(request.get("trail_id"))
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
@@ -230,7 +231,7 @@ private fun fetchData(ctx: Context) {
       }
       "trails_in_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()
-        val id = key.get("boundary_id").asLong()
+        val id = request.get("boundary_id").asLong()
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "

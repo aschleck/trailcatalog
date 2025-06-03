@@ -2,6 +2,24 @@
 
 @import "tailwindcss";
 
+@theme inline {
+  --color-gray-800: #424242;
+  --color-gray-900: #212121;
+  --color-white-opaque-160: #ffffffa0;
+  --color-white-opaque-250: #fffffffa;
+  --font-sans: 'Source Sans 3', var(--font-sans);
+
+  --animate-slide: slide 1.75s ease-in-out infinite;
+  @keyframes slide {
+    0% {
+      left: -33%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+}
+
 a:not(.no-underline):hover {
   @apply underline;
 }

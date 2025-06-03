@@ -11,6 +11,7 @@ pkgs.mkShell {
     jdk21_headless
     neovim
     nginx
+    nodePackages.npm
     nodePackages.pnpm
     nodejs-slim_20
     podman

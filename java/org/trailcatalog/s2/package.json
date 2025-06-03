@@ -1,5 +1,6 @@
 {
   "name": "s2_raw",
   "main": "s2_raw.js",
+  "type": "module",
   "typings": "s2_raw.d.ts"
 }

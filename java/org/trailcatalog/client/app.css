@@ -2,6 +2,28 @@
 
 @import "tailwindcss";
 
+@theme inline {
+  --color-black-opaque-20: #00000014;
+  --color-tc-error-100: #ffeeee;
+  --color-tc-error-200: #ffcccc;
+  --color-tc-error-500: #e93636;
+  --color-tc-error-900: #ac0000;
+  --color-tc-gray-100: #f3f3f3;
+  --color-tc-gray-200: #e2e2e2;
+  --color-tc-gray-400: #737a80;
+  --color-tc-gray-600: #3a3a3a;
+  --color-tc-gray-700: #363636;
+  --color-tc-gray-900: #222222;
+  --color-tc-highlight-1: #ffe600;
+  --color-tc-highlight-2: #9fe26b;
+  --color-tc-highlight-3: #4f8d1f;
+  --color-white-opaque-160: #ffffffa0;
+
+  --font-header: 'Barlow', var(--font-sans);
+  --font-input: 'Nunito Sans', var(--font-sans);
+  --font-sans: 'Roboto', var(--font-sans);
+}
+
 a:not(.no-underline):hover {
   @apply underline;
 }

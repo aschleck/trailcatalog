@@ -2,7 +2,7 @@ import process from 'process';
 
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { generators, Issuer } from 'openid-client';
-import { Pool } from 'pg'
+import postgres from 'postgres';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
@@ -15,7 +15,7 @@ export async function addGoogle(
     fastify: FastifyInstance,
     encrypter: Encrypter,
     loginEnforcer: LoginEnforcer,
-    pgPool: Pool): Promise<void> {
+    sql: postgres.Sql): Promise<void> {
   const issuer = await Issuer.discover('https://accounts.google.com');
 
   const getCallbackUrl =
@@ -59,14 +59,21 @@ export async function addGoogle(
 
     // TODO(april): we can have a uuid conflict but #yolo
     const result =
-        await pgPool.query(
-            'INSERT INTO users (id, oidc_issuer, oidc_id, display_name, enabled, last_login) '
-                + 'VALUES (gen_random_uuid(), $1, $2, $3, $4, $5) '
-                + 'ON CONFLICT (oidc_issuer, oidc_id) '
-                + 'DO UPDATE SET display_name = $3, last_login = $5 '
-                + 'RETURNING id',
-            [claims.iss, claims.sub, claims.email, true, new Date()]);
-    loginEnforcer.createFreshLogin(result.rows[0].id, 'google', reply);
+        await sql`
+          INSERT INTO users (id, oidc_issuer, oidc_id, display_name, enabled, last_login)
+              VALUES (
+                  gen_random_uuid(),
+                  ${claims.iss},
+                  ${claims.sub},
+                  ${checkExists(claims.email)},
+                  ${true},
+                  ${new Date()}
+              )
+              ON CONFLICT (oidc_issuer, oidc_id)
+              DO UPDATE SET display_name = $3, last_login = $5
+              RETURNING id
+        `;
+    loginEnforcer.createFreshLogin(result[0].id, 'google', reply);
     reply.redirect('/');
   });
 }

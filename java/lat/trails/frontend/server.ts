@@ -3,7 +3,7 @@ import process from 'process';
 import fastifyCookie, { FastifyCookieOptions } from '@fastify/cookie';
 import fastifyReplyFrom from '@fastify/reply-from';
 import { FastifyInstance, FastifyRequest } from 'fastify';
-import { Pool } from 'pg'
+import postgres from 'postgres';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { serve } from 'external/dev_april_corgi+/js/server/server';
@@ -19,7 +19,7 @@ const DEBUG = process.env.DEBUG !== 'false';
 
 const encrypter = new Encrypter(COOKIE_SECRET);
 const loginEnforcer = new LoginEnforcer(encrypter);
-const pgPool = new Pool();
+const sql = postgres();
 
 async function initialize(server: FastifyInstance): Promise<void> {
   server.register(fastifyCookie, {
@@ -75,7 +75,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
     (request as unknown as {userId: string}).userId = maybeUserId ?? '';
   });
 
-  await oidc.addGoogle(server, encrypter, loginEnforcer, pgPool);
+  await oidc.addGoogle(server, encrypter, loginEnforcer, sql);
 }
 
 function page(content: string, title: string, initialData: string): string {

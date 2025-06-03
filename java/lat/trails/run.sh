@@ -26,7 +26,7 @@ BAZEL_BINDIR="." \
     PGDATABASE="trails_lat" \
     OAUTH2_GOOGLE_CLIENT_ID="347014216307-7u1hp5dkr05p62q0r75b76rau37c6o9j.apps.googleusercontent.com" \
     OAUTH2_GOOGLE_SECRET="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" \
-    ./bazel-bin/java/lat/trails/frontend/runner.sh &
+    ./bazel-bin/java/lat/trails/frontend/runner_/runner &
 
  DEFAULT_JVM_DEBUG_SUSPEND=n \
     ./bazel-bin/java/lat/trails/api_server \

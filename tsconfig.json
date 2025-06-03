@@ -22,6 +22,6 @@
   // Has to be set to workaround https://github.com/microsoft/TypeScript/issues/59036 but also
   // setting it to so LSP doesn't abort on too many files
   "exclude": [
-    "bazel-escalante/*"
+    "bazel-trailcatalog/*"
   ]
 }

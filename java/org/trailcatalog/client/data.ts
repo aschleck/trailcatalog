@@ -134,18 +134,18 @@ let fetchFuture: Future<Array<object | null>> | undefined;
 let fetchQueue: Array<[string, object | null]> | undefined;
 
 export function fetchData<K extends keyof DataRequests>(
-  type: K,
+  method: K,
   request: DataRequests[K]
 ): Future<DataResponses[K]> {
   // We wait a tick to gather multiple keys before making the request. But if we're rendering on
   // the server we really just want to send it out now. Yolo.
   if (!process.env.CORGI_FOR_BROWSER) {
-    return fetchDataBatch([[type, request]]).then(
+    return fetchDataBatch([[method, request]]).then(
       r => r[0] as DataResponses[K]
     );
   }
 
-  const cached = getCache(type, request);
+  const cached = getCache(method, request);
   if (cached) {
     return resolvedFuture(cached as DataResponses[K]);
   }
@@ -161,7 +161,7 @@ export function fetchData<K extends keyof DataRequests>(
   }
 
   const i = fetchQueue.length;
-  fetchQueue.push([type, request]);
+  fetchQueue.push([method, request]);
   return fetchFuture.then(r => r[i] as DataResponses[K]);
 }
 
@@ -170,20 +170,20 @@ export function fetchDataBatch<T extends (keyof DataRequests)[]>(
 ): Future<ResponseBatch<T>> {
   return (fetchDataBatchUnsafe(tuples) as Future<ResponseBatch<T>>).then(responses => {
     for (let i = 0; i < tuples.length; ++i) {
-      const [type, request] = tuples[i];
-      middleware(type, request, responses[i]);
+      const [method, request] = tuples[i];
+      middleware(method, request, responses[i]);
     }
     return responses;
   });
 }
 
 function middleware<K extends keyof DataRequests>(
-    type: K, rawRequest: DataRequests[K], rawResponse: DataResponses[K]) {
-  if (type === 'trail') {
+    method: K, rawRequest: DataRequests[K], rawResponse: DataResponses[K]) {
+  if (method === 'trail') {
     const request = rawRequest as DataRequests['trail'];
     const response = rawResponse as DataResponses['trail'];
     if ('numeric' in request.trail_id) {
-      putCache(type, {
+      putCache(method, {
         ...request,
         trail_id: {readable: response.readable_id},
       }, response);

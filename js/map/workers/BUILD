@@ -7,7 +7,6 @@ load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
 # paths?
 esbuild_binary(
     name = "earth_search_loader_worker",
-    bazel_sandbox_plugin = False,
     entry_point = "earth_search_loader.ts",
     deps = [
         ":workers",
@@ -32,7 +31,6 @@ esbuild_binary(
 
 esbuild_binary(
     name = "raster_loader_worker",
-    bazel_sandbox_plugin = False,
     entry_point = "raster_loader.ts",
     deps = [
         ":workers",
