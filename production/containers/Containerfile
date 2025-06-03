@@ -5,11 +5,11 @@ RUN apt-get update \
         curl \
         gnupg \
         nginx \
-        openjdk-17-jre-headless \
+        openjdk-25-jre-headless \
         xz-utils \
     && apt-get clean \
-    && curl -L https://nodejs.org/dist/v20.11.1/node-v20.11.1-linux-x64.tar.xz | tar -xvJf -
-ENV NODEJS_DIR /node-v20.11.1-linux-x64
+    && curl -L https://nodejs.org/dist/v22.16.0/node-v22.16.0-linux-x64.tar.xz | tar -xvJf -
+ENV NODEJS_DIR /node-v22.16.0-linux-x64
 ARG NGINX_CONF
 COPY $NGINX_CONF /app/nginx.conf
 COPY serve.sh /app/serve.sh
