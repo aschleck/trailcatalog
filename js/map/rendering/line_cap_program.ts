@@ -258,6 +258,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
             cosLat * sin(lng), // z
             1.0                // w
         );
+        spherical.xy += push * inverseHalfViewportSize * spherical.w;
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;

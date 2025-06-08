@@ -77,10 +77,10 @@ export class LineProgram extends Program<LineProgramData> {
     gl.bindBuffer(gl.COPY_WRITE_BUFFER, this.lineBuffer);
     const square =
         new Float32Array([
-          0, -1,
           0, 1,
-          1, -1,
+          0, -1,
           1, 1,
+          1, -1,
         ]);
     gl.bufferData(gl.COPY_WRITE_BUFFER, square, gl.STATIC_DRAW);
     gl.bindBuffer(gl.COPY_WRITE_BUFFER, null);
@@ -342,6 +342,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
             cosLat * sin(lng), // z
             1.0                // w
         );
+        spherical.xy += push * inverseHalfViewportSize * spherical.w;
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
