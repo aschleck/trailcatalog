@@ -7,12 +7,13 @@ import { rgbaToUint32 } from 'js/map/common/math';
 import { RgbaU32 } from 'js/map/common/types';
 import { MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
+import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
 import { CompositeZoomLayer } from 'js/map/layers/composite_zoom_layer';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
-import { Z_BASE_SATELLITE, Z_BASE_TERRAIN } from 'js/map/z';
+import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM } from 'js/map/z';
 
 import { CollectionLayer } from './collection_layer';
 
@@ -49,6 +50,10 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     this.lastChange = Date.now();
 
     const allLayers = [{
+      name: 'Skybox',
+      enabled: true,
+      layer: new SkyboxLayer(Z_BOTTOM, this.mapController.renderer),
+    }, {
       name: 'Hillshades',
       enabled: true,
       layer: new RasterTileLayer(

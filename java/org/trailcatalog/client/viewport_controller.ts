@@ -8,8 +8,9 @@ import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
+import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
-import { Z_BASE_TERRAIN } from 'js/map/z';
+import { Z_BASE_TERRAIN, Z_BOTTOM } from 'js/map/z';
 
 import { UnitSystem } from './common/formatters';
 import { MapDataService } from './data/map_data_service';
@@ -84,6 +85,10 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
             this.mapController.renderer);
 
     const allLayers = [{
+      name: 'Skybox',
+      enabled: true,
+      layer: new SkyboxLayer(Z_BOTTOM, this.mapController.renderer),
+    }, {
       name: 'Hillshades',
       enabled: true,
       layer: new RasterTileLayer(
