@@ -115,38 +115,38 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
       void main() {
         gl_Position = vec4(position, z + 1., 1.) + 0. * sphericalMvp * cameraCenter * halfWorldSize * flattenFactor + vec4(0.000001 * inverseHalfViewportSize, 0., 0.);
 
-        // TODO(april): this doesn't work. There's another approach in ed07d813 that seems righter
-        // but also doesn't work. Alas.
-
-        // Figure out where the edge of the globe on X is
-        vec2 cameraMerged = vec2(cameraCenter.x + cameraCenter.y + 0.5, 0);
-        float sinLat = tanh(cameraMerged.y * PI);
+        float sinLat = tanh((cameraCenter.z + cameraCenter.w) * PI);
         float lat = asin(sinLat);
         float cosLat = cos(lat);
-        float lng = cameraMerged.x * PI;
-        vec4 sphericalRight = sphericalMvp * vec4(
+        float lng = (cameraCenter.x + cameraCenter.y) * PI;
+        vec3 zAxis = vec3(
             cosLat * cos(lng), // x
             sinLat,            // y
-            cosLat * sin(lng), // z
-            1.0                // w
+            cosLat * sin(lng)  // z
         );
-
-        // Figure out where the edge of the globe on Y is
-        cameraMerged =
-          vec2(cameraCenter.x + cameraCenter.y, cameraCenter.z + cameraCenter.w + 1.);
-        sinLat = tanh(cameraMerged.y * PI);
-        lat = asin(sinLat);
+        lat += PI / 2.;
         cosLat = cos(lat);
-        lng = cameraMerged.x * PI;
-        vec4 sphericalTop = sphericalMvp * vec4(
+        if (lat > PI) {
+          lng += PI;
+        }
+        vec3 yAxis = vec3(
             cosLat * cos(lng), // x
-            sinLat,            // y
-            cosLat * sin(lng), // z
-            1.0                // w
+            sin(lat),          // y
+            cosLat * sin(lng)  // z
         );
+        vec3 xAxis = cross(zAxis, yAxis);
 
-        vec2 spherical =
-          position / vec2(sphericalRight.x / sphericalRight.w, sphericalTop.y / sphericalTop.w);
+        float viewportRadiusWorldUnitsAtLat =
+          PI * cos(0.) / halfWorldSize / inverseHalfViewportSize.y;
+        float distanceCameraToGlobeSurface = viewportRadiusWorldUnitsAtLat / tan(FOV / 2.);
+        float scale = 1. + distanceCameraToGlobeSurface;
+        float theta = acos(1. / scale);
+        float sinTheta = sin(theta);
+        float cosTheta = cos(theta);
+        vec4 top = sphericalMvp * vec4(cosTheta * zAxis + sinTheta * yAxis, 1);
+        vec4 right = sphericalMvp * vec4(cosTheta * zAxis + sinTheta * xAxis, 1);
+
+        vec2 spherical = position / vec2(right.x / right.w, top.y / top.w);
         fragPosition = spherical;
       }
     `;
