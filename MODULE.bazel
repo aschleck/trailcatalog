@@ -12,9 +12,9 @@ bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "com_google_elemental2")
 archive_override(
     module_name = "com_google_elemental2",
-    integrity = "sha256-oJmJqc3JvQAyqNk1XiIKs35agDH4tW6eLzPgAwfTWkc=",
-    strip_prefix = "elemental2-9ea71d6b10195c841acde17ad14bd8677b05dea3",
-    urls = ["https://github.com/google/elemental2/archive/9ea71d6b10195c841acde17ad14bd8677b05dea3.zip"],
+    integrity = "sha256-1IdmjRje6lBGlmXQ/8recLGsGpdE6Inl+7n09rWSPq4=",
+    strip_prefix = "elemental2-e4390c00842c32db441ada284ea3b650eae335e6",
+    urls = ["https://github.com/google/elemental2/archive/e4390c00842c32db441ada284ea3b650eae335e6.zip"],
 )
 bazel_dep(name = "com_google_geometry_s2")
 git_override(
@@ -29,14 +29,14 @@ git_override(
 bazel_dep(name = "com_google_j2cl")
 archive_override(
     module_name = "com_google_j2cl",
-    integrity = "sha256-kvjnq4RA9dPoNvn5XONzgw9tE7F4tj5esz23GPguEVE=",
-    strip_prefix = "j2cl-b6950dc4a941eb8e482a8bebe355ef2b3be5b7d7",
-    urls = ["https://github.com/google/j2cl/archive/b6950dc4a941eb8e482a8bebe355ef2b3be5b7d7.zip"],
+    integrity = "sha256-MtLsk8nesUswt9q7L4g9F7mgSrH+I9ACG+CrIUDNAaM=",
+    strip_prefix = "j2cl-a16fe434982e8f95d77946f6b532c06a5f925c4e",
+    urls = ["https://github.com/google/j2cl/archive/a16fe434982e8f95d77946f6b532c06a5f925c4e.zip"],
 )
 bazel_dep(name = "com_google_jsinterop_base")
 git_override(
     module_name = "com_google_jsinterop_base",
-    commit = "dda001a659c58dea29caf431890a30a8f645036f",
+    commit = "3c7ea155bc382641cd2cf1047ce00723bba7e6a7",
     remote = "https://github.com/google/jsinterop-base",
 )
 bazel_dep(name = "dev_april_corgi")
@@ -138,7 +138,7 @@ maven.install(
 )
 use_repo(maven, "maven")
 
-j2cl_maven_import_external = use_repo_rule("@com_google_j2cl//build_defs:rules.bzl", "j2cl_maven_import_external")
+j2cl_maven_import_external = use_repo_rule("@j2cl//build_defs:rules.bzl", "j2cl_maven_import_external")
 j2cl_maven_import_external(
     name = "com_google_guava-j2cl",
     artifact = "com.google.guava:guava-gwt:33.4.8-jre",
@@ -147,7 +147,7 @@ j2cl_maven_import_external(
     deps = [
         "@com_google_elemental2//:elemental2-promise-j2cl",
         "@com_google_errorprone_error_prone_annotations-j2cl",
-        "@com_google_j2cl//:jsinterop-annotations-j2cl",
+        "@j2cl//:jsinterop-annotations-j2cl",
         "@com_google_j2objc_annotations-j2cl",
         "@org_jspecify_jspecify-j2cl",
     ],

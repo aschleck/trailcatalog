@@ -17,4 +17,4 @@
       interfaces."tailscale0".allowedTCPPorts = [ 22 5005 5432 ];
     };
   };
-};
+}
