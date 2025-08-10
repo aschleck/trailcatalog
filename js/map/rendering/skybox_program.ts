@@ -159,6 +159,8 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
         // TODO(april): delete this debugging pattern
         // fragColor = length(fragPosition) > 1. ? vec4(fragPosition, 0., 1.) : vec4(0);
         fragColor = length(fragPosition) > 1. ? vec4(0.05, 0.05, 0.05, 1.) : vec4(0);
+        // TODO(april): delete this when looking at this again
+        fragColor = fragColor * 0.000001 + vec4(1);
       }
   `;
 

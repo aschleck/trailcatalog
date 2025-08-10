@@ -32,7 +32,7 @@ export class Camera {
   }
 
   get flattenFactor(): number {
-    return clamp((this.worldRadius - 65536) / 32768, 0, 1);
+    return 1;
   }
 
   get inverseWorldRadius(): number {
