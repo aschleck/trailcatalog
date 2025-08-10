@@ -79,6 +79,8 @@ private fun fetchData(ctx: Context) {
   })
 }
 
+private data class WireLine(val id: UUID, val data: String, val latLngDegrees: ByteArray)
+
 private data class WirePolygon(val id: UUID, val data: String, val s2Polygon: ByteArray)
 
 private fun fetchCollectionCovering(ctx: Context) {
@@ -143,9 +145,55 @@ private fun fetchCollectionObjects(ctx: Context) {
     // version
     it.writeVarInt(1)
 
-    // polygons
     hikari.connection.use { connection ->
       val single = cell.level() < indexBottom
+
+      // lines
+      connection
+        .prepareStatement(
+          "SELECT l.id, l.data, l.lat_lng_degrees, l.created "
+              + "FROM collections c "
+              + "JOIN lines l ON c.id = l.collection "
+              + "WHERE "
+              + "c.id = ? AND "
+              + "c.creator = ANY (?) AND "
+              + (if (single) "l.cell = ?" else "(l.cell >= ? AND l.cell <= ?) ")
+        )
+        .apply {
+          setObject(1, UUID.fromString(collection))
+          setArray(2, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
+          if (single) {
+            setLong(3, cell.id())
+          } else {
+            setLong(3, cell.rangeMin().id())
+            setLong(4, cell.rangeMax().id())
+          }
+        }
+        .executeQuery()
+        .use { results ->
+          val lines = ArrayList<WireLine>()
+          while (results.next()) {
+            lines.add(
+              WireLine(
+                results.getObject(1) as UUID,
+                results.getString(2),
+                results.getBytes(3)))
+            mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
+          }
+          it.writeVarInt(lines.size)
+          for (line in lines) {
+            it.writeLong(line.id.leastSignificantBits)
+            it.writeLong(line.id.mostSignificantBits)
+            line.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
+              it.writeVarInt(utf8.size)
+              it.write(utf8)
+            }
+            it.writeVarInt(line.latLngDegrees.size)
+            it.write(line.latLngDegrees)
+          }
+        }
+
+      // polygons
       connection
           .prepareStatement(
               "SELECT p.id, p.data, p.s2_polygon, p.created "

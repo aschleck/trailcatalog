@@ -30,7 +30,6 @@ import org.locationtech.proj4j.ProjCoordinate
 import org.slf4j.LoggerFactory
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.flags.FlagSpec
-import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.createNullableFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.basemap.StringifyingInputStream
@@ -41,12 +40,15 @@ import org.trailcatalog.s2.polygonToCell
 private val logger = LoggerFactory.getLogger("PublicAccess")
 
 @FlagSpec(name = "collection_id")
-private val collectionId = createNullableFlag(null as String)
+val collectionId = createNullableFlag(null as String?)
+
+@FlagSpec(name = "creator_id")
+val creatorId = createNullableFlag(null as String?)
 
 @FlagSpec(name = "source")
-private val source = createNullableFlag(null as Path?)
+val source = createNullableFlag(null as Path?)
 
-data class Feature(
+private data class Feature(
     val data: Map<String, String>,
     val cell: S2CellId,
     val covering: S2CellUnion,
@@ -232,9 +234,16 @@ private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature
                   UUID.fromString(collectionId.value)
                 else
                   null)
-              setString(2, "Public Land")
+              setObject(
+                2,
+                if (creatorId.value != null)
+                  UUID.fromString(creatorId.value)
+                else
+                  UUID(0, 0)
+              )
+              setString(3, "Public Land")
               setBytes(
-                  3,
+                  4,
                   ByteArrayOutputStream().also {
                     DelegatingEncodedOutputStream(it).use {
                       covering.sortWith(Comparator.naturalOrder())
