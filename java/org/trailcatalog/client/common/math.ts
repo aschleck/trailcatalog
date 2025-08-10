@@ -31,6 +31,14 @@ const reinterpretLongBuffer = new ArrayBuffer(8);
 const reinterpretFloatArray = new Float64Array(reinterpretLongBuffer);
 const reinterpretIntArray = new Int32Array(reinterpretLongBuffer);
 
+/** Reads a float using the bits of a bigint. */
+export function reinterpretBigInt(v: bigint): number {
+  const mask = 0xFFFFFFFFn;
+  reinterpretIntArray[0] = Number((v >> 32n) & mask);
+  reinterpretIntArray[1] = Number(v & mask);
+  return reinterpretFloatArray[0];
+}
+
 /** Reads a float using the bits of a Closure Long. */
 export function reinterpretLong(v: Long): number {
   reinterpretIntArray[0] = v.getHighBits();

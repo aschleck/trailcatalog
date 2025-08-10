@@ -510,12 +510,12 @@ private fun fetchCoarse(ctx: Context) {
 
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
 
-  val paths = ArrayList<WirePath>()
+  val paths = HashMap<S2CellId, ArrayList<WirePath>>()
   connectionSource.connection.use {
     val query = if (cell.level() >= SimpleS2.HIGHEST_COARSE_INDEX_LEVEL) {
       it.prepareStatement(
           // Analysis shows that the union is faster than OR'ing the cell queries
-          "SELECT p.id, p.type, p.lat_lng_degrees "
+          "SELECT p.id, p.cell, p.type, p.lat_lng_degrees "
               + "FROM paths p "
               + "JOIN paths_in_trails pit "
               + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
@@ -531,7 +531,7 @@ private fun fetchCoarse(ctx: Context) {
       }
     } else {
       it.prepareStatement(
-          "SELECT p.id, p.type, p.lat_lng_degrees "
+          "SELECT p.id, p.cell, p.type, p.lat_lng_degrees "
               + "FROM paths p "
               + "JOIN paths_in_trails pit "
               + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
@@ -546,17 +546,29 @@ private fun fetchCoarse(ctx: Context) {
     val results = query.executeQuery()
     while (results.next()) {
       val id = results.getLong(1)
-      paths.add(
+      val raw = S2CellId(results.getLong(2))
+      val cell =
+        if (raw.level() > SimpleS2.HIGHEST_FINE_INDEX_LEVEL)
+          raw.parent(SimpleS2.HIGHEST_FINE_INDEX_LEVEL)
+        else
+          raw
+      val group = paths.computeIfAbsent(cell) { ArrayList() }
+      group
+        .add(
           WirePath(
               id = id,
-              type = results.getInt(2),
-              vertices = results.getBytes(3),
+              type = results.getInt(3),
+              vertices = results.getBytes(4),
           ))
     }
   }
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
-  writeDetailPaths(paths, bytes, output)
+  output.writeVarInt(paths.size)
+  for ((cell, group) in paths) {
+    output.writeLong(cell.id())
+    writeDetailPaths(group, bytes, output, false)
+  }
   ctx.result(bytes.toByteArray())
 }
 
@@ -672,7 +684,7 @@ private fun fetchFine(ctx: Context) {
 
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
-  writeDetailPaths(paths, bytes, output)
+  writeDetailPaths(paths, bytes, output, true)
   writeDetailPoints(points, bytes, output)
   ctx.result(bytes.toByteArray())
 }
@@ -746,16 +758,14 @@ private fun fetchDataPacked(ctx: Context) {
           WirePath(
               id = id,
               type = results.getInt(2),
-              vertices = results.getBytes(3).let {
-                if (precise) it else simplify(it)
-              }
+              vertices = results.getBytes(3),
           ))
     }
   }
 
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
-  writeDetailPaths(paths, bytes, output)
+  writeDetailPaths(paths, bytes, output, precise)
   writeDetailTrails(listOf(trail), bytes, output)
   ctx.result(bytes.toByteArray())
 }
@@ -763,15 +773,17 @@ private fun fetchDataPacked(ctx: Context) {
 private fun writeDetailPaths(
     paths: List<WirePath>,
     bytes: AlignableByteArrayOutputStream,
-    output: DelegatingEncodedOutputStream) {
+    output: DelegatingEncodedOutputStream,
+    precise: Boolean) {
   output.writeVarInt(paths.size)
   for (path in paths) {
     output.writeVarLong(path.id)
     output.writeVarInt(path.type)
-    output.writeVarInt(path.vertices.size / 4)
+    val source = if (precise) path.vertices else simplify(path.vertices)
+    output.writeVarInt(source.size / 4)
     output.flush()
     bytes.align(4)
-    output.write(path.vertices)
+    output.write(source)
   }
 }
 

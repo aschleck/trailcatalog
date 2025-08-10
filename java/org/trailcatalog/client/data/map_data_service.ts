@@ -7,7 +7,7 @@ import { Service, ServiceResponse } from 'external/dev_april_corgi+/js/corgi/ser
 import { projectE7Array } from 'js/map/camera';
 import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 
-import { degreesE7ToLatLng, projectLatLng } from '../common/math';
+import { degreesE7ToLatLng, projectLatLng, reinterpretBigInt } from '../common/math';
 import { PixelRect, S2CellNumber } from '../common/types';
 import { Path, Point, Trail } from '../models/types';
 import { PIN_CELL_ID } from '../workers/data_constants';
@@ -49,7 +49,8 @@ export class MapDataService extends Service<EmptyDeps> {
   readonly overviewCells: Map<S2CellNumber, ArrayBuffer|false>;
   readonly coarseCells: Map<S2CellNumber, ArrayBuffer|false>;
   readonly fineCells: Map<S2CellNumber, ArrayBuffer|false>;
-  readonly paths: Map<bigint, Path>;
+  readonly coarsePaths: Map<bigint, Path>;
+  readonly finePaths: Map<bigint, Path>;
   readonly pinnedPaths: Map<bigint, Path>;
   readonly pathsToTrails: IdentitySetMultiMap<bigint, Trail>;
   readonly points: Map<bigint, Point>;
@@ -68,7 +69,8 @@ export class MapDataService extends Service<EmptyDeps> {
     this.overviewCells = new Map();
     this.coarseCells = new Map();
     this.fineCells = new Map();
-    this.paths = new Map();
+    this.coarsePaths = new Map();
+    this.finePaths = new Map();
     this.pinnedPaths = new Map();
     this.pathsToTrails = new IdentitySetMultiMap();
     this.points = new Map();
@@ -141,7 +143,7 @@ export class MapDataService extends Service<EmptyDeps> {
         const pathVertexCount = data.getVarInt32();
         data.align(4);
         data.skip(4 * pathVertexCount);
-        const path = this.paths.get(id);
+        const path = this.coarsePaths.get(id);
         if (path) {
           paths.push(path);
         }
@@ -162,7 +164,7 @@ export class MapDataService extends Service<EmptyDeps> {
         const pathVertexCount = data.getVarInt32();
         data.align(4);
         data.skip(4 * pathVertexCount);
-        const path = this.paths.get(id);
+        const path = this.finePaths.get(id);
         if (path) {
           paths.push(path);
         }
@@ -225,7 +227,7 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   getPath(id: bigint): Path|undefined {
-    return this.paths.get(id);
+    return this.finePaths.get(id) ?? this.coarsePaths.get(id);
   }
 
   getPoint(id: bigint): Point|undefined {
@@ -304,7 +306,7 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   private loadCoarseCell(id: S2CellNumber, buffer: ArrayBuffer): void {
-    // Check if the server wrote us a 1 byte response with 0 trails and paths.
+    // Check if the server wrote us a short response with 0 trails and paths.
     if (buffer.byteLength <= 8) {
       this.coarseCells.set(id, false);
       return;
@@ -313,7 +315,7 @@ export class MapDataService extends Service<EmptyDeps> {
     if (id === PIN_CELL_ID) {
       this.loadPinnedCoarse(buffer);
     } else {
-      this.loadRegularCoarse(id, buffer);
+      this.loadRegularCoarse(buffer);
     }
 
     // We may load pinned trails before the pinned call comes back, and are incentivized to resolve
@@ -403,36 +405,41 @@ export class MapDataService extends Service<EmptyDeps> {
     this.listener?.loadPinned();
   }
 
-  private loadRegularCoarse(id: S2CellNumber, buffer: ArrayBuffer): void {
+  private loadRegularCoarse(buffer: ArrayBuffer): void {
     const data = new LittleEndianView(buffer);
 
-    const pathCount = data.getVarInt32();
-    const paths = [];
-    for (let i = 0; i < pathCount; ++i) {
-      const id = data.getVarBigInt64();
-      const type = data.getVarInt32();
-      const pathVertexCount = data.getVarInt32();
-      data.align(4);
-      const points = projectE7Array(data.sliceInt32(pathVertexCount));
-      const bound = {
-        low: [1, 1],
-        high: [-1, -1],
-      };
-      for (let i = 0; i < pathVertexCount; i += 2) {
-        const x = points[i + 0];
-        const y = points[i + 1];
-        bound.low[0] = Math.min(bound.low[0], x);
-        bound.low[1] = Math.min(bound.low[1], y);
-        bound.high[0] = Math.max(bound.high[0], x);
-        bound.high[1] = Math.max(bound.high[1], y);
-      }
-      const built = new Path(id, type, bound as unknown as PixelRect, points);
-      this.paths.set(id, built);
-      paths.push(built);
-    }
+    const groupCount = data.getVarInt32();
+    for (let group = 0; group < groupCount; ++group) {
+      const id = reinterpretBigInt(data.getBigInt64()) as S2CellNumber;
 
-    this.coarseCells.set(id, buffer);
-    this.listener?.loadCoarseCell(id, paths);
+      const pathCount = data.getVarInt32();
+      const paths = [];
+      for (let i = 0; i < pathCount; ++i) {
+        const id = data.getVarBigInt64();
+        const type = data.getVarInt32();
+        const pathVertexCount = data.getVarInt32();
+        data.align(4);
+        const points = projectE7Array(data.sliceInt32(pathVertexCount));
+        const bound = {
+          low: [1, 1],
+          high: [-1, -1],
+        };
+        for (let i = 0; i < pathVertexCount; i += 2) {
+          const x = points[i + 0];
+          const y = points[i + 1];
+          bound.low[0] = Math.min(bound.low[0], x);
+          bound.low[1] = Math.min(bound.low[1], y);
+          bound.high[0] = Math.max(bound.high[0], x);
+          bound.high[1] = Math.max(bound.high[1], y);
+        }
+        const built = new Path(id, type, bound as unknown as PixelRect, points);
+        this.coarsePaths.set(id, built);
+        paths.push(built);
+      }
+
+      this.coarseCells.set(id, buffer);
+      this.listener?.loadCoarseCell(id, paths);
+    }
   }
 
   private loadFineCell(id: S2CellNumber, buffer: ArrayBuffer): void {
@@ -465,7 +472,7 @@ export class MapDataService extends Service<EmptyDeps> {
         bound.high[1] = Math.max(bound.high[1], y);
       }
       const built = new Path(id, type, bound as unknown as PixelRect, points);
-      this.paths.set(id, built);
+      this.finePaths.set(id, built);
       paths.push(built);
     }
 
@@ -514,9 +521,9 @@ export class MapDataService extends Service<EmptyDeps> {
       const pathVertexBytes = data.getVarInt32() * 4;
       data.align(4);
       data.skip(pathVertexBytes);
-      const entity = this.paths.get(id);
+      const entity = this.coarsePaths.get(id);
       if (entity) {
-        this.paths.delete(id);
+        this.coarsePaths.delete(id);
         paths.push(entity);
       }
     }
@@ -542,9 +549,9 @@ export class MapDataService extends Service<EmptyDeps> {
       const pathVertexBytes = data.getVarInt32() * 4;
       data.align(4);
       data.skip(pathVertexBytes);
-      const entity = this.paths.get(id);
+      const entity = this.finePaths.get(id);
       if (entity) {
-        this.paths.delete(id);
+        this.finePaths.delete(id);
         paths.push(entity);
       }
     }

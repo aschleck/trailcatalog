@@ -227,23 +227,20 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   override render(planner: Planner): void {
-    // TODO(april): we don't mark and sweep the pin renderer and it's not clear how we would
-
-    let detailPlans;
+    const detailPlans = [];
     if (this.showDetail(this.camera.zoom)) {
-      let cells: Set<S2CellNumber>;
-      let source;
-      if (this.showFine(this.camera.zoom)) {
-        cells = this.cellsInView(SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
-        source = this.finePlans;
-      } else {
-        cells = this.cellsInView(SimpleS2.HIGHEST_COARSE_INDEX_LEVEL);
-        source = this.coarsePlans;
+      const cells = this.cellsInView(SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
+      for (const cell of cells) {
+        const fine = this.finePlans.get(cell);
+        if (fine) {
+          detailPlans.push(fine);
+          continue;
+        }
+        const coarse = this.coarsePlans.get(cell);
+        if (coarse) {
+          detailPlans.push(coarse);
+        }
       }
-
-      detailPlans = new Map([...source.entries()].filter(([id, _]) => cells.has(id)));
-    } else {
-      detailPlans = new Map();
     }
 
     for (const source of [
