@@ -65,6 +65,8 @@
 
   services.nginx = {
     enable = true;
+    recommendedProxySettings = true;
+
     virtualHosts."trailcatalog.org" = {
       enableACME = true;
       forceSSL = true;
@@ -147,7 +149,6 @@
 
       locations."@pmtiles" = {
         proxyPass = "http://127.0.0.1:9999";
-        recommendedProxySettings = true;
 
         extraConfig = ''
           proxy_hide_header 'Access-Control-Allow-Origin';

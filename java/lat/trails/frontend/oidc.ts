@@ -18,9 +18,11 @@ export async function addGoogle(
     sql: postgres.Sql): Promise<void> {
   const issuer = await Issuer.discover('https://accounts.google.com');
 
-  const getCallbackUrl =
-      (request: FastifyRequest) =>
-          `${request.protocol}://${request.hostname}/login/google/callback`;
+  const getCallbackUrl = (request: FastifyRequest) => {
+    const protocol = request.headers['x-forwarded-proto'] ?? request.protocol;
+    const hostname = request.headers['x-forwarded-host'] ?? request.hostname;
+    return `${protocol}://${hostname}/login/google/callback`;
+  }
 
   const client = new issuer.Client({
     client_id: checkExists(process.env.OAUTH2_GOOGLE_CLIENT_ID),
