@@ -666,7 +666,7 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'park',
       minZoom: 0,
-      maxZoom: 11,
+      maxZoom: 10,
       lineTexts: [],
       lines: [],
       points: [
@@ -715,7 +715,7 @@ export const NATURE: Readonly<Style> = {
     },
     {
       layerName: 'park',
-      minZoom: 11,
+      minZoom: 10,
       maxZoom: 31,
       lineTexts: [],
       lines: [],
