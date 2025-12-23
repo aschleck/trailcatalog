@@ -182,7 +182,7 @@ val ROUTE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, RelationCategory>()
     .put(ByteString.copyFromUtf8("tram"), RelationCategory.TRANSPORT_TRAM)
     .put(ByteString.copyFromUtf8("trolleybus"), RelationCategory.TRANSPORT_TROLLEYBUS)
 
-    .put(ByteString.copyFromUtf8("biycle"), RelationCategory.TRAIL_BICYCLE)
+    .put(ByteString.copyFromUtf8("bicycle"), RelationCategory.TRAIL_BICYCLE)
     .put(ByteString.copyFromUtf8("canoe"), RelationCategory.TRAIL_CANOE)
     .put(ByteString.copyFromUtf8("foot"), RelationCategory.TRAIL_FOOT)
     .put(ByteString.copyFromUtf8("hiking"), RelationCategory.TRAIL_HIKING)
