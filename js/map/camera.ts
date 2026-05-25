@@ -9,7 +9,7 @@ import { Rect, Vec2 } from './common/types';
 const FOV = Math.PI / 4;
 const MAX_EDGE_ANGLE = SimpleS2.earthMetersToAngle(50000).radians();
 const MERCATOR_MAX_LAT_RADIANS = 85 / 90 * Math.PI / 2;
-const ZOOM_MIN = 4;
+const ZOOM_MIN = 3;
 const ZOOM_MAX = 22;
 
 // Iterative pin-solver tunings. Tolerance is in NDC units (1.0 = halfViewport
@@ -24,6 +24,12 @@ const SOLVER_MAX_STEP = 0.1;
 // at z=20 — way past the linearization regime. 1e-7 keeps the perturbation
 // under ~0.01 NDC across the supported zoom range.
 const SOLVER_EPS = 1e-7;
+// Pin-solver residual above this (in NDC units) means Newton failed to
+// converge in its bounded iteration budget — the cursor was near or past the
+// silhouette where the inverse projection and the Jacobian both degenerate.
+// ~1e-3 NDC ≈ 1 pixel at typical resolutions; the solver targets 1e-5 when
+// healthy, so anything bigger is unambiguously a failure.
+const SOLVER_REJECT_TOLERANCE = 1e-3;
 
 export class Camera {
   private _center: S2LatLng;
@@ -102,8 +108,48 @@ export class Camera {
     const newIwr = this._inverseWorldRadius;
     const newF = this.flattenFactor;
 
+    // If the cursor was off the globe at the old state, the pin-solver can't
+    // converge tightly (the target NDC has no real preimage), so the safety
+    // net used to trip and we'd zoom in place. Instead, lerp camera lat/lng
+    // directly toward grab — that's the closest visible globe point in the
+    // cursor's direction, so each zoom-in step pans the camera toward it.
+    // Scales with dZ so small scrolls pan gently; skip on zoom out so pulling
+    // back doesn't drag the closest point off-center.
+    if (oldF < 1) {
+      const old = projectBlended(
+          grab.lat, grab.lng, oldLat, oldLng, oldIwr, widthPx, heightPx, oldF, oldMvp);
+      const eX = old[0] - cursorNdc[0];
+      const eY = old[1] - cursorNdc[1];
+      if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
+        if (dZ <= 0) {
+          return;
+        }
+        const fraction = Math.min(0.5, dZ * 0.3);
+        const dLat = grab.lat - oldLat;
+        const dLng = wrapPi(grab.lng - oldLng);
+        this._center = S2LatLng.fromRadians(
+            clamp(oldLat + dLat * fraction,
+                -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
+            wrapPi(oldLng + dLng * fraction));
+        return;
+      }
+    }
+
     const newC = solveCameraForPin(
         grab.lat, grab.lng, cursorNdc, oldLat, oldLng, newIwr, widthPx, heightPx, newF);
+
+    // Safety net: if the solver fails to pin grab to cursorNdc at the new
+    // zoom (e.g., silhouette shrank past cursor), zoom in place.
+    if (newF < 1) {
+      const newMvp = computeSphericalMvp(newC.lat, newC.lng, newIwr, widthPx, heightPx);
+      const next = projectBlended(
+          grab.lat, grab.lng, newC.lat, newC.lng, newIwr, widthPx, heightPx, newF, newMvp);
+      const eX = next[0] - cursorNdc[0];
+      const eY = next[1] - cursorNdc[1];
+      if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
+        return;
+      }
+    }
 
     this._center = S2LatLng.fromRadians(
         clamp(newC.lat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
@@ -127,6 +173,32 @@ export class Camera {
 
     const newC = solveCameraForPin(
         grab.lat, grab.lng, cursorCurrNdc, oldLat, oldLng, iwr, widthPx, heightPx, f);
+
+    // Verify the solver actually placed grab at currNdc. In spherical mode,
+    // both the inverse projection (used to compute grab) and the pin-solver's
+    // Jacobian degenerate as the cursor approaches the silhouette: tiny NDC
+    // noise produces huge lat/lng swings in grab, and Newton's bounded steps
+    // can't converge. If the round-trip residual is over tolerance, the
+    // solver result is junk — fall back to constant-speed angular rotation
+    // (1 NDC unit ≈ thetaT radians, scaled by aspect for lng so the rate is
+    // equal in pixels-per-radian for both axes) so dragging stays smooth.
+    if (f < 1) {
+      const newMvp = computeSphericalMvp(newC.lat, newC.lng, iwr, widthPx, heightPx);
+      const projected = projectBlended(
+          grab.lat, grab.lng, newC.lat, newC.lng, iwr, widthPx, heightPx, f, newMvp);
+      const eX = projected[0] - cursorCurrNdc[0];
+      const eY = projected[1] - cursorCurrNdc[1];
+      if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
+        const frame = computeSphericalFrame(oldLat, oldLng, iwr, widthPx, heightPx);
+        const thetaT = Math.acos(Math.min(1, 1 / frame.scale));
+        const dLng = -(cursorCurrNdc[0] - cursorLastNdc[0]) * thetaT * frame.aspect;
+        const dLat = -(cursorCurrNdc[1] - cursorLastNdc[1]) * thetaT;
+        this._center = S2LatLng.fromRadians(
+            clamp(oldLat + dLat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
+            wrapPi(oldLng + dLng));
+        return;
+      }
+    }
 
     this._center = S2LatLng.fromRadians(
         clamp(newC.lat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
