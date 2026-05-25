@@ -758,6 +758,21 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
    layer.polygonBounds =
       layer.polygonBounds.filter(f => f.geometry.length > 0 && f.starts.length > 0);
 
+  // Densify polygon edges that run along the horizontal tile boundaries. On
+  // the globe each tile renders its boundary as a polyline of 3D chords
+  // between its own vertex set; adjacent rows have different vertex sets
+  // (each tile clipped the source polygon independently), so the chord
+  // polylines sag toward the equator by different amounts and a thin sliver
+  // of clear color shows through. Inserting matching canonical x positions
+  // on both sides makes the polylines coincide. Vertical boundaries don't
+  // need this — meridians are great circles, so the chord is the true arc.
+  for (const feature of layer.polygons) {
+    const [geometry, starts] =
+        densifyHorizontalBoundaries(feature.geometry, feature.starts, extent);
+    feature.geometry = geometry;
+    feature.starts = starts;
+  }
+
   // Pole-row tiles: extend any exterior polygon ring that runs along the
   // pole-side boundary outward toward the pole. The mbtile data has no
   // coverage past +/-85 lat (the Mercator limit), so without this the polar
@@ -847,6 +862,72 @@ function extendPoleEdges(
       } else if (extendBottom && py === extent && ny === extent) {
         out.push(px, extent + poleReachTile);
         out.push(nx, extent + poleReachTile);
+      }
+    }
+  }
+
+  return [out, outStarts];
+}
+
+// Walks each polygon ring and inserts canonical x positions on any segment
+// between two consecutive vertices that both lie on a horizontal tile
+// boundary (y=0 or y=extent). The canonical positions are k*extent/STRIDE
+// for integer k, so adjacent tile rows independently produce the same set
+// of points along the shared edge and their chord polylines coincide on the
+// globe. Doesn't disturb ring winding — vertices are emitted in the same
+// px→nx direction as the original segment.
+function densifyHorizontalBoundaries(
+    geometry: number[],
+    starts: number[],
+    extent: number): [number[], number[]] {
+  // 8 segments per tile edge keeps chord sag sub-pixel through low zooms;
+  // higher counts add cheap-but-unneeded vertices for the common case.
+  const stride = extent / 8;
+  const out: number[] = [];
+  const outStarts: number[] = [];
+
+  for (let r = 0; r < starts.length; ++r) {
+    const start = starts[r];
+    const end = r < starts.length - 1 ? starts[r + 1] : geometry.length;
+    outStarts.push(out.length);
+    if (end - start < 6) {
+      for (let i = start; i < end; ++i) {
+        out.push(geometry[i]);
+      }
+      continue;
+    }
+
+    const n = (end - start) / 2;
+    for (let i = 0; i < n; ++i) {
+      const px = geometry[start + 2 * i + 0];
+      const py = geometry[start + 2 * i + 1];
+      out.push(px, py);
+
+      const j = (i + 1) % n;
+      const nx = geometry[start + 2 * j + 0];
+      const ny = geometry[start + 2 * j + 1];
+
+      let boundaryY: number;
+      if (py === 0 && ny === 0) {
+        boundaryY = 0;
+      } else if (py === extent && ny === extent) {
+        boundaryY = extent;
+      } else {
+        continue;
+      }
+
+      const lo = Math.min(px, nx);
+      const hi = Math.max(px, nx);
+      const firstK = Math.floor(lo / stride) + 1;
+      const lastK = Math.ceil(hi / stride) - 1;
+      if (px < nx) {
+        for (let k = firstK; k <= lastK; ++k) {
+          out.push(k * stride, boundaryY);
+        }
+      } else {
+        for (let k = lastK; k >= firstK; --k) {
+          out.push(k * stride, boundaryY);
+        }
       }
     }
   }
