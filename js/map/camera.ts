@@ -154,18 +154,23 @@ export class Camera {
     return S2LatLng.fromRadians(v.lat, v.lng);
   }
 
-  // The tile zoom at which we should fetch source tiles. In mercator mode this
-  // is just `_zoom`: one screen-height of map covers heightPx/worldRadius
-  // mercator units, so tz=floor(_zoom) gives ~256-pixel tiles. In spherical
-  // mode the camera is pulled back enough to fit a cap of angular radius θₜ
-  // in the viewport, and at the same `_zoom` the screen actually shows
-  // 2·θₜ radians of arc — far more world than mercator does. Picking tz from
-  // `_zoom` directly fetches hundreds of tiny tiles to fill the cap at a pixel
-  // density the screen can't display. Matching tiles-per-screen-height gives
-  //   tz_eff = _zoom + log2(heightPx·π / (2·worldRadius·θₜ))
-  // which at z=8.5 reduces from tz=8 to tz≈5 — a 16× reduction in tiles
-  // fetched per layer with no visible loss of detail. Blended by
-  // flattenFactor so the transition into mercator mode is continuous.
+  // The tile zoom at which we should fetch source tiles. Hedges between
+  // two caps:
+  //   - horizon cap acos(1/scale): geometric occlusion limit. At low zoom
+  //     (scale ≳ 2.6) this is the only thing limiting the visible cap,
+  //     and matching tile density to it gives commit 9af3745's coarse
+  //     globe-view fetches — few tiles, no 600-tile storm.
+  //   - FOV cap (vertical-edge ray hitting the sphere): perspective limit.
+  //     At high zoom (scale ≈ 1) this is what's actually rendered, and
+  //     matching tile density to it gives mercator-equivalent detail.
+  // Pure FOV-cap fetches fine detail but produces a 200+ tile/layer storm
+  // at high latitudes where the FOV cap is moderate and wraps around the
+  // pole. Pure horizon-cap leaves z=8-9 spherical views upscaled 8× and
+  // visibly triangulated. Geometric mean of the two thetas (= arithmetic
+  // mean of the two derived zoom values) hedges between the regimes — at
+  // low zoom FOV ≈ horizon and the formula is unchanged from the commit,
+  // at high zoom we get tz ≈ (_zoom + commit_tz)/2, midway between full
+  // detail and globe-coarse.
   tileFetchZoom(widthPx: number, heightPx: number): number {
     const f = this.flattenFactor;
     if (f >= 1) {
@@ -173,16 +178,19 @@ export class Camera {
     }
     const viewportRadius = Math.PI * heightPx * this._inverseWorldRadius / 2;
     const scale = 1 + viewportRadius / Math.tan(FOV / 2);
-    const thetaT = Math.max(1e-6, Math.acos(Math.min(1, 1 / scale)));
-    const sph =
-        this._zoom + Math.log2(heightPx * Math.PI / (2 * this.worldRadius * thetaT));
-    return (1 - f) * sph + f * this._zoom;
+    const thetaFov = Math.max(1e-6, visibleCapRadius(scale, 0));
+    const thetaHorizon = Math.max(1e-6, Math.acos(Math.min(1, 1 / scale)));
+    const thetaSph = Math.sqrt(thetaFov * thetaHorizon);
+    const sphTz = Math.log2(Math.PI * heightPx / (256 * thetaSph));
+    return (1 - f) * sphTz + f * this._zoom;
   }
 
   // Returns the visible spherical cap as seen from the camera, suitable for
-  // culling tiles that fall entirely outside the visible cone. Returns
-  // undefined in fully-flat (mercator) mode, where there is no cone to test
-  // against.
+  // culling tiles that fall entirely outside the visible region. Bound is
+  // the diagonal FOV cap (corners reach √(1+aspect²)× further from cap
+  // center than top/bottom edges), clamped to the horizon and padded a
+  // little so silhouette tiles aren't clipped. Returns undefined in
+  // fully-flat mercator mode.
   sphericalCone(widthPx: number, heightPx: number): SphericalCone | undefined {
     if (this.flattenFactor >= 1) {
       return undefined;
@@ -190,9 +198,12 @@ export class Camera {
     const frame = computeSphericalFrame(
         this._center.latRadians(), this._center.lngRadians(),
         this._inverseWorldRadius, widthPx, heightPx);
+    const horizonCap = Math.acos(Math.min(1, 1 / frame.scale));
+    const fovCap = visibleCapRadius(frame.scale, widthPx / heightPx);
+    const thetaT = Math.min(horizonCap, fovCap * 1.1);
     return {
       camDir: frame.zAxis,
-      cosThetaT: 1 / frame.scale,
+      cosThetaT: Math.cos(thetaT),
     };
   }
 
@@ -217,8 +228,15 @@ export class Camera {
         this._center.latRadians(), this._center.lngRadians(),
         this._inverseWorldRadius, widthPx, heightPx);
     const cosLatC = Math.cos(this._center.latRadians());
-    const cosThetaT = 1 / frame.scale;
-    const sinThetaT = Math.sqrt(Math.max(0, 1 - cosThetaT * cosThetaT));
+    // Use the diagonal FOV cap (clamped to horizon) for the pole-expansion
+    // check. At high zoom near the pole the horizon cap reaches the pole
+    // while the FOV cone doesn't — using horizon here forces a full-lng
+    // bounding rect, which the tile loop then iterates exhaustively even
+    // though the cone culls almost everything.
+    const horizonCap = Math.acos(Math.min(1, 1 / frame.scale));
+    const fovCap = visibleCapRadius(frame.scale, widthPx / heightPx);
+    const thetaT = Math.min(horizonCap, fovCap * 1.1);
+    const sinThetaT = Math.sin(thetaT);
 
     const samples: ReadonlyArray<readonly [number, number]> = [
       [-1, -1], [0, -1], [1, -1],
@@ -306,6 +324,26 @@ function latToMercY(lat: number): number {
 
 function mercYToLat(y: number): number {
   return Math.asin(Math.tanh(y * Math.PI));
+}
+
+// Angular radius of the visible cap on the unit sphere, looking from a
+// camera at distance `scale` from the sphere center. The camera ray that
+// grazes the screen along a chosen direction has tangent
+//   h = tan(FOV/2) · √(1 + aspect²)
+// where `aspect` is the cross-axis ratio (0 for the vertical-edge ray,
+// width/height for the diagonal corner ray). That ray hits the sphere at α
+// solving sin(α)/(scale - cos(α)) = h; rearranging gives
+//   α = asin(h·scale / √(1+h²)) - atan(h).
+// When h·scale ≥ √(1+h²) the ray misses the sphere — the FOV cone wraps
+// past the silhouette — and the cap is horizon-limited at acos(1/scale).
+function visibleCapRadius(scale: number, aspect: number): number {
+  const h = Math.tan(FOV / 2) * Math.sqrt(1 + aspect * aspect);
+  const denom = Math.sqrt(1 + h * h);
+  const r = h * scale / denom;
+  if (r >= 1) {
+    return Math.acos(Math.min(1, 1 / scale));
+  }
+  return Math.asin(r) - Math.atan(h);
 }
 
 // Build the spherical perspective MVP at the given camera lat/lng/zoom. The
