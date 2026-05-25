@@ -896,120 +896,104 @@ function cropLine(geometry: number[], starts: number[], extent: number, loop: bo
   return [cGeometry, cStarts];
 }
 
+// Sutherland-Hodgman polygon clipping against the tile rectangle [0, extent] x [0, extent].
 function cropPolygon(geometry: number[], starts: number[], extent: number, loop: boolean):
     [number[], number[]] {
-  const cGeometry = [];
-  const cStarts = [];
-  for (let i = 0; i < starts.length; ++i) {
-    const start = starts[i];
-    const end = i < starts.length - 1 ? starts[i + 1] : geometry.length;
-    cStarts.push(cGeometry.length);
+  const cGeometry: number[] = [];
+  const cStarts: number[] = [];
+  let buf: number[] = [];
+  let next: number[] = [];
 
-    let everInside = false;
-    let outside = true;
-    let lastPushedX = undefined;
-    let lastPushedY = undefined;
+  for (let r = 0; r < starts.length; ++r) {
+    const start = starts[r];
+    const end = r < starts.length - 1 ? starts[r + 1] : geometry.length;
+    if (end - start < 4) {
+      continue;
+    }
+
+    buf.length = 0;
     for (let i = start; i < end; i += 2) {
-      const px = geometry[i + 0];
-      const py = geometry[i + 1];
-
-      if ((px >= 0 && px < extent) && (py >= 0 && py < extent)) {
-        everInside = true;
-        if (i > start && outside) {
-          const lx = geometry[i - 2 + 0];
-          const ly = geometry[i - 2 + 1];
-          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
-          if (ix !== lastPushedX || iy !== lastPushedY) {
-            cGeometry.push(ix, iy);
-            lastPushedX = ix;
-            lastPushedY = iy;
-          }
-        }
-
-        if (px !== lastPushedX || py !== lastPushedY) {
-          cGeometry.push(px, py);
-          lastPushedX = px;
-          lastPushedY = py;
-        }
-        outside = false;
-      } else {
-        if (i > start) {
-          const lx = geometry[i - 2 + 0];
-          const ly = geometry[i - 2 + 1];
-
-          if (outside) {
-            const intersections =
-                intersectInfiniteTile(lx, ly, px, py, extent)
-                    .map(([x, y]) => [clamp(x, 0, extent), clamp(y, 0, extent)]);
-            for (const [ix, iy] of intersections) {
-              if (ix !== lastPushedX || iy !== lastPushedY) {
-                cGeometry.push(ix, iy);
-                lastPushedX = ix;
-                lastPushedY = iy;
-              }
-            }
-          } else {
-            const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
-            if (ix !== lastPushedX || iy !== lastPushedY) {
-              cGeometry.push(ix, iy);
-              lastPushedX = ix;
-              lastPushedY = iy;
-            }
-          }
-        }
-
-        outside = true;
-      }
+      buf.push(geometry[i + 0], geometry[i + 1]);
     }
 
-    // Also check for intersections on the way back to the start point
-    if (loop) {
-      const px = geometry[start + 0];
-      const py = geometry[start + 1];
-
-      if ((px >= 0 && px < extent) && (py >= 0 && py < extent)) {
-        everInside = true;
-        if (outside) {
-          const lx = geometry[end - 2 + 0];
-          const ly = geometry[end - 2 + 1];
-          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
-          if (ix !== lastPushedX || iy !== lastPushedY) {
-            cGeometry.push(ix, iy);
-          }
-        }
-      } else {
-        const lx = geometry[end - 2 + 0];
-        const ly = geometry[end - 2 + 1];
-
-        if (outside) {
-          const intersections =
-              intersectInfiniteTile(lx, ly, px, py, extent)
-                  .map(([x, y]) => [clamp(x, 0, extent), clamp(y, 0, extent)]);
-          for (const [ix, iy] of intersections) {
-            if (ix !== lastPushedX || iy !== lastPushedY) {
-              cGeometry.push(ix, iy);
-              lastPushedX = ix;
-              lastPushedY = iy;
-            }
-          }
-        } else {
-          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
-          if (ix !== lastPushedX || iy !== lastPushedY) {
-            cGeometry.push(ix, iy);
-            lastPushedX = ix;
-            lastPushedY = iy;
-          }
-        }
+    for (let edge = 0; edge < 4; ++edge) {
+      next.length = 0;
+      const n = buf.length;
+      if (n === 0) {
+        break;
       }
+
+      let px = buf[n - 2];
+      let py = buf[n - 1];
+      let pIn = isInside(px, py, edge, extent);
+      for (let i = 0; i < n; i += 2) {
+        const cx = buf[i + 0];
+        const cy = buf[i + 1];
+        const cIn = isInside(cx, cy, edge, extent);
+
+        if (cIn) {
+          if (!pIn) {
+            const [ix, iy] = intersectEdge(px, py, cx, cy, edge, extent);
+            next.push(ix, iy);
+          }
+          next.push(cx, cy);
+        } else if (pIn) {
+          const [ix, iy] = intersectEdge(px, py, cx, cy, edge, extent);
+          next.push(ix, iy);
+        }
+
+        px = cx;
+        py = cy;
+        pIn = cIn;
+      }
+
+      const tmp = buf;
+      buf = next;
+      next = tmp;
     }
 
-    // Check if we failed to push any geometry and skip it if so.
-    if ((!everInside && !loop) || cStarts[cStarts.length - 1] === cGeometry.length) {
-      cGeometry.length = checkExists(cStarts.pop());
+    if (buf.length >= 6) {
+      cStarts.push(cGeometry.length);
+      for (let i = 0; i < buf.length; ++i) {
+        cGeometry.push(buf[i]);
+      }
     }
   }
 
   return [cGeometry, cStarts];
+}
+
+function isInside(x: number, y: number, edge: number, extent: number): boolean {
+  switch (edge) {
+    case 0: return x >= 0;
+    case 1: return x <= extent;
+    case 2: return y >= 0;
+    case 3: return y <= extent;
+    default: throw new Error(`bad edge ${edge}`);
+  }
+}
+
+function intersectEdge(
+    x1: number, y1: number, x2: number, y2: number, edge: number, extent: number): Vec2 {
+  switch (edge) {
+    case 0: {
+      const t = -x1 / (x2 - x1);
+      return [0, y1 + t * (y2 - y1)];
+    }
+    case 1: {
+      const t = (extent - x1) / (x2 - x1);
+      return [extent, y1 + t * (y2 - y1)];
+    }
+    case 2: {
+      const t = -y1 / (y2 - y1);
+      return [x1 + t * (x2 - x1), 0];
+    }
+    case 3: {
+      const t = (extent - y1) / (y2 - y1);
+      return [x1 + t * (x2 - x1), extent];
+    }
+    default: throw new Error(`bad edge ${edge}`);
+  }
 }
 
 function intersectFiniteTile(

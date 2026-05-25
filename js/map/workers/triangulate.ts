@@ -10,60 +10,112 @@ export interface Triangles {
   index: number[];
 }
 
+interface Ring {
+  begin: number;
+  end: number;
+  area: number;
+  bboxMinX: number;
+  bboxMinY: number;
+  bboxMaxX: number;
+  bboxMaxY: number;
+}
+
 export function triangulateMb(
   geometry: number[],
   starts: number[],
   maxTriangleLengthMeters: number,
 ): Triangles {
-  // We need to figure out what's an exterior and what's a ring. We do so by calculating the sign of
-  // the polygon's area.
   starts.push(geometry.length);
-  const groupedStarts = [];
+  const rings: Ring[] = [];
   for (let i = 1; i < starts.length; ++i) {
     const begin = starts[i - 1];
     const end = starts[i];
+    if (end - begin < 6) {
+      continue;
+    }
 
     let area = 0;
-    for (let i = begin + 2; i < end; i += 2) {
-      area += (geometry[i + 0] - geometry[i - 2]) * (geometry[i - 1] + geometry[i + 1]);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let j = begin; j < end; j += 2) {
+      const x = geometry[j];
+      const y = geometry[j + 1];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    for (let j = begin + 2; j < end; j += 2) {
+      area += (geometry[j] - geometry[j - 2]) * (geometry[j - 1] + geometry[j + 1]);
     }
     area +=
-        (geometry[begin + 0] - geometry[end - 2])
+        (geometry[begin] - geometry[end - 2])
             * (geometry[end - 1] + geometry[begin + 1]);
 
-    if (area > 0) {
-      // close the last exterior group
-      if (groupedStarts.length > 0) {
-        groupedStarts[groupedStarts.length - 1].push(begin);
-      }
-      // push on a new exterior ring
-      groupedStarts.push([begin]);
-    } else if (groupedStarts.length > 0 && area < 0) {
-      // if we haven't pushed any starts then there's no point making a hole
-      groupedStarts[groupedStarts.length - 1].push(begin);
+    if (area === 0) {
+      continue;
     }
+
+    rings.push({begin, end, area, bboxMinX: minX, bboxMinY: minY, bboxMaxX: maxX, bboxMaxY: maxY});
   }
 
-  if (groupedStarts.length === 0) {
+  const exteriors = rings.filter(r => r.area > 0);
+  const holes = rings.filter(r => r.area < 0);
+  if (exteriors.length === 0) {
     return {geometry: [], index: []};
   }
 
-  // close the last exterior group
-  groupedStarts[groupedStarts.length - 1].push(geometry.length);
+  // Assign each hole to the smallest-area exterior that contains it. Without this, holes
+  // get attached to the nearest exterior in MVT order, which can leave earcut producing
+  // overlapping triangles when one feature contains multiple polygons.
+  const holesByExterior = new Map<Ring, Ring[]>();
+  for (const e of exteriors) {
+    holesByExterior.set(e, []);
+  }
+  for (const hole of holes) {
+    const hx = geometry[hole.begin];
+    const hy = geometry[hole.begin + 1];
+    let best: Ring | undefined;
+    let bestArea = Infinity;
+    for (const e of exteriors) {
+      if (hx < e.bboxMinX || hx > e.bboxMaxX || hy < e.bboxMinY || hy > e.bboxMaxY) {
+        continue;
+      }
+      if (!pointInRing(geometry, e, hx, hy)) {
+        continue;
+      }
+      if (e.area < bestArea) {
+        best = e;
+        bestArea = e.area;
+      }
+    }
+    if (best !== undefined) {
+      checkExists(holesByExterior.get(best)).push(hole);
+    }
+  }
 
-  // Earcut each exterior and its holes. We have to do a bunch of indice mapping and unmapping to
-  // reuse the geometry.
-  const allIndices = [];
-  for (const starts of groupedStarts) {
-    const begin = checkExists(starts.shift());
-    const end = checkExists(starts.pop());
-    for (let i = 0; i < starts.length; ++i) {
-      starts[i] = (starts[i] - begin) / 2;
+  const allIndices: number[] = [];
+  for (const exterior of exteriors) {
+    const exteriorHoles = checkExists(holesByExterior.get(exterior));
+
+    const vertices: number[] = [];
+    const originalIndices: number[] = [];
+    const holeStarts: number[] = [];
+
+    for (let j = exterior.begin; j < exterior.end; j += 2) {
+      vertices.push(geometry[j], geometry[j + 1]);
+      originalIndices.push(j / 2);
+    }
+    for (const hole of exteriorHoles) {
+      holeStarts.push(vertices.length / 2);
+      for (let j = hole.begin; j < hole.end; j += 2) {
+        vertices.push(geometry[j], geometry[j + 1]);
+        originalIndices.push(j / 2);
+      }
     }
 
-    const index = earcut(geometry.slice(begin, end), starts);
-    for (const i of index) {
-      allIndices.push(begin / 2 + i);
+    const earcutIndices = earcut(vertices, holeStarts);
+    for (const i of earcutIndices) {
+      allIndices.push(originalIndices[i]);
     }
   }
 
@@ -73,6 +125,23 @@ export function triangulateMb(
     allIndices,
     maxLengthRadians * maxLengthRadians,
   );
+}
+
+function pointInRing(geometry: number[], ring: Ring, x: number, y: number): boolean {
+  let inside = false;
+  let jx = geometry[ring.end - 2];
+  let jy = geometry[ring.end - 1];
+  for (let i = ring.begin; i < ring.end; i += 2) {
+    const ix = geometry[i];
+    const iy = geometry[i + 1];
+    if (((iy > y) !== (jy > y))
+        && x < (jx - ix) * (y - iy) / (jy - iy) + ix) {
+      inside = !inside;
+    }
+    jx = ix;
+    jy = iy;
+  }
+  return inside;
 }
 
 function subdivideBigTriangles(
