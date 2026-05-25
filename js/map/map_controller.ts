@@ -46,7 +46,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   private area: Vec2;
   readonly camera: Camera;
   private readonly dialog: DialogService;
-  private initialCameraArgs: LatLngRect|LatLngZoom|undefined;
   private lastCameraArgs: LatLngRect|LatLngZoom|undefined;
   private readonly canvas: HTMLCanvasElement;
   private readonly dataChangedDebouncer: Debouncer;
@@ -67,7 +66,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.area = [-1, -1];
     this.camera = new Camera(0, 0, -1);
     this.dialog = response.deps.services.dialog;
-    this.initialCameraArgs = response.args.camera;
     this.lastCameraArgs = response.args.camera;
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
@@ -125,7 +123,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   }
 
   updateArgs(newArgs: Args): void {
-    if (newArgs.camera && newArgs.camera !== this.initialCameraArgs) {
+    if (newArgs.camera && newArgs.camera !== this.lastCameraArgs) {
+      this.lastCameraArgs = newArgs.camera;
       this.setCamera(newArgs.camera);
     }
     this.enterIdle();
