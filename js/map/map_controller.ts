@@ -15,7 +15,7 @@ import { Copyright, LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types'
 import { Planner } from './rendering/planner';
 import { Renderer } from './rendering/renderer';
 
-import { Camera, unprojectS2LatLng } from './camera';
+import { Camera } from './camera';
 import { CopyrightDialog } from './copyright_dialog';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from './events';
 import { Layer } from './layer';
@@ -208,8 +208,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   click(pageX: number, pageY: number, contextual: boolean): void {
     const offsetX = pageX - this.screenArea.left;
     const offsetY = pageY - this.screenArea.top;
-    const point = this.clientToWorld(offsetX, offsetY)
-    const ll = unprojectS2LatLng(point[0], point[1]);
+    const ll = this.camera.unprojectScreen(
+        offsetX, offsetY, this.screenArea.width, this.screenArea.height);
     // On mobile we don't get hover events, so we won't have previously hovered.
     for (const layer of this.layers) {
       if (layer.hover(ll, this)) {
@@ -227,8 +227,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   hover(pageX: number, pageY: number): void {
     const offsetX = pageX - this.screenArea.left;
     const offsetY = pageY - this.screenArea.top;
-    const point = this.clientToWorld(offsetX, offsetY);
-    const ll = unprojectS2LatLng(point[0], point[1]);
+    const ll = this.camera.unprojectScreen(
+        offsetX, offsetY, this.screenArea.width, this.screenArea.height);
     for (const layer of this.layers) {
       if (layer.hover(ll, this)) {
         break;
@@ -246,17 +246,23 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.dialog.display(CopyrightDialog({copyrights: unique}));
   }
 
-  pan(dx: number, dy: number): void {
+  pan(lastPageX: number, lastPageY: number, currPageX: number, currPageY: number): void {
     this.isIdle = false;
-    this.camera.translate([dx, dy]);
+    this.camera.pan(
+        [lastPageX - this.screenArea.left, lastPageY - this.screenArea.top],
+        [currPageX - this.screenArea.left, currPageY - this.screenArea.top],
+        this.screenArea.width,
+        this.screenArea.height);
     this.nextRender = RenderType.CameraChange;
   }
 
   zoom(amount: number, pageX: number, pageY: number): void {
     this.isIdle = false;
-    const offsetX = pageX - this.screenArea.left;
-    const offsetY = pageY - this.screenArea.top;
-    this.camera.linearZoom(Math.log2(amount), this.screenToRelativeCoord(offsetX, offsetY));
+    this.camera.linearZoom(
+        Math.log2(amount),
+        [pageX - this.screenArea.left, pageY - this.screenArea.top],
+        this.screenArea.width,
+        this.screenArea.height);
     this.nextRender = RenderType.CameraChange;
     this.trigger(ZOOMED, {});
   }
@@ -264,9 +270,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   private wheel(e: WheelEvent): void {
     e.preventDefault();
 
-    const offsetX = e.pageX - this.screenArea.left;
-    const offsetY = e.pageY - this.screenArea.top;
-    this.camera.linearZoom(-0.01 * e.deltaY, this.screenToRelativeCoord(offsetX, offsetY));
+    this.camera.linearZoom(
+        -0.01 * e.deltaY,
+        [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
+        this.screenArea.width,
+        this.screenArea.height);
     this.nextRender = RenderType.CameraChange;
     this.wheelDebouncer.trigger();
     this.trigger(ZOOMED, {});
@@ -289,21 +297,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
 
   private notifyDataChanged(): void {
     this.trigger(DATA_CHANGED, {});
-  }
-
-  private clientToWorld(offsetX: number, offsetY: number): Vec2 {
-    const center = this.camera.centerPixel;
-    const client = this.screenToRelativeCoord(offsetX, offsetY);
-    return [
-      center[0] + client[0] * this.camera.inverseWorldRadius,
-      center[1] + client[1] * this.camera.inverseWorldRadius,
-    ];
-  }
-
-  private screenToRelativeCoord(offsetX: number, offsetY: number): Vec2 {
-    const x = offsetX - this.screenArea.width / 2;
-    const y = this.screenArea.height / 2 - offsetY;
-    return [x, y];
   }
 
   private render(): void {

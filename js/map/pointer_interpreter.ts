@@ -2,7 +2,7 @@ interface PointerListener {
   click(pageX: number, pageY: number, contextual: boolean): void;
   hover(pageX: number, pageY: number): void;
   idle(): void;
-  pan(dx: number, dy: number): void;
+  pan(lastPageX: number, lastPageY: number, currPageX: number, currPageY: number): void;
   zoom(amount: number, pageX: number, pageY: number): void;
 }
 
@@ -60,7 +60,7 @@ export class PointerInterpreter {
 
     if (this.pointers.size === 1) {
       const [last] = this.pointers.values();
-      this.listener.pan(last.pageX - e.pageX, -(last.pageY - e.pageY));
+      this.listener.pan(last.pageX, last.pageY, e.pageX, e.pageY);
 
       if (this.maybeClickStart) {
         const d2 = distance2(this.maybeClickStart, e);

@@ -53,24 +53,55 @@ export class Camera {
     this._inverseWorldRadius = 1 / this.worldRadius;
   }
 
-  linearZoom(dZ: number, relativePixels: Vec2): void {
+  linearZoom(dZ: number, cursorOffset: Vec2, widthPx: number, heightPx: number): void {
     const nz = clamp(this._zoom + dZ, ZOOM_MIN, ZOOM_MAX);
     if (this._zoom === nz) {
       return;
     }
 
+    if (this.flattenFactor >= 1) {
+      this._zoom = nz;
+      this._inverseWorldRadius = 1 / this.worldRadius;
+
+      const deltaScale = Math.pow(2, dZ);
+      const relX = cursorOffset[0] - widthPx / 2;
+      const relY = heightPx / 2 - cursorOffset[1];
+      const dX = (deltaScale - 1) * relX;
+      const dY = (deltaScale - 1) * relY;
+
+      const centerPixel = projectS2LatLng(this._center);
+      const worldYPixel = centerPixel[1] + dY * this._inverseWorldRadius;
+      const newLat = Math.asin(Math.tanh(worldYPixel * Math.PI));
+      const dLng = Math.PI * dX * this._inverseWorldRadius;
+      this._center = S2LatLng.fromRadians(newLat, this._center.lngRadians() + dLng);
+      return;
+    }
+
+    // Globe: ray-cast the cursor before and after the zoom and rotate the
+    // camera so the pre-zoom sphere point ends up back under the cursor.
+    const ndc = screenToNdc(cursorOffset[0], cursorOffset[1], widthPx, heightPx);
+    const preFrame = this.sphericalFrame(widthPx, heightPx);
+    const before = raycastUnitSphere(ndc, preFrame);
+
     this._zoom = nz;
     this._inverseWorldRadius = 1 / this.worldRadius;
 
-    const deltaScale = Math.pow(2, dZ);
-    const dX = (deltaScale - 1) * relativePixels[0];
-    const dY = (deltaScale - 1) * relativePixels[1];
+    const postFrame = this.sphericalFrame(widthPx, heightPx);
+    const after = raycastUnitSphere(ndc, postFrame);
 
-    const centerPixel = projectS2LatLng(this._center);
-    const worldYPixel = centerPixel[1] + dY * this._inverseWorldRadius;
-    const newLat = Math.asin(Math.tanh(worldYPixel * Math.PI));
-    const dLng = Math.PI * dX * this._inverseWorldRadius;
-    this._center = S2LatLng.fromRadians(newLat, this._center.lngRadians() + dLng);
+    const lat = this._center.latRadians();
+    const lng = this._center.lngRadians();
+    const center: Vec3 = [
+      Math.cos(lat) * Math.cos(lng),
+      Math.sin(lat),
+      Math.cos(lat) * Math.sin(lng),
+    ];
+    const rotated = rotateFromTo(center, after, before);
+    const newLat = clamp(
+        Math.asin(clamp(rotated[1], -1, 1)),
+        -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS);
+    const newLng = Math.atan2(rotated[2], rotated[0]);
+    this._center = S2LatLng.fromRadians(newLat, newLng);
   }
 
   sphericalMvp(viewportHeightPx: number, viewportWidthPx: number): Float32Array {
@@ -107,6 +138,79 @@ export class Camera {
     this._center = S2LatLng.fromRadians(clampedNewLat, wrappedNewLng);
   }
 
+  // Pan from `last` to `curr` in canvas-offset pixels. In globe mode this is a
+  // trackball rotation that keeps the sphere point under the cursor pinned to
+  // the cursor; in mercator mode it's a straight pixel-delta translation.
+  pan(last: Vec2, curr: Vec2, widthPx: number, heightPx: number): void {
+    if (this.flattenFactor >= 1) {
+      this.translate([last[0] - curr[0], curr[1] - last[1]]);
+      return;
+    }
+
+    const frame = this.sphericalFrame(widthPx, heightPx);
+    const p0 = raycastUnitSphere(
+        screenToNdc(last[0], last[1], widthPx, heightPx), frame);
+    const p1 = raycastUnitSphere(
+        screenToNdc(curr[0], curr[1], widthPx, heightPx), frame);
+
+    const lat = this._center.latRadians();
+    const lng = this._center.lngRadians();
+    const center: Vec3 = [
+      Math.cos(lat) * Math.cos(lng),
+      Math.sin(lat),
+      Math.cos(lat) * Math.sin(lng),
+    ];
+    const rotated = rotateFromTo(center, p1, p0);
+
+    const newLat = Math.asin(clamp(rotated[1], -1, 1));
+    const newLng = Math.atan2(rotated[2], rotated[0]);
+    const clampedLat = clamp(newLat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS);
+    const wrappedLng = (newLng + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+    this._center = S2LatLng.fromRadians(clampedLat, wrappedLng);
+  }
+
+  // Convert a canvas-offset pixel to a lat/lng using the actual projection in
+  // use (spherical when not fully flattened, mercator otherwise).
+  unprojectScreen(offsetX: number, offsetY: number, widthPx: number, heightPx: number): S2LatLng {
+    if (this.flattenFactor >= 1) {
+      const x = (offsetX - widthPx / 2) * this._inverseWorldRadius + this.centerPixel[0];
+      const y = (heightPx / 2 - offsetY) * this._inverseWorldRadius + this.centerPixel[1];
+      return unprojectS2LatLng(x, y);
+    }
+    const frame = this.sphericalFrame(widthPx, heightPx);
+    const p = raycastUnitSphere(
+        screenToNdc(offsetX, offsetY, widthPx, heightPx), frame);
+    return S2LatLng.fromRadians(Math.asin(clamp(p[1], -1, 1)), Math.atan2(p[2], p[0]));
+  }
+
+  private sphericalFrame(widthPx: number, heightPx: number): SphericalFrame {
+    const lat = this._center.latRadians();
+    const lng = this._center.lngRadians();
+    const cosLat = Math.cos(lat);
+    const sinLat = Math.sin(lat);
+    const cosLng = Math.cos(lng);
+    const sinLng = Math.sin(lng);
+
+    const viewportRadius = Math.PI * heightPx * this._inverseWorldRadius / 2;
+    const distance = viewportRadius / Math.tan(FOV / 2);
+    const scale = 1 + distance;
+
+    const zAxis: Vec3 = [cosLat * cosLng, sinLat, cosLat * sinLng];
+    const xAxis: Vec3 = [-sinLng, 0, cosLng];
+    const yAxis: Vec3 = [-cosLng * sinLat, cosLat, -sinLng * sinLat];
+    const eye: Vec3 = [zAxis[0] * scale, zAxis[1] * scale, zAxis[2] * scale];
+
+    return {
+      eye,
+      scale,
+      xAxis,
+      yAxis,
+      zAxis,
+      halfTanFov: Math.tan(FOV / 2),
+      aspect: widthPx / heightPx,
+    };
+  }
+
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
     const centerPixel = projectS2LatLng(this._center);
     const dY = heightPx * this._inverseWorldRadius / 2;
@@ -124,28 +228,10 @@ export class Camera {
     // Spherical: raycast a handful of screen-perimeter points to find what
     // part of the sphere is visible. Falls back to the silhouette point when
     // the ray misses (i.e., that corner of the screen looks at the skybox).
-    const latC = this._center.latRadians();
-    const cosLatC = Math.cos(latC);
-    const sinLatC = Math.sin(latC);
-    const cosLngC = Math.cos(lngC);
-    const sinLngC = Math.sin(lngC);
-
-    const viewportRadius = Math.PI * heightPx * this._inverseWorldRadius / 2;
-    const distance = viewportRadius / Math.tan(FOV / 2);
-    const scale = 1 + distance;
-    const cosThetaT = 1 / scale;
+    const frame = this.sphericalFrame(widthPx, heightPx);
+    const cosLatC = Math.cos(this._center.latRadians());
+    const cosThetaT = 1 / frame.scale;
     const sinThetaT = Math.sqrt(Math.max(0, 1 - cosThetaT * cosThetaT));
-
-    const zAxis: [number, number, number] =
-        [cosLatC * cosLngC, sinLatC, cosLatC * sinLngC];
-    const xAxis: [number, number, number] = [-sinLngC, 0, cosLngC];
-    const yAxis: [number, number, number] =
-        [-cosLngC * sinLatC, cosLatC, -sinLngC * sinLatC];
-    const eye: [number, number, number] =
-        [zAxis[0] * scale, zAxis[1] * scale, zAxis[2] * scale];
-
-    const halfTanFov = Math.tan(FOV / 2);
-    const aspect = widthPx / heightPx;
 
     const samples: ReadonlyArray<readonly [number, number]> = [
       [-1, -1], [0, -1], [1, -1],
@@ -160,46 +246,8 @@ export class Camera {
     let coversPole = false;
 
     for (const [sx, sy] of samples) {
-      const cx = sx * halfTanFov * aspect;
-      const cy = sy * halfTanFov;
-      const dx = xAxis[0] * cx + yAxis[0] * cy - zAxis[0];
-      const dy = xAxis[1] * cx + yAxis[1] * cy - zAxis[1];
-      const dz = xAxis[2] * cx + yAxis[2] * cy - zAxis[2];
-
-      const a = dx * dx + dy * dy + dz * dz;
-      const b = 2 * (eye[0] * dx + eye[1] * dy + eye[2] * dz);
-      const c = scale * scale - 1;
-      const disc = b * b - 4 * a * c;
-
-      let px: number;
-      let py: number;
-      let pz: number;
-      if (disc >= 0) {
-        const t = (-b - Math.sqrt(disc)) / (2 * a);
-        px = eye[0] + t * dx;
-        py = eye[1] + t * dy;
-        pz = eye[2] + t * dz;
-      } else {
-        // Miss: project ray direction onto the plane perpendicular to the
-        // camera axis and use the silhouette point in that direction.
-        const dn = Math.sqrt(a);
-        const ndx = dx / dn;
-        const ndy = dy / dn;
-        const ndz = dz / dn;
-        const dotZ = ndx * zAxis[0] + ndy * zAxis[1] + ndz * zAxis[2];
-        let perpX = ndx - dotZ * zAxis[0];
-        let perpY = ndy - dotZ * zAxis[1];
-        let perpZ = ndz - dotZ * zAxis[2];
-        const perpN = Math.sqrt(perpX * perpX + perpY * perpY + perpZ * perpZ);
-        perpX /= perpN;
-        perpY /= perpN;
-        perpZ /= perpN;
-        px = cosThetaT * zAxis[0] + sinThetaT * perpX;
-        py = cosThetaT * zAxis[1] + sinThetaT * perpY;
-        pz = cosThetaT * zAxis[2] + sinThetaT * perpZ;
-      }
-
-      const lat = Math.asin(Math.max(-1, Math.min(1, py)));
+      const [px, py, pz] = raycastUnitSphere([sx, sy], frame);
+      const lat = Math.asin(clamp(py, -1, 1));
       const lng = Math.atan2(pz, px);
 
       if (lat > maxLat) maxLat = lat;
@@ -219,7 +267,7 @@ export class Camera {
     if (coversPole || sinThetaT >= cosLatC) {
       minLngOff = -Math.PI;
       maxLngOff = Math.PI;
-      if (latC >= 0) {
+      if (this._center.latRadians() >= 0) {
         maxLat = MERCATOR_MAX_LAT_RADIANS;
       } else {
         minLat = -MERCATOR_MAX_LAT_RADIANS;
@@ -236,6 +284,91 @@ export class Camera {
                 MERCATOR_MAX_LAT_RADIANS, Math.max(maxLat, mercatorHighLat)),
             lngC + Math.max(maxLngOff, dLng)));
   }
+}
+
+type Vec3 = [number, number, number];
+
+interface SphericalFrame {
+  eye: Vec3;
+  scale: number;
+  xAxis: Vec3;
+  yAxis: Vec3;
+  zAxis: Vec3;
+  halfTanFov: number;
+  aspect: number;
+}
+
+function screenToNdc(offsetX: number, offsetY: number, widthPx: number, heightPx: number): Vec2 {
+  return [(offsetX - widthPx / 2) / (widthPx / 2), (heightPx / 2 - offsetY) / (heightPx / 2)];
+}
+
+// Cast a ray from the camera through normalized screen coords (sx,sy in [-1,1])
+// at the unit sphere. Returns the closer intersection, or the silhouette point
+// in the ray's direction when the ray misses.
+function raycastUnitSphere(ndc: Vec2, frame: SphericalFrame): Vec3 {
+  const {eye, scale, xAxis, yAxis, zAxis, halfTanFov, aspect} = frame;
+  const cx = ndc[0] * halfTanFov * aspect;
+  const cy = ndc[1] * halfTanFov;
+  const dx = xAxis[0] * cx + yAxis[0] * cy - zAxis[0];
+  const dy = xAxis[1] * cx + yAxis[1] * cy - zAxis[1];
+  const dz = xAxis[2] * cx + yAxis[2] * cy - zAxis[2];
+
+  const a = dx * dx + dy * dy + dz * dz;
+  const b = 2 * (eye[0] * dx + eye[1] * dy + eye[2] * dz);
+  const c = scale * scale - 1;
+  const disc = b * b - 4 * a * c;
+
+  if (disc >= 0) {
+    const t = (-b - Math.sqrt(disc)) / (2 * a);
+    return [eye[0] + t * dx, eye[1] + t * dy, eye[2] + t * dz];
+  }
+
+  const cosThetaT = 1 / scale;
+  const sinThetaT = Math.sqrt(Math.max(0, 1 - cosThetaT * cosThetaT));
+  const dn = Math.sqrt(a);
+  const ndx = dx / dn;
+  const ndy = dy / dn;
+  const ndz = dz / dn;
+  const dotZ = ndx * zAxis[0] + ndy * zAxis[1] + ndz * zAxis[2];
+  let perpX = ndx - dotZ * zAxis[0];
+  let perpY = ndy - dotZ * zAxis[1];
+  let perpZ = ndz - dotZ * zAxis[2];
+  const perpN = Math.sqrt(perpX * perpX + perpY * perpY + perpZ * perpZ);
+  perpX /= perpN;
+  perpY /= perpN;
+  perpZ /= perpN;
+  return [
+    cosThetaT * zAxis[0] + sinThetaT * perpX,
+    cosThetaT * zAxis[1] + sinThetaT * perpY,
+    cosThetaT * zAxis[2] + sinThetaT * perpZ,
+  ];
+}
+
+// Rotate `v` by the shortest rotation that takes `from` to `to`. All inputs are
+// unit vectors.
+function rotateFromTo(v: Vec3, from: Vec3, to: Vec3): Vec3 {
+  const ax = from[1] * to[2] - from[2] * to[1];
+  const ay = from[2] * to[0] - from[0] * to[2];
+  const az = from[0] * to[1] - from[1] * to[0];
+  const sinAngle = Math.sqrt(ax * ax + ay * ay + az * az);
+  if (sinAngle < 1e-9) {
+    return v;
+  }
+  const cosAngle = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+  const kx = ax / sinAngle;
+  const ky = ay / sinAngle;
+  const kz = az / sinAngle;
+  // Rodrigues' rotation formula
+  const dot = kx * v[0] + ky * v[1] + kz * v[2];
+  const oneMinusCos = 1 - cosAngle;
+  const cx = ky * v[2] - kz * v[1];
+  const cy = kz * v[0] - kx * v[2];
+  const cz = kx * v[1] - ky * v[0];
+  return [
+    v[0] * cosAngle + cx * sinAngle + kx * dot * oneMinusCos,
+    v[1] * cosAngle + cy * sinAngle + ky * dot * oneMinusCos,
+    v[2] * cosAngle + cz * sinAngle + kz * dot * oneMinusCos,
+  ];
 }
 
 export function projectE7Array(llE7: Int32Array): Float64Array {
