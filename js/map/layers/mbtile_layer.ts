@@ -563,10 +563,15 @@ export const NATURE: Readonly<Style> = {
       lines: [
         {
           // Country borders: admin_level 2 (and any lower disputed/supranational levels).
+          // Skip maritime boundaries so we don't trace the offshore sovereignty line.
           filters: [{
             match: 'less_than',
             key: 'admin_level',
             value: 3,
+          }, {
+            match: 'number_equals',
+            key: 'maritime',
+            value: 0,
           }],
           fill: 0x55407099 as RgbaU32,
           stroke: 0x55407055 as RgbaU32,
@@ -603,6 +608,10 @@ export const NATURE: Readonly<Style> = {
             match: 'number_equals',
             key: 'admin_level',
             value: 4,
+          }, {
+            match: 'number_equals',
+            key: 'maritime',
+            value: 0,
           }],
           fill: 0x6a587ecc as RgbaU32,
           stroke: 0x6a587e77 as RgbaU32,
@@ -934,7 +943,7 @@ export const NATURE: Readonly<Style> = {
           ],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.45,
+          textScale: 0.3,
           z: Z_OVERLAY_TEXT + 0.2,
         },
       ],
@@ -985,8 +994,29 @@ export const NATURE: Readonly<Style> = {
           ],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.45,
+          textScale: 0.4,
           z: Z_OVERLAY_TEXT + 0.2,
+        },
+        {
+          // Only the very top-tier cities at this zoom — capitals and a few peers.
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'city',
+              ],
+            },
+            {
+              match: 'less_than',
+              key: 'rank',
+              value: 3,
+            },
+          ],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.35,
+          z: Z_OVERLAY_TEXT + 0.1,
         },
       ],
       polygons: [],
@@ -999,30 +1029,44 @@ export const NATURE: Readonly<Style> = {
       lines: [],
       points: [
         {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
-              'city',
-            ],
-          }],
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'city',
+              ],
+            },
+            {
+              match: 'less_than',
+              key: 'rank',
+              value: 8,
+            },
+          ],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.4,
           z: Z_OVERLAY_TEXT + 0.1,
         },
         {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
-              'province',
-              'state',
-            ],
-          }],
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'province',
+                'state',
+              ],
+            },
+            {
+              match: 'less_than',
+              key: 'rank',
+              value: 4,
+            },
+          ],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.6,
+          textScale: 0.45,
           z: Z_OVERLAY_TEXT + 0.11,
         },
       ],
@@ -1042,6 +1086,8 @@ export const NATURE: Readonly<Style> = {
             value: [
               'city',
               'town',
+              'village',
+              'suburb',
             ],
           }],
           textFill: 0x000000FF as RgbaU32,
