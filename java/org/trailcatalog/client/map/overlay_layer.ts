@@ -3,6 +3,8 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectS2LatLng, projectS2Loop } from 'js/map/camera';
 import { LatLng, RgbaU32, Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
+import { BillboardProgram } from 'js/map/rendering/billboard_program';
+import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -26,6 +28,8 @@ export class OverlayLayer extends Layer {
   private blueIcon: WebGLTexture|undefined;
   private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
+  private lastOverlays: Overlays;
+  private scratchBuffer: ArrayBuffer;
 
   constructor(overlays: Overlays, private readonly renderer: Renderer) {
     super();
@@ -36,6 +40,8 @@ export class OverlayLayer extends Layer {
       generation: -1,
       drawables: [],
     };
+    this.lastOverlays = {};
+    this.scratchBuffer = new ArrayBuffer(64 * 1024);
 
     fetch("/static/images/icons/bear-face.png")
         .then(response => {
@@ -71,7 +77,40 @@ export class OverlayLayer extends Layer {
   }
 
   setOverlay(overlays: Overlays) {
-    const buffer = new ArrayBuffer(1024 * 1024 * 1024);
+    if (overlays.bear === this.lastOverlays.bear
+        && overlays.blueDot === this.lastOverlays.blueDot
+        && overlays.polygon === this.lastOverlays.polygon) {
+      return;
+    }
+    this.lastOverlays = overlays;
+
+    const projectedLoops: Array<{splits: number[]; vertices: Float32Array}> = [];
+    let bufferSize = 0;
+    if (overlays.bear && this.bearIcon) {
+      bufferSize += BillboardProgram.bytesNeeded();
+    }
+    if (overlays.blueDot && this.blueIcon) {
+      bufferSize += BillboardProgram.bytesNeeded();
+    }
+    if (overlays.polygon) {
+      for (let l = 0; l < overlays.polygon.numLoops(); ++l) {
+        const projected = projectS2Loop(overlays.polygon.loop(l));
+        projectedLoops.push(projected);
+        let last = 0;
+        for (const i of projected.splits) {
+          // Each split is closed by appending the first vertex, giving
+          // (i - last) / 2 + 1 vertices in the polyline.
+          bufferSize += LineProgram.bytesNeeded((i - last) / 2 + 1);
+          last = i;
+        }
+      }
+    }
+
+    if (bufferSize > this.scratchBuffer.byteLength) {
+      const capacity = Math.pow(2, Math.ceil(Math.log2(bufferSize)) + 1);
+      this.scratchBuffer = new ArrayBuffer(capacity);
+    }
+    const buffer = this.scratchBuffer;
     const drawables = [];
     let offset = 0;
 
@@ -118,35 +157,31 @@ export class OverlayLayer extends Layer {
       offset += byteSize;
     }
 
-    if (overlays.polygon) {
-      for (let l = 0; l < overlays.polygon.numLoops(); ++l) {
-        const loop = overlays.polygon.loop(l);
-        const {splits, vertices} = projectS2Loop(loop);
-        let last = 0;
-        for (const i of splits) {
-          const connected = new Float32Array(i - last + 2);
-          connected.set(vertices.subarray(last, last + i - last), 0);
-          connected[i - last + 0] = connected[0];
-          connected[i - last + 1] = connected[1];
-          const drawable =
-              this.renderer.lineProgram.plan(
-                  BOUNDARY_PALETTE.fill,
-                  BOUNDARY_PALETTE.stroke,
-                  /* radius= */ 3,
-                  /* stipple= */ false,
-                  /* z= */ 105,
-                  connected,
-                  buffer,
-                  offset,
-                  this.buffer);
-          offset += drawable.geometryByteLength;
-          drawables.push(drawable);
-          drawables.push({
-            ...drawable,
-            program: this.renderer.lineCapProgram,
-          });
-          last = i;
-        }
+    for (const {splits, vertices} of projectedLoops) {
+      let last = 0;
+      for (const i of splits) {
+        const connected = new Float32Array(i - last + 2);
+        connected.set(vertices.subarray(last, last + i - last), 0);
+        connected[i - last + 0] = connected[0];
+        connected[i - last + 1] = connected[1];
+        const drawable =
+            this.renderer.lineProgram.plan(
+                BOUNDARY_PALETTE.fill,
+                BOUNDARY_PALETTE.stroke,
+                /* radius= */ 3,
+                /* stipple= */ false,
+                /* z= */ 105,
+                connected,
+                buffer,
+                offset,
+                this.buffer);
+        offset += drawable.geometryByteLength;
+        drawables.push(drawable);
+        drawables.push({
+          ...drawable,
+          program: this.renderer.lineCapProgram,
+        });
+        last = i;
       }
     }
 

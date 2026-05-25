@@ -18,6 +18,15 @@ export const VERTEX_STRIDE =
 /** Renders instanced lines as rectangles without mitering. */
 export class LineProgram extends Program<LineProgramData> {
 
+  /**
+   * Bytes that {@link push} (and therefore {@link plan}) will write into the
+   * supplied buffer for a polyline of the given vertex count. A polyline of N
+   * vertices produces N - 1 segments.
+   */
+  static bytesNeeded(vertexCount: number): number {
+    return Math.max(0, vertexCount - 1) * VERTEX_STRIDE;
+  }
+
   static push(
       colorFill: RgbaU32,
       colorStroke: RgbaU32,

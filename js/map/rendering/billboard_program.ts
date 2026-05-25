@@ -4,7 +4,18 @@ import { RgbaU32, Vec2 } from '../common/types';
 
 import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
 
+// The instance grid is 4 cells x 4 cells, 6 vertices per cell, with 16
+// floats written per vertex by plan() (11 floats + 5 uint32s, all 4 bytes).
+const BILLBOARD_GRID_CELLS = 4 * 4;
+const BILLBOARD_VERTS_PER_CELL = 6;
+const BILLBOARD_FLOATS_PER_VERT = 16;
+
 export class BillboardProgram extends Program<BillboardProgramData> {
+
+  /** Bytes that {@link plan} will write into the supplied buffer. */
+  static bytesNeeded(): number {
+    return 4 * BILLBOARD_GRID_CELLS * BILLBOARD_VERTS_PER_CELL * BILLBOARD_FLOATS_PER_VERT;
+  }
 
   private readonly billboardData: Float32Array;
 
