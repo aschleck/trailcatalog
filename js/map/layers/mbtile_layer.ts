@@ -556,6 +556,65 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
+      layerName: 'boundary',
+      minZoom: 0,
+      maxZoom: 3,
+      lineTexts: [],
+      lines: [
+        {
+          // Country borders: admin_level 2 (and any lower disputed/supranational levels).
+          filters: [{
+            match: 'less_than',
+            key: 'admin_level',
+            value: 3,
+          }],
+          fill: 0x55407099 as RgbaU32,
+          stroke: 0x55407055 as RgbaU32,
+          radius: 0.6,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN + 0.9,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'boundary',
+      minZoom: 3,
+      maxZoom: 31,
+      lineTexts: [],
+      lines: [
+        {
+          // Country borders (repeated so they keep drawing at state-visible zooms).
+          filters: [{
+            match: 'less_than',
+            key: 'admin_level',
+            value: 3,
+          }],
+          fill: 0x55407099 as RgbaU32,
+          stroke: 0x55407055 as RgbaU32,
+          radius: 0.6,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN + 0.9,
+        },
+        {
+          // State / province borders.
+          filters: [{
+            match: 'number_equals',
+            key: 'admin_level',
+            value: 4,
+          }],
+          fill: 0x6a587ecc as RgbaU32,
+          stroke: 0x6a587e77 as RgbaU32,
+          radius: 0.55,
+          stipple: false,
+          z: Z_OVERLAY_TERRAIN + 0.85,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
       layerName: 'contour_ft',
       minZoom: 0,
       maxZoom: 31,
