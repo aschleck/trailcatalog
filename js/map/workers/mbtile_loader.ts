@@ -451,7 +451,9 @@ class MbtileLoader {
           response.labels.push({
             angle,
             center,
-            graphemes: wrap(toGraphemes(text)),
+            // Line labels render rotated along the line direction. Wrapping turns them into
+            // a tilted multi-line block which looks wrong; keep them single-line.
+            graphemes: toGraphemes(text),
             fill: style.fill,
             stroke: style.stroke,
             scale: style.scale,

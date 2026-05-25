@@ -21,14 +21,50 @@ interface LoadedTile {
   drawables: Drawable[];
   glGeometryBuffer: WebGLBuffer;
   glIndexBuffer: WebGLBuffer;
-  labels: IndexedLabel[];
+  labelKeys: string[];
 }
 
 interface IndexedLabel extends Label {
   id: number;
+  key: string;
+  owners: Set<string>;
   bound: Rect;
   collidedMinZoom: number;
   radius: Vec2;
+}
+
+function tileKey(id: TileId): string {
+  return `${id.zoom},${id.x},${id.y}`;
+}
+
+// Extra pixel padding applied between labels in collision math. SAME_TEXT_PAD_PX is the larger
+// gap enforced between labels with identical text. DIFFERENT_TEXT_PAD_PX is the breathing room
+// between any pair, so visually-close labels (e.g., a tilted river or lake name next to a
+// horizontal state name) get one suppressed even when their tight AABBs don't quite intersect.
+// The label bound is sized to SAME_TEXT_PAD_PX (the larger value) so queryRect finds the
+// candidates for both cases.
+const SAME_TEXT_PAD_PX = 384;
+const DIFFERENT_TEXT_PAD_PX = 32;
+
+function labelBound(center: Vec2, w: number, h: number, minZoom: number): Rect {
+  const mzWorldSize = 256 * Math.pow(2, minZoom);
+  const hwWorld = w / mzWorldSize;
+  const hhWorld = h / mzWorldSize;
+  return {
+    low: [center[0] - hwWorld, center[1] - hhWorld] as const,
+    high: [center[0] + hwWorld, center[1] + hhWorld] as const,
+  };
+}
+
+// Quantize world coords so two tiles at different zooms projecting the same lat/lng bucket the
+// same key. MVT rounding error at zoom Z is ~1/(2^(Z+12)) world units; across adjacent zoom
+// transitions (e.g. 7↔10), the worst-case diff is ~2e-6 world units. 1/0x40000 (~3.8e-6, ≈76m at
+// equator) is coarse enough to absorb that error but fine enough that distinct point features
+// stay distinct.
+function labelKey(label: Label): string {
+  const cx = Math.round(label.center[0] * 0x40000);
+  const cy = Math.round(label.center[1] * 0x40000);
+  return `${label.graphemes.join('')}|${cx},${cy}`;
 }
 
 const PREFERRED_LANGUAGE = getLanguage().split('-')[0];
@@ -796,6 +832,57 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'place',
       minZoom: 4,
+      maxZoom: 5,
+      lineTexts: [],
+      lines: [],
+      points: [
+        {
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'country',
+              ],
+            },
+            {
+              match: 'less_than',
+              key: 'rank',
+              value: 4,
+            },
+          ],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.5,
+          z: Z_OVERLAY_TEXT + 0.3,
+        },
+        {
+          filters: [
+            {
+              match: 'string_in',
+              key: 'class',
+              value: [
+                'province',
+                'state',
+              ],
+            },
+            {
+              match: 'less_than',
+              key: 'rank',
+              value: 2,
+            },
+          ],
+          textFill: 0x000000FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.45,
+          z: Z_OVERLAY_TEXT + 0.2,
+        },
+      ],
+      polygons: [],
+    },
+    {
+      layerName: 'place',
+      minZoom: 5,
       maxZoom: 7,
       lineTexts: [],
       lines: [],
@@ -1061,8 +1148,50 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'waterway',
       minZoom: 0,
-      maxZoom: 31,
+      maxZoom: 12,
       lineTexts: [],
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'canal',
+              'river',
+              'stream',
+            ],
+          }],
+          fill: 0x52BAEBFF as RgbaU32,
+          stroke: 0x52BAEBFF as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_BASE_WATER,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'waterway',
+      minZoom: 12,
+      maxZoom: 31,
+      lineTexts: [{
+        filters: [{
+          match: 'string_in',
+          key: 'class',
+          value: [
+            'canal',
+            'river',
+            'stream',
+          ],
+        }],
+        preferred: `name:${PREFERRED_LANGUAGE}`,
+        fallback: 'name',
+        fill: 0x1288E6FF as RgbaU32,
+        stroke: 0xD0DCE5FF as RgbaU32,
+        scale: 0.4,
+        z: Z_OVERLAY_TEXT,
+      }],
       lines: [
         {
           filters: [{
@@ -1092,6 +1221,7 @@ export class MbtileLayer extends Layer {
   private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
   private fetching: boolean;
   private readonly labelIndex: WorldBoundsQuadtree<IndexedLabel>;
+  private readonly labels: Map<string, IndexedLabel>;
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private readonly textBuffer: ArrayBuffer;
@@ -1114,6 +1244,7 @@ export class MbtileLayer extends Layer {
     this.fetcher = new WorkerPool('/static/xyz_data_fetcher_worker.js', 1);
     this.fetching = false;
     this.labelIndex = new WorldBoundsQuadtree();
+    this.labels = new Map();
     this.loader = new QueuedWorkerPool('/static/mbtile_loader_worker.js', 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.textBuffer = new ArrayBuffer(4194304);
@@ -1173,8 +1304,6 @@ export class MbtileLayer extends Layer {
   }
 
   override render(planner: Planner, zoom: number): void {
-    const zoomFloor = Math.floor(zoom);
-
     // TODO(april): this results in bad behavior like low zoom tiles drawing over what should be
     // background at high zoom. We need to drop the depth buffer and just be careful about overdraw
     // with xyz tiles. Sad.
@@ -1182,33 +1311,33 @@ export class MbtileLayer extends Layer {
     // Orrrr we could add a tile wide quad at the start of every tile...? But then we need the
     // stencil buffer not depth.
     const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
-    let textByteSize = 0;
-    for (const [id, response] of sorted) {
+    for (const [, response] of sorted) {
       planner.add(response.drawables);
+    }
 
-      for (const label of response.labels) {
-        if (label.collidedMinZoom > zoom) {
-          continue;
-        } else if (label.maxZoom < zoom) {
-          continue;
-        }
-
-        const {byteSize, drawables} = GLYPHER.plan(
-            label.graphemes,
-            label.center,
-            [0, 0],
-            label.scale,
-            label.angle,
-            label.fill,
-            label.stroke,
-            label.z,
-            this.textBuffer,
-            textByteSize,
-            this.textGlBuffer,
-            this.renderer);
-        planner.add(drawables);
-        textByteSize += byteSize;
+    let textByteSize = 0;
+    for (const label of this.labels.values()) {
+      if (label.collidedMinZoom > zoom) {
+        continue;
+      } else if (label.maxZoom < zoom) {
+        continue;
       }
+
+      const {byteSize, drawables} = GLYPHER.plan(
+          label.graphemes,
+          label.center,
+          [0, 0],
+          label.scale,
+          label.angle,
+          label.fill,
+          label.stroke,
+          label.z,
+          this.textBuffer,
+          textByteSize,
+          this.textGlBuffer,
+          this.renderer);
+      planner.add(drawables);
+      textByteSize += byteSize;
     }
     this.renderer.uploadData(this.textBuffer, textByteSize, this.textGlBuffer);
 
@@ -1257,9 +1386,39 @@ export class MbtileLayer extends Layer {
     this.renderer.uploadIndices(response.index, response.index.byteLength, index);
     const drawables = [];
 
-    const labels = [];
+    const labelKeys: string[] = [];
+    const ownerKey = tileKey(response.id);
     const padding = 2;
     for (const label of response.labels) {
+      const key = labelKey(label);
+      const existing = this.labels.get(key);
+      if (existing) {
+        existing.owners.add(ownerKey);
+        labelKeys.push(key);
+
+        // Different zoom-band tile styles can produce the same point label with different
+        // [minZoom, maxZoom] ranges. Take the union so the label remains visible across all
+        // zooms where some contributing style says it should show.
+        if (label.minZoom < existing.minZoom || label.maxZoom > existing.maxZoom) {
+          const newMin = Math.min(existing.minZoom, label.minZoom);
+          const newMax = Math.max(existing.maxZoom, label.maxZoom);
+          if (newMin < existing.minZoom) {
+            // Bound scales inversely with minZoom; widening minZoom downward grows the bound.
+            this.labelIndex.delete(existing.bound);
+            const [w, h] = existing.radius;
+            existing.bound =
+                labelBound(
+                    existing.center, w + SAME_TEXT_PAD_PX, h + SAME_TEXT_PAD_PX, newMin);
+            this.labelIndex.insert(existing, existing.bound);
+          }
+          existing.minZoom = newMin;
+          existing.maxZoom = newMax;
+          existing.collidedMinZoom = newMin;
+          this.recalculateCollisionZoom(existing);
+        }
+        continue;
+      }
+
       const [wr, hr] = checkExists(GLYPHER.measurePx(label.graphemes, label.scale));
       const sin = Math.sin(label.angle);
       const cos = Math.cos(label.angle);
@@ -1268,25 +1427,26 @@ export class MbtileLayer extends Layer {
       // on another corner here.
       const w = Math.abs(wr * cos - hr * sin) + 2 * padding;
       const h = Math.abs(wr * sin + hr * cos) + 2 * padding;
-      const mzWorldSize = 256 * Math.pow(2, label.minZoom);
-      const hwWorld = w / mzWorldSize; // no divide by 2 because the world is -1 to 1
-      const hhWorld = h / mzWorldSize;
-      const maximalBound = {
-        low: [label.center[0] - hwWorld, label.center[1] - hhWorld],
-        high: [label.center[0] + hwWorld, label.center[1] + hhWorld],
-      } as const;
+      // Pad the bound by SAME_TEXT_PAD_PX so queryRect surfaces same-text neighbors at the
+      // padded collision range. radius stays at [w, h] for the actual collision math.
+      const maximalBound =
+          labelBound(
+              label.center, w + SAME_TEXT_PAD_PX, h + SAME_TEXT_PAD_PX, label.minZoom);
 
-      const indexed = {
+      const indexed: IndexedLabel = {
         ...label,
         id: ++this.lastLabelId,
+        key,
+        owners: new Set([ownerKey]),
         bound: maximalBound,
         collidedMinZoom: label.minZoom,
         radius: [w, h] as const, // no divide by 2 because the world is -1 to 1
       };
       this.recalculateCollisionZoom(indexed);
 
-      labels.push(indexed);
+      this.labels.set(key, indexed);
       this.labelIndex.insert(indexed, maximalBound);
+      labelKeys.push(key);
     }
 
     for (const line of response.lines) {
@@ -1328,7 +1488,7 @@ export class MbtileLayer extends Layer {
       glGeometryBuffer: geometry,
       glIndexBuffer: index,
       drawables,
-      labels,
+      labelKeys,
     });
     this.generation += 1;
 
@@ -1352,13 +1512,23 @@ export class MbtileLayer extends Layer {
         this.tiles.delete(id);
         this.renderer.deleteBuffer(response.glGeometryBuffer);
         this.renderer.deleteBuffer(response.glIndexBuffer);
-        
-        for (const label of response.labels) {
+
+        const ownerKey = tileKey(id);
+        for (const key of response.labelKeys) {
+          const label = this.labels.get(key);
+          if (!label) {
+            continue;
+          }
+          label.owners.delete(ownerKey);
+          if (label.owners.size > 0) {
+            continue;
+          }
+
+          this.labels.delete(key);
           affectedLabels.delete(label);
           this.labelIndex.delete(label.bound);
 
           const affected: IndexedLabel[] = [];
-          // TODO(april): we have an extra pad elsewhere...
           this.labelIndex.queryRect(label.bound, affected);
           for (const other of affected) {
             // TODO(april): can we skip labels we know we didn't affect?
@@ -1383,6 +1553,9 @@ export class MbtileLayer extends Layer {
     let ourMinZoom = label.minZoom;
     const [wr, hr] = label.radius;
     for (const other of neighbors) {
+      if (other === label) {
+        continue;
+      }
       if (label.maxZoom < other.minZoom || label.minZoom > other.maxZoom) {
         continue;
       }
@@ -1391,13 +1564,10 @@ export class MbtileLayer extends Layer {
       const collisionZoom = Math.max(ourMinZoom, other.collidedMinZoom);
       const worldSize = 256 * Math.pow(2, collisionZoom);
 
-      let extraPad;
-      if (arrays.equals(label.graphemes, other.graphemes)) {
-        extraPad = 128;
-      } else {
-        extraPad = 0;
-      }
-
+      const extraPad =
+          arrays.equals(label.graphemes, other.graphemes)
+              ? SAME_TEXT_PAD_PX
+              : DIFFERENT_TEXT_PAD_PX;
       const ourRadius = [wr / worldSize, hr / worldSize];
       const theirRadius = [other.radius[0] / worldSize, other.radius[1] / worldSize];
       const overlapX =
