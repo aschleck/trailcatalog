@@ -139,6 +139,11 @@ type Match =
 interface LoadRequest {
   kind: 'lr';
   id: TileId;
+  // Integer viewport-zoom bucket the caller wants this tile styled against.
+  // Independent of id.zoom (the fetched MVT's zoom), since spherical-mode
+  // tile fetches use a lower zoom than the viewport (commit 9af3745) but
+  // the rendered layer-style detail should still match the viewport.
+  styleZoom: number;
   data: ArrayBuffer;
 }
 
@@ -147,6 +152,9 @@ export type Request = InitializeRequest|LoadRequest;
 export interface LoadResponse {
   kind: 'lr';
   id: TileId;
+  // Echoed from the request so the layer can drop results whose styleZoom
+  // has already been superseded by a viewport change.
+  styleZoom: number;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
   labels: Label[];
@@ -249,8 +257,8 @@ class MbtileLoader {
     for (const layer of layers) {
       let layerStyle;
       for (const ls of this.style.layers) {
-        if (ls.minZoom <= request.id.zoom
-            && request.id.zoom < ls.maxZoom
+        if (ls.minZoom <= request.styleZoom
+            && request.styleZoom < ls.maxZoom
             && layer.name === ls.layerName) {
           layerStyle = ls;
           break;
@@ -382,6 +390,7 @@ class MbtileLoader {
     const response: LoadResponse = {
       kind: 'lr',
       id: request.id,
+      styleZoom: request.styleZoom,
       geometry: geometry.buffer,
       index: index.buffer,
       labels: [],

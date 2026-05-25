@@ -1284,18 +1284,27 @@ export class MbtileLayer extends Layer {
   private readonly labels: Map<string, IndexedLabel>;
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
+  // Holds the raw MVT bytes for every currently-known tile so that when the
+  // viewport's styleZoom bucket changes we can re-post each tile to the
+  // loader at the new styleZoom without re-fetching over the network. This
+  // is needed because tiles are fetched at `fetchZoom` (a cap-density-matched
+  // value that can be much lower than viewport.zoom in spherical mode, per
+  // commit 9af3745) while the layer-style detail should still track the
+  // viewport so the rendered map looks like the user's actual zoom.
+  private readonly rawBytes: HashMap<TileId, ArrayBuffer>;
   private readonly textBuffer: ArrayBuffer;
   private readonly textGlBuffer: WebGLBuffer;
   private readonly tiles: HashMap<TileId, LoadedTile>;
   private generation: number;
   private lastRenderGeneration: number;
   private lastLabelId: number;
+  private styleZoom: number;
 
   constructor(
       copyrights: Copyright[],
       url: string,
       style: Style,
-      extraZoom: number,
+      private readonly extraZoom: number,
       minZoom: number,
       maxZoom: number,
       private readonly renderer: Renderer,
@@ -1307,6 +1316,7 @@ export class MbtileLayer extends Layer {
     this.labels = new Map();
     this.loader = new QueuedWorkerPool('/static/mbtile_loader_worker.js', 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
+    this.rawBytes = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.textBuffer = new ArrayBuffer(4194304);
     this.textGlBuffer = renderer.createDataBuffer(this.textBuffer.byteLength);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
@@ -1321,6 +1331,10 @@ export class MbtileLayer extends Layer {
     this.generation = 0;
     this.lastRenderGeneration = -1;
     this.lastLabelId = -1;
+    // -1 is a sentinel: no styleZoom has been observed yet, so the first
+    // viewportChanged adopts whatever the camera reports without triggering
+    // a re-style pass (there are no cached raw bytes to re-style anyway).
+    this.styleZoom = -1;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'ltc') {
@@ -1379,8 +1393,6 @@ export class MbtileLayer extends Layer {
     for (const label of this.labels.values()) {
       if (label.collidedMinZoom > zoom) {
         continue;
-      } else if (label.maxZoom < zoom) {
-        continue;
       }
 
       const {byteSize, drawables} = GLYPHER.plan(
@@ -1417,6 +1429,26 @@ export class MbtileLayer extends Layer {
         cone,
       },
     });
+
+    // Floor of viewport zoom is a stable bucket: layerStyle.minZoom/maxZoom
+    // boundaries are all integers, so styles only need to refresh when this
+    // integer changes. Add extraZoom so layers calibrated against fetchZoom
+    // (which includes extraZoom in the fetcher) match the original tuning.
+    const newStyleZoom = Math.floor(zoom + this.extraZoom);
+    if (newStyleZoom !== this.styleZoom) {
+      this.styleZoom = newStyleZoom;
+      for (const [id, data] of this.rawBytes) {
+        // Structured-clone copies for the worker; main-thread buffer is
+        // preserved for future re-style passes.
+        const task = this.loader.post({
+          kind: 'lr',
+          id,
+          styleZoom: newStyleZoom,
+          data,
+        });
+        this.loading.set(id, task);
+      }
+    }
   }
 
   private loadRawTile(command: LoadTileCommand): void {
@@ -1425,15 +1457,25 @@ export class MbtileLayer extends Layer {
     }
 
     const id = command.id;
+    this.rawBytes.set(id, command.data);
+    // No transfer list: structured-clone gives the worker its own copy and
+    // leaves the cached buffer intact for later re-styling.
     const task = this.loader.post({
       kind: 'lr',
       id,
+      styleZoom: this.styleZoom,
       data: command.data,
-    }, [command.data]);
+    });
     this.loading.set(id, task);
   }
 
   private loadProcessedTile(response: LoadResponse): void {
+    // A new request for this tile at a different styleZoom has already gone
+    // out; discard this stale styled output.
+    if (response.styleZoom !== this.styleZoom) {
+      return;
+    }
+
     for (const label of response.labels) {
       if (!GLYPHER.measurePx(label.graphemes, label.scale)) {
         // yolo!
@@ -1441,6 +1483,12 @@ export class MbtileLayer extends Layer {
         return;
       }
     }
+
+    // If we're replacing a previously-styled entry for this tile (re-style
+    // path), tear down its GL buffers and unwind its label ownership before
+    // installing the new entry so neither leaks.
+    const affectedLabels = new Set<IndexedLabel>();
+    this.disposeStyledTile(response.id, affectedLabels);
 
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
@@ -1552,12 +1600,51 @@ export class MbtileLayer extends Layer {
       drawables,
       labelKeys,
     });
+    // Recalculate collidedMinZoom for labels whose neighbor was just removed
+    // by the dispose pass above. Done after the new labels are installed so
+    // those new labels participate in the recomputed collisions.
+    for (const label of affectedLabels) {
+      this.recalculateCollisionZoom(label);
+    }
     this.generation += 1;
 
     this.fetcher.broadcast({
       kind: 'tlr',
       id: response.id,
     });
+  }
+
+  private disposeStyledTile(id: TileId, affectedLabels: Set<IndexedLabel>): void {
+    const response = this.tiles.get(id);
+    if (!response) {
+      return;
+    }
+    this.tiles.delete(id);
+    this.renderer.deleteBuffer(response.glGeometryBuffer);
+    this.renderer.deleteBuffer(response.glIndexBuffer);
+
+    const ownerKey = tileKey(id);
+    for (const key of response.labelKeys) {
+      const label = this.labels.get(key);
+      if (!label) {
+        continue;
+      }
+      label.owners.delete(ownerKey);
+      if (label.owners.size > 0) {
+        continue;
+      }
+
+      this.labels.delete(key);
+      affectedLabels.delete(label);
+      this.labelIndex.delete(label.bound);
+
+      const affected: IndexedLabel[] = [];
+      this.labelIndex.queryRect(label.bound, affected);
+      for (const other of affected) {
+        // TODO(april): can we skip labels we know we didn't affect?
+        affectedLabels.add(other);
+      }
+    }
   }
 
   private unloadTiles(ids: TileId[]): void {
@@ -1569,35 +1656,8 @@ export class MbtileLayer extends Layer {
         task.cancel();
       }
 
-      const response = this.tiles.get(id);
-      if (response) {
-        this.tiles.delete(id);
-        this.renderer.deleteBuffer(response.glGeometryBuffer);
-        this.renderer.deleteBuffer(response.glIndexBuffer);
-
-        const ownerKey = tileKey(id);
-        for (const key of response.labelKeys) {
-          const label = this.labels.get(key);
-          if (!label) {
-            continue;
-          }
-          label.owners.delete(ownerKey);
-          if (label.owners.size > 0) {
-            continue;
-          }
-
-          this.labels.delete(key);
-          affectedLabels.delete(label);
-          this.labelIndex.delete(label.bound);
-
-          const affected: IndexedLabel[] = [];
-          this.labelIndex.queryRect(label.bound, affected);
-          for (const other of affected) {
-            // TODO(april): can we skip labels we know we didn't affect?
-            affectedLabels.add(other);
-          }
-        }
-      }
+      this.rawBytes.delete(id);
+      this.disposeStyledTile(id, affectedLabels);
     }
 
     // We recalculate after all tiles are unloaded because we may be unloading every label.
