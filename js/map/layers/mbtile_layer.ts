@@ -1345,7 +1345,8 @@ export class MbtileLayer extends Layer {
     this.lastRenderGeneration = this.generation;
   }
 
-  override viewportChanged(bounds: S2LatLngRect, zoom: number, cone?: SphericalCone): void {
+  override viewportChanged(
+      bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({
@@ -1353,7 +1354,7 @@ export class MbtileLayer extends Layer {
       viewport: {
         lat: [lat.lo(), lat.hi()],
         lng: [lng.lo(), lng.hi()],
-        zoom,
+        zoom: fetchZoom,
         cone,
       },
     });

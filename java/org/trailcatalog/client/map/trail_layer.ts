@@ -557,12 +557,12 @@ export class TrailLayer extends Layer implements Listener {
     this.generation += 1;
   }
 
-  viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+  viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
     this.viewportBounds = bounds;
     this.dataService.updateViewport({
       lat: [bounds.lat().lo(), bounds.lat().hi()],
       lng: [bounds.lng().lo(), bounds.lng().hi()],
-      zoom,
+      zoom: fetchZoom,
     });
   }
 

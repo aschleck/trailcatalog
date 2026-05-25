@@ -120,7 +120,7 @@ export class EarthSearchLayer extends Layer {
     planner.add(this.plan.drawables);
   }
 
-  override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+  override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.loader.broadcast({
@@ -128,7 +128,7 @@ export class EarthSearchLayer extends Layer {
       viewport: {
         lat: [lat.lo(), lat.hi()],
         lng: [lng.lo(), lng.hi()],
-        zoom,
+        zoom: fetchZoom,
       },
     });
   }

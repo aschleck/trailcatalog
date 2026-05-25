@@ -34,7 +34,8 @@ export abstract class Layer extends Disposable {
 
   render(planner: Planner, zoom: number): void {}
 
-  viewportChanged(bounds: S2LatLngRect, zoom: number, cone?: SphericalCone): void {}
+  viewportChanged(
+      bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {}
 }
 
 export interface EventSource {

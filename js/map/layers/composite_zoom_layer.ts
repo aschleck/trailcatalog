@@ -65,9 +65,10 @@ export class CompositeZoomLayer extends Layer {
     this.findActive()?.render(planner, zoom);
   }
 
-  override viewportChanged(bounds: S2LatLngRect, zoom: number, cone?: SphericalCone): void {
+  override viewportChanged(
+      bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     this.lastZoom = zoom;
-    this.findActive()?.viewportChanged(bounds, zoom, cone);
+    this.findActive()?.viewportChanged(bounds, zoom, fetchZoom, cone);
   }
 
   private findActive(): Layer|undefined {

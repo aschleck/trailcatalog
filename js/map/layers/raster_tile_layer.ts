@@ -159,7 +159,8 @@ export class RasterTileLayer extends Layer {
     planner.add(this.plan.drawables);
   }
 
-  override viewportChanged(bounds: S2LatLngRect, zoom: number, cone?: SphericalCone): void {
+  override viewportChanged(
+      bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({
@@ -167,7 +168,7 @@ export class RasterTileLayer extends Layer {
       viewport: {
         lat: [lat.lo(), lat.hi()],
         lng: [lng.lo(), lng.hi()],
-        zoom,
+        zoom: fetchZoom,
         cone,
       },
     });

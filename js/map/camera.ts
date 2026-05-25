@@ -154,6 +154,31 @@ export class Camera {
     return S2LatLng.fromRadians(v.lat, v.lng);
   }
 
+  // The tile zoom at which we should fetch source tiles. In mercator mode this
+  // is just `_zoom`: one screen-height of map covers heightPx/worldRadius
+  // mercator units, so tz=floor(_zoom) gives ~256-pixel tiles. In spherical
+  // mode the camera is pulled back enough to fit a cap of angular radius θₜ
+  // in the viewport, and at the same `_zoom` the screen actually shows
+  // 2·θₜ radians of arc — far more world than mercator does. Picking tz from
+  // `_zoom` directly fetches hundreds of tiny tiles to fill the cap at a pixel
+  // density the screen can't display. Matching tiles-per-screen-height gives
+  //   tz_eff = _zoom + log2(heightPx·π / (2·worldRadius·θₜ))
+  // which at z=8.5 reduces from tz=8 to tz≈5 — a 16× reduction in tiles
+  // fetched per layer with no visible loss of detail. Blended by
+  // flattenFactor so the transition into mercator mode is continuous.
+  tileFetchZoom(widthPx: number, heightPx: number): number {
+    const f = this.flattenFactor;
+    if (f >= 1) {
+      return this._zoom;
+    }
+    const viewportRadius = Math.PI * heightPx * this._inverseWorldRadius / 2;
+    const scale = 1 + viewportRadius / Math.tan(FOV / 2);
+    const thetaT = Math.max(1e-6, Math.acos(Math.min(1, 1 / scale)));
+    const sph =
+        this._zoom + Math.log2(heightPx * Math.PI / (2 * this.worldRadius * thetaT));
+    return (1 - f) * sph + f * this._zoom;
+  }
+
   // Returns the visible spherical cap as seen from the camera, suitable for
   // culling tiles that fall entirely outside the visible cone. Returns
   // undefined in fully-flat (mercator) mode, where there is no cone to test

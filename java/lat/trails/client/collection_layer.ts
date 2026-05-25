@@ -149,7 +149,7 @@ export class CollectionLayer extends Layer {
     }
   }
 
-  override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+  override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({
