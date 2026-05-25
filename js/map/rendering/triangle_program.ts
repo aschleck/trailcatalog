@@ -202,7 +202,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
         // precisely correct. However, around the edges of the visible globe the precision of the
         // depth buffer becomes insufficient and we get wonky fighting results. So we compromise by
         // using the calculated depth on the edges and the exact z layering elsewhere.
-        gl_Position.z = z * (gl_Position.z > -0.03 ? gl_Position.z : sign(gl_Position.z)) + 1.;
+        gl_Position.z = z * (gl_Position.z > -0.03 ? gl_Position.z : sign(gl_Position.z)) + (1. - z);
 
         fragFillColor = uint32ToVec4(fillColor);
         fragFillColor = vec4(fragFillColor.rgb * fragFillColor.a, fragFillColor.a);

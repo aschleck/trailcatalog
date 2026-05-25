@@ -32,7 +32,7 @@ export class Camera {
   }
 
   get flattenFactor(): number {
-    return 1;
+    return clamp((this.worldRadius - 65536) / 32768, 0, 1);
   }
 
   get inverseWorldRadius(): number {
@@ -110,12 +110,131 @@ export class Camera {
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
     const centerPixel = projectS2LatLng(this._center);
     const dY = heightPx * this._inverseWorldRadius / 2;
-    const lowLat = Math.asin(Math.tanh((centerPixel[1] - dY) * Math.PI));
-    const highLat = Math.asin(Math.tanh((centerPixel[1] + dY) * Math.PI));
+    const mercatorLowLat = Math.asin(Math.tanh((centerPixel[1] - dY) * Math.PI));
+    const mercatorHighLat = Math.asin(Math.tanh((centerPixel[1] + dY) * Math.PI));
     const dLng = Math.PI * widthPx * this._inverseWorldRadius / 2;
+    const lngC = this._center.lngRadians();
+
+    if (this.flattenFactor >= 1) {
+      return S2LatLngRect.fromPointPair(
+          S2LatLng.fromRadians(mercatorLowLat, lngC - dLng),
+          S2LatLng.fromRadians(mercatorHighLat, lngC + dLng));
+    }
+
+    // Spherical: raycast a handful of screen-perimeter points to find what
+    // part of the sphere is visible. Falls back to the silhouette point when
+    // the ray misses (i.e., that corner of the screen looks at the skybox).
+    const latC = this._center.latRadians();
+    const cosLatC = Math.cos(latC);
+    const sinLatC = Math.sin(latC);
+    const cosLngC = Math.cos(lngC);
+    const sinLngC = Math.sin(lngC);
+
+    const viewportRadius = Math.PI * heightPx * this._inverseWorldRadius / 2;
+    const distance = viewportRadius / Math.tan(FOV / 2);
+    const scale = 1 + distance;
+    const cosThetaT = 1 / scale;
+    const sinThetaT = Math.sqrt(Math.max(0, 1 - cosThetaT * cosThetaT));
+
+    const zAxis: [number, number, number] =
+        [cosLatC * cosLngC, sinLatC, cosLatC * sinLngC];
+    const xAxis: [number, number, number] = [-sinLngC, 0, cosLngC];
+    const yAxis: [number, number, number] =
+        [-cosLngC * sinLatC, cosLatC, -sinLngC * sinLatC];
+    const eye: [number, number, number] =
+        [zAxis[0] * scale, zAxis[1] * scale, zAxis[2] * scale];
+
+    const halfTanFov = Math.tan(FOV / 2);
+    const aspect = widthPx / heightPx;
+
+    const samples: ReadonlyArray<readonly [number, number]> = [
+      [-1, -1], [0, -1], [1, -1],
+      [1, 0], [1, 1], [0, 1],
+      [-1, 1], [-1, 0],
+    ];
+
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    let minLngOff = Infinity;
+    let maxLngOff = -Infinity;
+    let coversPole = false;
+
+    for (const [sx, sy] of samples) {
+      const cx = sx * halfTanFov * aspect;
+      const cy = sy * halfTanFov;
+      const dx = xAxis[0] * cx + yAxis[0] * cy - zAxis[0];
+      const dy = xAxis[1] * cx + yAxis[1] * cy - zAxis[1];
+      const dz = xAxis[2] * cx + yAxis[2] * cy - zAxis[2];
+
+      const a = dx * dx + dy * dy + dz * dz;
+      const b = 2 * (eye[0] * dx + eye[1] * dy + eye[2] * dz);
+      const c = scale * scale - 1;
+      const disc = b * b - 4 * a * c;
+
+      let px: number;
+      let py: number;
+      let pz: number;
+      if (disc >= 0) {
+        const t = (-b - Math.sqrt(disc)) / (2 * a);
+        px = eye[0] + t * dx;
+        py = eye[1] + t * dy;
+        pz = eye[2] + t * dz;
+      } else {
+        // Miss: project ray direction onto the plane perpendicular to the
+        // camera axis and use the silhouette point in that direction.
+        const dn = Math.sqrt(a);
+        const ndx = dx / dn;
+        const ndy = dy / dn;
+        const ndz = dz / dn;
+        const dotZ = ndx * zAxis[0] + ndy * zAxis[1] + ndz * zAxis[2];
+        let perpX = ndx - dotZ * zAxis[0];
+        let perpY = ndy - dotZ * zAxis[1];
+        let perpZ = ndz - dotZ * zAxis[2];
+        const perpN = Math.sqrt(perpX * perpX + perpY * perpY + perpZ * perpZ);
+        perpX /= perpN;
+        perpY /= perpN;
+        perpZ /= perpN;
+        px = cosThetaT * zAxis[0] + sinThetaT * perpX;
+        py = cosThetaT * zAxis[1] + sinThetaT * perpY;
+        pz = cosThetaT * zAxis[2] + sinThetaT * perpZ;
+      }
+
+      const lat = Math.asin(Math.max(-1, Math.min(1, py)));
+      const lng = Math.atan2(pz, px);
+
+      if (lat > maxLat) maxLat = lat;
+      if (lat < minLat) minLat = lat;
+
+      let dLngFromC = lng - lngC;
+      while (dLngFromC > Math.PI) dLngFromC -= 2 * Math.PI;
+      while (dLngFromC < -Math.PI) dLngFromC += 2 * Math.PI;
+      if (dLngFromC > maxLngOff) maxLngOff = dLngFromC;
+      if (dLngFromC < minLngOff) minLngOff = dLngFromC;
+
+      if (Math.abs(py) > 0.999) {
+        coversPole = true;
+      }
+    }
+
+    if (coversPole || sinThetaT >= cosLatC) {
+      minLngOff = -Math.PI;
+      maxLngOff = Math.PI;
+      if (latC >= 0) {
+        maxLat = MERCATOR_MAX_LAT_RADIANS;
+      } else {
+        minLat = -MERCATOR_MAX_LAT_RADIANS;
+      }
+    }
+
     return S2LatLngRect.fromPointPair(
-        S2LatLng.fromRadians(lowLat, this._center.lngRadians() - dLng),
-        S2LatLng.fromRadians(highLat, this._center.lngRadians() + dLng));
+        S2LatLng.fromRadians(
+            Math.max(
+                -MERCATOR_MAX_LAT_RADIANS, Math.min(minLat, mercatorLowLat)),
+            lngC + Math.min(minLngOff, -dLng)),
+        S2LatLng.fromRadians(
+            Math.min(
+                MERCATOR_MAX_LAT_RADIANS, Math.max(maxLat, mercatorHighLat)),
+            lngC + Math.max(maxLngOff, dLng)));
   }
 }
 
