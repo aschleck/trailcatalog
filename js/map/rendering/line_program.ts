@@ -2,7 +2,14 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { RgbaU32 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
+import {
+  COLOR_OPERATIONS,
+  Drawable,
+  FP64_OPERATIONS,
+  Program,
+  ProgramData,
+  SPHERE_OPERATIONS,
+} from './program';
 
 // We write the stipple with 4 bytes to keep the 32bit numbers aligned.
 export const VERTEX_STRIDE =
@@ -310,11 +317,11 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       out lowp float fragRadius;
       out lowp float fragStipple;
       out lowp float fragDistanceOrtho;
+      out mediump float fragBehindHorizon;
 
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
-
-      const float PI = 3.141592653589793;
+      ${SPHERE_OPERATIONS}
 
       vec2 perpendicular(vec2 v) {
         return vec2(-v.y, v.x);
@@ -341,21 +348,17 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
         // Calculate the spherical projection
-        float sinLat = tanh(center.y * PI);
-        float lat = asin(sinLat);
-        float cosLat = cos(lat);
-        float lng = center.x * PI;
-        vec4 spherical = sphericalMvp * vec4(
-            cosLat * cos(lng), // x
-            sinLat,            // y
-            cosLat * sin(lng), // z
-            1.0                // w
-        );
+        vec3 spherePos = sphereFromMercator(center);
+        vec4 spherical = sphericalMvp * vec4(spherePos, 1.0);
         spherical.xy += push * inverseHalfViewportSize * spherical.w;
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
         gl_Position.z = z * gl_Position.z + (1. - z);
+
+        // Signed horizon distance for fragment-level cull on the back of the
+        // globe — see triangle_program for context.
+        fragBehindHorizon = horizonDistance(spherePos);
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
@@ -370,16 +373,22 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       }
     `;
   const fs = `#version 300 es
+      uniform mediump float flattenFactor;
+
       in lowp vec4 fragColorFill;
       in lowp vec4 fragColorStroke;
       in lowp float fragDistanceAlong;
       in lowp float fragDistanceOrtho;
       in lowp float fragRadius;
       in lowp float fragStipple;
+      in mediump float fragBehindHorizon;
 
       out lowp vec4 fragColor;
 
       void main() {
+        if (flattenFactor < 1.0 && fragBehindHorizon < 0.0) {
+          discard;
+        }
         mediump float a =
             1. - smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 0.75 - fragRadius, 0., 1.));
         // 0 is fill, 1 is stroke

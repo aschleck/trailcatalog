@@ -210,6 +210,52 @@ export const COLOR_OPERATIONS = `
     }
 `;
 
+// Spherical-projection helpers shared by every program that projects mercator
+// positions onto the globe. Reads the standard ProgramData uniforms
+// (cameraCenter, halfWorldSize, inverseHalfViewportSize) so callers don't
+// need to plumb anything extra.
+export const SPHERE_OPERATIONS = `
+    const float SPHERE_PI = 3.141592653589793;
+    const float SPHERE_FOV = SPHERE_PI / 4.;
+
+    // Direction from globe center toward the camera, derived from the
+    // split-fp64 cameraCenter mercator coords.
+    vec3 cameraDirection() {
+      float camSinLat = tanh((cameraCenter.z + cameraCenter.w) * SPHERE_PI);
+      float camLat = asin(camSinLat);
+      float camCosLat = cos(camLat);
+      float camLng = (cameraCenter.x + cameraCenter.y) * SPHERE_PI;
+      return vec3(camCosLat * cos(camLng), camSinLat, camCosLat * sin(camLng));
+    }
+
+    // Camera distance from globe center: 1 + (distance to globe surface).
+    // halfWorldSize is in pixels per mercator half-unit; inverseHalfViewportSize.y
+    // is 1/halfHeightPx; so the ratio is the viewport's half-height in
+    // mercator units, which equals the world-units-per-radian at the equator.
+    float cameraScale() {
+      float viewportRadiusWorldUnits =
+          SPHERE_PI / halfWorldSize / inverseHalfViewportSize.y;
+      return 1. + viewportRadiusWorldUnits / tan(SPHERE_FOV / 2.);
+    }
+
+    // Convert a mercator (x, y) in [-1, 1] to a unit-sphere position.
+    vec3 sphereFromMercator(vec2 mercator) {
+      float sinLat = tanh(mercator.y * SPHERE_PI);
+      float lat = asin(sinLat);
+      float cosLat = cos(lat);
+      float lng = mercator.x * SPHERE_PI;
+      return vec3(cosLat * cos(lng), sinLat, cosLat * sin(lng));
+    }
+
+    // Signed distance from the visible-cap horizon: positive on the visible
+    // side, negative behind the globe. Pair with a fragment-shader discard
+    // when flattenFactor < 1 to cull back-of-globe geometry that survives
+    // far-plane clipping.
+    float horizonDistance(vec3 spherePos) {
+      return dot(spherePos, cameraDirection()) - 1.0 / cameraScale();
+    }
+`;
+
 /**
  * Functions from luma.gl
  * https://github.com/visgl/luma.gl/blob/a999dc6d38169cb15120935cbeab55384140f1a5/modules/shadertools/src/modules-webgl1/math/fp64/fp64-arithmetic-glsl.ts

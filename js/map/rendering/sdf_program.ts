@@ -2,7 +2,14 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
+import {
+  COLOR_OPERATIONS,
+  Drawable,
+  FP64_OPERATIONS,
+  Program,
+  ProgramData,
+  SPHERE_OPERATIONS,
+} from './program';
 
 export interface Glyph {
   index: number;
@@ -312,9 +319,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
 
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
-
-      const float PI = 3.141592653589793;
-      const float FOV = PI / 4.;
+      ${SPHERE_OPERATIONS}
 
       void main() {
         vec4 relativeCenter = sub_fp64(split(center), cameraCenter);
@@ -339,15 +344,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
         vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
         // Calculate the spherical projection
-        float sinLat = tanh(center.y * PI);
-        float lat = asin(sinLat);
-        float cosLat = cos(lat);
-        float lng = center.x * PI;
-        vec3 labelDir = vec3(
-            cosLat * cos(lng), // x
-            sinLat,            // y
-            cosLat * sin(lng)  // z
-        );
+        vec3 labelDir = sphereFromMercator(center);
         vec4 sphericalCenter = sphericalMvp * vec4(labelDir, 1.0);
         vec4 sphericalSplit =
           sum_fp64(
@@ -367,24 +364,11 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
 
         // Cull labels that the curvature of the globe occludes in the
         // spherical view. The SDF pass has depth testing disabled, so without
-        // this they composite on top of the visible side. With a finite
-        // camera distance the visible cap is smaller than a full hemisphere:
-        // the horizon is at dot(labelDir, camDir) = 1/scale, where scale is
-        // the camera distance from the globe center.
-        float camSinLat = tanh((cameraCenter.z + cameraCenter.w) * PI);
-        float camLat = asin(camSinLat);
-        float camCosLat = cos(camLat);
-        float camLng = (cameraCenter.x + cameraCenter.y) * PI;
-        vec3 camDir = vec3(
-            camCosLat * cos(camLng),
-            camSinLat,
-            camCosLat * sin(camLng));
-        float viewportRadiusWorldUnitsAtLat =
-            PI / halfWorldSize / inverseHalfViewportSize.y;
-        float distanceCameraToGlobeSurface =
-            viewportRadiusWorldUnitsAtLat / tan(FOV / 2.);
-        float camScale = 1. + distanceCameraToGlobeSurface;
-        if (flattenFactor < 1.0 && dot(labelDir, camDir) <= 1.0 / camScale) {
+        // this they composite on top of the visible side. Labels are atomic
+        // quads so we move the whole quad out of clip space at the center —
+        // see triangle_program for the fragment-discard variant used for
+        // meshes that may straddle the horizon.
+        if (flattenFactor < 1.0 && horizonDistance(labelDir) <= 0.0) {
           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         }
 

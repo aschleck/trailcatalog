@@ -2,7 +2,14 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
+import {
+  COLOR_OPERATIONS,
+  Drawable,
+  FP64_OPERATIONS,
+  Program,
+  ProgramData,
+  SPHERE_OPERATIONS,
+} from './program';
 
 const VERTEX_STRIDE =
     4 * (
@@ -165,11 +172,11 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       invariant gl_Position;
 
       out mediump vec4 fragFillColor;
+      out mediump float fragBehindHorizon;
 
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
-
-      const float PI = 3.141592653589793;
+      ${SPHERE_OPERATIONS}
 
       void main() {
         // Calculate the Mercator projection
@@ -185,17 +192,9 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
         vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
         // Calculate the spherical projection
-        float sinLat = tanh(position.y * PI);
-        float lat = asin(sinLat);
-        float cosLat = cos(lat);
-        float lng = position.x * PI;
-        vec4 spherical = sphericalMvp * vec4(
-            cosLat * cos(lng), // x
-            sinLat,            // y
-            cosLat * sin(lng), // z
-            1.0                // w
-        );
- 
+        vec3 spherePos = sphereFromMercator(position);
+        vec4 spherical = sphericalMvp * vec4(spherePos, 1.0);
+
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
         // To render transparent polygons prettily we depend on the depth buffer getting their z
@@ -204,17 +203,30 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
         // using the calculated depth on the edges and the exact z layering elsewhere.
         gl_Position.z = z * (gl_Position.z > -0.03 ? gl_Position.z : sign(gl_Position.z)) + (1. - z);
 
+        // Signed horizon distance for fragment-level cull on the back of the
+        // globe. The far plane sits just past the visible cap, so back-side
+        // triangles get clipped to the far-plane disc and land at the same
+        // depth as the skybox — depth test alone doesn't hide them. See
+        // sdf_program for the equivalent label-level cull.
+        fragBehindHorizon = horizonDistance(spherePos);
+
         fragFillColor = uint32ToVec4(fillColor);
         fragFillColor = vec4(fragFillColor.rgb * fragFillColor.a, fragFillColor.a);
       }
     `;
   const fs = `#version 300 es
 
+      uniform mediump float flattenFactor;
+
       in mediump vec4 fragFillColor;
+      in mediump float fragBehindHorizon;
 
       out mediump vec4 fragColor;
 
       void main() {
+        if (flattenFactor < 1.0 && fragBehindHorizon < 0.0) {
+          discard;
+        }
         fragColor = fragFillColor;
       }
   `;
