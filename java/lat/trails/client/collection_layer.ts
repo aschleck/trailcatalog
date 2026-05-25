@@ -85,6 +85,7 @@ export class CollectionLayer extends Layer {
     this.loader.broadcast({
       kind: 'ir',
       style: {
+        lines: [],
         polygons: [
           {
             filters: [{match: 'string_equals', key: 'owner', value: 'BLM/BR'}],
@@ -181,7 +182,7 @@ export class CollectionLayer extends Layer {
       return;
     }
 
-    if (response.polygons.length === 0) {
+    if (response.polygons.length === 0 && response.lines.length === 0) {
       return;
     }
 
@@ -197,7 +198,23 @@ export class CollectionLayer extends Layer {
       polygons: response.polygons,
     });
 
-    for (const polygon of response.polygonalGeometries) {
+    for (const line of response.lineGeometries) {
+      drawables.push({
+        elements: undefined,
+        geometry,
+        geometryByteLength: line.geometryByteLength,
+        geometryOffset: line.geometryOffset,
+        instanced: {
+          count: line.instanceCount,
+        },
+        program: this.renderer.lineProgram,
+        texture: undefined,
+        vertexCount: line.vertexCount,
+        z: line.z,
+      });
+    }
+
+    for (const polygon of response.polygonGeometries) {
       drawables.push({
         elements: {
           count: polygon.indexCount,

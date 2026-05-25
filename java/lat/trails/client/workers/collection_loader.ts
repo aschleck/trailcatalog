@@ -3,7 +3,9 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { projectE7Array } from 'js/map/camera';
 import { LatLngRect, RgbaU32, S2CellToken } from 'js/map/common/types';
+import { LineProgram } from 'js/map/rendering/line_program';
 import { Triangles, triangulateS2 } from 'js/map/workers/triangulate';
 import { Z_USER_DATA } from 'js/map/z';
 
@@ -13,7 +15,17 @@ interface InitializeRequest {
 }
 
 interface Style {
+  lines: LineStyle[];
   polygons: PolygonStyle[];
+}
+
+interface LineStyle {
+  filters: Match[];
+  fill: RgbaU32;
+  stroke: RgbaU32;
+  radius: number;
+  stipple: boolean;
+  z: number;
 }
 
 interface PolygonStyle {
@@ -47,8 +59,24 @@ export interface LoadResponse {
   token: S2CellToken;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
+  lines: Line[];
+  lineGeometries: LineGeometry[];
   polygons: Polygon[];
-  polygonalGeometries: PolygonalGeometry[];
+  polygonGeometries: PolygonGeometry[];
+}
+
+export interface Line {
+  data: Data;
+  geometryByteLength: number;
+  geometryOffset: number;
+}
+
+export interface LineGeometry {
+  geometryByteLength: number;
+  geometryOffset: number;
+  instanceCount: number;
+  vertexCount: number;
+  z: number;
 }
 
 export interface Polygon {
@@ -59,10 +87,10 @@ export interface Polygon {
   indexCount: number;
   // relative the start of the polygon indices
   indexOffset: number;
-  s2: ArrayBuffer;
+  raw: ArrayBuffer;
 }
 
-export interface PolygonalGeometry {
+export interface PolygonGeometry {
   geometryByteLength: number;
   geometryOffset: number;
   indexCount: number;
@@ -90,6 +118,47 @@ class CollectionLoader {
       throw new Error("Unhandled version");
     }
 
+    let lineGeometryBytes = 0;
+
+    const lineCount = source.getVarInt32();
+    const styledLines: Array<{
+      data: Data;
+      fill: RgbaU32;
+      stroke: RgbaU32;
+      radius: number;
+      stipple: boolean;
+      points: Float64Array;
+      z: number;
+    }> = [];
+    for (let i = 0; i < lineCount; ++i) {
+      const idLsb = source.getBigInt64();
+      const idMsb = source.getBigInt64();
+      const dataByteSize = source.getVarInt32();
+      const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
+      const lineByteSize = source.getVarInt32();
+      const latLngDegrees = source.sliceInt32(lineByteSize / 4);
+
+      const style = findStyle(data, this.style.lines);
+      if (!style) {
+        continue;
+      }
+
+      const points = projectE7Array(latLngDegrees);
+      lineGeometryBytes += LineProgram.bytesNeeded(points.length / 2);
+
+      styledLines.push({
+        data,
+        fill: style.fill,
+        stroke: style.stroke,
+        radius: style.radius,
+        stipple: style.stipple,
+        points,
+        z: style.z,
+      });
+    }
+
+    styledLines.sort((a, b) => a.z - b.z);
+
     const polygonCount = source.getVarInt32();
     const triangulated: Array<{
       data: Data;
@@ -98,7 +167,7 @@ class CollectionLoader {
       triangles: Triangles;
       z: number;
     }> = [];
-    let geometryCount = 0;
+    let polygonGeometryFloats = 0;
     let indexCount = 0;
     for (let i = 0; i < polygonCount; ++i) {
       const idLsb = source.getBigInt64();
@@ -115,7 +184,7 @@ class CollectionLoader {
       }
 
       const triangles = triangulateS2(polygon);
-      geometryCount += triangles.geometry.length;
+      polygonGeometryFloats += triangles.geometry.length;
       indexCount += triangles.index.length;
 
       triangulated.push({
@@ -145,10 +214,13 @@ class CollectionLoader {
       merged.push(triangulated.slice(last, i));
       last = i;
     }
-    merged.push(triangulated.slice(last, triangulated.length));
+    if (triangulated.length > 0) {
+      merged.push(triangulated.slice(last, triangulated.length));
+    }
 
-    // Add a float per color group to include the colors
-    const geometry = new Float32Array(merged.length + geometryCount);
+    // Geometry layout: lines first, then a fill float per polygon group, then polygon vertices.
+    const geometry =
+        new Float32Array(lineGeometryBytes / 4 + merged.length + polygonGeometryFloats);
     const geometryUints = new Uint32Array(geometry.buffer);
     const index = new Uint32Array(indexCount);
     let geometryOffset = 0;
@@ -159,9 +231,59 @@ class CollectionLoader {
       token: request.token,
       geometry: geometry.buffer,
       index: index.buffer,
+      lines: [],
+      lineGeometries: [],
       polygons: [],
-      polygonalGeometries: [],
+      polygonGeometries: [],
     };
+
+    // Per-segment fill/stroke are baked into the vertex stride, so a LineGeometry only needs to
+    // group consecutive same-z entries.
+    let groupZ: number|undefined = undefined;
+    let groupStart = 0;
+    let groupInstances = 0;
+    let groupVertexCount = 0;
+    for (const line of styledLines) {
+      if (groupZ !== undefined && line.z !== groupZ) {
+        response.lineGeometries.push({
+          geometryByteLength: 4 * (geometryOffset - groupStart),
+          geometryOffset: 4 * groupStart,
+          instanceCount: groupInstances,
+          vertexCount: groupVertexCount,
+          z: groupZ,
+        });
+        groupStart = geometryOffset;
+        groupInstances = 0;
+        groupVertexCount = 0;
+      }
+      groupZ = line.z;
+
+      const result = LineProgram.push(
+          line.fill,
+          line.stroke,
+          line.radius,
+          line.stipple,
+          line.points,
+          geometry.buffer,
+          4 * geometryOffset);
+      response.lines.push({
+        data: line.data,
+        geometryByteLength: result.geometryByteLength,
+        geometryOffset: 4 * geometryOffset,
+      });
+      geometryOffset += result.geometryByteLength / 4;
+      groupInstances += result.instanceCount;
+      groupVertexCount = result.vertexCount;
+    }
+    if (groupZ !== undefined && groupInstances > 0) {
+      response.lineGeometries.push({
+        geometryByteLength: 4 * (geometryOffset - groupStart),
+        geometryOffset: 4 * groupStart,
+        instanceCount: groupInstances,
+        vertexCount: groupVertexCount,
+        z: groupZ,
+      });
+    }
 
     for (const group of merged) {
       const geometryStart = geometryOffset;
@@ -183,17 +305,16 @@ class CollectionLoader {
           geometryOffset,
           indexCount: triangles.index.length,
           indexOffset,
-          s2: rawPolygon,
+          raw: rawPolygon,
         });
 
         geometryOffset += triangles.geometry.length;
         indexOffset += triangles.index.length;
       }
 
-      response.polygonalGeometries.push({
+      response.polygonGeometries.push({
         geometryByteLength: 4 * (geometryOffset - geometryStart),
         geometryOffset: 4 * geometryStart,
-        // same here
         indexCount: indexOffset - indexStart,
         indexOffset: 4 * indexStart,
         z: Z_USER_DATA,
@@ -227,7 +348,7 @@ self.onmessage = e => {
   start(request);
 };
 
-function findStyle(data: Data, styles: PolygonStyle[]): PolygonStyle|undefined {
+function findStyle<S extends {filters: Match[]}>(data: Data, styles: S[]): S|undefined {
   for (const style of styles) {
     if (matches(data, style.filters)) {
       return style;

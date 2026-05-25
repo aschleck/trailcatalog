@@ -13,7 +13,7 @@ interface LoadRequest {
   kind: 'lr';
   groupId: string;
   polygons: Array<{
-    s2: ArrayBuffer;
+    raw: ArrayBuffer;
   }>;
 }
 
@@ -55,7 +55,7 @@ class LocationQuerier {
     this.groups.set(request.groupId, request);
 
     for (const polygon of request.polygons) {
-      const s2 = SimpleS2.decodePolygon(polygon.s2);
+      const s2 = SimpleS2.decodePolygon(polygon.raw);
       const bound = llrBound(s2);
       this.tree.insert({polygon: s2}, bound);
     }
