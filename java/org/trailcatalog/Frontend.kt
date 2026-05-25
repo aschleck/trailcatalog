@@ -31,6 +31,9 @@ private val connectionSource = createConnectionSource()
 private val epochTracker = EpochTracker(connectionSource)
 private val startTime = Instant.now().getEpochSecond() % 10000 // make it shorter
 
+private fun ok(value: Any): Map<String, Any> = mapOf("kind" to "result", "value" to value)
+private fun err(code: Int): Map<String, Any> = mapOf("kind" to "error", "code" to code)
+
 fun main(args: Array<String>) {
   val app = Javalin.create {}.start(7070)
   app.post("/api/data", ::fetchData)
@@ -71,6 +74,7 @@ private fun fetchData(ctx: Context) {
       "boundary" -> {
         val data = HashMap<String, Any>()
         val id = request.get("id").asLong()
+        var found = false
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
@@ -83,16 +87,15 @@ private fun fetchData(ctx: Context) {
                 setLong(1, id)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
-          if (!results.next()) {
-            ctx.status(HttpStatus.NOT_FOUND)
-            return@fetchData
+          if (results.next()) {
+            found = true
+            data["id"] = id
+            data["name"] = results.getString(1)
+            data["type"] = results.getInt(2)
+            data["s2_polygon"] = String(Base64.getEncoder().encode(results.getBytes(3)))
           }
-          data["id"] = id
-          data["name"] = results.getString(1)
-          data["type"] = results.getInt(2)
-          data["s2_polygon"] = String(Base64.getEncoder().encode(results.getBytes(3)))
         }
-        responses.add(data)
+        responses.add(if (found) ok(data) else err(404))
       }
       "boundaries_containing_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()
@@ -118,7 +121,7 @@ private fun fetchData(ctx: Context) {
             data.add(boundary)
           }
         }
-        responses.add(ImmutableMap.of("boundaries", data))
+        responses.add(ok(ImmutableMap.of("boundaries", data)))
       }
       "boundaries_containing_trail" -> {
         val data = ArrayList<HashMap<String, Any>>()
@@ -145,14 +148,14 @@ private fun fetchData(ctx: Context) {
             data.add(boundary)
           }
         }
-        responses.add(ImmutableMap.of("boundaries", data))
+        responses.add(ok(ImmutableMap.of("boundaries", data)))
       }
       "epoch" -> {
         val year = epochTracker.epoch / 100_00
         val month = epochTracker.epoch / 100 - year * 100
         val day = epochTracker.epoch - year * 100_00 - month * 100 + 1
         val date = LocalDate.of(2000 + year, month, day).atStartOfDay(ZoneId.systemDefault());
-        responses.add(ImmutableMap.of("timestampS", date.toEpochSecond()))
+        responses.add(ok(ImmutableMap.of("timestampS", date.toEpochSecond())))
       };
       "path_profiles_in_trail" -> {
         val data = ArrayList<HashMap<String, Any>>()
@@ -177,21 +180,22 @@ private fun fetchData(ctx: Context) {
             path["samples_meters"] = String(Base64.getEncoder().encode(results.getBytes(2)))
             data.add(path)
           }
-          responses.add(ImmutableMap.of("profiles", data))
+          responses.add(ok(ImmutableMap.of("profiles", data)))
         }
       }
       "search_boundaries" -> {
-        responses.add(executeSearchBoundaries(request.get("query").asText(), 10))
+        responses.add(ok(executeSearchBoundaries(request.get("query").asText(), 10)))
       }
       "search_trails" -> {
         responses.add(
-            executeSearchTrails(
+            ok(executeSearchTrails(
                 request.get("query").asText(),
-                request.get("limit").asInt().coerceIn(1, 100)))
+                request.get("limit").asInt().coerceIn(1, 100))))
       }
       "trail" -> {
         val data = HashMap<String, Any>()
         val (idColumn, setId) = parseTrailId(request.get("trail_id"))
+        var found = false
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
@@ -212,22 +216,21 @@ private fun fetchData(ctx: Context) {
                 setId(this, 1)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
-          if (!results.next()) {
-            ctx.status(HttpStatus.NOT_FOUND)
-            return@fetchData
+          if (results.next()) {
+            found = true
+            data["id"] = results.getLong(1).toString()
+            data["readable_id"] = results.getString(2)
+            data["name"] = results.getString(3)
+            data["type"] = results.getInt(4)
+            data["path_ids"] = String(Base64.getEncoder().encode(results.getBytes(5)))
+            data["bound"] = String(Base64.getEncoder().encode(results.getBytes(6)))
+            data["marker"] = String(Base64.getEncoder().encode(results.getBytes(7)))
+            data["elevation_down_meters"] = results.getFloat(8)
+            data["elevation_up_meters"] = results.getFloat(9)
+            data["length_meters"] = results.getFloat(10)
           }
-          data["id"] = results.getLong(1).toString()
-          data["readable_id"] = results.getString(2)
-          data["name"] = results.getString(3)
-          data["type"] = results.getInt(4)
-          data["path_ids"] = String(Base64.getEncoder().encode(results.getBytes(5)))
-          data["bound"] = String(Base64.getEncoder().encode(results.getBytes(6)))
-          data["marker"] = String(Base64.getEncoder().encode(results.getBytes(7)))
-          data["elevation_down_meters"] = results.getFloat(8)
-          data["elevation_up_meters"] = results.getFloat(9)
-          data["length_meters"] = results.getFloat(10)
         }
-        responses.add(data)
+        responses.add(if (found) ok(data) else err(404))
       }
       "trails_in_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()
@@ -261,7 +264,7 @@ private fun fetchData(ctx: Context) {
             data.add(trail)
           }
         }
-        responses.add(ImmutableMap.of("trails", data))
+        responses.add(ok(ImmutableMap.of("trails", data)))
       }
     }
   }

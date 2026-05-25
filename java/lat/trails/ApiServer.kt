@@ -43,7 +43,7 @@ private fun fetchData(ctx: Context) {
   val keys = request.get("keys").elements()
   val responses = ArrayList<Any>()
   for (key in keys) {
-    val type = key.get("type").asText()
+    val type = key.get("method").asText()
     when (type) {
       null -> throw IllegalArgumentException("Key has no type")
       "collections" -> {
@@ -63,12 +63,12 @@ private fun fetchData(ctx: Context) {
               }
         }
         responses.add(
-            hashMapOf("collections" to collections.map {
+            mapOf("kind" to "result", "value" to hashMapOf("collections" to collections.map {
               val row = HashMap<String, Any>()
               row["id"] = it.id
               row["name"] = it.name
               row
-            })
+            }))
         )
       }
     }
