@@ -105,8 +105,11 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
       // See https://github.com/visgl/luma.gl/issues/1764
       invariant gl_Position;
 
-      out mediump vec2 fragPosition;
+      out highp vec2 fragPosition;
       out mediump vec2 fragRadius;
+      flat out highp vec3 fragXAxis;
+      flat out highp vec3 fragYAxis;
+      flat out highp vec3 fragZAxis;
 
       const float PI = 3.141592653589793;
       // TODO(april): share FOV constant?
@@ -148,19 +151,89 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
 
         vec2 spherical = position / vec2(right.x / right.w, top.y / top.w);
         fragPosition = spherical;
+        fragXAxis = xAxis;
+        fragYAxis = yAxis;
+        fragZAxis = zAxis;
       }
     `;
   const fs = `#version 300 es
 
-      in mediump vec2 fragPosition;
+      in highp vec2 fragPosition;
+      flat in highp vec3 fragXAxis;
+      flat in highp vec3 fragYAxis;
+      flat in highp vec3 fragZAxis;
       out mediump vec4 fragColor;
 
+      const highp float PI = 3.141592653589793;
+
+      highp float hash12(highp vec2 p) {
+        highp vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+
+      mediump vec3 starfield(highp vec3 dir) {
+        const highp float DENSITY = 40.0;
+        const highp float THRESHOLD = 0.972;
+        // Half-width of a star, in screen pixels.
+        const highp float STAR_PX = 1.1;
+        // Convert direction to (lng, lat). Wrap lng so cells are continuous
+        // across the lng = +/-PI seam.
+        highp float lng = atan(dir.z, dir.x);
+        highp float lat = asin(clamp(dir.y, -1.0, 1.0));
+        highp vec2 scaled = vec2(lng, lat) * DENSITY;
+        highp vec2 cell = floor(scaled);
+        highp float ring = floor(2.0 * PI * DENSITY + 0.5);
+        cell.x = mod(cell.x + ring, ring);
+        highp float h = hash12(cell);
+        if (h < THRESHOLD) {
+          return vec3(0.0);
+        }
+        highp vec2 jitter = vec2(
+            hash12(cell + vec2(1.7, 9.2)),
+            hash12(cell + vec2(8.3, 2.8)));
+        highp vec2 d = fract(scaled) - jitter;
+        // Reproject d from angular (cell-fraction) units into screen pixels
+        // using local derivatives. fwidth(scaled) is "cells per pixel" along
+        // each screen axis, so dividing folds the projection's anisotropy in
+        // and stars stay round and a constant size everywhere on screen.
+        highp vec2 perPixel = max(fwidth(scaled), vec2(1e-6));
+        highp vec2 dPx = d / (perPixel * STAR_PX);
+        mediump float falloff = exp(-dot(dPx, dPx));
+        mediump float brightness = (h - THRESHOLD) / (1.0 - THRESHOLD);
+        mediump vec3 tint =
+            mix(vec3(1.0, 0.88, 0.70), vec3(0.75, 0.85, 1.0), hash12(cell + 5.0));
+        return tint * falloff * brightness * 1.4;
+      }
+
       void main() {
-        // TODO(april): delete this debugging pattern
-        // fragColor = length(fragPosition) > 1. ? vec4(fragPosition, 0., 1.) : vec4(0);
-        fragColor = length(fragPosition) > 1. ? vec4(0.05, 0.05, 0.05, 1.) : vec4(0);
-        // TODO(april): delete this when looking at this again
-        fragColor = fragColor * 0.000001 + vec4(1);
+        const mediump float ATM = 1.04;
+        const mediump float H = 0.008;
+        const mediump vec3 SPACE_NEAR = vec3(0.020, 0.025, 0.045);
+        const mediump vec3 SPACE_FAR = vec3(0.002, 0.003, 0.008);
+        const mediump vec3 RAYLEIGH = vec3(0.30, 0.60, 1.00);
+
+        mediump float r = length(fragPosition);
+        if (r < 1.0) {
+          fragColor = vec4(0);
+          return;
+        }
+
+        mediump float farMix = smoothstep(1.0, 1.6, r);
+        mediump vec3 space = mix(SPACE_NEAR, SPACE_FAR, farMix);
+        highp vec3 skyDir = normalize(
+            fragXAxis * fragPosition.x + fragYAxis * fragPosition.y - fragZAxis);
+        space += starfield(skyDir);
+
+        if (r >= ATM) {
+          fragColor = vec4(space, 1.0);
+          return;
+        }
+
+        mediump float chord = sqrt(ATM * ATM - r * r);
+        mediump float density = exp(-(r - 1.0) / H);
+        mediump vec3 glow = RAYLEIGH * chord * density * 6.0;
+        fragColor = vec4(glow + space, 1.0);
       }
   `;
 
