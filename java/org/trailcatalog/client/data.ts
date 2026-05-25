@@ -1,13 +1,80 @@
+import { deepEqual } from 'external/dev_april_corgi+/js/common/comparisons';
 import {
   Future,
   asFuture,
   resolvedFuture,
 } from 'external/dev_april_corgi+/js/common/futures';
 import {
-  fetchDataBatch as fetchDataBatchUnsafe,
-  getCache,
-  putCache,
-} from 'external/dev_april_corgi+/js/server/data';
+  DataKey,
+  initialData,
+  requestDataBatch as ssrRequestDataBatch,
+} from 'external/dev_april_corgi+/js/server/ssr_aware';
+
+// Local cache shim — replaces the old corgi js/server/data.ts. We treat values as plain `object`
+// and lie at the boundary about the JsonValue/ServerResponse types from the new ssr_aware.
+const MAX_CACHE_ENTRIES = process.env.CORGI_FOR_BROWSER ? 10 : 0;
+const cache: Array<[key: DataKey, response: object]> = [];
+for (const [key, value] of initialData()) {
+  if (value.kind === 'result') {
+    cache.push([key, value.value as unknown as object]);
+  }
+}
+
+function fetchDataBatchUnsafe(
+    tuples: Array<[string, object]>): Future<object[]> {
+  const missing: DataKey[] = [];
+  const missingIndices: number[] = [];
+  const data: object[] = Array(tuples.length);
+  for (let i = 0; i < tuples.length; ++i) {
+    const [method, request] = tuples[i];
+    const cached = getCache(method, request);
+    if (cached) {
+      data[i] = cached;
+      continue;
+    }
+
+    missing.push({method, request: request as never});
+    missingIndices.push(i);
+  }
+
+  if (missing.length === 0) {
+    return resolvedFuture(data);
+  }
+
+  return ssrRequestDataBatch(missing).then(responses => {
+    for (let i = 0; i < responses.length; ++i) {
+      const response = responses[i];
+      if (response.kind !== 'result') {
+        throw new Error(
+            `Request for ${missing[i].method} failed with code ${response.code}`);
+      }
+      const value = response.value as unknown as object;
+      data[missingIndices[i]] = value;
+      cache.push([missing[i], value]);
+    }
+    if (cache.length > MAX_CACHE_ENTRIES) {
+      cache.splice(0, cache.length - MAX_CACHE_ENTRIES);
+    }
+    return data;
+  });
+}
+
+function getCache(method: string, request: object): object|undefined {
+  const key = {method, request: request as never};
+  for (let i = cache.length - 1; i >= 0; --i) {
+    if (deepEqual(cache[i][0], key)) {
+      const entry = cache[i];
+      cache.splice(i, 1);
+      cache.push(entry);
+      return entry[1];
+    }
+  }
+  return undefined;
+}
+
+function putCache(method: string, request: object, response: object): void {
+  cache.push([{method, request: request as never}, response]);
+}
 
 export type TrailId = {numeric: string}|{readable: string};
 

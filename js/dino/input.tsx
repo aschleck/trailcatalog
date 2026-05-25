@@ -1,4 +1,5 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { InputOtherProperties } from 'external/dev_april_corgi+/js/corgi/elements';
 
 import { Input as EmuInput } from 'external/dev_april_corgi+/js/emu/input';
 
@@ -12,7 +13,7 @@ type InputProps = {
   inset?: corgi.VElementOrPrimitive,
   placeholder?: string,
   ref?: string,
-} & corgi.InputProperties;
+} & InputOtherProperties;
 
 export function OutlinedInput({className, ...props}: {
   className?: string,

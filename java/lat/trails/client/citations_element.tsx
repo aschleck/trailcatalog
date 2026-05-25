@@ -1,6 +1,6 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
-export function CitationsElement() {
+export function CitationsElement(_: {parameters: {[key: string]: string};}) {
   return <>
     <div>Citations</div>
     <p>

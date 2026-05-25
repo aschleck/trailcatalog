@@ -14,6 +14,12 @@ import { ExpiredCredentialError, LoginEnforcer } from './auth';
 import { Encrypter } from './encrypter';
 import * as oidc from './oidc';
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    userId: string;
+  }
+}
+
 const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
 const DEBUG = process.env.DEBUG !== 'false';
 
@@ -22,6 +28,8 @@ const loginEnforcer = new LoginEnforcer(encrypter);
 const sql = postgres();
 
 async function initialize(server: FastifyInstance): Promise<void> {
+  server.decorateRequest('userId', '');
+
   server.register(fastifyCookie, {
     secret: COOKIE_SECRET,
     parseOptions: {
@@ -50,7 +58,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
             'if-none-match': headers['if-none-match'],
             'pragma': headers['pragma'],
             'user-agent': headers['user-agent'],
-            'x-user-id': (request as unknown as {userId?: string}).userId ?? '',
+            'x-user-id': request.userId ?? '',
           };
         },
       });
@@ -72,7 +80,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
       }
     }
 
-    (request as unknown as {userId: string}).userId = maybeUserId ?? '';
+    request.userId = maybeUserId ?? '';
   });
 
   await oidc.addGoogle(server, encrypter, loginEnforcer, sql);
