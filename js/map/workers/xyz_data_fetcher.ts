@@ -26,6 +26,14 @@ interface Viewport {
   lat: [number, number];
   lng: [number, number];
   zoom: number;
+  // Optional spherical visibility cone. When present, only tiles whose
+  // nearest spherical point P satisfies dot(P, camDir) >= cosThetaT are
+  // fetched. In fully-flat (mercator) mode this is omitted so the lat/lng
+  // rectangle alone defines visibility.
+  cone?: {
+    camDir: [number, number, number];
+    cosThetaT: number;
+  };
 }
 
 interface UpdateViewportRequest {
@@ -126,6 +134,9 @@ class XyzDataFetcher {
           y,
           zoom: tz,
         };
+        if (!tileInCone(id, worldSize, viewport.cone)) {
+          continue;
+        }
         used.add(id);
 
         if (this.inFlight.has(id) || this.pending.has(id) || this.loaded.has(id)) {
@@ -221,6 +232,9 @@ class XyzDataFetcher {
           y,
           zoom: tz,
         };
+        if (!tileInCone(id, worldSize, viewport.cone)) {
+          continue;
+        }
         used.add(id);
       }
     }
@@ -328,5 +342,44 @@ function createTileHashMap<V>(): HashMap<TileId, V> {
 
 function createTileHashSet(): HashSet<TileId> {
   return new HashSet(id => `${id.x},${id.y},${id.zoom}`);
+}
+
+// Returns true if the tile's geographic patch intersects the camera's
+// visible cap. The cap is the set of unit-sphere points P with
+// dot(P, camDir) >= cosThetaT. We maximize dot(P, camDir) over the patch by
+// clamping (camLat, camLng) into the patch's lat/lng box: the max of the
+// dot product on a lat/lng rectangle is attained at that clamped point,
+// since the dot product is concave in each angular axis with the unique
+// unconstrained maximum at P = camDir.
+function tileInCone(id: TileId, worldSize: number, cone?: Viewport['cone']): boolean {
+  if (!cone) {
+    return true;
+  }
+  const PI = Math.PI;
+  const mx0 = (id.x / worldSize) * 2 - 1;
+  const mx1 = ((id.x + 1) / worldSize) * 2 - 1;
+  // Tile y indices go top-to-bottom but mercator y goes bottom-to-top.
+  const myHigh = 1 - (id.y / worldSize) * 2;
+  const myLow = 1 - ((id.y + 1) / worldSize) * 2;
+  const lng0 = mx0 * PI;
+  const lng1 = mx1 * PI;
+  const lat0 = Math.asin(Math.tanh(myLow * PI));
+  const lat1 = Math.asin(Math.tanh(myHigh * PI));
+
+  const camLat = Math.asin(Math.max(-1, Math.min(1, cone.camDir[1])));
+  let camLng = Math.atan2(cone.camDir[2], cone.camDir[0]);
+  // Wrap camLng into [lng0 - PI, lng0 + PI] so the clamp picks the nearest
+  // lng on the +/-PI seam correctly.
+  while (camLng < lng0 - PI) camLng += 2 * PI;
+  while (camLng > lng0 + PI) camLng -= 2 * PI;
+
+  const clampedLat = Math.max(lat0, Math.min(lat1, camLat));
+  const clampedLng = Math.max(lng0, Math.min(lng1, camLng));
+  const cosLat = Math.cos(clampedLat);
+  const px = cosLat * Math.cos(clampedLng);
+  const py = Math.sin(clampedLat);
+  const pz = cosLat * Math.sin(clampedLng);
+  const d = px * cone.camDir[0] + py * cone.camDir[1] + pz * cone.camDir[2];
+  return d >= cone.cosThetaT;
 }
 

@@ -2,6 +2,7 @@ import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 import { EventSpec } from 'external/dev_april_corgi+/js/corgi/events';
 
+import { SphericalCone } from './camera';
 import { Copyright } from './common/types';
 import { Planner } from './rendering/planner';
 
@@ -33,7 +34,7 @@ export abstract class Layer extends Disposable {
 
   render(planner: Planner, zoom: number): void {}
 
-  viewportChanged(bounds: S2LatLngRect, zoom: number): void {}
+  viewportChanged(bounds: S2LatLngRect, zoom: number, cone?: SphericalCone): void {}
 }
 
 export interface EventSource {

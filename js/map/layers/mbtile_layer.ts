@@ -6,6 +6,7 @@ import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queu
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
+import { SphericalCone } from '../camera';
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
 import { Copyright, Rect, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
@@ -1344,7 +1345,7 @@ export class MbtileLayer extends Layer {
     this.lastRenderGeneration = this.generation;
   }
 
-  override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+  override viewportChanged(bounds: S2LatLngRect, zoom: number, cone?: SphericalCone): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({
@@ -1353,6 +1354,7 @@ export class MbtileLayer extends Layer {
         lat: [lat.lo(), lat.hi()],
         lng: [lng.lo(), lng.hi()],
         zoom,
+        cone,
       },
     });
   }

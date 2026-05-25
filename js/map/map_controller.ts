@@ -285,8 +285,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.nextRender = RenderType.DataChange;
     // No DPI here because this controls the overdraw for panning
     const bounds = this.camera.viewportBounds(this.canvas.width, this.canvas.height);
+    const cone = this.camera.sphericalCone(this.canvas.width, this.canvas.height);
     for (const layer of this.layers) {
-      layer.viewportChanged(bounds, this.camera.zoom);
+      layer.viewportChanged(bounds, this.camera.zoom, cone);
     }
 
     this.trigger(MAP_MOVED, {

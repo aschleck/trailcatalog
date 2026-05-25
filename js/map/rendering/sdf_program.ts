@@ -314,6 +314,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       ${FP64_OPERATIONS}
 
       const float PI = 3.141592653589793;
+      const float FOV = PI / 4.;
 
       void main() {
         vec4 relativeCenter = sub_fp64(split(center), cameraCenter);
@@ -342,12 +343,12 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
         float lat = asin(sinLat);
         float cosLat = cos(lat);
         float lng = center.x * PI;
-        vec4 sphericalCenter = sphericalMvp * vec4(
+        vec3 labelDir = vec3(
             cosLat * cos(lng), // x
             sinLat,            // y
-            cosLat * sin(lng), // z
-            1.0                // w
+            cosLat * sin(lng)  // z
         );
+        vec4 sphericalCenter = sphericalMvp * vec4(labelDir, 1.0);
         vec4 sphericalSplit =
           sum_fp64(
             split(sphericalCenter.xy),
@@ -363,6 +364,29 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
         gl_Position.z = z * gl_Position.z + (1. - z);
+
+        // Cull labels that the curvature of the globe occludes in the
+        // spherical view. The SDF pass has depth testing disabled, so without
+        // this they composite on top of the visible side. With a finite
+        // camera distance the visible cap is smaller than a full hemisphere:
+        // the horizon is at dot(labelDir, camDir) = 1/scale, where scale is
+        // the camera distance from the globe center.
+        float camSinLat = tanh((cameraCenter.z + cameraCenter.w) * PI);
+        float camLat = asin(camSinLat);
+        float camCosLat = cos(camLat);
+        float camLng = (cameraCenter.x + cameraCenter.y) * PI;
+        vec3 camDir = vec3(
+            camCosLat * cos(camLng),
+            camSinLat,
+            camCosLat * sin(camLng));
+        float viewportRadiusWorldUnitsAtLat =
+            PI / halfWorldSize / inverseHalfViewportSize.y;
+        float distanceCameraToGlobeSurface =
+            viewportRadiusWorldUnitsAtLat / tan(FOV / 2.);
+        float camScale = 1. + distanceCameraToGlobeSurface;
+        if (flattenFactor < 1.0 && dot(labelDir, camDir) <= 1.0 / camScale) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        }
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);

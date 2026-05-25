@@ -4,6 +4,7 @@ import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 
+import { SphericalCone } from '../camera';
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { Planner } from '../rendering/planner';
@@ -95,7 +96,10 @@ export class RasterTileLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.hasNewData()) {
-      const buffer = new ArrayBuffer(16 * 256 * 256);
+      // Each billboard tile writes (96 vertices) * (11 floats + 5 uint32s) * 4
+      // bytes = 6144 bytes. Pad to be safe.
+      const PER_TILE_BYTES = 8192;
+      const buffer = new ArrayBuffer(Math.max(PER_TILE_BYTES * this.tiles.size, 65536));
       const drawables = [];
       let offset = 0;
 
@@ -135,7 +139,7 @@ export class RasterTileLayer extends Layer {
     planner.add(this.plan.drawables);
   }
 
-  override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+  override viewportChanged(bounds: S2LatLngRect, zoom: number, cone?: SphericalCone): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({
@@ -144,6 +148,7 @@ export class RasterTileLayer extends Layer {
         lat: [lat.lo(), lat.hi()],
         lng: [lng.lo(), lng.hi()],
         zoom,
+        cone,
       },
     });
   }

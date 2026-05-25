@@ -211,6 +211,21 @@ export class Camera {
     };
   }
 
+  // Returns the visible spherical cap as seen from the camera, suitable for
+  // culling tiles that fall entirely outside the visible cone. Returns
+  // undefined in fully-flat (mercator) mode, where there is no cone to test
+  // against.
+  sphericalCone(widthPx: number, heightPx: number): SphericalCone | undefined {
+    if (this.flattenFactor >= 1) {
+      return undefined;
+    }
+    const frame = this.sphericalFrame(widthPx, heightPx);
+    return {
+      camDir: frame.zAxis,
+      cosThetaT: 1 / frame.scale,
+    };
+  }
+
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
     const centerPixel = projectS2LatLng(this._center);
     const dY = heightPx * this._inverseWorldRadius / 2;
@@ -287,6 +302,11 @@ export class Camera {
 }
 
 type Vec3 = [number, number, number];
+
+export interface SphericalCone {
+  camDir: Vec3;
+  cosThetaT: number;
+}
 
 interface SphericalFrame {
   eye: Vec3;
