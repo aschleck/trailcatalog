@@ -735,6 +735,9 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
   const tx = tile.x / halfWorldSize - 1;
   const ty = 1 - tile.y / halfWorldSize;
   const increment = 1 / halfWorldSize / extent;
+  const worldSize = 2 * halfWorldSize;
+  const extendTop = tile.y === 0;
+  const extendBottom = tile.y === worldSize - 1;
 
    for (const [crop, loop, source] of [
       [cropLine, false, layer.lines],
@@ -755,6 +758,25 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
    layer.polygonBounds =
       layer.polygonBounds.filter(f => f.geometry.length > 0 && f.starts.length > 0);
 
+  // Pole-row tiles: extend any exterior polygon ring that runs along the
+  // pole-side boundary outward toward the pole. The mbtile data has no
+  // coverage past +/-85 lat (the Mercator limit), so without this the polar
+  // cap shows through to the clear color. Picking up the actual polygon
+  // colors here means whatever the style produces (water, ice, ...) flows
+  // naturally into the cap, with no hardcoded fallback.
+  if (extendTop || extendBottom) {
+    // y = -poleReachTile maps via the projection below to mercator y = ty + 2
+    // = 3 on a top-row tile, which tanh-projects to ~lat 89.998°.
+    const poleReachTile = 2 * halfWorldSize * extent;
+    for (const feature of layer.polygons) {
+      const [geometry, starts] = extendPoleEdges(
+          feature.geometry, feature.starts, extent, poleReachTile,
+          extendTop, extendBottom);
+      feature.geometry = geometry;
+      feature.starts = starts;
+    }
+  }
+
   for (const source of [layer.lines, layer.points, layer.polygons, layer.polygonBounds]) {
     for (const feature of source) {
       const g = feature.geometry;
@@ -764,6 +786,72 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
       }
     }
   }
+}
+
+// Walks each polygon ring and inserts pole-extending vertices wherever two
+// consecutive vertices both lie on the tile's pole-side boundary. Skips hole
+// rings (negative signed area) so the cap inherits the surrounding
+// exterior's color rather than being cut out of it.
+function extendPoleEdges(
+    geometry: number[],
+    starts: number[],
+    extent: number,
+    poleReachTile: number,
+    extendTop: boolean,
+    extendBottom: boolean): [number[], number[]] {
+  const out: number[] = [];
+  const outStarts: number[] = [];
+
+  for (let r = 0; r < starts.length; ++r) {
+    const start = starts[r];
+    const end = r < starts.length - 1 ? starts[r + 1] : geometry.length;
+    outStarts.push(out.length);
+    if (end - start < 6) {
+      for (let i = start; i < end; ++i) {
+        out.push(geometry[i]);
+      }
+      continue;
+    }
+
+    // Shoelace area in MVT tile coords (y increases downward). MVT
+    // exteriors are CW in this convention, which gives a negative shoelace
+    // — the opposite of the triangulator's later area check, which runs
+    // after the projection flips y.
+    let area = 0;
+    for (let i = start + 2; i < end; i += 2) {
+      area +=
+          (geometry[i] - geometry[i - 2])
+              * (geometry[i - 1] + geometry[i + 1]);
+    }
+    area +=
+        (geometry[start] - geometry[end - 2])
+            * (geometry[end - 1] + geometry[start + 1]);
+    const isExterior = area < 0;
+
+    const n = (end - start) / 2;
+    for (let i = 0; i < n; ++i) {
+      const px = geometry[start + 2 * i + 0];
+      const py = geometry[start + 2 * i + 1];
+      out.push(px, py);
+
+      if (!isExterior) {
+        continue;
+      }
+
+      const j = (i + 1) % n;
+      const nx = geometry[start + 2 * j + 0];
+      const ny = geometry[start + 2 * j + 1];
+      if (extendTop && py === 0 && ny === 0) {
+        out.push(px, -poleReachTile);
+        out.push(nx, -poleReachTile);
+      } else if (extendBottom && py === extent && ny === extent) {
+        out.push(px, extent + poleReachTile);
+        out.push(nx, extent + poleReachTile);
+      }
+    }
+  }
+
+  return [out, outStarts];
 }
 
 function cropLine(geometry: number[], starts: number[], extent: number, loop: boolean):

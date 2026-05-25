@@ -110,7 +110,6 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
       flat out highp vec3 fragXAxis;
       flat out highp vec3 fragYAxis;
       flat out highp vec3 fragZAxis;
-      flat out highp float fragScale;
 
       const float PI = 3.141592653589793;
       // TODO(april): share FOV constant?
@@ -155,7 +154,6 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
         fragXAxis = xAxis;
         fragYAxis = yAxis;
         fragZAxis = zAxis;
-        fragScale = scale;
       }
     `;
   const fs = `#version 300 es
@@ -164,7 +162,6 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
       flat in highp vec3 fragXAxis;
       flat in highp vec3 fragYAxis;
       flat in highp vec3 fragZAxis;
-      flat in highp float fragScale;
       out mediump vec4 fragColor;
 
       const highp float PI = 3.141592653589793;
@@ -218,32 +215,7 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
 
         mediump float r = length(fragPosition);
         if (r < 1.0) {
-          // The mbtile data has no coverage past +/-85 lat (the Mercator
-          // limit), so the polar caps would otherwise render as the white
-          // clear color. Map this pixel back to a sphere point and only
-          // paint when it lands in one of the caps.
-          highp float rSq = r * r;
-          highp float scaleSq = fragScale * fragScale;
-          highp float cosTheta =
-              (rSq * fragScale + (scaleSq - 1.0) * sqrt(max(0.0, 1.0 - rSq)))
-                  / (rSq + scaleSq - 1.0);
-          highp float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-          highp vec2 perpDir = fragPosition / max(r, 1e-6);
-          highp vec3 P =
-              cosTheta * fragZAxis
-                  + sinTheta * (perpDir.x * fragXAxis + perpDir.y * fragYAxis);
-          // sin(MERCATOR_MAX_LAT) where MERCATOR_MAX_LAT = asin(tanh(PI))
-          // is ~0.996272. Bias lower so the cap fill overlaps with the
-          // tile coverage and we don't leave a thin precision gap showing
-          // the white clear color at the seam.
-          const mediump float CAP_SIN_LAT = 0.994;
-          if (abs(P.y) > CAP_SIN_LAT) {
-            const mediump vec3 OCEAN = vec3(0.322, 0.729, 0.922);
-            const mediump vec3 ICE = vec3(1.0, 1.0, 1.0);
-            fragColor = vec4(P.y > 0.0 ? OCEAN : ICE, 1.0);
-          } else {
-            fragColor = vec4(0);
-          }
+          fragColor = vec4(0);
           return;
         }
 

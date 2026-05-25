@@ -7,6 +7,7 @@ import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { SphericalCone } from '../camera';
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
+import { BillboardProgram } from '../rendering/billboard_program';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
@@ -96,10 +97,10 @@ export class RasterTileLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.hasNewData()) {
-      // Each billboard tile writes (96 vertices) * (11 floats + 5 uint32s) * 4
-      // bytes = 6144 bytes. Pad to be safe.
-      const PER_TILE_BYTES = 8192;
-      const buffer = new ArrayBuffer(Math.max(PER_TILE_BYTES * this.tiles.size, 65536));
+      // Reserve room for a body + cap per tile; pole-row tiles need both.
+      const perTileBytes =
+          BillboardProgram.bytesNeeded() + BillboardProgram.capBytesNeeded();
+      const buffer = new ArrayBuffer(Math.max(perTileBytes * this.tiles.size, 65536));
       const drawables = [];
       let offset = 0;
 
@@ -108,12 +109,11 @@ export class RasterTileLayer extends Layer {
       for (const [id, texture] of sorted) {
         const halfWorldSize = Math.pow(2, id.zoom - 1);
         const size = 1 / halfWorldSize;
+        const centerX = (id.x + 0.5 - halfWorldSize) / halfWorldSize;
+        const centerY = (halfWorldSize - (id.y + 0.5)) / halfWorldSize;
         const {byteSize, drawable} =
             this.renderer.billboardProgram.plan(
-                [
-                  (id.x + 0.5 - halfWorldSize) / halfWorldSize,
-                  (halfWorldSize - (id.y + 0.5)) / halfWorldSize,
-                ],
+                [centerX, centerY],
                 NO_OFFSET,
                 [size, size],
                 /* angle= */ 0,
@@ -127,6 +127,26 @@ export class RasterTileLayer extends Layer {
                 texture);
         drawables.push(drawable);
         offset += byteSize;
+
+        // Pole-row tiles get an extra cap quad sampling the tile's edge
+        // row. At zoom 0 the single tile is both top and bottom row.
+        const worldSize = 2 * halfWorldSize;
+        if (id.y === 0) {
+          const cap = this.renderer.billboardProgram.planCap(
+              centerX, size, 'north', this.tint, this.z,
+              /* atlasIndex= */ 0, /* atlasSize= */ [1, 1],
+              buffer, offset, this.buffer, texture);
+          drawables.push(cap.drawable);
+          offset += cap.byteSize;
+        }
+        if (id.y === worldSize - 1) {
+          const cap = this.renderer.billboardProgram.planCap(
+              centerX, size, 'south', this.tint, this.z,
+              /* atlasIndex= */ 0, /* atlasSize= */ [1, 1],
+              buffer, offset, this.buffer, texture);
+          drawables.push(cap.drawable);
+          offset += cap.byteSize;
+        }
       }
 
       this.renderer.uploadData(buffer, offset, this.buffer);

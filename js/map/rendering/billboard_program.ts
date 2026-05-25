@@ -17,7 +17,13 @@ export class BillboardProgram extends Program<BillboardProgramData> {
     return 4 * BILLBOARD_GRID_CELLS * BILLBOARD_VERTS_PER_CELL * BILLBOARD_FLOATS_PER_VERT;
   }
 
+  /** Bytes that {@link planCap} will write into the supplied buffer. */
+  static capBytesNeeded(): number {
+    return BillboardProgram.bytesNeeded();
+  }
+
   private readonly billboardData: Float32Array;
+  private readonly capData: Float32Array;
 
   constructor(gl: WebGL2RenderingContext) {
     super(createBillboardProgram(gl), gl, gl.TRIANGLES);
@@ -26,6 +32,11 @@ export class BillboardProgram extends Program<BillboardProgramData> {
     });
 
     const vertices = [];
+    // Cap geometry uses the same lattice as the body but with the texture
+    // v coordinate left as a placeholder — planCap() overrides it with the
+    // tile's top (v=0) or bottom (v=1) edge so the cap inherits the tile's
+    // edge row of texels.
+    const capVertices = [];
     const step = 1 / 4;
     for (let y = -0.5; y < 0.5; y += step) {
       for (let x = -0.5; x < 0.5; x += step) {
@@ -38,9 +49,19 @@ export class BillboardProgram extends Program<BillboardProgramData> {
           x + step, y + step, 0.5 + x + step, 0.5 - (y + step),
           x, y + step, 0.5 + x, 0.5 - (y + step),
         ]);
+        capVertices.push(...[
+          x, y, 0.5 + x, 0,
+          x + step, y, 0.5 + x + step, 0,
+          x, y + step, 0.5 + x, 0,
+
+          x + step, y, 0.5 + x + step, 0,
+          x + step, y + step, 0.5 + x + step, 0,
+          x, y + step, 0.5 + x, 0,
+        ]);
       }
     }
     this.billboardData = new Float32Array(vertices);
+    this.capData = new Float32Array(capVertices);
   }
 
   plan(
@@ -97,6 +118,77 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         program: this,
         texture: glTexture,
         vertexCount: this.billboardData.length / 4,
+        z,
+      },
+    };
+  }
+
+  // Plans a polar cap quad for a tile that sits in the top or bottom row of
+  // its zoom level. The cap geometry spans mercator y in [+1, +3] (north)
+  // or [-3, -1] (south); the vertex shader's tanh(mercator_y * PI) maps
+  // those to ~lat +/-89.998° while the bottom seams cleanly against the
+  // tile body at +/-MERCATOR_MAX_LAT. The texture v coordinate is locked
+  // to 0 (north) or 1 (south) so the whole cap samples the tile texture's
+  // edge row.
+  planCap(
+      centerX: number,
+      sizeX: number,
+      side: 'north' | 'south',
+      tint: RgbaU32,
+      z: number,
+      atlasIndex: number,
+      atlasSize: Vec2,
+      buffer: ArrayBuffer,
+      offset: number,
+      glBuffer: WebGLBuffer,
+      glTexture: WebGLTexture,
+  ): {byteSize: number; drawable: Drawable;} {
+    const floats = new Float32Array(buffer, offset);
+    const uint32s = new Uint32Array(buffer, offset);
+
+    // size.y stays positive for both poles so position.y -> mercator y has
+    // the same sign as the tile body. The cap is placed at center.y = +/-2
+    // with size 2, putting mercator y in [+1, +3] (north) or [-3, -1]
+    // (south). Flipping size.y would put the geometry in the right place
+    // but invert the winding, causing backface culling to drop the south
+    // cap.
+    const isNorth = side === 'north';
+    const centerY = isNorth ? 2 : -2;
+    const sizeY = 2;
+    const vEdge = isNorth ? 0 : 1;
+
+    let count = 0;
+    for (let i = 0; i < this.capData.length; i += 4) {
+      floats.set([
+        /* position= */ this.capData[i + 0], this.capData[i + 1],
+        /* colorPosition= */ this.capData[i + 2], vEdge,
+        /* center= */ centerX, centerY,
+        /* offsetPx= */ 0, 0,
+        /* size= */ sizeX, sizeY,
+        /* angle= */ 0,
+      ], count);
+      count += 11;
+
+      uint32s.set([
+        /* atlasIndex= */ atlasIndex,
+        /* atlasSize= */ atlasSize[0], atlasSize[1],
+        /* tint= */ tint,
+        /* sizeIsPixels= */ 0,
+      ], count);
+      count += 5;
+    }
+
+    return {
+      byteSize: count * 4,
+      drawable: {
+        elements: undefined,
+        geometry: glBuffer,
+        geometryByteLength: 4 * count,
+        geometryOffset: offset,
+        instanced: undefined,
+        program: this,
+        texture: glTexture,
+        vertexCount: this.capData.length / 4,
         z,
       },
     };
