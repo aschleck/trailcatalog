@@ -128,6 +128,7 @@ export class TrailLayer extends Layer implements Listener {
   private readonly hovering: Map<bigint, LinePalette>;
   private readonly pinRenderer: PinRenderer;
   private readonly pointsAtlas: WebGLTexture;
+  private readonly queryClosestBuffer: Handle[];
   private generation: number;
   private lastGeneration: number;
   private lastHoverTarget: Path|Point|Trail|undefined;
@@ -168,6 +169,7 @@ export class TrailLayer extends Layer implements Listener {
     this.registerDisposable(this.pinRenderer);
     // Why don't we need to dispose?
     this.pointsAtlas = new TexturePool(renderer).acquire();
+    this.queryClosestBuffer = [];
 
     const pinPixelSize = this.pinRenderer.measureUnlabeledPin();
     const halfPinWidth = pinPixelSize[0] / 2;
@@ -293,7 +295,8 @@ export class TrailLayer extends Layer implements Listener {
     // This method is kind of funny because it tries to be abstract about the types it's processing,
     // but it ends up being type specific implicitly.
 
-    const near: Handle[] = [];
+    const near = this.queryClosestBuffer;
+    near.length = 0;
     const screenToWorldPx = this.camera.inverseWorldRadius;
     // We want to select a trail even if 0 distance to a path
     const pathAntibias2 = screenToWorldPx * screenToWorldPx;

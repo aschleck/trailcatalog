@@ -1,34 +1,45 @@
-import * as arrays from 'external/dev_april_corgi+/js/common/arrays';
-
 import { Rect, Vec2 } from './types';
 
 const SPLIT_THRESHOLD = 100;
 const MIN_HALF_RADIUS = 1 / Math.pow(2, 15);
 
 interface Node<V> {
-  center: Vec2;
+  centerX: number;
+  centerY: number;
   halfRadius: number;
-  values: Array<[V, Rect]>;
-  children: [
-    Node<V>,
-    Node<V>,
-    Node<V>,
-    Node<V>,
-  ]|undefined;
+  // Parallel arrays. For value index i:
+  //   - values[i] is the value
+  //   - bounds[4*i .. 4*i+3] is [lowX, lowY, highX, highY] — kept as a plain number[] so V8
+  //     stores it as PACKED_DOUBLE_ELEMENTS, no boxed Numbers and no per-entry tuple object
+  //     for GC to walk on the query hot path.
+  //   - boundRefs[i] is the original Rect passed to insert(), used only to support
+  //     delete-by-Rect-identity. The Rect is already live via the value, so this is a
+  //     redundant edge for GC, not an extra object.
+  values: V[];
+  bounds: number[];
+  boundRefs: Rect[];
+  children: [Node<V>, Node<V>, Node<V>, Node<V>] | undefined;
   valueCount: number;
+}
+
+function makeNode<V>(centerX: number, centerY: number, halfRadius: number): Node<V> {
+  return {
+    centerX,
+    centerY,
+    halfRadius,
+    values: [],
+    bounds: [],
+    boundRefs: [],
+    children: undefined,
+    valueCount: 0,
+  };
 }
 
 export class BoundsQuadtree<V> {
   private readonly root: Node<V>;
 
   constructor(center: Vec2, halfRadius: number) {
-    this.root = {
-      center,
-      halfRadius,
-      values: [],
-      children: undefined,
-      valueCount: 0,
-    };
+    this.root = makeNode(center[0], center[1], halfRadius);
   }
 
   delete(bound: Rect): boolean {
@@ -36,15 +47,15 @@ export class BoundsQuadtree<V> {
   }
 
   insert(value: V, bound: Rect): void {
-    insert(this.root, value, bound);
+    insert(this.root, value, bound, bound.low[0], bound.low[1], bound.high[0], bound.high[1]);
   }
 
   queryCircle(point: Vec2, radius: number, output: V[]): void {
-    queryCircle(this.root, point, radius, output);
+    queryCircle(this.root, point[0], point[1], radius, output);
   }
 
   queryRect(rect: Rect, output: V[]): void {
-    queryRect(this.root, rect, output);
+    queryRect(this.root, rect.low[0], rect.low[1], rect.high[0], rect.high[1], output);
   }
 }
 
@@ -80,23 +91,29 @@ export class WorldBoundsQuadtree<V> extends BoundsQuadtree<V> {
   }
 }
 
-function _delete<V>(node: Node<V>, bound: Rect): boolean {
-  if ((bound.low[0] <= node.center[0] && node.center[0] <= bound.high[0]) ||
-      (bound.low[1] <= node.center[1] && node.center[1] <= bound.high[1])) {
-    for (let i = 0; i < node.values.length; ++i) {
-      if (node.values[i][1] === bound) {
-        node.values.splice(i, 1);
-        node.valueCount -= 1;
-        return true;
-      }
+function findAndRemove<V>(node: Node<V>, bound: Rect): boolean {
+  const refs = node.boundRefs;
+  for (let i = 0; i < refs.length; ++i) {
+    if (refs[i] === bound) {
+      node.values.splice(i, 1);
+      node.bounds.splice(i * 4, 4);
+      refs.splice(i, 1);
+      node.valueCount -= 1;
+      return true;
     }
-    return false;
+  }
+  return false;
+}
+
+function _delete<V>(node: Node<V>, bound: Rect): boolean {
+  if ((bound.low[0] <= node.centerX && node.centerX <= bound.high[0]) ||
+      (bound.low[1] <= node.centerY && node.centerY <= bound.high[1])) {
+    return findAndRemove(node, bound);
   }
 
   if (node.children) {
-    // We know that the bound is fully contained by a child, so we can just test any point.
-    const xi = (bound.low[0] <= node.center[0]) as unknown as number;
-    const yi = (bound.low[1] <= node.center[1]) as unknown as number;
+    const xi = (bound.low[0] <= node.centerX) as unknown as number;
+    const yi = (bound.low[1] <= node.centerY) as unknown as number;
     const child = node.children[(xi << 1) + yi];
     const deleted = _delete(child, bound);
     if (deleted) {
@@ -104,185 +121,199 @@ function _delete<V>(node: Node<V>, bound: Rect): boolean {
     }
 
     if (node.valueCount < SPLIT_THRESHOLD) {
-      pushAllValuesInto(node, node.values);
-      node.children = undefined;
+      collapseChildren(node);
     }
 
     return deleted;
   } else {
-    for (let i = 0; i < node.values.length; ++i) {
-      if (node.values[i][1] === bound) {
-        node.values.splice(i, 1);
-        node.valueCount -= 1;
-        return true;
-      }
-    }
-    return false;
+    return findAndRemove(node, bound);
   }
 }
 
-function insert<V>(node: Node<V>, value: V, bound: Rect): void {
+function insert<V>(
+    node: Node<V>,
+    value: V,
+    boundRef: Rect,
+    lowX: number,
+    lowY: number,
+    highX: number,
+    highY: number): void {
   node.valueCount += 1;
 
-  if ((bound.low[0] <= node.center[0] && node.center[0] <= bound.high[0]) ||
-      (bound.low[1] <= node.center[1] && node.center[1] <= bound.high[1])) {
-    node.values.push([value, bound]);
+  if ((lowX <= node.centerX && node.centerX <= highX) ||
+      (lowY <= node.centerY && node.centerY <= highY)) {
+    node.values.push(value);
+    node.bounds.push(lowX, lowY, highX, highY);
+    node.boundRefs.push(boundRef);
     return;
   }
 
   if (node.children) {
-    // We know that the bound is fully contained by a child, so we can just test any point.
-    const xi = (bound.low[0] <= node.center[0]) as unknown as number;
-    const yi = (bound.low[1] <= node.center[1]) as unknown as number;
-    const child = node.children[(xi << 1) + yi];
-    insert(child, value, bound);
+    const xi = (lowX <= node.centerX) as unknown as number;
+    const yi = (lowY <= node.centerY) as unknown as number;
+    insert(node.children[(xi << 1) + yi], value, boundRef, lowX, lowY, highX, highY);
     return;
   }
 
   if (node.halfRadius > MIN_HALF_RADIUS && node.values.length + 1 >= SPLIT_THRESHOLD) {
     const halfHalfRadius = node.halfRadius / 2;
     node.children = [
-      {
-        center: [node.center[0] + node.halfRadius, node.center[1] + node.halfRadius],
-        halfRadius: halfHalfRadius,
-        values: [],
-        children: undefined,
-        valueCount: 0,
-      },
-      {
-        center: [node.center[0] + node.halfRadius, node.center[1] - node.halfRadius],
-        halfRadius: halfHalfRadius,
-        values: [],
-        children: undefined,
-        valueCount: 0,
-      },
-      {
-        center: [node.center[0] - node.halfRadius, node.center[1] + node.halfRadius],
-        halfRadius: halfHalfRadius,
-        values: [],
-        children: undefined,
-        valueCount: 0,
-      },
-      {
-        center: [node.center[0] - node.halfRadius, node.center[1] - node.halfRadius],
-        halfRadius: halfHalfRadius,
-        values: [],
-        children: undefined,
-        valueCount: 0,
-      },
+      makeNode(node.centerX + node.halfRadius, node.centerY + node.halfRadius, halfHalfRadius),
+      makeNode(node.centerX + node.halfRadius, node.centerY - node.halfRadius, halfHalfRadius),
+      makeNode(node.centerX - node.halfRadius, node.centerY + node.halfRadius, halfHalfRadius),
+      makeNode(node.centerX - node.halfRadius, node.centerY - node.halfRadius, halfHalfRadius),
     ];
 
-    const items = [...node.values];
-    node.values.length = 0;
-    for (const [sv, sb] of items) {
-      insert(node, sv, sb);
+    const oldValues = node.values;
+    const oldBounds = node.bounds;
+    const oldBoundRefs = node.boundRefs;
+    node.values = [];
+    node.bounds = [];
+    node.boundRefs = [];
+    for (let i = 0; i < oldValues.length; ++i) {
+      const j = i * 4;
+      insert(
+          node,
+          oldValues[i],
+          oldBoundRefs[i],
+          oldBounds[j], oldBounds[j + 1], oldBounds[j + 2], oldBounds[j + 3]);
     }
-    insert(node, value, bound);
+    insert(node, value, boundRef, lowX, lowY, highX, highY);
   } else {
-    node.values.push([value, bound]);
+    node.values.push(value);
+    node.bounds.push(lowX, lowY, highX, highY);
+    node.boundRefs.push(boundRef);
   }
 }
 
-function queryCircle<V>(node: Node<V>, point: Vec2, radius: number, output: V[]): void {
-  for (const [value, bound] of node.values) {
-    if (intersectCircleAabb(point, radius, bound)) {
-      output.push(value);
+function collapseChildren<V>(node: Node<V>): void {
+  const children = node.children;
+  if (!children) return;
+  for (let c = 0; c < 4; ++c) {
+    const child = children[c];
+    collapseChildren(child);
+    const cvs = child.values;
+    for (let i = 0; i < cvs.length; ++i) {
+      node.values.push(cvs[i]);
+    }
+    const cbs = child.bounds;
+    for (let i = 0; i < cbs.length; ++i) {
+      node.bounds.push(cbs[i]);
+    }
+    const cbr = child.boundRefs;
+    for (let i = 0; i < cbr.length; ++i) {
+      node.boundRefs.push(cbr[i]);
+    }
+  }
+  node.children = undefined;
+}
+
+function queryCircle<V>(
+    node: Node<V>,
+    px: number,
+    py: number,
+    radius: number,
+    output: V[]): void {
+  const values = node.values;
+  const bounds = node.bounds;
+  const r2 = radius * radius;
+  const count = values.length;
+  for (let i = 0; i < count; ++i) {
+    const j = i * 4;
+    const lowX = bounds[j];
+    const lowY = bounds[j + 1];
+    const highX = bounds[j + 2];
+    const highY = bounds[j + 3];
+    if (intersectCircleAabb(px, py, r2, lowX, lowY, highX, highY)) {
+      output.push(values[i]);
     }
   }
 
-  if (node.children) {
-    const cx = node.center[0];
-    const cy = node.center[1];
-    if (point[0] - radius <= cx) {
-      if (point[1] - radius <= cy) {
-        queryCircle(node.children[3], point, radius, output);
+  const children = node.children;
+  if (children) {
+    const cx = node.centerX;
+    const cy = node.centerY;
+    if (px - radius <= cx) {
+      if (py - radius <= cy) {
+        queryCircle(children[3], px, py, radius, output);
       }
-      if (point[1] + radius > cy) {
-        queryCircle(node.children[2], point, radius, output);
+      if (py + radius > cy) {
+        queryCircle(children[2], px, py, radius, output);
       }
     }
-    if (point[0] + radius > cx) {
-      if (point[1] - radius <= cy) {
-        queryCircle(node.children[1], point, radius, output);
+    if (px + radius > cx) {
+      if (py - radius <= cy) {
+        queryCircle(children[1], px, py, radius, output);
       }
-      if (point[1] + radius > cy) {
-        queryCircle(node.children[0], point, radius, output);
+      if (py + radius > cy) {
+        queryCircle(children[0], px, py, radius, output);
       }
     }
   }
 }
 
-function queryRect<V>(node: Node<V>, rect: Rect, output: V[]): void {
-  for (const [value, bound] of node.values) {
-    if (intersectAabbAabb(rect, bound)) {
-      output.push(value);
+function queryRect<V>(
+    node: Node<V>,
+    lowX: number,
+    lowY: number,
+    highX: number,
+    highY: number,
+    output: V[]): void {
+  const values = node.values;
+  const bounds = node.bounds;
+  const count = values.length;
+  for (let i = 0; i < count; ++i) {
+    const j = i * 4;
+    const bLowX = bounds[j];
+    const bLowY = bounds[j + 1];
+    const bHighX = bounds[j + 2];
+    const bHighY = bounds[j + 3];
+    if (!(lowX > bHighX || bLowX > highX) && !(lowY > bHighY || bLowY > highY)) {
+      output.push(values[i]);
     }
   }
 
-  if (node.children) {
-    const cx = node.center[0];
-    const cy = node.center[1];
-    if (rect.low[0] <= cx) {
-      if (rect.low[1] <= cy) {
-        queryRect(node.children[3], rect, output);
+  const children = node.children;
+  if (children) {
+    const cx = node.centerX;
+    const cy = node.centerY;
+    if (lowX <= cx) {
+      if (lowY <= cy) {
+        queryRect(children[3], lowX, lowY, highX, highY, output);
       }
-      if (rect.high[1] > cy) {
-        queryRect(node.children[2], rect, output);
+      if (highY > cy) {
+        queryRect(children[2], lowX, lowY, highX, highY, output);
       }
     }
-    if (rect.high[0] > cx) {
-      if (rect.low[1] <= cy) {
-        queryRect(node.children[1], rect, output);
+    if (highX > cx) {
+      if (lowY <= cy) {
+        queryRect(children[1], lowX, lowY, highX, highY, output);
       }
-      if (rect.high[1] > cy) {
-        queryRect(node.children[0], rect, output);
+      if (highY > cy) {
+        queryRect(children[0], lowX, lowY, highX, highY, output);
       }
     }
   }
 }
 
-function pushAllValuesInto<V>(node: Node<V>, output: Array<[V, Rect]>): void {
-  arrays.pushInto(output, node.values);
-  if (node.children) {
-    pushAllValuesInto(node.children[0], output);
-    pushAllValuesInto(node.children[1], output);
-    pushAllValuesInto(node.children[2], output);
-    pushAllValuesInto(node.children[3], output);
-  }
-}
-
-function intersectAabbAabb(a: Rect, b: Rect): boolean {
-  if (a.low[0] > b.high[0] || b.low[0] > a.high[0]) {
-    return false;
-  } else if (a.low[1] > b.high[1] || b.low[1] > a.high[1]) {
-    return false;
-  } else {
+function intersectCircleAabb(
+    px: number,
+    py: number,
+    r2: number,
+    lowX: number,
+    lowY: number,
+    highX: number,
+    highY: number): boolean {
+  if (lowX <= px && px <= highX && lowY <= py && py <= highY) {
     return true;
   }
+  const halfWidth = (highX - lowX) / 2;
+  const halfHeight = (highY - lowY) / 2;
+  const dx = px - (lowX + halfWidth);
+  const dy = py - (lowY + halfHeight);
+  const cx = dx < -halfWidth ? -halfWidth : (dx > halfWidth ? halfWidth : dx);
+  const cy = dy < -halfHeight ? -halfHeight : (dy > halfHeight ? halfHeight : dy);
+  const dxPrime = px - (lowX + cx);
+  const dyPrime = py - (lowY + cy);
+  return dxPrime * dxPrime + dyPrime * dyPrime <= r2;
 }
-
-function intersectCircleAabb(point: Vec2, radius: number, b: Rect): boolean {
-  // Is the circle inside the rectangle?
-  if (b.low[0] <= point[0] && point[0] <= b.high[0]
-     && b.low[1] <= point[1] && point[1] <= b.high[1]) {
-    return true;
-  }
-  // Find the center of the rectangle
-  const halfWidth = (b.high[0] - b.low[0]) / 2;
-  const halfHeight = (b.high[1] - b.low[1]) / 2;
-  // Find the vector to the circle
-  const dx = point[0] - (b.low[0] + halfWidth);
-  const dy = point[1] - (b.low[1] + halfHeight);
-  // Find the closest point to the circle
-  const cx = clamp(-halfWidth, dx, halfWidth);
-  const cy = clamp(-halfHeight, dy, halfHeight);
-  // Check if that closest point lies inside the circle
-  const dxPrime = point[0] - (b.low[0] + cx);
-  const dyPrime = point[1] - (b.low[1] + cy);
-  return dxPrime * dxPrime + dyPrime * dyPrime <= radius * radius;
-}
-
-function clamp(low: number, v: number, high: number): number {
-  return Math.min(Math.max(low, v), high);
-}
-
