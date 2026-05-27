@@ -22,11 +22,34 @@ private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
   ByteBuffer.allocate(256 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
 }
 
+/**
+ * One entry every ~1 MB of merged output, paired with a fixed-size footer at the end of the
+ * file. Lets Phase 2's parallel zip pick split keys without scanning gigabytes of data.
+ */
+private const val INDEX_GRANULARITY_BYTES = 1024L * 1024L
+
+// Footer (24 bytes, little-endian) sits at the very end of every merged PMap file:
+//   8 bytes  magic
+//   8 bytes  file offset where the index begins
+//   8 bytes  number of index entries
+private const val INDEX_FOOTER_MAGIC: Long = 0x504D6170496E6478L  // "PMapIndx"
+private const val INDEX_FOOTER_SIZE: Long = 24L
+
+/** An index entry: a key from the merged data and the file offset where its record starts. */
+data class PMapIndexEntry<K>(val key: K, val offset: Long)
+
 class MmapPMap<K : Comparable<K>, V>(
     private val maps: List<EncodedByteBufferInputStream>,
     private val keySerializer: Serializer<K>,
     private val valueSerializer: Serializer<V>,
     private val size: Long,
+    /**
+     * Sparse (key, file-offset) entries — one every ~1 MB of merged output. Populated for PMaps
+     * produced by [mergeSortedShards]; may be empty for PMaps with no producer-side index
+     * (parallel emit fallback paths, tests). Phase 2's parallel zip uses this to pick split
+     * keys without scanning the data.
+     */
+    val index: List<PMapIndexEntry<K>> = emptyList(),
 ) : PMap<K, V> {
 
   var shard = 0
@@ -380,7 +403,16 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
       File.createTempFile(cleanFilename("mmap-map-merged-${keyType}-${valueType}"), null)
   merged.deleteOnExit()
 
-  val shards = RandomAccessFile(merged, "rw").use {
+  // Index entries accumulated while the data is being written. One entry per ~1 MB.
+  val indexKeys = ArrayList<K>()
+  val indexOffsets = ArrayList<Long>()
+
+  // After the data is fully written, snapshot the data shards (so MmapPMap only mmaps the
+  // data extents, not the trailing index/footer region).
+  var dataShards: List<org.trailcatalog.common.Extents> = emptyList()
+  var indexStart: Long = 0L
+
+  RandomAccessFile(merged, "rw").use {
     val stream = ChannelEncodedOutputStream(it.channel)
     stream.use { output ->
       val heap = PriorityQueue<MergeKey<K>>()
@@ -394,6 +426,16 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
         }
       }
 
+      var lastIndexedOffset = -INDEX_GRANULARITY_BYTES
+
+      fun maybeIndex(key: K, recordOffset: Long) {
+        if (recordOffset - lastIndexedOffset >= INDEX_GRANULARITY_BYTES) {
+          indexKeys.add(key)
+          indexOffsets.add(recordOffset)
+          lastIndexedOffset = recordOffset
+        }
+      }
+
       longProgress("${context} merging shards") { progress ->
         var last: K? = null
         val values = ArrayList<ByteArray>()
@@ -402,6 +444,8 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
           if (last == null) {
             last = min.key
           } else if (last.compareTo(min.key) != 0) {
+            val recordOffset = output.nextWriteOffset()
+            maybeIndex(last, recordOffset)
             keySerializer.write(last, output)
             output.writeVarInt(values.size)
             for (value in values) {
@@ -426,6 +470,8 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
         }
 
         if (last != null) {
+          val recordOffset = output.nextWriteOffset()
+          maybeIndex(last, recordOffset)
           keySerializer.write(last, output)
           output.writeVarInt(values.size)
           for (value in values) {
@@ -435,25 +481,46 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
           values.clear()
         }
       }
-    }
 
-    stream.shards()
+      // Close the data region as a shard so MmapPMap doesn't mmap the index/footer as data.
+      output.shard()
+      dataShards = output.shardsSnapshot()
+
+      // Write the sparse index, then a fixed-size footer pointing at it.
+      indexStart = output.nextWriteOffset()
+      for (i in indexKeys.indices) {
+        keySerializer.write(indexKeys[i], output)
+        output.writeLong(indexOffsets[i])
+      }
+
+      output.writeLong(INDEX_FOOTER_MAGIC)
+      output.writeLong(indexStart)
+      output.writeLong(indexKeys.size.toLong())
+    }
   }
 
-  val size = if (shards.isNotEmpty()) shards[shards.size - 1].let { it.start + it.length } else 0
-  println("  PMap (mmap) ${keyType} -> ${valueType} size ${size}")
+  val size =
+      if (dataShards.isNotEmpty()) dataShards[dataShards.size - 1].let { it.start + it.length }
+      else 0
+  println("  PMap (mmap) ${keyType} -> ${valueType} size ${size} (index ${indexKeys.size})")
   println("  -> estimated ${estimatedByteSize} bytes (${estimatedByteSize * 100.0 / size}%)")
 
   val fileReference = FileReference(merged)
+  val indexEntries = indexKeys.indices.map { PMapIndexEntry(indexKeys[it], indexOffsets[it]) }
 
   return DisposableSupplier(fileReference) {
     val opened = FileChannel.open(merged.toPath()).use { postsortChannel ->
-      shards.map { s ->
+      dataShards.map { s ->
         EncodedByteBufferInputStream(postsortChannel.map(MapMode.READ_ONLY, s.start, s.length))
       }
     }
     MmapPMap(
-        opened, keySerializer, valueSerializer, opened.sumOf { it.size().toLong() })
+        opened,
+        keySerializer,
+        valueSerializer,
+        opened.sumOf { it.size().toLong() },
+        index = indexEntries,
+    )
   }
 }
 

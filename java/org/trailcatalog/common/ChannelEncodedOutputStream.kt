@@ -18,7 +18,24 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel) : Enc
     return position
   }
 
+  /**
+   * Byte offset where the next call to write() will land in the underlying channel, accounting
+   * for bytes still sitting in the internal buffer that haven't been flushed yet.
+   */
+  fun nextWriteOffset(): Long {
+    return position + buffer.position()
+  }
+
   fun shards(): List<Extents> {
+    return shards.build()
+  }
+
+  /**
+   * Immutable snapshot of the shards recorded so far. Subsequent writes / shard() calls will
+   * not affect the returned list. Useful when you want to record the data extent before
+   * appending a sidecar region (e.g. an index) into the same file.
+   */
+  fun shardsSnapshot(): List<Extents> {
     return shards.build()
   }
 
