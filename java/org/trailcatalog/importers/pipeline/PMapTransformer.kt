@@ -19,11 +19,8 @@ abstract class PMapTransformer<I, K : Comparable<K>, V : Any>(
     val estimate =
         (estimateRatio() * input.estimatedByteSize()).toLong()
             + estimateCount() * estimateElementBytes()
-    return createPMap(context, keyType, valueType, estimate) { emitter ->
-      while (input.hasNext()) {
-        act(input.next(), emitter)
-      }
-      input.close()
+    return createPMap(context, keyType, valueType, estimate, input, resolvedParallelism) { item, emitter ->
+      act(item, emitter)
     }
   }
 }

@@ -1,9 +1,10 @@
 package org.trailcatalog.importers.pipeline.collections
 
 import com.google.common.reflect.TypeToken
-import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
 import org.trailcatalog.common.ChannelEncodedOutputStream
 import org.trailcatalog.common.EncodedByteBufferInputStream
+import org.trailcatalog.common.Extents
+import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
 import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.File
 import java.io.RandomAccessFile
@@ -12,6 +13,7 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
+import java.util.concurrent.ArrayBlockingQueue
 
 var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024L
 // ThreadLocal so worker threads in parallel-extract mode don't race on the same scratch buffer.
@@ -68,7 +70,7 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
   val valueSerializer = getSerializer(valueType)
 
   val startTime = System.currentTimeMillis()
-  val (shardedFile, shards) =
+  val (shardedFiles, shards) =
       emitToSortedShards(context, keyType, valueType, keySerializer, valueSerializer, fn)
   return mergeSortedShards(
       context,
@@ -80,9 +82,57 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
       estimatedByteSize,
   ).also {
     shards.forEach { it.close() }
-    shardedFile.delete()
+    shardedFiles.forEach { it.delete() }
     val seconds = (System.currentTimeMillis() - startTime) / 1000
     println("  PMap ${context} total ${seconds}s")
+  }
+}
+
+/**
+ * Parallel variant: drives [input] iteration on the caller thread and dispatches batches to
+ * [workers] worker threads, each running [perItem] and writing into its own pre-sort shard file.
+ * The K-way merge picks up shards from all worker files transparently.
+ *
+ * With `workers <= 1` this delegates to the single-threaded path, so callers can pass the
+ * resolved parallelism directly.
+ */
+fun <I, K : Comparable<K>, V : Any> createMmapPMap(
+    context: String,
+    keyType: TypeToken<K>,
+    valueType: TypeToken<out V>,
+    estimatedByteSize: Long,
+    input: PCollection<I>,
+    workers: Int,
+    perItem: (I, Emitter2<K, V>) -> Unit): DisposableSupplier<MmapPMap<K, V>> {
+  if (workers <= 1) {
+    return createMmapPMap(context, keyType, valueType, estimatedByteSize) { emitter ->
+      while (input.hasNext()) {
+        perItem(input.next(), emitter)
+      }
+      input.close()
+    }
+  }
+
+  val keySerializer = getSerializer(keyType)
+  val valueSerializer = getSerializer(valueType)
+
+  val startTime = System.currentTimeMillis()
+  val (shardedFiles, shards) =
+      emitToSortedShardsParallel(
+          context, keyType, valueType, keySerializer, valueSerializer, input, workers, perItem)
+  return mergeSortedShards(
+      context,
+      keyType,
+      valueType,
+      shards,
+      keySerializer,
+      valueSerializer,
+      estimatedByteSize,
+  ).also {
+    shards.forEach { it.close() }
+    shardedFiles.forEach { it.delete() }
+    val seconds = (System.currentTimeMillis() - startTime) / 1000
+    println("  PMap ${context} total ${seconds}s (parallel x${workers})")
   }
 }
 
@@ -92,7 +142,7 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
     valueType: TypeToken<out V>,
     keySerializer: Serializer<K>,
     valueSerializer: Serializer<V>,
-    fn: (Emitter2<K, V>) -> Unit): Pair<File, List<EncodedByteBufferInputStream>> {
+    fn: (Emitter2<K, V>) -> Unit): Pair<List<File>, List<EncodedByteBufferInputStream>> {
   val sharded =
       File.createTempFile(cleanFilename("mmap-map-sharded-${keyType}-${valueType}"), null)
   sharded.deleteOnExit()
@@ -163,9 +213,158 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
   println("  PMap (mmap) ${keyType} -> ${valueType} in ${shards.size} shards (size ${size})")
 
   val fileChannel = FileChannel.open(sharded.toPath())
-  return Pair(sharded, shards.map { s ->
+  return Pair(listOf(sharded), shards.map { s ->
     EncodedByteBufferInputStream(fileChannel.map(MapMode.READ_ONLY, s.start, s.length))
   })
+}
+
+private const val PARALLEL_BATCH_SIZE = 1024
+
+// Sentinel passed through the work queue to signal a worker should drain and exit. Reference
+// equality is what matters; the empty list contents are irrelevant.
+private val SENTINEL_BATCH: List<Any?> = emptyList()
+
+private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
+    context: String,
+    keyType: TypeToken<K>,
+    valueType: TypeToken<out V>,
+    keySerializer: Serializer<K>,
+    valueSerializer: Serializer<V>,
+    input: PCollection<I>,
+    workers: Int,
+    perItem: (I, Emitter2<K, V>) -> Unit,
+): Pair<List<File>, List<EncodedByteBufferInputStream>> {
+  val workerFiles =
+      (0 until workers).map { w ->
+        File.createTempFile(
+            cleanFilename("mmap-map-sharded-${keyType}-${valueType}-w${w}"),
+            null,
+        ).also { it.deleteOnExit() }
+      }
+
+  // Queue of input batches to dispatch to workers. Cap at 2x workers so the producer can stay
+  // a step ahead without unbounded memory growth.
+  val queueCapacity = (workers * 2).coerceAtLeast(2)
+  val queue = ArrayBlockingQueue<List<I>>(queueCapacity)
+
+  val perWorkerShards = arrayOfNulls<List<Extents>>(workers)
+  val runtime = Runtime.getRuntime()
+  val maxMemory = runtime.maxMemory()
+
+  longProgress("${context} emitting to shards (parallel x${workers})") { progress ->
+    val workerThreads =
+        (0 until workers).map { workerId ->
+          Thread(
+              {
+                val raf = RandomAccessFile(workerFiles[workerId], "rw")
+                try {
+                  val stream = ChannelEncodedOutputStream(raf.channel)
+                  stream.use { output ->
+                    val itemsInShard = ArrayList<SortKey<K>>()
+                    var shardValuesSize = 0L
+
+                    val dumpShard = {
+                      itemsInShard.sort()
+                      for (item in itemsInShard) {
+                        keySerializer.write(item.key, output)
+                        output.writeVarInt(item.value.size)
+                        output.write(item.value)
+                        output.checkBufferSpace()
+                      }
+                      output.shard()
+                      itemsInShard.clear()
+                      shardValuesSize = 0
+                    }
+
+                    var lastHeapCheck = 0L
+                    val emitter =
+                        object : Emitter2<K, V> {
+                          override fun emit(a: K, b: V) {
+                            val buffer = BYTE_BUFFER.get()
+                            valueSerializer.write(b, ByteBufferEncodedOutputStream(buffer))
+                            buffer.flip()
+                            val bytes = ByteArray(buffer.limit())
+                            buffer.get(bytes)
+                            buffer.clear()
+                            itemsInShard.add(SortKey(a, bytes))
+                            shardValuesSize += bytes.size
+                            progress.increment()
+
+                            // Heap check is racy across workers but the worst outcome is an
+                            // unnecessary or skipped dump; safe.
+                            if (shardValuesSize - lastHeapCheck > 50 * 1024 * 1024) {
+                              val remains =
+                                  maxMemory - (runtime.totalMemory() - runtime.freeMemory())
+                              if (remains < HEAP_DUMP_THRESHOLD) {
+                                dumpShard()
+                              }
+                              lastHeapCheck = shardValuesSize
+                            }
+                          }
+                        }
+
+                    while (true) {
+                      val batch = queue.take()
+                      if (batch === SENTINEL_BATCH) break
+                      for (item in batch) {
+                        perItem(item, emitter)
+                      }
+                    }
+
+                    dumpShard()
+                  }
+                  perWorkerShards[workerId] = stream.shards()
+                } finally {
+                  raf.close()
+                }
+              },
+              "mmap-pmap-${context}-w${workerId}",
+          )
+        }
+
+    workerThreads.forEach { it.start() }
+
+    // Producer (this thread): batch input items and push to queue.
+    var batch = ArrayList<I>(PARALLEL_BATCH_SIZE)
+    while (input.hasNext()) {
+      batch.add(input.next())
+      if (batch.size >= PARALLEL_BATCH_SIZE) {
+        queue.put(batch)
+        batch = ArrayList(PARALLEL_BATCH_SIZE)
+      }
+    }
+    if (batch.isNotEmpty()) {
+      queue.put(batch)
+    }
+    @Suppress("UNCHECKED_CAST")
+    repeat(workers) { queue.put(SENTINEL_BATCH as List<I>) }
+
+    workerThreads.forEach { it.join() }
+  }
+
+  input.close()
+
+  val combinedFileShards =
+      workerFiles.mapIndexed { i, file -> file to perWorkerShards[i]!! }
+  val totalShards = combinedFileShards.sumOf { it.second.size }
+  val totalSize = combinedFileShards.sumOf { (_, shards) -> shards.sumOf { it.length } }
+  println(
+      "  PMap (mmap parallel x${workers}) ${keyType} -> ${valueType} in ${totalShards} shards" +
+          " (size ${totalSize})")
+
+  // Open every worker file's shards as mmap'd input streams. Each worker file gets one
+  // FileChannel; we map each shard's extent into its own buffer.
+  val streams =
+      combinedFileShards.flatMap { (file, shards) ->
+        val channel = FileChannel.open(file.toPath())
+        channel.use { fc ->
+          shards.map { s ->
+            EncodedByteBufferInputStream(fc.map(MapMode.READ_ONLY, s.start, s.length))
+          }
+        }
+      }
+
+  return Pair(workerFiles, streams)
 }
 
 private fun <K : Comparable<K>, V : Any> mergeSortedShards(

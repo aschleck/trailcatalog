@@ -36,4 +36,17 @@ abstract class PStage<I, O> {
    * multiply heap usage.
    */
   open val parallelism: Int = 1
+
+  /**
+   * Worker-thread count actually granted to this stage for the current invocation. Set by
+   * [BoundStage.invoke] right before it calls [act], so subclasses can read it from inside
+   * act() without needing to thread the Pipeline through. Equal to
+   * `min(this.parallelism, pipeline.parallelism)`.
+   */
+  protected var resolvedParallelism: Int = 1
+    private set
+
+  internal fun setResolvedParallelism(value: Int) {
+    resolvedParallelism = value
+  }
 }

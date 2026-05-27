@@ -37,4 +37,8 @@ class MakeWayGeometries
   override fun estimateRatio(): Double {
     return 0.5
   }
+
+  // Per-way: build a HashMap of node IDs, walk way.nodes, emit a fresh Way with geometry.
+  // Tens of millions of ways at planet scale — non-trivial CPU per call.
+  override val parallelism: Int = Int.MAX_VALUE
 }

@@ -8,6 +8,7 @@ import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.importers.pipeline.collections.PMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.min
 
 abstract class BoundStage<I, O>(
     val pipeline: Pipeline,
@@ -37,6 +38,7 @@ abstract class BoundStage<I, O>(
   fun invoke(): O {
     val existing = result.get()
     val computed = if (existing == null) {
+      this.stage.setResolvedParallelism(min(this.stage.parallelism, pipeline.parallelism))
       result.set(this.stage.act(getInput(), this.handles.get()))
       result.get()
     } else {
