@@ -9,7 +9,7 @@ import { RgbaU32, Vec2 } from '../common/types';
 
 import { Drawable } from './program';
 import { Renderer } from './renderer';
-import { Glyph } from './sdf_program';
+import { Glyph, SdfProgram } from './sdf_program';
 import { TexturePool } from './texture_pool';
 
 interface LoadAwareFontFace extends TFontFace {
@@ -61,6 +61,17 @@ class Glypher {
     for (let i = 32; i < 127; ++i) {
       this.characters.add(String.fromCodePoint(i));
     }
+  }
+
+  /** Upper bound on bytes that {@link plan} will write for the given graphemes. */
+  bytesNeeded(graphemes: string[]): number {
+    let glyphCount = 0;
+    for (const c of graphemes) {
+      if (c !== '\n') {
+        glyphCount += 1;
+      }
+    }
+    return SdfProgram.bytesNeeded(glyphCount);
   }
 
   measurePx(graphemes: string[], scale: number): Vec2|undefined {

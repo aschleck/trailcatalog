@@ -21,7 +21,14 @@ export interface Glyph {
   height: number;
 }
 
+const FLOATS_PER_GLYPH = 12;
+
 export class SdfProgram extends Program<SdfProgramData> {
+
+  /** Bytes that {@link plan} will write into the supplied buffer. */
+  static bytesNeeded(glyphCount: number): number {
+    return glyphCount * FLOATS_PER_GLYPH * 4;
+  }
 
   readonly atlas: WebGLTexture;
   private readonly sdfBuffer: WebGLBuffer;

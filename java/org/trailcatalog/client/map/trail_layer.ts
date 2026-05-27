@@ -8,7 +8,9 @@ import { WorldBoundsQuadtree } from 'js/map/common/bounds_quadtree';
 import { DPI } from 'js/map/common/dpi';
 import { LatLng, RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
+import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { GLYPHER, toGraphemes } from 'js/map/rendering/glypher';
+import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -129,6 +131,8 @@ export class TrailLayer extends Layer implements Listener {
   private readonly pinRenderer: PinRenderer;
   private readonly pointsAtlas: WebGLTexture;
   private readonly queryClosestBuffer: Handle[];
+  private interactiveScratchBuffer: ArrayBuffer;
+  private loadScratchBuffer: ArrayBuffer;
   private generation: number;
   private lastGeneration: number;
   private lastHoverTarget: Path|Point|Trail|undefined;
@@ -170,6 +174,8 @@ export class TrailLayer extends Layer implements Listener {
     // Why don't we need to dispose?
     this.pointsAtlas = new TexturePool(renderer).acquire();
     this.queryClosestBuffer = [];
+    this.interactiveScratchBuffer = new ArrayBuffer(64 * 1024);
+    this.loadScratchBuffer = new ArrayBuffer(1024 * 1024);
 
     const pinPixelSize = this.pinRenderer.measureUnlabeledPin();
     const halfPinWidth = pinPixelSize[0] / 2;
@@ -219,11 +225,11 @@ export class TrailLayer extends Layer implements Listener {
       if (this.lastHoverTarget) {
         this.setHover(this.lastHoverTarget, false);
       }
+      if (best) {
+        this.setHover(best, true);
+      }
       source.trigger(HOVER_CHANGED, {target: best});
-    }
-    this.lastHoverTarget = best;
-    if (best) {
-      this.setHover(best, true);
+      this.lastHoverTarget = best;
     }
     return true;
   }
@@ -434,7 +440,36 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   private updateInteractive(): void {
-    const buffer = new ArrayBuffer(1024 * 1024 * 1024);
+    let bufferSize = 0;
+    for (const source of [this.active, this.hovering]) {
+      for (const id of source.keys()) {
+        const path = this.dataService.getPath(id);
+        if (path) {
+          const onTrail = this.dataService.pathsToTrails.has(path.id);
+          if (onTrail || isPath(path.type)) {
+            bufferSize += LineProgram.bytesNeeded(path.line.length / 2);
+          }
+        }
+
+        const trail = this.dataService.getTrail(id);
+        if (trail) {
+          bufferSize += BillboardProgram.bytesNeeded();
+          const {value, unit} = formatDistance(trail.lengthMeters);
+          const graphemes = toGraphemes(`${value} ${unit}`);
+          if (GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE)) {
+            bufferSize += BillboardProgram.bytesNeeded();
+            bufferSize += GLYPHER.bytesNeeded(graphemes);
+          }
+        }
+
+        if (this.dataService.getPoint(id)) {
+          bufferSize += BillboardProgram.bytesNeeded();
+        }
+      }
+    }
+
+    this.interactiveScratchBuffer = growBuffer(this.interactiveScratchBuffer, bufferSize);
+    const buffer = this.interactiveScratchBuffer;
     this.interactivePlan.paths.length = 0;
     this.interactivePlan.pinsLabeled.length = 0;
     this.interactivePlan.pinsUnlabeled.length = 0;
@@ -570,18 +605,21 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   loadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void {
+    let bufferSize = 0;
     for (const trail of trails) {
       const {value, unit} = formatDistance(trail.lengthMeters);
-      const text = `${value} ${unit}`;
-      const graphemes = toGraphemes(text);
+      const graphemes = toGraphemes(`${value} ${unit}`);
       if (!GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE)) {
         // yolo!
         setTimeout(() => { this.loadOverviewCell(id, trails); });
         return;
       }
+      // Unlabeled pin + labeled pin + glyph text.
+      bufferSize += 2 * BillboardProgram.bytesNeeded() + GLYPHER.bytesNeeded(graphemes);
     }
 
-    const buffer = new ArrayBuffer(1024 * 1024 * 1024);
+    this.loadScratchBuffer = growBuffer(this.loadScratchBuffer, bufferSize);
+    const buffer = this.loadScratchBuffer;
     const pinsLabeled = [];
     const pinsUnlabeled = [];
     const glBuffer = this.renderer.createDataBuffer(0);
@@ -690,7 +728,16 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   loadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void {
-    const buffer = new ArrayBuffer(1024 * 1024 * 1024);
+    let bufferSize = 0;
+    for (const path of paths) {
+      const onTrail = this.dataService.pathsToTrails.has(path.id);
+      if (onTrail || isPath(path.type)) {
+        bufferSize += LineProgram.bytesNeeded(path.line.length / 2);
+      }
+    }
+
+    this.loadScratchBuffer = growBuffer(this.loadScratchBuffer, bufferSize);
+    const buffer = this.loadScratchBuffer;
     const drawables = [];
     const glBuffer = this.renderer.createDataBuffer(0);
     let offset = 0;
@@ -739,7 +786,19 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   loadFineCell(id: S2CellNumber, paths: Iterable<Path>, points: Iterable<Point>): void {
-    const buffer = new ArrayBuffer(1024 * 1024 * 1024);
+    let bufferSize = 0;
+    for (const path of paths) {
+      const onTrail = this.dataService.pathsToTrails.has(path.id);
+      if (onTrail || isPath(path.type)) {
+        bufferSize += LineProgram.bytesNeeded(path.line.length / 2);
+      }
+    }
+    for (const _ of points) {
+      bufferSize += BillboardProgram.bytesNeeded();
+    }
+
+    this.loadScratchBuffer = growBuffer(this.loadScratchBuffer, bufferSize);
+    const buffer = this.loadScratchBuffer;
     const pathDrawables = [];
     const pointDrawables = [];
     const glBuffer = this.renderer.createDataBuffer(0);
@@ -881,6 +940,14 @@ export class TrailLayer extends Layer implements Listener {
   private showFine(zoom: number): boolean {
     return zoom >= FINE_ZOOM_THRESHOLD;
   }
+}
+
+function growBuffer(buffer: ArrayBuffer, needed: number): ArrayBuffer {
+  if (needed <= buffer.byteLength) {
+    return buffer;
+  }
+  const capacity = Math.pow(2, Math.ceil(Math.log2(needed)) + 1);
+  return new ArrayBuffer(capacity);
 }
 
 function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number {
