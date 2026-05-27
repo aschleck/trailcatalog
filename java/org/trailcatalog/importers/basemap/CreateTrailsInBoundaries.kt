@@ -14,6 +14,10 @@ class CreateTrailsInBoundaries
     TypeToken.of(Long::class.java),
 ) {
 
+  // Same per-hot-cell memory blowup as CreateBoundariesInBoundaries: a HashMap of every decoded
+  // trail polyline plus per-boundary polygon decode in the inner loop.
+  override val parallelism: Int = 1
+
   override fun act(
       input: PEntry<Long, Pair<List<BoundaryPolygon>, List<TrailPolyline>>>,
       emitter: Emitter2<Long, Long>) {

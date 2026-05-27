@@ -22,9 +22,6 @@ class ExtractWays
   override fun estimateRatio(): Double {
     return 0.5
   }
-
-  // Per PBF block: classify ways via tag lookups and build node-ref arrays.
-  override val parallelism: Int = Int.MAX_VALUE
 }
 
 private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {

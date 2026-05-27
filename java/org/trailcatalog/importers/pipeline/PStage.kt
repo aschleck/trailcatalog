@@ -25,17 +25,20 @@ abstract class PStage<I, O> {
   /**
    * Maximum worker threads this stage can usefully spread its act() loop across.
    *
-   * The default of 1 keeps each stage single-threaded — the current behavior. Stages whose act()
-   * is cheap (a few comparisons, a hash lookup, an emit) leave this at 1 because dispatch
-   * overhead would dominate. Stages whose act() is expensive (S2 polygon assembly, trail
-   * orient/trace, DEM lookups) override it to fan out.
+   * Defaults to `Int.MAX_VALUE` — stages opt *out* of parallelism, not in. The actual worker
+   * count is `min(this, pipeline.parallelism)`, so the `--parallelism` CLI flag is the overall
+   * cap. Stages override this to a smaller value (usually 1) when:
    *
-   * The actual worker count is min(this, pipeline.parallelism), so the CLI flag is an overall
-   * cap, and any stage with known in-memory hotspots (CreateBoundariesInBoundaries,
-   * CreateTrailsInBoundaries, ExtractRelationGeometriesWithWays) leaves this at 1 so it doesn't
-   * multiply heap usage.
+   *   - The in-memory working set scales with per-key value count (CreateBoundariesInBoundaries,
+   *     CreateTrailsInBoundaries) — N workers means N hot keys resident at once, which can OOM.
+   *   - act() touches shared mutable state with unclear thread safety (CalculateWayElevations
+   *     and its DemResolver).
+   *
+   * Everything else uses workers freely. The per-record serialization cost on the hot path is
+   * non-trivial even for "cheap" stages, so dispatch overhead is comfortably amortized at the
+   * 1024-item batch size used by the worker queue.
    */
-  open val parallelism: Int = 1
+  open val parallelism: Int = Int.MAX_VALUE
 
   /**
    * Worker-thread count actually granted to this stage for the current invocation. Set by

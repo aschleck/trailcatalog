@@ -59,9 +59,6 @@ class ExtractPoints : PTransformer<PrimitiveBlock, Point>(TypeToken.of(Point::cl
   override fun estimateRatio(): Double {
     return 0.01
   }
-
-  // Per PBF block: tag scanning + StringTable lookups per node. Heavy enough per block to share.
-  override val parallelism: Int = Int.MAX_VALUE
 }
 
 private fun maybeEmitPoint(

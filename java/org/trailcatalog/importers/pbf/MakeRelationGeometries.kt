@@ -41,10 +41,6 @@ class MakeRelationGeometries
   override fun estimateRatio(): Double {
     return 1.0
   }
-
-  // Per-relation: assemble a fresh RelationGeometry from constituent ways. Heavy CPU on big
-  // relations (route relations with thousands of ways).
-  override val parallelism: Int = Int.MAX_VALUE
 }
 
 private fun inflate(

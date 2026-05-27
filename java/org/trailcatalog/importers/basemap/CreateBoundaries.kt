@@ -21,9 +21,6 @@ class CreateBoundaries
   : PTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Boundary>(
     TypeToken.of(Boundary::class.java)) {
 
-  // Per relation: S2Polygon assembly + snap. Heavy CPU.
-  override val parallelism: Int = Int.MAX_VALUE
-
   override fun act(
       input: PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>,
       emitter: Emitter<Boundary>) {

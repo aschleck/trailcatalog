@@ -18,6 +18,10 @@ class CalculateWayElevations(hikari: HikariDataSource)
 
   private val resolver = DemResolver(hikari)
 
+  // DemResolver wraps a DB connection and tile cache whose thread safety hasn't been audited.
+  // Stay single-threaded until that's verified.
+  override val parallelism: Int = 1
+
   override fun act(input: PEntry<S2CellId, Way>, emitter: Emitter<Profile>) {
     for (way in input.values) {
       emitter.emit(calculateProfile(way, resolver))

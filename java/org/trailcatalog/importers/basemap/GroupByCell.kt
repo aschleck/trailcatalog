@@ -46,10 +46,6 @@ class GroupBoundariesByCell
       emitter.emit(cell.id(), output)
     }
   }
-
-  // S2Polygon decode + S2RegionCoverer covering is CPU-heavy per boundary. COVERER is a
-  // S2RegionCoverer instance from the builder, which is thread-safe per the S2 docs.
-  override val parallelism: Int = Int.MAX_VALUE
 }
 
 class GroupTrailsByCell
@@ -60,9 +56,6 @@ class GroupTrailsByCell
       "GroupTrailsByCell",
       TypeToken.of(Long::class.java),
       TypeToken.of(TrailPolyline::class.java)) {
-
-  // S2CellUnion build per polyline is moderate CPU per trail.
-  override val parallelism: Int = Int.MAX_VALUE
 
   override fun act(
       input: Trail,
