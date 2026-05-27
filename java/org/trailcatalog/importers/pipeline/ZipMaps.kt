@@ -118,7 +118,7 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
         }
 
         override fun hasNext(): Boolean {
-          return nl != null && nr != null
+          return nl != null || nr != null
         }
 
         override fun next(): PEntry<K, Pair<List<V1>, List<V2>>> {
