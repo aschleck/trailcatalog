@@ -21,6 +21,11 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import kotlin.io.path.exists
 
+// Worker-thread cap for stages that opt in via PStage.parallelism. Defaults to available cores;
+// the --parallelism CLI flag overrides it. Read in Importer.processPbfs when building the
+// Pipeline; not consulted again afterward.
+var IMPORTER_PARALLELISM: Int = Runtime.getRuntime().availableProcessors()
+
 fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
   registerPbfSerializers()
 
@@ -187,6 +192,10 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       }
       "--heap_dump_threshold" -> {
         HEAP_DUMP_THRESHOLD = args[i + 1].toLong()
+        i += 1
+      }
+      "--parallelism" -> {
+        IMPORTER_PARALLELISM = args[i + 1].toInt()
         i += 1
       }
       "--pbf_path" -> {

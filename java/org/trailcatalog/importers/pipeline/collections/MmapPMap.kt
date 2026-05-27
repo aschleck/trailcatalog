@@ -14,7 +14,11 @@ import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
 
 var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024L
-private val BYTE_BUFFER = ByteBuffer.allocate(256 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+// ThreadLocal so worker threads in parallel-extract mode don't race on the same scratch buffer.
+// Each thread serializes one record at a time before copying the bytes out into the shard list.
+private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
+  ByteBuffer.allocate(256 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+}
 
 class MmapPMap<K : Comparable<K>, V>(
     private val maps: List<EncodedByteBufferInputStream>,
@@ -63,6 +67,7 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
   val keySerializer = getSerializer(keyType)
   val valueSerializer = getSerializer(valueType)
 
+  val startTime = System.currentTimeMillis()
   val (shardedFile, shards) =
       emitToSortedShards(context, keyType, valueType, keySerializer, valueSerializer, fn)
   return mergeSortedShards(
@@ -76,6 +81,8 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
   ).also {
     shards.forEach { it.close() }
     shardedFile.delete()
+    val seconds = (System.currentTimeMillis() - startTime) / 1000
+    println("  PMap ${context} total ${seconds}s")
   }
 }
 
@@ -115,11 +122,12 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
 
       val emitter = object : Emitter2<K, V> {
         override fun emit(a: K, b: V) {
-          valueSerializer.write(b, ByteBufferEncodedOutputStream(BYTE_BUFFER))
-          BYTE_BUFFER.flip()
-          val bytes = ByteArray(BYTE_BUFFER.limit())
-          BYTE_BUFFER.get(bytes)
-          BYTE_BUFFER.clear()
+          val buffer = BYTE_BUFFER.get()
+          valueSerializer.write(b, ByteBufferEncodedOutputStream(buffer))
+          buffer.flip()
+          val bytes = ByteArray(buffer.limit())
+          buffer.get(bytes)
+          buffer.clear()
           itemsInShard.add(SortKey(a, bytes))
           shardValuesSize += bytes.size
 

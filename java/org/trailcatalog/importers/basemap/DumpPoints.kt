@@ -10,7 +10,9 @@ import org.trailcatalog.importers.pipeline.collections.PList
 import org.trailcatalog.models.PointCategory
 import org.trailcatalog.s2.latLngToCell
 
-private val BYTE_BUFFER = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
+  ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+}
 
 class DumpPoints(private val epoch: Int, private val hikari: HikariDataSource)
   : PSink<PList<Point>>() {
@@ -19,11 +21,12 @@ class DumpPoints(private val epoch: Int, private val hikari: HikariDataSource)
     input.use {
       val stream =
           StringifyingInputStream(input) { point, csv ->
-            val markerAsInts = BYTE_BUFFER.asIntBuffer()
+            val buffer = BYTE_BUFFER.get()
+            val markerAsInts = buffer.asIntBuffer()
             markerAsInts
                 .put(point.latLng.lat)
                 .put(point.latLng.lng)
-            BYTE_BUFFER.limit(4 * markerAsInts.position()) // ? can we do this better?
+            buffer.limit(4 * markerAsInts.position()) // ? can we do this better?
 
             // id,epoch,type,cell,name,marker_degrees_e7
             csv.append(point.id)
@@ -40,8 +43,8 @@ class DumpPoints(private val epoch: Int, private val hikari: HikariDataSource)
               csv.append(StringEscapeUtils.escapeCsv(point.name))
             }
             csv.append(",")
-            appendByteBuffer(BYTE_BUFFER, csv)
-            BYTE_BUFFER.clear()
+            appendByteBuffer(buffer, csv)
+            buffer.clear()
             csv.append("\n")
           }
       copyStreamToPg("points", stream, hikari)

@@ -5,7 +5,14 @@ import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.PSortedList
 
-class Pipeline {
+/**
+ * Pipeline executor.
+ *
+ * @param parallelism Caps the worker-thread count any stage can opt into via its
+ *   [PStage.parallelism] property. 1 (the default) preserves the historical single-threaded
+ *   behavior. Wired from the `--parallelism` CLI flag in BaseImporter.
+ */
+class Pipeline(val parallelism: Int = 1) {
 
   private val outputs = ArrayList<BoundStage<*, *>>()
 

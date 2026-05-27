@@ -10,7 +10,9 @@ import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.boundToCell
 
-private val BYTE_BUFFER = ByteBuffer.allocate(1 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
+  ByteBuffer.allocate(1 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+}
 
 class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
   : PSink<PMap<Long, Way>>() {
@@ -24,13 +26,14 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
               return@StringifyingInputStream
             }
 
+            val buffer = BYTE_BUFFER.get()
             val bound = S2LatLngRect.empty().toBuilder()
-            val asInts = BYTE_BUFFER.asIntBuffer()
+            val asInts = buffer.asIntBuffer()
             for (e7 in way.points) {
               bound.addPoint(e7.toS2LatLng())
               asInts.put(e7.lat).put(e7.lng)
             }
-            BYTE_BUFFER.limit(4 * asInts.position()) // ? can we do this better?
+            buffer.limit(4 * asInts.position()) // ? can we do this better?
 
             // id,epoch,type,cell,lat_lng_degrees,source_way
             csv.append(2 * way.id)
@@ -41,8 +44,8 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
             csv.append(",")
             csv.append(boundToCell(bound.build()).id())
             csv.append(",")
-            appendByteBuffer(BYTE_BUFFER, csv)
-            BYTE_BUFFER.clear()
+            appendByteBuffer(buffer, csv)
+            buffer.clear()
             csv.append(",")
             csv.append(way.id)
             csv.append("\n")

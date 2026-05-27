@@ -73,7 +73,8 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   // TODO(april): it's good for speed to only calculate paths used in relations, but it means that
   // we won't be able to dynamically create trails. So need to relax this in the future.
 
-  val pipeline = Pipeline()
+  val pipeline = Pipeline(parallelism = IMPORTER_PARALLELISM)
+  println("Pipeline parallelism cap: ${IMPORTER_PARALLELISM}")
 
   // First, get basic way geometries
   val nodeBlocks =
