@@ -33,6 +33,10 @@ class ExtractNodes : PTransformer<PrimitiveBlock, Node>(TypeToken.of(Node::class
   override fun estimateRatio(): Double {
     return 2.0
   }
+
+  // Per PBF block: emit potentially thousands of Node objects with E7-decoded coordinates.
+  // Decode is bulk arithmetic; parallel emit lets cores share the work.
+  override val parallelism: Int = Int.MAX_VALUE
 }
 
 fun Double.toIntE7(): Int {

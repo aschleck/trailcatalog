@@ -3,10 +3,12 @@ package org.trailcatalog.importers.pipeline.collections
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.common.ChannelEncodedOutputStream
 import org.trailcatalog.common.EncodedByteBufferInputStream
+import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
+import java.util.concurrent.ArrayBlockingQueue
 
 open class MmapPList<T>(
     private val maps: List<EncodedByteBufferInputStream>,
@@ -95,6 +97,125 @@ fun <T : Any> createMmapPList(
       }
     }
     MmapPList(maps, serializer, size)
+  }
+}
+
+private const val PARALLEL_PLIST_BATCH_SIZE = 1024
+private val PLIST_SENTINEL_BATCH: List<Any?> = emptyList()
+
+/**
+ * Parallel variant of [createMmapPList]: drives [input] on the caller thread and dispatches
+ * batches to [workers] worker threads, each writing into its own output file. With `workers <= 1`
+ * this falls back to the single-threaded path so callers can pass the resolved parallelism
+ * directly.
+ */
+fun <I, T : Any> createMmapPList(
+    context: String,
+    type: TypeToken<out T>,
+    input: PCollection<I>,
+    workers: Int,
+    perItem: (I, Emitter<T>) -> Unit,
+): DisposableSupplier<MmapPList<T>> {
+  if (workers <= 1) {
+    return createMmapPList(type) { emitter ->
+      while (input.hasNext()) {
+        perItem(input.next(), emitter)
+      }
+      input.close()
+    }
+  }
+
+  val serializer = getSerializer(type)
+  val startTime = System.currentTimeMillis()
+
+  val workerFiles =
+      (0 until workers).map { w ->
+        File.createTempFile(cleanFilename("mmap-list-${type}-w${w}"), null).also {
+          it.deleteOnExit()
+        }
+      }
+
+  val queue =
+      ArrayBlockingQueue<List<I>>((workers * 2).coerceAtLeast(2))
+  val perWorkerShards = arrayOfNulls<List<org.trailcatalog.common.Extents>>(workers)
+
+  longProgress("PList ${context} emitting (parallel x${workers})") { progress ->
+    val workerThreads =
+        (0 until workers).map { workerId ->
+          Thread(
+              {
+                val raf = RandomAccessFile(workerFiles[workerId], "rw")
+                try {
+                  val stream = ChannelEncodedOutputStream(raf.channel)
+                  stream.use { output ->
+                    val emitter =
+                        object : Emitter<T> {
+                          override fun emit(v: T) {
+                            serializer.write(v, output)
+                            output.checkBufferSpace()
+                            progress.increment()
+                          }
+                        }
+
+                    while (true) {
+                      val batch = queue.take()
+                      if (batch === PLIST_SENTINEL_BATCH) break
+                      for (item in batch) {
+                        perItem(item, emitter)
+                      }
+                    }
+                  }
+                  perWorkerShards[workerId] = stream.shards()
+                } finally {
+                  raf.close()
+                }
+              },
+              "mmap-plist-${context}-w${workerId}",
+          )
+        }
+
+    workerThreads.forEach { it.start() }
+
+    var batch = ArrayList<I>(PARALLEL_PLIST_BATCH_SIZE)
+    while (input.hasNext()) {
+      batch.add(input.next())
+      if (batch.size >= PARALLEL_PLIST_BATCH_SIZE) {
+        queue.put(batch)
+        batch = ArrayList(PARALLEL_PLIST_BATCH_SIZE)
+      }
+    }
+    if (batch.isNotEmpty()) {
+      queue.put(batch)
+    }
+    @Suppress("UNCHECKED_CAST")
+    repeat(workers) { queue.put(PLIST_SENTINEL_BATCH as List<I>) }
+
+    workerThreads.forEach { it.join() }
+  }
+
+  input.close()
+
+  val totalSize =
+      workerFiles
+          .zip(perWorkerShards.map { it!! })
+          .sumOf { (_, shards) -> shards.sumOf { it.length } }
+  val seconds = (System.currentTimeMillis() - startTime) / 1000
+  println("PList (mmap parallel x${workers}) ${type} size ${totalSize} (${seconds}s)")
+
+  val fileReferences = workerFiles.map { FileReference(it) }
+
+  return DisposableSupplier(java.io.Closeable { fileReferences.forEach { it.close() } }) {
+    val maps =
+        workerFiles
+            .zip(perWorkerShards.map { it!! })
+            .flatMap { (file, shards) ->
+              FileChannel.open(file.toPath()).use { fc ->
+                shards.map { s ->
+                  EncodedByteBufferInputStream(fc.map(MapMode.READ_ONLY, s.start, s.length))
+                }
+              }
+            }
+    MmapPList(maps, serializer, totalSize)
   }
 }
 

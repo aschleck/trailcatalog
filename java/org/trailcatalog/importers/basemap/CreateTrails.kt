@@ -22,6 +22,10 @@ class CreateTrails
   : PTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Trail>(
     TypeToken.of(Trail::class.java)) {
 
+  // Per trail: orient/trace algorithm with up-to-60s timeouts. The single biggest CPU-per-item
+  // stage in the pipeline. Workers are heavily underused without this.
+  override val parallelism: Int = Int.MAX_VALUE
+
   override fun act(
       input: PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>,
       emitter: Emitter<Trail>) {

@@ -18,12 +18,13 @@ abstract class PTransformer<I, O : Any>(private val type: TypeToken<out O>)
         (estimateRatio() * input.estimatedByteSize()).toLong()
             + estimateCount() * estimateElementBytes()
     if (dependants > 1) {
-      return createPList(type, estimate) { emitter ->
-        while (input.hasNext()) {
-          act(input.next(), emitter)
-        }
-        input.close()
-      }
+      return createPList(
+          this::class.simpleName ?: "PTransformer",
+          type,
+          estimate,
+          input,
+          resolvedParallelism,
+      ) { item, emitter -> act(item, emitter) }
     } else {
       val openCount = AtomicInteger(0)
       return DisposableSupplier({ }) {

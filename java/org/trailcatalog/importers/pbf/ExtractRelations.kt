@@ -32,6 +32,9 @@ class ExtractRelations : PTransformer<PrimitiveBlock, Relation>(TypeToken.of(Rel
   override fun estimateRatio(): Double {
     return 0.01
   }
+
+  // Per PBF block: classify relations, build skeleton protos.
+  override val parallelism: Int = Int.MAX_VALUE
 }
 
 fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relation {
