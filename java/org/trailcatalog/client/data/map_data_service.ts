@@ -134,21 +134,31 @@ export class MapDataService extends Service<EmptyDeps> {
         continue;
       }
 
+      // Coarse buffers are grouped: a single buffer holds multiple cells and is
+      // stored in coarseCells under each group's id. Reparse the groups and
+      // replay only the one matching this entry's id (others have their own
+      // entries, and a partially unloaded buffer may no longer contain all).
       const data = new LittleEndianView(buffer);
-      const pathCount = data.getVarInt32();
-      const paths = [];
-      for (let i = 0; i < pathCount; ++i) {
-        const id = data.getVarBigInt64();
-        data.getVarInt32();
-        const pathVertexCount = data.getVarInt32();
-        data.align(4);
-        data.skip(4 * pathVertexCount);
-        const path = this.coarsePaths.get(id);
-        if (path) {
-          paths.push(path);
+      const groupCount = data.getVarInt32();
+      for (let group = 0; group < groupCount; ++group) {
+        const groupId = reinterpretBigInt(data.getBigInt64()) as S2CellNumber;
+        const pathCount = data.getVarInt32();
+        const paths = [];
+        for (let i = 0; i < pathCount; ++i) {
+          const id = data.getVarBigInt64();
+          data.getVarInt32();
+          const pathVertexCount = data.getVarInt32();
+          data.align(4);
+          data.skip(4 * pathVertexCount);
+          const path = this.coarsePaths.get(id);
+          if (path) {
+            paths.push(path);
+          }
+        }
+        if (groupId === id) {
+          listener.loadCoarseCell(id, paths);
         }
       }
-      listener.loadCoarseCell(id, paths);
     }
 
     for (const [id, buffer] of this.fineCells) {
@@ -513,27 +523,33 @@ export class MapDataService extends Service<EmptyDeps> {
 
     const data = new LittleEndianView(buffer);
 
-    const pathCount = data.getVarInt32();
-    const paths = [];
-    for (let i = 0; i < pathCount; ++i) {
-      const id = data.getVarBigInt64();
-      data.getVarInt32();
-      const pathVertexBytes = data.getVarInt32() * 4;
-      data.align(4);
-      data.skip(pathVertexBytes);
-      const entity = this.coarsePaths.get(id);
-      if (entity) {
-        this.coarsePaths.delete(id);
-        paths.push(entity);
+    // Coarse buffers hold multiple groups; only unload the one matching id.
+    const groupCount = data.getVarInt32();
+    for (let group = 0; group < groupCount; ++group) {
+      const groupId = reinterpretBigInt(data.getBigInt64()) as S2CellNumber;
+      const pathCount = data.getVarInt32();
+      const paths = [];
+      for (let i = 0; i < pathCount; ++i) {
+        const pathId = data.getVarBigInt64();
+        data.getVarInt32();
+        const pathVertexBytes = data.getVarInt32() * 4;
+        data.align(4);
+        data.skip(pathVertexBytes);
+        const entity = this.coarsePaths.get(pathId);
+        if (entity) {
+          this.coarsePaths.delete(pathId);
+          paths.push(entity);
+        }
+      }
+      if (groupId === id) {
+        this.listener?.unloadCoarseCell(id, paths);
       }
     }
-
-    this.listener?.unloadCoarseCell(id, paths);
   }
 
   private unloadFineCell(id: S2CellNumber): void {
-    const buffer = this.coarseCells.get(id);
-    this.coarseCells.delete(id);
+    const buffer = this.fineCells.get(id);
+    this.fineCells.delete(id);
 
     if (!buffer || id === PIN_CELL_ID) {
       return;
