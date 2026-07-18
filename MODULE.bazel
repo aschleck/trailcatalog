@@ -1,7 +1,6 @@
 module(
     name = "org_trailcatalog",
     version = "0.0.0",
-    compatibility_level = 1,
 )
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.16.0")
@@ -9,36 +8,16 @@ bazel_dep(name = "aspect_rules_jest", version = "0.23.2")
 bazel_dep(name = "aspect_rules_js", version = "2.3.7")
 bazel_dep(name = "aspect_rules_ts", version = "3.5.3")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
-bazel_dep(name = "com_google_elemental2")
-archive_override(
-    module_name = "com_google_elemental2",
-    integrity = "sha256-1IdmjRje6lBGlmXQ/8recLGsGpdE6Inl+7n09rWSPq4=",
-    strip_prefix = "elemental2-e4390c00842c32db441ada284ea3b650eae335e6",
-    urls = ["https://github.com/google/elemental2/archive/e4390c00842c32db441ada284ea3b650eae335e6.zip"],
-)
 bazel_dep(name = "com_google_geometry_s2")
 git_override(
     module_name = "com_google_geometry_s2",
-    commit = "c94b8f7ef55d6e56ea166a672887aeac41629f95",
+    commit = "cedf1ade52a37e2b8bff9deb43838c986d2a9f75",
     remote = "https://github.com/aschleck/s2-geometry-library-java",
 )
 #local_path_override(
 #    module_name = "com_google_geometry_s2",
 #    path = "../s2-geometry-library-java",
 #)
-bazel_dep(name = "com_google_j2cl")
-archive_override(
-    module_name = "com_google_j2cl",
-    integrity = "sha256-MtLsk8nesUswt9q7L4g9F7mgSrH+I9ACG+CrIUDNAaM=",
-    strip_prefix = "j2cl-a16fe434982e8f95d77946f6b532c06a5f925c4e",
-    urls = ["https://github.com/google/j2cl/archive/a16fe434982e8f95d77946f6b532c06a5f925c4e.zip"],
-)
-bazel_dep(name = "com_google_jsinterop_base")
-git_override(
-    module_name = "com_google_jsinterop_base",
-    commit = "3c7ea155bc382641cd2cf1047ce00723bba7e6a7",
-    remote = "https://github.com/google/jsinterop-base",
-)
 bazel_dep(name = "dev_april_corgi")
 archive_override(
     module_name = "dev_april_corgi",
@@ -50,45 +29,34 @@ archive_override(
 #    module_name = "dev_april_corgi",
 #    path = "../corgi",
 #)
-bazel_dep(name = "io_bazel_rules_closure")
-archive_override(
-    module_name = "io_bazel_rules_closure",
-    integrity = "sha256-zU306vgiWdqp1103YmI3SK6khr1LaqdGv5+6HF7YbsM=",
-    strip_prefix = "rules_closure-f87c3374de464c12ad958df98872c28e7a5cfd11",
-    urls = ["https://github.com/bazelbuild/rules_closure/archive/f87c3374de464c12ad958df98872c28e7a5cfd11.zip"],
+bazel_dep(name = "elemental2", version = "1.4.0-RC1")
+single_version_override(
+    module_name = "elemental2",
+    patch_strip = 1,
+    patches = ["//:elemental2_gwt.patch"],
 )
+bazel_dep(name = "j2cl", version = "20260402")
+archive_override(
+    module_name = "j2cl",
+    integrity = "sha256-Ny6r8kYwbMjLWY+39VKzGGHerH1xOIWBRvhxO1gT8iQ=",
+    strip_prefix = "j2cl-78d44e6e7c2c2517e654f63405a2bc61e2462c4c",
+    urls = ["https://github.com/google/j2cl/archive/78d44e6e7c2c2517e654f63405a2bc61e2462c4c.tar.gz"],
+)
+bazel_dep(name = "jsinterop_base", version = "1.2.0")
+bazel_dep(name = "jsinterop_generator", version = "20260701")
 bazel_dep(name = "platforms", version = "0.0.11")
-bazel_dep(name = "protobuf", version = "30.2")
+bazel_dep(name = "protobuf", version = "35.1")
 bazel_dep(name = "rules_cc", version = "0.1.1")
-bazel_dep(name = "rules_java", version = "8.11.0")
-bazel_dep(name = "rules_jvm_external", version = "6.7")
+bazel_dep(name = "rules_closure", version = "0.16.0")
+bazel_dep(name = "rules_java", version = "9.6.1")
+bazel_dep(name = "rules_jvm_external", version = "7.0")
 bazel_dep(name = "rules_kotlin", version = "2.1.4")
 bazel_dep(name = "rules_nodejs", version = "6.3.5")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_python", version = "1.4.1")
 bazel_dep(name = "rules_oci", version = "2.2.6")
-bazel_dep(name = "toolchains_llvm", version = "1.4.0")
-
-# Overrides required by j2cl since neither of these are in BCR
-git_override(
-    module_name = "com_google_jsinterop_generator",
-    commit = "411e77ca1e9f2b14243edc3f420352b0a3580c62",
-    remote = "https://github.com/google/jsinterop-generator",
-)
-git_override(
-    module_name = "rules_scala",
-    commit = "219e63983e8e483e66ebf70372969ba227382001",
-    remote = "https://github.com/mbland/rules_scala",
-)
-git_override(
-    module_name = "rules_webtesting",
-    commit = "7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
-    remote = "https://github.com/bazelbuild/rules_webtesting",
-)
-
-# Overrides bazel_worker_java which marks junit testonly which breaks rules_closure...
-bazel_dep(name = "bazel_worker_java", version = "0.0.4")
+bazel_dep(name = "toolchains_llvm", version = "1.7.0")
 
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
 llvm.toolchain(llvm_version = "20.1.2")

@@ -120,7 +120,7 @@ goog.exportProperty(S2Polygon.prototype, 'numLoops', S2Polygon.prototype.numLoop
 //goog.exportProperty(S2PolygonBuilderOptions, 'UNDIRECTED_XOR', S2PolygonBuilderOptions.UNDIRECTED_XOR);
 
 // This is insane but yolo!
-const GetLoopsList = goog.require('com.google.common.geometry.S2Polygon.$3$impl');
+const GetLoopsList = goog.require('com.google.common.geometry.S2Polygon.$1$impl');
 goog.exportSymbol('com.google.common.geometry.S2Polygon.$3$impl', GetLoopsList);
 goog.exportProperty(GetLoopsList.prototype, 'getAtIndex', GetLoopsList.prototype.getAtIndex);
 goog.exportProperty(GetLoopsList.prototype, 'size', GetLoopsList.prototype.size);
