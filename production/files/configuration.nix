@@ -72,6 +72,7 @@
       forceSSL = true;
 
       locations."/" = {
+        proxyHttpVersion = 2;
         proxyPass = "http://127.0.0.1:7080";
       };
 
@@ -89,6 +90,7 @@
       forceSSL = true;
 
       locations."/" = {
+        proxyHttpVersion = 2;
         proxyPass = "http://127.0.0.1:7059";
       };
     };
@@ -98,6 +100,7 @@
       forceSSL = true;
 
       locations."/" = {
+        proxyHttpVersion = 2;
         proxyPass = "http://127.0.0.1:7061";
       };
     };
