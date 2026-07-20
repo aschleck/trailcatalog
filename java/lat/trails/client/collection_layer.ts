@@ -8,7 +8,7 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
-import { Request as QuerierRequest, Response as QuerierResponse } from 'js/map/workers/location_querier';
+import { Request as QuerierRequest, Response as QuerierResponse, QueryPointResponse } from 'js/map/workers/location_querier';
 import { Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA } from 'js/map/z';
 
@@ -27,6 +27,11 @@ export class CollectionLayer extends Layer {
   private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
   private readonly querier: WorkerPool<QuerierRequest, QuerierResponse>;
   private readonly cells: Map<S2CellToken, LoadedCell|undefined>;
+  private activeQuery: {
+    id: number;
+    resolve: (response: QueryPointResponse) => void;
+    reject: () => void;
+  };
   private generation: number;
   private lastRenderGeneration: number;
 
@@ -52,6 +57,7 @@ export class CollectionLayer extends Layer {
         this.renderer.deleteBuffer(response.glIndexBuffer);
       }
     });
+    this.activeQuery = {id: -1, resolve: () => {}, reject: () => {}};
     this.generation = 0;
     this.lastRenderGeneration = -1;
 
@@ -72,6 +78,12 @@ export class CollectionLayer extends Layer {
         this.loadProcessedCell(response);
       } else {
         checkExhaustive(response.kind);
+      }
+    };
+
+    this.querier.onresponse = response => {
+      if (this.activeQuery.id === response.generation) {
+        this.activeQuery.resolve(response);
       }
     };
 
@@ -114,10 +126,34 @@ export class CollectionLayer extends Layer {
   }
 
   override click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
-    this.querier.post({
-      kind: 'qpr',
-      point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
-    });
+    new Promise((resolve, reject) => {
+      const id = this.activeQuery.id + 1;
+      this.activeQuery.reject();
+      this.activeQuery = {id, resolve, reject};
+      this.querier.post({
+        kind: 'qpr',
+        generation: id,
+        point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
+      });
+    }).then(response => {
+      console.log(response);
+    }).catch(() => {});
+    return false;
+  }
+
+  override hover(point: S2LatLng, source: EventSource): boolean {
+    new Promise((resolve, reject) => {
+      const id = this.activeQuery.id + 1;
+      this.activeQuery.reject();
+      this.activeQuery = {id, resolve, reject};
+      this.querier.post({
+        kind: 'qpr',
+        generation: id,
+        point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
+      });
+    }).then(response => {
+      console.log(response);
+    }).catch(() => {});
     return false;
   }
 

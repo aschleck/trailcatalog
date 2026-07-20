@@ -66,12 +66,14 @@ export interface LoadResponse {
 }
 
 export interface Line {
+  id: RawUuid;
   data: Data;
   geometryByteLength: number;
   geometryOffset: number;
 }
 
 export interface LineGeometry {
+  id: RawUuid;
   geometryByteLength: number;
   geometryOffset: number;
   instanceCount: number;
@@ -80,6 +82,7 @@ export interface LineGeometry {
 }
 
 export interface Polygon {
+  id: RawUuid;
   data: Data;
   geometryByteLength: number;
   // relative the start of the polygon geometry
@@ -99,6 +102,8 @@ export interface PolygonGeometry {
 }
 
 export type Response = LoadResponse;
+
+export type RawUuid = {lsb: bigint; msb: bigint};
 
 type Data = {[key: string]: boolean|number|string};
 
@@ -122,6 +127,7 @@ class CollectionLoader {
 
     const lineCount = source.getVarInt32();
     const styledLines: Array<{
+      id: RawUuid;
       data: Data;
       fill: RgbaU32;
       stroke: RgbaU32;
@@ -147,6 +153,7 @@ class CollectionLoader {
       lineGeometryBytes += LineProgram.bytesNeeded(points.length / 2);
 
       styledLines.push({
+        id: {lsb: idLsb, msb: idMsb},
         data,
         fill: style.fill,
         stroke: style.stroke,
@@ -161,6 +168,7 @@ class CollectionLoader {
 
     const polygonCount = source.getVarInt32();
     const triangulated: Array<{
+      id: RawUuid;
       data: Data;
       fill: RgbaU32;
       rawPolygon: ArrayBuffer;
@@ -188,6 +196,7 @@ class CollectionLoader {
       indexCount += triangles.index.length;
 
       triangulated.push({
+        id: {lsb: idLsb, msb: idMsb},
         data,
         fill: style.fill,
         rawPolygon,
@@ -238,14 +247,20 @@ class CollectionLoader {
     };
 
     // Per-segment fill/stroke are baked into the vertex stride, so a LineGeometry only needs to
-    // group consecutive same-z entries.
+    // group consecutive same-id/same-z entries.
     let groupZ: number|undefined = undefined;
+    let groupId: RawUuid|undefined = undefined;
     let groupStart = 0;
     let groupInstances = 0;
     let groupVertexCount = 0;
     for (const line of styledLines) {
-      if (groupZ !== undefined && line.z !== groupZ) {
+      if (
+        groupId !== undefined
+          && groupZ !== undefined
+          && (line.id !== groupId || line.z !== groupZ)
+      ) {
         response.lineGeometries.push({
+          id: groupId,
           geometryByteLength: 4 * (geometryOffset - groupStart),
           geometryOffset: 4 * groupStart,
           instanceCount: groupInstances,
@@ -256,6 +271,7 @@ class CollectionLoader {
         groupInstances = 0;
         groupVertexCount = 0;
       }
+      groupId = line.id;
       groupZ = line.z;
 
       const result = LineProgram.push(
@@ -267,6 +283,7 @@ class CollectionLoader {
           geometry.buffer,
           4 * geometryOffset);
       response.lines.push({
+        id: line.id,
         data: line.data,
         geometryByteLength: result.geometryByteLength,
         geometryOffset: 4 * geometryOffset,
@@ -275,8 +292,9 @@ class CollectionLoader {
       groupInstances += result.instanceCount;
       groupVertexCount = result.vertexCount;
     }
-    if (groupZ !== undefined && groupInstances > 0) {
+    if (groupId !== undefined && groupZ !== undefined && groupInstances > 0) {
       response.lineGeometries.push({
+        id: groupId,
         geometryByteLength: 4 * (geometryOffset - groupStart),
         geometryOffset: 4 * groupStart,
         instanceCount: groupInstances,
@@ -300,6 +318,7 @@ class CollectionLoader {
         }
 
         response.polygons.push({
+          id: polygon.id,
           data,
           geometryByteLength: 4 * triangles.geometry.length,
           geometryOffset,

@@ -13,6 +13,7 @@ interface LoadRequest {
   kind: 'lr';
   groupId: string;
   polygons: Array<{
+    id: {lsb: bigint; msb: bigint};
     raw: ArrayBuffer;
   }>;
 }
@@ -24,6 +25,7 @@ interface UnloadRequest {
 
 interface QueryPointRequest {
   kind: 'qpr';
+  generation: number;
   point: LatLng;
 }
 
@@ -31,17 +33,20 @@ export type Request = InitializeRequest|LoadRequest|UnloadRequest|QueryPointRequ
 
 export interface QueryPointResponse {
   kind: 'qpr';
+  generation: number;
+  ids: string[];
 }
 
 export type Response = QueryPointResponse;
 
 interface Entry {
+  id: {lsb: bigint; msb: bigint};
   polygon: S2Polygon;
 }
 
 class LocationQuerier {
 
-  private readonly groups: Map<string, LoadRequest>;
+  private readonly groups: Map<string, Array<Rect>>;
   private readonly tree: WorldBoundsQuadtree<Entry>;
 
   constructor(
@@ -52,17 +57,22 @@ class LocationQuerier {
   }
 
   load(request: LoadRequest) {
-    this.groups.set(request.groupId, request);
-
+    const bounds = [];
     for (const polygon of request.polygons) {
       const s2 = SimpleS2.decodePolygon(polygon.raw);
       const bound = llrBound(s2);
-      this.tree.insert({polygon: s2}, bound);
+      bounds.push(bound);
+      this.tree.insert({id: polygon.id, polygon: s2}, bound);
     }
+    this.groups.set(request.groupId, bounds);
   }
 
   unload(request: UnloadRequest) {
     for (const groupId of request.groupIds) {
+      const bounds = this.groups.get(groupId);
+      for (const bound of bounds ?? []) {
+        this.tree.delete(bound);
+      }
       this.groups.delete(groupId);
     }
   }
@@ -71,11 +81,17 @@ class LocationQuerier {
     const point = S2LatLng.fromDegrees(request.point[0], request.point[1]).toPoint();
     const output: Entry[] = [];
     this.tree.queryCircle(normalize(request.point), 0.0001, output);
-    for (const {polygon} of output) {
+    const ids = new Set();
+    for (const {id, polygon} of output) {
       if (polygon.containsPoint(point)) {
-        console.log(polygon);
+        ids.add(id);
       }
     }
+    self.postMessage({
+      kind: 'qpr',
+      generation: request.generation,
+      ids,
+    });
   }
 }
 

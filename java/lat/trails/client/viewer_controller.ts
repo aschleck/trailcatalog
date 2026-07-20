@@ -3,9 +3,8 @@ import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/control
 import { CorgiEvent } from 'external/dev_april_corgi+/js/corgi/events';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
-import { rgbaToUint32 } from 'js/map/common/math';
 import { RgbaU32 } from 'js/map/common/types';
-import { MAP_MOVED } from 'js/map/events';
+import { CLICKED, MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
