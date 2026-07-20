@@ -193,13 +193,7 @@ function subdivideTriangleIfBig(
 
   // If none of the edges are too long, keep the triangle as it is.
   if (!edge0TooLong && !edge1TooLong && !edge2TooLong) {
-    // Sort the edges to ensure the winding order is correct. earcut mostly gives us ccw winding but
-    // not always (for example pacific ocean west of California at zoom level 7)
-    const sign =
-      (geometry[2 * a] - geometry[2 * c]) * (geometry[2 * a + 1] + geometry[2 * c + 1])
-        + (geometry[2 * b] - geometry[2 * a]) * (geometry[2 * b + 1] + geometry[2 * a + 1])
-        + (geometry[2 * c] - geometry[2 * b]) * (geometry[2 * c + 1] + geometry[2 * b + 1]);
-    if (sign < 0) {
+    if (signedArea2(geometry, a, b, c) < 0) {
       indices.push(a, b, c);
     } else {
       indices.push(c, b, a);
@@ -274,6 +268,16 @@ function approxRadiansBetweenSq(lat0: number, lng0: number, lat1: number, lng1: 
   const y = lat1 - lat0
 
   return x * x + y * y;
+}
+
+// Twice the signed area of the triangle (a, b, c), whose vertices index into an interleaved x/y
+// buffer. Positive when the vertices wind clockwise in screen space. earcut mostly emits ccw
+// triangles but not always, and CULL_FACE is enabled globally, so callers use the sign to reorder
+// wrongly-wound triangles before emitting them.
+function signedArea2(g: ArrayLike<number>, a: number, b: number, c: number): number {
+  return (g[2 * a] - g[2 * c]) * (g[2 * a + 1] + g[2 * c + 1])
+      + (g[2 * b] - g[2 * a]) * (g[2 * b + 1] + g[2 * a + 1])
+      + (g[2 * c] - g[2 * b]) * (g[2 * c + 1] + g[2 * b + 1]);
 }
 
 // Map non-negative pairs of integers to non-negative integers. pair(a, b) = pair(b, a)
@@ -376,7 +380,7 @@ export function triangulateS2(polygon: S2Polygon): Triangles {
     for (const split of splits) {
       const length = split - start;
       const allVertices = new Float32Array(length + holeSize);
-      allVertices.set(vertices.subarray(start, length), 0);
+      allVertices.set(vertices.subarray(start, split), 0);
       allVertices.set(holeVertices, length);
 
       // Figure out the hole positions relative to the loop vertices.
@@ -385,27 +389,33 @@ export function triangulateS2(polygon: S2Polygon): Triangles {
         offsetHoles.push((length + offset) / 2);
       }
 
-      const triangulatedIndices = earcut(allVertices, offsetHoles);
-      for (const indice of triangulatedIndices) {
-        let trueIndice = -1;
+      // Maps an earcut vertex index back into the final geometry buffer.
+      const toTrueIndice = (indice: number) => {
         if (indice < length / 2) {
-          trueIndice = (geometryOffset + start) / 2 + indice;
-        } else {
-          const offsetInHoles = 2 * indice - length;
-          let holeOffset = 0;
-          for (const {offset, vertices} of holesToCheck) {
-            if (offsetInHoles < holeOffset + vertices.length) {
-              trueIndice = (exteriorVertexLength + offset + offsetInHoles - holeOffset) / 2;
-              break;
-            }
-            holeOffset += vertices.length;
-          }
-
-          if (trueIndice < 0) {
-            throw new Error('Failed to find correct hole offset');
-          }
+          return (geometryOffset + start) / 2 + indice;
         }
-        index.push(trueIndice);
+        const offsetInHoles = 2 * indice - length;
+        let holeOffset = 0;
+        for (const {offset, vertices} of holesToCheck) {
+          if (offsetInHoles < holeOffset + vertices.length) {
+            return (exteriorVertexLength + offset + offsetInHoles - holeOffset) / 2;
+          }
+          holeOffset += vertices.length;
+        }
+        throw new Error('Failed to find correct hole offset');
+      };
+
+      const triangulatedIndices = earcut(allVertices, offsetHoles);
+      for (let t = 0; t < triangulatedIndices.length; t += 3) {
+        const a = triangulatedIndices[t];
+        const b = triangulatedIndices[t + 1];
+        const c = triangulatedIndices[t + 2];
+
+        if (signedArea2(allVertices, a, b, c) < 0) {
+          index.push(toTrueIndice(a), toTrueIndice(b), toTrueIndice(c));
+        } else {
+          index.push(toTrueIndice(c), toTrueIndice(b), toTrueIndice(a));
+        }
       }
 
       start = split;
