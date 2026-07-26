@@ -211,7 +211,7 @@ private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform):
   val snapped = S2Polygon()
   snapped.initToSimplified(
       builder.assemblePolygon(),
-      S1Angle.radians(S2Projections.PROJ.maxDiag.getValue(21) / 2.0 + 1e-15),
+      S1Angle.radians(S2Projections.MAX_DIAG.getValue(21) / 2.0 + 1e-15),
       /* snapToCellCenters= */ true)
 
   val normalized = S2PolygonBuilder()

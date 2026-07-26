@@ -11,7 +11,7 @@ bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "com_google_geometry_s2")
 git_override(
     module_name = "com_google_geometry_s2",
-    commit = "cedf1ade52a37e2b8bff9deb43838c986d2a9f75",
+    commit = "5ec2a61f09cf4ecbef6f06b0e6d6464ed9ffea7d",
     remote = "https://github.com/aschleck/s2-geometry-library-java",
 )
 #local_path_override(

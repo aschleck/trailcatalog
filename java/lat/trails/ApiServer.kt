@@ -226,7 +226,7 @@ private fun fetchCollectionObjects(ctx: Context) {
                   S2Polygon().apply {
                     initToSimplified(
                         S2Polygon.decode(ByteArrayInputStream(raw)),
-                        S1Angle.radians(S2Projections.PROJ.maxDiag.getValue(snap) / 2.0 + 1e-15),
+                        S1Angle.radians(S2Projections.MAX_DIAG.getValue(snap) / 2.0 + 1e-15),
                         /* snapToCellCenters= */ false)
                   }.let {
                     val output = ByteArrayOutputStream()

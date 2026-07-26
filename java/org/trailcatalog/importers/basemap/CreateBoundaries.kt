@@ -61,7 +61,7 @@ private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
   val snapped = S2Polygon()
   snapped.initToSimplified(
       unsnapped,
-      S1Angle.radians(S2Projections.PROJ.maxDiag.getValue(21) / 2.0 + 1e-15),
+      S1Angle.radians(S2Projections.MAX_DIAG.getValue(21) / 2.0 + 1e-15),
       /* snapToCellCenters= */ true)
   return snapped
 }
