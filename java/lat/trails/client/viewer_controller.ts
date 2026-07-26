@@ -8,7 +8,6 @@ import { CLICKED, MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
-import { CompositeZoomLayer } from 'js/map/layers/composite_zoom_layer';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
@@ -64,7 +63,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
-          /* tint= */ 0xFFFFFF44 as RgbaU32,
+          /* tint= */ 0xFFFFFF30 as RgbaU32,
           /* z= */ Z_BASE_TERRAIN,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
@@ -174,35 +173,31 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     }, {
       name: 'US public land',
       enabled: false,
-      layer: new CompositeZoomLayer([
-        [
-          0,
-          new CollectionLayer(
-              '/api/collections/f09f5d2e-f163-4271-8ac2-34c44c75f99a',
-              /* indexBottom= */ 4,
-              /* snap= */ 11,
-              this.mapController.renderer,
-          ),
-        ],
-        [
-          7,
-          new CollectionLayer(
-              '/api/collections/f09f5d2e-f163-4271-8ac2-34c44c75f99a',
-              /* indexBottom= */ 6,
-              /* snap= */ 14,
-              this.mapController.renderer,
-          ),
-        ],
-        [
-          10,
-          new CollectionLayer(
-              '/api/collections/f09f5d2e-f163-4271-8ac2-34c44c75f99a',
-              /* indexBottom= */ 6,
-              /* snap= */ undefined,
-              this.mapController.renderer,
-          ),
-        ],
-      ]),
+      layer: new CollectionLayer(
+          '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
+          // Snapping to a level whose cells are a few pixels across is invisible and saves most of
+          // the geometry, but past zoom 10 we want the real boundaries.
+          [
+            {minZoom: 0, snap: 11},
+            {minZoom: 7, snap: 14},
+            {minZoom: 10, snap: undefined},
+          ],
+          [
+            // Anything wider than a level 10 cell, so about 7 km up. That reaches the national
+            // parks, which sit at levels 6 to 9, and it is everything the coarsest snap can draw:
+            // snapping to level 11 erases whatever is smaller than a level 11 cell anyway.
+            //
+            // Tiled at level 5 rather than 4 because a tile carries its objects across its whole
+            // cell, so a coarser tiling means pulling parks hundreds of km offscreen once zoomed
+            // in. Level 5 costs 205 requests for a view of the western US instead of 68, and 2.9 MB
+            // instead of 4.5 MB at zoom 11.
+            {minZoom: 0, indexBottom: 5, fromLevel: 0, toLevel: 10},
+            // Everything smaller. A level 6 cell holds up to 11k of these, which is why they wait
+            // until the viewport is small enough to be worth it.
+            {minZoom: 7, indexBottom: 6, fromLevel: 11, toLevel: undefined},
+          ],
+          this.mapController.renderer,
+      ),
     }];
     for (const layer of allLayers) {
       this.registerDisposable(layer.layer);

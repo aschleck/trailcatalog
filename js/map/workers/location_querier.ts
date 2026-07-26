@@ -3,7 +3,7 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
-import { LatLng, RawUuid, Rect, Vec2 } from '../common/types';
+import { LatLng, LatLngRect, RawUuid, Rect, Vec2 } from '../common/types';
 
 interface InitializeRequest {
   kind: 'ir';
@@ -18,6 +18,7 @@ interface LoadRequest {
   }>;
   polygons: Array<{
     id: RawUuid;
+    bound: LatLngRect;
     raw: ArrayBuffer;
   }>;
 }
@@ -45,7 +46,10 @@ export type Response = QueryPointResponse;
 
 interface Entry {
   id: {lsb: bigint; msb: bigint};
-  polygon: S2Polygon;
+  raw: ArrayBuffer;
+  // Decoding runs a byte at a time through the S2 reader, which is far too slow to do for every
+  // object in a cell. Only the handful of objects a query lands on pay for it.
+  polygon: S2Polygon|undefined;
 }
 
 class LocationQuerier {
@@ -64,10 +68,14 @@ class LocationQuerier {
     const bounds = [];
     // TODO(april): also load lines
     for (const polygon of request.polygons) {
-      const s2 = SimpleS2.decodePolygon(polygon.raw);
-      const bound = llrBound(s2);
+      // A polygon that simplified away has an empty bound and can never be hit.
+      if (polygon.bound.low[0] > polygon.bound.high[0]) {
+        continue;
+      }
+
+      const bound = normalize(polygon.bound);
       bounds.push(bound);
-      this.tree.insert({id: polygon.id, polygon: s2}, bound);
+      this.tree.insert({id: polygon.id, raw: polygon.raw, polygon: undefined}, bound);
     }
     this.groups.set(request.groupId, bounds);
   }
@@ -85,11 +93,12 @@ class LocationQuerier {
   queryPoint(request: QueryPointRequest) {
     const point = S2LatLng.fromDegrees(request.point[0], request.point[1]).toPoint();
     const output: Entry[] = [];
-    this.tree.queryCircle(normalize(request.point), 0.0001, output);
+    this.tree.queryCircle(normalizePoint(request.point), 0.0001, output);
     const ids = new Set();
-    for (const {id, polygon} of output) {
-      if (polygon.containsPoint(point)) {
-        ids.add(id);
+    for (const entry of output) {
+      entry.polygon = entry.polygon ?? SimpleS2.decodePolygon(entry.raw);
+      if (entry.polygon.containsPoint(point)) {
+        ids.add(entry.id);
       }
     }
     self.postMessage({
@@ -127,16 +136,13 @@ self.onmessage = e => {
   start(request);
 };
 
-function llrBound(polygon: S2Polygon): Rect {
-  const bound = polygon.getRectBound();
-  const low = bound.lo();
-  const high = bound.hi();
+function normalize(bound: LatLngRect): Rect {
   return {
-    low: [low.latDegrees() / 90, low.lngDegrees() / 180],
-    high: [high.latDegrees() / 90, high.lngDegrees() / 180],
+    low: [bound.low[0] / 90, bound.low[1] / 180],
+    high: [bound.high[0] / 90, bound.high[1] / 180],
   } as const as Rect;
 }
 
-function normalize(ll: LatLng): Vec2 {
+function normalizePoint(ll: LatLng): Vec2 {
   return [ll[0] / 90, ll[1] / 180];
 }

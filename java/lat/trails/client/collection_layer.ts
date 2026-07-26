@@ -2,25 +2,34 @@ import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
-import { LatLng, RawUuid, RgbaU32, S2CellToken, TileId } from 'js/map/common/types';
+import { LatLng, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
-import { TexturePool } from 'js/map/rendering/texture_pool';
 import { Request as QuerierRequest, Response as QuerierResponse, QueryPointResponse } from 'js/map/workers/location_querier';
-import { LineProgram } from 'js/map/rendering/line_program';
-import { Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
+import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA } from 'js/map/z';
 
 import { HOVER_CHANGED } from './events';
-import { Line, LineGeometry, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, PolygonGeometry } from './workers/collection_loader';
+import { Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon } from './workers/collection_loader';
 
 interface LoadedCell {
   drawables: Drawable[];
   glGeometryBuffer: WebGLBuffer;
   glIndexBuffer: WebGLBuffer;
-  objects: RawUuid[];
+  lines: Line[];
+  polygons: Polygon[];
+}
+
+// The object the cursor is over, drawn from its own buffers so it can sit above its cell. Which
+// object that is lives in lastHoverTarget.
+interface Highlight {
+  drawables: Drawable[];
+  geometry: ArrayBuffer;
+  glGeometryBuffer: WebGLBuffer;
+  glIndexBuffer: WebGLBuffer;
+  index: ArrayBuffer;
 }
 
 export class CollectionLayer extends Layer {
@@ -29,12 +38,12 @@ export class CollectionLayer extends Layer {
   private fetching: boolean;
   private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
   private readonly querier: WorkerPool<QuerierRequest, QuerierResponse>;
-  private readonly cells: Map<S2CellToken, LoadedCell|undefined>;
+  private readonly cells: Map<CellKey, LoadedCell|undefined>;
   private readonly objects:
     HashMap<
       RawUuid,
-      | {kind: 'line'; cell: S2CellToken; value: Line}
-      | {kind: 'polygon'; cell: S2CellToken; value: Polygon}
+      | {kind: 'line'; key: CellKey; value: Line}
+      | {kind: 'polygon'; key: CellKey; value: Polygon}
     >;
   private activeQuery: {
     id: number;
@@ -42,17 +51,16 @@ export class CollectionLayer extends Layer {
     reject: () => void;
   };
   private generation: number;
-  private interactiveData: LoadedCell & {
-    geometry: ArrayBuffer;
-    index: ArrayBuffer;
-  };
+  private readonly highlight: Highlight;
+  // The object the highlight is drawing. Its geometry is blanked in its own cell so that only the
+  // highlight draws it.
   private lastHoverTarget: RawUuid|undefined;
   private lastRenderGeneration: number;
 
   constructor(
       url: string,
-      indexBottom: number,
-      snap: number|undefined,
+      snaps: Snap[],
+      streams: Stream[],
       private readonly renderer: Renderer,
   ) {
     super(/* copyright= */ []);
@@ -63,24 +71,21 @@ export class CollectionLayer extends Layer {
     this.cells = new Map();
     this.objects = new HashMap(key => `${key.msb}-${key.lsb}`);
     this.registerDisposer(() => {
-      for (const response of this.cells.values()) {
-        if (!response) {
-          continue;
+      for (const cell of this.cells.values()) {
+        if (cell) {
+          this.renderer.deleteBuffer(cell.glGeometryBuffer);
+          this.renderer.deleteBuffer(cell.glIndexBuffer);
         }
-
-        this.renderer.deleteBuffer(response.glGeometryBuffer);
-        this.renderer.deleteBuffer(response.glIndexBuffer);
       }
     });
     this.activeQuery = {id: -1, resolve: () => {}, reject: () => {}};
     this.generation = 0;
-    this.interactiveData = {
+    this.highlight = {
       drawables: [],
       geometry: new ArrayBuffer(/* length= */ 64 * 1024),
       index: new ArrayBuffer(/* length= */ 64 * 1024),
       glGeometryBuffer: this.renderer.createDataBuffer(/* byteSize= */ 64 * 1024),
       glIndexBuffer: this.renderer.createIndexBuffer(/* byteSize= */ 64 * 1024),
-      objects: [],
     };
     this.lastHoverTarget = undefined;
     this.lastRenderGeneration = -1;
@@ -114,8 +119,8 @@ export class CollectionLayer extends Layer {
     this.fetcher.broadcast({
       kind: 'ir',
       covering: url + '/covering',
-      indexBottom,
-      snap,
+      snaps,
+      streams,
       url: url + '/objects',
     });
     this.loader.broadcast({
@@ -176,53 +181,24 @@ export class CollectionLayer extends Layer {
         point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
       });
     }).then(response => {
-      const target: RawUuid|undefined = response.ids[0];
+      // A point can land in several nested units, so take the first one we still hold.
+      const target = response.ids.find(id => this.objects.has(id));
       if (target?.msb === this.lastHoverTarget?.msb && target?.lsb === this.lastHoverTarget?.lsb) {
         return;
       }
 
-      this.lastHoverTarget = target;
       this.lastRenderGeneration += 1;
-      const interactive = this.interactiveData;
+      this.clearHighlight();
+      this.lastHoverTarget = target;
+      const highlight = this.highlight;
 
-      for (const id of interactive.objects) {
-        const object = this.objects.get(id);
-        if (!object) {
-          continue;
-        }
-        const cell = this.cells.get(object.cell);
-        if (!cell) {
-          continue;
-        }
-
-        // Restore the cleared original geometry
-        if (object.kind === 'line') {
-        } else if (object.kind === 'polygon') {
-          const polygon = object.value;
-          this.renderer.uploadDataSubset(
-            Float32Array.from(polygon.triangles.geometry).buffer,
-            polygon.geometryOffset,
-            polygon.geometryByteLength,
-            cell.glGeometryBuffer);
-        } else {
-          throw checkExhaustive(object);
-        }
-      }
-
-      interactive.drawables.length = 0;
-      interactive.objects.length = 0;
-
-      const object = this.objects.get(target);
+      const object = target ? this.objects.get(target) : undefined;
       source.trigger(HOVER_CHANGED, {target: object?.value});
-      if (target) {
-        interactive.objects.push(target);
-      }
-
       if (!object) {
         return;
       }
 
-      const cell = this.cells.get(object.cell);
+      const cell = this.cells.get(object.key);
       if (!cell) {
         return;
       }
@@ -232,23 +208,25 @@ export class CollectionLayer extends Layer {
       } else if (object.kind === 'polygon') {
         const polygon = object.value;
         const triangles = polygon.triangles;
-        interactive.geometry = growBuffer(interactive.geometry, 1 + 4 * triangles.geometry.length);
-        interactive.index = growBuffer(interactive.index, 4 * triangles.index.length);
+        // A fill color rides in front of the vertices, so the buffer holds one extra float.
+        highlight.geometry =
+            growBuffer(highlight.geometry, 4 * (1 + triangles.geometry.length));
+        highlight.index = growBuffer(highlight.index, 4 * triangles.index.length);
 
-        const geometryFloats = new Float32Array(interactive.geometry);
-        const geometryUints = new Uint32Array(interactive.geometry);
+        const geometryFloats = new Float32Array(highlight.geometry);
+        const geometryUints = new Uint32Array(highlight.geometry);
         geometryUints[0] = 0xFFFFFF88;
         geometryFloats.set(triangles.geometry, /* offset= */ 1);
-        const index = new Uint32Array(interactive.index);
+        const index = new Uint32Array(highlight.index);
         index.set(triangles.index);
 
-        interactive.drawables.push({
+        highlight.drawables.push({
           elements: {
             count: triangles.index.length,
-            index: interactive.glIndexBuffer,
+            index: highlight.glIndexBuffer,
             offset: 0,
           },
-          geometry: interactive.glGeometryBuffer,
+          geometry: highlight.glGeometryBuffer,
           geometryByteLength: 4 * (1 + triangles.geometry.length),
           geometryOffset: 0,
           instanced: undefined,
@@ -269,9 +247,9 @@ export class CollectionLayer extends Layer {
       }
 
       this.renderer.uploadData(
-        interactive.geometry, interactive.geometry.byteLength, interactive.glGeometryBuffer);
+        highlight.geometry, highlight.geometry.byteLength, highlight.glGeometryBuffer);
       this.renderer.uploadIndices(
-        interactive.index, interactive.index.byteLength, interactive.glIndexBuffer);
+        highlight.index, highlight.index.byteLength, highlight.glIndexBuffer);
     }).catch(() => {});
     return false;
   }
@@ -285,8 +263,8 @@ export class CollectionLayer extends Layer {
       return true;
     }
 
-    for (const response of this.cells.values()) {
-      if (!response) {
+    for (const cell of this.cells.values()) {
+      if (!cell) {
         return true;
       }
     }
@@ -294,15 +272,13 @@ export class CollectionLayer extends Layer {
   }
 
   override render(planner: Planner): void {
-    for (const response of this.cells.values()) {
-      if (!response) {
-        continue;
+    for (const cell of this.cells.values()) {
+      if (cell) {
+        planner.add(cell.drawables);
       }
-
-      planner.add(response.drawables);
     }
 
-    planner.add(this.interactiveData.drawables);
+    planner.add(this.highlight.drawables);
     this.lastRenderGeneration = this.generation;
   }
 
@@ -322,50 +298,63 @@ export class CollectionLayer extends Layer {
   private loadRawCell(command: LoadCellCommand): void {
     // It takes 2 bytes to return a response indicating no data
     if (command.data.byteLength <= 2) {
+      this.release(command.key);
+      this.cells.delete(command.key);
       return;
     }
 
-    this.cells.set(command.token, undefined);
+    // A cell we already hold is being refined, so it keeps drawing until the finer geometry lands.
+    if (!this.cells.has(command.key)) {
+      this.cells.set(command.key, undefined);
+    }
+
     this.loader.post({
       kind: 'lr',
-      token: command.token,
+      key: command.key,
       data: command.data,
     }, [command.data]);
   }
 
   private loadProcessedCell(response: LoadResponse): void {
     // Has this already been unloaded?
-    if (!this.cells.has(response.token)) {
+    if (!this.cells.has(response.key)) {
       return;
     }
 
+    // Refining a cell throws out the coarser copy of the same objects, and with it the offsets the
+    // highlight blanked into its buffer.
+    this.release(response.key);
+
+    // Nothing in the cell matched the style, so there is nothing to wait for either.
     if (response.lines.length === 0 && response.polygons.length === 0) {
+      this.cells.delete(response.key);
+      this.generation += 1;
       return;
     }
 
-    const objects = [];
     for (const line of response.lines) {
-      this.objects.set(line.id, {kind: 'line', cell: response.token, value: line});
-      objects.push(line.id);
+      this.objects.set(line.id, {kind: 'line', key: response.key, value: line});
+    }
+    for (const polygon of response.polygons) {
+      this.objects.set(polygon.id, {kind: 'polygon', key: response.key, value: polygon});
     }
 
-    for (const polygon of response.polygons) {
-      this.objects.set(polygon.id, {kind: 'polygon', cell: response.token, value: polygon});
-      objects.push(polygon.id);
-    }
+    this.querier.post({
+      kind: 'lr',
+      groupId: response.key,
+      lines: response.lines.map(line => ({id: line.id, points: line.points})),
+      polygons: response.polygons.map(polygon => ({
+        id: polygon.id,
+        bound: polygon.bound,
+        raw: polygon.raw,
+      })),
+    });
 
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
     this.renderer.uploadData(response.geometry, response.geometry.byteLength, geometry);
     this.renderer.uploadIndices(response.index, response.index.byteLength, index);
     const drawables = [];
-
-    this.querier.post({
-      kind: 'lr',
-      groupId: response.token,
-      lines: response.lines,
-      polygons: response.polygons,
-    });
 
     for (const line of response.lineGeometries) {
       drawables.push({
@@ -401,34 +390,74 @@ export class CollectionLayer extends Layer {
       });
     }
 
-    this.cells.set(response.token, {
+    this.cells.set(response.key, {
       glGeometryBuffer: geometry,
       glIndexBuffer: index,
       drawables,
-      objects,
+      lines: response.lines,
+      polygons: response.polygons,
     });
     this.generation += 1;
   }
 
   private unloadCells(command: UnloadCellsCommand): void {
-    this.querier.post({
-      kind: 'ur',
-      groupIds: command.tokens,
-    });
-
-    for (const token of command.tokens) {
-      const response = this.cells.get(token);
-      if (response) {
-        this.cells.delete(token);
-        for (const id of response.objects) {
-          this.objects.delete(id);
-        }
-
-        this.renderer.deleteBuffer(response.glGeometryBuffer);
-        this.renderer.deleteBuffer(response.glIndexBuffer);
-      }
+    for (const key of command.keys) {
+      this.release(key);
+      this.cells.delete(key);
     }
     this.generation += 1;
+  }
+
+  // Throws out everything a cell owns, either because it left the viewport or because finer
+  // geometry is about to replace it. The caller decides what the cell becomes.
+  private release(key: CellKey): void {
+    const cell = this.cells.get(key);
+    if (!cell) {
+      return;
+    }
+
+    for (const line of cell.lines) {
+      this.objects.delete(line.id);
+    }
+    for (const polygon of cell.polygons) {
+      this.objects.delete(polygon.id);
+    }
+    this.querier.post({kind: 'ur', groupIds: [key]});
+
+    this.renderer.deleteBuffer(cell.glGeometryBuffer);
+    this.renderer.deleteBuffer(cell.glIndexBuffer);
+
+    // The highlight blanked geometry in a buffer that is now gone, so there is nothing to put back.
+    if (this.lastHoverTarget && !this.objects.has(this.lastHoverTarget)) {
+      this.dropHighlight();
+    }
+  }
+
+  // Puts back the geometry the highlight hid, then stops drawing it.
+  private clearHighlight(): void {
+    const object = this.lastHoverTarget ? this.objects.get(this.lastHoverTarget) : undefined;
+    const cell = object ? this.cells.get(object.key) : undefined;
+    if (object && cell) {
+      if (object.kind === 'line') {
+        // TODO(april): lines never got hidden, so there is nothing to put back.
+      } else if (object.kind === 'polygon') {
+        const polygon = object.value;
+        this.renderer.uploadDataSubset(
+          Float32Array.from(polygon.triangles.geometry).buffer,
+          polygon.geometryOffset,
+          polygon.geometryByteLength,
+          cell.glGeometryBuffer);
+      } else {
+        throw checkExhaustive(object);
+      }
+    }
+
+    this.dropHighlight();
+  }
+
+  private dropHighlight(): void {
+    this.highlight.drawables.length = 0;
+    this.lastHoverTarget = undefined;
   }
 }
 

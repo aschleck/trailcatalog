@@ -140,6 +140,11 @@ private fun fetchCollectionObjects(ctx: Context) {
   val bytes = AlignableByteArrayOutputStream()
   val indexBottom = ctx.queryParam("bottom")!!.toInt()
   val snap = ctx.queryParam("snap")?.toInt()
+  // Streams split the objects by the level of the cell they were assigned to, so that no two tiles
+  // carry the same object. The lowest set bit of a cell id is 4^(30 - level), so a level range is a
+  // range on that bit, backwards: a coarser cell has a higher bit.
+  val levelFloor = ctx.queryParam("maxLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
+  val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   var mostRecent = Instant.EPOCH
   DelegatingEncodedOutputStream(bytes).use {
     // version
@@ -157,7 +162,9 @@ private fun fetchCollectionObjects(ctx: Context) {
               + "WHERE "
               + "c.id = ? AND "
               + "c.creator = ANY (?) AND "
-              + (if (single) "l.cell = ?" else "(l.cell >= ? AND l.cell <= ?) ")
+              + (if (single) "l.cell = ? " else "(l.cell >= ? AND l.cell <= ?) ")
+              + (if (levelFloor != null) "AND (l.cell & -l.cell) >= ? " else "")
+              + (if (levelCeiling != null) "AND (l.cell & -l.cell) <= ? " else "")
         )
         .apply {
           setObject(1, UUID.fromString(collection))
@@ -167,6 +174,13 @@ private fun fetchCollectionObjects(ctx: Context) {
           } else {
             setLong(3, cell.rangeMin().id())
             setLong(4, cell.rangeMax().id())
+          }
+          var index = if (single) 4 else 5
+          if (levelFloor != null) {
+            setLong(index++, levelFloor)
+          }
+          if (levelCeiling != null) {
+            setLong(index, levelCeiling)
           }
         }
         .executeQuery()
@@ -202,7 +216,9 @@ private fun fetchCollectionObjects(ctx: Context) {
                       + "WHERE "
                       + "c.id = ? AND "
                       + "c.creator = ANY (?) AND "
-                      + (if (single) "p.cell = ?" else "(p.cell >= ? AND p.cell <= ?) ")
+                      + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
+                      + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
+                      + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
           )
           .apply {
             setObject(1, UUID.fromString(collection))
@@ -212,6 +228,13 @@ private fun fetchCollectionObjects(ctx: Context) {
             } else {
               setLong(3, cell.rangeMin().id())
               setLong(4, cell.rangeMax().id())
+            }
+            var index = if (single) 4 else 5
+            if (levelFloor != null) {
+              setLong(index++, levelFloor)
+            }
+            if (levelCeiling != null) {
+              setLong(index, levelCeiling)
             }
           }
           .executeQuery()

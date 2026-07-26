@@ -4,8 +4,9 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Array } from 'js/map/camera';
-import { RawUuid, RgbaU32, S2CellToken } from 'js/map/common/types';
+import { LatLngRect, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { LineProgram } from 'js/map/rendering/line_program';
+import { CellKey } from 'js/map/workers/s2_data_fetcher';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
 import { Z_USER_DATA } from 'js/map/z';
@@ -49,7 +50,7 @@ type Match = AlwaysMatch|StringEqualsMatch;
 
 interface LoadRequest {
   kind: 'lr';
-  token: S2CellToken;
+  key: CellKey;
   data: ArrayBuffer;
 }
 
@@ -57,7 +58,7 @@ export type Request = InitializeRequest|LoadRequest;
 
 export interface LoadResponse {
   kind: 'lr';
-  token: S2CellToken;
+  key: CellKey;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
   // We merge multiple objects into the *Geometry version, so if we want just the geometry of any
@@ -87,6 +88,8 @@ export interface LineGeometry {
 
 export interface Polygon {
   id: RawUuid;
+  // For the location querier, which indexes objects by bound and only decodes what a query hits.
+  bound: LatLngRect;
   data: Data;
   geometryByteLength: number;
   // relative the start of the polygon geometry
@@ -172,6 +175,7 @@ class CollectionLoader {
     const polygonCount = source.getVarInt32();
     const triangulated: Array<{
       id: RawUuid;
+      bound: LatLngRect;
       data: Data;
       fill: RgbaU32;
       rawPolygon: ArrayBuffer;
@@ -200,6 +204,7 @@ class CollectionLoader {
 
       triangulated.push({
         id: {lsb: idLsb, msb: idMsb},
+        bound: latLngBound(polygon),
         data,
         fill: style.fill,
         rawPolygon,
@@ -240,7 +245,7 @@ class CollectionLoader {
 
     const response: LoadResponse = {
       kind: 'lr',
-      token: request.token,
+      key: request.key,
       geometry: geometry.buffer,
       index: index.buffer,
       lines: [],
@@ -323,6 +328,7 @@ class CollectionLoader {
 
         response.polygons.push({
           id: polygon.id,
+          bound: polygon.bound,
           data,
           geometryByteLength: 4 * triangles.geometry.length,
           geometryOffset: 4 * geometryOffset,
@@ -371,6 +377,16 @@ self.onmessage = e => {
 
   start(request);
 };
+
+function latLngBound(polygon: S2Polygon): LatLngRect {
+  const bound = polygon.getRectBound();
+  const low = bound.lo();
+  const high = bound.hi();
+  return {
+    low: [low.latDegrees(), low.lngDegrees()],
+    high: [high.latDegrees(), high.lngDegrees()],
+  } as const as LatLngRect;
+}
 
 function findStyle<S extends {filters: Match[]}>(data: Data, styles: S[]): S|undefined {
   for (const style of styles) {
