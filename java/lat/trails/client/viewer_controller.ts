@@ -172,7 +172,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         Z_BASE_SATELLITE,
         this.mapController.renderer),
     }, {
-      name: 'Public land',
+      name: 'US public land',
       enabled: false,
       layer: new CompositeZoomLayer([
         [

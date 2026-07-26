@@ -269,7 +269,7 @@ private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature
                 else
                   UUID(0, 0)
               )
-              setString(3, "Public Land")
+              setString(3, "PAD-US 4.1")
               setBytes(
                   4,
                   ByteArrayOutputStream().also {
