@@ -1098,10 +1098,18 @@ export const NATURE: Readonly<Style> = {
       ],
       polygons: [],
     },
+    // Roads are ribbons: a light warm grey fill inside a darker casing of the same hue, so the
+    // hierarchy reads as width rather than as darkness. The casing is only the outer pixel of the
+    // line (see line_program.ts#draw), so under about two pixels wide a road is all casing, and
+    // the fills at the narrow end of the ramp are darkened toward the casing to compensate.
+    //
+    // Each class sits Z_OVERLAY_TRANSPORTATION + 0.15 above the one below it so a motorway's
+    // casing covers the streets running into it. The step has to clear the 0.1 the line program
+    // drops the casing by, or else a casing lands on top of the class above it.
     {
       layerName: 'transportation',
       minZoom: 0,
-      maxZoom: 11,
+      maxZoom: 9,
       lineTexts: [],
       lines: [
         {
@@ -1111,15 +1119,13 @@ export const NATURE: Readonly<Style> = {
             value: [
               'primary',
               'primary_construction',
-              'secondary',
-              'secondary_construction',
             ],
           }],
-          fill: 0xFFFFFFFF as RgbaU32,
-          stroke: 0xFFFFFFFF as RgbaU32,
-          radius: 0.75,
+          fill: 0xB5AFA7FF as RgbaU32,
+          stroke: 0xB5AFA7FF as RgbaU32,
+          radius: 0.5,
           stipple: false,
-          z: Z_OVERLAY_TRANSPORTATION,
+          z: Z_OVERLAY_TRANSPORTATION + 0.75,
         },
         {
           filters: [{
@@ -1131,11 +1137,67 @@ export const NATURE: Readonly<Style> = {
               'trunk',
             ],
           }],
-          fill: 0xFFFFFFFF as RgbaU32,
-          stroke: 0xFFFFFFFF as RgbaU32,
-          radius: 0.75,
+          fill: 0x9C968EFF as RgbaU32,
+          stroke: 0x9C968EFF as RgbaU32,
+          radius: 0.5,
           stipple: false,
-          z: Z_OVERLAY_TRANSPORTATION,
+          z: Z_OVERLAY_TRANSPORTATION + 0.9,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'transportation',
+      minZoom: 9,
+      maxZoom: 11,
+      lineTexts: [],
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'secondary',
+              'secondary_construction',
+            ],
+          }],
+          fill: 0xC0BAB2FF as RgbaU32,
+          stroke: 0xB8B2AAFF as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.6,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'primary',
+              'primary_construction',
+            ],
+          }],
+          fill: 0xB5AFA7FF as RgbaU32,
+          stroke: 0xADA79FFF as RgbaU32,
+          radius: 0.6,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.75,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'motorway_construction',
+              'trunk',
+            ],
+          }],
+          fill: 0xA8A29AFF as RgbaU32,
+          stroke: 0x9C968EFF as RgbaU32,
+          radius: 0.8,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.9,
         },
       ],
       points: [],
@@ -1144,7 +1206,7 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'transportation',
       minZoom: 11,
-      maxZoom: 31,
+      maxZoom: 13,
       lineTexts: [],
       lines: [
         {
@@ -1158,9 +1220,9 @@ export const NATURE: Readonly<Style> = {
           }],
           fill: 0xAAAAAAAA as RgbaU32,
           stroke: 0xAAAAAAAA as RgbaU32,
-          radius: 1,
+          radius: 0.9,
           stipple: false,
-          z: Z_OVERLAY_TRANSPORTATION,
+          z: Z_OVERLAY_TRANSPORTATION + 0.15,
         },
         {
           filters: [{
@@ -1169,15 +1231,42 @@ export const NATURE: Readonly<Style> = {
             value: [
               'minor',
               'minor_construction',
-              'service',
+            ],
+          }],
+          fill: 0xCAC5BFFF as RgbaU32,
+          stroke: 0xCAC5BFFF as RgbaU32,
+          radius: 0.5,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.3,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
               'tertiary',
             ],
           }],
-          fill: 0x808080FF as RgbaU32,
-          stroke: 0x808080FF as RgbaU32,
-          radius: 1,
+          fill: 0xC8C2BBFF as RgbaU32,
+          stroke: 0xC2BCB5FF as RgbaU32,
+          radius: 0.65,
           stipple: false,
-          z: Z_OVERLAY_TRANSPORTATION,
+          z: Z_OVERLAY_TRANSPORTATION + 0.45,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'secondary',
+              'secondary_construction',
+            ],
+          }],
+          fill: 0xD2CCC4FF as RgbaU32,
+          stroke: 0xB8B2AAFF as RgbaU32,
+          radius: 0.8,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.6,
         },
         {
           filters: [{
@@ -1186,15 +1275,13 @@ export const NATURE: Readonly<Style> = {
             value: [
               'primary',
               'primary_construction',
-              'secondary',
-              'secondary_construction',
             ],
           }],
-          fill: 0x707070FF as RgbaU32,
-          stroke: 0x707070FF as RgbaU32,
-          radius: 1.25,
+          fill: 0xC9C3BBFF as RgbaU32,
+          stroke: 0xADA79FFF as RgbaU32,
+          radius: 1,
           stipple: false,
-          z: Z_OVERLAY_TRANSPORTATION,
+          z: Z_OVERLAY_TRANSPORTATION + 0.75,
         },
         {
           filters: [{
@@ -1206,13 +1293,488 @@ export const NATURE: Readonly<Style> = {
               'trunk',
             ],
           }],
-          fill: 0x606060FF as RgbaU32,
-          stroke: 0x606060FF as RgbaU32,
+          fill: 0xBBB6AEFF as RgbaU32,
+          stroke: 0x9C968EFF as RgbaU32,
+          radius: 1.25,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.9,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'transportation',
+      minZoom: 13,
+      maxZoom: 15,
+      lineTexts: [],
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'service',
+            ],
+          }],
+          fill: 0xD6D2CDFF as RgbaU32,
+          stroke: 0xD6D2CDFF as RgbaU32,
+          radius: 0.6,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'rail',
+              'transit',
+            ],
+          }],
+          fill: 0xAAAAAAAA as RgbaU32,
+          stroke: 0xAAAAAAAA as RgbaU32,
+          radius: 1,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.15,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'minor',
+              'minor_construction',
+            ],
+          }],
+          fill: 0xDCD8D3FF as RgbaU32,
+          stroke: 0xCAC5BFFF as RgbaU32,
+          radius: 0.9,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.3,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'tertiary',
+            ],
+          }],
+          fill: 0xE2DFDAFF as RgbaU32,
+          stroke: 0xC2BCB5FF as RgbaU32,
+          radius: 1.1,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.45,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'secondary',
+              'secondary_construction',
+            ],
+          }],
+          fill: 0xDEDAD5FF as RgbaU32,
+          stroke: 0xB8B2AAFF as RgbaU32,
+          radius: 1.3,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.6,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'primary',
+              'primary_construction',
+            ],
+          }],
+          fill: 0xD6D2CCFF as RgbaU32,
+          stroke: 0xADA79FFF as RgbaU32,
+          radius: 1.6,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.75,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'motorway_construction',
+              'trunk',
+            ],
+          }],
+          fill: 0xC7C2BBFF as RgbaU32,
+          stroke: 0x9C968EFF as RgbaU32,
+          radius: 2,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.9,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'transportation',
+      minZoom: 15,
+      maxZoom: 17,
+      lineTexts: [],
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'service',
+            ],
+          }],
+          fill: 0xF1EFECFF as RgbaU32,
+          stroke: 0xD6D2CDFF as RgbaU32,
+          radius: 1,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'rail',
+              'transit',
+            ],
+          }],
+          fill: 0xAAAAAAAA as RgbaU32,
+          stroke: 0xAAAAAAAA as RgbaU32,
+          radius: 1,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.15,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'minor',
+              'minor_construction',
+            ],
+          }],
+          fill: 0xEDEBE7FF as RgbaU32,
+          stroke: 0xCAC5BFFF as RgbaU32,
+          radius: 1.5,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.3,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'tertiary',
+            ],
+          }],
+          fill: 0xE9E6E2FF as RgbaU32,
+          stroke: 0xC2BCB5FF as RgbaU32,
+          radius: 1.8,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.45,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'secondary',
+              'secondary_construction',
+            ],
+          }],
+          fill: 0xE4E1DCFF as RgbaU32,
+          stroke: 0xB8B2AAFF as RgbaU32,
+          radius: 2.1,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.6,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'primary',
+              'primary_construction',
+            ],
+          }],
+          fill: 0xDEDAD4FF as RgbaU32,
+          stroke: 0xADA79FFF as RgbaU32,
+          radius: 2.6,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.75,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'motorway_construction',
+              'trunk',
+            ],
+          }],
+          fill: 0xCFCAC3FF as RgbaU32,
+          stroke: 0x9C968EFF as RgbaU32,
+          radius: 3.2,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.9,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+    {
+      // MapTiler stops at zoom 15, so past here we're overzooming and only the pixel widths grow.
+      layerName: 'transportation',
+      minZoom: 17,
+      maxZoom: 31,
+      lineTexts: [],
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'service',
+            ],
+          }],
+          fill: 0xF1EFECFF as RgbaU32,
+          stroke: 0xD6D2CDFF as RgbaU32,
           radius: 1.5,
           stipple: false,
           z: Z_OVERLAY_TRANSPORTATION,
         },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'rail',
+              'transit',
+            ],
+          }],
+          fill: 0xAAAAAAAA as RgbaU32,
+          stroke: 0xAAAAAAAA as RgbaU32,
+          radius: 1.2,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.15,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'minor',
+              'minor_construction',
+            ],
+          }],
+          fill: 0xEDEBE7FF as RgbaU32,
+          stroke: 0xCAC5BFFF as RgbaU32,
+          radius: 2.2,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.3,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'tertiary',
+            ],
+          }],
+          fill: 0xE9E6E2FF as RgbaU32,
+          stroke: 0xC2BCB5FF as RgbaU32,
+          radius: 2.5,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.45,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'secondary',
+              'secondary_construction',
+            ],
+          }],
+          fill: 0xE4E1DCFF as RgbaU32,
+          stroke: 0xB8B2AAFF as RgbaU32,
+          radius: 3,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.6,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'primary',
+              'primary_construction',
+            ],
+          }],
+          fill: 0xDEDAD4FF as RgbaU32,
+          stroke: 0xADA79FFF as RgbaU32,
+          radius: 3.6,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.75,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'motorway_construction',
+              'trunk',
+            ],
+          }],
+          fill: 0xCFCAC3FF as RgbaU32,
+          stroke: 0x9C968EFF as RgbaU32,
+          radius: 4.5,
+          stipple: false,
+          z: Z_OVERLAY_TRANSPORTATION + 0.9,
+        },
       ],
+      points: [],
+      polygons: [],
+    },
+    // Road names, which this app doesn't care about except as landmarks for finding the trail
+    // you're looking at. They sit just under Z_OVERLAY_TEXT so place and water names win the
+    // collision (see recalculateCollisionZoom), and above every road so the halo covers the
+    // ribbon.
+    //
+    // Motorways label with their shield number rather than their name because "101" orients you
+    // and "Bayshore Freeway" doesn't.
+    {
+      layerName: 'transportation_name',
+      minZoom: 10,
+      maxZoom: 13,
+      lineTexts: [{
+        filters: [{
+          match: 'string_in',
+          key: 'class',
+          value: [
+            'motorway',
+            'trunk',
+          ],
+        }],
+        preferred: 'ref',
+        fallback: 'name',
+        fill: 0x655F57FF as RgbaU32,
+        stroke: 0xFFFFFFDD as RgbaU32,
+        scale: 0.34,
+        z: Z_OVERLAY_TEXT - 0.05,
+      }],
+      lines: [],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'transportation_name',
+      minZoom: 13,
+      maxZoom: 16,
+      lineTexts: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'trunk',
+            ],
+          }],
+          preferred: 'ref',
+          fallback: 'name',
+          fill: 0x655F57FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.34,
+          z: Z_OVERLAY_TEXT - 0.05,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'primary',
+              'secondary',
+              'tertiary',
+            ],
+          }],
+          preferred: `name:${PREFERRED_LANGUAGE}`,
+          fallback: 'name',
+          fill: 0x736D64FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.32,
+          z: Z_OVERLAY_TEXT - 0.06,
+        },
+      ],
+      lines: [],
+      points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'transportation_name',
+      minZoom: 16,
+      maxZoom: 31,
+      lineTexts: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'trunk',
+            ],
+          }],
+          preferred: 'ref',
+          fallback: 'name',
+          fill: 0x655F57FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.34,
+          z: Z_OVERLAY_TEXT - 0.05,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'primary',
+              'secondary',
+              'tertiary',
+            ],
+          }],
+          preferred: `name:${PREFERRED_LANGUAGE}`,
+          fallback: 'name',
+          fill: 0x736D64FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.32,
+          z: Z_OVERLAY_TEXT - 0.06,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'minor',
+            ],
+          }],
+          preferred: `name:${PREFERRED_LANGUAGE}`,
+          fallback: 'name',
+          fill: 0x807A71FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.3,
+          z: Z_OVERLAY_TEXT - 0.07,
+        },
+      ],
+      lines: [],
       points: [],
       polygons: [],
     },
