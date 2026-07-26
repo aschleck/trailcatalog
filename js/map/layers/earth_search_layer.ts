@@ -5,6 +5,7 @@ import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queu
 
 import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
+import { BillboardProgram } from '../rendering/billboard_program';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
@@ -80,7 +81,8 @@ export class EarthSearchLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.hasNewData()) {
-      const buffer = new ArrayBuffer(4 * 256 * 256);
+      const buffer =
+          new ArrayBuffer(Math.max(BillboardProgram.bytesNeeded() * this.tiles.size, 65536));
       const drawables = [];
       let offset = 0;
 
