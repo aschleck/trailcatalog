@@ -9,7 +9,12 @@
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          config = {
+            allowUnfree = true;
+          };
+        };
 
         reshape = pkgs.reshape.overrideAttrs (old: rec {
           src = pkgs.fetchFromGitHub {
@@ -35,6 +40,7 @@
             google-cloud-sdk
             imagemagick
             jdk21_headless
+            jetbrains.idea
             neovim
             nginx
             nodejs-slim_22

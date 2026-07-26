@@ -147,8 +147,9 @@ class CollectionLoader {
       const idMsb = source.getBigInt64();
       const dataByteSize = source.getVarInt32();
       const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
-      const lineByteSize = source.getVarInt32();
-      const latLngDegrees = source.sliceInt32(lineByteSize / 4);
+      const linePointCount = source.getVarInt32();
+      source.align(4);
+      const latLngDegrees = source.sliceInt32(linePointCount * 2);
 
       const style = findStyle(data, this.style.lines);
       if (!style) {

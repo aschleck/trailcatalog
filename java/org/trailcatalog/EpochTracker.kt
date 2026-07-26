@@ -2,7 +2,7 @@ package org.trailcatalog
 
 import com.zaxxer.hikari.HikariDataSource
 
-class EpochTracker(private val hikari: HikariDataSource) {
+public class EpochTracker(private val hikari: HikariDataSource) {
 
   @Volatile var epoch: Int = 0
 

@@ -19,7 +19,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import lat.trails.common.COLLECTION_COVERING_MAX_LEVEL
 import lat.trails.common.FEATURE_COVERING_MAX_LEVEL
-import lat.trails.common.createConnection
+import lat.trails.common.createBaseConnection
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
 import org.apache.commons.text.StringEscapeUtils
@@ -248,7 +248,7 @@ private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform):
 }
 
 private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature>) {
-  createConnection().use { hikari ->
+  createBaseConnection().use { hikari ->
     val collection =
         hikari.connection
             .prepareStatement(

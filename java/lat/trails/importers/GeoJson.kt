@@ -12,7 +12,7 @@ import java.util.Comparator
 import java.util.UUID
 import lat.trails.common.COLLECTION_COVERING_MAX_LEVEL
 import lat.trails.common.FEATURE_COVERING_MAX_LEVEL
-import lat.trails.common.createConnection
+import lat.trails.common.createBaseConnection
 import org.apache.commons.text.StringEscapeUtils
 import org.slf4j.LoggerFactory
 import org.trailcatalog.common.DelegatingEncodedOutputStream
@@ -73,7 +73,7 @@ fun main(args: Array<String>) {
 }
 
 private fun dumpLines(covering: MutableList<S2CellId>, lines: List<Line>) {
-  createConnection().use { hikari ->
+  createBaseConnection().use { hikari ->
     val collection =
         hikari.connection
             .prepareStatement(

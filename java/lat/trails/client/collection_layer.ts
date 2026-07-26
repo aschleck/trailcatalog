@@ -126,7 +126,16 @@ export class CollectionLayer extends Layer {
     this.loader.broadcast({
       kind: 'ir',
       style: {
-        lines: [],
+        lines: [
+          {
+            filters: [{match: 'always'}],
+            fill: 0xFF00FFFF as RgbaU32,
+            radius: 2,
+            stipple: true,
+            stroke: 0xFF00FFFF as RgbaU32,
+            z: Z_USER_DATA,
+          },
+        ],
         polygons: [
           {
             filters: [{match: 'string_equals', key: 'owner', value: 'BLM/BR'}],

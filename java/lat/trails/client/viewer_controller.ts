@@ -198,6 +198,22 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           ],
           this.mapController.renderer,
       ),
+    }, {
+      name: 'OSM paths',
+      enabled: false,
+      layer: new CollectionLayer(
+          '/api/collections/00000000-0000-0000-0000-000000000001',
+          [
+            {minZoom: 11, snap: 12},
+            {minZoom: 13, snap: 15},
+            {minZoom: 15, snap: undefined},
+          ],
+          [
+            {minZoom: 11, indexBottom: 11, fromLevel: 0, toLevel: 12},
+            {minZoom: 13, indexBottom: 13, fromLevel: 13, toLevel: undefined},
+          ],
+          this.mapController.renderer,
+      ),
     }];
     for (const layer of allLayers) {
       this.registerDisposable(layer.layer);

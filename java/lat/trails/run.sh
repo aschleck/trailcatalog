@@ -5,11 +5,6 @@ bazelisk build \
     java/lat/trails:api_server \
     java/lat/trails/frontend:runner \
     java/lat/trails/static
-ibazel build \
-    java/lat/trails:api_server \
-    java/lat/trails/frontend:runner \
-    java/lat/trails/static \
-    &
 nginx \
     -c "$(pwd)/java/lat/trails/nginx.conf" \
     -e /dev/stderr \
@@ -32,5 +27,8 @@ BAZEL_BINDIR="." \
     ./bazel-bin/java/lat/trails/api_server \
     --debug=0.0.0.0:5005 \
     --database_username_password="trails_lat:trails_lat" \
-    --database_url="postgresql://127.0.0.1:5432/trails_lat?currentSchema=migration_1_data"
+    --database_url="postgresql://127.0.0.1:5432/trails_lat?currentSchema=migration_1_data" \
+    --trailcatalog_database_username_password="trailcatalog:trailcatalog" \
+    --trailcatalog_database_url="postgresql://127.0.0.1:5432/trailcatalog?currentSchema=migration_3_faster"
+
 

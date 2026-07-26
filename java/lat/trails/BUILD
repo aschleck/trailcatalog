@@ -1,9 +1,9 @@
-package(default_visibility = [":internal"])
-
 load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+package(default_visibility = [":internal"])
 
 package_group(
     name = "internal",
@@ -16,13 +16,13 @@ package_group(
 
 pkg_tar(
     name = "frontend_pkg",
-    package_dir = "app",
     srcs = [
-        "//java/lat/trails/frontend:frontend.js",
-        "//java/lat/trails/frontend:frontend.js.map",
         ":api_server_deploy.jar",
         ":static_data",
+        "//java/lat/trails/frontend:frontend.js",
+        "//java/lat/trails/frontend:frontend.js.map",
     ],
+    package_dir = "app",
     stamp = 1,
 )
 
@@ -46,6 +46,7 @@ kt_jvm_library(
     srcs = glob(["*.kt"]),
     deps = [
         "//java/lat/trails/common",
+        "//java/org/trailcatalog:epoch_tracker",
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/flags",
         "//java/org/trailcatalog/s2:s2-kt",

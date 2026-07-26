@@ -17,18 +17,29 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.collections.ArrayList
-import lat.trails.common.createConnection
 import java.nio.charset.StandardCharsets
+import lat.trails.common.createBaseConnection
+import lat.trails.common.createTrailcatalogConnection
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.flags.parseFlags
+import org.trailcatalog.EpochTracker
+import java.time.LocalDate
+import java.time.ZoneOffset
+import kotlin.use
 
+private lateinit var epochTracker: EpochTracker
 private lateinit var hikari: HikariDataSource
+private lateinit var hikariTrailcatalog: HikariDataSource
+
+private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
 
 fun main(args: Array<String>) {
   parseFlags(args)
 
-  hikari = createConnection()
+  hikari = createBaseConnection()
+  hikariTrailcatalog = createTrailcatalogConnection()
+  epochTracker = EpochTracker(hikariTrailcatalog)
   val app = Javalin.create {}.start(7051)
   app.post("/api/data", ::fetchData)
   app.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
@@ -98,14 +109,26 @@ private fun fetchCollectionCovering(ctx: Context) {
     it.writeVarInt(1)
 
     // covering
-    hikari.connection.use { connection ->
-      connection
+    if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
+      val covering = ByteArrayOutputStream().use {
+        DelegatingEncodedOutputStream(it).use {
+          it.writeVarInt(1)
+          it.writeVarInt(S2CellId.FACE_CELLS.size)
+          S2CellId.FACE_CELLS.forEach { id -> it.writeLong(id.id()) }
+        }
+        it.toByteArray()
+      }
+      it.writeVarInt(covering.size)
+      it.write(covering)
+    } else {
+      hikari.connection.use { connection ->
+        connection
           .prepareStatement(
-              "SELECT c.covering "
-                      + "FROM collections c "
-                      + "WHERE "
-                      + "c.id = ? AND "
-                      + "c.creator = ANY (?)"
+            "SELECT c.covering "
+                    + "FROM collections c "
+                    + "WHERE "
+                    + "c.id = ? AND "
+                    + "c.creator = ANY (?)"
           )
           .apply {
             setObject(1, UUID.fromString(collection))
@@ -122,6 +145,7 @@ private fun fetchCollectionCovering(ctx: Context) {
             it.writeVarInt(covering.size)
             it.write(covering)
           }
+      }
     }
   }
   ctx.result(bytes.toByteArray())
@@ -145,143 +169,243 @@ private fun fetchCollectionObjects(ctx: Context) {
   // range on that bit, backwards: a coarser cell has a higher bit.
   val levelFloor = ctx.queryParam("maxLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
-  var mostRecent = Instant.EPOCH
-  DelegatingEncodedOutputStream(bytes).use {
+  val mostRecent = DelegatingEncodedOutputStream(bytes).use {
     // version
     it.writeVarInt(1)
 
-    hikari.connection.use { connection ->
-      val single = cell.level() < indexBottom
-
-      // lines
-      connection
-        .prepareStatement(
-          "SELECT l.id, l.data, l.lat_lng_degrees, l.created "
-              + "FROM collections c "
-              + "JOIN lines l ON c.id = l.collection "
-              + "WHERE "
-              + "c.id = ? AND "
-              + "c.creator = ANY (?) AND "
-              + (if (single) "l.cell = ? " else "(l.cell >= ? AND l.cell <= ?) ")
-              + (if (levelFloor != null) "AND (l.cell & -l.cell) >= ? " else "")
-              + (if (levelCeiling != null) "AND (l.cell & -l.cell) <= ? " else "")
-        )
-        .apply {
-          setObject(1, UUID.fromString(collection))
-          setArray(2, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
-          if (single) {
-            setLong(3, cell.id())
-          } else {
-            setLong(3, cell.rangeMin().id())
-            setLong(4, cell.rangeMax().id())
-          }
-          var index = if (single) 4 else 5
-          if (levelFloor != null) {
-            setLong(index++, levelFloor)
-          }
-          if (levelCeiling != null) {
-            setLong(index, levelCeiling)
-          }
-        }
-        .executeQuery()
-        .use { results ->
-          val lines = ArrayList<WireLine>()
-          while (results.next()) {
-            lines.add(
-              WireLine(
-                results.getObject(1) as UUID,
-                results.getString(2),
-                results.getBytes(3)))
-            mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
-          }
-          it.writeVarInt(lines.size)
-          for (line in lines) {
-            it.writeLong(line.id.leastSignificantBits)
-            it.writeLong(line.id.mostSignificantBits)
-            line.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
-              it.writeVarInt(utf8.size)
-              it.write(utf8)
-            }
-            it.writeVarInt(line.latLngDegrees.size)
-            it.write(line.latLngDegrees)
-          }
-        }
-
-      // polygons
-      connection
-          .prepareStatement(
-              "SELECT p.id, p.data, p.s2_polygon, p.created "
-                      + "FROM collections c "
-                      + "JOIN polygons p ON c.id = p.collection "
-                      + "WHERE "
-                      + "c.id = ? AND "
-                      + "c.creator = ANY (?) AND "
-                      + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
-                      + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
-                      + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
-          )
-          .apply {
-            setObject(1, UUID.fromString(collection))
-            setArray(2, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
-            if (single) {
-              setLong(3, cell.id())
-            } else {
-              setLong(3, cell.rangeMin().id())
-              setLong(4, cell.rangeMax().id())
-            }
-            var index = if (single) 4 else 5
-            if (levelFloor != null) {
-              setLong(index++, levelFloor)
-            }
-            if (levelCeiling != null) {
-              setLong(index, levelCeiling)
-            }
-          }
-          .executeQuery()
-          .use { results ->
-            val polygons = ArrayList<WirePolygon>()
-            while (results.next()) {
-              val raw = results.getBytes(3)
-              val simplified =
-                if (snap == null) {
-                  raw
-                } else {
-                  S2Polygon().apply {
-                    initToSimplified(
-                        S2Polygon.decode(ByteArrayInputStream(raw)),
-                        S1Angle.radians(S2Projections.MAX_DIAG.getValue(snap) / 2.0 + 1e-15),
-                        /* snapToCellCenters= */ false)
-                  }.let {
-                    val output = ByteArrayOutputStream()
-                    it.encode(output)
-                    output.toByteArray()
-                  }
-                }
-              polygons.add(
-                  WirePolygon(
-                      results.getObject(1) as UUID,
-                      results.getString(2),
-                      simplified))
-              mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
-            }
-            it.writeVarInt(polygons.size)
-            for (polygon in polygons) {
-              it.writeLong(polygon.id.leastSignificantBits)
-              it.writeLong(polygon.id.mostSignificantBits)
-              polygon.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
-                it.writeVarInt(utf8.size)
-                it.write(utf8)
-              }
-              it.writeVarInt(polygon.s2Polygon.size)
-              it.write(polygon.s2Polygon)
-            }
-          }
+    if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
+      fetchTrailcatalogPaths(it, bytes, cell, indexBottom, levelCeiling, levelFloor)
+    } else {
+      fetchRealCollection(it, bytes, allowed, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
     }
   }
 
   if (!contentIsCached(ctx, mostRecent)) {
     ctx.result(bytes.toByteArray())
   }
+}
+
+private fun fetchRealCollection(
+  it: DelegatingEncodedOutputStream,
+  align: AlignableByteArrayOutputStream,
+  allowed: ArrayList<UUID>,
+  cell: S2CellId,
+  collection: String,
+  indexBottom: Int,
+  levelCeiling: Long?,
+  levelFloor: Long?,
+  snap: Int?,
+): Instant {
+  var mostRecent = Instant.EPOCH
+  hikari.connection.use { connection ->
+    val single = cell.level() < indexBottom
+
+    // lines
+    connection
+      .prepareStatement(
+        "SELECT l.id, l.data, l.lat_lng_degrees, l.created "
+                + "FROM collections c "
+                + "JOIN lines l ON c.id = l.collection "
+                + "WHERE "
+                + "c.id = ? AND "
+                + "c.creator = ANY (?) AND "
+                + (if (single) "l.cell = ? " else "(l.cell >= ? AND l.cell <= ?) ")
+                + (if (levelFloor != null) "AND (l.cell & -l.cell) >= ? " else "")
+                + (if (levelCeiling != null) "AND (l.cell & -l.cell) <= ? " else "")
+      )
+      .apply {
+        setObject(1, UUID.fromString(collection))
+        setArray(2, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
+        if (single) {
+          setLong(3, cell.id())
+        } else {
+          setLong(3, cell.rangeMin().id())
+          setLong(4, cell.rangeMax().id())
+        }
+        var index = if (single) 4 else 5
+        if (levelFloor != null) {
+          setLong(index++, levelFloor)
+        }
+        if (levelCeiling != null) {
+          setLong(index, levelCeiling)
+        }
+      }
+      .executeQuery()
+      .use { results ->
+        val lines = ArrayList<WireLine>()
+        while (results.next()) {
+          lines.add(
+            WireLine(
+              results.getObject(1) as UUID,
+              results.getString(2),
+              results.getBytes(3)
+            )
+          )
+          mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
+        }
+        it.writeVarInt(lines.size)
+        for (line in lines) {
+          it.writeLong(line.id.leastSignificantBits)
+          it.writeLong(line.id.mostSignificantBits)
+          line.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
+            it.writeVarInt(utf8.size)
+            it.write(utf8)
+          }
+          it.writeVarInt(line.latLngDegrees.size / 2 / 4)
+          align.align(4)
+          it.write(line.latLngDegrees)
+        }
+      }
+
+    // polygons
+    connection
+      .prepareStatement(
+        "SELECT p.id, p.data, p.s2_polygon, p.created "
+                + "FROM collections c "
+                + "JOIN polygons p ON c.id = p.collection "
+                + "WHERE "
+                + "c.id = ? AND "
+                + "c.creator = ANY (?) AND "
+                + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
+                + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
+                + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
+      )
+      .apply {
+        setObject(1, UUID.fromString(collection))
+        setArray(2, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
+        if (single) {
+          setLong(3, cell.id())
+        } else {
+          setLong(3, cell.rangeMin().id())
+          setLong(4, cell.rangeMax().id())
+        }
+        var index = if (single) 4 else 5
+        if (levelFloor != null) {
+          setLong(index++, levelFloor)
+        }
+        if (levelCeiling != null) {
+          setLong(index, levelCeiling)
+        }
+      }
+      .executeQuery()
+      .use { results ->
+        val polygons = ArrayList<WirePolygon>()
+        while (results.next()) {
+          val raw = results.getBytes(3)
+          val simplified =
+            if (snap == null) {
+              raw
+            } else {
+              S2Polygon().apply {
+                initToSimplified(
+                  S2Polygon.decode(ByteArrayInputStream(raw)),
+                  S1Angle.radians(S2Projections.MAX_DIAG.getValue(snap) / 2.0 + 1e-15),
+                  /* snapToCellCenters= */ false
+                )
+              }.let {
+                val output = ByteArrayOutputStream()
+                it.encode(output)
+                output.toByteArray()
+              }
+            }
+          polygons.add(
+            WirePolygon(
+              results.getObject(1) as UUID,
+              results.getString(2),
+              simplified
+            )
+          )
+          mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
+        }
+        it.writeVarInt(polygons.size)
+        for (polygon in polygons) {
+          it.writeLong(polygon.id.leastSignificantBits)
+          it.writeLong(polygon.id.mostSignificantBits)
+          polygon.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
+            it.writeVarInt(utf8.size)
+            it.write(utf8)
+          }
+          it.writeVarInt(polygon.s2Polygon.size)
+          it.write(polygon.s2Polygon)
+        }
+      }
+  }
+  return mostRecent
+}
+
+private fun fetchTrailcatalogPaths(
+  it: DelegatingEncodedOutputStream,
+  align: AlignableByteArrayOutputStream,
+  cell: S2CellId,
+  indexBottom: Int,
+  levelCeiling: Long?,
+  levelFloor: Long?,
+): Instant {
+  val epoch = epochTracker.epoch
+  hikariTrailcatalog.connection.use { connection ->
+    val single = cell.level() < indexBottom
+
+    // lines
+    connection
+      .prepareStatement(
+        "SELECT p.id, p.type, p.lat_lng_degrees, p.source_way "
+                + "FROM paths p "
+                + "WHERE "
+                + "p.epoch = ? AND "
+                + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
+                + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
+                + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
+      )
+      .apply {
+        setInt(1, epoch)
+        if (single) {
+          setLong(2, cell.id())
+        } else {
+          setLong(2, cell.rangeMin().id())
+          setLong(3, cell.rangeMax().id())
+        }
+        var index = if (single) 3 else 4
+        if (levelFloor != null) {
+          setLong(index++, levelFloor)
+        }
+        if (levelCeiling != null) {
+          setLong(index, levelCeiling)
+        }
+      }
+      .executeQuery()
+      .use { results ->
+        val lines = ArrayList<WireLine>()
+        while (results.next()) {
+          lines.add(
+            WireLine(
+              UUID(0,results.getLong(1)),
+              "{\"id\":${results.getLong(4)},\"type\":${results.getInt(2)}}",
+              results.getBytes(3)
+            )
+          )
+        }
+        it.writeVarInt(lines.size)
+        for (line in lines) {
+          it.writeLong(line.id.leastSignificantBits)
+          it.writeLong(line.id.mostSignificantBits)
+          line.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
+            it.writeVarInt(utf8.size)
+            it.write(utf8)
+          }
+          it.writeVarInt(line.latLngDegrees.size / 2 / 4)
+          align.align(4)
+          it.write(line.latLngDegrees)
+        }
+      }
+
+    // polygons
+    it.writeVarInt(0)
+  }
+
+  val day = epoch % 100
+  val month = (epoch / 100) % 100
+  val year = epoch / 10000
+  return LocalDate.of(year, month, day).atTime(0, 0).toInstant(ZoneOffset.UTC)
 }
 
 private fun contentIsCached(ctx: Context, version: Instant): Boolean {
