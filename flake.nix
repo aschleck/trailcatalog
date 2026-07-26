@@ -40,6 +40,7 @@
             nodejs-slim_22
             pnpm
             podman
+            postgresql
             reshape
           ];
 
