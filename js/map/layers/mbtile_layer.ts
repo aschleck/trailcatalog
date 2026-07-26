@@ -1651,28 +1651,53 @@ export const NATURE: Readonly<Style> = {
     // collision (see recalculateCollisionZoom), and above every road so the halo covers the
     // ribbon.
     //
-    // Motorways label with their shield number rather than their name because "101" orients you
-    // and "Bayshore Freeway" doesn't.
+    // A motorway labels with its shield number instead of its name, because "101" orients you and
+    // "Bayshore Freeway" doesn't. That only holds for a route that's actually signed by number:
+    // network is 'road' when there is no shield network, and then the ref is something like
+    // "CR G6" on a road every local calls Central Expressway. Those keep their name, and the
+    // rule has to come first because the first matching style wins.
     {
       layerName: 'transportation_name',
       minZoom: 10,
       maxZoom: 13,
-      lineTexts: [{
-        filters: [{
-          match: 'string_in',
-          key: 'class',
-          value: [
-            'motorway',
-            'trunk',
-          ],
-        }],
-        preferred: 'ref',
-        fallback: 'name',
-        fill: 0x655F57FF as RgbaU32,
-        stroke: 0xFFFFFFDD as RgbaU32,
-        scale: 0.34,
-        z: Z_OVERLAY_TEXT - 0.05,
-      }],
+      lineTexts: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'trunk',
+            ],
+          }, {
+            match: 'string_equals',
+            key: 'network',
+            value: 'road',
+          }],
+          preferred: `name:${PREFERRED_LANGUAGE}`,
+          fallback: 'name',
+          fill: 0x655F57FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.34,
+          z: Z_OVERLAY_TEXT - 0.05,
+        },
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'trunk',
+            ],
+          }],
+          preferred: 'ref',
+          fallback: 'name',
+          fill: 0x655F57FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.34,
+          z: Z_OVERLAY_TEXT - 0.05,
+        },
+      ],
       lines: [],
       points: [],
       polygons: [],
@@ -1682,6 +1707,26 @@ export const NATURE: Readonly<Style> = {
       minZoom: 13,
       maxZoom: 16,
       lineTexts: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'trunk',
+            ],
+          }, {
+            match: 'string_equals',
+            key: 'network',
+            value: 'road',
+          }],
+          preferred: `name:${PREFERRED_LANGUAGE}`,
+          fallback: 'name',
+          fill: 0x655F57FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.34,
+          z: Z_OVERLAY_TEXT - 0.05,
+        },
         {
           filters: [{
             match: 'string_in',
@@ -1725,6 +1770,26 @@ export const NATURE: Readonly<Style> = {
       minZoom: 16,
       maxZoom: 31,
       lineTexts: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'class',
+            value: [
+              'motorway',
+              'trunk',
+            ],
+          }, {
+            match: 'string_equals',
+            key: 'network',
+            value: 'road',
+          }],
+          preferred: `name:${PREFERRED_LANGUAGE}`,
+          fallback: 'name',
+          fill: 0x655F57FF as RgbaU32,
+          stroke: 0xFFFFFFDD as RgbaU32,
+          scale: 0.34,
+          z: Z_OVERLAY_TEXT - 0.05,
+        },
         {
           filters: [{
             match: 'string_in',
