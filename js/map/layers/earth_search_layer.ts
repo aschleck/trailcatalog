@@ -13,6 +13,8 @@ import { TexturePool } from '../rendering/texture_pool';
 import { Command as LoaderCommand, LoadTileCommand, Request as LoaderRequest } from '../workers/earth_search_loader';
 
 const NO_OFFSET: Vec2 = [0, 0];
+// A viewport holds well under 64 billboards, so the buffer never grows in practice.
+const TILE_BUFFER_BYTES = 65536;
 
 export class EarthSearchLayer extends Layer {
 
@@ -38,7 +40,7 @@ export class EarthSearchLayer extends Layer {
       }],
     );
 
-    this.buffer = this.renderer.createDataBuffer(0);
+    this.buffer = this.renderer.createDataBuffer(TILE_BUFFER_BYTES);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
     this.loader = new QueuedWorkerPool('/static/earth_search_loader_worker.js', 1);
     this.fetching = false;
@@ -82,7 +84,8 @@ export class EarthSearchLayer extends Layer {
   override render(planner: Planner): void {
     if (this.hasNewData()) {
       const buffer =
-          new ArrayBuffer(Math.max(BillboardProgram.bytesNeeded() * this.tiles.size, 65536));
+          new ArrayBuffer(
+              Math.max(BillboardProgram.bytesNeeded() * this.tiles.size, TILE_BUFFER_BYTES));
       const drawables = [];
       let offset = 0;
 
