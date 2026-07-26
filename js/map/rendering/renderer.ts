@@ -42,7 +42,9 @@ export class Renderer extends Disposable {
     gl.depthFunc(gl.LEQUAL);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 
-    gl.clearColor(1, 1, 1, 1);
+    // Land is whatever no layer draws over, so the clear color is the basemap's background. Warm
+    // off-white rather than white, because roads are white and need something to sit against.
+    gl.clearColor(244 / 255, 240 / 255, 232 / 255, 1);
   }
 
   clear(): void {
