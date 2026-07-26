@@ -2,22 +2,25 @@ import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
-import { LatLng, RgbaU32, S2CellToken, TileId } from 'js/map/common/types';
+import { LatLng, RawUuid, RgbaU32, S2CellToken, TileId } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
 import { Request as QuerierRequest, Response as QuerierResponse, QueryPointResponse } from 'js/map/workers/location_querier';
+import { LineProgram } from 'js/map/rendering/line_program';
 import { Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA } from 'js/map/z';
 
-import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from './workers/collection_loader';
+import { HOVER_CHANGED } from './events';
+import { Line, LineGeometry, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, PolygonGeometry } from './workers/collection_loader';
 
 interface LoadedCell {
   drawables: Drawable[];
   glGeometryBuffer: WebGLBuffer;
   glIndexBuffer: WebGLBuffer;
+  objects: RawUuid[];
 }
 
 export class CollectionLayer extends Layer {
@@ -27,12 +30,23 @@ export class CollectionLayer extends Layer {
   private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
   private readonly querier: WorkerPool<QuerierRequest, QuerierResponse>;
   private readonly cells: Map<S2CellToken, LoadedCell|undefined>;
+  private readonly objects:
+    HashMap<
+      RawUuid,
+      | {kind: 'line'; cell: S2CellToken; value: Line}
+      | {kind: 'polygon'; cell: S2CellToken; value: Polygon}
+    >;
   private activeQuery: {
     id: number;
     resolve: (response: QueryPointResponse) => void;
     reject: () => void;
   };
   private generation: number;
+  private interactiveData: LoadedCell & {
+    geometry: ArrayBuffer;
+    index: ArrayBuffer;
+  };
+  private lastHoverTarget: RawUuid|undefined;
   private lastRenderGeneration: number;
 
   constructor(
@@ -47,6 +61,7 @@ export class CollectionLayer extends Layer {
     this.loader = new WorkerPool('/static/collection_loader_worker.js', 6);
     this.querier = new WorkerPool('/static/location_querier_worker.js', 1);
     this.cells = new Map();
+    this.objects = new HashMap(key => `${key.msb}-${key.lsb}`);
     this.registerDisposer(() => {
       for (const response of this.cells.values()) {
         if (!response) {
@@ -59,6 +74,15 @@ export class CollectionLayer extends Layer {
     });
     this.activeQuery = {id: -1, resolve: () => {}, reject: () => {}};
     this.generation = 0;
+    this.interactiveData = {
+      drawables: [],
+      geometry: new ArrayBuffer(/* length= */ 64 * 1024),
+      index: new ArrayBuffer(/* length= */ 64 * 1024),
+      glGeometryBuffer: this.renderer.createDataBuffer(/* byteSize= */ 64 * 1024),
+      glIndexBuffer: this.renderer.createIndexBuffer(/* byteSize= */ 64 * 1024),
+      objects: [],
+    };
+    this.lastHoverTarget = undefined;
     this.lastRenderGeneration = -1;
 
     this.fetcher.onresponse = command => {
@@ -142,7 +166,7 @@ export class CollectionLayer extends Layer {
   }
 
   override hover(point: S2LatLng, source: EventSource): boolean {
-    new Promise((resolve, reject) => {
+    new Promise<QueryPointResponse>((resolve, reject) => {
       const id = this.activeQuery.id + 1;
       this.activeQuery.reject();
       this.activeQuery = {id, resolve, reject};
@@ -152,7 +176,102 @@ export class CollectionLayer extends Layer {
         point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
       });
     }).then(response => {
-      console.log(response);
+      const target: RawUuid|undefined = response.ids[0];
+      if (target?.msb === this.lastHoverTarget?.msb && target?.lsb === this.lastHoverTarget?.lsb) {
+        return;
+      }
+
+      this.lastHoverTarget = target;
+      this.lastRenderGeneration += 1;
+      const interactive = this.interactiveData;
+
+      for (const id of interactive.objects) {
+        const object = this.objects.get(id);
+        if (!object) {
+          continue;
+        }
+        const cell = this.cells.get(object.cell);
+        if (!cell) {
+          continue;
+        }
+
+        // Restore the cleared original geometry
+        if (object.kind === 'line') {
+        } else if (object.kind === 'polygon') {
+          const polygon = object.value;
+          this.renderer.uploadDataSubset(
+            Float32Array.from(polygon.triangles.geometry).buffer,
+            polygon.geometryOffset,
+            polygon.geometryByteLength,
+            cell.glGeometryBuffer);
+        } else {
+          throw checkExhaustive(object);
+        }
+      }
+
+      interactive.drawables.length = 0;
+      interactive.objects.length = 0;
+
+      const object = this.objects.get(target);
+      source.trigger(HOVER_CHANGED, {target: object?.value});
+      if (target) {
+        interactive.objects.push(target);
+      }
+
+      if (!object) {
+        return;
+      }
+
+      const cell = this.cells.get(object.cell);
+      if (!cell) {
+        return;
+      }
+
+      if (object.kind === 'line') {
+        // TODO(april)
+      } else if (object.kind === 'polygon') {
+        const polygon = object.value;
+        const triangles = polygon.triangles;
+        interactive.geometry = growBuffer(interactive.geometry, 1 + 4 * triangles.geometry.length);
+        interactive.index = growBuffer(interactive.index, 4 * triangles.index.length);
+
+        const geometryFloats = new Float32Array(interactive.geometry);
+        const geometryUints = new Uint32Array(interactive.geometry);
+        geometryUints[0] = 0xFFFFFF88;
+        geometryFloats.set(triangles.geometry, /* offset= */ 1);
+        const index = new Uint32Array(interactive.index);
+        index.set(triangles.index);
+
+        interactive.drawables.push({
+          elements: {
+            count: triangles.index.length,
+            index: interactive.glIndexBuffer,
+            offset: 0,
+          },
+          geometry: interactive.glGeometryBuffer,
+          geometryByteLength: 4 * (1 + triangles.geometry.length),
+          geometryOffset: 0,
+          instanced: undefined,
+          program: this.renderer.triangleProgram,
+          texture: undefined,
+          vertexCount: undefined,
+          z: Z_USER_DATA + 1,
+        });
+
+        // Hide the existing object
+        this.renderer.uploadDataSubset(
+          new ArrayBuffer(polygon.geometryByteLength),
+          polygon.geometryOffset,
+          polygon.geometryByteLength,
+          cell.glGeometryBuffer);
+      } else {
+        throw checkExhaustive(object);
+      }
+
+      this.renderer.uploadData(
+        interactive.geometry, interactive.geometry.byteLength, interactive.glGeometryBuffer);
+      this.renderer.uploadIndices(
+        interactive.index, interactive.index.byteLength, interactive.glIndexBuffer);
     }).catch(() => {});
     return false;
   }
@@ -181,8 +300,10 @@ export class CollectionLayer extends Layer {
       }
 
       planner.add(response.drawables);
-      this.lastRenderGeneration = this.generation;
     }
+
+    planner.add(this.interactiveData.drawables);
+    this.lastRenderGeneration = this.generation;
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
@@ -218,8 +339,19 @@ export class CollectionLayer extends Layer {
       return;
     }
 
-    if (response.polygons.length === 0 && response.lines.length === 0) {
+    if (response.lines.length === 0 && response.polygons.length === 0) {
       return;
+    }
+
+    const objects = [];
+    for (const line of response.lines) {
+      this.objects.set(line.id, {kind: 'line', cell: response.token, value: line});
+      objects.push(line.id);
+    }
+
+    for (const polygon of response.polygons) {
+      this.objects.set(polygon.id, {kind: 'polygon', cell: response.token, value: polygon});
+      objects.push(polygon.id);
     }
 
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
@@ -231,6 +363,7 @@ export class CollectionLayer extends Layer {
     this.querier.post({
       kind: 'lr',
       groupId: response.token,
+      lines: response.lines,
       polygons: response.polygons,
     });
 
@@ -272,6 +405,7 @@ export class CollectionLayer extends Layer {
       glGeometryBuffer: geometry,
       glIndexBuffer: index,
       drawables,
+      objects,
     });
     this.generation += 1;
   }
@@ -286,6 +420,10 @@ export class CollectionLayer extends Layer {
       const response = this.cells.get(token);
       if (response) {
         this.cells.delete(token);
+        for (const id of response.objects) {
+          this.objects.delete(id);
+        }
+
         this.renderer.deleteBuffer(response.glGeometryBuffer);
         this.renderer.deleteBuffer(response.glIndexBuffer);
       }
@@ -294,3 +432,10 @@ export class CollectionLayer extends Layer {
   }
 }
 
+function growBuffer(buffer: ArrayBuffer, needed: number): ArrayBuffer {
+  if (needed <= buffer.byteLength) {
+    return buffer;
+  }
+  const capacity = Math.pow(2, Math.ceil(Math.log2(needed)) + 1);
+  return new ArrayBuffer(capacity);
+}

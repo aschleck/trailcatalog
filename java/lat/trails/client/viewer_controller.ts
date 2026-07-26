@@ -15,6 +15,7 @@ import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM } from 'js/map/z';
 
 import { CollectionLayer } from './collection_layer';
+import { HOVER_CHANGED } from './events';
 
 export interface LayerState {
   name: string;
@@ -211,6 +212,10 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       layers: allLayers,
     });
     this.mapController.setLayers(allLayers.filter(l => l.enabled).map(l => l.layer));
+  }
+
+  onHoverChange(e: CorgiEvent<typeof HOVER_CHANGED>): void {
+    console.log(e.detail);
   }
 
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {

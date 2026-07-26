@@ -92,6 +92,12 @@ export class Renderer extends Disposable {
     gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(source, 0, size), usage ?? gl.STATIC_DRAW);
   }
 
+  uploadDataSubset(source: ArrayBuffer, offset: number, size: number, to: WebGLBuffer): void {
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, to);
+    gl.bufferSubData(gl.ARRAY_BUFFER, offset, new Uint8Array(source, 0, size));
+  }
+
   uploadIndices(source: ArrayBuffer, size: number, to: WebGLBuffer): void {
     if (size === 0) {
       return;

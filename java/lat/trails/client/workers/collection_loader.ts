@@ -4,7 +4,7 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Array } from 'js/map/camera';
-import { LatLngRect, RgbaU32, S2CellToken } from 'js/map/common/types';
+import { RawUuid, RgbaU32, S2CellToken } from 'js/map/common/types';
 import { LineProgram } from 'js/map/rendering/line_program';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
@@ -60,6 +60,8 @@ export interface LoadResponse {
   token: S2CellToken;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
+  // We merge multiple objects into the *Geometry version, so if we want just the geometry of any
+  // one object then we keep the non-*Geometry arrays too.
   lines: Line[];
   lineGeometries: LineGeometry[];
   polygons: Polygon[];
@@ -71,6 +73,7 @@ export interface Line {
   data: Data;
   geometryByteLength: number;
   geometryOffset: number;
+  points: Float64Array;
 }
 
 export interface LineGeometry {
@@ -92,6 +95,7 @@ export interface Polygon {
   // relative the start of the polygon indices
   indexOffset: number;
   raw: ArrayBuffer;
+  triangles: Triangles;
 }
 
 export interface PolygonGeometry {
@@ -104,9 +108,7 @@ export interface PolygonGeometry {
 
 export type Response = LoadResponse;
 
-export type RawUuid = {lsb: bigint; msb: bigint};
-
-type Data = {[key: string]: boolean|number|string};
+export type Data = {[key: string]: boolean|number|string};
 
 const TEXT_DECODER = new TextDecoder();
 
@@ -288,6 +290,7 @@ class CollectionLoader {
         data: line.data,
         geometryByteLength: result.geometryByteLength,
         geometryOffset: 4 * geometryOffset,
+        points: line.points,
       });
       geometryOffset += result.geometryByteLength / 4;
       groupInstances += result.instanceCount;
@@ -322,10 +325,11 @@ class CollectionLoader {
           id: polygon.id,
           data,
           geometryByteLength: 4 * triangles.geometry.length,
-          geometryOffset,
+          geometryOffset: 4 * geometryOffset,
           indexCount: triangles.index.length,
           indexOffset,
           raw: rawPolygon,
+          triangles,
         });
 
         geometryOffset += triangles.geometry.length;

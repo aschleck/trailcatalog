@@ -21,6 +21,8 @@ export type LatLngZoom = Readonly<{
   zoom: number;
 }>;
 
+export type RawUuid = {lsb: bigint; msb: bigint};
+
 export type RgbaU32 = number & {brand: 'RgbaU32'};
 
 export type TileId = Readonly<{

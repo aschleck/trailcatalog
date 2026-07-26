@@ -3,7 +3,7 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
-import { LatLng, Rect, Vec2 } from '../common/types';
+import { LatLng, RawUuid, Rect, Vec2 } from '../common/types';
 
 interface InitializeRequest {
   kind: 'ir';
@@ -12,8 +12,12 @@ interface InitializeRequest {
 interface LoadRequest {
   kind: 'lr';
   groupId: string;
+  lines: Array<{
+    id: RawUuid;
+    points: Float64Array;
+  }>;
   polygons: Array<{
-    id: {lsb: bigint; msb: bigint};
+    id: RawUuid;
     raw: ArrayBuffer;
   }>;
 }
@@ -34,7 +38,7 @@ export type Request = InitializeRequest|LoadRequest|UnloadRequest|QueryPointRequ
 export interface QueryPointResponse {
   kind: 'qpr';
   generation: number;
-  ids: string[];
+  ids: RawUuid[];
 }
 
 export type Response = QueryPointResponse;
@@ -58,6 +62,7 @@ class LocationQuerier {
 
   load(request: LoadRequest) {
     const bounds = [];
+    // TODO(april): also load lines
     for (const polygon of request.polygons) {
       const s2 = SimpleS2.decodePolygon(polygon.raw);
       const bound = llrBound(s2);
@@ -90,8 +95,8 @@ class LocationQuerier {
     self.postMessage({
       kind: 'qpr',
       generation: request.generation,
-      ids,
-    });
+      ids: [...ids],
+    } as QueryPointResponse);
   }
 }
 

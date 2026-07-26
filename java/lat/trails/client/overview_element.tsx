@@ -6,6 +6,7 @@ import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
 import { LayerState, State, ViewerController } from './viewer_controller';
+import { HOVER_CHANGED } from './events';
 
 export function OverviewElement(
   {parameters}: {parameters: {[key: string]: string};},
@@ -33,7 +34,10 @@ export function OverviewElement(
         js={corgi.bind({
           controller: ViewerController,
           events: {
-            corgi: [[MAP_MOVED, 'onMove']],
+            corgi: [
+              [HOVER_CHANGED, 'onHoverChange'],
+              [MAP_MOVED, 'onMove'],
+            ],
             render: 'wakeup',
           },
           state: [state, updateState],
