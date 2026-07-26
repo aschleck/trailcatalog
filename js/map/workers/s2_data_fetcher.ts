@@ -1,4 +1,4 @@
-import { Long, S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { Long, S2CellId } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
@@ -124,12 +124,11 @@ class S2DataFetcher {
       return;
     }
 
-    const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
-    const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
-    const bounds = S2LatLngRect.fromPointPair(low, high);
-
     const used = new Set<S2CellToken>();
-    const cells = SimpleS2.cover(bounds, this.indexBottom);
+    const cells =
+        SimpleS2.cover(
+            viewport.lat[0], viewport.lat[1], viewport.lng[0], viewport.lng[1],
+            this.indexBottom);
     for (let i = 0; i < cells.size(); ++i) {
       const cell = cells.getAtIndex(i);
       const token = cell.toToken() as S2CellToken;
@@ -200,12 +199,11 @@ class S2DataFetcher {
 
   private cull(): void {
     const viewport = this.lastViewport;
-    const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
-    const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
-    const bounds = S2LatLngRect.fromPointPair(low, high);
-
     const used = new Set<S2CellToken>();
-    const cells = SimpleS2.cover(bounds, this.indexBottom);
+    const cells =
+        SimpleS2.cover(
+            viewport.lat[0], viewport.lat[1], viewport.lng[0], viewport.lng[1],
+            this.indexBottom);
     for (let i = 0; i < cells.size(); ++i) {
       const cell = cells.getAtIndex(i);
       const token = cell.toToken() as S2CellToken;

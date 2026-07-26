@@ -1,6 +1,7 @@
 package org.trailcatalog.s2;
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.geometry.R1Interval;
 import com.google.common.geometry.S1Angle;
 import com.google.common.geometry.S1Interval;
 import com.google.common.geometry.S2Cell;
@@ -69,34 +70,35 @@ public final class SimpleS2 {
     return S1Angle.radians(meters / EARTH_RADIUS_METERS);
   }
 
+  /**
+   * Takes bare radians instead of an S2LatLngRect because callers pass coordinates outside of
+   * [-pi, pi] and S2LatLngRect rejects them.
+   */
   @JsMethod
-  public static ArrayList<S2CellId> cover(S2LatLngRect viewport, int deepest) {
-    // Normalize the viewport for world wrapping. Note that at low zoom S2 has some weird S1Interval
-    // logic that makes lo/hi the opposite of what we want. See also render_planner.ts#render.
+  public static ArrayList<S2CellId> cover(
+      double latLo, double latHi, double lngLo, double lngHi, int deepest) {
+    // Callers unpacking an S2LatLngRect give us lo/hi swapped once the span passes pi, because
+    // that's how fromPointPair stores it. See also render_planner.ts#render.
+    double lowLng = Math.min(lngLo, lngHi);
+    double highLng = Math.max(lngLo, lngHi);
+    R1Interval lat = R1Interval.fromPointPair(latLo, latHi);
+
+    // Shift the range into [-pi, pi] and split it where it runs off the end.
     List<S2LatLngRect> expanded = new ArrayList<>();
-    double lowLng = Math.min(viewport.lng().lo(), viewport.lng().hi());
-    double highLng = Math.max(viewport.lng().lo(), viewport.lng().hi());
-    if (lowLng == viewport.lng().lo()) {
-      expanded.add(viewport);
+    if (highLng - lowLng >= 2 * Math.PI) {
+      expanded.add(new S2LatLngRect(lat, S1Interval.full()));
     } else {
+      double worlds = Math.floor((lowLng + Math.PI) / (2 * Math.PI));
+      lowLng -= worlds * 2 * Math.PI;
+      highLng -= worlds * 2 * Math.PI;
       expanded.add(
           new S2LatLngRect(
-              viewport.lat(),
-              new S1Interval(
-                  Math.max(-Math.PI, lowLng),
-                  Math.min(Math.PI, highLng))));
-    }
-    if (lowLng < -Math.PI) {
-      expanded.add(
-          new S2LatLngRect(
-              viewport.lat(),
-              new S1Interval(lowLng + 2 * Math.PI, 2 * Math.PI)));
-    }
-    if (highLng > Math.PI) {
-      expanded.add(
-          new S2LatLngRect(
-              viewport.lat(),
-              new S1Interval(-2 * Math.PI, highLng - 2 * Math.PI)));
+              lat, new S1Interval(lowLng, Math.min(Math.PI, highLng))));
+      if (highLng > Math.PI) {
+        expanded.add(
+            new S2LatLngRect(
+                lat, new S1Interval(-Math.PI, highLng - 2 * Math.PI)));
+      }
     }
 
     // Compute the base covering cells

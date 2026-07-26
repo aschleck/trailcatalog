@@ -150,7 +150,8 @@ declare global {
       static angleToEarthMeters(angle: com.google.common.geometry.S1Angle): number;
       static cellIdToCell(id: com.google.common.geometry.S2CellId): com.google.common.geometry.S2Cell;
       static cellLevel(id: nativebootstrap.Long): number;
-      static cover(viewport: com.google.common.geometry.S2LatLngRect, deepest: number):
+      static cover(
+          latLo: number, latHi: number, lngLo: number, lngHi: number, deepest: number):
           java.util.ArrayList<com.google.common.geometry.S2CellId>;
       static decodeCellUnion(data: Uint8Array): com.google.common.geometry.S2CellUnion;
       static decodePolygon(bytes: ArrayBuffer): com.google.common.geometry.S2Polygon;

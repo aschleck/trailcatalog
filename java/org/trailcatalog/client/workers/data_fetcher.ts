@@ -1,4 +1,3 @@
-import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_throttler';
@@ -138,10 +137,14 @@ class DataFetcher {
     });
   }
 
-  updateViewport(bounds: S2LatLngRect, zoom: number): void {
+  updateViewport(viewport: Viewport): void {
+    const zoom = viewport.zoom;
     const used = new Set([PIN_CELL_ID]); // never cancel our pin request
 
-    const overviewCellsInBound = SimpleS2.cover(bounds, SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL);
+    const overviewCellsInBound =
+        SimpleS2.cover(
+            viewport.lat[0], viewport.lat[1], viewport.lng[0], viewport.lng[1],
+            SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL);
     for (let i = 0; i < overviewCellsInBound.size(); ++i) {
       const cell = overviewCellsInBound.getAtIndex(i);
       const id = reinterpretLong(cell.id()) as S2CellNumber;
@@ -207,7 +210,9 @@ class DataFetcher {
       outOfFlight.forEach(a => { a.abort() });
       outOfFlight.clear();
 
-      const detailCellsInBound = SimpleS2.cover(bounds, depth);
+      const detailCellsInBound =
+          SimpleS2.cover(
+              viewport.lat[0], viewport.lat[1], viewport.lng[0], viewport.lng[1], depth);
       for (let i = 0; i < detailCellsInBound.size(); ++i) {
         const cell = detailCellsInBound.getAtIndex(i);
         const id = reinterpretLong(cell.id()) as S2CellNumber;
@@ -289,11 +294,7 @@ self.onmessage = e => {
   if (request.kind === 'spr') {
     fetcher.setPins(request);
   } else if (request.kind === 'uvr') {
-    const viewport = request.viewport;
-    const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
-    const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
-    const bounds = S2LatLngRect.fromPointPair(low, high);
-    fetcher.updateViewport(bounds, viewport.zoom);
+    fetcher.updateViewport(request.viewport);
   } else {
     checkExhaustive(request);
   }

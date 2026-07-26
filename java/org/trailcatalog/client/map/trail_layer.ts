@@ -401,7 +401,10 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   private cellsInView(deepest: number): Set<S2CellNumber> {
-    const cellsInArrayList = SimpleS2.cover(this.viewportBounds, deepest);
+    const bounds = this.viewportBounds;
+    const cellsInArrayList =
+        SimpleS2.cover(
+            bounds.lat().lo(), bounds.lat().hi(), bounds.lng().lo(), bounds.lng().hi(), deepest);
     const cells = [];
     for (let i = 0; i < cellsInArrayList.size(); ++i) {
       cells.push(reinterpretLong(cellsInArrayList.getAtIndex(i).id()) as S2CellNumber);
