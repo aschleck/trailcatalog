@@ -23,6 +23,9 @@ export interface Glyph {
 
 const FLOATS_PER_GLYPH = 12;
 
+/** Floats {@link SdfProgram.planPlaced} reads per glyph: an x,y offset in pixels and an angle. */
+export const FLOATS_PER_PLACEMENT = 3;
+
 export class SdfProgram extends Program<SdfProgramData> {
 
   /** Bytes that {@link plan} will write into the supplied buffer. */
@@ -87,21 +90,21 @@ export class SdfProgram extends Program<SdfProgramData> {
       const charXOffset = xOffset - glyph.glyphTop * scale * sin;
       const charYOffset = yOffset + glyph.glyphTop * scale * cos;
 
-      floats.set([
-        /* center= */ center[0], center[1],
-        /* offsetPx= */ charXOffset, charYOffset,
-        /* size= */ glyph.width * scale, glyph.height * scale,
-        /* angle= */ angle,
-      ], count);
-      count += 7;
-
-      uint32s.set([
-        /* atlasIndex= */ glyph.index,
-        /* atlasSize= */ atlasSize[0], atlasSize[1],
-        /* fill= */ fill,
-        /* fill= */ stroke,
-      ], count);
-      count += 5;
+      count =
+          pushGlyph(
+              floats,
+              uint32s,
+              count,
+              glyph,
+              center[0],
+              center[1],
+              charXOffset,
+              charYOffset,
+              angle,
+              scale,
+              fill,
+              stroke,
+              atlasSize);
 
       const xAdvance = glyph.glyphAdvance * scale;
       xOffset += cos * xAdvance;
@@ -110,19 +113,76 @@ export class SdfProgram extends Program<SdfProgramData> {
 
     return {
       byteSize: count * 4,
-      drawable: {
-        elements: undefined,
-        geometry: glBuffer,
-        geometryByteLength: 4 * count,
-        geometryOffset: offset,
-        instanced: {
-          count: glyphs.length,
-        },
-        program: this,
-        texture: this.atlas,
-        vertexCount: 4,
-        z,
+      drawable: this.drawableFor(glyphs.length, count, z, glBuffer, offset),
+    };
+  }
+
+  /**
+   * Writes glyphs that share a center but each carry their own offset and rotation, for text that
+   * follows a curve rather than a single baseline. Everything past the center is in pixels
+   * because a mercator coordinate at zoom 20 rounds to about nine pixels as a float, which is
+   * enough to pile the glyphs of a word on top of each other.
+   */
+  planPlaced(
+      glyphs: Glyph[],
+      center: Vec2,
+      // offset x,y in pixels and angle in radians, per glyph
+      placements: ArrayLike<number>,
+      scale: number,
+      fill: RgbaU32,
+      stroke: RgbaU32,
+      z: number,
+      atlasSize: Vec2,
+      buffer: ArrayBuffer,
+      offset: number,
+      glBuffer: WebGLBuffer,
+  ): {byteSize: number; drawable: Drawable;} {
+    const floats = new Float32Array(buffer, offset);
+    const uint32s = new Uint32Array(buffer, offset);
+
+    let count = 0;
+    for (let i = 0; i < glyphs.length; ++i) {
+      count =
+          pushGlyph(
+              floats,
+              uint32s,
+              count,
+              glyphs[i],
+              center[0],
+              center[1],
+              placements[FLOATS_PER_PLACEMENT * i + 0],
+              placements[FLOATS_PER_PLACEMENT * i + 1],
+              placements[FLOATS_PER_PLACEMENT * i + 2],
+              scale,
+              fill,
+              stroke,
+              atlasSize);
+    }
+
+    return {
+      byteSize: count * 4,
+      drawable: this.drawableFor(glyphs.length, count, z, glBuffer, offset),
+    };
+  }
+
+  private drawableFor(
+      instanceCount: number,
+      floatCount: number,
+      z: number,
+      glBuffer: WebGLBuffer,
+      offset: number): Drawable {
+    return {
+      elements: undefined,
+      geometry: glBuffer,
+      geometryByteLength: 4 * floatCount,
+      geometryOffset: offset,
+      instanced: {
+        count: instanceCount,
       },
+      program: this,
+      texture: this.atlas,
+      vertexCount: 4,
+      z,
     };
   }
 
@@ -290,6 +350,40 @@ interface SdfProgramData extends ProgramData {
     sphericalMvp: WebGLUniformLocation;
     z: WebGLUniformLocation;
   };
+}
+
+// Returns the float count after the glyph.
+function pushGlyph(
+    floats: Float32Array,
+    uint32s: Uint32Array,
+    count: number,
+    glyph: Glyph,
+    centerX: number,
+    centerY: number,
+    offsetX: number,
+    offsetY: number,
+    angle: number,
+    scale: number,
+    fill: RgbaU32,
+    stroke: RgbaU32,
+    atlasSize: Vec2): number {
+  floats.set([
+    /* center= */ centerX, centerY,
+    /* offsetPx= */ offsetX, offsetY,
+    /* size= */ glyph.width * scale, glyph.height * scale,
+    /* angle= */ angle,
+  ], count);
+  count += 7;
+
+  uint32s.set([
+    /* atlasIndex= */ glyph.index,
+    /* atlasSize= */ atlasSize[0], atlasSize[1],
+    /* fill= */ fill,
+    /* stroke= */ stroke,
+  ], count);
+  count += 5;
+
+  return count;
 }
 
 function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {

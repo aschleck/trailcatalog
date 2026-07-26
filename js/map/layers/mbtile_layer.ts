@@ -2005,25 +2005,42 @@ export class MbtileLayer extends Layer {
       planner.add(response.drawables);
     }
 
+    // Pixels per mercator unit, the same scale the programs get as halfWorldSize. Glyph advances
+    // are in pixels and label paths are in mercator, so curved layout needs the live conversion.
+    const pixelsPerWorld = 256 * Math.pow(2, zoom - 1);
     let textByteSize = 0;
     for (const label of this.labels.values()) {
       if (label.collidedMinZoom > zoom) {
         continue;
       }
 
-      const {byteSize, drawables} = GLYPHER.plan(
-          label.graphemes,
-          label.center,
-          [0, 0],
-          label.scale,
-          label.angle,
-          label.fill,
-          label.stroke,
-          label.z,
-          this.textBuffer,
-          textByteSize,
-          this.textGlBuffer,
-          this.renderer);
+      const {byteSize, drawables} =
+          label.path
+              ? GLYPHER.planCurved(
+                  label.graphemes,
+                  label.path,
+                  pixelsPerWorld,
+                  label.scale,
+                  label.fill,
+                  label.stroke,
+                  label.z,
+                  this.textBuffer,
+                  textByteSize,
+                  this.textGlBuffer,
+                  this.renderer)
+              : GLYPHER.plan(
+                  label.graphemes,
+                  label.center,
+                  [0, 0],
+                  label.scale,
+                  label.angle,
+                  label.fill,
+                  label.stroke,
+                  label.z,
+                  this.textBuffer,
+                  textByteSize,
+                  this.textGlBuffer,
+                  this.renderer);
       planner.add(drawables);
       textByteSize += byteSize;
     }
