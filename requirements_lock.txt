@@ -292,7 +292,7 @@ osmium==3.7.0 \
     --hash=sha256:f5872e9ee30399328f962e6d06eff5d907bda569092df3a735c0a73a9b958928 \
     --hash=sha256:f71a99b573e319ad12f1c77e0e8a08b683ca6d9dae094bcac038700a481c2c9e \
     --hash=sha256:f9797f6b0ff1c432230bd398b173b5682b4fc8d932172dfc406e612c508104b8
-    # via -r requirements_lock.in
+    # via trailcatalog (pyproject.toml)
 pillow==10.3.0 \
     --hash=sha256:048ad577748b9fa4a99a0548c64f2cb8d672d5bf2e643a739ac8faff1164238c \
     --hash=sha256:048eeade4c33fdf7e08da40ef402e748df113fd0b4584e32c4af74fe78baaeb2 \
@@ -367,7 +367,7 @@ pillow==10.3.0 \
 reportlab==4.2.0 \
     --hash=sha256:474fb28d63431a5d47d75c90d580393050df7d491a09c7877df3291a2e9f6d0a \
     --hash=sha256:53630f9d25a7938def3e6a93d723b72a7a5921d34d23cf7a0930adeb2cb0e6c1
-    # via -r requirements_lock.in
+    # via trailcatalog (pyproject.toml)
 requests==2.31.0 \
     --hash=sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f \
     --hash=sha256:942c5a758f98d790eaed1a29cb6eefc7ffb0d1cf7af05c3d2791656dbd6ad1e1
@@ -375,7 +375,7 @@ requests==2.31.0 \
 svgutils==0.3.4 \
     --hash=sha256:4d08524a08126553c1a9bf2639616cf31290adea6fd235a3eb67d77c748abc00 \
     --hash=sha256:9ef48f44cb1d460a7747dd02694200fda25eb9faf6dea392118def2695e0e053
-    # via -r requirements_lock.in
+    # via trailcatalog (pyproject.toml)
 urllib3==2.2.1 \
     --hash=sha256:450b20ec296a467077128bff42b73080516e71b56ff59a60a02bef2232c4fa9d \
     --hash=sha256:d0570876c61ab9e520d776c38acbbb5b05a776d3f9ff98a5c8fd5162a444cf19

@@ -41,6 +41,7 @@
             pnpm
             podman
             postgresql
+            python3
             reshape
           ];
 

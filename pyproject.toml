@@ -1,0 +1,9 @@
+[project]
+name = "trailcatalog"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "osmium==3.7.0",
+    "reportlab==4.2.0",
+    "svgutils==0.3.4",
+]
