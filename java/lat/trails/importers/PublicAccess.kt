@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2CellUnion
+import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Loop
 import com.google.common.geometry.S2Polygon
@@ -60,10 +61,11 @@ fun main(args: Array<String>) {
 
   val manager = GeoPackageManager.open(false, source.value!!.toFile())
 
-  val ignoreCategory = hashSetOf("Easement")
+  val ignoreCategory = hashSetOf("Easement", "Proclamation")
   val ignoreAccess = hashSetOf("UK", "XA")
   val ignoreOwners =
       hashSetOf(
+          "BOEM", // Bureau of Ocean Energy Management: offshore leasing, not recreation land
           "DESG", // Designations, not actual usage
           "JNT", // Unclear owner
           "PVT", // Not public land
@@ -125,7 +127,7 @@ fun main(args: Array<String>) {
 
   val polygons = ArrayList<Feature>()
   val coverer = S2RegionCoverer.builder().setMaxLevel(FEATURE_COVERING_MAX_LEVEL).build()
-  for (table in listOf("PADUS3_0Combined_DOD_TRIB_Fee_Designation_Easement", "PADUS3_0Marine")) {
+  for (table in listOf("PADUS4_1Combined_Proclamation_Marine_Fee_Designation_Easement")) {
     for (result in manager.getFeatureDao(table).queryForAll()) {
       if (ignoreCategory.contains(result.getValue("Category"))) {
         continue
@@ -177,14 +179,40 @@ fun main(args: Array<String>) {
 
   // Does this work...? Too bad I gave away Java Concurrency in Practice...
   synchronized (polygons) {
+    val distinct = deduplicate(polygons)
     val covering = HashSet<S2CellId>()
-    for (feature in polygons) {
+    for (feature in distinct) {
       val cell = feature.cell;
       covering.add(cell.parent(COLLECTION_COVERING_MAX_LEVEL.coerceAtMost(cell.level())))
     }
-    dumpPolygons(ArrayList(covering), polygons)
+    dumpPolygons(ArrayList(covering), distinct)
   }
 }
+
+// Two records are the same piece of land if they agree on the unit's name, owner and access and
+// enclose the same area around the same centroid. Both conditions together make a false match
+// between genuinely distinct units very unlikely. 100 m is far below the spacing of units that
+// share all three fields and far above the ~4 m grid toS2Polygon snaps vertices to.
+private val DUPLICATE_CENTROID_DISTANCE = S2Earth.metersToAngle(100.0)
+
+private fun deduplicate(polygons: List<Feature>): List<Feature> {
+  val result = ArrayList<Feature>()
+  for ((_, group) in polygons.groupBy { it.data }) {
+    val kept = ArrayList<Feature>()
+    for (feature in group) {
+      if (kept.none { it.polygon.duplicates(feature.polygon) }) {
+        kept.add(feature)
+      }
+    }
+    result.addAll(kept)
+  }
+  logger.info("Dropped {} duplicate records, kept {}", polygons.size - result.size, result.size)
+  return result
+}
+
+private fun S2Polygon.duplicates(other: S2Polygon): Boolean =
+    Math.abs(area - other.area) <= 0.01 * area
+        && S2LatLng(centroid).getDistance(S2LatLng(other.centroid)) < DUPLICATE_CENTROID_DISTANCE
 
 private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform): S2Polygon {
   val builder = S2PolygonBuilder(S2PolygonBuilder.Options.DIRECTED_UNION)

@@ -95,5 +95,23 @@ java -jar ~/hillshader_deploy.jar \
 
 ## Public access datasets
 
-* Download the "national geopackage" from
-  https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-download
+Download the "National Geodatabase" from
+https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-download. 4.1 only publishes
+the national dataset as a geodatabase, so it needs to be converted before import.
+
+```
+nix-shell -p gdal
+
+ogr2ogr -f GPKG PADUS4_1.gpkg PADUS4_1Geodatabase.gdb \
+    PADUS4_1Combined_Proclamation_Marine_Fee_Designation_Easement
+```
+
+Import against `currentSchema=public` because `COPY` doesn't work with views.
+
+```
+bazelisk run //java/lat/trails/importers:public_access -- \
+    --source=/path/to/PADUS4_1.gpkg \
+    --database_url="postgresql://localhost:5432/trails_lat?currentSchema=public" \
+    --database_username_password="trails_lat:trails_lat"
+```
+
