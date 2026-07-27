@@ -14,6 +14,7 @@ import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM } from 'js/map/z';
 
 import { CollectionLayer } from './collection_layer';
+import { OSM_PATHS, PUBLIC_LAND } from './styles';
 import { HOVER_CHANGED } from './events';
 
 export interface LayerState {
@@ -175,6 +176,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       enabled: false,
       layer: new CollectionLayer(
           '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
+          PUBLIC_LAND,
           // Snapping to a level whose cells are a few pixels across is invisible and saves most of
           // the geometry, but past zoom 10 we want the real boundaries.
           [
@@ -203,6 +205,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       enabled: false,
       layer: new CollectionLayer(
           '/api/collections/00000000-0000-0000-0000-000000000001',
+          OSM_PATHS,
           [
             // Snapping only reaches polygons, see ApiServer#fetchRealCollection, and a collection
             // of nothing but lines draws fast enough at zoom 10 to leave them at full detail.

@@ -18,6 +18,7 @@ tc_ts_project(
         "//js/map",
         "//js/map/common",
         "//js/map/workers",
+        "//java/org/trailcatalog/models:models-ts",
         "//java/org/trailcatalog/s2",
         "@dev_april_corgi//js/common",
     ],

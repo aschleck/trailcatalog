@@ -1,6 +1,8 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
+import { aDescendsB } from 'java/org/trailcatalog/models/categories';
+
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Deltas, skipE7Deltas } from 'js/map/camera';
@@ -16,13 +18,16 @@ interface InitializeRequest {
   style: Style;
 }
 
-interface Style {
+export interface Style {
   lines: LineStyle[];
   polygons: PolygonStyle[];
 }
 
-interface LineStyle {
+export interface LineStyle {
   filters: Match[];
+  // Half open, matching the bands in the mbtile styles.
+  minZoom: number;
+  maxZoom: number;
   fill: RgbaU32;
   stroke: RgbaU32;
   radius: number;
@@ -30,27 +35,36 @@ interface LineStyle {
   z: number;
 }
 
-interface PolygonStyle {
+export interface PolygonStyle {
   filters: Match[];
   fill: RgbaU32;
   z: number;
 }
 
-interface AlwaysMatch {
+export interface AlwaysMatch {
   match: 'always';
 }
 
-interface StringEqualsMatch {
+export interface StringEqualsMatch {
   match: 'string_equals';
   key: string;
   value: string;
 }
 
-type Match = AlwaysMatch|StringEqualsMatch;
+// Categories are a tree packed into an int, so naming a parent takes everything under it. See
+// Categories.kt.
+export interface CategoryInMatch {
+  match: 'category_in';
+  key: string;
+  value: number[];
+}
+
+export type Match = AlwaysMatch|CategoryInMatch|StringEqualsMatch;
 
 interface LoadRequest {
   kind: 'lr';
   key: CellKey;
+  styleZoom: number;
   data: ArrayBuffer;
 }
 
@@ -59,6 +73,7 @@ export type Request = InitializeRequest|LoadRequest;
 export interface LoadResponse {
   kind: 'lr';
   key: CellKey;
+  styleZoom: number;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
   // We merge multiple objects into the *Geometry version, so if we want just the geometry of any
@@ -77,6 +92,8 @@ export interface Line {
   // Mercator, which is what the location querier hit tests in and what the hover highlight repushes
   // through LineProgram.
   points: Float64Array;
+  // What the style drew it at, so the highlight can sit wider than it whatever band it came from.
+  radius: number;
 }
 
 export interface LineGeometry {
@@ -148,7 +165,7 @@ class CollectionLoader {
       const idMsb = source.getBigInt64();
       const dataByteSize = source.getVarInt32();
       const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
-      const style = findStyle(data, this.style.lines);
+      const style = findZoomedStyle(data, request.styleZoom, this.style.lines);
       if (!style) {
         // Deltas have no width to multiply past, so a line the style drops still costs a walk.
         skipE7Deltas(source);
@@ -247,6 +264,7 @@ class CollectionLoader {
     const response: LoadResponse = {
       kind: 'lr',
       key: request.key,
+      styleZoom: request.styleZoom,
       geometry: geometry.buffer,
       index: index.buffer,
       lines: [],
@@ -290,6 +308,7 @@ class CollectionLoader {
         geometryByteLength: result.geometryByteLength,
         geometryOffset: 4 * geometryOffset,
         points: line.points,
+        radius: line.radius,
       });
       geometryOffset += result.geometryByteLength / 4;
       groupInstances += result.instanceCount;
@@ -390,13 +409,39 @@ function findStyle<S extends {filters: Match[]}>(data: Data, styles: S[]): S|und
   return undefined;
 }
 
-function matches(data: Data, filters: Match[]): boolean {
-  for (const filter of filters) {
-    switch (filter.match) {
-      case "string_equals": return data[filter.key] === filter.value;
-      case "always": return true;
+function findZoomedStyle<S extends {filters: Match[]; minZoom: number; maxZoom: number}>(
+    data: Data, styleZoom: number, styles: S[]): S|undefined {
+  for (const style of styles) {
+    if (style.minZoom <= styleZoom && styleZoom < style.maxZoom && matches(data, style.filters)) {
+      return style;
     }
   }
-  return false;
+  return undefined;
+}
+
+function matches(data: Data, filters: Match[]): boolean {
+  for (const filter of filters) {
+    if (!matchesOne(data, filter)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function matchesOne(data: Data, filter: Match): boolean {
+  switch (filter.match) {
+    case 'always':
+      return true;
+    case 'category_in':
+      const category = data[filter.key];
+      if (typeof category !== 'number') {
+        return false;
+      }
+      return filter.value.some(parent => aDescendsB(category, parent));
+    case 'string_equals':
+      return data[filter.key] === filter.value;
+    default:
+      throw checkExhaustive(filter);
+  }
 }
 

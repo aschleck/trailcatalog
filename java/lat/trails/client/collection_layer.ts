@@ -14,21 +14,14 @@ import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as Fetcher
 import { Z_USER_DATA } from 'js/map/z';
 
 import { HOVER_CHANGED } from './events';
-import { Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon } from './workers/collection_loader';
+import { Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 
-const LINE_STYLE = {
-  fill: 0xFF00FFFF as RgbaU32,
-  radius: 2,
-  stipple: true,
-  stroke: 0xFF00FFFF as RgbaU32,
-};
-
-// Solid and wide enough to read as a halo around the stippled LINE_STYLE.radius line underneath.
+// Solid, and drawn wider than the line under it so it reads as a halo rather than a recolor.
 const HIGHLIGHT_LINE_FILL = 0xFFFFFFCC as RgbaU32;
-const HIGHLIGHT_LINE_RADIUS = LINE_STYLE.radius + 3;
+const HIGHLIGHT_LINE_PADDING_PX = 3;
 
-// How close the cursor has to come to a line to hover it. The line draws LINE_STYLE.radius wide, so
-// this reaches a few pixels past its edge.
+// How close the cursor has to come to a line to hover it, measured from the center, so it reaches
+// past the edge of everything but the widest motorway.
 const HOVER_RADIUS_PX = 6;
 
 interface LoadedCell {
@@ -56,6 +49,9 @@ export class CollectionLayer extends Layer {
   private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
   private readonly querier: WorkerPool<QuerierRequest, QuerierResponse>;
   private readonly cells: Map<CellKey, LoadedCell|undefined>;
+  // The bytes each cell arrived as, so that a styleZoom change can re-post them to the loader
+  // instead of refetching. Same trade MbtileLayer makes with rawBytes.
+  private readonly rawBytes: Map<CellKey, ArrayBuffer>;
   private readonly objects:
     HashMap<
       RawUuid,
@@ -75,9 +71,12 @@ export class CollectionLayer extends Layer {
   private lastRenderGeneration: number;
   // Hit testing a line needs a radius in mercator, which only the zoom can give.
   private zoom: number;
+  // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
+  private styleZoom: number;
 
   constructor(
       url: string,
+      style: Style,
       snaps: Snap[],
       streams: Stream[],
       private readonly renderer: Renderer,
@@ -88,6 +87,7 @@ export class CollectionLayer extends Layer {
     this.loader = new WorkerPool('/static/collection_loader_worker.js', 6);
     this.querier = new WorkerPool('/static/location_querier_worker.js', 1);
     this.cells = new Map();
+    this.rawBytes = new Map();
     this.objects = new HashMap(key => `${key.msb}-${key.lsb}`);
     this.registerDisposer(() => {
       for (const cell of this.cells.values()) {
@@ -109,6 +109,7 @@ export class CollectionLayer extends Layer {
     this.lastHoverTarget = undefined;
     this.lastRenderGeneration = -1;
     this.zoom = 0;
+    this.styleZoom = -1;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
@@ -145,37 +146,7 @@ export class CollectionLayer extends Layer {
     });
     this.loader.broadcast({
       kind: 'ir',
-      style: {
-        lines: [
-          {
-            filters: [{match: 'always'}],
-            ...LINE_STYLE,
-            z: Z_USER_DATA,
-          },
-        ],
-        polygons: [
-          {
-            filters: [{match: 'string_equals', key: 'owner', value: 'BLM/BR'}],
-            fill: 0xFFFF0088 as RgbaU32,
-            z: Z_USER_DATA,
-          },
-          {
-            filters: [{match: 'string_equals', key: 'owner', value: 'NPS'}],
-            fill: 0x00FF0088 as RgbaU32,
-            z: Z_USER_DATA,
-          },
-          {
-            filters: [{match: 'string_equals', key: 'owner', value: 'USFS'}],
-            fill: 0x0000FF88 as RgbaU32,
-            z: Z_USER_DATA,
-          },
-          {
-            filters: [{match: 'always'}],
-            fill: 0xFF000088 as RgbaU32,
-            z: Z_USER_DATA,
-          },
-        ],
-      },
+      style,
     });
     this.querier.broadcast({kind: 'ir'});
   }
@@ -240,7 +211,7 @@ export class CollectionLayer extends Layer {
             LineProgram.push(
                 HIGHLIGHT_LINE_FILL,
                 HIGHLIGHT_LINE_FILL,
-                HIGHLIGHT_LINE_RADIUS,
+                line.radius + HIGHLIGHT_LINE_PADDING_PX,
                 /* stipple= */ false,
                 line.points,
                 highlight.geometry,
@@ -349,6 +320,15 @@ export class CollectionLayer extends Layer {
         zoom,
       },
     });
+
+    // Style bands break on integers, so the floor is the only thing a restyle has to watch.
+    const newStyleZoom = Math.floor(zoom);
+    if (newStyleZoom !== this.styleZoom) {
+      this.styleZoom = newStyleZoom;
+      for (const [key, data] of this.rawBytes) {
+        this.loader.post({kind: 'lr', key, styleZoom: newStyleZoom, data});
+      }
+    }
   }
 
   private loadRawCell(command: LoadCellCommand): void {
@@ -356,6 +336,7 @@ export class CollectionLayer extends Layer {
     if (command.data.byteLength <= 2) {
       this.release(command.key);
       this.cells.delete(command.key);
+      this.rawBytes.delete(command.key);
       return;
     }
 
@@ -364,11 +345,14 @@ export class CollectionLayer extends Layer {
       this.cells.set(command.key, undefined);
     }
 
+    // No transfer list, so the worker gets a structured clone and this copy survives to restyle.
+    this.rawBytes.set(command.key, command.data);
     this.loader.post({
       kind: 'lr',
       key: command.key,
+      styleZoom: this.styleZoom,
       data: command.data,
-    }, [command.data]);
+    });
   }
 
   private loadProcessedCell(response: LoadResponse): void {
@@ -377,16 +361,15 @@ export class CollectionLayer extends Layer {
       return;
     }
 
+    // A restyle at a newer zoom has already gone out, so this answer is for a band nobody is
+    // looking at.
+    if (response.styleZoom !== this.styleZoom) {
+      return;
+    }
+
     // Refining a cell throws out the coarser copy of the same objects, and with it the offsets the
     // highlight blanked into its buffer.
     this.release(response.key);
-
-    // Nothing in the cell matched the style, so there is nothing to wait for either.
-    if (response.lines.length === 0 && response.polygons.length === 0) {
-      this.cells.delete(response.key);
-      this.generation += 1;
-      return;
-    }
 
     for (const line of response.lines) {
       this.objects.set(line.id, {kind: 'line', key: response.key, value: line});
@@ -460,6 +443,7 @@ export class CollectionLayer extends Layer {
     for (const key of command.keys) {
       this.release(key);
       this.cells.delete(key);
+      this.rawBytes.delete(key);
     }
     this.generation += 1;
   }
