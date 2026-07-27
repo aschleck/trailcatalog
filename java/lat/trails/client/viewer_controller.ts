@@ -204,13 +204,19 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       layer: new CollectionLayer(
           '/api/collections/00000000-0000-0000-0000-000000000001',
           [
-            {minZoom: 11, snap: 12},
-            {minZoom: 13, snap: 15},
-            {minZoom: 15, snap: undefined},
+            // A snap cell lands on about 8 pixels at the zoom that takes it, so snap is zoom + 3:
+            // a zoom level halves the pixel and an S2 level halves the cell, so the ratio holds
+            // down the ladder.
+            // => zoom 12 pixel = 20037 km / (256 * 2^11) = 38 m, level 15 cell = 306 m, so 8 px
+            {minZoom: 10, snap: 13},
+            {minZoom: 12, snap: 15},
+            {minZoom: 14, snap: undefined},
           ],
           [
-            {minZoom: 11, indexBottom: 11, fromLevel: 0, toLevel: 12},
-            {minZoom: 13, indexBottom: 13, fromLevel: 13, toLevel: undefined},
+            // Tiled at level 11 even though zoom 10 sees about four cells across, because the
+            // level 13 snap keeps each one small enough that the extra offscreen reach is cheaper
+            // than quadrupling the request count.
+            {minZoom: 10, indexBottom: 11, fromLevel: 10, toLevel: undefined},
           ],
           this.mapController.renderer,
       ),
