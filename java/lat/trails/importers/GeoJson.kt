@@ -16,6 +16,7 @@ import lat.trails.common.createBaseConnection
 import org.apache.commons.text.StringEscapeUtils
 import org.slf4j.LoggerFactory
 import org.trailcatalog.common.DelegatingEncodedOutputStream
+import org.trailcatalog.common.DeltaLatLngE7
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.basemap.StringifyingInputStream
 import org.trailcatalog.importers.basemap.appendByteArray
@@ -125,13 +126,16 @@ private fun dumpLines(covering: MutableList<S2CellId>, lines: List<Line>) {
       csv.append(",now(),")
       csv.append(StringEscapeUtils.escapeCsv(mapper.writeValueAsString(HashMap<String, String>())))
       csv.append(",")
-      appendByteArray(ByteArrayOutputStream().also {
-        for (point in line.line.vertices()) {
-          val e7 = point.toLatLngE7()
-          it.write(e7.lat)
-          it.write(e7.lng)
-        }
-      }.toByteArray(), csv)
+      // OutputStream#write takes an int and keeps its low byte, so this used to store two bytes a
+      // point instead of eight.
+      val vertices = line.line.vertices()
+      val latLngE7 = IntArray(2 * vertices.size)
+      for (i in vertices.indices) {
+        val e7 = vertices[i].toLatLngE7()
+        latLngE7[2 * i] = e7.lat
+        latLngE7[2 * i + 1] = e7.lng
+      }
+      appendByteArray(DeltaLatLngE7.encode(latLngE7), csv)
       csv.append("\n")
     }
     copyStreamToPg("lines", stream, hikari)

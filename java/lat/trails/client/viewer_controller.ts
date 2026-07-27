@@ -204,13 +204,9 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       layer: new CollectionLayer(
           '/api/collections/00000000-0000-0000-0000-000000000001',
           [
-            // A snap cell lands on about 8 pixels at the zoom that takes it, so snap is zoom + 3:
-            // a zoom level halves the pixel and an S2 level halves the cell, so the ratio holds
-            // down the ladder.
-            // => zoom 12 pixel = 20037 km / (256 * 2^11) = 38 m, level 15 cell = 306 m, so 8 px
-            {minZoom: 10, snap: 13},
-            {minZoom: 12, snap: 15},
-            {minZoom: 14, snap: undefined},
+            // Snapping only reaches polygons, see ApiServer#fetchRealCollection, and a collection
+            // of nothing but lines draws fast enough at zoom 10 to leave them at full detail.
+            {minZoom: 0, snap: undefined},
           ],
           [
             // Tiled at level 11 even though zoom 10 sees about four cells across, because the

@@ -4,7 +4,7 @@ import { IdentitySetMultiMap } from 'external/dev_april_corgi+/js/common/collect
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
 import { Service, ServiceResponse } from 'external/dev_april_corgi+/js/corgi/service';
-import { projectE7Array } from 'js/map/camera';
+import { projectE7Deltas, skipE7Deltas } from 'js/map/camera';
 import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 
 import { degreesE7ToLatLng, projectLatLng, reinterpretBigInt } from '../common/math';
@@ -147,9 +147,7 @@ export class MapDataService extends Service<EmptyDeps> {
         for (let i = 0; i < pathCount; ++i) {
           const id = data.getVarBigInt64();
           data.getVarInt32();
-          const pathVertexCount = data.getVarInt32();
-          data.align(4);
-          data.skip(4 * pathVertexCount);
+          skipE7Deltas(data);
           const path = this.coarsePaths.get(id);
           if (path) {
             paths.push(path);
@@ -171,9 +169,7 @@ export class MapDataService extends Service<EmptyDeps> {
       for (let i = 0; i < pathCount; ++i) {
         const id = data.getVarBigInt64();
         data.getVarInt32();
-        const pathVertexCount = data.getVarInt32();
-        data.align(4);
-        data.skip(4 * pathVertexCount);
+        skipE7Deltas(data);
         const path = this.finePaths.get(id);
         if (path) {
           paths.push(path);
@@ -359,9 +355,7 @@ export class MapDataService extends Service<EmptyDeps> {
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getVarBigInt64();
       const type = data.getVarInt32();
-      const pathVertexCount = data.getVarInt32();
-      data.align(4);
-      const points = projectE7Array(data.sliceInt32(pathVertexCount));
+      const points = projectE7Deltas(data);
       this.pinnedPaths.set(id, new Path(id, type, bound, points));
     }
 
@@ -427,14 +421,12 @@ export class MapDataService extends Service<EmptyDeps> {
       for (let i = 0; i < pathCount; ++i) {
         const id = data.getVarBigInt64();
         const type = data.getVarInt32();
-        const pathVertexCount = data.getVarInt32();
-        data.align(4);
-        const points = projectE7Array(data.sliceInt32(pathVertexCount));
+        const points = projectE7Deltas(data);
         const bound = {
           low: [1, 1],
           high: [-1, -1],
         };
-        for (let i = 0; i < pathVertexCount; i += 2) {
+        for (let i = 0; i < points.length; i += 2) {
           const x = points[i + 0];
           const y = points[i + 1];
           bound.low[0] = Math.min(bound.low[0], x);
@@ -466,14 +458,12 @@ export class MapDataService extends Service<EmptyDeps> {
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getVarBigInt64();
       const type = data.getVarInt32();
-      const pathVertexCount = data.getVarInt32();
-      data.align(4);
-      const points = projectE7Array(data.sliceInt32(pathVertexCount));
+      const points = projectE7Deltas(data);
       const bound = {
         low: [1, 1],
         high: [-1, -1],
       };
-      for (let i = 0; i < pathVertexCount; i += 2) {
+      for (let i = 0; i < points.length; i += 2) {
         const x = points[i + 0];
         const y = points[i + 1];
         bound.low[0] = Math.min(bound.low[0], x);

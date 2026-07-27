@@ -251,8 +251,8 @@ private fun fetchRealCollection(
             it.writeVarInt(utf8.size)
             it.write(utf8)
           }
-          it.writeVarInt(line.latLngDegrees.size / 2 / 4)
-          align.align(4)
+          // DeltaLatLngE7 leads with its own point count and needs no alignment, so the geometry
+          // goes to the wire exactly as it sits in the column.
           it.write(line.latLngDegrees)
         }
       }
@@ -392,8 +392,8 @@ private fun fetchTrailcatalogPaths(
             it.writeVarInt(utf8.size)
             it.write(utf8)
           }
-          it.writeVarInt(line.latLngDegrees.size / 2 / 4)
-          align.align(4)
+          // DeltaLatLngE7 leads with its own point count and needs no alignment, so the geometry
+          // goes to the wire exactly as it sits in the column.
           it.write(line.latLngDegrees)
         }
       }

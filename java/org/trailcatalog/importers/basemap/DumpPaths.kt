@@ -4,6 +4,7 @@ import com.google.common.geometry.S2LatLngRect
 import com.zaxxer.hikari.HikariDataSource
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import org.trailcatalog.common.DeltaLatLngE7
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PMap
@@ -28,14 +29,19 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
 
             val buffer = BYTE_BUFFER.get()
             val bound = S2LatLngRect.empty().toBuilder()
-            val asInts = buffer.asIntBuffer()
-            for (e7 in way.points) {
+            val latLngE7 = IntArray(2 * way.points.size)
+            for (i in way.points.indices) {
+              val e7 = way.points[i]
               bound.addPoint(e7.toS2LatLng())
-              asInts.put(e7.lat).put(e7.lng)
+              latLngE7[2 * i] = e7.lat
+              latLngE7[2 * i + 1] = e7.lng
             }
-            buffer.limit(4 * asInts.position()) // ? can we do this better?
+            DeltaLatLngE7.encode(latLngE7, way.points.size, buffer)
+            buffer.flip()
 
             // id,epoch,type,cell,lat_lng_degrees,source_way
+            // lat_lng_degrees is DeltaLatLngE7, so readers cannot divide its length to get a
+            // point count.
             csv.append(2 * way.id)
             csv.append(",")
             csv.append(epoch)

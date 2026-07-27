@@ -3,7 +3,7 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { projectE7Array } from 'js/map/camera';
+import { projectE7Deltas, skipE7Deltas } from 'js/map/camera';
 import { LatLngRect, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { LineProgram } from 'js/map/rendering/line_program';
 import { CellKey } from 'js/map/workers/s2_data_fetcher';
@@ -148,16 +148,15 @@ class CollectionLoader {
       const idMsb = source.getBigInt64();
       const dataByteSize = source.getVarInt32();
       const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
-      const linePointCount = source.getVarInt32();
-      source.align(4);
-      const latLngDegrees = source.sliceInt32(linePointCount * 2);
-
       const style = findStyle(data, this.style.lines);
       if (!style) {
+        // Deltas have no width to multiply past, so a line the style drops still costs a walk.
+        skipE7Deltas(source);
         continue;
       }
 
-      const points = projectE7Array(latLngDegrees);
+      const points = projectE7Deltas(source);
+
       lineGeometryBytes += LineProgram.bytesNeeded(points.length / 2);
 
       styledLines.push({

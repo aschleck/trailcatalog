@@ -1,3 +1,4 @@
+import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
 import { S2LatLng, S2LatLngRect, S2Loop } from 'java/org/trailcatalog/s2';
@@ -641,6 +642,54 @@ function raycastUnitSphere(ndc: Vec2, frame: SphericalFrame): Vec3 {
 /** Pixels one mercator unit spans at a zoom, so pixels divided by it are mercator. */
 export function worldRadiusFor(zoom: number): number {
   return 256 * Math.pow(2, zoom - 1);
+}
+
+/**
+ * Reads a DeltaLatLngE7 polyline and projects it, leaving the view after the last byte it holds.
+ *
+ * Deltas only ever go to the wire, so the array handed back is the same densely indexable mercator
+ * array a fixed E7 array would have produced. See DeltaLatLngE7.kt for the layout.
+ */
+export function projectE7Deltas(source: LittleEndianView): Float64Array {
+  const pointCount = source.getVarInt32();
+  const projected = new Float64Array(2 * pointCount);
+  if (pointCount <= 0) {
+    return projected;
+  }
+
+  let lat = source.getInt32();
+  let lng = source.getInt32();
+  projectE7Into(lat, lng, projected, 0);
+  for (let i = 1; i < pointCount; ++i) {
+    lat += unzigzag(source.getVarInt32());
+    lng += unzigzag(source.getVarInt32());
+    projectE7Into(lat, lng, projected, i);
+  }
+  return projected;
+}
+
+/** Steps a view past a DeltaLatLngE7 polyline. Varints have no width to multiply, so it walks. */
+export function skipE7Deltas(source: LittleEndianView): void {
+  const pointCount = source.getVarInt32();
+  if (pointCount <= 0) {
+    return;
+  }
+
+  source.skip(/* the first point, two fixed int32= */ 8);
+  const varints = 2 * (pointCount - 1);
+  for (let i = 0; i < varints; ++i) {
+    source.getVarInt32();
+  }
+}
+
+function unzigzag(v: number): number {
+  return (v >>> 1) ^ -(v & 1);
+}
+
+function projectE7Into(latE7: number, lngE7: number, into: Float64Array, index: number): void {
+  into[2 * index] = e7ToRadians(lngE7) / Math.PI;
+  const y = latToMercY(e7ToRadians(latE7));
+  into[2 * index + 1] = Number.isFinite(y) ? y : 9999 * Math.sign(y);
 }
 
 export function projectE7Array(llE7: Int32Array): Float64Array {

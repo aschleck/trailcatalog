@@ -10,11 +10,10 @@ import io.javalin.http.Header
 import io.javalin.http.HttpStatus
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
+import org.trailcatalog.common.DeltaLatLngE7
 import org.trailcatalog.models.ENUM_SIZE
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.sql.PreparedStatement
 import java.time.Instant
 import java.time.LocalDate
@@ -570,7 +569,7 @@ private fun fetchCoarse(ctx: Context) {
   output.writeVarInt(paths.size)
   for ((cell, group) in paths) {
     output.writeLong(cell.id())
-    writeDetailPaths(group, bytes, output, false)
+    writeDetailPaths(group, output, false)
   }
   ctx.result(bytes.toByteArray())
 }
@@ -687,7 +686,7 @@ private fun fetchFine(ctx: Context) {
 
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
-  writeDetailPaths(paths, bytes, output, true)
+  writeDetailPaths(paths, output, true)
   writeDetailPoints(points, bytes, output)
   ctx.result(bytes.toByteArray())
 }
@@ -768,25 +767,22 @@ private fun fetchDataPacked(ctx: Context) {
 
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
-  writeDetailPaths(paths, bytes, output, precise)
+  writeDetailPaths(paths, output, precise)
   writeDetailTrails(listOf(trail), bytes, output)
   ctx.result(bytes.toByteArray())
 }
 
 private fun writeDetailPaths(
     paths: List<WirePath>,
-    bytes: AlignableByteArrayOutputStream,
     output: DelegatingEncodedOutputStream,
     precise: Boolean) {
   output.writeVarInt(paths.size)
   for (path in paths) {
     output.writeVarLong(path.id)
     output.writeVarInt(path.type)
-    val source = if (precise) path.vertices else simplify(path.vertices)
-    output.writeVarInt(source.size / 4)
-    output.flush()
-    bytes.align(4)
-    output.write(source)
+    // DeltaLatLngE7 carries its own point count and needs no alignment, so a precise path goes out
+    // exactly as it sits in the column.
+    output.write(if (precise) path.vertices else simplify(path.vertices))
   }
 }
 
@@ -909,9 +905,11 @@ private fun addETagAndCheckCached(ctx: Context): Boolean {
 }
 
 private fun simplify(latLngDegrees: ByteArray): ByteArray {
-  val degrees = ByteBuffer.wrap(latLngDegrees).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer()
+  // Douglas-Peucker seeks by index, so the deltas have to be resolved first. That costs one pass
+  // against the many this already makes over the same points.
+  val degrees = DeltaLatLngE7.decode(latLngDegrees)
   val spans = Stack<Pair<Int, Int>>()
-  spans.add(Pair(0, degrees.limit() / 2 - 1))
+  spans.add(Pair(0, degrees.size / 2 - 1))
   val epsilon = 1 / 2.0.pow(17.0) // 1px at zoom level 17
   val points = ArrayList<Int>()
   while (spans.isNotEmpty()) {
@@ -946,14 +944,13 @@ private fun simplify(latLngDegrees: ByteArray): ByteArray {
     }
   }
 
-  val simplified = ByteBuffer.allocate(points.size * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
-  simplified.asIntBuffer().let {
-    for (i in points) {
-      it.put(degrees.get(i * 2))
-      it.put(degrees.get(i * 2 + 1))
-    }
+  val simplified = IntArray(points.size * 2)
+  for (j in points.indices) {
+    val i = points[j]
+    simplified[2 * j] = degrees[i * 2]
+    simplified[2 * j + 1] = degrees[i * 2 + 1]
   }
-  return simplified.array()
+  return DeltaLatLngE7.encode(simplified)
 }
 
 /** Projects into Mercator space from -1 to 1. */
