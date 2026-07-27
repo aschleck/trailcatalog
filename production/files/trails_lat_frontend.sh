@@ -2,6 +2,8 @@
 
 set -ex
 
+podman rm -f trails-lat-frontend || true
+
 CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     gcloud auth print-access-token \
     | podman login -u oauth2accesstoken --password-stdin us-west1-docker.pkg.dev
@@ -15,6 +17,17 @@ secrets="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json 
     --project trailcatalog \
     --secret trails_lat \
     --quiet)"
+
+tc_pwd="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
+    gcloud \
+    secrets \
+    versions \
+    access \
+    latest \
+    --project trailcatalog \
+    --secret db-authorization \
+    --quiet \
+    | sed 's/^[^:]*://' | tail -n 1)"
 
 cookie_secret="$(echo "${secrets}" | jq -r '.cookie_secret')"
 google_cid="$(echo "${secrets}" | jq -r '.google_client_id')"
@@ -38,4 +51,6 @@ podman run \
     us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_frontend:latest \
     /app/serve.sh \
     --database_username_password="${pg_user}:${pg_pwd}" \
-    --database_url "postgresql://127.0.0.1/trails_lat" # TODO(april): specify schema?
+    --database_url "postgresql://127.0.0.1/trails_lat" \
+    --trailcatalog_database_username_password="trailcatalog:${tc_pwd}" \
+    --trailcatalog_database_url "postgresql://127.0.0.1/trailcatalog"
