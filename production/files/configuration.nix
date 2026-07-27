@@ -206,6 +206,7 @@
 
     serviceConfig = {
       ExecStart = "/home/april/trails_lat_frontend.sh";
+      ExecStop = "${pkgs.podman}/bin/podman stop --ignore --time 10 trails-lat-frontend";
       Restart = "always";
     };
   };
@@ -225,6 +226,7 @@
 
     serviceConfig = {
       ExecStart = "/home/april/trailcatalog_frontend.sh";
+      ExecStop = "${pkgs.podman}/bin/podman stop --ignore --time 10 trailcatalog-frontend";
       Restart = "always";
     };
   };
