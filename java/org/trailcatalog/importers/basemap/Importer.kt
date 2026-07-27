@@ -66,9 +66,11 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   hikari.connection.use {
     // An import that dies partway never reaches the INSERT into active_epoch, so a cleanup driven
     // by active_epoch rows has nothing naming its partitions and leaves them attached with partial
-    // rows in them forever.
+    // rows in them forever. That includes this epoch, because a run killed by a signal commits
+    // some of its COPYs and then a retry on the same day picks the same epoch and duplicates on
+    // them. A live epoch is in activeEpochs, so it still survives.
     println("Dropping orphaned partitions")
-    dropPartitionsExcept(it, activeEpochs + epoch)
+    dropPartitionsExcept(it, activeEpochs)
 
     println("Creating partitions")
     for (table in PARTITIONED_TABLES) {

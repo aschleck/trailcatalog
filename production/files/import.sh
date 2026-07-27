@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -ex
+set -exo pipefail
 
 CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     gcloud auth print-access-token \
