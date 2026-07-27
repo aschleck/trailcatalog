@@ -28,8 +28,10 @@ class ExtractWays
 private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   var category = WayCategory.ANY
   var name: String? = null
-  // service=* rides alongside railway=* instead of replacing it, and it also appears on
-  // highway=service, so it can only be resolved once every other tag has been read.
+  // construction=* and service=* both name a subtype of whatever the way already is, so they can
+  // only be resolved once every other tag has been read. service=* also appears on
+  // highway=service, where it means something else.
+  var construction: ByteString? = null
   var service: ByteString? = null
   for (i in 0 until way.keysCount) {
     when (stringTable.getS(way.getKeys(i))) {
@@ -47,6 +49,8 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
         // Only the linear ones, or else every storage tank lands in the table.
         category =
             category.coerceAtLeast(MAN_MADE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+      CONSTRUCTION_BS ->
+        construction = stringTable.getS(way.getVals(i))
       SERVICE_BS ->
         service = stringTable.getS(way.getVals(i))
       WATERWAY_BS ->
@@ -95,6 +99,9 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   // Only a way that stayed at plain rail, so that a siding tag can't overwrite a tram or a subway.
   if (service != null && category == WayCategory.RAIL) {
     category = category.coerceAtLeast(RAIL_SERVICE_CATEGORY_NAMES[service])
+  }
+  if (construction != null && category == WayCategory.ROAD_CONSTRUCTION) {
+    category = category.coerceAtLeast(ROAD_CONSTRUCTION_CATEGORY_NAMES[construction])
   }
   val refs = LongArray(way.refsCount)
   var nodeId = 0L

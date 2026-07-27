@@ -160,9 +160,15 @@ enum class WayCategory(override val id: Int) : Category<WayCategory> {
         ROAD_ESCAPE(ROAD.id * ENUM_SIZE + 18),
         ROAD_RACEWAY(ROAD.id * ENUM_SIZE + 19),
         ROAD_BUSWAY(ROAD.id * ENUM_SIZE + 20),
-        // The basemap splits construction by the class it will become, which needs the
-        // construction=* tag. One category is enough to draw it as unbuilt road.
+        // highway=construction with the class it will become in construction=*, which the basemap
+        // styles exactly like that class.
         ROAD_CONSTRUCTION(ROAD.id * ENUM_SIZE + 21),
+          ROAD_CONSTRUCTION_MOTORWAY(ROAD_CONSTRUCTION.id * ENUM_SIZE + 1),
+          ROAD_CONSTRUCTION_TRUNK(ROAD_CONSTRUCTION.id * ENUM_SIZE + 2),
+          ROAD_CONSTRUCTION_PRIMARY(ROAD_CONSTRUCTION.id * ENUM_SIZE + 3),
+          ROAD_CONSTRUCTION_SECONDARY(ROAD_CONSTRUCTION.id * ENUM_SIZE + 4),
+          ROAD_CONSTRUCTION_TERTIARY(ROAD_CONSTRUCTION.id * ENUM_SIZE + 5),
+          ROAD_CONSTRUCTION_MINOR(ROAD_CONSTRUCTION.id * ENUM_SIZE + 6),
 
       PATH(HIGHWAY.id * ENUM_SIZE + 3),
         PATH_FOOTWAY(PATH.id * ENUM_SIZE + 1),

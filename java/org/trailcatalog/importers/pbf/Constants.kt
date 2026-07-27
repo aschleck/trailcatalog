@@ -186,6 +186,24 @@ val RAILWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
 
     .build()
 
+// The class a highway=construction way is being built into, from construction=*.
+val ROAD_CONSTRUCTION_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("motorway"), WayCategory.ROAD_CONSTRUCTION_MOTORWAY)
+    .put(ByteString.copyFromUtf8("motorway_link"), WayCategory.ROAD_CONSTRUCTION_MOTORWAY)
+    .put(ByteString.copyFromUtf8("trunk"), WayCategory.ROAD_CONSTRUCTION_TRUNK)
+    .put(ByteString.copyFromUtf8("trunk_link"), WayCategory.ROAD_CONSTRUCTION_TRUNK)
+    .put(ByteString.copyFromUtf8("primary"), WayCategory.ROAD_CONSTRUCTION_PRIMARY)
+    .put(ByteString.copyFromUtf8("primary_link"), WayCategory.ROAD_CONSTRUCTION_PRIMARY)
+    .put(ByteString.copyFromUtf8("secondary"), WayCategory.ROAD_CONSTRUCTION_SECONDARY)
+    .put(ByteString.copyFromUtf8("secondary_link"), WayCategory.ROAD_CONSTRUCTION_SECONDARY)
+    .put(ByteString.copyFromUtf8("tertiary"), WayCategory.ROAD_CONSTRUCTION_TERTIARY)
+    .put(ByteString.copyFromUtf8("tertiary_link"), WayCategory.ROAD_CONSTRUCTION_TERTIARY)
+    .put(ByteString.copyFromUtf8("unclassified"), WayCategory.ROAD_CONSTRUCTION_MINOR)
+    .put(ByteString.copyFromUtf8("residential"), WayCategory.ROAD_CONSTRUCTION_MINOR)
+    .put(ByteString.copyFromUtf8("living_street"), WayCategory.ROAD_CONSTRUCTION_MINOR)
+
+    .build()
+
 // service=* also rides on highway=service, so only a way already known to be rail may take these.
 val RAIL_SERVICE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
     .put(ByteString.copyFromUtf8("yard"), WayCategory.RAIL_YARD)
@@ -265,6 +283,7 @@ val AERIALWAY_BS = ByteString.copyFromUtf8("aerialway")
 val AEROWAY_BS = ByteString.copyFromUtf8("aeroway")
 val AMENITY_BS = ByteString.copyFromUtf8("amenity")
 val BOUNDARY_BS = ByteString.copyFromUtf8("boundary")
+val CONSTRUCTION_BS = ByteString.copyFromUtf8("construction")
 val HIGHWAY_BS = ByteString.copyFromUtf8("highway")
 val INFORMATION_BS = ByteString.copyFromUtf8("information")
 val LEISURE_BS = ByteString.copyFromUtf8("leisure")

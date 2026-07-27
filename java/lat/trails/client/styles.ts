@@ -43,11 +43,12 @@ const CLASS_CATEGORIES = new Map<string, WayCategory[]>([
     WayCategory.RAIL_TRAM,
     WayCategory.RAIL_MONORAIL,
   ]],
-  // The tiles split construction by the class it will become, the importer does not.
-  ['motorway_construction', [WayCategory.ROAD_CONSTRUCTION]],
-  ['primary_construction', [WayCategory.ROAD_CONSTRUCTION]],
-  ['secondary_construction', [WayCategory.ROAD_CONSTRUCTION]],
-  ['minor_construction', [WayCategory.ROAD_CONSTRUCTION]],
+  // A construction way whose construction=* named no class stays on the bare category, which no
+  // class claims, so it draws as unbuilt rather than as the narrowest thing that matched.
+  ['motorway_construction', [WayCategory.ROAD_CONSTRUCTION_MOTORWAY]],
+  ['primary_construction', [WayCategory.ROAD_CONSTRUCTION_PRIMARY]],
+  ['secondary_construction', [WayCategory.ROAD_CONSTRUCTION_SECONDARY]],
+  ['minor_construction', [WayCategory.ROAD_CONSTRUCTION_MINOR]],
   ['runway', [WayCategory.AEROWAY_RUNWAY]],
   ['taxiway', [WayCategory.AEROWAY_TAXIWAY, WayCategory.AEROWAY_TAXILANE]],
   ['river', [WayCategory.WATERWAY_RIVER]],
