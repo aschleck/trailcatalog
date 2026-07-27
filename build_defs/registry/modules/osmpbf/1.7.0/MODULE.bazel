@@ -1,0 +1,6 @@
+module(
+    name = "osmpbf",
+    version = "1.7.0",
+)
+
+bazel_dep(name = "protobuf", version = "35.1")

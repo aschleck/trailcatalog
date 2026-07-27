@@ -15,9 +15,9 @@ kt_jvm_library(
         "//java/org/trailcatalog/s2:s2-kt",
         "//trailcatalog/proto:encoding_java_proto",
         "@maven//:com_google_guava_guava",
-        "@maven//:com_wolt_osm_parallelpbf",
         "@maven//:org_apache_commons_commons_text",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk7",
+        "@osmpbf//osmpbf:java_proto",
     ],
 )
 

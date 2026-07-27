@@ -2,8 +2,6 @@ package org.trailcatalog.importers.pbf
 
 import com.google.protobuf.CodedInputStream
 import com.google.protobuf.ExtensionRegistry
-import com.wolt.osm.parallelpbf.blob.BlobInformation
-import com.wolt.osm.parallelpbf.blob.BlobReader
 import crosby.binary.Fileformat
 import crosby.binary.Osmformat.DenseNodes
 import crosby.binary.Osmformat.Node
@@ -13,9 +11,10 @@ import crosby.binary.Osmformat.Relation
 import crosby.binary.Osmformat.StringTable
 import crosby.binary.Osmformat.Way
 import org.trailcatalog.importers.pipeline.PSource
+import java.io.InputStream
+import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Optional
 import java.util.zip.Inflater
 import kotlin.io.path.inputStream
 
@@ -35,48 +34,48 @@ class PbfBlockReader(
   }
 
   override fun read() = sequence {
-    val reader = BlobReader(path.inputStream())
-    var maybeInformation: Optional<BlobInformation>
-    do {
-      maybeInformation = reader
-          .readBlobHeaderLength()
-          .flatMap { length ->
-            reader.readBlobHeader(length)
+    path.inputStream().buffered().use { input ->
+      while (true) {
+        val header = readBlobHeader(input) ?: break
+        if (header.type != "OSMData") {
+          input.skipNBytes(header.datasize.toLong())
+          continue
+        }
+
+        val blob = Fileformat.Blob.parseFrom(input.readNBytes(header.datasize))
+        val payload = when {
+          blob.hasZlibData() -> {
+            val inflater = Inflater()
+            inflater.setInput(blob.zlibData.toByteArray())
+            val decompressed = ByteArray(blob.rawSize)
+            val size = inflater.inflate(decompressed)
+            if (size != decompressed.size) {
+              throw IllegalStateException("Payload size mismatch: $size vs ${decompressed.size}")
+            } else {
+              CodedInputStream.newInstance(decompressed)
+            }
           }
-      val maybeBlock =
-          maybeInformation
-              .flatMap { information ->
-                when (information.type) {
-                  BlobInformation.TYPE_OSM_DATA -> reader.readBlob(information.size)
-                  else -> {
-                    reader.skip(information.size)
-                    Optional.empty()
-                  }
-                }
-              }
-              .map { data ->
-                val blob = Fileformat.Blob.parseFrom(data)
-                val payload = when {
-                  blob.hasZlibData() -> {
-                    val inflater = Inflater()
-                    inflater.setInput(blob.zlibData.toByteArray())
-                    val decompressed = ByteArray(blob.rawSize)
-                    val size = inflater.inflate(decompressed)
-                    if (size != decompressed.size) {
-                      throw IllegalStateException("Payload size mismatch: $size vs ${decompressed.size}")
-                    } else {
-                      CodedInputStream.newInstance(decompressed)
-                    }
-                  }
-                  blob.hasRaw() -> blob.raw.newCodedInput()
-                  else -> throw AssertionError("Unknown type of blob")
-                }
-                parseBlock(payload)
-              }
-      if (maybeBlock.isPresent) {
-        yield(maybeBlock.get())
+          blob.hasRaw() -> blob.raw.newCodedInput()
+          else -> throw AssertionError("Unknown type of blob")
+        }
+        yield(parseBlock(payload))
       }
-    } while (maybeInformation.isPresent)
+    }
+  }
+
+  // A blob is a four byte big endian length, a BlobHeader of that length, and then header.datasize
+  // bytes of Blob. Returns null at a clean end of file.
+  //
+  // https://wiki.openstreetmap.org/wiki/PBF_Format#File_format
+  private fun readBlobHeader(input: InputStream): Fileformat.BlobHeader? {
+    val length = input.readNBytes(4)
+    if (length.isEmpty()) {
+      return null
+    } else if (length.size < 4) {
+      throw IllegalStateException("Truncated blob header length: ${length.size} bytes")
+    }
+    return Fileformat.BlobHeader.parseFrom(
+        input.readNBytes(ByteBuffer.wrap(length).int))
   }
 
   private fun parseBlock(coded: CodedInputStream): PrimitiveBlock {

@@ -1,0 +1,11 @@
+{
+    "homepage": "https://github.com/openstreetmap/OSM-binary",
+    "maintainers": [],
+    "versions": [
+        "1.7.0"
+    ],
+    "yanked_versions": {},
+    "repository": [
+        "github:openstreetmap/OSM-binary"
+    ]
+}

@@ -1,0 +1,8 @@
+{
+    "integrity": "sha256-rHqtxX0hilGGB29VJVIC7H0JScfzNLiwzsi90ZbNddc=",
+    "strip_prefix": "OSM-binary-1.7.0",
+    "url": "https://github.com/openstreetmap/OSM-binary/archive/refs/tags/v1.7.0.tar.gz",
+    "overlay": {
+        "osmpbf/BUILD.bazel": "sha256-DsVRki1M88cMKN3an99aEiQMqz4wqtKH8tXPZN+4gKo="
+    }
+}
