@@ -5,7 +5,7 @@ import { aDescendsB } from 'java/org/trailcatalog/models/categories';
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { projectE7Deltas, skipE7Deltas } from 'js/map/camera';
+import { projectE7Deltas, projectS2Loop, skipE7Deltas } from 'js/map/camera';
 import { LatLngRect, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { LineProgram } from 'js/map/rendering/line_program';
 import { CellKey } from 'js/map/workers/s2_data_fetcher';
@@ -119,6 +119,11 @@ export interface Polygon {
   indexOffset: number;
   raw: ArrayBuffer;
   triangles: Triangles;
+  // Closed mercator rings of the boundary, so a hover can outline it without the main thread
+  // decoding the polygon again. Float32 because that is what projectS2Loop hands back and what the
+  // vertex buffer holds, and a state forest runs to thousands of rings.
+  outline: Float32Array[];
+  style: PolygonStyle;
 }
 
 export interface PolygonGeometry {
@@ -184,10 +189,10 @@ class CollectionLoader {
       id: RawUuid;
       bound: LatLngRect;
       data: Data;
-      fill: RgbaU32;
+      outline: Float32Array[];
       rawPolygon: ArrayBuffer;
+      style: PolygonStyle;
       triangles: Triangles;
-      z: number;
     }> = [];
     let polygonGeometryFloats = 0;
     let indexCount = 0;
@@ -213,25 +218,25 @@ class CollectionLoader {
         id: {lsb: idLsb, msb: idMsb},
         bound: latLngBound(polygon),
         data,
-        fill: style.fill,
+        outline: outlineOf(polygon),
         rawPolygon,
+        style,
         triangles,
-        z: style.z,
       });
     }
 
     triangulated.sort((a, b) => {
-      if (a.z !== b.z) {
-        return a.z - b.z;
+      if (a.style.z !== b.style.z) {
+        return a.style.z - b.style.z;
       } else {
-        return a.fill - b.fill;
+        return a.style.fill - b.style.fill;
       }
     });
 
     const merged = [];
     let last = 0;
     for (let i = 1; i < triangulated.length; ++i) {
-      if (triangulated[last].fill === triangulated[i].fill) {
+      if (triangulated[last].style.fill === triangulated[i].style.fill) {
         continue;
       }
 
@@ -317,11 +322,11 @@ class CollectionLoader {
       const geometryStart = geometryOffset;
       const indexStart = indexOffset;
 
-      geometryUints[geometryOffset] = group[0].fill;
+      geometryUints[geometryOffset] = group[0].style.fill;
       geometryOffset += 1;
 
       for (const polygon of group) {
-        const {data, rawPolygon, triangles} = polygon;
+        const {data, outline, rawPolygon, style, triangles} = polygon;
         geometry.set(triangles.geometry, geometryOffset);
         for (let i = 0; i < triangles.index.length; ++i) {
           index[indexOffset + i] = triangles.index[i] + (geometryOffset - geometryStart - 1) / 2;
@@ -335,7 +340,9 @@ class CollectionLoader {
           geometryOffset: 4 * geometryOffset,
           indexCount: triangles.index.length,
           indexOffset,
+          outline,
           raw: rawPolygon,
+          style,
           triangles,
         });
 
@@ -378,6 +385,26 @@ self.onmessage = e => {
 
   start(request);
 };
+
+// projectS2Loop drops the repeated first vertex and splits a loop that crosses the antimeridian,
+// so each piece has to be closed again or the outline is missing its last edge.
+function outlineOf(polygon: S2Polygon): Float32Array[] {
+  const loops = polygon.getLoops();
+  const rings: Float32Array[] = [];
+  for (let i = 0; i < loops.size(); ++i) {
+    const {splits, vertices} = projectS2Loop(loops.getAtIndex(i));
+    let start = 0;
+    for (const split of splits) {
+      const ring = new Float32Array(split - start + 2);
+      ring.set(vertices.subarray(start, split));
+      ring[split - start + 0] = vertices[start + 0];
+      ring[split - start + 1] = vertices[start + 1];
+      rings.push(ring);
+      start = split;
+    }
+  }
+  return rings;
+}
 
 function latLngBound(polygon: S2Polygon): LatLngRect {
   const bound = polygon.getRectBound();

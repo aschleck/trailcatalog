@@ -20,7 +20,10 @@ import { Line, LoadResponse, Request as LoaderRequest, Response as LoaderRespons
 // makes it read as lifted, over pale roads and over landcover alike.
 const HOVER_FILL = 0xFFFFFFFF as RgbaU32;
 const HOVER_STROKE = 0x000000FF as RgbaU32;
-const HOVER_POLYGON_FILL = 0xFFFFFF66 as RgbaU32;
+// A hovered area keeps its owner's color and just gets more of it, since the color is what the
+// layer is for. The boundary does the picking out.
+const HOVER_POLYGON_ALPHA = 0xCC;
+const HOVER_POLYGON_OUTLINE_RADIUS_PX = 1.5;
 
 // Enough to leave a casing around the line it replaces, and never thinner than the casing needs:
 // LineProgram draws the fill a pixel inside the stroke, so under about 3 the white core disappears
@@ -250,13 +253,18 @@ export class CollectionLayer extends Layer {
         const polygon = object.value;
         const triangles = polygon.triangles;
         // A fill color rides in front of the vertices, so the buffer holds one extra float.
+        const fillByteLength = 4 * (1 + triangles.geometry.length);
+        let outlineByteLength = 0;
+        for (const ring of polygon.outline) {
+          outlineByteLength += LineProgram.bytesNeeded(ring.length / 2);
+        }
         highlight.geometry =
-            growBuffer(highlight.geometry, 4 * (1 + triangles.geometry.length));
+            growBuffer(highlight.geometry, fillByteLength + outlineByteLength);
         highlight.index = growBuffer(highlight.index, 4 * triangles.index.length);
 
         const geometryFloats = new Float32Array(highlight.geometry);
         const geometryUints = new Uint32Array(highlight.geometry);
-        geometryUints[0] = HOVER_POLYGON_FILL;
+        geometryUints[0] = raiseAlpha(polygon.style.fill, HOVER_POLYGON_ALPHA);
         geometryFloats.set(triangles.geometry, /* offset= */ 1);
         const index = new Uint32Array(highlight.index);
         index.set(triangles.index);
@@ -268,7 +276,7 @@ export class CollectionLayer extends Layer {
             offset: 0,
           },
           geometry: highlight.glGeometryBuffer,
-          geometryByteLength: 4 * (1 + triangles.geometry.length),
+          geometryByteLength: fillByteLength,
           geometryOffset: 0,
           instanced: undefined,
           program: this.renderer.triangleProgram,
@@ -276,6 +284,47 @@ export class CollectionLayer extends Layer {
           vertexCount: undefined,
           z: Z_USER_DATA + 1,
         });
+
+        // The boundary, above the fill, so the shape reads as picked out rather than just
+        // brighter. An owner keeps its own color, which is the whole point of the layer.
+        //
+        // A ring only ever produces segments of its own, so laying every ring end to end and
+        // drawing the lot as one run of instances joins nothing that should not be joined. A state
+        // forest reaches a few thousand rings, and one drawable is what keeps the planner from
+        // sorting all of them every frame.
+        let outlineOffset = fillByteLength;
+        let outlineInstances = 0;
+        for (const ring of polygon.outline) {
+          const result =
+              LineProgram.push(
+                  HOVER_STROKE,
+                  HOVER_STROKE,
+                  HOVER_POLYGON_OUTLINE_RADIUS_PX,
+                  /* stipple= */ false,
+                  ring,
+                  highlight.geometry,
+                  outlineOffset);
+          outlineOffset += result.geometryByteLength;
+          outlineInstances += result.instanceCount;
+        }
+
+        if (outlineInstances > 0) {
+          const drawable = {
+            elements: undefined,
+            geometry: highlight.glGeometryBuffer,
+            geometryByteLength: outlineOffset - fillByteLength,
+            geometryOffset: fillByteLength,
+            instanced: {
+              count: outlineInstances,
+            },
+            program: this.renderer.lineProgram,
+            texture: undefined,
+            vertexCount: /* a rectangle per segment= */ 4,
+            z: Z_USER_DATA + 2,
+          };
+          highlight.drawables.push(drawable);
+          highlight.drawables.push({...drawable, program: this.renderer.lineCapProgram});
+        }
 
         // Hide the existing object
         this.renderer.uploadDataSubset(
@@ -525,6 +574,10 @@ export class CollectionLayer extends Layer {
     this.highlight.drawables.length = 0;
     this.lastHoverTarget = undefined;
   }
+}
+
+function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {
+  return (((color & 0xFFFFFF00) >>> 0) | alpha) as RgbaU32;
 }
 
 function growBuffer(buffer: ArrayBuffer, needed: number): ArrayBuffer {
