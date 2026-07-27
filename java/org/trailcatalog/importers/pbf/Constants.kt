@@ -101,6 +101,16 @@ val AERIALWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
 
     .build()
 
+val AEROWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("runway"), WayCategory.AEROWAY_RUNWAY)
+    .put(ByteString.copyFromUtf8("taxiway"), WayCategory.AEROWAY_TAXIWAY)
+    .put(ByteString.copyFromUtf8("taxilane"), WayCategory.AEROWAY_TAXILANE)
+    .put(ByteString.copyFromUtf8("helipad"), WayCategory.AEROWAY_HELIPAD)
+    .put(ByteString.copyFromUtf8("apron"), WayCategory.AEROWAY_APRON)
+    .put(ByteString.copyFromUtf8("aerodrome"), WayCategory.AEROWAY_AERODROME)
+
+    .build()
+
 val BOUNDARY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, RelationCategory>()
     .put(ByteString.copyFromUtf8("aboriginal_lands"), RelationCategory.BOUNDARY_ABORIGINAL_LANDS)
     .put(ByteString.copyFromUtf8("administrative"), RelationCategory.BOUNDARY_ADMINISTRATIVE)
@@ -141,6 +151,55 @@ val HIGHWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
     .put(ByteString.copyFromUtf8("bridleway"), WayCategory.PATH_BRIDLEWAY)
     .put(ByteString.copyFromUtf8("steps"), WayCategory.PATH_STEPS)
     .put(ByteString.copyFromUtf8("corridor"), WayCategory.PATH_CORRIDOR)
+
+    .put(ByteString.copyFromUtf8("construction"), WayCategory.ROAD_CONSTRUCTION)
+
+    .build()
+
+val MAN_MADE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("pier"), WayCategory.MAN_MADE_PIER)
+    .put(ByteString.copyFromUtf8("breakwater"), WayCategory.MAN_MADE_BREAKWATER)
+    .put(ByteString.copyFromUtf8("groyne"), WayCategory.MAN_MADE_GROYNE)
+
+    .build()
+
+val NATURAL_WAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("coastline"), WayCategory.NATURAL_COASTLINE)
+    .put(ByteString.copyFromUtf8("tree_row"), WayCategory.NATURAL_TREE_ROW)
+    .put(ByteString.copyFromUtf8("cliff"), WayCategory.NATURAL_CLIFF)
+    .put(ByteString.copyFromUtf8("ridge"), WayCategory.NATURAL_RIDGE)
+    .put(ByteString.copyFromUtf8("arete"), WayCategory.NATURAL_ARETE)
+    .put(ByteString.copyFromUtf8("valley"), WayCategory.NATURAL_VALLEY)
+
+    .build()
+
+val RAILWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("rail"), WayCategory.RAIL)
+    .put(ByteString.copyFromUtf8("narrow_gauge"), WayCategory.RAIL_NARROW_GAUGE)
+    .put(ByteString.copyFromUtf8("preserved"), WayCategory.RAIL_PRESERVED)
+    .put(ByteString.copyFromUtf8("funicular"), WayCategory.RAIL_FUNICULAR)
+
+    .put(ByteString.copyFromUtf8("subway"), WayCategory.RAIL_SUBWAY)
+    .put(ByteString.copyFromUtf8("light_rail"), WayCategory.RAIL_LIGHT_RAIL)
+    .put(ByteString.copyFromUtf8("tram"), WayCategory.RAIL_TRAM)
+    .put(ByteString.copyFromUtf8("monorail"), WayCategory.RAIL_MONORAIL)
+
+    .build()
+
+// service=* also rides on highway=service, so only a way already known to be rail may take these.
+val RAIL_SERVICE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("yard"), WayCategory.RAIL_YARD)
+    .put(ByteString.copyFromUtf8("siding"), WayCategory.RAIL_SIDING)
+    .put(ByteString.copyFromUtf8("spur"), WayCategory.RAIL_SPUR)
+
+    .build()
+
+val WATERWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("river"), WayCategory.WATERWAY_RIVER)
+    .put(ByteString.copyFromUtf8("stream"), WayCategory.WATERWAY_STREAM)
+    .put(ByteString.copyFromUtf8("canal"), WayCategory.WATERWAY_CANAL)
+    .put(ByteString.copyFromUtf8("ditch"), WayCategory.WATERWAY_DITCH)
+    .put(ByteString.copyFromUtf8("drain"), WayCategory.WATERWAY_DRAIN)
 
     .build()
 
@@ -203,11 +262,13 @@ val ROUTE_WAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
 
 val ADMIN_LEVEL_BS = ByteString.copyFromUtf8("admin_level")
 val AERIALWAY_BS = ByteString.copyFromUtf8("aerialway")
+val AEROWAY_BS = ByteString.copyFromUtf8("aeroway")
 val AMENITY_BS = ByteString.copyFromUtf8("amenity")
 val BOUNDARY_BS = ByteString.copyFromUtf8("boundary")
 val HIGHWAY_BS = ByteString.copyFromUtf8("highway")
 val INFORMATION_BS = ByteString.copyFromUtf8("information")
 val LEISURE_BS = ByteString.copyFromUtf8("leisure")
+val MAN_MADE_BS = ByteString.copyFromUtf8("man_made")
 val MOUNTAIN_PASS_BS = ByteString.copyFromUtf8("mountain_pass")
 val NAME_BS = ByteString.copyFromUtf8("name")
 val NATURAL_BS = ByteString.copyFromUtf8("natural")
@@ -217,5 +278,6 @@ val PROTECT_CLASS_BS = ByteString.copyFromUtf8("protect_class")
 val RAILWAY_BS = ByteString.copyFromUtf8("railway")
 val REF_BS = ByteString.copyFromUtf8("ref")
 val ROUTE_BS = ByteString.copyFromUtf8("route")
+val SERVICE_BS = ByteString.copyFromUtf8("service")
 val TOURISM_BS = ByteString.copyFromUtf8("tourism")
 val WATERWAY_BS = ByteString.copyFromUtf8("waterway")

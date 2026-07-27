@@ -1,6 +1,7 @@
 package org.trailcatalog.importers.pbf
 
 import com.google.common.reflect.TypeToken
+import com.google.protobuf.ByteString
 import crosby.binary.Osmformat
 import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.StringTable
@@ -27,6 +28,9 @@ class ExtractWays
 private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   var category = WayCategory.ANY
   var name: String? = null
+  // service=* rides alongside railway=* instead of replacing it, and it also appears on
+  // highway=service, so it can only be resolved once every other tag has been read.
+  var service: ByteString? = null
   for (i in 0 until way.keysCount) {
     when (stringTable.getS(way.getKeys(i))) {
       AERIALWAY_BS ->
@@ -34,6 +38,21 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
             category
                 .coerceAtLeast(WayCategory.AERIALWAY)
                 .coerceAtLeast(AERIALWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+      AEROWAY_BS ->
+        category =
+            category
+                .coerceAtLeast(WayCategory.AEROWAY)
+                .coerceAtLeast(AEROWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+      MAN_MADE_BS ->
+        // Only the linear ones, or else every storage tank lands in the table.
+        category =
+            category.coerceAtLeast(MAN_MADE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+      SERVICE_BS ->
+        service = stringTable.getS(way.getVals(i))
+      WATERWAY_BS ->
+        // Only the linear ones, so that a dock or a boatyard area stays out.
+        category =
+            category.coerceAtLeast(WATERWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
       ROUTE_BS ->
         // Prefer anything to routes
         if (WayCategory.ANY == category) {
@@ -49,10 +68,12 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
       NAME_BS ->
         name = stringTable.getS(way.getVals(i)).toStringUtf8()
       NATURAL_BS ->
-        // Note: we do this or else it won't be dumped
         // Prefer road categories to naturals
         if (!WayCategory.ROAD.isParentOf(category)) {
-          category = category.coerceAtLeast(WayCategory.HIGHWAY)
+          category =
+              category
+                  .coerceAtLeast(WayCategory.NATURAL)
+                  .coerceAtLeast(NATURAL_WAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
         }
       PISTE_TYPE_BS ->
         // Prefer road categories to pistes
@@ -65,8 +86,15 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
       RAILWAY_BS ->
         // It seems fun to dump all rails just in case...
         // TODO(april): but do trails really depend on railways?
-        category = category.coerceAtLeast(WayCategory.RAIL)
+        category =
+            category
+                .coerceAtLeast(WayCategory.RAIL)
+                .coerceAtLeast(RAILWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
     }
+  }
+  // Only a way that stayed at plain rail, so that a siding tag can't overwrite a tram or a subway.
+  if (service != null && category == WayCategory.RAIL) {
+    category = category.coerceAtLeast(RAIL_SERVICE_CATEGORY_NAMES[service])
   }
   val refs = LongArray(way.refsCount)
   var nodeId = 0L

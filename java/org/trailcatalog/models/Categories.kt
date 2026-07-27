@@ -117,7 +117,22 @@ enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
 enum class WayCategory(override val id: Int) : Category<WayCategory> {
   ANY(0),
     HIGHWAY(ANY.id * ENUM_SIZE + 1),
+      // railway=rail lands on RAIL itself, the way highway=road lands on ROAD.
       RAIL(HIGHWAY.id * ENUM_SIZE + 1),
+        RAIL_NARROW_GAUGE(RAIL.id * ENUM_SIZE + 1),
+        RAIL_PRESERVED(RAIL.id * ENUM_SIZE + 2),
+        RAIL_FUNICULAR(RAIL.id * ENUM_SIZE + 3),
+
+        // What OpenMapTiles calls transit, as opposed to the mainline rail above.
+        RAIL_SUBWAY(RAIL.id * ENUM_SIZE + 4),
+        RAIL_LIGHT_RAIL(RAIL.id * ENUM_SIZE + 5),
+        RAIL_TRAM(RAIL.id * ENUM_SIZE + 6),
+        RAIL_MONORAIL(RAIL.id * ENUM_SIZE + 7),
+
+        // From service=*, which rides alongside railway=* rather than replacing it.
+        RAIL_YARD(RAIL.id * ENUM_SIZE + 8),
+        RAIL_SIDING(RAIL.id * ENUM_SIZE + 9),
+        RAIL_SPUR(RAIL.id * ENUM_SIZE + 10),
 
       ROAD(HIGHWAY.id * ENUM_SIZE + 2),
         // Normal roads
@@ -145,6 +160,9 @@ enum class WayCategory(override val id: Int) : Category<WayCategory> {
         ROAD_ESCAPE(ROAD.id * ENUM_SIZE + 18),
         ROAD_RACEWAY(ROAD.id * ENUM_SIZE + 19),
         ROAD_BUSWAY(ROAD.id * ENUM_SIZE + 20),
+        // The basemap splits construction by the class it will become, which needs the
+        // construction=* tag. One category is enough to draw it as unbuilt road.
+        ROAD_CONSTRUCTION(ROAD.id * ENUM_SIZE + 21),
 
       PATH(HIGHWAY.id * ENUM_SIZE + 3),
         PATH_FOOTWAY(PATH.id * ENUM_SIZE + 1),
@@ -180,6 +198,36 @@ enum class WayCategory(override val id: Int) : Category<WayCategory> {
 
     WATERWAY(ANY.id * ENUM_SIZE + 4),
       WATERWAY_FERRY(WATERWAY.id * ENUM_SIZE + 1),
+      WATERWAY_RIVER(WATERWAY.id * ENUM_SIZE + 2),
+      WATERWAY_STREAM(WATERWAY.id * ENUM_SIZE + 3),
+      WATERWAY_CANAL(WATERWAY.id * ENUM_SIZE + 4),
+      WATERWAY_DITCH(WATERWAY.id * ENUM_SIZE + 5),
+      WATERWAY_DRAIN(WATERWAY.id * ENUM_SIZE + 6),
+
+    AEROWAY(ANY.id * ENUM_SIZE + 5),
+      AEROWAY_RUNWAY(AEROWAY.id * ENUM_SIZE + 1),
+      AEROWAY_TAXIWAY(AEROWAY.id * ENUM_SIZE + 2),
+      AEROWAY_TAXILANE(AEROWAY.id * ENUM_SIZE + 3),
+      AEROWAY_HELIPAD(AEROWAY.id * ENUM_SIZE + 4),
+      // Areas in OSM. A closed way still dumps as a line, so the style decides whether an outline
+      // is worth drawing until the collection carries polygons.
+      AEROWAY_APRON(AEROWAY.id * ENUM_SIZE + 5),
+      AEROWAY_AERODROME(AEROWAY.id * ENUM_SIZE + 6),
+
+    // Was folded into HIGHWAY so that DumpPaths would keep it, which makes a coastline draw as a
+    // road once anything styles by category.
+    NATURAL(ANY.id * ENUM_SIZE + 6),
+      NATURAL_COASTLINE(NATURAL.id * ENUM_SIZE + 1),
+      NATURAL_TREE_ROW(NATURAL.id * ENUM_SIZE + 2),
+      NATURAL_CLIFF(NATURAL.id * ENUM_SIZE + 3),
+      NATURAL_RIDGE(NATURAL.id * ENUM_SIZE + 4),
+      NATURAL_ARETE(NATURAL.id * ENUM_SIZE + 5),
+      NATURAL_VALLEY(NATURAL.id * ENUM_SIZE + 6),
+
+    MAN_MADE(ANY.id * ENUM_SIZE + 7),
+      MAN_MADE_PIER(MAN_MADE.id * ENUM_SIZE + 1),
+      MAN_MADE_BREAKWATER(MAN_MADE.id * ENUM_SIZE + 2),
+      MAN_MADE_GROYNE(MAN_MADE.id * ENUM_SIZE + 3),
   ;
 }
 
