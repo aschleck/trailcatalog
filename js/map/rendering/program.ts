@@ -80,6 +80,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
     let drawStart = drawables[0];
     let drawStartIndex = 0;
     let pendingGeometryByteLength = drawStart.geometryByteLength;
+    let pendingInstanceCount = drawStart.instanced?.count ?? 0;
     let pendingVertexCount = drawStart.vertexCount ?? 0;
     for (let i = 1; i < drawables.length; ++i) {
       const drawable = drawables[i];
@@ -87,19 +88,24 @@ export abstract class Program<P extends ProgramData> extends Disposable {
       if (
           drawStart.elements === undefined
               && drawable.elements === undefined
-              && drawStart.instanced === undefined
-              && drawable.instanced === undefined
+              && (drawStart.instanced === undefined) === (drawable.instanced === undefined)
               && drawStart.geometry === drawable.geometry
               && drawStart.texture === drawable.texture
               && drawStart.z === drawable.z
               && drawStart.geometryOffset + pendingGeometryByteLength === drawable.geometryOffset
+              // Instances share one set of vertices, so merging only works when both runs draw the
+              // same shape.
+              && (drawStart.instanced === undefined
+                  || drawStart.vertexCount === drawable.vertexCount)
       ) {
         pendingGeometryByteLength += drawable.geometryByteLength;
-        pendingVertexCount += drawable.vertexCount ?? 0;
+        if (drawable.instanced) {
+          pendingInstanceCount += drawable.instanced.count;
+        } else {
+          pendingVertexCount += drawable.vertexCount ?? 0;
+        }
         continue;
       }
-
-      // TODO(april): should we merge instance calls? Maybe
 
       if (lastGeometry !== drawStart.geometry) {
         gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
@@ -124,7 +130,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         geometry: drawStart.geometry,
         geometryByteLength: pendingGeometryByteLength,
         geometryOffset: drawStart.geometryOffset,
-        instanced: drawStart.instanced,
+        instanced: drawStart.instanced ? {count: pendingInstanceCount} : undefined,
         program: drawStart.program,
         texture: drawStart.texture,
         vertexCount: pendingVertexCount,
@@ -134,6 +140,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
       drawStart = drawable;
       drawStartIndex = i;
       pendingGeometryByteLength = drawStart.geometryByteLength;
+      pendingInstanceCount = drawStart.instanced?.count ?? 0;
       pendingVertexCount = drawStart.vertexCount ?? 0;
     }
 
@@ -160,7 +167,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
       geometry: drawStart.geometry,
       geometryByteLength: pendingGeometryByteLength,
       geometryOffset: drawStart.geometryOffset,
-      instanced: drawStart.instanced,
+      instanced: drawStart.instanced ? {count: pendingInstanceCount} : undefined,
       program: drawStart.program,
       texture: drawStart.texture,
       vertexCount: pendingVertexCount,

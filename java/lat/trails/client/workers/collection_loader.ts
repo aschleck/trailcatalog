@@ -74,11 +74,12 @@ export interface Line {
   data: Data;
   geometryByteLength: number;
   geometryOffset: number;
+  // Mercator, which is what the location querier hit tests in and what the hover highlight repushes
+  // through LineProgram.
   points: Float64Array;
 }
 
 export interface LineGeometry {
-  id: RawUuid;
   geometryByteLength: number;
   geometryOffset: number;
   instanceCount: number;
@@ -255,21 +256,15 @@ class CollectionLoader {
       polygonGeometries: [],
     };
 
-    // Per-segment fill/stroke are baked into the vertex stride, so a LineGeometry only needs to
-    // group consecutive same-id/same-z entries.
+    // Fill, stroke, radius, and stipple are baked into the vertex stride, so every line sharing a z
+    // draws as one instanced call. styledLines is sorted by z, so a group ends when z changes.
     let groupZ: number|undefined = undefined;
-    let groupId: RawUuid|undefined = undefined;
     let groupStart = 0;
     let groupInstances = 0;
     let groupVertexCount = 0;
     for (const line of styledLines) {
-      if (
-        groupId !== undefined
-          && groupZ !== undefined
-          && (line.id !== groupId || line.z !== groupZ)
-      ) {
+      if (groupZ !== undefined && line.z !== groupZ) {
         response.lineGeometries.push({
-          id: groupId,
           geometryByteLength: 4 * (geometryOffset - groupStart),
           geometryOffset: 4 * groupStart,
           instanceCount: groupInstances,
@@ -280,7 +275,6 @@ class CollectionLoader {
         groupInstances = 0;
         groupVertexCount = 0;
       }
-      groupId = line.id;
       groupZ = line.z;
 
       const result = LineProgram.push(
@@ -302,9 +296,8 @@ class CollectionLoader {
       groupInstances += result.instanceCount;
       groupVertexCount = result.vertexCount;
     }
-    if (groupId !== undefined && groupZ !== undefined && groupInstances > 0) {
+    if (groupZ !== undefined && groupInstances > 0) {
       response.lineGeometries.push({
-        id: groupId,
         geometryByteLength: 4 * (geometryOffset - groupStart),
         geometryOffset: 4 * groupStart,
         instanceCount: groupInstances,

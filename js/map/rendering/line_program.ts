@@ -347,18 +347,27 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         vec4 p = mul_fp64(worldCoord, split(inverseHalfViewportSize));
         vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
-        // Calculate the spherical projection
-        vec3 spherePos = sphereFromMercator(center);
-        vec4 spherical = sphericalMvp * vec4(spherePos, 1.0);
-        spherical.xy += push * inverseHalfViewportSize * spherical.w;
+        // sphereFromMercator and horizonDistance each cost a tanh, an asin, and four more
+        // transcendentals, and mix discards all of it once flattenFactor reaches 1, which happens
+        // around zoom 10 at mid latitudes. flattenFactor is a uniform, so the branch is coherent
+        // across the draw.
+        vec4 spherical = vec4(0.);
+        highp float behindHorizon = 1.;
+        if (flattenFactor < 1.) {
+          vec3 spherePos = sphereFromMercator(center);
+          spherical = sphericalMvp * vec4(spherePos, 1.0);
+          spherical.xy += push * inverseHalfViewportSize * spherical.w;
+
+          // Signed horizon distance for fragment-level cull on the back of the globe, see
+          // triangle_program for context.
+          behindHorizon = horizonDistance(spherePos);
+        }
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
         gl_Position.z = z * gl_Position.z + (1. - z);
 
-        // Signed horizon distance for fragment-level cull on the back of the
-        // globe — see triangle_program for context.
-        fragBehindHorizon = horizonDistance(spherePos);
+        fragBehindHorizon = behindHorizon;
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
