@@ -36,6 +36,21 @@ import org.trailcatalog.models.RelationCategory
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
+import java.sql.Connection
+
+// Tables partitioned by epoch. The partition holding epoch E is named ${table}_${E}.
+private val PARTITIONED_TABLES =
+    listOf(
+        "boundaries",
+        "boundaries_in_boundaries",
+        "path_elevations",
+        "paths",
+        "paths_in_trails",
+        "points",
+        "trail_identifiers",
+        "trails",
+        "trails_in_boundaries",
+    )
 
 fun main(args: Array<String>) {
   createConnectionSource(syncCommit = false).use { hikari ->
@@ -46,21 +61,17 @@ fun main(args: Array<String>) {
 private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
   val (epoch, pbfs) = input
 
-  val partitionedTables =
-      listOf(
-          "boundaries",
-          "boundaries_in_boundaries",
-          "path_elevations",
-          "paths",
-          "paths_in_trails",
-          "points",
-          "trail_identifiers",
-          "trails",
-          "trails_in_boundaries",
-      )
+  val activeEpochs = hikari.connection.use { readActiveEpochs(it) }
+
   hikari.connection.use {
+    // An import that dies partway never reaches the INSERT into active_epoch, so a cleanup driven
+    // by active_epoch rows has nothing naming its partitions and leaves them attached with partial
+    // rows in them forever.
+    println("Dropping orphaned partitions")
+    dropPartitionsExcept(it, activeEpochs + epoch)
+
     println("Creating partitions")
-    for (table in partitionedTables) {
+    for (table in PARTITIONED_TABLES) {
       it.prepareStatement(
               """
               CREATE TABLE IF NOT EXISTS ${table}_${epoch}
@@ -177,34 +188,75 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
       .write(DumpReadableTrailIds(epoch, hikari))
   trailsInBoundaries.write(DumpTrailsInBoundaries(epoch, hikari))
 
-  pipeline.execute()
+  try {
+    pipeline.execute()
+  } catch (e: Throwable) {
+    // Rerunning an epoch that is already live would drop the partitions the frontend is serving,
+    // so only partitions this run created are safe to remove.
+    if (!activeEpochs.contains(epoch)) {
+      println("Dropping partitions for failed epoch ${epoch}")
+      hikari.connection.use { dropPartitionsExcept(it, activeEpochs) }
+    }
+    throw e
+  }
 
   hikari.connection.use {
     println("Updating epoch")
-    it.prepareStatement("INSERT INTO active_epoch (epoch) VALUES (?)").apply {
+    it.prepareStatement(
+        "INSERT INTO active_epoch (epoch) VALUES (?) ON CONFLICT DO NOTHING").apply {
       setInt(1, epoch)
     }.execute()
 
     println("Cleaning up old epochs")
-    it.prepareStatement("SELECT epoch FROM active_epoch WHERE epoch < ?").apply {
-      setInt(1, epoch)
-    }.executeQuery().use { results ->
-      while (results.next()) {
-        val oldEpoch = results.getInt(1)
-        for (table in partitionedTables) {
-          val partition = "${table}_${oldEpoch}"
-          it.prepareStatement("""
-              ALTER TABLE ${table} DETACH PARTITION ${partition};
-              DROP TABLE ${partition};
-          """).execute()
-        }
-      }
-    }
+    dropPartitionsExcept(it, setOf(epoch))
 
     println("Removing old epochs")
     it.prepareStatement("DELETE FROM active_epoch WHERE epoch < ?").apply {
       setInt(1, epoch)
     }.execute()
+  }
+}
+
+private fun readActiveEpochs(connection: Connection): Set<Int> {
+  val epochs = HashSet<Int>()
+  connection.prepareStatement("SELECT epoch FROM active_epoch").executeQuery().use {
+    while (it.next()) {
+      epochs.add(it.getInt(1))
+    }
+  }
+  return epochs
+}
+
+/** Drops every partition of [PARTITIONED_TABLES] whose epoch is not in [keep]. */
+private fun dropPartitionsExcept(connection: Connection, keep: Set<Int>) {
+  for (table in PARTITIONED_TABLES) {
+    // Resolving the parent through regclass rather than by relname picks the same table the
+    // CREATE TABLE above does, and gives back child names already qualified for the DROP.
+    val partitions = ArrayList<Pair<Int, String>>()
+    connection.prepareStatement(
+        """
+        SELECT c.relname, c.oid::regclass::text
+        FROM pg_inherits i
+        JOIN pg_class c ON c.oid = i.inhrelid
+        WHERE i.inhparent = ?::regclass
+        """).apply {
+      setString(1, table)
+    }.executeQuery().use { results ->
+      while (results.next()) {
+        val epoch = results.getString(1).removePrefix("${table}_").toIntOrNull() ?: continue
+        partitions.add(Pair(epoch, results.getString(2)))
+      }
+    }
+
+    // Collect before dropping because the DDL runs on the connection holding the result set.
+    for ((partitionEpoch, qualified) in partitions) {
+      if (keep.contains(partitionEpoch)) {
+        continue
+      }
+
+      println("Dropping ${qualified}")
+      connection.prepareStatement("DROP TABLE ${qualified}").execute()
+    }
   }
 }
 
