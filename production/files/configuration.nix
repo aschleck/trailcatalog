@@ -72,7 +72,7 @@
       forceSSL = true;
 
       locations."/" = {
-        proxyHttpVersion = 2;
+        extraConfig = "proxy_http_version 2;";
         proxyPass = "http://127.0.0.1:7080";
       };
 
@@ -90,7 +90,6 @@
       forceSSL = true;
 
       locations."/" = {
-        proxyHttpVersion = 2;
         proxyPass = "http://127.0.0.1:7059";
       };
     };
@@ -100,7 +99,6 @@
       forceSSL = true;
 
       locations."/" = {
-        proxyHttpVersion = 2;
         proxyPass = "http://127.0.0.1:7061";
       };
     };
@@ -109,19 +107,12 @@
       enableACME = true;
       forceSSL = true;
 
-      locations."~ \\.pmtiles$" = {
-        return = "403";
-      };
-
       locations."/" = {
-        root = "/mnt/horse/tiles";
-
         extraConfig = ''
           add_header 'Vary' 'Origin' always;
           valid_referers server_names
               henrythasler.static.observableusercontent.com
               mango.exclusivelyducks.com
-              protomaps.github.io
               s2.trailcatalog.org
               stevage.github.io
               trailcatalog.org
@@ -219,7 +210,7 @@
     };
   };
 
-  systemd.services."tc-frontend" = {
+  systemd.services."trailcatalog-frontend" = {
     enable = true;
     after = [ "podman.service" ];
     requires = [ "podman.service" ];
@@ -238,7 +229,7 @@
     };
   };
 
-  systemd.services."tc-import" = {
+  systemd.services."trailcatalog-import" = {
     enable = true;
     after = [ "podman.service" ];
     requires = [ "podman.service" ];
@@ -257,14 +248,14 @@
     };
   };
 
-  systemd.services."tc-pmtiles" = {
+  systemd.services."trailcatalog-pmtiles" = {
     enable = true;
     after = [ "podman.service" ];
     requires = [ "podman.service" ];
     wantedBy = [ "multi-user.target" ];
 
     serviceConfig = {
-      ExecStart = "/home/april/tiles/pmtiles serve --port 9999 /home/april/tiles";
+      ExecStart = "${pkgs.pmtiles}/bin/pmtiles serve --port 9999 /home/april/tiles";
       Restart = "always";
     };
   };
