@@ -68,7 +68,7 @@ export class Camera {
   }
 
   get worldRadius(): number {
-    return 256 * Math.pow(2, this._zoom - 1);
+    return worldRadiusFor(this._zoom);
   }
 
   get zoom(): number {
@@ -636,6 +636,11 @@ function raycastUnitSphere(ndc: Vec2, frame: SphericalFrame): Vec3 {
     cosThetaT * zAxis[1] + sinThetaT * perpY,
     cosThetaT * zAxis[2] + sinThetaT * perpZ,
   ];
+}
+
+/** Pixels one mercator unit spans at a zoom, so pixels divided by it are mercator. */
+export function worldRadiusFor(zoom: number): number {
+  return 256 * Math.pow(2, zoom - 1);
 }
 
 export function projectE7Array(llE7: Int32Array): Float64Array {

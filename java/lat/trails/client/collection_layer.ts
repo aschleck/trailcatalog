@@ -2,8 +2,10 @@ import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
+import { worldRadiusFor } from 'js/map/camera';
 import { LatLng, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
+import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -13,6 +15,21 @@ import { Z_USER_DATA } from 'js/map/z';
 
 import { HOVER_CHANGED } from './events';
 import { Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon } from './workers/collection_loader';
+
+const LINE_STYLE = {
+  fill: 0xFF00FFFF as RgbaU32,
+  radius: 2,
+  stipple: true,
+  stroke: 0xFF00FFFF as RgbaU32,
+};
+
+// Solid and wide enough to read as a halo around the stippled LINE_STYLE.radius line underneath.
+const HIGHLIGHT_LINE_FILL = 0xFFFFFFCC as RgbaU32;
+const HIGHLIGHT_LINE_RADIUS = LINE_STYLE.radius + 3;
+
+// How close the cursor has to come to a line to hover it. The line draws LINE_STYLE.radius wide, so
+// this reaches a few pixels past its edge.
+const HOVER_RADIUS_PX = 6;
 
 interface LoadedCell {
   drawables: Drawable[];
@@ -52,10 +69,12 @@ export class CollectionLayer extends Layer {
   };
   private generation: number;
   private readonly highlight: Highlight;
-  // The object the highlight is drawing. Its geometry is blanked in its own cell so that only the
-  // highlight draws it.
+  // The object the highlight is drawing. A polygon gets blanked in its own cell so that only the
+  // highlight draws it, a line just gets drawn over.
   private lastHoverTarget: RawUuid|undefined;
   private lastRenderGeneration: number;
+  // Hit testing a line needs a radius in mercator, which only the zoom can give.
+  private zoom: number;
 
   constructor(
       url: string,
@@ -89,6 +108,7 @@ export class CollectionLayer extends Layer {
     };
     this.lastHoverTarget = undefined;
     this.lastRenderGeneration = -1;
+    this.zoom = 0;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
@@ -129,10 +149,7 @@ export class CollectionLayer extends Layer {
         lines: [
           {
             filters: [{match: 'always'}],
-            fill: 0xFF00FFFF as RgbaU32,
-            radius: 2,
-            stipple: true,
-            stroke: 0xFF00FFFF as RgbaU32,
+            ...LINE_STYLE,
             z: Z_USER_DATA,
           },
         ],
@@ -172,6 +189,7 @@ export class CollectionLayer extends Layer {
         kind: 'qpr',
         generation: id,
         point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
+        radius: HOVER_RADIUS_PX / worldRadiusFor(this.zoom),
       });
     }).then(response => {
       console.log(response);
@@ -188,6 +206,7 @@ export class CollectionLayer extends Layer {
         kind: 'qpr',
         generation: id,
         point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
+        radius: HOVER_RADIUS_PX / worldRadiusFor(this.zoom),
       });
     }).then(response => {
       // A point can land in several nested units, so take the first one we still hold.
@@ -213,7 +232,33 @@ export class CollectionLayer extends Layer {
       }
 
       if (object.kind === 'line') {
-        // TODO(april)
+        const line = object.value;
+        const byteLength = LineProgram.bytesNeeded(line.points.length / 2);
+        highlight.geometry = growBuffer(highlight.geometry, byteLength);
+
+        const result =
+            LineProgram.push(
+                HIGHLIGHT_LINE_FILL,
+                HIGHLIGHT_LINE_FILL,
+                HIGHLIGHT_LINE_RADIUS,
+                /* stipple= */ false,
+                line.points,
+                highlight.geometry,
+                /* offset= */ 0);
+
+        highlight.drawables.push({
+          elements: undefined,
+          geometry: highlight.glGeometryBuffer,
+          geometryByteLength: result.geometryByteLength,
+          geometryOffset: 0,
+          instanced: {
+            count: result.instanceCount,
+          },
+          program: this.renderer.lineProgram,
+          texture: undefined,
+          vertexCount: result.vertexCount,
+          z: Z_USER_DATA + 1,
+        });
       } else if (object.kind === 'polygon') {
         const polygon = object.value;
         const triangles = polygon.triangles;
@@ -251,14 +296,15 @@ export class CollectionLayer extends Layer {
           polygon.geometryOffset,
           polygon.geometryByteLength,
           cell.glGeometryBuffer);
+
+        this.renderer.uploadIndices(
+          highlight.index, highlight.index.byteLength, highlight.glIndexBuffer);
       } else {
         throw checkExhaustive(object);
       }
 
       this.renderer.uploadData(
         highlight.geometry, highlight.geometry.byteLength, highlight.glGeometryBuffer);
-      this.renderer.uploadIndices(
-        highlight.index, highlight.index.byteLength, highlight.glIndexBuffer);
     }).catch(() => {});
     return false;
   }
@@ -292,6 +338,7 @@ export class CollectionLayer extends Layer {
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
+    this.zoom = zoom;
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({
@@ -448,7 +495,7 @@ export class CollectionLayer extends Layer {
     const cell = object ? this.cells.get(object.key) : undefined;
     if (object && cell) {
       if (object.kind === 'line') {
-        // TODO(april): lines never got hidden, so there is nothing to put back.
+        // The highlight draws over the line rather than replacing it, so nothing was taken away.
       } else if (object.kind === 'polygon') {
         const polygon = object.value;
         this.renderer.uploadDataSubset(
