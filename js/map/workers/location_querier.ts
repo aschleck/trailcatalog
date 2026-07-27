@@ -125,13 +125,13 @@ class LocationQuerier {
     const output: Entry[] = [];
     this.tree.queryCircle(normalizePoint(request.point), CANDIDATE_RADIUS, output);
 
-    const lines: Array<{id: RawUuid; distance: number}> = [];
+    const lines: Array<{id: RawUuid; distance2: number}> = [];
     const polygons: RawUuid[] = [];
     for (const entry of output) {
       if (entry.kind === 'line') {
-        const distance = distanceToPolyline(mercatorX, mercatorY, entry.points);
-        if (distance <= request.radius) {
-          lines.push({id: entry.id, distance});
+        const distance2 = distanceToPolyline2(mercatorX, mercatorY, entry.points);
+        if (distance2 <= request.radius * request.radius) {
+          lines.push({id: entry.id, distance2});
         }
       } else if (entry.kind === 'polygon') {
         entry.polygon = entry.polygon ?? SimpleS2.decodePolygon(entry.raw);
@@ -145,7 +145,7 @@ class LocationQuerier {
 
     // A line is a narrower target than whatever area sits under it, so lines rank ahead of
     // polygons and the nearest line wins among themselves.
-    lines.sort((a, b) => a.distance - b.distance);
+    lines.sort((a, b) => a.distance2 - b.distance2);
     const ids = new Set<RawUuid>();
     for (const line of lines) {
       ids.add(line.id);
@@ -228,8 +228,9 @@ function lineBound(points: Float64Array): LatLngRect|undefined {
   } as const as LatLngRect;
 }
 
-// Mercator distance from a point to the nearest segment of a polyline.
-function distanceToPolyline(px: number, py: number, points: Float64Array): number {
+// Squared mercator distance from a point to the nearest segment of a polyline. Squared because
+// nothing here needs the real distance: the caller thresholds and sorts, and both survive it.
+function distanceToPolyline2(px: number, py: number, points: Float64Array): number {
   let best = Number.POSITIVE_INFINITY;
   for (let i = 0; i + 3 < points.length; i += 2) {
     const ax = wrapX(points[i + 0] - px);
@@ -245,7 +246,7 @@ function distanceToPolyline(px: number, py: number, points: Float64Array): numbe
     const cy = ay + t * dy;
     best = Math.min(best, cx * cx + cy * cy);
   }
-  return Math.sqrt(best);
+  return best;
 }
 
 // Mercator x wraps at the antimeridian, so a separation wider than the world is really the short

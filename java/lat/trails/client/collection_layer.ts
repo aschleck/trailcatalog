@@ -2,7 +2,7 @@ import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
-import { worldRadiusFor } from 'js/map/camera';
+import { Camera } from 'js/map/camera';
 import { LatLng, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { LineProgram } from 'js/map/rendering/line_program';
@@ -16,9 +16,17 @@ import { Z_USER_DATA } from 'js/map/z';
 import { HOVER_CHANGED } from './events';
 import { Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 
-// Solid, and drawn wider than the line under it so it reads as a halo rather than a recolor.
-const HIGHLIGHT_LINE_FILL = 0xFFFFFFCC as RgbaU32;
-const HIGHLIGHT_LINE_PADDING_PX = 3;
+// White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
+// makes it read as lifted, over pale roads and over landcover alike.
+const HOVER_FILL = 0xFFFFFFFF as RgbaU32;
+const HOVER_STROKE = 0x000000FF as RgbaU32;
+const HOVER_POLYGON_FILL = 0xFFFFFF66 as RgbaU32;
+
+// Enough to leave a casing around the line it replaces, and never thinner than the casing needs:
+// LineProgram draws the fill a pixel inside the stroke, so under about 3 the white core disappears
+// and all that is left is a black line. Same floor trailcatalog draws a raised path at.
+const HOVER_LINE_PADDING_PX = 1;
+const HOVER_LINE_MIN_RADIUS_PX = 4;
 
 // How close the cursor has to come to a line to hover it, measured from the center, so it reaches
 // past the edge of everything but the widest motorway.
@@ -65,12 +73,10 @@ export class CollectionLayer extends Layer {
   };
   private generation: number;
   private readonly highlight: Highlight;
-  // The object the highlight is drawing. A polygon gets blanked in its own cell so that only the
-  // highlight draws it, a line just gets drawn over.
+  // The object the highlight is drawing. Its geometry is blanked in its own cell so that only the
+  // highlight draws it, which leaves the highlight free to be narrower or translucent.
   private lastHoverTarget: RawUuid|undefined;
   private lastRenderGeneration: number;
-  // Hit testing a line needs a radius in mercator, which only the zoom can give.
-  private zoom: number;
   // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
   private styleZoom: number;
 
@@ -79,6 +85,7 @@ export class CollectionLayer extends Layer {
       style: Style,
       snaps: Snap[],
       streams: Stream[],
+      private readonly camera: Camera,
       private readonly renderer: Renderer,
   ) {
     super(/* copyright= */ []);
@@ -108,7 +115,6 @@ export class CollectionLayer extends Layer {
     };
     this.lastHoverTarget = undefined;
     this.lastRenderGeneration = -1;
-    this.zoom = 0;
     this.styleZoom = -1;
 
     this.fetcher.onresponse = command => {
@@ -160,7 +166,7 @@ export class CollectionLayer extends Layer {
         kind: 'qpr',
         generation: id,
         point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
-        radius: HOVER_RADIUS_PX / worldRadiusFor(this.zoom),
+        radius: HOVER_RADIUS_PX * this.camera.inverseWorldRadius,
       });
     }).then(response => {
       console.log(response);
@@ -177,7 +183,7 @@ export class CollectionLayer extends Layer {
         kind: 'qpr',
         generation: id,
         point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
-        radius: HOVER_RADIUS_PX / worldRadiusFor(this.zoom),
+        radius: HOVER_RADIUS_PX * this.camera.inverseWorldRadius,
       });
     }).then(response => {
       // A point can land in several nested units, so take the first one we still hold.
@@ -204,20 +210,20 @@ export class CollectionLayer extends Layer {
 
       if (object.kind === 'line') {
         const line = object.value;
-        const byteLength = LineProgram.bytesNeeded(line.points.length / 2);
-        highlight.geometry = growBuffer(highlight.geometry, byteLength);
+        highlight.geometry =
+            growBuffer(highlight.geometry, LineProgram.bytesNeeded(line.points.length / 2));
 
         const result =
             LineProgram.push(
-                HIGHLIGHT_LINE_FILL,
-                HIGHLIGHT_LINE_FILL,
-                line.radius + HIGHLIGHT_LINE_PADDING_PX,
+                HOVER_FILL,
+                HOVER_STROKE,
+                Math.max(line.style.radius + HOVER_LINE_PADDING_PX, HOVER_LINE_MIN_RADIUS_PX),
                 /* stipple= */ false,
                 line.points,
                 highlight.geometry,
                 /* offset= */ 0);
 
-        highlight.drawables.push({
+        const drawable = {
           elements: undefined,
           geometry: highlight.glGeometryBuffer,
           geometryByteLength: result.geometryByteLength,
@@ -229,7 +235,17 @@ export class CollectionLayer extends Layer {
           texture: undefined,
           vertexCount: result.vertexCount,
           z: Z_USER_DATA + 1,
-        });
+        };
+        highlight.drawables.push(drawable);
+        // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
+        highlight.drawables.push({...drawable, program: this.renderer.lineCapProgram});
+
+        // Hide the existing object
+        this.renderer.uploadDataSubset(
+          new ArrayBuffer(line.geometryByteLength),
+          line.geometryOffset,
+          line.geometryByteLength,
+          cell.glGeometryBuffer);
       } else if (object.kind === 'polygon') {
         const polygon = object.value;
         const triangles = polygon.triangles;
@@ -240,7 +256,7 @@ export class CollectionLayer extends Layer {
 
         const geometryFloats = new Float32Array(highlight.geometry);
         const geometryUints = new Uint32Array(highlight.geometry);
-        geometryUints[0] = 0xFFFFFF88;
+        geometryUints[0] = HOVER_POLYGON_FILL;
         geometryFloats.set(triangles.geometry, /* offset= */ 1);
         const index = new Uint32Array(highlight.index);
         index.set(triangles.index);
@@ -309,7 +325,6 @@ export class CollectionLayer extends Layer {
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
-    this.zoom = zoom;
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.post({
@@ -479,7 +494,18 @@ export class CollectionLayer extends Layer {
     const cell = object ? this.cells.get(object.key) : undefined;
     if (object && cell) {
       if (object.kind === 'line') {
-        // The highlight draws over the line rather than replacing it, so nothing was taken away.
+        const line = object.value;
+        const restored = new ArrayBuffer(line.geometryByteLength);
+        LineProgram.push(
+            line.style.fill,
+            line.style.stroke,
+            line.style.radius,
+            line.style.stipple,
+            line.points,
+            restored,
+            /* offset= */ 0);
+        this.renderer.uploadDataSubset(
+          restored, line.geometryOffset, line.geometryByteLength, cell.glGeometryBuffer);
       } else if (object.kind === 'polygon') {
         const polygon = object.value;
         this.renderer.uploadDataSubset(

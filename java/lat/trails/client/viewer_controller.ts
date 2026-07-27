@@ -198,6 +198,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
             // until the viewport is small enough to be worth it.
             {minZoom: 7, indexBottom: 6, fromLevel: 11, toLevel: undefined},
           ],
+          this.mapController.camera,
           this.mapController.renderer,
       ),
     }, {
@@ -218,6 +219,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
             // than quadrupling the request count.
             {minZoom: 10, indexBottom: 11, fromLevel: 10, toLevel: undefined},
           ],
+          this.mapController.camera,
           this.mapController.renderer,
       ),
     }];

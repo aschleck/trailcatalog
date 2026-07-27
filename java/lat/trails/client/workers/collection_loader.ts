@@ -92,8 +92,10 @@ export interface Line {
   // Mercator, which is what the location querier hit tests in and what the hover highlight repushes
   // through LineProgram.
   points: Float64Array;
-  // What the style drew it at, so the highlight can sit wider than it whatever band it came from.
-  radius: number;
+  // What drew it, so the highlight can size itself against it and putting it back after a hover
+  // does not have to guess. Structured clone keeps this one object shared across every line that
+  // matched it.
+  style: LineStyle;
 }
 
 export interface LineGeometry {
@@ -153,12 +155,8 @@ class CollectionLoader {
     const styledLines: Array<{
       id: RawUuid;
       data: Data;
-      fill: RgbaU32;
-      stroke: RgbaU32;
-      radius: number;
-      stipple: boolean;
+      style: LineStyle;
       points: Float64Array;
-      z: number;
     }> = [];
     for (let i = 0; i < lineCount; ++i) {
       const idLsb = source.getBigInt64();
@@ -176,19 +174,10 @@ class CollectionLoader {
 
       lineGeometryBytes += LineProgram.bytesNeeded(points.length / 2);
 
-      styledLines.push({
-        id: {lsb: idLsb, msb: idMsb},
-        data,
-        fill: style.fill,
-        stroke: style.stroke,
-        radius: style.radius,
-        stipple: style.stipple,
-        points,
-        z: style.z,
-      });
+      styledLines.push({id: {lsb: idLsb, msb: idMsb}, data, style, points});
     }
 
-    styledLines.sort((a, b) => a.z - b.z);
+    styledLines.sort((a, b) => a.style.z - b.style.z);
 
     const polygonCount = source.getVarInt32();
     const triangulated: Array<{
@@ -280,7 +269,7 @@ class CollectionLoader {
     let groupInstances = 0;
     let groupVertexCount = 0;
     for (const line of styledLines) {
-      if (groupZ !== undefined && line.z !== groupZ) {
+      if (groupZ !== undefined && line.style.z !== groupZ) {
         response.lineGeometries.push({
           geometryByteLength: 4 * (geometryOffset - groupStart),
           geometryOffset: 4 * groupStart,
@@ -292,13 +281,13 @@ class CollectionLoader {
         groupInstances = 0;
         groupVertexCount = 0;
       }
-      groupZ = line.z;
+      groupZ = line.style.z;
 
       const result = LineProgram.push(
-          line.fill,
-          line.stroke,
-          line.radius,
-          line.stipple,
+          line.style.fill,
+          line.style.stroke,
+          line.style.radius,
+          line.style.stipple,
           line.points,
           geometry.buffer,
           4 * geometryOffset);
@@ -308,7 +297,7 @@ class CollectionLoader {
         geometryByteLength: result.geometryByteLength,
         geometryOffset: 4 * geometryOffset,
         points: line.points,
-        radius: line.radius,
+        style: line.style,
       });
       geometryOffset += result.geometryByteLength / 4;
       groupInstances += result.instanceCount;
