@@ -55,7 +55,7 @@ bazel_dep(name = "rules_nodejs", version = "6.7.3")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
-bazel_dep(name = "rules_oci", version = "2.2.6")
+bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "toolchains_llvm", version = "1.7.0")
 
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
@@ -169,12 +169,14 @@ rules_ts_ext.deps()
 use_repo(rules_ts_ext, "npm_typescript")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
 oci.pull(
     name = "distroless_java",
-    digest = "sha256:0af43bf953d8cb07c0dd1c59aeaf817ada24eb8b1564532190012ff88afab4da",
+    digest = "sha256:5beb5b13774c4461d9a7ef64832fa4ddeaf167d352556e86a60c15c89c4a56db",
     image = "gcr.io/distroless/java21",
+    platforms = ["linux/amd64"],
 )
-use_repo(oci, "distroless_java")
+use_repo(oci, "distroless_java", "distroless_java_linux_amd64")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
