@@ -444,32 +444,39 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
         vec4 p = mul_fp64(screenCoord, split(inverseHalfViewportSize));
         vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
-        // Calculate the spherical projection
-        vec3 labelDir = sphereFromMercator(center);
-        vec4 sphericalCenter = sphericalMvp * vec4(labelDir, 1.0);
-        vec4 sphericalSplit =
-          sum_fp64(
-            split(sphericalCenter.xy),
-            mul_fp64(sum_fp64(rotated, split(offsetPx)), split(inverseHalfViewportSize))
-              * sphericalCenter.w);
-        vec4 spherical =
-          vec4(
-            sphericalSplit.x + sphericalSplit.y,
-            sphericalSplit.z + sphericalSplit.w,
-            sphericalCenter.z,
-            sphericalCenter.w);
+        // sphereFromMercator and horizonDistance each cost a tanh, an asin, and four more
+        // transcendentals, and mix discards all of it once flattenFactor reaches 1. flattenFactor
+        // is a uniform, so the branch is coherent across the draw.
+        vec4 spherical = vec4(0.);
+        bool occluded = false;
+        if (flattenFactor < 1.) {
+          vec3 labelDir = sphereFromMercator(center);
+          vec4 sphericalCenter = sphericalMvp * vec4(labelDir, 1.0);
+          vec4 sphericalSplit =
+            sum_fp64(
+              split(sphericalCenter.xy),
+              mul_fp64(sum_fp64(rotated, split(offsetPx)), split(inverseHalfViewportSize))
+                * sphericalCenter.w);
+          spherical =
+            vec4(
+              sphericalSplit.x + sphericalSplit.y,
+              sphericalSplit.z + sphericalSplit.w,
+              sphericalCenter.z,
+              sphericalCenter.w);
+
+          // Cull labels that the curvature of the globe occludes in the spherical view. The SDF
+          // pass has depth testing disabled, so without this they composite on top of the visible
+          // side. Labels are atomic quads so we move the whole quad out of clip space at the
+          // center. See triangle_program for the fragment-discard variant used for meshes that
+          // may straddle the horizon.
+          occluded = horizonDistance(labelDir) <= 0.0;
+        }
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
         gl_Position.z = z * gl_Position.z + (1. - z);
 
-        // Cull labels that the curvature of the globe occludes in the
-        // spherical view. The SDF pass has depth testing disabled, so without
-        // this they composite on top of the visible side. Labels are atomic
-        // quads so we move the whole quad out of clip space at the center —
-        // see triangle_program for the fragment-discard variant used for
-        // meshes that may straddle the horizon.
-        if (flattenFactor < 1.0 && horizonDistance(labelDir) <= 0.0) {
+        if (occluded) {
           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         }
 

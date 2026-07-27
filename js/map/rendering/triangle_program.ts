@@ -191,9 +191,21 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
         vec4 p = mul_fp64(screenCoord, split(inverseHalfViewportSize));
         vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
 
-        // Calculate the spherical projection
-        vec3 spherePos = sphereFromMercator(position);
-        vec4 spherical = sphericalMvp * vec4(spherePos, 1.0);
+        // sphereFromMercator and horizonDistance each cost a tanh, an asin, and four more
+        // transcendentals, and mix discards all of it once flattenFactor reaches 1. flattenFactor
+        // is a uniform, so the branch is coherent across the draw.
+        vec4 spherical = vec4(0.);
+        highp float behindHorizon = 1.;
+        if (flattenFactor < 1.) {
+          vec3 spherePos = sphereFromMercator(position);
+          spherical = sphericalMvp * vec4(spherePos, 1.0);
+
+          // Signed horizon distance for fragment-level cull on the back of the globe. The far
+          // plane sits just past the visible cap, so back-side triangles get clipped to the
+          // far-plane disc and land at the same depth as the skybox, and the depth test alone
+          // doesn't hide them. See sdf_program for the equivalent label-level cull.
+          behindHorizon = horizonDistance(spherePos);
+        }
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
@@ -203,12 +215,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
         // using the calculated depth on the edges and the exact z layering elsewhere.
         gl_Position.z = z * (gl_Position.z > -0.03 ? gl_Position.z : sign(gl_Position.z)) + (1. - z);
 
-        // Signed horizon distance for fragment-level cull on the back of the
-        // globe. The far plane sits just past the visible cap, so back-side
-        // triangles get clipped to the far-plane disc and land at the same
-        // depth as the skybox — depth test alone doesn't hide them. See
-        // sdf_program for the equivalent label-level cull.
-        fragBehindHorizon = horizonDistance(spherePos);
+        fragBehindHorizon = behindHorizon;
 
         fragFillColor = uint32ToVec4(fillColor);
         fragFillColor = vec4(fragFillColor.rgb * fragFillColor.a, fragFillColor.a);

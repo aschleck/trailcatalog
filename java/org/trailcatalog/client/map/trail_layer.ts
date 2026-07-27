@@ -1,7 +1,7 @@
 import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { Camera, projectLatLngRect, projectS2LatLng } from 'js/map/camera';
 import { WorldBoundsQuadtree } from 'js/map/common/bounds_quadtree';
@@ -88,7 +88,9 @@ interface PointHandle {
 interface TrailHandle {
   readonly entity: Trail;
   readonly markerPx: Vec2;
-  readonly screenPixelBound: Vec4;
+  // Widens from the unlabeled pin to the labeled one when the labels get planned, because a
+  // trail is hoverable before anything has measured its label.
+  screenPixelBound: Vec4;
 }
 
 type Handle = PathHandle|PointHandle|TrailHandle;
@@ -99,6 +101,15 @@ interface CellPlan {
   pinsLabeled: Drawable[];
   pinsUnlabeled: Drawable[];
   points: Drawable[];
+}
+
+interface OverviewPlan extends CellPlan {
+  // A labeled pin costs a billboard plus a run of glyphs, and nothing draws one below
+  // RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD, so we hold the trails until a render asks for them.
+  // Undefined until then.
+  labelBuffer: WebGLBuffer|undefined;
+  handles: TrailHandle[];
+  trails: Trail[];
 }
 
 const RENDER_POINT_ZOOM_THRESHOLD = 14;
@@ -121,7 +132,7 @@ export class TrailLayer extends Layer implements Listener {
   private readonly overviewBounds: WorldBoundsQuadtree<Handle>;
   private readonly coarseBounds: WorldBoundsQuadtree<Handle>;
   private readonly fineBounds: WorldBoundsQuadtree<Handle>;
-  private readonly overviewPlans: Map<S2CellNumber, CellPlan>;
+  private readonly overviewPlans: Map<S2CellNumber, OverviewPlan>;
   private readonly coarsePlans: Map<S2CellNumber, CellPlan>;
   private readonly finePlans: Map<S2CellNumber, CellPlan>;
   private readonly interactivePlan: CellPlan;
@@ -162,6 +173,11 @@ export class TrailLayer extends Layer implements Listener {
       for (const source of [this.overviewPlans, this.coarsePlans, this.finePlans]) {
         for (const {buffer} of source.values()) {
           this.renderer.deleteBuffer(buffer);
+        }
+      }
+      for (const {labelBuffer} of this.overviewPlans.values()) {
+        if (labelBuffer) {
+          this.renderer.deleteBuffer(labelBuffer);
         }
       }
 
@@ -235,6 +251,14 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   override render(planner: Planner): void {
+    if (this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
+      for (const plan of this.overviewPlans.values()) {
+        if (plan.labelBuffer === undefined) {
+          this.planOverviewLabels(plan);
+        }
+      }
+    }
+
     const detailPlans = [];
     if (this.showDetail(this.camera.zoom)) {
       const cells = this.cellsInView(SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
@@ -608,27 +632,16 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   loadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void {
-    let bufferSize = 0;
-    for (const trail of trails) {
-      const {value, unit} = formatDistance(trail.lengthMeters);
-      const graphemes = toGraphemes(`${value} ${unit}`);
-      if (!GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE)) {
-        // yolo!
-        setTimeout(() => { this.loadOverviewCell(id, trails); });
-        return;
-      }
-      // Unlabeled pin + labeled pin + glyph text.
-      bufferSize += 2 * BillboardProgram.bytesNeeded() + GLYPHER.bytesNeeded(graphemes);
-    }
-
-    this.loadScratchBuffer = growBuffer(this.loadScratchBuffer, bufferSize);
+    const all = [...trails];
+    this.loadScratchBuffer =
+        growBuffer(this.loadScratchBuffer, all.length * BillboardProgram.bytesNeeded());
     const buffer = this.loadScratchBuffer;
-    const pinsLabeled = [];
     const pinsUnlabeled = [];
+    const handles = [];
     const glBuffer = this.renderer.createDataBuffer(0);
     let offset = 0;
 
-    for (const trail of trails) {
+    for (const trail of all) {
       const {byteSize, drawable} =
           this.pinRenderer.planPin(
               UNLABELED_PIN_REGULAR,
@@ -640,19 +653,62 @@ export class TrailLayer extends Layer implements Listener {
       pinsUnlabeled.push(drawable);
       offset += byteSize;
 
-      this.overviewBounds.insert({
+      // One handle in all three quadtrees so widening its bound for the labeled pin reaches every
+      // zoom that queries it.
+      const handle = {
         entity: trail,
         markerPx: trail.markerPx,
         screenPixelBound: this.pinPixelBounds,
-      }, trail.mouseBound);
+      };
+      handles.push(handle);
+      this.overviewBounds.insert(handle, trail.mouseBound);
+      this.coarseBounds.insert(handle, trail.mouseBound);
+      this.fineBounds.insert(handle, trail.mouseBound);
     }
 
-    let zEpsilon = 0;
+    this.renderer.uploadData(buffer, offset, glBuffer);
+    this.overviewPlans.set(id, {
+      buffer: glBuffer,
+      handles,
+      labelBuffer: undefined,
+      paths: [],
+      pinsLabeled: [],
+      pinsUnlabeled,
+      points: [],
+      trails: all,
+    });
+
+    this.updateInteractive();
+    this.generation += 1;
+  }
+
+  private planOverviewLabels(plan: OverviewPlan): void {
+    const trails = plan.trails;
+    const texts = [];
+    let bufferSize = 0;
     for (const trail of trails) {
       const {value, unit} = formatDistance(trail.lengthMeters);
-      const text = `${value} ${unit}`;
-      const graphemes = toGraphemes(text);
-      const textSize = checkExists(GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE));
+      const graphemes = toGraphemes(`${value} ${unit}`);
+      const textSize = GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE);
+      if (!textSize) {
+        // measurePx triggered an atlas regeneration, so ask for another frame and try again then.
+        setTimeout(() => { this.generation += 1; });
+        return;
+      }
+      texts.push({graphemes, textSize});
+      bufferSize += BillboardProgram.bytesNeeded() + GLYPHER.bytesNeeded(graphemes);
+    }
+
+    this.loadScratchBuffer = growBuffer(this.loadScratchBuffer, bufferSize);
+    const buffer = this.loadScratchBuffer;
+    const pinsLabeled = [];
+    const glBuffer = this.renderer.createDataBuffer(0);
+    let offset = 0;
+    let zEpsilon = 0;
+
+    for (let i = 0; i < trails.length; ++i) {
+      const trail = trails[i];
+      const {graphemes, textSize} = texts[i];
       const pinSize = this.pinRenderer.measureLabeledPin(textSize);
 
       const pin = {
@@ -695,39 +751,17 @@ export class TrailLayer extends Layer implements Listener {
       zEpsilon += 0.0000002;
 
       const halfDetailWidth = pinSize[0] / 2;
-      this.coarseBounds.insert({
-        entity: trail,
-        markerPx: trail.markerPx,
-        screenPixelBound: [
-          -halfDetailWidth,
-          0,
-          halfDetailWidth,
-          pinSize[1],
-        ],
-      }, trail.mouseBound);
-      this.fineBounds.insert({
-        entity: trail,
-        markerPx: trail.markerPx,
-        screenPixelBound: [
-          -halfDetailWidth,
-          0,
-          halfDetailWidth,
-          pinSize[1],
-        ],
-      }, trail.mouseBound);
+      plan.handles[i].screenPixelBound = [
+        -halfDetailWidth,
+        0,
+        halfDetailWidth,
+        pinSize[1],
+      ];
     }
 
     this.renderer.uploadData(buffer, offset, glBuffer);
-    this.overviewPlans.set(id, {
-      buffer: glBuffer,
-      paths: [],
-      pinsLabeled,
-      pinsUnlabeled,
-      points: [],
-    });
-
-    this.updateInteractive();
-    this.generation += 1;
+    plan.labelBuffer = glBuffer;
+    plan.pinsLabeled = pinsLabeled;
   }
 
   loadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void {
@@ -911,6 +945,9 @@ export class TrailLayer extends Layer implements Listener {
     const plan = this.overviewPlans.get(id);
     if (plan) {
       this.renderer.deleteBuffer(plan.buffer);
+      if (plan.labelBuffer) {
+        this.renderer.deleteBuffer(plan.labelBuffer);
+      }
       this.overviewPlans.delete(id);
     }
 
