@@ -9,12 +9,12 @@ import { Layer } from 'js/map/layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
-import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/layers/mbtile_layer';
+import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM } from 'js/map/z';
 
 import { CollectionLayer } from './collection_layer';
-import { OSM_PATHS, PUBLIC_LAND } from './styles';
+import { NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
 import { HOVER_CHANGED } from './events';
 
 export interface LayerState {
@@ -123,7 +123,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           ],
           'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
               + 'key=wWxlJy7a8SEPXS7AZ42l',
-          NATURE,
+          NATURE_WITHOUT_DETAILED_WAYS,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 15,
@@ -202,7 +202,8 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       ),
     }, {
       name: 'OSM paths',
-      enabled: false,
+      // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
+      enabled: true,
       layer: new CollectionLayer(
           '/api/collections/00000000-0000-0000-0000-000000000001',
           OSM_PATHS,
