@@ -80,7 +80,6 @@ private val BACKWARD_BS = ByteString.copyFromUtf8("backward")
 private val FORWARD_BS = ByteString.copyFromUtf8("forward")
 private val INNER_BS = ByteString.copyFromUtf8("inner")
 private val OUTER_BS = ByteString.copyFromUtf8("outer")
-private val SUBAREA_BS = ByteString.copyFromUtf8("subarea")
 private val EMPTY_BS = ByteString.copyFromUtf8("")
 
 fun relationToSkeleton(relation: Osmformat.Relation, stringTable: StringTable): RelationSkeleton {
@@ -96,7 +95,6 @@ fun relationToSkeleton(relation: Osmformat.Relation, stringTable: StringTable): 
           FORWARD_BS -> OUTER
           INNER_BS -> INNER
           OUTER_BS -> OUTER
-          SUBAREA_BS -> OUTER
           EMPTY_BS -> OUTER
           null -> OUTER
           else -> null

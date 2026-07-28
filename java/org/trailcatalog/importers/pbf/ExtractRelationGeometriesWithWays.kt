@@ -54,18 +54,22 @@ private fun inflate(
     return null
   }
 
-  used.push(id)
   val skeleton = relations[id] ?: return null
+
+  // Pushing after the lookup keeps a member that has no skeleton from leaving its id on the stack,
+  // which the check above would then read as a cycle in the members after it.
+  used.push(id)
   val geometry = RelationGeometry.newBuilder().setRelationId(id)
   for (member in skeleton.membersList) {
     when (member.valueCase) {
       NODE_ID -> geometry.addMembers(RelationMember.newBuilder().setNodeId(member.nodeId))
-      RELATION_ID ->
-          geometry.addMembers(
-              RelationMember.newBuilder()
-                  .setFunction(member.function)
-                  .setRelation(
-                      inflate(member.relationId, from, relations, used) ?: return null))
+      RELATION_ID -> {
+        // A member we can't inflate leaves a hole, but the rest of the geometry is still worth
+        // having, and returning null here would erase this relation and every relation using it.
+        val inflated = inflate(member.relationId, from, relations, used) ?: continue
+        geometry.addMembers(
+            RelationMember.newBuilder().setFunction(member.function).setRelation(inflated))
+      }
       WAY_ID ->
         geometry.addMembers(
             RelationMember.newBuilder()

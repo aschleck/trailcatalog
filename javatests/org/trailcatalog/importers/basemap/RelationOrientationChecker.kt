@@ -32,7 +32,6 @@ private fun fetchRelation(id: Long, map: MapDataApi): RelationGeometry {
       "forward" -> "outer"
       "inner" -> "inner"
       "outer" -> "outer"
-      "subarea" -> "outer"
       "empty" -> "outer"
       "" -> "outer"
       else -> continue
