@@ -55,21 +55,6 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
     }
   })
 
-  registerSerializer(TypeToken.of(BoundaryPolygon::class.java), object : Serializer<BoundaryPolygon> {
-    override fun read(from: EncodedInputStream): BoundaryPolygon {
-      val id = from.readLong()
-      val polygon = ByteArray(from.readVarInt())
-      from.read(polygon)
-      return BoundaryPolygon(id, polygon)
-    }
-
-    override fun write(v: BoundaryPolygon, to: EncodedOutputStream) {
-      to.writeLong(v.id)
-      to.writeVarInt(v.polygon.size)
-      to.write(v.polygon)
-    }
-  })
-
   registerSerializer(TypeToken.of(Profile::class.java), object : Serializer<Profile> {
 
     override fun read(from: EncodedInputStream): Profile {
@@ -135,21 +120,6 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       to.writeFloat(v.downMeters)
       to.writeFloat(v.upMeters)
       to.writeBoolean(v.validGeometry)
-    }
-  })
-
-  registerSerializer(TypeToken.of(TrailPolyline::class.java), object : Serializer<TrailPolyline> {
-    override fun read(from: EncodedInputStream): TrailPolyline {
-      val id = from.readLong()
-      val polyline = ByteArray(from.readVarInt())
-      from.read(polyline)
-      return TrailPolyline(id, polyline)
-    }
-
-    override fun write(v: TrailPolyline, to: EncodedOutputStream) {
-      to.writeLong(v.id)
-      to.writeVarInt(v.polyline.size)
-      to.write(v.polyline)
     }
   })
 

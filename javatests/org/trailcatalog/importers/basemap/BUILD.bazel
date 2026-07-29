@@ -10,7 +10,24 @@ kt_jvm_test(
     deps = [
         ":relation_orientation_checker_lib",
         "//java/org/trailcatalog/importers/basemap",
+        "//java/org/trailcatalog/importers/pipeline/collections",
         "//trailcatalog/proto:encoding_java_proto",
+        "@com_google_geometry_s2//:s2",
+        "@maven//:com_google_truth_truth",
+        "@maven//:org_junit_jupiter_junit_jupiter",
+    ],
+)
+
+kt_jvm_test(
+    name = "boundary_index",
+    srcs = glob(["*.kt"]),
+    test_class = "org.trailcatalog.importers.basemap.BoundaryIndexTest",
+    deps = [
+        ":relation_orientation_checker_lib",
+        "//java/org/trailcatalog/importers/basemap",
+        "//java/org/trailcatalog/importers/pipeline/collections",
+        "//trailcatalog/proto:encoding_java_proto",
+        "@com_google_geometry_s2//:s2",
         "@maven//:com_google_truth_truth",
         "@maven//:org_junit_jupiter_junit_jupiter",
     ],

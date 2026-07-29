@@ -31,7 +31,6 @@ import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.invert
-import org.trailcatalog.importers.pipeline.uniqueValues
 import org.trailcatalog.models.RelationCategory
 import java.io.File
 import java.io.InputStream
@@ -166,13 +165,11 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   val trails = relationsWithGeometry.then(CreateTrails())
   trails.write(DumpPathsInTrails(epoch, hikari))
   trails.write(DumpTrails(epoch, hikari))
-  val byCells = pipeline
-      .join2(
-          "JoinOnContainment",
-          boundaries.then(GroupBoundariesByCell()),
-          trails.then(GroupTrailsByCell()))
-  byCells.then(CreateBoundariesInBoundaries()).write(DumpBoundariesInBoundaries(epoch, hikari))
-  val trailsInBoundaries = byCells.then(CreateTrailsInBoundaries()).uniqueValues("UniqueBoundaries")
+  val boundaryIndex = boundaries.then(BuildBoundaryIndex())
+  boundaryIndex
+      .then(FindBoundariesInBoundaries())
+      .write(DumpBoundariesInBoundaries(epoch, hikari))
+  val trailsInBoundaries = pipeline.zip2(boundaryIndex, trails, FindTrailsInBoundaries())
   val trailIdToContainingBoundaries =
       pipeline
           .join2(

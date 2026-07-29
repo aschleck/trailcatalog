@@ -54,6 +54,7 @@ kt_jvm_library(
         "//java/org/trailcatalog/importers/pbf:pbf_java",
         "//java/org/trailcatalog/importers/pipeline",
         "//java/org/trailcatalog/importers/pipeline/collections",
+        "//java/org/trailcatalog/importers/pipeline/progress",
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
         "//trailcatalog/proto:encoding_java_proto",

@@ -85,6 +85,23 @@ class Pipeline(val parallelism: Int = 1) {
     }
   }
 
+  /** Feeds two stages' outputs to a stage needing both, where [join2] would need a shared key. */
+  fun <A, B, O> zip2(
+      first: BoundStage<*, A>,
+      second: BoundStage<*, B>,
+      stage: PStage<in Pair<A, B>, O>): BoundStage<Pair<A, B>, O> {
+    return object : BoundStage<Pair<A, B>, O>(this, stage) {
+      override fun getInput(): Pair<A, B> {
+        return Pair(first.invoke(), second.invoke())
+      }
+
+      override fun traceInputs() {
+        first.trace()
+        second.trace()
+      }
+    }
+  }
+
   inline fun <reified T : Comparable<T>> merge(list: List<BoundStage<*, PSortedList<T>>>):
       BoundStage<List<PSortedList<T>>, PSortedList<T>> {
     return object : BoundStage<List<PSortedList<T>>, PSortedList<T>>(
