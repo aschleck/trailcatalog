@@ -23,3 +23,14 @@ kt_jvm_test(
         "@maven//:org_junit_jupiter_junit_jupiter",
     ],
 )
+
+kt_jvm_test(
+    name = "streaming_merge",
+    srcs = glob(["*.kt"]),
+    test_class = "org.trailcatalog.importers.pipeline.StreamingMergeTest",
+    deps = [
+        "//java/org/trailcatalog/importers/pipeline",
+        "@maven//:com_google_truth_truth",
+        "@maven//:org_junit_jupiter_junit_jupiter",
+    ],
+)

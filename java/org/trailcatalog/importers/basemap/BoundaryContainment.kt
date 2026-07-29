@@ -190,6 +190,7 @@ class FindBoundariesInBoundaries : PStage<BoundaryIndex, PMap<Long, Long>>() {
         input.size * BYTES_PER_CHILD_BOUNDARY,
         slots(input),
         resolvedParallelism,
+        dependants,
     ) { slot, emitter ->
       val child = input.id(slot)
       input.forEachContaining(input.covering(slot), child) { parent ->
@@ -213,6 +214,7 @@ class FindTrailsInBoundaries
         estimateSize(trails.estimatedByteSize()),
         trails,
         resolvedParallelism,
+        dependants,
     ) { trail, emitter ->
       index.forEachContaining(coveringOf(trail.polyline), NO_SKIP) { boundary ->
         emitter.emit(trail.relationId, boundary)

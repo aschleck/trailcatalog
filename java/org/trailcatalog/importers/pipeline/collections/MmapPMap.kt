@@ -14,6 +14,7 @@ import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.atomic.AtomicInteger
 
 var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024L
 // ThreadLocal so worker threads in parallel-extract mode don't race on the same scratch buffer.
@@ -118,6 +119,9 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
  *
  * With `workers <= 1` this delegates to the single-threaded path, so callers can pass the
  * resolved parallelism directly.
+ *
+ * With one dependant the merge runs inside the consumer's reads instead of writing a merged file.
+ * See [StreamingMergePMap].
  */
 fun <I, K : Comparable<K>, V : Any> createMmapPMap(
     context: String,
@@ -126,8 +130,10 @@ fun <I, K : Comparable<K>, V : Any> createMmapPMap(
     estimatedByteSize: Long,
     input: PCollection<I>,
     workers: Int,
-    perItem: (I, Emitter2<K, V>) -> Unit): DisposableSupplier<MmapPMap<K, V>> {
+    dependants: Int,
+    perItem: (I, Emitter2<K, V>) -> Unit): DisposableSupplier<PMap<K, V>> {
   if (workers <= 1) {
+    // The single-threaded path takes no dependant count, so it always materializes.
     return createMmapPMap(context, keyType, valueType, estimatedByteSize) { emitter ->
       while (input.hasNext()) {
         perItem(input.next(), emitter)
@@ -143,6 +149,26 @@ fun <I, K : Comparable<K>, V : Any> createMmapPMap(
   val (shardedFiles, shards) =
       emitToSortedShardsParallel(
           context, keyType, valueType, keySerializer, valueSerializer, input, workers, perItem)
+
+  if (dependants <= 1) {
+    val seconds = (System.currentTimeMillis() - startTime) / 1000
+    val size = shards.sumOf { it.size().toLong() }
+    println(
+        "  PMap ${context} emitted ${seconds}s (parallel x${workers}), merging on read" +
+            " (${shards.size} shards, size ${size})")
+    val opened = AtomicInteger(0)
+    // Unlinking a shard leaves its mappings readable, which is what the merged path already
+    // relies on when BoundStage closes the supplier before the consumer reads. Closing a stream
+    // unmaps it through Unsafe.invokeCleaner and would crash the reader, so that waits for the
+    // consumer to close the PMap.
+    return DisposableSupplier({ shardedFiles.forEach { it.delete() } }) {
+      if (opened.incrementAndGet() != 1) {
+        throw RuntimeException("Streaming merge can only be used once")
+      }
+      StreamingMergePMap(shards, keySerializer, valueSerializer, size)
+    }
+  }
+
   return mergeSortedShards(
       context,
       keyType,
@@ -521,6 +547,104 @@ private fun <K : Comparable<K>, V : Any> mergeSortedShards(
         opened.sumOf { it.size().toLong() },
         index = indexEntries,
     )
+  }
+}
+
+/**
+ * Lazy K-way merge over the pre-sort shards, standing in for a merged file.
+ *
+ * Materializing costs the stage's size twice over, once writing the merged file and once reading
+ * it back, and that pass is the disk's throughput end to end. A single consumer only ever asks for
+ * one cursor, so the merge can happen in next() and the pass disappears. In exchange the merge now
+ * runs on whichever thread drives the consumer, over one open mapping per shard rather than one
+ * sequential file.
+ */
+private class StreamingMergePMap<K : Comparable<K>, V : Any>(
+    private val shards: List<EncodedByteBufferInputStream>,
+    keySerializer: Serializer<K>,
+    valueSerializer: Serializer<V>,
+    private val size: Long,
+) : PMap<K, V> {
+
+  private val heap = PriorityQueue<ShardCursor<K, V>>()
+
+  init {
+    for (shard in shards) {
+      val cursor = ShardCursor<K, V>(shard, keySerializer, valueSerializer)
+      if (cursor.advance()) {
+        heap.add(cursor)
+      }
+    }
+  }
+
+  override fun estimatedByteSize(): Long {
+    return size
+  }
+
+  override fun close() {
+    shards.forEach { it.close() }
+  }
+
+  override fun hasNext(): Boolean {
+    return heap.isNotEmpty()
+  }
+
+  override fun next(): PEntry<K, V> {
+    // A cursor's key is its heap position, so it comes out before advancing and goes back after.
+    val first = heap.poll()
+    val key = first.key
+    val values = ArrayList<V>()
+    values.add(first.value)
+    if (first.advance()) {
+      heap.add(first)
+    }
+
+    // A shard can hold the same key twice, so the re-added cursor gets rechecked here.
+    while (heap.isNotEmpty() && heap.peek().key.compareTo(key) == 0) {
+      val next = heap.poll()
+      values.add(next.value)
+      if (next.advance()) {
+        heap.add(next)
+      }
+    }
+
+    return PEntry(key, values)
+  }
+}
+
+private class ShardCursor<K : Comparable<K>, V : Any>(
+    private val source: EncodedByteBufferInputStream,
+    private val keySerializer: Serializer<K>,
+    private val valueSerializer: Serializer<V>,
+) : Comparable<ShardCursor<K, V>> {
+
+  private var currentKey: K? = null
+  private var currentValue: V? = null
+
+  val key: K
+    get() = currentKey!!
+
+  val value: V
+    get() = currentValue!!
+
+  /** Reads the next record, returning false once the shard is spent. */
+  fun advance(): Boolean {
+    if (!source.hasRemaining()) {
+      currentKey = null
+      currentValue = null
+      return false
+    }
+
+    currentKey = keySerializer.read(source)
+    // The length prefix exists so the merged path can copy value bytes without deserializing them.
+    // Reading past it keeps the stream aligned.
+    source.readVarInt()
+    currentValue = valueSerializer.read(source)
+    return true
+  }
+
+  override fun compareTo(other: ShardCursor<K, V>): Int {
+    return key.compareTo(other.key)
   }
 }
 

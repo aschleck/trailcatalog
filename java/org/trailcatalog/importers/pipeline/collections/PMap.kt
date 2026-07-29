@@ -20,7 +20,8 @@ fun <K : Comparable<K>, V : Any> createPMap(
  * worker threads. Each worker runs [perItem] and writes into its own pre-sort shard file. The
  * K-way merge picks up shards from all worker files transparently.
  *
- * Passing `workers <= 1` falls back to the single-threaded path.
+ * Passing `workers <= 1` falls back to the single-threaded path. Passing `dependants` of 1 lets the
+ * merge run on read rather than through a merged file, so pass the count act() was handed.
  */
 fun <I, K : Comparable<K>, V : Any> createPMap(
     context: String,
@@ -29,6 +30,8 @@ fun <I, K : Comparable<K>, V : Any> createPMap(
     estimatedByteSize: Long,
     input: PCollection<I>,
     workers: Int,
+    dependants: Int,
     perItem: (I, Emitter2<K, V>) -> Unit): DisposableSupplier<PMap<K, V>> {
-  return createMmapPMap(context, keyType, valueType, estimatedByteSize, input, workers, perItem)
+  return createMmapPMap(
+      context, keyType, valueType, estimatedByteSize, input, workers, dependants, perItem)
 }
