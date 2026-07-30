@@ -1,12 +1,12 @@
 import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
-import { S2CellId, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
-import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
+import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { Camera, projectLatLngRect, projectS2LatLng } from 'js/map/camera';
 import { WorldBoundsQuadtree } from 'js/map/common/bounds_quadtree';
 import { DPI } from 'js/map/common/dpi';
-import { LatLng, RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
+import { RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { GLYPHER, toGraphemes } from 'js/map/rendering/glypher';
@@ -17,11 +17,11 @@ import { Renderer } from 'js/map/rendering/renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { formatDistance } from '../common/formatters';
-import { degreesE7ToLatLng, projectLatLng, reinterpretLong } from '../common/math';
+import { reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 import { Listener, MapDataService } from '../data/map_data_service';
 import { Path, Point, Trail } from '../models/types';
-import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from '../workers/data_constants';
+import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD } from '../workers/data_constants';
 
 import { DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, LinePalette } from './colors';
 import { HOVER_CHANGED, SELECTION_CHANGED } from './events';
@@ -88,9 +88,17 @@ interface PointHandle {
 interface TrailHandle {
   readonly entity: Trail;
   readonly markerPx: Vec2;
-  // Widens from the unlabeled pin to the labeled one when the labels get planned, because a
+  // Widens from the unlabeled pin to the labeled one when the label gets measured, because a
   // trail is hoverable before anything has measured its label.
   screenPixelBound: Vec4;
+  // Undefined until the viewport first reaches this trail at a zoom that labels pins, and while a
+  // grapheme of its label is missing from the glyph atlas.
+  label: TrailLabel|undefined;
+}
+
+interface TrailLabel {
+  readonly graphemes: string[];
+  readonly textSize: Vec2;
 }
 
 type Handle = PathHandle|PointHandle|TrailHandle;
@@ -98,18 +106,7 @@ type Handle = PathHandle|PointHandle|TrailHandle;
 interface CellPlan {
   buffer: WebGLBuffer;
   paths: Drawable[];
-  pinsLabeled: Drawable[];
-  pinsUnlabeled: Drawable[];
   points: Drawable[];
-}
-
-interface OverviewPlan extends CellPlan {
-  // A labeled pin costs a billboard plus a run of glyphs, and nothing draws one below
-  // RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD, so we hold the trails until a render asks for them.
-  // Undefined until then.
-  labelBuffer: WebGLBuffer|undefined;
-  handles: TrailHandle[];
-  trails: Trail[];
 }
 
 const RENDER_POINT_ZOOM_THRESHOLD = 14;
@@ -125,6 +122,10 @@ const UNLABELED_PIN_REGULAR = {
 // because they are not centered vertically.)
 const CLICK_RADIUS_PX = 35 * DPI;
 
+// Grows the pin query past the viewport so a marker just off screen still contributes the pin that
+// reaches into view.
+const PIN_QUERY_PADDING = 0.5;
+
 export class TrailLayer extends Layer implements Listener {
 
   // A note on bounds: we load trails into all quadtrees because trail pins have different sizes at
@@ -132,17 +133,23 @@ export class TrailLayer extends Layer implements Listener {
   private readonly overviewBounds: WorldBoundsQuadtree<Handle>;
   private readonly coarseBounds: WorldBoundsQuadtree<Handle>;
   private readonly fineBounds: WorldBoundsQuadtree<Handle>;
-  private readonly overviewPlans: Map<S2CellNumber, OverviewPlan>;
   private readonly coarsePlans: Map<S2CellNumber, CellPlan>;
   private readonly finePlans: Map<S2CellNumber, CellPlan>;
   private readonly interactivePlan: CellPlan;
   private readonly pinPixelBounds: Vec4;
   private readonly active: Map<bigint, LinePalette>;
   private readonly hovering: Map<bigint, LinePalette>;
+  // Every pin on screen, replanned each render.
+  private readonly pinBuffer: WebGLBuffer;
+  // Asks for another frame after a label missed the glyph atlas.
+  private readonly pinLabelDebouncer: Debouncer;
   private readonly pinRenderer: PinRenderer;
   private readonly pointsAtlas: WebGLTexture;
   private readonly queryClosestBuffer: Handle[];
+  private readonly queryVisibleBuffer: TrailHandle[];
+  private readonly visiblePins: Drawable[];
   private interactiveScratchBuffer: ArrayBuffer;
+  private pinScratchBuffer: ArrayBuffer;
   private loadScratchBuffer: ArrayBuffer;
   private generation: number;
   private lastGeneration: number;
@@ -159,28 +166,23 @@ export class TrailLayer extends Layer implements Listener {
     this.overviewBounds = new WorldBoundsQuadtree<Handle>();
     this.coarseBounds = new WorldBoundsQuadtree<Handle>();
     this.fineBounds = new WorldBoundsQuadtree<Handle>();
-    this.overviewPlans = new Map();
     this.coarsePlans = new Map();
     this.finePlans = new Map();
     this.interactivePlan = {
       buffer: this.renderer.createDataBuffer(0),
       paths: [],
-      pinsLabeled: [],
-      pinsUnlabeled: [],
       points: [],
     };
+    this.pinBuffer = this.renderer.createDataBuffer(0);
+    this.pinLabelDebouncer = new Debouncer(10, () => { this.generation += 1; });
     this.registerDisposer(() => {
-      for (const source of [this.overviewPlans, this.coarsePlans, this.finePlans]) {
+      for (const source of [this.coarsePlans, this.finePlans]) {
         for (const {buffer} of source.values()) {
           this.renderer.deleteBuffer(buffer);
         }
       }
-      for (const {labelBuffer} of this.overviewPlans.values()) {
-        if (labelBuffer) {
-          this.renderer.deleteBuffer(labelBuffer);
-        }
-      }
 
+      this.renderer.deleteBuffer(this.pinBuffer);
       this.renderer.deleteBuffer(this.interactivePlan.buffer);
     });
     this.active = new Map();
@@ -190,7 +192,10 @@ export class TrailLayer extends Layer implements Listener {
     // Why don't we need to dispose?
     this.pointsAtlas = new TexturePool(renderer).acquire();
     this.queryClosestBuffer = [];
+    this.queryVisibleBuffer = [];
+    this.visiblePins = [];
     this.interactiveScratchBuffer = new ArrayBuffer(64 * 1024);
+    this.pinScratchBuffer = new ArrayBuffer(256 * 1024);
     this.loadScratchBuffer = new ArrayBuffer(1024 * 1024);
 
     const pinPixelSize = this.pinRenderer.measureUnlabeledPin();
@@ -251,13 +256,8 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   override render(planner: Planner): void {
-    if (this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
-      for (const plan of this.overviewPlans.values()) {
-        if (plan.labelBuffer === undefined) {
-          this.planOverviewLabels(plan);
-        }
-      }
-    }
+    this.pinRenderer.mark();
+    this.planInteractive();
 
     const detailPlans = [];
     if (this.showDetail(this.camera.zoom)) {
@@ -275,32 +275,170 @@ export class TrailLayer extends Layer implements Listener {
       }
     }
 
-    for (const source of [
-      new Map([['', this.interactivePlan]]),
-      this.overviewPlans,
-      detailPlans,
-    ]) {
-      for (const {paths, pinsLabeled, pinsUnlabeled, points} of source.values()) {
-        if (this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
-          planner.add(paths);
-        }
+    for (const {paths, points} of detailPlans.values()) {
+      if (this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
+        planner.add(paths);
+      }
 
-        if (this.camera.zoom >= RENDER_POINT_ZOOM_THRESHOLD) {
-          planner.add(points);
-        }
-
-        if (this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD) {
-          planner.add(pinsLabeled);
-        } else {
-          planner.add(pinsUnlabeled);
-        }
+      if (this.camera.zoom >= RENDER_POINT_ZOOM_THRESHOLD) {
+        planner.add(points);
       }
     }
 
     planner.add(this.interactivePlan.paths);
     planner.add(this.interactivePlan.points);
 
+    const labeled = this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD;
+    this.planVisiblePins(planner, labeled);
+    this.pinRenderer.sweep();
+
     this.lastGeneration = this.generation;
+  }
+
+  // An overview cell reaches S2 level 7, a few hundred kilometers across, so it holds orders of
+  // magnitude more trails than a viewport shows. Planning a pin is a few dozen buffer writes
+  // against a texture the pin cache already holds, and render only runs when the camera or the data
+  // moved, so we replan the pins the viewport reaches rather than hold geometry for trails nobody
+  // is looking at.
+  //
+  // Culling pays for itself twice: each labeled pin needs its own z so that it covers the labels
+  // behind it, and Planner sorts on z ahead of program, so every pin submitted costs a billboard to
+  // sdf program switch whether or not it is on screen.
+  private planVisiblePins(planner: Planner, labeled: boolean): void {
+    const handles = this.queryVisibleBuffer;
+    handles.length = 0;
+    const viewport = projectLatLngRect(this.viewportBounds);
+    const padX = (viewport.high[0] - viewport.low[0]) * PIN_QUERY_PADDING;
+    const padY = (viewport.high[1] - viewport.low[1]) * PIN_QUERY_PADDING;
+    // Only loadOverviewCell inserts into overviewBounds, so everything this returns is a trail.
+    this.overviewBounds.queryRect({
+      low: [viewport.low[0] - padX, viewport.low[1] - padY] as Vec2,
+      high: [viewport.high[0] + padX, viewport.high[1] + padY] as Vec2,
+    }, handles);
+    // Ordered by trail so that the z ladder below is a property of the trails on screen and not of
+    // the order the quadtree walked them, or else which pin covers which label changes as you pan.
+    handles.sort((a, b) => a.entity.id < b.entity.id ? -1 : 1);
+
+    // First, measure the labels, because the buffer has to be sized before anything is planned
+    // into it.
+    let bufferSize = 0;
+    let missingGlyphs = false;
+    for (const handle of handles) {
+      bufferSize += BillboardProgram.bytesNeeded();
+      if (!labeled) {
+        continue;
+      }
+
+      const label = handle.label ?? this.measureLabel(handle);
+      if (label) {
+        bufferSize += GLYPHER.bytesNeeded(label.graphemes);
+      } else {
+        missingGlyphs = true;
+      }
+    }
+    if (missingGlyphs) {
+      // measurePx fails on a grapheme the atlas does not hold yet, and queues a rebuild, so ask
+      // for another frame and plan those pins then.
+      this.pinLabelDebouncer.trigger();
+    }
+
+    this.pinScratchBuffer = growBuffer(this.pinScratchBuffer, bufferSize);
+    const buffer = this.pinScratchBuffer;
+    const pins = this.visiblePins;
+    pins.length = 0;
+    let offset = 0;
+    let zEpsilon = 0;
+
+    for (const handle of handles) {
+      const entity = handle.entity;
+      const special = this.hovering.get(entity.id) ?? this.active.get(entity.id);
+      const z = special ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
+
+      if (!labeled) {
+        const {byteSize, drawable} =
+            this.pinRenderer.planPin(
+                special ? {
+                  textSize: [0, 0] as const,
+                  fillColor: special.hex.fill,
+                  strokeColor: special.hex.stroke,
+                } : UNLABELED_PIN_REGULAR,
+                entity.markerPx,
+                z,
+                buffer,
+                offset,
+                this.pinBuffer);
+        pins.push(drawable);
+        offset += byteSize;
+      } else {
+        const label = handle.label;
+        if (!label) {
+          continue;
+        }
+
+        const pinPlan =
+            this.pinRenderer.planPin(
+                special ? {
+                  textSize: label.textSize,
+                  fillColor: special.hex.fill,
+                  strokeColor: special.hex.stroke,
+                } : {
+                  textSize: label.textSize,
+                  fillColor: DEFAULT_HEX_PALETTE.fill,
+                  strokeColor: '#ffffffff',
+                },
+                entity.markerPx,
+                z + zEpsilon,
+                buffer,
+                offset,
+                this.pinBuffer);
+        pins.push(pinPlan.drawable);
+        offset += pinPlan.byteSize;
+
+        const {byteSize, drawables} =
+            GLYPHER.plan(
+                label.graphemes,
+                entity.markerPx,
+                pinPlan.textOffset,
+                TRAIL_MARKER_TEXT_SCALE,
+                /* angle= */ 0,
+                special ? special.raw.stroke : DEFAULT_PALETTE.stroke,
+                special ? special.raw.fill : DEFAULT_PALETTE.fill,
+                z + zEpsilon + 0.0000001,
+                buffer,
+                offset,
+                this.pinBuffer,
+                this.renderer);
+        pins.push(...drawables);
+        offset += byteSize;
+
+        // Leaves room for the label to sit between this pin and the next one up the ladder.
+        zEpsilon += 0.0000002;
+      }
+    }
+
+    this.renderer.uploadData(buffer, offset, this.pinBuffer);
+    planner.add(pins);
+  }
+
+  private measureLabel(handle: TrailHandle): TrailLabel|undefined {
+    const {value, unit} = formatDistance(handle.entity.lengthMeters);
+    const graphemes = toGraphemes(`${value} ${unit}`);
+    const textSize = GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE);
+    if (!textSize) {
+      return undefined;
+    }
+
+    const pinSize = this.pinRenderer.measureLabeledPin(textSize);
+    const halfDetailWidth = pinSize[0] / 2;
+    handle.screenPixelBound = [
+      -halfDetailWidth,
+      0,
+      halfDetailWidth,
+      pinSize[1],
+    ];
+
+    handle.label = {graphemes, textSize};
+    return handle.label;
   }
 
   override hasNewData(): boolean {
@@ -463,10 +601,10 @@ export class TrailLayer extends Layer implements Listener {
       }
     }
 
-    this.updateInteractive();
+    this.generation += 1;
   }
 
-  private updateInteractive(): void {
+  private planInteractive(): void {
     let bufferSize = 0;
     for (const source of [this.active, this.hovering]) {
       for (const id of source.keys()) {
@@ -498,8 +636,6 @@ export class TrailLayer extends Layer implements Listener {
     this.interactiveScratchBuffer = growBuffer(this.interactiveScratchBuffer, bufferSize);
     const buffer = this.interactiveScratchBuffer;
     this.interactivePlan.paths.length = 0;
-    this.interactivePlan.pinsLabeled.length = 0;
-    this.interactivePlan.pinsUnlabeled.length = 0;
     this.interactivePlan.points.length = 0;
     let offset = 0;
 
@@ -532,69 +668,6 @@ export class TrailLayer extends Layer implements Listener {
           offset += drawable.geometryByteLength;
         }
 
-        const trail = this.dataService.getTrail(id);
-        if (trail) {
-          {
-            const {byteSize, drawable} =
-                this.pinRenderer.planPin(
-                    {
-                      textSize: [0, 0] as const,
-                      fillColor: palette.hex.fill,
-                      strokeColor: palette.hex.stroke,
-                    },
-                    trail.markerPx,
-                    Z_RAISED_TRAIL_MARKER,
-                    buffer,
-                    offset,
-                    this.interactivePlan.buffer);
-            this.interactivePlan.pinsUnlabeled.push(drawable);
-            offset += byteSize;
-          }
-
-          {
-            const {value, unit} = formatDistance(trail.lengthMeters);
-            const text = `${value} ${unit}`;
-            const graphemes = toGraphemes(text);
-            const textSize = GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE);
-            if (!textSize) {
-              continue;
-            }
-
-            const pinPlan =
-                this.pinRenderer.planPin(
-                    {
-                      textSize,
-                      fillColor: palette.hex.fill,
-                      strokeColor: palette.hex.stroke,
-                    },
-                    trail.markerPx,
-                    Z_RAISED_TRAIL_MARKER,
-                    buffer,
-                    offset,
-                    this.interactivePlan.buffer);
-            this.interactivePlan.pinsLabeled.push(pinPlan.drawable);
-            offset += pinPlan.byteSize;
-            const textOffset = pinPlan.textOffset;
-
-            const {byteSize, drawables} =
-                GLYPHER.plan(
-                    graphemes,
-                    trail.markerPx,
-                    textOffset,
-                    TRAIL_MARKER_TEXT_SCALE,
-                    /* angle= */ 0,
-                    palette.raw.stroke,
-                    palette.raw.fill,
-                    Z_RAISED_TRAIL_MARKER,
-                    buffer,
-                    offset,
-                    this.interactivePlan.buffer,
-                    this.renderer);
-            this.interactivePlan.pinsLabeled.push(...drawables);
-            offset += byteSize;
-          }
-        }
-
         const point = this.dataService.getPoint(id);
         if (point) {
           const icon = POINTS_ATLAS.get(point.type) ?? 0;
@@ -619,7 +692,6 @@ export class TrailLayer extends Layer implements Listener {
     }
 
     this.renderer.uploadData(buffer, offset, this.interactivePlan.buffer);
-    this.generation += 1;
   }
 
   viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
@@ -632,136 +704,21 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   loadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void {
-    const all = [...trails];
-    this.loadScratchBuffer =
-        growBuffer(this.loadScratchBuffer, all.length * BillboardProgram.bytesNeeded());
-    const buffer = this.loadScratchBuffer;
-    const pinsUnlabeled = [];
-    const handles = [];
-    const glBuffer = this.renderer.createDataBuffer(0);
-    let offset = 0;
-
-    for (const trail of all) {
-      const {byteSize, drawable} =
-          this.pinRenderer.planPin(
-              UNLABELED_PIN_REGULAR,
-              trail.markerPx,
-              Z_TRAIL_MARKER,
-              buffer,
-              offset,
-              glBuffer);
-      pinsUnlabeled.push(drawable);
-      offset += byteSize;
-
+    for (const trail of trails) {
       // One handle in all three quadtrees so widening its bound for the labeled pin reaches every
       // zoom that queries it.
       const handle = {
         entity: trail,
         markerPx: trail.markerPx,
         screenPixelBound: this.pinPixelBounds,
+        label: undefined,
       };
-      handles.push(handle);
       this.overviewBounds.insert(handle, trail.mouseBound);
       this.coarseBounds.insert(handle, trail.mouseBound);
       this.fineBounds.insert(handle, trail.mouseBound);
     }
 
-    this.renderer.uploadData(buffer, offset, glBuffer);
-    this.overviewPlans.set(id, {
-      buffer: glBuffer,
-      handles,
-      labelBuffer: undefined,
-      paths: [],
-      pinsLabeled: [],
-      pinsUnlabeled,
-      points: [],
-      trails: all,
-    });
-
-    this.updateInteractive();
     this.generation += 1;
-  }
-
-  private planOverviewLabels(plan: OverviewPlan): void {
-    const trails = plan.trails;
-    const texts = [];
-    let bufferSize = 0;
-    for (const trail of trails) {
-      const {value, unit} = formatDistance(trail.lengthMeters);
-      const graphemes = toGraphemes(`${value} ${unit}`);
-      const textSize = GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE);
-      if (!textSize) {
-        // measurePx triggered an atlas regeneration, so ask for another frame and try again then.
-        setTimeout(() => { this.generation += 1; });
-        return;
-      }
-      texts.push({graphemes, textSize});
-      bufferSize += BillboardProgram.bytesNeeded() + GLYPHER.bytesNeeded(graphemes);
-    }
-
-    this.loadScratchBuffer = growBuffer(this.loadScratchBuffer, bufferSize);
-    const buffer = this.loadScratchBuffer;
-    const pinsLabeled = [];
-    const glBuffer = this.renderer.createDataBuffer(0);
-    let offset = 0;
-    let zEpsilon = 0;
-
-    for (let i = 0; i < trails.length; ++i) {
-      const trail = trails[i];
-      const {graphemes, textSize} = texts[i];
-      const pinSize = this.pinRenderer.measureLabeledPin(textSize);
-
-      const pin = {
-        textSize,
-        fillColor: DEFAULT_HEX_PALETTE.fill,
-        strokeColor: '#ffffffff',
-      };
-
-      const pinPlan =
-          this.pinRenderer.planPin(
-              pin,
-              trail.markerPx,
-              Z_TRAIL_MARKER + zEpsilon,
-              buffer,
-              offset,
-              glBuffer);
-      pinsLabeled.push(pinPlan.drawable);
-      offset += pinPlan.byteSize;
-      const textOffset = pinPlan.textOffset;
-
-      {
-        const {byteSize, drawables} =
-            GLYPHER.plan(
-                graphemes,
-                trail.markerPx,
-                textOffset,
-                TRAIL_MARKER_TEXT_SCALE,
-                /* angle= */ 0,
-                DEFAULT_PALETTE.stroke,
-                DEFAULT_PALETTE.fill,
-                Z_TRAIL_MARKER + zEpsilon + 0.0000001,
-                buffer,
-                offset,
-                glBuffer,
-                this.renderer);
-        pinsLabeled.push(...drawables);
-        offset += byteSize;
-      }
-
-      zEpsilon += 0.0000002;
-
-      const halfDetailWidth = pinSize[0] / 2;
-      plan.handles[i].screenPixelBound = [
-        -halfDetailWidth,
-        0,
-        halfDetailWidth,
-        pinSize[1],
-      ];
-    }
-
-    this.renderer.uploadData(buffer, offset, glBuffer);
-    plan.labelBuffer = glBuffer;
-    plan.pinsLabeled = pinsLabeled;
   }
 
   loadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void {
@@ -813,12 +770,9 @@ export class TrailLayer extends Layer implements Listener {
     this.coarsePlans.set(id, {
       buffer: glBuffer,
       paths: drawables,
-      pinsLabeled: [],
-      pinsUnlabeled: [],
       points: [],
     });
 
-    this.updateInteractive();
     this.generation += 1;
   }
 
@@ -900,17 +854,13 @@ export class TrailLayer extends Layer implements Listener {
     this.finePlans.set(id, {
       buffer: glBuffer,
       paths: pathDrawables,
-      pinsLabeled: [],
-      pinsUnlabeled: [],
       points: pointDrawables,
     });
 
-    this.updateInteractive();
     this.generation += 1;
   }
 
   loadPinned(): void {
-    this.updateInteractive();
     this.generation += 1;
   }
 
@@ -942,15 +892,6 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   unloadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void {
-    const plan = this.overviewPlans.get(id);
-    if (plan) {
-      this.renderer.deleteBuffer(plan.buffer);
-      if (plan.labelBuffer) {
-        this.renderer.deleteBuffer(plan.labelBuffer);
-      }
-      this.overviewPlans.delete(id);
-    }
-
     for (const trail of trails) {
       this.overviewBounds.delete(trail.mouseBound);
       this.coarseBounds.delete(trail.mouseBound);
