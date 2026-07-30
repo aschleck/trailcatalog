@@ -9,12 +9,14 @@ import com.google.common.geometry.S2PolygonBuilder.Options
 import com.google.common.geometry.S2Projections
 import com.google.common.reflect.TypeToken
 import java.io.ByteArrayOutputStream
+import kotlin.math.PI
 import org.trailcatalog.importers.pbf.Relation
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory.BOUNDARY
 import org.trailcatalog.proto.RelationGeometry
+import org.trailcatalog.proto.RelationMemberFunction.INNER
 import org.trailcatalog.s2.earthSteradiansToMeters2
 import org.trailcatalog.s2.polygonToCell
 
@@ -62,62 +64,94 @@ class CreateBoundaries
   }
 }
 
+// Half the level 21 cell diagonal, so a vertex snapped to a cell center moves by at most this.
+private val SNAP_RADIUS = S1Angle.radians(S2Projections.MAX_DIAG.getValue(21) / 2.0 + 1e-15)
+
+// Ways meeting at a corner miss each other by a fraction of a meter often enough that assembled
+// rings cross themselves. Assembling on the level 21 grid we snap to afterwards merges those
+// corners before they can cross, which leaves only the crossings that are real, such as بلدية
+// النسيم's western edge doubling back over itself for a kilometer.
+private val ASSEMBLE_OPTIONS =
+    Options.UNDIRECTED_UNION.toBuilder()
+        .setRobustnessRadius(SNAP_RADIUS)
+        .setSnapToCellCenters(true)
+        .build()
+
 private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
-  val loops = ArrayList<S2Loop>()
-  expandIntoPolygon(geometry, loops)
-  val unsnapped = S2Polygon(loops)
+  val outers = ArrayList<S2Loop>()
+  val inners = ArrayList<S2Loop>()
+  expandIntoPolygon(geometry, outers, inners)
+
+  // Saddle Mountains East is one BLM way tagged inner with nothing to be inner to. A relation with
+  // no outer ring has its roles wrong rather than no area, and the rings it does have are the
+  // area the mapper drew.
+  if (outers.isEmpty()) {
+    outers.addAll(inners)
+    inners.clear()
+  }
+
+  // A relation's rings are the pieces of one area, not a nesting hierarchy: Custer Gallatin
+  // National Forest lists one of its rings twice, and two coincident rings are neither nested nor
+  // disjoint, so S2Polygon of them is invalid and initToSimplified hands back its complement.
+  //
+  // Roles say which rings are holes, so gmina Bełchatów keeps the town of Bełchatów out of itself.
+  val unsnapped = S2Polygon()
+  unsnapped.initToDifference(
+      S2Polygon.union(outers.map { S2Polygon(it) }),
+      S2Polygon.union(inners.map { S2Polygon(it) }))
 
   val snapped = S2Polygon()
-  snapped.initToSimplified(
-      unsnapped,
-      S1Angle.radians(S2Projections.MAX_DIAG.getValue(21) / 2.0 + 1e-15),
-      /* snapToCellCenters= */ true)
+  snapped.initToSimplified(unsnapped, SNAP_RADIUS, /* snapToCellCenters= */ true)
   return snapped
 }
 
 private fun expandIntoPolygon(
     geometry: RelationGeometry,
-    loops: MutableList<S2Loop>) {
-  val us = S2PolygonBuilder(Options.UNDIRECTED_UNION)
+    outers: MutableList<S2Loop>,
+    inners: MutableList<S2Loop>) {
+  val outerBuilder = S2PolygonBuilder(ASSEMBLE_OPTIONS)
+  val innerBuilder = S2PolygonBuilder(ASSEMBLE_OPTIONS)
   for (member in geometry.membersList) {
-    // TODO(april): consider inner vs outer
     if (member.hasWay()) {
+      val into = if (member.function == INNER) innerBuilder else outerBuilder
       val latLngs = member.way.latLngE7List
       for (i in 0 until latLngs.size - 2 step 2) {
-        us.addEdge(e7ToS2(latLngs[i], latLngs[i + 1]), e7ToS2(latLngs[i + 2], latLngs[i + 3]))
+        into.addEdge(e7ToS2(latLngs[i], latLngs[i + 1]), e7ToS2(latLngs[i + 2], latLngs[i + 3]))
       }
     }
   }
-  val ourLoops = ArrayList<S2Loop>()
-  try {
-    us.assembleLoops(ourLoops, /* unusedEdges= */ null)
-  } catch (_: StackOverflowError) {
-    println("Unable to assemble ${geometry.getRelationId()}")
-    return
-  }
 
-  for (loop in ourLoops) {
-    if (loop.isHole()) {
-      loop.invert()
+  for ((builder, into) in listOf(outerBuilder to outers, innerBuilder to inners)) {
+    val assembled = ArrayList<S2Loop>()
+    try {
+      builder.assembleLoops(assembled, /* unusedEdges= */ null)
+    } catch (_: StackOverflowError) {
+      println("Unable to assemble ${geometry.getRelationId()}")
+      continue
     }
 
-    var contained = false
-    for (other in loops) {
-      if (other.contains(loop)) {
-        contained = true
-        break
+    for (loop in assembled) {
+      // S2PolygonBuilder orients a ring by its turning angle, and the two windings of a ring that
+      // crosses itself cancel to zero, which reads as counterclockwise, so a clockwise ring comes
+      // back enclosing everything outside itself. No administrative boundary or protected area
+      // covers half the Earth, so area says which side is the interior when the turning angle
+      // can't.
+      if (loop.area > 2 * PI) {
+        loop.invert()
       }
-    }
 
-    if (!contained) {
-      loops.add(loop)
+      into.add(loop)
     }
   }
 
   for (member in geometry.membersList) {
-    // TODO(april): consider inner vs outer
     if (member.hasRelation()) {
-      expandIntoPolygon(member.relation, loops)
+      // An inner member's own outers cut the hole and its inners give the hole back.
+      if (member.function == INNER) {
+        expandIntoPolygon(member.relation, inners, outers)
+      } else {
+        expandIntoPolygon(member.relation, outers, inners)
+      }
     }
   }
 }
