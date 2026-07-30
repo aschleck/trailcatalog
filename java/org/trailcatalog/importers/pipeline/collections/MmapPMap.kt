@@ -16,11 +16,31 @@ import java.util.PriorityQueue
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 
+// Heap reserved for everything that isn't a queued pre-sort record: the scratch buffers, the input
+// pipeline, and the garbage G1 hasn't reclaimed yet. maxMemory minus this is split evenly across
+// the workers.
 var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024L
 // ThreadLocal so worker threads in parallel-extract mode don't race on the same scratch buffer.
 // Each thread serializes one record at a time before copying the bytes out into the shard list.
 private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
   ByteBuffer.allocate(256 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+}
+
+// Workers check the number of bytes they've written to track when to dump. However we also keep a
+// SortKey in memory in a list per value, and values are often smaller than that so keys can become
+// a dominant cost.
+//
+// Claude's accounting:
+//   32  SortKey, a 16 byte header plus the key and value references
+//   24  the boxed Long key
+//   24  the ByteArray header
+//    8  the ArrayList slot
+private const val RECORD_OVERHEAD_BYTES = 88
+
+// Bytes of queued records a single worker may hold.
+private fun calculateMemoryBudgetPerShard(workers: Int): Long {
+  return ((Runtime.getRuntime().maxMemory() - HEAP_DUMP_THRESHOLD) / workers)
+      .coerceAtLeast(64 * 1024 * 1024)
 }
 
 /**
@@ -197,11 +217,10 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
   sharded.deleteOnExit()
   val shards = RandomAccessFile(sharded, "rw").use {
     val stream = ChannelEncodedOutputStream(it.channel)
-    val runtime = Runtime.getRuntime()
-    val maxMemory = runtime.maxMemory()
+    val budget = calculateMemoryBudgetPerShard(1)
     stream.use { output ->
       val itemsInShard = ArrayList<SortKey<K>>()
-      var shardValuesSize = 0L
+      var heldBytes = 0L
 
       val dumpShard = {
         itemsInShard.sort()
@@ -214,10 +233,8 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
 
         output.shard()
         itemsInShard.clear()
-        shardValuesSize = 0
+        heldBytes = 0
       }
-
-      var lastHeapCheck = 0L
 
       val emitter = object : Emitter2<K, V> {
         override fun emit(a: K, b: V) {
@@ -228,16 +245,10 @@ private fun <K : Comparable<K>, V : Any> emitToSortedShards(
           buffer.get(bytes)
           buffer.clear()
           itemsInShard.add(SortKey(a, bytes))
-          shardValuesSize += bytes.size
+          heldBytes += RECORD_OVERHEAD_BYTES + bytes.size
 
-          // Check the heap every 50mb.
-          if (shardValuesSize - lastHeapCheck > 50 * 1024 * 1024) {
-            val remains = maxMemory - (runtime.totalMemory() - runtime.freeMemory())
-            // If we have less than 256mb of memory, dump
-            if (remains < HEAP_DUMP_THRESHOLD) {
-              dumpShard()
-            }
-            lastHeapCheck = shardValuesSize
+          if (heldBytes > budget) {
+            dumpShard()
           }
         }
       }
@@ -297,8 +308,7 @@ private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
   val queue = ArrayBlockingQueue<List<I>>(queueCapacity)
 
   val perWorkerShards = arrayOfNulls<List<Extents>>(workers)
-  val runtime = Runtime.getRuntime()
-  val maxMemory = runtime.maxMemory()
+  val budget = calculateMemoryBudgetPerShard(workers)
 
   longProgress("${context} emitting to shards (parallel x${workers})") { progress ->
     val workerThreads =
@@ -310,7 +320,7 @@ private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
                   val stream = ChannelEncodedOutputStream(raf.channel)
                   stream.use { output ->
                     val itemsInShard = ArrayList<SortKey<K>>()
-                    var shardValuesSize = 0L
+                    var heldBytes = 0L
 
                     val dumpShard = {
                       itemsInShard.sort()
@@ -322,10 +332,9 @@ private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
                       }
                       output.shard()
                       itemsInShard.clear()
-                      shardValuesSize = 0
+                      heldBytes = 0
                     }
 
-                    var lastHeapCheck = 0L
                     val emitter =
                         object : Emitter2<K, V> {
                           override fun emit(a: K, b: V) {
@@ -336,18 +345,11 @@ private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
                             buffer.get(bytes)
                             buffer.clear()
                             itemsInShard.add(SortKey(a, bytes))
-                            shardValuesSize += bytes.size
+                            heldBytes += RECORD_OVERHEAD_BYTES + bytes.size
                             progress.increment()
 
-                            // Heap check is racy across workers but the worst outcome is an
-                            // unnecessary or skipped dump; safe.
-                            if (shardValuesSize - lastHeapCheck > 50 * 1024 * 1024) {
-                              val remains =
-                                  maxMemory - (runtime.totalMemory() - runtime.freeMemory())
-                              if (remains < HEAP_DUMP_THRESHOLD) {
-                                dumpShard()
-                              }
-                              lastHeapCheck = shardValuesSize
+                            if (heldBytes > budget) {
+                              dumpShard()
                             }
                           }
                         }
