@@ -604,6 +604,7 @@ private fun fetchFine(ctx: Context) {
               + "  pit.path_id IS NOT NULL "
               + "  OR public.enumADescendsB(p.type, ?, ?) "
               + "  OR public.enumADescendsB(p.type, ?, ?) "
+              + "  OR public.enumADescendsB(p.type, ?, ?) "
               + ") "
       ).apply {
         val min = cell.rangeMin()
@@ -615,6 +616,8 @@ private fun fetchFine(ctx: Context) {
         setInt(5, ENUM_SIZE)
         setInt(6, WayCategory.PISTE.id)
         setInt(7, ENUM_SIZE)
+        setInt(8, WayCategory.ROAD_TRACK.id)
+        setInt(9, ENUM_SIZE)
       }
     } else {
       it.prepareStatement(
@@ -629,6 +632,7 @@ private fun fetchFine(ctx: Context) {
               + "  pit.path_id IS NOT NULL "
               + "  OR public.enumADescendsB(p.type, ?, ?) "
               + "  OR public.enumADescendsB(p.type, ?, ?) "
+              + "  OR public.enumADescendsB(p.type, ?, ?) "
               + ") "
       ).apply {
         setLong(1, cell.id())
@@ -637,6 +641,8 @@ private fun fetchFine(ctx: Context) {
         setInt(4, ENUM_SIZE)
         setInt(5, WayCategory.PISTE.id)
         setInt(6, ENUM_SIZE)
+        setInt(7, WayCategory.ROAD_TRACK.id)
+        setInt(8, ENUM_SIZE)
       }
     }
     val results = query.executeQuery()
