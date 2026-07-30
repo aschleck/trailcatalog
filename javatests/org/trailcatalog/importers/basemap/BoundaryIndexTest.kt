@@ -256,7 +256,7 @@ private fun randomPolylineNear(random: Random, center: S2CellId): com.google.com
 
 private fun boundaryOf(id: Long, polygon: S2Polygon): Boundary {
   val encoded = ByteArrayOutputStream().also { polygon.encode(it) }
-  return Boundary(id, 0, 0, "b${id}", encoded.toByteArray())
+  return Boundary(id, 0, 0, "b${id}", listOf(), encoded.toByteArray(), 0.0)
 }
 
 private fun decode(boundary: Boundary): S2Polygon {

@@ -9,12 +9,6 @@ java_binary(
     runtime_deps = [":scrapers"],
 )
 
-java_binary(
-    name = "scraper",
-    main_class = "org.trailcatalog.scrapers.ScraperKt",
-    runtime_deps = [":scrapers"],
-)
-
 kt_jvm_library(
     name = "scrapers",
     srcs = glob(["*.kt"]),
@@ -22,12 +16,8 @@ kt_jvm_library(
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
     ],
     deps = [
-        "//java/org/trailcatalog:pg_support",
         "//java/org/trailcatalog/common",
-        "//java/org/trailcatalog/importers/common",
         "//java/org/trailcatalog/importers/pipeline/io",
-        "//java/org/trailcatalog/s2:s2-kt",
-        "@maven//:com_google_code_gson_gson",
         "@maven//:com_squareup_okhttp3_okhttp",
     ],
 )

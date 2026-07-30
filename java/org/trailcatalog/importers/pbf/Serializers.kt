@@ -7,6 +7,38 @@ import org.trailcatalog.common.EncodedInputStream
 import org.trailcatalog.common.EncodedOutputStream
 import org.trailcatalog.proto.RelationSkeleton
 
+fun readNames(from: EncodedInputStream): List<Name> {
+  val count = from.readVarInt()
+  val names = ArrayList<Name>(count)
+  repeat(count) {
+    val language = if (from.readBoolean()) readString(from) else null
+    names.add(Name(language, readString(from)))
+  }
+  return names
+}
+
+fun writeNames(names: List<Name>, to: EncodedOutputStream) {
+  to.writeVarInt(names.size)
+  for (name in names) {
+    val language = name.language
+    to.writeBoolean(language != null)
+    if (language != null) {
+      writeString(language, to)
+    }
+    writeString(name.value, to)
+  }
+}
+
+private fun readString(from: EncodedInputStream): String {
+  return ByteArray(from.readVarInt()).also { from.read(it) }.decodeToString()
+}
+
+private fun writeString(value: String, to: EncodedOutputStream) {
+  val bytes = value.encodeToByteArray()
+  to.writeVarInt(bytes.size)
+  to.write(bytes)
+}
+
 fun registerPbfSerializers() {
   registerSerializer(TypeToken.of(LatLngE7::class.java), object : Serializer<LatLngE7> {
 
@@ -71,8 +103,9 @@ fun registerPbfSerializers() {
       val nameLength = from.readVarInt()
       val nameBytes = ByteArray(nameLength)
       from.read(nameBytes)
+      val names = readNames(from)
       val skeleton = RelationSkeleton.parseDelimitedFrom(from)
-      return Relation(id, type, nameBytes.decodeToString(), skeleton)
+      return Relation(id, type, nameBytes.decodeToString(), names, skeleton)
     }
 
     override fun write(v: Relation, to: EncodedOutputStream) {
@@ -81,6 +114,7 @@ fun registerPbfSerializers() {
       val bytes = v.name.encodeToByteArray()
       to.writeVarInt(bytes.size)
       to.write(bytes)
+      writeNames(v.names, to)
       v.skeleton.writeDelimitedTo(to)
     }
   })

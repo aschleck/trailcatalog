@@ -7,7 +7,9 @@ import com.google.common.reflect.TypeToken
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.pbf.LatLngE7
+import org.trailcatalog.importers.pbf.readNames
 import org.trailcatalog.importers.pbf.registerPbfSerializers
+import org.trailcatalog.importers.pbf.writeNames
 import org.trailcatalog.importers.pipeline.collections.HEAP_DUMP_THRESHOLD
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
@@ -37,10 +39,12 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       val name = ByteArray(from.readVarInt()).also {
         from.read(it)
       }.decodeToString()
+      val names = readNames(from)
       val polygon = ByteArray(from.readVarInt()).also {
         from.read(it)
       }
-      return Boundary(id, type, cell, name, polygon)
+      val areaMeters2 = from.readDouble()
+      return Boundary(id, type, cell, name, names, polygon, areaMeters2)
     }
 
     override fun write(v: Boundary, to: EncodedOutputStream) {
@@ -50,8 +54,10 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       val name = v.name.encodeToByteArray()
       to.writeVarInt(name.size)
       to.write(name)
+      writeNames(v.names, to)
       to.writeVarInt(v.s2Polygon.size)
       to.write(v.s2Polygon)
+      to.writeDouble(v.areaMeters2)
     }
   })
 
@@ -86,6 +92,7 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       val name = ByteArray(from.readVarInt()).also {
         from.read(it)
       }.decodeToString()
+      val names = readNames(from)
       val paths = LongArray(from.readVarInt()).also { array ->
         for (i in 0 until array.size) {
           array[i] = from.readLong()
@@ -100,7 +107,7 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       val downMeters = from.readFloat()
       val upMeters = from.readFloat()
       val validGeometry = from.readBoolean()
-      return Trail(id, type, name, paths, polyline, downMeters, upMeters, validGeometry)
+      return Trail(id, type, name, names, paths, polyline, downMeters, upMeters, validGeometry)
     }
 
     override fun write(v: Trail, to: EncodedOutputStream) {
@@ -109,6 +116,7 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       val name = v.name.encodeToByteArray()
       to.writeVarInt(name.size)
       to.write(name)
+      writeNames(v.names, to)
       to.writeVarInt(v.paths.size)
       v.paths.forEach { to.writeLong(it) }
       to.writeVarInt(v.polyline.numVertices())

@@ -288,6 +288,20 @@ private fun parseTrailId(id: JsonNode):
   return Pair(idColumn, setId)
 }
 
+// Boundary areas run from around 1e6 square meters for a village to 1.7e14 for Russia, so eight
+// decades, and at 0.005 per decade above 1e6 the bonus tops out near 0.04.
+// => Moscow, Russia is 2.5e9, so 0.005 * (9.40 - 6) = 0.017
+// => Moscow, Idaho is 1.8e7, so 0.005 * (7.26 - 6) = 0.006
+// The 0.011 between them beats the 0.007 the substring branch puts between "Moscow" and "Moscow
+// Oblast", so a query for Moscow reaches the city, then the oblast, then Idaho. The 0.04 ceiling
+// stays inside the similarity branch's 0 to 0.8 spread, so a big boundary never outranks a better
+// name.
+private const val BOUNDARY_AREA_BONUS = "0.005 * GREATEST(LOG(GREATEST(b.area_meters2, 1)) - 6, 0)"
+
+// Scores group twice. MAX over the two branches for one name, because a whole word match drives
+// strict_word_similarity to 1 and the branch to 0, which would throw away the substring branch's
+// preference for the shorter of two names that both contain the query. Then MIN over the names one
+// boundary has, because it should rank on its best name and not its worst.
 private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, Any> {
   val data = ArrayList<HashMap<String, Any>>()
   val query = sanitizeQuery(rawQuery)
@@ -305,23 +319,24 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
             + "    b.id as id, "
             + "    b.name as name, "
             + "    b.type as type, "
-            + "    MAX(score) as score "
+            + "    MIN(nm.score) - ${BOUNDARY_AREA_BONUS} as score "
             + "  FROM ( "
-            + "    SELECT id, name, type, length(name) / 1000. AS score "
-            + "    FROM boundaries "
-            + "    WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
-            + "    UNION ALL "
-            + "    SELECT "
-            + "      id, "
-            + "      name, "
-            + "      type, "
-            + "      1 - strict_word_similarity(?, name) AS score "
-            + "    FROM boundaries "
-            + "    WHERE ? <<% name AND epoch = ? "
-            + "  ) b "
-            + "  WHERE score < 0.8 "
-            + "  GROUP BY 1, 2, 3 "
-            + "  ORDER BY MAX(score) ASC "
+            + "    SELECT id, name, MAX(score) as score "
+            + "    FROM ( "
+            + "      SELECT id, name, length(name) / 1000. AS score "
+            + "      FROM boundary_names "
+            + "      WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
+            + "      UNION ALL "
+            + "      SELECT id, name, 1 - strict_word_similarity(?, name) AS score "
+            + "      FROM boundary_names "
+            + "      WHERE ? <<% name AND epoch = ? "
+            + "    ) n "
+            + "    WHERE n.score < 0.8 "
+            + "    GROUP BY 1, 2 "
+            + "  ) nm "
+            + "  JOIN boundaries b ON b.id = nm.id AND b.epoch = ? "
+            + "  GROUP BY 1, 2, 3, b.area_meters2 "
+            + "  ORDER BY score ASC "
             + "  LIMIT ?"
             + ") sr "
             + "LEFT JOIN boundaries_in_boundaries bib ON sr.id = bib.child_id AND bib.epoch = ? "
@@ -333,8 +348,9 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
           setString(3, query)
           setString(4, query)
           setInt(5, epochTracker.epoch)
-          setInt(6, limit)
-          setInt(7, epochTracker.epoch)
+          setInt(6, epochTracker.epoch)
+          setInt(7, limit)
+          setInt(8, epochTracker.epoch)
         }.executeQuery()
     val seen = HashSet<Long>()
     while (results.next()) {
@@ -361,6 +377,7 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
   return ImmutableMap.of("results", data, "boundaries", boundaries)
 }
 
+// Scored the same way as executeSearchBoundaries, without an area to rank on.
 private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> {
   val data = ArrayList<HashMap<String, Any>>()
   val query = sanitizeQuery(rawQuery)
@@ -386,35 +403,24 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "    t.elevation_down_meters as elevation_down_meters, "
             + "    t.elevation_up_meters as elevation_up_meters, "
             + "    t.length_meters as length_meters, "
-            + "    MAX(score) as score "
+            + "    MIN(nm.score) as score "
             + "  FROM ( "
-            + "    SELECT "
-            + "      id, "
-            + "      name, "
-            + "      bound_degrees_e7, "
-            + "      marker_degrees_e7, "
-            + "      elevation_down_meters, "
-            + "      elevation_up_meters, "
-            + "      length_meters, "
-            + "      length(name) / 1000. AS score "
-            + "    FROM trails "
-            + "    WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
-            + "    UNION ALL "
-            + "    SELECT "
-            + "      id, "
-            + "      name, "
-            + "      bound_degrees_e7, "
-            + "      marker_degrees_e7, "
-            + "      elevation_down_meters, "
-            + "      elevation_up_meters, "
-            + "      length_meters, "
-            + "      1 - strict_word_similarity(?, name) AS score "
-            + "    FROM trails "
-            + "    WHERE ? <<% name AND epoch = ? "
-            + "  ) t "
-            + "  WHERE score < 0.7 "
+            + "    SELECT id, name, MAX(score) as score "
+            + "    FROM ( "
+            + "      SELECT id, name, length(name) / 1000. AS score "
+            + "      FROM trail_names "
+            + "      WHERE name ILIKE '%' || ? || '%' AND epoch = ? "
+            + "      UNION ALL "
+            + "      SELECT id, name, 1 - strict_word_similarity(?, name) AS score "
+            + "      FROM trail_names "
+            + "      WHERE ? <<% name AND epoch = ? "
+            + "    ) n "
+            + "    WHERE n.score < 0.7 "
+            + "    GROUP BY 1, 2 "
+            + "  ) nm "
+            + "  JOIN trails t ON t.id = nm.id AND t.epoch = ? "
             + "  GROUP BY 1, 2, 3, 4, 5, 6, 7 "
-            + "  ORDER BY MAX(score) ASC "
+            + "  ORDER BY score ASC "
             + "  LIMIT ?"
             + ") sr "
             + "LEFT JOIN trails_in_boundaries tib ON sr.id = tib.trail_id AND tib.epoch = ? "
@@ -426,8 +432,9 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
           setString(3, query)
           setString(4, query)
           setInt(5, epochTracker.epoch)
-          setInt(6, limit)
-          setInt(7, epochTracker.epoch)
+          setInt(6, epochTracker.epoch)
+          setInt(7, limit)
+          setInt(8, epochTracker.epoch)
         }.executeQuery()
     while (results.next()) {
       val trail = HashMap<String, Any>()

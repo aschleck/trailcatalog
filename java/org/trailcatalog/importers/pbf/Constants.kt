@@ -278,6 +278,21 @@ val ROUTE_WAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
 
     .build()
 
+// Tag keys that hold a name, either bare or suffixed with a language.
+// https://wiki.openstreetmap.org/wiki/Names
+val NAME_TAG_KEYS =
+    listOf(
+        "alt_name",
+        "int_name",
+        "loc_name",
+        "name",
+        "nat_name",
+        "official_name",
+        "old_name",
+        "reg_name",
+        "short_name",
+    ).map { ByteString.copyFromUtf8(it) }
+
 val ADMIN_LEVEL_BS = ByteString.copyFromUtf8("admin_level")
 val AERIALWAY_BS = ByteString.copyFromUtf8("aerialway")
 val AEROWAY_BS = ByteString.copyFromUtf8("aeroway")

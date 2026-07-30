@@ -19,7 +19,7 @@ pg_pwd="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     --quiet \
     | sed 's/^[^:]*://' | tail -n 1)"
 
-#--env DATABASE_URL="postgresql://localhost/trailcatalog?currentSchema=migration_2_search" \
+#--env DATABASE_URL="postgresql://localhost/trailcatalog?currentSchema=migration_3_names" \
 podman run \
     --name trailcatalog-frontend \
     --pull always \

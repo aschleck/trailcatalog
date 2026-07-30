@@ -37,9 +37,13 @@ class ExtractRelations : PTransformer<PrimitiveBlock, Relation>(TypeToken.of(Rel
 fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relation {
   var category = RelationCategory.ANY
   var name: String? = null
+  // Keyed by the name so that a value carried by several tags, like name and name:en on anything
+  // in an English speaking country, only becomes one row. A bare key overwrites a suffixed one so
+  // that a shared value ends up with no language whichever order the tags arrive in.
+  val languagesByName = LinkedHashMap<String, String?>()
   for (i in 0 until relation.keysCount) {
-    val key = relation.getKeys(i)
-    when (stringTable.getS(key)) {
+    val key = stringTable.getS(relation.getKeys(i))
+    when (key) {
       ADMIN_LEVEL_BS ->
         category =
             category
@@ -63,8 +67,50 @@ fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relatio
                 .coerceAtLeast(RelationCategory.ROUTE)
                 .coerceAtLeast(ROUTE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
     }
+
+    val tagged = tagToName(key, stringTable.getS(relation.getVals(i))) ?: continue
+    if (tagged.language == null || !languagesByName.containsKey(tagged.value)) {
+      languagesByName[tagged.value] = tagged.language
+    }
   }
-  return Relation(relation.id, category.id, name ?: "", relationToSkeleton(relation, stringTable))
+
+  return Relation(
+      relation.id,
+      category.id,
+      name ?: "",
+      languagesByName.map { (value, language) -> Name(language, value) },
+      relationToSkeleton(relation, stringTable))
+}
+
+// Matches a language code: a two or three letter primary subtag plus anything hanging off it. The
+// point is to reject the tags that describe a name rather than being one, like name:etymology,
+// name:signed, and name:left.
+//
+// This is looser than iD's, which allows only "-" and requires script and region subtags to be
+// exactly -Xxxx and -XX. That drops ja_rm, ja_kana, zh_pinyin, and be-tarask, and transliterations
+// are the whole reason to read these tags, because they are what someone typing in the Latin
+// alphabet has to search with. The cost is that a suffix like ref-foo would pass as a language.
+// https://wiki.openstreetmap.org/wiki/Multilingual_names
+private val LANGUAGE_CODE = Regex("[a-z]{2,3}([-_][A-Za-z0-9]+)*")
+
+// Returns the name a tag holds, or null if the key is not one of NAME_TAG_KEYS or the value is
+// empty.
+private fun tagToName(key: ByteString, value: ByteString): Name? {
+  // No key in NAME_TAG_KEYS is a prefix of another, so at most one of them can fit.
+  val tag =
+      NAME_TAG_KEYS.firstOrNull { key == it || isSuffixedWithLanguage(key, it) } ?: return null
+  val decoded = value.toStringUtf8()
+  if (decoded.isBlank()) {
+    return null
+  }
+  return Name(if (key == tag) null else key.substring(tag.size() + 1).toStringUtf8(), decoded)
+}
+
+private fun isSuffixedWithLanguage(key: ByteString, tag: ByteString): Boolean {
+  return key.size() > tag.size() + 1
+      && key.startsWith(tag)
+      && key.byteAt(tag.size()) == ':'.code.toByte()
+      && LANGUAGE_CODE.matches(key.substring(tag.size() + 1).toStringUtf8())
 }
 
 private val BACKWARD_BS = ByteString.copyFromUtf8("backward")

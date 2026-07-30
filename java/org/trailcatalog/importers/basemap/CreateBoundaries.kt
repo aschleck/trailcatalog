@@ -15,6 +15,7 @@ import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory.BOUNDARY
 import org.trailcatalog.proto.RelationGeometry
+import org.trailcatalog.s2.earthSteradiansToMeters2
 import org.trailcatalog.s2.polygonToCell
 
 class CreateBoundaries
@@ -49,7 +50,15 @@ class CreateBoundaries
     if (cell == S2CellId.fromFace(0).id()) {
       println(relation.id)
     }
-    emitter.emit(Boundary(relation.id, relation.type, cell, relation.name, encoded.toByteArray()))
+    emitter.emit(
+        Boundary(
+            relation.id,
+            relation.type,
+            cell,
+            relation.name,
+            relation.names,
+            encoded.toByteArray(),
+            earthSteradiansToMeters2(polygon.area)))
   }
 }
 

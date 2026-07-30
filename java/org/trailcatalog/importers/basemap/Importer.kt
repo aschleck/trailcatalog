@@ -42,11 +42,13 @@ private val PARTITIONED_TABLES =
     listOf(
         "boundaries",
         "boundaries_in_boundaries",
+        "boundary_names",
         "path_elevations",
         "paths",
         "paths_in_trails",
         "points",
         "trail_identifiers",
+        "trail_names",
         "trails",
         "trails_in_boundaries",
     )
@@ -131,7 +133,7 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   val waysNeedingElevations =
       pipeline.join2("JoinForWaysNeedingElevations", waysWithGeometry, waysInRouteRelations)
           .then(InnerJoinWays())
-  val waysToElevations = calculateProfiles(hikari, pipeline, waysNeedingElevations)
+  val waysToElevations = calculateProfiles(pipeline, waysNeedingElevations)
 
   // Merge the way geometry and way elevations
   val waysWithElevationAndGeometry =
@@ -162,9 +164,11 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   // Now start dumping boundaries, trails, and what contains what.
   val boundaries = relationsWithGeometry.then(CreateBoundaries())
   boundaries.write(DumpBoundaries(epoch, hikari))
+  boundaries.write(DumpBoundaryNames(epoch, hikari))
   val trails = relationsWithGeometry.then(CreateTrails())
   trails.write(DumpPathsInTrails(epoch, hikari))
   trails.write(DumpTrails(epoch, hikari))
+  trails.write(DumpTrailNames(epoch, hikari))
   val boundaryIndex = boundaries.then(BuildBoundaryIndex())
   boundaryIndex
       .then(FindBoundariesInBoundaries())
@@ -260,7 +264,6 @@ private fun dropPartitionsExcept(connection: Connection, keep: Set<Int>) {
 }
 
 private fun calculateProfiles(
-    hikari: HikariDataSource,
     pipeline: Pipeline,
     waysNeedingProfiles: BoundStage<*, PMap<Long, Way>>,
 ): BoundStage<*, PMap<Long, Profile>> {
@@ -329,7 +332,7 @@ private fun calculateProfiles(
     // they have 30x the density of a Copernicus tile in 5x the size), just pick 7.
     S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
   }
-  val calculatedProfiles = waysByCells.then(CalculateWayElevations(hikari))
+  val calculatedProfiles = waysByCells.then(CalculateWayElevations())
 
   pipeline
       .cat(listOf(alreadyHadProfiles, calculatedProfiles))

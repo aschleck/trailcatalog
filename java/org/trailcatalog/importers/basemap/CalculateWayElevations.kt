@@ -4,7 +4,6 @@ import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Point
 import com.google.common.reflect.TypeToken
-import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.importers.elevation.DemResolver
 import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.Way
@@ -13,13 +12,13 @@ import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.s2.earthMetersToAngle
 
-class CalculateWayElevations(hikari: HikariDataSource)
+class CalculateWayElevations
     : PTransformer<PEntry<S2CellId, Way>, Profile>(TypeToken.of(Profile::class.java)) {
 
-  private val resolver = DemResolver(hikari)
+  private val resolver = DemResolver()
 
-  // DemResolver wraps a DB connection and tile cache whose thread safety hasn't been audited.
-  // Stay single-threaded until that's verified.
+  // DemResolver wraps a tile cache whose thread safety hasn't been audited. Stay single-threaded
+  // until that's verified.
   override val parallelism: Int = 1
 
   override fun act(input: PEntry<S2CellId, Way>, emitter: Emitter<Profile>) {

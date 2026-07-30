@@ -85,6 +85,7 @@ class CreateTrails
             relation.id,
             relation.type,
             relation.name,
+            relation.names,
             orderedArray,
             polyline,
             downMeters,

@@ -1,0 +1,141 @@
+# boundary_names and trail_names are a search index rather than a model of names. A row is one
+# searchable string and nothing reads them for display, so boundaries.name and trails.name stay the
+# display names. In particular language IS NULL does not pick out the primary name: alt_name and
+# short_name are unsuffixed too, so an object can have several rows with no language.
+
+[[actions]]
+type = "create_table"
+name = "boundary_names"
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+  # The suffix the tag key carried, or NULL when it carried none.
+  [[actions.columns]]
+  name = "language"
+  nullable = true
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "name"
+  nullable = false
+  type = "TEXT"
+
+  [actions.partition_by]
+  list = ["epoch"]
+
+[[actions]]
+type = "add_index"
+table = "boundary_names"
+
+  [actions.index]
+  name = "boundary_names_by_id_epoch_idx"
+  columns = ["id", "epoch"]
+  concurrently = false
+
+[[actions]]
+type = "create_table"
+name = "trail_names"
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+  [[actions.columns]]
+  name = "language"
+  nullable = true
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "name"
+  nullable = false
+  type = "TEXT"
+
+  [actions.partition_by]
+  list = ["epoch"]
+
+[[actions]]
+type = "add_index"
+table = "trail_names"
+
+  [actions.index]
+  name = "trail_names_by_id_epoch_idx"
+  columns = ["id", "epoch"]
+  concurrently = false
+
+[[actions]]
+type = "add_column"
+table = "boundaries"
+
+  # The default is only reached by epochs imported before this column existed, and a zero area is
+  # worth no ranking bonus, which is what we want for a boundary whose area we never measured.
+  [actions.column]
+  name = "area_meters2"
+  default = "0"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "remove_table"
+table = "digital_elevation_models"
+
+[[actions]]
+type = "custom"
+
+# The live epoch's partitions are already attached, so seed them from the name column or else search
+# returns nothing between this migration and the next import. The importer creates the partitions
+# for later epochs itself.
+start = """
+  DO $$
+  DECLARE
+    e INT;
+  BEGIN
+    FOR e IN SELECT epoch FROM active_epoch LOOP
+      EXECUTE format(
+          'CREATE TABLE IF NOT EXISTS boundary_names_%s PARTITION OF boundary_names '
+              || 'FOR VALUES IN (%s)',
+          e, e);
+      EXECUTE format(
+          'CREATE TABLE IF NOT EXISTS trail_names_%s PARTITION OF trail_names FOR VALUES IN (%s)',
+          e, e);
+    END LOOP;
+  END $$;
+
+  -- Only the epochs above got a partition, and a run that died before writing active_epoch leaves
+  -- rows behind under an epoch that did not.
+  INSERT INTO boundary_names (id, epoch, language, name)
+  SELECT id, epoch, NULL, name FROM boundaries
+  WHERE epoch IN (SELECT epoch FROM active_epoch);
+  INSERT INTO trail_names (id, epoch, language, name)
+  SELECT id, epoch, NULL, name FROM trails
+  WHERE epoch IN (SELECT epoch FROM active_epoch);
+
+  CREATE INDEX IF NOT EXISTS search_boundary_names_idx
+      ON boundary_names USING gist (epoch, name gist_trgm_ops(siglen=256));
+  CREATE INDEX IF NOT EXISTS search_trail_names_idx
+      ON trail_names USING gist (epoch, name gist_trgm_ops(siglen=256));
+"""
+
+# search_boundaries_idx and search_trails_idx from 2_search are left in place. A custom action only
+# runs at start and abort, and search still reads boundaries.name and trails.name through the old
+# schema until the new frontend is deployed. They cost disk and import time and nothing else, so
+# drop them by hand once nothing queries the old schema:
+#   DROP INDEX search_boundaries_idx, search_trails_idx;
+
+abort = """
+  DROP INDEX IF EXISTS search_boundary_names_idx;
+  DROP INDEX IF EXISTS search_trail_names_idx;
+"""

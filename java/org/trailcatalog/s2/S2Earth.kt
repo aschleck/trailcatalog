@@ -9,3 +9,8 @@ fun earthMetersToAngle(meters: Double): S1Angle {
 fun S1Angle.earthMeters(): Double {
   return SimpleS2.angleToEarthMeters(this)
 }
+
+fun earthSteradiansToMeters2(steradians: Double): Double {
+  val radius = SimpleS2.EARTH_RADIUS_METERS.toDouble()
+  return steradians * radius * radius
+}

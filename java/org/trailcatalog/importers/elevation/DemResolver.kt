@@ -4,7 +4,6 @@ import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
-import com.zaxxer.hikari.HikariDataSource
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.slf4j.LoggerFactory
 import org.trailcatalog.common.IORuntimeException
@@ -18,7 +17,7 @@ import java.nio.file.Path
 
 private val logger = LoggerFactory.getLogger(DemResolver::class.java)
 
-class DemResolver(private val hikari: HikariDataSource) {
+class DemResolver {
 
   private var area = S2LatLngRect.empty()
   private val metadata = ArrayList<DemMetadata>()
@@ -51,7 +50,7 @@ class DemResolver(private val hikari: HikariDataSource) {
       // TODO(april): this is 10 miles, but is there a reason to pull 10 miles?
       area = S2LatLngRect.fromPoint(ll).expandedByDistance(earthMetersToAngle(16093.0))
       metadata.clear()
-      metadata.addAll(getDemMetadata(area, hikari))
+      metadata.addAll(getDemMetadata(area))
     }
 
     for (dem in metadata) {
