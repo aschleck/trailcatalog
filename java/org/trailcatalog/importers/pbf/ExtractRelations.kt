@@ -37,8 +37,6 @@ class ExtractRelations : PTransformer<PrimitiveBlock, Relation>(TypeToken.of(Rel
 fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relation {
   var category = RelationCategory.ANY
   var name: String? = null
-  var network: String? = null
-  var ref: String? = null
   for (i in 0 until relation.keysCount) {
     val key = relation.getKeys(i)
     when (stringTable.getS(key)) {
@@ -54,24 +52,17 @@ fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relatio
                 .coerceAtLeast(BOUNDARY_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
       NAME_BS ->
         name = stringTable.getS(relation.getVals(i)).toStringUtf8()
-      NETWORK_BS ->
-        network = stringTable.getS(relation.getVals(i)).toStringUtf8()
       PROTECT_CLASS_BS ->
         category =
             category
                 .coerceAtLeast(RelationCategory.BOUNDARY_PROTECTED_AREA)
                 .coerceAtLeast(PROTECT_CLASS_NAMES[stringTable.getS(relation.getVals(i))])
-      REF_BS ->
-        ref = stringTable.getS(relation.getVals(i)).toStringUtf8()
       ROUTE_BS ->
         category =
             category
                 .coerceAtLeast(RelationCategory.ROUTE)
                 .coerceAtLeast(ROUTE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
     }
-  }
-  if (name == null && network != null && ref != null) {
-    name = "${network} ${ref}"
   }
   return Relation(relation.id, category.id, name ?: "", relationToSkeleton(relation, stringTable))
 }

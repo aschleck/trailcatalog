@@ -31,6 +31,7 @@ class CreateTrails
     }
 
     val relation = relations[0]
+    // If no one bothered to give this a name, it's probably not worth being shown
     if (relation.name.isNullOrBlank()) {
       return
     }
