@@ -62,6 +62,67 @@ class CreateBoundariesTest {
     assertThat(boundaryOf(inner(ring)).area).isWithin(1e-9).of(boundaryOf(outer(ring)).area)
   }
 
+  // Sous Préfecture de Samango, relation 19591099, as the nine ways whose ring crosses itself. Its
+  // 39 km northern edge and the 18 km edge that closes the ring both end at the same corner and
+  // cross 150 m short of it, which is far past any merge distance. S2BooleanOperation only checks
+  // that its input is valid through an assert, so union of a ring like this with anything reaches
+  // doneBoundaryPair and dies on a sourceIdMap entry that was never added.
+  @Test
+  fun testRingThatReallyCrossesItselfIsDropped() {
+    val samango =
+        listOf(
+            longArrayOf(96814968, -80843737, 96066422, -77381301),
+            longArrayOf(96066422, -77381301, 96018713, -77438164),
+            longArrayOf(96018713, -77438164, 95899808, -77875069),
+            longArrayOf(95899808, -77875069, 96002523, -78093700),
+            longArrayOf(95862500, -78264378, 96002523, -78093700),
+            longArrayOf(95934959, -78539766, 95862500, -78264378),
+            longArrayOf(95934959, -78539766, 95905744, -79140216),
+            longArrayOf(95905744, -79140216, 95834635, -79545698),
+            longArrayOf(95834635, -79545698, 96815991, -80836056, 96814968, -80843737))
+    val square = squareAround(-500_000_000, 0, 1_000_000)
+
+    val polygon = boundaryOf(outer(samango), outer(square))
+
+    assertThat(polygon.area).isWithin(1e-9).of(boundaryOf(outer(square)).area)
+  }
+
+  // Nine of the houses relation 4116274 tags inner, cut down to the corners that matter. Their
+  // walls sit within the merge distance of each other, so they assemble into one ring 110 m long
+  // and a couple of cells wide, and moving that ring's vertices to their cell centers one at a
+  // time crosses its third edge over its last.
+  @Test
+  fun testRingOnlyCellsWideSurvivesSnapping() {
+    val houses =
+        listOf(
+            longArrayOf(496397489, 181430207, 496399872, 181430596, 496398424, 181430664,
+                496397489, 181430207),
+            longArrayOf(496400194, 181428567, 496399984, 181427306, 496400099, 181428526,
+                496400194, 181428567),
+            longArrayOf(496397701, 181428445, 496399955, 181428463, 496399949, 181429464,
+                496397701, 181428445),
+            longArrayOf(496399766, 181431319, 496399618, 181432194, 496399120, 181432717,
+                496399766, 181431319),
+            longArrayOf(496399652, 181433874, 496399628, 181434877, 496399409, 181433719,
+                496399652, 181433874),
+            longArrayOf(496398843, 181438168, 496399092, 181437054, 496398757, 181438120,
+                496398843, 181438168),
+            longArrayOf(496398587, 181439174, 496396982, 181438483, 496398566, 181439284,
+                496398587, 181439174),
+            longArrayOf(496395779, 181439354, 496396005, 181438408, 496395926, 181438734,
+                496395779, 181439354),
+            longArrayOf(496397002, 181434166, 496397569, 181436002, 496399281, 181436146,
+                496399038, 181435350, 496397002, 181434166))
+
+    val polygon = boundaryOf(inner(houses))
+
+    assertThat(polygon.area).isLessThan(2 * PI)
+    // The nine rings cover 336 m^2 on their own, and merging the walls they share fuses them into
+    // one blob of 621.
+    assertThat(polygon.area * 6371010.0 * 6371010.0).isGreaterThan(336.0)
+    assertThat(polygon.area * 6371010.0 * 6371010.0).isLessThan(1_000.0)
+  }
+
   @Test
   fun testInnerRingIsAHole() {
     val outer = squareAround(0, 0, 1_000_000)
