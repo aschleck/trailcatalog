@@ -9,6 +9,8 @@ import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 open class MmapPList<T>(
     private val maps: List<EncodedByteBufferInputStream>,
@@ -104,6 +106,22 @@ private const val PARALLEL_PLIST_BATCH_SIZE = 1024
 private val PLIST_SENTINEL_BATCH: List<Any?> = emptyList()
 
 /**
+ * Hands [batch] to a worker, or returns false if a worker has recorded a failure. A dead worker
+ * never takes another batch, so a blocking put waits forever once enough of them are gone.
+ */
+internal fun <I> offerToWorkers(
+    queue: ArrayBlockingQueue<List<I>>,
+    batch: List<I>,
+    failure: AtomicReference<Throwable>): Boolean {
+  while (failure.get() == null) {
+    if (queue.offer(batch, 100, TimeUnit.MILLISECONDS)) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
  * Parallel variant of [createMmapPList]: drives [input] on the caller thread and dispatches
  * batches to [workers] worker threads, each writing into its own output file. With `workers <= 1`
  * this falls back to the single-threaded path so callers can pass the resolved parallelism
@@ -138,36 +156,43 @@ fun <I, T : Any> createMmapPList(
   val queue =
       ArrayBlockingQueue<List<I>>((workers * 2).coerceAtLeast(2))
   val perWorkerShards = arrayOfNulls<List<org.trailcatalog.common.Extents>>(workers)
+  val failure = AtomicReference<Throwable>()
 
   longProgress("PList ${context} emitting (parallel x${workers})") { progress ->
     val workerThreads =
         (0 until workers).map { workerId ->
           Thread(
               {
-                val raf = RandomAccessFile(workerFiles[workerId], "rw")
                 try {
-                  val stream = ChannelEncodedOutputStream(raf.channel)
-                  stream.use { output ->
-                    val emitter =
-                        object : Emitter<T> {
-                          override fun emit(v: T) {
-                            serializer.write(v, output)
-                            output.checkBufferSpace()
-                            progress.increment()
+                  val raf = RandomAccessFile(workerFiles[workerId], "rw")
+                  try {
+                    val stream = ChannelEncodedOutputStream(raf.channel)
+                    stream.use { output ->
+                      val emitter =
+                          object : Emitter<T> {
+                            override fun emit(v: T) {
+                              serializer.write(v, output)
+                              output.checkBufferSpace()
+                              progress.increment()
+                            }
                           }
-                        }
 
-                    while (true) {
-                      val batch = queue.take()
-                      if (batch === PLIST_SENTINEL_BATCH) break
-                      for (item in batch) {
-                        perItem(item, emitter)
+                      while (true) {
+                        val batch = queue.take()
+                        if (batch === PLIST_SENTINEL_BATCH) break
+                        for (item in batch) {
+                          perItem(item, emitter)
+                        }
                       }
                     }
+                    perWorkerShards[workerId] = stream.shards()
+                  } finally {
+                    raf.close()
                   }
-                  perWorkerShards[workerId] = stream.shards()
-                } finally {
-                  raf.close()
+                } catch (e: Throwable) {
+                  // Letting the thread die here leaves this worker's shards null, and the caller
+                  // reports that instead of what perItem threw.
+                  failure.compareAndSet(null, e)
                 }
               },
               "mmap-plist-${context}-w${workerId}",
@@ -180,20 +205,33 @@ fun <I, T : Any> createMmapPList(
     while (input.hasNext()) {
       batch.add(input.next())
       if (batch.size >= PARALLEL_PLIST_BATCH_SIZE) {
-        queue.put(batch)
+        if (!offerToWorkers(queue, batch, failure)) {
+          break
+        }
         batch = ArrayList(PARALLEL_PLIST_BATCH_SIZE)
       }
     }
     if (batch.isNotEmpty()) {
-      queue.put(batch)
+      offerToWorkers(queue, batch, failure)
     }
     @Suppress("UNCHECKED_CAST")
-    repeat(workers) { queue.put(PLIST_SENTINEL_BATCH as List<I>) }
+    repeat(workers) { offerToWorkers(queue, PLIST_SENTINEL_BATCH as List<I>, failure) }
+
+    // offerToWorkers drops those sentinels once a worker has failed, so the workers that are still
+    // alive sit on take() and join never returns. The interrupt loses to the recorded failure at
+    // compareAndSet, so we still report what perItem threw.
+    if (failure.get() != null) {
+      workerThreads.forEach { it.interrupt() }
+    }
 
     workerThreads.forEach { it.join() }
   }
 
   input.close()
+
+  failure.get()?.let {
+    throw RuntimeException("PList ${context} worker failed", it)
+  }
 
   val totalSize =
       workerFiles

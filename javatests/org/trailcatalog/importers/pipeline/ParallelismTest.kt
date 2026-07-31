@@ -2,6 +2,8 @@ package org.trailcatalog.importers.pipeline
 
 import com.google.common.reflect.TypeToken
 import com.google.common.truth.Truth.assertThat
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Test
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.Emitter2
@@ -48,6 +50,23 @@ class ParallelismTest {
       for (i in 0 until fanOut) {
         emitter.emit(input * 100 + i)
       }
+    }
+  }
+
+  private class ThrowOnTransform(private val bad: Int, override val parallelism: Int)
+    : PTransformer<Int, Int>(TypeToken.of(Int::class.java)) {
+    override fun act(input: Int, emitter: Emitter<Int>) {
+      check(input != bad) { "boom on ${input}" }
+      emitter.emit(input)
+    }
+  }
+
+  private class ThrowOnMap(private val bad: Int, override val parallelism: Int)
+    : PMapTransformer<Int, Int, Int>(
+        "ThrowOnMap", TypeToken.of(Int::class.java), TypeToken.of(Int::class.java)) {
+    override fun act(input: Int, emitter: Emitter2<Int, Int>) {
+      check(input != bad) { "boom on ${input}" }
+      emitter.emit(input, input)
     }
   }
 
@@ -159,7 +178,69 @@ class ParallelismTest {
     assertThat(out.last()).isEqualTo("PEntry(key=19999, values=[19999])")
   }
 
+  // ----- Worker failure -----
+
+  // The producer has to still be feeding the queue when the worker dies, or it reaches the
+  // sentinels on its own and the survivors drain whether or not they can be interrupted.
+  private val itemsOutlastingAFailure = 100_000
+
+  @Test
+  fun ptransformerWorkerThrowIsReported() {
+    val thrown = runOffThread {
+      val pipeline = Pipeline(parallelism = 4)
+      val stage =
+          pipeline.read(SequenceSource((0 until itemsOutlastingAFailure).asSequence()))
+              .then(ThrowOnTransform(bad = 5, parallelism = Int.MAX_VALUE))
+      stage.write(ListSink(ArrayList()))
+      stage.write(ListSink(ArrayList()))
+      pipeline.execute()
+    }
+    assertThat(causalMessages(thrown)).contains("boom on 5")
+  }
+
+  @Test
+  fun pmapWorkerThrowIsReported() {
+    val thrown = runOffThread {
+      val pipeline = Pipeline(parallelism = 4)
+      pipeline.read(SequenceSource((0 until itemsOutlastingAFailure).asSequence()))
+          .then(ThrowOnMap(bad = 5, parallelism = Int.MAX_VALUE))
+          .write(MapSink(ArrayList()))
+      pipeline.execute()
+    }
+    assertThat(causalMessages(thrown)).contains("boom on 5")
+  }
+
   // ----- Helpers -----
+
+  /** Runs [body] on a daemon thread so a deadlocked pipeline fails instead of hanging the suite. */
+  private fun runOffThread(body: () -> Unit): Throwable {
+    val caught = AtomicReference<Throwable>()
+    val thread =
+        Thread {
+          try {
+            body()
+          } catch (e: Throwable) {
+            caught.set(e)
+          }
+        }
+    thread.isDaemon = true
+    thread.start()
+    thread.join(TimeUnit.MINUTES.toMillis(1))
+    if (thread.isAlive) {
+      throw AssertionError("the pipeline hung instead of reporting the worker failure")
+    }
+    return caught.get() ?: throw AssertionError("the pipeline did not fail")
+  }
+
+  private fun causalMessages(thrown: Throwable): List<String?> {
+    val messages = ArrayList<String?>()
+    var walk: Throwable? = thrown
+    while (walk != null && messages.size < 10) {
+      messages.add(walk.message)
+      walk = walk.cause
+    }
+    return messages
+  }
 
   /** PSink that collects PMap entries into a list of strings. */
   private class MapSink(val out: MutableList<String>) : PSink<PMap<Int, Int>>() {

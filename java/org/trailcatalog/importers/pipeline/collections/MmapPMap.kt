@@ -15,6 +15,7 @@ import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 // Heap reserved for everything that isn't a queued pre-sort record: the scratch buffers, the input
 // pipeline, and the garbage G1 hasn't reclaimed yet. maxMemory minus this is split evenly across
@@ -309,64 +310,71 @@ private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
 
   val perWorkerShards = arrayOfNulls<List<Extents>>(workers)
   val budget = calculateMemoryBudgetPerShard(workers)
+  val failure = AtomicReference<Throwable>()
 
   longProgress("${context} emitting to shards (parallel x${workers})") { progress ->
     val workerThreads =
         (0 until workers).map { workerId ->
           Thread(
               {
-                val raf = RandomAccessFile(workerFiles[workerId], "rw")
                 try {
-                  val stream = ChannelEncodedOutputStream(raf.channel)
-                  stream.use { output ->
-                    val itemsInShard = ArrayList<SortKey<K>>()
-                    var heldBytes = 0L
+                  val raf = RandomAccessFile(workerFiles[workerId], "rw")
+                  try {
+                    val stream = ChannelEncodedOutputStream(raf.channel)
+                    stream.use { output ->
+                      val itemsInShard = ArrayList<SortKey<K>>()
+                      var heldBytes = 0L
 
-                    val dumpShard = {
-                      itemsInShard.sort()
-                      for (item in itemsInShard) {
-                        keySerializer.write(item.key, output)
-                        output.writeVarInt(item.value.size)
-                        output.write(item.value)
-                        output.checkBufferSpace()
+                      val dumpShard = {
+                        itemsInShard.sort()
+                        for (item in itemsInShard) {
+                          keySerializer.write(item.key, output)
+                          output.writeVarInt(item.value.size)
+                          output.write(item.value)
+                          output.checkBufferSpace()
+                        }
+                        output.shard()
+                        itemsInShard.clear()
+                        heldBytes = 0
                       }
-                      output.shard()
-                      itemsInShard.clear()
-                      heldBytes = 0
-                    }
 
-                    val emitter =
-                        object : Emitter2<K, V> {
-                          override fun emit(a: K, b: V) {
-                            val buffer = BYTE_BUFFER.get()
-                            valueSerializer.write(b, ByteBufferEncodedOutputStream(buffer))
-                            buffer.flip()
-                            val bytes = ByteArray(buffer.limit())
-                            buffer.get(bytes)
-                            buffer.clear()
-                            itemsInShard.add(SortKey(a, bytes))
-                            heldBytes += RECORD_OVERHEAD_BYTES + bytes.size
-                            progress.increment()
+                      val emitter =
+                          object : Emitter2<K, V> {
+                            override fun emit(a: K, b: V) {
+                              val buffer = BYTE_BUFFER.get()
+                              valueSerializer.write(b, ByteBufferEncodedOutputStream(buffer))
+                              buffer.flip()
+                              val bytes = ByteArray(buffer.limit())
+                              buffer.get(bytes)
+                              buffer.clear()
+                              itemsInShard.add(SortKey(a, bytes))
+                              heldBytes += RECORD_OVERHEAD_BYTES + bytes.size
+                              progress.increment()
 
-                            if (heldBytes > budget) {
-                              dumpShard()
+                              if (heldBytes > budget) {
+                                dumpShard()
+                              }
                             }
                           }
+
+                      while (true) {
+                        val batch = queue.take()
+                        if (batch === SENTINEL_BATCH) break
+                        for (item in batch) {
+                          perItem(item, emitter)
                         }
-
-                    while (true) {
-                      val batch = queue.take()
-                      if (batch === SENTINEL_BATCH) break
-                      for (item in batch) {
-                        perItem(item, emitter)
                       }
-                    }
 
-                    dumpShard()
+                      dumpShard()
+                    }
+                    perWorkerShards[workerId] = stream.shards()
+                  } finally {
+                    raf.close()
                   }
-                  perWorkerShards[workerId] = stream.shards()
-                } finally {
-                  raf.close()
+                } catch (e: Throwable) {
+                  // Letting the thread die here leaves this worker's shards null, and the caller
+                  // reports that instead of what perItem threw.
+                  failure.compareAndSet(null, e)
                 }
               },
               "mmap-pmap-${context}-w${workerId}",
@@ -380,20 +388,33 @@ private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
     while (input.hasNext()) {
       batch.add(input.next())
       if (batch.size >= PARALLEL_BATCH_SIZE) {
-        queue.put(batch)
+        if (!offerToWorkers(queue, batch, failure)) {
+          break
+        }
         batch = ArrayList(PARALLEL_BATCH_SIZE)
       }
     }
     if (batch.isNotEmpty()) {
-      queue.put(batch)
+      offerToWorkers(queue, batch, failure)
     }
     @Suppress("UNCHECKED_CAST")
-    repeat(workers) { queue.put(SENTINEL_BATCH as List<I>) }
+    repeat(workers) { offerToWorkers(queue, SENTINEL_BATCH as List<I>, failure) }
+
+    // offerToWorkers drops those sentinels once a worker has failed, so the workers that are still
+    // alive sit on take() and join never returns. The interrupt loses to the recorded failure at
+    // compareAndSet, so we still report what perItem threw.
+    if (failure.get() != null) {
+      workerThreads.forEach { it.interrupt() }
+    }
 
     workerThreads.forEach { it.join() }
   }
 
   input.close()
+
+  failure.get()?.let {
+    throw RuntimeException("PMap ${context} worker failed", it)
+  }
 
   val combinedFileShards =
       workerFiles.mapIndexed { i, file -> file to perWorkerShards[i]!! }
