@@ -30,10 +30,11 @@ archive_override(
 #    path = "../corgi",
 #)
 bazel_dep(name = "elemental2", version = "1.4.0-RC1")
-single_version_override(
+archive_override(
     module_name = "elemental2",
-    patch_strip = 1,
-    patches = ["//:elemental2_gwt.patch"],
+    integrity = "sha256-HPaHgCmPlec/XqPSu91i7gNjA6orq/bIKHyryZkKr7g=",
+    strip_prefix = "elemental2-8e4fce237f33ff7710b9988c017d929e02d3f17c",
+    urls = ["https://github.com/google/elemental2/archive/8e4fce237f33ff7710b9988c017d929e02d3f17c.tar.gz"],
 )
 bazel_dep(name = "j2cl", version = "20260402")
 archive_override(
