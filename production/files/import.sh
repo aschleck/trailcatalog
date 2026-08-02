@@ -51,7 +51,6 @@ CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     gcloud auth print-access-token \
     | podman login -u oauth2accesstoken --password-stdin us-west1-docker.pkg.dev
 
-mkdir -p /mnt/horse/dems
 podman run \
     --name=importer \
     --pull always \
@@ -64,8 +63,9 @@ podman run \
     us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \
     --block_size 4194304 \
     --buffer_size 500000000 \
+    --copernicus_root /tmp/copernicus \
     --elevation_profile /tmp/elevation_profile.pb \
     --heap_dump_threshold 8048000000 \
     --pbfs /tmp/planet-latest.osm.pbf \
     | tee /mnt/horse/import_log.txt
-rm -rf /mnt/horse/dems /mnt/horse/planet-latest.osm.pbf
+rm -rf /mnt/horse/planet-latest.osm.pbf

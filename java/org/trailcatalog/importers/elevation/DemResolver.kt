@@ -13,7 +13,6 @@ import org.trailcatalog.importers.elevation.tiff.ConstantReader
 import org.trailcatalog.importers.elevation.tiff.DemReader
 import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
 import org.trailcatalog.s2.earthMetersToAngle
-import java.nio.file.Path
 
 private val logger = LoggerFactory.getLogger(DemResolver::class.java)
 
@@ -31,11 +30,10 @@ class DemResolver {
           .build(
               object : CacheLoader<DemMetadata, DemReader>() {
                 override fun load(p0: DemMetadata): DemReader {
-                  val path = demFilePath(p0)
                   logger.info("Downloading and opening DEM {}", p0)
                   try {
-                    download(p0.url.toHttpUrl(), path)
-                    return GeoTiffReader(path)
+                    download(p0.url.toHttpUrl(), p0.path)
+                    return GeoTiffReader(p0.path)
                   } catch (e: NotFoundException) {
                     return ConstantReader(if (p0.global) 0f else null)
                   } catch (e: IORuntimeException) {
@@ -65,11 +63,4 @@ class DemResolver {
     }
     return null
   }
-}
-
-private fun demFilePath(metadata: DemMetadata): Path {
-  val base = Path.of("/tmp/dems")
-  base.toFile().mkdir()
-  val url = metadata.url.toHttpUrl()
-  return base.resolve(url.pathSegments[url.pathSegments.size - 1])
 }

@@ -41,6 +41,12 @@ fun createFlag(initial: Long): Flag<Long> {
   }
 }
 
+fun createFlag(initial: Path): Flag<Path> {
+  return object : Flag<Path>(initial) {
+    override fun parseFrom(s: String) = Path.of(s)
+  }
+}
+
 fun createFlag(initial: String): Flag<String> {
   return object : Flag<String>(initial) {
     override fun parseFrom(s: String) = s

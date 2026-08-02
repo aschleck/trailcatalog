@@ -44,7 +44,11 @@ class CreateBoundaries
       return
     }
 
-    val polygon = relationGeometryToPolygon(geometries[0])
+    val polygon = try {
+        relationGeometryToPolygon(geometries[0])
+    } catch (e: NullPointerException) {
+        throw RuntimeException("Error creating the boundary for ${relation.id} - ${relation.name}", e)
+    }
     val encoded = ByteArrayOutputStream().also {
       polygon.encode(it)
     }
