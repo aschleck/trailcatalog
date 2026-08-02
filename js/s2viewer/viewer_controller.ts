@@ -79,7 +79,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
             },
           ],
           'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
-              + 'key=wWxlJy7a8SEPXS7AZ42l',
+              + 'key=UGTHB0b969Xa1xpZvnvB',
           NATURE,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,

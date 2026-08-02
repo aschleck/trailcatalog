@@ -122,7 +122,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
             },
           ],
           'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
-              + 'key=wWxlJy7a8SEPXS7AZ42l',
+              + 'key=UGTHB0b969Xa1xpZvnvB',
           NATURE_WITHOUT_DETAILED_WAYS,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
@@ -145,7 +145,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
               url: 'https://www.openstreetmap.org/copyright',
             },
           ],
-          'https://api.maptiler.com/tiles/satellite-mediumres-2021/${id.zoom}/${id.x}/${id.y}.jpg?key=wWxlJy7a8SEPXS7AZ42l',
+          'https://api.maptiler.com/tiles/satellite-mediumres-2021/${id.zoom}/${id.x}/${id.y}.jpg?key=UGTHB0b969Xa1xpZvnvB',
           /* tint= */ 0xFFFFFFFF as RgbaU32,
           /* z= */ Z_BASE_SATELLITE,
           /* extraZoom= */ 0,
