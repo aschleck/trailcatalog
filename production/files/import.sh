@@ -66,6 +66,6 @@ podman run \
     --buffer_size 500000000 \
     --elevation_profile /tmp/elevation_profile.pb \
     --heap_dump_threshold 8048000000 \
-    --pbf_path /tmp \
-    --source planet | tee /mnt/horse/import_log.txt
+    --pbfs /tmp/planet-latest.osm.pbf \
+    | tee /mnt/horse/import_log.txt
 rm -rf /mnt/horse/dems /mnt/horse/planet-latest.osm.pbf

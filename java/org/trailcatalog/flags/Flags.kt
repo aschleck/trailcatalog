@@ -35,6 +35,12 @@ fun createFlag(initial: Int): Flag<Int> {
   }
 }
 
+fun createFlag(initial: Long): Flag<Long> {
+  return object : Flag<Long>(initial) {
+    override fun parseFrom(s: String) = s.toLong()
+  }
+}
+
 fun createFlag(initial: String): Flag<String> {
   return object : Flag<String>(initial) {
     override fun parseFrom(s: String) = s

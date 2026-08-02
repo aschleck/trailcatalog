@@ -4,6 +4,8 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.common.ChannelEncodedOutputStream
 import org.trailcatalog.common.EncodedByteBufferInputStream
 import org.trailcatalog.common.Extents
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
 import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
 import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.File
@@ -20,7 +22,8 @@ import java.util.concurrent.atomic.AtomicReference
 // Heap reserved for everything that isn't a queued pre-sort record: the scratch buffers, the input
 // pipeline, and the garbage G1 hasn't reclaimed yet. maxMemory minus this is split evenly across
 // the workers.
-var HEAP_DUMP_THRESHOLD = 256 * 1024 * 1024L
+@FlagSpec(name = "heap_dump_threshold")
+private val heapDumpThreshold = createFlag(256 * 1024 * 1024L)
 // ThreadLocal so worker threads in parallel-extract mode don't race on the same scratch buffer.
 // Each thread serializes one record at a time before copying the bytes out into the shard list.
 private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
@@ -40,7 +43,7 @@ private const val RECORD_OVERHEAD_BYTES = 88
 
 // Bytes of queued records a single worker may hold.
 private fun calculateMemoryBudgetPerShard(workers: Int): Long {
-  return ((Runtime.getRuntime().maxMemory() - HEAP_DUMP_THRESHOLD) / workers)
+  return ((Runtime.getRuntime().maxMemory() - heapDumpThreshold.value) / workers)
       .coerceAtLeast(64 * 1024 * 1024)
 }
 

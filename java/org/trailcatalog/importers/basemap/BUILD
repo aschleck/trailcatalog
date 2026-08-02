@@ -1,9 +1,9 @@
-package(default_visibility = ["//java/org/trailcatalog:internal"])
-
 load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//:pkg.bzl", "pkg_tar")
+
+package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 java_binary(
     name = "importer",
@@ -38,8 +38,8 @@ oci_load(
 oci_push(
     name = "container_push",
     image = ":container",
-    repository = "us-west1-docker.pkg.dev/trailcatalog/containers/importer",
     remote_tags = ["latest"],
+    repository = "us-west1-docker.pkg.dev/trailcatalog/containers/importer",
 )
 
 kt_jvm_library(
@@ -48,6 +48,7 @@ kt_jvm_library(
     deps = [
         ":basemap_java",
         "//java/org/trailcatalog:pg_support",
+        "//java/org/trailcatalog/flags",
         "//java/org/trailcatalog/importers/common",
         "//java/org/trailcatalog/importers/elevation",
         "//java/org/trailcatalog/importers/pbf",

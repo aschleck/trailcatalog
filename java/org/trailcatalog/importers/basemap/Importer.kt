@@ -6,6 +6,10 @@ import com.zaxxer.hikari.HikariDataSource
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
 import org.trailcatalog.createConnectionSource
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
+import org.trailcatalog.flags.createNullableFlag
+import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.pipeline.groupBy
 import org.trailcatalog.importers.pipeline.Pipeline
 import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
@@ -36,6 +40,20 @@ import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
 import java.sql.Connection
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+
+@FlagSpec(name = "elevation_profile")
+private val elevationProfilePath = createNullableFlag(null as Path?)
+
+@FlagSpec(name = "epoch")
+private val epoch = createFlag(calculateEpoch())
+
+@FlagSpec(name = "parallelism")
+private val importerParallelism = createFlag((Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1))
+
+@FlagSpec(name = "pbfs")
+private val pbfPaths = createFlag("")
 
 // Tables partitioned by epoch. The partition holding epoch E is named ${table}_${E}.
 private val PARTITIONED_TABLES =
@@ -54,14 +72,16 @@ private val PARTITIONED_TABLES =
     )
 
 fun main(args: Array<String>) {
+  parseFlags(args)
+  registerBaseMapSerializers()
+
+  val pbfs = pbfPaths.value.split(",").filter { it.isNotEmpty() }.map { Path.of(it) }
   createConnectionSource(syncCommit = false).use { hikari ->
-    processPbfs(processArgsAndGetPbfs(args.asList()), hikari)
+    processPbfs(epoch.value, pbfs, hikari)
   }
 }
 
-private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) {
-  val (epoch, pbfs) = input
-
+private fun processPbfs(epoch: Int, pbfs: List<Path>, hikari: HikariDataSource) {
   val activeEpochs = hikari.connection.use { readActiveEpochs(it) }
 
   hikari.connection.use {
@@ -87,8 +107,8 @@ private fun processPbfs(input: Pair<Int, List<Path>>, hikari: HikariDataSource) 
   // TODO(april): it's good for speed to only calculate paths used in relations, but it means that
   // we won't be able to dynamically create trails. So need to relax this in the future.
 
-  val pipeline = Pipeline(parallelism = IMPORTER_PARALLELISM)
-  println("Pipeline parallelism cap: ${IMPORTER_PARALLELISM}")
+  val pipeline = Pipeline(parallelism = importerParallelism.value)
+  println("Pipeline parallelism cap: ${importerParallelism.value}")
 
   // First, get basic way geometries
   val nodeBlocks =
@@ -267,10 +287,11 @@ private fun calculateProfiles(
     pipeline: Pipeline,
     waysNeedingProfiles: BoundStage<*, PMap<Long, Way>>,
 ): BoundStage<*, PMap<Long, Profile>> {
-  ELEVATION_PROFILES_FILE.createNewFile()
-  File(ELEVATION_PROFILES_FILE.path + ".shards").createNewFile()
+  val cachedProfiles = checkNotNull(elevationProfilePath.value).toFile()
+  cachedProfiles.createNewFile()
+  File(cachedProfiles.path + ".shards").createNewFile()
   val existingProfiles =
-      pipeline.read(binaryStructListReader<Profile>(ELEVATION_PROFILES_FILE))
+      pipeline.read(binaryStructListReader<Profile>(cachedProfiles))
           .groupBy("GroupProfiles") { it.id }
 
   val waysSources = pipeline.join2("JoinExistingProfiles", waysNeedingProfiles, existingProfiles)
@@ -336,7 +357,7 @@ private fun calculateProfiles(
 
   pipeline
       .cat(listOf(alreadyHadProfiles, calculatedProfiles))
-      .write(binaryStructListWriter(ELEVATION_PROFILES_FILE))
+      .write(binaryStructListWriter(cachedProfiles))
 
   return pipeline
       .cat(listOf(alreadyHadProfiles, calculatedProfiles))
@@ -348,4 +369,14 @@ fun copyStreamToPg(table: String, stream: InputStream, hikari: HikariDataSource)
     val pg = connection.unwrap(PgConnection::class.java)
     CopyManager(pg).copyIn("COPY ${table} FROM STDIN WITH (FORMAT CSV, HEADER, NULL 'NULL')", stream)
   }
+}
+
+private fun calculateEpoch(): Int {
+    val now = LocalDateTime.now(ZoneOffset.UTC)
+    return if (now.hour >= 1 || now.minute >= 15) {
+        // TODO(april): roll back month
+        (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
+    } else {
+        throw RuntimeException("Don't do this")
+    }
 }

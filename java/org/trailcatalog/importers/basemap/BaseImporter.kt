@@ -4,31 +4,16 @@ import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import org.trailcatalog.importers.common.download
 import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.readNames
 import org.trailcatalog.importers.pbf.registerPbfSerializers
 import org.trailcatalog.importers.pbf.writeNames
-import org.trailcatalog.importers.pipeline.collections.HEAP_DUMP_THRESHOLD
 import org.trailcatalog.importers.pipeline.collections.Serializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
-import org.trailcatalog.common.BUFFER_SIZE
 import org.trailcatalog.common.EncodedInputStream
-import org.trailcatalog.common.FLUSH_THRESHOLD
 import org.trailcatalog.common.EncodedOutputStream
-import java.io.File
-import java.nio.file.Path
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-import kotlin.io.path.exists
 
-// Worker-thread cap for stages that opt in via PStage.parallelism. Defaults to available cores;
-// the --parallelism CLI flag overrides it. Read in Importer.processPbfs when building the
-// Pipeline; not consulted again afterward.
-var IMPORTER_PARALLELISM: Int = Runtime.getRuntime().availableProcessors()
-
-fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
+fun registerBaseMapSerializers() {
   registerPbfSerializers()
 
   registerSerializer(TypeToken.of(Boundary::class.java), object : Serializer<Boundary> {
@@ -140,98 +125,4 @@ fun processArgsAndGetPbfs(args: List<String>): Pair<Int, List<Path>> {
       to.writeLong(v.id())
     }
   })
-
-  var i = 0
-  var epoch = -1
-  val geofabrikSources = ArrayList<String>()
-  var pbfPath = "./pbfs"
-  var source = "geofabrik"
-  while (i < args.size) {
-    when (args[i]) {
-      "--block_size" -> {
-        FLUSH_THRESHOLD = args[i + 1].toInt()
-        i += 1
-      }
-      "--buffer_size" -> {
-        BUFFER_SIZE = args[i + 1].toInt()
-        i += 1
-      }
-      "--elevation_profile" -> {
-        ELEVATION_PROFILES_FILE = File(args[i + 1])
-        i += 1
-      }
-      "--epoch" -> {
-        epoch = args[i + 1].toInt()
-        i += 1
-      }
-      "--geofabrik_sources" -> {
-        geofabrikSources.addAll(args[i + 1].split(","))
-        i += 1
-      }
-      "--heap_dump_threshold" -> {
-        HEAP_DUMP_THRESHOLD = args[i + 1].toLong()
-        i += 1
-      }
-      "--parallelism" -> {
-        IMPORTER_PARALLELISM = args[i + 1].toInt()
-        i += 1
-      }
-      "--pbf_path" -> {
-        pbfPath = args[i + 1]
-        i += 1
-      }
-      "--source" -> {
-        source = args[i + 1]
-        i += 1
-      }
-      else -> {
-        throw RuntimeException("Unknown argument ${args[i]}")
-      }
-    }
-    i += 1
-  }
-
-  return when (source) {
-    "geofabrik" -> {
-      fetchGeofabrikSources(epoch, geofabrikSources, pbfPath)
-    }
-    "planet" -> {
-      fetchPlanetSource(pbfPath)
-    }
-    else -> throw RuntimeException("Unknown type of source ${source}")
-  }
-}
-
-private fun fetchGeofabrikSources(
-    maybeEpoch: Int,
-    sources: List<String>,
-    pbfPath: String): Pair<Int, List<Path>> {
-  val epoch = if (maybeEpoch > 0) maybeEpoch else calculateEpoch()
-  val paths = ArrayList<Path>()
-  for (source in sources) {
-    val pbfUrl = "https://download.geofabrik.de/${source}-${epoch}.osm.pbf".toHttpUrl()
-    val pbf = Path.of(pbfPath, pbfUrl.pathSegments[pbfUrl.pathSize - 1])
-    download(pbfUrl, pbf)
-    paths.add(pbf)
-  }
-
-  return Pair(epoch, paths)
-}
-
-private fun fetchPlanetSource(pbfPath: String): Pair<Int, List<Path>> {
-  val planet = Path.of(pbfPath, "planet-latest.osm.pbf")
-  if (!planet.exists()) {
-    throw RuntimeException("No such file ${planet}")
-  }
-  return Pair(calculateEpoch(), listOf(planet))
-}
-
-private fun calculateEpoch(): Int {
-  val now = LocalDateTime.now(ZoneOffset.UTC)
-  return if (now.hour >= 1 || now.minute >= 15) {
-    // TODO(april): roll back month
-    (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
-  } else {
-    throw RuntimeException("Don't do this")
-  }
 }

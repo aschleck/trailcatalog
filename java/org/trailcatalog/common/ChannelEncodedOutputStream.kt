@@ -1,15 +1,20 @@
 package org.trailcatalog.common
 
 import com.google.common.collect.ImmutableList
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
 import java.nio.ByteBuffer
 import java.nio.channels.WritableByteChannel
 
-var BUFFER_SIZE = 500 * 1024 * 1024
-var FLUSH_THRESHOLD = 4 * 1024 * 1024
+@FlagSpec(name = "block_size")
+private val flushThreshold = createFlag(4 * 1024 * 1024)
+
+@FlagSpec(name = "buffer_size")
+private val bufferSize = createFlag(500 * 1024 * 1024)
 
 class ChannelEncodedOutputStream(private val channel: WritableByteChannel) : EncodedOutputStream() {
 
-  private val buffer = ByteBuffer.allocateDirect(BUFFER_SIZE)
+  private val buffer = ByteBuffer.allocateDirect(bufferSize.value)
   private val shards = ImmutableList.builder<Extents>()
   private var start = 0L
   private var position = 0L
@@ -78,7 +83,7 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel) : Enc
   // Thought: yes. Because we can't flush after write(Byte) in case it's part of a larger
   // serialization. So we need to checkBufferSpace after all of that.
   fun checkBufferSpace() {
-    if (buffer.position() >= FLUSH_THRESHOLD) {
+    if (buffer.position() >= flushThreshold.value) {
       flush()
     }
 
