@@ -14,6 +14,7 @@ git_override(
     commit = "5ec2a61f09cf4ecbef6f06b0e6d6464ed9ffea7d",
     remote = "https://github.com/aschleck/s2-geometry-library-java",
 )
+
 #local_path_override(
 #    module_name = "com_google_geometry_s2",
 #    path = "../s2-geometry-library-java",
@@ -25,6 +26,7 @@ archive_override(
     strip_prefix = "corgi-d2df06f281638fcc4f9746696ebdd176004d53f3",
     urls = ["https://github.com/aschleck/corgi/archive/d2df06f281638fcc4f9746696ebdd176004d53f3.tar.gz"],
 )
+
 #local_path_override(
 #    module_name = "dev_april_corgi",
 #    path = "../corgi",
@@ -36,6 +38,7 @@ archive_override(
     strip_prefix = "elemental2-8e4fce237f33ff7710b9988c017d929e02d3f17c",
     urls = ["https://github.com/google/elemental2/archive/8e4fce237f33ff7710b9988c017d929e02d3f17c.tar.gz"],
 )
+
 bazel_dep(name = "j2cl", version = "20260402")
 archive_override(
     module_name = "j2cl",
@@ -43,6 +46,7 @@ archive_override(
     strip_prefix = "j2cl-78d44e6e7c2c2517e654f63405a2bc61e2462c4c",
     urls = ["https://github.com/google/j2cl/archive/78d44e6e7c2c2517e654f63405a2bc61e2462c4c.tar.gz"],
 )
+
 bazel_dep(name = "jsinterop_base", version = "1.2.0")
 bazel_dep(name = "jsinterop_generator", version = "20260701")
 bazel_dep(name = "osmpbf", version = "1.7.0")
@@ -63,40 +67,45 @@ bazel_dep(name = "toolchains_llvm", version = "1.7.0")
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
 llvm.toolchain(llvm_version = "20.1.2")
 use_repo(llvm, "llvm_toolchain")
+
 register_toolchains("@llvm_toolchain//:all")
 
 java_toolchains = use_extension("@rules_java//java:extensions.bzl", "toolchains")
 use_repo(java_toolchains, "remotejdk21_linux")
 use_repo(java_toolchains, "remotejdk21_macos")
+
 register_toolchains("@remotejdk21_linux//:all")
+
 register_toolchains("@remotejdk21_macos//:all")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(
     artifacts = [
-        "com.fasterxml.jackson.core:jackson-databind:2.19.0",
-        "com.google.guava:guava:33.4.8-jre",
-        "com.google.truth:truth:1.4.4",
-        "com.squareup.okhttp3:okhttp:4.12.0",
-        "com.zaxxer:HikariCP:5.1.0",
+        "com.google.guava:guava:33.6.0-jre",
+        "com.google.truth:truth:1.4.5",
+        "com.squareup.okhttp3:okhttp-jvm:5.4.0",
+        "com.zaxxer:HikariCP:7.1.0",
         "de.westnordost:osmapi:5.2",
-        "io.javalin:javalin:5.6.5",
+        "io.javalin:javalin:7.2.2",
         "mil.nga.geopackage:geopackage:6.6.5",
-        "org.apache.commons:commons-text:1.13.1",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2",
-        "org.junit.jupiter:junit-jupiter:5.12.2",
-        "org.locationtech.proj4j:proj4j-epsg:1.4.0",
-        "org.locationtech.proj4j:proj4j:1.4.0",
-        "org.postgresql:postgresql:42.7.5",
+        "org.apache.commons:commons-text:1.15.0",
+        "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.21",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.11.0",
+        "org.junit.jupiter:junit-jupiter:6.1.2",
+        "org.locationtech.proj4j:proj4j-epsg:1.4.3",
+        "org.locationtech.proj4j:proj4j:1.4.3",
+        "org.postgresql:postgresql:42.7.13",
         "org.reflections:reflections:0.10.2",
         "org.sejda.imageio:webp-imageio:0.1.6",
-        "org.slf4j:slf4j-simple:2.0.17",
-        "org.wololo:flatgeobuf:3.27.1",
+        "org.slf4j:slf4j-simple:2.0.18",
+        "org.wololo:flatgeobuf:3.29.0",
+        "tools.jackson.core:jackson-databind:3.2.1",
     ],
 )
 use_repo(maven, "maven")
 
 j2cl_maven_import_external = use_repo_rule("@j2cl//build_defs:rules.bzl", "j2cl_maven_import_external")
+
 j2cl_maven_import_external(
     name = "com_google_guava-j2cl",
     artifact = "com.google.guava:guava-gwt:33.4.8-jre",
@@ -105,11 +114,12 @@ j2cl_maven_import_external(
     deps = [
         "@com_google_elemental2//:elemental2-promise-j2cl",
         "@com_google_errorprone_error_prone_annotations-j2cl",
-        "@j2cl//:jsinterop-annotations-j2cl",
         "@com_google_j2objc_annotations-j2cl",
+        "@j2cl//:jsinterop-annotations-j2cl",
         "@org_jspecify_jspecify-j2cl",
     ],
 )
+
 j2cl_maven_import_external(
     name = "com_google_errorprone_error_prone_annotations-j2cl",
     annotation_only = True,
@@ -117,6 +127,7 @@ j2cl_maven_import_external(
     artifact_sha256 = "6661d5335090a5fc61dd869d2095bc6c1e2156e3aa47a6e4ababdf64c99a7889",
     server_urls = ["https://repo1.maven.org/maven2/"],
 )
+
 j2cl_maven_import_external(
     name = "com_google_j2objc_annotations-j2cl",
     annotation_only = True,
@@ -124,6 +135,7 @@ j2cl_maven_import_external(
     artifact_sha256 = "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64",
     server_urls = ["https://repo1.maven.org/maven2/"],
 )
+
 j2cl_maven_import_external(
     name = "org_jspecify_jspecify-j2cl",
     annotation_only = True,
@@ -159,7 +171,6 @@ rules_ts_ext.deps()
 use_repo(rules_ts_ext, "npm_typescript")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
-
 oci.pull(
     name = "distroless_java",
     digest = "sha256:5beb5b13774c4461d9a7ef64832fa4ddeaf167d352556e86a60c15c89c4a56db",
@@ -175,4 +186,3 @@ pip.parse(
     requirements_lock = "//:requirements_lock.txt",
 )
 use_repo(pip, "pip")
-

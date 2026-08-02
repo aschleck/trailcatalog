@@ -1,7 +1,7 @@
-package(default_visibility = ["//java/org/trailcatalog:internal"])
-
 load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+
+package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 java_binary(
     name = "hillshader",
@@ -32,7 +32,7 @@ kt_jvm_library(
         "//third_party/mapbox-vector-tiles:vector_tile_java_proto",
         "@com_google_geometry_s2//:s2",
         "@maven//:com_google_code_gson_gson",
-        "@maven//:com_squareup_okhttp3_okhttp",
+        "@maven//:com_squareup_okhttp3_okhttp_jvm",
         "@maven//:org_wololo_flatgeobuf",
     ],
 )

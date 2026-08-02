@@ -1,7 +1,7 @@
-package(default_visibility = ["//java/org/trailcatalog:internal"])
-
 load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+
+package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 java_binary(
     name = "decog",
@@ -18,6 +18,6 @@ kt_jvm_library(
     deps = [
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/importers/pipeline/io",
-        "@maven//:com_squareup_okhttp3_okhttp",
+        "@maven//:com_squareup_okhttp3_okhttp_jvm",
     ],
 )

@@ -40,10 +40,11 @@ fun main(args: Array<String>) {
   hikari = createBaseConnection()
   hikariTrailcatalog = createTrailcatalogConnection()
   epochTracker = EpochTracker(hikariTrailcatalog)
-  val app = Javalin.create {}.start(7051)
-  app.post("/api/data", ::fetchData)
-  app.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
-  app.get("/api/collections/{id}/objects/{cell}", ::fetchCollectionObjects)
+  Javalin.create { config ->
+    config.routes.post("/api/data", ::fetchData)
+    config.routes.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
+    config.routes.get("/api/collections/{id}/objects/{cell}", ::fetchCollectionObjects)
+  }.start(7051)
 }
 
 private data class WireCollection(val id: UUID, val name: String)

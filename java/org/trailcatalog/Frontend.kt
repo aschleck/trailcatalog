@@ -34,12 +34,13 @@ private fun ok(value: Any): Map<String, Any> = mapOf("kind" to "result", "value"
 private fun err(code: Int): Map<String, Any> = mapOf("kind" to "error", "code" to code)
 
 fun main(args: Array<String>) {
-  val app = Javalin.create {}.start(7070)
-  app.post("/api/data", ::fetchData)
-  app.post("/api/data-packed", ::fetchDataPacked)
-  app.get("/api/fetch-overview/{token}", ::fetchOverview)
-  app.get("/api/fetch-coarse/{token}", ::fetchCoarse)
-  app.get("/api/fetch-fine/{token}", ::fetchFine)
+  Javalin.create { config ->
+    config.routes.post("/api/data", ::fetchData)
+    config.routes.post("/api/data-packed", ::fetchDataPacked)
+    config.routes.get("/api/fetch-overview/{token}", ::fetchOverview)
+    config.routes.get("/api/fetch-coarse/{token}", ::fetchCoarse)
+    config.routes.get("/api/fetch-fine/{token}", ::fetchFine)
+  }.start(7070)
 }
 
 private data class WireBoundary(val id: Long, val type: Int, val name: String)
