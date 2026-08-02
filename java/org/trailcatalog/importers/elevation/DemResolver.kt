@@ -30,7 +30,6 @@ class DemResolver {
           .build(
               object : CacheLoader<DemMetadata, DemReader>() {
                 override fun load(p0: DemMetadata): DemReader {
-                  logger.info("Downloading and opening DEM {}", p0)
                   try {
                     download(p0.url.toHttpUrl(), p0.path)
                     return GeoTiffReader(p0.path)

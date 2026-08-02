@@ -6,7 +6,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
 import org.trailcatalog.common.IORuntimeException
-import java.io.InputStreamReader
 import java.lang.Exception
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -48,11 +47,9 @@ fun download(url: HttpUrl, to: Path) {
 
 private fun downloadOnce(url: HttpUrl, to: Path) {
   val etag = to.resolveSibling("${to.name}.etag")
-  val etagValue = etag.toFile().run {
-    if (to.exists() && canRead()) {
-      InputStreamReader(inputStream()).use {
-        it.readText().trim()
-      }
+  val etagValue = etag.toFile().let {
+    if (to.exists() && it.exists() && it.canRead()) {
+      it.readText(StandardCharsets.UTF_8).trim()
     } else {
       ""
     }
@@ -66,7 +63,7 @@ private fun downloadOnce(url: HttpUrl, to: Path) {
 
     to.toFile().outputStream().use { file ->
       val scale = 1000.0 /* b/kb */ * 1000.0 /* kb/mb */
-      ProgressBar("downloading ${to.name}", "mb", body.contentLength().toDouble() / scale).use { progress ->
+      ProgressBar("downloading ${url}", "mb", body.contentLength().toDouble() / scale).use { progress ->
         val buffer = ByteArray(8 * 1024)
         body.byteStream().use { input ->
           while (true) {
