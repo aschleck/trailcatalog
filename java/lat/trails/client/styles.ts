@@ -1,6 +1,7 @@
 import { WayCategory } from 'java/org/trailcatalog/models/categories';
 import { RgbaU32 } from 'js/map/common/types';
 import { NATURE } from 'js/map/layers/mbtile_layer';
+import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { Style as MbtileStyle } from 'js/map/workers/mbtile_loader';
 import { Z_USER_DATA } from 'js/map/z';
 
@@ -127,6 +128,10 @@ export const OSM_PATHS: Style = {
 };
 
 export const NATURE_WITHOUT_DETAILED_WAYS: MbtileStyle = withoutWayLines(NATURE);
+
+// Translated after dropping the ways because withoutWayLines and wayLines both read OpenMapTiles
+// layer names and classes.
+export const NATURE_PROTOMAPS: MbtileStyle = toProtomaps(NATURE_WITHOUT_DETAILED_WAYS);
 
 export const PUBLIC_LAND: Style = {
   lines: [],

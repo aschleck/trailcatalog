@@ -14,7 +14,7 @@ import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM } from 'js/map/z';
 
 import { CollectionLayer } from './collection_layer';
-import { NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
+import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
 import { HOVER_CHANGED } from './events';
 
 export interface LayerState {
@@ -151,6 +151,24 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 14,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'Protomaps',
+      enabled: true,
+      layer: new MbtileLayer(
+          [
+            {
+              long: 'Base political and transportation data provided by the OpenStreetMap project',
+              short: 'OpenStreetMap contributors',
+              url: 'https://www.openstreetmap.org/copyright',
+            },
+          ],
+          'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
+          NATURE_PROTOMAPS,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 15,
           this.mapController.renderer,
       ),
     }, {
