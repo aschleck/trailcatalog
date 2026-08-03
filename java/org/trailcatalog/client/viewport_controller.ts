@@ -7,6 +7,7 @@ import { rgbaToUint32 } from 'js/map/common/math';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/layers/mbtile_layer';
+import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
@@ -21,6 +22,9 @@ import { Filters, TrailLayer } from './map/trail_layer';
 import { Path, Point, Trail } from './models/types';
 
 import * as routes from './routes';
+
+// Translated once, because the layer list is rebuilt for every response.
+const NATURE_PROTOMAPS = toProtomaps(NATURE);
 
 export interface Args {
   active?: {
@@ -141,8 +145,26 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           this.mapController.renderer,
       ),
     }, {
-      name: 'MapTiler vector',
+      name: 'Protomaps',
       enabled: true,
+      layer: new MbtileLayer(
+          [
+            {
+              long: 'Base political and transportation data provided by the OpenStreetMap project',
+              short: 'OpenStreetMap contributors',
+              url: 'https://www.openstreetmap.org/copyright',
+            },
+          ],
+          'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
+          NATURE_PROTOMAPS,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          /* maxZoom= */ 15,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'MapTiler vector',
+      enabled: false,
       layer: new MbtileLayer(
           [
             {

@@ -107,7 +107,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       ),
     }, {
       name: 'MapTiler vector',
-      enabled: true,
+      enabled: false,
       layer: new MbtileLayer(
           [
             {
