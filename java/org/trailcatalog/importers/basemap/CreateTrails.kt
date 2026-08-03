@@ -1,7 +1,6 @@
 package org.trailcatalog.importers.basemap
 
-import com.google.common.collect.ImmutableMultimap
-import com.google.common.collect.ImmutableSetMultimap
+import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
@@ -14,7 +13,6 @@ import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.proto.WayGeometry
-import java.util.Stack
 
 private val logger = LoggerFactory.getLogger(CreateTrails::class.java)
 
@@ -41,25 +39,16 @@ class CreateTrails
 
     val mapped = HashMap<Long, List<LatLngE7>>()
     val ways = HashMap<Long, WayGeometry>()
-    val ordered = flattenWays(geometries[0], mapped, ways, false)
-    val (orderedArray, validGeometry) = if (ordered == null) {
-      logger.warn("Unable to orient ${relation.id}")
-
-      // If we bail here then we just lost basically all the big trails. But our distance
-      // computation is fubar for them anyway so does it even matter? I guess it's better to show
-      // them wrong than lose them?
-      val naive = ArrayList<Long>()
-      naiveFlattenWays(geometries[0], naive)
-      Pair(naive.toLongArray(), false)
-    } else {
-      Pair(ordered.toLongArray(), true)
-    }
-
-    if (orderedArray.isEmpty()) {
+    val flattened = flattenWays(geometries[0], mapped, ways)
+    if (flattened.ids.isEmpty()) {
       logger.warn("Trail ${relation.id} is empty somehow")
       return
     }
+    if (!flattened.continuous) {
+      logger.warn("Trail ${relation.id} does not trace as one line")
+    }
 
+    val orderedArray = flattened.ids.toLongArray()
     val polyline = pathsToPolyline(orderedArray, mapped)
     var downMeters = 0f
     var upMeters = 0f
@@ -90,10 +79,13 @@ class CreateTrails
             polyline,
             downMeters,
             upMeters,
-            validGeometry,
+            flattened.continuous,
         ))
   }
 }
+
+/** Oriented way IDs in traversal order, and whether they trace as one continuous line. */
+class FlatWays(val ids: List<Long>, val continuous: Boolean)
 
 /**
  * Returns oriented way IDs in the given relation. Fills in `mapped` (a map from oriented relation
@@ -104,37 +96,26 @@ class CreateTrails
  * child relation makes sense, so we can sort it individually and then treat it as a single polyline
  * higher up in the relations tree. This is not necessarily the case in OSM modeling, but I'm over
  * it.
- *
- * Because we need to get every present way into mapped, we also pass in whether the parent relation
- * failed flattening to the child. This enables skipping sorting on stuff we know will fail.
  */
 fun flattenWays(
     geometry: RelationGeometry,
     mapped: MutableMap<Long, List<LatLngE7>>,
-    ways: MutableMap<Long, WayGeometry>,
-    parentFailed: Boolean): List<Long>? {
+    ways: MutableMap<Long, WayGeometry>): FlatWays {
   val ids = ArrayList<Long>(geometry.membersList.count { it.hasRelation() || it.hasWay() })
   val childRelations = HashMap<Long, List<Long>>()
-  var failed = parentFailed
+  var continuous = true
   for (member in geometry.membersList) {
     if (member.hasNodeId()) {
       // who cares
     } else if (member.hasRelation()) {
       // Note that MAX_VALUE / 2 % 10 is 3.5. So to keep this value even we just add 1.
       val id = member.relation.relationId * 2 + Long.MAX_VALUE / 2 + 1
-      val flatChild = flattenWays(member.relation, mapped, ways, failed)
-      if (flatChild == null) {
-        logger.warn("Unable to orient child relation ${member.relation.relationId}")
-        // We can't bail out early because we still need to get every way in the other child
-        // relations into mapped
-        failed = true
-        continue
-      }
+      val child = flattenWays(member.relation, mapped, ways)
+      continuous = continuous && child.continuous
       ids.add(id)
-      childRelations[id] = flatChild
+      childRelations[id] = child.ids
       val childLatLngs = ArrayList<LatLngE7>()
-      for (i in flatChild.indices) {
-        val childChildId = flatChild[i]
+      for (childChildId in child.ids) {
         val points = mapped[childChildId.and(1L.inv())]!!
         if (points.size < 2) {
           continue
@@ -144,9 +125,10 @@ fun flattenWays(
         } else {
           points.reversed()
         }
-        val startOffset = if (i == 0) 0 else 1
-        val subset = direction.subList(startOffset, direction.size)
-        childLatLngs.addAll(subset)
+        // A child that traces as one line repeats the shared node, but one that breaks does not,
+        // and dropping a vertex there would cut the corner.
+        val startOffset = if (childLatLngs.lastOrNull() == direction[0]) 1 else 0
+        childLatLngs.addAll(direction.subList(startOffset, direction.size))
       }
       mapped[id] = childLatLngs
     } else if (member.hasWay()) {
@@ -161,20 +143,15 @@ fun flattenWays(
     }
   }
 
-  if (failed) {
-    return null
-  }
-
-  val filtered = ids.filter { mapped[it]!!.size > 0 }
+  val filtered = ids.filter { mapped[it]!!.isNotEmpty() }
   if (filtered.isEmpty()) {
     // This is the case where a relation has only a node inside of it?
-    return filtered
+    return FlatWays(filtered, continuous)
   }
 
-  val oriented =
-      orientPaths(geometry.relationId, filtered, mapped) ?: return null
+  val oriented = orientPaths(filtered, mapped)
   val flatIds = ArrayList<Long>()
-  for (childId in oriented) {
+  for (childId in oriented.ids) {
     if (childId >= Long.MAX_VALUE / 2) {
       val childIds = childRelations[childId.and(1L.inv())]!!
       if (childId % 2 == 0L) {
@@ -186,260 +163,217 @@ fun flattenWays(
       flatIds.add(childId)
     }
   }
-  return flatIds
+  return FlatWays(flatIds, continuous && oriented.continuous)
 }
 
-private fun naiveFlattenWays(
-    geometry: RelationGeometry,
-    wayIds: MutableList<Long>) {
-  for (member in geometry.membersList) {
-    if (member.hasNodeId()) {
-      // who cares
-    } else if (member.hasRelation()) {
-      naiveFlattenWays(member.relation, wayIds)
-    } else if (member.hasWay()) {
-      wayIds.add(2 * member.way.wayId)
-    }
-  }
-}
+// A maximal stretch of ways that meet nose to tail at vertices where nothing else joins, so it has
+// no choices inside it.
+private class Run(
+    val ids: List<Long>, val start: LatLngE7, val end: LatLngE7, val meters: Double)
 
+// A run in a chain, reversed when the chain walks it end to start.
+private class Step(val run: Int, val reversed: Boolean)
+
+private class Chain(val ids: List<Long>, val meters: Double)
+
+private class OrientedPaths(val ids: LongArray, val continuous: Boolean)
+
+/**
+ * Walks the ways of a relation nose to tail, setting the low bit on the ones that run backwards.
+ *
+ * Ordering every way into one line is an Eulerian path problem. We chain up the stretches that
+ * have no choice in them, hang those on each other longest first, and splice in the detours that
+ * come back, which finds one line whenever one exists. Relations that branch have no such line at
+ * all, and there taking the longest first leaves the main line whole and puts the spurs after it.
+ */
 private fun orientPaths(
-    trailId: Long,
-    ordered: List<Long>,
-    pathPolylines: Map<Long, List<LatLngE7>>): LongArray? {
-  val orientedPathIds = LongArray(ordered.size)
-  var globallyAligned = true
-  if (ordered.size > 2) {
-    for (i in 1 until ordered.size - 1) {
-      val previousId = (ordered[i - 1] / 2) * 2
-      val id = (ordered[i] / 2) * 2
-      val nextId = (ordered[i + 1] / 2) * 2
-      val previous = pathPolylines[previousId]!!
-      val current = pathPolylines[id]!!
-      val next = pathPolylines[nextId]!!
-      val forwardIsPreviousForwardAligned =
-          checkAligned(previous, false, current, false)
-      val forwardIsPreviousReversedAligned =
-          checkAligned(previous, true, current, false)
-      val forwardIsPreviousAligned =
-          forwardIsPreviousForwardAligned || forwardIsPreviousReversedAligned
-      val forwardIsNextForwardAligned =
-          checkAligned(current, false, next, false)
-      val forwardIsNextReversedAligned =
-          checkAligned(current, false, next, true)
-      val forwardIsNextAligned = forwardIsNextForwardAligned || forwardIsNextReversedAligned
-      if (forwardIsPreviousAligned && forwardIsNextAligned) {
-        if (forwardIsPreviousForwardAligned) {
-          orientedPathIds[i - 1] = previousId
-        } else {
-          orientedPathIds[i - 1] = previousId + 1
-        }
-        orientedPathIds[i] = id
-        if (forwardIsNextForwardAligned) {
-          orientedPathIds[i + 1] = nextId
-        } else {
-          orientedPathIds[i + 1] = nextId + 1
-        }
-      } else {
-        if (checkAligned(previous, false, current, true)) {
-          orientedPathIds[i - 1] = previousId
-        } else {
-          globallyAligned = globallyAligned && checkAligned(previous, true, current, true)
-          orientedPathIds[i - 1] = previousId + 1
-        }
-        orientedPathIds[i] = id + 1
-        if (checkAligned(current, true, next, false)) {
-          orientedPathIds[i + 1] = nextId
-        } else {
-          globallyAligned = globallyAligned && checkAligned(current, true, next, true)
-          orientedPathIds[i + 1] = nextId + 1
-        }
-      }
-    }
-  } else if (ordered.size == 2) {
-    val previousId = (ordered[0] / 2) * 2
-    val nextId = (ordered[1] / 2) * 2
-    val previous = pathPolylines[previousId]!!
-    val next = pathPolylines[nextId]!!
-    val forwardIsNextForwardAligned = checkAligned(previous, false, next, false)
-    val forwardIsNextReverseAligned = checkAligned(previous, false, next, true)
-    if (forwardIsNextForwardAligned || forwardIsNextReverseAligned) {
-      orientedPathIds[0] = previousId
-      if (forwardIsNextForwardAligned) {
-        orientedPathIds[1] = nextId
-      } else {
-        orientedPathIds[1] = nextId + 1
-      }
-    } else {
-      orientedPathIds[0] = previousId + 1
-      if (checkAligned(previous, true, next, false)) {
-        orientedPathIds[1] = nextId
-      } else {
-        orientedPathIds[1] = nextId + 1
-      }
-    }
-  } else {
-    orientedPathIds[0] = ordered[0]
+    ordered: List<Long>, pathPolylines: Map<Long, List<LatLngE7>>): OrientedPaths {
+  val incident = HashMap<LatLngE7, MutableList<Int>>()
+  for (i in ordered.indices) {
+    val points = pathPolylines[ordered[i]]!!
+    incident.getOrPut(points.first()) { ArrayList() }.add(i)
+    incident.getOrPut(points.last()) { ArrayList() }.add(i)
   }
 
-  if (globallyAligned) {
-    return orientedPathIds
-  } else {
-    if (globallyAlign(trailId, orientedPathIds, pathPolylines)) {
-      return orientedPathIds
+  // First, gather the runs
+  val walked = BooleanArray(ordered.size)
+  // The way carrying on through a vertex, or null at a trail end or a junction. Junctions are a
+  // choice and we make those later, once we know how long each run is.
+  val carryOn = { vertex: LatLngE7 ->
+    val at = incident[vertex]!!
+    if (at.size == 2) {
+      val candidate = if (walked[at[0]]) at[1] else at[0]
+      if (walked[candidate]) null else candidate
     } else {
-      return null
+      null
     }
   }
+  val runs = ArrayList<Run>()
+  for (seed in ordered.indices) {
+    if (walked[seed]) {
+      continue
+    }
+
+    walked[seed] = true
+    val ids = ArrayDeque<Long>()
+    ids.addLast(ordered[seed])
+    var meters = metersOf(pathPolylines[ordered[seed]]!!)
+    var start = pathPolylines[ordered[seed]]!!.first()
+    var end = pathPolylines[ordered[seed]]!!.last()
+    while (true) {
+      val next = carryOn(end) ?: break
+      walked[next] = true
+      val points = pathPolylines[ordered[next]]!!
+      meters += metersOf(points)
+      if (points.first() == end) {
+        ids.addLast(ordered[next])
+        end = points.last()
+      } else {
+        ids.addLast(ordered[next] or 1L)
+        end = points.first()
+      }
+    }
+    while (true) {
+      val next = carryOn(start) ?: break
+      walked[next] = true
+      val points = pathPolylines[ordered[next]]!!
+      meters += metersOf(points)
+      if (points.last() == start) {
+        ids.addFirst(ordered[next])
+        start = points.first()
+      } else {
+        ids.addFirst(ordered[next] or 1L)
+        start = points.last()
+      }
+    }
+    runs.add(Run(ids, start, end, meters))
+  }
+
+  // Now hang the runs off each other
+  val endpoints = HashMap<LatLngE7, MutableList<Int>>()
+  for (i in runs.indices) {
+    endpoints.getOrPut(runs[i].start) { ArrayList() }.add(i)
+    endpoints.getOrPut(runs[i].end) { ArrayList() }.add(i)
+  }
+  val hung = BooleanArray(runs.size)
+  val longestAt = { vertex: LatLngE7 ->
+    endpoints[vertex]!!.filter { !hung[it] }.maxByOrNull { runs[it].meters }
+  }
+  // A vertex the walk already passed through can still have runs waiting on it, and those are
+  // reachable only as a detour that comes back. Anything that does not come back would tear the
+  // chain in two, so we leave it for a chain of its own.
+  val detourFrom = { vertex: LatLngE7 ->
+    val walk = ArrayList<Step>()
+    var cursor = vertex
+    var next = longestAt(vertex)
+    while (next != null) {
+      val attach = next
+      hung[attach] = true
+      val reversed = runs[attach].start != cursor
+      walk.add(Step(attach, reversed))
+      cursor = if (reversed) runs[attach].start else runs[attach].end
+      next = if (cursor == vertex) null else longestAt(cursor)
+    }
+    if (walk.isNotEmpty() && cursor == vertex) {
+      walk
+    } else {
+      walk.forEach { hung[it.run] = false }
+      null
+    }
+  }
+
+  val chains = ArrayList<Chain>()
+  for (seed in runs.indices.sortedByDescending { runs[it].meters }) {
+    if (hung[seed]) {
+      continue
+    }
+
+    hung[seed] = true
+    val steps = ArrayList<Step>()
+    steps.add(Step(seed, false))
+    var start = runs[seed].start
+    var end = runs[seed].end
+    while (true) {
+      val next = longestAt(end) ?: break
+      hung[next] = true
+      val reversed = runs[next].start != end
+      steps.add(Step(next, reversed))
+      end = if (reversed) runs[next].start else runs[next].end
+    }
+    while (true) {
+      val next = longestAt(start) ?: break
+      hung[next] = true
+      val reversed = runs[next].end != start
+      steps.add(0, Step(next, reversed))
+      start = if (reversed) runs[next].end else runs[next].start
+    }
+
+    var at = 0
+    while (at <= steps.size) {
+      val vertex = if (at < steps.size) {
+        val step = steps[at]
+        if (step.reversed) runs[step.run].end else runs[step.run].start
+      } else {
+        end
+      }
+      val detour = detourFrom(vertex)
+      if (detour == null) {
+        at += 1
+      } else {
+        steps.addAll(at, detour)
+      }
+    }
+
+    val ids = ArrayList<Long>()
+    var meters = 0.0
+    for (step in steps) {
+      meters += runs[step.run].meters
+      if (step.reversed) {
+        runs[step.run].ids.reversed().forEach { ids.add(it.xor(1L)) }
+      } else {
+        ids.addAll(runs[step.run].ids)
+      }
+    }
+    chains.add(Chain(ids, meters))
+  }
+
+  chains.sortByDescending { it.meters }
+  val ids = LongArray(ordered.size)
+  var at = 0
+  for (chain in chains) {
+    for (id in chain.ids) {
+      ids[at] = id
+      at += 1
+    }
+  }
+  return OrientedPaths(ids, chains.size == 1)
 }
 
-private fun checkAligned(
-    firstVertices: List<LatLngE7>,
-    firstReversed: Boolean,
-    secondVertices: List<LatLngE7>,
-    secondReversed: Boolean,
-): Boolean {
-  val firstLast =
-      if (firstReversed) {
-        firstVertices[0]
-      } else {
-        firstVertices[firstVertices.size - 1]
-      }
-  val secondFirst =
-      if (secondReversed) {
-        secondVertices[secondVertices.size - 1]
-      } else {
-        secondVertices[0]
-      }
-  return firstLast == secondFirst
-}
-
-private fun globallyAlign(
-    trailId: Long, orientedPathIds: LongArray, pathPolylines: Map<Long, List<LatLngE7>>): Boolean {
-  // All the possible places we can start a trail from
-  val starts = ImmutableSetMultimap.Builder<LatLngE7, Long>()
-  // The count of times a path (forward or reverse) can be used.
-  val uses = HashMap<Long, Int>()
-
-  // Seed all possible starts
-  for (id in orientedPathIds) {
-    val forward = id.and(1L.inv())
-    uses[forward] = (uses[forward] ?: 0) + 1
-    val polyline = pathPolylines[forward]!!
-    starts.put(polyline[0], forward)
-    starts.put(polyline[polyline.size - 1], id or 1L)
+private fun metersOf(points: List<LatLngE7>): Double {
+  var radians = 0.0
+  for (i in 1 until points.size) {
+    radians += points[i - 1].toS2LatLng().getDistance(points[i].toS2LatLng()).radians()
   }
-  val builtStarts = starts.build()
-
-  // Wouldn't it be great if the first path was the start?
-  val firstGuess = orientedPathIds[0]
-  if (canTracePath(trailId, firstGuess, orientedPathIds, builtStarts, uses, pathPolylines) ||
-      canTracePath(trailId, firstGuess xor 1L, orientedPathIds, builtStarts, uses, pathPolylines)) {
-    return true
-  }
-
-  val startTime = System.currentTimeMillis()
-  val timeoutSeconds = 60
-  for (start in builtStarts.keys()) {
-    if ((System.currentTimeMillis() - startTime) / 1000 > timeoutSeconds) {
-      logger.warn(
-          "Spent more than ${timeoutSeconds} seconds tracing ${trailId} total, giving up")
-      return false
-    }
-
-    if (
-        canTracePath(
-            trailId,
-            builtStarts[start].iterator().next(),
-            orientedPathIds,
-            builtStarts,
-            uses,
-            pathPolylines)) {
-      return true
-    }
-  }
-
-  return false
-}
-
-fun canTracePath(
-    trailId: Long,
-    start: Long,
-    orientedPathIds: LongArray,
-    starts: ImmutableMultimap<LatLngE7, Long>,
-    allowedUses: Map<Long, Int>,
-    pathPolylines: Map<Long, List<LatLngE7>>): Boolean {
-  val stack = Stack<Pair<Long, Int>>()
-  val trail = ArrayList<Long>()
-  val actualUses = HashMap(allowedUses.keys.map { it to 0 }.toMap())
-
-  stack.push(Pair(start, 1))
-  var success = false
-  val startTime = System.currentTimeMillis()
-  val timeoutSeconds = 30
-  while (!stack.isEmpty()) {
-    if ((System.currentTimeMillis() - startTime) / 1000 > timeoutSeconds) {
-      logger.warn(
-          "Spent more than ${timeoutSeconds} seconds tracing ${trailId} starting at ${start}, " +
-          "giving up")
-      return false
-    }
-
-    val (cursor, depth) = stack.pop()
-    trail.add(cursor)
-    val cursorForward = cursor.and(1L.inv())
-    actualUses[cursorForward] = actualUses[cursorForward]!! + 1
-    if (depth == orientedPathIds.size) {
-      success = true
-      break
-    }
-
-    while (trail.size > depth) {
-      val forward = trail.removeLast().and(1L.inv())
-      actualUses[forward] = actualUses[forward]!! - 1
-    }
-
-    val polyline = pathPolylines[cursor and 1L.inv()]!!
-    val end = if ((cursor and 1L) == 0L) {
-      polyline[polyline.size - 1]
-    } else {
-      polyline[0]
-    }
-    for (candidate in starts[end]) {
-      val forward = candidate and 1L.inv()
-      // Check to make sure if we use this candidate we haven't exceeded our uses
-      if (actualUses[forward]!! < allowedUses[forward]!!) {
-        stack.push(Pair(candidate, depth + 1))
-      }
-    }
-  }
-
-  return if (success) {
-    for (i in 0 until orientedPathIds.size) {
-      orientedPathIds[i] = trail[i]
-    }
-    true
-  } else {
-    false
-  }
+  return S2Earth.radiansToMeters(radians)
 }
 
 private fun pathsToPolyline(
     orientedPathIds: LongArray,
-    pathPolylines: HashMap<Long, List<LatLngE7>>): S2Polyline {
+    pathPolylines: Map<Long, List<LatLngE7>>): S2Polyline {
   val polyline = ArrayList<S2Point>()
-  for (pathIndex in orientedPathIds.indices) {
-    val pathId = orientedPathIds[pathIndex]
+  var last: LatLngE7? = null
+  for (pathId in orientedPathIds) {
     val path = pathPolylines[pathId.and(1L.inv())]!!
-    val startOffset = if (pathIndex == 0) 0 else 1
-    val endOffset = if (pathIndex == orientedPathIds.size - 1) 0 else 1
-    if (pathId % 2 == 0L) {
-      for (i in startOffset until path.size - endOffset) {
-        polyline.add(path[i].toS2LatLng().toPoint())
-      }
+    val direction = if (pathId % 2 == 0L) {
+      path
     } else {
-      for (i in (path.size - 1 - endOffset) downTo startOffset) {
-        polyline.add(path[i].toS2LatLng().toPoint())
+      path.asReversed()
+    }
+    for (point in direction) {
+      // S2Polyline rejects repeated vertices, and consecutive ways share the node they meet at.
+      if (point != last) {
+        polyline.add(point.toS2LatLng().toPoint())
+        last = point
       }
     }
   }

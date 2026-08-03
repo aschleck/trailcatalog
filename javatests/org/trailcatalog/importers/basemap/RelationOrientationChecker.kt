@@ -54,7 +54,9 @@ private fun fetchRelation(id: Long, map: MapDataApi): RelationGeometry {
 private fun fetchWay(id: Long, map: MapDataApi): WayGeometry {
   println("Fetching way ${id}")
   val source = map.getWay(id)
-  val unsorted = map.getNodes(source.nodeIds).associateBy { it.id }
+  // The node IDs go in the URI, and a way with hundreds of nodes makes one the API rejects as too
+  // long.
+  val unsorted = source.nodeIds.chunked(250).flatMap { map.getNodes(it) }.associateBy { it.id }
   val nodes = source.nodeIds.map { unsorted[it]!! }
   return WayGeometry.newBuilder()
     .setWayId(id)
@@ -69,12 +71,12 @@ private fun fetchWay(id: Long, map: MapDataApi): WayGeometry {
 private fun test(relation: RelationGeometry) {
   val mapped = HashMap<Long, List<LatLngE7>>()
   val ways = HashMap<Long, WayGeometry>()
-  val flattened = flattenWays(relation, mapped, ways, false)
-  if (flattened != null) {
-    println("relation ${relation.relationId} is valid")
-    println(flattened)
+  val flattened = flattenWays(relation, mapped, ways)
+  println(flattened.ids)
+  if (flattened.continuous) {
+    println("relation ${relation.relationId} traces as one line")
   } else {
-    println("relation ${relation.relationId} failed")
+    println("relation ${relation.relationId} breaks")
     val children = ArrayList<Long>()
     for (member in relation.membersList) {
       if (member.hasRelation()) {

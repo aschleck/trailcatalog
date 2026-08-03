@@ -8,27 +8,38 @@ import org.trailcatalog.proto.WayGeometry
 class CreateTrailsTest {
 
   @Test
-  fun testNestedRelationIsValid() {
+  fun testNestedRelationIsContinuous() {
     // 2024-06-16: popsicle
-    assertThat(isValid(4813557)).isTrue()
+    assertThat(flatten(4813557).continuous).isTrue()
   }
 
   @Test
-  fun testSimpleRelationIsValid() {
+  fun testSimpleRelationIsContinuous() {
     // 2024-06-16: two ways
-    assertThat(isValid(4137055)).isTrue()
+    assertThat(flatten(4137055).continuous).isTrue()
   }
 
   @Test
   fun testBrokenRelationIsBroken() {
     // 2024-06-16: I hate it
-    assertThat(isValid(17639740)).isFalse()
+    assertThat(flatten(17639740).continuous).isFalse()
+  }
+
+  @Test
+  fun testSpurredRelationKeepsItsMainLineTogether() {
+    // 2026-08-02: the Boundary Trail, with a 25 meter stub and a 100 meter stub hanging off its
+    // middle
+    val flattened = flatten(5628775)
+    assertThat(flattened.continuous).isFalse()
+    // The stubs are the two shortest stretches, so they sort to the end and leave the 110 km main
+    // line in one piece.
+    assertThat(flattened.ids.dropLast(2).map { it / 2 })
+        .containsNoneOf(962484855L, 961258419L)
   }
 }
 
-private fun isValid(id: Long): Boolean {
+private fun flatten(id: Long): FlatWays {
   val mapped = HashMap<Long, List<LatLngE7>>()
   val ways = HashMap<Long, WayGeometry>()
-  val flattened = flattenWays(fetchRelation(id), mapped, ways, false)
-  return flattened != null
+  return flattenWays(fetchRelation(id), mapped, ways)
 }

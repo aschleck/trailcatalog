@@ -1,5 +1,6 @@
 package org.trailcatalog.importers.basemap
 
+import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
@@ -10,7 +11,7 @@ fun e7ToS2(latE7: Int, lngE7: Int): S2Point {
 }
 
 fun polylineToMeters(polyline: S2Polyline): Double {
-  return polyline.arclengthAngle.radians() * 6371010.0
+  return S2Earth.toMeters(polyline.arclengthAngle)
 }
 
 fun S2Point.toLatLngE7(): LatLngE7 {

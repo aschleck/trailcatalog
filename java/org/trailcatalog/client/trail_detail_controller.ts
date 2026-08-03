@@ -172,6 +172,13 @@ export function calculateGraph(
     }
     lastPoint = point;
   };
+  // A relation that branches or breaks has no single line through it, so the importer puts its
+  // main line first and appends whatever it could not chain on. Two paths that meet share an OSM
+  // node and project to the same doubles, so a start that doesn't match the last end is where the
+  // main line stopped. Carrying on from there would draw tens of kilometers of straight line
+  // across the gap.
+  let lastX: number|undefined = undefined;
+  let lastY: number|undefined = undefined;
   for (let i = 0; i < trail.paths.length; ++i) {
     const pathId = trail.paths[i];
     const path = data.pinnedPaths.get(pathId & ~1n);
@@ -180,8 +187,18 @@ export function calculateGraph(
       continue;
     }
 
+    const line = path.line;
+    const forward = (pathId & 1n) === 0n;
+    const startX = forward ? line[0] : line[line.length - 2];
+    const startY = forward ? line[1] : line[line.length - 1];
+    if (lastX !== undefined && (lastX !== startX || lastY !== startY)) {
+      break;
+    }
+    lastX = forward ? line[line.length - 2] : line[0];
+    lastY = forward ? line[line.length - 1] : line[1];
+
     const profile = checkExists(pathProfiles.get(pathId & ~1n));
-    const points = calculateSampleLocations(profile.granularityMeters, path.line);
+    const points = calculateSampleLocations(profile.granularityMeters, line);
     const samples = profile.samplesMeters;
     const offset = i === 0 ? 0 : 1;
 
@@ -191,7 +208,7 @@ export function calculateGraph(
       points.push(points[points.length - 1]);
     }
 
-    if ((pathId & 1n) === 0n) {
+    if (forward) {
       for (let j = offset; j < samples.length; ++j) {
         process(points[j], samples[j]);
       }
