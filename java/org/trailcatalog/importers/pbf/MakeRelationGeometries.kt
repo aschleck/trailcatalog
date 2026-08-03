@@ -64,6 +64,7 @@ private fun inflate(
                 .setWayId(wayId)
                 .setDownMeters(original.downMeters)
                 .setUpMeters(original.upMeters)
+                .setLengthMeters(original.lengthMeters)
         original.points.forEach { way.addLatLngE7(it.lat).addLatLngE7(it.lng) }
         geometry.addMembers(RelationMember.newBuilder().setFunction(member.function).setWay(way))
       }

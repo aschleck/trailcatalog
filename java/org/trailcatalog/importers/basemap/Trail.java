@@ -13,5 +13,7 @@ public record Trail(
     S2Polyline polyline,
     float downMeters,
     float upMeters,
+    // Along the ground, so it includes the elevation the trail climbs over.
+    float lengthMeters,
     boolean validGeometry) {
 }

@@ -8,5 +8,6 @@ data class Profile(
     val hash: Int,
     val down: Double,
     val up: Double,
+    val length: Double,
     val profile: List<Float>,
 )

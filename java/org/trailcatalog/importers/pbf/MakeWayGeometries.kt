@@ -31,7 +31,7 @@ class MakeWayGeometries
       hash = 31 * hash + node.lng
       geometry.add(node)
     }
-    emitter.emit(way.id, Way(way.id, hash, way.type, Float.NaN, Float.NaN, geometry))
+    emitter.emit(way.id, Way(way.id, hash, way.type, Float.NaN, Float.NaN, Float.NaN, geometry))
   }
 
   override fun estimateRatio(): Double {

@@ -8,4 +8,6 @@ public record Way(
     int type,
     float downMeters,
     float upMeters,
+    // Along the ground, so it includes the rise. Ways with no elevation profile carry arclength.
+    float lengthMeters,
     List<LatLngE7> points) {}

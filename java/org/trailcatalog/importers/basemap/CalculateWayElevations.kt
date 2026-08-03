@@ -1,6 +1,7 @@
 package org.trailcatalog.importers.basemap
 
 import com.google.common.geometry.S2CellId
+import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Point
 import com.google.common.reflect.TypeToken
@@ -39,11 +40,24 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
   val increment = earthMetersToAngle(5.0)
   val sampleRate = 2
 
-  var offsetRadians = 0.0
-  var current = 0
-  var last = 0f
   var totalUp = 0.0
   var totalDown = 0.0
+  var totalMeters = 0.0
+  // Someone walking a step covers the hypotenuse of its arclength and its rise, not the arclength.
+  fun step(radians: Double, dz: Float) {
+    if (dz >= 0) {
+      totalUp += dz
+    } else {
+      totalDown -= dz
+    }
+    totalMeters += Math.hypot(S2Earth.radiansToMeters(radians), dz.toDouble())
+  }
+
+  var offsetRadians = 0.0
+  var current = 0
+  // TODO(april): this actually isn't a bad default because if we have no elevation it likely is
+  // at sea-level. But should we think about this more?
+  var last = resolver.query(S2LatLng(points[0])) ?: 0f
   val profile = ArrayList<Float>()
   var sampleIndex = 0
   while (current < points.size - 1) {
@@ -51,9 +65,8 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
     val next = points[current + 1]
     val length = previous.angle(next)
     var position = offsetRadians
-    // TODO(april): this actually isn't a bad default because if we have no elevation it likely is
-    // at sea-level. But should we think about this more?
-    last = resolver.query(S2LatLng(previous)) ?: 0f
+    // Where along this segment `last` sits, so a step spans from one sample to the next.
+    var lastRadians = 0.0
     while (position < length) {
       // Haversine as opposed to arc interpolation
       val fraction = Math.sin(position) / Math.sin(length)
@@ -68,15 +81,17 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
       }
       sampleIndex += 1
 
-      val dz = height - last
-      if (dz >= 0) {
-        totalUp += dz
-      } else {
-        totalDown -= dz
-      }
+      step(position - lastRadians, height - last)
       last = height
+      lastRadians = position
       position += increment.radians()
     }
+
+    // Sampling in fixed increments lands short of the vertex ending the segment, so that stretch is
+    // a step of its own or else the steps would sum to less than the way.
+    val vertex = resolver.query(S2LatLng(next)) ?: 0f
+    step(length - lastRadians, vertex - last)
+    last = vertex
     current += 1
     offsetRadians = position - length
   }
@@ -89,5 +104,6 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
       hash=way.hash,
       down=totalDown,
       up=totalUp,
+      length=totalMeters,
       profile=profile)
 }

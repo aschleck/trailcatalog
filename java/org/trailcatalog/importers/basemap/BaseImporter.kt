@@ -53,11 +53,12 @@ fun registerBaseMapSerializers() {
       val hash = from.readInt()
       val down = from.readDouble()
       val up = from.readDouble()
+      val length = from.readDouble()
       val profile = ArrayList<Float>()
       for (i in 0 until from.readVarInt()) {
         profile.add(from.readFloat())
       }
-      return Profile(id, hash, down, up, profile)
+      return Profile(id, hash, down, up, length, profile)
     }
 
     override fun write(v: Profile, to: EncodedOutputStream) {
@@ -65,6 +66,7 @@ fun registerBaseMapSerializers() {
       to.writeInt(v.hash)
       to.writeDouble(v.down)
       to.writeDouble(v.up)
+      to.writeDouble(v.length)
       to.writeVarInt(v.profile.size)
       v.profile.forEach { to.writeFloat(it) }
     }
@@ -91,8 +93,10 @@ fun registerBaseMapSerializers() {
       val polyline = S2Polyline(points)
       val downMeters = from.readFloat()
       val upMeters = from.readFloat()
+      val lengthMeters = from.readFloat()
       val validGeometry = from.readBoolean()
-      return Trail(id, type, name, names, paths, polyline, downMeters, upMeters, validGeometry)
+      return Trail(
+          id, type, name, names, paths, polyline, downMeters, upMeters, lengthMeters, validGeometry)
     }
 
     override fun write(v: Trail, to: EncodedOutputStream) {
@@ -112,6 +116,7 @@ fun registerBaseMapSerializers() {
       }
       to.writeFloat(v.downMeters)
       to.writeFloat(v.upMeters)
+      to.writeFloat(v.lengthMeters)
       to.writeBoolean(v.validGeometry)
     }
   })

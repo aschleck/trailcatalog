@@ -21,8 +21,10 @@ class UpdateWayElevations
 
     val down = profile?.down?.toFloat() ?: Float.NaN
     val up = profile?.up?.toFloat() ?: Float.NaN
+    // Ways outside of route relations never get a profile, and arclength beats no length at all.
+    val length = (profile?.length ?: latLngsToMeters(way.points)).toFloat()
 
-    emitter.emit(way.id, Way(way.id, way.hash, way.type, down, up, way.points))
+    emitter.emit(way.id, Way(way.id, way.hash, way.type, down, up, length, way.points))
   }
 
   override fun estimateRatio(): Double {

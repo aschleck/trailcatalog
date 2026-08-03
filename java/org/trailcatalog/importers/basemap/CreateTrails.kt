@@ -1,6 +1,5 @@
 package org.trailcatalog.importers.basemap
 
-import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2Point
 import com.google.common.geometry.S2Polyline
 import com.google.common.reflect.TypeToken
@@ -52,11 +51,13 @@ class CreateTrails
     val polyline = pathsToPolyline(orderedArray, mapped)
     var downMeters = 0f
     var upMeters = 0f
+    var lengthMeters = 0.0
     for (pathId in orderedArray) {
       val way = ways[pathId / 2]
       if (way == null) {
         downMeters = Float.NaN
         upMeters = Float.NaN
+        lengthMeters = Double.NaN
         break
       }
 
@@ -67,6 +68,9 @@ class CreateTrails
         downMeters += way.upMeters
         upMeters += way.downMeters
       }
+      // Summing the ways rather than measuring the joined polyline, because only the ways carry the
+      // elevation the trail climbs over.
+      lengthMeters += way.lengthMeters
     }
 
     emitter.emit(
@@ -79,6 +83,7 @@ class CreateTrails
             polyline,
             downMeters,
             upMeters,
+            lengthMeters.toFloat(),
             flattened.continuous,
         ))
   }
@@ -217,14 +222,14 @@ private fun orientPaths(
     walked[seed] = true
     val ids = ArrayDeque<Long>()
     ids.addLast(ordered[seed])
-    var meters = metersOf(pathPolylines[ordered[seed]]!!)
+    var meters = latLngsToMeters(pathPolylines[ordered[seed]]!!)
     var start = pathPolylines[ordered[seed]]!!.first()
     var end = pathPolylines[ordered[seed]]!!.last()
     while (true) {
       val next = carryOn(end) ?: break
       walked[next] = true
       val points = pathPolylines[ordered[next]]!!
-      meters += metersOf(points)
+      meters += latLngsToMeters(points)
       if (points.first() == end) {
         ids.addLast(ordered[next])
         end = points.last()
@@ -237,7 +242,7 @@ private fun orientPaths(
       val next = carryOn(start) ?: break
       walked[next] = true
       val points = pathPolylines[ordered[next]]!!
-      meters += metersOf(points)
+      meters += latLngsToMeters(points)
       if (points.last() == start) {
         ids.addFirst(ordered[next])
         start = points.first()
@@ -347,14 +352,6 @@ private fun orientPaths(
     }
   }
   return OrientedPaths(ids, chains.size == 1)
-}
-
-private fun metersOf(points: List<LatLngE7>): Double {
-  var radians = 0.0
-  for (i in 1 until points.size) {
-    radians += points[i - 1].toS2LatLng().getDistance(points[i].toS2LatLng()).radians()
-  }
-  return S2Earth.radiansToMeters(radians)
 }
 
 private fun pathsToPolyline(

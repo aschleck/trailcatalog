@@ -40,6 +40,7 @@ message WayGeometry {
   float down_meters = 2;
   float up_meters = 3;
   repeated int32 lat_lng_e7 = 4;
+  float length_meters = 5;
 }
 
 enum RelationMemberFunction {
