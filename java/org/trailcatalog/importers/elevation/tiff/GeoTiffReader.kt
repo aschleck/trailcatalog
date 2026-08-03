@@ -18,7 +18,6 @@ import java.nio.ByteOrder.LITTLE_ENDIAN
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.nio.file.Path
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.fileSize
 
 data class XyPair(val x: Double, val y: Double)
@@ -312,7 +311,6 @@ class GeoTiffReader(private val path: Path) : DemReader {
 
   override fun close() {
     stream.close()
-    path.deleteIfExists()
   }
 
   @Override

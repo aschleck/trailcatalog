@@ -1,65 +1,43 @@
 package org.trailcatalog.importers.elevation
 
-import com.google.common.cache.CacheBuilder
-import com.google.common.cache.CacheLoader
 import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2LatLngRect
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import org.slf4j.LoggerFactory
-import org.trailcatalog.common.IORuntimeException
-import org.trailcatalog.importers.common.NotFoundException
-import org.trailcatalog.importers.common.download
-import org.trailcatalog.importers.elevation.tiff.ConstantReader
-import org.trailcatalog.importers.elevation.tiff.DemReader
-import org.trailcatalog.importers.elevation.tiff.GeoTiffReader
-import org.trailcatalog.s2.earthMetersToAngle
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
+import org.trailcatalog.flags.createNullableFlag
+import java.io.Closeable
+import java.nio.file.Path
 
-private val logger = LoggerFactory.getLogger(DemResolver::class.java)
+enum class ElevationSource {
+  COPERNICUS,
+  MAPTERHORN,
+}
 
-class DemResolver {
+@FlagSpec("elevation_source")
+private val elevationSource = createFlag(ElevationSource.MAPTERHORN)
+@FlagSpec("copernicus_root")
+private val copernicusRoot = createNullableFlag(null as Path?)
+@FlagSpec("mapterhorn_pmtiles")
+private val mapterhornPmtiles = createNullableFlag(null as Path?)
 
-  private var area = S2LatLngRect.empty()
-  private val metadata = ArrayList<DemMetadata>()
+/** Samples elevations in meters above sea level. */
+interface DemResolver : Closeable {
 
-  private val dems =
-      CacheBuilder.newBuilder()
-          .maximumSize(30)
-          .removalListener<DemMetadata, DemReader> {
-            it.value?.close()
-          }
-          .build(
-              object : CacheLoader<DemMetadata, DemReader>() {
-                override fun load(p0: DemMetadata): DemReader {
-                  try {
-                    download(p0.url.toHttpUrl(), p0.path)
-                    return GeoTiffReader(p0.path)
-                  } catch (e: NotFoundException) {
-                    return ConstantReader(if (p0.global) 0f else null)
-                  } catch (e: IORuntimeException) {
-                    logger.warn("Error fetching ${p0.url}")
-                    return ConstantReader(null)
-                  }
-                }
-              })
+  override fun close() {}
 
-  fun query(ll: S2LatLng): Float? {
-    if (!area.contains(ll)) {
-      // TODO(april): this is 10 miles, but is there a reason to pull 10 miles?
-      area = S2LatLngRect.fromPoint(ll).expandedByDistance(earthMetersToAngle(16093.0))
-      metadata.clear()
-      metadata.addAll(getDemMetadata(area))
-    }
+  /** Returns the elevation at [ll], or null where the source has no data. */
+  fun query(ll: S2LatLng): Float?
+}
 
-    for (dem in metadata) {
-      if (!dem.bounds.contains(ll)) {
-        continue
-      }
-
-      val value = dems[dem].query(ll)
-      if (value != null) {
-        return value
-      }
-    }
-    return null
+fun createDemResolver(): DemResolver {
+  return when (elevationSource.value) {
+    ElevationSource.COPERNICUS ->
+      CopernicusResolver(checkNotNull(copernicusRoot.value) {
+        "--copernicus_root is required with --elevation_source=COPERNICUS"
+      })
+    ElevationSource.MAPTERHORN ->
+      MapterhornResolver(
+          checkNotNull(mapterhornPmtiles.value) {
+            "--mapterhorn_pmtiles is required with --elevation_source=MAPTERHORN"
+          })
   }
 }

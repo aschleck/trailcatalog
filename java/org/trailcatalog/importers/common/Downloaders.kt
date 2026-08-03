@@ -105,13 +105,17 @@ private fun <E : Exception, T> retry(limit: Int, expect: List<KClass<in E>>, fn:
         }
       }
 
-      if (retryable && failures < limit) {
-        failures += 1
-        Thread.sleep(backoffMs)
-        backoffMs *= 2
-      } else {
+      if (!retryable) {
+        throw e
+      }
+
+      if (failures >= limit) {
         throw IORuntimeException("Out of retries", e)
       }
+
+      failures += 1
+      Thread.sleep(backoffMs)
+      backoffMs *= 2
     }
   }
 }

@@ -5,6 +5,7 @@ import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Point
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.elevation.DemResolver
+import org.trailcatalog.importers.elevation.createDemResolver
 import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.PTransformer
@@ -15,10 +16,10 @@ import org.trailcatalog.s2.earthMetersToAngle
 class CalculateWayElevations
     : PTransformer<PEntry<S2CellId, Way>, Profile>(TypeToken.of(Profile::class.java)) {
 
-  private val resolver = DemResolver()
+  private val resolver = createDemResolver()
 
-  // DemResolver wraps a tile cache whose thread safety hasn't been audited. Stay single-threaded
-  // until that's verified.
+  // The resolvers wrap tile caches whose thread safety hasn't been audited, and neither has
+  // ImageIO's WebP decoding. Stay single-threaded until that's verified.
   override val parallelism: Int = 1
 
   override fun act(input: PEntry<S2CellId, Way>, emitter: Emitter<Profile>) {
@@ -33,7 +34,8 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
 
   // 1609 meters to a mile, so at four bytes per meter we'd pay 6.4kb per mile. Seems like a lot,
   // but accuracy is nice... Let's calculate at 5m but build the profile every 10m.
-  // TODO(april): we're calculating using Copernicus which is 30m, so...?
+  // TODO(april): the sources are coarser than this, 30m for Copernicus and 19m per pixel at the
+  // equator for mapterhorn's z12 tiles, so we're oversampling.
   val increment = earthMetersToAngle(5.0)
   val sampleRate = 2
 

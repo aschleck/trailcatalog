@@ -347,10 +347,8 @@ private fun calculateProfiles(
               })
 
   val waysByCells = missingWays.groupBy("GroupWaysMissingProfilesByCells") {
-    // 1 degree on Earth is around 111km, which is in between the edge lengths of level 6 and 7. So
-    // to balance between downloading Copernicus imagery multiple times (because level 6 cells are
-    // contained by a Copernicus tile) and loading too many USGS 1m tiles at one time (because
-    // they have 30x the density of a Copernicus tile in 5x the size), just pick 7.
+    // A group is calculated back to back, so grouping by locality keeps its elevation tiles in the
+    // resolver's cache. A level 7 cell is around 100km on a side, which is a few hundred tiles.
     S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
   }
   val calculatedProfiles = waysByCells.then(CalculateWayElevations())

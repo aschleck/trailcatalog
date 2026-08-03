@@ -63,9 +63,10 @@ podman run \
     us-west1-docker.pkg.dev/trailcatalog/containers/importer:latest \
     --block_size 4194304 \
     --buffer_size 500000000 \
-    --copernicus_root /tmp/copernicus \
     --elevation_profile /tmp/elevation_profile.pb \
+    --elevation_source MAPTERHORN \
     --heap_dump_threshold 8048000000 \
+    --mapterhorn_pmtiles /tmp/mapterhorn_2026-07-01.pmtiles \
     --pbfs /tmp/planet-latest.osm.pbf \
     | tee /mnt/horse/import_log.txt
 rm -rf /mnt/horse/planet-latest.osm.pbf
