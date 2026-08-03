@@ -1200,6 +1200,12 @@ function loadValue(data: LittleEndianView): ValueType {
       } else if (field === 7) {
         boolean = !!value;
       }
+    } else if (wireType === 1) {
+      if (field === 3) {
+        number = data.getFloat64();
+      } else {
+        throw new Error(`Unknown field ${field}`);
+      }
     } else if (wireType === 2) {
       const size = data.getVarInt32();
       if (field === 1) {
