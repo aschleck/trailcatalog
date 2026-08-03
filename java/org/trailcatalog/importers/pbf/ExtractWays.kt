@@ -28,10 +28,11 @@ class ExtractWays
 private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   var category = WayCategory.ANY
   var name: String? = null
-  // construction=* and service=* both name a subtype of whatever the way already is, so they can
-  // only be resolved once every other tag has been read. service=* also appears on
+  // construction=*, footway=*, and service=* each name a subtype of whatever the way already is, so
+  // they can only be resolved once every other tag has been read. service=* also appears on
   // highway=service, where it means something else.
   var construction: ByteString? = null
+  var footway: ByteString? = null
   var service: ByteString? = null
   for (i in 0 until way.keysCount) {
     when (stringTable.getS(way.getKeys(i))) {
@@ -51,6 +52,8 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
             category.coerceAtLeast(MAN_MADE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
       CONSTRUCTION_BS ->
         construction = stringTable.getS(way.getVals(i))
+      FOOTWAY_BS ->
+        footway = stringTable.getS(way.getVals(i))
       SERVICE_BS ->
         service = stringTable.getS(way.getVals(i))
       WATERWAY_BS ->
@@ -102,6 +105,11 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   }
   if (construction != null && category == WayCategory.ROAD_CONSTRUCTION) {
     category = category.coerceAtLeast(ROAD_CONSTRUCTION_CATEGORY_NAMES[construction])
+  }
+  // Only a way that stayed at plain footway, so a sidewalk tag can't pull a cycleway or a set of
+  // steps out from under its own category.
+  if (footway != null && category == WayCategory.PATH_FOOTWAY) {
+    category = category.coerceAtLeast(FOOTWAY_CATEGORY_NAMES[footway])
   }
   val refs = LongArray(way.refsCount)
   var nodeId = 0L

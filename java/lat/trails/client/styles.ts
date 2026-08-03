@@ -3,7 +3,7 @@ import { RgbaU32 } from 'js/map/common/types';
 import { NATURE } from 'js/map/layers/mbtile_layer';
 import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { Style as MbtileStyle } from 'js/map/workers/mbtile_loader';
-import { Z_USER_DATA } from 'js/map/z';
+import { Z_OVERLAY_TRANSPORTATION, Z_USER_DATA } from 'js/map/z';
 
 import { LineStyle, Style } from './workers/collection_loader';
 
@@ -122,8 +122,213 @@ function withoutWayLines(style: MbtileStyle): MbtileStyle {
   return {layers};
 }
 
+// Dark enough to read against landcover, which composites to about 0xBFD9A8 where the 40% alpha
+// 0x72B948 wood fill lands on the base.
+const TRAIL_COLOR = 0x2A6B3CFF as RgbaU32;
+
+// TRAIL_COLOR lightened toward the landcover it sits on, because a city block of sidewalks has to
+// read as texture while a trail still wins.
+const SIDEWALK_COLOR = 0x74A183FF as RgbaU32;
+
+// NATURE's service casing 0xBCB4A5 pushed toward yellow to say unpaved, and taken most of the way
+// to black because it only ever gets the one device pixel at the edge of the line to say it.
+const TRACK_COLOR = 0x4A3A1EFF as RgbaU32;
+
+// The core inside a track's border. NATURE's service fill 0xF6F5F2 warmed toward TRACK_COLOR, so
+// the core still says dirt.
+const TRACK_CORE_COLOR = 0xEFE9DEFF as RgbaU32;
+
+// The path family, written against WayCategory rather than replayed out of an OpenMapTiles style,
+// because OpenMapTiles names neither a sidewalk nor a piste and MapTiler draws none of this anyway.
+// Bands match NATURE's transportation bands so the widths ramp with the roads, and nothing starts
+// before zoom 11 because a whole wilderness of trails at that scale is a smear.
+//
+// Every rule is one flat color: the casing is the outer device pixel of the line (see
+// line_program.ts#draw) and none of these is ever wide enough to hold anything inside it.
+//
+// A piste takes the trail's own style. It is a route over the ground the same way a trail is, and
+// this is not a ski map, so nothing here needs to tell them apart.
+//
+// The sidewalk rule comes first in every band because the first matching style wins and the trail
+// rule names WayCategory.PATH, which is the subtree and so takes the sidewalks too.
+const PATH_LINES: LineStyle[] = [
+  {
+    filters: [{
+      match: 'category_in',
+      key: 'type',
+      value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
+    }],
+    minZoom: 11,
+    maxZoom: 12,
+    fill: SIDEWALK_COLOR,
+    stroke: SIDEWALK_COLOR,
+    radius: 0.4,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.45,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH, WayCategory.PISTE]}],
+    minZoom: 11,
+    maxZoom: 12,
+    fill: TRAIL_COLOR,
+    stroke: TRAIL_COLOR,
+    radius: 0.5,
+    // Stippled because a solid hairline reads as a stream.
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.3,
+  },
+  {
+    filters: [{
+      match: 'category_in',
+      key: 'type',
+      value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
+    }],
+    minZoom: 12,
+    maxZoom: 13,
+    fill: SIDEWALK_COLOR,
+    stroke: SIDEWALK_COLOR,
+    radius: 0.4,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.45,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH, WayCategory.PISTE]}],
+    minZoom: 12,
+    maxZoom: 13,
+    fill: TRAIL_COLOR,
+    stroke: TRAIL_COLOR,
+    radius: 0.5,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.3,
+  },
+  {
+    filters: [{
+      match: 'category_in',
+      key: 'type',
+      value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
+    }],
+    minZoom: 13,
+    maxZoom: 15,
+    fill: SIDEWALK_COLOR,
+    stroke: SIDEWALK_COLOR,
+    radius: 0.5,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.45,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH, WayCategory.PISTE]}],
+    minZoom: 13,
+    maxZoom: 15,
+    fill: TRAIL_COLOR,
+    stroke: TRAIL_COLOR,
+    radius: 0.6,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.3,
+  },
+  {
+    filters: [{
+      match: 'category_in',
+      key: 'type',
+      value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
+    }],
+    minZoom: 15,
+    maxZoom: 31,
+    fill: SIDEWALK_COLOR,
+    stroke: SIDEWALK_COLOR,
+    radius: 0.8,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.45,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH, WayCategory.PISTE]}],
+    minZoom: 15,
+    maxZoom: 31,
+    fill: TRAIL_COLOR,
+    stroke: TRAIL_COLOR,
+    radius: 1.2,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.3,
+  },
+];
+
+// The track rules MapTiler's basemap has no reason to carry, per NATURE transportation band, keyed
+// by the band's minZoom. These stay in the mbtile style because track is a real OpenMapTiles class,
+// so NATURE_WITH_TRACKS is still a style that would draw the tiles it claims to.
+//
+// A track draws TRACK_CORE_COLOR inside TRACK_COLOR once the band is wide enough to hold a core,
+// which is past radius 1. The casing pixel is also where the shader fades the line's alpha out, so
+// the border stays a soft hairline no matter how wide the track gets, and a paper map's double dash
+// would take two line styles per way. A pale road in a dark border still reads as unpaved next to a
+// solid green trail, which is the job.
+//
+// The z values continue NATURE's transportation ramp downward from service, so a service road's
+// casing covers a track running into it and a track's covers a trail.
+const TRACK_LINES = new Map<number, MbtileLayerStyle['lines']>([
+  [11, [
+    {
+      filters: [{match: 'string_in', key: 'class', value: ['track']}],
+      fill: TRACK_COLOR,
+      stroke: TRACK_COLOR,
+      radius: 0.5,
+      stipple: true,
+      z: Z_OVERLAY_TRANSPORTATION - 0.15,
+    },
+  ]],
+  [12, [
+    {
+      filters: [{match: 'string_in', key: 'class', value: ['track']}],
+      fill: TRACK_COLOR,
+      stroke: TRACK_COLOR,
+      radius: 0.6,
+      stipple: true,
+      z: Z_OVERLAY_TRANSPORTATION - 0.15,
+    },
+  ]],
+  [13, [
+    {
+      filters: [{match: 'string_in', key: 'class', value: ['track']}],
+      fill: TRACK_CORE_COLOR,
+      stroke: TRACK_COLOR,
+      radius: 1.8,
+      stipple: true,
+      z: Z_OVERLAY_TRANSPORTATION - 0.15,
+    },
+  ]],
+  [15, [
+    {
+      filters: [{match: 'string_in', key: 'class', value: ['track']}],
+      fill: TRACK_CORE_COLOR,
+      stroke: TRACK_COLOR,
+      radius: 2.4,
+      stipple: true,
+      z: Z_OVERLAY_TRANSPORTATION - 0.15,
+    },
+  ]],
+]);
+
+/**
+ * Adds TRACK_LINES to the transportation bands that already exist, so the widths ramp with the
+ * roads.
+ */
+function withTracks(style: MbtileStyle): MbtileStyle {
+  const layers = style.layers.map(layer => {
+    const lines = layer.layerName === 'transportation' ? TRACK_LINES.get(layer.minZoom) : undefined;
+    if (!lines) {
+      return layer;
+    }
+
+    // Prepended to keep NATURE's bottom of the ramp first ordering.
+    return {...layer, lines: [...lines, ...layer.lines]};
+  });
+  return {layers};
+}
+
+export const NATURE_WITH_TRACKS: MbtileStyle = withTracks(NATURE);
+
+// PATH_LINES first to keep the lowest z first, which is only cosmetic: it names categories no road,
+// aeroway, or waterway rule can match, so nothing depends on which one findZoomedStyle reaches.
 export const OSM_PATHS: Style = {
-  lines: wayLines(NATURE),
+  lines: [...PATH_LINES, ...wayLines(NATURE_WITH_TRACKS)],
   polygons: [],
 };
 

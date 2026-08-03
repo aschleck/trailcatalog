@@ -156,6 +156,14 @@ val HIGHWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
 
     .build()
 
+// What a highway=footway is for, from footway=*. Everything else, including no footway tag at all,
+// stays on PATH_FOOTWAY, which is where a trail someone tagged highway=footway lands.
+val FOOTWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("sidewalk"), WayCategory.PATH_FOOTWAY_SIDEWALK)
+    .put(ByteString.copyFromUtf8("crossing"), WayCategory.PATH_FOOTWAY_CROSSING)
+
+    .build()
+
 val MAN_MADE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
     .put(ByteString.copyFromUtf8("pier"), WayCategory.MAN_MADE_PIER)
     .put(ByteString.copyFromUtf8("breakwater"), WayCategory.MAN_MADE_BREAKWATER)
@@ -299,6 +307,7 @@ val AEROWAY_BS = ByteString.copyFromUtf8("aeroway")
 val AMENITY_BS = ByteString.copyFromUtf8("amenity")
 val BOUNDARY_BS = ByteString.copyFromUtf8("boundary")
 val CONSTRUCTION_BS = ByteString.copyFromUtf8("construction")
+val FOOTWAY_BS = ByteString.copyFromUtf8("footway")
 val HIGHWAY_BS = ByteString.copyFromUtf8("highway")
 val INFORMATION_BS = ByteString.copyFromUtf8("information")
 val LEISURE_BS = ByteString.copyFromUtf8("leisure")

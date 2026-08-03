@@ -954,8 +954,12 @@ function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number
   return bestDistance2;
 }
 
+// A sidewalk and a crossing are the only footways that exist to carry a pedestrian alongside a
+// road. The rest of highway=footway is trail, which is most of what a national park is mapped as.
 function isPath(type: number): boolean {
-  return (aDescendsB(type, WayCategory.PATH) && !aDescendsB(type, WayCategory.PATH_FOOTWAY))
+  return (aDescendsB(type, WayCategory.PATH)
+        && !aDescendsB(type, WayCategory.PATH_FOOTWAY_SIDEWALK)
+        && !aDescendsB(type, WayCategory.PATH_FOOTWAY_CROSSING))
     || aDescendsB(type, WayCategory.PISTE)
     || aDescendsB(type, WayCategory.ROAD_TRACK);
 }

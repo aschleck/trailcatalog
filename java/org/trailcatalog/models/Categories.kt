@@ -171,7 +171,11 @@ enum class WayCategory(override val id: Int) : Category<WayCategory> {
           ROAD_CONSTRUCTION_MINOR(ROAD_CONSTRUCTION.id * ENUM_SIZE + 6),
 
       PATH(HIGHWAY.id * ENUM_SIZE + 3),
+        // A bare highway=footway is as often a mountain trail as a city sidewalk, so footway=*
+        // splits off the ones that only exist to carry a pedestrian alongside a road.
         PATH_FOOTWAY(PATH.id * ENUM_SIZE + 1),
+          PATH_FOOTWAY_SIDEWALK(PATH_FOOTWAY.id * ENUM_SIZE + 1),
+          PATH_FOOTWAY_CROSSING(PATH_FOOTWAY.id * ENUM_SIZE + 2),
         PATH_BRIDLEWAY(PATH.id * ENUM_SIZE + 2),
         PATH_STEPS(PATH.id * ENUM_SIZE + 3),
         PATH_CORRIDOR(PATH.id * ENUM_SIZE + 4),
