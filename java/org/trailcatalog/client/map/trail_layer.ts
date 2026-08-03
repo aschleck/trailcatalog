@@ -67,9 +67,9 @@ const POINTS_ATLAS = new Map<PointCategory, number>([
 const POINTS_ATLAS_SIZE = [8, 4] as Vec2;
 
 const Z_PATH = 110;
-const Z_RAISED_PATH = 111;
-const Z_POINT = 112;
-const Z_TRAIL_MARKER = 113;
+const Z_POINT = 111;
+const Z_TRAIL_MARKER = 112;
+const Z_RAISED_PATH = 113;
 const Z_RAISED_TRAIL_MARKER = 114;
 const PATH_RADIUS_PX = 1.5;
 const RAISED_PATH_RADIUS_PX = 4;
