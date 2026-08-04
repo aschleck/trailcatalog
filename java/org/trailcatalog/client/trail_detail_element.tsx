@@ -268,16 +268,13 @@ function TrailSidebar({state}: {state: State}) {
           }
         </div>
       </div>
-      <section className="mt-4">
-        <div className="font-medium text-lg">Elevation</div>
-        {state.elevation
-            ? <section className="mt-4">
-                <div className="font-medium text-lg">Elevation</div>
-                <ElevationGraph {...state} />
-              </section>
-            : <></>
-        }
-      </section>
+      {state.elevation
+          ? <section className="mt-4">
+              <div className="font-medium text-lg">Elevation</div>
+              <ElevationGraph {...state} />
+            </section>
+          : <></>
+      }
     </div>
   </>;
 }
