@@ -5,12 +5,11 @@ import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_thrott
 import { reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 
-import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD, PIN_CELL_ID } from './data_constants';
+import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD } from './data_constants';
 
-export interface SetPinsRequest {
-  kind: 'spr';
-  precise: boolean;
-  trail?: bigint;
+export interface FetchTrailRequest {
+  kind: 'ftr';
+  trail: bigint;
 }
 
 export interface UpdateViewportRequest {
@@ -24,7 +23,13 @@ export interface Viewport {
   zoom: number;
 }
 
-type Request = SetPinsRequest|UpdateViewportRequest;
+type Request = FetchTrailRequest|UpdateViewportRequest;
+
+export interface FetchTrailResponse {
+  type: 'ftr';
+  trail: bigint;
+  data: ArrayBuffer;
+}
 
 export interface LoadCellCoarseCommand {
   type: 'lcc';
@@ -44,16 +49,22 @@ export interface LoadCellOverviewCommand {
   data: ArrayBuffer;
 }
 
+// Which index the cells belong to. A coarse cell and a fine cell can carry the same id, so
+// without this the client can't tell which of the two to unload.
+export type CellIndex = 'coarse'|'fine'|'overview';
+
 export interface UnloadCellsCommand {
   type: 'ucc';
+  index: CellIndex;
   cells: S2CellNumber[];
 }
 
 export type FetcherCommand =
-    LoadCellCoarseCommand
-        |LoadCellFineCommand
-        |LoadCellOverviewCommand
-        |UnloadCellsCommand;
+  | FetchTrailResponse
+  | LoadCellCoarseCommand
+  | LoadCellFineCommand
+  | LoadCellOverviewCommand
+  | UnloadCellsCommand;
 
 class DataFetcher {
 
@@ -77,43 +88,14 @@ class DataFetcher {
     this.throttler = new FetchThrottler();
   }
 
-  flush(): void {
-    this.mail({
-      type: 'ucc',
-      cells: [...this.overview, ...this.coarse, ...this.fine],
-    }, []);
-    this.overview.clear();
-    this.overviewInFlight.clear();
-    this.coarse.clear();
-    this.coarseInFlight.clear();
-    this.fine.clear();
-    this.fineInFlight.clear();
-  }
-
-  setPins(pins: SetPinsRequest): void {
-    const id = PIN_CELL_ID;
-    const inFlight = this.overviewInFlight.get(id);
-    if (inFlight) {
-      inFlight.abort();
-    }
-
-    if (!pins.trail) {
-      this.overviewInFlight.delete(id);
-      this.mail({
-        type: 'ucc',
-        cells: [id],
-      }, []);
-      return;
-    }
-
+  fetchTrail(request: FetchTrailRequest): void {
     const abort = new AbortController();
-    this.overviewInFlight.set(id, abort);
     this.throttler.fetch(`/api/data-packed`, {
       method: 'POST',
       signal: abort.signal,
       body: JSON.stringify({
-        precise: pins.precise,
-        trail_id: pins.trail,
+        precise: true,
+        trail_id: request.trail,
       }, (k, v) => typeof v === 'bigint' ? String(v) : v),
     }).then(response => {
       if (response.ok) {
@@ -123,15 +105,9 @@ class DataFetcher {
       }
     })
     .then(data => {
-      this.overviewInFlight.delete(id);
       this.mail({
-        type: 'ucc',
-        cells: [id],
-      }, []);
-      // TODO(april): weird we use overview for InFlight but then send this as coarse
-      this.mail({
-        type: 'lcc',
-        cell: id,
+        type: 'ftr',
+        trail: request.trail,
         data,
       }, [data]);
     });
@@ -139,7 +115,7 @@ class DataFetcher {
 
   updateViewport(viewport: Viewport): void {
     const zoom = viewport.zoom;
-    const used = new Set([PIN_CELL_ID]); // never cancel our pin request
+    const used = new Set<S2CellNumber>();
 
     const overviewCellsInBound =
         SimpleS2.cover(
@@ -265,24 +241,25 @@ class DataFetcher {
       }
     }
 
-    // Rough approximation: only consider unloading if zoomed in.
-    if (zoom < COARSE_ZOOM_THRESHOLD) {
-      return;
-    }
+    this.unloadUnused('coarse', this.coarse, used);
+    this.unloadUnused('fine', this.fine, used);
+  }
 
-    const unload = [];
-    for (const id of this.coarse) {
+  private unloadUnused(
+      index: CellIndex, loaded: Set<S2CellNumber>, used: Set<S2CellNumber>): void {
+    const cells = [];
+    for (const id of loaded) {
       if (!used.has(id)) {
-        this.overview.delete(id);
-        this.coarse.delete(id);
-        unload.push(id);
+        loaded.delete(id);
+        cells.push(id);
       }
     }
 
-    if (unload.length > 0) {
+    if (cells.length > 0) {
       this.mail({
         type: 'ucc',
-        cells: unload,
+        index,
+        cells,
       }, []);
     }
   }
@@ -291,8 +268,8 @@ class DataFetcher {
 const fetcher = new DataFetcher((self as any).postMessage.bind(self));
 self.onmessage = e => {
   const request = e.data as Request;
-  if (request.kind === 'spr') {
-    fetcher.setPins(request);
+  if (request.kind === 'ftr') {
+    fetcher.fetchTrail(request);
   } else if (request.kind === 'uvr') {
     fetcher.updateViewport(request.viewport);
   } else {

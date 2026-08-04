@@ -147,6 +147,8 @@ export class TrailLayer extends Layer implements Listener {
   private readonly pointsAtlas: WebGLTexture;
   private readonly queryClosestBuffer: Handle[];
   private readonly queryVisibleBuffer: TrailHandle[];
+  // An entry with no palette is a pinned path that nothing has highlighted.
+  private readonly plannedEntities: Map<bigint, LinePalette|undefined>;
   private readonly visiblePins: Drawable[];
   private interactiveScratchBuffer: ArrayBuffer;
   private pinScratchBuffer: ArrayBuffer;
@@ -193,6 +195,7 @@ export class TrailLayer extends Layer implements Listener {
     this.pointsAtlas = new TexturePool(renderer).acquire();
     this.queryClosestBuffer = [];
     this.queryVisibleBuffer = [];
+    this.plannedEntities = new Map();
     this.visiblePins = [];
     this.interactiveScratchBuffer = new ArrayBuffer(64 * 1024);
     this.pinScratchBuffer = new ArrayBuffer(256 * 1024);
@@ -261,9 +264,10 @@ export class TrailLayer extends Layer implements Listener {
 
     const detailPlans = [];
     if (this.showDetail(this.camera.zoom)) {
+      const useFine = this.showFine(this.camera.zoom);
       const cells = this.cellsInView(SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
       for (const cell of cells) {
-        const fine = this.finePlans.get(cell);
+        const fine = useFine ? this.finePlans.get(cell) : undefined;
         if (fine) {
           detailPlans.push(fine);
           continue;
@@ -285,6 +289,7 @@ export class TrailLayer extends Layer implements Listener {
       }
     }
 
+    // A pinned trail draws wherever the camera is, so this plan has no zoom gate.
     planner.add(this.interactivePlan.paths);
     planner.add(this.interactivePlan.points);
 
@@ -474,15 +479,33 @@ export class TrailLayer extends Layer implements Listener {
     const trailBias2 = 10 * 10;
     const radius = CLICK_RADIUS_PX * screenToWorldPx;
     this.getActiveBounds().queryCircle(point, radius, near);
+    // Pinned paths are in no quadtree. They answer the mouse at every zoom, so no single tree
+    // suits them, and overviewBounds holds trails only. There are few enough to test one by one.
+    for (const path of this.dataService.pinnedPaths.values()) {
+      const bound = path.bound;
+      if (point[0] + radius < bound.low[0]
+          || point[0] - radius > bound.high[0]
+          || point[1] + radius < bound.low[1]
+          || point[1] - radius > bound.high[1]) {
+        continue;
+      }
+
+      // The pin and the cell copy are separate objects carrying the same vertices, so without
+      // this the line gets measured twice.
+      if (near.some(h => h.entity instanceof Path && h.entity.id === path.id)) {
+        continue;
+      }
+
+      near.push({entity: path, line: path.line});
+    }
 
     let best = undefined;
     let bestDistance2 = (7 * screenToWorldPx) * (7 * screenToWorldPx);
     for (const handle of near) {
       let d2 = Number.MAX_VALUE;
-      if (handle.entity instanceof Path && this.camera.zoom >= COARSE_ZOOM_THRESHOLD) {
-        const path = handle.entity;
-        if (this.dataService.pathsToTrails.has(path.id) || isPath(path.type)) {
-          const pathHandle = handle as PathHandle;
+      if (handle.entity instanceof Path) {
+        const pathHandle = handle as PathHandle;
+        if (this.pathAnswersMouse(handle.entity)) {
           d2 = distanceCheckLine(point, pathHandle.line) + pathAntibias2;
         }
       } else if (
@@ -549,6 +572,22 @@ export class TrailLayer extends Layer implements Listener {
     }
   }
 
+  // Drop the pinned check and a pinned trail draws dashed, and vanishes entirely, until the
+  // overview cell claiming its paths loads, which at low zooms is never.
+  private onTrail(path: Path): boolean {
+    return this.dataService.pathsToTrails.has(path.id)
+        || this.dataService.pinnedPaths.has(path.id);
+  }
+
+  private drawsAsTrail(path: Path): boolean {
+    return this.onTrail(path) || isPath(path.type);
+  }
+
+  private pathAnswersMouse(path: Path): boolean {
+    return this.dataService.pinnedPaths.has(path.id)
+        || (this.showDetail(this.camera.zoom) && this.drawsAsTrail(path));
+  }
+
   setActive(entity: Path|Trail, state: boolean, color: LinePalette): void {
     this.setColor(entity, this.active, state, color);
   }
@@ -604,32 +643,31 @@ export class TrailLayer extends Layer implements Listener {
     this.generation += 1;
   }
 
+  // Everything that draws above the cell data: whatever is highlighted, plus the pinned paths.
   private planInteractive(): void {
-    let bufferSize = 0;
+    const planned = this.plannedEntities;
+    planned.clear();
+    for (const id of this.dataService.pinnedPaths.keys()) {
+      planned.set(id, undefined);
+    }
+    // Deleting before setting moves an id to the back of the map, so an id in both maps draws
+    // last and in the hover palette.
     for (const source of [this.active, this.hovering]) {
-      for (const id of source.keys()) {
-        const path = this.dataService.getPath(id);
-        if (path) {
-          const onTrail = this.dataService.pathsToTrails.has(path.id);
-          if (onTrail || isPath(path.type)) {
-            bufferSize += LineProgram.bytesNeeded(path.line.length / 2);
-          }
-        }
+      for (const [id, palette] of source) {
+        planned.delete(id);
+        planned.set(id, palette);
+      }
+    }
 
-        const trail = this.dataService.getTrail(id);
-        if (trail) {
-          bufferSize += BillboardProgram.bytesNeeded();
-          const {value, unit} = formatDistance(trail.lengthMeters);
-          const graphemes = toGraphemes(`${value} ${unit}`);
-          if (GLYPHER.measurePx(graphemes, TRAIL_MARKER_TEXT_SCALE)) {
-            bufferSize += BillboardProgram.bytesNeeded();
-            bufferSize += GLYPHER.bytesNeeded(graphemes);
-          }
-        }
+    let bufferSize = 0;
+    for (const id of planned.keys()) {
+      const path = this.pathToPlan(id);
+      if (path) {
+        bufferSize += LineProgram.bytesNeeded(path.line.length / 2);
+      }
 
-        if (this.dataService.getPoint(id)) {
-          bufferSize += BillboardProgram.bytesNeeded();
-        }
+      if (this.dataService.getPoint(id)) {
+        bufferSize += BillboardProgram.bytesNeeded();
       }
     }
 
@@ -639,59 +677,62 @@ export class TrailLayer extends Layer implements Listener {
     this.interactivePlan.points.length = 0;
     let offset = 0;
 
-    // Order matters here! We want to draw hovered things above active things so we draw them after.
-    for (const source of [this.active, this.hovering]) {
-      for (const [id, palette] of source) {
-        const path = this.dataService.getPath(id);
-        if (path) {
-          const onTrail = this.dataService.pathsToTrails.has(path.id);
-          if (!onTrail && !isPath(path.type)) {
-            continue;
-          }
+    for (const [id, palette] of planned) {
+      const path = this.pathToPlan(id);
+      if (path) {
+        const onTrail = this.onTrail(path);
+        const drawable =
+            this.renderer.lineProgram.plan(
+                palette ? palette.raw.fill : DEFAULT_PALETTE.fill,
+                palette ? palette.raw.stroke : DEFAULT_PALETTE.stroke,
+                palette ? RAISED_PATH_RADIUS_PX : PATH_RADIUS_PX,
+                !onTrail,
+                palette ? Z_RAISED_PATH : Z_PATH,
+                path.line,
+                buffer,
+                offset,
+                this.interactivePlan.buffer);
+        this.interactivePlan.paths.push(drawable);
+        this.interactivePlan.paths.push({
+          ...drawable,
+          program: this.renderer.lineCapProgram,
+        });
+        offset += drawable.geometryByteLength;
+      }
 
-          const drawable =
-              this.renderer.lineProgram.plan(
-                  palette.raw.fill,
-                  palette.raw.stroke,
-                  RAISED_PATH_RADIUS_PX,
-                  !onTrail,
-                  Z_RAISED_PATH,
-                  path.line,
-                  buffer,
-                  offset,
-                  this.interactivePlan.buffer);
-          this.interactivePlan.paths.push(drawable);
-          this.interactivePlan.paths.push({
-            ...drawable,
-            program: this.renderer.lineCapProgram,
-          });
-          offset += drawable.geometryByteLength;
-        }
-
-        const point = this.dataService.getPoint(id);
-        if (point) {
-          const icon = POINTS_ATLAS.get(point.type) ?? 0;
-          const {byteSize, drawable} =
-              this.renderer.billboardProgram.plan(
-                  point.markerPx,
-                  NO_OFFSET,
-                  POINT_HOVER_BILLBOARD_SIZE_PX,
-                  /* angle= */ 0,
-                  0xFFFFFFFF as RgbaU32,
-                  Z_RAISED_TRAIL_MARKER,
-                  icon,
-                  POINTS_ATLAS_SIZE,
-                  buffer,
-                  offset,
-                  this.interactivePlan.buffer,
-                  this.pointsAtlas);
-          this.interactivePlan.points.push(drawable);
-          offset += byteSize;
-        }
+      const point = this.dataService.getPoint(id);
+      if (point) {
+        const icon = POINTS_ATLAS.get(point.type) ?? 0;
+        const {byteSize, drawable} =
+            this.renderer.billboardProgram.plan(
+                point.markerPx,
+                NO_OFFSET,
+                POINT_HOVER_BILLBOARD_SIZE_PX,
+                /* angle= */ 0,
+                0xFFFFFFFF as RgbaU32,
+                Z_RAISED_TRAIL_MARKER,
+                icon,
+                POINTS_ATLAS_SIZE,
+                buffer,
+                offset,
+                this.interactivePlan.buffer,
+                this.pointsAtlas);
+        this.interactivePlan.points.push(drawable);
+        offset += byteSize;
       }
     }
 
     this.renderer.uploadData(buffer, offset, this.interactivePlan.buffer);
+  }
+
+  // A pin is fetched precise, so it holds the same vertices as its cell copy and either will
+  // draw. We prefer the cell copy because that is the one the quadtrees hold.
+  private pathToPlan(id: bigint): Path|undefined {
+    const path = this.dataService.getPath(id) ?? this.dataService.pinnedPaths.get(id);
+    if (!path) {
+      return undefined;
+    }
+    return this.drawsAsTrail(path) ? path : undefined;
   }
 
   viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {

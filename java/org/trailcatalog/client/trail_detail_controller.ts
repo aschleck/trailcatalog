@@ -65,7 +65,9 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     history.silentlyReplaceUrl(`/trail/${trail.readableId}`);
 
     const data = response.deps.services.data;
-    response.deps.services.data.setPins({trail: trail.id}, true).then(_ => {
+    const reference = data.addPin({trail: trail.id});
+    this.registerDisposable(reference);
+    reference.trail.then(_ => {
       this.updateState({
         ...this.state,
         elevation:

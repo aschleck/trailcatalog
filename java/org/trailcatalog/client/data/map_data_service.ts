@@ -1,16 +1,17 @@
 import * as arrays from 'external/dev_april_corgi+/js/common/arrays';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { IdentitySetMultiMap } from 'external/dev_april_corgi+/js/common/collections';
+import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
+import { Future, asFuture } from 'external/dev_april_corgi+/js/common/futures';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
 import { Service, ServiceResponse } from 'external/dev_april_corgi+/js/corgi/service';
 import { projectE7Deltas, skipE7Deltas } from 'js/map/camera';
-import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
+import { LatLng, LatLngRect } from 'js/map/common/types';
 
 import { degreesE7ToLatLng, projectLatLng, reinterpretBigInt } from '../common/math';
 import { PixelRect, S2CellNumber } from '../common/types';
 import { Path, Point, Trail } from '../models/types';
-import { PIN_CELL_ID } from '../workers/data_constants';
 import { FetcherCommand, Viewport } from '../workers/data_fetcher';
 
 export interface Listener {
@@ -27,17 +28,26 @@ const DATA_ZOOM_THRESHOLD = 4;
 const EPSILON = 1e-9;
 const TEXT_DECODER = new TextDecoder();
 
+export class PinReference extends Disposable {
+
+  constructor(
+      readonly trail: Future<Trail>,
+      readonly resolve: (trail: Trail) => void) {
+    super();
+  }
+}
+
+interface PinnedTrail {
+  paths: Path[];
+  references: PinReference[];
+  trail: Trail|undefined;
+}
+
 export class MapDataService extends Service<EmptyDeps> {
 
   private readonly fetcher: Worker;
+  private readonly pins: Map<bigint, PinnedTrail>;
   private listener: Listener|undefined;
-  private viewport: Viewport;
-  // When a pin is set but the trail isn't loaded, we need to fetch the trail from the server
-  // directly. These promises resolve on that load.
-  private readonly pinnedMissingTrails: Map<bigint, {
-    resolve: (trail: Trail) => void;
-    reject: (v?: unknown) => void;
-  }>;
 
   // A note on the different ArrayBuffers:
   // * overview cells basically only contain trails and go up to cell level 5
@@ -59,12 +69,7 @@ export class MapDataService extends Service<EmptyDeps> {
   constructor(response: ServiceResponse<EmptyDeps>) {
     super(response);
     this.fetcher = new Worker('/static/data_fetcher_worker.js');
-    this.viewport = {
-      lat: [0, 0],
-      lng: [0, 0],
-      zoom: 31,
-    };
-    this.pinnedMissingTrails = new Map();
+    this.pins = new Map();
 
     this.overviewCells = new Map();
     this.coarseCells = new Map();
@@ -78,7 +83,9 @@ export class MapDataService extends Service<EmptyDeps> {
 
     this.fetcher.onmessage = e => {
       const command = e.data as FetcherCommand;
-      if (command.type === 'lco') {
+      if (command.type === 'ftr') {
+        this.loadPinnedTrail(command.trail, command.data);
+      } else if (command.type === 'lco') {
         this.loadOverviewCell(command.cell, command.data);
       } else if (command.type === 'lcc') {
         this.loadCoarseCell(command.cell, command.data);
@@ -86,9 +93,15 @@ export class MapDataService extends Service<EmptyDeps> {
         this.loadFineCell(command.cell, command.data);
       } else if (command.type == 'ucc') {
         for (const cell of command.cells) {
-          this.unloadCoarseCell(cell);
-          this.unloadFineCell(cell);
-          this.unloadOverviewCell(cell);
+          if (command.index === 'coarse') {
+            this.unloadCoarseCell(cell);
+          } else if (command.index === 'fine') {
+            this.unloadFineCell(cell);
+          } else if (command.index === 'overview') {
+            this.unloadOverviewCell(cell);
+          } else {
+            checkExhaustive(command.index);
+          }
         }
       } else {
         checkExhaustive(command, 'Unknown type of command');
@@ -128,9 +141,6 @@ export class MapDataService extends Service<EmptyDeps> {
 
     for (const [id, buffer] of this.coarseCells) {
       if (!buffer) {
-        continue;
-      } else if (id === PIN_CELL_ID) {
-        // We don't load this
         continue;
       }
 
@@ -189,43 +199,50 @@ export class MapDataService extends Service<EmptyDeps> {
       }
       listener.loadFineCell(id, paths, points);
     }
+
+    if (this.pinnedPaths.size > 0) {
+      listener.loadPinned();
+    }
   }
 
-  clearPins(): void {
-    this.fetcher.postMessage({
-      kind: 'spr',
-      precise: false,
+  addPin({trail}: {trail: bigint}): PinReference {
+    let resolve: (trail: Trail) => void = () => {};
+    const loaded = asFuture(new Promise<Trail>(r => { resolve = r; }));
+    const reference = new PinReference(loaded, resolve);
+    reference.registerDisposer(() => {
+      const pin = this.pins.get(trail);
+      if (!pin) {
+        return;
+      }
+      const index = pin.references.indexOf(reference);
+      if (index >= 0) {
+        pin.references.splice(index, 1);
+      }
+      if (pin.references.length === 0) {
+        this.pins.delete(trail);
+        this.repackPinnedPaths();
+        this.listener?.loadPinned();
+      }
     });
 
-    for (const {reject} of this.pinnedMissingTrails.values()) {
-      reject();
-    }
-    this.pinnedMissingTrails.clear();
-  }
-
-  setPins({trail}: {trail: bigint}, precise: boolean = false): Promise<Trail> {
-    this.fetcher.postMessage({
-      kind: 'spr',
-      precise,
-      trail,
-    });
-
-    for (const {reject} of this.pinnedMissingTrails.values()) {
-      reject();
-    }
-    this.pinnedMissingTrails.clear();
-
-    const existing = this.trails.get(trail);
-    if (existing && !precise) {
-      return Promise.resolve(existing);
+    const existing = this.pins.get(trail);
+    if (existing) {
+      existing.references.push(reference);
+      if (existing.trail) {
+        resolve(existing.trail);
+      }
     } else {
-      return new Promise((resolve, reject) => {
-        this.pinnedMissingTrails.set(trail, {
-          resolve,
-          reject,
-        });
+      this.pins.set(trail, {
+        paths: [],
+        references: [reference],
+        trail: undefined,
+      });
+      this.fetcher.postMessage({
+        kind: 'ftr',
+        trail,
       });
     }
+    return reference;
   }
 
   clearListener(): void {
@@ -249,7 +266,6 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   updateViewport(viewport: Viewport): void {
-    this.viewport = viewport;
     if (viewport.zoom < DATA_ZOOM_THRESHOLD) {
       return;
     }
@@ -318,46 +334,48 @@ export class MapDataService extends Service<EmptyDeps> {
       return;
     }
 
-    if (id === PIN_CELL_ID) {
-      this.loadPinnedCoarse(buffer);
-    } else {
-      this.loadRegularCoarse(buffer);
-    }
-
-    // We may load pinned trails before the pinned call comes back, and are incentivized to resolve
-    // the pin here because we can. However callers may be expecting both the trail and its paths
-    // to be available. Because of some terrible choices, see comment in loadPinnedCoarse, we look
-    // for pinned paths in pinnedPaths. So let's just not resolve trails early.
+    this.loadRegularCoarse(buffer);
   }
 
-  private loadPinnedCoarse(buffer: ArrayBuffer): void {
-    // Interesting choice: we don't load the pin cell. The complication we're avoiding is the case
+  private loadPinnedTrail(trail: bigint, buffer: ArrayBuffer): void {
+    const pin = this.pins.get(trail);
+    if (!pin) {
+      return;
+    }
+
+    // Interesting choice: we don't load the pin cells. The complication we're avoiding is the case
     // where we have the cell containing a path/trail and that path/trail in the pin cell at the
-    // same time. Determining how to unload data in the paths/trails map is complicated. The main
-    // problem with skipping this is that we could render things but they wouldn't be
-    // interactive, As it turns out, our usecase is to always render pinned paths regardless of zoom
-    // level. We can therefore just only render pinned paths and skip trails, and we sacrafice
-    // interactivity for them. This also allows us to downsample packed path geometry without visual
-    // artifacting (because when the user is zoomed in they will load the real paths spatially.)
+    // same time. Determining how to unload data in the paths/trails map is complicated. So we take
+    // the paths and skip the trails, which costs us the path to trail mapping: a click on a pinned
+    // path resolves to its trail only where an overview cell has already claimed the path.
     //
     // The exception is that we do fill in existing data.
     //
     // The other exception is that we will resolve pinned promises so we can pass bounds. Ew.
-    this.coarseCells.set(PIN_CELL_ID, buffer);
-    this.pinnedPaths.clear();
 
     const data = new LittleEndianView(buffer);
     const pathCount = data.getVarInt32();
-    const bound = {
-      low: [1, 1],
-      high: [-1, -1],
-    } as const as PixelRect;
+    pin.paths.length = 0;
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getVarBigInt64();
       const type = data.getVarInt32();
       const points = projectE7Deltas(data);
-      this.pinnedPaths.set(id, new Path(id, type, bound, points));
+      // A rect per path because we hit test against it and the quadtrees delete by its identity.
+      const bound = {
+        low: [1, 1],
+        high: [-1, -1],
+      };
+      for (let j = 0; j < points.length; j += 2) {
+        const x = points[j + 0];
+        const y = points[j + 1];
+        bound.low[0] = Math.min(bound.low[0], x);
+        bound.low[1] = Math.min(bound.low[1], y);
+        bound.high[0] = Math.max(bound.high[0], x);
+        bound.high[1] = Math.max(bound.high[1], y);
+      }
+      pin.paths.push(new Path(id, type, bound as unknown as PixelRect, points));
     }
+    this.repackPinnedPaths();
 
     const trailCount = data.getVarInt32();
     for (let i = 0; i < trailCount; ++i) {
@@ -397,16 +415,25 @@ export class MapDataService extends Service<EmptyDeps> {
                 lengthMeters);
       }
 
-      // If we don't do this here, then when the user loads the page zoomed out coarse will never
-      // load and then we will never do this elsewhere.
-      const missing = this.pinnedMissingTrails.get(id);
-      if (missing) {
-        missing.resolve(trail);
-        this.pinnedMissingTrails.delete(id);
+      // This is *crazy* we just assume the server only gives us one trail back despite the format
+      // allowing multiple trails.
+      pin.trail = trail;
+      for (const reference of pin.references) {
+        reference.resolve(trail);
       }
     }
 
     this.listener?.loadPinned();
+  }
+
+  // Two pinned trails can share a path, so a dropped pin can't just delete the paths it named.
+  private repackPinnedPaths(): void {
+    this.pinnedPaths.clear();
+    for (const pin of this.pins.values()) {
+      for (const path of pin.paths) {
+        this.pinnedPaths.set(path.id, path);
+      }
+    }
   }
 
   private loadRegularCoarse(buffer: ArrayBuffer): void {
@@ -507,7 +534,7 @@ export class MapDataService extends Service<EmptyDeps> {
     const buffer = this.coarseCells.get(id);
     this.coarseCells.delete(id);
 
-    if (!buffer || id === PIN_CELL_ID) {
+    if (!buffer) {
       return;
     }
 
@@ -522,9 +549,7 @@ export class MapDataService extends Service<EmptyDeps> {
       for (let i = 0; i < pathCount; ++i) {
         const pathId = data.getVarBigInt64();
         data.getVarInt32();
-        const pathVertexBytes = data.getVarInt32() * 4;
-        data.align(4);
-        data.skip(pathVertexBytes);
+        skipE7Deltas(data);
         const entity = this.coarsePaths.get(pathId);
         if (entity) {
           this.coarsePaths.delete(pathId);
@@ -541,7 +566,7 @@ export class MapDataService extends Service<EmptyDeps> {
     const buffer = this.fineCells.get(id);
     this.fineCells.delete(id);
 
-    if (!buffer || id === PIN_CELL_ID) {
+    if (!buffer) {
       return;
     }
 
@@ -552,9 +577,7 @@ export class MapDataService extends Service<EmptyDeps> {
     for (let i = 0; i < pathCount; ++i) {
       const id = data.getVarBigInt64();
       data.getVarInt32();
-      const pathVertexBytes = data.getVarInt32() * 4;
-      data.align(4);
-      data.skip(pathVertexBytes);
+      skipE7Deltas(data);
       const entity = this.finePaths.get(id);
       if (entity) {
         this.finePaths.delete(id);
@@ -583,7 +606,7 @@ export class MapDataService extends Service<EmptyDeps> {
     const buffer = this.overviewCells.get(id);
     this.overviewCells.delete(id);
 
-    if (!buffer || id === PIN_CELL_ID) {
+    if (!buffer) {
       return;
     }
 
