@@ -83,12 +83,45 @@ private fun fetchData(ctx: Context) {
             }))
         )
       }
+      "self" -> {
+        responses.add(mapOf("kind" to "result", "value" to mapOf("user" to fetchSelf(ctx))))
+      }
     }
   }
 
   ctx.json(HashMap<String, Any>().also {
     it["values"] = responses
   })
+}
+
+// Null when nobody is signed in
+private fun fetchSelf(ctx: Context): Map<String, Any?>? {
+  // The frontend sets this header from the login cookie and always overwrites what the browser
+  // sent, so an empty one is a signed out browser.
+  val id = ctx.header("X-User-ID")
+  if (id.isNullOrEmpty()) {
+    return null
+  }
+
+  hikari.connection.use { connection ->
+    connection
+        .prepareStatement(
+            "SELECT id, display_name, picture_url FROM users WHERE id = ? AND enabled")
+        .apply {
+          setObject(1, UUID.fromString(id))
+        }
+        .executeQuery()
+        .use { results ->
+          if (!results.next()) {
+            return null
+          }
+
+          return mapOf(
+              "id" to (results.getObject(1) as UUID).toString(),
+              "display_name" to results.getString(2),
+              "picture_url" to results.getString(3))
+        }
+  }
 }
 
 private data class WireLine(val id: UUID, val data: String, val latLngDegrees: ByteArray)

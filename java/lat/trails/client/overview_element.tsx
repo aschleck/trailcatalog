@@ -1,22 +1,34 @@
+import { resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
 import { floatCoalesce } from 'external/dev_april_corgi+/js/common/math';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
-import { Checkbox } from 'external/dev_april_corgi+/js/emu/checkbox';
-import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
-import { LayerState, State, ViewerController } from './viewer_controller';
+import { State, ViewerController } from './viewer_controller';
+import { fetchData } from './data';
 import { HOVER_CHANGED } from './events';
+import { Menubar, MenubarItem } from './menubar';
 
 export function OverviewElement(
   {parameters}: {parameters: {[key: string]: string};},
-  state: State|undefined,
+  inState: State|undefined,
   updateState: (newState: State) => void,
 ) {
-  if (!state) {
-    state = {
+  if (!inState) {
+    inState = {
       layers: [],
+      self: fetchData('self', {}),
     };
+  }
+  const state = inState;
+
+  if (!state.self.finished) {
+    state.self.then(self => {
+      updateState({
+        ...state,
+        self: resolvedFuture(self),
+      });
+    });
   }
 
   let camera = undefined;
@@ -42,69 +54,16 @@ export function OverviewElement(
           },
           state: [state, updateState],
         })}
-        className="h-full"
+        className="flex flex-col h-full relative"
     >
+      <Menubar user={state.self.finished ? state.self.value().user ?? undefined : undefined}>
+        <MenubarItem label="Layers" onClick="layersMenuClicked" />
+      </Menubar>
       <MapElement
           camera={camera}
+          height="grow min-h-0"
           ref="map"
       />
-      <Rail>
-        <Layers layers={state.layers} />
-      </Rail>
     </div>
-  </>;
-}
-
-function Rail({children}: {children?: corgi.VElementOrPrimitive}) {
-  return <>
-    <div className="
-        absolute
-        bg-gray-900
-        border
-        border-gray-900
-        left-4
-        p-1
-        rounded
-        text-white
-        top-4
-        ">
-      {children}
-    </div>
-  </>;
-}
-
-function Layers({layers}: {layers: LayerState[];}) {
-  const reversed = [];
-  for (let i = layers.length - 1; i >= 0; --i) {
-    reversed.push(layers[i]);
-  }
-  return <>
-    <details>
-      <summary>Layers</summary>
-      <ul
-          unboundEvents={{
-            corgi: [
-              [ACTION, 'setLayerVisible'],
-            ],
-          }}
-      >
-        {reversed.map(l => <>
-          <li>
-            <Checkbox ariaLabel={l.name} checked={l.enabled}>
-              {l.name}
-            </Checkbox>
-          </li>
-        </>)}
-      </ul>
-    </details>
-  </>;
-}
-
-function Logo() {
-  return <>
-    <img
-        alt="An illustration of a cat looking at the moon"
-        className="w-72"
-        src="/static/cat_moon.webp" />
   </>;
 }

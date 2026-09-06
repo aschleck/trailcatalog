@@ -1,7 +1,9 @@
-import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { Future } from 'external/dev_april_corgi+/js/common/futures';
+import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
-import { CorgiEvent } from 'external/dev_april_corgi+/js/corgi/events';
-import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
+import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
+import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
+import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
 import { RgbaU32 } from 'js/map/common/types';
 import { CLICKED, MAP_MOVED } from 'js/map/events';
@@ -15,7 +17,9 @@ import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'j
 
 import { CollectionLayer } from './collection_layer';
 import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
+import { User, refetchData } from './data';
 import { HOVER_CHANGED } from './events';
+import { MENU_CLASSES } from './menubar';
 
 export interface LayerState {
   name: string;
@@ -25,6 +29,7 @@ export interface LayerState {
 
 export interface State {
   layers: LayerState[];
+  self: Future<{user: User|null}>;
 }
 
 type Deps = typeof ViewerController.deps;
@@ -37,17 +42,39 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         map: MapController,
       },
       services: {
+        menu: MenuService,
       },
     };
   }
 
   private readonly mapController: MapController;
+  private readonly menu: MenuService;
+  private loginPopup: Window|undefined;
+  private readonly loginWatcher: Timer;
   lastChange: number;
 
   constructor(response: Response<ViewerController>) {
     super(response);
     this.mapController = response.deps.controllers.map;
+    this.menu = response.deps.services.menu;
     this.lastChange = Date.now();
+
+    // Logins work via a popup running on Google's origin. So when we know it's open we start this
+    // timer to poll for completion.
+    this.loginWatcher = new Timer(250 /* ms */, () => {
+      const popup = this.loginPopup;
+      if (popup && !popup.closed) {
+        return;
+      }
+
+      this.loginWatcher.stop();
+      this.loginPopup = undefined;
+      this.updateState({
+        ...this.state,
+        self: refetchData('self', {}),
+      });
+    });
+    this.registerDisposable(this.loginWatcher);
 
     const allLayers = [{
       name: 'Skybox',
@@ -364,26 +391,68 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     window.history.replaceState(null, '', url);
   }
 
-  setLayerVisible(e: CorgiEvent<typeof ACTION>): void {
-    const name = checkExists(e.targetElement.attr('aria-label')).string();
-
-    const newLayers = [];
-    for (const layer of this.state.layers) {
-      if (layer.name === name) {
-        newLayers.push({
-          ...layer,
-          enabled: !layer.enabled,
-        });
-      } else {
-        newLayers.push(layer);
-      }
+  // Reversed so the menu reads top down the way the layers stack, the topmost drawn one first.
+  layersMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const layers = this.state.layers;
+    const items: MenuEntries = [];
+    for (let i = layers.length - 1; i >= 0; --i) {
+      const index = i;
+      const layer = layers[index];
+      items.push({
+        kind: 'checkbox_menu_item',
+        label: layer.name,
+        checked: layer.enabled,
+        action: () => {
+          this.setLayerEnabled(index, !layer.enabled);
+        },
+      });
     }
+    this.openMenu(items, e);
+  }
+
+  userMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.openMenu([{
+      kind: 'menu_item',
+      // Navigating drops the camera and the layers, which is the point: the map should not keep
+      // showing what it was showing for someone who just signed out.
+      label: 'Log out',
+      action: () => {
+        window.location.href = '/logout';
+      },
+    }], e);
+  }
+
+  loginClicked(): void {
+    const popup = window.open('/login/google', 'login', 'height=700,popup,width=500');
+    if (!popup) {
+      return;
+    }
+
+    this.loginPopup = popup;
+    this.loginWatcher.start();
+  }
+
+  private openMenu(items: MenuEntries, e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const bound = e.actionElement.element().getBoundingClientRect();
+    this.menu.open(
+        items,
+        {x: bound.left, y: bound.bottom},
+        this.root,
+        {anchor: 'top_left', classes: MENU_CLASSES});
+  }
+
+  private setLayerEnabled(index: number, enabled: boolean): void {
+    const layers = [...this.state.layers];
+    layers[index] = {
+      ...layers[index],
+      enabled,
+    };
 
     this.updateState({
       ...this.state,
-      layers: newLayers,
+      layers,
     });
-    this.mapController.setLayers(newLayers.filter(l => l.enabled).map(l => l.layer));
+    this.mapController.setLayers(layers.filter(l => l.enabled).map(l => l.layer));
   }
 }
 

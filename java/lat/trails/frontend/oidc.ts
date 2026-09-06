@@ -11,6 +11,24 @@ import { Encrypter } from './encrypter';
 
 const OIDC_COOKIE = 'oidc';
 
+// The login runs in a popup so the page underneath keeps its state, and the opener watches for the
+// window to disappear. Anyone who reached the callback in a tab of their own has no opener to
+// return to, so send them to the map.
+const FINISHED_PAGE = `<!DOCTYPE html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Signed in</title></head>
+  <body>
+    <script>
+      if (window.opener) {
+        window.close();
+      } else {
+        window.location.replace('/');
+      }
+    </script>
+  </body>
+</html>
+`;
+
 export async function addGoogle(
     fastify: FastifyInstance,
     encrypter: Encrypter,
@@ -20,7 +38,9 @@ export async function addGoogle(
 
   const getCallbackUrl = (request: FastifyRequest) => {
     const protocol = request.headers['x-forwarded-proto'] ?? request.protocol;
-    const hostname = request.headers['x-forwarded-host'] ?? request.hostname;
+    // hostname drops the port, so a dev server on 7069 asks Google to redirect to a URI that is
+    // not the one it is listening on.
+    const hostname = request.headers['x-forwarded-host'] ?? request.host;
     return `${protocol}://${hostname}/login/google/callback`;
   }
 
@@ -41,7 +61,7 @@ export async function addGoogle(
           code_challenge: generators.codeChallenge(codeVerifier),
           code_challenge_method: 'S256',
           redirect_uri: getCallbackUrl(request),
-          scope: 'openid email',
+          scope: 'openid email profile',
         }));
   });
 
@@ -60,22 +80,29 @@ export async function addGoogle(
     }
 
     // TODO(april): we can have a uuid conflict but #yolo
+    // EXCLUDED rather than positional parameters because the numbering silently shifts under
+    // anything added to the insert.
     const result =
         await sql`
-          INSERT INTO users (id, oidc_issuer, oidc_id, display_name, enabled, last_login)
+          INSERT INTO users (
+                  id, oidc_issuer, oidc_id, display_name, picture_url, enabled, last_login)
               VALUES (
                   gen_random_uuid(),
                   ${claims.iss},
                   ${claims.sub},
                   ${checkExists(claims.email)},
+                  ${claims.picture ?? null},
                   ${true},
                   ${new Date()}
               )
               ON CONFLICT (oidc_issuer, oidc_id)
-              DO UPDATE SET display_name = $3, last_login = $5
+              DO UPDATE SET
+                  display_name = EXCLUDED.display_name,
+                  picture_url = EXCLUDED.picture_url,
+                  last_login = EXCLUDED.last_login
               RETURNING id
         `;
     loginEnforcer.createFreshLogin(result[0].id, 'google', reply);
-    reply.redirect('/');
+    reply.type('text/html').send(FINISHED_PAGE);
   });
 }

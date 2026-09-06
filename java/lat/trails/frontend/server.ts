@@ -84,6 +84,14 @@ async function initialize(server: FastifyInstance): Promise<void> {
     }
 
     request.userId = maybeUserId ?? '';
+    // corgi's server side render forwards this header to the data server, and the browser never
+    // gets to set it because we assign it on every request.
+    request.headers['x-user-id'] = request.userId;
+  });
+
+  server.get('/logout', async (request, reply) => {
+    loginEnforcer.logout(reply);
+    reply.redirect('/');
   });
 
   await oidc.addGoogle(server, encrypter, loginEnforcer, sql);
@@ -118,7 +126,7 @@ function page(content: string, title: string, initialData: string): string {
 
 (async () => {
   await serve(App as any, page, {
-    dataServer: 'http://127.0.0.1:7070/api/data',
+    dataServer: 'http://127.0.0.1:7051/api/data',
     defaultTitle: 'trails.lat',
     // I don't get why this needs an any at all
     initialize: initialize as any,

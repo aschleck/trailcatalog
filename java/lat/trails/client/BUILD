@@ -22,6 +22,7 @@ tc_ts_project(
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/corgi",
         "@dev_april_corgi//js/emu",
+        "@dev_april_corgi//js/emu/menu",
         "@dev_april_corgi//js/server:client",
     ],
 )

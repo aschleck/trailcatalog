@@ -29,7 +29,6 @@ export class LoginEnforcer {
       return undefined;
     }
 
-    console.log(this.encrypter.decrypt(credential));
     const info = JSON.parse(this.encrypter.decrypt(credential));
     if (new Date().getTime() < info.created + LOGIN_DURATION_MS) {
       return info.id;
@@ -50,6 +49,10 @@ export class LoginEnforcer {
     reply.setCookie(LOGIN_COOKIE, serialized, {
       maxAge: LOGIN_DURATION_MS / 1000,
     });
+  }
+
+  logout(reply: FastifyReply): void {
+    reply.clearCookie(LOGIN_COOKIE);
   }
 }
 
