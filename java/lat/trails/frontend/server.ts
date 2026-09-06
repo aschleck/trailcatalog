@@ -23,9 +23,12 @@ declare module 'fastify' {
 const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
 const DEBUG = process.env.DEBUG !== 'false';
 
+// Keep in sync with common/Database.kt#SCHEMA.
+const SCHEMA = 'migration_2_pictures_and_samples';
+
 const encrypter = new Encrypter(COOKIE_SECRET);
 const loginEnforcer = new LoginEnforcer(encrypter);
-const sql = postgres();
+const sql = postgres({connection: {search_path: SCHEMA}});
 
 async function initialize(server: FastifyInstance): Promise<void> {
   server.decorateRequest('userId', '');

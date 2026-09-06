@@ -1,0 +1,29 @@
+[[actions]]
+type = "add_column"
+table = "users"
+
+  # Not guaranteed to be returned. Also unclear if it's stable but yolo
+  [actions.column]
+  name = "picture_url"
+  nullable = true
+  type = "TEXT"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+
+  # One sample per vertex of lat_lng_degrees (int64 delta encoded)
+  [actions.column]
+  name = "elevation_centimeters"
+  nullable = true
+  type = "BYTEA"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+
+  # One sample per vertex of lat_lng_degrees (int64 unix seconds delta encoded)
+  [actions.column]
+  name = "time_seconds"
+  nullable = true
+  type = "BYTEA"
