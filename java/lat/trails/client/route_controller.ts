@@ -1,4 +1,3 @@
-import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { DiscriminatedRoute, matchPath, ViewsService } from 'external/dev_april_corgi+/js/corgi/history/views_service';
 import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
@@ -14,7 +13,8 @@ const routes: {[k in keyof Routes]: RegExp} = {
 } as const;
 
 export interface State {
-  active: DiscriminatedRoute<Routes>;
+  // Undefined if no route matches
+  active: DiscriminatedRoute<Routes>|undefined;
   parameters: {[key: string]: string};
 }
 
@@ -25,7 +25,7 @@ export class RouteController extends Controller<{}, Deps, HTMLDivElement, State>
   static getInitialState(): State {
     const url = currentUrl();
     return {
-      active: checkExists(matchPath<Routes>(url.pathname, routes)),
+      active: matchPath<Routes>(url.pathname, routes),
       parameters: Object.fromEntries(new URLSearchParams(url.search).entries()),
     };
   }
@@ -51,8 +51,9 @@ export class RouteController extends Controller<{}, Deps, HTMLDivElement, State>
     });
   }
 
-  routeChanged(active: DiscriminatedRoute<Routes>, parameters: {[key: string]: string}):
-      Promise<void> {
+  routeChanged(
+      active: DiscriminatedRoute<Routes>,
+      parameters: {[key: string]: string}): Promise<void> {
     return this.updateState({
       active,
       parameters,
