@@ -11,7 +11,7 @@ import { MapController } from 'js/map/map_controller';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
-import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM } from 'js/map/z';
+import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
 
 import { CollectionLayer } from './collection_layer';
 import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
@@ -189,6 +189,106 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         {'eo:cloud_cover': {'gte': 0, 'lte': 5}},
         Z_BASE_SATELLITE,
         this.mapController.renderer),
+    }, {
+      name: 'GOES-East GeoColor',
+      enabled: false,
+      layer: new RasterTileLayer(
+          [
+            {
+              long: 'GOES-East ABI imagery from NOAA, tiled by NASA Global Imagery Browse Services',
+              short: 'NOAA/NASA GIBS',
+              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
+            },
+          ],
+          // The path is style/time/matrix set, and "default" for time means the most recent scan
+          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
+          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor'
+              + '/default/default/GoogleMapsCompatible_Level7'
+              + '/${id.zoom}/${id.y}/${id.x}.png',
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ Z_OVERLAY_TERRAIN,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
+          // gives away from the sub-satellite point anyway.
+          /* maxZoom= */ 7,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'GOES-East fire temperature',
+      enabled: false,
+      layer: new RasterTileLayer(
+          [
+            {
+              long: 'GOES-East ABI imagery from NOAA, tiled by NASA Global Imagery Browse Services',
+              short: 'NOAA/NASA GIBS',
+              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
+            },
+          ],
+          // The path is style/time/matrix set, and "default" for time means the most recent scan
+          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
+          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_FireTemp'
+              + '/default/default/GoogleMapsCompatible_Level7'
+              + '/${id.zoom}/${id.y}/${id.x}.png',
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ Z_OVERLAY_TERRAIN,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
+          // gives away from the sub-satellite point anyway.
+          /* maxZoom= */ 7,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'GOES-West GeoColor',
+      enabled: false,
+      layer: new RasterTileLayer(
+          [
+            {
+              long: 'GOES-West ABI imagery from NOAA, tiled by NASA Global Imagery Browse Services',
+              short: 'NOAA/NASA GIBS',
+              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
+            },
+          ],
+          // The path is style/time/matrix set, and "default" for time means the most recent scan
+          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
+          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-West_ABI_GeoColor'
+              + '/default/default/GoogleMapsCompatible_Level7'
+              + '/${id.zoom}/${id.y}/${id.x}.png',
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ Z_OVERLAY_TERRAIN,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
+          // gives away from the sub-satellite point anyway.
+          /* maxZoom= */ 7,
+          this.mapController.renderer,
+      ),
+    }, {
+      name: 'GOES-West fire temperature',
+      enabled: false,
+      layer: new RasterTileLayer(
+          [
+            {
+              long: 'GOES-West ABI imagery from NOAA, tiled by NASA Global Imagery Browse Services',
+              short: 'NOAA/NASA GIBS',
+              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
+            },
+          ],
+          // The path is style/time/matrix set, and "default" for time means the most recent scan
+          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
+          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-West_ABI_FireTemp'
+              + '/default/default/GoogleMapsCompatible_Level7'
+              + '/${id.zoom}/${id.y}/${id.x}.png',
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ Z_OVERLAY_TERRAIN,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
+          // gives away from the sub-satellite point anyway.
+          /* maxZoom= */ 7,
+          this.mapController.renderer,
+      ),
     }, {
       name: 'US public land',
       enabled: false,
