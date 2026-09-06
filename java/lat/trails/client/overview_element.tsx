@@ -5,7 +5,7 @@ import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
 import { State, ViewerController } from './viewer_controller';
-import { fetchData } from './data';
+import { requestData } from './data';
 import { HOVER_CHANGED } from './events';
 import { Menubar, MenubarItem } from './menubar';
 
@@ -17,7 +17,7 @@ export function OverviewElement(
   if (!inState) {
     inState = {
       layers: [],
-      self: fetchData('self', {}),
+      self: requestData('lat.trails.DataService/GetCurrentUser', {}),
     };
   }
   const state = inState;
@@ -56,7 +56,7 @@ export function OverviewElement(
         })}
         className="flex flex-col h-full relative"
     >
-      <Menubar user={state.self.finished ? state.self.value().user ?? undefined : undefined}>
+      <Menubar user={state.self.finished ? state.self.value().user : undefined}>
         <MenubarItem label="Layers" onClick="layersMenuClicked" />
       </Menubar>
       <MapElement

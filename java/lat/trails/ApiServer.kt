@@ -5,6 +5,7 @@ import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2Projections
+import com.google.protobuf.util.JsonFormat
 import com.zaxxer.hikari.HikariDataSource
 import io.javalin.Javalin
 import io.javalin.http.Context
@@ -20,6 +21,9 @@ import kotlin.collections.ArrayList
 import java.nio.charset.StandardCharsets
 import lat.trails.common.createBaseConnection
 import lat.trails.common.createTrailcatalogConnection
+import lat.trails.proto.Collection
+import lat.trails.proto.GetCurrentUserResponse
+import lat.trails.proto.ListCollectionsResponse
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.flags.parseFlags
@@ -32,7 +36,10 @@ private lateinit var epochTracker: EpochTracker
 private lateinit var hikari: HikariDataSource
 private lateinit var hikariTrailcatalog: HikariDataSource
 
+private val ANONYMOUS_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
+
+private val JSON_PRINTER = JsonFormat.printer().omittingInsignificantWhitespace()
 
 fun main(args: Array<String>) {
   parseFlags(args)
@@ -47,60 +54,34 @@ fun main(args: Array<String>) {
   }.start(7051)
 }
 
-private data class WireCollection(val id: UUID, val name: String)
-
 private fun fetchData(ctx: Context) {
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyInputStream())
-  val keys = request.get("keys").elements()
   val responses = ArrayList<Any>()
-  for (key in keys) {
-    val type = key.get("method").asText()
-    when (type) {
-      null -> throw IllegalArgumentException("Key has no type")
-      "collections" -> {
-        val collections = ArrayList<WireCollection>()
-        hikari.connection.use { connection ->
-          connection.prepareStatement("SELECT id, name FROM collections WHERE creator = ?")
-              .apply {
-                setLong(1, 0)
-              }
-              .executeQuery()
-              .use { results ->
-                while (results.next()) {
-                  collections.add(
-                      WireCollection(
-                          results.getObject(1) as UUID, results.getString(1)))
-                }
-              }
-        }
-        responses.add(
-            mapOf("kind" to "result", "value" to hashMapOf("collections" to collections.map {
-              val row = HashMap<String, Any>()
-              row["id"] = it.id
-              row["name"] = it.name
-              row
-            }))
-        )
-      }
-      "self" -> {
-        responses.add(mapOf("kind" to "result", "value" to mapOf("user" to fetchSelf(ctx))))
-      }
+  for (key in request.get("keys").elements()) {
+    val method = key.get("method").asText() ?: throw IllegalArgumentException("Key has no method")
+    // TODO(april): both request messages are empty, so key.get("request") goes unread. Merge it
+    // into the request builder with JsonFormat.parser() once one of them takes a field.
+    val value = when (method) {
+      "lat.trails.DataService/GetCurrentUser" -> getCurrentUser(ctx)
+      "lat.trails.DataService/ListCollections" -> listCollections(ctx)
+      else -> throw IllegalArgumentException("Unknown method $method")
     }
+
+    responses.add(
+        mapOf("kind" to "result", "value" to mapper.readTree(JSON_PRINTER.print(value))))
   }
 
-  ctx.json(HashMap<String, Any>().also {
-    it["values"] = responses
-  })
+  ctx.json(mapOf("values" to responses))
 }
 
-// Null when nobody is signed in
-private fun fetchSelf(ctx: Context): Map<String, Any?>? {
+private fun getCurrentUser(ctx: Context): GetCurrentUserResponse {
+  val response = GetCurrentUserResponse.newBuilder()
   // The frontend sets this header from the login cookie and always overwrites what the browser
   // sent, so an empty one is a signed out browser.
   val id = ctx.header("X-User-ID")
   if (id.isNullOrEmpty()) {
-    return null
+    return response.build()
   }
 
   hikari.connection.use { connection ->
@@ -113,15 +94,45 @@ private fun fetchSelf(ctx: Context): Map<String, Any?>? {
         .executeQuery()
         .use { results ->
           if (!results.next()) {
-            return null
+            return response.build()
           }
 
-          return mapOf(
-              "id" to (results.getObject(1) as UUID).toString(),
-              "display_name" to results.getString(2),
-              "picture_url" to results.getString(3))
+          response.userBuilder
+              .setId((results.getObject(1) as UUID).toString())
+              .setDisplayName(results.getString(2))
+          // Left unset rather than empty because the client treats any value as a usable URL.
+          results.getString(3)?.let { response.userBuilder.setPictureUrl(it) }
         }
   }
+  return response.build()
+}
+
+private fun listCollections(ctx: Context): ListCollectionsResponse {
+  val allowed = arrayListOf(ANONYMOUS_USER_ID)
+  ctx.header("X-User-ID").let {
+    if (!it.isNullOrEmpty()) {
+      allowed.add(UUID.fromString(it))
+    }
+  }
+
+  val response = ListCollectionsResponse.newBuilder()
+  hikari.connection.use { connection ->
+    connection
+        .prepareStatement("SELECT id, name FROM collections WHERE creator = ANY(?)")
+        .apply {
+          setArray(1, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
+        }
+        .executeQuery()
+        .use { results ->
+          while (results.next()) {
+            response.addCollections(
+                Collection.newBuilder()
+                    .setId((results.getObject(1) as UUID).toString())
+                    .setName(results.getString(2)))
+          }
+        }
+  }
+  return response.build()
 }
 
 private data class WireLine(val id: UUID, val data: String, val latLngDegrees: ByteArray)
@@ -129,7 +140,7 @@ private data class WireLine(val id: UUID, val data: String, val latLngDegrees: B
 private data class WirePolygon(val id: UUID, val data: String, val s2Polygon: ByteArray)
 
 private fun fetchCollectionCovering(ctx: Context) {
-  val allowed = arrayListOf(UUID.fromString("00000000-0000-0000-0000-000000000000"))
+  val allowed = arrayListOf(ANONYMOUS_USER_ID)
   ctx.header("X-User-ID").let {
     if (!it.isNullOrEmpty()) {
       allowed.add(UUID.fromString(it))
@@ -186,7 +197,7 @@ private fun fetchCollectionCovering(ctx: Context) {
 }
 
 private fun fetchCollectionObjects(ctx: Context) {
-  val allowed = arrayListOf(UUID.fromString("00000000-0000-0000-0000-000000000000"))
+  val allowed = arrayListOf(ANONYMOUS_USER_ID)
   ctx.header("X-User-ID").let {
     if (!it.isNullOrEmpty()) {
       allowed.add(UUID.fromString(it))

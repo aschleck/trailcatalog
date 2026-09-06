@@ -2,7 +2,7 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { VElementOrPrimitive } from 'external/dev_april_corgi+/js/corgi';
 import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_element';
 
-import { User } from './data';
+import { User } from 'trails_lat/proto/data_pb';
 
 // MenuElement ships unstyled, so every menu the bar opens has to bring the bar's own colors.
 export const MENU_CLASSES: MenuClassNames = {
@@ -38,13 +38,13 @@ export function Menubar({children, user}: {
                 "
                 unboundEvents={{click: 'userMenuClicked'}}
             >
-              {user.picture_url
+              {user.pictureUrl
                   ? <img
-                        alt={user.display_name}
+                        alt={user.displayName}
                         className="h-6 rounded-full w-6"
-                        src={user.picture_url}
+                        src={user.pictureUrl}
                     />
-                  : user.display_name
+                  : user.displayName
               }
             </div>
           : <MenubarItem label="Log in" onClick="loginClicked" />

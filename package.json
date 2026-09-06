@@ -2,6 +2,7 @@
   "//": "stack-chain is an undeclared dep of cls-hooked, yikes!",
   "type": "module",
   "devDependencies": {
+    "@bufbuild/protoc-gen-es": "^2.11.0",
     "@tailwindcss/node": "^4.1.8",
     "@tailwindcss/oxide": "^4.1.8",
     "@tailwindcss/oxide-darwin-arm64": "^4.1.8",
@@ -21,6 +22,7 @@
     "tailwindcss": "^4.1.8"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0",
     "@fastify/cookie": "^11.0.2",
     "@fastify/reply-from": "^11.0.2",
     "@fastify/request-context": "^6.2.0",

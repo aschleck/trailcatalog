@@ -14,13 +14,16 @@ esbuild_binary(
 tc_ts_project(
     name = "ts",
     deps = [
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/node",
         "//java/lat/trails/client/workers",
         "//js/map",
         "//js/map/layers",
         "//js/map/workers",
+        "//trails_lat/proto:data_ts_proto",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/corgi",
+        "@dev_april_corgi//js/data",
         "@dev_april_corgi//js/emu",
         "@dev_april_corgi//js/emu/menu",
         "@dev_april_corgi//js/server:client",

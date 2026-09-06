@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package lat.trails;
+
+option java_multiple_files = true;
+option java_package = "lat.trails.proto";
+
+service DataService {
+  rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+}
+
+message User {
+  string id = 1;
+  string display_name = 2;
+  optional string picture_url = 3;
+}
+
+message GetCurrentUserRequest {}
+
+message GetCurrentUserResponse {
+  // Unset when nobody is signed in.
+  optional User user = 1;
+}
+
+message Collection {
+  string id = 1;
+  string name = 2;
+}
+
+message ListCollectionsRequest {}
+
+message ListCollectionsResponse {
+  repeated Collection collections = 1;
+}

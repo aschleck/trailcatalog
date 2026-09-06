@@ -14,10 +14,11 @@ import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
+import { GetCurrentUserResponse } from 'trails_lat/proto/data_pb';
 
 import { CollectionLayer } from './collection_layer';
 import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
-import { User, refetchData } from './data';
+import { invalidateCurrentUser, requestData } from './data';
 import { HOVER_CHANGED } from './events';
 import { MENU_CLASSES } from './menubar';
 
@@ -29,7 +30,7 @@ export interface LayerState {
 
 export interface State {
   layers: LayerState[];
-  self: Future<{user: User|null}>;
+  self: Future<GetCurrentUserResponse>;
 }
 
 type Deps = typeof ViewerController.deps;
@@ -69,9 +70,10 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
       this.loginWatcher.stop();
       this.loginPopup = undefined;
+      invalidateCurrentUser();
       this.updateState({
         ...this.state,
-        self: refetchData('self', {}),
+        self: requestData('lat.trails.DataService/GetCurrentUser', {}),
       });
     });
     this.registerDisposable(this.loginWatcher);

@@ -46,11 +46,13 @@ kt_jvm_library(
     srcs = glob(["*.kt"]),
     deps = [
         "//java/lat/trails/common",
+        "//trails_lat/proto:data_java_proto",
         "//java/org/trailcatalog:epoch_tracker",
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/flags",
         "//java/org/trailcatalog/s2:s2-kt",
         "@com_google_geometry_s2//:s2",
+        "@protobuf//java/util",
         "@maven//:com_fasterxml_jackson_core_jackson_databind",
         "@maven//:io_javalin_javalin",
         "@maven//:org_slf4j_slf4j_simple",
