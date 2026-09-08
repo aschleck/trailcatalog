@@ -140,6 +140,10 @@ export type Data = {[key: string]: boolean|number|string};
 
 const TEXT_DECODER = new TextDecoder();
 
+// Keep in sync with ApiServer.kt#KIND_UUID_JSON.
+const KIND_UUID_JSON = 0;
+const KIND_PACKED_PATH = 1;
+
 class CollectionLoader {
 
   constructor(
@@ -150,8 +154,13 @@ class CollectionLoader {
   load(request: LoadRequest) {
     const source = new LittleEndianView(request.data);
     const version = source.getVarInt32();
-    if (version !== 1) {
+    if (version !== 2) {
       throw new Error("Unhandled version");
+    }
+
+    const kind = source.getVarInt32();
+    if (kind !== KIND_UUID_JSON && kind !== KIND_PACKED_PATH) {
+      throw new Error(`Unhandled object kind ${kind}`);
     }
 
     let lineGeometryBytes = 0;
@@ -164,10 +173,20 @@ class CollectionLoader {
       points: Float64Array;
     }> = [];
     for (let i = 0; i < lineCount; ++i) {
-      const idLsb = source.getBigInt64();
-      const idMsb = source.getBigInt64();
-      const dataByteSize = source.getVarInt32();
-      const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
+      let idLsb;
+      let idMsb;
+      let data;
+      if (kind === KIND_PACKED_PATH) {
+        idLsb = source.getVarBigInt64();
+        idMsb = 0n;
+        // Keep the way id a number the way the jsonb one was. They reach only about 1.3e9.
+        data = {id: Number(source.getVarBigInt64()), type: source.getVarInt32()};
+      } else {
+        idLsb = source.getBigInt64();
+        idMsb = source.getBigInt64();
+        const dataByteSize = source.getVarInt32();
+        data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
+      }
       const style = findZoomedStyle(data, request.styleZoom, this.style.lines);
       if (!style) {
         // Deltas have no width to multiply past, so a line the style drops still costs a walk.

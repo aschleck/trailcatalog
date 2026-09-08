@@ -56,6 +56,15 @@ private lateinit var hikariTrailcatalog: HikariDataSource
 private val ANONYMOUS_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
 
+// How a tile encodes its objects. Keep in sync with collection_loader.ts#load.
+//
+// Pack the trailcatalog paths into three varints instead of a UUID and a JSON blob, saving about
+// 46 bytes a line. They are rows in a table we own, so the id fits a varint and the only attributes
+// are the source way and the category. A user collection needs the general form: its objects are
+// identified by UUID and described by the jsonb its creator wrote.
+private const val KIND_UUID_JSON = 0
+private const val KIND_PACKED_PATH = 1
+
 private val JSON_PARSER = JsonFormat.parser()
 private val JSON_PRINTER = JsonFormat.printer().omittingInsignificantWhitespace()
 
@@ -475,6 +484,9 @@ private fun <B : Message.Builder> B.mergeJson(json: JsonNode?): B {
 
 private data class WireLine(val id: UUID, val data: String, val latLngDegrees: ByteArray)
 
+private data class WirePath(
+    val id: Long, val sourceWay: Long, val type: Int, val latLngDegrees: ByteArray)
+
 private data class WirePolygon(val id: UUID, val data: String, val s2Polygon: ByteArray)
 
 private fun fetchCollectionCovering(ctx: Context) {
@@ -577,11 +589,13 @@ private fun fetchCollectionObjects(ctx: Context) {
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   DelegatingEncodedOutputStream(bytes).use {
     // version
-    it.writeVarInt(1)
+    it.writeVarInt(2)
 
     if (trailcatalogPaths) {
+      it.writeVarInt(KIND_PACKED_PATH)
       fetchTrailcatalogPaths(it, cell, indexBottom, levelCeiling, levelFloor, snap)
     } else {
+      it.writeVarInt(KIND_UUID_JSON)
       fetchRealCollection(
           it, allowed, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
     }
@@ -775,31 +789,29 @@ private fun fetchTrailcatalogPaths(
       }
       .executeQuery()
       .use { results ->
-        val lines = ArrayList<WireLine>()
+        val paths = ArrayList<WirePath>()
         while (results.next()) {
-          lines.add(
-            WireLine(
-              UUID(0,results.getLong(1)),
-              "{\"id\":${results.getLong(4)},\"type\":${results.getInt(2)}}",
+          paths.add(
+            WirePath(
+              results.getLong(1),
+              results.getLong(4),
+              results.getInt(2),
               simplifyForSnap(results.getBytes(3), snap)
             )
           )
         }
-        it.writeVarInt(lines.size)
-        for (line in lines) {
-          it.writeLong(line.id.leastSignificantBits)
-          it.writeLong(line.id.mostSignificantBits)
-          line.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
-            it.writeVarInt(utf8.size)
-            it.write(utf8)
-          }
+        it.writeVarInt(paths.size)
+        for (path in paths) {
+          it.writeVarLong(path.id)
+          it.writeVarLong(path.sourceWay)
+          it.writeVarInt(path.type)
           // DeltaLatLngE7 leads with its own point count and needs no alignment, so the geometry
           // goes to the wire in the encoding it is stored in.
-          it.write(line.latLngDegrees)
+          it.write(path.latLngDegrees)
         }
       }
 
-    // polygons
+    // polygons, which the paths table has none of
     it.writeVarInt(0)
   }
 }

@@ -19,7 +19,10 @@ export interface Snap {
 // Streams split the levels between them so no object is in two of them and no two tiles ever draw
 // the same object.
 export interface Stream {
+  // Half open, matching the bands in the line styles. Keep streams that overlap in level disjoint
+  // in zoom, or else both tile the same objects and each cell draws them once.
   minZoom: number;
+  maxZoom: number|undefined;
   indexBottom: number;
   fromLevel: number;
   toLevel: number|undefined;
@@ -294,7 +297,7 @@ class S2DataFetcher {
     const viewport = this.lastViewport;
     const wanted = [];
     for (const [id, stream] of this.streams.entries()) {
-      if (stream.minZoom > zoom) {
+      if (stream.minZoom > zoom || (stream.maxZoom !== undefined && zoom >= stream.maxZoom)) {
         continue;
       }
 

@@ -406,10 +406,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             // cell, so a coarser tiling means pulling parks hundreds of km offscreen once zoomed
             // in. Level 5 costs 205 requests for a view of the western US instead of 68, and 2.9 MB
             // instead of 4.5 MB at zoom 11.
-            {minZoom: 0, indexBottom: 5, fromLevel: 0, toLevel: 10},
+            {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
             // Everything smaller. A level 6 cell holds up to 11k of these, which is why they wait
             // until the viewport is small enough to be worth it.
-            {minZoom: 7, indexBottom: 6, fromLevel: 11, toLevel: undefined},
+            {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
           ],
           this.mapController.camera,
           this.mapController.renderer,
@@ -422,23 +422,50 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           '/api/collections/00000000-0000-0000-0000-000000000001',
           OSM_PATHS,
           [
-            // A level L cell's half diagonal is 0.388 * 2^-L in the Mercator units the simplifier
-            // measures in, and a pixel at zoom z is 2^-(z+7) of them, so L = z + 6 is about a
-            // pixel. Consecutive OSM nodes on a path sit about 15 m apart against 38 m to the pixel
-            // at zoom 12, so this is where most of the geometry goes.
-            // => level 16 for zoom 10, 20 for zoom 14
+            // Snap to about a pixel at each zoom, which is level z + 6. A level L cell's half
+            // diagonal is 0.388 * 2^-L in Mercator units and a pixel at zoom z is 2^-(z+7).
             //
-            // Two bands rather than one per style band because a band boundary refetches every
-            // tile in the viewport.
+            // This is where most of the geometry goes: consecutive OSM nodes on a path sit about
+            // 15 m apart, against 38 m to the pixel at zoom 12.
+            //
+            // One band per zoom is cheap because zooming out reuses what is already held. Only
+            // zooming in asks for a finer snap, and a finer snap is a different URL.
             {minZoom: 0, snap: 16},
+            {minZoom: 11, snap: 17},
+            {minZoom: 12, snap: 18},
+            {minZoom: 13, snap: 19},
             {minZoom: 14, snap: 20},
-            {minZoom: 17, snap: undefined},
+            {minZoom: 15, snap: undefined},
           ],
           [
-            // Tiled at level 11 even though zoom 10 sees about four cells across, because the
-            // level 13 snap keeps each one small enough that the extra offscreen reach is cheaper
-            // than quadrupling the request count.
-            {minZoom: 10, indexBottom: 11, fromLevel: 10, toLevel: undefined},
+            // Tile at zoom - 2, which holds requests near 50 and offscreen reach near 5x at every
+            // zoom. Requests go as the viewport divided by the tile and reach goes as the tile
+            // divided by the viewport, so a fixed bottom loses at one end or the other: bottom 11
+            // costs 903 requests at zoom 10 and reaches 30x at zoom 15.
+            //
+            // Only the tiling moves between bands. They all carry levels 11 and deeper, so crossing
+            // a zoom boundary can never leave a level uncovered.
+            //
+            // Level 9 is the coarsest safe tiling. The worst level 9 cell on the planet is central
+            // Berlin at 221k paths for 3.7 MB, against 94k at level 10 and 34k at level 11.
+            {minZoom: 10, maxZoom: 12, indexBottom: 9, fromLevel: 11, toLevel: undefined},
+            {minZoom: 12, maxZoom: 14, indexBottom: 10, fromLevel: 11, toLevel: undefined},
+            {minZoom: 14, maxZoom: undefined, indexBottom: 11, fromLevel: 11, toLevel: undefined},
+            // Carry the long ways separately, or a river keeps its short ways and loses the long
+            // stretches of its mainstem. A way is assigned to the smallest cell containing it and a
+            // range query only reaches cells at or below its own level, so nothing above can pick
+            // these up. 153k paths sit above level 10, 42% of them waterways, and the share climbs
+            // with length: 87 of the 101 paths at level 4.
+            //
+            // Tile the two ends differently because they cost differently. Levels 0 to 8 are rare
+            // enough for level 4, where the worst tile on the planet holds 188 and a real one runs
+            // about 25 kb. Levels 9 and 10 are 25x more numerous, so they need level 7 for 9 to
+            // 42 kb against the 1.5 MB a level 4 tile of them costs.
+            //
+            // fromLevel 0 buys the 18 ways above level 4 for 8 to 19 ancestor requests a viewport.
+            // They are ferry routes and a rail line, and a layer that draws every way draws those.
+            {minZoom: 10, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: 8},
+            {minZoom: 10, maxZoom: undefined, indexBottom: 7, fromLevel: 9, toLevel: 10},
           ],
           this.mapController.camera,
           this.mapController.renderer,
