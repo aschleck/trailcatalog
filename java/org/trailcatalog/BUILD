@@ -60,6 +60,7 @@ kt_jvm_library(
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
+        "//java/org/trailcatalog/s2:s2-kt",
         "@bazel_tools//tools/java/runfiles",
         "@com_google_geometry_s2//:s2",
         "@maven//:com_fasterxml_jackson_core_jackson_databind",

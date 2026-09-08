@@ -5,6 +5,7 @@ import java.util.Random
 import kotlin.math.ln
 import kotlin.math.sin
 import org.junit.Test
+import org.trailcatalog.s2.snapEpsilon
 
 class SimplifyTest {
 
@@ -96,7 +97,7 @@ class SimplifyTest {
 
     var previous = Int.MAX_VALUE
     for (level in intArrayOf(22, 20, 18, 16, 14)) {
-      val kept = simplifyLatLngE7(points, levelToEpsilon(level)).size
+      val kept = simplifyLatLngE7(points, snapEpsilon(level)).size
       assertThat(kept).isAtMost(previous)
       previous = kept
     }
@@ -104,10 +105,10 @@ class SimplifyTest {
     assertThat(previous).isLessThan(pointCount / 4)
   }
 
-  // Half a level 14 cell diagonal in Mercator units, the coarse end of what the servers ask for.
-  private val LOOSE = levelToEpsilon(14)
-  // Half a level 22 cell diagonal, fine enough that a straight line is all that survives it.
-  private val TIGHT = levelToEpsilon(22)
+  // The coarse end of what the servers ask for.
+  private val LOOSE = snapEpsilon(14)
+  // Fine enough that a straight line is all that survives it.
+  private val TIGHT = snapEpsilon(22)
 
   // Only to absorb floating point, since measuring to the segment makes epsilon a real bound.
   private val TOLERANCE_SLACK = 1.0001
@@ -120,12 +121,6 @@ class SimplifyTest {
     }
     return points
   }
-}
-
-// Kept off S2Projections so the test does not need the geometry library. MAX_DIAG for the
-// quadratic projection is 2.4387 radians at level 0, and a Mercator unit is pi radians.
-private fun levelToEpsilon(level: Int): Double {
-  return 2.438654594434021 * Math.pow(2.0, -level.toDouble()) / 2.0 / Math.PI
 }
 
 // A constant scale at the test's latitude is close enough, since this only sizes the wobble.

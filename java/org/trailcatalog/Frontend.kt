@@ -15,6 +15,7 @@ import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.models.ENUM_SIZE
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
+import org.trailcatalog.s2.snapEpsilon
 import java.sql.PreparedStatement
 import java.time.Instant
 import java.time.LocalDate
@@ -917,12 +918,6 @@ private fun addETagAndCheckCached(ctx: Context): Boolean {
 
 // One pixel at zoom 10. The Mercator world is 2 units wide and a pixel at zoom z is 2^-(z+7).
 private val SIMPLIFICATION_EPSILON = 1 / 2.0.pow(17.0)
-
-// The furthest a point can move when snapped to a level L cell, in the Mercator units the
-// simplifier measures in.
-private fun snapEpsilon(level: Int): Double {
-  return 0.388 / 2.0.pow(level.toDouble())
-}
 
 // The error the client accepts, from the S2 level it names. A client that names none predates the
 // parameter and gets what the endpoint always gave it.

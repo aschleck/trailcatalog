@@ -7,7 +7,6 @@ import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2Polyline
-import com.google.common.geometry.S2Projections
 import com.google.protobuf.Message
 import com.google.protobuf.util.JsonFormat
 import com.zaxxer.hikari.HikariDataSource
@@ -46,6 +45,8 @@ import org.trailcatalog.common.DeltaLatLngE7
 import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.s2.polylineToCell
+import org.trailcatalog.s2.snapEpsilon
+import org.trailcatalog.s2.snapRadians
 import org.trailcatalog.EpochTracker
 import kotlin.use
 
@@ -716,7 +717,7 @@ private fun fetchRealCollection(
               S2Polygon().apply {
                 initToSimplified(
                   S2Polygon.decode(ByteArrayInputStream(raw)),
-                  S1Angle.radians(S2Projections.MAX_DIAG.getValue(snap) / 2.0 + 1e-15),
+                  S1Angle.radians(snapRadians(snap) + 1e-15),
                   /* snapToCellCenters= */ false
                 )
               }.let {
@@ -870,8 +871,6 @@ private fun simplifyForSnap(latLngDegrees: ByteArray, snap: Int?): ByteArray {
     return latLngDegrees
   }
 
-  // Halve the cell diagonal to match what fetchRealCollection hands initToSimplified for polygons
-  // at the same snap level. MAX_DIAG is in radians and a Mercator unit is pi radians.
-  val epsilon = S2Projections.MAX_DIAG.getValue(snap) / 2.0 / Math.PI
-  return DeltaLatLngE7.encode(simplifyLatLngE7(DeltaLatLngE7.decode(latLngDegrees), epsilon))
+  return DeltaLatLngE7.encode(
+      simplifyLatLngE7(DeltaLatLngE7.decode(latLngDegrees), snapEpsilon(snap)))
 }

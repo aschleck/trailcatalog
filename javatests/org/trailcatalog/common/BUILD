@@ -30,6 +30,7 @@ kt_jvm_test(
     test_class = "org.trailcatalog.common.SimplifyTest",
     deps = [
         "//java/org/trailcatalog/common",
+        "//java/org/trailcatalog/s2:s2-kt",
         "@maven//:com_google_truth_truth",
         "@maven//:org_junit_jupiter_junit_jupiter",
     ],
