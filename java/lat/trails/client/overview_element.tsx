@@ -8,16 +8,22 @@ import { State, ViewerController } from './viewer_controller';
 import { requestData } from './data';
 import { HOVER_CHANGED } from './events';
 import { Menubar, MenubarItem } from './menubar';
+import { Toolbar } from './toolbar';
 
 export function OverviewElement(
-  {parameters}: {parameters: {[key: string]: string};},
+  {collection, parameters}: {
+    collection: string|undefined;
+    parameters: {[key: string]: string};
+  },
   inState: State|undefined,
   updateState: (newState: State) => void,
 ) {
   if (!inState) {
     inState = {
+      collection: undefined,
       layers: [],
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
+      tool: 'pointer',
     };
   }
   const state = inState;
@@ -45,6 +51,7 @@ export function OverviewElement(
     <div
         js={corgi.bind({
           controller: ViewerController,
+          args: {collection},
           events: {
             corgi: [
               [HOVER_CHANGED, 'onHoverChange'],
@@ -57,13 +64,16 @@ export function OverviewElement(
         className="flex flex-col h-full relative"
     >
       <Menubar user={state.self.finished ? state.self.value().user : undefined}>
+        <MenubarItem label="File" onClick="fileMenuClicked" />
         <MenubarItem label="Layers" onClick="layersMenuClicked" />
       </Menubar>
-      <MapElement
-          camera={camera}
-          height="grow min-h-0"
-          ref="map"
-      />
+      <div className="grow min-h-0 relative">
+        <MapElement
+            camera={camera}
+            ref="map"
+        />
+        <Toolbar tool={state.tool} />
+      </div>
     </div>
   </>;
 }

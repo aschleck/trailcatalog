@@ -6,14 +6,38 @@ option java_multiple_files = true;
 option java_package = "lat.trails.proto";
 
 service DataService {
+  rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
+  rpc DeleteLine(DeleteLineRequest) returns (DeleteLineResponse);
+  rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+  rpc PutLine(PutLineRequest) returns (PutLineResponse);
 }
 
-message User {
+message CreateCollectionRequest {
+  string name = 1;
+}
+
+message CreateCollectionResponse {
+  Collection collection = 1;
+}
+
+message DeleteLineRequest {
+  string collection = 1;
+  string id = 2;
+  // A stale version is a 409. Deleting an already deleted line succeeds whatever this says.
+  int64 base_version = 3;
+}
+
+message DeleteLineResponse {}
+
+message GetCollectionRequest {
   string id = 1;
-  string display_name = 2;
-  optional string picture_url = 3;
+}
+
+message GetCollectionResponse {
+  Collection collection = 1;
+  repeated Line lines = 2;
 }
 
 message GetCurrentUserRequest {}
@@ -23,13 +47,48 @@ message GetCurrentUserResponse {
   optional User user = 1;
 }
 
-message Collection {
-  string id = 1;
-  string name = 2;
-}
-
 message ListCollectionsRequest {}
 
 message ListCollectionsResponse {
   repeated Collection collections = 1;
 }
+
+message PutLineRequest {
+  string collection = 1;
+  // The client picks the id so that a retried put replaces the line instead of adding another.
+  // A stale line.version is a 409.
+  Line line = 2;
+}
+
+message PutLineResponse {
+  // Send this back on the next edit of this line.
+  int64 version = 1;
+}
+
+message Collection {
+  string id = 1;
+  string name = 2;
+  // Bumped once per write, and stamped onto whatever the write touched.
+  int64 version = 3;
+}
+
+message Line {
+  string id = 1;
+  // The jsonb column verbatim, the same string /api/collections/{id}/objects writes.
+  string data = 2;
+  // Interleaved lat then lng.
+  repeated sint32 lat_lng_e7 = 3;
+  // Empty, or one per point.
+  repeated sint32 elevation_centimeters = 4;
+  // Empty, or one per point.
+  repeated int64 time_seconds = 5;
+  // The collection version this line was last written at, 0 for a line the server has not seen.
+  int64 version = 6;
+}
+
+message User {
+  string id = 1;
+  string display_name = 2;
+  optional string picture_url = 3;
+}
+

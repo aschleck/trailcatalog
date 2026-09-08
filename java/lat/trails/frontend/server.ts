@@ -24,7 +24,7 @@ const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
 const DEBUG = process.env.DEBUG !== 'false';
 
 // Keep in sync with common/Database.kt#SCHEMA.
-const SCHEMA = 'migration_2_pictures_and_samples';
+const SCHEMA = 'migration_3_line_versions';
 
 const encrypter = new Encrypter(COOKIE_SECRET);
 const loginEnforcer = new LoginEnforcer(encrypter);

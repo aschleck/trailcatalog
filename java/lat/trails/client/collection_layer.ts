@@ -5,13 +5,14 @@ import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { Camera } from 'js/map/camera';
 import { LatLng, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
+import { growBuffer } from 'js/map/rendering/buffers';
 import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { Request as QuerierRequest, Response as QuerierResponse, QueryPointResponse } from 'js/map/workers/location_querier';
 import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
-import { Z_USER_DATA } from 'js/map/z';
+import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { HOVER_CHANGED } from './events';
 import { Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
@@ -237,7 +238,7 @@ export class CollectionLayer extends Layer {
           program: this.renderer.lineProgram,
           texture: undefined,
           vertexCount: result.vertexCount,
-          z: Z_USER_DATA + 1,
+          z: Z_USER_DATA_HIGHLIGHT,
         };
         highlight.drawables.push(drawable);
         // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
@@ -282,7 +283,7 @@ export class CollectionLayer extends Layer {
           program: this.renderer.triangleProgram,
           texture: undefined,
           vertexCount: undefined,
-          z: Z_USER_DATA + 1,
+          z: Z_USER_DATA_HIGHLIGHT - 0.5,
         });
 
         // The boundary, above the fill, so the shape reads as picked out rather than just
@@ -320,7 +321,7 @@ export class CollectionLayer extends Layer {
             program: this.renderer.lineProgram,
             texture: undefined,
             vertexCount: /* a rectangle per segment= */ 4,
-            z: Z_USER_DATA + 2,
+            z: Z_USER_DATA_HIGHLIGHT,
           };
           highlight.drawables.push(drawable);
           highlight.drawables.push({...drawable, program: this.renderer.lineCapProgram});
@@ -343,6 +344,19 @@ export class CollectionLayer extends Layer {
         highlight.geometry, highlight.geometry.byteLength, highlight.glGeometryBuffer);
     }).catch(() => {});
     return false;
+  }
+
+  override hoverLost(source: EventSource): void {
+    // A query in flight would set the highlight back up after we clear it.
+    this.activeQuery.reject();
+    if (!this.lastHoverTarget) {
+      return;
+    }
+
+    this.lastRenderGeneration += 1;
+    this.clearHighlight();
+    this.lastHoverTarget = undefined;
+    source.trigger(HOVER_CHANGED, {target: undefined});
   }
 
   override hasNewData(): boolean {
@@ -578,12 +592,4 @@ export class CollectionLayer extends Layer {
 
 function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {
   return (((color & 0xFFFFFF00) >>> 0) | alpha) as RgbaU32;
-}
-
-function growBuffer(buffer: ArrayBuffer, needed: number): ArrayBuffer {
-  if (needed <= buffer.byteLength) {
-    return buffer;
-  }
-  const capacity = Math.pow(2, Math.ceil(Math.log2(needed)) + 1);
-  return new ArrayBuffer(capacity);
 }

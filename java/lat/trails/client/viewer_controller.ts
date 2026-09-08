@@ -1,7 +1,11 @@
+import { checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
+import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
+import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
+import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
 import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
@@ -14,12 +18,23 @@ import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
-import { GetCurrentUserResponse } from 'trails_lat/proto/data_pb';
+import {
+  Collection,
+  CreateCollectionResponse,
+  GetCollectionResponse,
+  GetCurrentUserResponse,
+  Line,
+  ListCollectionsResponse,
+  PutLineResponse,
+} from 'trails_lat/proto/data_pb';
 
 import { CollectionLayer } from './collection_layer';
 import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
 import { invalidateCurrentUser, requestData } from './data';
+import { ImportFailedDialog, SaveFailedDialog } from './dialogs';
+import { EditableLine, EditLayer, Tool } from './edit_layer';
 import { HOVER_CHANGED } from './events';
+import { parseGpx } from './gpx';
 import { MENU_CLASSES } from './menubar';
 
 export interface LayerState {
@@ -28,14 +43,21 @@ export interface LayerState {
   layer: Layer;
 }
 
+export interface Args {
+  // The id of the open collection or none
+  collection: string|undefined;
+}
+
 export interface State {
+  collection: Collection|undefined;
   layers: LayerState[];
   self: Future<GetCurrentUserResponse>;
+  tool: Tool;
 }
 
 type Deps = typeof ViewerController.deps;
 
-export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
+export class ViewerController extends Controller<Args, Deps, HTMLElement, State> {
 
   static deps() {
     return {
@@ -43,40 +65,84 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
         map: MapController,
       },
       services: {
+        dialog: DialogService,
+        history: HistoryService,
         menu: MenuService,
       },
     };
   }
 
   private readonly mapController: MapController;
+  private readonly dialog: DialogService;
+  private readonly history: HistoryService;
   private readonly menu: MenuService;
-  private loginPopup: Window|undefined;
+  private readonly editLayer: EditLayer;
+  // Logins run in a popup on Google's origin, so a caller waiting on one waits on this.
+  private login: {
+    popup: Window;
+    promise: Promise<void>;
+    resolve: () => void;
+    reject: (e: unknown) => void;
+  }|undefined;
   private readonly loginWatcher: Timer;
+  // Writes to the server are serialized one after another to avoid multiple occuring at the same
+  // time.
+  private writes: Promise<unknown>;
+  // Importing a GPX queues a write per segment, and whatever failed the first one usually fails
+  // all of them, so a dialog apiece would bury the page.
+  private warnedUnsaved: boolean;
   lastChange: number;
 
   constructor(response: Response<ViewerController>) {
     super(response);
     this.mapController = response.deps.controllers.map;
+    this.dialog = response.deps.services.dialog;
+    this.history = response.deps.services.history;
     this.menu = response.deps.services.menu;
+    this.writes = Promise.resolve();
+    this.warnedUnsaved = false;
     this.lastChange = Date.now();
 
-    // Logins work via a popup running on Google's origin. So when we know it's open we start this
-    // timer to poll for completion.
+    // The popup runs on another origin, so the only thing we can see about it is that it closed.
     this.loginWatcher = new Timer(250 /* ms */, () => {
-      const popup = this.loginPopup;
-      if (popup && !popup.closed) {
+      const login = this.login;
+      if (login && !login.popup.closed) {
         return;
       }
 
       this.loginWatcher.stop();
-      this.loginPopup = undefined;
+      this.login = undefined;
       invalidateCurrentUser();
+      const self: Future<GetCurrentUserResponse> =
+          requestData('lat.trails.DataService/GetCurrentUser', {});
       this.updateState({
         ...this.state,
-        self: requestData('lat.trails.DataService/GetCurrentUser', {}),
+        self,
       });
+      if (login) {
+        // Callers wait on login.promise, so it has to settle even when the user fetch fails, or
+        // else the write queue behind it never runs again.
+        self.then(response => {
+          if (response.user) {
+            login.resolve();
+          } else {
+            login.reject(new Error('Nobody signed in'));
+          }
+        }).catch(e => {
+          login.reject(e);
+        });
+      }
     });
     this.registerDisposable(this.loginWatcher);
+
+    this.editLayer =
+        new EditLayer(
+            this.mapController.camera,
+            this.mapController.renderer,
+            line => {
+              this.saveLine(line);
+            });
+    this.registerDisposable(this.editLayer);
 
     const allLayers = [{
       name: 'Skybox',
@@ -377,7 +443,12 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       ...this.state,
       layers: allLayers,
     });
-    this.mapController.setLayers(allLayers.filter(l => l.enabled).map(l => l.layer));
+    this.setMapLayers(allLayers);
+
+    const collection = response.args.collection;
+    if (collection) {
+      this.loadCollection(collection);
+    }
   }
 
   onHoverChange(e: CorgiEvent<typeof HOVER_CHANGED>): void {
@@ -390,7 +461,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     url.searchParams.set('lat', center.latDegrees().toFixed(7));
     url.searchParams.set('lng', center.lngDegrees().toFixed(7));
     url.searchParams.set('zoom', zoom.toFixed(3));
-    window.history.replaceState(null, '', url);
+    this.history.silentlyReplaceUrl(url.toString());
   }
 
   // Reversed so the menu reads top down the way the layers stack, the topmost drawn one first.
@@ -412,26 +483,233 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     this.openMenu(items, e);
   }
 
+  fileMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const collections: Future<ListCollectionsResponse> =
+        requestData('lat.trails.DataService/ListCollections', {});
+    collections.then(response => {
+      const items: MenuEntries = [{
+        kind: 'menu_item',
+        label: 'New',
+        action: () => {
+          this.newCollection();
+        },
+      }];
+      if (response.collections.length > 0) {
+        items.push({
+          kind: 'menu',
+          label: 'Open',
+          items: response.collections.map(collection => ({
+            kind: 'menu_item' as const,
+            label: collection.name,
+            action: () => {
+              this.openCollection(collection);
+            },
+          })),
+        });
+      } else {
+        items.push({kind: 'menu_item', label: 'Open', disabled: true, action: () => {}});
+      }
+      items.push({kind: 'divider'});
+      items.push({
+        kind: 'menu_item',
+        label: 'Import GPX',
+        action: () => {
+          this.importGpx();
+        },
+      });
+      this.openMenu(items, e);
+    });
+  }
+
+  toolClicked(e: CorgiEvent<typeof ACTION>): void {
+    const tool = checkExists(e.actionElement.data('tool')).string() as Tool;
+    this.editLayer.setTool(tool);
+    this.updateState({
+      ...this.state,
+      tool,
+    });
+  }
+
   userMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.openMenu([{
       kind: 'menu_item',
-      // Navigating drops the camera and the layers, which is the point: the map should not keep
-      // showing what it was showing for someone who just signed out.
       label: 'Log out',
       action: () => {
+        // Force a page refresh as part of logging out
         window.location.href = '/logout';
       },
     }], e);
   }
 
   loginClicked(): void {
-    const popup = window.open('/login/google', 'login', 'height=700,popup,width=500');
-    if (!popup) {
+    this.requireLogin().catch(e => {
+      console.error(e);
+    });
+  }
+
+  private newCollection(): void {
+    this.editLayer.setLines([]);
+    this.updateState({
+      ...this.state,
+      collection: undefined,
+    });
+    this.history.silentlyReplaceUrl('/');
+  }
+
+  private openCollection(collection: Collection): void {
+    this.updateState({
+      ...this.state,
+      collection,
+    });
+    this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
+    this.loadCollection(collection.id);
+  }
+
+  private loadCollection(id: string): void {
+    const loading: Future<GetCollectionResponse> =
+        requestData('lat.trails.DataService/GetCollection', {id});
+    loading
+        .then(response => {
+          this.updateState({
+            ...this.state,
+            collection: response.collection,
+          });
+          this.editLayer.setLines(response.lines.map(fromProto));
+        })
+        .catch(e => {
+          console.error(e);
+        });
+  }
+
+  private importGpx(): void {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.gpx,application/gpx+xml';
+    input.multiple = true;
+    input.addEventListener('change', () => {
+      const files = Array.from(input.files ?? []);
+      Promise.all(files.map(file => this.importOneGpx(file)))
+          .then(failed => {
+            const named = failed.filter(exists);
+            if (named.length > 0) {
+              this.dialog.display(ImportFailedDialog({files: named})).catch(() => {});
+            }
+          });
+    });
+    input.click();
+  }
+
+  // Resolves with the file's name when it yielded no lines, so that picking several files names
+  // every one that failed in a single dialog.
+  private importOneGpx(file: File): Promise<string|undefined> {
+    return file.text()
+        .then(text => {
+          const lines = parseGpx(text);
+          // A GPX carrying only waypoints or routes parses and still leaves nothing to draw, which
+          // looks the same to somebody who picked a file and watched the map not change.
+          if (lines.length === 0) {
+            return file.name;
+          }
+
+          this.editLayer.addLines(lines);
+          for (const line of lines) {
+            this.saveLine(line);
+          }
+          return undefined;
+        })
+        .catch(e => {
+          console.error(e);
+          return file.name;
+        });
+  }
+
+  private saveLine(line: EditableLine): void {
+    this.writes =
+        this.writes
+            .then(() => this.currentCollection())
+            .then(collection => {
+              const put: Future<PutLineResponse> =
+                  requestData('lat.trails.DataService/PutLine', {
+                    collection,
+                    line: toProto(line),
+                  });
+              return put.then(response => {
+                line.version = response.version;
+              });
+            })
+            .catch(e => {
+              console.error(e);
+              this.warnUnsaved();
+            });
+  }
+
+  // Dismissing the dialog arms it again, so a later failure is not silent.
+  private warnUnsaved(): void {
+    if (this.warnedUnsaved) {
       return;
     }
 
-    this.loginPopup = popup;
+    this.warnedUnsaved = true;
+    const dismissed = () => {
+      this.warnedUnsaved = false;
+    };
+    this.dialog.display(SaveFailedDialog({})).then(dismissed, dismissed);
+  }
+
+  private currentCollection(): Promise<string> {
+    const open = this.state.collection;
+    if (open) {
+      return Promise.resolve(open.id);
+    }
+
+    return this.requireLogin()
+        .then(() => {
+          const created: Future<CreateCollectionResponse> =
+              requestData(
+                  'lat.trails.DataService/CreateCollection', {name: newCollectionName()});
+          return created;
+        })
+        .then(response => {
+          const collection = checkExists(response.collection);
+          this.updateState({
+            ...this.state,
+            collection,
+          });
+          this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
+          return collection.id;
+        });
+  }
+
+  private requireLogin(): Promise<void> {
+    if (this.login) {
+      return this.login.promise;
+    }
+
+    // Somebody already signed in whose GetCurrentUser has not landed yet gets a popup if we go by
+    // finished, so wait the fetch out instead.
+    return this.state.self.then(
+        response => response.user ? Promise.resolve() : this.openLogin());
+  }
+
+  private openLogin(): Promise<void> {
+    if (this.login) {
+      return this.login.promise;
+    }
+
+    const popup = window.open('/login/google', 'login', 'height=700,popup,width=500');
+    if (!popup) {
+      return Promise.reject(new Error('Unable to open the login window'));
+    }
+
+    let resolve!: () => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    this.login = {popup, promise, resolve, reject};
     this.loginWatcher.start();
+    return promise;
   }
 
   private openMenu(items: MenuEntries, e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -454,7 +732,49 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       ...this.state,
       layers,
     });
-    this.mapController.setLayers(layers.filter(l => l.enabled).map(l => l.layer));
+    this.setMapLayers(layers);
   }
+
+  private setMapLayers(layers: LayerState[]): void {
+    this.mapController.setLayers(
+        [this.editLayer as Layer].concat(layers.filter(l => l.enabled).map(l => l.layer)));
+  }
+}
+
+function toProto(line: EditableLine): {
+  id: string;
+  version: bigint;
+  data: string;
+  latLngE7: number[];
+  elevationCentimeters: number[];
+  timeSeconds: bigint[];
+} {
+  return {
+    id: line.id,
+    version: line.version,
+    data: JSON.stringify(line.data),
+    latLngE7: Array.from(line.latLngE7),
+    elevationCentimeters:
+        line.elevationCentimeters ? Array.from(line.elevationCentimeters) : [],
+    timeSeconds: line.timeSeconds ? Array.from(line.timeSeconds) : [],
+  };
+}
+
+function fromProto(line: Line): EditableLine {
+  return {
+    id: line.id,
+    version: line.version,
+    data: line.data ? JSON.parse(line.data) : {},
+    latLngE7: Int32Array.from(line.latLngE7),
+    elevationCentimeters:
+        line.elevationCentimeters.length > 0
+            ? Int32Array.from(line.elevationCentimeters)
+            : undefined,
+    timeSeconds: line.timeSeconds.length > 0 ? BigInt64Array.from(line.timeSeconds) : undefined,
+  };
+}
+
+function newCollectionName(): string {
+  return `Untitled collection ${new Date().toLocaleDateString()}`;
 }
 

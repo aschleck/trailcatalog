@@ -4,12 +4,6 @@ load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 java_binary(
-    name = "geo_json",
-    main_class = "lat.trails.importers.GeoJsonKt",
-    runtime_deps = [":importers"],
-)
-
-java_binary(
     name = "public_access",
     main_class = "lat.trails.importers.PublicAccessKt",
     runtime_deps = [":importers"],

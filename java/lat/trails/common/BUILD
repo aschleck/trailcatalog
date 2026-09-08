@@ -10,7 +10,9 @@ kt_jvm_library(
         "@maven//:org_postgresql_postgresql",
     ],
     deps = [
+        "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/flags",
+        "@com_google_geometry_s2//:s2",
         "@maven//:com_zaxxer_HikariCP",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
     ],

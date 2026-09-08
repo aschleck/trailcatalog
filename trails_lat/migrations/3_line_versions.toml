@@ -1,0 +1,61 @@
+[[actions]]
+type = "add_column"
+table = "collections"
+
+  # Bumped once per write, so a client can ask for everything above the version it holds.
+  [actions.column]
+  name = "version"
+  nullable = false
+  type = "BIGINT"
+  default = "0"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+
+  # The collections.version this line was last written at, echoed back by a put to catch a lost
+  # update.
+  [actions.column]
+  name = "version"
+  nullable = false
+  type = "BIGINT"
+  default = "0"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+
+  # Tombstone, or else a put that raced a delete inserts the line back.
+  [actions.column]
+  name = "deleted"
+  nullable = true
+  type = "TIMESTAMPTZ"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+
+  # The tile cache validator, see ApiServer#contentIsCached. created does not move on an edit.
+  [actions.column]
+  name = "updated"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+[[actions]]
+type = "custom"
+
+# Clients pick line ids, so identity is (collection, id): two collections may pick the same id,
+# and nothing outside a collection ever addresses a line.
+start = """
+  ALTER TABLE lines DROP CONSTRAINT lines_pkey, ADD PRIMARY KEY (collection, id);
+"""
+
+# Fails if two collections have since picked the same id.
+abort = """
+  ALTER TABLE lines DROP CONSTRAINT lines_pkey, ADD PRIMARY KEY (id);
+"""
+
+[[actions]]
+type = "remove_index"
+index = "lines_by_collection"

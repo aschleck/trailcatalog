@@ -13,13 +13,12 @@ import com.google.common.geometry.S2Projections
 import com.google.common.geometry.S2RegionCoverer
 import java.io.ByteArrayOutputStream
 import java.nio.file.Path
-import java.util.Comparator
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import lat.trails.common.COLLECTION_COVERING_MAX_LEVEL
 import lat.trails.common.FEATURE_COVERING_MAX_LEVEL
 import lat.trails.common.createBaseConnection
+import lat.trails.common.encodeCovering
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
 import org.apache.commons.text.StringEscapeUtils
@@ -29,7 +28,6 @@ import org.locationtech.proj4j.CoordinateTransform
 import org.locationtech.proj4j.CoordinateTransformFactory
 import org.locationtech.proj4j.ProjCoordinate
 import org.slf4j.LoggerFactory
-import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createNullableFlag
 import org.trailcatalog.flags.parseFlags
@@ -179,13 +177,7 @@ fun main(args: Array<String>) {
 
   // Does this work...? Too bad I gave away Java Concurrency in Practice...
   synchronized (polygons) {
-    val distinct = deduplicate(polygons)
-    val covering = HashSet<S2CellId>()
-    for (feature in distinct) {
-      val cell = feature.cell;
-      covering.add(cell.parent(COLLECTION_COVERING_MAX_LEVEL.coerceAtMost(cell.level())))
-    }
-    dumpPolygons(ArrayList(covering), distinct)
+    dumpPolygons(deduplicate(polygons))
   }
 }
 
@@ -247,7 +239,7 @@ private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform):
   return normalized.assemblePolygon()
 }
 
-private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature>) {
+private fun dumpPolygons(polygons: List<Feature>) {
   createBaseConnection().use { hikari ->
     val collection =
         hikari.connection
@@ -270,18 +262,7 @@ private fun dumpPolygons(covering: MutableList<S2CellId>, polygons: List<Feature
                   UUID(0, 0)
               )
               setString(3, "PAD-US 4.1")
-              setBytes(
-                  4,
-                  ByteArrayOutputStream().also {
-                    DelegatingEncodedOutputStream(it).use {
-                      covering.sortWith(Comparator.naturalOrder())
-                      it.writeVarInt(1)
-                      it.writeVarInt(covering.size)
-                      for (cell in covering) {
-                        it.writeLong(cell.id())
-                      }
-                    }
-                  }.toByteArray())
+              setBytes(4, encodeCovering(polygons.map { it.cell }))
             }
             .executeQuery()
             .use {

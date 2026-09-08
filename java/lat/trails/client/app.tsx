@@ -20,8 +20,10 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
     route = <NotFoundElement />;
   } else if (state.active.kind === 'citations') {
     route = <CitationsElement parameters={state.parameters} />;
+  } else if (state.active.kind === 'collection') {
+    route = <OverviewElement collection={state.active.id} parameters={state.parameters} />;
   } else if (state.active.kind === 'overview') {
-    route = <OverviewElement parameters={state.parameters} />;
+    route = <OverviewElement collection={undefined} parameters={state.parameters} />;
   } else {
     checkExhaustive(state.active);
   }

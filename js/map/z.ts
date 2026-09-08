@@ -6,5 +6,7 @@ export const Z_OVERLAY_TERRAIN = 10;
 export const Z_OVERLAY_TRANSPORTATION = 12;
 export const Z_OVERLAY_TEXT = 13;
 export const Z_USER_DATA = 100;
+export const Z_USER_DATA_HIGHLIGHT = 101;
+export const Z_EDITING = 200;
 
 // don't exceed 1000 without changing program.ts.

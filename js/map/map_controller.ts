@@ -1,4 +1,4 @@
-import { S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashSet } from 'external/dev_april_corgi+/js/common/collections';
 import { approxEqual } from 'external/dev_april_corgi+/js/common/comparisons';
@@ -156,6 +156,18 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.registerListener(document, 'pointerup', e => { interpreter.pointerUp(e); });
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
     this.registerListener(this.canvas, 'contextmenu', e => { e.preventDefault(); });
+    this.registerListener(this.canvas, 'keydown', e => {
+      if (e.defaultPrevented) {
+        return;
+      }
+
+      for (const layer of this.layers) {
+        if (layer.keyPressed(e.key, this)) {
+          e.preventDefault();
+          break;
+        }
+      }
+    });
   }
 
   setLayers(layers: Layer[]): void {
@@ -211,11 +223,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     const ll = this.camera.unprojectScreen(
         offsetX, offsetY, this.screenArea.width, this.screenArea.height);
     // On mobile we don't get hover events, so we won't have previously hovered.
-    for (const layer of this.layers) {
-      if (layer.hover(ll, this)) {
-        break;
-      }
-    }
+    this.dispatchHover(ll);
 
     for (const layer of this.layers) {
       if (layer.click(ll, [offsetX, offsetY], contextual, this)) {
@@ -229,9 +237,18 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     const offsetY = pageY - this.screenArea.top;
     const ll = this.camera.unprojectScreen(
         offsetX, offsetY, this.screenArea.width, this.screenArea.height);
+    this.dispatchHover(ll);
+  }
+
+  // The layers under the claimant hear hoverLost because a layer only clears its highlight when it
+  // is told where the cursor went, and it stops being told once something above it claims.
+  private dispatchHover(ll: S2LatLng): void {
+    let claimed = false;
     for (const layer of this.layers) {
-      if (layer.hover(ll, this)) {
-        break;
+      if (claimed) {
+        layer.hoverLost(this);
+      } else {
+        claimed = layer.hover(ll, this);
       }
     }
   }

@@ -4,11 +4,15 @@ import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 export interface Routes {
   citations: {};
+  collection: {
+    id: string;
+  };
   overview: {};
 }
 
 const routes: {[k in keyof Routes]: RegExp} = {
   'citations': /^\/citations$/,
+  'collection': /^\/collection\/(?<id>[0-9a-f-]{36})$/,
   'overview': /^\/$/,
 } as const;
 
