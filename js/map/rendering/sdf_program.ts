@@ -497,8 +497,11 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       out mediump vec4 fragColor;
 
       void main() {
-        highp float gamma = 0.022096875;
         mediump float distance = texture(color, fragColorPosition).a;
+        // fwidth is how much of the distance range one screen pixel spans, so a smoothstep this
+        // wide keeps the edge ramp a pixel at any scale. A ramp narrower than a pixel drops the
+        // stems that land between pixel centers, which is most of them at label sizes.
+        mediump float gamma = fwidth(distance);
         mediump float alpha = smoothstep(halo - gamma, halo + gamma, distance);
         fragColor = fragColorFill * alpha;
       }
