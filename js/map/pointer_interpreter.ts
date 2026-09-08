@@ -1,5 +1,8 @@
+import { Vec2 } from './common/types';
+
 interface PointerListener {
   click(pageX: number, pageY: number, contextual: boolean): void;
+  fling(pageX: number, pageY: number, velocityX: number, velocityY: number): void;
   hover(pageX: number, pageY: number): void;
   idle(): void;
   pan(lastPageX: number, lastPageY: number, currPageX: number, currPageY: number): void;
@@ -14,10 +17,28 @@ interface SimplePointerEvent {
   pointerId: number;
 }
 
+interface Sample {
+  pageX: number;
+  pageY: number;
+  timeMs: number;
+}
+
+// A single pair of moves is too noisy to aim a fling with, especially on touch screens where
+// consecutive samples can land on the same pixel, so we average over a window. 100ms is 6 samples
+// at 60hz and short enough that a curve at the end of the drag decides the direction.
+const FLING_WINDOW_MS = 100;
+// Lifting after holding still means the user placed the map instead of throwing it.
+const FLING_STALE_MS = 50;
+// At 150 px/s the glide is under 40px with map_controller.ts#FLING_DECAY_MS, which isn't worth
+// animating.
+const FLING_MIN_SPEED = 0.15; // in px/ms
+
 export class PointerInterpreter {
 
   private readonly pointers: Map<number, SimplePointerEvent>;
   private maybeClickStart: SimplePointerEvent|undefined;
+  // Recent single-pointer positions inside FLING_WINDOW_MS, oldest first.
+  private readonly samples: Sample[];
 
   // If the user is panning or zooming, we want to trigger an idle call when they stop.
   private needIdle: boolean;
@@ -25,6 +46,7 @@ export class PointerInterpreter {
   constructor(private readonly listener: PointerListener) {
     this.pointers = new Map();
     this.maybeClickStart = undefined;
+    this.samples = [];
     this.needIdle = false;
   }
 
@@ -36,7 +58,12 @@ export class PointerInterpreter {
       pointerId: e.pointerId,
     });
 
+    this.samples.length = 0;
     if (this.pointers.size === 1) {
+      // A flick can be over in one move, so the press is the only sample we have to measure it
+      // against.
+      this.sample(e);
+
       this.maybeClickStart = {
         pageX: e.pageX,
         pageY: e.pageY,
@@ -61,6 +88,7 @@ export class PointerInterpreter {
     if (this.pointers.size === 1) {
       const [last] = this.pointers.values();
       this.listener.pan(last.pageX, last.pageY, e.pageX, e.pageY);
+      this.sample(e);
 
       if (this.maybeClickStart) {
         const d2 = distance2(this.maybeClickStart, e);
@@ -104,8 +132,14 @@ export class PointerInterpreter {
 
     if (this.pointers.size === 0) {
       if (this.needIdle) {
-        this.listener.idle();
         this.needIdle = false;
+        const velocity = this.flingVelocity(e.timeStamp);
+        if (velocity) {
+          // The listener idles when the fling settles.
+          this.listener.fling(e.pageX, e.pageY, velocity[0], velocity[1]);
+        } else {
+          this.listener.idle();
+        }
       }
 
       if (this.maybeClickStart) {
@@ -113,6 +147,58 @@ export class PointerInterpreter {
         this.maybeClickStart = undefined;
       }
     }
+
+    this.samples.length = 0;
+  }
+
+  // The browser takes gestures away from us on mobile, so without this a canceled touch stays in
+  // the map forever and the next one-finger drag looks like the second half of a pinch.
+  pointerCancel(e: PointerEvent): void {
+    if (!this.pointers.has(e.pointerId)) {
+      return;
+    }
+
+    this.pointers.delete(e.pointerId);
+    this.maybeClickStart = undefined;
+    this.samples.length = 0;
+
+    if (this.pointers.size === 0 && this.needIdle) {
+      this.needIdle = false;
+      this.listener.idle();
+    }
+  }
+
+  private sample(e: PointerEvent): void {
+    while (this.samples.length > 0 && e.timeStamp - this.samples[0].timeMs > FLING_WINDOW_MS) {
+      this.samples.shift();
+    }
+
+    this.samples.push({
+      pageX: e.pageX,
+      pageY: e.pageY,
+      timeMs: e.timeStamp,
+    });
+  }
+
+  private flingVelocity(upTimeMs: number): Vec2|undefined {
+    const oldest = this.samples[0];
+    const newest = this.samples[this.samples.length - 1];
+    if (!newest || upTimeMs - newest.timeMs > FLING_STALE_MS) {
+      return undefined;
+    }
+
+    const dt = newest.timeMs - oldest.timeMs;
+    if (dt <= 0) {
+      return undefined;
+    }
+
+    const vX = (newest.pageX - oldest.pageX) / dt;
+    const vY = (newest.pageY - oldest.pageY) / dt;
+    if (vX * vX + vY * vY < FLING_MIN_SPEED * FLING_MIN_SPEED) {
+      return undefined;
+    }
+
+    return [vX, vY];
   }
 }
 

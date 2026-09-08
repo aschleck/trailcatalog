@@ -26,6 +26,29 @@ interface Args {
   interactive: boolean;
 }
 
+interface Fling {
+  // Where the drag was released, in page pixels. We keep panning from this point instead of
+  // walking it along because in globe mode the angle a pixel of pan covers depends on where on
+  // the sphere it lands, and the release point is where the velocity was measured.
+  anchor: Vec2;
+  velocityX: number; // in px/ms
+  velocityY: number; // in px/ms
+  lastMs: number;
+}
+
+// Exponential decay so the glide eases out instead of stopping on a frame. Total travel is
+// velocity * FLING_DECAY_MS, so a hard 2 px/ms flick carries 500px, about a phone screen and a
+// half.
+const FLING_DECAY_MS = 250;
+// Below 50 px/s the glide reads as stopped, and we want to actually stop so layers start fetching
+// the data for where we landed.
+const FLING_STOP_SPEED = 0.05; // in px/ms
+// Sampling can hand us a velocity no finger produced, and 4000 px/s already carries a full 1000px.
+const FLING_MAX_SPEED = 4; // in px/ms
+// A hitch in the frame loop shouldn't turn into a jump, so a gap longer than three frames at 60hz
+// counts as three frames.
+const FLING_MAX_STEP_MS = 50;
+
 export interface State {
   copyrights: Copyright[];
   loadingData: boolean;
@@ -56,6 +79,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   private layers: Layer[];
 
   private isIdle: boolean;
+  private flingState: Fling|undefined;
   private screenArea: DOMRect;
   private nextRender: RenderType;
 
@@ -95,6 +119,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.layers = [];
 
     this.isIdle = true;
+    this.flingState = undefined;
     this.screenArea = new DOMRect();
     this.nextRender = RenderType.CameraChange;
 
@@ -112,6 +137,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       }
 
       requestAnimationFrame(raf);
+      this.advanceFling();
       this.render();
     };
     requestAnimationFrame(raf);
@@ -140,6 +166,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         // is to steal focus from inputs and close any popups for panning, which is noble. So for
         // now let's fix this up in the double click handlers until it gets too annoying.
         this.canvas.focus();
+        this.stopFling();
         this.trigger(CLICKED, {
           clickPx: [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
           contextual: e.button === 2,
@@ -154,6 +181,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       interpreter.pointerMove(e, e.target === this.canvas);
     });
     this.registerListener(document, 'pointerup', e => { interpreter.pointerUp(e); });
+    this.registerListener(document, 'pointercancel', e => { interpreter.pointerCancel(e); });
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
     this.registerListener(this.canvas, 'contextmenu', e => { e.preventDefault(); });
     this.registerListener(this.canvas, 'keydown', e => {
@@ -195,6 +223,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   }
 
   setCamera(camera: LatLngRect|LatLngZoom): void {
+    this.stopFling();
+
     let llz;
     if (isLatLngRect(camera)) {
       const fitted = fitBoundInScreen(camera, this.screenArea);
@@ -271,6 +301,57 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         this.screenArea.width,
         this.screenArea.height);
     this.nextRender = RenderType.CameraChange;
+  }
+
+  fling(pageX: number, pageY: number, velocityX: number, velocityY: number): void {
+    const speed2 = velocityX * velocityX + velocityY * velocityY;
+    const scale =
+        speed2 > FLING_MAX_SPEED * FLING_MAX_SPEED
+            ? FLING_MAX_SPEED / Math.sqrt(speed2) : 1;
+    this.flingState = {
+      anchor: [pageX, pageY],
+      velocityX: velocityX * scale,
+      velocityY: velocityY * scale,
+      lastMs: performance.now(),
+    };
+  }
+
+  private advanceFling(): void {
+    const fling = this.flingState;
+    if (!fling) {
+      return;
+    }
+
+    const now = performance.now();
+    const dt = Math.min(now - fling.lastMs, FLING_MAX_STEP_MS);
+    fling.lastMs = now;
+
+    this.pan(
+        fling.anchor[0],
+        fling.anchor[1],
+        fling.anchor[0] + fling.velocityX * dt,
+        fling.anchor[1] + fling.velocityY * dt);
+
+    const decay = Math.exp(-dt / FLING_DECAY_MS);
+    fling.velocityX *= decay;
+    fling.velocityY *= decay;
+
+    const speed2 = fling.velocityX * fling.velocityX + fling.velocityY * fling.velocityY;
+    if (speed2 < FLING_STOP_SPEED * FLING_STOP_SPEED) {
+      this.flingState = undefined;
+      this.enterIdle();
+    }
+  }
+
+  // The interpreter skips its idle call when it hands us a fling, so whoever interrupts one owes
+  // the layers an idle for the viewport it left us in.
+  private stopFling(): void {
+    if (!this.flingState) {
+      return;
+    }
+
+    this.flingState = undefined;
+    this.enterIdle();
   }
 
   zoom(amount: number, pageX: number, pageY: number): void {
