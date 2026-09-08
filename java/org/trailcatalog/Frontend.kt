@@ -574,7 +574,7 @@ private fun fetchCoarse(ctx: Context) {
   output.writeVarInt(paths.size)
   for ((cell, group) in paths) {
     output.writeLong(cell.id())
-    writeDetailPaths(group, output, false)
+    writeDetailPaths(group, output, snapFor(ctx, SIMPLIFICATION_EPSILON))
   }
   ctx.result(bytes.toByteArray())
 }
@@ -697,7 +697,7 @@ private fun fetchFine(ctx: Context) {
 
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
-  writeDetailPaths(paths, output, true)
+  writeDetailPaths(paths, output, snapFor(ctx, null))
   writeDetailPoints(points, bytes, output)
   ctx.result(bytes.toByteArray())
 }
@@ -778,7 +778,7 @@ private fun fetchDataPacked(ctx: Context) {
 
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
-  writeDetailPaths(paths, output, precise)
+  writeDetailPaths(paths, output, if (precise) null else SIMPLIFICATION_EPSILON)
   writeDetailTrails(listOf(trail), bytes, output)
   ctx.result(bytes.toByteArray())
 }
@@ -786,14 +786,14 @@ private fun fetchDataPacked(ctx: Context) {
 private fun writeDetailPaths(
     paths: List<WirePath>,
     output: DelegatingEncodedOutputStream,
-    precise: Boolean) {
+    epsilon: Double?) {
   output.writeVarInt(paths.size)
   for (path in paths) {
     output.writeVarLong(path.id)
     output.writeVarInt(path.type)
     // DeltaLatLngE7 carries its own point count and needs no alignment, so a precise path goes out
     // exactly as it sits in the column.
-    output.write(if (precise) path.vertices else simplify(path.vertices))
+    output.write(if (epsilon == null) path.vertices else simplify(path.vertices, epsilon))
   }
 }
 
@@ -918,9 +918,21 @@ private fun addETagAndCheckCached(ctx: Context): Boolean {
 // One pixel at zoom 10. The Mercator world is 2 units wide and a pixel at zoom z is 2^-(z+7).
 private val SIMPLIFICATION_EPSILON = 1 / 2.0.pow(17.0)
 
-private fun simplify(latLngDegrees: ByteArray): ByteArray {
+// The furthest a point can move when snapped to a level L cell, in the Mercator units the
+// simplifier measures in.
+private fun snapEpsilon(level: Int): Double {
+  return 0.388 / 2.0.pow(level.toDouble())
+}
+
+// The error the client accepts, from the S2 level it names. A client that names none predates the
+// parameter and gets what the endpoint always gave it.
+private fun snapFor(ctx: Context, absent: Double?): Double? {
+  return ctx.queryParam("snap")?.toIntOrNull()?.let { snapEpsilon(it) } ?: absent
+}
+
+private fun simplify(latLngDegrees: ByteArray, epsilon: Double): ByteArray {
   return DeltaLatLngE7.encode(
-      simplifyLatLngE7(DeltaLatLngE7.decode(latLngDegrees), SIMPLIFICATION_EPSILON))
+      simplifyLatLngE7(DeltaLatLngE7.decode(latLngDegrees), epsilon))
 }
 
 private fun sanitizeQuery(query: String): String {

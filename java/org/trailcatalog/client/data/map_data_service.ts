@@ -472,6 +472,12 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   private loadFineCell(id: S2CellNumber, buffer: ArrayBuffer): void {
+    // Drop the coarser copy first. Zooming in refetches a cell at a finer snap, and the new parse
+    // reuses the same path ids.
+    if (this.fineCells.has(id)) {
+      this.unloadFineCell(id);
+    }
+
     // Check if the server wrote us a 1 byte response with 0 trails and paths.
     if (buffer.byteLength <= 8) {
       this.fineCells.set(id, false);
