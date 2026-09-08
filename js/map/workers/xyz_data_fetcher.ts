@@ -156,12 +156,6 @@ class XyzDataFetcher {
                         + `(status ${response.status}`);
               }
             })
-            .catch(e => {
-              if (e.name !== 'AbortError') {
-                console.error(e);
-              }
-              return new ArrayBuffer(0);
-            })
             .then(data => {
               this.pending.add(id);
               this.postMessage({
@@ -171,13 +165,27 @@ class XyzDataFetcher {
               }, [data]);
               this.cull();
             })
+            .catch(e => {
+              // Forget an aborted tile so panning back fetches it again. Count one we can't
+              // download as loaded, or else every sibling that lands asks for it again.
+              if (e.name !== 'AbortError') {
+                console.error(e);
+                this.loaded.add(id);
+              }
+            })
             .finally(() => {
+              // Only clear the slot if it is still ours. An abort drops out of inFlight before it
+              // unwinds, so a second request for the same tile may hold it by now, and clearing
+              // that one reports idle while it is still running.
+              if (this.inFlight.get(id) !== abort) {
+                return;
+              }
               this.inFlight.delete(id);
 
               if (this.inFlight.size === 0) {
                 this.postMessage({
                   kind: 'usc',
-                  fetching: this.inFlight.size > 0,
+                  fetching: false,
                 });
               }
             });
