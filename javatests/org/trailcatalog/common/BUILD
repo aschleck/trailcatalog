@@ -23,3 +23,14 @@ kt_jvm_test(
         "@maven//:org_junit_jupiter_junit_jupiter",
     ],
 )
+
+kt_jvm_test(
+    name = "simplify",
+    srcs = ["SimplifyTest.kt"],
+    test_class = "org.trailcatalog.common.SimplifyTest",
+    deps = [
+        "//java/org/trailcatalog/common",
+        "@maven//:com_google_truth_truth",
+        "@maven//:org_junit_jupiter_junit_jupiter",
+    ],
+)

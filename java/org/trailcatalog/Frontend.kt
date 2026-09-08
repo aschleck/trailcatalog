@@ -11,6 +11,7 @@ import io.javalin.http.HttpStatus
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.common.DeltaLatLngE7
+import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.models.ENUM_SIZE
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
@@ -20,11 +21,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Base64
 import java.util.Stack
-import kotlin.math.abs
-import kotlin.math.ln
 import kotlin.math.pow
-import kotlin.math.sin
-import kotlin.math.sqrt
 
 private val connectionSource = createConnectionSource()
 private val epochTracker = EpochTracker(connectionSource)
@@ -918,61 +915,12 @@ private fun addETagAndCheckCached(ctx: Context): Boolean {
   return false
 }
 
+// One pixel at zoom 10. The Mercator world is 2 units wide and a pixel at zoom z is 2^-(z+7).
+private val SIMPLIFICATION_EPSILON = 1 / 2.0.pow(17.0)
+
 private fun simplify(latLngDegrees: ByteArray): ByteArray {
-  // Douglas-Peucker seeks by index, so the deltas have to be resolved first. That costs one pass
-  // against the many this already makes over the same points.
-  val degrees = DeltaLatLngE7.decode(latLngDegrees)
-  val spans = Stack<Pair<Int, Int>>()
-  spans.add(Pair(0, degrees.size / 2 - 1))
-  val epsilon = 1 / 2.0.pow(17.0) // 1px at zoom level 17
-  val points = ArrayList<Int>()
-  while (spans.isNotEmpty()) {
-    val (startI, endI) = spans.pop()
-    if (startI == endI) {
-      points.add(startI)
-      continue
-    }
-
-    var biggestE = 0.0
-    var furthest = -1
-    val start = project(degrees[startI * 2], degrees[startI * 2 + 1])
-    val end = project(degrees[endI * 2], degrees[endI * 2 + 1])
-    val dx = end.first - start.first
-    val dy = end.second - start.second
-    val scale = 1.0 / sqrt(dx * dx + dy * dy)
-    for (i in startI + 1  until endI) {
-      val point = project(degrees[i * 2], degrees[i * 2 + 1])
-      val dz = abs(dx * (start.second - point.second) - (start.first - point.first) * dy) * scale
-      if (dz > epsilon && dz > biggestE) {
-        biggestE = dz
-        furthest = i
-      }
-    }
-
-    if (furthest > -1) {
-      spans.push(Pair(furthest, endI))
-      spans.push(Pair(startI, furthest - 1))
-    } else {
-      points.add(startI)
-      points.add(endI)
-    }
-  }
-
-  val simplified = IntArray(points.size * 2)
-  for (j in points.indices) {
-    val i = points[j]
-    simplified[2 * j] = degrees[i * 2]
-    simplified[2 * j + 1] = degrees[i * 2 + 1]
-  }
-  return DeltaLatLngE7.encode(simplified)
-}
-
-/** Projects into Mercator space from -1 to 1. */
-private fun project(latDegrees: Int, lngDegrees: Int): Pair<Double, Double> {
-  val x = lngDegrees / 10_000_000.0 / 180
-  val latRadians = latDegrees / 10_000_000.0 / 180 * Math.PI
-  val y = ln((1 + sin(latRadians)) / (1 - sin(latRadians))) / (2 * Math.PI)
-  return Pair(x, y)
+  return DeltaLatLngE7.encode(
+      simplifyLatLngE7(DeltaLatLngE7.decode(latLngDegrees), SIMPLIFICATION_EPSILON))
 }
 
 private fun sanitizeQuery(query: String): String {

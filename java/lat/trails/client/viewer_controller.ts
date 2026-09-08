@@ -422,9 +422,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           '/api/collections/00000000-0000-0000-0000-000000000001',
           OSM_PATHS,
           [
-            // Snapping only reaches polygons, see ApiServer#fetchRealCollection, and a collection
-            // of nothing but lines draws fast enough at zoom 10 to leave them at full detail.
-            {minZoom: 0, snap: undefined},
+            // A level L cell's half diagonal is 0.388 * 2^-L in the Mercator units the simplifier
+            // measures in, and a pixel at zoom z is 2^-(z+7) of them, so L = z + 6 is about a
+            // pixel. Consecutive OSM nodes on a path sit about 15 m apart against 38 m to the pixel
+            // at zoom 12, so this is where most of the geometry goes.
+            // => level 16 for zoom 10, 20 for zoom 14
+            //
+            // Two bands rather than one per style band because a band boundary refetches every
+            // tile in the viewport.
+            {minZoom: 0, snap: 16},
+            {minZoom: 14, snap: 20},
+            {minZoom: 17, snap: undefined},
           ],
           [
             // Tiled at level 11 even though zoom 10 sees about four cells across, because the

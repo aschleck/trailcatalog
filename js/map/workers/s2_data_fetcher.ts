@@ -79,6 +79,10 @@ interface WantedCell {
 // One past S2's deepest level, so an unsnapped cell outranks every snap level.
 const FULL_DETAIL = 31;
 
+// Matches ApiServer#NO_VERSION. No collection ever has it, so a request carrying it is never held
+// past its revalidation.
+const NO_VERSION = -1;
+
 // Zoom of the viewport we start with, which is no viewport at all.
 const UNSET_ZOOM = 31;
 
@@ -89,6 +93,9 @@ class S2DataFetcher {
   // The covering reduced to a given level, so that a cell can be tested against it by token.
   private readonly coveringByLevel: Map<number, Set<S2CellToken>>;
   private coveringBottom: number;
+  // What the server built the covering from. An object URL names it and is then cacheable forever.
+  // refresh does nothing until the covering lands, so no request carries NO_VERSION.
+  private collectionVersion: number;
   private readonly culler: Debouncer;
   // The snap level each cell we hold was fetched at, or FULL_DETAIL if it was never snapped.
   private readonly held: Map<CellKey, number>;
@@ -111,6 +118,7 @@ class S2DataFetcher {
     this.covering = new Set();
     this.coveringByLevel = new Map();
     this.coveringBottom = 0;
+    this.collectionVersion = NO_VERSION;
     this.culler = new Debouncer(100 /* ms */, () => {
       this.cull();
     });
@@ -140,10 +148,13 @@ class S2DataFetcher {
         .then(data => {
           const source = new LittleEndianView(data);
           const version = source.getVarInt32();
-          if (version !== 1) {
+          if (version !== 2) {
             throw new Error("Unhandled version");
           }
 
+          // Narrow to a number: an epoch is a six digit date and a collection version counts
+          // edits, so neither needs the bigint the wire carries.
+          this.collectionVersion = Number(source.getVarBigInt64());
           const coveringByteLength = source.getVarInt32();
           const coveringVersion = source.getVarInt32();
           if (coveringVersion === 1) {
@@ -204,7 +215,7 @@ class S2DataFetcher {
     const abort = new AbortController();
     this.inFlight.set(key, abort);
 
-    const query = [`bottom=${stream.indexBottom}`];
+    const query = [`bottom=${stream.indexBottom}`, `version=${this.collectionVersion}`];
     if (snap !== undefined) {
       query.push(`snap=${snap}`);
     }

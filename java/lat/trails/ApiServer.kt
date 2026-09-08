@@ -22,9 +22,6 @@ import io.javalin.http.UnauthorizedResponse
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.sql.Connection
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.collections.ArrayList
 import java.nio.charset.StandardCharsets
@@ -46,11 +43,10 @@ import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.common.DeltaInt64
 import org.trailcatalog.common.DeltaLatLngE7
+import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.s2.polylineToCell
 import org.trailcatalog.EpochTracker
-import java.time.LocalDate
-import java.time.ZoneOffset
 import kotlin.use
 
 private lateinit var epochTracker: EpochTracker
@@ -489,14 +485,21 @@ private fun fetchCollectionCovering(ctx: Context) {
     }
   }
 
+  // Revalidate this one response, because it is what tells a client the collection version.
+  // Everything it points at is immutable, see cacheAndCheckIfCached.
+  ctx.header("Cache-Control", "no-cache,private")
+
   val collection = ctx.pathParam("id")
   val bytes = AlignableByteArrayOutputStream()
   DelegatingEncodedOutputStream(bytes).use {
     // version
-    it.writeVarInt(1)
+    it.writeVarInt(2)
 
-    // covering
+    // collection version, then covering
     if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
+      // The epoch is the version: the paths a tile holds only change when an import lands.
+      it.writeVarLong(epochTracker.epoch.toLong())
+
       val covering = ByteArrayOutputStream().use {
         DelegatingEncodedOutputStream(it).use {
           it.writeVarInt(1)
@@ -511,7 +514,7 @@ private fun fetchCollectionCovering(ctx: Context) {
       hikari.connection.use { connection ->
         connection
           .prepareStatement(
-            "SELECT c.covering "
+            "SELECT c.covering, c.version "
                     + "FROM collections c "
                     + "WHERE "
                     + "c.id = ? AND "
@@ -528,6 +531,7 @@ private fun fetchCollectionCovering(ctx: Context) {
               return@fetchCollectionCovering
             }
 
+            it.writeVarLong(results.getLong(2))
             val covering = results.getBytes(1)
             it.writeVarInt(covering.size)
             it.write(covering)
@@ -547,6 +551,21 @@ private fun fetchCollectionObjects(ctx: Context) {
   }
 
   val collection = ctx.pathParam("id")
+  val trailcatalogPaths = collection == TRAILCATALOG_PATHS_COLLECTIONS_ID
+  // A collection nobody can read has no version to match, so it falls through to the queries below
+  // and answers empty the way it always has.
+  val currentVersion =
+      if (trailcatalogPaths) {
+        epochTracker.epoch.toLong()
+      } else {
+        collectionVersion(collection, allowed) ?: NO_VERSION
+      }
+  // Checked before the object queries run, or else a revalidation costs everything a miss does.
+  val requestedVersion = ctx.queryParam("version")?.toLong()
+  if (cacheAndCheckIfCached(ctx, requestedVersion, currentVersion, trailcatalogPaths)) {
+    return
+  }
+
   val cell = S2CellId.fromToken(ctx.pathParam("cell"))
   val bytes = AlignableByteArrayOutputStream()
   val indexBottom = ctx.queryParam("bottom")!!.toInt()
@@ -556,25 +575,23 @@ private fun fetchCollectionObjects(ctx: Context) {
   // range on that bit, backwards: a coarser cell has a higher bit.
   val levelFloor = ctx.queryParam("maxLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
-  val mostRecent = DelegatingEncodedOutputStream(bytes).use {
+  DelegatingEncodedOutputStream(bytes).use {
     // version
     it.writeVarInt(1)
 
-    if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
-      fetchTrailcatalogPaths(it, bytes, cell, indexBottom, levelCeiling, levelFloor)
+    if (trailcatalogPaths) {
+      fetchTrailcatalogPaths(it, cell, indexBottom, levelCeiling, levelFloor, snap)
     } else {
-      fetchRealCollection(it, bytes, allowed, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
+      fetchRealCollection(
+          it, allowed, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
     }
   }
 
-  if (!contentIsCached(ctx, mostRecent)) {
-    ctx.result(bytes.toByteArray())
-  }
+  ctx.result(bytes.toByteArray())
 }
 
 private fun fetchRealCollection(
   it: DelegatingEncodedOutputStream,
-  align: AlignableByteArrayOutputStream,
   allowed: ArrayList<UUID>,
   cell: S2CellId,
   collection: String,
@@ -582,15 +599,14 @@ private fun fetchRealCollection(
   levelCeiling: Long?,
   levelFloor: Long?,
   snap: Int?,
-): Instant {
-  var mostRecent = Instant.EPOCH
+) {
   hikari.connection.use { connection ->
     val single = cell.level() < indexBottom
 
     // lines
     connection
       .prepareStatement(
-        "SELECT l.id, l.data, l.lat_lng_degrees, l.updated "
+        "SELECT l.id, l.data, l.lat_lng_degrees "
                 + "FROM collections c "
                 + "JOIN lines l ON c.id = l.collection "
                 + "WHERE "
@@ -626,10 +642,9 @@ private fun fetchRealCollection(
             WireLine(
               results.getObject(1) as UUID,
               results.getString(2),
-              results.getBytes(3)
+              simplifyForSnap(results.getBytes(3), snap)
             )
           )
-          mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
         }
         it.writeVarInt(lines.size)
         for (line in lines) {
@@ -640,7 +655,7 @@ private fun fetchRealCollection(
             it.write(utf8)
           }
           // DeltaLatLngE7 leads with its own point count and needs no alignment, so the geometry
-          // goes to the wire exactly as it sits in the column.
+          // goes to the wire in the encoding it is stored in.
           it.write(line.latLngDegrees)
         }
       }
@@ -648,7 +663,7 @@ private fun fetchRealCollection(
     // polygons
     connection
       .prepareStatement(
-        "SELECT p.id, p.data, p.s2_polygon, p.created "
+        "SELECT p.id, p.data, p.s2_polygon "
                 + "FROM collections c "
                 + "JOIN polygons p ON c.id = p.collection "
                 + "WHERE "
@@ -703,7 +718,6 @@ private fun fetchRealCollection(
               simplified
             )
           )
-          mostRecent = mostRecent.coerceAtLeast(results.getTimestamp(4).toInstant())
         }
         it.writeVarInt(polygons.size)
         for (polygon in polygons) {
@@ -718,17 +732,16 @@ private fun fetchRealCollection(
         }
       }
   }
-  return mostRecent
 }
 
 private fun fetchTrailcatalogPaths(
   it: DelegatingEncodedOutputStream,
-  align: AlignableByteArrayOutputStream,
   cell: S2CellId,
   indexBottom: Int,
   levelCeiling: Long?,
   levelFloor: Long?,
-): Instant {
+  snap: Int?,
+) {
   val epoch = epochTracker.epoch
   hikariTrailcatalog.connection.use { connection ->
     val single = cell.level() < indexBottom
@@ -768,7 +781,7 @@ private fun fetchTrailcatalogPaths(
             WireLine(
               UUID(0,results.getLong(1)),
               "{\"id\":${results.getLong(4)},\"type\":${results.getInt(2)}}",
-              results.getBytes(3)
+              simplifyForSnap(results.getBytes(3), snap)
             )
           )
         }
@@ -781,7 +794,7 @@ private fun fetchTrailcatalogPaths(
             it.write(utf8)
           }
           // DeltaLatLngE7 leads with its own point count and needs no alignment, so the geometry
-          // goes to the wire exactly as it sits in the column.
+          // goes to the wire in the encoding it is stored in.
           it.write(line.latLngDegrees)
         }
       }
@@ -789,23 +802,30 @@ private fun fetchTrailcatalogPaths(
     // polygons
     it.writeVarInt(0)
   }
-
-  val day = epoch % 100
-  val month = (epoch / 100) % 100
-  val year = epoch / 10000
-  return LocalDate.of(year, month, day).atTime(0, 0).toInstant(ZoneOffset.UTC)
 }
 
-private fun contentIsCached(ctx: Context, version: Instant): Boolean {
-  "\"${version.hashCode()}\"".let { etag ->
+// Lets the browser and the CDN hold a tile until the collection version changes, because the object
+// URL names that version and so can never go stale under its own key.
+//
+// Only the trailcatalog paths collection is public. Every other collection answers from the
+// requesting user's own rows, so it may only ever land in that browser's cache.
+private fun cacheAndCheckIfCached(
+    ctx: Context, requested: Long?, current: Long, public: Boolean): Boolean {
+  // Require the request to name the version it is about to get. A client asking for an older one
+  // still gets the current objects, and marking those immutable under the old key would pin them
+  // past the edit that replaced them.
+  if (requested != null && requested == current) {
+    ctx.header(
+        "Cache-Control", (if (public) "public" else "private") + ",max-age=31536000,immutable")
+  } else {
     ctx.header("Cache-Control", "no-cache,private")
+  }
+
+  "\"${current}\"".let { etag ->
     ctx.header("ETag", etag)
-    val modSince = DateTimeFormatter.RFC_1123_DATE_TIME.format(version.atZone(ZoneId.of("GMT")))
-    ctx.header("Last-Modified", modSince)
-    val requestModSince = ctx.header(Header.IF_MODIFIED_SINCE)
     val requestETag = ctx.header(Header.IF_NONE_MATCH)
     // nginx weakens etags when gzipping, so we have to also check if the user sent us a weak etag.
-    if (modSince == requestModSince || etag == requestETag || "W/${etag}" == requestETag) {
+    if (etag == requestETag || "W/${etag}" == requestETag) {
       ctx.status(HttpStatus.NOT_MODIFIED)
       return true
     }
@@ -813,3 +833,33 @@ private fun contentIsCached(ctx: Context, version: Instant): Boolean {
   return false
 }
 
+// Never matches what a client asks for, because no collection has a negative version.
+private const val NO_VERSION = -1L
+
+private fun collectionVersion(collection: String, allowed: ArrayList<UUID>): Long? {
+  hikari.connection.use { connection ->
+    connection
+        .prepareStatement("SELECT version FROM collections WHERE id = ? AND creator = ANY (?)")
+        .apply {
+          setObject(1, UUID.fromString(collection))
+          setArray(2, connection.createArrayOf("UUID", arrayOf(allowed.toArray())))
+        }
+        .executeQuery()
+        .use { results ->
+          return if (results.next()) results.getLong(1) else null
+        }
+  }
+}
+
+// Drops the vertices a chord across them already clears, which is most of them: consecutive OSM
+// nodes on a path sit about 15 meters apart and a pixel at zoom 12 is 38 meters.
+private fun simplifyForSnap(latLngDegrees: ByteArray, snap: Int?): ByteArray {
+  if (snap == null) {
+    return latLngDegrees
+  }
+
+  // Halve the cell diagonal to match what fetchRealCollection hands initToSimplified for polygons
+  // at the same snap level. MAX_DIAG is in radians and a Mercator unit is pi radians.
+  val epsilon = S2Projections.MAX_DIAG.getValue(snap) / 2.0 / Math.PI
+  return DeltaLatLngE7.encode(simplifyLatLngE7(DeltaLatLngE7.decode(latLngDegrees), epsilon))
+}
