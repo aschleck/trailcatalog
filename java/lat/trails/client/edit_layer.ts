@@ -96,6 +96,11 @@ export class EditLayer extends Layer {
     this.saved.generation += 1;
   }
 
+  /** Lines the server has never seen, in draw order. */
+  unsavedLines(): EditableLine[] {
+    return this.lines.filter(line => line.version === 0n);
+  }
+
   override click(
       point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
     if (this.tool !== 'line') {

@@ -125,6 +125,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         self.then(response => {
           if (response.user) {
             login.resolve();
+            this.retryUnsaved();
           } else {
             login.reject(new Error('Nobody signed in'));
           }
@@ -675,6 +676,24 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             .catch(e => {
               console.error(e);
               this.warnUnsaved();
+            });
+  }
+
+  // Puts the lines that never reached the server, because a failed write drops its line and only
+  // finishing a line calls saveLine again.
+  //
+  // Queued behind the outstanding writes because a line waiting in front of this has no version
+  // yet, and putting it twice makes the second one a 409.
+  private retryUnsaved(): void {
+    this.writes =
+        this.writes
+            .then(() => {
+              for (const line of this.editLayer.unsavedLines()) {
+                this.saveLine(line);
+              }
+            })
+            .catch(e => {
+              console.error(e);
             });
   }
 
