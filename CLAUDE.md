@@ -19,6 +19,10 @@
     the signature, and is usually one line in third person: `/** Renders instanced lines as
     rectangles without mitering. */`. Multi-paragraph KDoc/JSDoc uses ` * ` with a bare ` *`
     between paragraphs. There are ~13 of these against ~800 line comments.
+  * A comment leading a method opens with a summary fragment, by Javadoc's rule even where it
+    isn't Javadoc. A noun phrase or a verb phrase, never a complete sentence: not `A Foo is a...`,
+    not `This method returns...`, not the imperative `Save the record.`. Capitalize and punctuate
+    it as if it were a sentence.
   * Capitalize the first word. Terminal period on complete sentences, none on fragments and
     labels.
   * Trailing comments are lowercase fragments stating one fact about that line: `// in degrees,
