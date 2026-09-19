@@ -17,10 +17,9 @@ export function ImportFailedDialog({files}: {files: string[]}) {
 
 export function SaveFailedDialog({}: {}) {
   return <>
-    <Shell title="Nothing is being saved">
+    <Shell title="Saving failed">
       <p>
-        We could not save what you drew. Check that you are signed in, then draw it again. What is
-        on the map stays until you reload the page.
+        Your changes failed to save. If you are not logged in, click "Log in".
       </p>
     </Shell>
   </>;
