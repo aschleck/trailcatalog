@@ -1,10 +1,8 @@
 package org.trailcatalog.common
 
-import java.util.Stack
+import org.trailcatalog.s2.SimpleS2
 import kotlin.math.ln
-import kotlin.math.pow
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
  * Douglas-Peucker over E7 lat/lng pairs, dropping any vertex within epsilon of the chord across it.
@@ -34,60 +32,8 @@ fun simplifyLatLngE7(
     projected[2 * i + 1] = y
   }
 
-  val keep = BooleanArray(pointCount)
-  keep[0] = true
-  keep[pointCount - 1] = true
-  val spans = Stack<Pair<Int, Int>>()
-  var spanStart = 0
-  for (i in 1 until pointCount) {
-    if (i == pointCount - 1 || pinned(degrees[2 * i], degrees[2 * i + 1])) {
-      keep[i] = true
-      spans.push(Pair(spanStart, i))
-      spanStart = i
-    }
-  }
-  while (spans.isNotEmpty()) {
-    val (startI, endI) = spans.pop()
-    if (endI <= startI + 1) {
-      continue
-    }
-
-    val startX = projected[2 * startI]
-    val startY = projected[2 * startI + 1]
-    val dx = projected[2 * endI] - startX
-    val dy = projected[2 * endI + 1] - startY
-    val lengthSquared = dx * dx + dy * dy
-
-    var biggest = 0.0
-    var furthest = -1
-    for (i in startI + 1 until endI) {
-      val px = projected[2 * i] - startX
-      val py = projected[2 * i + 1] - startY
-      // Measure to the segment, not to the infinite line through it, so that epsilon really
-      // bounds how far the result moves. A vertex past either end is further from the polyline we
-      // hand back than its perpendicular says. Clamping t to zero also handles a closed span,
-      // which has no direction, by measuring from its ends.
-      val t =
-          if (lengthSquared > 0.0) {
-            ((px * dx + py * dy) / lengthSquared).coerceIn(0.0, 1.0)
-          } else {
-            0.0
-          }
-      val distance = sqrt((px - t * dx).pow(2) + (py - t * dy).pow(2))
-      if (distance > biggest) {
-        biggest = distance
-        furthest = i
-      }
-    }
-
-    // Keep the split point in both halves, or else a vertex that the chord across it does clear
-    // gets dropped along with the ones it was standing in for.
-    if (furthest > -1 && biggest > epsilon) {
-      keep[furthest] = true
-      spans.push(Pair(startI, furthest))
-      spans.push(Pair(furthest, endI))
-    }
-  }
+  val pins = BooleanArray(pointCount) { pinned(degrees[2 * it], degrees[2 * it + 1]) }
+  val keep = SimpleS2.douglasPeucker(projected, epsilon, pins)
 
   var kept = 0
   for (i in 0 until pointCount) {

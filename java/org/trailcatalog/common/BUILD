@@ -7,6 +7,7 @@ kt_jvm_library(
     srcs = glob(["*.kt"]),
     deps = [
         "//java/org/trailcatalog/flags",
+        "//java/org/trailcatalog/s2:s2-java",
         "@maven//:com_google_guava_guava",
     ],
 )

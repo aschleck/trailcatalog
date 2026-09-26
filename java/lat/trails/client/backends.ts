@@ -2,16 +2,14 @@ import {
   CreateCollectionRequestSchema,
   CreateCollectionResponseSchema,
   DataService,
-  DeleteLineRequestSchema,
-  DeleteLineResponseSchema,
   GetCollectionRequestSchema,
   GetCollectionResponseSchema,
   GetCurrentUserRequestSchema,
   GetCurrentUserResponseSchema,
   ListCollectionsRequestSchema,
   ListCollectionsResponseSchema,
-  PutLineRequestSchema,
-  PutLineResponseSchema,
+  SaveRequestSchema,
+  SaveResponseSchema,
 } from 'trails_lat/proto/data_pb';
 
 export const BACKENDS = {
@@ -19,11 +17,10 @@ export const BACKENDS = {
     service: DataService,
     methods: {
       createCollection: [CreateCollectionRequestSchema, CreateCollectionResponseSchema],
-      deleteLine: [DeleteLineRequestSchema, DeleteLineResponseSchema],
       getCollection: [GetCollectionRequestSchema, GetCollectionResponseSchema],
       getCurrentUser: [GetCurrentUserRequestSchema, GetCurrentUserResponseSchema],
       listCollections: [ListCollectionsRequestSchema, ListCollectionsResponseSchema],
-      putLine: [PutLineRequestSchema, PutLineResponseSchema],
+      save: [SaveRequestSchema, SaveResponseSchema],
     },
   },
 } as const;

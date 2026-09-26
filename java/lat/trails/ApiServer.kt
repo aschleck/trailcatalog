@@ -21,6 +21,7 @@ import io.javalin.http.UnauthorizedResponse
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.sql.Connection
+import java.sql.Types
 import java.util.UUID
 import kotlin.collections.ArrayList
 import java.nio.charset.StandardCharsets
@@ -30,25 +31,36 @@ import lat.trails.common.encodeCovering
 import lat.trails.proto.Collection
 import lat.trails.proto.CreateCollectionRequest
 import lat.trails.proto.CreateCollectionResponse
-import lat.trails.proto.DeleteLineRequest
-import lat.trails.proto.DeleteLineResponse
+import lat.trails.proto.Delete
+import lat.trails.proto.FeatureKind
+import lat.trails.proto.Folder
 import lat.trails.proto.GetCollectionRequest
 import lat.trails.proto.GetCollectionResponse
 import lat.trails.proto.GetCurrentUserResponse
+import lat.trails.proto.Line
 import lat.trails.proto.ListCollectionsResponse
-import lat.trails.proto.PutLineRequest
-import lat.trails.proto.PutLineResponse
+import lat.trails.proto.Point
+import lat.trails.proto.SaveRequest
+import lat.trails.proto.SaveResponse
+import lat.trails.proto.Write
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.common.DeltaInt64
 import org.trailcatalog.common.DeltaLatLngE7
 import org.trailcatalog.common.simplifyLatLngE7
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.parseFlags
+import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.polylineToCell
 import org.trailcatalog.s2.snapEpsilon
 import org.trailcatalog.s2.snapRadians
 import org.trailcatalog.EpochTracker
+import kotlin.math.abs
 import kotlin.use
+
+@FlagSpec("port")
+private val port = createFlag(7051)
 
 private lateinit var epochTracker: EpochTracker
 private lateinit var hikari: HikariDataSource
@@ -79,7 +91,7 @@ fun main(args: Array<String>) {
     config.routes.post("/api/data", ::fetchData)
     config.routes.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
     config.routes.get("/api/collections/{id}/objects/{cell}", ::fetchCollectionObjects)
-  }.start(7051)
+  }.start(port.value)
 }
 
 private fun fetchData(ctx: Context) {
@@ -92,14 +104,12 @@ private fun fetchData(ctx: Context) {
     val value = when (method) {
       "lat.trails.DataService/CreateCollection" ->
         createCollection(ctx, CreateCollectionRequest.newBuilder().mergeJson(payload).build())
-      "lat.trails.DataService/DeleteLine" ->
-        deleteLine(ctx, DeleteLineRequest.newBuilder().mergeJson(payload).build())
       "lat.trails.DataService/GetCollection" ->
         getCollection(ctx, GetCollectionRequest.newBuilder().mergeJson(payload).build())
       "lat.trails.DataService/GetCurrentUser" -> getCurrentUser(ctx)
       "lat.trails.DataService/ListCollections" -> listCollections(ctx)
-      "lat.trails.DataService/PutLine" ->
-        putLine(ctx, PutLineRequest.newBuilder().mergeJson(payload).build())
+      "lat.trails.DataService/Save" ->
+        save(ctx, SaveRequest.newBuilder().mergeJson(payload).build())
       else -> throw IllegalArgumentException("Unknown method $method")
     }
 
@@ -195,6 +205,22 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
 
     connection
         .prepareStatement(
+            "SELECT id, data, version FROM folders WHERE collection = ? AND deleted IS NULL")
+        .apply {
+          setObject(1, id)
+        }
+        .executeQuery()
+        .use { results ->
+          while (results.next()) {
+            response.addFoldersBuilder()
+                .setId((results.getObject(1) as UUID).toString())
+                .setData(results.getString(2))
+                .setVersion(results.getLong(3))
+          }
+        }
+
+    connection
+        .prepareStatement(
             "SELECT id, data, lat_lng_degrees, elevation_centimeters, time_seconds, version "
                 + "FROM lines "
                 + "WHERE collection = ? AND deleted IS NULL")
@@ -221,6 +247,32 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
               for (seconds in DeltaInt64.decode(time)) {
                 line.addTimeSeconds(seconds)
               }
+            }
+          }
+        }
+
+    connection
+        .prepareStatement(
+            "SELECT id, data, lat_lng_degrees, elevation_centimeters, version "
+                + "FROM points "
+                + "WHERE collection = ? AND deleted IS NULL")
+        .apply {
+          setObject(1, id)
+        }
+        .executeQuery()
+        .use { results ->
+          while (results.next()) {
+            val latLngE7 = DeltaLatLngE7.decode(results.getBytes(3))
+            val point =
+                response.addPointsBuilder()
+                    .setId((results.getObject(1) as UUID).toString())
+                    .setData(results.getString(2))
+                    .setLatE7(latLngE7[0])
+                    .setLngE7(latLngE7[1])
+                    .setVersion(results.getLong(5))
+            val elevation = results.getInt(4)
+            if (!results.wasNull()) {
+              point.setElevationCentimeters(elevation)
             }
           }
         }
@@ -259,10 +311,76 @@ private fun createCollection(
   return response.build()
 }
 
-private fun putLine(ctx: Context, request: PutLineRequest): PutLineResponse {
+private fun save(ctx: Context, request: SaveRequest): SaveResponse {
   val creator = requireUser(ctx)
-  val collection = parseUuid(request.collection)
-  val line = request.line
+  val collection = parseUuid(request.collectionId)
+  // Validated and encoded up front so that a bad write fails before we take the collection lock.
+  val writes = request.writesList.map { prepareWrite(it) }
+  val seen = HashSet<Pair<Table, UUID>>()
+  for (write in writes) {
+    // The version check reads what the batch already wrote, so a second write to the same feature
+    // would always look stale.
+    if (!seen.add(write.table to write.id)) {
+      throw BadRequestResponse("${write.id} is written twice")
+    }
+  }
+
+  return transact { connection ->
+    val version = lockCollection(connection, collection, creator) + 1
+    for (write in writes) {
+      write.apply(connection, collection, version)
+    }
+    updateCovering(connection, collection, version)
+    SaveResponse.newBuilder().setVersion(version).build()
+  }
+}
+
+private enum class Table(val sql: String) {
+  FOLDERS("folders"),
+  LINES("lines"),
+  POINTS("points"),
+}
+
+private abstract class PreparedWrite(val table: Table, val id: UUID) {
+  abstract fun apply(connection: Connection, collection: UUID, version: Long)
+}
+
+private fun prepareWrite(write: Write): PreparedWrite {
+  return when (write.writeCase) {
+    Write.WriteCase.PUT_FOLDER -> prepareFolder(write.putFolder)
+    Write.WriteCase.PUT_LINE -> prepareLine(write.putLine)
+    Write.WriteCase.PUT_POINT -> preparePoint(write.putPoint)
+    Write.WriteCase.DELETE -> prepareDelete(write.delete)
+    else -> throw BadRequestResponse("A write needs a feature")
+  }
+}
+
+private fun prepareFolder(folder: Folder): PreparedWrite {
+  val id = parseUuid(folder.id)
+  val data = jsonbData(folder.data)
+
+  return object : PreparedWrite(Table.FOLDERS, id) {
+    override fun apply(connection: Connection, collection: UUID, version: Long) {
+      checkPut(connection, table, collection, id, folder.version)
+      connection
+          .prepareStatement(
+              "INSERT INTO folders (id, collection, created, updated, data, version) "
+                  + "VALUES (?, ?, NOW(), NOW(), ?::jsonb, ?) "
+                  + "ON CONFLICT (collection, id) DO UPDATE SET "
+                  + "data = EXCLUDED.data, version = EXCLUDED.version, updated = NOW(), "
+                  + "deleted = NULL")
+          .apply {
+            setObject(1, id)
+            setObject(2, collection)
+            setString(3, data)
+            setLong(4, version)
+          }
+          .executeUpdate()
+    }
+  }
+}
+
+private fun prepareLine(line: Line): PreparedWrite {
   val id = parseUuid(line.id)
   if (line.latLngE7Count % 2 != 0) {
     throw BadRequestResponse("Points are interleaved lat then lng")
@@ -299,42 +417,23 @@ private fun putLine(ctx: Context, request: PutLineRequest): PutLineResponse {
         null
       }
   val geometry = DeltaLatLngE7.encode(latLngE7)
-  // jsonb rejects an empty string.
-  val data = line.data.ifEmpty { "{}" }
+  val data = jsonbData(line.data)
 
-  return transact { connection ->
-    val target = lockForWrite(connection, collection, creator, id)
-    val version = target.collectionVersion + 1
-    // Check if the current version matches the client's version and reject it if not
-    if ((target.lineVersion ?: 0L) != line.version || target.lineDeleted) {
-      throw ConflictResponse("The line changed since it was read")
-    }
-
-    if (target.lineVersion != null) {
-      connection
-          .prepareStatement(
-              "UPDATE lines "
-                  + "SET cell = ?, data = ?::jsonb, lat_lng_degrees = ?, "
-                  + "elevation_centimeters = ?, time_seconds = ?, version = ?, updated = NOW() "
-                  + "WHERE id = ? AND collection = ?")
-          .apply {
-            setLong(1, cell.id())
-            setString(2, data)
-            setBytes(3, geometry)
-            setBytes(4, elevation)
-            setBytes(5, time)
-            setLong(6, version)
-            setObject(7, id)
-            setObject(8, collection)
-          }
-          .executeUpdate()
-    } else {
+  return object : PreparedWrite(Table.LINES, id) {
+    override fun apply(connection: Connection, collection: UUID, version: Long) {
+      checkPut(connection, table, collection, id, line.version)
       connection
           .prepareStatement(
               "INSERT INTO lines "
                   + "(id, collection, cell, created, updated, data, lat_lng_degrees, "
                   + "elevation_centimeters, time_seconds, version) "
-                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?, ?)")
+                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?, ?) "
+                  + "ON CONFLICT (collection, id) DO UPDATE SET "
+                  + "cell = EXCLUDED.cell, data = EXCLUDED.data, "
+                  + "lat_lng_degrees = EXCLUDED.lat_lng_degrees, "
+                  + "elevation_centimeters = EXCLUDED.elevation_centimeters, "
+                  + "time_seconds = EXCLUDED.time_seconds, version = EXCLUDED.version, "
+                  + "updated = NOW(), deleted = NULL")
           .apply {
             setObject(1, id)
             setObject(2, collection)
@@ -347,73 +446,164 @@ private fun putLine(ctx: Context, request: PutLineRequest): PutLineResponse {
           }
           .executeUpdate()
     }
-
-    updateCovering(connection, collection, version)
-    PutLineResponse.newBuilder().setVersion(version).build()
   }
 }
 
-private fun deleteLine(ctx: Context, request: DeleteLineRequest): DeleteLineResponse {
-  val creator = requireUser(ctx)
-  val collection = parseUuid(request.collection)
-  val id = parseUuid(request.id)
-  transact { connection ->
-    val target = lockForWrite(connection, collection, creator, id)
-    // Check if someone else already deleted this
-    if (target.lineVersion == null || target.lineDeleted) {
-      return@transact
-    }
-    // Check if the line has been updated since the user decided to delete
-    if (target.lineVersion != request.baseVersion) {
-      throw ConflictResponse("The line changed since it was read")
-    }
-
-    // Set the tombstone
-    val version = target.collectionVersion + 1
-    connection
-        .prepareStatement(
-            "UPDATE lines SET deleted = NOW(), updated = NOW(), version = ? "
-                + "WHERE id = ? AND collection = ?")
-        .apply {
-          setLong(1, version)
-          setObject(2, id)
-          setObject(3, collection)
-        }
-        .executeUpdate()
-    updateCovering(connection, collection, version)
+private fun preparePoint(point: Point): PreparedWrite {
+  val id = parseUuid(point.id)
+  if (abs(point.latE7) > 90_0000000 || abs(point.lngE7) > 180_0000000) {
+    throw BadRequestResponse("${point.latE7},${point.lngE7} is not on the globe")
   }
-  return DeleteLineResponse.getDefaultInstance()
+
+  val cell =
+      S2CellId.fromLatLng(S2LatLng.fromE7(point.latE7, point.lngE7))
+          .parent(SimpleS2.HIGHEST_INDEX_LEVEL)
+  val geometry = DeltaLatLngE7.encode(intArrayOf(point.latE7, point.lngE7))
+  val data = jsonbData(point.data)
+
+  return object : PreparedWrite(Table.POINTS, id) {
+    override fun apply(connection: Connection, collection: UUID, version: Long) {
+      checkPut(connection, table, collection, id, point.version)
+      connection
+          .prepareStatement(
+              "INSERT INTO points "
+                  + "(id, collection, cell, created, updated, data, lat_lng_degrees, "
+                  + "elevation_centimeters, version) "
+                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?) "
+                  + "ON CONFLICT (collection, id) DO UPDATE SET "
+                  + "cell = EXCLUDED.cell, data = EXCLUDED.data, "
+                  + "lat_lng_degrees = EXCLUDED.lat_lng_degrees, "
+                  + "elevation_centimeters = EXCLUDED.elevation_centimeters, "
+                  + "version = EXCLUDED.version, updated = NOW(), deleted = NULL")
+          .apply {
+            setObject(1, id)
+            setObject(2, collection)
+            setLong(3, cell.id())
+            setString(4, data)
+            setBytes(5, geometry)
+            if (point.hasElevationCentimeters()) {
+              setInt(6, point.elevationCentimeters)
+            } else {
+              setNull(6, Types.INTEGER)
+            }
+            setLong(7, version)
+          }
+          .executeUpdate()
+    }
+  }
 }
 
-// A null version means we're writing a new line
-private data class WriteTarget(
-    val collectionVersion: Long, val lineVersion: Long?, val lineDeleted: Boolean)
+private fun prepareDelete(delete: Delete): PreparedWrite {
+  val id = parseUuid(delete.id)
+  val table =
+      when (delete.kind) {
+        FeatureKind.FEATURE_KIND_FOLDER -> Table.FOLDERS
+        FeatureKind.FEATURE_KIND_LINE -> Table.LINES
+        FeatureKind.FEATURE_KIND_POINT -> Table.POINTS
+        else -> throw BadRequestResponse("A delete needs a kind")
+      }
 
-// Holds the collection row until the transaction ends so we can go back and update covering after a
-// geometry change.
-//
-// FOR UPDATE OF c because otherwise Postgres will not lock the nullable side of an outer join.
-private fun lockForWrite(
-    connection: Connection, collection: UUID, creator: UUID, line: UUID): WriteTarget {
+  return object : PreparedWrite(table, id) {
+    override fun apply(connection: Connection, collection: UUID, version: Long) {
+      val existing = readVersion(connection, table, collection, id)
+      // Check if someone else already deleted this
+      if (existing == null || existing.deleted) {
+        return
+      }
+      // Check if the feature has been updated since the user decided to delete
+      if (existing.version != delete.baseVersion) {
+        throw ConflictResponse("${table.sql} $id changed since it was read")
+      }
+      if (table == Table.FOLDERS && folderHasChildren(connection, collection, id)) {
+        throw ConflictResponse("Folder $id still has children")
+      }
+
+      // Set the tombstone
+      connection
+          .prepareStatement(
+              "UPDATE ${table.sql} SET deleted = NOW(), updated = NOW(), version = ? "
+                  + "WHERE id = ? AND collection = ?")
+          .apply {
+            setLong(1, version)
+            setObject(2, id)
+            setObject(3, collection)
+          }
+          .executeUpdate()
+    }
+  }
+}
+
+private data class ExistingVersion(val version: Long, val deleted: Boolean)
+
+private fun readVersion(
+    connection: Connection, table: Table, collection: UUID, id: UUID): ExistingVersion? {
   connection
       .prepareStatement(
-          "SELECT c.version, l.version, l.deleted IS NOT NULL "
-              + "FROM collections c "
-              + "LEFT JOIN lines l ON l.collection = c.id AND l.id = ? "
-              + "WHERE c.id = ? AND c.creator = ? "
-              + "FOR UPDATE OF c")
+          "SELECT version, deleted IS NOT NULL FROM ${table.sql} WHERE collection = ? AND id = ?")
       .apply {
-        setObject(1, line)
-        setObject(2, collection)
-        setObject(3, creator)
+        setObject(1, collection)
+        setObject(2, id)
+      }
+      .executeQuery()
+      .use { results ->
+        return if (results.next()) {
+          ExistingVersion(results.getLong(1), results.getBoolean(2))
+        } else {
+          null
+        }
+      }
+}
+
+// Rejects a put unless the client read the version the feature is at now. A tombstone keeps the
+// version that deleted it, so a put at that version is the deleter undoing the delete, and anyone
+// who read the feature before it was deleted is a 409.
+private fun checkPut(
+    connection: Connection, table: Table, collection: UUID, id: UUID, version: Long) {
+  val existing = readVersion(connection, table, collection, id)
+  if ((existing?.version ?: 0L) != version) {
+    throw ConflictResponse("${table.sql} $id changed since it was read")
+  }
+}
+
+private fun folderHasChildren(connection: Connection, collection: UUID, folder: UUID): Boolean {
+  connection
+      .prepareStatement(
+          Table.entries.joinToString(" UNION ALL ", postfix = " LIMIT 1") {
+            "SELECT 1 FROM ${it.sql} " +
+                "WHERE collection = ? AND deleted IS NULL AND data->>'folder_id' = ?"
+          })
+      .apply {
+        for (i in Table.entries.indices) {
+          setObject(2 * i + 1, collection)
+          setString(2 * i + 2, folder.toString())
+        }
+      }
+      .executeQuery()
+      .use { results ->
+        return results.next()
+      }
+}
+
+// jsonb rejects an empty string.
+private fun jsonbData(data: String): String {
+  return data.ifEmpty { "{}" }
+}
+
+// Holds the collection row until the transaction ends so we can go back and update covering after a
+// geometry change, and so that concurrent saves to one collection apply one after the other.
+private fun lockCollection(connection: Connection, collection: UUID, creator: UUID): Long {
+  connection
+      .prepareStatement("SELECT version FROM collections WHERE id = ? AND creator = ? FOR UPDATE")
+      .apply {
+        setObject(1, collection)
+        setObject(2, creator)
       }
       .executeQuery()
       .use { results ->
         if (!results.next()) {
           throw NotFoundResponse()
         }
-        return WriteTarget(
-            results.getLong(1), results.getObject(2) as Long?, results.getBoolean(3))
+        return results.getLong(1)
       }
 }
 
@@ -423,10 +613,13 @@ private fun updateCovering(connection: Connection, collection: UUID, version: Lo
       .prepareStatement(
           "SELECT cell FROM lines WHERE collection = ? AND deleted IS NULL "
               + "UNION ALL "
+              + "SELECT cell FROM points WHERE collection = ? AND deleted IS NULL "
+              + "UNION ALL "
               + "SELECT cell FROM polygons WHERE collection = ?")
       .apply {
         setObject(1, collection)
         setObject(2, collection)
+        setObject(3, collection)
       }
       .executeQuery()
       .use { results ->

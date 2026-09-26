@@ -1,53 +1,66 @@
-import { EditableLine } from './edit_layer';
+import { EditableFeature, SaveOp } from './features';
 
-/** Puts lines to the server one at a time, holding each one until its put succeeds. */
+export interface SaveEntry {
+  feature: EditableFeature;
+  op: SaveOp;
+}
+
+/** Saves features to the server in batches, holding each write until a batch carrying it lands. */
 export class SaveQueue {
 
-  // In the order they were saved, which a Set iterates in.
-  private readonly unsaved: Set<EditableLine>;
-  // Serialized so that two puts cannot each decide the collection does not exist yet and create
+  // One entry per feature, the last write to it. Ordered by when that write happened, which a Map
+  // iterates in once we reinsert on every write, so a folder's delete follows its children's.
+  private readonly unsaved: Map<string, SaveEntry>;
+  // Serialized so that two saves cannot each decide the collection does not exist yet and create
   // their own.
   private writes: Promise<void>;
 
   constructor(
-      private readonly put: (line: EditableLine) => Promise<void>,
+      // Resolves with the version the server stamped onto the batch
+      private readonly save: (entries: SaveEntry[]) => Promise<bigint>,
       private readonly onFailure: (e: unknown) => void,
   ) {
-    this.unsaved = new Set();
+    this.unsaved = new Map();
     this.writes = Promise.resolve();
   }
 
-  save(lines: EditableLine[]): void {
-    for (const line of lines) {
-      this.unsaved.add(line);
+  write(op: SaveOp, features: EditableFeature[]): void {
+    for (const feature of features) {
+      this.unsaved.delete(feature.id);
+      this.unsaved.set(feature.id, {feature, op});
     }
     this.flush();
   }
 
-  /** Puts whatever is still unsaved, stopping at the first failure. */
+  /** Saves whatever is still unsaved. */
   flush(): void {
-    this.writes = this.writes.then(() => this.putUnsaved());
+    this.writes = this.writes.then(() => this.saveUnsaved());
   }
 
-  /** Forgets the unsaved lines, for when the collection they belong to closes. */
+  /** Forgets the unsaved features, for when the collection they belong to closes. */
   clear(): void {
     this.unsaved.clear();
   }
 
-  // Whatever fails one put usually fails the rest, and a login popup somebody closed would open
-  // again for every line behind it, so a failure ends the run and the lines wait for the next
-  // flush.
-  private putUnsaved(): Promise<void> {
-    const next = this.unsaved.values().next();
-    if (next.done) {
+  // A failed batch stays queued for the next flush rather than retrying here, because whatever
+  // failed it usually fails the retry too, and a login popup somebody closed would open again.
+  private saveUnsaved(): Promise<void> {
+    if (this.unsaved.size === 0) {
       return Promise.resolve();
     }
 
-    const line = next.value;
-    return this.put(line).then(
-        () => {
-          this.unsaved.delete(line);
-          return this.putUnsaved();
+    const batch = [...this.unsaved.values()];
+    return this.save(batch).then(
+        version => {
+          for (const entry of batch) {
+            entry.feature.version = version;
+            // A feature written again while the batch was in flight has a newer entry, which
+            // still needs saving.
+            if (this.unsaved.get(entry.feature.id) === entry) {
+              this.unsaved.delete(entry.feature.id);
+            }
+          }
+          return this.saveUnsaved();
         },
         e => {
           this.onFailure(e);

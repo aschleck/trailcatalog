@@ -22,7 +22,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -68,6 +70,81 @@ public final class SimpleS2 {
   public static double snapEpsilon(int level) {
     // A Mercator unit is 180 degrees of longitude, so pi radians.
     return snapRadians(level) / Math.PI;
+  }
+
+  /**
+   * Returns which vertices of an interleaved x,y polyline Douglas-Peucker keeps, dropping any
+   * vertex within epsilon of the chord across it. A vertex pinned is true for survives regardless
+   * of epsilon, and pinned may be null.
+   */
+  @JsMethod
+  public static boolean[] douglasPeucker(double[] xys, double epsilon, boolean[] pinned) {
+    int pointCount = xys.length / 2;
+    boolean[] keep = new boolean[pointCount];
+    if (pointCount < 3) {
+      Arrays.fill(keep, true);
+      return keep;
+    }
+
+    keep[0] = true;
+    keep[pointCount - 1] = true;
+    // Spans are start then end vertex, flattened so J2CL needs no boxing
+    ArrayDeque<Integer> spans = new ArrayDeque<>();
+    int spanStart = 0;
+    for (int i = 1; i < pointCount; ++i) {
+      if (i == pointCount - 1 || (pinned != null && pinned[i])) {
+        keep[i] = true;
+        spans.push(spanStart);
+        spans.push(i);
+        spanStart = i;
+      }
+    }
+    while (!spans.isEmpty()) {
+      int endI = spans.pop();
+      int startI = spans.pop();
+      if (endI <= startI + 1) {
+        continue;
+      }
+
+      double startX = xys[2 * startI];
+      double startY = xys[2 * startI + 1];
+      double dx = xys[2 * endI] - startX;
+      double dy = xys[2 * endI + 1] - startY;
+      double lengthSquared = dx * dx + dy * dy;
+
+      double biggest = 0;
+      int furthest = -1;
+      for (int i = startI + 1; i < endI; ++i) {
+        double px = xys[2 * i] - startX;
+        double py = xys[2 * i + 1] - startY;
+        // Measure to the segment, not to the infinite line through it, so that epsilon really
+        // bounds how far the result moves. A vertex past either end is further from the polyline
+        // we hand back than its perpendicular says. Clamping t to zero also handles a closed span,
+        // which has no direction, by measuring from its ends.
+        double t =
+            lengthSquared > 0
+                ? Math.max(0, Math.min(1, (px * dx + py * dy) / lengthSquared))
+                : 0;
+        double ex = px - t * dx;
+        double ey = py - t * dy;
+        double distance = Math.sqrt(ex * ex + ey * ey);
+        if (distance > biggest) {
+          biggest = distance;
+          furthest = i;
+        }
+      }
+
+      // Keep the split point in both halves, or else a vertex that the chord across it does clear
+      // gets dropped along with the ones it was standing in for.
+      if (furthest > -1 && biggest > epsilon) {
+        keep[furthest] = true;
+        spans.push(startI);
+        spans.push(furthest);
+        spans.push(furthest);
+        spans.push(endI);
+      }
+    }
+    return keep;
   }
 
   @JsMethod

@@ -1,0 +1,102 @@
+[[actions]]
+type = "add_column"
+table = "points"
+
+  # The collections.version this point was last written at, see lines.version.
+  [actions.column]
+  name = "version"
+  nullable = false
+  type = "BIGINT"
+  default = "0"
+
+[[actions]]
+type = "add_column"
+table = "points"
+
+  [actions.column]
+  name = "deleted"
+  nullable = true
+  type = "TIMESTAMPTZ"
+
+[[actions]]
+type = "add_column"
+table = "points"
+
+  [actions.column]
+  name = "updated"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+[[actions]]
+type = "add_column"
+table = "points"
+
+  [actions.column]
+  name = "elevation_centimeters"
+  nullable = true
+  type = "INTEGER"
+
+[[actions]]
+type = "custom"
+
+# Clients pick point ids, see 3_line_versions.toml.
+start = """
+  ALTER TABLE points DROP CONSTRAINT points_pkey, ADD PRIMARY KEY (collection, id);
+"""
+
+abort = """
+  ALTER TABLE points DROP CONSTRAINT points_pkey, ADD PRIMARY KEY (id);
+"""
+
+[[actions]]
+type = "remove_index"
+index = "points_by_collection"
+
+[[actions]]
+type = "create_table"
+name = "folders"
+primary_key = ["collection", "id"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "collection"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "created"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+  [[actions.columns]]
+  name = "updated"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+  [[actions.columns]]
+  name = "data"
+  nullable = false
+  type = "JSONB"
+
+  [[actions.columns]]
+  name = "version"
+  nullable = false
+  type = "BIGINT"
+  default = "0"
+
+  [[actions.columns]]
+  name = "deleted"
+  nullable = true
+  type = "TIMESTAMPTZ"
+
+  [[actions.foreign_keys]]
+  columns = ["collection"]
+  referenced_table = "collections"
+  referenced_columns = ["id"]

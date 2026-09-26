@@ -3,7 +3,7 @@ import { VElementOrPrimitive } from 'external/dev_april_corgi+/js/corgi';
 import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
-import { Tool } from './edit_layer';
+import { Tool } from './events';
 
 export function Toolbar({tool}: {tool: Tool}) {
   // Icons are inlined because Fabric doesn't have a polyline icon as far as I can tell
