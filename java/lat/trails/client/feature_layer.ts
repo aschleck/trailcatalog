@@ -23,6 +23,14 @@ import {
   EditablePoint,
   snapshot,
 } from './features';
+import {
+  createHandleTexture,
+  Handle,
+  HANDLE_SIZE_PX,
+  handleBytesNeeded,
+  INSERT_HANDLE_SIZE_PX,
+  planHandles,
+} from './handles';
 import { insertVertex, moveVertex, removeVertex } from './line_edits';
 
 const POINT_RADIUS_PX = 5;
@@ -45,15 +53,10 @@ const LABEL_PATH_TOLERANCE_PX = 4;
 // Where along a line to try starting its label, as fractions of its length, best first
 const LABEL_ANCHORS = [0.5, 0.3, 0.7, 0.15, 0.85];
 
-const HANDLE_RADIUS_PX = 5;
-const INSERT_RADIUS_PX = 4;
+
 // A GPS track has a vertex every few meters, which at most zooms is several per pixel, so a vertex
 // only gets a handle once it is this far from the last one that did.
 const HANDLE_SPACING_PX = 12;
-const HANDLE_FILL = 0xFFFFFFFF as RgbaU32;
-const HANDLE_STROKE = 0x1A1A1AFF as RgbaU32;
-const ACTIVE_HANDLE_FILL = 0x2563EBFF as RgbaU32;
-const INSERT_FILL = 0xFFFFFFFF as RgbaU32;
 // Two clicks on one line this close together count as a double click.
 const DOUBLE_CLICK_MS = 400;
 
@@ -122,6 +125,7 @@ export class FeatureLayer extends Layer {
   // move and would otherwise replan every line each time
   private readonly overlay: Plan;
   private readonly glLabels: WebGLBuffer;
+  private readonly handleTexture: WebGLTexture;
   private labels: ArrayBuffer;
   private labelDrawables: Drawable[];
   private labelsPlanned: {generation: number; zoom: number};
@@ -165,6 +169,7 @@ export class FeatureLayer extends Layer {
     // A few hundred handles
     this.overlay = this.createPlan(16 * 1024);
     this.glLabels = renderer.createDataBuffer(16 * 1024);
+    this.handleTexture = createHandleTexture(renderer);
     this.labels = new ArrayBuffer(16 * 1024);
     this.labelDrawables = [];
     this.labelsPlanned = {generation: -1, zoom: -1};
@@ -179,6 +184,7 @@ export class FeatureLayer extends Layer {
     this.viewport = {low: [-1, -1], high: [1, 1]};
     this.registerDisposer(() => {
       renderer.deleteBuffer(this.glLabels);
+      renderer.deleteTexture(this.handleTexture);
       this.locations.unload([...this.published.keys()].map(id => this.key(id)));
     });
 
@@ -502,7 +508,7 @@ export class FeatureLayer extends Layer {
 
   // The nearest vertex handle under at, if any.
   private vertexAt(points: Float64Array, at: Vec2): number|undefined {
-    const radius = (HANDLE_RADIUS_PX + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    const radius = (HANDLE_SIZE_PX / 2 + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
     let best = undefined;
     let bestDistance = radius;
     for (const i of this.handles) {
@@ -688,12 +694,8 @@ export class FeatureLayer extends Layer {
     const linePoints =
         dragging && dragging.kind !== 'point' ? dragging.points : editing?.points;
 
-    // Handles are drawn by caps alone along a polyline through them, so that each set is one
-    // drawable however many handles it has.
-    const vertices: number[] = [];
-    const inserting = this.inserting;
-    const insert = inserting && !dragging ? [...inserting.at, ...inserting.at] : [];
-    let active: number[] = [];
+    // The same squares the drawing tools place, hollow except for the vertex picked last
+    const handles: Handle[] = [];
     // A drag keeps the handles it started with, so the one under the pointer stays grabbable.
     if (!dragging) {
       this.handles = [];
@@ -710,9 +712,6 @@ export class FeatureLayer extends Layer {
       for (let i = 0; i <= last; ++i) {
         const x = linePoints[2 * i];
         const y = linePoints[2 * i + 1];
-        if (i === this.activeVertex) {
-          active = [x, y, x, y];
-        }
         // Ends always get handles, because they are what extending a line grabs.
         const spaced =
             i === 0 || i === last || Math.hypot(x - lastX, y - lastY) >= HANDLE_SPACING_PX * pixel;
@@ -724,15 +723,14 @@ export class FeatureLayer extends Layer {
           lastX = x;
           lastY = y;
         }
-        if (i !== this.activeVertex && handled) {
-          vertices.push(x, y);
+        if (handled || i === this.activeVertex) {
+          handles.push({at: [x, y], filled: i === this.activeVertex, sizePx: HANDLE_SIZE_PX});
         }
-
       }
     }
-    // The cap program needs a segment, so a lone handle is repeated.
-    if (vertices.length === 2) {
-      vertices.push(vertices[0], vertices[1]);
+    const inserting = this.inserting;
+    if (inserting && !dragging) {
+      handles.push({at: inserting.at, filled: false, sizePx: INSERT_HANDLE_SIZE_PX});
     }
 
     // The selected feature already has its highlight, and a dragged one is drawn below.
@@ -741,9 +739,7 @@ export class FeatureLayer extends Layer {
     const hoveredLine = this.visibleLines.find(l => l.feature.id === hoveredId);
     const hoveredPoint = this.visiblePoints.find(p => p.feature.id === hoveredId);
     let needed =
-        LineProgram.bytesNeeded(vertices.length / 2)
-            + LineProgram.bytesNeeded(insert.length / 2)
-            + LineProgram.bytesNeeded(active.length / 2)
+        handleBytesNeeded(handles.length)
             + (hoveredLine ? LineProgram.bytesNeeded(hoveredLine.points.length / 2) : 0)
             + (hoveredPoint ? LineProgram.bytesNeeded(2) : 0);
     if (dragging?.kind === 'point') {
@@ -790,9 +786,7 @@ export class FeatureLayer extends Layer {
       batch.push(
           color, SELECTED_CASING, lineRadius(line) + 2, dragging.points, Z_DRAGGED, 'both');
     }
-    batch.push(INSERT_FILL, HANDLE_STROKE, INSERT_RADIUS_PX, insert, Z_HANDLE, 'caps');
-    batch.push(HANDLE_FILL, HANDLE_STROKE, HANDLE_RADIUS_PX, vertices, Z_HANDLE, 'caps');
-    batch.push(ACTIVE_HANDLE_FILL, HANDLE_STROKE, HANDLE_RADIUS_PX, active, Z_HANDLE, 'caps');
+    batch.pushHandles(handles, Z_HANDLE, this.handleTexture);
     batch.finish();
   }
 
@@ -890,7 +884,15 @@ class ShapeBatch {
     this.offset = 0;
   }
 
-  // Caps alone draw a circle at every vertex, which is how points and handles are drawn.
+  pushHandles(handles: Handle[], z: number, texture: WebGLTexture): void {
+    const planned =
+        planHandles(
+            handles, z, this.plan.buffer, this.offset, this.plan.glBuffer, texture, this.renderer);
+    this.drawables.push(...planned.drawables);
+    this.offset += planned.byteSize;
+  }
+
+  // Caps alone draw a circle at every vertex, which is how points are drawn.
   push(
       fill: RgbaU32,
       stroke: RgbaU32,
