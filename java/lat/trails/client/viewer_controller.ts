@@ -40,6 +40,7 @@ import { DrawingLayer, toE7Array } from './drawing_layer';
 import {
   FEATURE_CLICKED,
   FEATURE_EDITED,
+  FEATURE_HOVERED,
   HOVER_CHANGED,
   LINE_DRAWN,
   Tool,
@@ -592,18 +593,19 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setTool(e.detail.tool);
   }
 
+  // Opens the folders above what the map selected and scrolls to it, so that the list shows it.
   onFeatureClicked(e: CorgiEvent<typeof FEATURE_CLICKED>): void {
     const id = e.detail.id;
-    // Opens the folders above it so that the list shows what the map selected.
-    let parent = id !== undefined ? this.store.get(id) : undefined;
-    while (parent) {
-      const up = this.store.parentOf(parent);
-      if (up !== undefined) {
-        this.expanded.add(up);
-      }
-      parent = up !== undefined ? this.store.get(up) : undefined;
+    for (const ancestor of this.ancestorsOf(id)) {
+      this.expanded.add(ancestor);
     }
     this.select(id);
+    if (id !== undefined) {
+      // After the render that puts the row in the list
+      requestAnimationFrame(() => {
+        this.root.querySelector(`div[data-id="${id}"]`)?.scrollIntoView({block: 'nearest'});
+      });
+    }
   }
 
   onFeatureEdited(e: CorgiEvent<typeof FEATURE_EDITED>): void {
@@ -611,19 +613,36 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.store.apply([{id: after.id, before, after}]);
   }
 
+  onFeatureHovered(e: CorgiEvent<typeof FEATURE_HOVERED>): void {
+    this.setHovered(e.detail.id);
+  }
+
   featureClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    // The visibility checkbox sits inside the row and has its own handler.
-    if (e.detail.target instanceof HTMLInputElement) {
+    // The chevron and the eye sit inside the row and have their own handlers.
+    if (e.detail.target instanceof Element && e.detail.target.closest('[data-role="toggle"]')) {
       return;
     }
 
+    this.select(checkExists(e.actionElement.data('id')).string());
+  }
+
+  folderToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
     const id = checkExists(e.actionElement.data('id')).string();
-    if (this.store.get(id)?.kind === 'folder') {
-      if (!this.expanded.delete(id)) {
-        this.expanded.add(id);
-      }
+    if (!this.expanded.delete(id)) {
+      this.expanded.add(id);
     }
-    this.select(id);
+    this.refreshFeatureList();
+  }
+
+  featureRowEntered(e: CorgiEvent<typeof DOM_POINTER>): void {
+    const id = checkExists(e.actionElement.data('id')).string();
+    this.featureLayer.setHovered(id);
+    this.setHovered(id);
+  }
+
+  featureRowLeft(): void {
+    this.featureLayer.setHovered(undefined);
+    this.setHovered(undefined);
   }
 
   measureClosed(): void {
@@ -776,23 +795,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.history.silentlyReplaceUrl(url.toString());
   }
 
-  // Reversed so the menu reads top down the way the layers stack, the topmost drawn one first.
-  layersMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const layers = this.state.layers;
-    const items: MenuEntries = [];
-    for (let i = layers.length - 1; i >= 0; --i) {
-      const index = i;
-      const layer = layers[index];
-      items.push({
-        kind: 'checkbox_menu_item',
-        label: layer.name,
-        checked: layer.enabled,
-        action: () => {
-          this.setLayerEnabled(index, !layer.enabled);
-        },
-      });
-    }
-    this.openMenu(items, e);
+  layerToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const index = checkExists(e.actionElement.data('index')).number();
+    this.setLayerEnabled(index, !this.state.layers[index].enabled);
   }
 
   fileMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -1005,6 +1010,35 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     return path;
   }
 
+  private setHovered(id: string|undefined): void {
+    if (id === this.state.features.hovered) {
+      return;
+    }
+
+    this.updateState({
+      ...this.state,
+      features: {
+        ...this.state.features,
+        hovered: id,
+        hoveredAncestors: new Set(this.ancestorsOf(id)),
+      },
+    });
+  }
+
+  private ancestorsOf(id: string|undefined): string[] {
+    const ancestors = [];
+    let at = id !== undefined ? this.store.get(id) : undefined;
+    while (at) {
+      const parent = this.store.parentOf(at);
+      if (parent === undefined) {
+        break;
+      }
+      ancestors.push(parent);
+      at = this.store.get(parent);
+    }
+    return ancestors;
+  }
+
   private select(id: string|undefined): void {
     this.selected = id;
     this.featureLayer.setSelected(id);
@@ -1055,6 +1089,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         selected,
         selectedDescendants:
             selected?.kind === 'folder' ? this.store.descendants(selected.id).length : 0,
+        hovered: this.state.features.hovered,
+        hoveredAncestors: new Set(this.ancestorsOf(this.state.features.hovered)),
         hidden: new Set(this.hidden),
         expanded: new Set(this.expanded),
       },
