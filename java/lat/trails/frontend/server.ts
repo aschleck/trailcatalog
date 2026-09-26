@@ -24,7 +24,12 @@ const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
 const DEBUG = process.env.DEBUG !== 'false';
 
 // Keep in sync with common/Database.kt#SCHEMA.
-const SCHEMA = 'migration_3_line_versions';
+const SCHEMA = 'migration_4_points_and_folders';
+
+// A GPX point costs about 45 bytes of JSON across its lat, lng, elevation, and time, so this fits
+// saving a track of a million and a half points. Keep in sync with nginx.conf and the trails.lat
+// virtual host in production/files/configuration.nix.
+const BODY_LIMIT_BYTES = 64 * 1024 * 1024;
 
 const encrypter = new Encrypter(COOKIE_SECRET);
 const loginEnforcer = new LoginEnforcer(encrypter);
@@ -128,6 +133,10 @@ function page(content: string, title: string, initialData: string): string {
   await serve(App as any, page, {
     dataServer: 'http://127.0.0.1:7051/api/data',
     defaultTitle: 'trails.lat',
+    fastifyOptions: {
+      bodyLimit: BODY_LIMIT_BYTES,
+      http2: true,
+    },
     // I don't get why this needs an any at all
     initialize: initialize as any,
     port: 7050,

@@ -41,6 +41,7 @@ declare global {
 
     class S2LatLng {
       static fromDegrees(lat: number, lon: number): S2LatLng;
+      static fromE7(latE7: number, lngE7: number): S2LatLng;
       static fromRadians(lat: number, lon: number): S2LatLng;
       equals(other: S2LatLng): boolean;
       getDistance(other: S2LatLng): S1Angle;
@@ -155,6 +156,8 @@ declare global {
           java.util.ArrayList<com.google.common.geometry.S2CellId>;
       static decodeCellUnion(data: Uint8Array): com.google.common.geometry.S2CellUnion;
       static decodePolygon(bytes: ArrayBuffer): com.google.common.geometry.S2Polygon;
+      static douglasPeucker(xys: ArrayLike<number>, epsilon: number, pinned: boolean[]|null):
+          boolean[];
       static earthMetersToAngle(meters: number): com.google.common.geometry.S1Angle;
       static encodePolygon(polygon: com.google.common.geometry.S2Polygon): ArrayBuffer;
       static pointToLatLng(point: com.google.common.geometry.S2Point):

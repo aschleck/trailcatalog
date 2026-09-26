@@ -5,12 +5,12 @@ import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 export function ImportFailedDialog({files}: {files: string[]}) {
   return <>
-    <Shell title="No tracks imported">
-      <p>We found no track segments in:</p>
+    <Shell title="Nothing imported">
+      <p>We found nothing to import in:</p>
       <ul className="list-disc list-inside mt-2">
         {files.map(file => <li>{file}</li>)}
       </ul>
-      <p className="mt-2">Waypoints and routes are not imported.</p>
+      <p className="mt-2">We import GPX waypoints and tracks, and GeoJSON points and lines.</p>
     </Shell>
   </>;
 }

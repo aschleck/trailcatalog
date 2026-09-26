@@ -1,10 +1,11 @@
+import { EditableLine } from './features';
 import { parseGpx } from './gpx';
 
-// A waypoint and a route to be dropped, a segment with everything, a segment missing one elevation
+// A waypoint, a route to be dropped, a segment with everything, a segment missing one elevation
 // and one time, a segment of a single point, and a segment carrying a point with no coordinates.
 const GPX = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
-  <wpt lat="46.8000000" lon="-121.8000000"><name>Paradise</name></wpt>
+  <wpt lat="46.8000000" lon="-121.8000000"><ele>1645.5</ele><name>Paradise</name></wpt>
   <rte><rtept lat="46.8100000" lon="-121.8100000" /></rte>
   <trk>
     <name>Camp Muir</name>
@@ -37,8 +38,21 @@ const GPX = `<?xml version="1.0" encoding="UTF-8"?>
 </gpx>
 `;
 
+test('reads a waypoint', () => {
+  const points = parseGpx(GPX).filter(f => f.kind === 'point');
+  expect(points).toEqual([{
+    kind: 'point',
+    id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    version: 0n,
+    data: {name: 'Paradise'},
+    latE7: 468000000,
+    lngE7: -1218000000,
+    elevationCentimeters: 164550,
+  }]);
+});
+
 test('reads a track segment', () => {
-  const lines = parseGpx(GPX);
+  const lines = linesOf(GPX);
   expect(lines).toHaveLength(2);
 
   const line = lines[0];
@@ -57,23 +71,27 @@ test('reads a track segment', () => {
 });
 
 test('drops samples the whole segment does not carry', () => {
-  const lines = parseGpx(GPX);
+  const lines = linesOf(GPX);
   expect(lines[1].elevationCentimeters).toBeUndefined();
   expect(lines[1].timeSeconds).toBeUndefined();
   expect(Array.from(lines[1].latLngE7)).toEqual([468623690, -1217448880, 468633690, -1217438880]);
 });
 
 test('gives every line its own id', () => {
-  const lines = parseGpx(GPX);
+  const lines = linesOf(GPX);
   expect(lines[0].id).not.toEqual(lines[1].id);
   expect(lines[0].id).toMatch(/^[0-9a-f-]{36}$/);
 });
 
 test('drops a segment missing a coordinate', () => {
   // The bad segment is last, so anything before it still comes through.
-  expect(parseGpx(GPX)).toHaveLength(2);
+  expect(linesOf(GPX)).toHaveLength(2);
 });
 
 test('rejects what is not a gpx', () => {
   expect(() => parseGpx('this is not xml at all <')).toThrow();
 });
+
+function linesOf(gpx: string): EditableLine[] {
+  return parseGpx(gpx).filter(f => f.kind === 'line');
+}

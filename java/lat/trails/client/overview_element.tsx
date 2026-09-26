@@ -6,7 +6,7 @@ import { MapElement } from 'js/map/map_element';
 
 import { State, ViewerController } from './viewer_controller';
 import { requestData } from './data';
-import { HOVER_CHANGED } from './events';
+import { HOVER_CHANGED, LINE_DRAWN, TOOL_REQUESTED } from './events';
 import { Menubar, MenubarItem } from './menubar';
 import { Toolbar } from './toolbar';
 
@@ -55,7 +55,9 @@ export function OverviewElement(
           events: {
             corgi: [
               [HOVER_CHANGED, 'onHoverChange'],
+              [LINE_DRAWN, 'onLineDrawn'],
               [MAP_MOVED, 'onMove'],
+              [TOOL_REQUESTED, 'onToolRequested'],
             ],
             render: 'wakeup',
           },

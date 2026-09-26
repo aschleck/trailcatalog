@@ -1,15 +1,39 @@
-import { EditableLine } from './edit_layer';
+import { EditableFeature, EditableLine, EditablePoint } from './features';
 
 /**
- * Reads the tracks of a GPX into lines, one per track segment.
+ * Reads the waypoints of a GPX into points and its tracks into lines, one per track segment.
  *
- * Waypoints and routes are dropped: a waypoint belongs in the points table, which nothing draws,
- * and a route is a plan rather than a record.
+ * Routes are dropped because a route is a plan rather than a record.
  */
-export function parseGpx(text: string): EditableLine[] {
+export function parseGpx(text: string): EditableFeature[] {
   const parsed = new DOMParser().parseFromString(text, 'application/xml');
   if (parsed.getElementsByTagName('parsererror').length > 0) {
     throw new Error('Unable to parse the GPX');
+  }
+
+  const points: EditablePoint[] = [];
+  for (const waypoint of Array.from(parsed.getElementsByTagNameNS('*', 'wpt'))) {
+    const lat = degrees(waypoint.getAttribute('lat'), 90);
+    const lng = degrees(waypoint.getAttribute('lon'), 180);
+    if (lat === undefined || lng === undefined) {
+      continue;
+    }
+
+    const name = childText(waypoint, 'name');
+    const description = childText(waypoint, 'desc');
+    const elevation = Number(childText(waypoint, 'ele') ?? NaN);
+    points.push({
+      kind: 'point',
+      id: crypto.randomUUID(),
+      version: 0n,
+      data: {
+        ...(name !== undefined ? {name} : {}),
+        ...(description !== undefined ? {description} : {}),
+      },
+      latE7: Math.round(lat * 1e7),
+      lngE7: Math.round(lng * 1e7),
+      elevationCentimeters: Number.isFinite(elevation) ? Math.round(elevation * 100) : undefined,
+    });
   }
 
   const lines: EditableLine[] = [];
@@ -65,6 +89,7 @@ export function parseGpx(text: string): EditableLine[] {
       }
 
       lines.push({
+        kind: 'line',
         id: crypto.randomUUID(),
         version: 0n,
         data: name !== undefined ? {name} : {},
@@ -74,7 +99,7 @@ export function parseGpx(text: string): EditableLine[] {
       });
     }
   }
-  return lines;
+  return [...points, ...lines];
 }
 
 function degrees(value: string|null, limit: number): number|undefined {

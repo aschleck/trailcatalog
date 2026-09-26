@@ -24,20 +24,29 @@ import {
   CreateCollectionResponse,
   GetCollectionResponse,
   GetCurrentUserResponse,
-  Line,
   ListCollectionsResponse,
-  PutLineResponse,
+  SaveResponse,
 } from 'trails_lat/proto/data_pb';
 
 import { CollectionLayer } from './collection_layer';
 import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
 import { invalidateCurrentUser, requestData } from './data';
 import { ImportFailedDialog, SaveFailedDialog } from './dialogs';
-import { EditableLine, EditLayer, Tool } from './edit_layer';
-import { HOVER_CHANGED } from './events';
-import { parseGpx } from './gpx';
+import { DrawingLayer } from './drawing_layer';
+import { HOVER_CHANGED, LINE_DRAWN, Tool, TOOL_REQUESTED } from './events';
+import { FeatureLayer } from './feature_layer';
+import { Change, FeatureStore } from './feature_store';
+import {
+  EditableFeature,
+  EditableLine,
+  folderFromProto,
+  lineFromProto,
+  pointFromProto,
+  toWrite,
+} from './features';
+import { parseImport } from './importer';
 import { MENU_CLASSES } from './menubar';
-import { SaveQueue } from './save_queue';
+import { SaveEntry, SaveQueue } from './save_queue';
 
 export interface LayerState {
   name: string;
@@ -78,7 +87,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly dialog: DialogService;
   private readonly history: HistoryService;
   private readonly menu: MenuService;
-  private readonly editLayer: EditLayer;
+  private readonly featureLayer: FeatureLayer;
+  private readonly lineLayer: DrawingLayer;
+  private readonly measureLayer: DrawingLayer;
+  private readonly store: FeatureStore;
   // Logins run in a popup on Google's origin, so a caller waiting on one waits on this.
   private login: {
     popup: Window;
@@ -99,10 +111,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.dialog = response.deps.services.dialog;
     this.history = response.deps.services.history;
     this.menu = response.deps.services.menu;
-    this.saves = new SaveQueue(line => this.putLine(line), e => {
+    this.saves = new SaveQueue(entries => this.save(entries), e => {
       console.error(e);
       this.warnUnsaved();
     });
+    this.store = new FeatureStore(this.saves);
     this.warnedUnsaved = false;
     this.lastChange = Date.now();
 
@@ -139,18 +152,33 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
     this.registerDisposable(this.loginWatcher);
 
-    // One index for every layer, so that the line tool snaps onto and routes across drawn lines
-    // and paths alike.
+    // One index for every layer, so that the drawing tools snap onto and route across drawn
+    // lines and paths alike.
     const locations = new LocationIndex();
-    this.editLayer =
-        new EditLayer(
+    const camera = this.mapController.camera;
+    const renderer = this.mapController.renderer;
+    this.featureLayer = new FeatureLayer(this.store, locations, camera, renderer);
+    this.registerDisposable(this.featureLayer);
+    this.lineLayer =
+        new DrawingLayer(
+            'line',
+            {fill: 0xE8442EFF as RgbaU32, stroke: 0x3A0D06FF as RgbaU32, radiusPx: 2.5},
             locations,
-            this.mapController.camera,
-            this.mapController.renderer,
-            line => {
-              this.saves.save([line]);
-            });
-    this.registerDisposable(this.editLayer);
+            camera,
+            renderer);
+    this.registerDisposable(this.lineLayer);
+    this.measureLayer =
+        new DrawingLayer(
+            'measure',
+            {fill: 0xF5C542FF as RgbaU32, stroke: 0x4A3A08FF as RgbaU32, radiusPx: 2.5},
+            locations,
+            camera,
+            renderer);
+    this.registerDisposable(this.measureLayer);
+
+    this.registerListener(window, 'keydown', e => {
+      this.undoKeyPressed(e);
+    });
 
     const allLayers = [{
       name: 'Skybox',
@@ -500,6 +528,23 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     console.log(e.detail);
   }
 
+  onLineDrawn(e: CorgiEvent<typeof LINE_DRAWN>): void {
+    const line: EditableLine = {
+      kind: 'line',
+      id: crypto.randomUUID(),
+      version: 0n,
+      data: {},
+      latLngE7: e.detail.latLngE7,
+      elevationCentimeters: undefined,
+      timeSeconds: undefined,
+    };
+    this.store.apply([{id: line.id, before: undefined, after: line}]);
+  }
+
+  onToolRequested(e: CorgiEvent<typeof TOOL_REQUESTED>): void {
+    this.setTool(e.detail.tool);
+  }
+
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
     const {center, zoom} = e.detail;
     const url = new URL(window.location.href);
@@ -557,9 +602,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       items.push({kind: 'divider'});
       items.push({
         kind: 'menu_item',
-        label: 'Import GPX',
+        label: 'Import',
         action: () => {
-          this.importGpx();
+          this.importFiles();
         },
       });
       this.openMenu(items, e);
@@ -567,12 +612,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   toolClicked(e: CorgiEvent<typeof ACTION>): void {
-    const tool = checkExists(e.actionElement.data('tool')).string() as Tool;
-    this.editLayer.setTool(tool);
-    this.updateState({
-      ...this.state,
-      tool,
-    });
+    this.setTool(checkExists(e.actionElement.data('tool')).string() as Tool);
   }
 
   userMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -592,9 +632,48 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
   }
 
+  // Deactivates before activating, because both drawing layers share the index's routing switch.
+  private setTool(tool: Tool): void {
+    this.lineLayer.setActive(false);
+    this.measureLayer.setActive(false);
+    if (tool === 'line') {
+      this.lineLayer.setActive(true);
+    } else if (tool === 'measure') {
+      this.measureLayer.setActive(true);
+    }
+    this.updateState({
+      ...this.state,
+      tool,
+    });
+  }
+
+  // Skipped while typing, so that the browser's own undo still works in text fields.
+  private undoKeyPressed(e: KeyboardEvent): void {
+    const target = e.target;
+    if (
+        target instanceof HTMLInputElement
+            || target instanceof HTMLTextAreaElement
+            || (target instanceof HTMLElement && target.isContentEditable)) {
+      return;
+    }
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) {
+      return;
+    }
+
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) {
+      this.store.undo();
+    } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+      this.store.redo();
+    } else {
+      return;
+    }
+    e.preventDefault();
+  }
+
   private newCollection(): void {
     this.saves.clear();
-    this.editLayer.setLines([]);
+    this.store.reset([]);
     this.updateState({
       ...this.state,
       collection: undefined,
@@ -621,64 +700,80 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ...this.state,
             collection: response.collection,
           });
-          this.editLayer.setLines(response.lines.map(fromProto));
+          this.store.reset([
+            ...response.folders.map(folderFromProto),
+            ...response.lines.map(lineFromProto),
+            ...response.points.map(pointFromProto),
+          ]);
         })
         .catch(e => {
           console.error(e);
         });
   }
 
-  private importGpx(): void {
+  private importFiles(): void {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.gpx,application/gpx+xml';
+    input.accept = '.geojson,.gpx,.json,application/geo+json,application/gpx+xml';
     input.multiple = true;
     input.addEventListener('change', () => {
       const files = Array.from(input.files ?? []);
-      Promise.all(files.map(file => this.importOneGpx(file)))
-          .then(failed => {
-            const named = failed.filter(exists);
-            if (named.length > 0) {
-              this.dialog.display(ImportFailedDialog({files: named})).catch(() => {});
+      Promise.all(files.map(file => this.importOne(file)))
+          .then(results => {
+            // One edit for the whole pick, so that a single undo takes back everything it added.
+            this.store.apply(results.flatMap(r => r.changes));
+            const failed = results.flatMap(r => r.failed ? [r.failed] : []);
+            if (failed.length > 0) {
+              this.dialog.display(ImportFailedDialog({files: failed})).catch(() => {});
             }
           });
     });
     input.click();
   }
 
-  // Resolves with the file's name when it yielded no lines, so that picking several files names
-  // every one that failed in a single dialog.
-  private importOneGpx(file: File): Promise<string|undefined> {
+  // Wraps the file's features in a folder named after it, so that importing a pile of files does
+  // not bury the collection's root. Reports the file's name when it yielded nothing, so that
+  // picking several files names every one that failed in a single dialog.
+  private importOne(file: File): Promise<{changes: Change[]; failed?: string}> {
     return file.text()
         .then(text => {
-          const lines = parseGpx(text);
-          // A GPX carrying only waypoints or routes parses and still leaves nothing to draw, which
-          // looks the same to somebody who picked a file and watched the map not change.
-          if (lines.length === 0) {
-            return file.name;
+          const features = parseImport(text);
+          // A GPX carrying only routes parses and still leaves nothing to draw, which looks the
+          // same to somebody who picked a file and watched the map not change.
+          if (features.length === 0) {
+            return {changes: [], failed: file.name};
           }
 
-          this.editLayer.addLines(lines);
-          this.saves.save(lines);
-          return undefined;
+          const folder: EditableFeature = {
+            kind: 'folder',
+            id: crypto.randomUUID(),
+            version: 0n,
+            data: {name: file.name.replace(/\.[^.]*$/, '')},
+          };
+          for (const feature of features) {
+            feature.data.folder_id ??= folder.id;
+          }
+          return {
+            changes: [folder, ...features].map(f => ({id: f.id, before: undefined, after: f})),
+          };
         })
         .catch(e => {
           console.error(e);
-          return file.name;
+          return {changes: [], failed: file.name};
         });
   }
 
-  private putLine(line: EditableLine): Promise<void> {
-    return this.currentCollection().then(collection => {
-      const put: Future<PutLineResponse> =
-          requestData('lat.trails.DataService/PutLine', {
-            collection,
-            line: toProto(line),
-          });
-      return put.then(response => {
-        line.version = response.version;
-      });
-    });
+  private save(entries: SaveEntry[]): Promise<bigint> {
+    return this.currentCollection()
+        .then(collectionId => {
+          const saved: Future<SaveResponse> =
+              requestData('lat.trails.DataService/Save', {
+                collectionId,
+                writes: entries.map(e => toWrite(e.op, e.feature)),
+              });
+          return saved;
+        })
+        .then(response => response.version);
   }
 
   // Dismissing the dialog arms it again, so a later failure is not silent.
@@ -781,41 +876,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       }
     }
     this.mapController.setLayers(
-        [this.editLayer as Layer].concat(layers.filter(l => l.enabled).map(l => l.layer)));
+        [this.lineLayer, this.measureLayer, this.featureLayer as Layer]
+            .concat(layers.filter(l => l.enabled).map(l => l.layer)));
   }
-}
-
-function toProto(line: EditableLine): {
-  id: string;
-  version: bigint;
-  data: string;
-  latLngE7: number[];
-  elevationCentimeters: number[];
-  timeSeconds: bigint[];
-} {
-  return {
-    id: line.id,
-    version: line.version,
-    data: JSON.stringify(line.data),
-    latLngE7: Array.from(line.latLngE7),
-    elevationCentimeters:
-        line.elevationCentimeters ? Array.from(line.elevationCentimeters) : [],
-    timeSeconds: line.timeSeconds ? Array.from(line.timeSeconds) : [],
-  };
-}
-
-function fromProto(line: Line): EditableLine {
-  return {
-    id: line.id,
-    version: line.version,
-    data: line.data ? JSON.parse(line.data) : {},
-    latLngE7: Int32Array.from(line.latLngE7),
-    elevationCentimeters:
-        line.elevationCentimeters.length > 0
-            ? Int32Array.from(line.elevationCentimeters)
-            : undefined,
-    timeSeconds: line.timeSeconds.length > 0 ? BigInt64Array.from(line.timeSeconds) : undefined,
-  };
 }
 
 function newCollectionName(): string {

@@ -14,8 +14,7 @@ import { BACKENDS } from './backends';
 // Write RPCs that cause cache invalidations
 const WRITES: string[] = [
   'lat.trails.DataService/CreateCollection',
-  'lat.trails.DataService/DeleteLine',
-  'lat.trails.DataService/PutLine',
+  'lat.trails.DataService/Save',
 ] satisfies Array<keyof FqMethods<typeof BACKENDS>>;
 
 // Read RPCs that are invalidated when a write comes through

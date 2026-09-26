@@ -91,6 +91,10 @@
 
       locations."/" = {
         proxyPass = "http://127.0.0.1:7059";
+        # Keep in sync with java/lat/trails/frontend/server.ts#BODY_LIMIT_BYTES
+        extraConfig = ''
+          client_max_body_size 64m;
+        '';
       };
     };
 
