@@ -37,6 +37,12 @@ export function Toolbar({tool}: {tool: Tool}) {
         <circle cx="12" cy="11" r="1.5" />
         <circle cx="17" cy="4" r="1.5" />
       </ToolButton>
+      <ToolButton active={tool === 'measure'} label="Measure" tool="measure">
+        <g transform="rotate(-45 10 10)">
+          <rect fill="none" height="8" rx="1" strokeWidth="1.5" width="16" x="2" y="6" />
+          <path d="M6 6 V9 M10 6 V10 M14 6 V9" fill="none" strokeWidth="1.5" />
+        </g>
+      </ToolButton>
     </div>
   </>;
 }

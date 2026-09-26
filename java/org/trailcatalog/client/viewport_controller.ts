@@ -23,6 +23,17 @@ import { Path, Point, Trail } from './models/types';
 
 import * as routes from './routes';
 
+// Mapterhorn is also where trail elevation profiles come from, see CalculateWayElevations.
+const MAPTERHORN_COPYRIGHT = {
+  long: '© Mapterhorn',
+  short: 'Mapterhorn',
+  url: 'https://mapterhorn.com/attribution',
+};
+// No short form, so that it shows in the full list and leaves the credit bar to Mapterhorn
+const COPERNICUS_COPYRIGHT = {
+  long: 'Contains modified Copernicus Sentinel data 2021',
+};
+
 // Translated once, because the layer list is rebuilt for every response.
 const NATURE_PROTOMAPS = toProtomaps(NATURE);
 
@@ -96,10 +107,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Hillshades',
       enabled: true,
       layer: new RasterTileLayer(
-          [{
-            long: 'Contains modified Copernicus Sentinel data 2021',
-            short: 'Copernicus 2021',
-          }, {
+          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
@@ -114,10 +122,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Contours (imperial)',
       enabled: response.args.units === 'imperial',
       layer: new MbtileLayer(
-          [{
-            long: 'Contains modified Copernicus Sentinel data 2021',
-            short: 'Copernicus 2021',
-          }, {
+          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
@@ -131,10 +136,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Contours (metric)',
       enabled: response.args.units === 'metric',
       layer: new MbtileLayer(
-          [{
-            long: 'Contains modified Copernicus Sentinel data 2021',
-            short: 'Copernicus 2021',
-          }, {
+          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',

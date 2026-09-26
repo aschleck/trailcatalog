@@ -1,7 +1,8 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { Camera, projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
-import { RgbaU32, Vec2 } from 'js/map/common/types';
+import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
+import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
@@ -12,12 +13,6 @@ import { Route } from 'js/map/workers/location_querier';
 import { Z_EDITING } from 'js/map/z';
 
 import { LINE_DRAWN, TOOL_REQUESTED } from './events';
-
-export interface DrawingStyle {
-  fill: RgbaU32;
-  stroke: RgbaU32;
-  radiusPx: number;
-}
 
 // What finishing a drawing does. A line hands itself off to be saved and clears. A measurement
 // stays on the map until the next click starts another, so that its numbers can still be read.
@@ -30,6 +25,16 @@ const FINISH_RADIUS_PX = 8;
 const SNAP_RADIUS_PX = 12;
 // One segment's worth, so the common case of drawing a line fits without a realloc.
 const INITIAL_BUFFER_BYTES = 8 * 1024;
+const LINE_COLOR = 0x2F6FEBFF as RgbaU32;
+// One pixel either side of the path, all of it casing, so the line is a plain 2 px stroke
+const LINE_RADIUS_PX = 1;
+const MARKER_RADIUS_PX = 6;
+const MARKER_STROKE = 0xFFFFFFFF as RgbaU32;
+// Placed vertices are squares, drawn from a two cell atlas: hollow, then filled for the last.
+const HANDLE_SIZE_PX = [9, 9] as Vec2;
+const HANDLE_ATLAS_SIZE = [2, 1] as Vec2;
+// Drawn at twice the size it shows at, so that it stays crisp on a high density screen
+const HANDLE_TEXTURE_CELL_PX = 18;
 
 // A vertex of the line under construction, with the path that reaches it from the vertex before.
 // Held in mercator and converted to E7 only when the line is finished, because the cursor vertex
@@ -61,7 +66,10 @@ export class DrawingLayer extends Layer {
 
   private active: boolean;
   private drawing: Drawing|undefined;
+  // A spot on the drawing to call out, like the one under the pointer on an elevation profile
+  private marker: Vec2|undefined;
   private readonly glGeometry: WebGLBuffer;
+  private readonly handleTexture: WebGLTexture;
   private geometry: ArrayBuffer;
   private drawables: Drawable[];
   // Moves whenever the drawing does, and planned catches up in render.
@@ -79,7 +87,6 @@ export class DrawingLayer extends Layer {
 
   constructor(
       private readonly mode: DrawingMode,
-      private readonly style: DrawingStyle,
       // What vertices snap and route onto
       private readonly locations: LocationIndex,
       private readonly camera: Camera,
@@ -87,15 +94,23 @@ export class DrawingLayer extends Layer {
       // Called whenever the drawing changes, including when a route lands after the input that
       // asked for it
       private readonly onChanged: () => void = () => {},
+      // Credited only while the layer is active, for data a tool reads while it is in use
+      private readonly activeCopyrights: Copyright[] = [],
   ) {
     super(/* copyright= */ []);
     this.active = false;
     this.drawing = undefined;
+    this.marker = undefined;
     this.glGeometry = renderer.createDataBuffer(INITIAL_BUFFER_BYTES);
     this.registerDisposer(() => {
       renderer.deleteBuffer(this.glGeometry);
     });
     this.geometry = new ArrayBuffer(INITIAL_BUFFER_BYTES);
+    this.handleTexture = renderer.createTexture();
+    renderer.uploadTexture(drawHandleAtlas(), this.handleTexture);
+    this.registerDisposer(() => {
+      renderer.deleteTexture(this.handleTexture);
+    });
     this.drawables = [];
     this.generation = 0;
     this.planned = -1;
@@ -116,6 +131,16 @@ export class DrawingLayer extends Layer {
     });
   }
 
+  override get copyrights(): Copyright[] {
+    return this.active ? this.activeCopyrights : [];
+  }
+
+  setMarker(at: Vec2|undefined): void {
+    this.marker = at;
+    // Not changed(), because the marker is not part of the drawing its listener measures
+    this.generation += 1;
+  }
+
   setActive(active: boolean): void {
     if (active === this.active) {
       return;
@@ -124,6 +149,11 @@ export class DrawingLayer extends Layer {
     this.active = active;
     this.clear();
     this.locations.setRouting(active);
+  }
+
+  /** Returns the placed vertices and the paths between them in mercator, without the cursor. */
+  placedPoints(): Float64Array {
+    return this.drawing ? drawnPoints(this.drawing.vertices) : STRAIGHT;
   }
 
   /** Returns the drawn polyline in mercator, including the segment to the cursor. */
@@ -161,6 +191,7 @@ export class DrawingLayer extends Layer {
     }
 
     this.drawing = undefined;
+    this.marker = undefined;
     this.changed();
   }
 
@@ -214,6 +245,17 @@ export class DrawingLayer extends Layer {
     // A drawing tool owns the cursor even before the first vertex, or else the layers below
     // highlight whatever the pointer crosses on the way to a click.
     return true;
+  }
+
+  // Drops the segment to the cursor, or else it stays pointing at wherever the pointer left.
+  override hoverLost(source: EventSource): void {
+    const drawing = this.drawing;
+    if (!this.active || !drawing?.cursor) {
+      return;
+    }
+
+    drawing.cursor = undefined;
+    this.changed();
   }
 
   override keyPressed(key: string, source: EventSource): boolean {
@@ -401,39 +443,110 @@ export class DrawingLayer extends Layer {
     }
 
     const points = this.points();
-    this.geometry = growBuffer(this.geometry, LineProgram.bytesNeeded(points.length / 2));
-    const result =
+    const vertices = drawing.vertices;
+    const marker = this.marker;
+    this.geometry =
+        growBuffer(
+            this.geometry,
+            LineProgram.bytesNeeded(points.length / 2)
+                + LineProgram.bytesNeeded(2)
+                + vertices.length * BillboardProgram.bytesNeeded());
+    const drawables: Drawable[] = [];
+    const line =
         LineProgram.push(
-            this.style.fill,
-            this.style.stroke,
-            this.style.radiusPx,
-            // Stipple what is still being drawn
-            /* stipple= */ !drawing.finished,
+            LINE_COLOR,
+            LINE_COLOR,
+            LINE_RADIUS_PX,
+            /* stipple= */ false,
             points,
             this.geometry,
             /* offset= */ 0);
-    if (result.instanceCount === 0) {
-      this.drawables = [];
-      return;
+    let offset = line.geometryByteLength;
+    if (line.instanceCount > 0) {
+      const drawable = {
+        elements: undefined,
+        geometry: this.glGeometry,
+        geometryByteLength: line.geometryByteLength,
+        geometryOffset: line.geometryOffset,
+        instanced: {
+          count: line.instanceCount,
+        },
+        program: this.renderer.lineProgram,
+        texture: undefined,
+        vertexCount: line.vertexCount,
+        z: Z_EDITING,
+      };
+      // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
+      drawables.push(drawable, {...drawable, program: this.renderer.lineCapProgram});
     }
 
-    this.renderer.uploadData(this.geometry, result.geometryByteLength, this.glGeometry);
-    const drawable = {
-      elements: undefined,
-      geometry: this.glGeometry,
-      geometryByteLength: result.geometryByteLength,
-      geometryOffset: result.geometryOffset,
-      instanced: {
-        count: result.instanceCount,
-      },
-      program: this.renderer.lineProgram,
-      texture: undefined,
-      vertexCount: result.vertexCount,
-      z: Z_EDITING,
-    };
-    // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
-    this.drawables = [drawable, {...drawable, program: this.renderer.lineCapProgram}];
+    for (let i = 0; i < vertices.length; ++i) {
+      const {byteSize, drawable} =
+          this.renderer.billboardProgram.plan(
+              vertices[i].point,
+              /* offsetPx= */ [0, 0],
+              HANDLE_SIZE_PX,
+              /* angle= */ 0,
+              /* tint= */ 0xFFFFFFFF as RgbaU32,
+              Z_EDITING + 1,
+              /* atlasIndex= */ i === vertices.length - 1 ? 1 : 0,
+              HANDLE_ATLAS_SIZE,
+              this.geometry,
+              offset,
+              this.glGeometry,
+              this.handleTexture);
+      drawables.push(drawable);
+      offset += byteSize;
+    }
+
+    if (marker) {
+      // A zero length segment, which the cap program draws as a circle
+      const result =
+          LineProgram.push(
+              LINE_COLOR,
+              MARKER_STROKE,
+              MARKER_RADIUS_PX,
+              /* stipple= */ false,
+              [marker[0], marker[1], marker[0], marker[1]],
+              this.geometry,
+              offset);
+      drawables.push({
+        elements: undefined,
+        geometry: this.glGeometry,
+        geometryByteLength: result.geometryByteLength,
+        geometryOffset: result.geometryOffset,
+        instanced: {count: result.instanceCount},
+        program: this.renderer.lineCapProgram,
+        texture: undefined,
+        vertexCount: result.vertexCount,
+        z: Z_EDITING + 2,
+      });
+      offset += result.geometryByteLength;
+    }
+
+    if (offset > 0) {
+      this.renderer.uploadData(this.geometry, offset, this.glGeometry);
+    }
+    this.drawables = drawables;
   }
+}
+
+// Returns the handle atlas: a white square with a blue border, then a solid blue one.
+function drawHandleAtlas(): HTMLCanvasElement {
+  const cell = HANDLE_TEXTURE_CELL_PX;
+  const canvas = document.createElement('canvas');
+  canvas.width = 2 * cell;
+  canvas.height = cell;
+  const context = canvas.getContext('2d')!;
+  const color = `#${(LINE_COLOR >>> 8).toString(16).padStart(6, '0')}`;
+  const border = 3;
+  for (const [index, fill] of [[0, '#ffffff'], [1, color]] as const) {
+    context.fillStyle = color;
+    context.fillRect(index * cell, 0, cell, cell);
+    context.fillStyle = fill;
+    context.fillRect(index * cell + border, border, cell - 2 * border, cell - 2 * border);
+  }
+  return canvas;
 }
 
 // The vertices and the paths reaching them, laid end to end, in mercator.

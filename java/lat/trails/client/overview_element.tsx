@@ -14,6 +14,7 @@ import {
   TOOL_REQUESTED,
 } from './events';
 import { FeatureList } from './feature_list';
+import { MeasurePanel } from './measure_panel';
 import { Menubar, MenubarItem } from './menubar';
 import { Toolbar } from './toolbar';
 
@@ -37,6 +38,13 @@ export function OverviewElement(
         expanded: new Set(),
       },
       layers: [],
+      measure: {
+        lengthMeters: 0,
+        vertexCount: 0,
+        profile: undefined,
+        hovered: undefined,
+        status: 'idle',
+      },
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
       tool: 'pointer',
     };
@@ -93,6 +101,7 @@ export function OverviewElement(
               ref="map"
           />
           <Toolbar tool={state.tool} />
+          {state.tool === 'measure' ? <MeasurePanel state={state.measure} /> : ''}
         </div>
         <FeatureList state={state.features} />
       </div>

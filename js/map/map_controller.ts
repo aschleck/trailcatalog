@@ -184,6 +184,13 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       interpreter.pointerMove(e, e.target === this.canvas);
     });
     this.registerListener(document, 'pointerup', e => { interpreter.pointerUp(e); });
+    // The pointer moving onto a panel over the map takes it somewhere no layer hears about, so
+    // layers drop whatever follows it.
+    this.registerListener(this.canvas, 'pointerleave', () => {
+      for (const layer of this.layers) {
+        layer.hoverLost(this);
+      }
+    });
     this.registerListener(document, 'pointercancel', e => { interpreter.pointerCancel(e); });
     this.registerListener(this.canvas, 'wheel', e => { this.wheel(e); });
     this.registerListener(this.canvas, 'contextmenu', e => { e.preventDefault(); });
