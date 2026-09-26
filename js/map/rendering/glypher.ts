@@ -18,7 +18,16 @@ interface LoadAwareFontFace extends TFontFace {
 
 export const FONT_SIZE = 28;
 const LINE_HEIGHT = 1.2;
-const ATLAS_GLYPH_SIZE = 32;
+// TinySDF's default, which we don't override: the SDF bitmap is the ink with this much padding on
+// each side.
+const SDF_BUFFER_PX = 3;
+// How far above and left of its cell's center a glyph's SDF bitmap starts, which is where the
+// quads plan draws expect the ink.
+const BITMAP_INSET_PX = 16;
+// TinySDF clamps ink to FONT_SIZE + 3 * SDF_BUFFER_PX, so its widest bitmap reaches
+// FONT_SIZE + 5 * SDF_BUFFER_PX - BITMAP_INSET_PX = 27px past the center and needs half a cell
+// that big, or else wide glyphs like emoji lose their right and bottom edges.
+const ATLAS_GLYPH_SIZE = 64;
 
 const ATLAS_WIDTH = 2048;
 const ATLAS_HEIGHT = 2048;
@@ -27,6 +36,12 @@ const SEGMENTER = new Intl.Segmenter();
 // Scratch for planCurved, which runs once per curved label per frame.
 const PLACEMENTS: number[] = [];
 const CURVED_GLYPHS: Glyph[] = [];
+
+/** Where on text's ink an offset lands, see Glypher#plan. */
+export interface TextAnchor {
+  horizontal: 'start'|'center';
+  vertical: 'middle';
+}
 
 class Glypher {
 
@@ -112,6 +127,12 @@ class Glypher {
     return [xWidth, yHeight];
   }
 
+  /**
+   * Lays text out at an offset from center. Without an anchor, the offset is the middle of the
+   * text's advance and near its baseline. An anchor puts the text's ink there instead: starting
+   * there or centered on it across, and centered on it up and down, which is what a label beside
+   * a marker or a symbol standing in for a place needs. Anchors assume a single line.
+   */
   plan(
       graphemes: string[],
       center: Vec2,
@@ -124,7 +145,8 @@ class Glypher {
       buffer: ArrayBuffer,
       offset: number,
       glBuffer: WebGLBuffer,
-      renderer: Renderer): {byteSize: number; drawables: Drawable[];} {
+      renderer: Renderer,
+      anchor?: TextAnchor): {byteSize: number; drawables: Drawable[];} {
     let regenerate = false;
     let yHeight = 0;
     for (const character of graphemes) {
@@ -159,6 +181,10 @@ class Glypher {
     let yOffset = yHeight / 2;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
+    if (anchor) {
+      const [dx, dy] = this.anchorShift(graphemes, scale, yOffset, anchor);
+      offsetPx = [offsetPx[0] + dx * cos - dy * sin, offsetPx[1] + dx * sin + dy * cos];
+    }
     for (let i = 0; i < graphemes.length; ++i) {
       const character = graphemes[i];
       if (character !== '\n') {
@@ -192,6 +218,42 @@ class Glypher {
       byteSize: totalByteSize,
       drawables,
     };
+  }
+
+  // How far to move text from where plan puts it without an anchor so its ink meets the anchor,
+  // in the text's own frame. Each quad is centered on the pen, which starts half the advance
+  // back, and raised by its glyph's top from yOffset, while the ink hangs from BITMAP_INSET_PX up
+  // and left of the quad's center.
+  private anchorShift(graphemes: string[], scale: number, yOffset: number, anchor: TextAnchor):
+      Vec2 {
+    let advance = 0;
+    for (const character of graphemes) {
+      advance += checkExists(this.glyphs.get(character)).glyphAdvance * scale;
+    }
+
+    let pen = -advance / 2;
+    let left = Infinity;
+    let right = -Infinity;
+    let top = -Infinity;
+    let bottom = Infinity;
+    for (const character of graphemes) {
+      const glyph = checkExists(this.glyphs.get(character));
+      if (glyph.glyphWidth > 0) {
+        const inkLeft = pen - (BITMAP_INSET_PX - SDF_BUFFER_PX) * scale;
+        const inkTop = yOffset + (glyph.glyphTop + BITMAP_INSET_PX - SDF_BUFFER_PX) * scale;
+        left = Math.min(left, inkLeft);
+        right = Math.max(right, inkLeft + glyph.glyphWidth * scale);
+        top = Math.max(top, inkTop);
+        bottom = Math.min(bottom, inkTop - glyph.glyphHeight * scale);
+      }
+      pen += glyph.glyphAdvance * scale;
+    }
+    if (left > right) {
+      return [0, 0];
+    }
+
+    const dx = anchor.horizontal === 'start' ? -left : -(left + right) / 2;
+    return [dx, -(top + bottom) / 2];
   }
 
   /**
@@ -358,7 +420,8 @@ class Glypher {
       const x = i % (ATLAS_WIDTH / size) * size;
       const y = Math.floor(i / (ATLAS_WIDTH / size)) * size;
       const g = this.tinySdf.draw(character);
-      copyIntoImage(g.data, g.width, this.atlas, x, y, ATLAS_WIDTH);
+      const inset = size / 2 - BITMAP_INSET_PX;
+      copyIntoImage(g.data, g.width, this.atlas, x + inset, y + inset, ATLAS_WIDTH);
       this.glyphs.set(character, {
         index: i,
         glyphAdvance: g.glyphAdvance,

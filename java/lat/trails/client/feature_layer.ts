@@ -15,12 +15,15 @@ import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 import { FeatureStore } from './feature_store';
 import { FEATURE_CLICKED, FEATURE_EDITED, FEATURE_HOVERED } from './events';
 import {
+  DEFAULT_ICON,
+  DEFAULT_ICON_SHRINK,
   DEFAULT_LINE_COLOR,
   DEFAULT_POINT_COLOR,
   DEFAULT_WIDTH_PX,
   EditableFeature,
   EditableLine,
   EditablePoint,
+  pointIcon,
   snapshot,
 } from './features';
 import {
@@ -33,20 +36,24 @@ import {
 } from './handles';
 import { insertVertex, moveVertex, removeVertex } from './line_edits';
 
-const POINT_RADIUS_PX = 5;
-const SELECTED_POINT_RADIUS_PX = 7;
 // How far past a feature's drawn edge a click still lands on it
 const CLICK_SLOP_PX = 3;
 // The casing LineProgram draws is a pixel wide on each side, see line_cap_program.ts.
 const CASING_PX = 1;
 const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
 const HOVERED_CASING = 0xFFFFFF99 as RgbaU32;
-const POINT_CASING = 0xFFFFFFFF as RgbaU32;
 const LABEL_FILL = 0x1A1A1AFF as RgbaU32;
 const LABEL_STROKE = 0xFFFFFFFF as RgbaU32;
 // FONT_SIZE is 28, so labels are 14px.
 const LABEL_SCALE = 0.5;
-const LABEL_OFFSET_PX = [POINT_RADIUS_PX + 4, 0] as Vec2;
+const LABEL_GAP_PX = 4;
+// FONT_SIZE is 28, so icons are about 17px.
+const ICON_SCALE = 0.6;
+// A hovered or selected icon grows, the way a hovered or selected line widens, because a ring
+// behind it vanishes against some icons and terrain.
+const HIGHLIGHTED_ICON_SCALE = 0.8;
+// Wide enough to ring an icon, and how far from its center a click still lands on it
+const ICON_RADIUS_PX = 10;
 // Tracks recorded by GPS wiggle every few meters, and Glypher refuses to bend text around turns
 // that sharp, so a label follows the line simplified to about this many pixels.
 const LABEL_PATH_TOLERANCE_PX = 4;
@@ -62,7 +69,6 @@ const DOUBLE_CLICK_MS = 400;
 
 const Z_LINE = Z_USER_DATA;
 const Z_SELECTED_LINE = Z_USER_DATA_HIGHLIGHT;
-const Z_POINT = Z_USER_DATA_HIGHLIGHT + 1;
 const Z_LABEL = Z_USER_DATA_HIGHLIGHT + 2;
 const Z_DRAGGED = Z_USER_DATA_HIGHLIGHT + 3;
 const Z_HANDLE = Z_USER_DATA_HIGHLIGHT + 4;
@@ -128,7 +134,14 @@ export class FeatureLayer extends Layer {
   private readonly handleTexture: WebGLTexture;
   private labels: ArrayBuffer;
   private labelDrawables: Drawable[];
-  private labelsPlanned: {generation: number; zoom: number};
+  // Icons draw with the labels, so the hovered one changing replans them too.
+  private labelsPlanned: {
+    draggedAt: Vec2|undefined;
+    generation: number;
+    hovered: string|undefined;
+    selected: string|undefined;
+    zoom: number;
+  };
   // Only the pointer tool selects, drags, and edits, or else a drawing tool's clicks would also
   // grab whatever is under them.
   private interactive: boolean;
@@ -172,7 +185,13 @@ export class FeatureLayer extends Layer {
     this.handleTexture = createHandleTexture(renderer);
     this.labels = new ArrayBuffer(16 * 1024);
     this.labelDrawables = [];
-    this.labelsPlanned = {generation: -1, zoom: -1};
+    this.labelsPlanned = {
+      draggedAt: undefined,
+      generation: -1,
+      hovered: undefined,
+      selected: undefined,
+      zoom: -1,
+    };
     this.labelsMissingGlyphs = false;
     this.interactive = true;
     this.editing = undefined;
@@ -455,17 +474,38 @@ export class FeatureLayer extends Layer {
       this.overlay.planned = this.overlay.generation;
     }
     // Curved labels are laid out in pixels along mercator paths, so they follow the zoom.
+    const draggedAt = this.dragging?.kind === 'point' ? this.dragging.at : undefined;
     if (
         this.labelsMissingGlyphs
+            || this.labelsPlanned.draggedAt !== draggedAt
             || this.labelsPlanned.generation !== this.geometry.generation
+            || this.labelsPlanned.hovered !== this.hovered
+            || this.labelsPlanned.selected !== this.selected
             || this.labelsPlanned.zoom !== zoom) {
       this.planLabels(zoom);
-      this.labelsPlanned = {generation: this.geometry.generation, zoom};
+      this.labelsPlanned = {
+        draggedAt,
+        generation: this.geometry.generation,
+        hovered: this.hovered,
+        selected: this.selected,
+        zoom,
+      };
     }
 
     planner.add(this.geometry.drawables);
     planner.add(this.overlay.drawables);
     planner.add(this.labelDrawables);
+  }
+
+  private isHighlighted(feature: EditableFeature): boolean {
+    return feature.id === this.hovered
+        || feature.id === this.selected
+        || (this.dragging?.kind === 'point' && feature.id === this.dragging.point.id);
+  }
+
+  private iconScale(feature: EditablePoint): number {
+    const scale = this.isHighlighted(feature) ? HIGHLIGHTED_ICON_SCALE : ICON_SCALE;
+    return pointIcon(feature.data.icon) === DEFAULT_ICON ? scale * DEFAULT_ICON_SHRINK : scale;
   }
 
   private editingLine(): ProjectedLine|undefined {
@@ -497,8 +537,10 @@ export class FeatureLayer extends Layer {
   }
 
   private pointAt(at: Vec2): ProjectedPoint|undefined {
-    const radius = (POINT_RADIUS_PX + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    const pixel = this.camera.inverseWorldRadius;
     for (const point of this.visiblePoints) {
+      const radius =
+          (ICON_RADIUS_PX + CLICK_SLOP_PX) * pixel;
       if (Math.hypot(point.at[0] - at[0], point.at[1] - at[1]) <= radius) {
         return point;
       }
@@ -647,7 +689,6 @@ export class FeatureLayer extends Layer {
     const dragged =
         this.dragging?.kind === 'point' ? this.dragging.point.id : this.dragging?.line.feature.id;
     const lines = this.visibleLines.filter(l => l.feature.id !== dragged);
-    const points = this.visiblePoints.filter(p => p.feature.id !== dragged);
     const selectedLine = lines.find(l => l.feature.id === this.selected);
     let needed = 0;
     for (const line of lines) {
@@ -656,7 +697,6 @@ export class FeatureLayer extends Layer {
     if (selectedLine) {
       needed += LineProgram.bytesNeeded(selectedLine.points.length / 2);
     }
-    needed += points.length * LineProgram.bytesNeeded(2);
 
     const batch = new ShapeBatch(this.geometry, needed, this.renderer);
     for (const line of lines) {
@@ -672,18 +712,6 @@ export class FeatureLayer extends Layer {
           selectedLine.points,
           Z_SELECTED_LINE,
           'both');
-    }
-    for (const point of points) {
-      const color = parseColor(point.feature.data.fill ?? DEFAULT_POINT_COLOR);
-      const selected = point.feature.id === this.selected;
-      // A zero length segment, which the cap program draws as a circle
-      batch.push(
-          color,
-          selected ? SELECTED_CASING : POINT_CASING,
-          selected ? SELECTED_POINT_RADIUS_PX : POINT_RADIUS_PX,
-          [point.at[0], point.at[1], point.at[0], point.at[1]],
-          Z_POINT,
-          'caps');
     }
     batch.finish();
   }
@@ -737,14 +765,10 @@ export class FeatureLayer extends Layer {
     const hoveredId =
         this.hovered !== this.selected && !dragging ? this.hovered : undefined;
     const hoveredLine = this.visibleLines.find(l => l.feature.id === hoveredId);
-    const hoveredPoint = this.visiblePoints.find(p => p.feature.id === hoveredId);
     let needed =
         handleBytesNeeded(handles.length)
-            + (hoveredLine ? LineProgram.bytesNeeded(hoveredLine.points.length / 2) : 0)
-            + (hoveredPoint ? LineProgram.bytesNeeded(2) : 0);
-    if (dragging?.kind === 'point') {
-      needed += LineProgram.bytesNeeded(2);
-    } else if (dragging) {
+            + (hoveredLine ? LineProgram.bytesNeeded(hoveredLine.points.length / 2) : 0);
+    if (dragging && dragging.kind !== 'point') {
       needed += LineProgram.bytesNeeded(dragging.points.length / 2);
     }
 
@@ -759,28 +783,7 @@ export class FeatureLayer extends Layer {
           Z_SELECTED_LINE,
           'both');
     }
-    if (hoveredPoint) {
-      const color = parseColor(hoveredPoint.feature.data.fill ?? DEFAULT_POINT_COLOR);
-      const at = hoveredPoint.at;
-      batch.push(
-          color,
-          HOVERED_CASING,
-          SELECTED_POINT_RADIUS_PX,
-          [at[0], at[1], at[0], at[1]],
-          Z_DRAGGED,
-          'caps');
-    }
-    if (dragging?.kind === 'point') {
-      const color = parseColor(dragging.point.data.fill ?? DEFAULT_POINT_COLOR);
-      const at = dragging.at;
-      batch.push(
-          color,
-          SELECTED_CASING,
-          SELECTED_POINT_RADIUS_PX,
-          [at[0], at[1], at[0], at[1]],
-          Z_DRAGGED,
-          'caps');
-    } else if (dragging) {
+    if (dragging && dragging.kind !== 'point') {
       const line = dragging.line.feature;
       const color = parseColor(line.data.stroke ?? DEFAULT_LINE_COLOR);
       batch.push(
@@ -792,6 +795,11 @@ export class FeatureLayer extends Layer {
 
   private planLabels(zoom: number): void {
     const labeled: Array<{graphemes: string[]; line?: ProjectedLine; point?: ProjectedPoint}> = [];
+    const icons: Array<{graphemes: string[]; point: ProjectedPoint}> = [];
+    const dragging = this.dragging?.kind === 'point' ? this.dragging : undefined;
+    // A dragged point's icon and label follow the pointer.
+    const at = (point: ProjectedPoint) =>
+        point.feature.id === dragging?.point.id ? dragging.at : point.at;
     let needed = 0;
     for (const line of this.visibleLines) {
       const name = line.feature.data.name;
@@ -808,6 +816,9 @@ export class FeatureLayer extends Layer {
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({graphemes, point});
       }
+      const graphemes = toGraphemes(pointIcon(point.feature.data.icon));
+      needed += GLYPHER.bytesNeeded(graphemes);
+      icons.push({graphemes, point});
     }
     this.labels = growBuffer(this.labels, needed);
 
@@ -816,6 +827,30 @@ export class FeatureLayer extends Layer {
     const drawables = [];
     let offset = 0;
     this.labelsMissingGlyphs = false;
+    for (const {graphemes, point} of icons) {
+      if (!GLYPHER.measurePx(graphemes, ICON_SCALE)) {
+        this.labelsMissingGlyphs = true;
+        continue;
+      }
+
+      const planned =
+          GLYPHER.plan(
+              graphemes,
+              at(point),
+              /* offsetPx= */ [0, 0],
+              this.iconScale(point.feature),
+              /* angle= */ 0,
+              parseColor(point.feature.data.fill ?? DEFAULT_POINT_COLOR),
+              LABEL_STROKE,
+              Z_LABEL,
+              this.labels,
+              offset,
+              this.glLabels,
+              this.renderer,
+              {horizontal: 'center', vertical: 'middle'});
+      drawables.push(...planned.drawables);
+      offset += planned.byteSize;
+    }
     for (const {graphemes, line, point} of labeled) {
       if (!GLYPHER.measurePx(graphemes, LABEL_SCALE)) {
         this.labelsMissingGlyphs = true;
@@ -826,8 +861,9 @@ export class FeatureLayer extends Layer {
         const planned =
             GLYPHER.plan(
                 graphemes,
-                point.at,
-                labelOffset(graphemes),
+                at(point),
+                // Beside the icon, however big it is drawn
+                [LABEL_GAP_PX + ICON_RADIUS_PX * this.iconScale(point.feature) / ICON_SCALE, 0],
                 LABEL_SCALE,
                 /* angle= */ 0,
                 LABEL_FILL,
@@ -836,7 +872,8 @@ export class FeatureLayer extends Layer {
                 this.labels,
                 offset,
                 this.glLabels,
-                this.renderer);
+                this.renderer,
+                {horizontal: 'start', vertical: 'middle'});
         drawables.push(...planned.drawables);
         offset += planned.byteSize;
         continue;
@@ -892,7 +929,7 @@ class ShapeBatch {
     this.offset += planned.byteSize;
   }
 
-  // Caps alone draw a circle at every vertex, which is how points are drawn.
+  // Caps alone draw a circle at every vertex.
   push(
       fill: RgbaU32,
       stroke: RgbaU32,
@@ -936,12 +973,6 @@ class ShapeBatch {
     }
     this.plan.drawables = this.drawables;
   }
-}
-
-// Glypher centers text on its anchor, so shifting by half the width puts it right of the marker.
-function labelOffset(graphemes: string[]): Vec2 {
-  const size = GLYPHER.measurePx(graphemes, LABEL_SCALE);
-  return [LABEL_OFFSET_PX[0] + (size ? size[0] / 2 : 0), LABEL_OFFSET_PX[1]];
 }
 
 // Returns the distance from at to the nearest segment, or Infinity when every segment is further
@@ -1016,9 +1047,13 @@ function simplify(points: Float64Array, tolerance: number): Float64Array {
   return Float64Array.from(simplified);
 }
 
+/** Parses #rrggbb, which is opaque, or #rrggbbaa. */
 export function parseColor(hex: string): RgbaU32 {
-  const rgb = parseInt(hex.slice(1), 16);
-  return (((Number.isNaN(rgb) ? 0 : rgb) << 8) | 0xFF) >>> 0 as RgbaU32;
+  const value = parseInt(hex.slice(1), 16);
+  if (Number.isNaN(value)) {
+    return 0x000000FF as RgbaU32;
+  }
+  return (hex.length === 9 ? value >>> 0 : ((value << 8) | 0xFF) >>> 0) as RgbaU32;
 }
 
 function darken(color: RgbaU32): RgbaU32 {

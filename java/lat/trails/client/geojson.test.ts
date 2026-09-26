@@ -98,11 +98,21 @@ test('reads a point without its padding', () => {
     kind: 'point',
     id: expect.stringMatching(/^[0-9a-f-]{36}$/),
     version: 0n,
-    data: {name: 'Les Houches', fill: '#ff0000', icon: 'point'},
+    // A symbol name like 'point' is left for the default dot
+    data: {name: 'Les Houches', fill: '#ff0000'},
     latE7: 458898737,
     lngE7: 67979193,
     elevationCentimeters: undefined,
   });
+});
+
+test('keeps an emoji symbol as the icon', () => {
+  const features = parseGeoJson(JSON.stringify({
+    type: 'Feature',
+    geometry: {type: 'Point', coordinates: [1, 2]},
+    properties: {'marker-symbol': '⛺'},
+  }));
+  expect(features[0].data.icon).toBe('⛺');
 });
 
 test('gives every feature a fresh id', () => {

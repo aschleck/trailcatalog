@@ -43,6 +43,7 @@ import {
   FEATURE_HOVERED,
   HOVER_CHANGED,
   LINE_DRAWN,
+  POINT_PLACED,
   Tool,
   TOOL_REQUESTED,
 } from './events';
@@ -50,17 +51,21 @@ import { FeatureLayer } from './feature_layer';
 import { buildTree, FeatureListState, foldersOf } from './feature_list';
 import { Change, FeatureStore } from './feature_store';
 import {
+  DEFAULT_POINT_COLOR,
   EditableFeature,
   EditableLine,
   FeatureData,
   folderFromProto,
+  importableIcon,
   lineFromProto,
   pointFromProto,
   snapshot,
   toWrite,
 } from './features';
 import { parseImport } from './importer';
+import { IconPickerDialog } from './icon_picker';
 import { MeasureState } from './measure_panel';
+import { PointToolLayer } from './point_tool_layer';
 import { haversineMeters, profileSamples, ProfileSamples, profileStats } from './measurements';
 import { MENU_CLASSES } from './menubar';
 import { SaveEntry, SaveQueue } from './save_queue';
@@ -119,6 +124,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly featureLayer: FeatureLayer;
   private readonly lineLayer: DrawingLayer;
   private readonly measureLayer: DrawingLayer;
+  private readonly pointLayer: PointToolLayer;
   private readonly store: FeatureStore;
   private readonly elevations: Elevations;
   // Waits for the pointer to settle before sampling, because the measure tool redraws its cursor
@@ -232,6 +238,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             },
             [MAPTERHORN_COPYRIGHT]);
     this.registerDisposable(this.measureLayer);
+    this.pointLayer = new PointToolLayer();
+    this.registerDisposable(this.pointLayer);
 
     this.registerListener(window, 'keydown', e => {
       this.keyPressed(e);
@@ -589,6 +597,26 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.store.apply([{id: line.id, before: undefined, after: line}]);
   }
 
+  // Selects the new point so that the panel is open to name it, and stays in the tool so that
+  // several can go down in a row.
+  onPointPlaced(e: CorgiEvent<typeof POINT_PLACED>): void {
+    const parent = this.newFeatureParent();
+    const point: EditableFeature = {
+      kind: 'point',
+      id: crypto.randomUUID(),
+      version: 0n,
+      data: parent !== undefined ? {folder_id: parent} : {},
+      latE7: e.detail.latE7,
+      lngE7: e.detail.lngE7,
+      elevationCentimeters: undefined,
+    };
+    if (parent !== undefined) {
+      this.expanded.add(parent);
+    }
+    this.store.apply([{id: point.id, before: undefined, after: point}]);
+    this.select(point.id);
+  }
+
   onToolRequested(e: CorgiEvent<typeof TOOL_REQUESTED>): void {
     this.setTool(e.detail.tool);
   }
@@ -721,11 +749,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.refreshFeatureList();
   }
 
-  // Puts the folder inside the selected folder, or else beside the selected feature.
   newFolderClicked(): void {
-    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
-    const parent =
-        selected?.kind === 'folder' ? selected.id : selected && this.store.parentOf(selected);
+    const parent = this.newFeatureParent();
     const folder: EditableFeature = {
       kind: 'folder',
       id: crypto.randomUUID(),
@@ -754,6 +779,30 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const color = (e.actionElement.element() as HTMLInputElement).value;
     const key = this.store.get(this.selected ?? '')?.kind === 'line' ? 'stroke' : 'fill';
     this.editSelectedData(data => ({...data, [key]: color}), 'color');
+  }
+
+  iconButtonClicked(): void {
+    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    if (selected?.kind !== 'point') {
+      return;
+    }
+
+    const counts = new Map<string, number>();
+    for (const point of this.store.points()) {
+      const icon = importableIcon(point.data.icon);
+      if (icon) {
+        counts.set(icon, (counts.get(icon) ?? 0) + 1);
+      }
+    }
+
+    this.dialog.display(IconPickerDialog({
+      color: selected.data.fill ?? DEFAULT_POINT_COLOR,
+      current: selected.data.icon,
+      onChosen: icon => {
+        this.editSelectedData(data => ({...data, icon}));
+      },
+      used: [...counts].sort((a, b) => b[1] - a[1]).map(([icon]) => icon),
+    })).catch(() => {});
   }
 
   widthChanged(e: CorgiEvent<typeof CHANGED>): void {
@@ -863,6 +912,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private setTool(tool: Tool): void {
     this.lineLayer.setActive(false);
     this.measureLayer.setActive(false);
+    this.pointLayer.setActive(tool === 'point');
     this.featureLayer.setInteractive(tool === 'pointer');
     // Refreshes the credits, because the measure layer's only count while it is active
     this.setMapLayers(this.state.layers);
@@ -1008,6 +1058,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       path[i + 1] = ll.lngDegrees();
     }
     return path;
+  }
+
+  // Where a new feature goes: inside the selected folder, or else beside the selected feature.
+  private newFeatureParent(): string|undefined {
+    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    return selected?.kind === 'folder' ? selected.id : selected && this.store.parentOf(selected);
   }
 
   private setHovered(id: string|undefined): void {
@@ -1304,7 +1360,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       }
     }
     this.mapController.setLayers(
-        [this.lineLayer, this.measureLayer, this.featureLayer as Layer]
+        [this.pointLayer, this.lineLayer, this.measureLayer, this.featureLayer as Layer]
             .concat(layers.filter(l => l.enabled).map(l => l.layer)));
   }
 }
