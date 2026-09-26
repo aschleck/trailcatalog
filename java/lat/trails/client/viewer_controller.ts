@@ -2,6 +2,7 @@ import { checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts
 import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
+import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_MOUSE, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
 import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
@@ -21,8 +22,10 @@ import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Elevations } from 'js/map/workers/elevations';
+import { Style } from 'js/map/workers/mbtile_loader';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
+import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
   Collection,
   CreateCollectionResponse,
@@ -129,6 +132,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly measureLayer: DrawingLayer;
   private readonly pointLayer: PointToolLayer;
   private readonly skyboxLayer: SkyboxLayer;
+  private readonly contours: Record<UnitSystem, MbtileLayer>;
   private readonly store: FeatureStore;
   private readonly elevations: Elevations;
   // Waits for the pointer to settle before sampling, because the measure tool redraws its cursor
@@ -252,6 +256,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.skyboxLayer = new SkyboxLayer(Z_BOTTOM, this.mapController.renderer);
     this.registerDisposable(this.skyboxLayer);
 
+    this.contours = {
+      imperial: this.newContourLayer(CONTOURS_FEET),
+      metric: this.newContourLayer(CONTOURS_METERS),
+    };
+
     const allLayers = [{
       name: 'Hillshades',
       enabled: true,
@@ -268,33 +277,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.mapController.renderer,
       ),
     }, {
-      name: 'Contours (feet)',
+      name: 'Contours',
       enabled: true,
-      layer: new MbtileLayer(
-          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
-            long: 'Contains modified NASADEM data 2000',
-          }],
-          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
-          CONTOURS_FEET,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 9,
-          /* maxZoom= */ 14,
-          this.mapController.renderer,
-      ),
-    }, {
-      name: 'Contours (meters)',
-      enabled: false,
-      layer: new MbtileLayer(
-          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
-            long: 'Contains modified NASADEM data 2000',
-          }],
-          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
-          CONTOURS_METERS,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 9,
-          /* maxZoom= */ 14,
-          this.mapController.renderer,
-      ),
+      layer: this.contours[getUnitSystem()],
     }, {
       name: 'MapTiler vector',
       enabled: false,
@@ -568,8 +553,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.mapController.renderer,
       ),
     }];
-    for (const layer of allLayers) {
-      this.registerDisposable(layer.layer);
+    const owned = new Set([...allLayers.map(l => l.layer), ...Object.values(this.contours)]);
+    for (const layer of owned) {
+      this.registerDisposable(layer);
     }
     this.updateState({
       ...this.state,
@@ -949,6 +935,25 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       });
       this.openMenu(items, e);
     });
+  }
+
+  viewMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const system = getUnitSystem();
+    this.openMenu([{
+      kind: 'checkbox_menu_item',
+      label: 'Imperial',
+      checked: system === 'imperial',
+      action: () => {
+        this.setUnitSystem('imperial');
+      },
+    }, {
+      kind: 'checkbox_menu_item',
+      label: 'Metric',
+      checked: system === 'metric',
+      action: () => {
+        this.setUnitSystem('metric');
+      },
+    }], e);
   }
 
   toolClicked(e: CorgiEvent<typeof ACTION>): void {
@@ -1409,6 +1414,34 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         {x: bound.left, y: bound.bottom},
         this.root,
         {anchor: 'top_left', classes: MENU_CLASSES});
+  }
+
+  // The formatters read the unit system from a global rather than from props, so a rerender with
+  // caching on would skip every element whose props are unchanged.
+  private setUnitSystem(system: UnitSystem): void {
+    setUnitSystem(system);
+    const contours = Object.values(this.contours) as Layer[];
+    const layers =
+        this.state.layers.map(
+            l => contours.includes(l.layer) ? {...l, layer: this.contours[system]} : l);
+    corgi.vdomCaching.disable();
+    this.updateState({...this.state, layers}).then(() => {
+      corgi.vdomCaching.enable();
+    });
+    this.setMapLayers(layers);
+  }
+
+  private newContourLayer(style: Readonly<Style>): MbtileLayer {
+    return new MbtileLayer(
+        [COPERNICUS_COPYRIGHT, {
+          long: 'Contains modified NASADEM data 2000',
+        }],
+        'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
+        style,
+        /* extraZoom= */ 0,
+        /* minZoom= */ 9,
+        /* maxZoom= */ 14,
+        this.mapController.renderer);
   }
 
   private setLayerEnabled(index: number, enabled: boolean): void {

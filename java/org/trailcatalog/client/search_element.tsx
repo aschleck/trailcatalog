@@ -6,7 +6,7 @@ import { OutlinedInput } from 'js/dino/input';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
-import { formatDistance } from './common/formatters';
+import { formatDistance } from 'js/units/formatters';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { TrailSearchResult } from './models/types';

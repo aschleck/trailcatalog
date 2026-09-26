@@ -2,7 +2,7 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { Radio } from 'js/dino/radio';
 
-import { getUnitSystem } from './common/formatters';
+import { getUnitSystem } from 'js/units/formatters';
 import { State, UnitSelectorController } from './unit_selector_controller';
 
 export function UnitSelector({

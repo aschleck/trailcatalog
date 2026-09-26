@@ -99,6 +99,7 @@ export function OverviewElement(
     >
       <Menubar user={state.self.finished ? state.self.value().user : undefined}>
         <MenubarItem label="File" onClick="fileMenuClicked" />
+        <MenubarItem label="View" onClick="viewMenuClicked" />
       </Menubar>
       <div className="flex grow min-h-0">
         <div className="grow min-w-0 relative">

@@ -10,6 +10,5 @@ tc_ts_project(
         "//js/map/common",
         "@dev_april_corgi//js/corgi",
         "@dev_april_corgi//js/corgi/history",
-        "@dev_april_corgi//js/server:client",
     ],
 )

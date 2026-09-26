@@ -14,6 +14,7 @@ tc_ts_project(
         "@dev_april_corgi//js/corgi",
         "//js/map",
         "//js/map/rendering",
+        "//js/units",
     ],
 )
 

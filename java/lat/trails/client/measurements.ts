@@ -1,3 +1,5 @@
+import { formatDistance as formatUnitDistance, formatHeight as formatUnitHeight } from 'js/units/formatters';
+
 // Keep in sync with SimpleS2#EARTH_RADIUS_METERS. Not read from there because loading S2 here would
 // keep these out of jest, which cannot load the J2CL bundle.
 const EARTH_RADIUS_METERS = 6371010;
@@ -60,11 +62,13 @@ export function measureLine(
 }
 
 export function formatDistance(meters: number): string {
-  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(2)} km`;
+  const {value, unit} = formatUnitDistance(meters);
+  return `${value} ${unit}`;
 }
 
 export function formatHeight(meters: number): string {
-  return `${Math.round(meters).toLocaleString()} m`;
+  const {value, unit} = formatUnitHeight(meters);
+  return `${value} ${unit}`;
 }
 
 // A z12 pixel is 13 m across in the Alps and most sources under Mapterhorn are no finer than 10 m,

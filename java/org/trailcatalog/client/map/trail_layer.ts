@@ -16,7 +16,7 @@ import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
 
-import { formatDistance } from '../common/formatters';
+import { formatDistance } from 'js/units/formatters';
 import { reinterpretLong } from '../common/math';
 import { S2CellNumber } from '../common/types';
 import { Listener, MapDataService } from '../data/map_data_service';

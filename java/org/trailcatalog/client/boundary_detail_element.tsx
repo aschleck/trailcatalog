@@ -7,7 +7,7 @@ import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
-import { formatCount, formatDistance, formatHeight, getUnitSystem } from './common/formatters';
+import { formatCount, formatDistance, formatHeight, getUnitSystem } from 'js/units/formatters';
 import { SELECTION_CHANGED } from './map/events';
 import { Boundary, Trail } from './models/types';
 

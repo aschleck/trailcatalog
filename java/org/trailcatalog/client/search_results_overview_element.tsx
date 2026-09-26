@@ -11,7 +11,7 @@ import { LatLngRect, Vec2 } from 'js/map/common/types';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
-import { getUnitSystem } from './common/formatters';
+import { getUnitSystem } from 'js/units/formatters';
 import { HOVER_CHANGED, SELECTION_CHANGED } from './map/events';
 import { Trail, TrailSearchResult } from './models/types';
 
