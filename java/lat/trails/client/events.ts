@@ -1,6 +1,7 @@
 import { declareEvent } from 'external/dev_april_corgi+/js/corgi/events';
 import { RawUuid } from 'js/map/common/types';
 
+import { EditableFeature } from './features';
 import { Data } from './workers/collection_loader';
 
 /** What pointer tools are possible. */
@@ -10,6 +11,11 @@ export const FEATURE_CLICKED = declareEvent<{
   // Undefined when the click missed every feature
   id: string|undefined;
 }>('feature_clicked');
+
+export const FEATURE_EDITED = declareEvent<{
+  before: EditableFeature;
+  after: EditableFeature;
+}>('feature_edited');
 
 export const HOVER_CHANGED = declareEvent<{
   target: {

@@ -34,7 +34,7 @@ const WIDTHS_PX = [1, 2, 3, 4, 6, 8];
 /** Lists the open collection's features as a tree, with the selected one's properties below. */
 export function FeatureList({state}: {state: FeatureListState}) {
   return <>
-    <div className="bg-white border-gray-300 border-r flex flex-col h-full min-h-0 text-sm w-72">
+    <div className="bg-white border-gray-300 border-l flex flex-col h-full min-h-0 text-sm w-72">
       <div className="border-b border-gray-300 flex items-center justify-between px-2 py-1">
         <span className="font-bold">Features</span>
         <Button

@@ -3,9 +3,23 @@ import { PointerInterpreter } from './pointer_interpreter';
 class Recorder {
   readonly flings: Array<{pageX: number, pageY: number, velocityX: number, velocityY: number}> = [];
   readonly pans: Array<{lastPageX: number, currPageX: number}> = [];
+  readonly drags: Array<{kind: 'drag'|'end', pageX: number, moved?: boolean}> = [];
+  claimDrags = false;
   clicks = 0;
   idles = 0;
   zooms = 0;
+
+  dragStart(pageX: number, pageY: number): boolean {
+    return this.claimDrags;
+  }
+
+  drag(pageX: number, pageY: number): void {
+    this.drags.push({kind: 'drag', pageX});
+  }
+
+  dragEnd(pageX: number, pageY: number, moved: boolean): void {
+    this.drags.push({kind: 'end', pageX, moved});
+  }
 
   click(pageX: number, pageY: number, contextual: boolean): void {
     this.clicks += 1;
@@ -135,4 +149,49 @@ test('drags with one pointer after another is canceled', () => {
 
   expect(recorder.zooms).toBe(0);
   expect(recorder.pans[recorder.pans.length - 1]).toEqual({lastPageX: 100, currPageX: 110});
+});
+
+test('sends a claimed drag to the layer instead of panning', () => {
+  const recorder = new Recorder();
+  recorder.claimDrags = true;
+  const interpreter = new PointerInterpreter(recorder);
+
+  interpreter.pointerDown(pointer({timeMs: 0}));
+  const end = drag(interpreter, 0, 0, 1, 3);
+  interpreter.pointerUp(pointer({x: end.x, timeMs: end.timeMs}));
+
+  expect(recorder.pans).toEqual([]);
+  expect(recorder.flings).toEqual([]);
+  expect(recorder.clicks).toBe(0);
+  expect(recorder.drags).toEqual([
+    {kind: 'drag', pageX: 16},
+    {kind: 'drag', pageX: 32},
+    {kind: 'drag', pageX: 48},
+    {kind: 'end', pageX: 48, moved: true},
+  ]);
+});
+
+test('clicks after a claimed press that never moved', () => {
+  const recorder = new Recorder();
+  recorder.claimDrags = true;
+  const interpreter = new PointerInterpreter(recorder);
+
+  interpreter.pointerDown(pointer({timeMs: 0}));
+  interpreter.pointerMove(pointer({x: 1, timeMs: 16}), /* inCanvas= */ true);
+  interpreter.pointerUp(pointer({x: 1, timeMs: 32}));
+
+  expect(recorder.drags[recorder.drags.length - 1]).toEqual({kind: 'end', pageX: 1, moved: false});
+  expect(recorder.clicks).toBe(1);
+});
+
+test('ends a drag when a second finger lands', () => {
+  const recorder = new Recorder();
+  recorder.claimDrags = true;
+  const interpreter = new PointerInterpreter(recorder);
+
+  interpreter.pointerDown(pointer({timeMs: 0}));
+  drag(interpreter, 0, 0, 1, 1);
+  interpreter.pointerDown(pointer({x: 100, id: 2, timeMs: 32}));
+
+  expect(recorder.drags[recorder.drags.length - 1]).toEqual({kind: 'end', pageX: 16, moved: true});
 });

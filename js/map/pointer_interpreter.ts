@@ -2,6 +2,12 @@ import { Vec2 } from './common/types';
 
 interface PointerListener {
   click(pageX: number, pageY: number, contextual: boolean): void;
+  // Asked on every single-pointer press. Claiming it sends the moves that follow to drag instead of
+  // panning.
+  dragStart(pageX: number, pageY: number): boolean;
+  drag(pageX: number, pageY: number): void;
+  // Moved is false for a press that never left the click radius, which still clicks.
+  dragEnd(pageX: number, pageY: number, moved: boolean): void;
   fling(pageX: number, pageY: number, velocityX: number, velocityY: number): void;
   hover(pageX: number, pageY: number): void;
   idle(): void;
@@ -37,6 +43,8 @@ export class PointerInterpreter {
 
   private readonly pointers: Map<number, SimplePointerEvent>;
   private maybeClickStart: SimplePointerEvent|undefined;
+  // Whether a layer claimed the press under way
+  private dragging: boolean;
   // Recent single-pointer positions inside FLING_WINDOW_MS, oldest first.
   private readonly samples: Sample[];
 
@@ -46,6 +54,7 @@ export class PointerInterpreter {
   constructor(private readonly listener: PointerListener) {
     this.pointers = new Map();
     this.maybeClickStart = undefined;
+    this.dragging = false;
     this.samples = [];
     this.needIdle = false;
   }
@@ -69,8 +78,12 @@ export class PointerInterpreter {
         pageY: e.pageY,
         pointerId: e.pointerId,
       };
+      this.dragging = e.button === 0 && this.listener.dragStart(e.pageX, e.pageY);
     } else {
       this.maybeClickStart = undefined;
+      // A second finger turns a drag into a pinch, so the drag ends where the first finger was.
+      const [first] = this.pointers.values();
+      this.endDrag(first.pageX, first.pageY);
     }
   }
 
@@ -83,6 +96,20 @@ export class PointerInterpreter {
     }
 
     e.preventDefault();
+
+    if (this.dragging) {
+      this.listener.drag(e.pageX, e.pageY);
+      if (this.maybeClickStart && distance2(this.maybeClickStart, e) > 3 * 3) {
+        this.maybeClickStart = undefined;
+      }
+      this.pointers.set(e.pointerId, {
+        pageX: e.pageX,
+        pageY: e.pageY,
+        pointerId: e.pointerId,
+      });
+      return;
+    }
+
     this.needIdle = true;
 
     if (this.pointers.size === 1) {
@@ -131,6 +158,7 @@ export class PointerInterpreter {
     this.pointers.delete(e.pointerId);
 
     if (this.pointers.size === 0) {
+      this.endDrag(e.pageX, e.pageY);
       if (this.needIdle) {
         this.needIdle = false;
         const velocity = this.flingVelocity(e.timeStamp);
@@ -161,11 +189,21 @@ export class PointerInterpreter {
     this.pointers.delete(e.pointerId);
     this.maybeClickStart = undefined;
     this.samples.length = 0;
+    this.endDrag(e.pageX, e.pageY);
 
     if (this.pointers.size === 0 && this.needIdle) {
       this.needIdle = false;
       this.listener.idle();
     }
+  }
+
+  private endDrag(pageX: number, pageY: number): void {
+    if (!this.dragging) {
+      return;
+    }
+
+    this.dragging = false;
+    this.listener.dragEnd(pageX, pageY, /* moved= */ !this.maybeClickStart);
   }
 
   private sample(e: PointerEvent): void {
