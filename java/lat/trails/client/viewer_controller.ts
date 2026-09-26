@@ -47,6 +47,7 @@ import {
   Tool,
   TOOL_REQUESTED,
 } from './events';
+import { toGeoJson, toGpx } from './exporter';
 import { FeatureLayer } from './feature_layer';
 import { buildTree, FeatureListState, foldersOf } from './feature_list';
 import { Change, FeatureStore } from './feature_store';
@@ -887,6 +888,23 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.importFiles();
         },
       });
+      items.push({
+        kind: 'menu',
+        label: 'Export',
+        items: [{
+          kind: 'menu_item',
+          label: 'GPX',
+          action: () => {
+            this.download(toGpx([...this.store.all()]), 'gpx', 'application/gpx+xml');
+          },
+        }, {
+          kind: 'menu_item',
+          label: 'GeoJSON',
+          action: () => {
+            this.download(toGeoJson([...this.store.all()]), 'geojson', 'application/geo+json');
+          },
+        }],
+      });
       this.openMenu(items, e);
     });
   }
@@ -1217,6 +1235,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           });
     });
     input.click();
+  }
+
+  private download(text: string, extension: string, type: string): void {
+    const url = URL.createObjectURL(new Blob([text], {type}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${this.state.collection?.name || 'trails'}.${extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   // Wraps the file's features in a folder named after it, so that importing a pile of files does
