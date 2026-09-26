@@ -33,7 +33,14 @@ import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND 
 import { invalidateCurrentUser, requestData } from './data';
 import { ConfirmDeleteDialog, ImportFailedDialog, SaveFailedDialog } from './dialogs';
 import { DrawingLayer } from './drawing_layer';
-import { FEATURE_CLICKED, HOVER_CHANGED, LINE_DRAWN, Tool, TOOL_REQUESTED } from './events';
+import {
+  FEATURE_CLICKED,
+  FEATURE_EDITED,
+  HOVER_CHANGED,
+  LINE_DRAWN,
+  Tool,
+  TOOL_REQUESTED,
+} from './events';
 import { FeatureLayer } from './feature_layer';
 import { buildTree, FeatureListState, foldersOf } from './feature_list';
 import { Change, FeatureStore } from './feature_store';
@@ -572,6 +579,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(id);
   }
 
+  onFeatureEdited(e: CorgiEvent<typeof FEATURE_EDITED>): void {
+    const {before, after} = e.detail;
+    this.store.apply([{id: after.id, before, after}]);
+  }
+
   featureClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
     // The visibility checkbox sits inside the row and has its own handler.
     if (e.detail.target instanceof HTMLInputElement) {
@@ -752,6 +764,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private setTool(tool: Tool): void {
     this.lineLayer.setActive(false);
     this.measureLayer.setActive(false);
+    this.featureLayer.setInteractive(tool === 'pointer');
     if (tool === 'line') {
       this.lineLayer.setActive(true);
     } else if (tool === 'measure') {
@@ -765,6 +778,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Skipped while typing, so that the browser's own undo still works in text fields.
   private keyPressed(e: KeyboardEvent): void {
+    // A map layer already handled it, like Delete removing a vertex from the line being edited
+    if (e.defaultPrevented) {
+      return;
+    }
+
     const target = e.target;
     if (
         target instanceof HTMLInputElement

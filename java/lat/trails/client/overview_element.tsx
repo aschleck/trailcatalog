@@ -6,7 +6,13 @@ import { MapElement } from 'js/map/map_element';
 
 import { State, ViewerController } from './viewer_controller';
 import { requestData } from './data';
-import { FEATURE_CLICKED, HOVER_CHANGED, LINE_DRAWN, TOOL_REQUESTED } from './events';
+import {
+  FEATURE_CLICKED,
+  FEATURE_EDITED,
+  HOVER_CHANGED,
+  LINE_DRAWN,
+  TOOL_REQUESTED,
+} from './events';
 import { FeatureList } from './feature_list';
 import { Menubar, MenubarItem } from './menubar';
 import { Toolbar } from './toolbar';
@@ -64,6 +70,7 @@ export function OverviewElement(
           events: {
             corgi: [
               [FEATURE_CLICKED, 'onFeatureClicked'],
+              [FEATURE_EDITED, 'onFeatureEdited'],
               [HOVER_CHANGED, 'onHoverChange'],
               [LINE_DRAWN, 'onLineDrawn'],
               [MAP_MOVED, 'onMove'],
@@ -80,7 +87,6 @@ export function OverviewElement(
         <MenubarItem label="Layers" onClick="layersMenuClicked" />
       </Menubar>
       <div className="flex grow min-h-0">
-        <FeatureList state={state.features} />
         <div className="grow min-w-0 relative">
           <MapElement
               camera={camera}
@@ -88,6 +94,7 @@ export function OverviewElement(
           />
           <Toolbar tool={state.tool} />
         </div>
+        <FeatureList state={state.features} />
       </div>
     </div>
   </>;

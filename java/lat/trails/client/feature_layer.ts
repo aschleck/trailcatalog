@@ -1,6 +1,6 @@
-import { S2LatLng } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { Camera, projectE7Array, projectS2LatLng } from 'js/map/camera';
+import { Camera, projectE7Array, projectLatLngRect, projectS2LatLng } from 'js/map/camera';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
@@ -13,7 +13,7 @@ import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { FeatureStore } from './feature_store';
-import { FEATURE_CLICKED } from './events';
+import { FEATURE_CLICKED, FEATURE_EDITED } from './events';
 import {
   DEFAULT_LINE_COLOR,
   DEFAULT_POINT_COLOR,
@@ -21,7 +21,9 @@ import {
   EditableFeature,
   EditableLine,
   EditablePoint,
+  snapshot,
 } from './features';
+import { insertVertex, moveVertex, removeVertex } from './line_edits';
 
 const POINT_RADIUS_PX = 5;
 const SELECTED_POINT_RADIUS_PX = 7;
@@ -42,10 +44,26 @@ const LABEL_PATH_TOLERANCE_PX = 4;
 // Where along a line to try starting its label, as fractions of its length, best first
 const LABEL_ANCHORS = [0.5, 0.3, 0.7, 0.15, 0.85];
 
+const HANDLE_RADIUS_PX = 5;
+const MIDPOINT_RADIUS_PX = 4;
+// A shorter segment's midpoint handle would crowd the vertex handles at its ends.
+const MIDPOINT_MIN_SEGMENT_PX = 24;
+// A GPS track has a vertex every few meters, which at most zooms is several per pixel, so a vertex
+// only gets a handle once it is this far from the last one that did.
+const HANDLE_SPACING_PX = 12;
+const HANDLE_FILL = 0xFFFFFFFF as RgbaU32;
+const HANDLE_STROKE = 0x1A1A1AFF as RgbaU32;
+const ACTIVE_HANDLE_FILL = 0x2563EBFF as RgbaU32;
+const MIDPOINT_FILL = 0xFFFFFF99 as RgbaU32;
+// Two clicks on one line this close together count as a double click.
+const DOUBLE_CLICK_MS = 400;
+
 const Z_LINE = Z_USER_DATA;
 const Z_SELECTED_LINE = Z_USER_DATA_HIGHLIGHT;
 const Z_POINT = Z_USER_DATA_HIGHLIGHT + 1;
 const Z_LABEL = Z_USER_DATA_HIGHLIGHT + 2;
+const Z_DRAGGED = Z_USER_DATA_HIGHLIGHT + 3;
+const Z_HANDLE = Z_USER_DATA_HIGHLIGHT + 4;
 
 // How far a line may sit from where it was drawn, which is only the rounding to E7. That moves
 // each axis by up to half a unit, and mercator stretches latitude by sec(lat), so this covers
@@ -68,6 +86,22 @@ interface ProjectedPoint {
   at: Vec2;
 }
 
+// What the pointer is moving. Line drags work on a mercator copy of the line with the vertex
+// moved, or inserted for a midpoint, which becomes the edit when the drag ends.
+type Drag =
+    {kind: 'point'; point: EditablePoint; at: Vec2}
+    |{kind: 'vertex'|'midpoint'; line: ProjectedLine; index: number; points: Float64Array};
+
+// Geometry in one buffer and the drawables that read it, replanned when generation moves past
+// planned.
+interface Plan {
+  buffer: ArrayBuffer;
+  glBuffer: WebGLBuffer;
+  drawables: Drawable[];
+  generation: number;
+  planned: number;
+}
+
 /** Draws the open collection's features. */
 export class FeatureLayer extends Layer {
 
@@ -81,15 +115,28 @@ export class FeatureLayer extends Layer {
   private visiblePoints: ProjectedPoint[];
   // What is in the index, by line id, as the latLngE7 array it was built from
   private readonly published: Map<string, Int32Array>;
-  private readonly glGeometry: WebGLBuffer;
-  private geometry: ArrayBuffer;
-  private geometryDrawables: Drawable[];
+  // Every feature but the one being dragged
+  private readonly geometry: Plan;
+  // The dragged feature and the handles of the line being edited, which change on every pointer
+  // move and would otherwise replan every line each time
+  private readonly overlay: Plan;
   private readonly glLabels: WebGLBuffer;
   private labels: ArrayBuffer;
   private labelDrawables: Drawable[];
-  private generation: number;
-  private planned: number;
   private labelsPlanned: {generation: number; zoom: number};
+  // Only the pointer tool selects, drags, and edits, or else a drawing tool's clicks would also
+  // grab whatever is under them.
+  private interactive: boolean;
+  // The line showing its vertex handles, entered by double clicking it
+  private editing: string|undefined;
+  // The handle a click picked, which Delete removes
+  private activeVertex: number|undefined;
+  // The vertices of the edited line that have handles, as of the last overlay plan
+  private handles: number[];
+  private dragging: Drag|undefined;
+  private lastClick: {id: string; timeMs: number}|undefined;
+  // In mercator, for culling handles to what is on screen
+  private viewport: {low: Vec2; high: Vec2};
   // Glypher builds its atlas asynchronously and plans nothing for a grapheme it lacks, so labels
   // planned before the atlas holds them have to be planned again once it does.
   private labelsMissingGlyphs: boolean;
@@ -110,18 +157,22 @@ export class FeatureLayer extends Layer {
     this.visiblePoints = [];
     this.published = new Map();
     // An imported day hike is about 100 kb of geometry.
-    this.glGeometry = renderer.createDataBuffer(128 * 1024);
-    this.geometry = new ArrayBuffer(128 * 1024);
-    this.geometryDrawables = [];
+    this.geometry = this.createPlan(128 * 1024);
+    // A few hundred handles
+    this.overlay = this.createPlan(16 * 1024);
     this.glLabels = renderer.createDataBuffer(16 * 1024);
     this.labels = new ArrayBuffer(16 * 1024);
     this.labelDrawables = [];
-    this.generation = 0;
-    this.planned = -1;
     this.labelsPlanned = {generation: -1, zoom: -1};
     this.labelsMissingGlyphs = false;
+    this.interactive = true;
+    this.editing = undefined;
+    this.activeVertex = undefined;
+    this.handles = [];
+    this.dragging = undefined;
+    this.lastClick = undefined;
+    this.viewport = {low: [-1, -1], high: [1, 1]};
     this.registerDisposer(() => {
-      renderer.deleteBuffer(this.glGeometry);
       renderer.deleteBuffer(this.glLabels);
       this.locations.unload([...this.published.keys()].map(id => this.key(id)));
     });
@@ -143,7 +194,17 @@ export class FeatureLayer extends Layer {
     }
 
     this.selected = id;
-    this.generation += 1;
+    if (id !== this.editing) {
+      this.stopEditing();
+    }
+    this.geometry.generation += 1;
+  }
+
+  setInteractive(interactive: boolean): void {
+    this.interactive = interactive;
+    if (!interactive) {
+      this.stopEditing();
+    }
   }
 
   isVisible(feature: EditableFeature): boolean {
@@ -159,23 +220,154 @@ export class FeatureLayer extends Layer {
     return true;
   }
 
-  // Points win over lines because they sit on top of them.
   override click(
       point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
-    const hit = this.hitTest(projectS2LatLng(point));
+    if (!this.interactive) {
+      return false;
+    }
+
+    const at = projectS2LatLng(point);
+    const editing = this.editingLine();
+    const vertex = editing && this.vertexAt(editing.points, at);
+    if (vertex !== undefined) {
+      this.activeVertex = vertex;
+      this.overlay.generation += 1;
+      return true;
+    }
+
+    const hit = this.hitTest(at);
+    const now = performance.now();
+    const doubled =
+        hit?.kind === 'line'
+            && this.lastClick?.id === hit.id
+            && now - this.lastClick.timeMs < DOUBLE_CLICK_MS;
+    if (doubled) {
+      this.startEditing(hit.id);
+    } else if (hit?.id !== this.editing) {
+      this.stopEditing();
+    }
+    this.lastClick = hit ? {id: hit.id, timeMs: now} : undefined;
     source.trigger(FEATURE_CLICKED, {id: hit?.id});
     return !!hit;
   }
 
-  hitTest(at: Vec2): EditableFeature|undefined {
-    const pixel = this.camera.inverseWorldRadius;
-    for (const point of this.visiblePoints) {
-      const radius = (POINT_RADIUS_PX + CLICK_SLOP_PX) * pixel;
-      if (Math.hypot(point.at[0] - at[0], point.at[1] - at[1]) <= radius) {
-        return point.feature;
+  override dragStart(point: S2LatLng, px: [number, number], source: EventSource): boolean {
+    if (!this.interactive) {
+      return false;
+    }
+
+    const at = projectS2LatLng(point);
+    const editing = this.editingLine();
+    if (editing) {
+      const vertex = this.vertexAt(editing.points, at);
+      if (vertex !== undefined) {
+        this.activeVertex = vertex;
+        this.startDrag(
+            {kind: 'vertex', line: editing, index: vertex, points: editing.points.slice()});
+        return true;
+      }
+
+      const midpoint = this.midpointAt(editing.points, at);
+      if (midpoint !== undefined) {
+        const points = new Float64Array(editing.points.length + 2);
+        points.set(editing.points.subarray(0, 2 * midpoint), 0);
+        points[2 * midpoint] = at[0];
+        points[2 * midpoint + 1] = at[1];
+        points.set(editing.points.subarray(2 * midpoint), 2 * midpoint + 2);
+        this.activeVertex = midpoint;
+        this.startDrag({kind: 'midpoint', line: editing, index: midpoint, points});
+        return true;
       }
     }
 
+    const hit = this.pointAt(at);
+    if (hit) {
+      this.startDrag({kind: 'point', point: hit.feature, at: hit.at});
+      return true;
+    }
+    return false;
+  }
+
+  override drag(point: S2LatLng, source: EventSource): void {
+    const dragging = this.dragging;
+    if (!dragging) {
+      return;
+    }
+
+    const at = projectS2LatLng(point);
+    if (dragging.kind === 'point') {
+      dragging.at = at;
+    } else {
+      dragging.points[2 * dragging.index] = at[0];
+      dragging.points[2 * dragging.index + 1] = at[1];
+    }
+    this.overlay.generation += 1;
+  }
+
+  override dragEnd(point: S2LatLng, moved: boolean, source: EventSource): void {
+    const dragging = this.dragging;
+    this.dragging = undefined;
+    this.geometry.generation += 1;
+    this.overlay.generation += 1;
+    if (!dragging || !moved) {
+      // A midpoint pressed and let go without moving was never a vertex.
+      if (dragging?.kind === 'midpoint') {
+        this.activeVertex = undefined;
+      }
+      return;
+    }
+
+    const latE7 = Math.round(point.latDegrees() * 1e7);
+    const lngE7 = Math.round(point.lngDegrees() * 1e7);
+    if (dragging.kind === 'point') {
+      const before = snapshot(dragging.point);
+      // The old elevation belongs to where the point was
+      const after = {...snapshot(dragging.point), latE7, lngE7, elevationCentimeters: undefined};
+      source.trigger(FEATURE_EDITED, {before, after});
+      source.trigger(FEATURE_CLICKED, {id: dragging.point.id});
+    } else {
+      const line = dragging.line.feature;
+      const after =
+          dragging.kind === 'vertex'
+              ? moveVertex(line, dragging.index, latE7, lngE7)
+              : insertVertex(line, dragging.index, latE7, lngE7);
+      source.trigger(FEATURE_EDITED, {before: snapshot(line), after});
+    }
+  }
+
+  override keyPressed(key: string, source: EventSource): boolean {
+    const editing = this.editingLine();
+    if (!editing) {
+      return false;
+    }
+
+    if (key === 'Escape') {
+      this.stopEditing();
+      return true;
+    } else if ((key === 'Delete' || key === 'Backspace') && this.activeVertex !== undefined) {
+      const after = removeVertex(editing.feature, this.activeVertex);
+      if (after) {
+        this.activeVertex = undefined;
+        source.trigger(FEATURE_EDITED, {before: snapshot(editing.feature), after});
+      }
+      return true;
+    }
+    return false;
+  }
+
+  override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
+    this.viewport = projectLatLngRect(bounds);
+    this.overlay.generation += 1;
+  }
+
+  // Points win over lines because they sit on top of them.
+  hitTest(at: Vec2): EditableFeature|undefined {
+    const hit = this.pointAt(at);
+    if (hit) {
+      return hit.feature;
+    }
+
+    const pixel = this.camera.inverseWorldRadius;
     let best: EditableFeature|undefined = undefined;
     let bestDistance = Infinity;
     for (const line of this.visibleLines) {
@@ -190,25 +382,117 @@ export class FeatureLayer extends Layer {
   }
 
   override hasNewData(): boolean {
-    return this.generation !== this.planned || this.labelsMissingGlyphs;
+    return this.geometry.generation !== this.geometry.planned
+        || this.overlay.generation !== this.overlay.planned
+        || this.labelsMissingGlyphs;
   }
 
   override render(planner: Planner, zoom: number): void {
-    if (this.generation !== this.planned) {
+    if (this.geometry.generation !== this.geometry.planned) {
       this.planGeometry();
-      this.planned = this.generation;
+      this.geometry.planned = this.geometry.generation;
+    }
+    if (this.overlay.generation !== this.overlay.planned) {
+      this.planOverlay();
+      this.overlay.planned = this.overlay.generation;
     }
     // Curved labels are laid out in pixels along mercator paths, so they follow the zoom.
     if (
         this.labelsMissingGlyphs
-            || this.labelsPlanned.generation !== this.generation
+            || this.labelsPlanned.generation !== this.geometry.generation
             || this.labelsPlanned.zoom !== zoom) {
       this.planLabels(zoom);
-      this.labelsPlanned = {generation: this.generation, zoom};
+      this.labelsPlanned = {generation: this.geometry.generation, zoom};
     }
 
-    planner.add(this.geometryDrawables);
+    planner.add(this.geometry.drawables);
+    planner.add(this.overlay.drawables);
     planner.add(this.labelDrawables);
+  }
+
+  private editingLine(): ProjectedLine|undefined {
+    const line = this.editing !== undefined ? this.projected.get(this.editing) : undefined;
+    return line && this.isVisible(line.feature) ? line : undefined;
+  }
+
+  private startEditing(id: string): void {
+    this.editing = id;
+    this.activeVertex = undefined;
+    this.overlay.generation += 1;
+  }
+
+  private stopEditing(): void {
+    if (this.editing === undefined) {
+      return;
+    }
+
+    this.editing = undefined;
+    this.activeVertex = undefined;
+    this.overlay.generation += 1;
+  }
+
+  private startDrag(dragging: Drag): void {
+    this.dragging = dragging;
+    this.geometry.generation += 1;
+    this.overlay.generation += 1;
+  }
+
+  private pointAt(at: Vec2): ProjectedPoint|undefined {
+    const radius = (POINT_RADIUS_PX + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    for (const point of this.visiblePoints) {
+      if (Math.hypot(point.at[0] - at[0], point.at[1] - at[1]) <= radius) {
+        return point;
+      }
+    }
+    return undefined;
+  }
+
+  // The nearest vertex handle under at, if any.
+  private vertexAt(points: Float64Array, at: Vec2): number|undefined {
+    const radius = (HANDLE_RADIUS_PX + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    let best = undefined;
+    let bestDistance = radius;
+    for (const i of this.handles) {
+      const distance = Math.hypot(points[2 * i] - at[0], points[2 * i + 1] - at[1]);
+      if (distance <= bestDistance) {
+        best = i;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  // The index a vertex inserted at the midpoint handle under at would take, if any.
+  private midpointAt(points: Float64Array, at: Vec2): number|undefined {
+    const pixel = this.camera.inverseWorldRadius;
+    const radius = (MIDPOINT_RADIUS_PX + CLICK_SLOP_PX) * pixel;
+    for (let i = 1; i < points.length / 2; ++i) {
+      const ax = points[2 * i - 2];
+      const ay = points[2 * i - 1];
+      const bx = points[2 * i];
+      const by = points[2 * i + 1];
+      if (Math.hypot(bx - ax, by - ay) < MIDPOINT_MIN_SEGMENT_PX * pixel) {
+        continue;
+      }
+      if (Math.hypot((ax + bx) / 2 - at[0], (ay + by) / 2 - at[1]) <= radius) {
+        return i;
+      }
+    }
+    return undefined;
+  }
+
+  private createPlan(byteLength: number): Plan {
+    const glBuffer = this.renderer.createDataBuffer(byteLength);
+    this.registerDisposer(() => {
+      this.renderer.deleteBuffer(glBuffer);
+    });
+    return {
+      buffer: new ArrayBuffer(byteLength),
+      glBuffer,
+      drawables: [],
+      generation: 0,
+      planned: -1,
+    };
   }
 
   private refresh(): void {
@@ -245,7 +529,8 @@ export class FeatureLayer extends Layer {
     }
 
     this.publish();
-    this.generation += 1;
+    this.geometry.generation += 1;
+    this.overlay.generation += 1;
   }
 
   // Puts visible lines into the index so that drawing snaps onto them and routes along them. A
@@ -292,64 +577,28 @@ export class FeatureLayer extends Layer {
   }
 
   private planGeometry(): void {
-    const selectedLine = this.visibleLines.find(l => l.feature.id === this.selected);
+    const dragged =
+        this.dragging?.kind === 'point' ? this.dragging.point.id : this.dragging?.line.feature.id;
+    const lines = this.visibleLines.filter(l => l.feature.id !== dragged);
+    const points = this.visiblePoints.filter(p => p.feature.id !== dragged);
+    const selectedLine = lines.find(l => l.feature.id === this.selected);
     let needed = 0;
-    for (const line of this.visibleLines) {
+    for (const line of lines) {
       needed += LineProgram.bytesNeeded(line.points.length / 2);
     }
     if (selectedLine) {
       needed += LineProgram.bytesNeeded(selectedLine.points.length / 2);
     }
-    // Each point is a zero length segment, which the cap program draws as a circle.
-    needed += this.visiblePoints.length * LineProgram.bytesNeeded(2);
-    this.geometry = growBuffer(this.geometry, needed);
+    needed += points.length * LineProgram.bytesNeeded(2);
 
-    const drawables: Drawable[] = [];
-    let offset = 0;
-    const push = (
-        fill: RgbaU32,
-        stroke: RgbaU32,
-        radius: number,
-        points: ArrayLike<number>,
-        z: number,
-        joins: 'line'|'caps'|'both') => {
-      const result =
-          LineProgram.push(
-              fill, stroke, radius, /* stipple= */ false, points, this.geometry, offset);
-      offset += result.geometryByteLength;
-      if (result.instanceCount === 0) {
-        return;
-      }
-
-      const drawable = {
-        elements: undefined,
-        geometry: this.glGeometry,
-        geometryByteLength: result.geometryByteLength,
-        geometryOffset: result.geometryOffset,
-        instanced: {
-          count: result.instanceCount,
-        },
-        program: this.renderer.lineProgram,
-        texture: undefined,
-        vertexCount: result.vertexCount,
-        z,
-      };
-      if (joins !== 'caps') {
-        drawables.push(drawable);
-      }
-      // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
-      if (joins !== 'line') {
-        drawables.push({...drawable, program: this.renderer.lineCapProgram});
-      }
-    };
-
-    for (const line of this.visibleLines) {
+    const batch = new ShapeBatch(this.geometry, needed, this.renderer);
+    for (const line of lines) {
       const color = parseColor(line.feature.data.stroke ?? DEFAULT_LINE_COLOR);
-      push(color, darken(color), lineRadius(line.feature), line.points, Z_LINE, 'both');
+      batch.push(color, darken(color), lineRadius(line.feature), line.points, Z_LINE, 'both');
     }
     if (selectedLine) {
       const color = parseColor(selectedLine.feature.data.stroke ?? DEFAULT_LINE_COLOR);
-      push(
+      batch.push(
           color,
           SELECTED_CASING,
           lineRadius(selectedLine.feature) + 2,
@@ -357,10 +606,11 @@ export class FeatureLayer extends Layer {
           Z_SELECTED_LINE,
           'both');
     }
-    for (const point of this.visiblePoints) {
+    for (const point of points) {
       const color = parseColor(point.feature.data.fill ?? DEFAULT_POINT_COLOR);
       const selected = point.feature.id === this.selected;
-      push(
+      // A zero length segment, which the cap program draws as a circle
+      batch.push(
           color,
           selected ? SELECTED_CASING : POINT_CASING,
           selected ? SELECTED_POINT_RADIUS_PX : POINT_RADIUS_PX,
@@ -368,11 +618,103 @@ export class FeatureLayer extends Layer {
           Z_POINT,
           'caps');
     }
+    batch.finish();
+  }
 
-    if (offset > 0) {
-      this.renderer.uploadData(this.geometry, offset, this.glGeometry);
+  private planOverlay(): void {
+    const dragging = this.dragging;
+    const editing = this.editingLine();
+    const linePoints =
+        dragging && dragging.kind !== 'point' ? dragging.points : editing?.points;
+
+    // Handles are drawn by caps alone along a polyline through them, so that each set is one
+    // drawable however many handles it has.
+    const vertices: number[] = [];
+    const midpoints: number[] = [];
+    let active: number[] = [];
+    // A drag keeps the handles it started with, so the one under the pointer stays grabbable.
+    if (!dragging) {
+      this.handles = [];
     }
-    this.geometryDrawables = drawables;
+    if (editing && linePoints) {
+      const pixel = this.camera.inverseWorldRadius;
+      const {low, high} = this.viewport;
+      const inView = (x: number, y: number) =>
+          x >= low[0] && x <= high[0] && y >= low[1] && y <= high[1];
+      const kept = new Set(this.handles);
+      let lastX = Infinity;
+      let lastY = Infinity;
+      const last = linePoints.length / 2 - 1;
+      for (let i = 0; i <= last; ++i) {
+        const x = linePoints[2 * i];
+        const y = linePoints[2 * i + 1];
+        if (i === this.activeVertex) {
+          active = [x, y, x, y];
+        }
+        // Ends always get handles, because they are what extending a line grabs.
+        const spaced =
+            i === 0 || i === last || Math.hypot(x - lastX, y - lastY) >= HANDLE_SPACING_PX * pixel;
+        const handled = dragging ? kept.has(i) : spaced && inView(x, y);
+        if (!dragging && handled) {
+          this.handles.push(i);
+        }
+        if (spaced) {
+          lastX = x;
+          lastY = y;
+        }
+        if (i !== this.activeVertex && handled) {
+          vertices.push(x, y);
+        }
+
+        if (i > 0 && !dragging) {
+          const px = linePoints[2 * i - 2];
+          const py = linePoints[2 * i - 1];
+          const mx = (px + x) / 2;
+          const my = (py + y) / 2;
+          if (Math.hypot(x - px, y - py) >= MIDPOINT_MIN_SEGMENT_PX * pixel && inView(mx, my)) {
+            midpoints.push(mx, my);
+          }
+        }
+      }
+    }
+    // The cap program needs a segment, so a lone handle is repeated.
+    for (const handles of [vertices, midpoints]) {
+      if (handles.length === 2) {
+        handles.push(handles[0], handles[1]);
+      }
+    }
+
+    let needed =
+        LineProgram.bytesNeeded(vertices.length / 2)
+            + LineProgram.bytesNeeded(midpoints.length / 2)
+            + LineProgram.bytesNeeded(active.length / 2);
+    if (dragging?.kind === 'point') {
+      needed += LineProgram.bytesNeeded(2);
+    } else if (dragging) {
+      needed += LineProgram.bytesNeeded(dragging.points.length / 2);
+    }
+
+    const batch = new ShapeBatch(this.overlay, needed, this.renderer);
+    if (dragging?.kind === 'point') {
+      const color = parseColor(dragging.point.data.fill ?? DEFAULT_POINT_COLOR);
+      const at = dragging.at;
+      batch.push(
+          color,
+          SELECTED_CASING,
+          SELECTED_POINT_RADIUS_PX,
+          [at[0], at[1], at[0], at[1]],
+          Z_DRAGGED,
+          'caps');
+    } else if (dragging) {
+      const line = dragging.line.feature;
+      const color = parseColor(line.data.stroke ?? DEFAULT_LINE_COLOR);
+      batch.push(
+          color, SELECTED_CASING, lineRadius(line) + 2, dragging.points, Z_DRAGGED, 'both');
+    }
+    batch.push(MIDPOINT_FILL, HANDLE_STROKE, MIDPOINT_RADIUS_PX, midpoints, Z_HANDLE, 'caps');
+    batch.push(HANDLE_FILL, HANDLE_STROKE, HANDLE_RADIUS_PX, vertices, Z_HANDLE, 'caps');
+    batch.push(ACTIVE_HANDLE_FILL, HANDLE_STROKE, HANDLE_RADIUS_PX, active, Z_HANDLE, 'caps');
+    batch.finish();
   }
 
   private planLabels(zoom: number): void {
@@ -454,6 +796,64 @@ export class FeatureLayer extends Layer {
       this.renderer.uploadData(this.labels, offset, this.glLabels);
     }
     this.labelDrawables = drawables;
+  }
+}
+
+// Writes LineProgram shapes into a plan's buffer and collects the drawables that read them.
+class ShapeBatch {
+
+  private readonly drawables: Drawable[];
+  private offset: number;
+
+  constructor(private readonly plan: Plan, needed: number, private readonly renderer: Renderer) {
+    plan.buffer = growBuffer(plan.buffer, needed);
+    this.drawables = [];
+    this.offset = 0;
+  }
+
+  // Caps alone draw a circle at every vertex, which is how points and handles are drawn.
+  push(
+      fill: RgbaU32,
+      stroke: RgbaU32,
+      radius: number,
+      points: ArrayLike<number>,
+      z: number,
+      joins: 'line'|'caps'|'both'): void {
+    const result =
+        LineProgram.push(
+            fill, stroke, radius, /* stipple= */ false, points, this.plan.buffer, this.offset);
+    this.offset += result.geometryByteLength;
+    if (result.instanceCount === 0) {
+      return;
+    }
+
+    const drawable = {
+      elements: undefined,
+      geometry: this.plan.glBuffer,
+      geometryByteLength: result.geometryByteLength,
+      geometryOffset: result.geometryOffset,
+      instanced: {
+        count: result.instanceCount,
+      },
+      program: this.renderer.lineProgram,
+      texture: undefined,
+      vertexCount: result.vertexCount,
+      z,
+    };
+    if (joins !== 'caps') {
+      this.drawables.push(drawable);
+    }
+    // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
+    if (joins !== 'line') {
+      this.drawables.push({...drawable, program: this.renderer.lineCapProgram});
+    }
+  }
+
+  finish(): void {
+    if (this.offset > 0) {
+      this.renderer.uploadData(this.plan.buffer, this.offset, this.plan.glBuffer);
+    }
+    this.plan.drawables = this.drawables;
   }
 }
 

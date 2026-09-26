@@ -77,6 +77,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   readonly renderer: Renderer;
 
   private layers: Layer[];
+  // The layer that claimed the drag under way
+  private dragging: Layer|undefined;
 
   private isIdle: boolean;
   private flingState: Fling|undefined;
@@ -117,6 +119,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.registerDisposable(this.renderer);
 
     this.layers = [];
+    this.dragging = undefined;
 
     this.isIdle = true;
     this.flingState = undefined;
@@ -260,6 +263,38 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         break;
       }
     }
+  }
+
+  dragStart(pageX: number, pageY: number): boolean {
+    const offsetX = pageX - this.screenArea.left;
+    const offsetY = pageY - this.screenArea.top;
+    const ll = this.camera.unprojectScreen(
+        offsetX, offsetY, this.screenArea.width, this.screenArea.height);
+    for (const layer of this.layers) {
+      if (layer.dragStart(ll, [offsetX, offsetY], this)) {
+        this.dragging = layer;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  drag(pageX: number, pageY: number): void {
+    this.dragging?.drag(this.unprojectPage(pageX, pageY), this);
+  }
+
+  dragEnd(pageX: number, pageY: number, moved: boolean): void {
+    const layer = this.dragging;
+    this.dragging = undefined;
+    layer?.dragEnd(this.unprojectPage(pageX, pageY), moved, this);
+  }
+
+  private unprojectPage(pageX: number, pageY: number): S2LatLng {
+    return this.camera.unprojectScreen(
+        pageX - this.screenArea.left,
+        pageY - this.screenArea.top,
+        this.screenArea.width,
+        this.screenArea.height);
   }
 
   hover(pageX: number, pageY: number): void {

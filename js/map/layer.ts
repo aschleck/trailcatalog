@@ -20,6 +20,16 @@ export abstract class Layer extends Disposable {
     return false;
   }
 
+  /** Claims a press for dragging, or returns false to let it pan the map. */
+  dragStart(point: S2LatLng, px: [number, number], source: EventSource): boolean {
+    return false;
+  }
+
+  drag(point: S2LatLng, source: EventSource): void {}
+
+  // Moved is false when the press never left the click radius, and the click follows.
+  dragEnd(point: S2LatLng, moved: boolean, source: EventSource): void {}
+
   hasNewData(): boolean {
     return false;
   }
