@@ -27,6 +27,7 @@ genrule(
         "//js/map/workers:raster_loader_worker",
         "//js/map/workers:s2_data_fetcher_worker",
         "//js/map/workers:xyz_data_fetcher_worker",
+        "//third_party/emojibase:emoji.json",
     ],
     outs = [
         "client.css",
@@ -38,6 +39,7 @@ genrule(
         "earth_search_loader_worker.js.map",
         "elevation_sampler_worker.js",
         "elevation_sampler_worker.js.map",
+        "emoji.json",
         "location_querier_worker.js",
         "location_querier_worker.js.map",
         "mbtile_loader_worker.js",

@@ -12,6 +12,7 @@ import {
   FEATURE_HOVERED,
   HOVER_CHANGED,
   LINE_DRAWN,
+  POINT_PLACED,
   TOOL_REQUESTED,
 } from './events';
 import { FeatureProperties, FeatureTree, LayerList, NewFolderButton } from './feature_list';
@@ -87,6 +88,7 @@ export function OverviewElement(
               [HOVER_CHANGED, 'onHoverChange'],
               [LINE_DRAWN, 'onLineDrawn'],
               [MAP_MOVED, 'onMove'],
+              [POINT_PLACED, 'onPointPlaced'],
               [TOOL_REQUESTED, 'onToolRequested'],
             ],
             render: 'wakeup',
@@ -120,7 +122,6 @@ export function OverviewElement(
                     : ''
               }
               label="Features"
-              weight={3}
           >
             <FeatureTree state={state.features} />
           </SidebarSection>

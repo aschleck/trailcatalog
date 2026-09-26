@@ -1,4 +1,4 @@
-import { EditableFeature, EditableLine, EditablePoint, FeatureData } from './features';
+import { EditableFeature, EditableLine, EditablePoint, FeatureData, importableIcon } from './features';
 
 type Json = null|boolean|number|string|Json[]|{[key: string]: Json};
 type JsonObject = {[key: string]: Json};
@@ -106,7 +106,7 @@ function parsePoint(
   if (fill !== undefined) {
     data.fill = fill;
   }
-  const icon = stringOf(properties['marker-symbol']);
+  const icon = importableIcon(stringOf(properties['marker-symbol']));
   if (icon !== undefined) {
     data.icon = icon;
   }

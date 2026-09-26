@@ -5,7 +5,7 @@ import { EditableFeature } from './features';
 import { Data } from './workers/collection_loader';
 
 /** What pointer tools are possible. */
-export type Tool = 'pointer'|'line'|'measure';
+export type Tool = 'pointer'|'point'|'line'|'measure';
 
 export const FEATURE_CLICKED = declareEvent<{
   // Undefined when the click missed every feature
@@ -32,6 +32,11 @@ export const HOVER_CHANGED = declareEvent<{
 export const LINE_DRAWN = declareEvent<{
   latLngE7: Int32Array;
 }>('line_drawn');
+
+export const POINT_PLACED = declareEvent<{
+  latE7: number;
+  lngE7: number;
+}>('point_placed');
 
 export const TOOL_REQUESTED = declareEvent<{
   tool: Tool;

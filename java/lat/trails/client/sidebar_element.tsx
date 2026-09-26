@@ -35,17 +35,16 @@ interface SectionState {
 
 /**
  * A titled part of the sidebar that opens and closes itself. Open sections split the sidebar's
- * free space by weight, and the footer stays in view beneath the section's scrolling content.
+ * free space evenly, and the footer stays in view beneath the section's scrolling content.
  */
 export function SidebarSection(
-    {children, controls, footer, label, open, weight}: {
+    {children, controls, footer, label, open}: {
       children?: Children;
       // Beside the title, and outside the toggle so they reach the controller their events name
       controls?: Children;
       footer?: Children;
       label: string;
       open?: boolean;
-      weight?: number;
     },
     inState: SectionState|undefined,
     updateState: (newState: SectionState) => void) {
@@ -53,7 +52,7 @@ export function SidebarSection(
   return (
     <div
         className={'border-b border-gray-300 flex flex-col ' + (state.open ? 'min-h-0' : 'shrink-0')}
-        style={state.open ? `flex: ${weight ?? 1} 1 0` : ''}
+        style={state.open ? 'flex: 1 1 0' : ''}
     >
       <div className="flex items-center pr-2">
         <div

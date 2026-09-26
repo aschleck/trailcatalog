@@ -11,6 +11,7 @@ import {
   EditableFeature,
   EditableFolder,
 } from './features';
+import { PointMarker } from './icon_picker';
 import { formatDistance, formatHeight, measureLine } from './measurements';
 
 export interface TreeItem {
@@ -230,21 +231,8 @@ function FeatureIcon({feature}: {feature: EditableFeature}) {
       </svg>
     );
   } else {
-    return (
-      // The dot with a white ring the map draws, see FeatureLayer#planGeometry, with a faint edge
-      // so the ring shows against the white list.
-      <svg className="h-4 shrink-0 w-4" viewBox="0 0 16 16">
-        <circle cx="8" cy="8" fill="none" r="6.5" stroke="#d1d5db" strokeWidth="1" />
-        <circle
-            cx="8"
-            cy="8"
-            fill={feature.data.fill ?? DEFAULT_POINT_COLOR}
-            r="5"
-            stroke="white"
-            strokeWidth="2"
-        />
-      </svg>
-    );
+    const color = feature.data.fill ?? DEFAULT_POINT_COLOR;
+    return <PointMarker color={color} icon={feature.data.icon} />;
   }
 }
 
@@ -278,6 +266,31 @@ export function FeatureProperties({descendants, feature, folders}: {
           : ''
       }
       <div className="flex gap-2 items-center">
+        {feature.kind === 'point'
+            ? <button
+                  ariaLabel="Icon"
+                  className="
+                      border
+                      border-gray-300
+                      flex
+                      h-7
+                      hover:bg-gray-100
+                      items-center
+                      justify-center
+                      rounded
+                      shrink-0
+                      w-8
+                  "
+                  title="Icon"
+                  unboundEvents={{click: 'iconButtonClicked'}}
+              >
+                <PointMarker
+                    color={feature.data.fill ?? DEFAULT_POINT_COLOR}
+                    icon={feature.data.icon}
+                />
+              </button>
+            : ''
+        }
         {feature.kind !== 'folder'
             ? <input
                   ariaLabel="Color"
