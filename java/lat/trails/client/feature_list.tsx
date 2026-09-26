@@ -248,101 +248,116 @@ export function FeatureProperties({descendants, feature, folders}: {
   folders: Array<{folder: EditableFolder; depth: number}>;
 }) {
   return (
-    <div className="border-gray-300 border-t flex flex-col gap-2 p-2 shrink-0">
-      <Input
-          className="border border-gray-300 px-1 rounded"
-          forceValue={true}
-          placeholder={untitled(feature)}
-          value={feature.data.name ?? ''}
-          unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
-      />
-      {feature.kind !== 'folder'
-          ? <textarea
-                className="border border-gray-300 px-1 rounded"
-                placeholder="Description"
-                value={feature.data.description ?? ''}
-                unboundEvents={{input: 'descriptionChanged'}}
-            />
-          : ''
-      }
-      <div className="flex gap-2 items-center">
-        {feature.kind === 'point'
-            ? <button
-                  ariaLabel="Icon"
-                  className="
-                      border
-                      border-gray-300
-                      flex
-                      h-7
-                      hover:bg-gray-100
-                      items-center
-                      justify-center
-                      rounded
-                      shrink-0
-                      w-8
-                  "
-                  title="Icon"
-                  unboundEvents={{click: 'iconButtonClicked'}}
-              >
-                <PointMarker
-                    color={feature.data.fill ?? DEFAULT_POINT_COLOR}
-                    icon={feature.data.icon}
-                />
-              </button>
-            : ''
-        }
-        {feature.kind !== 'folder'
-            ? <input
-                  ariaLabel="Color"
-                  className="h-7 shrink-0 w-10"
-                  type="color"
-                  value={
-                    feature.kind === 'line'
-                        ? feature.data.stroke ?? DEFAULT_LINE_COLOR
-                        : feature.data.fill ?? DEFAULT_POINT_COLOR
-                  }
-                  unboundEvents={{input: 'colorChanged'}}
-              />
-            : ''
-        }
-        {feature.kind === 'line'
-            ? <Select
-                  ariaLabel="Width"
-                  className="border border-gray-300 rounded shrink-0 w-20"
-                  options={WIDTHS_PX.map(width => ({
-                    label: `${width} px`,
-                    value: String(width),
-                    selected: width === (feature.data.width_px ?? DEFAULT_WIDTH_PX),
-                  }))}
-                  unboundEvents={{corgi: [[CHANGED, 'widthChanged']]}}
-              />
-            : ''
-        }
-        <Select
-            ariaLabel="Folder"
-            className="border border-gray-300 grow min-w-0 rounded"
-            options={[
-              {label: 'No folder', value: '', selected: !feature.data.folder_id},
-              ...folders
-                  .filter(({folder}) => folder.id !== feature.id)
-                  .map(({folder, depth}) => ({
-                    label: `${'  '.repeat(depth)}${folder.data.name || 'Untitled folder'}`,
-                    value: folder.id,
-                    selected: folder.id === feature.data.folder_id,
-                  })),
-            ]}
-            unboundEvents={{corgi: [[CHANGED, 'folderChanged']]}}
-        />
+    <div className="border-gray-300 border-t flex flex-col shrink-0">
+      <div className="bg-gray-100 border-b border-gray-300 flex items-center px-2 py-1">
+        <span className="font-bold grow">{`Editing ${feature.kind}`}</span>
+        <Button
+            ariaLabel="Deselect"
+            className="hover:bg-black/10 p-1 rounded"
+            title="Deselect"
+            unboundEvents={{corgi: [[ACTION, 'deselectClicked']]}}
+        >
+          <svg className="h-3 stroke-current w-3" viewBox="0 0 12 12">
+            <path d="M1 1 L11 11 M1 11 L11 1" strokeWidth="1.5" />
+          </svg>
+        </Button>
       </div>
-      <Stats feature={feature} />
-      <Button
-          className="bg-red-700 hover:bg-red-800 px-2 py-1 rounded self-start text-white"
-          unboundEvents={{corgi: [[ACTION, 'deleteClicked']]}}
-      >
-        {feature.kind === 'folder' && descendants > 0
-            ? `Delete folder and ${descendants} ${descendants === 1 ? 'item' : 'items'}`
-            : 'Delete'}
-      </Button>
+      <div className="flex flex-col gap-2 p-2">
+        <Input
+            className="border border-gray-300 px-1 rounded"
+            forceValue={true}
+            placeholder={untitled(feature)}
+            value={feature.data.name ?? ''}
+            unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
+        />
+        {feature.kind !== 'folder'
+            ? <textarea
+                  className="border border-gray-300 px-1 rounded"
+                  placeholder="Description"
+                  value={feature.data.description ?? ''}
+                  unboundEvents={{input: 'descriptionChanged'}}
+              />
+            : ''
+        }
+        <div className="flex gap-2 items-center">
+          {feature.kind === 'point'
+              ? <button
+                    ariaLabel="Icon"
+                    className="
+                        border
+                        border-gray-300
+                        flex
+                        h-7
+                        hover:bg-gray-100
+                        items-center
+                        justify-center
+                        rounded
+                        shrink-0
+                        w-8
+                    "
+                    title="Icon"
+                    unboundEvents={{click: 'iconButtonClicked'}}
+                >
+                  <PointMarker
+                      color={feature.data.fill ?? DEFAULT_POINT_COLOR}
+                      icon={feature.data.icon}
+                  />
+                </button>
+              : ''
+          }
+          {feature.kind !== 'folder'
+              ? <input
+                    ariaLabel="Color"
+                    className="h-7 shrink-0 w-10"
+                    type="color"
+                    value={
+                      feature.kind === 'line'
+                          ? feature.data.stroke ?? DEFAULT_LINE_COLOR
+                          : feature.data.fill ?? DEFAULT_POINT_COLOR
+                    }
+                    unboundEvents={{input: 'colorChanged'}}
+                />
+              : ''
+          }
+          {feature.kind === 'line'
+              ? <Select
+                    ariaLabel="Width"
+                    className="border border-gray-300 rounded shrink-0 w-20"
+                    options={WIDTHS_PX.map(width => ({
+                      label: `${width} px`,
+                      value: String(width),
+                      selected: width === (feature.data.width_px ?? DEFAULT_WIDTH_PX),
+                    }))}
+                    unboundEvents={{corgi: [[CHANGED, 'widthChanged']]}}
+                />
+              : ''
+          }
+          <Select
+              ariaLabel="Folder"
+              className="border border-gray-300 grow min-w-0 rounded"
+              options={[
+                {label: 'No folder', value: '', selected: !feature.data.folder_id},
+                ...folders
+                    .filter(({folder}) => folder.id !== feature.id)
+                    .map(({folder, depth}) => ({
+                      label: `${'  '.repeat(depth)}${folder.data.name || 'Untitled folder'}`,
+                      value: folder.id,
+                      selected: folder.id === feature.data.folder_id,
+                    })),
+              ]}
+              unboundEvents={{corgi: [[CHANGED, 'folderChanged']]}}
+          />
+        </div>
+        <Stats feature={feature} />
+        <Button
+            className="bg-red-700 hover:bg-red-800 px-2 py-1 rounded self-start text-white"
+            unboundEvents={{corgi: [[ACTION, 'deleteClicked']]}}
+        >
+          {feature.kind === 'folder' && descendants > 0
+              ? `Delete folder and ${descendants} ${descendants === 1 ? 'item' : 'items'}`
+              : 'Delete'}
+        </Button>
+      </div>
     </div>
   );
 }

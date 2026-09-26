@@ -781,6 +781,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.editSelectedData(data => ({...data, [key]: color}), 'color');
   }
 
+  deselectClicked(): void {
+    this.select(undefined);
+  }
+
   iconButtonClicked(): void {
     const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
     if (selected?.kind !== 'point') {
