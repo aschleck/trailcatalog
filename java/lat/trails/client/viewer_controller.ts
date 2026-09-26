@@ -5,7 +5,7 @@ import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/control
 import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
 import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
 import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
-import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
+import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
 import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
@@ -31,17 +31,20 @@ import {
 import { CollectionLayer } from './collection_layer';
 import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
 import { invalidateCurrentUser, requestData } from './data';
-import { ImportFailedDialog, SaveFailedDialog } from './dialogs';
+import { ConfirmDeleteDialog, ImportFailedDialog, SaveFailedDialog } from './dialogs';
 import { DrawingLayer } from './drawing_layer';
-import { HOVER_CHANGED, LINE_DRAWN, Tool, TOOL_REQUESTED } from './events';
+import { FEATURE_CLICKED, HOVER_CHANGED, LINE_DRAWN, Tool, TOOL_REQUESTED } from './events';
 import { FeatureLayer } from './feature_layer';
+import { buildTree, FeatureListState, foldersOf } from './feature_list';
 import { Change, FeatureStore } from './feature_store';
 import {
   EditableFeature,
   EditableLine,
+  FeatureData,
   folderFromProto,
   lineFromProto,
   pointFromProto,
+  snapshot,
   toWrite,
 } from './features';
 import { parseImport } from './importer';
@@ -61,6 +64,7 @@ export interface Args {
 
 export interface State {
   collection: Collection|undefined;
+  features: FeatureListState;
   layers: LayerState[];
   self: Future<GetCurrentUserResponse>;
   tool: Tool;
@@ -91,6 +95,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly lineLayer: DrawingLayer;
   private readonly measureLayer: DrawingLayer;
   private readonly store: FeatureStore;
+  private selected: string|undefined;
+  private readonly hidden: Set<string>;
+  private readonly expanded: Set<string>;
   // Logins run in a popup on Google's origin, so a caller waiting on one waits on this.
   private login: {
     popup: Window;
@@ -116,6 +123,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.warnUnsaved();
     });
     this.store = new FeatureStore(this.saves);
+    this.selected = undefined;
+    this.hidden = new Set();
+    this.expanded = new Set();
+    this.store.listen(() => {
+      this.refreshFeatureList();
+    });
     this.warnedUnsaved = false;
     this.lastChange = Date.now();
 
@@ -177,7 +190,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.registerDisposable(this.measureLayer);
 
     this.registerListener(window, 'keydown', e => {
-      this.undoKeyPressed(e);
+      this.keyPressed(e);
     });
 
     const allLayers = [{
@@ -545,6 +558,109 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setTool(e.detail.tool);
   }
 
+  onFeatureClicked(e: CorgiEvent<typeof FEATURE_CLICKED>): void {
+    const id = e.detail.id;
+    // Opens the folders above it so that the list shows what the map selected.
+    let parent = id !== undefined ? this.store.get(id) : undefined;
+    while (parent) {
+      const up = this.store.parentOf(parent);
+      if (up !== undefined) {
+        this.expanded.add(up);
+      }
+      parent = up !== undefined ? this.store.get(up) : undefined;
+    }
+    this.select(id);
+  }
+
+  featureClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    // The visibility checkbox sits inside the row and has its own handler.
+    if (e.detail.target instanceof HTMLInputElement) {
+      return;
+    }
+
+    const id = checkExists(e.actionElement.data('id')).string();
+    if (this.store.get(id)?.kind === 'folder') {
+      if (!this.expanded.delete(id)) {
+        this.expanded.add(id);
+      }
+    }
+    this.select(id);
+  }
+
+  visibilityToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const id = checkExists(e.actionElement.data('id')).string();
+    if (!this.hidden.delete(id)) {
+      this.hidden.add(id);
+    }
+    this.featureLayer.setHidden(new Set(this.hidden));
+    this.refreshFeatureList();
+  }
+
+  // Puts the folder inside the selected folder, or else beside the selected feature.
+  newFolderClicked(): void {
+    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    const parent =
+        selected?.kind === 'folder' ? selected.id : selected && this.store.parentOf(selected);
+    const folder: EditableFeature = {
+      kind: 'folder',
+      id: crypto.randomUUID(),
+      version: 0n,
+      data: parent !== undefined ? {folder_id: parent} : {},
+    };
+    if (parent !== undefined) {
+      this.expanded.add(parent);
+    }
+    this.store.apply([{id: folder.id, before: undefined, after: folder}]);
+    this.select(folder.id);
+  }
+
+  nameChanged(e: CorgiEvent<typeof CHANGED>): void {
+    const name = e.detail.value;
+    this.editSelectedData(data => ({...data, name: name || undefined}), 'name');
+  }
+
+  descriptionChanged(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const description = (e.actionElement.element() as HTMLTextAreaElement).value;
+    this.editSelectedData(
+        data => ({...data, description: description || undefined}), 'description');
+  }
+
+  colorChanged(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const color = (e.actionElement.element() as HTMLInputElement).value;
+    const key = this.store.get(this.selected ?? '')?.kind === 'line' ? 'stroke' : 'fill';
+    this.editSelectedData(data => ({...data, [key]: color}), 'color');
+  }
+
+  widthChanged(e: CorgiEvent<typeof CHANGED>): void {
+    const width = Number(e.detail.value);
+    this.editSelectedData(data => ({...data, width_px: width}));
+  }
+
+  folderChanged(e: CorgiEvent<typeof CHANGED>): void {
+    const folder = e.detail.value;
+    if (folder) {
+      this.expanded.add(folder);
+    }
+    this.editSelectedData(data => ({...data, folder_id: folder || undefined}));
+  }
+
+  deleteClicked(): void {
+    const feature = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    if (!feature) {
+      return;
+    }
+
+    const doomed =
+        feature.kind === 'folder' ? [...this.store.descendants(feature.id), feature] : [feature];
+    const confirmed =
+        doomed.length > 1
+            ? this.dialog.display(ConfirmDeleteDialog({count: doomed.length - 1}))
+            : Promise.resolve();
+    confirmed.then(() => {
+      this.deleteFeatures(doomed);
+    }, () => {});
+  }
+
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
     const {center, zoom} = e.detail;
     const url = new URL(window.location.href);
@@ -648,14 +764,27 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   // Skipped while typing, so that the browser's own undo still works in text fields.
-  private undoKeyPressed(e: KeyboardEvent): void {
+  private keyPressed(e: KeyboardEvent): void {
     const target = e.target;
     if (
         target instanceof HTMLInputElement
             || target instanceof HTMLTextAreaElement
+            || target instanceof HTMLSelectElement
             || (target instanceof HTMLElement && target.isContentEditable)) {
       return;
     }
+
+    // Folders only go through the button, because a stray key taking a folder of dozens of
+    // features with it is too easy.
+    if ((e.key === 'Delete' || e.key === 'Backspace') && this.state.tool === 'pointer') {
+      const feature = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+      if (feature && feature.kind !== 'folder') {
+        this.deleteFeatures([feature]);
+        e.preventDefault();
+      }
+      return;
+    }
+
     if (!(e.ctrlKey || e.metaKey) || e.altKey) {
       return;
     }
@@ -671,8 +800,65 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     e.preventDefault();
   }
 
+  private select(id: string|undefined): void {
+    this.selected = id;
+    this.featureLayer.setSelected(id);
+    this.refreshFeatureList();
+  }
+
+  private editSelectedData(update: (data: FeatureData) => FeatureData, mergeKey?: string): void {
+    const live = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    if (!live) {
+      return;
+    }
+
+    const before = snapshot(live);
+    const after = {...snapshot(live), data: stripUndefined(update({...live.data}))};
+    // Merged per feature, so that typing in one name and then another stay two undos
+    this.store.apply(
+        [{id: live.id, before, after}],
+        mergeKey !== undefined ? `${mergeKey}:${live.id}` : undefined);
+  }
+
+  // In the order given, which for a folder is its descendants deepest first and then itself, so
+  // each folder is empty by the time its delete lands.
+  private deleteFeatures(features: EditableFeature[]): void {
+    this.store.apply(features.map(f => ({id: f.id, before: snapshot(f), after: undefined})));
+    if (features.some(f => f.id === this.selected)) {
+      this.select(undefined);
+    }
+  }
+
+  // Hands the list copies, because the store edits features in place and corgi skips rendering a
+  // component whose props are the same objects as last time.
+  private refreshFeatureList(): void {
+    const tree =
+        buildTree([...this.store.all()].map(snapshot), f => this.store.parentOf(f));
+    const live = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    const selected = live && snapshot(live);
+    // A folder cannot move into itself or anything under it
+    const excluded =
+        new Set(
+            selected?.kind === 'folder'
+                ? [selected.id, ...this.store.descendants(selected.id).map(f => f.id)]
+                : []);
+    this.updateState({
+      ...this.state,
+      features: {
+        tree,
+        folders: foldersOf(tree).filter(({folder}) => !excluded.has(folder.id)),
+        selected,
+        selectedDescendants:
+            selected?.kind === 'folder' ? this.store.descendants(selected.id).length : 0,
+        hidden: new Set(this.hidden),
+        expanded: new Set(this.expanded),
+      },
+    });
+  }
+
   private newCollection(): void {
     this.saves.clear();
+    this.select(undefined);
     this.store.reset([]);
     this.updateState({
       ...this.state,
@@ -683,6 +869,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private openCollection(collection: Collection): void {
     this.saves.clear();
+    this.select(undefined);
     this.updateState({
       ...this.state,
       collection,
@@ -879,6 +1066,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         [this.lineLayer, this.measureLayer, this.featureLayer as Layer]
             .concat(layers.filter(l => l.enabled).map(l => l.layer)));
   }
+}
+
+function stripUndefined(data: FeatureData): FeatureData {
+  const stripped: FeatureData = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      stripped[key] = value;
+    }
+  }
+  return stripped;
 }
 
 function newCollectionName(): string {

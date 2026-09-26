@@ -50,6 +50,10 @@ export type EditableFeature = EditableFolder|EditableLine|EditablePoint;
 
 export type SaveOp = 'delete'|'put';
 
+export const DEFAULT_LINE_COLOR = '#de29db';
+export const DEFAULT_POINT_COLOR = '#de29db';
+export const DEFAULT_WIDTH_PX = 3;
+
 /** Copies a feature so that later edits to the original leave the copy alone. */
 export function snapshot<F extends EditableFeature>(feature: F): F {
   return {...feature, data: {...feature.data}};

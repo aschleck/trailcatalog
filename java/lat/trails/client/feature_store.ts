@@ -1,6 +1,13 @@
 import { EditableFeature, EditableFolder, EditableLine, EditablePoint, snapshot } from './features';
 import { SaveQueue } from './save_queue';
 
+// An edit, which undo reverts as a unit. Edits sharing a merge key in a row become one, so typing
+// a name is one undo rather than one per keystroke.
+interface Edit {
+  changes: Change[];
+  mergeKey: string|undefined;
+}
+
 // One feature's side of an edit. An undefined state is a feature that does not exist, so a change
 // from undefined creates and a change to undefined deletes.
 export interface Change {
@@ -21,8 +28,8 @@ export class FeatureStore {
   private readonly live: Map<string, EditableFeature>;
   // Deleted features, kept so that undoing the delete puts at the version the delete landed at.
   private readonly removed: Map<string, EditableFeature>;
-  private readonly undoStack: Change[][];
-  private readonly redoStack: Change[][];
+  private readonly undoStack: Edit[];
+  private readonly redoStack: Edit[];
   private readonly listeners: Array<() => void>;
   // Moves on every change so that readers can tell whether they are stale.
   generation: number;
@@ -110,35 +117,52 @@ export class FeatureStore {
     return this.redoStack.length > 0;
   }
 
-  /** Applies one edit, which undo reverts as a unit. */
-  apply(changes: Change[]): void {
+  /**
+   * Applies one edit, which undo reverts as a unit. An edit with the same merge key as the one
+   * before it folds into that one, keeping its before states.
+   */
+  apply(changes: Change[], mergeKey?: string): void {
     if (changes.length === 0) {
       return;
     }
 
-    this.undoStack.push(changes);
+    const last = this.undoStack[this.undoStack.length - 1];
+    if (mergeKey !== undefined && last?.mergeKey === mergeKey && this.redoStack.length === 0) {
+      for (const change of changes) {
+        const existing = last.changes.find(c => c.id === change.id);
+        if (existing) {
+          existing.after = change.after;
+        } else {
+          last.changes.push(change);
+        }
+      }
+    } else {
+      this.undoStack.push({changes, mergeKey});
+    }
     this.redoStack.length = 0;
     this.commit(changes, 'forward');
   }
 
   undo(): void {
-    const changes = this.undoStack.pop();
-    if (!changes) {
+    const edit = this.undoStack.pop();
+    if (!edit) {
       return;
     }
 
-    this.redoStack.push(changes);
-    this.commit(changes, 'backward');
+    // Undone edits never merge again, or else redoing and then typing would fold into a stale edit.
+    edit.mergeKey = undefined;
+    this.redoStack.push(edit);
+    this.commit(edit.changes, 'backward');
   }
 
   redo(): void {
-    const changes = this.redoStack.pop();
-    if (!changes) {
+    const edit = this.redoStack.pop();
+    if (!edit) {
       return;
     }
 
-    this.undoStack.push(changes);
-    this.commit(changes, 'forward');
+    this.undoStack.push(edit);
+    this.commit(edit.changes, 'forward');
   }
 
   // Backward runs the changes in reverse, so undoing a folder delete that emptied the folder

@@ -6,7 +6,8 @@ import { MapElement } from 'js/map/map_element';
 
 import { State, ViewerController } from './viewer_controller';
 import { requestData } from './data';
-import { HOVER_CHANGED, LINE_DRAWN, TOOL_REQUESTED } from './events';
+import { FEATURE_CLICKED, HOVER_CHANGED, LINE_DRAWN, TOOL_REQUESTED } from './events';
+import { FeatureList } from './feature_list';
 import { Menubar, MenubarItem } from './menubar';
 import { Toolbar } from './toolbar';
 
@@ -21,6 +22,14 @@ export function OverviewElement(
   if (!inState) {
     inState = {
       collection: undefined,
+      features: {
+        tree: [],
+        folders: [],
+        selected: undefined,
+        selectedDescendants: 0,
+        hidden: new Set(),
+        expanded: new Set(),
+      },
       layers: [],
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
       tool: 'pointer',
@@ -54,6 +63,7 @@ export function OverviewElement(
           args: {collection},
           events: {
             corgi: [
+              [FEATURE_CLICKED, 'onFeatureClicked'],
               [HOVER_CHANGED, 'onHoverChange'],
               [LINE_DRAWN, 'onLineDrawn'],
               [MAP_MOVED, 'onMove'],
@@ -69,12 +79,15 @@ export function OverviewElement(
         <MenubarItem label="File" onClick="fileMenuClicked" />
         <MenubarItem label="Layers" onClick="layersMenuClicked" />
       </Menubar>
-      <div className="grow min-h-0 relative">
-        <MapElement
-            camera={camera}
-            ref="map"
-        />
-        <Toolbar tool={state.tool} />
+      <div className="flex grow min-h-0">
+        <FeatureList state={state.features} />
+        <div className="grow min-w-0 relative">
+          <MapElement
+              camera={camera}
+              ref="map"
+          />
+          <Toolbar tool={state.tool} />
+        </div>
       </div>
     </div>
   </>;

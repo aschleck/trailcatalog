@@ -67,6 +67,22 @@ test('undoes a folder delete folder first and redoes it children first', async (
   ]);
 });
 
+test('merges edits that share a key into one undo', () => {
+  const {store} = setUp();
+  const a = point('a', {name: ''});
+  store.reset([a]);
+
+  for (const name of ['L', 'Le', 'Les']) {
+    const live = store.get('a')!;
+    store.apply(
+        [{id: 'a', before: snapshot(live), after: {...snapshot(live), data: {name}}}], 'name');
+  }
+  store.undo();
+
+  expect(store.get('a')?.data.name).toBe('');
+  expect(store.canUndo).toBe(false);
+});
+
 test('drops the redo stack on a new edit', () => {
   const {store} = setUp();
   store.apply([create(point('a', {}))]);
