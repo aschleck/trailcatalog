@@ -11,11 +11,13 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { LocationIndex } from 'js/map/workers/location_index';
+import { Terrain } from 'js/map/workers/path_router';
+import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { HOVER_CHANGED } from './events';
-import { Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
+import { Data, Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
 // makes it read as lifted, over pale roads and over landcover alike.
@@ -431,7 +433,11 @@ export class CollectionLayer extends Layer {
     this.locations.load(
         this.groupKey(key),
         tolerance,
-        lines.map(line => ({id: objectKey(line.id), points: line.points})),
+        lines.map(line => ({
+          id: objectKey(line.id),
+          points: line.points,
+          terrain: terrainOf(line.data),
+        })),
         polygons.map(polygon => ({
           id: objectKey(polygon.id),
           bound: polygon.bound,
@@ -622,4 +628,14 @@ function objectKey(id: RawUuid): string {
 
 function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {
   return (((color & 0xFFFFFF00) >>> 0) | alpha) as RgbaU32;
+}
+
+// Paths carry their way category, so waterways route as water and the rest as land. Objects
+// without one, like a user's own lines, are any kind.
+function terrainOf(data: Data): Terrain|undefined {
+  const type = data.type;
+  if (typeof type !== 'number') {
+    return undefined;
+  }
+  return aDescendsB(type, WayCategory.WATERWAY) ? 'water' : 'land';
 }

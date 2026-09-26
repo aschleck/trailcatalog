@@ -6,7 +6,7 @@ import { projectS2LatLng, unprojectS2LatLng } from '../camera';
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
 import { LatLng, LatLngRect, Rect, Vec2 } from '../common/types';
 
-import { Anchor, PathRouter } from './path_router';
+import { Anchor, PathRouter, Terrain } from './path_router';
 
 interface InitializeRequest {
   kind: 'ir';
@@ -17,6 +17,8 @@ export interface IndexedLine {
   id: string;
   // Mercator, matching what LineProgram renders.
   points: Float64Array;
+  // What routes along it run over, or undefined for any, see PathRouter's Terrain
+  terrain?: Terrain;
 }
 
 export interface IndexedPolygon {
@@ -97,6 +99,7 @@ interface LineEntry {
   kind: 'line';
   id: string;
   points: Float64Array;
+  terrain: Terrain|undefined;
 }
 
 interface PolygonEntry {
@@ -157,8 +160,9 @@ class LocationQuerier {
 
       const bound = normalize(latLng);
       bounds.push(bound);
-      lines.push(line.points);
-      this.tree.insert({kind: 'line', id: line.id, points: line.points}, bound);
+      lines.push({points: line.points, terrain: line.terrain});
+      this.tree.insert(
+          {kind: 'line', id: line.id, points: line.points, terrain: line.terrain}, bound);
     }
     for (const polygon of request.polygons) {
       // A polygon that simplified away has an empty bound and can never be hit.
@@ -277,7 +281,7 @@ class LocationQuerier {
         output);
 
     let best: Nearest|undefined = undefined;
-    let bestLine: Float64Array|undefined = undefined;
+    let bestLine: LineEntry|undefined = undefined;
     let bestDistance2 = radius * radius;
     for (const entry of output) {
       if (entry.kind !== 'line') {
@@ -287,7 +291,7 @@ class LocationQuerier {
       const nearest = nearestOnPolyline(point[0], point[1], entry.points);
       if (nearest.distance2 <= bestDistance2) {
         best = nearest;
-        bestLine = entry.points;
+        bestLine = entry;
         bestDistance2 = nearest.distance2;
       }
     }
@@ -296,10 +300,12 @@ class LocationQuerier {
       return undefined;
     }
 
+    const points = bestLine.points;
     return {
       point: [best.x, best.y],
-      a: [bestLine[best.at], bestLine[best.at + 1]],
-      b: [bestLine[best.at + 2], bestLine[best.at + 3]],
+      a: [points[best.at], points[best.at + 1]],
+      b: [points[best.at + 2], points[best.at + 3]],
+      terrain: bestLine.terrain,
     };
   }
 }
