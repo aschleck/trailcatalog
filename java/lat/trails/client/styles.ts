@@ -172,7 +172,7 @@ const PATH_LINES: LineStyle[] = [
     maxZoom: 12,
     fill: TRAIL_COLOR,
     stroke: TRAIL_COLOR,
-    radius: 0.5,
+    radius: 0.6,
     // Stippled because a solid hairline reads as a stream.
     stipple: true,
     z: Z_OVERLAY_TRANSPORTATION - 0.3,
@@ -197,7 +197,7 @@ const PATH_LINES: LineStyle[] = [
     maxZoom: 13,
     fill: TRAIL_COLOR,
     stroke: TRAIL_COLOR,
-    radius: 0.5,
+    radius: 0.6,
     stipple: true,
     z: Z_OVERLAY_TRANSPORTATION - 0.3,
   },
