@@ -243,7 +243,9 @@ export class FeatureLayer extends Layer {
       }
 
       const key = this.key(id);
-      this.locations.load(key, DRAWN_TOLERANCE, [{id: key, points: line.points}], []);
+      // Drawn and imported lines share no vertices where they meet, so they join where they cross.
+      this.locations.load(
+          key, DRAWN_TOLERANCE, [{id: key, points: line.points}], [], /* crossings= */ true);
       this.published.set(id, line.latLngE7);
     }
   }
