@@ -43,6 +43,19 @@ class SimplifyTest {
   }
 
   @Test
+  fun keepsAPinnedVertexOnTheChord() {
+    val points = line(50)
+    val pinnedLng = points[2 * 20 + 1]
+    val simplified = simplifyLatLngE7(points, TIGHT) { _, lng -> lng == pinnedLng }
+    assertThat(simplified.toList())
+        .isEqualTo(
+            listOf(
+                points[0], points[1],
+                points[40], points[41],
+                points[98], points[99]))
+  }
+
+  @Test
   fun dropsAWobbleUnderEpsilon() {
     val points = line(50)
     // A quarter of an epsilon of noise on the interior, so the chord across it clears.

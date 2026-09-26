@@ -790,17 +790,18 @@ private fun fetchTrailcatalogPaths(
       }
       .executeQuery()
       .use { results ->
-        val paths = ArrayList<WirePath>()
+        val raw = ArrayList<WirePath>()
         while (results.next()) {
-          paths.add(
+          raw.add(
             WirePath(
               results.getLong(1),
               results.getLong(4),
               results.getInt(2),
-              simplifyForSnap(results.getBytes(3), snap)
+              results.getBytes(3)
             )
           )
         }
+        val paths = simplifyPathsForSnap(raw, snap)
         it.writeVarInt(paths.size)
         for (path in paths) {
           it.writeVarLong(path.id)
@@ -862,6 +863,56 @@ private fun collectionVersion(collection: String, allowed: ArrayList<UUID>): Lon
           return if (results.next()) results.getLong(1) else null
         }
   }
+}
+
+// Simplifies a tile's paths without dropping the vertices they share, or else a way running
+// straight through a junction loses it and the client's router can no longer turn there.
+//
+// Two ways whose cells are both at or below the tile's level always meet in the same tile, because
+// both cells contain the vertex they share and so one is an ancestor of the other. Junctions
+// between streams, and with the ways above indexBottom that tile one cell at a time, cross tiles,
+// so PathRouter joins those by distance.
+private fun simplifyPathsForSnap(paths: List<WirePath>, snap: Int?): List<WirePath> {
+  if (snap == null) {
+    return paths
+  }
+
+  val decoded = paths.map { DeltaLatLngE7.decode(it.latLngDegrees) }
+  val shared = sharedVertices(decoded)
+  val epsilon = snapEpsilon(snap)
+  return paths.mapIndexed { i, path ->
+    val simplified =
+        simplifyLatLngE7(decoded[i], epsilon) { lat, lng ->
+          shared.binarySearch(packLatLngE7(lat, lng)) >= 0
+        }
+    path.copy(latLngDegrees = DeltaLatLngE7.encode(simplified))
+  }
+}
+
+// Sorted, so that callers can binarySearch it. Sorting every vertex rather than counting them in a
+// map because a dense tile holds millions and a map would box each one.
+private fun sharedVertices(lines: List<IntArray>): LongArray {
+  val all = LongArray(lines.sumOf { it.size / 2 })
+  var at = 0
+  for (line in lines) {
+    for (i in 0 until line.size / 2) {
+      all[at] = packLatLngE7(line[2 * i], line[2 * i + 1])
+      at += 1
+    }
+  }
+  all.sort()
+
+  val shared = ArrayList<Long>()
+  for (i in 1 until all.size) {
+    if (all[i] == all[i - 1] && (shared.isEmpty() || shared.last() != all[i])) {
+      shared.add(all[i])
+    }
+  }
+  return shared.toLongArray()
+}
+
+private fun packLatLngE7(lat: Int, lng: Int): Long {
+  return (lat.toLong() shl 32) or (lng.toLong() and 0xFFFFFFFFL)
 }
 
 // Drops the vertices a chord across them already clears, which is most of them: consecutive OSM

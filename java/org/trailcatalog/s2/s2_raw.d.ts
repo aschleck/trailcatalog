@@ -161,6 +161,8 @@ declare global {
           com.google.common.geometry.S2LatLng;
       static pointsToPolygon(points: java.util.ArrayList<com.google.common.geometry.S2Point>):
           com.google.common.geometry.S2Polygon;
+      static snapEpsilon(level: number): number;
+      static snapRadians(level: number): number;
       static newArrayList<E>(): java.util.ArrayList<E>;
       static newPolygon(): com.google.common.geometry.S2Polygon;
     }

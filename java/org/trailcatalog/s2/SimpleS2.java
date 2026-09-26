@@ -12,6 +12,7 @@ import com.google.common.geometry.S2LatLngRect;
 import com.google.common.geometry.S2Loop;
 import com.google.common.geometry.S2Point;
 import com.google.common.geometry.S2Polygon;
+import com.google.common.geometry.S2Projections;
 import com.google.common.geometry.S2RegionCoverer;
 import elemental2.core.ArrayBuffer;
 import elemental2.core.Uint8Array;
@@ -53,6 +54,20 @@ public final class SimpleS2 {
   @JsMethod
   public static double angleToEarthMeters(S1Angle angle) {
     return angle.radians() * EARTH_RADIUS_METERS;
+  }
+
+  /** The furthest a point can move when snapped to a level {@code level} cell, in radians. */
+  @JsMethod
+  public static double snapRadians(int level) {
+    // Half a diagonal, because a point can land anywhere in the cell it snapped to.
+    return S2Projections.MAX_DIAG.getValue(level) / 2.0;
+  }
+
+  /** {@link #snapRadians} in the Mercator units the simplifier measures in. */
+  @JsMethod
+  public static double snapEpsilon(int level) {
+    // A Mercator unit is 180 degrees of longitude, so pi radians.
+    return snapRadians(level) / Math.PI;
   }
 
   @JsMethod

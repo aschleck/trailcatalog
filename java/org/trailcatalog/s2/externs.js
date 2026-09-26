@@ -155,5 +155,7 @@ goog.exportProperty(SimpleS2, 'encodePolygon', SimpleS2.encodePolygon);
 goog.exportProperty(SimpleS2, 'earthMetersToAngle', SimpleS2.earthMetersToAngle);
 goog.exportProperty(SimpleS2, 'pointToLatLng', SimpleS2.pointToLatLng);
 goog.exportProperty(SimpleS2, 'pointsToPolygon', SimpleS2.pointsToPolygon);
+goog.exportProperty(SimpleS2, 'snapEpsilon', SimpleS2.snapEpsilon);
+goog.exportProperty(SimpleS2, 'snapRadians', SimpleS2.snapRadians);
 goog.exportProperty(SimpleS2, 'newArrayList', SimpleS2.newArrayList);
 goog.exportProperty(SimpleS2, 'newPolygon', SimpleS2.newPolygon);

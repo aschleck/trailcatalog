@@ -12,8 +12,14 @@ import kotlin.math.sqrt
  * Epsilon is in the Mercator units [project] hands back, which is the space the client draws in, so
  * a tolerance stated in it is a tolerance in pixels. One Mercator unit is 180 degrees of longitude,
  * so divide an angle in radians by pi.
+ *
+ * A vertex [pinned] answers true for survives regardless of epsilon.
  */
-fun simplifyLatLngE7(degrees: IntArray, epsilon: Double): IntArray {
+fun simplifyLatLngE7(
+    degrees: IntArray,
+    epsilon: Double,
+    pinned: (latE7: Int, lngE7: Int) -> Boolean = { _, _ -> false },
+): IntArray {
   val pointCount = degrees.size / 2
   if (pointCount < 3) {
     return degrees
@@ -32,7 +38,14 @@ fun simplifyLatLngE7(degrees: IntArray, epsilon: Double): IntArray {
   keep[0] = true
   keep[pointCount - 1] = true
   val spans = Stack<Pair<Int, Int>>()
-  spans.push(Pair(0, pointCount - 1))
+  var spanStart = 0
+  for (i in 1 until pointCount) {
+    if (i == pointCount - 1 || pinned(degrees[2 * i], degrees[2 * i + 1])) {
+      keep[i] = true
+      spans.push(Pair(spanStart, i))
+      spanStart = i
+    }
+  }
   while (spans.isNotEmpty()) {
     val (startI, endI) = spans.pop()
     if (endI <= startI + 1) {
