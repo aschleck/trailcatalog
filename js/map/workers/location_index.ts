@@ -56,13 +56,15 @@ export class LocationIndex {
   /**
    * Replaces everything held under a group id. Tolerance is how far its lines may sit from the
    * geometry they stand for, in mercator, which is how far apart two lines may end and still meet.
+   * Crossings lets routes turn wherever these lines cross another group's.
    */
   load(
       groupId: string,
       tolerance: number,
       lines: IndexedLine[],
-      polygons: IndexedPolygon[]): void {
-    this.worker.post({kind: 'lr', groupId, tolerance, lines, polygons});
+      polygons: IndexedPolygon[],
+      crossings = false): void {
+    this.worker.post({kind: 'lr', groupId, tolerance, crossings, lines, polygons});
   }
 
   unload(groupIds: string[]): void {

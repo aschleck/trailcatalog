@@ -30,6 +30,8 @@ interface LoadRequest {
   groupId: string;
   // How far the lines may sit from the geometry they stand for, in mercator.
   tolerance: number;
+  // Whether routes may turn where these lines cross another group's, see PathRouter#load.
+  crossings: boolean;
   lines: IndexedLine[];
   polygons: IndexedPolygon[];
 }
@@ -170,7 +172,7 @@ class LocationQuerier {
           {kind: 'polygon', id: polygon.id, raw: polygon.raw, polygon: undefined}, bound);
     }
     this.groups.set(request.groupId, bounds);
-    this.router.load(request.groupId, lines, request.tolerance);
+    this.router.load(request.groupId, lines, request.tolerance, request.crossings);
     this.prepareSoon();
   }
 

@@ -19,6 +19,8 @@ interface Group {
   lines: Float64Array[]|undefined;
   // How far these lines may sit from the geometry they stand for, in mercator.
   tolerance: number;
+  // Whether these lines meet wherever they cross another group's, see load.
+  crossings: boolean;
   edges: Int32Array|undefined;
   // The node at each end of each line, which is where a line from another group may meet it
   // without sharing a vertex.
@@ -31,8 +33,9 @@ interface Group {
   runTree: BoundsQuadtree<Run>;
   // Indices into ends
   endTree: BoundsQuadtree<number>;
-  // Joins found when this group was noded, onto its segments and from its ends. Whichever group
-  // was noded second holds a join, so each is found once and goes when either group does.
+  // Joins found when this group was noded, onto its segments and from its ends or from where
+  // segments cross. Whichever group was noded second holds a join, so each is found once and goes
+  // when either group does.
   joins: Join[];
 }
 
@@ -60,12 +63,14 @@ const INITIAL_NODES = 1 << 16;
 const RUN_SEGMENTS = 16;
 
 /**
- * A* over the polylines a layer holds. Two polylines connect where they share a vertex, and where
- * the end of one comes within tolerance of a segment of another group's.
+ * A* over the polylines a layer holds. Two polylines connect where they share a vertex, where the
+ * end of one comes within tolerance of a segment of another group's, and where they cross if
+ * either group asked for crossings.
  *
  * The server keeps the vertices a tile's paths share when it simplifies them, but not the ones
  * shared across tiles, so those junctions come from ends alone. Two ways from different tiles that
- * cross with neither ending there don't connect.
+ * cross with neither ending there don't connect, because OSM ways that cross without a shared node
+ * are usually a bridge over the other.
  */
 export class PathRouter {
 
@@ -109,13 +114,15 @@ export class PathRouter {
 
   /**
    * Replaces the lines held under a group id. Tolerance is how far they may sit from the geometry
-   * they stand for, in mercator.
+   * they stand for, in mercator. Crossings joins them to any other group's line they cross, for
+   * lines that were drawn or recorded separately and so share no vertices where they meet.
    */
-  load(groupId: string, lines: Float64Array[], tolerance: number): void {
+  load(groupId: string, lines: Float64Array[], tolerance: number, crossings = false): void {
     this.unload(groupId);
     this.groups.set(groupId, {
       lines,
       tolerance,
+      crossings,
       edges: undefined,
       ends: undefined,
       bound: undefined,
@@ -257,8 +264,10 @@ export class PathRouter {
     for (const group of this.groups.values()) {
       widest = Math.max(widest, group.tolerance);
     }
+    const joined = new Set<Group>();
     for (const group of arrived) {
-      this.join(group, arrived, widest);
+      this.join(group, arrived, joined, widest);
+      joined.add(group);
     }
 
     this.joined = new Map();
@@ -368,7 +377,10 @@ export class PathRouter {
   //
   // Lines in the same group are left alone because the server keeps the vertices a tile shares.
   // Drawn lines are each their own group, so they still join each other.
-  private join(group: Group, arrived: Set<Group>, widest: number): void {
+  //
+  // Crossings are symmetric, so of two groups arriving together only the first to join finds
+  // them.
+  private join(group: Group, arrived: Set<Group>, joined: Set<Group>, widest: number): void {
     const bound = group.bound;
     if (!bound) {
       return;
@@ -401,6 +413,10 @@ export class PathRouter {
         }
       }
 
+      if ((group.crossings || other.crossings) && !joined.has(other)) {
+        this.joinCrossings(group, other);
+      }
+
       if (arrived.has(other)) {
         continue;
       }
@@ -412,6 +428,43 @@ export class PathRouter {
           const join = this.nearestJoin(other, otherEnds[i], group, run);
           if (join) {
             group.joins.push({partner: other, ...join});
+          }
+        }
+      }
+    }
+  }
+
+  // Puts a node wherever a segment of group properly crosses one of other's, joined onto both.
+  // Segments that meet at a vertex already share a node and need nothing.
+  private joinCrossings(group: Group, other: Group): void {
+    const edges = checkExists(group.edges);
+    const otherEdges = checkExists(other.edges);
+    const runs: Run[] = [];
+    for (const run of group.runs) {
+      runs.length = 0;
+      other.runTree.queryRect(run.bound, runs);
+      for (const otherRun of runs) {
+        for (let i = run.start; i < run.end; i += 2) {
+          const a = edges[i];
+          const b = edges[i + 1];
+          for (let j = otherRun.start; j < otherRun.end; j += 2) {
+            const c = otherEdges[j];
+            const d = otherEdges[j + 1];
+            if (a === c || a === d || b === c || b === d) {
+              continue;
+            }
+
+            const crossing =
+                intersection(
+                    this.x[a], this.y[a], this.x[b], this.y[b],
+                    this.x[c], this.y[c], this.x[d], this.y[d]);
+            if (!crossing) {
+              continue;
+            }
+
+            const node = this.nodeFor(crossing[0], crossing[1]);
+            group.joins.push({partner: other, end: node, a, b});
+            group.joins.push({partner: other, end: node, a: c, b: d});
           }
         }
       }
@@ -513,13 +566,25 @@ export class PathRouter {
         edges[i] = node;
       }
 
-      // Every end and every join is on an edge, so the pass above has already renumbered them.
+      // Every end is on an edge, so the pass above has already renumbered them.
       const ends = checkExists(group.ends);
       for (let i = 0; i < ends.length; ++i) {
         ends[i] = remap[ends[i]];
       }
+    }
+
+    // A join's segment is on an edge, but a crossing's node is on none, so it keeps itself here.
+    for (const group of this.groups.values()) {
       for (const join of group.joins) {
-        join.end = remap[join.end];
+        let end = remap[join.end];
+        if (end < 0) {
+          end = count;
+          count += 1;
+          remap[join.end] = end;
+          x[end] = this.x[join.end];
+          y[end] = this.y[join.end];
+        }
+        join.end = end;
         join.a = remap[join.a];
         join.b = remap[join.b];
       }
@@ -671,6 +736,28 @@ function union(a: Rect, b: Rect): Rect {
     low: [Math.min(a.low[0], b.low[0]), Math.min(a.low[1], b.low[1])],
     high: [Math.max(a.high[0], b.high[0]), Math.max(a.high[1], b.high[1])],
   };
+}
+
+// Where segment ab crosses segment cd, or undefined when they meet at an end or not at all. Ends
+// are left out because a shared or touching end is a vertex, which noding or the end joins handle.
+function intersection(
+    ax: number, ay: number, bx: number, by: number,
+    cx: number, cy: number, dx: number, dy: number): Vec2|undefined {
+  const rx = bx - ax;
+  const ry = by - ay;
+  const sx = dx - cx;
+  const sy = dy - cy;
+  const denominator = rx * sy - ry * sx;
+  if (denominator === 0) {
+    return undefined;
+  }
+
+  const t = ((cx - ax) * sy - (cy - ay) * sx) / denominator;
+  const u = ((cx - ax) * ry - (cy - ay) * rx) / denominator;
+  if (t <= 0 || t >= 1 || u <= 0 || u >= 1) {
+    return undefined;
+  }
+  return [ax + t * rx, ay + t * ry];
 }
 
 function segmentKey(a: number, b: number): string {

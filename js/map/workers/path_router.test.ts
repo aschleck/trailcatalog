@@ -167,6 +167,58 @@ test('routes over a line that repeats a point', () => {
   expect(Array.from(via ?? [])).toEqual([1, 0]);
 });
 
+// An X: one segment from (0, 0) to (2, 2) and another from (0, 2) to (2, 0), crossing at (1, 1).
+const CROSS_A = [Float64Array.of(0, 0, 2, 2)];
+const CROSS_B = [Float64Array.of(0, 2, 2, 0)];
+
+test('routes across where two groups cross when one asks for crossings', () => {
+  const router = new PathRouter();
+  router.load('a', CROSS_A, /* tolerance= */ 0, /* crossings= */ true);
+  router.load('b', CROSS_B, /* tolerance= */ 0);
+
+  const via =
+      router.route(anchor([0.5, 0.5], [0, 0], [2, 2]), anchor([1.5, 0.5], [0, 2], [2, 0]), REACH);
+  expect(Array.from(via ?? [])).toEqual([1, 1]);
+});
+
+test('does not route across a crossing nobody asked for', () => {
+  const router = new PathRouter();
+  router.load('a', CROSS_A, /* tolerance= */ 0);
+  router.load('b', CROSS_B, /* tolerance= */ 0);
+
+  const via =
+      router.route(anchor([0.5, 0.5], [0, 0], [2, 2]), anchor([1.5, 0.5], [0, 2], [2, 0]), REACH);
+  expect(via).toBeUndefined();
+});
+
+test('routes across a crossing with a group noded before it', () => {
+  const router = new PathRouter();
+  router.load('a', CROSS_A, /* tolerance= */ 0);
+  // Route first, so that b arrives alone and has to find the crossing against a held group.
+  router.route(anchor([0.5, 0.5], [0, 0], [2, 2]), anchor([1.5, 1.5], [0, 0], [2, 2]), REACH);
+  router.load('b', CROSS_B, /* tolerance= */ 0, /* crossings= */ true);
+
+  const via =
+      router.route(anchor([0.5, 0.5], [0, 0], [2, 2]), anchor([1.5, 0.5], [0, 2], [2, 0]), REACH);
+  expect(Array.from(via ?? [])).toEqual([1, 1]);
+});
+
+test('keeps a crossing through compaction', () => {
+  const router = new PathRouter();
+  router.load('tee', TEE, /* tolerance= */ 0);
+  router.route(anchor([0.5, 0], [0, 0], [1, 0]), anchor([1.5, 0], [1, 0], [2, 0]), REACH);
+  router.unload('tee');
+  router.load('a', [Float64Array.of(10, 10, 12, 12)], /* tolerance= */ 0, /* crossings= */ true);
+  router.load('b', [Float64Array.of(10, 12, 12, 10)], /* tolerance= */ 0);
+
+  const via =
+      router.route(
+          anchor([10.5, 10.5], [10, 10], [12, 12]),
+          anchor([11.5, 10.5], [10, 12], [12, 10]),
+          REACH);
+  expect(Array.from(via ?? [])).toEqual([11, 11]);
+});
+
 function build(lines: Float64Array[]): PathRouter {
   const router = new PathRouter();
   router.load('lines', lines, /* tolerance= */ 0);
