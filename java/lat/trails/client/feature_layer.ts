@@ -13,7 +13,7 @@ import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { FeatureStore } from './feature_store';
-import { FEATURE_CLICKED, FEATURE_EDITED } from './events';
+import { FEATURE_CLICKED, FEATURE_EDITED, FEATURE_HOVERED } from './events';
 import {
   DEFAULT_LINE_COLOR,
   DEFAULT_POINT_COLOR,
@@ -32,6 +32,7 @@ const CLICK_SLOP_PX = 3;
 // The casing LineProgram draws is a pixel wide on each side, see line_cap_program.ts.
 const CASING_PX = 1;
 const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
+const HOVERED_CASING = 0xFFFFFF99 as RgbaU32;
 const POINT_CASING = 0xFFFFFFFF as RgbaU32;
 const LABEL_FILL = 0x1A1A1AFF as RgbaU32;
 const LABEL_STROKE = 0xFFFFFFFF as RgbaU32;
@@ -45,16 +46,14 @@ const LABEL_PATH_TOLERANCE_PX = 4;
 const LABEL_ANCHORS = [0.5, 0.3, 0.7, 0.15, 0.85];
 
 const HANDLE_RADIUS_PX = 5;
-const MIDPOINT_RADIUS_PX = 4;
-// A shorter segment's midpoint handle would crowd the vertex handles at its ends.
-const MIDPOINT_MIN_SEGMENT_PX = 24;
+const INSERT_RADIUS_PX = 4;
 // A GPS track has a vertex every few meters, which at most zooms is several per pixel, so a vertex
 // only gets a handle once it is this far from the last one that did.
 const HANDLE_SPACING_PX = 12;
 const HANDLE_FILL = 0xFFFFFFFF as RgbaU32;
 const HANDLE_STROKE = 0x1A1A1AFF as RgbaU32;
 const ACTIVE_HANDLE_FILL = 0x2563EBFF as RgbaU32;
-const MIDPOINT_FILL = 0xFFFFFF99 as RgbaU32;
+const INSERT_FILL = 0xFFFFFFFF as RgbaU32;
 // Two clicks on one line this close together count as a double click.
 const DOUBLE_CLICK_MS = 400;
 
@@ -87,10 +86,10 @@ interface ProjectedPoint {
 }
 
 // What the pointer is moving. Line drags work on a mercator copy of the line with the vertex
-// moved, or inserted for a midpoint, which becomes the edit when the drag ends.
+// moved, or inserted where the insert marker was, which becomes the edit when the drag ends.
 type Drag =
     {kind: 'point'; point: EditablePoint; at: Vec2}
-    |{kind: 'vertex'|'midpoint'; line: ProjectedLine; index: number; points: Float64Array};
+    |{kind: 'vertex'|'insert'; line: ProjectedLine; index: number; points: Float64Array};
 
 // Geometry in one buffer and the drawables that read it, replanned when generation moves past
 // planned.
@@ -109,6 +108,8 @@ export class FeatureLayer extends Layer {
   private readonly producer: string;
   private hidden: ReadonlySet<string>;
   private selected: string|undefined;
+  // The feature under the pointer, on the map or in the list
+  private hovered: string|undefined;
   // Every line, visible or not, so that a folder toggling does not reproject its lines
   private readonly projected: Map<string, ProjectedLine>;
   private visibleLines: ProjectedLine[];
@@ -131,6 +132,8 @@ export class FeatureLayer extends Layer {
   private editing: string|undefined;
   // The handle a click picked, which Delete removes
   private activeVertex: number|undefined;
+  // Where on the edited line the pointer is, and the index a vertex dragged from there takes
+  private inserting: {index: number; at: Vec2}|undefined;
   // The vertices of the edited line that have handles, as of the last overlay plan
   private handles: number[];
   private dragging: Drag|undefined;
@@ -152,6 +155,7 @@ export class FeatureLayer extends Layer {
     this.producer = locations.producer();
     this.hidden = new Set();
     this.selected = undefined;
+    this.hovered = undefined;
     this.projected = new Map();
     this.visibleLines = [];
     this.visiblePoints = [];
@@ -168,6 +172,7 @@ export class FeatureLayer extends Layer {
     this.interactive = true;
     this.editing = undefined;
     this.activeVertex = undefined;
+    this.inserting = undefined;
     this.handles = [];
     this.dragging = undefined;
     this.lastClick = undefined;
@@ -198,6 +203,15 @@ export class FeatureLayer extends Layer {
       this.stopEditing();
     }
     this.geometry.generation += 1;
+  }
+
+  setHovered(id: string|undefined): void {
+    if (id === this.hovered) {
+      return;
+    }
+
+    this.hovered = id;
+    this.overlay.generation += 1;
   }
 
   setInteractive(interactive: boolean): void {
@@ -251,6 +265,42 @@ export class FeatureLayer extends Layer {
     return !!hit;
   }
 
+  override hover(point: S2LatLng, source: EventSource): boolean {
+    if (!this.interactive || this.dragging) {
+      return false;
+    }
+
+    const at = projectS2LatLng(point);
+    const editing = this.editingLine();
+    // A vertex handle under the pointer wins over inserting next to it.
+    const inserting =
+        editing && this.vertexAt(editing.points, at) === undefined
+            ? this.insertAt(editing, at)
+            : undefined;
+    if (inserting || this.inserting) {
+      this.inserting = inserting;
+      this.overlay.generation += 1;
+    }
+
+    const hit = this.hitTest(at);
+    if (hit?.id !== this.hovered) {
+      this.setHovered(hit?.id);
+      source.trigger(FEATURE_HOVERED, {id: hit?.id});
+    }
+    return !!hit;
+  }
+
+  override hoverLost(source: EventSource): void {
+    if (this.inserting) {
+      this.inserting = undefined;
+      this.overlay.generation += 1;
+    }
+    if (this.hovered !== undefined) {
+      this.setHovered(undefined);
+      source.trigger(FEATURE_HOVERED, {id: undefined});
+    }
+  }
+
   override dragStart(point: S2LatLng, px: [number, number], source: EventSource): boolean {
     if (!this.interactive) {
       return false;
@@ -267,15 +317,17 @@ export class FeatureLayer extends Layer {
         return true;
       }
 
-      const midpoint = this.midpointAt(editing.points, at);
-      if (midpoint !== undefined) {
+      const insert = this.insertAt(editing, at);
+      if (insert) {
+        const {index} = insert;
         const points = new Float64Array(editing.points.length + 2);
-        points.set(editing.points.subarray(0, 2 * midpoint), 0);
-        points[2 * midpoint] = at[0];
-        points[2 * midpoint + 1] = at[1];
-        points.set(editing.points.subarray(2 * midpoint), 2 * midpoint + 2);
-        this.activeVertex = midpoint;
-        this.startDrag({kind: 'midpoint', line: editing, index: midpoint, points});
+        points.set(editing.points.subarray(0, 2 * index), 0);
+        points[2 * index] = insert.at[0];
+        points[2 * index + 1] = insert.at[1];
+        points.set(editing.points.subarray(2 * index), 2 * index + 2);
+        this.activeVertex = index;
+        this.inserting = undefined;
+        this.startDrag({kind: 'insert', line: editing, index, points});
         return true;
       }
     }
@@ -310,8 +362,8 @@ export class FeatureLayer extends Layer {
     this.geometry.generation += 1;
     this.overlay.generation += 1;
     if (!dragging || !moved) {
-      // A midpoint pressed and let go without moving was never a vertex.
-      if (dragging?.kind === 'midpoint') {
+      // An insert pressed and let go without moving was never a vertex.
+      if (dragging?.kind === 'insert') {
         this.activeVertex = undefined;
       }
       return;
@@ -428,6 +480,7 @@ export class FeatureLayer extends Layer {
 
     this.editing = undefined;
     this.activeVertex = undefined;
+    this.inserting = undefined;
     this.overlay.generation += 1;
   }
 
@@ -462,23 +515,31 @@ export class FeatureLayer extends Layer {
     return best;
   }
 
-  // The index a vertex inserted at the midpoint handle under at would take, if any.
-  private midpointAt(points: Float64Array, at: Vec2): number|undefined {
-    const pixel = this.camera.inverseWorldRadius;
-    const radius = (MIDPOINT_RADIUS_PX + CLICK_SLOP_PX) * pixel;
+  // The nearest spot on the edited line to at, if the pointer is over the line, and the index a
+  // vertex inserted there takes.
+  private insertAt(line: ProjectedLine, at: Vec2): {index: number; at: Vec2}|undefined {
+    const points = line.points;
+    let best = (lineRadius(line.feature) + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    let found = undefined;
     for (let i = 1; i < points.length / 2; ++i) {
       const ax = points[2 * i - 2];
       const ay = points[2 * i - 1];
-      const bx = points[2 * i];
-      const by = points[2 * i + 1];
-      if (Math.hypot(bx - ax, by - ay) < MIDPOINT_MIN_SEGMENT_PX * pixel) {
-        continue;
-      }
-      if (Math.hypot((ax + bx) / 2 - at[0], (ay + by) / 2 - at[1]) <= radius) {
-        return i;
+      const dx = points[2 * i] - ax;
+      const dy = points[2 * i + 1] - ay;
+      const length2 = dx * dx + dy * dy;
+      const t =
+          length2 > 0
+              ? Math.max(0, Math.min(1, ((at[0] - ax) * dx + (at[1] - ay) * dy) / length2))
+              : 0;
+      const x = ax + t * dx;
+      const y = ay + t * dy;
+      const distance = Math.hypot(at[0] - x, at[1] - y);
+      if (distance <= best) {
+        best = distance;
+        found = {index: i, at: [x, y] as Vec2};
       }
     }
-    return undefined;
+    return found;
   }
 
   private createPlan(byteLength: number): Plan {
@@ -630,7 +691,8 @@ export class FeatureLayer extends Layer {
     // Handles are drawn by caps alone along a polyline through them, so that each set is one
     // drawable however many handles it has.
     const vertices: number[] = [];
-    const midpoints: number[] = [];
+    const inserting = this.inserting;
+    const insert = inserting && !dragging ? [...inserting.at, ...inserting.at] : [];
     let active: number[] = [];
     // A drag keeps the handles it started with, so the one under the pointer stays grabbable.
     if (!dragging) {
@@ -666,28 +728,24 @@ export class FeatureLayer extends Layer {
           vertices.push(x, y);
         }
 
-        if (i > 0 && !dragging) {
-          const px = linePoints[2 * i - 2];
-          const py = linePoints[2 * i - 1];
-          const mx = (px + x) / 2;
-          const my = (py + y) / 2;
-          if (Math.hypot(x - px, y - py) >= MIDPOINT_MIN_SEGMENT_PX * pixel && inView(mx, my)) {
-            midpoints.push(mx, my);
-          }
-        }
       }
     }
     // The cap program needs a segment, so a lone handle is repeated.
-    for (const handles of [vertices, midpoints]) {
-      if (handles.length === 2) {
-        handles.push(handles[0], handles[1]);
-      }
+    if (vertices.length === 2) {
+      vertices.push(vertices[0], vertices[1]);
     }
 
+    // The selected feature already has its highlight, and a dragged one is drawn below.
+    const hoveredId =
+        this.hovered !== this.selected && !dragging ? this.hovered : undefined;
+    const hoveredLine = this.visibleLines.find(l => l.feature.id === hoveredId);
+    const hoveredPoint = this.visiblePoints.find(p => p.feature.id === hoveredId);
     let needed =
         LineProgram.bytesNeeded(vertices.length / 2)
-            + LineProgram.bytesNeeded(midpoints.length / 2)
-            + LineProgram.bytesNeeded(active.length / 2);
+            + LineProgram.bytesNeeded(insert.length / 2)
+            + LineProgram.bytesNeeded(active.length / 2)
+            + (hoveredLine ? LineProgram.bytesNeeded(hoveredLine.points.length / 2) : 0)
+            + (hoveredPoint ? LineProgram.bytesNeeded(2) : 0);
     if (dragging?.kind === 'point') {
       needed += LineProgram.bytesNeeded(2);
     } else if (dragging) {
@@ -695,6 +753,27 @@ export class FeatureLayer extends Layer {
     }
 
     const batch = new ShapeBatch(this.overlay, needed, this.renderer);
+    if (hoveredLine) {
+      const color = parseColor(hoveredLine.feature.data.stroke ?? DEFAULT_LINE_COLOR);
+      batch.push(
+          color,
+          HOVERED_CASING,
+          lineRadius(hoveredLine.feature) + 2,
+          hoveredLine.points,
+          Z_SELECTED_LINE,
+          'both');
+    }
+    if (hoveredPoint) {
+      const color = parseColor(hoveredPoint.feature.data.fill ?? DEFAULT_POINT_COLOR);
+      const at = hoveredPoint.at;
+      batch.push(
+          color,
+          HOVERED_CASING,
+          SELECTED_POINT_RADIUS_PX,
+          [at[0], at[1], at[0], at[1]],
+          Z_DRAGGED,
+          'caps');
+    }
     if (dragging?.kind === 'point') {
       const color = parseColor(dragging.point.data.fill ?? DEFAULT_POINT_COLOR);
       const at = dragging.at;
@@ -711,7 +790,7 @@ export class FeatureLayer extends Layer {
       batch.push(
           color, SELECTED_CASING, lineRadius(line) + 2, dragging.points, Z_DRAGGED, 'both');
     }
-    batch.push(MIDPOINT_FILL, HANDLE_STROKE, MIDPOINT_RADIUS_PX, midpoints, Z_HANDLE, 'caps');
+    batch.push(INSERT_FILL, HANDLE_STROKE, INSERT_RADIUS_PX, insert, Z_HANDLE, 'caps');
     batch.push(HANDLE_FILL, HANDLE_STROKE, HANDLE_RADIUS_PX, vertices, Z_HANDLE, 'caps');
     batch.push(ACTIVE_HANDLE_FILL, HANDLE_STROKE, HANDLE_RADIUS_PX, active, Z_HANDLE, 'caps');
     batch.finish();

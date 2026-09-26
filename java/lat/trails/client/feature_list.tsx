@@ -25,75 +25,135 @@ export interface FeatureListState {
   selected: EditableFeature|undefined;
   // How many features deleting the selected folder takes with it
   selectedDescendants: number;
+  // The feature under the pointer, here or on the map, and the folders it is inside
+  hovered: string|undefined;
+  hoveredAncestors: ReadonlySet<string>;
   hidden: ReadonlySet<string>;
   expanded: ReadonlySet<string>;
 }
 
 const WIDTHS_PX = [1, 2, 3, 4, 6, 8];
+const EYE_OUTLINE =
+    'M1.5 8 C3.5 4.5 5.5 3.5 8 3.5 C10.5 3.5 12.5 4.5 14.5 8 '
+        + 'C12.5 11.5 10.5 12.5 8 12.5 C5.5 12.5 3.5 11.5 1.5 8 Z';
 
-/** Lists the open collection's features as a tree, with the selected one's properties below. */
-export function FeatureList({state}: {state: FeatureListState}) {
-  return <>
-    <div className="bg-white border-gray-300 border-l flex flex-col h-full min-h-0 text-sm w-72">
-      <div className="border-b border-gray-300 flex items-center justify-between px-2 py-1">
-        <span className="font-bold">Features</span>
-        <Button
-            ariaLabel="New folder"
-            className="hover:bg-black/10 px-2 py-0.5 rounded"
-            title="New folder"
-            unboundEvents={{corgi: [[ACTION, 'newFolderClicked']]}}
-        >
-          New folder
-        </Button>
-      </div>
-      <div className="grow min-h-0 overflow-y-auto py-1">
-        {state.tree.length > 0
-            ? rows(state.tree, 0, state)
-            : [
-              <div className="px-2 py-1 text-gray-500">
-                Draw or import something to see it here.
-              </div>,
-            ]
-        }
-      </div>
-      {state.selected
-          ? <Properties
-                feature={state.selected}
-                folders={state.folders}
-                descendants={state.selectedDescendants}
-            />
-          : ''
+/** Lists the open collection's features as a tree. */
+export function FeatureTree({state}: {state: FeatureListState}) {
+  return (
+    <div>
+      {state.tree.length > 0
+          ? rows(state.tree, state, /* dimmed= */ false)
+          : [
+            <div className="px-2 py-1 text-gray-500">
+              Draw or import something to see it here.
+            </div>,
+          ]
       }
     </div>
-  </>;
+  );
 }
 
+export function NewFolderButton() {
+  return (
+    <Button
+        ariaLabel="New folder"
+        className="hover:bg-black/10 p-1 rounded"
+        title="New folder"
+        unboundEvents={{corgi: [[ACTION, 'newFolderClicked']]}}
+    >
+      <svg className="h-4 stroke-current w-4" fill="none" viewBox="0 0 16 16">
+        <FolderShape />
+        <path d="M8 7.5 V12.5 M5.5 10 H10.5" strokeWidth="1.3" />
+      </svg>
+    </Button>
+  );
+}
+
+/**
+ * Lists the map's layers topmost first, the way they stack, which is the reverse of the order they
+ * come in and the map draws them.
+ */
+export function LayerList({layers}: {layers: Array<{name: string; enabled: boolean}>}) {
+  const rows = [];
+  for (let i = layers.length - 1; i >= 0; --i) {
+    const layer = layers[i];
+    rows.push(
+        <div
+            className={
+              'cursor-pointer flex gap-1.5 h-7 hover:bg-gray-100 items-center pl-6 pr-2 '
+                  + 'select-none '
+                  + (layer.enabled ? '' : 'opacity-50')
+            }
+            data={{index: i}}
+            unboundEvents={{click: 'layerToggled'}}
+        >
+          <span className="grow truncate">{layer.name}</span>
+          <span className="text-gray-500">
+            <Eye visible={layer.enabled} />
+          </span>
+        </div>);
+  }
+  return <div>{rows}</div>;
+}
+
+function Chevron({expanded}: {expanded: boolean}) {
+  return (
+    <svg className="h-3 shrink-0 stroke-current text-gray-500 w-3" fill="none" viewBox="0 0 16 16">
+      <path d={expanded ? 'M3 6 L8 11 L13 6' : 'M6 3 L11 8 L6 13'} strokeWidth="2" />
+    </svg>
+  );
+}
+
+function Eye({visible}: {visible: boolean}) {
+  return (
+    <svg className="h-4 shrink-0 stroke-current w-4" fill="none" viewBox="0 0 16 16">
+      <path d={EYE_OUTLINE} strokeWidth="1.3" />
+      {visible
+          ? <circle cx="8" cy="8" fill="currentColor" r="2" />
+          : <path d="M2.5 13.5 L13.5 2.5" strokeWidth="1.3" />
+      }
+    </svg>
+  );
+}
+
+// A folder's children sit in a container with a guide line down its left edge, under the
+// folder's chevron, the way a tree in an outliner shows what belongs to what.
 function rows(
-    items: TreeItem[], depth: number, state: FeatureListState): corgi.VElementOrPrimitive[] {
+    items: TreeItem[], state: FeatureListState, dimmed: boolean): corgi.VElementOrPrimitive[] {
   const rendered = [];
   for (const item of items) {
     const feature = item.feature;
     const expanded = state.expanded.has(feature.id);
+    const hidden = dimmed || state.hidden.has(feature.id);
     rendered.push(
         <Row
             key={feature.id}
-            depth={depth}
+            dimmed={hidden}
             expanded={expanded}
             feature={feature}
+            hovered={
+              state.hovered === feature.id
+                  // A collapsed folder stands in for whatever inside it is hovered.
+                  || (!expanded && state.hoveredAncestors.has(feature.id))
+            }
             selected={state.selected?.id === feature.id}
             visible={!state.hidden.has(feature.id)}
         />);
-    if (feature.kind === 'folder' && expanded) {
-      rendered.push(...rows(item.children, depth + 1, state));
+    if (feature.kind === 'folder' && expanded && item.children.length > 0) {
+      rendered.push(
+          <div className="border-gray-300 border-l ml-3" key={`children:${feature.id}`}>
+            {rows(item.children, state, hidden)}
+          </div>);
     }
   }
   return rendered;
 }
 
-function Row({depth, expanded, feature, selected, visible}: {
-  depth: number;
+function Row({dimmed, expanded, feature, hovered, selected, visible}: {
+  dimmed: boolean;
   expanded: boolean;
   feature: EditableFeature;
+  hovered: boolean;
   key: string;
   selected: boolean;
   visible: boolean;
@@ -101,31 +161,61 @@ function Row({depth, expanded, feature, selected, visible}: {
   return (
     <div
         className={
-          'cursor-pointer flex gap-1 items-center pr-2 py-0.5 select-none '
-              + (selected ? 'bg-blue-100' : 'hover:bg-gray-100')
+          'cursor-pointer flex gap-1.5 h-7 items-center pl-1 pr-2 select-none '
+              + (selected ? 'bg-blue-100 ' : hovered ? 'bg-gray-100 ' : '')
+              + (dimmed ? 'opacity-50' : '')
         }
         data={{id: feature.id}}
-        style={`padding-left: ${0.5 + depth}rem`}
-        unboundEvents={{click: 'featureClicked'}}
+        unboundEvents={{
+          click: 'featureClicked',
+          pointerenter: 'featureRowEntered',
+          pointerleave: 'featureRowLeft',
+        }}
     >
-      <input
-          ariaLabel={visible ? 'Hide' : 'Show'}
-          checked={visible}
-          data={{id: feature.id}}
-          type="checkbox"
-          unboundEvents={{click: 'visibilityToggled'}}
-      />
-      <Swatch expanded={expanded} feature={feature} />
-      <span className={'truncate' + (feature.data.name ? '' : ' italic text-gray-500')}>
+      {feature.kind === 'folder'
+          ? <span
+                className="cursor-pointer flex h-4 items-center justify-center shrink-0 w-4"
+                data={{id: feature.id, role: 'toggle'}}
+                unboundEvents={{click: 'folderToggled'}}
+            >
+              <Chevron expanded={expanded} />
+            </span>
+          : <span className="shrink-0 w-4" />
+      }
+      <FeatureIcon feature={feature} />
+      <span
+          className={
+            'grow truncate '
+                + (selected ? 'text-blue-900 ' : '')
+                + (feature.data.name ? '' : 'italic text-gray-500')
+          }
+      >
         {feature.data.name || untitled(feature)}
+      </span>
+      <span
+          ariaLabel={visible ? 'Hide' : 'Show'}
+          className="cursor-pointer hover:text-gray-900 shrink-0 text-gray-500"
+          data={{id: feature.id, role: 'toggle'}}
+          title={visible ? 'Hide' : 'Show'}
+          unboundEvents={{click: 'visibilityToggled'}}
+      >
+        <Eye visible={visible} />
       </span>
     </div>
   );
 }
 
-function Swatch({expanded, feature}: {expanded: boolean; feature: EditableFeature}) {
+function FeatureIcon({feature}: {feature: EditableFeature}) {
   if (feature.kind === 'folder') {
-    return <span className="text-center text-gray-600 w-4">{expanded ? '▾' : '▸'}</span>;
+    return (
+      <svg
+          className="h-4 shrink-0 stroke-current text-gray-600 w-4"
+          fill="none"
+          viewBox="0 0 16 16"
+      >
+        <FolderShape />
+      </svg>
+    );
   } else if (feature.kind === 'line') {
     return (
       <svg className="h-4 shrink-0 w-4" viewBox="0 0 16 16">
@@ -141,27 +231,36 @@ function Swatch({expanded, feature}: {expanded: boolean; feature: EditableFeatur
     );
   } else {
     return (
+      // The dot with a white ring the map draws, see FeatureLayer#planGeometry, with a faint edge
+      // so the ring shows against the white list.
       <svg className="h-4 shrink-0 w-4" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" fill="none" r="6.5" stroke="#d1d5db" strokeWidth="1" />
         <circle
             cx="8"
             cy="8"
             fill={feature.data.fill ?? DEFAULT_POINT_COLOR}
-            r="4"
+            r="5"
             stroke="white"
-            strokeWidth="1.5"
+            strokeWidth="2"
         />
       </svg>
     );
   }
 }
 
-function Properties({descendants, feature, folders}: {
+// A box with a lid, for folders
+function FolderShape() {
+  return <path d="M2.5 5.5 H13.5 V13.5 H2.5 Z M1.5 2.5 H14.5 V5.5 H1.5 Z" strokeWidth="1.3" />;
+}
+
+/** Edits the selected feature. */
+export function FeatureProperties({descendants, feature, folders}: {
   descendants: number;
   feature: EditableFeature;
   folders: Array<{folder: EditableFolder; depth: number}>;
 }) {
   return (
-    <div className="border-gray-300 border-t flex flex-col gap-2 p-2">
+    <div className="border-gray-300 border-t flex flex-col gap-2 p-2 shrink-0">
       <Input
           className="border border-gray-300 px-1 rounded"
           forceValue={true}

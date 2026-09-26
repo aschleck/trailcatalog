@@ -17,6 +17,11 @@ export const FEATURE_EDITED = declareEvent<{
   after: EditableFeature;
 }>('feature_edited');
 
+export const FEATURE_HOVERED = declareEvent<{
+  // Undefined when the pointer left every feature
+  id: string|undefined;
+}>('feature_hovered');
+
 export const HOVER_CHANGED = declareEvent<{
   target: {
     id: RawUuid;

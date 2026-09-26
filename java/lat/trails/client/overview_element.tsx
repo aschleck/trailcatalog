@@ -9,12 +9,14 @@ import { requestData } from './data';
 import {
   FEATURE_CLICKED,
   FEATURE_EDITED,
+  FEATURE_HOVERED,
   HOVER_CHANGED,
   LINE_DRAWN,
   TOOL_REQUESTED,
 } from './events';
-import { FeatureList } from './feature_list';
+import { FeatureProperties, FeatureTree, LayerList, NewFolderButton } from './feature_list';
 import { MeasurePanel } from './measure_panel';
+import { SidebarElement, SidebarSection } from './sidebar_element';
 import { Menubar, MenubarItem } from './menubar';
 import { Toolbar } from './toolbar';
 
@@ -34,6 +36,8 @@ export function OverviewElement(
         folders: [],
         selected: undefined,
         selectedDescendants: 0,
+        hovered: undefined,
+        hoveredAncestors: new Set(),
         hidden: new Set(),
         expanded: new Set(),
       },
@@ -79,6 +83,7 @@ export function OverviewElement(
             corgi: [
               [FEATURE_CLICKED, 'onFeatureClicked'],
               [FEATURE_EDITED, 'onFeatureEdited'],
+              [FEATURE_HOVERED, 'onFeatureHovered'],
               [HOVER_CHANGED, 'onHoverChange'],
               [LINE_DRAWN, 'onLineDrawn'],
               [MAP_MOVED, 'onMove'],
@@ -92,7 +97,6 @@ export function OverviewElement(
     >
       <Menubar user={state.self.finished ? state.self.value().user : undefined}>
         <MenubarItem label="File" onClick="fileMenuClicked" />
-        <MenubarItem label="Layers" onClick="layersMenuClicked" />
       </Menubar>
       <div className="flex grow min-h-0">
         <div className="grow min-w-0 relative">
@@ -103,7 +107,27 @@ export function OverviewElement(
           <Toolbar tool={state.tool} />
           {state.tool === 'measure' ? <MeasurePanel state={state.measure} /> : ''}
         </div>
-        <FeatureList state={state.features} />
+        <SidebarElement>
+          <SidebarSection
+              controls={<NewFolderButton />}
+              footer={
+                state.features.selected
+                    ? <FeatureProperties
+                          feature={state.features.selected}
+                          folders={state.features.folders}
+                          descendants={state.features.selectedDescendants}
+                      />
+                    : ''
+              }
+              label="Features"
+              weight={3}
+          >
+            <FeatureTree state={state.features} />
+          </SidebarSection>
+          <SidebarSection label="Layers" open={false}>
+            <LayerList layers={state.layers} />
+          </SidebarSection>
+        </SidebarElement>
       </div>
     </div>
   </>;
