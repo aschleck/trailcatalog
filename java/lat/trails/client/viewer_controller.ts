@@ -36,6 +36,7 @@ import { EditableLine, EditLayer, Tool } from './edit_layer';
 import { HOVER_CHANGED } from './events';
 import { parseGpx } from './gpx';
 import { MENU_CLASSES } from './menubar';
+import { SaveQueue } from './save_queue';
 
 export interface LayerState {
   name: string;
@@ -85,11 +86,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     reject: (e: unknown) => void;
   }|undefined;
   private readonly loginWatcher: Timer;
-  // Writes to the server are serialized one after another to avoid multiple occuring at the same
-  // time.
-  private writes: Promise<unknown>;
-  // Importing a GPX queues a write per segment, and whatever failed the first one usually fails
-  // all of them, so a dialog apiece would bury the page.
+  private readonly saves: SaveQueue;
+  // A failure the dialog is already up for stays quiet, or else every retry that fails for the
+  // same reason stacks another one on the page.
   private warnedUnsaved: boolean;
   lastChange: number;
 
@@ -99,7 +98,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.dialog = response.deps.services.dialog;
     this.history = response.deps.services.history;
     this.menu = response.deps.services.menu;
-    this.writes = Promise.resolve();
+    this.saves = new SaveQueue(line => this.putLine(line), e => {
+      console.error(e);
+      this.warnUnsaved();
+    });
     this.warnedUnsaved = false;
     this.lastChange = Date.now();
 
@@ -125,7 +127,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         self.then(response => {
           if (response.user) {
             login.resolve();
-            this.retryUnsaved();
+            this.saves.flush();
           } else {
             login.reject(new Error('Nobody signed in'));
           }
@@ -141,7 +143,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             this.mapController.camera,
             this.mapController.renderer,
             line => {
-              this.saveLine(line);
+              this.saves.save([line]);
             });
     this.registerDisposable(this.editLayer);
 
@@ -584,6 +586,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private newCollection(): void {
+    this.saves.clear();
     this.editLayer.setLines([]);
     this.updateState({
       ...this.state,
@@ -593,6 +596,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private openCollection(collection: Collection): void {
+    this.saves.clear();
     this.updateState({
       ...this.state,
       collection,
@@ -648,9 +652,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           }
 
           this.editLayer.addLines(lines);
-          for (const line of lines) {
-            this.saveLine(line);
-          }
+          this.saves.save(lines);
           return undefined;
         })
         .catch(e => {
@@ -659,42 +661,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         });
   }
 
-  private saveLine(line: EditableLine): void {
-    this.writes =
-        this.writes
-            .then(() => this.currentCollection())
-            .then(collection => {
-              const put: Future<PutLineResponse> =
-                  requestData('lat.trails.DataService/PutLine', {
-                    collection,
-                    line: toProto(line),
-                  });
-              return put.then(response => {
-                line.version = response.version;
-              });
-            })
-            .catch(e => {
-              console.error(e);
-              this.warnUnsaved();
-            });
-  }
-
-  // Puts the lines that never reached the server, because a failed write drops its line and only
-  // finishing a line calls saveLine again.
-  //
-  // Queued behind the outstanding writes because a line waiting in front of this has no version
-  // yet, and putting it twice makes the second one a 409.
-  private retryUnsaved(): void {
-    this.writes =
-        this.writes
-            .then(() => {
-              for (const line of this.editLayer.unsavedLines()) {
-                this.saveLine(line);
-              }
-            })
-            .catch(e => {
-              console.error(e);
-            });
+  private putLine(line: EditableLine): Promise<void> {
+    return this.currentCollection().then(collection => {
+      const put: Future<PutLineResponse> =
+          requestData('lat.trails.DataService/PutLine', {
+            collection,
+            line: toProto(line),
+          });
+      return put.then(response => {
+        line.version = response.version;
+      });
+    });
   }
 
   // Dismissing the dialog arms it again, so a later failure is not silent.
