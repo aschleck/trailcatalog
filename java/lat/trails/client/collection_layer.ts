@@ -16,7 +16,7 @@ import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories
 import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
-import { HOVER_CHANGED } from './events';
+import { DOUBLE_CLICK_MS, HOVER_CHANGED, OBJECT_OPENED } from './events';
 import { Data, Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
@@ -79,6 +79,7 @@ export class CollectionLayer extends Layer {
   // Bumped on every hover and hoverLost, so that an answer for a point the pointer has left is
   // dropped.
   private hoverGeneration: number;
+  private lastClick: {id: string; timeMs: number}|undefined;
   private indexed: boolean;
   private generation: number;
   private readonly highlight: Highlight;
@@ -115,6 +116,7 @@ export class CollectionLayer extends Layer {
       }
     });
     this.hoverGeneration = 0;
+    this.lastClick = undefined;
     this.indexed = true;
     this.generation = 0;
     this.highlight = {
@@ -181,9 +183,17 @@ export class CollectionLayer extends Layer {
     }
   }
 
+  // Takes the time before querying, because the query's latency is not the person's.
   override click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
+    const now = performance.now();
     this.queryPoint(point).then(ids => {
-      console.log(ids);
+      const target = ids.find(id => this.objects.has(id));
+      const last = this.lastClick;
+      this.lastClick = target ? {id: target, timeMs: now} : undefined;
+      const object = target ? this.objects.get(target) : undefined;
+      if (object && last && last.id === target && now - last.timeMs < DOUBLE_CLICK_MS) {
+        source.trigger(OBJECT_OPENED, {layer: this, object});
+      }
     });
     return false;
   }

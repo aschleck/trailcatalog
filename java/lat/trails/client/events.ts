@@ -1,8 +1,12 @@
 import { declareEvent } from 'external/dev_april_corgi+/js/corgi/events';
 import { RawUuid } from 'js/map/common/types';
+import { Layer } from 'js/map/layer';
 
 import { EditableFeature } from './features';
-import { Data } from './workers/collection_loader';
+import { Data, Line, Polygon } from './workers/collection_loader';
+
+// Two clicks on one object this close together count as a double click.
+export const DOUBLE_CLICK_MS = 400;
 
 /** What pointer tools are possible. */
 export type Tool = 'pointer'|'point'|'line'|'measure';
@@ -32,6 +36,14 @@ export const HOVER_CHANGED = declareEvent<{
 export const LINE_DRAWN = declareEvent<{
   latLngE7: Int32Array;
 }>('line_drawn');
+
+/** An object a map layer drew from a collection. */
+export type LayerObject = {kind: 'line'; value: Line}|{kind: 'polygon'; value: Polygon};
+
+export const OBJECT_OPENED = declareEvent<{
+  layer: Layer;
+  object: LayerObject;
+}>('object_opened');
 
 export const POINT_PLACED = declareEvent<{
   latE7: number;
