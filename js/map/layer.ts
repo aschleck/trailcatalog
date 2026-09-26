@@ -38,8 +38,8 @@ export abstract class Layer extends Disposable {
     return false;
   }
 
-  // Called on the layers under whichever one claimed the hover, so a layer that holds a highlight
-  // can drop it.
+  // Called on the layers under whichever one claimed the hover, and on every layer when the pointer
+  // leaves the map, so a layer that holds a highlight can drop it.
   hoverLost(source: EventSource): void {}
 
   keyPressed(key: string, source: EventSource): boolean {

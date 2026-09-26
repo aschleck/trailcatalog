@@ -14,6 +14,14 @@ esbuild_binary(
 )
 
 esbuild_binary(
+    name = "elevation_sampler_worker",
+    entry_point = "elevation_sampler.ts",
+    deps = [
+        ":workers",
+    ],
+)
+
+esbuild_binary(
     name = "location_querier_worker",
     entry_point = "location_querier.ts",
     deps = [

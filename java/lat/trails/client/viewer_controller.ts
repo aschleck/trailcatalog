@@ -1,14 +1,17 @@
 import { checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Future } from 'external/dev_april_corgi+/js/common/futures';
+import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
-import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
+import { CorgiEvent, DOM_MOUSE, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
 import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
 import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
 import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
+import { S2LatLng } from 'java/org/trailcatalog/s2';
+import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
 import { RgbaU32 } from 'js/map/common/types';
 import { CLICKED, MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
@@ -17,6 +20,7 @@ import { MapController } from 'js/map/map_controller';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
+import { Elevations } from 'js/map/workers/elevations';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import {
@@ -32,7 +36,7 @@ import { CollectionLayer } from './collection_layer';
 import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
 import { invalidateCurrentUser, requestData } from './data';
 import { ConfirmDeleteDialog, ImportFailedDialog, SaveFailedDialog } from './dialogs';
-import { DrawingLayer } from './drawing_layer';
+import { DrawingLayer, toE7Array } from './drawing_layer';
 import {
   FEATURE_CLICKED,
   FEATURE_EDITED,
@@ -55,8 +59,20 @@ import {
   toWrite,
 } from './features';
 import { parseImport } from './importer';
+import { MeasureState } from './measure_panel';
+import { haversineMeters, profileSamples, ProfileSamples, profileStats } from './measurements';
 import { MENU_CLASSES } from './menubar';
 import { SaveEntry, SaveQueue } from './save_queue';
+
+const MAPTERHORN_COPYRIGHT = {
+  long: 'Mapterhorn',
+  short: 'Mapterhorn',
+  url: 'https://mapterhorn.com/attribution',
+};
+// No short form, so that it shows in the full list and leaves the credit bar to Mapterhorn
+const COPERNICUS_COPYRIGHT = {
+  long: 'Contains modified Copernicus Sentinel data 2021',
+};
 
 export interface LayerState {
   name: string;
@@ -73,6 +89,7 @@ export interface State {
   collection: Collection|undefined;
   features: FeatureListState;
   layers: LayerState[];
+  measure: MeasureState;
   self: Future<GetCurrentUserResponse>;
   tool: Tool;
 }
@@ -102,6 +119,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly lineLayer: DrawingLayer;
   private readonly measureLayer: DrawingLayer;
   private readonly store: FeatureStore;
+  private readonly elevations: Elevations;
+  // Waits for the pointer to settle before sampling, because the measure tool redraws its cursor
+  // segment on every move and each profile fetches tiles.
+  private readonly profileDebouncer: Debouncer;
+  // The samples behind the profile on screen, so hovering it can find the spot on the map
+  private measureSamples: ProfileSamples|undefined;
+  // Moves with every profile asked for, so that a slow answer for an old drawing is dropped
+  private profileGeneration: number;
+  // The placed path the length and profile describe
+  private measuredPath: Float64Array|undefined;
   private selected: string|undefined;
   private readonly hidden: Set<string>;
   private readonly expanded: Set<string>;
@@ -130,6 +157,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.warnUnsaved();
     });
     this.store = new FeatureStore(this.saves);
+    this.elevations = new Elevations();
+    this.profileDebouncer = new Debouncer(/* delayMs= */ 150, () => {
+      this.sampleProfile();
+    });
+    this.measureSamples = undefined;
+    this.profileGeneration = 0;
+    this.measuredPath = undefined;
     this.selected = undefined;
     this.hidden = new Set();
     this.expanded = new Set();
@@ -182,7 +216,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.lineLayer =
         new DrawingLayer(
             'line',
-            {fill: 0xE8442EFF as RgbaU32, stroke: 0x3A0D06FF as RgbaU32, radiusPx: 2.5},
             locations,
             camera,
             renderer);
@@ -190,10 +223,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.measureLayer =
         new DrawingLayer(
             'measure',
-            {fill: 0xF5C542FF as RgbaU32, stroke: 0x4A3A08FF as RgbaU32, radiusPx: 2.5},
             locations,
             camera,
-            renderer);
+            renderer,
+            () => {
+              this.measureChanged();
+            },
+            [MAPTERHORN_COPYRIGHT]);
     this.registerDisposable(this.measureLayer);
 
     this.registerListener(window, 'keydown', e => {
@@ -208,10 +244,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name: 'Hillshades',
       enabled: true,
       layer: new RasterTileLayer(
-          [{
-            long: 'Contains modified Copernicus Sentinel data 2021',
-            short: 'Copernicus 2021',
-          }, {
+          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
@@ -226,10 +259,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name: 'Contours (feet)',
       enabled: true,
       layer: new MbtileLayer(
-          [{
-            long: 'Contains modified Copernicus Sentinel data 2021',
-            short: 'Copernicus 2021',
-          }, {
+          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
@@ -243,10 +273,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name: 'Contours (meters)',
       enabled: false,
       layer: new MbtileLayer(
-          [{
-            long: 'Contains modified Copernicus Sentinel data 2021',
-            short: 'Copernicus 2021',
-          }, {
+          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
@@ -599,6 +626,73 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(id);
   }
 
+  measureClosed(): void {
+    this.setTool('pointer');
+  }
+
+  measureUndoClicked(): void {
+    this.measureLayer.popVertex();
+  }
+
+  profileHovered(e: CorgiEvent<typeof DOM_POINTER>): void {
+    const samples = this.measureSamples;
+    if (!samples || samples.distanceMeters.length === 0) {
+      return;
+    }
+
+    // The chart scales its viewBox to its width, so the pointer's share of the plot is its share
+    // of the distance.
+    const svg = e.actionElement.element();
+    const bounds = svg.getBoundingClientRect();
+    const width = checkExists(e.actionElement.data('width')).number();
+    const left = checkExists(e.actionElement.data('left')).number() * bounds.width / width;
+    const right = checkExists(e.actionElement.data('right')).number() * bounds.width / width;
+    const fraction =
+        Math.min(1, Math.max(0, (e.detail.clientX - bounds.left - left) / (right - left)));
+    const distances = samples.distanceMeters;
+    const target = fraction * distances[distances.length - 1];
+    let index = 0;
+    while (index + 1 < distances.length && distances[index + 1] <= target) {
+      index += 1;
+    }
+    const ll =
+        S2LatLng.fromDegrees(
+            samples.latLngDegrees[2 * index], samples.latLngDegrees[2 * index + 1]);
+    this.measureLayer.setMarker(projectS2LatLng(ll));
+    this.updateState({...this.state, measure: {...this.state.measure, hovered: index}});
+  }
+
+  profileLeft(): void {
+    this.measureLayer.setMarker(undefined);
+    this.updateState({...this.state, measure: {...this.state.measure, hovered: undefined}});
+  }
+
+  // Samples elevations at the vertices so that the saved line carries them like an imported one.
+  saveMeasurementClicked(): void {
+    const latLngE7 = toE7Array(this.measureLayer.points());
+    if (latLngE7.length < 4) {
+      return;
+    }
+
+    const degrees = Float64Array.from(latLngE7, e7 => e7 / 1e7);
+    this.elevations.sample(degrees, profileSamples(degrees).zoom)
+        .then(meters => Int32Array.from(meters, m => Math.round(m * 100)), () => undefined)
+        .then(elevationCentimeters => {
+          const line: EditableLine = {
+            kind: 'line',
+            id: crypto.randomUUID(),
+            version: 0n,
+            data: {},
+            latLngE7,
+            elevationCentimeters,
+            timeSeconds: undefined,
+          };
+          this.store.apply([{id: line.id, before: undefined, after: line}]);
+          this.setTool('pointer');
+          this.select(line.id);
+        });
+  }
+
   visibilityToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
     const id = checkExists(e.actionElement.data('id')).string();
     if (!this.hidden.delete(id)) {
@@ -765,6 +859,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.lineLayer.setActive(false);
     this.measureLayer.setActive(false);
     this.featureLayer.setInteractive(tool === 'pointer');
+    // Refreshes the credits, because the measure layer's only count while it is active
+    this.setMapLayers(this.state.layers);
     if (tool === 'line') {
       this.lineLayer.setActive(true);
     } else if (tool === 'measure') {
@@ -816,6 +912,97 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
     e.preventDefault();
+  }
+
+  // Updates the length now, because it is cheap, and the profile once the pointer settles. The
+  // drawing changes on every pointer move, and most moves leave the placed part alone.
+  private measureChanged(): void {
+    const path = this.measurePath();
+    const measured = this.measuredPath;
+    if (measured && measured.length === path.length && measured.every((v, i) => v === path[i])) {
+      return;
+    }
+    this.measuredPath = path;
+    let lengthMeters = 0;
+    for (let i = 2; i < path.length; i += 2) {
+      lengthMeters += haversineMeters(path[i - 2], path[i - 1], path[i], path[i + 1]);
+    }
+    const vertexCount = path.length / 2;
+    this.updateState({
+      ...this.state,
+      measure: {
+        ...this.state.measure,
+        lengthMeters,
+        vertexCount,
+      },
+    });
+    if (vertexCount >= 2) {
+      this.profileDebouncer.trigger();
+    } else {
+      this.measureSamples = undefined;
+      this.updateState({
+        ...this.state,
+        measure: {
+          lengthMeters,
+          vertexCount,
+          profile: undefined,
+          hovered: undefined,
+          status: 'idle',
+        },
+      });
+    }
+  }
+
+  private sampleProfile(): void {
+    const path = this.measurePath();
+    if (path.length < 4) {
+      return;
+    }
+
+    const samples = profileSamples(path);
+    this.profileGeneration += 1;
+    const generation = this.profileGeneration;
+    this.updateState({...this.state, measure: {...this.state.measure, status: 'loading'}});
+    this.elevations.sample(samples.latLngDegrees, samples.zoom).then(
+        meters => {
+          if (generation !== this.profileGeneration) {
+            return;
+          }
+
+          this.measureSamples = samples;
+          this.updateState({
+            ...this.state,
+            measure: {
+              ...this.state.measure,
+              profile: {
+                distanceMeters: Array.from(samples.distanceMeters),
+                meters: Array.from(meters),
+                stats: profileStats(meters),
+              },
+              hovered: undefined,
+              status: 'idle',
+            },
+          });
+        },
+        e => {
+          console.error(e);
+          if (generation === this.profileGeneration) {
+            this.updateState({...this.state, measure: {...this.state.measure, status: 'failed'}});
+          }
+        });
+  }
+
+  // The placed part of the measurement as interleaved lat then lng degrees. The segment to the
+  // cursor is left out, because the numbers are about what was clicked.
+  private measurePath(): Float64Array {
+    const points = this.measureLayer.placedPoints();
+    const path = new Float64Array(points.length);
+    for (let i = 0; i < points.length; i += 2) {
+      const ll = unprojectS2LatLng(points[i], points[i + 1]);
+      path[i] = ll.latDegrees();
+      path[i + 1] = ll.lngDegrees();
+    }
+    return path;
   }
 
   private select(id: string|undefined): void {

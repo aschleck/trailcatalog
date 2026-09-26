@@ -25,6 +25,11 @@ export function CitationsElement(_: {parameters: {[key: string]: string};}) {
         <li>NASADEM 1 arc second provided by NASA Earthdata</li>
       </ul>
     </p>
+    <p>
+      Measured elevations come from © <a href="https://mapterhorn.com/">Mapterhorn</a>, which
+      combines the open datasets listed on its
+      <a href="https://mapterhorn.com/attribution">attribution page</a>.
+    </p>
   </>;
 }
 
