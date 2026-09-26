@@ -313,7 +313,8 @@ function intersectCircleAabb(
   const dy = py - (lowY + halfHeight);
   const cx = dx < -halfWidth ? -halfWidth : (dx > halfWidth ? halfWidth : dx);
   const cy = dy < -halfHeight ? -halfHeight : (dy > halfHeight ? halfHeight : dy);
-  const dxPrime = px - (lowX + cx);
-  const dyPrime = py - (lowY + cy);
+  // cx and cy are offsets from the center, so this is the gap to the closest point on the box.
+  const dxPrime = dx - cx;
+  const dyPrime = dy - cy;
   return dxPrime * dxPrime + dyPrime * dyPrime <= r2;
 }
