@@ -125,6 +125,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly lineLayer: DrawingLayer;
   private readonly measureLayer: DrawingLayer;
   private readonly pointLayer: PointToolLayer;
+  private readonly skyboxLayer: SkyboxLayer;
   private readonly store: FeatureStore;
   private readonly elevations: Elevations;
   // Waits for the pointer to settle before sampling, because the measure tool redraws its cursor
@@ -245,11 +246,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.keyPressed(e);
     });
 
+    this.skyboxLayer = new SkyboxLayer(Z_BOTTOM, this.mapController.renderer);
+    this.registerDisposable(this.skyboxLayer);
+
     const allLayers = [{
-      name: 'Skybox',
-      enabled: true,
-      layer: new SkyboxLayer(Z_BOTTOM, this.mapController.renderer),
-    }, {
       name: 'Hillshades',
       enabled: true,
       layer: new RasterTileLayer(
@@ -1365,7 +1365,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
     this.mapController.setLayers(
         [this.pointLayer, this.lineLayer, this.measureLayer, this.featureLayer as Layer]
-            .concat(layers.filter(l => l.enabled).map(l => l.layer)));
+            .concat(layers.filter(l => l.enabled).map(l => l.layer))
+            .concat([this.skyboxLayer]));
   }
 }
 
