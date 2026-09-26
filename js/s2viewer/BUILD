@@ -17,9 +17,9 @@ esbuild_binary(
 tc_ts_project(
     name = "ts",
     deps = [
-        "//java/org/trailcatalog/client/common",
         "//js/map",
         "//js/map/layers",
+        "//js/units",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/corgi",
         "@dev_april_corgi//js/emu",

@@ -2,8 +2,6 @@ import { debugMode } from 'external/dev_april_corgi+/js/common/debug';
 import { maybeMemoized } from 'external/dev_april_corgi+/js/common/memoized';
 import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
-import { celsiusToFahrenheit, metersToFeet, metersToMiles } from './math';
-
 export type UnitSystem = 'imperial'|'metric';
 
 const UNIT_SYSTEM_COOKIE = 'unit_system';
@@ -41,6 +39,17 @@ export function setUnitSystem(system: UnitSystem) {
   document.cookie = `${UNIT_SYSTEM_COOKIE}=${system}; Path=/; SameSite=Strict${secure}`;
 }
 
+export function celsiusToFahrenheit(celsius: number): number {
+  return 1.8 * celsius + 32;
+}
+
+export function metersToFeet(meters: number): number {
+  return meters * 3.28084;
+}
+
+export function metersToMiles(meters: number): number {
+  return meters * 0.00062137119224;
+}
 
 const areaFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,

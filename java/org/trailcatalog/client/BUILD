@@ -22,6 +22,7 @@ tc_ts_project(
         "//js/dino",
         "//js/map",
         "//js/map/layers",
+        "//js/units",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/corgi",
         "@dev_april_corgi//js/emu",

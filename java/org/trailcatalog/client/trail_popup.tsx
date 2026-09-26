@@ -3,7 +3,7 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Vec2 } from 'js/map/common/types';
 
-import { formatDistance } from './common/formatters';
+import { formatDistance } from 'js/units/formatters';
 import { Path, Point, Trail } from './models/types';
 
 const POINT_CATEGORY_TO_LABEL =

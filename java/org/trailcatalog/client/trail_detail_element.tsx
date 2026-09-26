@@ -7,8 +7,8 @@ import { LatLng } from 'js/map/common/types';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
-import { formatDistance, formatHeight, formatTemperature, getUnitSystem, shouldUseImperial } from './common/formatters';
-import { metersToFeet, metersToMiles } from './common/math';
+import { formatDistance, formatHeight, formatTemperature, getUnitSystem, shouldUseImperial } from 'js/units/formatters';
+import { metersToFeet, metersToMiles } from 'js/units/formatters';
 import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
 

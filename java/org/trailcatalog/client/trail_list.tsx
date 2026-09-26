@@ -1,6 +1,6 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
-import { formatCount, formatDistance, formatHeight } from './common/formatters';
+import { formatCount, formatDistance, formatHeight } from 'js/units/formatters';
 import { Path, Point, Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';

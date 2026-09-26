@@ -13,7 +13,7 @@ import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
 import { Z_BASE_TERRAIN, Z_BOTTOM } from 'js/map/z';
 
-import { UnitSystem } from './common/formatters';
+import { UnitSystem } from 'js/units/formatters';
 import { MapDataService } from './data/map_data_service';
 import { ACTIVE_PALETTE, ERROR_PALETTE, LinePalette } from './map/colors';
 import { SELECTION_CHANGED } from './map/events';
@@ -122,7 +122,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Contours (imperial)',
       enabled: response.args.units === 'imperial',
       layer: new MbtileLayer(
-          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
+          [COPERNICUS_COPYRIGHT, {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
@@ -136,7 +136,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Contours (metric)',
       enabled: response.args.units === 'metric',
       layer: new MbtileLayer(
-          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
+          [COPERNICUS_COPYRIGHT, {
             long: 'Contains modified NASADEM data 2000',
           }],
           'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',

@@ -5,7 +5,7 @@ import { CorgiEvent } from 'external/dev_april_corgi+/js/corgi/events';
 import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
-import { setUnitSystem, UnitSystem } from './common/formatters';
+import { setUnitSystem, UnitSystem } from 'js/units/formatters';
 
 export interface State {
   system: UnitSystem;
