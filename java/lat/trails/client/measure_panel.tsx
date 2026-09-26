@@ -29,20 +29,17 @@ const PLOT_BOTTOM = CHART_HEIGHT - 22;
 export function MeasurePanel({state}: {state: MeasureState}) {
   return (
     <div className="
-        absolute
         bg-white
         flex
         flex-col
         gap-2
         p-3
-        right-2
+        pointer-events-auto
         rounded
         shadow-lg
+        shrink-0
         text-gray-900
         text-sm
-        top-2
-        w-80
-        z-10
     ">
       <div className="flex gap-2 items-center">
         <svg className="h-5 stroke-current w-5" viewBox="0 0 20 20">

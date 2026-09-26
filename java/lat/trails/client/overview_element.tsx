@@ -12,10 +12,17 @@ import {
   FEATURE_HOVERED,
   HOVER_CHANGED,
   LINE_DRAWN,
+  OBJECT_OPENED,
   POINT_PLACED,
   TOOL_REQUESTED,
 } from './events';
-import { FeatureProperties, FeatureTree, LayerList, NewFolderButton } from './feature_list';
+import {
+  FeatureProperties,
+  FeatureTree,
+  LayerList,
+  NewFolderButton,
+  ObjectProperties,
+} from './feature_list';
 import { MeasurePanel } from './measure_panel';
 import { SidebarElement, SidebarSection } from './sidebar_element';
 import { Menubar, MenubarItem } from './menubar';
@@ -42,6 +49,7 @@ export function OverviewElement(
         hidden: new Set(),
         expanded: new Set(),
       },
+      inspected: undefined,
       layers: [],
       measure: {
         lengthMeters: 0,
@@ -88,6 +96,7 @@ export function OverviewElement(
               [HOVER_CHANGED, 'onHoverChange'],
               [LINE_DRAWN, 'onLineDrawn'],
               [MAP_MOVED, 'onMove'],
+              [OBJECT_OPENED, 'onObjectOpened'],
               [POINT_PLACED, 'onPointPlaced'],
               [TOOL_REQUESTED, 'onToolRequested'],
             ],
@@ -108,22 +117,34 @@ export function OverviewElement(
               ref="map"
           />
           <Toolbar tool={state.tool} />
-          {state.tool === 'measure' ? <MeasurePanel state={state.measure} /> : ''}
+          {/* Spans the map's height so a tall dialog scrolls, and passes clicks to the map. */}
+          <div className="
+              absolute
+              bottom-2
+              flex
+              flex-col
+              gap-2
+              pointer-events-none
+              right-2
+              top-2
+              w-80
+              z-10
+          ">
+            {state.tool === 'measure' ? <MeasurePanel state={state.measure} /> : ''}
+            {state.features.selected
+                ? <FeatureProperties
+                      feature={state.features.selected}
+                      folders={state.features.folders}
+                      descendants={state.features.selectedDescendants}
+                  />
+                : state.inspected
+                    ? <ObjectProperties object={state.inspected} />
+                    : ''
+            }
+          </div>
         </div>
         <SidebarElement>
-          <SidebarSection
-              controls={<NewFolderButton />}
-              footer={
-                state.features.selected
-                    ? <FeatureProperties
-                          feature={state.features.selected}
-                          folders={state.features.folders}
-                          descendants={state.features.selectedDescendants}
-                      />
-                    : ''
-              }
-              label="Features"
-          >
+          <SidebarSection controls={<NewFolderButton />} label="Features">
             <FeatureTree state={state.features} />
           </SidebarSection>
           <SidebarSection label="Layers" open={false}>

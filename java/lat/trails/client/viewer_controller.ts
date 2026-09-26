@@ -45,14 +45,16 @@ import {
   FEATURE_EDITED,
   FEATURE_HOVERED,
   HOVER_CHANGED,
+  LayerObject,
   LINE_DRAWN,
+  OBJECT_OPENED,
   POINT_PLACED,
   Tool,
   TOOL_REQUESTED,
 } from './events';
 import { toGeoJson, toGpx } from './exporter';
 import { FeatureLayer } from './feature_layer';
-import { buildTree, FeatureListState, foldersOf } from './feature_list';
+import { buildTree, FeatureListState, foldersOf, InspectedObject } from './feature_list';
 import { Change, FeatureStore } from './feature_store';
 import {
   DEFAULT_POINT_COLOR,
@@ -70,7 +72,7 @@ import { parseImport } from './importer';
 import { IconPickerDialog } from './icon_picker';
 import { MeasureState } from './measure_panel';
 import { PointToolLayer } from './point_tool_layer';
-import { haversineMeters, profileSamples, ProfileSamples, profileStats } from './measurements';
+import { pathLengthMeters, profileSamples, ProfileSamples, profileStats } from './measurements';
 import { MENU_CLASSES } from './menubar';
 import { SaveEntry, SaveQueue } from './save_queue';
 
@@ -100,6 +102,8 @@ export interface Args {
 export interface State {
   collection: Collection|undefined;
   features: FeatureListState;
+  // The map layer object open in the dialog, when no feature is selected
+  inspected: InspectedObject|undefined;
   layers: LayerState[];
   measure: MeasureState;
   self: Future<GetCurrentUserResponse>;
@@ -145,6 +149,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // The placed path the length and profile describe
   private measuredPath: Float64Array|undefined;
   private selected: string|undefined;
+  // Kept for centering on, which needs the geometry the dialog's state leaves out
+  private inspected: LayerObject|undefined;
+  // Moves with every object opened or closed, so that tags arriving for an earlier one are dropped
+  private inspectGeneration: number;
+  private readonly osmPaths: CollectionLayer;
   private readonly hidden: Set<string>;
   private readonly expanded: Set<string>;
   // Logins run in a popup on Google's origin, so a caller waiting on one waits on this.
@@ -180,6 +189,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.profileGeneration = 0;
     this.measuredPath = undefined;
     this.selected = undefined;
+    this.inspected = undefined;
+    this.inspectGeneration = 0;
     this.hidden = new Set();
     this.expanded = new Set();
     this.store.listen(() => {
@@ -499,7 +510,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name: 'OSM paths',
       // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
       enabled: true,
-      layer: new CollectionLayer(
+      layer: this.osmPaths = new CollectionLayer(
           '/api/collections/00000000-0000-0000-0000-000000000001',
           OSM_PATHS,
           [
@@ -622,6 +633,42 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       requestAnimationFrame(() => {
         this.root.querySelector(`div[data-id="${id}"]`)?.scrollIntoView({block: 'nearest'});
       });
+    }
+  }
+
+  // Only the pointer tool opens objects, or else finishing a line with a double click would too.
+  onObjectOpened(e: CorgiEvent<typeof OBJECT_OPENED>): void {
+    if (this.state.tool !== 'pointer') {
+      return;
+    }
+
+    const {layer, object} = e.detail;
+    this.select(undefined);
+    this.inspected = object;
+    const data = object.value.data;
+    const wayId = layer === this.osmPaths && typeof data.id === 'number' ? data.id : undefined;
+    const common = {
+      layer: this.state.layers.find(l => l.layer === layer)?.name ?? '',
+      data,
+      osm: wayId !== undefined ? {id: wayId, tags: 'loading' as const} : undefined,
+    };
+    if (object.kind === 'line') {
+      const path = toDegrees(object.value.points);
+      this.updateState({
+        ...this.state,
+        inspected: {
+          ...common,
+          kind: 'line',
+          lengthMeters: pathLengthMeters(path),
+          climb: undefined,
+        },
+      });
+      this.loadClimb(path);
+    } else {
+      this.updateState({...this.state, inspected: {...common, kind: 'polygon'}});
+    }
+    if (wayId !== undefined) {
+      this.loadWayTags(wayId);
     }
   }
 
@@ -772,25 +819,36 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // A folder centers on everything inside it.
   centerClicked(): void {
-    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
-    if (!selected) {
-      return;
-    }
-
     let low = [Infinity, Infinity] as Vec2;
     let high = [-Infinity, -Infinity] as Vec2;
-    const include = (latE7: number, lngE7: number) => {
-      low = [Math.min(low[0], latE7 / 1e7), Math.min(low[1], lngE7 / 1e7)] as Vec2;
-      high = [Math.max(high[0], latE7 / 1e7), Math.max(high[1], lngE7 / 1e7)] as Vec2;
+    const include = (latDegrees: number, lngDegrees: number) => {
+      low = [Math.min(low[0], latDegrees), Math.min(low[1], lngDegrees)] as Vec2;
+      high = [Math.max(high[0], latDegrees), Math.max(high[1], lngDegrees)] as Vec2;
     };
-    const features = selected.kind === 'folder' ? this.store.descendants(selected.id) : [selected];
+    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    const features =
+        !selected
+            ? []
+            : selected.kind === 'folder' ? this.store.descendants(selected.id) : [selected];
     for (const feature of features) {
       if (feature.kind === 'point') {
-        include(feature.latE7, feature.lngE7);
+        include(feature.latE7 / 1e7, feature.lngE7 / 1e7);
       } else if (feature.kind === 'line') {
         for (let i = 0; i < feature.latLngE7.length; i += 2) {
-          include(feature.latLngE7[i], feature.latLngE7[i + 1]);
+          include(feature.latLngE7[i] / 1e7, feature.latLngE7[i + 1] / 1e7);
         }
+      }
+    }
+    const inspected = this.inspected;
+    if (inspected?.kind === 'polygon') {
+      const bound = inspected.value.bound;
+      include(bound.low[0], bound.low[1]);
+      include(bound.high[0], bound.high[1]);
+    } else if (inspected?.kind === 'line') {
+      const points = inspected.value.points;
+      for (let i = 0; i < points.length; i += 2) {
+        const ll = unprojectS2LatLng(points[i], points[i + 1]);
+        include(ll.latDegrees(), ll.lngDegrees());
       }
     }
     if (low[0] > high[0]) {
@@ -1047,10 +1105,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
     this.measuredPath = path;
-    let lengthMeters = 0;
-    for (let i = 2; i < path.length; i += 2) {
-      lengthMeters += haversineMeters(path[i - 2], path[i - 1], path[i], path[i + 1]);
-    }
+    const lengthMeters = pathLengthMeters(path);
     const vertexCount = path.length / 2;
     this.updateState({
       ...this.state,
@@ -1119,14 +1174,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // The placed part of the measurement as interleaved lat then lng degrees. The segment to the
   // cursor is left out, because the numbers are about what was clicked.
   private measurePath(): Float64Array {
-    const points = this.measureLayer.placedPoints();
-    const path = new Float64Array(points.length);
-    for (let i = 0; i < points.length; i += 2) {
-      const ll = unprojectS2LatLng(points[i], points[i + 1]);
-      path[i] = ll.latDegrees();
-      path[i + 1] = ll.lngDegrees();
-    }
-    return path;
+    return toDegrees(this.measureLayer.placedPoints());
   }
 
   // Where a new feature goes: inside the selected folder, or else beside the selected feature.
@@ -1164,10 +1212,62 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     return ancestors;
   }
 
+  // Closes whatever map layer object is open, because the dialog shows one thing at a time.
   private select(id: string|undefined): void {
     this.selected = id;
     this.featureLayer.setSelected(id);
+    this.inspected = undefined;
+    this.inspectGeneration += 1;
+    if (this.state.inspected) {
+      this.updateState({...this.state, inspected: undefined});
+    }
     this.refreshFeatureList();
+  }
+
+  private loadClimb(path: Float64Array): void {
+    const generation = this.inspectGeneration;
+    const samples = profileSamples(path);
+    this.elevations.sample(samples.latLngDegrees, samples.zoom).then(
+        meters => {
+          const inspected = this.state.inspected;
+          if (generation !== this.inspectGeneration || inspected?.kind !== 'line') {
+            return;
+          }
+
+          this.updateState({...this.state, inspected: {...inspected, climb: profileStats(meters)}});
+        },
+        e => {
+          console.error(e);
+        });
+  }
+
+  private loadWayTags(id: number): void {
+    const generation = this.inspectGeneration;
+    fetch(`https://api.openstreetmap.org/api/0.6/way/${id}.json`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`OpenStreetMap answered ${response.status} for way ${id}`);
+          }
+          return response.json();
+        })
+        .then(
+            (json: {elements?: Array<{tags?: {[key: string]: string}}>}) =>
+                json.elements?.[0]?.tags ?? {},
+            e => {
+              console.error(e);
+              return 'failed' as const;
+            })
+        .then(tags => {
+          const inspected = this.state.inspected;
+          if (generation !== this.inspectGeneration || !inspected?.osm) {
+            return;
+          }
+
+          this.updateState({
+            ...this.state,
+            inspected: {...inspected, osm: {...inspected.osm, tags}},
+          });
+        });
   }
 
   private editSelectedData(update: (data: FeatureData) => FeatureData, mergeKey?: string): void {
@@ -1470,6 +1570,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             .concat(layers.filter(l => l.enabled).map(l => l.layer))
             .concat([this.skyboxLayer]));
   }
+}
+
+// Mercator to interleaved lat then lng degrees
+function toDegrees(points: Float64Array): Float64Array {
+  const degrees = new Float64Array(points.length);
+  for (let i = 0; i < points.length; i += 2) {
+    const ll = unprojectS2LatLng(points[i], points[i + 1]);
+    degrees[i] = ll.latDegrees();
+    degrees[i + 1] = ll.lngDegrees();
+  }
+  return degrees;
 }
 
 function stripUndefined(data: FeatureData): FeatureData {

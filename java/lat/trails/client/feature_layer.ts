@@ -13,7 +13,7 @@ import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { FeatureStore } from './feature_store';
-import { FEATURE_CLICKED, FEATURE_EDITED, FEATURE_HOVERED } from './events';
+import { DOUBLE_CLICK_MS, FEATURE_CLICKED, FEATURE_EDITED, FEATURE_HOVERED } from './events';
 import {
   DEFAULT_ICON,
   DEFAULT_ICON_SHRINK,
@@ -64,8 +64,6 @@ const LABEL_ANCHORS = [0.5, 0.3, 0.7, 0.15, 0.85];
 // A GPS track has a vertex every few meters, which at most zooms is several per pixel, so a vertex
 // only gets a handle once it is this far from the last one that did.
 const HANDLE_SPACING_PX = 12;
-// Two clicks on one line this close together count as a double click.
-const DOUBLE_CLICK_MS = 400;
 
 const Z_LINE = Z_USER_DATA;
 const Z_SELECTED_LINE = Z_USER_DATA_HIGHLIGHT;

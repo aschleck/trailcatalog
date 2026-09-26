@@ -13,10 +13,37 @@ import {
 } from './features';
 import { PointMarker } from './icon_picker';
 import { formatDistance, formatHeight, measureLine } from './measurements';
+import { Data } from './workers/collection_loader';
 
 export interface TreeItem {
   feature: EditableFeature;
   children: TreeItem[];
+}
+
+export interface OsmWayState {
+  id: number;
+  tags: {[key: string]: string}|'loading'|'failed';
+}
+
+export type InspectedObject = {
+  // The name the layer list shows for the layer it came from
+  layer: string;
+  data: Data;
+  // Set for a way from the OSM paths layer, which carries only its id and category
+  osm: OsmWayState|undefined;
+} & ({
+  kind: 'line';
+  // Measured along the tile's geometry, which is simplified for the zoom it loaded at
+  lengthMeters: number;
+  // Undefined until the elevations load, or if they fail
+  climb: Climb|undefined;
+}|{
+  kind: 'polygon';
+});
+
+interface Climb {
+  upMeters: number;
+  downMeters: number;
 }
 
 export interface FeatureListState {
@@ -46,7 +73,7 @@ export function FeatureTree({state}: {state: FeatureListState}) {
           ? rows(state.tree, state, /* dimmed= */ false)
           : [
             <div className="px-2 py-1 text-gray-500">
-              Draw or import something to see it here.
+              This collection is empty
             </div>,
           ]
       }
@@ -248,32 +275,8 @@ export function FeatureProperties({descendants, feature, folders}: {
   folders: Array<{folder: EditableFolder; depth: number}>;
 }) {
   return (
-    <div className="border-gray-300 border-t flex flex-col shrink-0">
-      <div className="bg-gray-100 border-b border-gray-300 flex items-center px-2 py-1">
-        <span className="font-bold grow">{`Editing ${feature.kind}`}</span>
-        <Button
-            ariaLabel="Center on map"
-            className="hover:bg-black/10 p-1 rounded"
-            title="Center on map"
-            unboundEvents={{corgi: [[ACTION, 'centerClicked']]}}
-        >
-          <svg className="h-3 stroke-current w-3" fill="none" viewBox="0 0 12 12">
-            <circle cx="6" cy="6" r="3.5" strokeWidth="1.3" />
-            <path d="M6 0 V3 M6 9 V12 M0 6 H3 M9 6 H12" strokeWidth="1.3" />
-          </svg>
-        </Button>
-        <Button
-            ariaLabel="Deselect"
-            className="hover:bg-black/10 p-1 rounded"
-            title="Deselect"
-            unboundEvents={{corgi: [[ACTION, 'deselectClicked']]}}
-        >
-          <svg className="h-3 stroke-current w-3" viewBox="0 0 12 12">
-            <path d="M1 1 L11 11 M1 11 L11 1" strokeWidth="1.5" />
-          </svg>
-        </Button>
-      </div>
-      <div className="flex flex-col gap-2 p-2">
+    <PropertiesDialog title={`Editing ${feature.kind}`}>
+      <div className="flex flex-col gap-2">
         <Input
             className="border border-gray-300 px-1 rounded"
             forceValue={true}
@@ -369,6 +372,110 @@ export function FeatureProperties({descendants, feature, folders}: {
               : 'Delete'}
         </Button>
       </div>
+    </PropertiesDialog>
+  );
+}
+
+/** Shows what a map layer knows about the object double clicked on it. */
+export function ObjectProperties({object}: {object: InspectedObject}) {
+  return (
+    <PropertiesDialog title={`Viewing ${object.kind}`}>
+      <div className="flex flex-col gap-2">
+        <div className="text-gray-600">{object.layer}</div>
+        {object.kind === 'line'
+            ? <LineStats lengthMeters={object.lengthMeters} climb={object.climb} />
+            : ''}
+        {object.osm ? <OsmWay way={object.osm} /> : <DataTable data={object.data} />}
+      </div>
+    </PropertiesDialog>
+  );
+}
+
+function OsmWay({way}: {way: OsmWayState}) {
+  const tags = way.tags;
+  return (
+    <div className="flex flex-col gap-2">
+      <a
+          className="text-blue-700 underline"
+          href={`https://www.openstreetmap.org/way/${way.id}`}
+          rel="noopener"
+          target="_blank"
+      >
+        {`OpenStreetMap way ${way.id}`}
+      </a>
+      {tags === 'loading'
+          ? <div className="text-gray-500">Loading tags</div>
+          : tags === 'failed'
+              ? <div className="text-gray-500">OpenStreetMap failed to return this way's tags</div>
+              : <DataTable data={tags} />
+      }
+    </div>
+  );
+}
+
+function DataTable({data}: {data: {[key: string]: boolean|number|string}}) {
+  const entries = Object.entries(data).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) {
+    return <div className="text-gray-500">No data</div>;
+  }
+
+  return (
+    <table className="w-full">
+      <tbody>
+        {entries.map(([key, value]) =>
+            <tr className="align-top border-gray-200 border-t">
+              <td className="pr-2 py-0.5 text-gray-600">{key}</td>
+              <td className="break-all py-0.5">{String(value)}</td>
+            </tr>)}
+      </tbody>
+    </table>
+  );
+}
+
+// Floats over the map, so its body scrolls rather than pushing past the bottom of the viewport.
+function PropertiesDialog({children, title}: {
+  children?: corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
+  title: string;
+}) {
+  return (
+    <div className="
+        bg-white
+        flex
+        flex-col
+        min-h-0
+        pointer-events-auto
+        rounded
+        shadow-lg
+        text-gray-900
+        text-sm
+    ">
+      <div className="border-b border-gray-300 flex items-center px-3 py-2">
+        <span className="font-bold grow">{title}</span>
+        <Button
+            ariaLabel="Center on map"
+            className="hover:bg-black/10 p-1 rounded"
+            title="Center on map"
+            unboundEvents={{corgi: [[ACTION, 'centerClicked']]}}
+        >
+          <svg className="h-3 stroke-current w-3" fill="none" viewBox="0 0 12 12">
+            <circle cx="6" cy="6" r="3.5" strokeWidth="1.3" />
+            <path d="M6 0 V3 M6 9 V12 M0 6 H3 M9 6 H12" strokeWidth="1.3" />
+          </svg>
+        </Button>
+        <Button
+            ariaLabel="Close"
+            className="hover:bg-black/10 p-1 rounded"
+            title="Close"
+            unboundEvents={{corgi: [[ACTION, 'deselectClicked']]}}
+        >
+          <svg className="h-3 stroke-current w-3" viewBox="0 0 12 12">
+            <path d="M1 1 L11 11 M1 11 L11 1" strokeWidth="1.5" />
+          </svg>
+        </Button>
+      </div>
+      <div className="min-h-0 overflow-y-auto p-3">
+        {children ?? []}
+      </div>
     </div>
   );
 }
@@ -376,15 +483,7 @@ export function FeatureProperties({descendants, feature, folders}: {
 function Stats({feature}: {feature: EditableFeature}) {
   if (feature.kind === 'line') {
     const stats = measureLine(feature.latLngE7, feature.elevationCentimeters);
-    const elevation = stats.elevation;
-    return (
-      <div className="text-gray-700">
-        {formatDistance(stats.lengthMeters)}
-        {elevation
-            ? `, ${formatHeight(elevation.upMeters)} up, ${formatHeight(elevation.downMeters)} down`
-            : ''}
-      </div>
-    );
+    return <LineStats lengthMeters={stats.lengthMeters} climb={stats.elevation} />;
   } else if (feature.kind === 'point') {
     return (
       <div className="text-gray-700">
@@ -397,6 +496,17 @@ function Stats({feature}: {feature: EditableFeature}) {
   } else {
     return <div className="hidden" />;
   }
+}
+
+function LineStats({climb, lengthMeters}: {climb: Climb|undefined; lengthMeters: number}) {
+  return (
+    <div className="text-gray-700">
+      {formatDistance(lengthMeters)}
+      {climb
+          ? `, ${formatHeight(climb.upMeters)} up, ${formatHeight(climb.downMeters)} down`
+          : ''}
+    </div>
+  );
 }
 
 function untitled(feature: EditableFeature): string {

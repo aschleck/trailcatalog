@@ -33,16 +33,12 @@ interface SectionState {
   open: boolean;
 }
 
-/**
- * A titled part of the sidebar that opens and closes itself. Open sections split the sidebar's
- * free space evenly, and the footer stays in view beneath the section's scrolling content.
- */
+/** A titled part of the sidebar that opens and closes itself. Open sections share the space. */
 export function SidebarSection(
-    {children, controls, footer, label, open}: {
+    {children, controls, label, open}: {
       children?: Children;
       // Beside the title, and outside the toggle so they reach the controller their events name
       controls?: Children;
-      footer?: Children;
       label: string;
       open?: boolean;
     },
@@ -82,7 +78,6 @@ export function SidebarSection(
             </div>
           : ''
       }
-      {state.open ? footer ?? '' : ''}
     </div>
   );
 }

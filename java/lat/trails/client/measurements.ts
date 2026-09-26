@@ -61,6 +61,15 @@ export function measureLine(
   };
 }
 
+/** Sums the great circle length of a path of interleaved lat then lng degrees. */
+export function pathLengthMeters(path: ArrayLike<number>): number {
+  let meters = 0;
+  for (let i = 2; i < path.length; i += 2) {
+    meters += haversineMeters(path[i - 2], path[i - 1], path[i], path[i + 1]);
+  }
+  return meters;
+}
+
 export function formatDistance(meters: number): string {
   const {value, unit} = formatUnitDistance(meters);
   return `${value} ${unit}`;
