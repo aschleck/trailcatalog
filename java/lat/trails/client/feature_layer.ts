@@ -2,7 +2,7 @@ import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { Camera, projectE7Array, projectS2LatLng } from 'js/map/camera';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
-import { Layer } from 'js/map/layer';
+import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { GLYPHER, toGraphemes } from 'js/map/rendering/glypher';
 import { LineProgram } from 'js/map/rendering/line_program';
@@ -13,13 +13,20 @@ import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { FeatureStore } from './feature_store';
-import { EditableFeature, EditableLine, EditablePoint } from './features';
+import { FEATURE_CLICKED } from './events';
+import {
+  DEFAULT_LINE_COLOR,
+  DEFAULT_POINT_COLOR,
+  DEFAULT_WIDTH_PX,
+  EditableFeature,
+  EditableLine,
+  EditablePoint,
+} from './features';
 
-const DEFAULT_LINE_COLOR = '#e8442e';
-const DEFAULT_POINT_COLOR = '#e8442e';
-const DEFAULT_WIDTH_PX = 3;
 const POINT_RADIUS_PX = 5;
 const SELECTED_POINT_RADIUS_PX = 7;
+// How far past a feature's drawn edge a click still lands on it
+const CLICK_SLOP_PX = 3;
 // The casing LineProgram draws is a pixel wide on each side, see line_cap_program.ts.
 const CASING_PX = 1;
 const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
@@ -150,6 +157,36 @@ export class FeatureLayer extends Layer {
       at = parent !== undefined ? this.store.get(parent) : undefined;
     }
     return true;
+  }
+
+  // Points win over lines because they sit on top of them.
+  override click(
+      point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
+    const hit = this.hitTest(projectS2LatLng(point));
+    source.trigger(FEATURE_CLICKED, {id: hit?.id});
+    return !!hit;
+  }
+
+  hitTest(at: Vec2): EditableFeature|undefined {
+    const pixel = this.camera.inverseWorldRadius;
+    for (const point of this.visiblePoints) {
+      const radius = (POINT_RADIUS_PX + CLICK_SLOP_PX) * pixel;
+      if (Math.hypot(point.at[0] - at[0], point.at[1] - at[1]) <= radius) {
+        return point.feature;
+      }
+    }
+
+    let best: EditableFeature|undefined = undefined;
+    let bestDistance = Infinity;
+    for (const line of this.visibleLines) {
+      const radius = (lineRadius(line.feature) + CLICK_SLOP_PX) * pixel;
+      const distance = distanceToPolyline(line.points, at, radius);
+      if (distance <= radius && distance < bestDistance) {
+        best = line.feature;
+        bestDistance = distance;
+      }
+    }
+    return best;
   }
 
   override hasNewData(): boolean {
@@ -424,6 +461,35 @@ export class FeatureLayer extends Layer {
 function labelOffset(graphemes: string[]): Vec2 {
   const size = GLYPHER.measurePx(graphemes, LABEL_SCALE);
   return [LABEL_OFFSET_PX[0] + (size ? size[0] / 2 : 0), LABEL_OFFSET_PX[1]];
+}
+
+// Returns the distance from at to the nearest segment, or Infinity when every segment is further
+// than cutoff, which lets most segments go by their bounding box alone.
+function distanceToPolyline(points: Float64Array, at: Vec2, cutoff: number): number {
+  let best = Infinity;
+  for (let i = 2; i < points.length; i += 2) {
+    const ax = points[i - 2];
+    const ay = points[i - 1];
+    const bx = points[i];
+    const by = points[i + 1];
+    if (
+        at[0] < Math.min(ax, bx) - cutoff
+            || at[0] > Math.max(ax, bx) + cutoff
+            || at[1] < Math.min(ay, by) - cutoff
+            || at[1] > Math.max(ay, by) + cutoff) {
+      continue;
+    }
+
+    const dx = bx - ax;
+    const dy = by - ay;
+    const length2 = dx * dx + dy * dy;
+    const t =
+        length2 > 0
+            ? Math.max(0, Math.min(1, ((at[0] - ax) * dx + (at[1] - ay) * dy) / length2))
+            : 0;
+    best = Math.min(best, Math.hypot(at[0] - ax - t * dx, at[1] - ay - t * dy));
+  }
+  return best;
 }
 
 function lineRadius(line: EditableLine): number {

@@ -6,6 +6,11 @@ import { Data } from './workers/collection_loader';
 /** What pointer tools are possible. */
 export type Tool = 'pointer'|'line'|'measure';
 
+export const FEATURE_CLICKED = declareEvent<{
+  // Undefined when the click missed every feature
+  id: string|undefined;
+}>('feature_clicked');
+
 export const HOVER_CHANGED = declareEvent<{
   target: {
     id: RawUuid;
