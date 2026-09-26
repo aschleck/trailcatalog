@@ -12,7 +12,7 @@ import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service'
 
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
-import { RgbaU32 } from 'js/map/common/types';
+import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { CLICKED, MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
@@ -80,6 +80,8 @@ const MAPTERHORN_COPYRIGHT = {
 const COPERNICUS_COPYRIGHT = {
   long: 'Contains modified Copernicus Sentinel data 2021',
 };
+// The zoom where the contours and the trails around a point come in at full detail
+const POINT_ZOOM = 14;
 
 export interface LayerState {
   name: string;
@@ -780,6 +782,46 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const color = (e.actionElement.element() as HTMLInputElement).value;
     const key = this.store.get(this.selected ?? '')?.kind === 'line' ? 'stroke' : 'fill';
     this.editSelectedData(data => ({...data, [key]: color}), 'color');
+  }
+
+  // A folder centers on everything inside it.
+  centerClicked(): void {
+    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    if (!selected) {
+      return;
+    }
+
+    let low = [Infinity, Infinity] as Vec2;
+    let high = [-Infinity, -Infinity] as Vec2;
+    const include = (latE7: number, lngE7: number) => {
+      low = [Math.min(low[0], latE7 / 1e7), Math.min(low[1], lngE7 / 1e7)] as Vec2;
+      high = [Math.max(high[0], latE7 / 1e7), Math.max(high[1], lngE7 / 1e7)] as Vec2;
+    };
+    const features = selected.kind === 'folder' ? this.store.descendants(selected.id) : [selected];
+    for (const feature of features) {
+      if (feature.kind === 'point') {
+        include(feature.latE7, feature.lngE7);
+      } else if (feature.kind === 'line') {
+        for (let i = 0; i < feature.latLngE7.length; i += 2) {
+          include(feature.latLngE7[i], feature.latLngE7[i + 1]);
+        }
+      }
+    }
+    if (low[0] > high[0]) {
+      return;
+    }
+
+    if (low[0] === high[0] && low[1] === high[1]) {
+      // A lone point has no extent to fit, so we zoom in until its surroundings are readable.
+      this.mapController.setCamera({
+        lat: low[0],
+        lng: low[1],
+        zoom: Math.max(this.mapController.camera.zoom, POINT_ZOOM),
+      });
+    } else {
+      // setCamera tells a rect from a center by the brand, so it has to exist at runtime.
+      this.mapController.setCamera({low, high, brand: 'LatLngRect'});
+    }
   }
 
   deselectClicked(): void {

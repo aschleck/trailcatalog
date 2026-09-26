@@ -252,6 +252,17 @@ export function FeatureProperties({descendants, feature, folders}: {
       <div className="bg-gray-100 border-b border-gray-300 flex items-center px-2 py-1">
         <span className="font-bold grow">{`Editing ${feature.kind}`}</span>
         <Button
+            ariaLabel="Center on map"
+            className="hover:bg-black/10 p-1 rounded"
+            title="Center on map"
+            unboundEvents={{corgi: [[ACTION, 'centerClicked']]}}
+        >
+          <svg className="h-3 stroke-current w-3" fill="none" viewBox="0 0 12 12">
+            <circle cx="6" cy="6" r="3.5" strokeWidth="1.3" />
+            <path d="M6 0 V3 M6 9 V12 M0 6 H3 M9 6 H12" strokeWidth="1.3" />
+          </svg>
+        </Button>
+        <Button
             ariaLabel="Deselect"
             className="hover:bg-black/10 p-1 rounded"
             title="Deselect"
