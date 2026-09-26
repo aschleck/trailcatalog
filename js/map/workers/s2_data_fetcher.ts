@@ -58,6 +58,8 @@ export type Request = InitializeRequest|UpdateViewportRequest;
 export interface LoadCellCommand {
   kind: 'lcc';
   key: CellKey;
+  // What the server simplified to, or undefined for full detail
+  snap: number|undefined;
   data: ArrayBuffer;
 }
 
@@ -243,6 +245,7 @@ class S2DataFetcher {
           this.postMessage({
             kind: 'lcc',
             key,
+            snap,
             data,
           }, [data]);
           this.culler.trigger();

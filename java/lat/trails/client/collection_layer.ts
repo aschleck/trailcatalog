@@ -1,16 +1,16 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
-import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { Camera } from 'js/map/camera';
-import { LatLng, RawUuid, RgbaU32 } from 'js/map/common/types';
+import { RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
-import { Request as QuerierRequest, Response as QuerierResponse, QueryPointResponse } from 'js/map/workers/location_querier';
+import { LocationIndex } from 'js/map/workers/location_index';
 import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
@@ -42,6 +42,8 @@ interface LoadedCell {
   glIndexBuffer: WebGLBuffer;
   lines: Line[];
   polygons: Polygon[];
+  // How far the server may have moved its lines, in mercator
+  tolerance: number;
 }
 
 // The object the cursor is over, drawn from its own buffers so it can sit above its cell. Which
@@ -59,27 +61,28 @@ export class CollectionLayer extends Layer {
   private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
   private fetching: boolean;
   private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
-  private readonly querier: WorkerPool<QuerierRequest, QuerierResponse>;
   private readonly cells: Map<CellKey, LoadedCell|undefined>;
   // The bytes each cell arrived as, so that a styleZoom change can re-post them to the loader
   // instead of refetching. Same trade MbtileLayer makes with rawBytes.
-  private readonly rawBytes: Map<CellKey, ArrayBuffer>;
+  private readonly rawBytes: Map<CellKey, {data: ArrayBuffer; tolerance: number}>;
+  // Prefixed to the cell keys this layer loads into the shared index
+  private readonly producer: string;
+  // Keyed by objectKey, which is also the id the index answers queries with
   private readonly objects:
-    HashMap<
-      RawUuid,
+    Map<
+      string,
       | {kind: 'line'; key: CellKey; value: Line}
       | {kind: 'polygon'; key: CellKey; value: Polygon}
     >;
-  private activeQuery: {
-    id: number;
-    resolve: (response: QueryPointResponse) => void;
-    reject: () => void;
-  };
+  // Bumped on every hover and hoverLost, so that an answer for a point the pointer has left is
+  // dropped.
+  private hoverGeneration: number;
+  private indexed: boolean;
   private generation: number;
   private readonly highlight: Highlight;
   // The object the highlight is drawing. Its geometry is blanked in its own cell so that only the
   // highlight draws it, which leaves the highlight free to be narrower or translucent.
-  private lastHoverTarget: RawUuid|undefined;
+  private lastHoverTarget: string|undefined;
   private lastRenderGeneration: number;
   // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
   private styleZoom: number;
@@ -89,17 +92,18 @@ export class CollectionLayer extends Layer {
       style: Style,
       snaps: Snap[],
       streams: Stream[],
+      private readonly locations: LocationIndex,
       private readonly camera: Camera,
       private readonly renderer: Renderer,
   ) {
     super(/* copyright= */ []);
+    this.producer = locations.producer();
     this.fetcher = new WorkerPool('/static/s2_data_fetcher_worker.js', 1);
     this.fetching = false;
     this.loader = new WorkerPool('/static/collection_loader_worker.js', 6);
-    this.querier = new WorkerPool('/static/location_querier_worker.js', 1);
     this.cells = new Map();
     this.rawBytes = new Map();
-    this.objects = new HashMap(key => `${key.msb}-${key.lsb}`);
+    this.objects = new Map();
     this.registerDisposer(() => {
       for (const cell of this.cells.values()) {
         if (cell) {
@@ -108,7 +112,8 @@ export class CollectionLayer extends Layer {
         }
       }
     });
-    this.activeQuery = {id: -1, resolve: () => {}, reject: () => {}};
+    this.hoverGeneration = 0;
+    this.indexed = true;
     this.generation = 0;
     this.highlight = {
       drawables: [],
@@ -141,12 +146,6 @@ export class CollectionLayer extends Layer {
       }
     };
 
-    this.querier.onresponse = response => {
-      if (this.activeQuery.id === response.generation) {
-        this.activeQuery.resolve(response);
-      }
-    };
-
     this.fetcher.broadcast({
       kind: 'ir',
       covering: url + '/covering',
@@ -158,41 +157,46 @@ export class CollectionLayer extends Layer {
       kind: 'ir',
       style,
     });
-    this.querier.broadcast({kind: 'ir'});
+  }
+
+  /** Puts this layer's geometry in the shared index or takes it out, for showing and hiding. */
+  setIndexed(indexed: boolean): void {
+    if (indexed === this.indexed) {
+      return;
+    }
+
+    this.indexed = indexed;
+    for (const [key, cell] of this.cells) {
+      if (!cell) {
+        continue;
+      }
+
+      if (indexed) {
+        this.index(key, cell.lines, cell.polygons, cell.tolerance);
+      } else {
+        this.locations.unload([this.groupKey(key)]);
+      }
+    }
   }
 
   override click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
-    new Promise((resolve, reject) => {
-      const id = this.activeQuery.id + 1;
-      this.activeQuery.reject();
-      this.activeQuery = {id, resolve, reject};
-      this.querier.post({
-        kind: 'qpr',
-        generation: id,
-        point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
-        radius: HOVER_RADIUS_PX * this.camera.inverseWorldRadius,
-      });
-    }).then(response => {
-      console.log(response);
-    }).catch(() => {});
+    this.queryPoint(point).then(ids => {
+      console.log(ids);
+    });
     return false;
   }
 
   override hover(point: S2LatLng, source: EventSource): boolean {
-    new Promise<QueryPointResponse>((resolve, reject) => {
-      const id = this.activeQuery.id + 1;
-      this.activeQuery.reject();
-      this.activeQuery = {id, resolve, reject};
-      this.querier.post({
-        kind: 'qpr',
-        generation: id,
-        point: [point.latDegrees(), point.lngDegrees()] as const as LatLng,
-        radius: HOVER_RADIUS_PX * this.camera.inverseWorldRadius,
-      });
-    }).then(response => {
+    this.hoverGeneration += 1;
+    const generation = this.hoverGeneration;
+    this.queryPoint(point).then(ids => {
+      if (generation !== this.hoverGeneration) {
+        return;
+      }
+
       // A point can land in several nested units, so take the first one we still hold.
-      const target = response.ids.find(id => this.objects.has(id));
-      if (target?.msb === this.lastHoverTarget?.msb && target?.lsb === this.lastHoverTarget?.lsb) {
+      const target = ids.find(id => this.objects.has(id));
+      if (target === this.lastHoverTarget) {
         return;
       }
 
@@ -342,13 +346,13 @@ export class CollectionLayer extends Layer {
 
       this.renderer.uploadData(
         highlight.geometry, highlight.geometry.byteLength, highlight.glGeometryBuffer);
-    }).catch(() => {});
+    });
     return false;
   }
 
   override hoverLost(source: EventSource): void {
     // A query in flight would set the highlight back up after we clear it.
-    this.activeQuery.reject();
+    this.hoverGeneration += 1;
     if (!this.lastHoverTarget) {
       return;
     }
@@ -403,10 +407,36 @@ export class CollectionLayer extends Layer {
     const newStyleZoom = Math.floor(zoom);
     if (newStyleZoom !== this.styleZoom) {
       this.styleZoom = newStyleZoom;
-      for (const [key, data] of this.rawBytes) {
-        this.loader.post({kind: 'lr', key, styleZoom: newStyleZoom, data});
+      for (const [key, {data, tolerance}] of this.rawBytes) {
+        this.loader.post({kind: 'lr', key, styleZoom: newStyleZoom, tolerance, data});
       }
     }
+  }
+
+  private queryPoint(point: S2LatLng): Promise<string[]> {
+    return this.locations.queryPoint(point, HOVER_RADIUS_PX * this.camera.inverseWorldRadius);
+  }
+
+  // Two collection layers key their cells the same way, so the prefix keeps their groups apart.
+  // Object ids are uuids and need none.
+  private groupKey(key: CellKey): string {
+    return `${this.producer}${key}`;
+  }
+
+  private index(key: CellKey, lines: Line[], polygons: Polygon[], tolerance: number): void {
+    if (!this.indexed) {
+      return;
+    }
+
+    this.locations.load(
+        this.groupKey(key),
+        tolerance,
+        lines.map(line => ({id: objectKey(line.id), points: line.points})),
+        polygons.map(polygon => ({
+          id: objectKey(polygon.id),
+          bound: polygon.bound,
+          raw: polygon.raw,
+        })));
   }
 
   private loadRawCell(command: LoadCellCommand): void {
@@ -424,11 +454,13 @@ export class CollectionLayer extends Layer {
     }
 
     // No transfer list, so the worker gets a structured clone and this copy survives to restyle.
-    this.rawBytes.set(command.key, command.data);
+    const tolerance = command.snap === undefined ? 0 : SimpleS2.snapEpsilon(command.snap);
+    this.rawBytes.set(command.key, {data: command.data, tolerance});
     this.loader.post({
       kind: 'lr',
       key: command.key,
       styleZoom: this.styleZoom,
+      tolerance,
       data: command.data,
     });
   }
@@ -450,22 +482,14 @@ export class CollectionLayer extends Layer {
     this.release(response.key);
 
     for (const line of response.lines) {
-      this.objects.set(line.id, {kind: 'line', key: response.key, value: line});
+      this.objects.set(objectKey(line.id), {kind: 'line', key: response.key, value: line});
     }
     for (const polygon of response.polygons) {
-      this.objects.set(polygon.id, {kind: 'polygon', key: response.key, value: polygon});
+      this.objects.set(
+          objectKey(polygon.id), {kind: 'polygon', key: response.key, value: polygon});
     }
 
-    this.querier.post({
-      kind: 'lr',
-      groupId: response.key,
-      lines: response.lines.map(line => ({id: line.id, points: line.points})),
-      polygons: response.polygons.map(polygon => ({
-        id: polygon.id,
-        bound: polygon.bound,
-        raw: polygon.raw,
-      })),
-    });
+    this.index(response.key, response.lines, response.polygons, response.tolerance);
 
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
@@ -513,6 +537,7 @@ export class CollectionLayer extends Layer {
       drawables,
       lines: response.lines,
       polygons: response.polygons,
+      tolerance: response.tolerance,
     });
     this.generation += 1;
   }
@@ -535,12 +560,12 @@ export class CollectionLayer extends Layer {
     }
 
     for (const line of cell.lines) {
-      this.objects.delete(line.id);
+      this.objects.delete(objectKey(line.id));
     }
     for (const polygon of cell.polygons) {
-      this.objects.delete(polygon.id);
+      this.objects.delete(objectKey(polygon.id));
     }
-    this.querier.post({kind: 'ur', groupIds: [key]});
+    this.locations.unload([this.groupKey(key)]);
 
     this.renderer.deleteBuffer(cell.glGeometryBuffer);
     this.renderer.deleteBuffer(cell.glIndexBuffer);
@@ -588,6 +613,11 @@ export class CollectionLayer extends Layer {
     this.highlight.drawables.length = 0;
     this.lastHoverTarget = undefined;
   }
+}
+
+// The id an object goes into the index under, and the key objects holds it by.
+function objectKey(id: RawUuid): string {
+  return `${id.msb}-${id.lsb}`;
 }
 
 function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {

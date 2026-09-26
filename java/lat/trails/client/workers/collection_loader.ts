@@ -65,6 +65,8 @@ interface LoadRequest {
   kind: 'lr';
   key: CellKey;
   styleZoom: number;
+  // Unused here, only echoed so that the answer says what its geometry was simplified to.
+  tolerance: number;
   data: ArrayBuffer;
 }
 
@@ -74,6 +76,7 @@ export interface LoadResponse {
   kind: 'lr';
   key: CellKey;
   styleZoom: number;
+  tolerance: number;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
   // We merge multiple objects into the *Geometry version, so if we want just the geometry of any
@@ -278,6 +281,7 @@ class CollectionLoader {
       kind: 'lr',
       key: request.key,
       styleZoom: request.styleZoom,
+      tolerance: request.tolerance,
       geometry: geometry.buffer,
       index: index.buffer,
       lines: [],

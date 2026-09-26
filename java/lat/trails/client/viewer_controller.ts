@@ -17,6 +17,7 @@ import { MapController } from 'js/map/map_controller';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
+import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import {
   Collection,
@@ -138,8 +139,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
     this.registerDisposable(this.loginWatcher);
 
+    // One index for every layer, so that the line tool snaps onto and routes across drawn lines
+    // and paths alike.
+    const locations = new LocationIndex();
     this.editLayer =
         new EditLayer(
+            locations,
             this.mapController.camera,
             this.mapController.renderer,
             line => {
@@ -414,6 +419,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             // until the viewport is small enough to be worth it.
             {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
           ],
+          locations,
           this.mapController.camera,
           this.mapController.renderer,
       ),
@@ -470,6 +476,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             {minZoom: 10, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: 8},
             {minZoom: 10, maxZoom: undefined, indexBottom: 7, fromLevel: 9, toLevel: 10},
           ],
+          locations,
           this.mapController.camera,
           this.mapController.renderer,
       ),
@@ -767,6 +774,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private setMapLayers(layers: LayerState[]): void {
+    for (const {enabled, layer} of layers) {
+      if (layer instanceof CollectionLayer) {
+        // A hidden layer's geometry would otherwise answer hovers and catch the line tool.
+        layer.setIndexed(enabled);
+      }
+    }
     this.mapController.setLayers(
         [this.editLayer as Layer].concat(layers.filter(l => l.enabled).map(l => l.layer)));
   }
