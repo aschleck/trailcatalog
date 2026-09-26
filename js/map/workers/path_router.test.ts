@@ -1,6 +1,6 @@
 import { Vec2 } from '../common/types';
 
-import { Anchor, PathRouter } from './path_router';
+import { Anchor, PathRouter, Terrain } from './path_router';
 
 // Wider than any network here, so only the tests about reach are bounded by it.
 const REACH = 100;
@@ -69,8 +69,8 @@ test('does not join an end onto a segment in its own group', () => {
 
 test('routes onto a segment another group ends on', () => {
   const router = new PathRouter();
-  router.load('through', [Float64Array.of(0, 0, 2, 0)], /* tolerance= */ 0);
-  router.load('branch', [Float64Array.of(1, 0.001, 1, 1)], /* tolerance= */ 0.01);
+  load(router, 'through', [Float64Array.of(0, 0, 2, 0)], /* tolerance= */ 0);
+  load(router, 'branch', [Float64Array.of(1, 0.001, 1, 1)], /* tolerance= */ 0.01);
 
   const via =
       router.route(anchor([0.5, 0], [0, 0], [2, 0]), anchor([1, 0.5], [1, 0.001], [1, 1]), REACH);
@@ -79,8 +79,8 @@ test('routes onto a segment another group ends on', () => {
 
 test('routes off a segment another group ends on', () => {
   const router = new PathRouter();
-  router.load('through', [Float64Array.of(0, 0, 2, 0)], /* tolerance= */ 0);
-  router.load('branch', [Float64Array.of(1, 0.001, 1, 1)], /* tolerance= */ 0.01);
+  load(router, 'through', [Float64Array.of(0, 0, 2, 0)], /* tolerance= */ 0);
+  load(router, 'branch', [Float64Array.of(1, 0.001, 1, 1)], /* tolerance= */ 0.01);
 
   const via =
       router.route(anchor([1, 0.5], [1, 0.001], [1, 1]), anchor([1.5, 0], [0, 0], [2, 0]), REACH);
@@ -89,8 +89,8 @@ test('routes off a segment another group ends on', () => {
 
 test('does not join an end past tolerance', () => {
   const router = new PathRouter();
-  router.load('through', [Float64Array.of(0, 0, 2, 0)], /* tolerance= */ 0);
-  router.load('branch', [Float64Array.of(1, 0.1, 1, 1)], /* tolerance= */ 0.01);
+  load(router, 'through', [Float64Array.of(0, 0, 2, 0)], /* tolerance= */ 0);
+  load(router, 'branch', [Float64Array.of(1, 0.1, 1, 1)], /* tolerance= */ 0.01);
 
   const via =
       router.route(anchor([0.5, 0], [0, 0], [2, 0]), anchor([1, 0.5], [1, 0.1], [1, 1]), REACH);
@@ -116,8 +116,8 @@ test('gives up on a detour past reach', () => {
 
 test('routes across two groups', () => {
   const router = new PathRouter();
-  router.load('a', [Float64Array.of(0, 0, 1, 0)], /* tolerance= */ 0);
-  router.load('b', [Float64Array.of(1, 0, 2, 0)], /* tolerance= */ 0);
+  load(router, 'a', [Float64Array.of(0, 0, 1, 0)], /* tolerance= */ 0);
+  load(router, 'b', [Float64Array.of(1, 0, 2, 0)], /* tolerance= */ 0);
 
   const via =
       router.route(anchor([0.5, 0], [0, 0], [1, 0]), anchor([1.5, 0], [1, 0], [2, 0]), REACH);
@@ -126,9 +126,9 @@ test('routes across two groups', () => {
 
 test('finds nothing once the group joining two others goes', () => {
   const router = new PathRouter();
-  router.load('a', [Float64Array.of(0, 0, 1, 0)], /* tolerance= */ 0);
-  router.load('joiner', [Float64Array.of(1, 0, 2, 0)], /* tolerance= */ 0);
-  router.load('c', [Float64Array.of(2, 0, 3, 0)], /* tolerance= */ 0);
+  load(router, 'a', [Float64Array.of(0, 0, 1, 0)], /* tolerance= */ 0);
+  load(router, 'joiner', [Float64Array.of(1, 0, 2, 0)], /* tolerance= */ 0);
+  load(router, 'c', [Float64Array.of(2, 0, 3, 0)], /* tolerance= */ 0);
   router.unload('joiner');
 
   const via =
@@ -138,8 +138,8 @@ test('finds nothing once the group joining two others goes', () => {
 
 test('reloading a group replaces its edges', () => {
   const router = new PathRouter();
-  router.load('a', [Float64Array.of(0, 0, 1, 0, 2, 0)], /* tolerance= */ 0);
-  router.load('a', [Float64Array.of(0, 0, 1, 0)], /* tolerance= */ 0);
+  load(router, 'a', [Float64Array.of(0, 0, 1, 0, 2, 0)], /* tolerance= */ 0);
+  load(router, 'a', [Float64Array.of(0, 0, 1, 0)], /* tolerance= */ 0);
 
   const via =
       router.route(anchor([0.5, 0], [0, 0], [1, 0]), anchor([1.5, 0], [1, 0], [2, 0]), REACH);
@@ -148,12 +148,12 @@ test('reloading a group replaces its edges', () => {
 
 test('routes after the dead nodes are compacted away', () => {
   const router = new PathRouter();
-  router.load('tee', TEE, /* tolerance= */ 0);
+  load(router, 'tee', TEE, /* tolerance= */ 0);
   // Route first, or else the tee is never noded and its edges never count as dead.
   router.route(anchor([0.5, 0], [0, 0], [1, 0]), anchor([1.5, 0], [1, 0], [2, 0]), REACH);
   router.unload('tee');
   // Two live edges against the tee's three dead ones, which is what trips the compaction.
-  router.load('bar', [Float64Array.of(4, 0, 5, 0, 6, 0)], /* tolerance= */ 0);
+  load(router, 'bar', [Float64Array.of(4, 0, 5, 0, 6, 0)], /* tolerance= */ 0);
 
   const via =
       router.route(anchor([4.5, 0], [4, 0], [5, 0]), anchor([5.5, 0], [5, 0], [6, 0]), REACH);
@@ -173,8 +173,8 @@ const CROSS_B = [Float64Array.of(0, 2, 2, 0)];
 
 test('routes across where two groups cross when one asks for crossings', () => {
   const router = new PathRouter();
-  router.load('a', CROSS_A, /* tolerance= */ 0, /* crossings= */ true);
-  router.load('b', CROSS_B, /* tolerance= */ 0);
+  load(router, 'a', CROSS_A, /* tolerance= */ 0, /* crossings= */ true);
+  load(router, 'b', CROSS_B, /* tolerance= */ 0);
 
   const via =
       router.route(anchor([0.5, 0.5], [0, 0], [2, 2]), anchor([1.5, 0.5], [0, 2], [2, 0]), REACH);
@@ -183,8 +183,8 @@ test('routes across where two groups cross when one asks for crossings', () => {
 
 test('does not route across a crossing nobody asked for', () => {
   const router = new PathRouter();
-  router.load('a', CROSS_A, /* tolerance= */ 0);
-  router.load('b', CROSS_B, /* tolerance= */ 0);
+  load(router, 'a', CROSS_A, /* tolerance= */ 0);
+  load(router, 'b', CROSS_B, /* tolerance= */ 0);
 
   const via =
       router.route(anchor([0.5, 0.5], [0, 0], [2, 2]), anchor([1.5, 0.5], [0, 2], [2, 0]), REACH);
@@ -193,10 +193,10 @@ test('does not route across a crossing nobody asked for', () => {
 
 test('routes across a crossing with a group noded before it', () => {
   const router = new PathRouter();
-  router.load('a', CROSS_A, /* tolerance= */ 0);
+  load(router, 'a', CROSS_A, /* tolerance= */ 0);
   // Route first, so that b arrives alone and has to find the crossing against a held group.
   router.route(anchor([0.5, 0.5], [0, 0], [2, 2]), anchor([1.5, 1.5], [0, 0], [2, 2]), REACH);
-  router.load('b', CROSS_B, /* tolerance= */ 0, /* crossings= */ true);
+  load(router, 'b', CROSS_B, /* tolerance= */ 0, /* crossings= */ true);
 
   const via =
       router.route(anchor([0.5, 0.5], [0, 0], [2, 2]), anchor([1.5, 0.5], [0, 2], [2, 0]), REACH);
@@ -205,11 +205,11 @@ test('routes across a crossing with a group noded before it', () => {
 
 test('keeps a crossing through compaction', () => {
   const router = new PathRouter();
-  router.load('tee', TEE, /* tolerance= */ 0);
+  load(router, 'tee', TEE, /* tolerance= */ 0);
   router.route(anchor([0.5, 0], [0, 0], [1, 0]), anchor([1.5, 0], [1, 0], [2, 0]), REACH);
   router.unload('tee');
-  router.load('a', [Float64Array.of(10, 10, 12, 12)], /* tolerance= */ 0, /* crossings= */ true);
-  router.load('b', [Float64Array.of(10, 12, 12, 10)], /* tolerance= */ 0);
+  load(router, 'a', [Float64Array.of(10, 10, 12, 12)], /* tolerance= */ 0, /* crossings= */ true);
+  load(router, 'b', [Float64Array.of(10, 12, 12, 10)], /* tolerance= */ 0);
 
   const via =
       router.route(
@@ -219,12 +219,72 @@ test('keeps a crossing through compaction', () => {
   expect(Array.from(via ?? [])).toEqual([11, 11]);
 });
 
+// A land trail from (0, 0) to (4, 0) that also runs along a river through the middle: the river
+// goes (0, 0) to (2, -1) to (4, 0), while the land trail's middle climbs over (2, 3), so the river
+// is shorter.
+const OVER_THE_FALLS = {
+  land: [
+    Float64Array.of(0, 0, 2, 3, 4, 0),
+    Float64Array.of(-1, 0, 0, 0),
+    Float64Array.of(4, 0, 5, 0),
+  ],
+  water: [Float64Array.of(0, 0, 2, -1, 4, 0)],
+};
+
+test('keeps a route between two land ends on land', () => {
+  const router = new PathRouter();
+  load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');
+  load(router, 'water', OVER_THE_FALLS.water, /* tolerance= */ 0, false, 'water');
+
+  const via =
+      router.route(
+          anchor([-0.5, 0], [-1, 0], [0, 0], 'land'),
+          anchor([4.5, 0], [4, 0], [5, 0], 'land'),
+          REACH);
+  expect(Array.from(via ?? [])).toEqual([0, 0, 2, 3, 4, 0]);
+});
+
+test('routes over either kind between ends on different kinds', () => {
+  const router = new PathRouter();
+  load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');
+  load(router, 'water', OVER_THE_FALLS.water, /* tolerance= */ 0, false, 'water');
+
+  const via =
+      router.route(
+          anchor([-0.5, 0], [-1, 0], [0, 0], 'land'),
+          anchor([3, -0.5], [2, -1], [4, 0], 'water'),
+          REACH);
+  expect(Array.from(via ?? [])).toEqual([0, 0, 2, -1]);
+});
+
+test('treats an end on a line of any kind as agreeing with the other end', () => {
+  const router = new PathRouter();
+  load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');
+  load(router, 'water', OVER_THE_FALLS.water, /* tolerance= */ 0, false, 'water');
+  load(router, 'drawn', [Float64Array.of(4, 0, 4, -2)], /* tolerance= */ 0);
+
+  const via =
+      router.route(
+          anchor([-0.5, 0], [-1, 0], [0, 0], 'land'), anchor([4, -1], [4, 0], [4, -2]), REACH);
+  expect(Array.from(via ?? [])).toEqual([0, 0, 2, 3, 4, 0]);
+});
+
 function build(lines: Float64Array[]): PathRouter {
   const router = new PathRouter();
-  router.load('lines', lines, /* tolerance= */ 0);
+  load(router, 'lines', lines, /* tolerance= */ 0);
   return router;
 }
 
-function anchor(point: Vec2, a: Vec2, b: Vec2): Anchor {
-  return {point, a, b};
+function anchor(point: Vec2, a: Vec2, b: Vec2, terrain?: Terrain): Anchor {
+  return {point, a, b, terrain};
+}
+
+function load(
+    router: PathRouter,
+    groupId: string,
+    lines: Float64Array[],
+    tolerance: number,
+    crossings = false,
+    terrain?: Terrain): void {
+  router.load(groupId, lines.map(points => ({points, terrain})), tolerance, crossings);
 }
