@@ -18,14 +18,7 @@ import {
   POINT_PLACED,
   TOOL_REQUESTED,
 } from './events';
-import {
-  FeatureDetails,
-  FeatureProperties,
-  FeatureTree,
-  LayerList,
-  NewFolderButton,
-  ObjectProperties,
-} from './feature_list';
+import { FeatureTree, LayerList, NewFolderButton, Properties } from './feature_list';
 import { formatDistance } from './measurements';
 import { MeasurePanel } from './measure_panel';
 import { SidebarElement, SidebarSection } from './sidebar_element';
@@ -170,19 +163,24 @@ export function OverviewElement(
                 : ''
             }
             {state.features.selected
-                ? readOnly
-                    ? <FeatureDetails
-                          feature={state.features.selected}
-                          profile={state.lineProfile}
-                      />
-                    : <FeatureProperties
-                          feature={state.features.selected}
-                          folders={state.features.folders}
-                          descendants={state.features.selectedDescendants}
-                          profile={state.lineProfile}
-                      />
+                ? <Properties
+                      profile={state.lineProfile}
+                      subject={{
+                        source: 'feature',
+                        feature: state.features.selected,
+                        editing: readOnly
+                            ? undefined
+                            : {
+                              descendants: state.features.selectedDescendants,
+                              folders: state.features.folders,
+                            },
+                      }}
+                  />
                 : state.inspected
-                    ? <ObjectProperties object={state.inspected} profile={state.lineProfile} />
+                    ? <Properties
+                          profile={state.lineProfile}
+                          subject={{source: 'object', object: state.inspected}}
+                      />
                     : ''
             }
           </div>

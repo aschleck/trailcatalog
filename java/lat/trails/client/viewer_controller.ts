@@ -82,6 +82,7 @@ import { insertVertex, joinLines, removeVertex, reverseLine, splitLine } from '.
 import { IconPickerDialog } from './icon_picker';
 import { GradeLimitState, MeasureState } from './measure_panel';
 import { PointToolLayer } from './point_tool_layer';
+import { OSM_PATHS_SCHEMA, PUBLIC_LAND_SCHEMA, Schema } from './schema';
 import {
   cumulativeMeters,
   pathLengthMeters,
@@ -112,6 +113,8 @@ export interface LayerState {
   name: string;
   enabled: boolean;
   layer: Layer;
+  // Set for a CollectionLayer, whose objects the properties dialog shows
+  schema?: Schema;
 }
 
 export interface Args {
@@ -192,7 +195,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private inspected: LayerObject|undefined;
   // Moves with every object opened or closed, so that tags arriving for an earlier one are dropped
   private inspectGeneration: number;
-  private readonly osmPaths: CollectionLayer;
   private readonly hidden: Set<string>;
   private readonly expanded: Set<string>;
   // The feature being dragged in the list, and the folder it would drop into, where undefined is
@@ -570,6 +572,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }, {
       name: 'US public land',
       enabled: false,
+      schema: PUBLIC_LAND_SCHEMA,
       layer: new CollectionLayer(
           '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
           PUBLIC_LAND,
@@ -602,7 +605,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name: 'OSM paths',
       // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
       enabled: true,
-      layer: this.osmPaths = new CollectionLayer(
+      schema: OSM_PATHS_SCHEMA,
+      layer: new CollectionLayer(
           '/api/collections/00000000-0000-0000-0000-000000000001',
           OSM_PATHS,
           [
@@ -745,10 +749,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(undefined);
     this.inspected = object;
     const data = object.value.data;
-    const wayId = layer === this.osmPaths && typeof data.id === 'number' ? data.id : undefined;
+    const schema = checkExists(this.state.layers.find(l => l.layer === layer)?.schema);
+    const titleValue = data[schema.title.key];
+    const wayId =
+        schema.title.kind === 'osm_way' && typeof titleValue === 'number' ? titleValue : undefined;
     const common = {
-      layer: this.state.layers.find(l => l.layer === layer)?.name ?? '',
       data,
+      schema,
       osm: wayId !== undefined ? {id: wayId, tags: 'loading' as const} : undefined,
     };
     if (object.kind === 'line') {

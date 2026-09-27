@@ -14,6 +14,7 @@ import {
 import { PointMarker } from './icon_picker';
 import { formatDistance, formatHeight, measureLine, profileStats } from './measurements';
 import { LineProfile, LineProfileState } from './profile_chart';
+import { Schema, USER_COLLECTION_SCHEMA } from './schema';
 import { Data } from './workers/collection_loader';
 
 export interface TreeItem {
@@ -27,10 +28,9 @@ export interface OsmWayState {
 }
 
 export type InspectedObject = {
-  // The name the layer list shows for the layer it came from
-  layer: string;
   data: Data;
-  // Set for a way from the OSM paths layer, which carries only its id and category
+  schema: Schema;
+  // Set when the schema titles the object by its OpenStreetMap way
   osm: OsmWayState|undefined;
 } & ({
   kind: 'line';
@@ -41,6 +41,21 @@ export type InspectedObject = {
 }|{
   kind: 'polygon';
 });
+
+/** What the properties dialog shows, from the open collection or from a map layer. */
+export type Subject = {
+  source: 'feature';
+  feature: EditableFeature;
+  // Unset when the collection is read only
+  editing: {
+    // How many features deleting a folder takes with it
+    descendants: number;
+    folders: Array<{folder: EditableFolder; depth: number}>;
+  }|undefined;
+}|{
+  source: 'object';
+  object: InspectedObject;
+};
 
 interface Climb {
   upMeters: number;
@@ -243,7 +258,7 @@ function Row({dimmed, draggable, dropTarget, expanded, feature, hovered, selecte
                 + (feature.data.name ? '' : 'italic text-gray-500')
           }
       >
-        {feature.data.name || untitled(feature)}
+        {feature.data.name || untitled(feature.kind)}
       </span>
       <span
           ariaLabel={visible ? 'Hide' : 'Show'}
@@ -293,193 +308,193 @@ function FolderShape() {
   return <path d="M2.5 5.5 H13.5 V13.5 H2.5 Z M1.5 2.5 H14.5 V5.5 H1.5 Z" strokeWidth="1.3" />;
 }
 
-/** Edits the selected feature. */
-export function FeatureProperties({descendants, feature, folders, profile}: {
-  descendants: number;
-  feature: EditableFeature;
-  folders: Array<{folder: EditableFolder; depth: number}>;
+/**
+ * Shows a feature of the open collection or an object from a map layer, with the controls to edit
+ * it when editing is set.
+ */
+export function Properties({profile, subject}: {
   // Set for a line
   profile: LineProfileState|undefined;
+  subject: Subject;
 }) {
+  const schema = subject.source === 'feature' ? USER_COLLECTION_SCHEMA : subject.object.schema;
+  const kind = subject.source === 'feature' ? subject.feature.kind : subject.object.kind;
+  const data: {[key: string]: boolean|number|string|undefined} =
+      subject.source === 'feature' ? subject.feature.data : subject.object.data;
+  const editing = subject.source === 'feature' ? subject.editing : undefined;
+  const osm = subject.source === 'object' ? subject.object.osm : undefined;
+  const title = data[schema.title.key];
+  const description = schema.description ? data[schema.description] : undefined;
+  const fields = schema.fields.flatMap(({key, label, values}): Array<[string, string]> => {
+    const value = data[key];
+    return value === undefined ? [] : [[label, values?.[String(value)] ?? String(value)]];
+  });
+
   return (
-    <PropertiesDialog title={`Editing ${feature.kind}`}>
+    <PropertiesDialog title={`${editing ? 'Editing' : 'Viewing'} ${kind}`}>
       <div className="flex flex-col gap-2">
-        <Input
-            className="border border-gray-300 px-1 rounded"
-            forceValue={true}
-            placeholder={untitled(feature)}
-            value={feature.data.name ?? ''}
-            unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
-        />
-        {feature.kind !== 'folder'
+        {editing
+            ? <Input
+                  className="border border-gray-300 px-1 rounded"
+                  forceValue={true}
+                  placeholder={untitled(kind)}
+                  value={title !== undefined ? String(title) : ''}
+                  unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
+              />
+            : osm
+                ? <a
+                      className="font-bold text-blue-700 underline"
+                      href={`https://www.openstreetmap.org/way/${osm.id}`}
+                      rel="noopener"
+                      target="_blank"
+                  >
+                    {`OpenStreetMap way ${osm.id}`}
+                  </a>
+                : <div className="font-bold">{title ? String(title) : untitled(kind)}</div>
+        }
+        {editing && kind !== 'folder'
             ? <textarea
                   className="border border-gray-300 px-1 rounded"
                   placeholder="Description"
-                  value={feature.data.description ?? ''}
+                  value={description !== undefined ? String(description) : ''}
                   unboundEvents={{input: 'descriptionChanged'}}
               />
+            : !editing && description
+                ? <div className="whitespace-pre-wrap">{String(description)}</div>
+                : ''
+        }
+        {editing && subject.source === 'feature'
+            ? <StyleControls feature={subject.feature} folders={editing.folders} />
             : ''
         }
-        <div className="flex gap-2 items-center">
-          {feature.kind === 'point'
-              ? <button
-                    ariaLabel="Icon"
-                    className="
-                        border
-                        border-gray-300
-                        flex
-                        h-7
-                        hover:bg-gray-100
-                        items-center
-                        justify-center
-                        rounded
-                        shrink-0
-                        w-8
-                    "
-                    title="Icon"
-                    unboundEvents={{click: 'iconButtonClicked'}}
-                >
-                  <PointMarker
-                      color={feature.data.fill ?? DEFAULT_POINT_COLOR}
-                      icon={feature.data.icon}
+        {subject.source === 'feature'
+            ? <Stats feature={subject.feature} profile={profile} />
+            : subject.object.kind === 'line'
+                ? <LineStats
+                      lengthMeters={subject.object.lengthMeters}
+                      climb={subject.object.climb}
                   />
-                </button>
-              : ''
-          }
-          {feature.kind !== 'folder'
-              ? <input
-                    ariaLabel="Color"
-                    className="h-7 shrink-0 w-10"
-                    type="color"
-                    value={
-                      feature.kind === 'line'
-                          ? feature.data.stroke ?? DEFAULT_LINE_COLOR
-                          : feature.data.fill ?? DEFAULT_POINT_COLOR
-                    }
-                    unboundEvents={{input: 'colorChanged'}}
-                />
-              : ''
-          }
-          {feature.kind === 'line'
-              ? <Select
-                    ariaLabel="Width"
-                    className="border border-gray-300 rounded shrink-0 w-20"
-                    options={WIDTHS_PX.map(width => ({
-                      label: `${width} px`,
-                      value: String(width),
-                      selected: width === (feature.data.width_px ?? DEFAULT_WIDTH_PX),
-                    }))}
-                    unboundEvents={{corgi: [[CHANGED, 'widthChanged']]}}
-                />
-              : ''
-          }
-          <Select
-              ariaLabel="Folder"
-              className="border border-gray-300 grow min-w-0 rounded"
-              options={[
-                {label: 'No folder', value: '', selected: !feature.data.folder_id},
-                ...folders
-                    .filter(({folder}) => folder.id !== feature.id)
-                    .map(({folder, depth}) => ({
-                      label: `${'  '.repeat(depth)}${folder.data.name || 'Untitled folder'}`,
-                      value: folder.id,
-                      selected: folder.id === feature.data.folder_id,
-                    })),
-              ]}
-              unboundEvents={{corgi: [[CHANGED, 'folderChanged']]}}
-          />
-        </div>
-        <Stats feature={feature} profile={profile} />
+                : ''
+        }
         {profile ? <LineProfile state={profile} /> : ''}
-        <Button
-            className="bg-red-700 hover:bg-red-800 px-2 py-1 rounded self-start text-white"
-            unboundEvents={{corgi: [[ACTION, 'deleteClicked']]}}
-        >
-          {feature.kind === 'folder' && descendants > 0
-              ? `Delete folder and ${descendants} ${descendants === 1 ? 'item' : 'items'}`
-              : 'Delete'}
-        </Button>
-      </div>
-    </PropertiesDialog>
-  );
-}
-
-/** Shows the selected feature of a collection the user can only view. */
-export function FeatureDetails({feature, profile}: {
-  feature: EditableFeature;
-  // Set for a line
-  profile: LineProfileState|undefined;
-}) {
-  return (
-    <PropertiesDialog title={`Viewing ${feature.kind}`}>
-      <div className="flex flex-col gap-2">
-        <div className="font-bold">{feature.data.name || untitled(feature)}</div>
-        {feature.data.description
-            ? <div className="whitespace-pre-wrap">{feature.data.description}</div>
+        {osm
+            ? <OsmTags tags={osm.tags} />
+            : fields.length > 0 ? <DataTable rows={fields} /> : ''
+        }
+        {editing
+            ? <Button
+                  className="bg-red-700 hover:bg-red-800 px-2 py-1 rounded self-start text-white"
+                  unboundEvents={{corgi: [[ACTION, 'deleteClicked']]}}
+              >
+                {kind === 'folder' && editing.descendants > 0
+                    ? `Delete folder and ${editing.descendants} ${
+                        editing.descendants === 1 ? 'item' : 'items'}`
+                    : 'Delete'}
+              </Button>
             : ''
         }
-        <Stats feature={feature} profile={profile} />
-        {profile ? <LineProfile state={profile} /> : ''}
       </div>
     </PropertiesDialog>
   );
 }
 
-/** Shows what a map layer knows about the object double clicked on it. */
-export function ObjectProperties({object, profile}: {
-  object: InspectedObject;
-  // Set for a line
-  profile: LineProfileState|undefined;
+function StyleControls({feature, folders}: {
+  feature: EditableFeature;
+  folders: Array<{folder: EditableFolder; depth: number}>;
 }) {
   return (
-    <PropertiesDialog title={`Viewing ${object.kind}`}>
-      <div className="flex flex-col gap-2">
-        <div className="text-gray-600">{object.layer}</div>
-        {object.kind === 'line'
-            ? <LineStats lengthMeters={object.lengthMeters} climb={object.climb} />
-            : ''}
-        {profile ? <LineProfile state={profile} /> : ''}
-        {object.osm ? <OsmWay way={object.osm} /> : <DataTable data={object.data} />}
-      </div>
-    </PropertiesDialog>
-  );
-}
-
-function OsmWay({way}: {way: OsmWayState}) {
-  const tags = way.tags;
-  return (
-    <div className="flex flex-col gap-2">
-      <a
-          className="text-blue-700 underline"
-          href={`https://www.openstreetmap.org/way/${way.id}`}
-          rel="noopener"
-          target="_blank"
-      >
-        {`OpenStreetMap way ${way.id}`}
-      </a>
-      {tags === 'loading'
-          ? <div className="text-gray-500">Loading tags</div>
-          : tags === 'failed'
-              ? <div className="text-gray-500">OpenStreetMap failed to return this way's tags</div>
-              : <DataTable data={tags} />
+    <div className="flex gap-2 items-center">
+      {feature.kind === 'point'
+          ? <button
+                ariaLabel="Icon"
+                className="
+                    border
+                    border-gray-300
+                    flex
+                    h-7
+                    hover:bg-gray-100
+                    items-center
+                    justify-center
+                    rounded
+                    shrink-0
+                    w-8
+                "
+                title="Icon"
+                unboundEvents={{click: 'iconButtonClicked'}}
+            >
+              <PointMarker
+                  color={feature.data.fill ?? DEFAULT_POINT_COLOR}
+                  icon={feature.data.icon}
+              />
+            </button>
+          : ''
       }
+      {feature.kind !== 'folder'
+          ? <input
+                ariaLabel="Color"
+                className="h-7 shrink-0 w-10"
+                type="color"
+                value={
+                  feature.kind === 'line'
+                      ? feature.data.stroke ?? DEFAULT_LINE_COLOR
+                      : feature.data.fill ?? DEFAULT_POINT_COLOR
+                }
+                unboundEvents={{input: 'colorChanged'}}
+            />
+          : ''
+      }
+      {feature.kind === 'line'
+          ? <Select
+                ariaLabel="Width"
+                className="border border-gray-300 rounded shrink-0 w-20"
+                options={WIDTHS_PX.map(width => ({
+                  label: `${width} px`,
+                  value: String(width),
+                  selected: width === (feature.data.width_px ?? DEFAULT_WIDTH_PX),
+                }))}
+                unboundEvents={{corgi: [[CHANGED, 'widthChanged']]}}
+            />
+          : ''
+      }
+      <Select
+          ariaLabel="Folder"
+          className="border border-gray-300 grow min-w-0 rounded"
+          options={[
+            {label: 'No folder', value: '', selected: !feature.data.folder_id},
+            ...folders
+                .filter(({folder}) => folder.id !== feature.id)
+                .map(({folder, depth}) => ({
+                  label: `${'  '.repeat(depth)}${folder.data.name || 'Untitled folder'}`,
+                  value: folder.id,
+                  selected: folder.id === feature.data.folder_id,
+                })),
+          ]}
+          unboundEvents={{corgi: [[CHANGED, 'folderChanged']]}}
+      />
     </div>
   );
 }
 
-function DataTable({data}: {data: {[key: string]: boolean|number|string}}) {
-  const entries = Object.entries(data).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) {
+function OsmTags({tags}: {tags: OsmWayState['tags']}) {
+  return tags === 'loading'
+      ? <div className="text-gray-500">Loading tags</div>
+      : tags === 'failed'
+          ? <div className="text-gray-500">OpenStreetMap failed to return this way's tags</div>
+          : <DataTable rows={Object.entries(tags).sort(([a], [b]) => a.localeCompare(b))} />;
+}
+
+function DataTable({rows}: {rows: Array<[string, string]>}) {
+  if (rows.length === 0) {
     return <div className="text-gray-500">No data</div>;
   }
 
   return (
     <table className="w-full">
       <tbody>
-        {entries.map(([key, value]) =>
+        {rows.map(([key, value]) =>
             <tr className="align-top border-gray-200 border-t">
               <td className="pr-2 py-0.5 text-gray-600">{key}</td>
-              <td className="break-all py-0.5">{String(value)}</td>
+              <td className="break-all py-0.5">{value}</td>
             </tr>)}
       </tbody>
     </table>
@@ -574,10 +589,8 @@ export function LineStats({climb, lengthMeters}: {climb: Climb|undefined; length
   );
 }
 
-function untitled(feature: EditableFeature): string {
-  return feature.kind === 'folder'
-      ? 'Untitled folder'
-      : feature.kind === 'line' ? 'Untitled line' : 'Untitled point';
+function untitled(kind: EditableFeature['kind']|'polygon'): string {
+  return kind === 'polygon' ? 'Untitled area' : `Untitled ${kind}`;
 }
 
 /** Sorts folders ahead of everything else and names in the order a person would number them. */
