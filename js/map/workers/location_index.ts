@@ -29,7 +29,7 @@ export class LocationIndex {
   private producerCount: number;
 
   constructor() {
-    this.worker = new WorkerPool('/static/location_querier_worker.js', 1);
+    this.worker = new WorkerPool(new URL('location_querier_worker.js', import.meta.url).href, 1);
     this.pending = new Map();
     this.queryCount = 0;
     this.producerCount = 0;

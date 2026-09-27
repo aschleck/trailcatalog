@@ -5,6 +5,15 @@ package(default_visibility = ["//visibility:private"])
 load("@rules_python//python:defs.bzl", "py_binary")
 
 py_binary(
+    name = "static_prefix",
+    srcs = ["static_prefix.py"],
+    visibility = [
+        "//java/lat/trails/frontend:__pkg__",
+        "//java/org/trailcatalog/frontend:__pkg__",
+    ],
+)
+
+py_binary(
     name = "svgs_to_atlas",
     srcs = ["svgs_to_atlas.py"],
     deps = [

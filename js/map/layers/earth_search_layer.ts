@@ -41,7 +41,8 @@ export class EarthSearchLayer extends Layer {
 
     this.buffer = this.renderer.createDataBuffer(TILE_BUFFER_BYTES);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
-    this.loader = new QueuedWorkerPool('/static/earth_search_loader_worker.js', 1);
+    this.loader =
+        new QueuedWorkerPool(new URL('earth_search_loader_worker.js', import.meta.url).href, 1);
     this.fetching = false;
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);

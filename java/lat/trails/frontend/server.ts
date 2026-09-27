@@ -10,6 +10,7 @@ import { serve } from 'external/dev_april_corgi+/js/server/server';
 
 import { App } from '../client/app';
 
+import { STATIC_PREFIX } from './assets';
 import { ExpiredCredentialError, LoginEnforcer } from './auth';
 import { Encrypter } from './encrypter';
 import * as oidc from './oidc';
@@ -113,13 +114,13 @@ function page(content: string, title: string, initialData: string): string {
     <meta
         name="viewport"
         content="height=device-height, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width" />
-    <link rel="stylesheet" type="text/css" href="/static/client.css" />
+    <link rel="stylesheet" type="text/css" href="${STATIC_PREFIX}/client.css" />
     <link rel="icon" href="/static/images/icons/favicon.ico" type="image/x-icon" />
   </head>
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
     <script>${process.env.DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${initialData}</script>
-    <script type="module" src="/static/client.js"></script>
+    <script type="module" src="${STATIC_PREFIX}/client.js"></script>
     <script
         async
         data-goatcounter="https://trails-lat.goatcounter.com/count"

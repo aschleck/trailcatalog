@@ -107,9 +107,9 @@ export class CollectionLayer extends Layer {
   ) {
     super(/* copyright= */ []);
     this.producer = locations.producer();
-    this.fetcher = new WorkerPool('/static/s2_data_fetcher_worker.js', 1);
+    this.fetcher = new WorkerPool(new URL('s2_data_fetcher_worker.js', import.meta.url).href, 1);
     this.fetching = false;
-    this.loader = new WorkerPool('/static/collection_loader_worker.js', 6);
+    this.loader = new WorkerPool(new URL('collection_loader_worker.js', import.meta.url).href, 6);
     this.cells = new Map();
     this.rawBytes = new Map();
     this.objects = new Map();

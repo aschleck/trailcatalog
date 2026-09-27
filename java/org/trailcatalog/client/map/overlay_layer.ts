@@ -43,7 +43,7 @@ export class OverlayLayer extends Layer {
     this.lastOverlays = {};
     this.scratchBuffer = new ArrayBuffer(64 * 1024);
 
-    fetch("/static/images/icons/bear-face.png")
+    fetch(new URL("images/icons/bear-face.png", import.meta.url))
         .then(response => {
           if (response.ok) {
             return response.blob()
@@ -58,7 +58,7 @@ export class OverlayLayer extends Layer {
           }
         });
 
-    fetch("/static/images/icons/blue-dot.png")
+    fetch(new URL("images/icons/blue-dot.png", import.meta.url))
         .then(response => {
           if (response.ok) {
             return response.blob()

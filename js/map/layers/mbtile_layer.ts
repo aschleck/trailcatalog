@@ -2098,11 +2098,11 @@ export class MbtileLayer extends Layer {
       private readonly renderer: Renderer,
   ) {
     super(copyrights);
-    this.fetcher = new WorkerPool('/static/xyz_data_fetcher_worker.js', 1);
+    this.fetcher = new WorkerPool(new URL('xyz_data_fetcher_worker.js', import.meta.url).href, 1);
     this.fetching = false;
     this.labelIndex = new WorldBoundsQuadtree();
     this.labels = new Map();
-    this.loader = new QueuedWorkerPool('/static/mbtile_loader_worker.js', 6);
+    this.loader = new QueuedWorkerPool(new URL('mbtile_loader_worker.js', import.meta.url).href, 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.rawBytes = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.textBuffer = new ArrayBuffer(4194304);

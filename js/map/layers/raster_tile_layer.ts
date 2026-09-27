@@ -42,9 +42,9 @@ export class RasterTileLayer extends Layer {
     super(copyrights);
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
-    this.fetcher = new WorkerPool('/static/xyz_data_fetcher_worker.js', 1);
+    this.fetcher = new WorkerPool(new URL('xyz_data_fetcher_worker.js', import.meta.url).href, 1);
     this.fetching = false;
-    this.loader = new QueuedWorkerPool('/static/raster_loader_worker.js', 6);
+    this.loader = new QueuedWorkerPool(new URL('raster_loader_worker.js', import.meta.url).href, 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);

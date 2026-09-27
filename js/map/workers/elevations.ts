@@ -15,7 +15,7 @@ export class Elevations {
   private requestCount: number;
 
   constructor() {
-    this.worker = new WorkerPool('/static/elevation_sampler_worker.js', 1);
+    this.worker = new WorkerPool(new URL('elevation_sampler_worker.js', import.meta.url).href, 1);
     this.pending = new Map();
     this.pendingRoutes = new Map();
     this.requestCount = 0;

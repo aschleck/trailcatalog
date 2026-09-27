@@ -26,8 +26,17 @@ esbuild_binary(
     ],
 )
 
+genrule(
+    name = "assets",
+    srcs = ["//java/lat/trails/static"],
+    outs = ["assets.ts"],
+    cmd = "$(execpath //py:static_prefix) $@ /static $(SRCS)",
+    tools = ["//py:static_prefix"],
+)
+
 tc_ts_project(
     name = "ts",
+    srcs = glob(["*.ts"]) + [":assets"],
     css_deps = [
         "//java/lat/trails/client:css",
     ],

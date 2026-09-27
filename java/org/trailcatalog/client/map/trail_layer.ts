@@ -190,7 +190,7 @@ export class TrailLayer extends Layer implements Listener {
       this.dataService.clearListener();
     });
 
-    fetch('/static/images/atlases/points.png')
+    fetch(new URL('images/atlases/points.png', import.meta.url))
         .then(response => {
           if (response.ok) {
             return response.blob();

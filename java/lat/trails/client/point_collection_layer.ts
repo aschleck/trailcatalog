@@ -73,7 +73,7 @@ export class PointCollectionLayer extends Layer {
       private readonly renderer: Renderer,
   ) {
     super(/* copyright= */ []);
-    this.fetcher = new WorkerPool('/static/s2_data_fetcher_worker.js', 1);
+    this.fetcher = new WorkerPool(new URL('s2_data_fetcher_worker.js', import.meta.url).href, 1);
     this.fetching = false;
     this.cells = new Map();
     const pool = new TexturePool(renderer);
@@ -111,7 +111,7 @@ export class PointCollectionLayer extends Layer {
       url: url + '/objects',
     });
 
-    fetch('/static/images/atlases/points.png')
+    fetch(new URL('images/atlases/points.png', import.meta.url))
         .then(response => {
           if (!response.ok) {
             throw new Error(`Unable to fetch the points atlas: ${response.status}`);

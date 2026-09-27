@@ -18,7 +18,7 @@ const OUTDOORS = [
 ];
 
 // Built by py/trim_emojibase.py from emojibase-data, keeping what Noto Emoji draws
-const CATALOG_URL = '/static/emoji.json';
+const CATALOG_URL = new URL('emoji.json', import.meta.url).href;
 
 /**
  * Draws a point's icon the way the map does, see FeatureLayer#planLabels. SVG text anchored on its
