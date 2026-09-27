@@ -1,5 +1,12 @@
 import { EditableLine } from './features';
-import { insertVertex, moveVertex, removeVertex, reverseLine, splitLine } from './line_edits';
+import {
+  insertVertex,
+  joinLines,
+  moveVertex,
+  removeVertex,
+  reverseLine,
+  splitLine,
+} from './line_edits';
 
 test('moves a vertex without touching the original', () => {
   const original = line();
@@ -74,6 +81,52 @@ test('reverses a line with its samples', () => {
   expect(Array.from(reversed.elevationCentimeters!)).toEqual([300, 200, 100]);
   expect(Array.from(reversed.timeSeconds!)).toEqual([20n, 10n, 0n]);
   expect(Array.from(original.latLngE7)).toEqual([0, 0, 10, 10, 20, 20]);
+});
+
+test('joins the halves of a split back together', () => {
+  const [first, second] = splitLine(line(), 1, 'b')!;
+  const joined = joinLines({...first, data: {name: 'a'}}, second);
+
+  expect(joined.id).toBe('a');
+  expect(joined.data.name).toBe('a');
+  expect(Array.from(joined.latLngE7)).toEqual([0, 0, 10, 10, 20, 20]);
+  expect(Array.from(joined.elevationCentimeters!)).toEqual([100, 200, 300]);
+  expect(Array.from(joined.timeSeconds!)).toEqual([0n, 10n, 20n]);
+});
+
+test('turns the second line around to meet at the nearest ends', () => {
+  const a = {...line(), elevationCentimeters: undefined, timeSeconds: undefined};
+  const b = {...a, id: 'b', latLngE7: Int32Array.from([50, 50, 30, 30])};
+  expect(Array.from(joinLines(a, b).latLngE7)).toEqual([0, 0, 10, 10, 20, 20, 30, 30, 50, 50]);
+
+  const before = {...a, id: 'b', latLngE7: Int32Array.from([-30, -30, -10, -10])};
+  expect(Array.from(joinLines(a, before).latLngE7))
+      .toEqual([-30, -30, -10, -10, 0, 0, 10, 10, 20, 20]);
+});
+
+test('turns the second line around to meet at both starts', () => {
+  const a = {...line(), elevationCentimeters: undefined, timeSeconds: undefined};
+  const b = {...a, id: 'b', latLngE7: Int32Array.from([-10, -10, -30, -30])};
+
+  expect(Array.from(joinLines(a, b).latLngE7))
+      .toEqual([-30, -30, -10, -10, 0, 0, 10, 10, 20, 20]);
+});
+
+test('splits partway along a segment into halves that share only the new vertex', () => {
+  const [first, second] = splitLine(insertVertex(line(), 2, 15, 15), 2, 'b')!;
+
+  expect(Array.from(first.latLngE7)).toEqual([0, 0, 10, 10, 15, 15]);
+  expect(Array.from(second.latLngE7)).toEqual([15, 15, 20, 20]);
+  expect(Array.from(joinLines(first, second).latLngE7)).toEqual([0, 0, 10, 10, 15, 15, 20, 20]);
+});
+
+test('drops samples that only one line has', () => {
+  const b = {...line(), id: 'b', latLngE7: Int32Array.from([20, 20, 30, 30])};
+  const joined = joinLines(line(), {...b, elevationCentimeters: undefined, timeSeconds: undefined});
+
+  expect(Array.from(joined.latLngE7)).toEqual([0, 0, 10, 10, 20, 20, 30, 30]);
+  expect(joined.elevationCentimeters).toBeUndefined();
+  expect(joined.timeSeconds).toBeUndefined();
 });
 
 function line(): EditableLine {

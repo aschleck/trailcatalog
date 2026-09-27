@@ -12,7 +12,7 @@ import {
   EditableFolder,
 } from './features';
 import { PointMarker } from './icon_picker';
-import { formatDistance, formatHeight, measureLine } from './measurements';
+import { formatDistance, formatHeight, measureLine, profileStats } from './measurements';
 import { LineProfile, LineProfileState } from './profile_chart';
 import { Data } from './workers/collection_loader';
 
@@ -389,7 +389,7 @@ export function FeatureProperties({descendants, feature, folders, profile}: {
               unboundEvents={{corgi: [[CHANGED, 'folderChanged']]}}
           />
         </div>
-        <Stats feature={feature} />
+        <Stats feature={feature} profile={profile} />
         {profile ? <LineProfile state={profile} /> : ''}
         <Button
             className="bg-red-700 hover:bg-red-800 px-2 py-1 rounded self-start text-white"
@@ -418,7 +418,7 @@ export function FeatureDetails({feature, profile}: {
             ? <div className="whitespace-pre-wrap">{feature.data.description}</div>
             : ''
         }
-        <Stats feature={feature} />
+        <Stats feature={feature} profile={profile} />
         {profile ? <LineProfile state={profile} /> : ''}
       </div>
     </PropertiesDialog>
@@ -534,10 +534,18 @@ function PropertiesDialog({children, title}: {
   );
 }
 
-function Stats({feature}: {feature: EditableFeature}) {
+// A line without elevations of its own takes its climb from the profile sampled for it, the way
+// an object from a map layer does.
+function Stats({feature, profile}: {
+  feature: EditableFeature;
+  profile: LineProfileState|undefined;
+}) {
   if (feature.kind === 'line') {
     const stats = measureLine(feature.latLngE7, feature.elevationCentimeters);
-    return <LineStats lengthMeters={stats.lengthMeters} climb={stats.elevation} />;
+    const climb =
+        stats.elevation
+            ?? (profile?.status === 'loaded' ? profileStats(profile.meters) : undefined);
+    return <LineStats lengthMeters={stats.lengthMeters} climb={climb} />;
   } else if (feature.kind === 'point') {
     return (
       <div className="text-gray-700">

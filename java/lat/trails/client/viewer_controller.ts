@@ -77,7 +77,7 @@ import {
   toWrite,
 } from './features';
 import { parseImport } from './importer';
-import { insertVertex, removeVertex, reverseLine, splitLine } from './line_edits';
+import { insertVertex, joinLines, removeVertex, reverseLine, splitLine } from './line_edits';
 import { IconPickerDialog } from './icon_picker';
 import { MeasureState } from './measure_panel';
 import { PointToolLayer } from './point_tool_layer';
@@ -122,6 +122,8 @@ export interface State {
   features: FeatureListState;
   // The map layer object open in the dialog, when no feature is selected
   inspected: InspectedObject|undefined;
+  // Set while the next line clicked joins the one Join with started from
+  joining: boolean;
   layers: LayerState[];
   // The profile of the selected feature or the inspected object, when that is a line
   lineProfile: LineProfileState|undefined;
@@ -186,6 +188,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // the root
   private draggedFeature: string|undefined;
   private dropTarget: {folder: string|undefined}|undefined;
+  // The line Join with started from
+  private joining: string|undefined;
   // Logins run in a popup on Google's origin, so a caller waiting on one waits on this.
   private login: {
     popup: Window;
@@ -233,6 +237,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.expanded = new Set();
     this.draggedFeature = undefined;
     this.dropTarget = undefined;
+    this.joining = undefined;
     this.store.listen(() => {
       this.refreshFeatureList();
     });
@@ -659,9 +664,28 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setTool(e.detail.tool);
   }
 
-  // Opens the folders above what the map selected and scrolls to it, so that the list shows it.
+  // Joins the line clicked while Join with is waiting on one. Anything else cancels the join and
+  // selects as usual.
   onFeatureClicked(e: CorgiEvent<typeof FEATURE_CLICKED>): void {
     const id = e.detail.id;
+    const from = this.joining;
+    this.stopJoining();
+    const a = from !== undefined ? this.store.get(from) : undefined;
+    const b = id !== undefined ? this.store.get(id) : undefined;
+    if (a?.kind === 'line' && b?.kind === 'line' && a.id !== b.id) {
+      this.store.apply([
+        {id: a.id, before: snapshot(a), after: joinLines(a, b)},
+        {id: b.id, before: snapshot(b), after: undefined},
+      ]);
+      this.select(a.id);
+      return;
+    }
+
+    this.reveal(id);
+  }
+
+  // Opens the folders above what the map selected and scrolls to it, so that the list shows it.
+  private reveal(id: string|undefined): void {
     for (const ancestor of this.ancestorsOf(id)) {
       this.expanded.add(ancestor);
     }
@@ -717,6 +741,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   onFeatureContextMenu(e: CorgiEvent<typeof FEATURE_CONTEXT_MENU>): void {
     const {id, spot, px} = e.detail;
+    this.stopJoining();
+    this.reveal(id);
     const feature = id !== undefined ? this.store.get(id) : undefined;
     const editable = feature !== undefined && !this.store.isReadOnly();
     const items: MenuEntries = [];
@@ -735,6 +761,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         label: 'Reverse direction',
         action: () => {
           this.editLine(feature.id, reverseLine);
+        },
+      });
+      items.push({
+        kind: 'menu_item',
+        label: 'Join with…',
+        disabled: this.store.lines().length < 2,
+        action: () => {
+          this.joining = feature.id;
+          this.updateState({...this.state, joining: true});
         },
       });
       if (spot.kind === 'vertex' && spot.handle) {
@@ -1287,6 +1322,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Deactivates before activating, because both drawing layers share the index's routing switch.
   private setTool(tool: Tool): void {
+    this.stopJoining();
     this.lineLayer.setActive(false);
     this.measureLayer.setActive(false);
     this.pointLayer.setActive(tool === 'point');
@@ -1307,6 +1343,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Skipped while typing, so that the browser's own undo still works in text fields.
   private keyPressed(e: KeyboardEvent): void {
+    // Checked before defaultPrevented, because the line being edited also takes Escape
+    if (e.key === 'Escape' && this.joining !== undefined) {
+      this.stopJoining();
+      e.preventDefault();
+      return;
+    }
+
     // A map layer already handled it, like Delete removing a vertex from the line being edited
     if (e.defaultPrevented) {
       return;
@@ -1679,6 +1722,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     this.dropTarget = target;
     this.refreshFeatureList();
+  }
+
+  private stopJoining(): void {
+    if (this.joining === undefined) {
+      return;
+    }
+
+    this.joining = undefined;
+    this.updateState({...this.state, joining: false});
   }
 
   // Splits at a vertex, adding one first when the spot is partway along a segment.

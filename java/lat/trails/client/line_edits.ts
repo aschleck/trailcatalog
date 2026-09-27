@@ -1,4 +1,5 @@
 import { EditableLine } from './features';
+import { haversineMeters } from './measurements';
 
 // Each returns a new line with new arrays, because undo holds on to the old ones.
 
@@ -118,4 +119,54 @@ export function reverseLine(line: EditableLine): EditableLine {
     elevationCentimeters: line.elevationCentimeters?.slice().reverse(),
     timeSeconds: line.timeSeconds?.slice().reverse(),
   };
+}
+
+/**
+ * Joins two lines at whichever of their ends are nearest, turning b around if it runs the other
+ * way. The result keeps a's id and data. Ends in the same spot become one vertex, and anything
+ * else is bridged by a straight segment.
+ */
+export function joinLines(a: EditableLine, b: EditableLine): EditableLine {
+  const aLast = a.latLngE7.length / 2 - 1;
+  const bLast = b.latLngE7.length / 2 - 1;
+  const gap = (i: number, j: number) =>
+      haversineMeters(
+          a.latLngE7[2 * i] / 1e7,
+          a.latLngE7[2 * i + 1] / 1e7,
+          b.latLngE7[2 * j] / 1e7,
+          b.latLngE7[2 * j + 1] / 1e7);
+  // a's end or start, against b's start or end
+  const options = [
+    {first: a, second: b, gap: gap(aLast, 0)},
+    {first: a, second: reverseLine(b), gap: gap(aLast, bLast)},
+    {first: b, second: a, gap: gap(0, bLast)},
+    {first: reverseLine(b), second: a, gap: gap(0, 0)},
+  ];
+  const {first, second} = options.reduce((best, option) => option.gap < best.gap ? option : best);
+
+  const firstCount = first.latLngE7.length / 2;
+  const shared =
+      first.latLngE7[2 * firstCount - 2] === second.latLngE7[0]
+          && first.latLngE7[2 * firstCount - 1] === second.latLngE7[1];
+  const skip = shared ? 1 : 0;
+  const latLngE7 = new Int32Array(first.latLngE7.length + second.latLngE7.length - 2 * skip);
+  latLngE7.set(first.latLngE7, 0);
+  latLngE7.set(second.latLngE7.subarray(2 * skip), first.latLngE7.length);
+
+  // Samples only survive when both lines have them, or else they would not line up with the
+  // vertices.
+  let elevationCentimeters = undefined;
+  if (first.elevationCentimeters && second.elevationCentimeters) {
+    elevationCentimeters = new Int32Array(latLngE7.length / 2);
+    elevationCentimeters.set(first.elevationCentimeters, 0);
+    elevationCentimeters.set(second.elevationCentimeters.subarray(skip), firstCount);
+  }
+  let timeSeconds = undefined;
+  if (first.timeSeconds && second.timeSeconds) {
+    timeSeconds = new BigInt64Array(latLngE7.length / 2);
+    timeSeconds.set(first.timeSeconds, 0);
+    timeSeconds.set(second.timeSeconds.subarray(skip), firstCount);
+  }
+
+  return {...a, data: {...a.data}, latLngE7, elevationCentimeters, timeSeconds};
 }

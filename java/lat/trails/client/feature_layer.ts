@@ -574,8 +574,8 @@ export class FeatureLayer extends Layer {
     this.overlay.generation += 1;
   }
 
-  // Selects what was hit, so that the menu the viewer opens is plainly about it. A right click
-  // never counts toward a double click.
+  // Reports what was hit and where, which the viewer selects so that its menu is plainly about
+  // it. A right click never counts toward a double click.
   private contextClick(
       point: S2LatLng, at: Vec2, px: [number, number], source: EventSource): void {
     const editing = this.editingLine();
@@ -592,7 +592,6 @@ export class FeatureLayer extends Layer {
       this.stopEditing();
     }
     this.lastClick = undefined;
-    source.trigger(FEATURE_CLICKED, {id: hit?.id});
     source.trigger(FEATURE_CONTEXT_MENU, {
       id: hit?.id,
       spot,

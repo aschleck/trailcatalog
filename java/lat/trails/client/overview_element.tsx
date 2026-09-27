@@ -53,6 +53,7 @@ export function OverviewElement(
         dropTarget: undefined,
       },
       inspected: undefined,
+      joining: false,
       layers: [],
       lineProfile: undefined,
       measure: {
@@ -122,6 +123,26 @@ export function OverviewElement(
               ref="map"
           />
           <Toolbar readOnly={readOnly} tool={state.tool} />
+          {state.joining
+              ? <div className="
+                    -translate-x-1/2
+                    absolute
+                    bg-gray-900
+                    left-1/2
+                    pointer-events-none
+                    px-3
+                    py-1
+                    rounded
+                    shadow-lg
+                    text-sm
+                    text-white
+                    top-2
+                    z-10
+                ">
+                  Click another line to join it, or press Escape to cancel
+                </div>
+              : ''
+          }
           {/* Spans the map's height so a tall dialog scrolls, and passes clicks to the map. */}
           <div className="
               absolute
