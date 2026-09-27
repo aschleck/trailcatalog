@@ -2288,16 +2288,7 @@ export class MbtileLayer extends Layer {
 
   private restyle(): void {
     for (const [id, data] of this.rawBytes) {
-      // Structured-clone copies for the worker; main-thread buffer is
-      // preserved for future re-style passes.
-      const task = this.loader.post({
-        kind: 'lr',
-        id,
-        styleZoom: this.styleZoom,
-        styleEpoch: this.styleEpoch,
-        data,
-      });
-      this.loading.set(id, task);
+      this.load(id, data);
     }
   }
 
@@ -2306,18 +2297,22 @@ export class MbtileLayer extends Layer {
       return;
     }
 
-    const id = command.id;
-    this.rawBytes.set(id, command.data);
-    // No transfer list: structured-clone gives the worker its own copy and
-    // leaves the cached buffer intact for later re-styling.
-    const task = this.loader.post({
+    this.rawBytes.set(command.id, command.data);
+    this.load(command.id, command.data);
+  }
+
+  private load(id: TileId, data: ArrayBuffer): void {
+    // A request styled at an older zoom is only thrown away when it lands, so cancel it before a
+    // worker spends time on it.
+    this.loading.get(id)?.cancel();
+    // No transfer list, so the worker gets a structured clone and this copy survives to restyle.
+    this.loading.set(id, this.loader.post({
       kind: 'lr',
       id,
       styleZoom: this.styleZoom,
       styleEpoch: this.styleEpoch,
-      data: command.data,
-    });
-    this.loading.set(id, task);
+      data,
+    }));
   }
 
   private loadProcessedTile(response: LoadResponse): void {

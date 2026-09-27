@@ -6,7 +6,7 @@ import { projectS2LatLng, unprojectS2LatLng } from '../camera';
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
 import { LatLng, LatLngRect, Rect, Vec2 } from '../common/types';
 
-import { Anchor, PathRouter, Terrain } from './path_router';
+import { Anchor, PathRouter, Terrain, TERRAINS } from './path_router';
 
 interface InitializeRequest {
   kind: 'ir';
@@ -19,6 +19,18 @@ export interface IndexedLine {
   points: Float64Array;
   // What routes along it run over, or undefined for any, see PathRouter's Terrain
   terrain?: Terrain;
+}
+
+/** Lines laid end to end, so that a cell of a hundred thousand posts as a handful of objects. */
+export interface PackedLines {
+  // Each line answers queries as this followed by its index
+  idPrefix: string;
+  // Mercator, every line's points end to end
+  points: Float64Array;
+  // Where each line starts in points, and one more for where the last one stops
+  starts: Uint32Array;
+  // Indices into path_router.ts#TERRAINS
+  terrains: Uint8Array;
 }
 
 export interface IndexedPolygon {
@@ -34,7 +46,7 @@ interface LoadRequest {
   tolerance: number;
   // Whether routes may turn where these lines cross another group's, see PathRouter#load.
   crossings: boolean;
-  lines: IndexedLine[];
+  lines: IndexedLine[]|PackedLines;
   polygons: IndexedPolygon[];
 }
 
@@ -152,7 +164,7 @@ class LocationQuerier {
 
     const bounds = [];
     const lines = [];
-    for (const line of request.lines) {
+    for (const line of unpack(request.lines)) {
       const latLng = lineBound(line.points);
       if (!latLng) {
         continue;
@@ -340,6 +352,23 @@ self.onmessage = e => {
 
   start(request);
 };
+
+function unpack(lines: IndexedLine[]|PackedLines): IndexedLine[] {
+  if (Array.isArray(lines)) {
+    return lines;
+  }
+
+  const {idPrefix, points, starts, terrains} = lines;
+  const unpacked = [];
+  for (let i = 0; i < terrains.length; ++i) {
+    unpacked.push({
+      id: `${idPrefix}${i}`,
+      points: points.subarray(starts[i], starts[i + 1]),
+      terrain: TERRAINS[terrains[i]],
+    });
+  }
+  return unpacked;
+}
 
 function normalize(bound: LatLngRect): Rect {
   return {

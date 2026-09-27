@@ -1,13 +1,15 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
-import { aDescendsB } from 'java/org/trailcatalog/models/categories';
+import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories';
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Deltas, projectS2Loop, skipE7Deltas } from 'js/map/camera';
 import { LatLngRect, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { LineProgram, Stipple } from 'js/map/rendering/line_program';
+import { PackedLines } from 'js/map/workers/location_querier';
+import { Terrain, TERRAINS } from 'js/map/workers/path_router';
 import { CellKey } from 'js/map/workers/s2_data_fetcher';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
@@ -89,11 +91,29 @@ export interface LoadResponse {
   index: ArrayBuffer;
   // We merge multiple objects into the *Geometry version, so if we want just the geometry of any
   // one object then we keep the non-*Geometry arrays too.
-  lines: Line[];
+  lines: LoadedLines;
   lineGeometries: LineGeometry[];
   polygons: Polygon[];
   polygonGeometries: PolygonGeometry[];
 }
+
+/**
+ * A cell's lines in parallel arrays, because a cell runs to a hundred thousand lines and cloning an
+ * object graph that size is what stalls the main thread. See collection_layer.ts#lineAt.
+ */
+export interface LoadedLines extends Omit<PackedLines, 'idPrefix'> {
+  // lsb then msb for each line
+  ids: BigInt64Array;
+  data: PackedData;
+  geometryByteLengths: Uint32Array;
+  geometryOffsets: Uint32Array;
+  // Indices into styles
+  styleIndices: Uint16Array;
+  styles: LineStyle[];
+}
+
+type PackedData =
+    {kind: 'packed_path'; ids: Float64Array; types: Int32Array}|{kind: 'json'; values: Data[]};
 
 export interface Line {
   id: RawUuid;
@@ -104,8 +124,7 @@ export interface Line {
   // through LineProgram.
   points: Float64Array;
   // What drew it, so the highlight can size itself against it and putting it back after a hover
-  // does not have to guess. Structured clone keeps this one object shared across every line that
-  // matched it.
+  // does not have to guess.
   style: LineStyle;
 }
 
@@ -289,6 +308,30 @@ class CollectionLoader {
     let geometryOffset = 0;
     let indexOffset = 0;
 
+    let pointCount = 0;
+    for (const line of styledLines) {
+      pointCount += line.points.length;
+    }
+    const styles = [...new Set(styledLines.map(line => line.style))];
+    const lines: LoadedLines = {
+      ids: new BigInt64Array(2 * styledLines.length),
+      data:
+          kind === KIND_PACKED_PATH
+              ? {
+                kind: 'packed_path',
+                ids: new Float64Array(styledLines.length),
+                types: new Int32Array(styledLines.length),
+              }
+              : {kind: 'json', values: []},
+      geometryByteLengths: new Uint32Array(styledLines.length),
+      geometryOffsets: new Uint32Array(styledLines.length),
+      points: new Float64Array(pointCount),
+      starts: new Uint32Array(styledLines.length + 1),
+      styleIndices: new Uint16Array(styledLines.length),
+      styles,
+      terrains: new Uint8Array(styledLines.length),
+    };
+
     const response: LoadResponse = {
       kind: 'lr',
       key: request.key,
@@ -297,7 +340,7 @@ class CollectionLoader {
       tolerance: request.tolerance,
       geometry: geometry.buffer,
       index: index.buffer,
-      lines: [],
+      lines,
       lineGeometries: [],
       polygons: [],
       polygonGeometries: [],
@@ -309,7 +352,9 @@ class CollectionLoader {
     let groupStart = 0;
     let groupInstances = 0;
     let groupVertexCount = 0;
-    for (const line of styledLines) {
+    let pointOffset = 0;
+    for (let i = 0; i < styledLines.length; ++i) {
+      const line = styledLines[i];
       if (groupZ !== undefined && line.style.z !== groupZ) {
         response.lineGeometries.push({
           geometryByteLength: 4 * (geometryOffset - groupStart),
@@ -332,18 +377,26 @@ class CollectionLoader {
           line.points,
           geometry.buffer,
           4 * geometryOffset);
-      response.lines.push({
-        id: line.id,
-        data: line.data,
-        geometryByteLength: result.geometryByteLength,
-        geometryOffset: 4 * geometryOffset,
-        points: line.points,
-        style: line.style,
-      });
+      lines.ids[2 * i + 0] = line.id.lsb;
+      lines.ids[2 * i + 1] = line.id.msb;
+      if (lines.data.kind === 'packed_path') {
+        lines.data.ids[i] = line.data.id as number;
+        lines.data.types[i] = line.data.type as number;
+      } else {
+        lines.data.values.push(line.data);
+      }
+      lines.geometryByteLengths[i] = result.geometryByteLength;
+      lines.geometryOffsets[i] = 4 * geometryOffset;
+      lines.points.set(line.points, pointOffset);
+      lines.starts[i] = pointOffset;
+      lines.styleIndices[i] = styles.indexOf(line.style);
+      lines.terrains[i] = TERRAINS.indexOf(terrainOf(line.data));
+      pointOffset += line.points.length;
       geometryOffset += result.geometryByteLength / 4;
       groupInstances += result.instanceCount;
       groupVertexCount = result.vertexCount;
     }
+    lines.starts[styledLines.length] = pointOffset;
     if (groupZ !== undefined && groupInstances > 0) {
       response.lineGeometries.push({
         geometryByteLength: 4 * (geometryOffset - groupStart),
@@ -395,7 +448,18 @@ class CollectionLoader {
       });
     }
 
-    this.postMessage(response, [geometry.buffer, index.buffer]);
+    this.postMessage(response, [
+      geometry.buffer,
+      index.buffer,
+      lines.ids.buffer,
+      lines.geometryByteLengths.buffer,
+      lines.geometryOffsets.buffer,
+      lines.points.buffer,
+      lines.starts.buffer,
+      lines.styleIndices.buffer,
+      lines.terrains.buffer,
+      ...(lines.data.kind === 'packed_path' ? [lines.data.ids.buffer, lines.data.types.buffer] : []),
+    ]);
   }
 }
 
@@ -442,6 +506,23 @@ function outlineOf(polygon: S2Polygon): Float32Array[] {
     }
   }
   return rings;
+}
+
+// Paths carry their way category, so waterways route as water, lifts as aerial, and the rest as
+// land. Only the lifts in RIDDEN_AERIALWAYS get here, because we drop lines OSM_WAYS doesn't style.
+// Objects without a category, like a user's own lines, are any kind.
+function terrainOf(data: Data): Terrain|undefined {
+  const type = data.type;
+  if (typeof type !== 'number') {
+    return undefined;
+  }
+  if (aDescendsB(type, WayCategory.WATERWAY)) {
+    return 'water';
+  }
+  if (aDescendsB(type, WayCategory.AERIALWAY)) {
+    return 'aerial';
+  }
+  return 'land';
 }
 
 function latLngBound(polygon: S2Polygon): LatLngRect {

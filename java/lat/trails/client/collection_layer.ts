@@ -1,6 +1,7 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
+import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { Camera } from 'js/map/camera';
 import { RawUuid, RgbaU32 } from 'js/map/common/types';
@@ -11,13 +12,11 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { LocationIndex } from 'js/map/workers/location_index';
-import { Terrain } from 'js/map/workers/path_router';
-import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { DOUBLE_CLICK_MS, HOVER_CHANGED, OBJECT_OPENED } from './events';
-import { Data, Line, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
+import { Line, LoadedLines, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
 // makes it read as lifted, over pale roads and over landcover alike.
@@ -42,7 +41,10 @@ interface LoadedCell {
   drawables: Drawable[];
   glGeometryBuffer: WebGLBuffer;
   glIndexBuffer: WebGLBuffer;
-  lines: Line[];
+  lines: LoadedLines;
+  // Counts loads across every cell, so that a line id the index answered with before this cell
+  // was restyled can't name whatever line took its index since.
+  serial: number;
   polygons: Polygon[];
   // How far the server may have moved its lines, in mercator
   tolerance: number;
@@ -68,17 +70,22 @@ export class CollectionLayer extends Layer {
 
   private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
   private fetching: boolean;
-  private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
+  private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
+  // The request each cell is waiting on, so that a newer one can cancel it before a worker spends
+  // time on it and we spend time cloning the answer
+  private readonly loading: Map<CellKey, Task<LoaderResponse>>;
   private readonly cells: Map<CellKey, LoadedCell|undefined>;
   // The bytes each cell arrived as, so that a styleZoom change can re-post them to the loader
   // instead of refetching. Same trade MbtileLayer makes with rawBytes.
   private readonly rawBytes: Map<CellKey, {data: ArrayBuffer; tolerance: number}>;
   // Prefixed to the cell keys this layer loads into the shared index
   private readonly producer: string;
-  // Every cell's copy of each object, newest last, keyed by objectKey, which is also the id the
+  // Every cell's copy of each polygon, newest last, keyed by objectKey, which is also the id the
   // index answers queries with. A cell unloading takes only its own copy, or else the band that
-  // replaced it loses objects it still draws and indexes.
+  // replaced it loses objects it still draws and indexes. Lines answer with their cell and index
+  // instead, see lineIdPrefix, because there are too many of them to key.
   private readonly objects: Map<string, HeldObject[]>;
+  private serial: number;
   // Bumped on every hover and hoverLost, so that an answer for a point the pointer has left is
   // dropped.
   private hoverGeneration: number;
@@ -90,11 +97,13 @@ export class CollectionLayer extends Layer {
   // that only the highlight draws it, which leaves the highlight free to be narrower or
   // translucent.
   private lastHoverTarget: string|undefined;
-  private highlightedIn: CellKey|undefined;
+  private highlighted: HeldObject|undefined;
   private lastRenderGeneration: number;
   // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
   private styleZoom: number;
   private styleEpoch: number;
+  // The zooms where a line style starts or stops, since the loader's output changes only there
+  private styleBreaks: number[];
 
   constructor(
       url: string,
@@ -109,10 +118,13 @@ export class CollectionLayer extends Layer {
     this.producer = locations.producer();
     this.fetcher = new WorkerPool(new URL('s2_data_fetcher_worker.js', import.meta.url).href, 1);
     this.fetching = false;
-    this.loader = new WorkerPool(new URL('collection_loader_worker.js', import.meta.url).href, 6);
+    this.loader =
+        new QueuedWorkerPool(new URL('collection_loader_worker.js', import.meta.url).href, 6);
+    this.loading = new Map();
     this.cells = new Map();
     this.rawBytes = new Map();
     this.objects = new Map();
+    this.serial = 0;
     this.registerDisposer(() => {
       for (const cell of this.cells.values()) {
         if (cell) {
@@ -133,10 +145,11 @@ export class CollectionLayer extends Layer {
       glIndexBuffer: this.renderer.createIndexBuffer(/* byteSize= */ 64 * 1024),
     };
     this.lastHoverTarget = undefined;
-    this.highlightedIn = undefined;
+    this.highlighted = undefined;
     this.lastRenderGeneration = -1;
     this.styleZoom = -1;
     this.styleEpoch = 0;
+    this.styleBreaks = styleBreaks(style);
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
@@ -174,6 +187,7 @@ export class CollectionLayer extends Layer {
   /** Redraws and reindexes every held cell with the style, without refetching. */
   setStyle(style: Style): void {
     this.styleEpoch += 1;
+    this.styleBreaks = styleBreaks(style);
     this.loader.broadcast({
       kind: 'sr',
       style,
@@ -194,7 +208,7 @@ export class CollectionLayer extends Layer {
       }
 
       if (indexed) {
-        this.index(key, cell.lines, cell.polygons, cell.tolerance);
+        this.index(key, cell.lines, cell.serial, cell.polygons, cell.tolerance);
       } else {
         this.locations.unload([this.groupKey(key)]);
       }
@@ -205,10 +219,10 @@ export class CollectionLayer extends Layer {
   override click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
     const now = performance.now();
     this.queryPoint(point).then(ids => {
-      const target = ids.find(id => this.objects.has(id));
+      const target = ids.find(id => this.resolve(id));
       const last = this.lastClick;
       this.lastClick = target ? {id: target, timeMs: now} : undefined;
-      const object = target ? this.held(target) : undefined;
+      const object = target ? this.resolve(target) : undefined;
       if (object && last && last.id === target && now - last.timeMs < DOUBLE_CLICK_MS) {
         source.trigger(OBJECT_OPENED, {layer: this, object});
       }
@@ -225,7 +239,7 @@ export class CollectionLayer extends Layer {
       }
 
       // A point can land in several nested units, so take the first one we still hold.
-      const target = ids.find(id => this.objects.has(id));
+      const target = ids.find(id => this.resolve(id));
       if (target === this.lastHoverTarget) {
         return;
       }
@@ -235,7 +249,7 @@ export class CollectionLayer extends Layer {
       this.lastHoverTarget = target;
       const highlight = this.highlight;
 
-      const object = target ? this.held(target) : undefined;
+      const object = target ? this.resolve(target) : undefined;
       source.trigger(HOVER_CHANGED, {target: object?.value});
       if (!object) {
         return;
@@ -245,7 +259,7 @@ export class CollectionLayer extends Layer {
       if (!cell) {
         return;
       }
-      this.highlightedIn = object.key;
+      this.highlighted = object;
 
       if (object.kind === 'line') {
         const line = object.value;
@@ -434,9 +448,12 @@ export class CollectionLayer extends Layer {
       },
     });
 
-    // Style bands break on integers, so the floor is the only thing a restyle has to watch.
+    // Style bands break on integers, so the floor is the only thing a restyle has to watch, and
+    // only when it crosses a break.
     const newStyleZoom = Math.floor(zoom);
-    if (newStyleZoom !== this.styleZoom) {
+    if (this.styleZoom < 0
+        || styleBand(newStyleZoom, this.styleBreaks)
+            !== styleBand(this.styleZoom, this.styleBreaks)) {
       this.styleZoom = newStyleZoom;
       this.restyle();
     }
@@ -444,15 +461,26 @@ export class CollectionLayer extends Layer {
 
   private restyle(): void {
     for (const [key, {data, tolerance}] of this.rawBytes) {
-      this.loader.post({
-        kind: 'lr',
-        key,
-        styleZoom: this.styleZoom,
-        styleEpoch: this.styleEpoch,
-        tolerance,
-        data,
-      });
+      this.load(key, data, tolerance);
     }
+  }
+
+  private load(key: CellKey, data: ArrayBuffer, tolerance: number): void {
+    this.loading.get(key)?.cancel();
+    // No transfer list, so the worker gets a structured clone and this copy survives to restyle.
+    this.loading.set(key, this.loader.post({
+      kind: 'lr',
+      key,
+      styleZoom: this.styleZoom,
+      styleEpoch: this.styleEpoch,
+      tolerance,
+      data,
+    }));
+  }
+
+  private cancel(key: CellKey): void {
+    this.loading.get(key)?.cancel();
+    this.loading.delete(key);
   }
 
   private queryPoint(point: S2LatLng): Promise<string[]> {
@@ -465,7 +493,9 @@ export class CollectionLayer extends Layer {
     return `${this.producer}${key}`;
   }
 
-  private index(key: CellKey, lines: Line[], polygons: Polygon[], tolerance: number): void {
+  private index(
+      key: CellKey, lines: LoadedLines, serial: number, polygons: Polygon[], tolerance: number):
+      void {
     if (!this.indexed) {
       return;
     }
@@ -473,11 +503,12 @@ export class CollectionLayer extends Layer {
     this.locations.load(
         this.groupKey(key),
         tolerance,
-        lines.map(line => ({
-          id: objectKey(line.id),
-          points: line.points,
-          terrain: terrainOf(line.data),
-        })),
+        {
+          idPrefix: this.lineIdPrefix(key, serial),
+          points: lines.points,
+          starts: lines.starts,
+          terrains: lines.terrains,
+        },
         polygons.map(polygon => ({
           id: objectKey(polygon.id),
           bound: polygon.bound,
@@ -488,6 +519,7 @@ export class CollectionLayer extends Layer {
   private loadRawCell(command: LoadCellCommand): void {
     // It takes 2 bytes to return a response indicating no data
     if (command.data.byteLength <= 2) {
+      this.cancel(command.key);
       this.release(command.key);
       this.cells.delete(command.key);
       this.rawBytes.delete(command.key);
@@ -499,17 +531,9 @@ export class CollectionLayer extends Layer {
       this.cells.set(command.key, undefined);
     }
 
-    // No transfer list, so the worker gets a structured clone and this copy survives to restyle.
     const tolerance = command.snap === undefined ? 0 : SimpleS2.snapEpsilon(command.snap);
     this.rawBytes.set(command.key, {data: command.data, tolerance});
-    this.loader.post({
-      kind: 'lr',
-      key: command.key,
-      styleZoom: this.styleZoom,
-      styleEpoch: this.styleEpoch,
-      tolerance,
-      data: command.data,
-    });
+    this.load(command.key, command.data, tolerance);
   }
 
   private loadProcessedCell(response: LoadResponse): void {
@@ -523,19 +547,19 @@ export class CollectionLayer extends Layer {
     if (response.styleZoom !== this.styleZoom || response.styleEpoch !== this.styleEpoch) {
       return;
     }
+    this.loading.delete(response.key);
 
     // Refining a cell throws out the coarser copy of the same objects, and with it the offsets the
     // highlight blanked into its buffer.
     this.release(response.key);
 
-    for (const line of response.lines) {
-      this.hold(objectKey(line.id), {kind: 'line', key: response.key, value: line});
-    }
     for (const polygon of response.polygons) {
       this.hold(objectKey(polygon.id), {kind: 'polygon', key: response.key, value: polygon});
     }
 
-    this.index(response.key, response.lines, response.polygons, response.tolerance);
+    this.serial += 1;
+    const serial = this.serial;
+    this.index(response.key, response.lines, serial, response.polygons, response.tolerance);
 
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
@@ -582,6 +606,7 @@ export class CollectionLayer extends Layer {
       glIndexBuffer: index,
       drawables,
       lines: response.lines,
+      serial,
       polygons: response.polygons,
       tolerance: response.tolerance,
     });
@@ -590,6 +615,7 @@ export class CollectionLayer extends Layer {
 
   private unloadCells(command: UnloadCellsCommand): void {
     for (const key of command.keys) {
+      this.cancel(key);
       this.release(key);
       this.cells.delete(key);
       this.rawBytes.delete(key);
@@ -605,9 +631,6 @@ export class CollectionLayer extends Layer {
       return;
     }
 
-    for (const line of cell.lines) {
-      this.drop(objectKey(line.id), key);
-    }
     for (const polygon of cell.polygons) {
       this.drop(objectKey(polygon.id), key);
     }
@@ -617,9 +640,30 @@ export class CollectionLayer extends Layer {
     this.renderer.deleteBuffer(cell.glIndexBuffer);
 
     // The highlight blanked geometry in a buffer that is now gone, so there is nothing to put back.
-    if (this.highlightedIn === key) {
+    if (this.highlighted?.key === key) {
       this.dropHighlight();
     }
+  }
+
+  // What the index puts ahead of a line's position in a cell's load to make the id it answers with
+  private lineIdPrefix(key: CellKey, serial: number): string {
+    return `${this.groupKey(key)}#${serial}#`;
+  }
+
+  // The object an id from the index names, if we still hold it
+  private resolve(id: string): HeldObject|undefined {
+    if (!id.startsWith(this.producer)) {
+      return this.held(id);
+    }
+
+    const indexAt = id.lastIndexOf('#');
+    const serialAt = id.lastIndexOf('#', indexAt - 1);
+    const key = id.substring(this.producer.length, serialAt) as CellKey;
+    const cell = this.cells.get(key);
+    if (!cell || cell.serial !== Number(id.substring(serialAt + 1, indexAt))) {
+      return undefined;
+    }
+    return {kind: 'line', key, value: lineAt(cell.lines, Number(id.substring(indexAt + 1)))};
   }
 
   // The newest copy, which belongs to the band the viewport is moving into
@@ -645,10 +689,7 @@ export class CollectionLayer extends Layer {
 
   // Puts back the geometry the highlight hid, then stops drawing it.
   private clearHighlight(): void {
-    const object =
-        this.lastHoverTarget
-            ? this.objects.get(this.lastHoverTarget)?.find(c => c.key === this.highlightedIn)
-            : undefined;
+    const object = this.highlighted;
     const cell = object ? this.cells.get(object.key) : undefined;
     if (object && cell) {
       if (object.kind === 'line') {
@@ -682,7 +723,7 @@ export class CollectionLayer extends Layer {
   private dropHighlight(): void {
     this.highlight.drawables.length = 0;
     this.lastHoverTarget = undefined;
-    this.highlightedIn = undefined;
+    this.highlighted = undefined;
   }
 }
 
@@ -695,19 +736,38 @@ function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {
   return (((color & 0xFFFFFF00) >>> 0) | alpha) as RgbaU32;
 }
 
-// Paths carry their way category, so waterways route as water, lifts as aerial, and the rest as
-// land. Only the lifts in RIDDEN_AERIALWAYS get here, because the loader drops lines OSM_WAYS
-// doesn't style. Objects without a category, like a user's own lines, are any kind.
-function terrainOf(data: Data): Terrain|undefined {
-  const type = data.type;
-  if (typeof type !== 'number') {
-    return undefined;
+// One line of a cell as a Line, for the few objects a hover or click lands on
+function lineAt(lines: LoadedLines, i: number): Line {
+  const data =
+      lines.data.kind === 'packed_path'
+          ? {id: lines.data.ids[i], type: lines.data.types[i]}
+          : lines.data.values[i];
+  return {
+    id: {lsb: lines.ids[2 * i + 0], msb: lines.ids[2 * i + 1]},
+    data,
+    geometryByteLength: lines.geometryByteLengths[i],
+    geometryOffset: lines.geometryOffsets[i],
+    points: lines.points.subarray(lines.starts[i], lines.starts[i + 1]),
+    style: lines.styles[lines.styleIndices[i]],
+  };
+}
+
+function styleBreaks(style: Style): number[] {
+  const breaks = new Set<number>();
+  for (const line of style.lines) {
+    breaks.add(line.minZoom);
+    breaks.add(line.maxZoom);
   }
-  if (aDescendsB(type, WayCategory.WATERWAY)) {
-    return 'water';
+  return [...breaks];
+}
+
+// Which run between breaks a zoom sits in, since the loader styles every zoom in one alike
+function styleBand(zoom: number, breaks: number[]): number {
+  let band = 0;
+  for (const b of breaks) {
+    if (b <= zoom) {
+      band += 1;
+    }
   }
-  if (aDescendsB(type, WayCategory.AERIALWAY)) {
-    return 'aerial';
-  }
-  return 'land';
+  return band;
 }

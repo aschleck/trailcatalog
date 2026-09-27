@@ -13,6 +13,9 @@ import { Heap } from './heap';
  */
 export type Terrain = 'land'|'water'|'aerial';
 
+// Terrain by a byte, for lines packed into arrays
+export const TERRAINS: ReadonlyArray<Terrain|undefined> = [undefined, 'land', 'water', 'aerial'];
+
 /** An end of a route: a point on the network and the segment it lies on. */
 export interface Anchor {
   // Mercator

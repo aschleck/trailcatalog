@@ -191,6 +191,9 @@ export class RasterTileLayer extends Layer {
   private loadBitmap(response: LoadResponse): void {
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(response.bitmap, texture);
+    // The texture holds its own copy, and the bitmap's pixels sit outside the heap until a GC gets
+    // around to its wrapper.
+    response.bitmap.close();
 
     this.loading.delete(response.id);
     this.tiles.set(response.id, texture);

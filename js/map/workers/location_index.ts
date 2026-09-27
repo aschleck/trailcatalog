@@ -6,6 +6,7 @@ import { LatLng, Vec2 } from '../common/types';
 import {
   IndexedLine,
   IndexedPolygon,
+  PackedLines,
   QueryPointResponse,
   QueryRouteResponse,
   Request,
@@ -61,7 +62,7 @@ export class LocationIndex {
   load(
       groupId: string,
       tolerance: number,
-      lines: IndexedLine[],
+      lines: IndexedLine[]|PackedLines,
       polygons: IndexedPolygon[],
       crossings = false): void {
     this.worker.post({kind: 'lr', groupId, tolerance, crossings, lines, polygons});
