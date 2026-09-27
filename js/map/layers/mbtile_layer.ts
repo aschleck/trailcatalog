@@ -889,24 +889,6 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'mountain_peak',
-      // Protomaps only carries peaks from zoom 13.
-      minZoom: 13,
-      maxZoom: 31,
-      lineTexts: [],
-      lines: [],
-      points: [
-        {
-          filters: [{match: 'string_in', key: 'class', value: ['peak', 'volcano']}],
-          textFill: 0x5C4424FF as RgbaU32,
-          textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.5,
-          z: Z_OVERLAY_TEXT,
-        },
-      ],
-      polygons: [],
-    },
-    {
       layerName: 'park',
       minZoom: 0,
       maxZoom: 10,

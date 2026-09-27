@@ -696,7 +696,7 @@ function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {
 }
 
 // Paths carry their way category, so waterways route as water, lifts as aerial, and the rest as
-// land. Only the lifts in RIDDEN_AERIALWAYS get here, because the loader drops lines OSM_PATHS
+// land. Only the lifts in RIDDEN_AERIALWAYS get here, because the loader drops lines OSM_WAYS
 // doesn't style. Objects without a category, like a user's own lines, are any kind.
 function terrainOf(data: Data): Terrain|undefined {
   const type = data.type;

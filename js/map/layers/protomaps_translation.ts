@@ -124,13 +124,6 @@ const LAYERS: ReadonlyMap<string, LayerTranslation> = new Map<string, LayerTrans
       ['state_park', {key: 'kind', values: ['park']}],
     ]),
   }],
-  ['mountain_peak', {
-    points: 'pois',
-    classes: new Map([
-      ['peak', {key: 'kind', values: ['peak']}],
-      ['volcano', {key: 'kind', values: ['volcano']}],
-    ]),
-  }],
   ['place', {
     points: 'places',
     classes: new Map([

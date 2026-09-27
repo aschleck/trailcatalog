@@ -5,9 +5,17 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 filegroup(
     name = "static",
     srcs = [
+        ":atlases",
         ":copies",
         ":glob",
     ],
+)
+
+genrule(
+    name = "atlases",
+    srcs = ["//java/org/trailcatalog/static:images/atlases/points.png"],
+    outs = ["images/atlases/points.png"],
+    cmd = "cp $< $@",
 )
 
 js_library(

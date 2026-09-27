@@ -42,10 +42,10 @@ import {
 import { CollectionLayer } from './collection_layer';
 import {
   NATURE_PROTOMAPS,
-  NATURE_PROTOMAPS_WITHOUT_POIS,
   NATURE_WITHOUT_DETAILED_WAYS,
-  OSM_PATHS,
-  osmPathsOf,
+  NODE_KINDS,
+  OSM_WAYS,
+  osmWaysOf,
   PUBLIC_LAND,
   WAY_KINDS,
 } from './styles';
@@ -100,8 +100,9 @@ import {
 import { insertVertex, joinLines, removeVertex, reverseLine, splitLine } from './line_edits';
 import { IconPickerDialog } from './icon_picker';
 import { GradeLimitState, MeasureState } from './measure_panel';
+import { PointCollectionLayer } from './point_collection_layer';
 import { PointToolLayer } from './point_tool_layer';
-import { OSM_PATHS_SCHEMA, PUBLIC_LAND_SCHEMA, Schema } from './schema';
+import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA, PUBLIC_LAND_SCHEMA, Schema } from './schema';
 import {
   cumulativeMeters,
   pathLengthMeters,
@@ -127,6 +128,8 @@ const COPERNICUS_COPYRIGHT = {
 };
 // The zoom where the contours and the trails around a point come in at full detail
 const POINT_ZOOM = 14;
+// Where trailcatalog starts drawing its points, see trail_layer.ts#RENDER_POINT_ZOOM_THRESHOLD
+const POINT_ICON_ZOOM = 14;
 
 export interface Args {
   // The id of the open collection or none
@@ -380,7 +383,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const ways =
         new CollectionLayer(
             '/api/collections/00000000-0000-0000-0000-000000000001',
-            OSM_PATHS,
+            OSM_WAYS,
             [
               // Snap to about a pixel at each zoom, which is level z + 6. A level L cell's half
               // diagonal is 0.388 * 2^-L in Mercator units and a pixel at zoom z is 2^-(z+7).
@@ -433,6 +436,20 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             this.mapController.camera,
             this.mapController.renderer,
         );
+    const osmNodes =
+        new PointCollectionLayer(
+            '/api/collections/00000000-0000-0000-0000-000000000002',
+            [
+              // Every point sits in a level 13 cell, see DumpPoints.kt. Level 11 tiles hold a
+              // viewport at zoom 14 in a handful of requests.
+              {minZoom: POINT_ICON_ZOOM, maxZoom: undefined, indexBottom: 11, fromLevel: 13,
+                toLevel: 13},
+            ],
+            NODE_KINDS.map(({category}) => category),
+            POINT_ICON_ZOOM,
+            this.mapController.camera,
+            this.mapController.renderer,
+        );
     const protomaps =
         new MbtileLayer(
             [
@@ -459,8 +476,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             Z_BASE_SATELLITE,
             this.mapController.renderer);
 
-    // The map layers sort by z, so the order here only decides the sidebar and which layer hears a
-    // click first.
     const nodes = sortLayerNodes([{
       kind: 'group',
       id: 'osm',
@@ -472,13 +487,26 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         name: 'Ways',
         // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
         enabled: true,
-        schema: OSM_PATHS_SCHEMA,
+        schema: OSM_WAYS_SCHEMA,
         layer: ways,
         controls: WAY_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
         values: Object.fromEntries(WAY_KINDS.map(({key}) => [key, true])),
         configure: values => {
           ways.setStyle(
-              osmPathsOf(WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
+              osmWaysOf(WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
+        },
+      }, {
+        kind: 'layer',
+        id: 'osm/nodes',
+        name: 'Nodes',
+        enabled: true,
+        schema: OSM_NODES_SCHEMA,
+        layer: osmNodes,
+        controls: NODE_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
+        values: Object.fromEntries(NODE_KINDS.map(({key}) => [key, true])),
+        configure: values => {
+          osmNodes.setCategories(
+              NODE_KINDS.filter(({key}) => values[key]).map(({category}) => category));
         },
       }, {
         kind: 'layer',
@@ -486,11 +514,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         name: 'Protomaps',
         enabled: true,
         layer: protomaps,
-        controls: [{kind: 'checkbox', key: 'pois', label: 'Points of interest'}],
-        values: {pois: true},
-        configure: values => {
-          protomaps.setStyle(values.pois ? NATURE_PROTOMAPS : NATURE_PROTOMAPS_WITHOUT_POIS);
-        },
+        controls: [],
+        values: {},
       }, {
         kind: 'layer',
         id: 'osm/maptiler',
@@ -777,13 +802,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             layerEntries(this.state.layers.nodes).find(({entry}) => entry.layer === layer)
                 ?.entry.schema);
     const titleValue = data[schema.title.key];
-    const wayId =
-        schema.title.kind === 'osm_way' && typeof titleValue === 'number' ? titleValue : undefined;
-    const common = {
-      data,
-      schema,
-      osm: wayId !== undefined ? {id: wayId, tags: 'loading' as const} : undefined,
-    };
+    const osmType =
+        schema.title.kind === 'osm_node' ? 'node' as const
+            : schema.title.kind === 'osm_way' ? 'way' as const
+            : undefined;
+    const osm =
+        osmType && typeof titleValue === 'number'
+            ? {type: osmType, id: titleValue, tags: 'loading' as const}
+            : undefined;
+    const common = {data, schema, osm};
     if (object.kind === 'line') {
       const path = toDegrees(object.value.points);
       this.updateState({
@@ -796,11 +823,22 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         },
       });
       this.loadClimb(path);
+    } else if (object.kind === 'point') {
+      const ll = unprojectS2LatLng(object.value.position[0], object.value.position[1]);
+      this.updateState({
+        ...this.state,
+        inspected: {
+          ...common,
+          kind: 'point',
+          latDegrees: ll.latDegrees(),
+          lngDegrees: ll.lngDegrees(),
+        },
+      });
     } else {
       this.updateState({...this.state, inspected: {...common, kind: 'polygon'}});
     }
-    if (wayId !== undefined) {
-      this.loadWayTags(wayId);
+    if (osm) {
+      this.loadOsmTags(osm.type, osm.id);
     }
   }
 
@@ -1114,6 +1152,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       const bound = inspected.value.bound;
       include(bound.low[0], bound.low[1]);
       include(bound.high[0], bound.high[1]);
+    } else if (inspected?.kind === 'point') {
+      const ll = unprojectS2LatLng(inspected.value.position[0], inspected.value.position[1]);
+      include(ll.latDegrees(), ll.lngDegrees());
     } else if (inspected?.kind === 'line') {
       const points = inspected.value.points;
       for (let i = 0; i < points.length; i += 2) {
@@ -1802,12 +1843,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     return {status: 'loading'};
   }
 
-  private loadWayTags(id: number): void {
+  private loadOsmTags(type: 'node'|'way', id: number): void {
     const generation = this.inspectGeneration;
-    fetch(`https://api.openstreetmap.org/api/0.6/way/${id}.json`)
+    fetch(`https://api.openstreetmap.org/api/0.6/${type}/${id}.json`)
         .then(response => {
           if (!response.ok) {
-            throw new Error(`OpenStreetMap answered ${response.status} for way ${id}`);
+            throw new Error(`OpenStreetMap answered ${response.status} for ${type} ${id}`);
           }
           return response.json();
         })
@@ -2460,7 +2501,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         entry.layer.setIndexed(shown);
       }
     }
-    // The tree lists the topmost first and the map takes them bottom first.
+    // The map draws by z, so this order only decides who hears events first. Nodes sit on
+    // everything they share the map with and claim what lands on an icon.
+    const shown = entries.filter(({shown}) => shown).map(({entry}) => entry.layer);
     this.mapController.setLayers(
         [
           this.pointLayer,
@@ -2469,7 +2512,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.terrainLayer,
           this.featureLayer as Layer,
         ]
-            .concat(entries.filter(({shown}) => shown).map(({entry}) => entry.layer).reverse())
+            .concat(shown.filter(layer => layer instanceof PointCollectionLayer))
+            .concat(shown.filter(layer => !(layer instanceof PointCollectionLayer)))
             .concat([this.skyboxLayer]));
   }
 }

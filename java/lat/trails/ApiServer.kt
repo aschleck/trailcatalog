@@ -81,6 +81,7 @@ private lateinit var hikariTrailcatalog: HikariDataSource
 
 private val ANONYMOUS_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
+private val TRAILCATALOG_POINTS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000002"
 
 // How a tile encodes its objects. Keep in sync with collection_loader.ts#load.
 //
@@ -88,8 +89,11 @@ private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-0000000
 // 46 bytes a line. They are rows in a table we own, so the id fits a varint and the only attributes
 // are the source way and the category. A user collection needs the general form: its objects are
 // identified by UUID and described by the jsonb its creator wrote.
+//
+// Points pack the same way, and carry their name because OSM names a node on the node.
 private const val KIND_UUID_JSON = 0
 private const val KIND_PACKED_PATH = 1
+private const val KIND_PACKED_POINT = 2
 
 private val JSON_PARSER = JsonFormat.parser()
 private val JSON_PRINTER = JsonFormat.printer().omittingInsignificantWhitespace()
@@ -1015,8 +1019,9 @@ private fun fetchCollectionCovering(ctx: Context) {
     it.writeVarInt(2)
 
     // collection version, then covering
-    if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
-      // The epoch is the version: the paths a tile holds only change when an import lands.
+    if (isTrailcatalog(collection)) {
+      // The epoch is the version: the paths and points a tile holds only change when an import
+      // lands.
       it.writeVarLong(epochTracker.epoch.toLong())
 
       val covering = ByteArrayOutputStream().use {
@@ -1058,10 +1063,10 @@ private fun fetchCollectionCovering(ctx: Context) {
 
 private fun fetchCollectionObjects(ctx: Context) {
   val collection = ctx.pathParam("id")
-  val trailcatalogPaths = collection == TRAILCATALOG_PATHS_COLLECTIONS_ID
+  val trailcatalog = isTrailcatalog(collection)
   // The object queries trust that this checked access, because they filter on nothing else.
   val currentVersion =
-      if (trailcatalogPaths) {
+      if (trailcatalog) {
         epochTracker.epoch.toLong()
       } else {
         hikari.connection.use { connection ->
@@ -1070,7 +1075,7 @@ private fun fetchCollectionObjects(ctx: Context) {
       }
   // Checked before the object queries run, or else a revalidation costs everything a miss does.
   val requestedVersion = ctx.queryParam("version")?.toLong()
-  if (cacheAndCheckIfCached(ctx, requestedVersion, currentVersion, trailcatalogPaths)) {
+  if (cacheAndCheckIfCached(ctx, requestedVersion, currentVersion, trailcatalog)) {
     return
   }
 
@@ -1087,9 +1092,12 @@ private fun fetchCollectionObjects(ctx: Context) {
     // version
     it.writeVarInt(2)
 
-    if (trailcatalogPaths) {
+    if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
       it.writeVarInt(KIND_PACKED_PATH)
       fetchTrailcatalogPaths(it, cell, indexBottom, levelCeiling, levelFloor, snap)
+    } else if (collection == TRAILCATALOG_POINTS_COLLECTIONS_ID) {
+      it.writeVarInt(KIND_PACKED_POINT)
+      fetchTrailcatalogPoints(it, cell, indexBottom, levelCeiling, levelFloor)
     } else {
       it.writeVarInt(KIND_UUID_JSON)
       fetchRealCollection(it, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
@@ -1305,10 +1313,74 @@ private fun fetchTrailcatalogPaths(
   }
 }
 
+private fun fetchTrailcatalogPoints(
+  it: DelegatingEncodedOutputStream,
+  cell: S2CellId,
+  indexBottom: Int,
+  levelCeiling: Long?,
+  levelFloor: Long?,
+) {
+  val epoch = epochTracker.epoch
+  hikariTrailcatalog.connection.use { connection ->
+    val single = cell.level() < indexBottom
+    connection
+      .prepareStatement(
+        "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
+                + "FROM points p "
+                + "WHERE "
+                + "p.epoch = ? AND "
+                + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
+                + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
+                + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
+      )
+      .apply {
+        setInt(1, epoch)
+        if (single) {
+          setLong(2, cell.id())
+        } else {
+          setLong(2, cell.rangeMin().id())
+          setLong(3, cell.rangeMax().id())
+        }
+        var index = if (single) 3 else 4
+        if (levelFloor != null) {
+          setLong(index++, levelFloor)
+        }
+        if (levelCeiling != null) {
+          setLong(index, levelCeiling)
+        }
+      }
+      .executeQuery()
+      .use { results ->
+        val points = ByteArrayOutputStream()
+        var count = 0
+        DelegatingEncodedOutputStream(points).use { out ->
+          while (results.next()) {
+            count += 1
+            // id,type,name,marker
+            out.writeVarLong(results.getLong(1))
+            out.writeVarInt(results.getInt(2))
+            val name = (results.getString(3) ?: "").toByteArray(Charsets.UTF_8)
+            out.writeVarInt(name.size)
+            out.write(name)
+            // Stored as the little endian lat then lng E7 pair the client reads.
+            out.write(results.getBytes(4))
+          }
+        }
+        it.writeVarInt(count)
+        it.write(points.toByteArray())
+      }
+  }
+}
+
+private fun isTrailcatalog(collection: String): Boolean {
+  return collection == TRAILCATALOG_PATHS_COLLECTIONS_ID
+      || collection == TRAILCATALOG_POINTS_COLLECTIONS_ID
+}
+
 // Lets the browser and the CDN hold a tile until the collection version changes, because the object
 // URL names that version and so can never go stale under its own key.
 //
-// Only the trailcatalog paths collection is public. Every other collection answers only if the
+// Only the trailcatalog collections are public. Every other collection answers only if the
 // requesting user may read it, and the owner can take that back, so it may only ever land in that
 // browser's cache.
 private fun cacheAndCheckIfCached(

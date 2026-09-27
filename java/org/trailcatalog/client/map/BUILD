@@ -8,6 +8,7 @@ tc_ts_project(
         "//java/org/trailcatalog/client/common",
         "//java/org/trailcatalog/client/data",
         "//java/org/trailcatalog/client/models",
+        "//java/org/trailcatalog/client/points",
         "//java/org/trailcatalog/client/workers:ts",
         "//java/org/trailcatalog/models:models-ts",
         "@dev_april_corgi//js/common",

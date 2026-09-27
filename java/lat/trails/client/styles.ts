@@ -1,4 +1,4 @@
-import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories';
+import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { RgbaU32 } from 'js/map/common/types';
 import { NATURE } from 'js/map/layers/mbtile_layer';
 import { toProtomaps } from 'js/map/layers/protomaps_translation';
@@ -442,7 +442,7 @@ export const NATURE_WITH_TRACKS: MbtileStyle = withTracks(NATURE);
 
 // PATH_LINES first to keep the lowest z first, which is only cosmetic: it names categories no road,
 // aeroway, or waterway rule can match, so nothing depends on which one findZoomedStyle reaches.
-export const OSM_PATHS: Style = {
+export const OSM_WAYS: Style = {
   lines: [...PATH_LINES, ...wayLines(NATURE_WITH_TRACKS), ...AERIALWAY_LINES, ...FERRY_LINES],
   polygons: [],
 };
@@ -461,12 +461,12 @@ export const WAY_KINDS: ReadonlyArray<{key: string; label: string; category: Way
 ];
 
 /**
- * Narrows OSM_PATHS to the ways descending from the categories. The loader drops a way no line
+ * Narrows OSM_WAYS to the ways descending from the categories. The loader drops a way no line
  * styles, so the rest also leave the index and stop catching the drawing tools.
  */
-export function osmPathsOf(categories: WayCategory[]): Style {
+export function osmWaysOf(categories: WayCategory[]): Style {
   const lines = [];
-  for (const line of OSM_PATHS.lines) {
+  for (const line of OSM_WAYS.lines) {
     const filters = line.filters.map(filter =>
         filter.match === 'category_in'
             ? {...filter, value: filter.value.filter(v => categories.some(c => aDescendsB(v, c)))}
@@ -475,23 +475,23 @@ export function osmPathsOf(categories: WayCategory[]): Style {
       lines.push({...line, filters});
     }
   }
-  return {lines, polygons: OSM_PATHS.polygons};
+  return {lines, polygons: OSM_WAYS.polygons};
 }
+
+// What the Nodes layer offers to show, by the top level PointCategory each group is.
+export const NODE_KINDS: ReadonlyArray<{key: string; label: string; category: PointCategory}> = [
+  {key: 'amenities', label: 'Amenities', category: PointCategory.AMENITY},
+  {key: 'information', label: 'Information', category: PointCategory.INFORMATION},
+  {key: 'natural', label: 'Natural features', category: PointCategory.NATURAL},
+  // Mountain passes, trailheads, and viewpoints
+  {key: 'trail', label: 'Trail features', category: PointCategory.WAY},
+];
 
 export const NATURE_WITHOUT_DETAILED_WAYS: MbtileStyle = withoutWayLines(NATURE);
 
 // Translated after dropping the ways because withoutWayLines and wayLines both read OpenMapTiles
 // layer names and classes.
 export const NATURE_PROTOMAPS: MbtileStyle = toProtomaps(NATURE_WITHOUT_DETAILED_WAYS);
-
-// The OpenMapTiles layers whose points are features on the ground rather than names of areas.
-// Chosen before translating because toProtomaps sends park names to pois alongside them.
-const POI_LAYERS = new Set(['mountain_peak']);
-
-export const NATURE_PROTOMAPS_WITHOUT_POIS: MbtileStyle =
-    toProtomaps({
-      layers: NATURE_WITHOUT_DETAILED_WAYS.layers.filter(layer => !POI_LAYERS.has(layer.layerName)),
-    });
 
 export const PUBLIC_LAND: Style = {
   lines: [],

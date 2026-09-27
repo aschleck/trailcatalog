@@ -22,7 +22,8 @@ export interface TreeItem {
   children: TreeItem[];
 }
 
-export interface OsmWayState {
+export interface OsmElementState {
+  type: 'node'|'way';
   id: number;
   tags: {[key: string]: string}|'loading'|'failed';
 }
@@ -30,14 +31,18 @@ export interface OsmWayState {
 export type InspectedObject = {
   data: Data;
   schema: Schema;
-  // Set when the schema titles the object by its OpenStreetMap way
-  osm: OsmWayState|undefined;
+  // Set when the schema titles the object by its OpenStreetMap node or way
+  osm: OsmElementState|undefined;
 } & ({
   kind: 'line';
   // Measured along the tile's geometry, which is simplified for the zoom it loaded at
   lengthMeters: number;
   // Undefined until the elevations load, or if they fail
   climb: Climb|undefined;
+}|{
+  kind: 'point';
+  latDegrees: number;
+  lngDegrees: number;
 }|{
   kind: 'polygon';
 });
@@ -317,11 +322,11 @@ export function Properties({profile, subject}: {
             : osm
                 ? <a
                       className="font-bold text-blue-700 underline"
-                      href={`https://www.openstreetmap.org/way/${osm.id}`}
+                      href={`https://www.openstreetmap.org/${osm.type}/${osm.id}`}
                       rel="noopener"
                       target="_blank"
                   >
-                    {`OpenStreetMap way ${osm.id}`}
+                    {`OpenStreetMap ${osm.type} ${osm.id}`}
                   </a>
                 : <div className="font-bold">{title ? String(title) : untitled(kind)}</div>
         }
@@ -347,7 +352,12 @@ export function Properties({profile, subject}: {
                       lengthMeters={subject.object.lengthMeters}
                       climb={subject.object.climb}
                   />
-                : ''
+                : subject.object.kind === 'point'
+                    ? <div className="text-gray-700">
+                        {`${subject.object.latDegrees.toFixed(5)}, `
+                            + subject.object.lngDegrees.toFixed(5)}
+                      </div>
+                    : ''
         }
         {profile ? <LineProfile state={profile} /> : ''}
         {osm
@@ -448,7 +458,7 @@ function StyleControls({feature, folders}: {
   );
 }
 
-function OsmTags({tags}: {tags: OsmWayState['tags']}) {
+function OsmTags({tags}: {tags: OsmElementState['tags']}) {
   return tags === 'loading'
       ? <div className="text-gray-500">Loading tags</div>
       : tags === 'failed'
