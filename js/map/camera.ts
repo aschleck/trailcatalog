@@ -39,6 +39,12 @@ const SOLVER_EPS = 1e-7;
 // ~1e-3 NDC ≈ 1 pixel at typical resolutions; the solver targets 1e-5 when
 // healthy, so anything bigger is unambiguously a failure.
 const SOLVER_REJECT_TOLERANCE = 1e-3;
+// Pinning the grabbed point to the cursor turns the globe faster the more that point is
+// foreshortened, over three times the center's rate at 95% of the silhouette's radius, and the
+// solver stops converging just past it. Between these fractions of the silhouette's radius we blend into
+// spinning at the center's rate, and past the end we only spin.
+const PAN_EDGE_START = 0.8;
+const PAN_EDGE_END = 0.95;
 
 export class Camera {
   private _center: S2LatLng;
@@ -159,39 +165,44 @@ export class Camera {
     const oldLat = this._center.latRadians();
     const oldLng = this._center.lngRadians();
     const old = createProjection(oldLat, oldLng, this._zoom, widthPx, heightPx);
-    const grab = inverseProjectBlended(cursorLastNdc, old);
 
-    const newC = solveCameraForPin(
+    let edge = 0;
+    let spun = undefined;
+    if (old.flattenFactor < 1) {
+      const radius = Math.max(
+          silhouetteRadius(cursorLastNdc, old.frame), silhouetteRadius(cursorCurrNdc, old.frame));
+      edge = smoothstep((radius - PAN_EDGE_START) / (PAN_EDGE_END - PAN_EDGE_START));
+      spun = spinCamera(cursorLastNdc, cursorCurrNdc, old.frame);
+    }
+    if (spun && edge >= 1) {
+      this.setCenterRadians(spun.lat, spun.lng);
+      return;
+    }
+
+    const grab = inverseProjectBlended(cursorLastNdc, old);
+    let newC = solveCameraForPin(
         grab.lat, grab.lng, cursorCurrNdc, oldLat, oldLng, this._zoom, widthPx, heightPx);
 
-    // Verify the solver actually placed grab at currNdc. In spherical mode,
-    // both the inverse projection (used to compute grab) and the pin-solver's
-    // Jacobian degenerate as the cursor approaches the silhouette: tiny NDC
-    // noise produces huge lat/lng swings in grab, and Newton's bounded steps
-    // can't converge. If the round-trip residual is over tolerance, the
-    // solver result is junk — fall back to constant-speed angular rotation
-    // (1 NDC unit ≈ thetaT radians, scaled by aspect for lng so the rate is
-    // equal in pixels-per-radian for both axes) so dragging stays smooth.
-    if (old.flattenFactor < 1) {
+    if (spun) {
+      // A solver that missed the cursor returned junk.
       const projected = projectBlended(
           grab.lat, grab.lng,
           createProjection(newC.lat, newC.lng, this._zoom, widthPx, heightPx));
       const eX = projected[0] - cursorCurrNdc[0];
       const eY = projected[1] - cursorCurrNdc[1];
       if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
-        const thetaT = Math.acos(Math.min(1, 1 / old.frame.scale));
-        const dLng = -(cursorCurrNdc[0] - cursorLastNdc[0]) * thetaT * old.frame.aspect;
-        const dLat = -(cursorCurrNdc[1] - cursorLastNdc[1]) * thetaT;
-        this._center = S2LatLng.fromRadians(
-            clamp(oldLat + dLat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
-            wrapPi(oldLng + dLng));
-        return;
+        newC = spun;
+      } else if (edge > 0) {
+        newC = mixCameras(newC, spun, edge);
       }
     }
 
+    this.setCenterRadians(newC.lat, newC.lng);
+  }
+
+  private setCenterRadians(lat: number, lng: number): void {
     this._center = S2LatLng.fromRadians(
-        clamp(newC.lat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
-        wrapPi(newC.lng));
+        clamp(lat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS), wrapPi(lng));
   }
 
   sphericalMvp(viewportHeightPx: number, viewportWidthPx: number): Float32Array {
@@ -409,6 +420,47 @@ function globeInverseRadiusAt(zoom: number, lat: number): number {
   const cosLat = Math.max(Math.cos(MERCATOR_MAX_LAT_RADIANS), Math.cos(lat));
   // cos^t so the extra zoom is spread evenly over zoom levels rather than over worldRadius
   return Math.pow(cosLat, t) / worldRadiusAt(zoom);
+}
+
+// Distance from the screen center in units of the globe's silhouette radius. The silhouette
+// subtends asin(1 / scale) from the eye.
+function silhouetteRadius(ndc: Vec2, frame: SphericalFrame): number {
+  const tanSilhouette = 1 / Math.sqrt(frame.scale * frame.scale - 1);
+  const x = ndc[0] * frame.halfTanFov * frame.aspect;
+  const y = ndc[1] * frame.halfTanFov;
+  return Math.sqrt(x * x + y * y) / tanSilhouette;
+}
+
+// Turns the camera about its own screen axes by the angle the cursor would have dragged the center
+// of the globe, which is viewportRadius per NDC unit.
+function spinCamera(last: Vec2, curr: Vec2, frame: SphericalFrame): { lat: number; lng: number } {
+  const viewportRadius = (frame.scale - 1) * frame.halfTanFov;
+  const a = -(curr[0] - last[0]) * viewportRadius * frame.aspect;
+  const b = -(curr[1] - last[1]) * viewportRadius;
+  const angle = Math.sqrt(a * a + b * b);
+  const {xAxis, yAxis, zAxis} = frame;
+  if (angle === 0) {
+    return {lat: Math.asin(clamp(zAxis[1], -1, 1)), lng: Math.atan2(zAxis[2], zAxis[0])};
+  }
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle) / angle;
+  const x = cos * zAxis[0] + sin * (a * xAxis[0] + b * yAxis[0]);
+  const y = cos * zAxis[1] + sin * (a * xAxis[1] + b * yAxis[1]);
+  const z = cos * zAxis[2] + sin * (a * xAxis[2] + b * yAxis[2]);
+  return {lat: Math.asin(clamp(y, -1, 1)), lng: Math.atan2(z, x)};
+}
+
+// Blends two camera centers along the great circle between them.
+function mixCameras(
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+    t: number): { lat: number; lng: number } {
+  const cosFrom = Math.cos(from.lat);
+  const cosTo = Math.cos(to.lat);
+  const x = (1 - t) * cosFrom * Math.cos(from.lng) + t * cosTo * Math.cos(to.lng);
+  const y = (1 - t) * Math.sin(from.lat) + t * Math.sin(to.lat);
+  const z = (1 - t) * cosFrom * Math.sin(from.lng) + t * cosTo * Math.sin(to.lng);
+  return {lat: Math.atan2(y, Math.sqrt(x * x + z * z)), lng: Math.atan2(z, x)};
 }
 
 function smoothstep(x: number): number {
