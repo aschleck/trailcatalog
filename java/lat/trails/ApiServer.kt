@@ -52,6 +52,8 @@ import lat.trails.proto.SaveRequest
 import lat.trails.proto.SaveResponse
 import lat.trails.proto.SetSharingRequest
 import lat.trails.proto.SetSharingResponse
+import lat.trails.proto.SetViewStateRequest
+import lat.trails.proto.SetViewStateResponse
 import lat.trails.proto.Sharing
 import lat.trails.proto.Write
 import org.trailcatalog.common.AlignableByteArrayOutputStream
@@ -129,6 +131,8 @@ private fun fetchData(ctx: Context) {
         save(ctx, SaveRequest.newBuilder().mergeJson(payload).build())
       "lat.trails.DataService/SetSharing" ->
         setSharing(ctx, SetSharingRequest.newBuilder().mergeJson(payload).build())
+      "lat.trails.DataService/SetViewState" ->
+        setViewState(ctx, SetViewStateRequest.newBuilder().mergeJson(payload).build())
       else -> throw IllegalArgumentException("Unknown method $method")
     }
 
@@ -221,14 +225,39 @@ private fun listCollections(ctx: Context): ListCollectionsResponse {
 
 private fun getCollection(ctx: Context, request: GetCollectionRequest): GetCollectionResponse {
   val id = parseUuid(request.id)
+  val user = optionalUser(ctx)
   val response = GetCollectionResponse.newBuilder()
   hikari.connection.use { connection ->
-    val access = accessTo(connection, id, optionalUser(ctx)) ?: throw NotFoundResponse()
+    val access = accessTo(connection, id, user) ?: throw NotFoundResponse()
     response.collectionBuilder
         .setId(request.id)
         .setName(access.name)
         .setVersion(access.version)
         .setRole(access.role)
+
+    // Everyone else sees the owner's, including a viewer whose own row is from when they could
+    // edit.
+    val own = if (user != null && canEdit(access.role)) user else access.creator
+    connection
+        .prepareStatement(
+            "SELECT hidden_feature_ids FROM view_states "
+                + "WHERE collection_id = ? AND user_id IN (?, ?) "
+                + "ORDER BY user_id = ? DESC "
+                + "LIMIT 1")
+        .apply {
+          setObject(1, id)
+          setObject(2, own)
+          setObject(3, access.creator)
+          setObject(4, own)
+        }
+        .executeQuery()
+        .use { results ->
+          if (results.next()) {
+            for (hidden in results.getArray(1).array as Array<*>) {
+              response.addHiddenFeatureIds((hidden as UUID).toString())
+            }
+          }
+        }
 
     connection
         .prepareStatement(
@@ -383,6 +412,7 @@ private fun deleteCollection(
     // save waiting on the lock finds no collection once we commit and gets a 404.
     for (sql in listOf(
         "DELETE FROM collection_grants WHERE collection_id = ?",
+        "DELETE FROM view_states WHERE collection_id = ?",
         "DELETE FROM folders WHERE collection = ?",
         "DELETE FROM lines WHERE collection = ?",
         "DELETE FROM points WHERE collection = ?",
@@ -490,6 +520,32 @@ private fun setSharing(ctx: Context, request: SetSharingRequest): SetSharingResp
 
     SetSharingResponse.newBuilder().setSharing(readSharing(connection, collection)).build()
   }
+}
+
+private fun setViewState(ctx: Context, request: SetViewStateRequest): SetViewStateResponse {
+  val user = requireUser(ctx)
+  val collection = parseUuid(request.collectionId)
+  val hidden = request.hiddenFeatureIdsList.map { parseUuid(it) }.distinct()
+  hikari.connection.use { connection ->
+    val access = accessTo(connection, collection, user) ?: throw NotFoundResponse()
+    if (!canEdit(access.role)) {
+      throw ForbiddenResponse()
+    }
+
+    connection
+        .prepareStatement(
+            "INSERT INTO view_states (collection_id, user_id, hidden_feature_ids) "
+                + "VALUES (?, ?, ?) "
+                + "ON CONFLICT (collection_id, user_id) DO UPDATE SET "
+                + "hidden_feature_ids = EXCLUDED.hidden_feature_ids")
+        .apply {
+          setObject(1, collection)
+          setObject(2, user)
+          setArray(3, connection.createArrayOf("UUID", hidden.toTypedArray()))
+        }
+        .executeUpdate()
+  }
+  return SetViewStateResponse.getDefaultInstance()
 }
 
 private fun readSharing(connection: Connection, collection: UUID): Sharing {
@@ -808,13 +864,17 @@ private fun lockCollection(connection: Connection, collection: UUID, user: UUID)
       .executeQuery()
       .close()
   val access = accessTo(connection, collection, user) ?: throw NotFoundResponse()
-  if (access.role != Role.ROLE_OWNER && access.role != Role.ROLE_WRITE) {
+  if (!canEdit(access.role)) {
     throw ForbiddenResponse()
   }
   return access
 }
 
-private data class Access(val name: String, val version: Long, val role: Role)
+private fun canEdit(role: Role): Boolean {
+  return role == Role.ROLE_OWNER || role == Role.ROLE_WRITE
+}
+
+private data class Access(val name: String, val version: Long, val creator: UUID, val role: Role)
 
 // Answers null for a collection the user may not see, so that it looks the same as one that does
 // not exist. A null user is signed out and sees what was shared with anyone.
@@ -851,7 +911,7 @@ private fun accessTo(connection: Connection, collection: UUID, user: UUID?): Acc
                 else -> parseRole(results.getString(5))
               }
           if (role != null && (access == null || role.number > access.role.number)) {
-            access = Access(name, version, role)
+            access = Access(name, version, creator, role)
           }
         }
         return access

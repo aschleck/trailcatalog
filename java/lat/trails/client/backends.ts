@@ -18,6 +18,8 @@ import {
   SaveResponseSchema,
   SetSharingRequestSchema,
   SetSharingResponseSchema,
+  SetViewStateRequestSchema,
+  SetViewStateResponseSchema,
 } from 'trails_lat/proto/data_pb';
 
 export const BACKENDS = {
@@ -33,6 +35,7 @@ export const BACKENDS = {
       renameCollection: [RenameCollectionRequestSchema, RenameCollectionResponseSchema],
       save: [SaveRequestSchema, SaveResponseSchema],
       setSharing: [SetSharingRequestSchema, SetSharingResponseSchema],
+      setViewState: [SetViewStateRequestSchema, SetViewStateResponseSchema],
     },
   },
 } as const;

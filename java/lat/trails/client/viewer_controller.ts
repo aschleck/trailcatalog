@@ -35,6 +35,7 @@ import {
   ListCollectionsResponse,
   Role,
   SaveResponse,
+  SetViewStateResponse,
 } from 'trails_lat/proto/data_pb';
 
 import { CollectionLayer } from './collection_layer';
@@ -204,6 +205,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }|undefined;
   private readonly loginWatcher: Timer;
   private readonly saves: SaveQueue;
+  // Serialized so that an older view state cannot land after a newer one
+  private viewStateWrites: Promise<void>;
   // The menubar item whose menu is open or loading. A File menu still waiting on ListCollections
   // when another menu takes over sees it change and stays closed.
   private menuTrigger: Element|undefined;
@@ -225,6 +228,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.warnUnsaved();
     });
     this.store = new FeatureStore(this.saves);
+    this.viewStateWrites = Promise.resolve();
     this.elevations = new Elevations();
     this.profileDebouncer = new Debouncer(/* delayMs= */ 150, () => {
       this.sampleProfile();
@@ -996,11 +1000,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   visibilityToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
     const id = checkExists(e.actionElement.data('id')).string();
-    if (!this.hidden.delete(id)) {
-      this.hidden.add(id);
+    const hidden = new Set(this.hidden);
+    if (!hidden.delete(id)) {
+      hidden.add(id);
     }
-    this.featureLayer.setHidden(new Set(this.hidden));
+    this.setHidden(hidden);
     this.refreshFeatureList();
+    this.saveViewState();
   }
 
   newFolderClicked(): void {
@@ -1860,6 +1866,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private newCollection(): void {
     this.saves.clear();
     this.select(undefined);
+    this.setHidden([]);
     this.store.reset([], /* readOnly= */ false);
     this.updateState({
       ...this.state,
@@ -1909,6 +1916,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private loadCollection(id: string): void {
+    this.setHidden([]);
     const loading: Future<GetCollectionResponse> =
         requestData('lat.trails.DataService/GetCollection', {id});
     loading
@@ -1918,6 +1926,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             collection: response.collection,
           });
           const readOnly = response.collection?.role === Role.READ;
+          this.setHidden(response.hiddenFeatureIds);
           this.store.reset([
             ...response.folders.map(folderFromProto),
             ...response.lines.map(lineFromProto),
@@ -2039,7 +2048,38 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             collection,
           });
           this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
+          // Anything hidden before the collection existed had nowhere to save to.
+          if (this.hidden.size > 0) {
+            this.saveViewState();
+          }
           return collection.id;
+        });
+  }
+
+  private setHidden(ids: Iterable<string>): void {
+    this.hidden.clear();
+    for (const id of ids) {
+      this.hidden.add(id);
+    }
+    this.featureLayer.setHidden(new Set(this.hidden));
+  }
+
+  // Viewers get no view state, so they start from the owner's every time they open the collection.
+  private saveViewState(): void {
+    const collection = this.state.collection;
+    if (!collection || (collection.role !== Role.OWNER && collection.role !== Role.WRITE)) {
+      return;
+    }
+
+    const request = {collectionId: collection.id, hiddenFeatureIds: [...this.hidden]};
+    this.viewStateWrites = this.viewStateWrites
+        .then(() => {
+          const saved: Future<SetViewStateResponse> =
+              requestData('lat.trails.DataService/SetViewState', request);
+          return saved;
+        })
+        .then(() => {}, e => {
+          console.error(e);
         });
   }
 

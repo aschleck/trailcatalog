@@ -18,6 +18,7 @@ const WRITES: string[] = [
   'lat.trails.DataService/RenameCollection',
   'lat.trails.DataService/Save',
   'lat.trails.DataService/SetSharing',
+  'lat.trails.DataService/SetViewState',
 ] satisfies Array<keyof FqMethods<typeof BACKENDS>>;
 
 // Read RPCs that are invalidated when a write comes through

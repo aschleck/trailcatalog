@@ -15,6 +15,7 @@ service DataService {
   rpc RenameCollection(RenameCollectionRequest) returns (RenameCollectionResponse);
   rpc Save(SaveRequest) returns (SaveResponse);
   rpc SetSharing(SetSharingRequest) returns (SetSharingResponse);
+  rpc SetViewState(SetViewStateRequest) returns (SetViewStateResponse);
 }
 
 message CreateCollectionRequest {
@@ -42,6 +43,8 @@ message GetCollectionResponse {
   repeated Folder folders = 2;
   repeated Line lines = 3;
   repeated Point points = 4;
+  // The caller's if they can edit and have saved one, or else the owner's.
+  repeated string hidden_feature_ids = 5;
 }
 
 message GetCurrentUserRequest {}
@@ -122,6 +125,15 @@ message SetSharingResponse {
   // Emails in the request with no trails.lat account
   repeated string unknown_emails = 2;
 }
+
+// Only someone who can edit may save a view state. Viewers start from the owner's.
+message SetViewStateRequest {
+  string collection_id = 1;
+  // Replaces what the caller had hidden before.
+  repeated string hidden_feature_ids = 2;
+}
+
+message SetViewStateResponse {}
 
 message Sharing {
   bool anyone_can_view = 1;

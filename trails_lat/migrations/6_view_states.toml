@@ -1,0 +1,31 @@
+[[actions]]
+type = "create_table"
+name = "view_states"
+primary_key = ["collection_id", "user_id"]
+
+  [[actions.columns]]
+  name = "collection_id"
+  nullable = false
+  type = "UUID"
+
+  # Only users who can edit the collection have a row. Viewers start from the owner's.
+  [[actions.columns]]
+  name = "user_id"
+  nullable = false
+  type = "UUID"
+
+  # Folders, lines, and points alike, since their ids never collide.
+  [[actions.columns]]
+  name = "hidden_feature_ids"
+  nullable = false
+  type = "UUID[]"
+
+  [[actions.foreign_keys]]
+  columns = ["collection_id"]
+  referenced_table = "collections"
+  referenced_columns = ["id"]
+
+  [[actions.foreign_keys]]
+  columns = ["user_id"]
+  referenced_table = "users"
+  referenced_columns = ["id"]
