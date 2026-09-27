@@ -1,5 +1,5 @@
 import { EditableLine } from './features';
-import { insertVertex, moveVertex, removeVertex } from './line_edits';
+import { insertVertex, moveVertex, removeVertex, reverseLine, splitLine } from './line_edits';
 
 test('moves a vertex without touching the original', () => {
   const original = line();
@@ -35,6 +35,45 @@ test('removes a vertex and its samples', () => {
 
 test('refuses to leave fewer than two vertices', () => {
   expect(removeVertex(removeVertex(line(), 0)!, 0)).toBeUndefined();
+});
+
+test('splits at a vertex that both halves keep', () => {
+  const [first, second] = splitLine(line(), 1, 'b')!;
+
+  expect(first.id).toBe('a');
+  expect(first.version).toBe(3n);
+  expect(first.data.name).toBe('a (1)');
+  expect(Array.from(first.latLngE7)).toEqual([0, 0, 10, 10]);
+  expect(Array.from(first.elevationCentimeters!)).toEqual([100, 200]);
+  expect(Array.from(first.timeSeconds!)).toEqual([0n, 10n]);
+  expect(second.id).toBe('b');
+  expect(second.version).toBe(0n);
+  expect(second.data.name).toBe('a (2)');
+  expect(Array.from(second.latLngE7)).toEqual([10, 10, 20, 20]);
+  expect(Array.from(second.elevationCentimeters!)).toEqual([200, 300]);
+  expect(Array.from(second.timeSeconds!)).toEqual([10n, 20n]);
+});
+
+test('refuses to split at an end', () => {
+  expect(splitLine(line(), 0, 'b')).toBeUndefined();
+  expect(splitLine(line(), 2, 'b')).toBeUndefined();
+});
+
+test('leaves an unnamed line unnamed when splitting', () => {
+  const [first, second] = splitLine({...line(), data: {}}, 1, 'b')!;
+
+  expect(first.data.name).toBeUndefined();
+  expect(second.data.name).toBeUndefined();
+});
+
+test('reverses a line with its samples', () => {
+  const original = line();
+  const reversed = reverseLine(original);
+
+  expect(Array.from(reversed.latLngE7)).toEqual([20, 20, 10, 10, 0, 0]);
+  expect(Array.from(reversed.elevationCentimeters!)).toEqual([300, 200, 100]);
+  expect(Array.from(reversed.timeSeconds!)).toEqual([20n, 10n, 0n]);
+  expect(Array.from(original.latLngE7)).toEqual([0, 0, 10, 10, 20, 20]);
 });
 
 function line(): EditableLine {

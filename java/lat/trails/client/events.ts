@@ -16,6 +16,24 @@ export const FEATURE_CLICKED = declareEvent<{
   id: string|undefined;
 }>('feature_clicked');
 
+/** Where on a line a right click was nearest. */
+export type LineSpot =
+    // Index is the vertex, and handle is whether the click was on its handle while editing.
+    {kind: 'vertex'; index: number; handle: boolean}
+    // A spot partway along the segment that ends at vertex index
+    |{kind: 'segment'; index: number; latE7: number; lngE7: number};
+
+export const FEATURE_CONTEXT_MENU = declareEvent<{
+  // Undefined when the click missed every feature
+  id: string|undefined;
+  // Set when id is a line
+  spot: LineSpot|undefined;
+  latE7: number;
+  lngE7: number;
+  // Relative to the map's canvas
+  px: [number, number];
+}>('feature_context_menu');
+
 export const FEATURE_EDITED = declareEvent<{
   before: EditableFeature;
   after: EditableFeature;

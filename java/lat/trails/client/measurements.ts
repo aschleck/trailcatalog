@@ -70,6 +70,17 @@ export function pathLengthMeters(path: ArrayLike<number>): number {
   return meters;
 }
 
+/** Returns the great circle distance along a path to each of its vertices. */
+export function cumulativeMeters(path: ArrayLike<number>): Float64Array {
+  const along = new Float64Array(path.length / 2);
+  for (let i = 1; i < along.length; ++i) {
+    along[i] =
+        along[i - 1]
+            + haversineMeters(path[2 * i - 2], path[2 * i - 1], path[2 * i], path[2 * i + 1]);
+  }
+  return along;
+}
+
 export function formatDistance(meters: number): string {
   const {value, unit} = formatUnitDistance(meters);
   return `${value} ${unit}`;

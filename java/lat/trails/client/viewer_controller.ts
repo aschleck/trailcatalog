@@ -49,11 +49,12 @@ import {
 import { DrawingLayer, toE7Array } from './drawing_layer';
 import {
   FEATURE_CLICKED,
+  FEATURE_CONTEXT_MENU,
   FEATURE_EDITED,
   FEATURE_HOVERED,
-  HOVER_CHANGED,
   LayerObject,
   LINE_DRAWN,
+  LineSpot,
   OBJECT_OPENED,
   POINT_PLACED,
   Tool,
@@ -76,11 +77,19 @@ import {
   toWrite,
 } from './features';
 import { parseImport } from './importer';
+import { insertVertex, removeVertex, reverseLine, splitLine } from './line_edits';
 import { IconPickerDialog } from './icon_picker';
 import { MeasureState } from './measure_panel';
 import { PointToolLayer } from './point_tool_layer';
-import { pathLengthMeters, profileSamples, ProfileSamples, profileStats } from './measurements';
+import {
+  cumulativeMeters,
+  pathLengthMeters,
+  profileSamples,
+  ProfileSamples,
+  profileStats,
+} from './measurements';
 import { MENU_CLASSES } from './menubar';
+import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
 import { RenameDialog } from './rename_dialog';
 import { ShareDialog } from './share_dialog';
@@ -114,6 +123,8 @@ export interface State {
   // The map layer object open in the dialog, when no feature is selected
   inspected: InspectedObject|undefined;
   layers: LayerState[];
+  // The profile of the selected feature or the inspected object, when that is a line
+  lineProfile: LineProfileState|undefined;
   measure: MeasureState;
   self: Future<GetCurrentUserResponse>;
   tool: Tool;
@@ -157,6 +168,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private profileGeneration: number;
   // The placed path the length and profile describe
   private measuredPath: Float64Array|undefined;
+  // The selected line's geometry as of its profile, which an edit replaces with a new array
+  private lineProfileSource: Int32Array|undefined;
+  // The samples behind the line profile on screen, like measureSamples
+  private lineSamples: {latLngDegrees: Float64Array; distanceMeters: Float64Array}|undefined;
+  // Moves with every line profile asked for, so that a slow answer for another line is dropped
+  private lineProfileGeneration: number;
   private selected: string|undefined;
   // Kept for centering on, which needs the geometry the dialog's state leaves out
   private inspected: LayerObject|undefined;
@@ -165,6 +182,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly osmPaths: CollectionLayer;
   private readonly hidden: Set<string>;
   private readonly expanded: Set<string>;
+  // The feature being dragged in the list, and the folder it would drop into, where undefined is
+  // the root
+  private draggedFeature: string|undefined;
+  private dropTarget: {folder: string|undefined}|undefined;
   // Logins run in a popup on Google's origin, so a caller waiting on one waits on this.
   private login: {
     popup: Window;
@@ -202,11 +223,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.measureSamples = undefined;
     this.profileGeneration = 0;
     this.measuredPath = undefined;
+    this.lineProfileSource = undefined;
+    this.lineSamples = undefined;
+    this.lineProfileGeneration = 0;
     this.selected = undefined;
     this.inspected = undefined;
     this.inspectGeneration = 0;
     this.hidden = new Set();
     this.expanded = new Set();
+    this.draggedFeature = undefined;
+    this.dropTarget = undefined;
     this.store.listen(() => {
       this.refreshFeatureList();
     });
@@ -596,10 +622,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
-  onHoverChange(e: CorgiEvent<typeof HOVER_CHANGED>): void {
-    console.log(e.detail);
-  }
-
   onLineDrawn(e: CorgiEvent<typeof LINE_DRAWN>): void {
     const line: EditableLine = {
       kind: 'line',
@@ -693,6 +715,79 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.store.apply([{id: after.id, before, after}]);
   }
 
+  onFeatureContextMenu(e: CorgiEvent<typeof FEATURE_CONTEXT_MENU>): void {
+    const {id, spot, px} = e.detail;
+    const feature = id !== undefined ? this.store.get(id) : undefined;
+    const editable = feature !== undefined && !this.store.isReadOnly();
+    const items: MenuEntries = [];
+    if (editable && feature.kind === 'line' && spot) {
+      const count = feature.latLngE7.length / 2;
+      items.push({
+        kind: 'menu_item',
+        label: 'Split here',
+        disabled: spot.kind === 'vertex' && (spot.index === 0 || spot.index === count - 1),
+        action: () => {
+          this.splitLineAt(feature.id, spot);
+        },
+      });
+      items.push({
+        kind: 'menu_item',
+        label: 'Reverse direction',
+        action: () => {
+          this.editLine(feature.id, reverseLine);
+        },
+      });
+      if (spot.kind === 'vertex' && spot.handle) {
+        items.push({
+          kind: 'menu_item',
+          label: 'Delete vertex',
+          disabled: count <= 2,
+          action: () => {
+            this.editLine(feature.id, line => removeVertex(line, spot.index));
+          },
+        });
+      }
+    }
+    if (editable) {
+      items.push({
+        kind: 'menu_item',
+        label: 'Duplicate',
+        action: () => {
+          this.duplicateFeature(feature.id);
+        },
+      });
+    }
+    const [latE7, lngE7] = coordinatesOf(feature, spot, e.detail.latE7, e.detail.lngE7);
+    items.push({
+      kind: 'menu_item',
+      label: 'Copy coordinates',
+      action: () => {
+        const text = `${(latE7 / 1e7).toFixed(6)}, ${(lngE7 / 1e7).toFixed(6)}`;
+        navigator.clipboard.writeText(text).catch(e => {
+          console.error(e);
+        });
+      },
+    });
+    if (editable) {
+      items.push({kind: 'divider'});
+      items.push({
+        kind: 'menu_item',
+        label: 'Delete',
+        action: () => {
+          const live = this.store.get(feature.id);
+          if (live) {
+            this.deleteFeatures([live]);
+          }
+        },
+      });
+    }
+
+    const canvas = checkExists(this.root.querySelector('canvas')).getBoundingClientRect();
+    const root = this.root.getBoundingClientRect();
+    this.openContextMenu(
+        items, canvas.left - root.left + px[0], canvas.top - root.top + px[1]);
+  }
+
   onFeatureHovered(e: CorgiEvent<typeof FEATURE_HOVERED>): void {
     this.setHovered(e.detail.id);
   }
@@ -704,6 +799,47 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
 
     this.select(checkExists(e.actionElement.data('id')).string());
+  }
+
+  featureDragStarted(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const id = checkExists(e.actionElement.data('id')).string();
+    this.draggedFeature = id;
+    const transfer = (e.detail as DragEvent).dataTransfer;
+    if (transfer) {
+      // Firefox refuses to start a drag that carries no data.
+      transfer.setData('text/plain', id);
+      transfer.effectAllowed = 'move';
+    }
+  }
+
+  featureDraggedOver(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.dragOver(e.detail as DragEvent, this.dropFolderFor(e));
+  }
+
+  featureTreeDraggedOver(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.dragOver(e.detail as DragEvent, undefined);
+  }
+
+  // Clears the target once the drag leaves the tree. Moving between rows leaves one row for
+  // another inside it, which keeps the target.
+  featureTreeDragLeft(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const related = e.detail.relatedTarget;
+    if (!(related instanceof Node) || !e.actionElement.element().contains(related)) {
+      this.setDropTarget(undefined);
+    }
+  }
+
+  featureDropped(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.drop(e.detail as DragEvent, this.dropFolderFor(e));
+  }
+
+  featureTreeDropped(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.drop(e.detail as DragEvent, undefined);
+  }
+
+  featureDragEnded(): void {
+    this.draggedFeature = undefined;
+    this.setDropTarget(undefined);
   }
 
   folderToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -734,7 +870,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   profileHovered(e: CorgiEvent<typeof DOM_POINTER>): void {
-    const samples = this.measureSamples;
+    const source = checkExists(e.actionElement.data('source')).string();
+    const samples = source === 'line' ? this.lineSamples : this.measureSamples;
     if (!samples || samples.distanceMeters.length === 0) {
       return;
     }
@@ -757,13 +894,25 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const ll =
         S2LatLng.fromDegrees(
             samples.latLngDegrees[2 * index], samples.latLngDegrees[2 * index + 1]);
-    this.measureLayer.setMarker(projectS2LatLng(ll));
-    this.updateState({...this.state, measure: {...this.state.measure, hovered: index}});
+    const line = this.state.lineProfile;
+    if (source !== 'line') {
+      this.measureLayer.setMarker(projectS2LatLng(ll));
+      this.updateState({...this.state, measure: {...this.state.measure, hovered: index}});
+    } else if (line?.status === 'loaded') {
+      this.featureLayer.setMarker(projectS2LatLng(ll));
+      this.updateState({...this.state, lineProfile: {...line, hovered: index}});
+    }
   }
 
   profileLeft(): void {
     this.measureLayer.setMarker(undefined);
-    this.updateState({...this.state, measure: {...this.state.measure, hovered: undefined}});
+    this.featureLayer.setMarker(undefined);
+    const line = this.state.lineProfile;
+    this.updateState({
+      ...this.state,
+      lineProfile: line?.status === 'loaded' ? {...line, hovered: undefined} : line,
+      measure: {...this.state.measure, hovered: undefined},
+    });
   }
 
   // Samples elevations at the vertices so that the saved line carries them like an imported one.
@@ -1142,6 +1291,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.measureLayer.setActive(false);
     this.pointLayer.setActive(tool === 'point');
     this.featureLayer.setInteractive(tool === 'pointer');
+    this.featureLayer.setPointsDraggable(tool === 'point');
     // Refreshes the credits, because the measure layer's only count while it is active
     this.setMapLayers(this.state.layers);
     if (tool === 'line') {
@@ -1313,10 +1463,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     return ancestors;
   }
 
-  // Closes whatever map layer object is open, because the dialog shows one thing at a time.
+  // Closes whatever map layer object is open, because the dialog shows one thing at a time. The
+  // profile marker goes too, because its chart leaves without a pointerleave.
   private select(id: string|undefined): void {
     this.selected = id;
     this.featureLayer.setSelected(id);
+    this.featureLayer.setMarker(undefined);
     this.inspected = undefined;
     this.inspectGeneration += 1;
     if (this.state.inspected) {
@@ -1325,9 +1477,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.refreshFeatureList();
   }
 
+  // Draws the profile from the same samples, since an object from a map layer has no elevations.
   private loadClimb(path: Float64Array): void {
     const generation = this.inspectGeneration;
     const samples = profileSamples(path);
+    this.lineSamples = undefined;
+    this.updateState({...this.state, lineProfile: {status: 'loading'}});
     this.elevations.sample(samples.latLngDegrees, samples.zoom).then(
         meters => {
           const inspected = this.state.inspected;
@@ -1335,11 +1490,84 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             return;
           }
 
-          this.updateState({...this.state, inspected: {...inspected, climb: profileStats(meters)}});
+          this.lineSamples = samples;
+          this.updateState({
+            ...this.state,
+            inspected: {...inspected, climb: profileStats(meters)},
+            lineProfile: {
+              status: 'loaded',
+              distanceMeters: Array.from(samples.distanceMeters),
+              meters: Array.from(meters),
+              hovered: undefined,
+            },
+          });
         },
         e => {
           console.error(e);
+          if (generation === this.inspectGeneration && this.state.inspected?.kind === 'line') {
+            this.updateState({...this.state, lineProfile: {status: 'failed'}});
+          }
         });
+  }
+
+  // Keeps the selected line's profile in step with its geometry. A line that carries elevations,
+  // like an imported track, draws its own so that the chart agrees with the climb above it, and
+  // anything else samples the DEM. An inspected object's profile belongs to loadClimb.
+  private lineProfileFor(live: EditableFeature|undefined): LineProfileState|undefined {
+    if (live?.kind !== 'line') {
+      if (this.state.inspected?.kind === 'line') {
+        return this.state.lineProfile;
+      }
+      this.lineProfileGeneration += 1;
+      this.lineProfileSource = undefined;
+      this.lineSamples = undefined;
+      return undefined;
+    } else if (live.latLngE7 === this.lineProfileSource) {
+      return this.state.lineProfile;
+    }
+
+    this.lineProfileGeneration += 1;
+    this.lineProfileSource = live.latLngE7;
+    const path = Float64Array.from(live.latLngE7, e7 => e7 / 1e7);
+    const own = live.elevationCentimeters;
+    if (own) {
+      const distanceMeters = cumulativeMeters(path);
+      this.lineSamples = {latLngDegrees: path, distanceMeters};
+      return {
+        status: 'loaded',
+        distanceMeters: Array.from(distanceMeters),
+        meters: Array.from(own, centimeters => centimeters / 100),
+        hovered: undefined,
+      };
+    }
+
+    const generation = this.lineProfileGeneration;
+    const samples = profileSamples(path);
+    this.lineSamples = undefined;
+    this.elevations.sample(samples.latLngDegrees, samples.zoom).then(
+        meters => {
+          if (generation !== this.lineProfileGeneration) {
+            return;
+          }
+
+          this.lineSamples = samples;
+          this.updateState({
+            ...this.state,
+            lineProfile: {
+              status: 'loaded',
+              distanceMeters: Array.from(samples.distanceMeters),
+              meters: Array.from(meters),
+              hovered: undefined,
+            },
+          });
+        },
+        e => {
+          console.error(e);
+          if (generation === this.lineProfileGeneration) {
+            this.updateState({...this.state, lineProfile: {status: 'failed'}});
+          }
+        });
+    return {status: 'loading'};
   }
 
   private loadWayTags(id: number): void {
@@ -1385,6 +1613,119 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         mergeKey !== undefined ? `${mergeKey}:${live.id}` : undefined);
   }
 
+  // The folder a drop onto this row lands in. A row that is not a folder passes it to the folder
+  // it is in, so dropping onto a sibling moves nothing.
+  private dropFolderFor(e: CorgiEvent<typeof DOM_MOUSE>): string|undefined {
+    const row = this.store.get(checkExists(e.actionElement.data('id')).string());
+    if (!row) {
+      return undefined;
+    }
+    return row.kind === 'folder' ? row.id : this.store.parentOf(row);
+  }
+
+  // Whether the dragged feature may go into folder. A folder cannot move into itself or anything
+  // under it.
+  private canDropInto(folder: string|undefined): boolean {
+    const dragged = this.draggedFeature;
+    if (dragged === undefined) {
+      return false;
+    }
+    return folder === undefined
+        || (folder !== dragged && !this.ancestorsOf(folder).includes(dragged));
+  }
+
+  // Marks folder as the target when the drop is allowed. The browser only drops where dragover
+  // called preventDefault.
+  private dragOver(e: DragEvent, folder: string|undefined): void {
+    if (!this.canDropInto(folder)) {
+      this.setDropTarget(undefined);
+      return;
+    }
+
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+    this.setDropTarget({folder});
+  }
+
+  private drop(e: DragEvent, folder: string|undefined): void {
+    const dragged = this.draggedFeature;
+    const live = dragged !== undefined ? this.store.get(dragged) : undefined;
+    if (!live || !this.canDropInto(folder)) {
+      return;
+    }
+
+    e.preventDefault();
+    this.draggedFeature = undefined;
+    this.dropTarget = undefined;
+    if (folder !== undefined) {
+      this.expanded.add(folder);
+    }
+    if (this.store.parentOf(live) === folder) {
+      this.refreshFeatureList();
+      return;
+    }
+
+    const before = snapshot(live);
+    const after = {...snapshot(live), data: stripUndefined({...live.data, folder_id: folder})};
+    this.store.apply([{id: live.id, before, after}]);
+  }
+
+  private setDropTarget(target: {folder: string|undefined}|undefined): void {
+    if (target?.folder === this.dropTarget?.folder && !target === !this.dropTarget) {
+      return;
+    }
+
+    this.dropTarget = target;
+    this.refreshFeatureList();
+  }
+
+  // Splits at a vertex, adding one first when the spot is partway along a segment.
+  private splitLineAt(id: string, spot: LineSpot): void {
+    const live = this.store.get(id);
+    if (live?.kind !== 'line') {
+      return;
+    }
+
+    const line =
+        spot.kind === 'segment' ? insertVertex(live, spot.index, spot.latE7, spot.lngE7) : live;
+    const halves = splitLine(line, spot.index, crypto.randomUUID());
+    if (!halves) {
+      return;
+    }
+
+    const [first, second] = halves;
+    this.store.apply([
+      {id: live.id, before: snapshot(live), after: first},
+      {id: second.id, before: undefined, after: second},
+    ]);
+  }
+
+  private editLine(id: string, edit: (line: EditableLine) => EditableLine|undefined): void {
+    const live = this.store.get(id);
+    const after = live?.kind === 'line' ? edit(live) : undefined;
+    if (live && after) {
+      this.store.apply([{id, before: snapshot(live), after}]);
+    }
+  }
+
+  // Selects the copy, because it lands exactly on the original and would otherwise look like
+  // nothing happened.
+  private duplicateFeature(id: string): void {
+    const live = this.store.get(id);
+    if (!live) {
+      return;
+    }
+
+    const copy = {...snapshot(live), id: crypto.randomUUID(), version: 0n};
+    if (copy.data.name) {
+      copy.data.name = `${copy.data.name} copy`;
+    }
+    this.store.apply([{id: copy.id, before: undefined, after: copy}]);
+    this.select(copy.id);
+  }
+
   // In the order given, which for a folder is its descendants deepest first and then itself, so
   // each folder is empty by the time its delete lands.
   private deleteFeatures(features: EditableFeature[]): void {
@@ -1419,7 +1760,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         hoveredAncestors: new Set(this.ancestorsOf(this.state.features.hovered)),
         hidden: new Set(this.hidden),
         expanded: new Set(this.expanded),
+        dropTarget: this.dropTarget,
       },
+      lineProfile: this.lineProfileFor(live),
     });
   }
 
@@ -1656,6 +1999,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.menuTrigger = undefined;
   }
 
+  private openContextMenu(items: MenuEntries, x: number, y: number): void {
+    this.closeMenu();
+    this.menu.open(items, {x, y}, this.root, {anchor: 'top_left', classes: MENU_CLASSES});
+    this.menuOverlay = this.root.lastElementChild ?? undefined;
+  }
+
   private openMenu(items: MenuEntries, trigger: Element): void {
     if (this.menuTrigger !== trigger) {
       return;
@@ -1735,6 +2084,22 @@ function toDegrees(points: Float64Array): Float64Array {
     degrees[i + 1] = ll.lngDegrees();
   }
   return degrees;
+}
+
+// The point's own spot, the spot on a line nearest the click, or else the click
+function coordinatesOf(
+    feature: EditableFeature|undefined,
+    spot: LineSpot|undefined,
+    latE7: number,
+    lngE7: number): [number, number] {
+  if (feature?.kind === 'point') {
+    return [feature.latE7, feature.lngE7];
+  } else if (feature?.kind === 'line' && spot?.kind === 'vertex') {
+    return [feature.latLngE7[2 * spot.index], feature.latLngE7[2 * spot.index + 1]];
+  } else if (spot?.kind === 'segment') {
+    return [spot.latE7, spot.lngE7];
+  }
+  return [latE7, lngE7];
 }
 
 function stripUndefined(data: FeatureData): FeatureData {

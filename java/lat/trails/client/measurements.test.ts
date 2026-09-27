@@ -1,10 +1,18 @@
-import { measureLine, profileSamples, profileStats } from './measurements';
+import { cumulativeMeters, measureLine, profileSamples, profileStats } from './measurements';
 
 test('measures a line along its hypotenuse with raw climb', () => {
   // Two segments of 0.001 degrees of latitude, about 111 m each
   const stats = measureLine([0, 0, 10000, 0, 20000, 0], [0, 1000, 500]);
   expect(stats.lengthMeters).toBeCloseTo(Math.hypot(111.2, 10) + Math.hypot(111.2, 5), 0);
   expect(stats.elevation).toEqual({upMeters: 10, downMeters: 5, minMeters: 0, maxMeters: 10});
+});
+
+test('accumulates distance to each vertex', () => {
+  // About 111 m north then 111 m east at the equator
+  const along = cumulativeMeters([0, 0, 0.001, 0, 0.001, 0.001]);
+  expect(along[0]).toBe(0);
+  expect(along[1]).toBeCloseTo(111.2, 0);
+  expect(along[2]).toBeCloseTo(222.4, 0);
 });
 
 test('spaces samples along a path and keeps its vertices', () => {

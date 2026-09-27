@@ -13,6 +13,7 @@ import {
 } from './features';
 import { PointMarker } from './icon_picker';
 import { formatDistance, formatHeight, measureLine } from './measurements';
+import { LineProfile, LineProfileState } from './profile_chart';
 import { Data } from './workers/collection_loader';
 
 export interface TreeItem {
@@ -58,6 +59,8 @@ export interface FeatureListState {
   hoveredAncestors: ReadonlySet<string>;
   hidden: ReadonlySet<string>;
   expanded: ReadonlySet<string>;
+  // The folder a feature dragged in the list would drop into, where undefined is the root
+  dropTarget: {folder: string|undefined}|undefined;
 }
 
 const WIDTHS_PX = [1, 2, 3, 4, 6, 8];
@@ -66,11 +69,20 @@ const EYE_OUTLINE =
         + 'C12.5 11.5 10.5 12.5 8 12.5 C5.5 12.5 3.5 11.5 1.5 8 Z';
 
 /** Lists the open collection's features as a tree. */
-export function FeatureTree({state}: {state: FeatureListState}) {
+export function FeatureTree({readOnly, state}: {readOnly: boolean; state: FeatureListState}) {
+  const rootTarget = state.dropTarget !== undefined && state.dropTarget.folder === undefined;
+  // The bottom padding leaves somewhere to drop onto the root when every row is inside a folder.
   return (
-    <div>
+    <div
+        className={'pb-6 ' + (rootTarget ? 'bg-blue-50' : '')}
+        unboundEvents={{
+          dragleave: 'featureTreeDragLeft',
+          dragover: 'featureTreeDraggedOver',
+          drop: 'featureTreeDropped',
+        }}
+    >
       {state.tree.length > 0
-          ? rows(state.tree, state, /* dimmed= */ false)
+          ? rows(state.tree, state, readOnly, /* dimmed= */ false)
           : [
             <div className="px-2 py-1 text-gray-500">
               This collection is empty
@@ -147,7 +159,8 @@ function Eye({visible}: {visible: boolean}) {
 // A folder's children sit in a container with a guide line down its left edge, under the
 // folder's chevron, the way a tree in an outliner shows what belongs to what.
 function rows(
-    items: TreeItem[], state: FeatureListState, dimmed: boolean): corgi.VElementOrPrimitive[] {
+    items: TreeItem[], state: FeatureListState, readOnly: boolean, dimmed: boolean):
+    corgi.VElementOrPrimitive[] {
   const rendered = [];
   for (const item of items) {
     const feature = item.feature;
@@ -157,6 +170,8 @@ function rows(
         <Row
             key={feature.id}
             dimmed={hidden}
+            draggable={!readOnly}
+            dropTarget={state.dropTarget?.folder === feature.id}
             expanded={expanded}
             feature={feature}
             hovered={
@@ -170,15 +185,18 @@ function rows(
     if (feature.kind === 'folder' && expanded && item.children.length > 0) {
       rendered.push(
           <div className="border-gray-300 border-l ml-3" key={`children:${feature.id}`}>
-            {rows(item.children, state, hidden)}
+            {rows(item.children, state, readOnly, hidden)}
           </div>);
     }
   }
   return rendered;
 }
 
-function Row({dimmed, expanded, feature, hovered, selected, visible}: {
+function Row({dimmed, draggable, dropTarget, expanded, feature, hovered, selected, visible}: {
   dimmed: boolean;
+  draggable: boolean;
+  // Whether a feature dragged in the list would drop into this folder
+  dropTarget: boolean;
   expanded: boolean;
   feature: EditableFeature;
   hovered: boolean;
@@ -190,12 +208,19 @@ function Row({dimmed, expanded, feature, hovered, selected, visible}: {
     <div
         className={
           'cursor-pointer flex gap-1.5 h-7 items-center pl-1 pr-2 select-none '
-              + (selected ? 'bg-blue-100 ' : hovered ? 'bg-gray-100 ' : '')
+              + (dropTarget
+                  ? 'bg-blue-100 ring-1 ring-blue-400 ring-inset '
+                  : selected ? 'bg-blue-100 ' : hovered ? 'bg-gray-100 ' : '')
               + (dimmed ? 'opacity-50' : '')
         }
         data={{id: feature.id}}
+        draggable={draggable}
         unboundEvents={{
           click: 'featureClicked',
+          dragend: 'featureDragEnded',
+          dragover: 'featureDraggedOver',
+          dragstart: 'featureDragStarted',
+          drop: 'featureDropped',
           pointerenter: 'featureRowEntered',
           pointerleave: 'featureRowLeft',
         }}
@@ -269,10 +294,12 @@ function FolderShape() {
 }
 
 /** Edits the selected feature. */
-export function FeatureProperties({descendants, feature, folders}: {
+export function FeatureProperties({descendants, feature, folders, profile}: {
   descendants: number;
   feature: EditableFeature;
   folders: Array<{folder: EditableFolder; depth: number}>;
+  // Set for a line
+  profile: LineProfileState|undefined;
 }) {
   return (
     <PropertiesDialog title={`Editing ${feature.kind}`}>
@@ -363,6 +390,7 @@ export function FeatureProperties({descendants, feature, folders}: {
           />
         </div>
         <Stats feature={feature} />
+        {profile ? <LineProfile state={profile} /> : ''}
         <Button
             className="bg-red-700 hover:bg-red-800 px-2 py-1 rounded self-start text-white"
             unboundEvents={{corgi: [[ACTION, 'deleteClicked']]}}
@@ -377,7 +405,11 @@ export function FeatureProperties({descendants, feature, folders}: {
 }
 
 /** Shows the selected feature of a collection the user can only view. */
-export function FeatureDetails({feature}: {feature: EditableFeature}) {
+export function FeatureDetails({feature, profile}: {
+  feature: EditableFeature;
+  // Set for a line
+  profile: LineProfileState|undefined;
+}) {
   return (
     <PropertiesDialog title={`Viewing ${feature.kind}`}>
       <div className="flex flex-col gap-2">
@@ -387,13 +419,18 @@ export function FeatureDetails({feature}: {feature: EditableFeature}) {
             : ''
         }
         <Stats feature={feature} />
+        {profile ? <LineProfile state={profile} /> : ''}
       </div>
     </PropertiesDialog>
   );
 }
 
 /** Shows what a map layer knows about the object double clicked on it. */
-export function ObjectProperties({object}: {object: InspectedObject}) {
+export function ObjectProperties({object, profile}: {
+  object: InspectedObject;
+  // Set for a line
+  profile: LineProfileState|undefined;
+}) {
   return (
     <PropertiesDialog title={`Viewing ${object.kind}`}>
       <div className="flex flex-col gap-2">
@@ -401,6 +438,7 @@ export function ObjectProperties({object}: {object: InspectedObject}) {
         {object.kind === 'line'
             ? <LineStats lengthMeters={object.lengthMeters} climb={object.climb} />
             : ''}
+        {profile ? <LineProfile state={profile} /> : ''}
         {object.osm ? <OsmWay way={object.osm} /> : <DataTable data={object.data} />}
       </div>
     </PropertiesDialog>

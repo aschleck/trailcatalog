@@ -9,9 +9,9 @@ import { State, ViewerController } from './viewer_controller';
 import { requestData } from './data';
 import {
   FEATURE_CLICKED,
+  FEATURE_CONTEXT_MENU,
   FEATURE_EDITED,
   FEATURE_HOVERED,
-  HOVER_CHANGED,
   LINE_DRAWN,
   OBJECT_OPENED,
   POINT_PLACED,
@@ -50,9 +50,11 @@ export function OverviewElement(
         hoveredAncestors: new Set(),
         hidden: new Set(),
         expanded: new Set(),
+        dropTarget: undefined,
       },
       inspected: undefined,
       layers: [],
+      lineProfile: undefined,
       measure: {
         lengthMeters: 0,
         vertexCount: 0,
@@ -94,9 +96,9 @@ export function OverviewElement(
           events: {
             corgi: [
               [FEATURE_CLICKED, 'onFeatureClicked'],
+              [FEATURE_CONTEXT_MENU, 'onFeatureContextMenu'],
               [FEATURE_EDITED, 'onFeatureEdited'],
               [FEATURE_HOVERED, 'onFeatureHovered'],
-              [HOVER_CHANGED, 'onHoverChange'],
               [LINE_DRAWN, 'onLineDrawn'],
               [MAP_MOVED, 'onMove'],
               [OBJECT_OPENED, 'onObjectOpened'],
@@ -136,21 +138,25 @@ export function OverviewElement(
             {state.tool === 'measure' ? <MeasurePanel state={state.measure} /> : ''}
             {state.features.selected
                 ? readOnly
-                    ? <FeatureDetails feature={state.features.selected} />
+                    ? <FeatureDetails
+                          feature={state.features.selected}
+                          profile={state.lineProfile}
+                      />
                     : <FeatureProperties
                           feature={state.features.selected}
                           folders={state.features.folders}
                           descendants={state.features.selectedDescendants}
+                          profile={state.lineProfile}
                       />
                 : state.inspected
-                    ? <ObjectProperties object={state.inspected} />
+                    ? <ObjectProperties object={state.inspected} profile={state.lineProfile} />
                     : ''
             }
           </div>
         </div>
         <SidebarElement>
           <SidebarSection controls={readOnly ? undefined : <NewFolderButton />} label="Features">
-            <FeatureTree state={state.features} />
+            <FeatureTree readOnly={readOnly} state={state.features} />
           </SidebarSection>
           <SidebarSection label="Layers" open={false}>
             <LayerList layers={state.layers} />

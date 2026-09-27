@@ -1,6 +1,12 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { Camera, projectE7Array, projectLatLngRect, projectS2LatLng } from 'js/map/camera';
+import {
+  Camera,
+  projectE7Array,
+  projectLatLngRect,
+  projectS2LatLng,
+  unprojectS2LatLng,
+} from 'js/map/camera';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
@@ -13,7 +19,14 @@ import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { FeatureStore } from './feature_store';
-import { DOUBLE_CLICK_MS, FEATURE_CLICKED, FEATURE_EDITED, FEATURE_HOVERED } from './events';
+import {
+  DOUBLE_CLICK_MS,
+  FEATURE_CLICKED,
+  FEATURE_CONTEXT_MENU,
+  FEATURE_EDITED,
+  FEATURE_HOVERED,
+  LineSpot,
+} from './events';
 import {
   DEFAULT_ICON,
   DEFAULT_ICON_SHRINK,
@@ -29,6 +42,7 @@ import {
 import {
   createHandleTexture,
   Handle,
+  HANDLE_COLOR,
   HANDLE_SIZE_PX,
   handleBytesNeeded,
   INSERT_HANDLE_SIZE_PX,
@@ -42,6 +56,9 @@ const CLICK_SLOP_PX = 3;
 const CASING_PX = 1;
 const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
 const HOVERED_CASING = 0xFFFFFF99 as RgbaU32;
+// Same as the measure tool's, see drawing_layer.ts
+const MARKER_RADIUS_PX = 6;
+const MARKER_STROKE = 0xFFFFFFFF as RgbaU32;
 const LABEL_FILL = 0x1A1A1AFF as RgbaU32;
 const LABEL_STROKE = 0xFFFFFFFF as RgbaU32;
 // FONT_SIZE is 28, so labels are 14px.
@@ -143,6 +160,9 @@ export class FeatureLayer extends Layer {
   // Only the pointer tool selects, drags, and edits, or else a drawing tool's clicks would also
   // grab whatever is under them.
   private interactive: boolean;
+  // Points stay draggable under the point tool, so that one placed in the wrong spot can be moved
+  // without switching tools.
+  private pointsDraggable: boolean;
   // The line showing its vertex handles, entered by double clicking it
   private editing: string|undefined;
   // The handle a click picked, which Delete removes
@@ -155,6 +175,8 @@ export class FeatureLayer extends Layer {
   private lastClick: {id: string; timeMs: number}|undefined;
   // In mercator, for culling handles to what is on screen
   private viewport: {low: Vec2; high: Vec2};
+  // The spot a line profile's pointer is over, in mercator
+  private marker: Vec2|undefined;
   // Glypher builds its atlas asynchronously and plans nothing for a grapheme it lacks, so labels
   // planned before the atlas holds them have to be planned again once it does.
   private labelsMissingGlyphs: boolean;
@@ -192,6 +214,7 @@ export class FeatureLayer extends Layer {
     };
     this.labelsMissingGlyphs = false;
     this.interactive = true;
+    this.pointsDraggable = false;
     this.editing = undefined;
     this.activeVertex = undefined;
     this.inserting = undefined;
@@ -199,6 +222,7 @@ export class FeatureLayer extends Layer {
     this.dragging = undefined;
     this.lastClick = undefined;
     this.viewport = {low: [-1, -1], high: [1, 1]};
+    this.marker = undefined;
     this.registerDisposer(() => {
       renderer.deleteBuffer(this.glLabels);
       renderer.deleteTexture(this.handleTexture);
@@ -237,6 +261,16 @@ export class FeatureLayer extends Layer {
     this.overlay.generation += 1;
   }
 
+  /** Marks a spot, which is what a line profile's pointer is over. */
+  setMarker(at: Vec2|undefined): void {
+    this.marker = at;
+    this.overlay.generation += 1;
+  }
+
+  setPointsDraggable(draggable: boolean): void {
+    this.pointsDraggable = draggable;
+  }
+
   setInteractive(interactive: boolean): void {
     this.interactive = interactive;
     if (!interactive) {
@@ -264,6 +298,11 @@ export class FeatureLayer extends Layer {
     }
 
     const at = projectS2LatLng(point);
+    if (contextual) {
+      this.contextClick(point, at, px, source);
+      return true;
+    }
+
     const editing = this.editingLine();
     const vertex = editing && this.vertexAt(editing.points, at);
     if (vertex !== undefined) {
@@ -324,8 +363,9 @@ export class FeatureLayer extends Layer {
     }
   }
 
+  // Without interactive nothing is being edited, so only a point drag can start.
   override dragStart(point: S2LatLng, px: [number, number], source: EventSource): boolean {
-    if (!this.interactive || this.store.isReadOnly()) {
+    if ((!this.interactive && !this.pointsDraggable) || this.store.isReadOnly()) {
       return false;
     }
 
@@ -534,6 +574,55 @@ export class FeatureLayer extends Layer {
     this.overlay.generation += 1;
   }
 
+  // Selects what was hit, so that the menu the viewer opens is plainly about it. A right click
+  // never counts toward a double click.
+  private contextClick(
+      point: S2LatLng, at: Vec2, px: [number, number], source: EventSource): void {
+    const editing = this.editingLine();
+    const vertex = editing && this.vertexAt(editing.points, at);
+    const hit = vertex !== undefined ? editing!.feature : this.hitTest(at);
+    let spot: LineSpot|undefined = undefined;
+    if (vertex !== undefined) {
+      spot = {kind: 'vertex', index: vertex, handle: true};
+    } else if (hit?.kind === 'line') {
+      spot = this.spotOn(this.projected.get(hit.id)!, at);
+    }
+
+    if (hit?.id !== this.editing) {
+      this.stopEditing();
+    }
+    this.lastClick = undefined;
+    source.trigger(FEATURE_CLICKED, {id: hit?.id});
+    source.trigger(FEATURE_CONTEXT_MENU, {
+      id: hit?.id,
+      spot,
+      latE7: Math.round(point.latDegrees() * 1e7),
+      lngE7: Math.round(point.lngDegrees() * 1e7),
+      px,
+    });
+  }
+
+  // Where on the line at is nearest. A spot at either end of a segment is that vertex, or else
+  // splitting there would put two vertices in the same place.
+  private spotOn(line: ProjectedLine, at: Vec2): LineSpot|undefined {
+    const nearest = nearestOnPolyline(line.points, at);
+    if (!nearest) {
+      return undefined;
+    } else if (nearest.t <= 0) {
+      return {kind: 'vertex', index: nearest.index - 1, handle: false};
+    } else if (nearest.t >= 1) {
+      return {kind: 'vertex', index: nearest.index, handle: false};
+    }
+
+    const ll = unprojectS2LatLng(nearest.at[0], nearest.at[1]);
+    return {
+      kind: 'segment',
+      index: nearest.index,
+      latE7: Math.round(ll.latDegrees() * 1e7),
+      lngE7: Math.round(ll.lngDegrees() * 1e7),
+    };
+  }
+
   private pointAt(at: Vec2): ProjectedPoint|undefined {
     const pixel = this.camera.inverseWorldRadius;
     for (const point of this.visiblePoints) {
@@ -564,28 +653,9 @@ export class FeatureLayer extends Layer {
   // The nearest spot on the edited line to at, if the pointer is over the line, and the index a
   // vertex inserted there takes.
   private insertAt(line: ProjectedLine, at: Vec2): {index: number; at: Vec2}|undefined {
-    const points = line.points;
-    let best = (lineRadius(line.feature) + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
-    let found = undefined;
-    for (let i = 1; i < points.length / 2; ++i) {
-      const ax = points[2 * i - 2];
-      const ay = points[2 * i - 1];
-      const dx = points[2 * i] - ax;
-      const dy = points[2 * i + 1] - ay;
-      const length2 = dx * dx + dy * dy;
-      const t =
-          length2 > 0
-              ? Math.max(0, Math.min(1, ((at[0] - ax) * dx + (at[1] - ay) * dy) / length2))
-              : 0;
-      const x = ax + t * dx;
-      const y = ay + t * dy;
-      const distance = Math.hypot(at[0] - x, at[1] - y);
-      if (distance <= best) {
-        best = distance;
-        found = {index: i, at: [x, y] as Vec2};
-      }
-    }
-    return found;
+    const radius = (lineRadius(line.feature) + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    const nearest = nearestOnPolyline(line.points, at);
+    return nearest && nearest.distance <= radius ? nearest : undefined;
   }
 
   private createPlan(byteLength: number): Plan {
@@ -763,9 +833,11 @@ export class FeatureLayer extends Layer {
     const hoveredId =
         this.hovered !== this.selected && !dragging ? this.hovered : undefined;
     const hoveredLine = this.visibleLines.find(l => l.feature.id === hoveredId);
+    const marker = this.marker;
     let needed =
         handleBytesNeeded(handles.length)
-            + (hoveredLine ? LineProgram.bytesNeeded(hoveredLine.points.length / 2) : 0);
+            + (hoveredLine ? LineProgram.bytesNeeded(hoveredLine.points.length / 2) : 0)
+            + (marker ? LineProgram.bytesNeeded(2) : 0);
     if (dragging && dragging.kind !== 'point') {
       needed += LineProgram.bytesNeeded(dragging.points.length / 2);
     }
@@ -788,6 +860,16 @@ export class FeatureLayer extends Layer {
           color, SELECTED_CASING, lineRadius(line) + 2, dragging.points, Z_DRAGGED, 'both');
     }
     batch.pushHandles(handles, Z_HANDLE, this.handleTexture);
+    if (marker) {
+      // A zero length segment, which the cap program draws as a circle
+      batch.push(
+          HANDLE_COLOR,
+          MARKER_STROKE,
+          MARKER_RADIUS_PX,
+          [marker[0], marker[1], marker[0], marker[1]],
+          Z_HANDLE,
+          'caps');
+    }
     batch.finish();
   }
 
@@ -1000,6 +1082,33 @@ function distanceToPolyline(points: Float64Array, at: Vec2, cutoff: number): num
     best = Math.min(best, Math.hypot(at[0] - ax - t * dx, at[1] - ay - t * dy));
   }
   return best;
+}
+
+// Returns the nearest spot on a polyline to at, with the index of the vertex ending its segment and
+// how far along that segment it is, from 0 to 1.
+function nearestOnPolyline(points: Float64Array, at: Vec2):
+    {index: number; t: number; at: Vec2; distance: number}|undefined {
+  let found = undefined;
+  let best = Infinity;
+  for (let i = 1; i < points.length / 2; ++i) {
+    const ax = points[2 * i - 2];
+    const ay = points[2 * i - 1];
+    const dx = points[2 * i] - ax;
+    const dy = points[2 * i + 1] - ay;
+    const length2 = dx * dx + dy * dy;
+    const t =
+        length2 > 0
+            ? Math.max(0, Math.min(1, ((at[0] - ax) * dx + (at[1] - ay) * dy) / length2))
+            : 0;
+    const x = ax + t * dx;
+    const y = ay + t * dy;
+    const distance = Math.hypot(at[0] - x, at[1] - y);
+    if (distance <= best) {
+      best = distance;
+      found = {index: i, t, at: [x, y] as Vec2, distance};
+    }
+  }
+  return found;
 }
 
 function lineRadius(line: EditableLine): number {

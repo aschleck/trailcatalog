@@ -77,3 +77,45 @@ function without<T extends Int32Array|BigInt64Array>(array: T, index: number): T
   result.set(array.subarray(index + 1) as any, index);
   return result;
 }
+
+/**
+ * Splits a line at one of its vertices, which both halves keep. The first half keeps the line's
+ * id and the second takes secondId. Returns undefined for an end, which would leave a half with a
+ * single vertex.
+ */
+export function splitLine(line: EditableLine, index: number, secondId: string):
+    [EditableLine, EditableLine]|undefined {
+  const count = line.latLngE7.length / 2;
+  if (index <= 0 || index >= count - 1) {
+    return undefined;
+  }
+
+  const name = line.data.name;
+  const half = (start: number, end: number, id: string, suffix: string): EditableLine => ({
+    ...line,
+    id,
+    version: id === line.id ? line.version : 0n,
+    data: name ? {...line.data, name: `${name} ${suffix}`} : {...line.data},
+    latLngE7: line.latLngE7.slice(2 * start, 2 * end),
+    elevationCentimeters: line.elevationCentimeters?.slice(start, end),
+    timeSeconds: line.timeSeconds?.slice(start, end),
+  });
+  return [half(0, index + 1, line.id, '(1)'), half(index, count, secondId, '(2)')];
+}
+
+/** Reverses a line's direction. Each vertex keeps its own elevation and time. */
+export function reverseLine(line: EditableLine): EditableLine {
+  const count = line.latLngE7.length / 2;
+  const latLngE7 = new Int32Array(line.latLngE7.length);
+  for (let i = 0; i < count; ++i) {
+    latLngE7[2 * i] = line.latLngE7[2 * (count - 1 - i)];
+    latLngE7[2 * i + 1] = line.latLngE7[2 * (count - 1 - i) + 1];
+  }
+  return {
+    ...line,
+    data: {...line.data},
+    latLngE7,
+    elevationCentimeters: line.elevationCentimeters?.slice().reverse(),
+    timeSeconds: line.timeSeconds?.slice().reverse(),
+  };
+}
