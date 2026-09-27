@@ -10,8 +10,10 @@ import {
   DEFAULT_WIDTH_PX,
   EditableFeature,
   EditableFolder,
+  isMarker,
 } from './features';
 import { PointMarker } from './icon_picker';
+import { DEFAULT_MARKER_WIDTH_PX } from './marker';
 import { formatDistance, formatHeight, measureLine, profileStats } from './measurements';
 import { LineProfile, LineProfileState } from './profile_chart';
 import { Schema, USER_COLLECTION_SCHEMA } from './schema';
@@ -247,7 +249,7 @@ function Row({dimmed, draggable, dropTarget, expanded, feature, hovered, selecte
                 + (feature.data.name ? '' : 'italic text-gray-500')
           }
       >
-        {feature.data.name || untitled(feature.kind)}
+        {feature.data.name || untitled(kindName(feature))}
       </span>
       <span
           ariaLabel={visible ? 'Hide' : 'Show'}
@@ -277,7 +279,7 @@ function FeatureIcon({feature}: {feature: EditableFeature}) {
     return (
       <svg className="h-4 shrink-0 w-4" viewBox="0 0 16 16">
         <path
-            d="M2 12 L6 6 L10 10 L14 4"
+            d={isMarker(feature) ? 'M2 11 C4 5 6 13 9 8 S12 4 14 6' : 'M2 12 L6 6 L10 10 L14 4'}
             fill="none"
             stroke={feature.data.stroke ?? DEFAULT_LINE_COLOR}
             strokeLinecap="round"
@@ -308,6 +310,7 @@ export function Properties({profile, subject}: {
 }) {
   const schema = subject.source === 'feature' ? USER_COLLECTION_SCHEMA : subject.object.schema;
   const kind = subject.source === 'feature' ? subject.feature.kind : subject.object.kind;
+  const name = subject.source === 'feature' ? kindName(subject.feature) : kind;
   const data: {[key: string]: boolean|number|string|undefined} =
       subject.source === 'feature' ? subject.feature.data : subject.object.data;
   const editing = subject.source === 'feature' ? subject.editing : undefined;
@@ -320,13 +323,13 @@ export function Properties({profile, subject}: {
   });
 
   return (
-    <PropertiesDialog title={`${editing ? 'Editing' : 'Viewing'} ${kind}`}>
+    <PropertiesDialog title={`${editing ? 'Editing' : 'Viewing'} ${name}`}>
       <div className="flex flex-col gap-2">
         {editing
             ? <Input
                   className="border border-gray-300 px-1 rounded"
                   forceValue={true}
-                  placeholder={untitled(kind)}
+                  placeholder={untitled(name)}
                   value={title !== undefined ? String(title) : ''}
                   unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
               />
@@ -339,7 +342,7 @@ export function Properties({profile, subject}: {
                   >
                     {`OpenStreetMap ${osm.type} ${osm.id}`}
                   </a>
-                : <div className="font-bold">{title ? String(title) : untitled(kind)}</div>
+                : <div className="font-bold">{title ? String(title) : untitled(name)}</div>
         }
         {editing && kind !== 'folder'
             ? <textarea
@@ -444,7 +447,10 @@ function StyleControls({feature, folders}: {
                 options={WIDTHS_PX.map(width => ({
                   label: `${width} px`,
                   value: String(width),
-                  selected: width === (feature.data.width_px ?? DEFAULT_WIDTH_PX),
+                  selected:
+                      width === (
+                          feature.data.width_px
+                              ?? (isMarker(feature) ? DEFAULT_MARKER_WIDTH_PX : DEFAULT_WIDTH_PX)),
                 }))}
                 unboundEvents={{corgi: [[CHANGED, 'widthChanged']]}}
             />
@@ -549,7 +555,9 @@ function Stats({feature, profile}: {
   feature: EditableFeature;
   profile: LineProfileState|undefined;
 }) {
-  if (feature.kind === 'line') {
+  if (feature.kind === 'line' && isMarker(feature)) {
+    return <div className="hidden" />;
+  } else if (feature.kind === 'line') {
     const stats = measureLine(feature.latLngE7, feature.elevationCentimeters);
     if (stats.elevation || profile?.status !== 'loaded') {
       return <LineStats lengthMeters={stats.lengthMeters} climb={stats.elevation} />;
@@ -583,8 +591,12 @@ export function LineStats({climb, lengthMeters}: {climb: Climb|undefined; length
   );
 }
 
-function untitled(kind: EditableFeature['kind']|'polygon'): string {
+function untitled(kind: string): string {
   return kind === 'polygon' ? 'Untitled area' : `Untitled ${kind}`;
+}
+
+function kindName(feature: EditableFeature): string {
+  return feature.kind === 'line' && isMarker(feature) ? 'drawing' : feature.kind;
 }
 
 /** Sorts folders ahead of everything else and names in the order a person would number them. */

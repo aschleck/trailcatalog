@@ -30,6 +30,9 @@ export function toGeoJson(features: EditableFeature[]): string {
         if (feature.data.width_px !== undefined) {
           properties['stroke-width'] = feature.data.width_px;
         }
+        if (feature.data.marker_zoom !== undefined) {
+          properties.markerZoom = feature.data.marker_zoom;
+        }
         geometry = {type: 'LineString', coordinates: lineCoordinates(feature)};
       } else {
         if (feature.data.fill !== undefined) {

@@ -65,6 +65,7 @@ import {
   LayerObject,
   LINE_DRAWN,
   LineSpot,
+  MARKER_DRAWN,
   OBJECT_OPENED,
   POINT_PLACED,
   Tool,
@@ -87,6 +88,7 @@ import {
   FeatureData,
   folderFromProto,
   importableIcon,
+  isMarker,
   lineFromProto,
   pointFromProto,
   snapshot,
@@ -117,6 +119,7 @@ import {
   profileStats,
   slopeMeters,
 } from './measurements';
+import { MarkerToolLayer } from './marker_tool_layer';
 import { MENU_CLASSES } from './menubar';
 import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
@@ -207,6 +210,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly measureLayer: DrawingLayer;
   private readonly terrainLayer: DrawingLayer;
   private readonly pointLayer: PointToolLayer;
+  private readonly markerLayer: MarkerToolLayer;
   private readonly skyboxLayer: SkyboxLayer;
   private readonly contours: Record<UnitSystem, MbtileLayer>;
   private readonly store: FeatureStore;
@@ -389,6 +393,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.registerDisposable(this.terrainLayer);
     this.pointLayer = new PointToolLayer();
     this.registerDisposable(this.pointLayer);
+    this.markerLayer = new MarkerToolLayer(camera, renderer);
+    this.registerDisposable(this.markerLayer);
 
     this.registerListener(window, 'keydown', e => {
       this.keyPressed(e);
@@ -755,6 +761,21 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Selects the new line, like onPointPlaced, so that the panel is open to name it.
   onLineDrawn(e: CorgiEvent<typeof LINE_DRAWN>): void {
     this.addLine(e.detail.latLngE7);
+  }
+
+  // Leaves the new stroke unselected, because the panel opening over the map after every stroke
+  // would get in the way of the next.
+  onMarkerDrawn(e: CorgiEvent<typeof MARKER_DRAWN>): void {
+    const line: EditableLine = {
+      kind: 'line',
+      id: crypto.randomUUID(),
+      version: 0n,
+      data: {marker_zoom: e.detail.zoom},
+      latLngE7: e.detail.latLngE7,
+      elevationCentimeters: undefined,
+      timeSeconds: undefined,
+    };
+    this.store.apply([{id: line.id, before: undefined, after: line}]);
   }
 
   // Selects the new point so that the panel is open to name it, and stays in the tool so that
@@ -1518,6 +1539,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.measureLayer.setActive(false);
     this.terrainLayer.setActive(false);
     this.pointLayer.setActive(tool === 'point');
+    this.markerLayer.setActive(tool === 'marker');
     this.featureLayer.setInteractive(tool === 'pointer');
     this.featureLayer.setPointsDraggable(tool === 'point');
     // Refreshes the credits, because the measure layer's only count while it is active
@@ -1805,9 +1827,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Keeps the selected line's profile in step with its geometry. A line that carries elevations,
   // like an imported track, draws its own so that the chart agrees with the climb above it, and
-  // anything else samples the DEM. An inspected object's profile belongs to loadClimb.
+  // anything else samples the DEM. An inspected object's profile belongs to loadClimb, and a marker
+  // stroke has none because it marks up the map rather than following the ground.
   private lineProfileFor(live: EditableFeature|undefined): LineProfileState|undefined {
-    if (live?.kind !== 'line') {
+    if (live?.kind !== 'line' || isMarker(live)) {
       if (this.state.inspected?.kind === 'line') {
         return this.state.lineProfile;
       }
@@ -2228,7 +2251,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           if (fit) {
             this.fitCamera(featureLatLngDegrees(this.store.all()));
           }
-          if (readOnly && (this.state.tool === 'point' || this.state.tool === 'line')) {
+          const tool = this.state.tool;
+          if (readOnly && (tool === 'point' || tool === 'line' || tool === 'marker')) {
             this.setTool('pointer');
           }
         })
@@ -2549,6 +2573,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.mapController.setLayers(
         [
           this.pointLayer,
+          this.markerLayer,
           this.lineLayer,
           this.measureLayer,
           this.terrainLayer,

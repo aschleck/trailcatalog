@@ -10,7 +10,7 @@ import { Data, Line, Polygon } from './workers/collection_loader';
 export const DOUBLE_CLICK_MS = 400;
 
 /** What pointer tools are possible. */
-export type Tool = 'pointer'|'point'|'line'|'measure'|'terrain';
+export type Tool = 'pointer'|'point'|'line'|'marker'|'measure'|'terrain';
 
 export const FEATURE_CLICKED = declareEvent<{
   // Undefined when the click missed every feature
@@ -57,6 +57,11 @@ export const HOVER_CHANGED = declareEvent<{
 export const LINE_DRAWN = declareEvent<{
   latLngE7: Int32Array;
 }>('line_drawn');
+
+export const MARKER_DRAWN = declareEvent<{
+  latLngE7: Int32Array;
+  zoom: number;
+}>('marker_drawn');
 
 /** An object a map layer drew from a collection. */
 export type LayerObject =

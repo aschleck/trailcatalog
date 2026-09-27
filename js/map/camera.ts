@@ -405,7 +405,7 @@ function createProjection(
   };
 }
 
-function worldRadiusAt(zoom: number): number {
+export function worldRadiusAt(zoom: number): number {
   return 256 * Math.pow(2, zoom - 1);
 }
 

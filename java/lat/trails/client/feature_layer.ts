@@ -6,6 +6,7 @@ import {
   projectLatLngRect,
   projectS2LatLng,
   unprojectS2LatLng,
+  worldRadiusAt,
 } from 'js/map/camera';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
@@ -18,6 +19,7 @@ import { Renderer } from 'js/map/rendering/renderer';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
+import { toE7Array } from './drawing_layer';
 import { FeatureStore } from './feature_store';
 import {
   DOUBLE_CLICK_MS,
@@ -36,6 +38,7 @@ import {
   EditableFeature,
   EditableLine,
   EditablePoint,
+  isMarker,
   pointIcon,
   snapshot,
 } from './features';
@@ -49,6 +52,7 @@ import {
   planHandles,
 } from './handles';
 import { insertVertex, moveVertex, removeVertex } from './line_edits';
+import { DEFAULT_MARKER_WIDTH_PX, MarkerOutline, outlineMarker, pushMarker } from './marker';
 
 // How far past a feature's drawn edge a click still lands on it
 const CLICK_SLOP_PX = 3;
@@ -102,6 +106,8 @@ interface ProjectedLine {
   points: Float64Array;
   // The line simplified for its label at an integer zoom, and the vertices to try starting it at
   label: {zoom: number; points: Float64Array; anchors: number[]}|undefined;
+  // Set on a marker stroke, as of the size and zoom it was outlined at
+  marker: {widthPx: number; zoom: number; outline: MarkerOutline}|undefined;
 }
 
 interface ProjectedPoint {
@@ -113,7 +119,9 @@ interface ProjectedPoint {
 // moved, or inserted where the insert marker was, which becomes the edit when the drag ends.
 type Drag =
     {kind: 'point'; point: EditablePoint; at: Vec2}
-    |{kind: 'vertex'|'insert'; line: ProjectedLine; index: number; points: Float64Array};
+    |{kind: 'vertex'|'insert'; line: ProjectedLine; index: number; points: Float64Array}
+    // A marker stroke moves whole, by how far the pointer has come from where it was pressed.
+    |{kind: 'marker'; line: ProjectedLine; from: Vec2; by: Vec2};
 
 // Geometry in one buffer and the drawables that read it, replanned when generation moves past
 // planned.
@@ -145,6 +153,10 @@ export class FeatureLayer extends Layer {
   // The dragged feature and the handles of the line being edited, which change on every pointer
   // move and would otherwise replan every line each time
   private readonly overlay: Plan;
+  // Marker strokes scale with the map but LineProgram radii are in pixels, so these replan on
+  // every zoom.
+  private readonly markers: Plan;
+  private markersZoom: number;
   private readonly glLabels: WebGLBuffer;
   private readonly handleTexture: WebGLTexture;
   private labels: ArrayBuffer;
@@ -201,6 +213,9 @@ export class FeatureLayer extends Layer {
     this.geometry = this.createPlan(128 * 1024);
     // A few hundred handles
     this.overlay = this.createPlan(16 * 1024);
+    // A few dozen strokes
+    this.markers = this.createPlan(64 * 1024);
+    this.markersZoom = -1;
     this.glLabels = renderer.createDataBuffer(16 * 1024);
     this.handleTexture = createHandleTexture(renderer);
     this.labels = new ArrayBuffer(16 * 1024);
@@ -250,6 +265,7 @@ export class FeatureLayer extends Layer {
       this.stopEditing();
     }
     this.geometry.generation += 1;
+    this.markers.generation += 1;
   }
 
   setHovered(id: string|undefined): void {
@@ -259,6 +275,7 @@ export class FeatureLayer extends Layer {
 
     this.hovered = id;
     this.overlay.generation += 1;
+    this.markers.generation += 1;
   }
 
   /** Marks a spot, which is what a line profile's pointer is over. */
@@ -315,6 +332,7 @@ export class FeatureLayer extends Layer {
     const now = performance.now();
     const doubled =
         hit?.kind === 'line'
+            && !isMarker(hit)
             && this.lastClick?.id === hit.id
             && now - this.lastClick.timeMs < DOUBLE_CLICK_MS;
     if (doubled && !this.store.isReadOnly()) {
@@ -400,6 +418,14 @@ export class FeatureLayer extends Layer {
       this.startDrag({kind: 'point', point: hit.feature, at: hit.at});
       return true;
     }
+
+    const line = this.interactive ? this.hitTest(at) : undefined;
+    const stroke =
+        line?.kind === 'line' && isMarker(line) ? this.projected.get(line.id) : undefined;
+    if (stroke) {
+      this.startDrag({kind: 'marker', line: stroke, from: at, by: [0, 0]});
+      return true;
+    }
     return false;
   }
 
@@ -412,6 +438,9 @@ export class FeatureLayer extends Layer {
     const at = projectS2LatLng(point);
     if (dragging.kind === 'point') {
       dragging.at = at;
+    } else if (dragging.kind === 'marker') {
+      dragging.by = [at[0] - dragging.from[0], at[1] - dragging.from[1]];
+      this.markers.generation += 1;
     } else {
       dragging.points[2 * dragging.index] = at[0];
       dragging.points[2 * dragging.index + 1] = at[1];
@@ -424,6 +453,7 @@ export class FeatureLayer extends Layer {
     this.dragging = undefined;
     this.geometry.generation += 1;
     this.overlay.generation += 1;
+    this.markers.generation += 1;
     if (!dragging || !moved) {
       // An insert pressed and let go without moving was never a vertex.
       if (dragging?.kind === 'insert') {
@@ -440,6 +470,14 @@ export class FeatureLayer extends Layer {
       const after = {...snapshot(dragging.point), latE7, lngE7, elevationCentimeters: undefined};
       source.trigger(FEATURE_EDITED, {before, after});
       source.trigger(FEATURE_CLICKED, {id: dragging.point.id});
+    } else if (dragging.kind === 'marker') {
+      const line = dragging.line;
+      const after = {
+        ...snapshot(line.feature),
+        latLngE7: toE7Array(translate(line.points, dragging.by)),
+      };
+      source.trigger(FEATURE_EDITED, {before: snapshot(line.feature), after});
+      source.trigger(FEATURE_CLICKED, {id: line.feature.id});
     } else {
       const line = dragging.line.feature;
       const after =
@@ -486,7 +524,10 @@ export class FeatureLayer extends Layer {
     let best: EditableFeature|undefined = undefined;
     let bestDistance = Infinity;
     for (const line of this.visibleLines) {
-      const radius = (lineRadius(line.feature) + CLICK_SLOP_PX) * pixel;
+      const radius =
+          line.marker
+              ? line.marker.outline.maxRadius + CLICK_SLOP_PX * pixel
+              : (lineRadius(line.feature) + CLICK_SLOP_PX) * pixel;
       const distance = distanceToPolyline(line.points, at, radius);
       if (distance <= radius && distance < bestDistance) {
         best = line.feature;
@@ -499,6 +540,7 @@ export class FeatureLayer extends Layer {
   override hasNewData(): boolean {
     return this.geometry.generation !== this.geometry.planned
         || this.overlay.generation !== this.overlay.planned
+        || this.markers.generation !== this.markers.planned
         || this.labelsMissingGlyphs;
   }
 
@@ -510,6 +552,11 @@ export class FeatureLayer extends Layer {
     if (this.overlay.generation !== this.overlay.planned) {
       this.planOverlay();
       this.overlay.planned = this.overlay.generation;
+    }
+    if (this.markers.generation !== this.markers.planned || this.markersZoom !== zoom) {
+      this.planMarkers();
+      this.markers.planned = this.markers.generation;
+      this.markersZoom = zoom;
     }
     // Curved labels are laid out in pixels along mercator paths, so they follow the zoom.
     const draggedAt = this.dragging?.kind === 'point' ? this.dragging.at : undefined;
@@ -532,6 +579,7 @@ export class FeatureLayer extends Layer {
 
     planner.add(this.geometry.drawables);
     planner.add(this.overlay.drawables);
+    planner.add(this.markers.drawables);
     planner.add(this.labelDrawables);
   }
 
@@ -572,6 +620,7 @@ export class FeatureLayer extends Layer {
     this.dragging = dragging;
     this.geometry.generation += 1;
     this.overlay.generation += 1;
+    this.markers.generation += 1;
   }
 
   // Reports what was hit and where, which the viewer selects so that its menu is plainly about
@@ -584,7 +633,7 @@ export class FeatureLayer extends Layer {
     let spot: LineSpot|undefined = undefined;
     if (vertex !== undefined) {
       spot = {kind: 'vertex', index: vertex, handle: true};
-    } else if (hit?.kind === 'line') {
+    } else if (hit?.kind === 'line' && !isMarker(hit)) {
       spot = this.spotOn(this.projected.get(hit.id)!, at);
     }
 
@@ -680,10 +729,17 @@ export class FeatureLayer extends Layer {
       let projected = this.projected.get(line.id);
       if (!projected || projected.latLngE7 !== line.latLngE7) {
         const points = projectE7Array(line.latLngE7);
-        projected = {feature: line, latLngE7: line.latLngE7, points, label: undefined};
+        projected = {
+          feature: line,
+          latLngE7: line.latLngE7,
+          points,
+          label: undefined,
+          marker: undefined,
+        };
         this.projected.set(line.id, projected);
       }
       projected.feature = line;
+      projected.marker = outlineOf(projected);
       if (this.isVisible(line)) {
         this.visibleLines.push(projected);
       }
@@ -707,6 +763,7 @@ export class FeatureLayer extends Layer {
     this.publish();
     this.geometry.generation += 1;
     this.overlay.generation += 1;
+    this.markers.generation += 1;
   }
 
   // Puts visible lines into the index so that drawing snaps onto them and routes along them. A
@@ -715,11 +772,13 @@ export class FeatureLayer extends Layer {
   // DRAWN_TOLERANCE.
   //
   // Each line is its own group, keyed by its id, so that editing one line does not reproject
-  // every other.
+  // every other. Marker strokes are left out because a scribble is nothing to route along.
   private publish(): void {
     const wanted = new Map<string, ProjectedLine>();
     for (const line of this.visibleLines) {
-      wanted.set(line.feature.id, line);
+      if (!line.marker) {
+        wanted.set(line.feature.id, line);
+      }
     }
 
     const stale = [];
@@ -755,7 +814,7 @@ export class FeatureLayer extends Layer {
   private planGeometry(): void {
     const dragged =
         this.dragging?.kind === 'point' ? this.dragging.point.id : this.dragging?.line.feature.id;
-    const lines = this.visibleLines.filter(l => l.feature.id !== dragged);
+    const lines = this.visibleLines.filter(l => l.feature.id !== dragged && !l.marker);
     const selectedLine = lines.find(l => l.feature.id === this.selected);
     let needed = 0;
     for (const line of lines) {
@@ -786,8 +845,9 @@ export class FeatureLayer extends Layer {
   private planOverlay(): void {
     const dragging = this.dragging;
     const editing = this.editingLine();
-    const linePoints =
-        dragging && dragging.kind !== 'point' ? dragging.points : editing?.points;
+    const vertexDrag =
+        dragging?.kind === 'vertex' || dragging?.kind === 'insert' ? dragging : undefined;
+    const linePoints = vertexDrag ? vertexDrag.points : editing?.points;
 
     // The same squares the drawing tools place, hollow except for the vertex picked last
     const handles: Handle[] = [];
@@ -831,14 +891,14 @@ export class FeatureLayer extends Layer {
     // The selected feature already has its highlight, and a dragged one is drawn below.
     const hoveredId =
         this.hovered !== this.selected && !dragging ? this.hovered : undefined;
-    const hoveredLine = this.visibleLines.find(l => l.feature.id === hoveredId);
+    const hoveredLine = this.visibleLines.find(l => l.feature.id === hoveredId && !l.marker);
     const marker = this.marker;
     let needed =
         handleBytesNeeded(handles.length)
             + (hoveredLine ? LineProgram.bytesNeeded(hoveredLine.points.length / 2) : 0)
             + (marker ? LineProgram.bytesNeeded(2) : 0);
-    if (dragging && dragging.kind !== 'point') {
-      needed += LineProgram.bytesNeeded(dragging.points.length / 2);
+    if (vertexDrag) {
+      needed += LineProgram.bytesNeeded(vertexDrag.points.length / 2);
     }
 
     const batch = new ShapeBatch(this.overlay, needed, this.renderer);
@@ -852,11 +912,11 @@ export class FeatureLayer extends Layer {
           Z_SELECTED_LINE,
           'both');
     }
-    if (dragging && dragging.kind !== 'point') {
-      const line = dragging.line.feature;
+    if (vertexDrag) {
+      const line = vertexDrag.line.feature;
       const color = parseColor(line.data.stroke ?? DEFAULT_LINE_COLOR);
       batch.push(
-          color, SELECTED_CASING, lineRadius(line) + 2, dragging.points, Z_DRAGGED, 'both');
+          color, SELECTED_CASING, lineRadius(line) + 2, vertexDrag.points, Z_DRAGGED, 'both');
     }
     batch.pushHandles(handles, Z_HANDLE, this.handleTexture);
     if (marker) {
@@ -872,6 +932,34 @@ export class FeatureLayer extends Layer {
     batch.finish();
   }
 
+  private planMarkers(): void {
+    const dragging = this.dragging?.kind === 'marker' ? this.dragging : undefined;
+    const strokes = this.visibleLines.filter(l => l.marker);
+    let needed = 0;
+    for (const line of strokes) {
+      needed += LineProgram.bytesNeeded(line.marker!.outline.points.length / 2);
+    }
+
+    const worldRadius = this.camera.worldRadius;
+    const batch = new ShapeBatch(this.markers, needed, this.renderer);
+    for (const line of strokes) {
+      const outline = line.marker!.outline;
+      const id = line.feature.id;
+      const color = parseColor(line.feature.data.stroke ?? DEFAULT_LINE_COLOR);
+      if (id === dragging?.line.feature.id) {
+        const moved = {...outline, points: translate(outline.points, dragging.by)};
+        batch.pushMarker(color, SELECTED_CASING, moved, 2, worldRadius, Z_DRAGGED);
+      } else if (id === this.selected) {
+        batch.pushMarker(color, SELECTED_CASING, outline, 2, worldRadius, Z_SELECTED_LINE);
+      } else if (id === this.hovered) {
+        batch.pushMarker(color, HOVERED_CASING, outline, 2, worldRadius, Z_SELECTED_LINE);
+      } else {
+        batch.pushMarker(color, color, outline, 0, worldRadius, Z_LINE);
+      }
+    }
+    batch.finish();
+  }
+
   private planLabels(zoom: number): void {
     const labeled: Array<{graphemes: string[]; line?: ProjectedLine; point?: ProjectedPoint}> = [];
     const icons: Array<{graphemes: string[]; point: ProjectedPoint}> = [];
@@ -882,7 +970,7 @@ export class FeatureLayer extends Layer {
     let needed = 0;
     for (const line of this.visibleLines) {
       const name = line.feature.data.name;
-      if (name) {
+      if (name && !line.marker) {
         const graphemes = toGraphemes(name);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({graphemes, line});
@@ -1019,6 +1107,31 @@ class ShapeBatch {
     const result =
         LineProgram.push(
             fill, stroke, radius, /* stipple= */ false, points, this.plan.buffer, this.offset);
+    this.add(result, z, joins);
+  }
+
+  pushMarker(
+      fill: RgbaU32,
+      stroke: RgbaU32,
+      outline: MarkerOutline,
+      extraPx: number,
+      worldRadius: number,
+      z: number): void {
+    const result =
+        pushMarker(
+            fill, stroke, outline, extraPx, worldRadius, this.plan.buffer, this.offset);
+    this.add(result, z, 'both');
+  }
+
+  finish(): void {
+    if (this.offset > 0) {
+      this.renderer.uploadData(this.plan.buffer, this.offset, this.plan.glBuffer);
+    }
+    this.plan.drawables = this.drawables;
+  }
+
+  private add(
+      result: ReturnType<typeof LineProgram.push>, z: number, joins: 'line'|'caps'|'both'): void {
     this.offset += result.geometryByteLength;
     if (result.instanceCount === 0) {
       return;
@@ -1044,13 +1157,6 @@ class ShapeBatch {
     if (joins !== 'line') {
       this.drawables.push({...drawable, program: this.renderer.lineCapProgram});
     }
-  }
-
-  finish(): void {
-    if (this.offset > 0) {
-      this.renderer.uploadData(this.plan.buffer, this.offset, this.plan.glBuffer);
-    }
-    this.plan.drawables = this.drawables;
   }
 }
 
@@ -1108,6 +1214,30 @@ function nearestOnPolyline(points: Float64Array, at: Vec2):
     }
   }
   return found;
+}
+
+// Keeps the last outline while the stroke's width and zoom are unchanged, since a new latLngE7
+// makes a new ProjectedLine.
+function outlineOf(line: ProjectedLine): ProjectedLine['marker'] {
+  const zoom = line.feature.data.marker_zoom;
+  if (zoom === undefined) {
+    return undefined;
+  }
+
+  const widthPx = line.feature.data.width_px ?? DEFAULT_MARKER_WIDTH_PX;
+  if (line.marker?.widthPx === widthPx && line.marker.zoom === zoom) {
+    return line.marker;
+  }
+  return {widthPx, zoom, outline: outlineMarker(line.points, widthPx, 1 / worldRadiusAt(zoom))};
+}
+
+function translate(points: Float64Array, by: Vec2): Float64Array {
+  const moved = new Float64Array(points.length);
+  for (let i = 0; i < points.length; i += 2) {
+    moved[i] = points[i] + by[0];
+    moved[i + 1] = points[i + 1] + by[1];
+  }
+  return moved;
 }
 
 function lineRadius(line: EditableLine): number {

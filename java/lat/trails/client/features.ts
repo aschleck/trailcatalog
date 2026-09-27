@@ -17,6 +17,9 @@ export interface FeatureData {
   fill?: string;
   stroke?: string;
   width_px?: number;
+  // Set on a line drawn with the marker, which is the zoom it was drawn at. width_px is how wide
+  // the stroke is at that zoom, and it scales with the map.
+  marker_zoom?: number;
   [key: string]: boolean|number|string|undefined;
 }
 
@@ -44,6 +47,11 @@ export interface EditablePoint extends FeatureBase {
   latE7: number;
   lngE7: number;
   elevationCentimeters: number|undefined;
+}
+
+/** Whether a line is a marker stroke rather than a path. */
+export function isMarker(line: EditableLine): boolean {
+  return typeof line.data.marker_zoom === 'number';
 }
 
 export type EditableFeature = EditableFolder|EditableLine|EditablePoint;

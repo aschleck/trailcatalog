@@ -52,6 +52,17 @@ export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
               <circle cx="17" cy="4" r="1.5" />
             </ToolButton>
       }
+      {readOnly
+          ? ''
+          : <ToolButton active={tool === 'marker'} label="Draw freehand" tool="marker">
+              <path
+                  d="M3 14 C5 7 8 16 11 10 S15 4 17 7"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeWidth="2"
+              />
+            </ToolButton>
+      }
       <ToolButton active={tool === 'measure'} label="Measure" tool="measure">
         <MeasureIcon />
       </ToolButton>

@@ -156,6 +156,10 @@ function parseLine(
   if (typeof width === 'number' && width > 0) {
     data.width_px = width;
   }
+  const markerZoom = properties.markerZoom;
+  if (typeof markerZoom === 'number') {
+    data.marker_zoom = markerZoom;
+  }
 
   return {
     kind: 'line',

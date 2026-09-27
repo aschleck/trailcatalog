@@ -40,7 +40,8 @@ export class LineProgram extends Program<LineProgramData> {
   static push(
       colorFill: RgbaU32,
       colorStroke: RgbaU32,
-      radius: number,
+      // One for every segment, or one per segment
+      radius: number|ArrayLike<number>,
       stipple: Stipple,
       points: ArrayLike<number>,
       buffer: ArrayBuffer,
@@ -72,7 +73,7 @@ export class LineProgram extends Program<LineProgramData> {
       uint32s[vertexOffset + 4] = colorFill;
       uint32s[vertexOffset + 5] = colorStroke;
       floats[vertexOffset + 6] = distanceAlong;
-      floats[vertexOffset + 7] = radius;
+      floats[vertexOffset + 7] = typeof radius === 'number' ? radius : radius[i / 2];
       uint32s[vertexOffset + 8] = stipple === 'ticks' ? 2 : stipple ? 1 : 0;
 
       distanceAlong += Math.sqrt((xp - x) * (xp - x) + (yp - y) * (yp - y));

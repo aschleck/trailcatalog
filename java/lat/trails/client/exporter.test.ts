@@ -44,6 +44,12 @@ test('GeoJSON reads back as what was written', () => {
   expect(point).toEqual({...POINT, id: expect.any(String), version: 0n});
 });
 
+test('GeoJSON keeps a marker stroke a marker', () => {
+  const marker = {...LINE, data: {marker_zoom: 14.5, width_px: 4.5}};
+  const [line] = parseGeoJson(toGeoJson([marker]));
+  expect(line.data).toEqual({marker_zoom: 14.5, width_px: 4.5});
+});
+
 test('GPX reads back as what was written, less what GPX cannot hold', () => {
   const [point, line] = parseGpx(toGpx([FOLDER, LINE, POINT]));
   expect(point).toEqual({
