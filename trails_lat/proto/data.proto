@@ -9,8 +9,10 @@ service DataService {
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
   rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
+  rpc GetSharing(GetSharingRequest) returns (GetSharingResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
   rpc Save(SaveRequest) returns (SaveResponse);
+  rpc SetSharing(SetSharingRequest) returns (SetSharingResponse);
 }
 
 message CreateCollectionRequest {
@@ -39,10 +41,21 @@ message GetCurrentUserResponse {
   optional User user = 1;
 }
 
+message GetSharingRequest {
+  string collection_id = 1;
+}
+
+message GetSharingResponse {
+  Sharing sharing = 1;
+}
+
 message ListCollectionsRequest {}
 
 message ListCollectionsResponse {
+  // Owned by the caller
   repeated Collection collections = 1;
+  // Granted to the caller by email, not to anyone
+  repeated Collection shared = 2;
 }
 
 // Writes apply in order in one transaction, so a batch lands whole or not at all. Any stale
@@ -76,6 +89,38 @@ enum FeatureKind {
   FEATURE_KIND_POINT = 3;
 }
 
+// Only the owner may set sharing.
+message SetSharingRequest {
+  string collection_id = 1;
+  // Replaces everything the collection was shared with. The owner's own email is skipped.
+  Sharing sharing = 2;
+}
+
+message SetSharingResponse {
+  // Unset when any email is unknown, because then nothing changed.
+  optional Sharing sharing = 1;
+  // Emails in the request with no trails.lat account
+  repeated string unknown_emails = 2;
+}
+
+message Sharing {
+  bool anyone_can_view = 1;
+  repeated Grant grants = 2;
+}
+
+message Grant {
+  string email = 1;
+  // ROLE_READ or ROLE_WRITE
+  Role role = 2;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_READ = 1;
+  ROLE_WRITE = 2;
+  ROLE_OWNER = 3;
+}
+
 message SaveResponse {
   // Stamped onto everything the batch wrote. Send it back on the next edit of any of them.
   int64 version = 1;
@@ -86,6 +131,8 @@ message Collection {
   string name = 2;
   // Bumped once per write, and stamped onto whatever the write touched.
   int64 version = 3;
+  // The caller's
+  Role role = 4;
 }
 
 message Folder {

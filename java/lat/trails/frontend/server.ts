@@ -24,7 +24,7 @@ const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
 const DEBUG = process.env.DEBUG !== 'false';
 
 // Keep in sync with common/Database.kt#SCHEMA.
-const SCHEMA = 'migration_4_points_and_folders';
+const SCHEMA = 'migration_5_sharing';
 
 // A GPX point costs about 45 bytes of JSON across its lat, lng, elevation, and time, so this fits
 // saving a track of a million and a half points. Keep in sync with nginx.conf and the trails.lat

@@ -6,10 +6,14 @@ import {
   GetCollectionResponseSchema,
   GetCurrentUserRequestSchema,
   GetCurrentUserResponseSchema,
+  GetSharingRequestSchema,
+  GetSharingResponseSchema,
   ListCollectionsRequestSchema,
   ListCollectionsResponseSchema,
   SaveRequestSchema,
   SaveResponseSchema,
+  SetSharingRequestSchema,
+  SetSharingResponseSchema,
 } from 'trails_lat/proto/data_pb';
 
 export const BACKENDS = {
@@ -19,8 +23,10 @@ export const BACKENDS = {
       createCollection: [CreateCollectionRequestSchema, CreateCollectionResponseSchema],
       getCollection: [GetCollectionRequestSchema, GetCollectionResponseSchema],
       getCurrentUser: [GetCurrentUserRequestSchema, GetCurrentUserResponseSchema],
+      getSharing: [GetSharingRequestSchema, GetSharingResponseSchema],
       listCollections: [ListCollectionsRequestSchema, ListCollectionsResponseSchema],
       save: [SaveRequestSchema, SaveResponseSchema],
+      setSharing: [SetSharingRequestSchema, SetSharingResponseSchema],
     },
   },
 } as const;

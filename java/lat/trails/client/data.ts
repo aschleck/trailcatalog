@@ -15,11 +15,13 @@ import { BACKENDS } from './backends';
 const WRITES: string[] = [
   'lat.trails.DataService/CreateCollection',
   'lat.trails.DataService/Save',
+  'lat.trails.DataService/SetSharing',
 ] satisfies Array<keyof FqMethods<typeof BACKENDS>>;
 
 // Read RPCs that are invalidated when a write comes through
 const READS_A_WRITE_CHANGES: string[] = [
   'lat.trails.DataService/GetCollection',
+  'lat.trails.DataService/GetSharing',
   'lat.trails.DataService/ListCollections',
 ] satisfies Array<keyof FqMethods<typeof BACKENDS>>;
 

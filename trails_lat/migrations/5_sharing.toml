@@ -1,0 +1,78 @@
+[[actions]]
+type = "add_column"
+table = "users"
+# display_name has held the Google email so far. The anonymous user has no email.
+up = "CASE WHEN oidc_issuer = 'https://trails.lat' THEN NULL ELSE LOWER(display_name) END"
+
+  # Lowercased, so that sharing with an address matches however it was typed.
+  [actions.column]
+  name = "email"
+  nullable = true
+  type = "TEXT"
+
+[[actions]]
+type = "add_index"
+table = "users"
+
+  [actions.index]
+  name = "users_by_email"
+  columns = ["email"]
+  unique = true
+
+[[actions]]
+type = "create_table"
+name = "collection_grants"
+primary_key = ["collection_id", "grantee_id"]
+
+  [[actions.columns]]
+  name = "collection_id"
+  nullable = false
+  type = "UUID"
+
+  # The anonymous user means anyone, signed in or not.
+  [[actions.columns]]
+  name = "grantee_id"
+  nullable = false
+  type = "UUID"
+
+  # read or write. The creator owns the collection and has no row.
+  [[actions.columns]]
+  name = "role"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.foreign_keys]]
+  columns = ["collection_id"]
+  referenced_table = "collections"
+  referenced_columns = ["id"]
+
+  [[actions.foreign_keys]]
+  columns = ["grantee_id"]
+  referenced_table = "users"
+  referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "collection_grants"
+
+  # For listing what is shared with a user
+  [actions.index]
+  name = "collection_grants_by_grantee_id"
+  columns = ["grantee_id"]
+
+[[actions]]
+type = "custom"
+
+# Anyone may view but never write, whatever the API is asked to store.
+start = """
+  ALTER TABLE collection_grants
+      ADD CONSTRAINT collection_grants_role CHECK (role IN ('read', 'write')),
+      ADD CONSTRAINT collection_grants_anyone_reads CHECK (
+          grantee_id <> '00000000-0000-0000-0000-000000000000' OR role = 'read');
+"""
+
+abort = """
+  ALTER TABLE collection_grants
+      DROP CONSTRAINT collection_grants_role,
+      DROP CONSTRAINT collection_grants_anyone_reads;
+"""

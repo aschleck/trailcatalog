@@ -32,6 +32,7 @@ import {
   GetCollectionResponse,
   GetCurrentUserResponse,
   ListCollectionsResponse,
+  Role,
   SaveResponse,
 } from 'trails_lat/proto/data_pb';
 
@@ -75,6 +76,7 @@ import { PointToolLayer } from './point_tool_layer';
 import { pathLengthMeters, profileSamples, ProfileSamples, profileStats } from './measurements';
 import { MENU_CLASSES } from './menubar';
 import { SaveEntry, SaveQueue } from './save_queue';
+import { ShareDialog } from './share_dialog';
 
 const MAPTERHORN_COPYRIGHT = {
   long: 'Mapterhorn',
@@ -951,25 +953,42 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.newCollection();
         },
       }];
-      if (response.collections.length > 0) {
-        items.push({
-          kind: 'menu',
-          label: 'Open',
-          items: response.collections.map(collection => ({
-            kind: 'menu_item' as const,
-            label: collection.name,
-            action: () => {
-              this.openCollection(collection);
-            },
-          })),
-        });
-      } else {
-        items.push({kind: 'menu_item', label: 'Open', disabled: true, action: () => {}});
+      for (const [label, collections] of [
+        ['Open', response.collections],
+        ['Open shared', response.shared],
+      ] as const) {
+        if (collections.length > 0) {
+          items.push({
+            kind: 'menu',
+            label,
+            items: collections.map(collection => ({
+              kind: 'menu_item' as const,
+              label: collection.name,
+              action: () => {
+                this.openCollection(collection);
+              },
+            })),
+          });
+        } else if (label === 'Open') {
+          items.push({kind: 'menu_item', label, disabled: true, action: () => {}});
+        }
       }
+      const open = this.state.collection;
+      items.push({
+        kind: 'menu_item',
+        label: 'Share',
+        disabled: open?.role !== Role.OWNER,
+        action: () => {
+          if (open) {
+            this.dialog.display(ShareDialog({collection: open})).catch(() => {});
+          }
+        },
+      });
       items.push({kind: 'divider'});
       items.push({
         kind: 'menu_item',
         label: 'Import',
+        disabled: this.store.isReadOnly(),
         action: () => {
           this.importFiles();
         },
@@ -1325,7 +1344,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private newCollection(): void {
     this.saves.clear();
     this.select(undefined);
-    this.store.reset([]);
+    this.store.reset([], /* readOnly= */ false);
     this.updateState({
       ...this.state,
       collection: undefined,
@@ -1353,11 +1372,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ...this.state,
             collection: response.collection,
           });
+          const readOnly = response.collection?.role === Role.READ;
           this.store.reset([
             ...response.folders.map(folderFromProto),
             ...response.lines.map(lineFromProto),
             ...response.points.map(pointFromProto),
-          ]);
+          ], readOnly);
+          if (readOnly && (this.state.tool === 'point' || this.state.tool === 'line')) {
+            this.setTool('pointer');
+          }
         })
         .catch(e => {
           console.error(e);

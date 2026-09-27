@@ -278,7 +278,7 @@ export class FeatureLayer extends Layer {
         hit?.kind === 'line'
             && this.lastClick?.id === hit.id
             && now - this.lastClick.timeMs < DOUBLE_CLICK_MS;
-    if (doubled) {
+    if (doubled && !this.store.isReadOnly()) {
       this.startEditing(hit.id);
     } else if (hit?.id !== this.editing) {
       this.stopEditing();
@@ -325,7 +325,7 @@ export class FeatureLayer extends Layer {
   }
 
   override dragStart(point: S2LatLng, px: [number, number], source: EventSource): boolean {
-    if (!this.interactive) {
+    if (!this.interactive || this.store.isReadOnly()) {
       return false;
     }
 

@@ -49,7 +49,7 @@ test('undoes a folder delete folder first and redoes it children first', async (
   const {saved, store} = setUp();
   const folder = folderOf('f');
   const child = point('c', {folder_id: 'f'});
-  store.reset([folder, child]);
+  store.reset([folder, child], /* readOnly= */ false);
 
   store.apply(
       [...store.descendants('f'), folder]
@@ -67,10 +67,25 @@ test('undoes a folder delete folder first and redoes it children first', async (
   ]);
 });
 
+test('drops edits to a read only collection', async () => {
+  const {saved, store} = setUp();
+  const a = point('a', {name: 'before'});
+  store.reset([a], /* readOnly= */ true);
+
+  store.apply([{id: 'a', before: snapshot(a), after: {...snapshot(a), data: {name: 'after'}}}]);
+  store.apply([create(point('b', {}))]);
+  store.undo();
+  await settle();
+
+  expect(store.get('a')?.data.name).toBe('before');
+  expect(store.get('b')).toBeUndefined();
+  expect(saved).toEqual([]);
+});
+
 test('merges edits that share a key into one undo', () => {
   const {store} = setUp();
   const a = point('a', {name: ''});
-  store.reset([a]);
+  store.reset([a], /* readOnly= */ false);
 
   for (const name of ['L', 'Le', 'Les']) {
     const live = store.get('a')!;
@@ -96,7 +111,7 @@ test('drops the redo stack on a new edit', () => {
 test('puts a feature whose folder is gone at the root', () => {
   const {store} = setUp();
   const orphan = point('a', {folder_id: 'missing'});
-  store.reset([orphan]);
+  store.reset([orphan], /* readOnly= */ false);
 
   expect(store.children(undefined)).toEqual([orphan]);
 });
