@@ -116,8 +116,8 @@ export function OverviewElement(
         <MenubarItem label="File" menu="file" onClick="fileMenuClicked" />
         <MenubarItem label="View" menu="view" onClick="viewMenuClicked" />
       </Menubar>
-      <div className="flex grow min-h-0">
-        <div className="grow min-w-0 relative">
+      <div className="flex flex-col grow min-h-0 md:flex-row">
+        <div className="grow min-h-0 min-w-0 relative">
           <MapElement
               camera={camera}
               ref="map"
@@ -143,18 +143,27 @@ export function OverviewElement(
                 </div>
               : ''
           }
-          {/* Spans the map's height so a tall dialog scrolls, and passes clicks to the map. */}
+          {/*
+            Spans the map's height so a tall dialog scrolls, and passes clicks to the map. On a
+            narrow screen it spans the width instead and sits in the bottom part, below the
+            toolbar. z-30 puts it over the map's copyright notice, which is z-20.
+          */}
           <div className="
               absolute
               bottom-2
               flex
               flex-col
               gap-2
+              justify-end
+              left-2
+              md:justify-start
+              md:left-auto
+              md:top-2
+              md:w-80
               pointer-events-none
               right-2
-              top-2
-              w-80
-              z-10
+              top-[40%]
+              z-30
           ">
             {state.tool === 'measure' || state.tool === 'terrain'
                 ? <MeasurePanel

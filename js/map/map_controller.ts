@@ -128,7 +128,15 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.screenArea = new DOMRect();
     this.nextRender = RenderType.CameraChange;
 
-    this.registerListener(window, 'resize', () => this.resize());
+    // The layout resizes the map without resizing the window, such as when the sidebar under it
+    // opens.
+    const resizeObserver = new ResizeObserver(() => {
+      this.resize();
+    });
+    resizeObserver.observe(checkExists(this.canvas.parentElement));
+    this.registerDisposer(() => {
+      resizeObserver.disconnect();
+    });
     this.resize();
     this.setCamera(response.args.camera ?? {lat: 46.859369, lng: -121.747888, zoom: 12});
 
