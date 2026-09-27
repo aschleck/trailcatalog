@@ -209,11 +209,11 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
-        // To render transparent polygons prettily we depend on the depth buffer getting their z
-        // precisely correct. However, around the edges of the visible globe the precision of the
-        // depth buffer becomes insufficient and we get wonky fighting results. So we compromise by
-        // using the calculated depth on the edges and the exact z layering elsewhere.
-        gl_Position.z = z * (gl_Position.z > -0.03 ? gl_Position.z : sign(gl_Position.z)) + (1. - z);
+        // Depth is the layer alone so polygons in one layer paint in draw order and transparent ones
+        // blend prettily. Geometric depth would sort land and water by how far their flat triangles
+        // sag from the globe, which tears land out near the limb. fragBehindHorizon culls the back
+        // of the globe instead.
+        gl_Position.z = 1. - 2. * z;
 
         fragBehindHorizon = behindHorizon;
 
