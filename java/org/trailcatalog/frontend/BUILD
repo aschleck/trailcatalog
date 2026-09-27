@@ -6,7 +6,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary")
 js_binary(
     name = "runner",
     data = [
-        ":frontend.js",
+        ":frontend",
     ],
     entry_point = "frontend.js",
 )

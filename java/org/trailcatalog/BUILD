@@ -23,8 +23,7 @@ pkg_tar(
     srcs = [
         ":api_server_deploy.jar",
         ":static_data",
-        "//java/org/trailcatalog/frontend:frontend.js",
-        "//java/org/trailcatalog/frontend:frontend.js.map",
+        "//java/org/trailcatalog/frontend",
         "//js/s2viewer:s2_pkg",
     ],
     package_dir = "app",

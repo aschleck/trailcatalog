@@ -19,8 +19,7 @@ pkg_tar(
     srcs = [
         ":api_server_deploy.jar",
         ":static_data",
-        "//java/lat/trails/frontend:frontend.js",
-        "//java/lat/trails/frontend:frontend.js.map",
+        "//java/lat/trails/frontend",
     ],
     package_dir = "app",
     stamp = 1,
