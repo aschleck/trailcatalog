@@ -17,7 +17,10 @@ private const val HEADER_BYTES = 127
 // Writes PMTiles v3 archives from the spec rather than from the reader, so the two have to agree
 // for a test to pass.
 // https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md
-class Archive(private val maxZoom: Int, private val tileType: Int = TILE_TYPE_WEBP) {
+class Archive(
+    private val maxZoom: Int,
+    private val tileType: Int = TILE_TYPE_WEBP,
+    private val minZoom: Int = 0) {
 
   private val tiles = TreeMap<Long, ByteArray>()
 
@@ -66,7 +69,7 @@ class Archive(private val maxZoom: Int, private val tileType: Int = TILE_TYPE_WE
     header.put(97, COMPRESSION_GZIP.toByte())
     header.put(98, COMPRESSION_NONE.toByte())
     header.put(99, tileType.toByte())
-    header.put(100, 0.toByte())
+    header.put(100, minZoom.toByte())
     header.put(101, maxZoom.toByte())
 
     val out = ByteArrayOutputStream()

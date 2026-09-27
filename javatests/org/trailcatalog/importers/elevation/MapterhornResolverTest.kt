@@ -7,7 +7,7 @@ import org.trailcatalog.importers.elevation.pmtiles.TILE_TYPE_PNG
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
-import kotlin.io.path.createTempFile
+import kotlin.io.path.createTempDirectory
 import kotlin.math.PI
 import kotlin.math.atan
 import kotlin.math.roundToInt
@@ -80,19 +80,59 @@ class MapterhornResolverTest {
     }
   }
 
+  @Test
+  fun testQueryPrefersARegionalArchive() {
+    resolverOf(maxZoom = 1, regional = true).use {
+      assertThat(it.query(pixelCenter(100, 100, worldPixels = 2 * TILE_SIZE))).isEqualTo(1000f)
+    }
+  }
+
+  @Test
+  fun testQueryFallsBackToThePlanetInAHoleInARegion() {
+    resolverOf(maxZoom = 1, regional = true).use {
+      assertThat(it.query(pixelCenter(384, 384, worldPixels = 2 * TILE_SIZE)))
+          .isWithin(0.01f)
+          .of(heightAt(384, 384))
+    }
+  }
+
+  @Test
+  fun testQueryFallsBackToThePlanetOutsideAnyRegion() {
+    resolverOf(maxZoom = 1, regional = true).use {
+      // Every planet tile is the same image, so world pixel 700 is pixel 188 of its tile.
+      assertThat(it.query(pixelCenter(700, 100, worldPixels = 2 * TILE_SIZE)))
+          .isWithin(0.01f)
+          .of(heightAt(700 - TILE_SIZE, 100))
+    }
+  }
+
   // Mapterhorn ships WebP, but the WebP plugin only carries x86 natives and PNG is lossless all the
   // same, so the tiles here are PNG.
   private fun resolverOf(
       maxZoom: Int,
+      regional: Boolean = false,
       heights: (x: Int, y: Int) -> Float = ::heightAt): MapterhornResolver {
+    val directory = createTempDirectory()
     val tile = terrariumTile(heights)
-    val archive = Archive(maxZoom = maxZoom, tileType = TILE_TYPE_PNG)
+    val planet = Archive(maxZoom = maxZoom, tileType = TILE_TYPE_PNG)
     val tiles = 1 shl maxZoom
     // The southern half stays empty so that missing tiles get exercised.
     for (x in 0 until tiles) {
-      archive.put(maxZoom, x, 0, tile)
+      planet.put(maxZoom, x, 0, tile)
     }
-    return MapterhornResolver(archive.write(createTempFile(suffix = ".pmtiles")))
+    planet.write(directory.resolve("planet.pmtiles"))
+
+    // One zoom finer over the northwestern tile, with its southeastern quarter left as a hole
+    if (regional) {
+      val z = maxZoom + 1
+      val flat = terrariumTile { _, _ -> 1000f }
+      Archive(minZoom = z, maxZoom = z, tileType = TILE_TYPE_PNG)
+          .put(z, 0, 0, flat)
+          .put(z, 1, 0, flat)
+          .put(z, 0, 1, flat)
+          .write(directory.resolve("${maxZoom}-0-0.pmtiles"))
+    }
+    return MapterhornResolver(directory)
   }
 }
 

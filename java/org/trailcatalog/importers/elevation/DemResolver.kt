@@ -16,8 +16,9 @@ enum class ElevationSource {
 private val elevationSource = createFlag(ElevationSource.MAPTERHORN)
 @FlagSpec("copernicus_root")
 private val copernicusRoot = createNullableFlag(null as Path?)
-@FlagSpec("mapterhorn_pmtiles")
-private val mapterhornPmtiles = createNullableFlag(null as Path?)
+// Holds planet.pmtiles and any regional archives, see MapterhornResolver.
+@FlagSpec("mapterhorn_dir")
+private val mapterhornDir = createNullableFlag(null as Path?)
 
 /** Samples elevations in meters above sea level. */
 interface DemResolver : Closeable {
@@ -36,8 +37,8 @@ fun createDemResolver(): DemResolver {
       })
     ElevationSource.MAPTERHORN ->
       MapterhornResolver(
-          checkNotNull(mapterhornPmtiles.value) {
-            "--mapterhorn_pmtiles is required with --elevation_source=MAPTERHORN"
+          checkNotNull(mapterhornDir.value) {
+            "--mapterhorn_dir is required with --elevation_source=MAPTERHORN"
           })
   }
 }

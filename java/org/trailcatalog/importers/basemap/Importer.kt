@@ -348,7 +348,8 @@ private fun calculateProfiles(
 
   val waysByCells = missingWays.groupBy("GroupWaysMissingProfilesByCells") {
     // A group is calculated back to back, so grouping by locality keeps its elevation tiles in the
-    // resolver's cache. A level 7 cell is around 100km on a side, which is a few hundred tiles.
+    // resolver's cache. A level 7 cell is around 100km on a side, which is a few hundred z12 tiles
+    // or a few thousand z14 ones.
     S2CellId.fromLatLng(it.points[0].toS2LatLng()).parent(7)
   }
   val calculatedProfiles = waysByCells.then(CalculateWayElevations())

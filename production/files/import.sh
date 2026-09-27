@@ -66,7 +66,7 @@ podman run \
     --elevation_profile /tmp/elevation_profile.pb \
     --elevation_source MAPTERHORN \
     --heap_dump_threshold 8048000000 \
-    --mapterhorn_pmtiles /tmp/mapterhorn_2026-07-01.pmtiles \
+    --mapterhorn_dir /tmp/mapterhorn \
     --pbfs /tmp/planet-latest.osm.pbf \
     | tee /mnt/horse/import_log.txt
 rm -rf /mnt/horse/planet-latest.osm.pbf
