@@ -563,7 +563,7 @@ function Stats({feature, profile}: {
   }
 }
 
-function LineStats({climb, lengthMeters}: {climb: Climb|undefined; lengthMeters: number}) {
+export function LineStats({climb, lengthMeters}: {climb: Climb|undefined; lengthMeters: number}) {
   return (
     <div className="text-gray-700">
       {formatDistance(lengthMeters)}

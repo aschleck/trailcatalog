@@ -2,7 +2,8 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
-import { formatDistance, formatHeight, ProfileStats } from './measurements';
+import { LineStats } from './feature_list';
+import { formatHeight, ProfileStats } from './measurements';
 import { ProfileChart } from './profile_chart';
 
 export interface MeasureState {
@@ -63,11 +64,7 @@ function Readout({state}: {state: MeasureState}) {
   const profile = state.profile;
   return (
     <div className="flex flex-col gap-2">
-      <div>
-        <div className="text-gray-600">Length</div>
-        <div className="text-base">{formatDistance(state.lengthMeters)}</div>
-      </div>
-      <div className="text-gray-600">Elevation profile</div>
+      <LineStats lengthMeters={state.lengthMeters} climb={profile?.stats} />
       {profile
           ? <ProfileChart
                 distanceMeters={profile.distanceMeters}
@@ -82,14 +79,10 @@ function Readout({state}: {state: MeasureState}) {
             </div>
       }
       {profile
-          ? <div className="grid grid-cols-2 gap-x-2 text-gray-700">
-              <span>{`Climb ${formatHeight(profile.stats.upMeters)}`}</span>
-              <span>{`Descent ${formatHeight(profile.stats.downMeters)}`}</span>
-              <span className="col-span-2">
-                {`Min ${formatHeight(profile.stats.minMeters)}, `
-                    + `median ${formatHeight(profile.stats.medianMeters)}, `
-                    + `max ${formatHeight(profile.stats.maxMeters)}`}
-              </span>
+          ? <div className="text-gray-700">
+              {`Min ${formatHeight(profile.stats.minMeters)}, `
+                  + `median ${formatHeight(profile.stats.medianMeters)}, `
+                  + `max ${formatHeight(profile.stats.maxMeters)}`}
             </div>
           : ''
       }
