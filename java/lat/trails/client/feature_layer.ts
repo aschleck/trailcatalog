@@ -446,7 +446,7 @@ export class FeatureLayer extends Layer {
           dragging.kind === 'vertex'
               ? moveVertex(line, dragging.index, latE7, lngE7)
               : insertVertex(line, dragging.index, latE7, lngE7);
-      source.trigger(FEATURE_EDITED, {before: snapshot(line), after});
+      source.trigger(FEATURE_EDITED, {before: snapshot(line), after, vertex: dragging.index});
     }
   }
 

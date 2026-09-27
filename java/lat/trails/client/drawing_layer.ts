@@ -24,6 +24,19 @@ import {
 // stays on the map until the next click starts another, so that its numbers can still be read.
 export type DrawingMode = 'line'|'measure';
 
+/**
+ * Finds a way between two mercator points, excluding both, or resolves undefined when there is
+ * none.
+ */
+export type SegmentRouter = (from: Vec2, to: Vec2) => Promise<Float64Array|undefined>;
+
+/** How the placed segments of a drawing with a SegmentRouter stand. */
+export interface RouteStatus {
+  routing: number;
+  unroutable: number;
+  failed: number;
+}
+
 // The click radius from a vertex to count as finishing drawing a line.
 const FINISH_RADIUS_PX = 8;
 // How close the pointer has to come to a line to snap onto it. Wider than the collection layer
@@ -50,6 +63,10 @@ interface Vertex {
   // The path from the previous vertex to this one, excluding both, and empty for a straight
   // segment
   via: Float64Array;
+  // How a SegmentRouter answered for the segment reaching this vertex
+  routed: 'routing'|'routed'|'unroutable'|'failed'|undefined;
+  // The latest request to the SegmentRouter, so that an answer to one it replaced is dropped
+  request: number;
 }
 
 // Shared because a straight segment is the common case and nothing writes through it.
@@ -61,6 +78,9 @@ interface Drawing {
   cursor: Vertex|undefined;
   // A finished measurement, which the next click replaces rather than extends
   finished: boolean;
+  // A finish waiting on the SegmentRouter, which goes through once no segment is routing, or else
+  // the line would keep them straight.
+  finishing: EventSource|undefined;
 }
 
 /** Turns clicks into a polyline that snaps and routes along the lines in the index. */
@@ -88,6 +108,7 @@ export class DrawingLayer extends Layer {
   private shiftHeld: boolean;
   // A click drops the cursor until the next move, so this is what says the pointer is still here.
   private pointerOver: boolean;
+  private routeRequests: number;
 
   constructor(
       private readonly mode: DrawingMode,
@@ -100,6 +121,9 @@ export class DrawingLayer extends Layer {
       private readonly onChanged: () => void = () => {},
       // Credited only while the layer is active, for data a tool reads while it is in use
       private readonly activeCopyrights: Copyright[] = [],
+      // Routes placed segments in place of the index, which then neither snaps nor routes. The
+      // segment to the cursor stays straight because a search can take seconds.
+      private readonly router: SegmentRouter|undefined = undefined,
   ) {
     super(/* copyright= */ []);
     this.active = false;
@@ -121,6 +145,7 @@ export class DrawingLayer extends Layer {
     this.reach = 0;
     this.shiftHeld = false;
     this.pointerOver = false;
+    this.routeRequests = 0;
 
     // Read from shiftKey rather than key, so that any keystroke corrects a missed shift release.
     this.registerListener(window, 'keydown', e => {
@@ -152,7 +177,9 @@ export class DrawingLayer extends Layer {
 
     this.active = active;
     this.clear();
-    this.locations.setRouting(active);
+    if (!this.router) {
+      this.locations.setRouting(active);
+    }
   }
 
   /** Returns the placed vertices and the paths between them in mercator, without the cursor. */
@@ -165,7 +192,7 @@ export class DrawingLayer extends Layer {
    * pointer.
    */
   followsPointer(): boolean {
-    return this.pointerOver && !!this.drawing && !this.drawing.finished;
+    return this.pointerOver && !!this.drawing && !this.drawing.finished && !this.drawing.finishing;
   }
 
   /** Returns the drawn polyline in mercator, including the segment to the cursor. */
@@ -177,6 +204,25 @@ export class DrawingLayer extends Layer {
     return drawnPoints(drawing.cursor ? [...drawing.vertices, drawing.cursor] : drawing.vertices);
   }
 
+  /** Asks the SegmentRouter again for every placed segment, like after its limits change. */
+  reroute(): void {
+    const vertices = this.drawing?.vertices ?? [];
+    for (let i = 1; i < vertices.length; ++i) {
+      this.resolve(vertices[i], vertices[i - 1]);
+    }
+    this.changed();
+  }
+
+  routeStatus(): RouteStatus {
+    const status = {routing: 0, unroutable: 0, failed: 0};
+    for (const vertex of this.drawing?.vertices ?? []) {
+      if (vertex.routed && vertex.routed !== 'routed') {
+        status[vertex.routed] += 1;
+      }
+    }
+    return status;
+  }
+
   /** Drops the last vertex, and the drawing with it once none are left. */
   popVertex(): void {
     const drawing = this.drawing;
@@ -185,6 +231,7 @@ export class DrawingLayer extends Layer {
     }
 
     drawing.vertices.pop();
+    drawing.finishing = undefined;
     if (drawing.vertices.length === 0) {
       this.clear();
       return;
@@ -213,7 +260,9 @@ export class DrawingLayer extends Layer {
       return false;
     }
 
-    if (contextual) {
+    if (this.drawing?.finishing) {
+      return true;
+    } else if (contextual) {
       this.finish(source);
       return true;
     }
@@ -227,7 +276,7 @@ export class DrawingLayer extends Layer {
     const drawing =
         this.drawing && !this.drawing.finished
             ? this.drawing
-            : {vertices: [], cursor: undefined, finished: false};
+            : {vertices: [], cursor: undefined, finished: false, finishing: undefined};
     const cursor = drawing.cursor;
     const previous = drawing.vertices[drawing.vertices.length - 1];
     drawing.cursor = undefined;
@@ -248,7 +297,7 @@ export class DrawingLayer extends Layer {
 
     this.pointerOver = true;
     const drawing = this.drawing;
-    if (drawing && !drawing.finished) {
+    if (drawing && !drawing.finished && !drawing.finishing) {
       const at = projectS2LatLng(point);
       if (!same(drawing.cursor?.at, at)) {
         this.setCursor(drawing, vertexAt(at));
@@ -293,7 +342,7 @@ export class DrawingLayer extends Layer {
       return true;
     }
 
-    if (!drawing || drawing.finished) {
+    if (!drawing || drawing.finished || drawing.finishing) {
       return false;
     }
 
@@ -372,7 +421,9 @@ export class DrawingLayer extends Layer {
   // Snaps a vertex onto the lines and routes to it from the vertex before. The first vertex of a
   // line has nothing to route from, so it asks about itself and keeps only the snap.
   private resolve(vertex: Vertex, previous: Vertex|undefined): Promise<void> {
-    if (this.shiftHeld) {
+    if (this.router) {
+      return this.resolveWithRouter(this.router, vertex, previous);
+    } else if (this.shiftHeld) {
       return Promise.resolve();
     }
 
@@ -389,6 +440,39 @@ export class DrawingLayer extends Layer {
 
           this.apply(vertex, previous, route);
           this.changed();
+        });
+  }
+
+  private resolveWithRouter(router: SegmentRouter, vertex: Vertex, previous: Vertex|undefined):
+      Promise<void> {
+    if (!previous || this.drawing?.cursor === vertex) {
+      return Promise.resolve();
+    }
+
+    this.routeRequests += 1;
+    const request = this.routeRequests;
+    vertex.request = request;
+    vertex.routed = 'routing';
+    const answered = (via: Float64Array|undefined, routed: Vertex['routed']) => {
+      if (!this.isDrawn(vertex) || vertex.request !== request) {
+        return;
+      }
+
+      vertex.via = via ?? STRAIGHT;
+      vertex.routed = routed;
+      this.changed();
+      const finishing = this.drawing?.finishing;
+      if (finishing && this.routeStatus().routing === 0) {
+        this.finish(finishing);
+      }
+    };
+    return router(previous.point, vertex.point).then(
+        via => {
+          answered(via, via ? 'routed' : 'unroutable');
+        },
+        e => {
+          console.error(e);
+          answered(undefined, 'failed');
         });
   }
 
@@ -431,6 +515,11 @@ export class DrawingLayer extends Layer {
     if (this.mode === 'measure') {
       drawing.cursor = undefined;
       drawing.finished = true;
+      this.changed();
+      return;
+    } else if (this.routeStatus().routing > 0) {
+      drawing.cursor = undefined;
+      drawing.finishing = source;
       this.changed();
       return;
     }
@@ -579,7 +668,7 @@ export function toE7Array(points: Float64Array): Int32Array {
 }
 
 function vertexAt(at: Vec2): Vertex {
-  return {at, point: at, via: STRAIGHT};
+  return {at, point: at, via: STRAIGHT, routed: undefined, request: 0};
 }
 
 function same(a: Vec2|undefined, b: Vec2): boolean {

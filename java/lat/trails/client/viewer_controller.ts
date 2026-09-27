@@ -80,7 +80,7 @@ import {
 import { parseImport } from './importer';
 import { insertVertex, joinLines, removeVertex, reverseLine, splitLine } from './line_edits';
 import { IconPickerDialog } from './icon_picker';
-import { MeasureState } from './measure_panel';
+import { GradeLimitState, MeasureState } from './measure_panel';
 import { PointToolLayer } from './point_tool_layer';
 import {
   cumulativeMeters,
@@ -133,6 +133,8 @@ export interface State {
   // The profile of the selected feature or the inspected object, when that is a line
   lineProfile: LineProfileState|undefined;
   measure: MeasureState;
+  // What the terrain tool routes within
+  grades: GradeLimitState;
   self: Future<GetCurrentUserResponse>;
   tool: Tool;
 }
@@ -161,6 +163,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly featureLayer: FeatureLayer;
   private readonly lineLayer: DrawingLayer;
   private readonly measureLayer: DrawingLayer;
+  private readonly terrainLayer: DrawingLayer;
   private readonly pointLayer: PointToolLayer;
   private readonly skyboxLayer: SkyboxLayer;
   private readonly contours: Record<UnitSystem, MbtileLayer>;
@@ -175,8 +178,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private profileGeneration: number;
   // The placed path the length and profile describe
   private measuredPath: Float64Array|undefined;
-  // The selected line's geometry as of its profile, which an edit replaces with a new array
-  private lineProfileSource: Int32Array|undefined;
+  // The selected line's arrays as of its profile, which an edit replaces with new ones
+  private lineProfileSource: {
+    latLngE7: Int32Array;
+    elevationCentimeters: Int32Array|undefined;
+  }|undefined;
   // The samples behind the line profile on screen, like measureSamples
   private lineSamples: {latLngDegrees: Float64Array; distanceMeters: Float64Array}|undefined;
   // Moves with every line profile asked for, so that a slow answer for another line is dropped
@@ -319,6 +325,24 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             },
             [MAPTERHORN_COPYRIGHT]);
     this.registerDisposable(this.measureLayer);
+    // A line mode, because finishing a route is how to keep it
+    this.terrainLayer =
+        new DrawingLayer(
+            'line',
+            locations,
+            camera,
+            renderer,
+            () => {
+              this.measureChanged();
+              this.drawnLengthChanged();
+            },
+            [MAPTERHORN_COPYRIGHT],
+            (from, to) => {
+              const {climbPercent, descentPercent} = this.state.grades;
+              return this.elevations.route(
+                  from, to, {climb: climbPercent / 100, descent: descentPercent / 100});
+            });
+    this.registerDisposable(this.terrainLayer);
     this.pointLayer = new PointToolLayer();
     this.registerDisposable(this.pointLayer);
 
@@ -650,17 +674,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Selects the new line, like onPointPlaced, so that the panel is open to name it.
   onLineDrawn(e: CorgiEvent<typeof LINE_DRAWN>): void {
-    const line: EditableLine = {
-      kind: 'line',
-      id: crypto.randomUUID(),
-      version: 0n,
-      data: {},
-      latLngE7: e.detail.latLngE7,
-      elevationCentimeters: undefined,
-      timeSeconds: undefined,
-    };
-    this.store.apply([{id: line.id, before: undefined, after: line}]);
-    this.select(line.id);
+    this.addLine(e.detail.latLngE7);
   }
 
   // Selects the new point so that the panel is open to name it, and stays in the tool so that
@@ -758,8 +772,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   onFeatureEdited(e: CorgiEvent<typeof FEATURE_EDITED>): void {
-    const {before, after} = e.detail;
-    this.store.apply([{id: after.id, before, after}]);
+    const {before, after, vertex} = e.detail;
+    const changes = [{id: after.id, before, after}];
+    if (vertex === undefined) {
+      this.store.apply(changes);
+    } else {
+      this.applyPlacingVertices(changes, [{id: after.id, index: vertex}]);
+    }
   }
 
   onFeatureContextMenu(e: CorgiEvent<typeof FEATURE_CONTEXT_MENU>): void {
@@ -924,7 +943,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   measureUndoClicked(): void {
-    this.measureLayer.popVertex();
+    this.measuringLayer().popVertex();
+  }
+
+  maxClimbChanged(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.setGrade(e, 'climbPercent');
+  }
+
+  maxDescentChanged(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.setGrade(e, 'descentPercent');
   }
 
   profileHovered(e: CorgiEvent<typeof DOM_POINTER>): void {
@@ -954,7 +981,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             samples.latLngDegrees[2 * index], samples.latLngDegrees[2 * index + 1]);
     const line = this.state.lineProfile;
     if (source !== 'line') {
-      this.measureLayer.setMarker(projectS2LatLng(ll));
+      this.measuringLayer().setMarker(projectS2LatLng(ll));
       this.updateState({...this.state, measure: {...this.state.measure, hovered: index}});
     } else if (line?.status === 'loaded') {
       this.featureLayer.setMarker(projectS2LatLng(ll));
@@ -964,6 +991,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   profileLeft(): void {
     this.measureLayer.setMarker(undefined);
+    this.terrainLayer.setMarker(undefined);
     this.featureLayer.setMarker(undefined);
     const line = this.state.lineProfile;
     this.updateState({
@@ -973,30 +1001,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
   }
 
-  // Samples elevations at the vertices so that the saved line carries them like an imported one.
   saveMeasurementClicked(): void {
-    const latLngE7 = toE7Array(this.measureLayer.points());
+    const latLngE7 = toE7Array(this.measuringLayer().points());
     if (latLngE7.length < 4) {
       return;
     }
 
-    const degrees = Float64Array.from(latLngE7, e7 => e7 / 1e7);
-    this.elevations.sample(degrees, profileSamples(degrees).zoom)
-        .then(meters => Int32Array.from(meters, m => Math.round(m * 100)), () => undefined)
-        .then(elevationCentimeters => {
-          const line: EditableLine = {
-            kind: 'line',
-            id: crypto.randomUUID(),
-            version: 0n,
-            data: {},
-            latLngE7,
-            elevationCentimeters,
-            timeSeconds: undefined,
-          };
-          this.store.apply([{id: line.id, before: undefined, after: line}]);
-          this.setTool('pointer');
-          this.select(line.id);
-        });
+    this.setTool('pointer');
+    this.addLine(latLngE7);
   }
 
   visibilityToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -1350,6 +1362,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.stopJoining();
     this.lineLayer.setActive(false);
     this.measureLayer.setActive(false);
+    this.terrainLayer.setActive(false);
     this.pointLayer.setActive(tool === 'point');
     this.featureLayer.setInteractive(tool === 'pointer');
     this.featureLayer.setPointsDraggable(tool === 'point');
@@ -1359,6 +1372,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.lineLayer.setActive(true);
     } else if (tool === 'measure') {
       this.measureLayer.setActive(true);
+    } else if (tool === 'terrain') {
+      this.terrainLayer.setActive(true);
     }
     this.updateState({
       ...this.state,
@@ -1418,6 +1433,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Updates the length now, because it is cheap, and the profile once the pointer settles. The
   // drawing changes on every pointer move, and most moves leave the placed part alone.
   private measureChanged(): void {
+    const route = this.state.tool === 'terrain' ? this.terrainLayer.routeStatus() : undefined;
+    const shown = this.state.measure.route;
+    if (
+        route?.routing !== shown?.routing
+            || route?.unroutable !== shown?.unroutable
+            || route?.failed !== shown?.failed) {
+      this.updateState({...this.state, measure: {...this.state.measure, route}});
+    }
+
     const path = this.measurePath();
     const measured = this.measuredPath;
     if (measured && measured.length === path.length && measured.every((v, i) => v === path[i])) {
@@ -1446,6 +1470,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           profile: undefined,
           hovered: undefined,
           status: 'idle',
+          route,
         },
       });
     }
@@ -1492,10 +1517,49 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         });
   }
 
+  // Without elevations, because the profile samples the DEM along a line that has none, and
+  // elevations read at the vertices alone would draw each segment as a straight slope.
+  private addLine(latLngE7: Int32Array): void {
+    const line: EditableLine = {
+      kind: 'line',
+      id: crypto.randomUUID(),
+      version: 0n,
+      data: {},
+      latLngE7,
+      elevationCentimeters: undefined,
+      timeSeconds: undefined,
+    };
+    this.store.apply([{id: line.id, before: undefined, after: line}]);
+    this.select(line.id);
+  }
+
+  // Resolves undefined when the tiles could not be fetched.
+  private sampleVertices(latLngE7: Int32Array): Promise<Int32Array|undefined> {
+    const degrees = Float64Array.from(latLngE7, e7 => e7 / 1e7);
+    return this.elevations.sample(degrees, profileSamples(degrees).zoom)
+        .then(meters => Int32Array.from(meters, m => Math.round(m * 100)), () => undefined);
+  }
+
   // The placed part of the measurement as interleaved lat then lng degrees. The segment to the
   // cursor is left out, because the numbers are about what was clicked.
   private measurePath(): Float64Array {
-    return toDegrees(this.measureLayer.placedPoints());
+    return toDegrees(this.measuringLayer().placedPoints());
+  }
+
+  // The measure and terrain tools share the panel and its state, and only one is active at a time.
+  private measuringLayer(): DrawingLayer {
+    return this.state.tool === 'terrain' ? this.terrainLayer : this.measureLayer;
+  }
+
+  // Ignores what isn't a positive number, like an emptied field.
+  private setGrade(e: CorgiEvent<typeof DOM_MOUSE>, key: keyof GradeLimitState): void {
+    const percent = Number((e.actionElement.element() as HTMLInputElement).value);
+    if (!(percent > 0) || percent === this.state.grades[key]) {
+      return;
+    }
+
+    this.updateState({...this.state, grades: {...this.state.grades, [key]: percent}});
+    this.terrainLayer.reroute();
   }
 
   // Where a new feature goes: inside the selected folder, or else beside the selected feature.
@@ -1597,12 +1661,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.lineProfileSource = undefined;
       this.lineSamples = undefined;
       return undefined;
-    } else if (live.latLngE7 === this.lineProfileSource) {
+    } else if (
+        live.latLngE7 === this.lineProfileSource?.latLngE7
+            && live.elevationCentimeters === this.lineProfileSource.elevationCentimeters) {
       return this.state.lineProfile;
     }
 
     this.lineProfileGeneration += 1;
-    this.lineProfileSource = live.latLngE7;
+    this.lineProfileSource = {
+      latLngE7: live.latLngE7,
+      elevationCentimeters: live.elevationCentimeters,
+    };
     const path = Float64Array.from(live.latLngE7, e7 => e7 / 1e7);
     const own = live.elevationCentimeters;
     if (own) {
@@ -1763,7 +1832,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const layer =
         this.state.tool === 'line'
             ? this.lineLayer
-            : this.state.tool === 'measure' ? this.measureLayer : undefined;
+            : this.state.tool === 'measure' || this.state.tool === 'terrain'
+                ? this.measuringLayer()
+                : undefined;
     const pointer = this.pointer;
     const drawnLength =
         layer?.followsPointer() && pointer
@@ -1803,10 +1874,59 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
 
     const [first, second] = halves;
-    this.store.apply([
+    const changes = [
       {id: live.id, before: snapshot(live), after: first},
       {id: second.id, before: undefined, after: second},
-    ]);
+    ];
+    if (spot.kind === 'segment') {
+      this.applyPlacingVertices(
+          changes, [{id: live.id, index: spot.index}, {id: second.id, index: 0}]);
+    } else {
+      this.store.apply(changes);
+    }
+  }
+
+  // Applies an edit that moved or added vertices, then gives each one on a line with elevations
+  // of its own the DEM's elevation as part of the same edit. Every other line samples the DEM for
+  // its profile anyway.
+  //
+  // An edit landing before the DEM answers keeps the patch from merging, so the patch becomes an
+  // undo of its own. The DEM usually answers well before anyone can edit again.
+  private applyPlacingVertices(
+      changes: Change[], placed: Array<{id: string; index: number}>): void {
+    const mergeKey = `placed:${crypto.randomUUID()}`;
+    this.store.apply(changes, mergeKey);
+    const targets = placed.flatMap(({id, index}) => {
+      const line = this.store.get(id);
+      return line?.kind === 'line' && line.elevationCentimeters
+          ? [{id, index, latLngE7: line.latLngE7}]
+          : [];
+    });
+    if (targets.length === 0) {
+      return;
+    }
+
+    const latLngE7 = Int32Array.from(
+        targets.flatMap(({index, latLngE7}) => [latLngE7[2 * index], latLngE7[2 * index + 1]]));
+    this.sampleVertices(latLngE7).then(centimeters => {
+      if (!centimeters) {
+        return;
+      }
+
+      const patches = targets.flatMap(({id, index, latLngE7}, i) => {
+        const live = this.store.get(id);
+        // Geometry edits replace the array rather than writing through it, so the same array means
+        // the line has kept its shape since.
+        if (live?.kind !== 'line' || live.latLngE7 !== latLngE7 || !live.elevationCentimeters) {
+          return [];
+        }
+
+        const elevationCentimeters = live.elevationCentimeters.slice();
+        elevationCentimeters[index] = centimeters[i];
+        return [{id, before: snapshot(live), after: {...snapshot(live), elevationCentimeters}}];
+      });
+      this.store.apply(patches, mergeKey);
+    });
   }
 
   private editLine(id: string, edit: (line: EditableLine) => EditableLine|undefined): void {
@@ -2210,7 +2330,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       }
     }
     this.mapController.setLayers(
-        [this.pointLayer, this.lineLayer, this.measureLayer, this.featureLayer as Layer]
+        [
+          this.pointLayer,
+          this.lineLayer,
+          this.measureLayer,
+          this.terrainLayer,
+          this.featureLayer as Layer,
+        ]
             .concat(layers.filter(l => l.enabled).map(l => l.layer))
             .concat([this.skyboxLayer]));
   }

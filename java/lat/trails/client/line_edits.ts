@@ -3,7 +3,10 @@ import { haversineMeters } from './measurements';
 
 // Each returns a new line with new arrays, because undo holds on to the old ones.
 
-/** Moves one vertex. Its elevation and time stay, since neither is known for the new spot. */
+/**
+ * Moves one vertex, keeping its time and, until the caller reads the DEM for the new spot, its
+ * elevation.
+ */
 export function moveVertex(
     line: EditableLine, index: number, latE7: number, lngE7: number): EditableLine {
   const latLngE7 = line.latLngE7.slice();
@@ -19,8 +22,8 @@ export function moveVertex(
 }
 
 /**
- * Inserts a vertex so that it lands at index, interpolating its elevation and time from its
- * neighbors.
+ * Inserts a vertex so that it lands at index, interpolating its time from its neighbors and, until
+ * the caller reads the DEM for it, its elevation.
  */
 export function insertVertex(
     line: EditableLine, index: number, latE7: number, lngE7: number): EditableLine {

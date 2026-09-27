@@ -1,5 +1,9 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
+import { Vec2 } from '../common/types';
+
+import { GradeLimits, routeOverTerrain, simplifyCells } from './terrain_router';
+
 // Mapterhorn serves terrarium encoded WebP tiles, 512 pixels to a side, at z12 everywhere it has
 // land and deeper where a finer source covers the area.
 // https://mapterhorn.com/attribution
@@ -11,6 +15,22 @@ const BASE_ZOOM = 12;
 const TERRARIUM_OFFSET = 32768;
 // Each tile decodes to a megabyte of floats, and a long measurement reaches a few dozen.
 const TILE_CACHE_SIZE = 48;
+// Keep in sync with SimpleS2#EARTH_RADIUS_METERS
+const EARTH_RADIUS_METERS = 6371010;
+// A z12 cell is 13 m across in the Alps, so a million cells is a box 13 km on a side. The search
+// holds 16 bytes a cell plus 16 per heap entry, and a longer segment drops a zoom rather than grow
+// past this.
+const MAX_ROUTE_CELLS = 1 << 20;
+// Past z9 cells are over 100 m across, which walks straight through cliff bands.
+const MIN_ROUTE_ZOOM = 9;
+// How far past the box around its ends a route may wander, as a fraction of the distance between
+// them, so a traverse has room to find a gentler line.
+const ROUTE_PADDING = 0.5;
+// So that two nearby points still leave room to switch back between them
+const MIN_ROUTE_PADDING_METERS = 300;
+// In cells. Half a cell keeps the route on the cells it found while dropping the staircase that
+// the router's headings leave along any other angle.
+const SIMPLIFY_TOLERANCE = 0.5;
 
 interface InitializeRequest {
   kind: 'ir';
@@ -24,7 +44,16 @@ export interface SampleRequest {
   zoom: number;
 }
 
-export type Request = InitializeRequest|SampleRequest;
+export interface RouteRequest {
+  kind: 'rr';
+  id: number;
+  // Mercator
+  from: Vec2;
+  to: Vec2;
+  limits: GradeLimits;
+}
+
+export type Request = InitializeRequest|RouteRequest|SampleRequest;
 
 export interface SampleResponse {
   kind: 'sr';
@@ -34,7 +63,17 @@ export interface SampleResponse {
   meters: Float32Array;
 }
 
-export type Response = SampleResponse;
+export interface RouteResponse {
+  kind: 'rr';
+  id: number;
+  // The way from from to to in mercator, excluding both, or undefined when no way keeps within
+  // the limits.
+  via: Float64Array|undefined;
+  // Set when tiles could not be fetched, so that no route means nothing about the terrain
+  failed: boolean;
+}
+
+export type Response = RouteResponse|SampleResponse;
 
 type Tile = Float32Array|undefined;
 
@@ -63,6 +102,90 @@ class ElevationSampler {
 
   fail(request: SampleRequest): void {
     this.postMessage({kind: 'sr', id: request.id, meters: new Float32Array(0)});
+  }
+
+  async route(request: RouteRequest): Promise<void> {
+    const via = await this.routeVia(request);
+    this.postMessage({kind: 'rr', id: request.id, via, failed: false}, via ? [via.buffer] : []);
+  }
+
+  failRoute(request: RouteRequest): void {
+    this.postMessage({kind: 'rr', id: request.id, via: undefined, failed: true});
+  }
+
+  // Searches the pixels of the deepest zoom that fits the box around the ends in MAX_ROUTE_CELLS.
+  private async routeVia(request: RouteRequest): Promise<Float64Array|undefined> {
+    const {from, to} = request;
+    for (let z = BASE_ZOOM; z >= MIN_ROUTE_ZOOM; --z) {
+      const world = TILE_SIZE * Math.pow(2, z);
+      // Mercator runs -1 to 1 and y grows north, pixels run 0 to world and y grows south.
+      const fx = (from[0] + 1) / 2 * world;
+      const fy = (1 - from[1]) / 2 * world;
+      const tx = (to[0] + 1) / 2 * world;
+      const ty = (1 - to[1]) / 2 * world;
+      const latitude = Math.atan(Math.sinh(Math.PI * (from[1] + to[1]) / 2));
+      const cellMeters = 2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(latitude) / world;
+      const pad =
+          Math.max(
+              ROUTE_PADDING * Math.hypot(tx - fx, ty - fy),
+              MIN_ROUTE_PADDING_METERS / cellMeters);
+      const x0 = Math.floor(Math.min(fx, tx) - pad);
+      const y0 = Math.max(0, Math.floor(Math.min(fy, ty) - pad));
+      const x1 = Math.ceil(Math.max(fx, tx) + pad);
+      const y1 = Math.min(world, Math.ceil(Math.max(fy, ty) + pad));
+      const width = x1 - x0;
+      const height = y1 - y0;
+      if (width * height > MAX_ROUTE_CELLS) {
+        continue;
+      }
+
+      const meters = await this.pixels(z, x0, y0, width, height);
+      const cellOf = (x: number, y: number) => Math.floor(y - y0) * width + Math.floor(x - x0);
+      const cells =
+          routeOverTerrain(
+              {meters, width, height, cellMeters}, cellOf(fx, fy), cellOf(tx, ty), request.limits);
+      if (!cells) {
+        return undefined;
+      }
+
+      // The first and last cells stand in for the ends, which the caller already has.
+      const kept = simplifyCells(cells, width, SIMPLIFY_TOLERANCE);
+      const via = new Float64Array(Math.max(0, kept.length - 4));
+      for (let i = 0; i < via.length; i += 2) {
+        // Plus half a cell because a pixel's value sits at its center
+        via[i] = (x0 + kept[i + 2] + 0.5) / world * 2 - 1;
+        via[i + 1] = 1 - (y0 + kept[i + 3] + 0.5) / world * 2;
+      }
+      return via;
+    }
+    return undefined;
+  }
+
+  // Copies a box of pixels out of the tiles at z, with NaN where there is no tile.
+  private async pixels(z: number, x0: number, y0: number, width: number, height: number):
+      Promise<Float32Array> {
+    const meters = new Float32Array(width * height).fill(NaN);
+    const tiles = Math.pow(2, z);
+    for (let ty = Math.floor(y0 / TILE_SIZE); ty * TILE_SIZE < y0 + height; ++ty) {
+      for (let tx = Math.floor(x0 / TILE_SIZE); tx * TILE_SIZE < x0 + width; ++tx) {
+        const tile = await this.tile(z, ((tx % tiles) + tiles) % tiles, ty);
+        if (!tile) {
+          continue;
+        }
+
+        const left = Math.max(x0, tx * TILE_SIZE);
+        const right = Math.min(x0 + width, (tx + 1) * TILE_SIZE);
+        const top = Math.max(y0, ty * TILE_SIZE);
+        const bottom = Math.min(y0 + height, (ty + 1) * TILE_SIZE);
+        for (let y = top; y < bottom; ++y) {
+          const row = (y - ty * TILE_SIZE) * TILE_SIZE;
+          meters.set(
+              tile.subarray(row + left - tx * TILE_SIZE, row + right - tx * TILE_SIZE),
+              (y - y0) * width + left - x0);
+        }
+      }
+    }
+    return meters;
   }
 
   // Falls back a zoom at a time until a tile answers, because only some places are covered past
@@ -164,6 +287,11 @@ self.onmessage = e => {
   const request = e.data as Request;
   if (request.kind === 'ir') {
     // nothing to set up
+  } else if (request.kind === 'rr') {
+    queue = queue.then(() => sampler.route(request)).catch(e => {
+      console.error(e);
+      sampler.failRoute(request);
+    });
   } else if (request.kind === 'sr') {
     queue = queue.then(() => sampler.sample(request)).catch(e => {
       console.error(e);

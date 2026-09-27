@@ -4,6 +4,7 @@ import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { Tool } from './events';
+import { MeasureIcon, TerrainIcon } from './measure_panel';
 
 export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
   // Icons are inlined because Fabric doesn't have a polyline icon as far as I can tell
@@ -52,10 +53,10 @@ export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
             </ToolButton>
       }
       <ToolButton active={tool === 'measure'} label="Measure" tool="measure">
-        <g transform="rotate(-45 10 10)">
-          <rect fill="none" height="8" rx="1" strokeWidth="1.5" width="16" x="2" y="6" />
-          <path d="M6 6 V9 M10 6 V10 M14 6 V9" fill="none" strokeWidth="1.5" />
-        </g>
+        <MeasureIcon />
+      </ToolButton>
+      <ToolButton active={tool === 'terrain'} label="Route off trail" tool="terrain">
+        <TerrainIcon />
       </ToolButton>
     </div>
   </>;

@@ -64,7 +64,9 @@ export function OverviewElement(
         profile: undefined,
         hovered: undefined,
         status: 'idle',
+        route: undefined,
       },
+      grades: {climbPercent: 25, descentPercent: 25},
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
       tool: 'pointer',
     };
@@ -158,7 +160,13 @@ export function OverviewElement(
               w-80
               z-10
           ">
-            {state.tool === 'measure' ? <MeasurePanel state={state.measure} /> : ''}
+            {state.tool === 'measure' || state.tool === 'terrain'
+                ? <MeasurePanel
+                      grades={state.tool === 'terrain' ? state.grades : undefined}
+                      state={state.measure}
+                  />
+                : ''
+            }
             {state.features.selected
                 ? readOnly
                     ? <FeatureDetails
