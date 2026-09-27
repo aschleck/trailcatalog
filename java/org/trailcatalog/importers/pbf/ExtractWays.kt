@@ -34,6 +34,9 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   var construction: ByteString? = null
   var footway: ByteString? = null
   var service: ByteString? = null
+  // A highway=* on a lift or a piste says there's ground to walk on, so it has to beat categories
+  // that outrank it, like PISTE_DOWNHILL over PATH, whichever order the tags come in.
+  var highway: WayCategory? = null
   for (i in 0 until way.keysCount) {
     when (stringTable.getS(way.getKeys(i))) {
       AERIALWAY_BS ->
@@ -67,11 +70,12 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
               category
                   .coerceAtLeast(ROUTE_WAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
         }
-      HIGHWAY_BS ->
-        category =
-            category
-                .coerceAtLeast(WayCategory.HIGHWAY)
+      HIGHWAY_BS -> {
+        highway =
+            WayCategory.HIGHWAY
                 .coerceAtLeast(HIGHWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+        category = category.coerceAtLeast(highway)
+      }
       NAME_BS ->
         name = stringTable.getS(way.getVals(i)).toStringUtf8()
       NATURAL_BS ->
@@ -83,13 +87,10 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
                   .coerceAtLeast(NATURAL_WAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
         }
       PISTE_TYPE_BS ->
-        // Prefer road categories to pistes
-        if (!WayCategory.ROAD.isParentOf(category)) {
-          category =
-              category
-                  .coerceAtLeast(WayCategory.PISTE)
-                  .coerceAtLeast(PISTE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
-        }
+        category =
+            category
+                .coerceAtLeast(WayCategory.PISTE)
+                .coerceAtLeast(PISTE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
       RAILWAY_BS ->
         // It seems fun to dump all rails just in case...
         // TODO(april): but do trails really depend on railways?
@@ -98,6 +99,10 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
                 .coerceAtLeast(WayCategory.RAIL)
                 .coerceAtLeast(RAILWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
     }
+  }
+  if (highway != null
+      && (WayCategory.AERIALWAY.isParentOf(category) || WayCategory.PISTE.isParentOf(category))) {
+    category = highway
   }
   // Only a way that stayed at plain rail, so that a siding tag can't overwrite a tram or a subway.
   if (service != null && category == WayCategory.RAIL) {

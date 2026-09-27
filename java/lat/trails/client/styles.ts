@@ -138,6 +138,10 @@ const TRACK_COLOR = 0x4A3A1EFF as RgbaU32;
 // the core still says dirt.
 const TRACK_CORE_COLOR = 0xEFE9DEFF as RgbaU32;
 
+// A slate blue, so that a run reads as snow rather than as a trail, lighter than SIDEWALK_COLOR so
+// it sits under both.
+const PISTE_COLOR = 0x9AAABBFF as RgbaU32;
+
 // The path family, written against WayCategory rather than replayed out of an OpenMapTiles style,
 // because OpenMapTiles names neither a sidewalk nor a piste and MapTiler draws none of this anyway.
 // Bands match NATURE's transportation bands so the widths ramp with the roads, and nothing starts
@@ -146,8 +150,8 @@ const TRACK_CORE_COLOR = 0xEFE9DEFF as RgbaU32;
 // Every rule is one flat color: the casing is the outer device pixel of the line (see
 // line_program.ts#draw) and none of these is ever wide enough to hold anything inside it.
 //
-// A piste takes the trail's own style. It is a route over the ground the same way a trail is, and
-// this is not a ski map, so nothing here needs to tell them apart.
+// A piste draws fainter than a trail, as thin as a sidewalk, because a ski run without a highway=*
+// on it is an open slope in summer and a resort has several times more of them than trails.
 //
 // The sidewalk rule comes first in every band because the first matching style wins and the trail
 // rule names WayCategory.PATH, which is the subtree and so takes the sidewalks too.
@@ -167,7 +171,17 @@ const PATH_LINES: LineStyle[] = [
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH, WayCategory.PISTE]}],
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
+    minZoom: 11,
+    maxZoom: 12,
+    fill: PISTE_COLOR,
+    stroke: PISTE_COLOR,
+    radius: 0.4,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.45,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH]}],
     minZoom: 11,
     maxZoom: 12,
     fill: TRAIL_COLOR,
@@ -192,7 +206,17 @@ const PATH_LINES: LineStyle[] = [
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH, WayCategory.PISTE]}],
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
+    minZoom: 12,
+    maxZoom: 13,
+    fill: PISTE_COLOR,
+    stroke: PISTE_COLOR,
+    radius: 0.4,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.45,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH]}],
     minZoom: 12,
     maxZoom: 13,
     fill: TRAIL_COLOR,
@@ -216,7 +240,17 @@ const PATH_LINES: LineStyle[] = [
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH, WayCategory.PISTE]}],
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
+    minZoom: 13,
+    maxZoom: 15,
+    fill: PISTE_COLOR,
+    stroke: PISTE_COLOR,
+    radius: 0.5,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.45,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH]}],
     minZoom: 13,
     maxZoom: 15,
     fill: TRAIL_COLOR,
@@ -240,7 +274,17 @@ const PATH_LINES: LineStyle[] = [
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH, WayCategory.PISTE]}],
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
+    minZoom: 15,
+    maxZoom: 31,
+    fill: PISTE_COLOR,
+    stroke: PISTE_COLOR,
+    radius: 0.8,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.45,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH]}],
     minZoom: 15,
     maxZoom: 31,
     fill: TRAIL_COLOR,
@@ -258,7 +302,8 @@ const PATH_LINES: LineStyle[] = [
 // one from an end on it, even though they're free and the trail depends on them. OSM tags them
 // aerialway=cable_car or zip_line like any ticketed lift, and nothing else on the way reliably sets
 // them apart: fee=no is rare, and hiking route relations also run over gondolas and chair lifts.
-// Walbran Creek Cable Car on the West Coast Trail is way 472864003.
+// Walbran Creek Cable Car on the West Coast Trail is way 472864003. One that also carries a
+// highway=* imports as that highway, see ExtractWays, and so draws and routes as a trail.
 const RIDDEN_AERIALWAYS = [
   WayCategory.AERIALWAY_CABLE_CAR,
   WayCategory.AERIALWAY_GONDOLA,
