@@ -480,8 +480,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       this.renderer.clear();
 
       const planner = new Planner();
+      const projection = this.camera.screenProjection(this.area[0], this.area[1]);
       for (const layer of this.layers) {
-        layer.render(planner, this.camera.zoom);
+        layer.render(planner, this.camera.zoom, projection);
       }
 
       const centerPixel = this.camera.centerPixel;

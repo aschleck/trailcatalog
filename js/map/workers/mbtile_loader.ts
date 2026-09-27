@@ -6,8 +6,17 @@ import { clamp } from 'external/dev_april_corgi+/js/common/math';
 import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { rgbaToUint32 } from '../common/math';
 import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
-import { FONT_SIZE, toGraphemes, wrap } from '../rendering/glypher';
+import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track, wrap } from '../rendering/glypher';
 
+import {
+  clipAround,
+  lineAnchors,
+  maxTurnWithin,
+  mergeLines,
+  polylineLength,
+  sampleAt,
+  smoothLine,
+} from './line_labels';
 import { GeometryType } from './mbtile_types';
 import { ringArea, Triangles, triangulateMb } from './triangulate';
 
@@ -87,6 +96,10 @@ interface PointStyle {
   textFill: RgbaU32;
   textStroke: RgbaU32;
   textScale: number;
+  // Sets the name in spaced capitals, see glypher#track
+  caps?: boolean;
+  // Wraps the name after the first space past this many graphemes, 8 if unset
+  wrapGraphemes?: number;
   z: number;
 }
 
@@ -198,8 +211,8 @@ export interface Label {
   stroke: RgbaU32;
   scale: number;
   z: number;
-  minZoom: number;
-  maxZoom: number;
+  // Orders labels of the same z for placement, highest first. See line_labels#lineAnchors.
+  rank: number;
 }
 
 export type Response = LoadResponse;
@@ -223,6 +236,12 @@ interface Feature {
 }
 
 const PREFERRED_LANGUAGE = navigator.language.split('-')[0];
+
+// How far apart candidate labels along a line start at styleZoom, which the viewport zoom
+// stretches up to twice as far by the next bucket. The placer thins them to its repeat distance.
+const LINE_LABEL_SPACING_PX = 128;
+// A point has one place to put its name, so it goes before any line label of the same z.
+const POINT_LABEL_RANK = 64;
 const TEXT_DECODER = new TextDecoder();
 
 class MbtileLoader {
@@ -446,7 +465,11 @@ class MbtileLoader {
       });
     }
 
+    // Pixels per mercator unit at styleZoom, where the world is -1 to 1.
+    const pixelsPerWorld = 256 * Math.pow(2, request.styleZoom - 1);
+    const spacing = LINE_LABEL_SPACING_PX / pixelsPerWorld;
     for (const [style, lineTexts] of lineTextGroups) {
+      const byText = new DefaultMap<string, number[][]>(() => []);
       for (const lineText of lineTexts) {
         let textFallback;
         let textPreferred;
@@ -464,55 +487,68 @@ class MbtileLoader {
           continue;
         }
 
-        const graphemes = toGraphemes(text);
-        const line = longestSubLine(lineText);
-        if (!line) {
-          continue;
+        const parts = byText.get(text);
+        for (let i = 0; i < lineText.starts.length; ++i) {
+          const start = lineText.starts[i];
+          const end =
+              i + 1 < lineText.starts.length ? lineText.starts[i + 1] : lineText.geometry.length;
+          parts.push(lineText.geometry.slice(start, end));
         }
+      }
 
+      for (const [text, parts] of byText) {
+        const graphemes = toGraphemes(text);
         // Glyph metrics live in the atlas, which a worker has no fonts to build, so guess the
         // width from Roboto's average advance of a little over half an em.
-        const widthPx = graphemes.length * FONT_SIZE * 0.6 * style.scale;
-        const width = widthPx / (256 * Math.pow(2, request.styleZoom - 1));
-        // Drop names too long for the road they sit on, or else they hold collision space against
-        // labels that would draw. Half a width of slack because styleZoom is the floor of the
-        // viewport zoom, and each zoom level halves how much of the world the text covers, so a
-        // name that misses here can still fit before the next bucket takes over.
-        const [start, end] = line;
-        const length = polylineLength(lineText.geometry, start, end);
-        if (length < width / 2) {
-          continue;
-        }
+        const width = graphemes.length * FONT_SIZE * 0.6 * style.scale / pixelsPerWorld;
+        // A glyph advance is at most about an em, and it only shrinks against the line as the
+        // viewport zooms past styleZoom.
+        const em = FONT_SIZE * style.scale / pixelsPerWorld;
+        for (const line of mergeLines(parts)) {
+          // A quarter width of margin because styleZoom is the floor of the viewport zoom and the
+          // text halves against the line by the next bucket. The placer drops what doesn't fit
+          // at the live zoom.
+          const length = polylineLength(line);
+          for (const {at, rank} of lineAnchors(length, spacing, width / 4)) {
+            // Three quarters of a width either side leaves room for the text to slide along a
+            // curve and for the width guess to run short, without paying for the whole road.
+            // The vertices of a stream zigzag at a smaller scale than its bends, and glyphs that
+            // take their angles from those segments tilt every which way.
+            const path =
+                smoothLine(
+                    clipAround(line, at - 0.75 * width, at + 0.75 * width),
+                    /* step= */ em / 4,
+                    /* radius= */ em);
+            // Two glyphs an advance apart that differ in angle by more than MAX_GLYPH_TURN stop
+            // reading as one word. Checking every em of the path once here, rather than the
+            // glyphs as they land at each zoom, keeps the label from flickering as it zooms.
+            if (maxTurnWithin(path, em) > MAX_GLYPH_TURN) {
+              continue;
+            }
 
-        // Ship only the stretch the text can occupy. Twice its width leaves room for the text to
-        // slide along a curve without paying for the whole road.
-        const path =
-            clipAround(lineText.geometry, start, end, length / 2 - width, length / 2 + width);
-        const [centerX, centerY, heading] = sampleAt(lineText.geometry, start, end, length / 2);
-        const center = [centerX, centerY] as Vec2;
-        let angle = heading;
-        if (angle < -Math.PI / 2) {
-          angle = angle + Math.PI;
-        } else if (angle > Math.PI / 2) {
-          angle = angle - Math.PI;
-        }
+            const [centerX, centerY, heading] = sampleAt(line, at);
+            let angle = heading;
+            if (angle < -Math.PI / 2) {
+              angle = angle + Math.PI;
+            } else if (angle > Math.PI / 2) {
+              angle = angle - Math.PI;
+            }
 
-        response.labels.push({
-          // Only used to size the collision box, which is the straight run the text would take.
-          // The glyphs themselves follow path, see glypher#planCurved.
-          angle,
-          center,
-          path,
-          // Line labels render rotated along the line direction. Wrapping turns them into
-          // a tilted multi-line block which looks wrong; keep them single-line.
-          graphemes,
-          fill: style.fill,
-          stroke: style.stroke,
-          scale: style.scale,
-          z: style.z,
-          minZoom: lineText.layerStyle.minZoom,
-          maxZoom: lineText.layerStyle.maxZoom,
-        });
+            response.labels.push({
+              angle,
+              center: [centerX, centerY],
+              path,
+              // Line labels render rotated along the line direction. Wrapping turns them into
+              // a tilted multi-line block which looks wrong; keep them single-line.
+              graphemes,
+              fill: style.fill,
+              stroke: style.stroke,
+              scale: style.scale,
+              z: style.z,
+              rank,
+            });
+          }
+        }
       }
     }
 
@@ -531,16 +567,19 @@ class MbtileLoader {
 
         const text = textPreferred ?? textFallback;
         if (text) {
+          const wrapped = wrap(toGraphemes(text), style.wrapGraphemes ?? 8);
           response.labels.push({
             angle: 0,
             center: point.geometry as unknown as Vec2,
-            graphemes: wrap(toGraphemes(text), /* lineGraphemes= */ 8),
+            graphemes:
+                style.caps
+                    ? track(wrapped.map(grapheme => grapheme.toLocaleUpperCase()))
+                    : wrapped,
             fill: style.textFill,
             stroke: style.textStroke,
             scale: style.textScale,
             z: style.z,
-            minZoom: point.layerStyle.minZoom,
-            maxZoom: point.layerStyle.maxZoom,
+            rank: POINT_LABEL_RANK,
           });
         }
       }
@@ -1234,82 +1273,6 @@ function loadValue(data: LittleEndianView): ValueType {
   }
 
   return boolean ?? number ?? string ?? 0;
-}
-
-// Returns the bounds of the feature's longest run, or undefined if it has none worth labeling. A
-// tile crop can leave a road as several disconnected pieces, and a name should follow one of them
-// rather than jump the gaps.
-function longestSubLine(feature: Feature): [number, number]|undefined {
-  let best: [number, number]|undefined;
-  let bestLength = 0;
-  for (let i = 0; i < feature.starts.length; ++i) {
-    const start = feature.starts[i];
-    const end = i + 1 < feature.starts.length ? feature.starts[i + 1] : feature.geometry.length;
-    if (end - start < 4) {
-      continue;
-    }
-
-    const length = polylineLength(feature.geometry, start, end);
-    if (length > bestLength) {
-      best = [start, end];
-      bestLength = length;
-    }
-  }
-  return best;
-}
-
-function polylineLength(geometry: number[], start: number, end: number): number {
-  let length = 0;
-  for (let i = start; i + 3 < end; i += 2) {
-    const dx = geometry[i + 2] - geometry[i + 0];
-    const dy = geometry[i + 3] - geometry[i + 1];
-    length += Math.sqrt(dx * dx + dy * dy);
-  }
-  return length;
-}
-
-/** Returns the x, y, and heading at an arc length along geometry[start, end). */
-function sampleAt(
-    geometry: number[], start: number, end: number, at: number): [number, number, number] {
-  let travelled = 0;
-  for (let i = start; i + 3 < end; i += 2) {
-    const dx = geometry[i + 2] - geometry[i + 0];
-    const dy = geometry[i + 3] - geometry[i + 1];
-    const length = Math.sqrt(dx * dx + dy * dy);
-    if (travelled + length >= at || i + 5 >= end) {
-      const fraction = length > 0 ? (at - travelled) / length : 0;
-      return [
-        geometry[i + 0] + fraction * dx,
-        geometry[i + 1] + fraction * dy,
-        Math.atan2(dy, dx),
-      ];
-    }
-    travelled += length;
-  }
-  return [geometry[start], geometry[start + 1], 0];
-}
-
-/** Returns geometry[start, end) between two arc lengths, cutting the end segments. */
-function clipAround(
-    geometry: number[], start: number, end: number, from: number, to: number): number[] {
-  const path: number[] = [];
-  let travelled = 0;
-  for (let i = start; i + 3 < end; i += 2) {
-    const dx = geometry[i + 2] - geometry[i + 0];
-    const dy = geometry[i + 3] - geometry[i + 1];
-    const length = Math.sqrt(dx * dx + dy * dy);
-    if (length > 0 && travelled + length >= from && travelled <= to) {
-      if (path.length === 0) {
-        const fraction = Math.max(0, (from - travelled) / length);
-        path.push(geometry[i + 0] + fraction * dx, geometry[i + 1] + fraction * dy);
-      }
-
-      const fraction = Math.min(1, (to - travelled) / length);
-      path.push(geometry[i + 0] + fraction * dx, geometry[i + 1] + fraction * dy);
-    }
-    travelled += length;
-  }
-  return path;
 }
 
 function findStyle<S extends GeometryStyle>(

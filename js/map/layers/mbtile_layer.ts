@@ -1,14 +1,12 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
-import * as arrays from 'external/dev_april_corgi+/js/common/arrays';
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
 import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
-import { SphericalCone } from '../camera';
-import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
-import { Copyright, Rect, RgbaU32, TileId, Vec2 } from '../common/types';
+import { ScreenProjection, SphericalCone } from '../camera';
+import { Copyright, RgbaU32, TileId } from '../common/types';
 import { Layer } from '../layer';
 import { GLYPHER } from '../rendering/glypher';
 import { Planner } from '../rendering/planner';
@@ -18,6 +16,8 @@ import { Label, LoadResponse, Request as LoaderRequest, Response as LoaderRespon
 import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
 import { Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
 
+import { compareLabels, LabelCandidate, LabelPlacer } from './label_placer';
+
 interface LoadedTile {
   drawables: Drawable[];
   glGeometryBuffer: WebGLBuffer;
@@ -25,36 +25,12 @@ interface LoadedTile {
   labelKeys: string[];
 }
 
-interface IndexedLabel extends Label {
-  id: number;
-  key: string;
+interface IndexedLabel extends LabelCandidate {
   owners: Set<string>;
-  bound: Rect;
-  collidedMinZoom: number;
-  radius: Vec2;
 }
 
 function tileKey(id: TileId): string {
   return `${id.zoom},${id.x},${id.y}`;
-}
-
-// Extra pixel padding applied between labels in collision math. SAME_TEXT_PAD_PX is the larger
-// gap enforced between labels with identical text. DIFFERENT_TEXT_PAD_PX is the breathing room
-// between any pair, so visually-close labels (e.g., a tilted river or lake name next to a
-// horizontal state name) get one suppressed even when their tight AABBs don't quite intersect.
-// The label bound is sized to SAME_TEXT_PAD_PX (the larger value) so queryRect finds the
-// candidates for both cases.
-const SAME_TEXT_PAD_PX = 384;
-const DIFFERENT_TEXT_PAD_PX = 32;
-
-function labelBound(center: Vec2, w: number, h: number, minZoom: number): Rect {
-  const mzWorldSize = 256 * Math.pow(2, minZoom);
-  const hwWorld = w / mzWorldSize;
-  const hhWorld = h / mzWorldSize;
-  return {
-    low: [center[0] - hwWorld, center[1] - hhWorld] as const,
-    high: [center[0] + hwWorld, center[1] + hhWorld] as const,
-  };
 }
 
 // Quantize world coords so two tiles at different zooms projecting the same lat/lng bucket the
@@ -375,6 +351,133 @@ export const CONTOURS_METERS: Readonly<Style> = {
       polygons: [],
     },
   ],
+};
+
+type PointStyle = Style['layers'][number]['points'][number];
+
+// Place names get smaller and lighter with the place, so a city reads as more than its
+// neighborhoods at a glance. Neighborhoods are gray spaced capitals, a different kind of name
+// rather than a smaller town. The z order follows, so a city never loses its space to a part of
+// itself.
+// A city ranked under 7 is one labeled by zoom 7, like San Francisco and Oakland but not Daly
+// City, which protomaps also calls a city.
+const MAJOR_CITY_LABEL: PointStyle = {
+  filters: [
+    {match: 'string_in', key: 'class', value: ['city']},
+    {match: 'less_than', key: 'rank', value: 7},
+  ],
+  textFill: 0x2B2B2BFF as RgbaU32,
+  textStroke: 0xEFEFEFFF as RgbaU32,
+  textScale: 0.6,
+  z: Z_OVERLAY_TEXT + 0.3,
+};
+
+const CITY_LABEL: PointStyle = {
+  filters: [{match: 'string_in', key: 'class', value: ['city']}],
+  textFill: 0x2B2B2BFF as RgbaU32,
+  textStroke: 0xEFEFEFFF as RgbaU32,
+  textScale: 0.52,
+  z: Z_OVERLAY_TEXT + 0.28,
+};
+
+const TOWN_LABEL: PointStyle = {
+  filters: [{match: 'string_in', key: 'class', value: ['town']}],
+  textFill: 0x3D3D3DFF as RgbaU32,
+  textStroke: 0xEFEFEFFF as RgbaU32,
+  textScale: 0.48,
+  z: Z_OVERLAY_TEXT + 0.25,
+};
+
+const VILLAGE_LABEL: PointStyle = {
+  filters: [{match: 'string_in', key: 'class', value: ['village']}],
+  textFill: 0x505050FF as RgbaU32,
+  textStroke: 0xEFEFEFFF as RgbaU32,
+  textScale: 0.44,
+  z: Z_OVERLAY_TEXT + 0.2,
+};
+
+// Under water and park names, which say more about where a trail goes.
+const SUBURB_LABEL: PointStyle = {
+  filters: [{match: 'string_in', key: 'class', value: ['suburb']}],
+  textFill: 0x6E6A64FF as RgbaU32,
+  textStroke: 0xEFEFEFFF as RgbaU32,
+  textScale: 0.38,
+  caps: true,
+  z: Z_OVERLAY_TEXT + 0.06,
+};
+
+const NEIGHBOURHOOD_LABEL: PointStyle = {
+  ...SUBURB_LABEL,
+  filters: [{match: 'string_in', key: 'class', value: ['neighbourhood']}],
+  textScale: 0.34,
+  z: Z_OVERLAY_TEXT + 0.05,
+};
+
+/**
+ * Narrows a style to what protomaps would label before the zoom, because it ranks a place or a
+ * park by the zoom its label should first appear at.
+ */
+function rankedUnder(style: PointStyle, zoom: number): PointStyle {
+  return {
+    ...style,
+    filters: [...style.filters, {match: 'less_than', key: 'rank', value: zoom}],
+  };
+}
+
+// Quieter than the place names, so a park reads as a region and not as a town.
+const PARK_LABEL: PointStyle = {
+  filters: [{match: 'string_in', key: 'class', value: ['national_park', 'wilderness_area']}],
+  textFill: 0x3F7A4AFF as RgbaU32,
+  textStroke: 0xEFEFEFFF as RgbaU32,
+  textScale: 0.44,
+  wrapGraphemes: 14,
+  z: Z_OVERLAY_TEXT + 0.1,
+};
+
+type PolygonStyle = Style['layers'][number]['polygons'][number];
+
+const PARK_OUTLINE: PolygonStyle = {
+  filters: [{
+    match: 'string_in',
+    key: 'class',
+    value: [
+      //'city_park',
+      //'county_park',
+      // TODO(april): this looks gross at the nortern tip of Greenland
+      'national_park',
+      'wilderness_area',
+      //'nature_reserve',
+      //'open_space_preserve',
+      //'regional_park',
+      //'state_park',
+      //'state_wilderness',
+    ],
+  }],
+  fill: 0 as RgbaU32,
+  stroke: 0x13653288 as RgbaU32,
+  strokeRadius: 1,
+  strokeStipple: false,
+  z: Z_BASE_TERRAIN + 0.75,
+};
+
+// Only from 10 in, because under that a city park is a speck and the lower zooms are where the
+// TODO about Greenland bites.
+const CITY_PARK_FILL: PolygonStyle = {
+  filters: [{
+    match: 'string_in',
+    key: 'class',
+    value: [
+      'city_park',
+      'county_park',
+      'regional_park',
+      'state_park',
+    ],
+  }],
+  fill: 0x8CC96A70 as RgbaU32,
+  stroke: 0 as RgbaU32,
+  strokeRadius: 0,
+  strokeStipple: false,
+  z: Z_BASE_TERRAIN + 0.75,
 };
 
 export const NATURE: Readonly<Style> = {
@@ -894,99 +997,36 @@ export const NATURE: Readonly<Style> = {
       maxZoom: 10,
       lineTexts: [],
       lines: [],
-      points: [
-        {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'national_park',
-                'wilderness_area',
-              ],
-            },
-          ],
-          textFill: 0x007D25FF as RgbaU32,
-          textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.5,
-          z: Z_OVERLAY_TEXT + 0.1,
-        },
-      ],
+      points: [PARK_LABEL],
       polygons: [
         {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
-              //'city_park',
-              //'county_park',
-              // TODO(april): this looks gross at the nortern tip of Greenland
-              'national_park',
-              'wilderness_area',
-              //'nature_reserve',
-              //'open_space_preserve',
-              //'regional_park',
-              //'state_park',
-              //'state_wilderness',
-            ],
-          }],
+          ...PARK_OUTLINE,
           fill: 0x8CC96A48 as RgbaU32,
           stroke: 0 as RgbaU32,
           strokeRadius: 0,
-          strokeStipple: false,
-          z: Z_BASE_TERRAIN + 0.75,
         },
       ],
     },
     {
       layerName: 'park',
       minZoom: 10,
+      maxZoom: 12,
+      lineTexts: [],
+      lines: [],
+      // Protomaps ranks only the big regional parks and watersheds at 10.
+      points: [rankedUnder(PARK_LABEL, 11)],
+      // No outlines yet, because at this zoom a region's parks are dozens of parcels and their
+      // outlines tangle into a mesh.
+      polygons: [CITY_PARK_FILL],
+    },
+    {
+      layerName: 'park',
+      minZoom: 12,
       maxZoom: 31,
       lineTexts: [],
       lines: [],
-      points: [
-        {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'national_park',
-                'wilderness_area',
-              ],
-            },
-          ],
-          textFill: 0x007D25FF as RgbaU32,
-          textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.55,
-          z: Z_OVERLAY_TEXT + 0.1,
-        },
-      ],
-      polygons: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
-              //'city_park',
-              //'county_park',
-              // TODO(april): this looks gross at the nortern tip of Greenland
-              'national_park',
-              'wilderness_area',
-              //'nature_reserve',
-              //'open_space_preserve',
-              //'regional_park',
-              //'state_park',
-              //'state_wilderness',
-            ],
-          }],
-          fill: 0 as RgbaU32,
-          stroke: 0x13653288 as RgbaU32,
-          strokeRadius: 1,
-          strokeStipple: false,
-          z: Z_BASE_TERRAIN + 0.75,
-        },
-      ],
+      points: [PARK_LABEL],
+      polygons: [PARK_OUTLINE, CITY_PARK_FILL],
     },
     {
       layerName: 'place',
@@ -1195,26 +1235,46 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'place',
       minZoom: 10,
+      maxZoom: 11,
+      lineTexts: [],
+      lines: [],
+      points: [
+        MAJOR_CITY_LABEL,
+        CITY_LABEL,
+        rankedUnder(TOWN_LABEL, 11),
+        rankedUnder(VILLAGE_LABEL, 11),
+      ],
+      polygons: [],
+    },
+    {
+      layerName: 'place',
+      minZoom: 11,
+      maxZoom: 13,
+      lineTexts: [],
+      lines: [],
+      points: [
+        MAJOR_CITY_LABEL,
+        CITY_LABEL,
+        rankedUnder(TOWN_LABEL, 13),
+        rankedUnder(VILLAGE_LABEL, 13),
+        // Protomaps ranks the big parts of a city, like Noe Valley, at 11 and the rest at 13.
+        rankedUnder(SUBURB_LABEL, 12),
+      ],
+      polygons: [],
+    },
+    {
+      layerName: 'place',
+      minZoom: 13,
       maxZoom: 31,
       lineTexts: [],
       lines: [],
       points: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
-              'city',
-              'town',
-              'village',
-              'suburb',
-            ],
-          }],
-          textFill: 0x000000FF as RgbaU32,
-          textStroke: 0xEFEFEFFF as RgbaU32,
-          textScale: 0.5,
-          z: Z_OVERLAY_TEXT + 0.11,
-        },
+        MAJOR_CITY_LABEL,
+        CITY_LABEL,
+        TOWN_LABEL,
+        VILLAGE_LABEL,
+        SUBURB_LABEL,
+        NEIGHBOURHOOD_LABEL,
       ],
       polygons: [],
     },
@@ -2067,7 +2127,6 @@ export class MbtileLayer extends Layer {
 
   private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
   private fetching: boolean;
-  private readonly labelIndex: WorldBoundsQuadtree<IndexedLabel>;
   private readonly labels: Map<string, IndexedLabel>;
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
@@ -2084,7 +2143,9 @@ export class MbtileLayer extends Layer {
   private readonly tiles: HashMap<TileId, LoadedTile>;
   private generation: number;
   private lastRenderGeneration: number;
-  private lastLabelId: number;
+  private readonly placer: LabelPlacer;
+  // The labels in placement order, or undefined when the set changed since the last sort
+  private sorted: IndexedLabel[]|undefined;
   private styleZoom: number;
   private styleEpoch: number;
 
@@ -2100,7 +2161,6 @@ export class MbtileLayer extends Layer {
     super(copyrights);
     this.fetcher = new WorkerPool(new URL('xyz_data_fetcher_worker.js', import.meta.url).href, 1);
     this.fetching = false;
-    this.labelIndex = new WorldBoundsQuadtree();
     this.labels = new Map();
     this.loader = new QueuedWorkerPool(new URL('mbtile_loader_worker.js', import.meta.url).href, 6);
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
@@ -2118,7 +2178,8 @@ export class MbtileLayer extends Layer {
     });
     this.generation = 0;
     this.lastRenderGeneration = -1;
-    this.lastLabelId = -1;
+    this.placer = new LabelPlacer();
+    this.sorted = undefined;
     // -1 is a sentinel: no styleZoom has been observed yet, so the first
     // viewportChanged adopts whatever the camera reports without triggering
     // a re-style pass (there are no cached raw bytes to re-style anyway).
@@ -2176,58 +2237,26 @@ export class MbtileLayer extends Layer {
     return this.fetching || this.loading.size > 0;
   }
 
-  override render(planner: Planner, zoom: number): void {
+  override render(planner: Planner, zoom: number, projection: ScreenProjection): void {
     // TODO(april): this results in bad behavior like low zoom tiles drawing over what should be
     // background at high zoom. We need to drop the depth buffer and just be careful about overdraw
     // with xyz tiles. Sad.
     //
     // Orrrr we could add a tile wide quad at the start of every tile...? But then we need the
     // stencil buffer not depth.
-    const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
-    for (const [, response] of sorted) {
+    const tiles = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
+    for (const [, response] of tiles) {
       planner.add(response.drawables);
     }
 
-    // Pixels per mercator unit, the same scale the programs get as halfWorldSize. Glyph advances
-    // are in pixels and label paths are in mercator, so curved layout needs the live conversion.
-    const pixelsPerWorld = 256 * Math.pow(2, zoom - 1);
-    let textByteSize = 0;
-    for (const label of this.labels.values()) {
-      if (label.collidedMinZoom > zoom) {
-        continue;
-      }
-
-      const {byteSize, drawables} =
-          label.path
-              ? GLYPHER.planCurved(
-                  label.graphemes,
-                  label.path,
-                  pixelsPerWorld,
-                  label.scale,
-                  label.fill,
-                  label.stroke,
-                  label.z,
-                  this.textBuffer,
-                  textByteSize,
-                  this.textGlBuffer,
-                  this.renderer)
-              : GLYPHER.plan(
-                  label.graphemes,
-                  label.center,
-                  [0, 0],
-                  label.scale,
-                  label.angle,
-                  label.fill,
-                  label.stroke,
-                  label.z,
-                  this.textBuffer,
-                  textByteSize,
-                  this.textGlBuffer,
-                  this.renderer);
-      planner.add(drawables);
-      textByteSize += byteSize;
+    if (!this.sorted) {
+      this.sorted = [...this.labels.values()].sort(compareLabels);
     }
-    this.renderer.uploadData(this.textBuffer, textByteSize, this.textGlBuffer);
+    const {byteSize, drawables} =
+        this.placer.place(
+            this.sorted, projection, zoom, this.textBuffer, this.textGlBuffer, this.renderer);
+    planner.add(drawables);
+    this.renderer.uploadData(this.textBuffer, byteSize, this.textGlBuffer);
 
     this.lastRenderGeneration = this.generation;
   }
@@ -2306,11 +2335,7 @@ export class MbtileLayer extends Layer {
       }
     }
 
-    // If we're replacing a previously-styled entry for this tile (re-style
-    // path), tear down its GL buffers and unwind its label ownership before
-    // installing the new entry so neither leaks.
-    const affectedLabels = new Set<IndexedLabel>();
-    this.disposeStyledTile(response.id, affectedLabels);
+    this.disposeStyledTile(response.id);
 
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
@@ -2320,66 +2345,22 @@ export class MbtileLayer extends Layer {
 
     const labelKeys: string[] = [];
     const ownerKey = tileKey(response.id);
-    const padding = 2;
     for (const label of response.labels) {
       const key = labelKey(label);
+      labelKeys.push(key);
       const existing = this.labels.get(key);
       if (existing) {
         existing.owners.add(ownerKey);
-        labelKeys.push(key);
-
-        // Different zoom-band tile styles can produce the same point label with different
-        // [minZoom, maxZoom] ranges. Take the union so the label remains visible across all
-        // zooms where some contributing style says it should show.
-        if (label.minZoom < existing.minZoom || label.maxZoom > existing.maxZoom) {
-          const newMin = Math.min(existing.minZoom, label.minZoom);
-          const newMax = Math.max(existing.maxZoom, label.maxZoom);
-          if (newMin < existing.minZoom) {
-            // Bound scales inversely with minZoom; widening minZoom downward grows the bound.
-            this.labelIndex.delete(existing.bound);
-            const [w, h] = existing.radius;
-            existing.bound =
-                labelBound(
-                    existing.center, w + SAME_TEXT_PAD_PX, h + SAME_TEXT_PAD_PX, newMin);
-            this.labelIndex.insert(existing, existing.bound);
-          }
-          existing.minZoom = newMin;
-          existing.maxZoom = newMax;
-          existing.collidedMinZoom = newMin;
-          this.recalculateCollisionZoom(existing);
-        }
-        continue;
+      } else {
+        this.labels.set(key, {
+          ...label,
+          key,
+          owners: new Set([ownerKey]),
+          text: label.graphemes.join(''),
+        });
       }
-
-      const [wr, hr] = checkExists(GLYPHER.measurePx(label.graphemes, label.scale));
-      const sin = Math.sin(label.angle);
-      const cos = Math.cos(label.angle);
-      // TODO(april): this isn't quite right. I think you can rotate the top right corner in such a
-      // way that it's no longer representative of the actual rotated width. I think need a Math.max
-      // on another corner here.
-      const w = Math.abs(wr * cos - hr * sin) + 2 * padding;
-      const h = Math.abs(wr * sin + hr * cos) + 2 * padding;
-      // Pad the bound by SAME_TEXT_PAD_PX so queryRect surfaces same-text neighbors at the
-      // padded collision range. radius stays at [w, h] for the actual collision math.
-      const maximalBound =
-          labelBound(
-              label.center, w + SAME_TEXT_PAD_PX, h + SAME_TEXT_PAD_PX, label.minZoom);
-
-      const indexed: IndexedLabel = {
-        ...label,
-        id: ++this.lastLabelId,
-        key,
-        owners: new Set([ownerKey]),
-        bound: maximalBound,
-        collidedMinZoom: label.minZoom,
-        radius: [w, h] as const, // no divide by 2 because the world is -1 to 1
-      };
-      this.recalculateCollisionZoom(indexed);
-
-      this.labels.set(key, indexed);
-      this.labelIndex.insert(indexed, maximalBound);
-      labelKeys.push(key);
     }
+    this.sorted = undefined;
 
     for (const line of response.lines) {
       drawables.push({
@@ -2422,12 +2403,6 @@ export class MbtileLayer extends Layer {
       drawables,
       labelKeys,
     });
-    // Recalculate collidedMinZoom for labels whose neighbor was just removed
-    // by the dispose pass above. Done after the new labels are installed so
-    // those new labels participate in the recomputed collisions.
-    for (const label of affectedLabels) {
-      this.recalculateCollisionZoom(label);
-    }
     this.generation += 1;
 
     this.fetcher.broadcast({
@@ -2436,7 +2411,7 @@ export class MbtileLayer extends Layer {
     });
   }
 
-  private disposeStyledTile(id: TileId, affectedLabels: Set<IndexedLabel>): void {
+  private disposeStyledTile(id: TileId): void {
     const response = this.tiles.get(id);
     if (!response) {
       return;
@@ -2452,25 +2427,14 @@ export class MbtileLayer extends Layer {
         continue;
       }
       label.owners.delete(ownerKey);
-      if (label.owners.size > 0) {
-        continue;
-      }
-
-      this.labels.delete(key);
-      affectedLabels.delete(label);
-      this.labelIndex.delete(label.bound);
-
-      const affected: IndexedLabel[] = [];
-      this.labelIndex.queryRect(label.bound, affected);
-      for (const other of affected) {
-        // TODO(april): can we skip labels we know we didn't affect?
-        affectedLabels.add(other);
+      if (label.owners.size === 0) {
+        this.labels.delete(key);
       }
     }
+    this.sorted = undefined;
   }
 
   private unloadTiles(ids: TileId[]): void {
-    const affectedLabels = new Set<IndexedLabel>();
     for (const id of ids) {
       const task = this.loading.get(id);
       if (task) {
@@ -2479,76 +2443,8 @@ export class MbtileLayer extends Layer {
       }
 
       this.rawBytes.delete(id);
-      this.disposeStyledTile(id, affectedLabels);
+      this.disposeStyledTile(id);
     }
-
-    // We recalculate after all tiles are unloaded because we may be unloading every label.
-    for (const label of affectedLabels) {
-      this.recalculateCollisionZoom(label);
-    }
-
     this.generation += 1;
   }
-
-  private recalculateCollisionZoom(label: IndexedLabel): void {
-    const neighbors: IndexedLabel[] = [];
-    this.labelIndex.queryRect(label.bound, neighbors);
-
-    let ourMinZoom = label.minZoom;
-    const [wr, hr] = label.radius;
-    for (const other of neighbors) {
-      if (other === label) {
-        continue;
-      }
-      if (label.maxZoom < other.minZoom || label.minZoom > other.maxZoom) {
-        continue;
-      }
-
-
-      const collisionZoom = Math.max(ourMinZoom, other.collidedMinZoom);
-      const worldSize = 256 * Math.pow(2, collisionZoom);
-
-      const extraPad =
-          arrays.equals(label.graphemes, other.graphemes)
-              ? SAME_TEXT_PAD_PX
-              : DIFFERENT_TEXT_PAD_PX;
-      const ourRadius = [wr / worldSize, hr / worldSize];
-      const theirRadius = [other.radius[0] / worldSize, other.radius[1] / worldSize];
-      const overlapX =
-          Math.abs(label.center[0] - other.center[0])
-              - ourRadius[0] - theirRadius[0] - extraPad / worldSize;
-      const overlapY =
-          Math.abs(label.center[1] - other.center[1])
-              - ourRadius[1] - theirRadius[1] - extraPad / worldSize;
-      if (overlapX >= 0 || overlapY >= 0) {
-        continue;
-      }
-
-      const minimalZoomX =
-          Math.log2(
-              (wr + other.radius[0] + extraPad)
-                  / Math.abs(label.center[0] - other.center[0]) / 512);
-      const minimalZoomY =
-          Math.log2(
-              (hr + other.radius[1] + extraPad)
-                  / Math.abs(label.center[1] - other.center[1]) / 512);
-      const minimalZoom = Math.max(minimalZoomX, minimalZoomY);
-
-      if (label.z > other.z) {
-        other.collidedMinZoom = Math.max(minimalZoom, other.collidedMinZoom);
-      } else if (label.z === other.z) {
-        const compare = arrays.compare(label.graphemes, other.graphemes);
-        if (compare < 0 || (compare === 0 && label.id < other.id)) {
-          other.collidedMinZoom = Math.max(minimalZoom, other.collidedMinZoom);
-        } else {
-          ourMinZoom = Math.max(ourMinZoom, minimalZoom);
-        }
-      } else {
-        ourMinZoom = Math.max(ourMinZoom, minimalZoom);
-      }
-    }
-
-    label.collidedMinZoom = ourMinZoom;
-  }
 }
-

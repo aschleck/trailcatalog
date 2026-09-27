@@ -36,6 +36,9 @@ const SEGMENTER = new Intl.Segmenter();
 // Scratch for planCurved, which runs once per curved label per frame.
 const PLACEMENTS: number[] = [];
 const CURVED_GLYPHS: Glyph[] = [];
+// Scratch for layOutAlong, the ends of the chord under one glyph.
+const PEN_START: [number, number] = [0, 0];
+const PEN_END: [number, number] = [0, 0];
 // Scratch for plan, one horizontal anchor shift per line.
 const LINE_SHIFTS: number[] = [];
 
@@ -299,7 +302,40 @@ class Glypher {
       offset: number,
       glBuffer: WebGLBuffer,
       renderer: Renderer): {byteSize: number; drawables: Drawable[];} {
-    const glyphs = CURVED_GLYPHS;
+    if (!this.layOutCurved(graphemes, path, pixelsPerWorld, scale, CURVED_GLYPHS, PLACEMENTS)
+        || turnsTooSharply(PLACEMENTS)) {
+      return {byteSize: 0, drawables: []};
+    }
+    return this.planPlaced(
+        CURVED_GLYPHS,
+        // The glyphs hang off the head of the path, so that is the label's anchor.
+        [path[0], path[1]],
+        PLACEMENTS,
+        scale,
+        fill,
+        stroke,
+        z,
+        buffer,
+        offset,
+        glBuffer,
+        renderer);
+  }
+
+  /**
+   * Fills glyphs and placements with text laid along path, see planCurved, and returns false when
+   * the text doesn't fit it. Placements are pixel offsets from the head of the path, with y up.
+   *
+   * Unlike planCurved this allows any bend, because whether a glyph lands across a sharp vertex
+   * changes with every step of zoom and the label would flicker. Callers that place the same label
+   * across zooms check the bend once against MAX_GLYPH_TURN instead.
+   */
+  layOutCurved(
+      graphemes: string[],
+      path: ArrayLike<number>,
+      pixelsPerWorld: number,
+      scale: number,
+      glyphs: Glyph[],
+      placements: number[]): boolean {
     glyphs.length = 0;
     let regenerate = false;
     let widthPx = 0;
@@ -320,7 +356,7 @@ class Glypher {
 
     if (regenerate) {
       this.regenerator.trigger();
-      return {byteSize: 0, drawables: []};
+      return false;
     }
 
     const points = path.length / 2;
@@ -331,34 +367,44 @@ class Glypher {
 
     const width = widthPx / pixelsPerWorld;
     if (width > length) {
-      return {byteSize: 0, drawables: []};
-    }
-
-    if (this.atlasUploads.get(renderer) !== this.generation) {
-      renderer.uploadAlphaTexture(
-          this.atlas, [ATLAS_WIDTH, ATLAS_HEIGHT], renderer.sdfProgram.atlas);
-      this.atlasUploads.set(renderer, this.generation);
+      return false;
     }
 
     // Lay the text out and then see which way it came out reading. Deciding from the path's two
     // endpoints instead gets it wrong wherever a line doubles back, because the ends point one
     // way while the stretch under the text points the other.
-    const placements = PLACEMENTS;
     const heading =
         layOutAlong(glyphs, path, length, width, pixelsPerWorld, scale, true, placements);
     if (heading < 0) {
       layOutAlong(glyphs, path, length, width, pixelsPerWorld, scale, false, placements);
     }
 
-    if (turnsTooSharply(placements)) {
-      return {byteSize: 0, drawables: []};
+    return true;
+  }
+
+  /** Draws glyphs at their own offsets from center, as layOutCurved places them. */
+  planPlaced(
+      glyphs: Glyph[],
+      center: Vec2,
+      placements: ArrayLike<number>,
+      scale: number,
+      fill: RgbaU32,
+      stroke: RgbaU32,
+      z: number,
+      buffer: ArrayBuffer,
+      offset: number,
+      glBuffer: WebGLBuffer,
+      renderer: Renderer): {byteSize: number; drawables: Drawable[];} {
+    if (this.atlasUploads.get(renderer) !== this.generation) {
+      renderer.uploadAlphaTexture(
+          this.atlas, [ATLAS_WIDTH, ATLAS_HEIGHT], renderer.sdfProgram.atlas);
+      this.atlasUploads.set(renderer, this.generation);
     }
 
     const {byteSize, drawable} =
         renderer.sdfProgram.planPlaced(
             glyphs,
-            // The glyphs hang off the head of the path, so that is the label's anchor.
-            [path[0], path[1]],
+            center,
             placements,
             scale,
             fill,
@@ -488,8 +534,10 @@ function layOutAlong(
   let segment = 0;
   let travelled = 0;
   let segmentLength = distance(path, first, first + step);
-  for (const glyph of glyphs) {
-    while (pen > travelled + segmentLength && segment + 2 < points) {
+  // Writes the point at an arc length into out. Arc lengths only grow, so the walk only moves
+  // forward.
+  const pointAt = (at: number, out: [number, number]) => {
+    while (at > travelled + segmentLength && segment + 2 < points) {
       travelled += segmentLength;
       segment += 1;
       segmentLength = distance(path, first + segment * step, first + (segment + 1) * step);
@@ -497,20 +545,31 @@ function layOutAlong(
 
     const from = 2 * (first + segment * step);
     const to = 2 * (first + (segment + 1) * step);
-    const fraction = segmentLength > 0 ? (pen - travelled) / segmentLength : 0;
-    const angle = Math.atan2(path[to + 1] - path[from + 1], path[to + 0] - path[from + 0]);
+    const fraction = segmentLength > 0 ? (at - travelled) / segmentLength : 0;
+    out[0] = path[from + 0] + fraction * (path[to + 0] - path[from + 0]);
+    out[1] = path[from + 1] + fraction * (path[to + 1] - path[from + 1]);
+  };
+
+  const start = PEN_START;
+  const end = PEN_END;
+  pointAt(pen, end);
+  for (const glyph of glyphs) {
+    start[0] = end[0];
+    start[1] = end[1];
+    const advance = glyph.glyphAdvance * scale;
+    pointAt(pen + advance / pixelsPerWorld, end);
+    // The chord across the glyph's own advance, rather than whichever segment the pen is on, so
+    // a glyph straddling a vertex leans with both sides of it.
+    const angle = Math.atan2(end[1] - start[1], end[0] - start[0]);
     // Lifts the glyph off the baseline onto the line itself, matching plan's vertical centering.
     const perpendicular = glyph.glyphTop * scale - FONT_SIZE * scale / 2;
     // Offsets from the anchor rather than absolute positions, because these land in a float
     // buffer and mercator coordinates have no precision left to spare at high zoom.
     placements.push(
-        (path[from + 0] + fraction * (path[to + 0] - path[from + 0]) - path[0]) * pixelsPerWorld
-            - Math.sin(angle) * perpendicular,
-        (path[from + 1] + fraction * (path[to + 1] - path[from + 1]) - path[1]) * pixelsPerWorld
-            + Math.cos(angle) * perpendicular,
+        (start[0] - path[0]) * pixelsPerWorld - Math.sin(angle) * perpendicular,
+        (start[1] - path[1]) * pixelsPerWorld + Math.cos(angle) * perpendicular,
         angle);
 
-    const advance = glyph.glyphAdvance * scale;
     heading += advance * Math.cos(angle);
     pen += advance / pixelsPerWorld;
   }
@@ -520,7 +579,7 @@ function layOutAlong(
 // Text that bends more than this between two glyphs stops reading as one word following a curve.
 // It happens where a line doubles back on itself, which puts the tail of the name on the return
 // leg pointing at its own head.
-const MAX_GLYPH_TURN = Math.PI / 4;
+export const MAX_GLYPH_TURN = Math.PI / 4;
 
 function turnsTooSharply(placements: number[]): boolean {
   for (let i = 2 * FLOATS_PER_PLACEMENT - 1; i < placements.length; i += FLOATS_PER_PLACEMENT) {
@@ -581,4 +640,16 @@ export function wrap(graphemes: string[], lineGraphemes: number): string[] {
     }
   }
   return wrapped;
+}
+
+/** Puts a hair space between the graphemes of each line, which letter-spaces the text. */
+export function track(graphemes: string[]): string[] {
+  const tracked = [];
+  for (let i = 0; i < graphemes.length; ++i) {
+    tracked.push(graphemes[i]);
+    if (i + 1 < graphemes.length && graphemes[i] !== '\n' && graphemes[i + 1] !== '\n') {
+      tracked.push('\u200A');
+    }
+  }
+  return tracked;
 }

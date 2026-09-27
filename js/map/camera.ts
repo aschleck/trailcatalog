@@ -224,6 +224,13 @@ export class Camera {
     return S2LatLng.fromRadians(v.lat, v.lng);
   }
 
+  screenProjection(widthPx: number, heightPx: number): ScreenProjection {
+    return new ScreenProjection(
+        createProjection(
+            this._center.latRadians(), this._center.lngRadians(), this._zoom, widthPx, heightPx),
+        projectS2LatLng(this._center));
+  }
+
   // The tile zoom at which we should fetch source tiles. Hedges between
   // two caps:
   //   - horizon cap acos(1/scale): geometric occlusion limit. At low zoom
@@ -362,6 +369,61 @@ export class Camera {
 }
 
 type Vec3 = [number, number, number];
+
+/**
+ * Projects mercator points to pixels from the viewport's center with y up, the frame that glyph
+ * offsets are in, through the same blend the shaders use.
+ */
+export class ScreenProjection {
+
+  private readonly halfWorldSize: number;
+  private readonly halfViewport: Vec2;
+
+  constructor(private readonly projection: Projection, private readonly centerPixel: Vec2) {
+    this.halfWorldSize = 1 / projection.inverseWorldRadius;
+    this.halfViewport = [projection.widthPx / 2, projection.heightPx / 2];
+  }
+
+  get heightPx(): number {
+    return this.projection.heightPx;
+  }
+
+  get widthPx(): number {
+    return this.projection.widthPx;
+  }
+
+  // Writes the pixel into out and returns false where the globe hides the point, like the
+  // shaders' horizonDistance.
+  project(x: number, y: number, out: [number, number]): boolean {
+    if (this.projection.flattenFactor >= 1) {
+      let dx = x - this.centerPixel[0];
+      if (dx > 1) {
+        dx -= 2;
+      } else if (dx < -1) {
+        dx += 2;
+      }
+      out[0] = dx * this.halfWorldSize;
+      out[1] = (y - this.centerPixel[1]) * this.halfWorldSize;
+      return true;
+    }
+
+    const lat = mercYToLat(y);
+    const lng = x * Math.PI;
+    const cosLat = Math.cos(lat);
+    const {scale, zAxis} = this.projection.frame;
+    const facing =
+        cosLat * Math.cos(lng) * zAxis[0] + Math.sin(lat) * zAxis[1]
+            + cosLat * Math.sin(lng) * zAxis[2];
+    if (facing <= 1 / scale) {
+      return false;
+    }
+
+    const ndc = projectBlended(lat, lng, this.projection);
+    out[0] = ndc[0] * this.halfViewport[0];
+    out[1] = ndc[1] * this.halfViewport[1];
+    return true;
+  }
+}
 
 export interface SphericalCone {
   camDir: Vec3;

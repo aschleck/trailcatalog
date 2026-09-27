@@ -123,6 +123,8 @@ const LAYERS: ReadonlyMap<string, LayerTranslation> = new Map<string, LayerTrans
       ['regional_park', {key: 'kind', values: ['park']}],
       ['state_park', {key: 'kind', values: ['park']}],
     ]),
+    // A park's rank and min_zoom line up the way a place's do, see place below.
+    renames: new Map([['rank', 'min_zoom']]),
   }],
   ['place', {
     points: 'places',
@@ -133,7 +135,9 @@ const LAYERS: ReadonlyMap<string, LayerTranslation> = new Map<string, LayerTrans
       ['city', {key: 'kind_detail', values: ['city']}],
       ['town', {key: 'kind_detail', values: ['town']}],
       ['village', {key: 'kind_detail', values: ['village']}],
-      ['suburb', {key: 'kind_detail', values: ['neighbourhood', 'quarter']}],
+      // Protomaps files the big named parts of a city, like Noe Valley, as quarters.
+      ['suburb', {key: 'kind_detail', values: ['quarter', 'suburb']}],
+      ['neighbourhood', {key: 'kind_detail', values: ['neighbourhood']}],
     ]),
     // OpenMapTiles ranks a place by prominence and protomaps names the zoom its label is meant to
     // appear at. Both count up as the place gets smaller and both run about 1 to 15, so the
