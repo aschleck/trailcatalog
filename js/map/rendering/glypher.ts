@@ -1,5 +1,4 @@
 import TinySDF from '@mapbox/tiny-sdf';
-import GraphemeSplitter from 'grapheme-splitter';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { TFontFace, parseCss } from 'external/dev_april_corgi+/js/common/css';
@@ -23,7 +22,7 @@ const ATLAS_GLYPH_SIZE = 32;
 
 const ATLAS_WIDTH = 2048;
 const ATLAS_HEIGHT = 2048;
-const SPLITTER = new GraphemeSplitter();
+const SEGMENTER = new Intl.Segmenter();
 
 // Scratch for planCurved, which runs once per curved label per frame.
 const PLACEMENTS: number[] = [];
@@ -478,5 +477,5 @@ function copyIntoImage(
 }
 
 export function toGraphemes(text: string): string[] {
-  return SPLITTER.splitGraphemes(text);
+  return Array.from(SEGMENTER.segment(text), s => s.segment);
 }
