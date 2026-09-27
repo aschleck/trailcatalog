@@ -7,17 +7,17 @@
  * @param fieldOfView - Vertical field of view in radians. (e.g., Math.PI / 4 for 45 degrees)
  * @param near - Distance to the near clipping plane. (in the same units as your scene, typically world units)
  * @param far - Distance to the far clipping plane. (in the same units as your scene, typically world units)
- * @returns A 4x4 perspective projection matrix as a Float32Array.
+ * @returns A 4x4 perspective projection matrix as a Float64Array.
  */
 export function createPerspectiveProjectionMatrix(
   aspect = 1.0,
   fieldOfView = Math.PI / 4,
   near = 0.1,
   far = 50.0,
-): Float32Array {
+): Float64Array {
   const f = 1.0 / Math.tan(fieldOfView / 2);
   const nf = 1 / (near - far);
-  return new Float32Array([
+  return new Float64Array([
     f * aspect, 0, 0, 0,
     0, f, 0, 0,
     0, 0, (far + near) * nf, -1,
@@ -31,12 +31,12 @@ export function createPerspectiveProjectionMatrix(
  * @param cameraPos - The position of the camera in world space.
  * @param target - The position the camera is looking at in world space.
  * @param up - The direction that is considered up.
- * @returns A 4x4 view matrix as a Float32Array.
+ * @returns A 4x4 view matrix as a Float64Array.
  */
 export function createViewMatrix(
   cameraPos: [number, number, number],
   target: [number, number, number],
-  up: [number, number, number]): Float32Array {
+  up: [number, number, number]): Float64Array {
   const [cx, cy, cz] = cameraPos;
   const [tx, ty, tz] = target;
   const [ux, uy, uz] = up;
@@ -62,7 +62,7 @@ export function createViewMatrix(
     xAxis[0] * zAxis[1] - xAxis[1] * zAxis[0],
   ];
 
-  return new Float32Array([
+  return new Float64Array([
     xAxis[0], yAxis[0], zAxis[0], 0,
     xAxis[1], yAxis[1], zAxis[1], 0,
     xAxis[2], yAxis[2], zAxis[2], 0,
@@ -74,7 +74,7 @@ export function createViewMatrix(
 }
 
 /** Assumes modifying `out` does not affect `a` or `b`. */
-export function multiply4x4(out: Float32Array, a: Float32Array, b: Float32Array): void {
+export function multiply4x4(out: Float64Array, a: Float64Array, b: Float64Array): void {
   out[0] = b[0] * a[0] + b[1] * a[4] + b[2] * a[8] + b[3] * a[12];
   out[1] = b[0] * a[1] + b[1] * a[5] + b[2] * a[9] + b[3] * a[13];
   out[2] = b[0] * a[2] + b[1] * a[6] + b[2] * a[10] + b[3] * a[14];

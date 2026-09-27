@@ -219,11 +219,9 @@ export const COLOR_OPERATIONS = `
 
 // Spherical-projection helpers shared by every program that projects mercator
 // positions onto the globe. Reads the standard ProgramData uniforms
-// (cameraCenter, halfWorldSize, inverseHalfViewportSize) so callers don't
-// need to plumb anything extra.
+// (cameraCenter, sphericalMvp) so callers don't need to plumb anything extra.
 export const SPHERE_OPERATIONS = `
     const float SPHERE_PI = 3.141592653589793;
-    const float SPHERE_FOV = SPHERE_PI / 4.;
 
     // Direction from globe center toward the camera, derived from the
     // split-fp64 cameraCenter mercator coords.
@@ -235,14 +233,10 @@ export const SPHERE_OPERATIONS = `
       return vec3(camCosLat * cos(camLng), camSinLat, camCosLat * sin(camLng));
     }
 
-    // Camera distance from globe center: 1 + (distance to globe surface).
-    // halfWorldSize is in pixels per mercator half-unit; inverseHalfViewportSize.y
-    // is 1/halfHeightPx; so the ratio is the viewport's half-height in
-    // mercator units, which equals the world-units-per-radian at the equator.
+    // Camera distance from globe center. The MVP sends the globe's center to w = its view depth,
+    // which is this distance, so we read it back rather than rederive camera.ts#createProjection.
     float cameraScale() {
-      float viewportRadiusWorldUnits =
-          SPHERE_PI / halfWorldSize / inverseHalfViewportSize.y;
-      return 1. + viewportRadiusWorldUnits / tan(SPHERE_FOV / 2.);
+      return sphericalMvp[3].w;
     }
 
     // Convert a mercator (x, y) in [-1, 1] to a unit-sphere position.

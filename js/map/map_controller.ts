@@ -10,7 +10,6 @@ import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 
 import { DPI } from './common/dpi';
 import { fitBoundInScreen } from './common/math';
-import { createPerspectiveProjectionMatrix } from './common/matrix';
 import { Copyright, LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
 import { Planner } from './rendering/planner';
 import { Renderer } from './rendering/renderer';
@@ -48,6 +47,9 @@ const FLING_MAX_SPEED = 4; // in px/ms
 // A hitch in the frame loop shouldn't turn into a jump, so a gap longer than three frames at 60hz
 // counts as three frames.
 const FLING_MAX_STEP_MS = 50;
+// A notch is 3 lines from browsers that scroll by lines and 100 pixels from Chrome, so a notch
+// zooms by the same amount either way.
+const WHEEL_LINE_PX = 100 / 3;
 
 export interface State {
   copyrights: Copyright[];
@@ -410,8 +412,16 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   private wheel(e: WheelEvent): void {
     e.preventDefault();
 
+    let deltaPx;
+    if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+      deltaPx = WHEEL_LINE_PX * e.deltaY;
+    } else if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+      deltaPx = this.screenArea.height * e.deltaY;
+    } else {
+      deltaPx = e.deltaY;
+    }
     this.camera.linearZoom(
-        -0.01 * e.deltaY,
+        -0.01 * deltaPx,
         [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
         this.screenArea.width,
         this.screenArea.height);

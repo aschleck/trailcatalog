@@ -12,6 +12,14 @@ const MAX_EDGE_ANGLE = SimpleS2.earthMetersToAngle(50000).radians();
 const MERCATOR_MAX_LAT_RADIANS = 85 / 90 * Math.PI / 2;
 const ZOOM_MIN = 3;
 const ZOOM_MAX = 22;
+// The globe draws the ground at true scale and mercator draws it 1/cos(lat) larger, which is 1.5
+// zoom levels at 70 degrees. Across this range we move the globe camera in by cos(lat) so the two
+// agree at the center before we flatten, or else flattening would do all that zooming at once.
+const GLOBE_MATCH_START_ZOOM = 5;
+// worldRadius 65536 to 98304
+// => zoom 9 to 9 + log2(1.5)
+const FLATTEN_START_ZOOM = 9;
+const FLATTEN_END_ZOOM = 9 + Math.log2(1.5);
 
 // Iterative pin-solver tunings. Tolerance is in NDC units (1.0 = halfViewport
 // in pixels), so 1e-5 is well below a pixel on any reasonable display. Max
@@ -52,16 +60,7 @@ export class Camera {
   }
 
   get flattenFactor(): number {
-    // Smoothstep keeps the derivative zero at both endpoints. The worldRadius
-    // window is stretched by 1/cos(lat) so that mercator's 1/cos(lat) apparent
-    // scale increase at high latitudes is spread over enough actual zoom to
-    // read as ordinary zooming rather than a sudden zoom-in. Drift from the
-    // wider window is handled by the iterative pin solver in pan/linearZoom.
-    const cosLat = Math.max(0.05, Math.abs(Math.cos(this._center.latRadians())));
-    const startRadius = 65536;
-    const endRadius = 98304 / cosLat;
-    const t = clamp((this.worldRadius - startRadius) / (endRadius - startRadius), 0, 1);
-    return t * t * (3 - 2 * t);
+    return flattenFactorAt(this._zoom);
   }
 
   get inverseWorldRadius(): number {
@@ -69,7 +68,11 @@ export class Camera {
   }
 
   get worldRadius(): number {
-    return 256 * Math.pow(2, this._zoom - 1);
+    return worldRadiusAt(this._zoom);
+  }
+
+  private get globeInverseRadius(): number {
+    return globeInverseRadiusAt(this._zoom, this._center.latRadians());
   }
 
   get zoom(): number {
@@ -95,19 +98,11 @@ export class Camera {
     const cursorNdc = screenToNdc(cursorOffset[0], cursorOffset[1], widthPx, heightPx);
     const oldLat = this._center.latRadians();
     const oldLng = this._center.lngRadians();
-    const oldIwr = this._inverseWorldRadius;
-    const oldF = this.flattenFactor;
-    const oldMvp = computeSphericalMvp(oldLat, oldLng, oldIwr, widthPx, heightPx);
+    const old = createProjection(oldLat, oldLng, this._zoom, widthPx, heightPx);
+    const grab = inverseProjectBlended(cursorNdc, old);
 
-    const grab = inverseProjectBlended(
-        cursorNdc, oldLat, oldLng, oldIwr, widthPx, heightPx, oldF, oldMvp);
-
-    // Move to the new zoom; flattenFactor is recomputed at the (current) lat
-    // — close enough as an initial value for the solver.
     this._zoom = nz;
     this._inverseWorldRadius = 1 / this.worldRadius;
-    const newIwr = this._inverseWorldRadius;
-    const newF = this.flattenFactor;
 
     // If the cursor was off the globe at the old state, the pin-solver can't
     // converge tightly (the target NDC has no real preimage), so the safety
@@ -116,11 +111,10 @@ export class Camera {
     // cursor's direction, so each zoom-in step pans the camera toward it.
     // Scales with dZ so small scrolls pan gently; skip on zoom out so pulling
     // back doesn't drag the closest point off-center.
-    if (oldF < 1) {
-      const old = projectBlended(
-          grab.lat, grab.lng, oldLat, oldLng, oldIwr, widthPx, heightPx, oldF, oldMvp);
-      const eX = old[0] - cursorNdc[0];
-      const eY = old[1] - cursorNdc[1];
+    if (old.flattenFactor < 1) {
+      const projected = projectBlended(grab.lat, grab.lng, old);
+      const eX = projected[0] - cursorNdc[0];
+      const eY = projected[1] - cursorNdc[1];
       if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
         if (dZ <= 0) {
           return;
@@ -137,14 +131,13 @@ export class Camera {
     }
 
     const newC = solveCameraForPin(
-        grab.lat, grab.lng, cursorNdc, oldLat, oldLng, newIwr, widthPx, heightPx, newF);
+        grab.lat, grab.lng, cursorNdc, oldLat, oldLng, nz, widthPx, heightPx);
 
     // Safety net: if the solver fails to pin grab to cursorNdc at the new
     // zoom (e.g., silhouette shrank past cursor), zoom in place.
-    if (newF < 1) {
-      const newMvp = computeSphericalMvp(newC.lat, newC.lng, newIwr, widthPx, heightPx);
+    if (this.flattenFactor < 1) {
       const next = projectBlended(
-          grab.lat, grab.lng, newC.lat, newC.lng, newIwr, widthPx, heightPx, newF, newMvp);
+          grab.lat, grab.lng, createProjection(newC.lat, newC.lng, nz, widthPx, heightPx));
       const eX = next[0] - cursorNdc[0];
       const eY = next[1] - cursorNdc[1];
       if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
@@ -165,15 +158,11 @@ export class Camera {
     const cursorCurrNdc = screenToNdc(curr[0], curr[1], widthPx, heightPx);
     const oldLat = this._center.latRadians();
     const oldLng = this._center.lngRadians();
-    const iwr = this._inverseWorldRadius;
-    const f = this.flattenFactor;
-    const mvp = computeSphericalMvp(oldLat, oldLng, iwr, widthPx, heightPx);
-
-    const grab = inverseProjectBlended(
-        cursorLastNdc, oldLat, oldLng, iwr, widthPx, heightPx, f, mvp);
+    const old = createProjection(oldLat, oldLng, this._zoom, widthPx, heightPx);
+    const grab = inverseProjectBlended(cursorLastNdc, old);
 
     const newC = solveCameraForPin(
-        grab.lat, grab.lng, cursorCurrNdc, oldLat, oldLng, iwr, widthPx, heightPx, f);
+        grab.lat, grab.lng, cursorCurrNdc, oldLat, oldLng, this._zoom, widthPx, heightPx);
 
     // Verify the solver actually placed grab at currNdc. In spherical mode,
     // both the inverse projection (used to compute grab) and the pin-solver's
@@ -183,16 +172,15 @@ export class Camera {
     // solver result is junk — fall back to constant-speed angular rotation
     // (1 NDC unit ≈ thetaT radians, scaled by aspect for lng so the rate is
     // equal in pixels-per-radian for both axes) so dragging stays smooth.
-    if (f < 1) {
-      const newMvp = computeSphericalMvp(newC.lat, newC.lng, iwr, widthPx, heightPx);
+    if (old.flattenFactor < 1) {
       const projected = projectBlended(
-          grab.lat, grab.lng, newC.lat, newC.lng, iwr, widthPx, heightPx, f, newMvp);
+          grab.lat, grab.lng,
+          createProjection(newC.lat, newC.lng, this._zoom, widthPx, heightPx));
       const eX = projected[0] - cursorCurrNdc[0];
       const eY = projected[1] - cursorCurrNdc[1];
       if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
-        const frame = computeSphericalFrame(oldLat, oldLng, iwr, widthPx, heightPx);
-        const thetaT = Math.acos(Math.min(1, 1 / frame.scale));
-        const dLng = -(cursorCurrNdc[0] - cursorLastNdc[0]) * thetaT * frame.aspect;
+        const thetaT = Math.acos(Math.min(1, 1 / old.frame.scale));
+        const dLng = -(cursorCurrNdc[0] - cursorLastNdc[0]) * thetaT * old.frame.aspect;
         const dLat = -(cursorCurrNdc[1] - cursorLastNdc[1]) * thetaT;
         this._center = S2LatLng.fromRadians(
             clamp(oldLat + dLat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
@@ -208,9 +196,9 @@ export class Camera {
 
   sphericalMvp(viewportHeightPx: number, viewportWidthPx: number): Float32Array {
     // TODO(josh): Creating this isn't exactly free so we should probably put it somewhere.
-    return computeSphericalMvp(
-        this._center.latRadians(), this._center.lngRadians(),
-        this._inverseWorldRadius, viewportWidthPx, viewportHeightPx);
+    return new Float32Array(computeSphericalMvp(
+        this._center.latRadians(), this._center.lngRadians(), this.globeInverseRadius,
+        viewportWidthPx, viewportHeightPx));
   }
 
   // Convert a canvas-offset pixel to a lat/lng under the blended projection
@@ -218,12 +206,10 @@ export class Camera {
   // pan/zoom so click/hover hit-testing matches what the user sees.
   unprojectScreen(offsetX: number, offsetY: number, widthPx: number, heightPx: number): S2LatLng {
     const cursorNdc = screenToNdc(offsetX, offsetY, widthPx, heightPx);
-    const lat = this._center.latRadians();
-    const lng = this._center.lngRadians();
-    const iwr = this._inverseWorldRadius;
-    const f = this.flattenFactor;
-    const mvp = computeSphericalMvp(lat, lng, iwr, widthPx, heightPx);
-    const v = inverseProjectBlended(cursorNdc, lat, lng, iwr, widthPx, heightPx, f, mvp);
+    const v = inverseProjectBlended(
+        cursorNdc,
+        createProjection(
+            this._center.latRadians(), this._center.lngRadians(), this._zoom, widthPx, heightPx));
     return S2LatLng.fromRadians(v.lat, v.lng);
   }
 
@@ -249,7 +235,7 @@ export class Camera {
     if (f >= 1) {
       return this._zoom;
     }
-    const viewportRadius = Math.PI * heightPx * this._inverseWorldRadius / 2;
+    const viewportRadius = Math.PI * heightPx * this.globeInverseRadius / 2;
     const scale = 1 + viewportRadius / Math.tan(FOV / 2);
     const thetaFov = Math.max(1e-6, visibleCapRadius(scale, 0));
     const thetaHorizon = Math.max(1e-6, Math.acos(Math.min(1, 1 / scale)));
@@ -270,7 +256,7 @@ export class Camera {
     }
     const frame = computeSphericalFrame(
         this._center.latRadians(), this._center.lngRadians(),
-        this._inverseWorldRadius, widthPx, heightPx);
+        this.globeInverseRadius, widthPx, heightPx);
     const horizonCap = Math.acos(Math.min(1, 1 / frame.scale));
     const fovCap = visibleCapRadius(frame.scale, widthPx / heightPx);
     const thetaT = Math.min(horizonCap, fovCap * 1.1);
@@ -299,7 +285,7 @@ export class Camera {
     // the ray misses (i.e., that corner of the screen looks at the skybox).
     const frame = computeSphericalFrame(
         this._center.latRadians(), this._center.lngRadians(),
-        this._inverseWorldRadius, widthPx, heightPx);
+        this.globeInverseRadius, widthPx, heightPx);
     const cosLatC = Math.cos(this._center.latRadians());
     // Use the diagonal FOV cap (clamped to horizon) for the pole-expansion
     // check. At high zoom near the pole the horizon cap reaches the pole
@@ -381,6 +367,55 @@ interface SphericalFrame {
   aspect: number;
 }
 
+// Everything projectBlended needs to place a point for one camera.
+interface Projection {
+  lat: number;
+  lng: number;
+  inverseWorldRadius: number;
+  flattenFactor: number;
+  frame: SphericalFrame;
+  mvp: Float64Array;
+  widthPx: number;
+  heightPx: number;
+}
+
+function createProjection(
+    lat: number, lng: number, zoom: number, widthPx: number, heightPx: number): Projection {
+  const globeInverseRadius = globeInverseRadiusAt(zoom, lat);
+  return {
+    lat,
+    lng,
+    inverseWorldRadius: 1 / worldRadiusAt(zoom),
+    flattenFactor: flattenFactorAt(zoom),
+    frame: computeSphericalFrame(lat, lng, globeInverseRadius, widthPx, heightPx),
+    mvp: computeSphericalMvp(lat, lng, globeInverseRadius, widthPx, heightPx),
+    widthPx,
+    heightPx,
+  };
+}
+
+function worldRadiusAt(zoom: number): number {
+  return 256 * Math.pow(2, zoom - 1);
+}
+
+function flattenFactorAt(zoom: number): number {
+  return smoothstep((zoom - FLATTEN_START_ZOOM) / (FLATTEN_END_ZOOM - FLATTEN_START_ZOOM));
+}
+
+// The inverseWorldRadius the globe camera is placed with. See GLOBE_MATCH_START_ZOOM.
+function globeInverseRadiusAt(zoom: number, lat: number): number {
+  const t =
+      smoothstep((zoom - GLOBE_MATCH_START_ZOOM) / (FLATTEN_START_ZOOM - GLOBE_MATCH_START_ZOOM));
+  const cosLat = Math.max(Math.cos(MERCATOR_MAX_LAT_RADIANS), Math.cos(lat));
+  // cos^t so the extra zoom is spread evenly over zoom levels rather than over worldRadius
+  return Math.pow(cosLat, t) / worldRadiusAt(zoom);
+}
+
+function smoothstep(x: number): number {
+  const t = clamp(x, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
 function screenToNdc(offsetX: number, offsetY: number, widthPx: number, heightPx: number): Vec2 {
   return [(offsetX - widthPx / 2) / (widthPx / 2), (heightPx / 2 - offsetY) / (heightPx / 2)];
 }
@@ -423,9 +458,11 @@ function visibleCapRadius(scale: number, aspect: number): number {
 // scale factor places the camera so that a viewport-half-height covers
 // `viewportRadius` arc-length on the unit sphere; that's the worldRadius/π
 // per-radian convention shared with the mercator projection at lat=0.
+//
+// Float64 because the solvers difference this with SOLVER_EPS, which is about one float32 ulp.
 function computeSphericalMvp(
     lat: number, lng: number, inverseWorldRadius: number,
-    widthPx: number, heightPx: number): Float32Array {
+    widthPx: number, heightPx: number): Float64Array {
   const viewportRadius = Math.PI * heightPx * inverseWorldRadius / 2;
   const distance = viewportRadius / Math.tan(FOV / 2);
   const scale = 1 + distance;
@@ -440,7 +477,7 @@ function computeSphericalMvp(
   const distanceToHorizon = Math.sqrt(scale * scale - 1);
   const projectionMatrix = createPerspectiveProjectionMatrix(
     heightPx / widthPx, FOV, distance * 0.99, distanceToHorizon * 1.001);
-  const mvp = new Float32Array(16);
+  const mvp = new Float64Array(16);
   multiply4x4(/* out= */ mvp, projectionMatrix, viewMatrix);
   return mvp;
 }
@@ -480,13 +517,9 @@ function computeSphericalFrame(
 //   gl_Position = mix(spherical_clip, mercator_clip, f) / mixed.w
 // so we mix the clip-space coordinates (not the post-divide NDC) and divide
 // once at the end. Mercator's w is 1, spherical's w varies with V's depth.
-function projectBlended(
-    V_lat: number, V_lng: number,
-    C_lat: number, C_lng: number,
-    inverseWorldRadius: number,
-    widthPx: number, heightPx: number,
-    f: number,
-    sphericalMvp: Float32Array): Vec2 {
+function projectBlended(V_lat: number, V_lng: number, projection: Projection): Vec2 {
+  const {lat: C_lat, lng: C_lng, inverseWorldRadius, widthPx, heightPx} = projection;
+  const f = projection.flattenFactor;
   // Mercator clip (w=1). Longitude wraps so points across the antimeridian
   // still produce a small relativeCenter.
   let mercRelX = (V_lng - C_lng) / Math.PI;
@@ -505,7 +538,7 @@ function projectBlended(
   const V3d_x = cosV * Math.cos(V_lng);
   const V3d_y = Math.sin(V_lat);
   const V3d_z = cosV * Math.sin(V_lng);
-  const m = sphericalMvp;
+  const m = projection.mvp;
   const sphereClipX = m[0] * V3d_x + m[4] * V3d_y + m[8] * V3d_z + m[12];
   const sphereClipY = m[1] * V3d_x + m[5] * V3d_y + m[9] * V3d_z + m[13];
   const sphereClipW = m[3] * V3d_x + m[7] * V3d_y + m[11] * V3d_z + m[15];
@@ -521,17 +554,10 @@ function projectBlended(
 // current camera. Spherical raycast is the initial guess (exact at f=0, close
 // at small f). Mercator is linear in V so Newton converges in one step at f=1.
 function inverseProjectBlended(
-    cursorNdc: Vec2,
-    C_lat: number, C_lng: number,
-    inverseWorldRadius: number,
-    widthPx: number, heightPx: number,
-    f: number,
-    sphericalMvp: Float32Array): { lat: number; lng: number } {
-  const frame = computeSphericalFrame(C_lat, C_lng, inverseWorldRadius, widthPx, heightPx);
-  const initial = raycastUnitSphere(cursorNdc, frame);
+    cursorNdc: Vec2, projection: Projection): { lat: number; lng: number } {
+  const initial = raycastUnitSphere(cursorNdc, projection.frame);
   const [lat, lng] = solveDampedNewton2D(
-      (V_lat, V_lng) => projectBlended(
-          V_lat, V_lng, C_lat, C_lng, inverseWorldRadius, widthPx, heightPx, f, sphericalMvp),
+      (V_lat, V_lng) => projectBlended(V_lat, V_lng, projection),
       cursorNdc,
       Math.asin(clamp(initial[1], -1, 1)),
       Math.atan2(initial[2], initial[0]));
@@ -539,18 +565,17 @@ function inverseProjectBlended(
 }
 
 // Solve for the camera position that lands V at targetNdc in the blended
-// projection. MVP is rebuilt each iteration since it depends on the camera.
+// projection. The projection is rebuilt each iteration because the MVP and the
+// globe camera's distance both depend on the camera's latitude.
 function solveCameraForPin(
     V_lat: number, V_lng: number,
     targetNdc: Vec2,
     C_init_lat: number, C_init_lng: number,
-    inverseWorldRadius: number,
-    widthPx: number, heightPx: number,
-    f: number): { lat: number; lng: number } {
+    zoom: number,
+    widthPx: number, heightPx: number): { lat: number; lng: number } {
   const [lat, lng] = solveDampedNewton2D(
       (C_lat, C_lng) => projectBlended(
-          V_lat, V_lng, C_lat, C_lng, inverseWorldRadius, widthPx, heightPx, f,
-          computeSphericalMvp(C_lat, C_lng, inverseWorldRadius, widthPx, heightPx)),
+          V_lat, V_lng, createProjection(C_lat, C_lng, zoom, widthPx, heightPx)),
       targetNdc,
       C_init_lat,
       C_init_lng);

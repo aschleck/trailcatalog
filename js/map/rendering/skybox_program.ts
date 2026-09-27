@@ -112,8 +112,6 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
       flat out highp vec3 fragZAxis;
 
       const float PI = 3.141592653589793;
-      // TODO(april): share FOV constant?
-      const float FOV = PI / 4.;
 
       void main() {
         gl_Position = vec4(position, z + 1., 1.) + 0. * sphericalMvp * cameraCenter * halfWorldSize * flattenFactor + vec4(0.000001 * inverseHalfViewportSize, 0., 0.);
@@ -139,10 +137,8 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
         );
         vec3 xAxis = cross(zAxis, yAxis);
 
-        float viewportRadiusWorldUnitsAtLat =
-          PI * cos(0.) / halfWorldSize / inverseHalfViewportSize.y;
-        float distanceCameraToGlobeSurface = viewportRadiusWorldUnitsAtLat / tan(FOV / 2.);
-        float scale = 1. + distanceCameraToGlobeSurface;
+        // See program.ts#cameraScale.
+        float scale = sphericalMvp[3].w;
         float theta = acos(1. / scale);
         float sinTheta = sin(theta);
         float cosTheta = cos(theta);
