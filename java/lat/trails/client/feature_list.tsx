@@ -83,13 +83,19 @@ export interface FeatureListState {
   dropTarget: {folder: string|undefined}|undefined;
 }
 
+export type CollectionStatus = 'failed'|'loaded'|'loading';
+
 const WIDTHS_PX = [1, 2, 3, 4, 6, 8];
 const EYE_OUTLINE =
     'M1.5 8 C3.5 4.5 5.5 3.5 8 3.5 C10.5 3.5 12.5 4.5 14.5 8 '
         + 'C12.5 11.5 10.5 12.5 8 12.5 C5.5 12.5 3.5 11.5 1.5 8 Z';
 
 /** Lists the open collection's features as a tree. */
-export function FeatureTree({readOnly, state}: {readOnly: boolean; state: FeatureListState}) {
+export function FeatureTree({readOnly, state, status}: {
+  readOnly: boolean;
+  state: FeatureListState;
+  status: CollectionStatus;
+}) {
   const rootTarget = state.dropTarget !== undefined && state.dropTarget.folder === undefined;
   // The bottom padding leaves somewhere to drop onto the root when every row is inside a folder.
   return (
@@ -105,7 +111,12 @@ export function FeatureTree({readOnly, state}: {readOnly: boolean; state: Featur
           ? rows(state.tree, state, readOnly, /* dimmed= */ false)
           : [
             <div className="px-2 py-1 text-gray-500">
-              This collection is empty
+              {status === 'loading'
+                  ? 'Loading features...'
+                  : status === 'failed'
+                      ? 'Couldn\'t load this collection'
+                      : 'This collection is empty'
+              }
             </div>,
           ]
       }

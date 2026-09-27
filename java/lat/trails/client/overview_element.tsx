@@ -37,6 +37,7 @@ export function OverviewElement(
   if (!inState) {
     inState = {
       collection: undefined,
+      collectionStatus: collection ? 'loading' : 'loaded',
       features: {
         tree: [],
         folders: [],
@@ -197,7 +198,11 @@ export function OverviewElement(
         </div>
         <SidebarElement>
           <SidebarSection controls={readOnly ? undefined : <NewFolderButton />} label="Features">
-            <FeatureTree readOnly={readOnly} state={state.features} />
+            <FeatureTree
+                readOnly={readOnly}
+                state={state.features}
+                status={state.collectionStatus}
+            />
           </SidebarSection>
           <SidebarSection label="Layers" open={false}>
             <LayerTree state={state.layers} />

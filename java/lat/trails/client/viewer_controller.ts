@@ -72,7 +72,13 @@ import {
 } from './events';
 import { toGeoJson, toGpx } from './exporter';
 import { FeatureLayer } from './feature_layer';
-import { buildTree, FeatureListState, foldersOf, InspectedObject } from './feature_list';
+import {
+  buildTree,
+  CollectionStatus,
+  FeatureListState,
+  foldersOf,
+  InspectedObject,
+} from './feature_list';
 import { Change, FeatureStore } from './feature_store';
 import {
   DEFAULT_POINT_COLOR,
@@ -138,6 +144,7 @@ export interface Args {
 
 export interface State {
   collection: Collection|undefined;
+  collectionStatus: CollectionStatus;
   features: FeatureListState;
   // The map layer object open in the dialog, when no feature is selected
   inspected: InspectedObject|undefined;
@@ -209,6 +216,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private inspected: LayerObject|undefined;
   // Moves with every object opened or closed, so that tags arriving for an earlier one are dropped
   private inspectGeneration: number;
+  // Moves with every collection opened or created, so that a slow load of an earlier one is dropped
+  private collectionGeneration: number;
   private readonly hidden: Set<string>;
   private readonly expanded: Set<string>;
   // The feature being dragged in the list, and the folder it would drop into, where undefined is
@@ -265,6 +274,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.selected = undefined;
     this.inspected = undefined;
     this.inspectGeneration = 0;
+    this.collectionGeneration = 0;
     this.hidden = new Set();
     this.expanded = new Set();
     this.draggedFeature = undefined;
@@ -2121,6 +2131,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private newCollection(): void {
+    this.collectionGeneration += 1;
     this.saves.clear();
     this.select(undefined);
     this.setHidden([]);
@@ -2128,6 +2139,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.updateState({
       ...this.state,
       collection: undefined,
+      collectionStatus: 'loaded',
     });
     this.history.silentlyReplaceUrl('/');
   }
@@ -2173,14 +2185,21 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private loadCollection(id: string): void {
+    this.collectionGeneration += 1;
+    const generation = this.collectionGeneration;
     this.setHidden([]);
+    this.updateState({...this.state, collectionStatus: 'loading'});
     const loading: Future<GetCollectionResponse> =
         requestData('lat.trails.DataService/GetCollection', {id});
     loading
         .then(response => {
+          if (generation !== this.collectionGeneration) {
+            return;
+          }
           this.updateState({
             ...this.state,
             collection: response.collection,
+            collectionStatus: 'loaded',
           });
           const readOnly = response.collection?.role === Role.READ;
           this.setHidden(response.hiddenFeatureIds);
@@ -2195,6 +2214,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         })
         .catch(e => {
           console.error(e);
+          if (generation === this.collectionGeneration) {
+            this.updateState({...this.state, collectionStatus: 'failed'});
+          }
         });
   }
 
