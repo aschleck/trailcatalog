@@ -36,6 +36,8 @@ const SEGMENTER = new Intl.Segmenter();
 // Scratch for planCurved, which runs once per curved label per frame.
 const PLACEMENTS: number[] = [];
 const CURVED_GLYPHS: Glyph[] = [];
+// Scratch for plan, one horizontal anchor shift per line.
+const LINE_SHIFTS: number[] = [];
 
 /** Where on text's ink an offset lands, see Glypher#plan. */
 export interface TextAnchor {
@@ -131,7 +133,8 @@ class Glypher {
    * Lays text out at an offset from center. Without an anchor, the offset is the middle of the
    * text's advance and near its baseline. An anchor puts the text's ink there instead: starting
    * there or centered on it across, and centered on it up and down, which is what a label beside
-   * a marker or a symbol standing in for a place needs. Anchors assume a single line.
+   * a marker or a symbol standing in for a place needs. Each line of multi-line text meets the anchor
+   * on its own, and the block is centered up and down.
    */
   plan(
       graphemes: string[],
@@ -181,22 +184,24 @@ class Glypher {
     let yOffset = yHeight / 2;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    if (anchor) {
-      const [dx, dy] = this.anchorShift(graphemes, scale, yOffset, anchor);
-      offsetPx = [offsetPx[0] + dx * cos - dy * sin, offsetPx[1] + dx * sin + dy * cos];
-    }
-    for (let i = 0; i < graphemes.length; ++i) {
+    const dy = anchor ? this.anchorShift(graphemes, scale, yOffset, anchor, LINE_SHIFTS) : 0;
+    let line = 0;
+    for (let i = 0; i <= graphemes.length; ++i) {
       const character = graphemes[i];
-      if (character !== '\n') {
-        const glyph = checkExists(this.glyphs.get(character));
-        pending.push(glyph);
+      if (i < graphemes.length && character !== '\n') {
+        pending.push(checkExists(this.glyphs.get(character)));
+        continue;
       }
 
-      if (i === graphemes.length - 1 || character === '\n') {
+      if (pending.length > 0) {
+        const dx = anchor ? LINE_SHIFTS[line] : 0;
         const {byteSize, drawable} = renderer.sdfProgram.plan(
             pending,
             center,
-            [offsetPx[0] - yOffset * sin, offsetPx[1] + yOffset * cos],
+            [
+              offsetPx[0] + dx * cos - (dy + yOffset) * sin,
+              offsetPx[1] + dx * sin + (dy + yOffset) * cos,
+            ],
             scale,
             angle,
             fill,
@@ -208,10 +213,11 @@ class Glypher {
             glBuffer);
         drawables.push(drawable);
         totalByteSize += byteSize;
-
-        pending.length = 0;
-        yOffset -= FONT_SIZE * scale * LINE_HEIGHT;
       }
+
+      pending.length = 0;
+      yOffset -= FONT_SIZE * scale * LINE_HEIGHT;
+      line += 1;
     }
 
     return {
@@ -221,39 +227,56 @@ class Glypher {
   }
 
   // How far to move text from where plan puts it without an anchor so its ink meets the anchor,
-  // in the text's own frame. Each quad is centered on the pen, which starts half the advance
-  // back, and raised by its glyph's top from yOffset, while the ink hangs from BITMAP_INSET_PX up
-  // and left of the quad's center.
-  private anchorShift(graphemes: string[], scale: number, yOffset: number, anchor: TextAnchor):
-      Vec2 {
-    let advance = 0;
-    for (const character of graphemes) {
-      advance += checkExists(this.glyphs.get(character)).glyphAdvance * scale;
-    }
-
-    let pen = -advance / 2;
-    let left = Infinity;
-    let right = -Infinity;
+  // in the text's own frame. Each line moves across by its own ink, written into lineShifts, and
+  // the block moves up or down by the ink of every line, which we return. Each quad is centered on
+  // the pen, which starts half its line's advance back, and raised by its glyph's top from its
+  // line's yOffset, while the ink hangs from BITMAP_INSET_PX up and left of the quad's center.
+  private anchorShift(
+      graphemes: string[],
+      scale: number,
+      yOffset: number,
+      anchor: TextAnchor,
+      lineShifts: number[]): number {
+    lineShifts.length = 0;
     let top = -Infinity;
     let bottom = Infinity;
-    for (const character of graphemes) {
-      const glyph = checkExists(this.glyphs.get(character));
-      if (glyph.glyphWidth > 0) {
-        const inkLeft = pen - (BITMAP_INSET_PX - SDF_BUFFER_PX) * scale;
-        const inkTop = yOffset + (glyph.glyphTop + BITMAP_INSET_PX - SDF_BUFFER_PX) * scale;
-        left = Math.min(left, inkLeft);
-        right = Math.max(right, inkLeft + glyph.glyphWidth * scale);
-        top = Math.max(top, inkTop);
-        bottom = Math.min(bottom, inkTop - glyph.glyphHeight * scale);
+    let start = 0;
+    for (let end = 0; end <= graphemes.length; ++end) {
+      if (end < graphemes.length && graphemes[end] !== '\n') {
+        continue;
       }
-      pen += glyph.glyphAdvance * scale;
-    }
-    if (left > right) {
-      return [0, 0];
+
+      let advance = 0;
+      for (let i = start; i < end; ++i) {
+        advance += checkExists(this.glyphs.get(graphemes[i])).glyphAdvance * scale;
+      }
+
+      let pen = -advance / 2;
+      let left = Infinity;
+      let right = -Infinity;
+      for (let i = start; i < end; ++i) {
+        const glyph = checkExists(this.glyphs.get(graphemes[i]));
+        if (glyph.glyphWidth > 0) {
+          const inkLeft = pen - (BITMAP_INSET_PX - SDF_BUFFER_PX) * scale;
+          const inkTop = yOffset + (glyph.glyphTop + BITMAP_INSET_PX - SDF_BUFFER_PX) * scale;
+          left = Math.min(left, inkLeft);
+          right = Math.max(right, inkLeft + glyph.glyphWidth * scale);
+          top = Math.max(top, inkTop);
+          bottom = Math.min(bottom, inkTop - glyph.glyphHeight * scale);
+        }
+        pen += glyph.glyphAdvance * scale;
+      }
+      if (left > right) {
+        lineShifts.push(0);
+      } else {
+        lineShifts.push(anchor.horizontal === 'start' ? -left : -(left + right) / 2);
+      }
+
+      yOffset -= FONT_SIZE * scale * LINE_HEIGHT;
+      start = end + 1;
     }
 
-    const dx = anchor.horizontal === 'start' ? -left : -(left + right) / 2;
-    return [dx, -(top + bottom) / 2];
+    return bottom > top ? 0 : -(top + bottom) / 2;
   }
 
   /**
@@ -541,4 +564,21 @@ function copyIntoImage(
 
 export function toGraphemes(text: string): string[] {
   return Array.from(SEGMENTER.segment(text), s => s.segment);
+}
+
+/**
+ * Breaks lines at the first space once a line has run past lineGraphemes, so no word is split.
+ */
+export function wrap(graphemes: string[], lineGraphemes: number): string[] {
+  const wrapped = [];
+  let lastWrap = 0;
+  for (let i = 0; i < graphemes.length; ++i) {
+    if (i - lastWrap > lineGraphemes && graphemes[i] === ' ') {
+      wrapped.push('\n');
+      lastWrap = i;
+    } else {
+      wrapped.push(graphemes[i]);
+    }
+  }
+  return wrapped;
 }

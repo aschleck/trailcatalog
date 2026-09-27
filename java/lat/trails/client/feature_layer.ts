@@ -11,7 +11,7 @@ import {
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { GLYPHER, toGraphemes } from 'js/map/rendering/glypher';
+import { GLYPHER, toGraphemes, wrap } from 'js/map/rendering/glypher';
 import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
@@ -68,6 +68,9 @@ const LABEL_STROKE = 0xFFFFFFFF as RgbaU32;
 // FONT_SIZE is 28, so labels are 14px.
 const LABEL_SCALE = 0.5;
 const LABEL_GAP_PX = 4;
+// Point names are often notes that run to a sentence, so we wrap them wider than the basemap's
+// place names.
+const LABEL_LINE_GRAPHEMES = 20;
 // FONT_SIZE is 28, so icons are about 17px.
 const ICON_SCALE = 0.6;
 // A hovered or selected icon grows, the way a hovered or selected line widens, because a ring
@@ -979,7 +982,7 @@ export class FeatureLayer extends Layer {
     for (const point of this.visiblePoints) {
       const name = point.feature.data.name;
       if (name) {
-        const graphemes = toGraphemes(name);
+        const graphemes = wrap(toGraphemes(name), LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({graphemes, point});
       }

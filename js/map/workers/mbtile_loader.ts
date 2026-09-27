@@ -6,7 +6,7 @@ import { clamp } from 'external/dev_april_corgi+/js/common/math';
 import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { rgbaToUint32 } from '../common/math';
 import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
-import { FONT_SIZE, toGraphemes } from '../rendering/glypher';
+import { FONT_SIZE, toGraphemes, wrap } from '../rendering/glypher';
 
 import { GeometryType } from './mbtile_types';
 import { ringArea, Triangles, triangulateMb } from './triangulate';
@@ -534,7 +534,7 @@ class MbtileLoader {
           response.labels.push({
             angle: 0,
             center: point.geometry as unknown as Vec2,
-            graphemes: wrap(toGraphemes(text)),
+            graphemes: wrap(toGraphemes(text), /* lineGraphemes= */ 8),
             fill: style.textFill,
             stroke: style.textStroke,
             scale: style.textScale,
@@ -1416,18 +1416,4 @@ function matches(tags: number[], keys: string[], values: ValueType[], filters: M
   }
 
   return true;
-}
-
-function wrap(text: string[]): string[] {
-  const wrapped = [];
-  let lastWrap = 0;
-  for (let i = 0; i < text.length; ++i) {
-    if (i - lastWrap > 8 && text[i] === ' ') {
-      wrapped.push('\n');
-      lastWrap = i;
-    } else {
-      wrapped.push(text[i]);
-    }
-  }
-  return wrapped;
 }
