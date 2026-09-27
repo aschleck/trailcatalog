@@ -15,9 +15,19 @@ export interface LineStats {
   }|undefined;
 }
 
+// A recording drifts 3 or 4 m in altitude over a flat day and Copernicus quotes up to 4 m of
+// relative error on steep slopes, so reversals smaller than this are noise. Real climbs lose
+// nothing because only the reversal is dropped, never the climb on either side of it.
+// Keep in sync with CalculateWayElevations#CLIMB_THRESHOLD_METERS.
+const CLIMB_THRESHOLD_METERS = 5;
+
 /**
- * Measures a line the way trailcatalog measures a way: raw climb and descent summed step by step,
- * and length along the hypotenuse of each step's run and rise.
+ * Measures a line's climb and descent past a reversal threshold, and its length along the
+ * hypotenuse of each step's run and counted rise.
+ *
+ * Length counts only the rise that climb does, or else a recording's altitude wobble would add to
+ * its length what the threshold leaves out of its climb. A rise that only passes the threshold
+ * several vertices in is spread over all of them rather than steepening the last one.
  *
  * See also CalculateWayElevations#calculateProfile.
  */
@@ -25,40 +35,66 @@ export function measureLine(
     latLngE7: ArrayLike<number>, elevationCentimeters: ArrayLike<number>|undefined): LineStats {
   const count = latLngE7.length / 2;
   let lengthMeters = 0;
-  let upMeters = 0;
-  let downMeters = 0;
+  // Ground walked since the climb last counted a rise
+  let heldMeters = 0;
+  const climb = new ClimbCounter();
   let minMeters = Infinity;
   let maxMeters = -Infinity;
   for (let i = 0; i < count; ++i) {
     const z = elevationCentimeters ? elevationCentimeters[i] / 100 : 0;
     minMeters = Math.min(minMeters, z);
     maxMeters = Math.max(maxMeters, z);
+    const rise = climb.add(z);
     if (i === 0) {
       continue;
     }
 
-    const run =
+    heldMeters +=
         haversineMeters(
             latLngE7[2 * i - 2] / 1e7,
             latLngE7[2 * i - 1] / 1e7,
             latLngE7[2 * i] / 1e7,
             latLngE7[2 * i + 1] / 1e7);
-    const dz = elevationCentimeters ? z - elevationCentimeters[i - 1] / 100 : 0;
-    if (dz >= 0) {
-      upMeters += dz;
-    } else {
-      downMeters -= dz;
+    if (rise > 0) {
+      lengthMeters += Math.hypot(heldMeters, rise);
+      heldMeters = 0;
     }
-    lengthMeters += Math.hypot(run, dz);
   }
 
   return {
-    lengthMeters,
+    lengthMeters: lengthMeters + heldMeters,
     elevation:
         elevationCentimeters && count > 0
-            ? {upMeters, downMeters, minMeters, maxMeters}
+            ? {upMeters: climb.upMeters, downMeters: climb.downMeters, minMeters, maxMeters}
             : undefined,
   };
+}
+
+/**
+ * Returns the distance to each sample along the counted rise the way measureLine measures it,
+ * given the distance along the ground to each.
+ */
+export function slopeMeters(groundMeters: ArrayLike<number>, meters: ArrayLike<number>):
+    Float64Array {
+  const along = new Float64Array(groundMeters.length);
+  const climb = new ClimbCounter();
+  // The sample the climb last counted a rise at. Samples after it wait for the next rise to know
+  // their slope, and share its length in proportion to their ground.
+  let from = 0;
+  for (let i = 0; i < along.length; ++i) {
+    const rise = climb.add(meters[i]);
+    if (i > 0 && (rise > 0 || i === along.length - 1)) {
+      const ground = groundMeters[i] - groundMeters[from];
+      const sloped = Math.hypot(ground, rise);
+      // Samples with no ground between them take the rise at once, or else it would go missing.
+      for (let j = from + 1; j <= i; ++j) {
+        const share = ground > 0 ? (groundMeters[j] - groundMeters[from]) / ground : 1;
+        along[j] = along[from] + share * sloped;
+      }
+      from = i;
+    }
+  }
+  return along;
 }
 
 /** Sums the great circle length of a path of interleaved lat then lng degrees. */
@@ -158,26 +194,58 @@ export interface ProfileStats {
   maxMeters: number;
 }
 
-/** Sums raw climb and descent between samples, the way measureLine does between vertices. */
+/** Sums climb and descent between samples, the way measureLine does between vertices. */
 export function profileStats(meters: ArrayLike<number>): ProfileStats {
-  let up = 0;
-  let down = 0;
-  for (let i = 1; i < meters.length; ++i) {
-    const dz = meters[i] - meters[i - 1];
-    if (dz >= 0) {
-      up += dz;
-    } else {
-      down -= dz;
-    }
+  const climb = new ClimbCounter();
+  for (let i = 0; i < meters.length; ++i) {
+    climb.add(meters[i]);
   }
   const sorted = Array.from(meters).sort((a, b) => a - b);
   return {
-    upMeters: up,
-    downMeters: down,
+    upMeters: climb.upMeters,
+    downMeters: climb.downMeters,
     minMeters: sorted[0] ?? 0,
     medianMeters: sorted[Math.floor(sorted.length / 2)] ?? 0,
     maxMeters: sorted[sorted.length - 1] ?? 0,
   };
+}
+
+// Follows the running peak or valley and only turns around once the elevation has come back
+// CLIMB_THRESHOLD_METERS from it, so a peak counts in full and a wobble counts not at all.
+// Keep in sync with CalculateWayElevations#ClimbCounter.
+class ClimbCounter {
+  upMeters = 0;
+  downMeters = 0;
+  // The running peak or valley, or the first elevation until the line has moved far enough to
+  // have a direction
+  private extreme = NaN;
+  private rising: boolean|undefined = undefined;
+
+  // Returns the climb or descent this elevation counted
+  add(meters: number): number {
+    if (Number.isNaN(this.extreme)) {
+      this.extreme = meters;
+      return 0;
+    } else if (
+        meters > this.extreme
+            && (this.rising === true || meters - this.extreme >= CLIMB_THRESHOLD_METERS)) {
+      const rise = meters - this.extreme;
+      this.upMeters += rise;
+      this.extreme = meters;
+      this.rising = true;
+      return rise;
+    } else if (
+        meters < this.extreme
+            && (this.rising === false || this.extreme - meters >= CLIMB_THRESHOLD_METERS)) {
+      const fall = this.extreme - meters;
+      this.downMeters += fall;
+      this.extreme = meters;
+      this.rising = false;
+      return fall;
+    } else {
+      return 0;
+    }
+  }
 }
 
 // https://en.wikipedia.org/wiki/Haversine_formula

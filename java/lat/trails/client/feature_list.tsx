@@ -534,18 +534,21 @@ function PropertiesDialog({children, title}: {
   );
 }
 
-// A line without elevations of its own takes its climb from the profile sampled for it, the way
-// an object from a map layer does.
+// A line without elevations of its own takes its length and climb from the profile sampled for
+// it, the way an object from a map layer does.
 function Stats({feature, profile}: {
   feature: EditableFeature;
   profile: LineProfileState|undefined;
 }) {
   if (feature.kind === 'line') {
     const stats = measureLine(feature.latLngE7, feature.elevationCentimeters);
-    const climb =
-        stats.elevation
-            ?? (profile?.status === 'loaded' ? profileStats(profile.meters) : undefined);
-    return <LineStats lengthMeters={stats.lengthMeters} climb={climb} />;
+    if (stats.elevation || profile?.status !== 'loaded') {
+      return <LineStats lengthMeters={stats.lengthMeters} climb={stats.elevation} />;
+    }
+    const along = profile.distanceMeters;
+    return (
+      <LineStats lengthMeters={along[along.length - 1]} climb={profileStats(profile.meters)} />
+    );
   } else if (feature.kind === 'point') {
     return (
       <div className="text-gray-700">

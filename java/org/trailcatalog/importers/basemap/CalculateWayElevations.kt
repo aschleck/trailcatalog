@@ -14,6 +14,12 @@ import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.s2.earthMetersToAngle
 
+// A recording drifts 3 or 4 m in altitude over a flat day and Copernicus quotes up to 4 m of
+// relative error on steep slopes, so reversals smaller than this are noise. Real climbs lose
+// nothing because only the reversal is dropped, never the climb on either side of it.
+// Keep in sync with measurements.ts#CLIMB_THRESHOLD_METERS.
+private const val CLIMB_THRESHOLD_METERS = 5.0
+
 class CalculateWayElevations
     : PTransformer<PEntry<S2CellId, Way>, Profile>(TypeToken.of(Profile::class.java)) {
 
@@ -34,23 +40,26 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
   val points = way.points.map { it.toS2LatLng().toPoint() }
 
   // 1609 meters to a mile, so at four bytes per meter we'd pay 6.4kb per mile. Seems like a lot,
-  // but accuracy is nice... Let's calculate at 5m but build the profile every 10m.
-  // TODO(april): the sources are coarser than this, 30m for Copernicus and 19m per pixel at the
-  // equator for mapterhorn's z12 tiles, so we're oversampling.
+  // but accuracy is nice... Let's calculate at 5m but build the profile every 10m. A z14 pixel,
+  // the finest we sample, is 4.8 m at the equator.
   val increment = earthMetersToAngle(5.0)
   val sampleRate = 2
 
-  var totalUp = 0.0
-  var totalDown = 0.0
+  val climb = ClimbCounter()
   var totalMeters = 0.0
+  // Ground walked since the climb last counted a rise, so that a rise which only passes the
+  // threshold several steps in is spread over all of them rather than steepening the last one
+  var heldMeters = 0.0
   // Someone walking a step covers the hypotenuse of its arclength and its rise, not the arclength.
-  fun step(radians: Double, dz: Float) {
-    if (dz >= 0) {
-      totalUp += dz
-    } else {
-      totalDown -= dz
+  // The rise is what the climb counts, or else terrain noise would add to the length what the
+  // threshold leaves out of the climb.
+  fun step(radians: Double, height: Float) {
+    heldMeters += S2Earth.radiansToMeters(radians)
+    val rise = climb.add(height)
+    if (rise > 0) {
+      totalMeters += Math.hypot(heldMeters, rise)
+      heldMeters = 0.0
     }
-    totalMeters += Math.hypot(S2Earth.radiansToMeters(radians), dz.toDouble())
   }
 
   var offsetRadians = 0.0
@@ -58,6 +67,7 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
   // TODO(april): this actually isn't a bad default because if we have no elevation it likely is
   // at sea-level. But should we think about this more?
   var last = resolver.query(S2LatLng(points[0])) ?: 0f
+  climb.add(last)
   val profile = ArrayList<Float>()
   var sampleIndex = 0
   while (current < points.size - 1) {
@@ -81,7 +91,7 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
       }
       sampleIndex += 1
 
-      step(position - lastRadians, height - last)
+      step(position - lastRadians, height)
       last = height
       lastRadians = position
       position += increment.radians()
@@ -90,7 +100,7 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
     // Sampling in fixed increments lands short of the vertex ending the segment, so that stretch is
     // a step of its own or else the steps would sum to less than the way.
     val vertex = resolver.query(S2LatLng(next)) ?: 0f
-    step(length - lastRadians, vertex - last)
+    step(length - lastRadians, vertex)
     last = vertex
     current += 1
     offsetRadians = position - length
@@ -98,12 +108,51 @@ private fun calculateProfile(way: Way, resolver: DemResolver): Profile {
 
   // Always add the last point
   profile.add(last)
+  totalMeters += heldMeters
 
   return Profile(
       id=way.id,
       hash=way.hash,
-      down=totalDown,
-      up=totalUp,
+      down=climb.downMeters,
+      up=climb.upMeters,
       length=totalMeters,
       profile=profile)
+}
+
+// Follows the running peak or valley and only turns around once the elevation has come back
+// CLIMB_THRESHOLD_METERS from it, so a peak counts in full and a wobble counts not at all.
+// Keep in sync with measurements.ts#ClimbCounter.
+class ClimbCounter {
+
+  var upMeters = 0.0
+    private set
+  var downMeters = 0.0
+    private set
+  // The running peak or valley, or the first elevation until the way has moved far enough to have
+  // a direction
+  private var extreme = Double.NaN
+  private var rising: Boolean? = null
+
+  /** Returns the climb or descent this elevation counted, which is 0 or positive either way. */
+  fun add(meters: Float): Double {
+    val z = meters.toDouble()
+    if (extreme.isNaN()) {
+      extreme = z
+      return 0.0
+    } else if (z > extreme && (rising == true || z - extreme >= CLIMB_THRESHOLD_METERS)) {
+      val rise = z - extreme
+      upMeters += rise
+      extreme = z
+      rising = true
+      return rise
+    } else if (z < extreme && (rising == false || extreme - z >= CLIMB_THRESHOLD_METERS)) {
+      val fall = extreme - z
+      downMeters += fall
+      extreme = z
+      rising = false
+      return fall
+    } else {
+      return 0.0
+    }
+  }
 }

@@ -88,6 +88,7 @@ import {
   profileSamples,
   ProfileSamples,
   profileStats,
+  slopeMeters,
 } from './measurements';
 import { MENU_CLASSES } from './menubar';
 import { LineProfileState } from './profile_chart';
@@ -1466,13 +1467,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             return;
           }
 
-          this.measureSamples = samples;
+          const distanceMeters = slopeMeters(samples.distanceMeters, meters);
+          this.measureSamples = {...samples, distanceMeters};
           this.updateState({
             ...this.state,
             measure: {
               ...this.state.measure,
+              lengthMeters: distanceMeters[distanceMeters.length - 1],
               profile: {
-                distanceMeters: Array.from(samples.distanceMeters),
+                distanceMeters: Array.from(distanceMeters),
                 meters: Array.from(meters),
                 stats: profileStats(meters),
               },
@@ -1557,13 +1560,18 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             return;
           }
 
-          this.lineSamples = samples;
+          const distanceMeters = slopeMeters(samples.distanceMeters, meters);
+          this.lineSamples = {latLngDegrees: samples.latLngDegrees, distanceMeters};
           this.updateState({
             ...this.state,
-            inspected: {...inspected, climb: profileStats(meters)},
+            inspected: {
+              ...inspected,
+              lengthMeters: distanceMeters[distanceMeters.length - 1],
+              climb: profileStats(meters),
+            },
             lineProfile: {
               status: 'loaded',
-              distanceMeters: Array.from(samples.distanceMeters),
+              distanceMeters: Array.from(distanceMeters),
               meters: Array.from(meters),
               hovered: undefined,
             },
@@ -1598,12 +1606,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const path = Float64Array.from(live.latLngE7, e7 => e7 / 1e7);
     const own = live.elevationCentimeters;
     if (own) {
-      const distanceMeters = cumulativeMeters(path);
+      const meters = Array.from(own, centimeters => centimeters / 100);
+      const distanceMeters = slopeMeters(cumulativeMeters(path), meters);
       this.lineSamples = {latLngDegrees: path, distanceMeters};
       return {
         status: 'loaded',
         distanceMeters: Array.from(distanceMeters),
-        meters: Array.from(own, centimeters => centimeters / 100),
+        meters,
         hovered: undefined,
       };
     }
@@ -1617,12 +1626,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             return;
           }
 
-          this.lineSamples = samples;
+          const distanceMeters = slopeMeters(samples.distanceMeters, meters);
+          this.lineSamples = {latLngDegrees: samples.latLngDegrees, distanceMeters};
           this.updateState({
             ...this.state,
             lineProfile: {
               status: 'loaded',
-              distanceMeters: Array.from(samples.distanceMeters),
+              distanceMeters: Array.from(distanceMeters),
               meters: Array.from(meters),
               hovered: undefined,
             },
