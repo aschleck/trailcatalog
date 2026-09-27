@@ -1,13 +1,14 @@
-import { resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
+import { Future, resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
 import { floatCoalesce } from 'external/dev_april_corgi+/js/common/math';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { setTitle } from 'external/dev_april_corgi+/js/server/ssr_aware';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
-import { Role } from 'trails_lat/proto/data_pb';
+import { GetCollectionResponse, Role } from 'trails_lat/proto/data_pb';
 
 import { State, ViewerController } from './viewer_controller';
 import { requestData } from './data';
+import { folderFromProto, lineFromProto, pointFromProto } from './features';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -19,7 +20,14 @@ import {
   POINT_PLACED,
   TOOL_REQUESTED,
 } from './events';
-import { FeatureTree, NewFolderButton, Properties } from './feature_list';
+import {
+  buildTree,
+  FeatureTree,
+  foldersOf,
+  NewFolderButton,
+  Properties,
+  topLevelFolderIds,
+} from './feature_list';
 import { LayerTree } from './layer_tree';
 import { formatDistance } from './measurements';
 import { MeasurePanel } from './measure_panel';
@@ -36,18 +44,31 @@ export function OverviewElement(
   updateState: (newState: State) => void,
 ) {
   if (!inState) {
+    // Settled on the server's later render passes, and in the browser from the data the server
+    // rendered with. ViewerController loads the geometry.
+    const outline: Future<GetCollectionResponse>|undefined =
+        collection
+            ? requestData(
+                'lat.trails.DataService/GetCollection', {id: collection, omitGeometry: true})
+            : undefined;
+    const loaded = outline?.finished && outline.ok ? outline.value() : undefined;
+    const all = [
+      ...(loaded?.folders ?? []).map(folderFromProto),
+      ...(loaded?.lines ?? []).map(lineFromProto),
+      ...(loaded?.points ?? []).map(pointFromProto),
+    ];
     inState = {
-      collection: undefined,
-      collectionStatus: collection ? 'loading' : 'loaded',
+      collection: loaded?.collection,
+      collectionStatus:
+          !collection ? 'loaded' : outline?.finished && !outline.ok ? 'failed' : 'loading',
       features: {
-        tree: [],
-        folders: [],
+        all,
         selected: undefined,
         selectedDescendants: 0,
         hovered: undefined,
         hoveredAncestors: new Set(),
-        hidden: new Set(),
-        expanded: new Set(),
+        hidden: new Set(loaded?.hiddenFeatureIds),
+        expanded: new Set(topLevelFolderIds(all)),
         dropTarget: undefined,
       },
       drawnLength: undefined,
@@ -70,6 +91,7 @@ export function OverviewElement(
   }
   const state = inState;
   const readOnly = state.collection?.role === Role.READ;
+  const tree = buildTree(state.features.all);
   setTitle(state.collection?.name ? `${state.collection.name} - trails.lat` : 'trails.lat');
 
   if (!state.self.finished) {
@@ -186,7 +208,8 @@ export function OverviewElement(
                             ? undefined
                             : {
                               descendants: state.features.selectedDescendants,
-                              folders: state.features.folders,
+                              // A folder cannot move into itself or anything under it
+                              folders: foldersOf(tree, state.features.selected.id),
                             },
                       }}
                   />
@@ -205,6 +228,7 @@ export function OverviewElement(
                 readOnly={readOnly}
                 state={state.features}
                 status={state.collectionStatus}
+                tree={tree}
             />
           </SidebarSection>
           <SidebarSection label="Layers" open={false}>

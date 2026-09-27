@@ -114,7 +114,8 @@ export class FeatureStore {
   }
 
   // A folder_id naming a folder that is gone puts the feature at the root, or else it would
-  // vanish from the list with nothing to open to find it.
+  // vanish from the list with nothing to open to find it. Keep in sync with
+  // feature_list.tsx#buildTree.
   parentOf(feature: EditableFeature): string|undefined {
     const parent = feature.data.folder_id;
     return parent !== undefined && this.live.get(parent)?.kind === 'folder' ? parent : undefined;

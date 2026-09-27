@@ -16,6 +16,7 @@ import io.javalin.http.ConflictResponse
 import io.javalin.http.Context
 import io.javalin.http.ForbiddenResponse
 import io.javalin.http.Header
+import io.javalin.http.HttpResponseException
 import io.javalin.http.HttpStatus
 import io.javalin.http.NotFoundResponse
 import io.javalin.http.UnauthorizedResponse
@@ -68,6 +69,7 @@ import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.polylineToCell
 import org.trailcatalog.s2.snapEpsilon
 import org.trailcatalog.s2.snapRadians
+import org.slf4j.LoggerFactory
 import org.trailcatalog.EpochTracker
 import kotlin.math.abs
 import kotlin.use
@@ -78,6 +80,8 @@ private val port = createFlag(7051)
 private lateinit var epochTracker: EpochTracker
 private lateinit var hikari: HikariDataSource
 private lateinit var hikariTrailcatalog: HikariDataSource
+
+private val logger = LoggerFactory.getLogger("ApiServer")
 
 private val ANONYMOUS_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
@@ -94,6 +98,9 @@ private val TRAILCATALOG_POINTS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000
 private const val KIND_UUID_JSON = 0
 private const val KIND_PACKED_PATH = 1
 private const val KIND_PACKED_POINT = 2
+
+private const val LINE_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters, time_seconds"
+private const val POINT_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters"
 
 private val JSON_PARSER = JsonFormat.parser()
 private val JSON_PRINTER = JsonFormat.printer().omittingInsignificantWhitespace()
@@ -118,26 +125,16 @@ private fun fetchData(ctx: Context) {
   for (key in request.get("keys").elements()) {
     val method = key.get("method").asText() ?: throw IllegalArgumentException("Key has no method")
     val payload = key.get("request")
-    val value = when (method) {
-      "lat.trails.DataService/CreateCollection" ->
-        createCollection(ctx, CreateCollectionRequest.newBuilder().mergeJson(payload).build())
-      "lat.trails.DataService/DeleteCollection" ->
-        deleteCollection(ctx, DeleteCollectionRequest.newBuilder().mergeJson(payload).build())
-      "lat.trails.DataService/GetCollection" ->
-        getCollection(ctx, GetCollectionRequest.newBuilder().mergeJson(payload).build())
-      "lat.trails.DataService/GetCurrentUser" -> getCurrentUser(ctx)
-      "lat.trails.DataService/GetSharing" ->
-        getSharing(ctx, GetSharingRequest.newBuilder().mergeJson(payload).build())
-      "lat.trails.DataService/ListCollections" -> listCollections(ctx)
-      "lat.trails.DataService/RenameCollection" ->
-        renameCollection(ctx, RenameCollectionRequest.newBuilder().mergeJson(payload).build())
-      "lat.trails.DataService/Save" ->
-        save(ctx, SaveRequest.newBuilder().mergeJson(payload).build())
-      "lat.trails.DataService/SetSharing" ->
-        setSharing(ctx, SetSharingRequest.newBuilder().mergeJson(payload).build())
-      "lat.trails.DataService/SetViewState" ->
-        setViewState(ctx, SetViewStateRequest.newBuilder().mergeJson(payload).build())
-      else -> throw IllegalArgumentException("Unknown method $method")
+    // Failed per key, because the server side render fails the whole page when the batch does.
+    val value = try {
+      dispatch(ctx, method, payload)
+    } catch (e: HttpResponseException) {
+      responses.add(mapOf("kind" to "error", "code" to e.status, "message" to e.message))
+      continue
+    } catch (e: Exception) {
+      logger.error("$method failed", e)
+      responses.add(mapOf("kind" to "error", "code" to HttpStatus.INTERNAL_SERVER_ERROR.code))
+      continue
     }
 
     responses.add(
@@ -145,6 +142,30 @@ private fun fetchData(ctx: Context) {
   }
 
   ctx.json(mapOf("values" to responses))
+}
+
+private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message {
+  return when (method) {
+    "lat.trails.DataService/CreateCollection" ->
+      createCollection(ctx, CreateCollectionRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/DeleteCollection" ->
+      deleteCollection(ctx, DeleteCollectionRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/GetCollection" ->
+      getCollection(ctx, GetCollectionRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/GetCurrentUser" -> getCurrentUser(ctx)
+    "lat.trails.DataService/GetSharing" ->
+      getSharing(ctx, GetSharingRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/ListCollections" -> listCollections(ctx)
+    "lat.trails.DataService/RenameCollection" ->
+      renameCollection(ctx, RenameCollectionRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/Save" ->
+      save(ctx, SaveRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/SetSharing" ->
+      setSharing(ctx, SetSharingRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/SetViewState" ->
+      setViewState(ctx, SetViewStateRequest.newBuilder().mergeJson(payload).build())
+    else -> throw IllegalArgumentException("Unknown method $method")
+  }
 }
 
 private fun getCurrentUser(ctx: Context): GetCurrentUserResponse {
@@ -281,9 +302,10 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
 
     connection
         .prepareStatement(
-            "SELECT id, data, lat_lng_degrees, elevation_centimeters, time_seconds, version "
-                + "FROM lines "
-                + "WHERE collection = ? AND deleted IS NULL")
+            "SELECT id, data, version"
+                + (if (request.omitGeometry) "" else ", $LINE_GEOMETRY_COLUMNS")
+                + " FROM lines"
+                + " WHERE collection = ? AND deleted IS NULL")
         .apply {
           setObject(1, id)
         }
@@ -294,16 +316,19 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
                 response.addLinesBuilder()
                     .setId((results.getObject(1) as UUID).toString())
                     .setData(results.getString(2))
-                    .setVersion(results.getLong(6))
-            for (e7 in DeltaLatLngE7.decode(results.getBytes(3))) {
+                    .setVersion(results.getLong(3))
+            if (request.omitGeometry) {
+              continue
+            }
+            for (e7 in DeltaLatLngE7.decode(results.getBytes(4))) {
               line.addLatLngE7(e7)
             }
-            results.getBytes(4)?.let { elevation ->
+            results.getBytes(5)?.let { elevation ->
               for (centimeters in DeltaInt64.decode(elevation)) {
                 line.addElevationCentimeters(centimeters.toInt())
               }
             }
-            results.getBytes(5)?.let { time ->
+            results.getBytes(6)?.let { time ->
               for (seconds in DeltaInt64.decode(time)) {
                 line.addTimeSeconds(seconds)
               }
@@ -313,24 +338,27 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
 
     connection
         .prepareStatement(
-            "SELECT id, data, lat_lng_degrees, elevation_centimeters, version "
-                + "FROM points "
-                + "WHERE collection = ? AND deleted IS NULL")
+            "SELECT id, data, version"
+                + (if (request.omitGeometry) "" else ", $POINT_GEOMETRY_COLUMNS")
+                + " FROM points"
+                + " WHERE collection = ? AND deleted IS NULL")
         .apply {
           setObject(1, id)
         }
         .executeQuery()
         .use { results ->
           while (results.next()) {
-            val latLngE7 = DeltaLatLngE7.decode(results.getBytes(3))
             val point =
                 response.addPointsBuilder()
                     .setId((results.getObject(1) as UUID).toString())
                     .setData(results.getString(2))
-                    .setLatE7(latLngE7[0])
-                    .setLngE7(latLngE7[1])
-                    .setVersion(results.getLong(5))
-            val elevation = results.getInt(4)
+                    .setVersion(results.getLong(3))
+            if (request.omitGeometry) {
+              continue
+            }
+            val latLngE7 = DeltaLatLngE7.decode(results.getBytes(4))
+            point.setLatE7(latLngE7[0]).setLngE7(latLngE7[1])
+            val elevation = results.getInt(5)
             if (!results.wasNull()) {
               point.setElevationCentimeters(elevation)
             }

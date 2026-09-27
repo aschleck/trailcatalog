@@ -70,9 +70,8 @@ interface Climb {
 }
 
 export interface FeatureListState {
-  tree: TreeItem[];
-  // Every folder in tree order with its depth, for the move menu
-  folders: Array<{folder: EditableFolder; depth: number}>;
+  // Copies of every feature in the open collection, which buildTree arranges into folders
+  all: EditableFeature[];
   selected: EditableFeature|undefined;
   // How many features deleting the selected folder takes with it
   selectedDescendants: number;
@@ -93,10 +92,12 @@ const EYE_OUTLINE =
         + 'C12.5 11.5 10.5 12.5 8 12.5 C5.5 12.5 3.5 11.5 1.5 8 Z';
 
 /** Lists the open collection's features as a tree. */
-export function FeatureTree({readOnly, state, status}: {
+export function FeatureTree({readOnly, state, status, tree}: {
   readOnly: boolean;
   state: FeatureListState;
   status: CollectionStatus;
+  // buildTree of state.all
+  tree: TreeItem[];
 }) {
   const rootTarget = state.dropTarget !== undefined && state.dropTarget.folder === undefined;
   // The bottom padding leaves somewhere to drop onto the root when every row is inside a folder.
@@ -109,8 +110,8 @@ export function FeatureTree({readOnly, state, status}: {
           drop: 'featureTreeDropped',
         }}
     >
-      {state.tree.length > 0
-          ? rows(state.tree, state, readOnly, /* dimmed= */ false)
+      {tree.length > 0
+          ? rows(tree, state, readOnly, /* dimmed= */ false)
           : [
             <div className="px-2 py-1 text-gray-500">
               {status === 'loading'
@@ -600,16 +601,17 @@ function kindName(feature: EditableFeature): string {
 }
 
 /** Sorts folders ahead of everything else and names in the order a person would number them. */
-export function buildTree(
-    features: Iterable<EditableFeature>,
-    parentOf: (feature: EditableFeature) => string|undefined): TreeItem[] {
+export function buildTree(features: Iterable<EditableFeature>): TreeItem[] {
   const children = new Map<string|undefined, TreeItem[]>();
   const items = new Map<string, TreeItem>();
   for (const feature of features) {
     items.set(feature.id, {feature, children: []});
   }
   for (const item of items.values()) {
-    const parent = parentOf(item.feature);
+    // Keep in sync with FeatureStore#parentOf
+    const folder = item.feature.data.folder_id;
+    const parent =
+        folder !== undefined && items.get(folder)?.feature.kind === 'folder' ? folder : undefined;
     const siblings = children.get(parent) ?? [];
     siblings.push(item);
     children.set(parent, siblings);
@@ -620,17 +622,22 @@ export function buildTree(
   return sortItems(children.get(undefined) ?? []);
 }
 
-/** Flattens the folders of a tree in order, with their depth. */
-export function foldersOf(tree: TreeItem[], depth = 0):
+/** Flattens a tree's folders in order with their depth, skipping excluded and what's in it. */
+export function foldersOf(tree: TreeItem[], excluded: string|undefined, depth = 0):
     Array<{folder: EditableFolder; depth: number}> {
   const folders = [];
   for (const item of tree) {
-    if (item.feature.kind === 'folder') {
+    if (item.feature.kind === 'folder' && item.feature.id !== excluded) {
       folders.push({folder: item.feature, depth});
-      folders.push(...foldersOf(item.children, depth + 1));
+      folders.push(...foldersOf(item.children, excluded, depth + 1));
     }
   }
   return folders;
+}
+
+/** Returns the folders not inside another folder, which start open. */
+export function topLevelFolderIds(features: Iterable<EditableFeature>): string[] {
+  return buildTree(features).filter(i => i.feature.kind === 'folder').map(i => i.feature.id);
 }
 
 function sortItems(items: TreeItem[]): TreeItem[] {

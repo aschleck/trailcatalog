@@ -36,6 +36,9 @@ message DeleteCollectionResponse {}
 
 message GetCollectionRequest {
   string id = 1;
+  // Leaves every line and point with only its id, data, and version, for listing the features
+  // without paying for their geometry.
+  bool omit_geometry = 2;
 }
 
 message GetCollectionResponse {

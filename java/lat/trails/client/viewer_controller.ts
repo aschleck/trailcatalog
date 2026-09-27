@@ -74,11 +74,10 @@ import {
 import { toGeoJson, toGpx } from './exporter';
 import { FeatureLayer } from './feature_layer';
 import {
-  buildTree,
   CollectionStatus,
   FeatureListState,
-  foldersOf,
   InspectedObject,
+  topLevelFolderIds,
 } from './feature_list';
 import { Change, FeatureStore } from './feature_store';
 import {
@@ -240,8 +239,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private inspectGeneration: number;
   // Moves with every collection opened or created, so that a slow load of an earlier one is dropped
   private collectionGeneration: number;
-  private readonly hidden: Set<string>;
-  private readonly expanded: Set<string>;
   // The feature being dragged in the list, and the folder it would drop into, where undefined is
   // the root
   private draggedFeature: string|undefined;
@@ -297,8 +294,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.inspected = undefined;
     this.inspectGeneration = 0;
     this.collectionGeneration = 0;
-    this.hidden = new Set();
-    this.expanded = new Set();
     this.draggedFeature = undefined;
     this.dropTarget = undefined;
     this.joining = undefined;
@@ -351,6 +346,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const renderer = this.mapController.renderer;
     this.featureLayer = new FeatureLayer(this.store, locations, camera, renderer);
     this.registerDisposable(this.featureLayer);
+    this.featureLayer.setHidden(this.state.features.hidden);
     this.lineLayer =
         new DrawingLayer(
             'line',
@@ -753,7 +749,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setMapLayers(nodes);
 
     const collection = response.args.collection;
-    if (collection) {
+    // The server render already answered with the outline's failure, and a reload is the retry.
+    if (collection && this.state.collectionStatus !== 'failed') {
       this.loadCollection(collection, response.args.fitCollection);
     }
   }
@@ -792,7 +789,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       elevationCentimeters: undefined,
     };
     if (parent !== undefined) {
-      this.expanded.add(parent);
+      this.expand([parent]);
     }
     this.store.apply([{id: point.id, before: undefined, after: point}]);
     this.select(point.id);
@@ -824,9 +821,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Opens the folders above what the map selected and scrolls to it, so that the list shows it.
   private reveal(id: string|undefined): void {
-    for (const ancestor of this.ancestorsOf(id)) {
-      this.expanded.add(ancestor);
-    }
+    this.expand(this.ancestorsOf(id));
     this.select(id);
     if (id !== undefined) {
       // After the render that puts the row in the list
@@ -1041,10 +1036,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   folderToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
     const id = checkExists(e.actionElement.data('id')).string();
-    if (!this.expanded.delete(id)) {
-      this.expanded.add(id);
+    const expanded = new Set(this.state.features.expanded);
+    if (!expanded.delete(id)) {
+      expanded.add(id);
     }
-    this.refreshFeatureList();
+    this.updateState({...this.state, features: {...this.state.features, expanded}});
   }
 
   featureRowEntered(e: CorgiEvent<typeof DOM_POINTER>): void {
@@ -1133,12 +1129,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   visibilityToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
     const id = checkExists(e.actionElement.data('id')).string();
-    const hidden = new Set(this.hidden);
+    const hidden = new Set(this.state.features.hidden);
     if (!hidden.delete(id)) {
       hidden.add(id);
     }
     this.setHidden(hidden);
-    this.refreshFeatureList();
     this.saveViewState();
   }
 
@@ -1151,7 +1146,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       data: parent !== undefined ? {folder_id: parent} : {},
     };
     if (parent !== undefined) {
-      this.expanded.add(parent);
+      this.expand([parent]);
     }
     this.store.apply([{id: folder.id, before: undefined, after: folder}]);
     this.select(folder.id);
@@ -1263,7 +1258,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   folderChanged(e: CorgiEvent<typeof CHANGED>): void {
     const folder = e.detail.value;
     if (folder) {
-      this.expanded.add(folder);
+      this.expand([folder]);
     }
     this.editSelectedData(data => ({...data, folder_id: folder || undefined}));
   }
@@ -2014,7 +2009,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.draggedFeature = undefined;
     this.dropTarget = undefined;
     if (folder !== undefined) {
-      this.expanded.add(folder);
+      this.expand([folder]);
     }
     if (this.store.parentOf(live) === folder) {
       this.refreshFeatureList();
@@ -2173,28 +2168,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Hands the list copies, because the store edits features in place and corgi skips rendering a
   // component whose props are the same objects as last time.
   private refreshFeatureList(): void {
-    const tree =
-        buildTree([...this.store.all()].map(snapshot), f => this.store.parentOf(f));
     const live = this.selected !== undefined ? this.store.get(this.selected) : undefined;
     const selected = live && snapshot(live);
-    // A folder cannot move into itself or anything under it
-    const excluded =
-        new Set(
-            selected?.kind === 'folder'
-                ? [selected.id, ...this.store.descendants(selected.id).map(f => f.id)]
-                : []);
     this.updateState({
       ...this.state,
       features: {
-        tree,
-        folders: foldersOf(tree).filter(({folder}) => !excluded.has(folder.id)),
+        ...this.state.features,
+        all: [...this.store.all()].map(snapshot),
         selected,
         selectedDescendants:
             selected?.kind === 'folder' ? this.store.descendants(selected.id).length : 0,
-        hovered: this.state.features.hovered,
         hoveredAncestors: new Set(this.ancestorsOf(this.state.features.hovered)),
-        hidden: new Set(this.hidden),
-        expanded: new Set(this.expanded),
         dropTarget: this.dropTarget,
       },
       lineProfile: this.lineProfileFor(live),
@@ -2215,12 +2199,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.history.silentlyReplaceUrl('/');
   }
 
+  // Empties the list while the collection loads, or else the last one's rows are left to click.
   private openCollection(collection: Collection): void {
     this.saves.clear();
     this.select(undefined);
+    this.setHidden([]);
+    this.store.reset([], this.store.isReadOnly());
     this.updateState({
       ...this.state,
       collection,
+      features: {...this.state.features, expanded: new Set()},
     });
     this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
     this.loadCollection(collection.id, /* fit= */ true);
@@ -2258,7 +2246,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private loadCollection(id: string, fit: boolean): void {
     this.collectionGeneration += 1;
     const generation = this.collectionGeneration;
-    this.setHidden([]);
+    const hidden = this.state.features.hidden;
     this.updateState({...this.state, collectionStatus: 'loading'});
     const loading: Future<GetCollectionResponse> =
         requestData('lat.trails.DataService/GetCollection', {id});
@@ -2273,12 +2261,18 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             collectionStatus: 'loaded',
           });
           const readOnly = response.collection?.role === Role.READ;
-          this.setHidden(response.hiddenFeatureIds);
-          this.store.reset([
+          // A toggle made since the request, like on the rows the server rendered, is newer than
+          // what the response read.
+          if (this.state.features.hidden === hidden) {
+            this.setHidden(response.hiddenFeatureIds);
+          }
+          const features = [
             ...response.folders.map(folderFromProto),
             ...response.lines.map(lineFromProto),
             ...response.points.map(pointFromProto),
-          ], readOnly);
+          ];
+          this.expand(topLevelFolderIds(features));
+          this.store.reset(features, readOnly);
           if (fit) {
             this.fitCamera(featureLatLngDegrees(this.store.all()));
           }
@@ -2403,7 +2397,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           });
           this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
           // Anything hidden before the collection existed had nowhere to save to.
-          if (this.hidden.size > 0) {
+          if (this.state.features.hidden.size > 0) {
             this.saveViewState();
           }
           return collection.id;
@@ -2411,11 +2405,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private setHidden(ids: Iterable<string>): void {
-    this.hidden.clear();
-    for (const id of ids) {
-      this.hidden.add(id);
-    }
-    this.featureLayer.setHidden(new Set(this.hidden));
+    const hidden = new Set(ids);
+    this.featureLayer.setHidden(hidden);
+    this.updateState({...this.state, features: {...this.state.features, hidden}});
+  }
+
+  private expand(ids: Iterable<string>): void {
+    const expanded = new Set([...this.state.features.expanded, ...ids]);
+    this.updateState({...this.state, features: {...this.state.features, expanded}});
   }
 
   // Viewers get no view state, so they start from the owner's every time they open the collection.
@@ -2425,7 +2422,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
-    const request = {collectionId: collection.id, hiddenFeatureIds: [...this.hidden]};
+    const request = {
+      collectionId: collection.id,
+      hiddenFeatureIds: [...this.state.features.hidden],
+    };
     this.viewStateWrites = this.viewStateWrites
         .then(() => {
           const saved: Future<SetViewStateResponse> =
