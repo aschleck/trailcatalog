@@ -635,9 +635,12 @@ export function foldersOf(tree: TreeItem[], excluded: string|undefined, depth = 
   return folders;
 }
 
-/** Returns the folders not inside another folder, which start open. */
-export function topLevelFolderIds(features: Iterable<EditableFeature>): string[] {
-  return buildTree(features).filter(i => i.feature.kind === 'folder').map(i => i.feature.id);
+/** Returns the shown folders not inside another folder, which start open. */
+export function topLevelFolderIds(
+    features: Iterable<EditableFeature>, hidden: ReadonlySet<string>): string[] {
+  return buildTree(features)
+      .filter(i => i.feature.kind === 'folder' && !hidden.has(i.feature.id))
+      .map(i => i.feature.id);
 }
 
 function sortItems(items: TreeItem[]): TreeItem[] {

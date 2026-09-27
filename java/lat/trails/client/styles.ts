@@ -493,6 +493,43 @@ export const NATURE_WITHOUT_DETAILED_WAYS: MbtileStyle = withoutWayLines(NATURE)
 // layer names and classes.
 export const NATURE_PROTOMAPS: MbtileStyle = toProtomaps(NATURE_WITHOUT_DETAILED_WAYS);
 
+// What the basemap layer offers to label, by the protomaps layers each one's text comes from.
+// Points in the basemap style only draw text, so dropping a layer's points and lineTexts takes
+// all of its labels.
+export const BASEMAP_LABEL_KINDS:
+    ReadonlyArray<{key: string; label: string; layerNames: string[]}> = [
+  {key: 'place_labels', label: 'Place labels', layerNames: ['places', 'pois']},
+  {key: 'water_labels', label: 'Water labels', layerNames: ['water']},
+  {key: 'way_labels', label: 'Way labels', layerNames: ['roads']},
+];
+
+/** Narrows NATURE_PROTOMAPS to the boundaries and the labels in the protomaps layers named. */
+export function basemapOf(boundaries: boolean, labeled: ReadonlySet<string>): MbtileStyle {
+  const unlabeled = new Set(
+      BASEMAP_LABEL_KINDS.flatMap(({layerNames}) => layerNames).filter(name => !labeled.has(name)));
+  const layers = [];
+  for (const layer of NATURE_PROTOMAPS.layers) {
+    if (!boundaries && layer.layerName === 'boundaries') {
+      continue;
+    }
+    let polygons = layer.polygons;
+    if (!boundaries) {
+      // The park outlines are strokes on landuse polygons, the only basemap polygons with one.
+      polygons = polygons
+          .filter(polygon => polygon.fill !== 0)
+          .map(polygon => ({...polygon, stroke: 0 as RgbaU32, strokeRadius: 0}));
+    }
+    const keepLabels = !unlabeled.has(layer.layerName);
+    layers.push({
+      ...layer,
+      lineTexts: keepLabels ? layer.lineTexts : [],
+      points: keepLabels ? layer.points : [],
+      polygons,
+    });
+  }
+  return {layers};
+}
+
 export const PUBLIC_LAND: Style = {
   lines: [],
   polygons: [

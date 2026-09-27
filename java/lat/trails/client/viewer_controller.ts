@@ -41,8 +41,9 @@ import {
 
 import { CollectionLayer } from './collection_layer';
 import {
+  BASEMAP_LABEL_KINDS,
+  basemapOf,
   NATURE_PROTOMAPS,
-  NATURE_WITHOUT_DETAILED_WAYS,
   NODE_KINDS,
   OSM_WAYS,
   osmWaysOf,
@@ -541,39 +542,26 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       }, {
         kind: 'layer',
         id: 'osm/protomaps',
-        name: 'Protomaps',
+        name: 'Basemap (Protomaps)',
         enabled: true,
         layer: protomaps,
-        controls: [],
-        values: {},
-      }, {
-        kind: 'layer',
-        id: 'osm/maptiler',
-        name: 'MapTiler',
-        enabled: false,
-        layer: new MbtileLayer(
-            [
-              {
-                long: 'Base political and transportation packaged and served by MapTiler',
-                short: 'MapTiler',
-                url: 'https://www.maptiler.com/copyright/',
-              },
-              {
-                long: 'Base political and transportation data provided by the OpenStreetMap project',
-                short: 'OpenStreetMap contributors',
-                url: 'https://www.openstreetmap.org/copyright',
-              },
-            ],
-            'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
-                + 'key=UGTHB0b969Xa1xpZvnvB',
-            NATURE_WITHOUT_DETAILED_WAYS,
-            /* extraZoom= */ 0,
-            /* minZoom= */ 0,
-            /* maxZoom= */ 15,
-            this.mapController.renderer,
-        ),
-        controls: [],
-        values: {},
+        controls: [
+          {kind: 'checkbox', key: 'boundaries', label: 'Boundaries'},
+          ...BASEMAP_LABEL_KINDS.map(({key, label}) => ({kind: 'checkbox' as const, key, label})),
+        ],
+        values: {
+          boundaries: true,
+          ...Object.fromEntries(BASEMAP_LABEL_KINDS.map(({key}) => [key, true])),
+        },
+        configure: values => {
+          protomaps.setStyle(
+              basemapOf(
+                  values.boundaries === true,
+                  new Set(
+                      BASEMAP_LABEL_KINDS
+                          .filter(({key}) => values[key])
+                          .flatMap(({layerNames}) => layerNames))));
+        },
       }],
     }, {
       kind: 'group',
@@ -760,8 +748,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.addLine(e.detail.latLngE7);
   }
 
-  // Leaves the new stroke unselected, because the panel opening over the map after every stroke
-  // would get in the way of the next.
+  // Selects the new stroke, like onPointPlaced, so that the panel is open to name it.
   onMarkerDrawn(e: CorgiEvent<typeof MARKER_DRAWN>): void {
     const line: EditableLine = {
       kind: 'line',
@@ -773,6 +760,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       timeSeconds: undefined,
     };
     this.store.apply([{id: line.id, before: undefined, after: line}]);
+    this.select(line.id);
   }
 
   // Selects the new point so that the panel is open to name it, and stays in the tool so that
@@ -2271,7 +2259,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ...response.lines.map(lineFromProto),
             ...response.points.map(pointFromProto),
           ];
-          this.expand(topLevelFolderIds(features));
+          this.expand(topLevelFolderIds(features, this.state.features.hidden));
           this.store.reset(features, readOnly);
           if (fit) {
             this.fitCamera(featureLatLngDegrees(this.store.all()));

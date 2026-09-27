@@ -57,6 +57,7 @@ export function OverviewElement(
       ...(loaded?.lines ?? []).map(lineFromProto),
       ...(loaded?.points ?? []).map(pointFromProto),
     ];
+    const hidden = new Set(loaded?.hiddenFeatureIds);
     inState = {
       collection: loaded?.collection,
       collectionStatus:
@@ -67,8 +68,8 @@ export function OverviewElement(
         selectedDescendants: 0,
         hovered: undefined,
         hoveredAncestors: new Set(),
-        hidden: new Set(loaded?.hiddenFeatureIds),
-        expanded: new Set(topLevelFolderIds(all)),
+        hidden,
+        expanded: new Set(topLevelFolderIds(all, hidden)),
         dropTarget: undefined,
       },
       drawnLength: undefined,
