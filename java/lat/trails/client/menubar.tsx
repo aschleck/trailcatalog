@@ -7,7 +7,16 @@ import { User } from 'trails_lat/proto/data_pb';
 // MenuElement ships unstyled, so every menu the bar opens has to bring the bar's own colors.
 export const MENU_CLASSES: MenuClassNames = {
   popup: 'bg-gray-900 p-1 rounded shadow-lg text-white',
-  item: 'cursor-pointer px-2 py-1 rounded select-none data-[active]:bg-gray-800',
+  item: `
+      cursor-pointer
+      data-[active]:bg-gray-800
+      data-[disabled]:cursor-default
+      data-[disabled]:opacity-50
+      px-2
+      py-1
+      rounded
+      select-none
+  `,
   divider: '-mx-1 my-1 h-px bg-white opacity-25',
 };
 

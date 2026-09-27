@@ -1356,6 +1356,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.fileMenu(e.actionElement.element());
   }
 
+  editMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.editMenu(e.actionElement.element());
+  }
+
   viewMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.viewMenu(e.actionElement.element());
   }
@@ -1373,6 +1377,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const menu = checkExists(e.actionElement.data('menu')).string();
     if (menu === 'file') {
       this.fileMenu(trigger);
+    } else if (menu === 'edit') {
+      this.editMenu(trigger);
     } else if (menu === 'view') {
       this.viewMenu(trigger);
     } else if (menu === 'user') {
@@ -1492,6 +1498,31 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       });
       this.openMenu(items, trigger);
     });
+  }
+
+  private editMenu(trigger: Element): void {
+    if (!this.claimMenu(trigger)) {
+      return;
+    }
+
+    const mac = navigator.platform.startsWith('Mac');
+    this.openMenu([{
+      kind: 'menu_item',
+      label: 'Undo',
+      disabled: !this.store.canUndo,
+      shortcut: mac ? '⌘Z' : 'Ctrl+Z',
+      action: () => {
+        this.store.undo();
+      },
+    }, {
+      kind: 'menu_item',
+      label: 'Redo',
+      disabled: !this.store.canRedo,
+      shortcut: mac ? '⇧⌘Z' : 'Ctrl+Y',
+      action: () => {
+        this.store.redo();
+      },
+    }], trigger);
   }
 
   private viewMenu(trigger: Element): void {
