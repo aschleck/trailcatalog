@@ -889,6 +889,24 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
+      layerName: 'mountain_peak',
+      // Protomaps only carries peaks from zoom 13.
+      minZoom: 13,
+      maxZoom: 31,
+      lineTexts: [],
+      lines: [],
+      points: [
+        {
+          filters: [{match: 'string_in', key: 'class', value: ['peak', 'volcano']}],
+          textFill: 0x5C4424FF as RgbaU32,
+          textStroke: 0xEFEFEFFF as RgbaU32,
+          textScale: 0.5,
+          z: Z_OVERLAY_TEXT,
+        },
+      ],
+      polygons: [],
+    },
+    {
       layerName: 'park',
       minZoom: 0,
       maxZoom: 10,
@@ -2086,6 +2104,7 @@ export class MbtileLayer extends Layer {
   private lastRenderGeneration: number;
   private lastLabelId: number;
   private styleZoom: number;
+  private styleEpoch: number;
 
   constructor(
       copyrights: Copyright[],
@@ -2122,6 +2141,7 @@ export class MbtileLayer extends Layer {
     // viewportChanged adopts whatever the camera reports without triggering
     // a re-style pass (there are no cached raw bytes to re-style anyway).
     this.styleZoom = -1;
+    this.styleEpoch = 0;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'ltc') {
@@ -2158,6 +2178,16 @@ export class MbtileLayer extends Layer {
 
   override hasNewData(): boolean {
     return this.generation !== this.lastRenderGeneration;
+  }
+
+  /** Redraws every held tile with the style, without refetching. */
+  setStyle(style: Style): void {
+    this.styleEpoch += 1;
+    this.loader.broadcast({
+      kind: 'sr',
+      style,
+    });
+    this.restyle();
   }
 
   override loadingData(): boolean {
@@ -2241,17 +2271,22 @@ export class MbtileLayer extends Layer {
     const newStyleZoom = Math.floor(zoom + this.extraZoom);
     if (newStyleZoom !== this.styleZoom) {
       this.styleZoom = newStyleZoom;
-      for (const [id, data] of this.rawBytes) {
-        // Structured-clone copies for the worker; main-thread buffer is
-        // preserved for future re-style passes.
-        const task = this.loader.post({
-          kind: 'lr',
-          id,
-          styleZoom: newStyleZoom,
-          data,
-        });
-        this.loading.set(id, task);
-      }
+      this.restyle();
+    }
+  }
+
+  private restyle(): void {
+    for (const [id, data] of this.rawBytes) {
+      // Structured-clone copies for the worker; main-thread buffer is
+      // preserved for future re-style passes.
+      const task = this.loader.post({
+        kind: 'lr',
+        id,
+        styleZoom: this.styleZoom,
+        styleEpoch: this.styleEpoch,
+        data,
+      });
+      this.loading.set(id, task);
     }
   }
 
@@ -2268,15 +2303,16 @@ export class MbtileLayer extends Layer {
       kind: 'lr',
       id,
       styleZoom: this.styleZoom,
+      styleEpoch: this.styleEpoch,
       data: command.data,
     });
     this.loading.set(id, task);
   }
 
   private loadProcessedTile(response: LoadResponse): void {
-    // A new request for this tile at a different styleZoom has already gone
-    // out; discard this stale styled output.
-    if (response.styleZoom !== this.styleZoom) {
+    // A new request for this tile at a different styleZoom or style has
+    // already gone out; discard this stale styled output.
+    if (response.styleZoom !== this.styleZoom || response.styleEpoch !== this.styleEpoch) {
       return;
     }
 

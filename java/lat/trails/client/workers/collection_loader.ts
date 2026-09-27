@@ -18,6 +18,11 @@ interface InitializeRequest {
   style: Style;
 }
 
+interface SetStyleRequest {
+  kind: 'sr';
+  style: Style;
+}
+
 export interface Style {
   lines: LineStyle[];
   polygons: PolygonStyle[];
@@ -65,17 +70,20 @@ interface LoadRequest {
   kind: 'lr';
   key: CellKey;
   styleZoom: number;
+  // Counts the layer's calls to setStyle, echoed so that a cell styled before the last one drops.
+  styleEpoch: number;
   // Unused here, only echoed so that the answer says what its geometry was simplified to.
   tolerance: number;
   data: ArrayBuffer;
 }
 
-export type Request = InitializeRequest|LoadRequest;
+export type Request = InitializeRequest|LoadRequest|SetStyleRequest;
 
 export interface LoadResponse {
   kind: 'lr';
   key: CellKey;
   styleZoom: number;
+  styleEpoch: number;
   tolerance: number;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
@@ -150,9 +158,13 @@ const KIND_PACKED_PATH = 1;
 class CollectionLoader {
 
   constructor(
-      private readonly style: Style,
+      private style: Style,
       private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
   ) {}
+
+  setStyle(style: Style): void {
+    this.style = style;
+  }
 
   load(request: LoadRequest) {
     const source = new LittleEndianView(request.data);
@@ -281,6 +293,7 @@ class CollectionLoader {
       kind: 'lr',
       key: request.key,
       styleZoom: request.styleZoom,
+      styleEpoch: request.styleEpoch,
       tolerance: request.tolerance,
       geometry: geometry.buffer,
       index: index.buffer,
@@ -394,6 +407,8 @@ function start(ir: InitializeRequest) {
       throw new Error('Already initialized');
     } else if (request.kind === 'lr') {
       fetcher.load(request);
+    } else if (request.kind === 'sr') {
+      fetcher.setStyle(request.style);
     } else {
       checkExhaustive(request);
     }

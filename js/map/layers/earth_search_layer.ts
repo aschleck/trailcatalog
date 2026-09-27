@@ -10,7 +10,7 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-import { Command as LoaderCommand, LoadTileCommand, Request as LoaderRequest } from '../workers/earth_search_loader';
+import { Command as LoaderCommand, LoadTileCommand, Request as LoaderRequest, Search } from '../workers/earth_search_loader';
 
 const NO_OFFSET: Vec2 = [0, 0];
 // A viewport holds well under 64 billboards, so the buffer never grows in practice.
@@ -28,8 +28,7 @@ export class EarthSearchLayer extends Layer {
 
   constructor(
       collection: string,
-      daysToFetch: number,
-      query: object,
+      search: Search,
       private readonly z: number,
       private readonly renderer: Renderer,
   ) {
@@ -68,8 +67,15 @@ export class EarthSearchLayer extends Layer {
     this.loader.broadcast({
       kind: 'ir',
       collection,
-      daysToFetch,
-      query,
+      search,
+    });
+  }
+
+  /** Replaces the imagery on screen with what the search finds. */
+  setSearch(search: Search): void {
+    this.loader.broadcast({
+      kind: 'usr',
+      search,
     });
   }
 
@@ -142,6 +148,11 @@ export class EarthSearchLayer extends Layer {
     const texture = this.pool.acquire();
     this.renderer.uploadTexture(command.bitmap, texture);
 
+    // A provisional tile is drawn again once more results arrive.
+    const replaced = this.tiles.get(command.id);
+    if (replaced) {
+      this.pool.release(replaced);
+    }
     this.tiles.set(command.id, texture);
     this.generation += 1;
   }

@@ -1,4 +1,4 @@
-import { WayCategory } from 'java/org/trailcatalog/models/categories';
+import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { RgbaU32 } from 'js/map/common/types';
 import { NATURE } from 'js/map/layers/mbtile_layer';
 import { toProtomaps } from 'js/map/layers/protomaps_translation';
@@ -339,6 +339,33 @@ const AERIALWAY_LINES: LineStyle[] = [
   },
 ];
 
+// The importer files a route=ferry way as WATERWAY_FERRY, and NATURE has no class for it. Dashed,
+// the way a paper map draws a ferry, so that it doesn't read as a road across the water.
+const FERRY_COLOR = 0x2F6FA8FF as RgbaU32;
+
+const FERRY_LINES: LineStyle[] = [
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.WATERWAY_FERRY]}],
+    minZoom: 10,
+    maxZoom: 15,
+    fill: FERRY_COLOR,
+    stroke: FERRY_COLOR,
+    radius: 0.6,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.5,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.WATERWAY_FERRY]}],
+    minZoom: 15,
+    maxZoom: 31,
+    fill: FERRY_COLOR,
+    stroke: FERRY_COLOR,
+    radius: 1,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.5,
+  },
+];
+
 // The track rules MapTiler's basemap has no reason to carry, per NATURE transportation band, keyed
 // by the band's minZoom. These stay in the mbtile style because track is a real OpenMapTiles class,
 // so NATURE_WITH_TRACKS is still a style that would draw the tiles it claims to.
@@ -416,15 +443,55 @@ export const NATURE_WITH_TRACKS: MbtileStyle = withTracks(NATURE);
 // PATH_LINES first to keep the lowest z first, which is only cosmetic: it names categories no road,
 // aeroway, or waterway rule can match, so nothing depends on which one findZoomedStyle reaches.
 export const OSM_PATHS: Style = {
-  lines: [...PATH_LINES, ...wayLines(NATURE_WITH_TRACKS), ...AERIALWAY_LINES],
+  lines: [...PATH_LINES, ...wayLines(NATURE_WITH_TRACKS), ...AERIALWAY_LINES, ...FERRY_LINES],
   polygons: [],
 };
+
+// What the Ways layer offers to show, by the top level OSM key each one imports from, except that
+// highway=* splits into the three a hiker tells apart. Ferries come under waterways because the
+// importer files route=ferry as WATERWAY_FERRY.
+export const WAY_KINDS: ReadonlyArray<{key: string; label: string; category: WayCategory}> = [
+  {key: 'aerialways', label: 'Aerialways', category: WayCategory.AERIALWAY},
+  {key: 'aeroways', label: 'Aeroways', category: WayCategory.AEROWAY},
+  {key: 'paths', label: 'Paths', category: WayCategory.PATH},
+  {key: 'pistes', label: 'Pistes', category: WayCategory.PISTE},
+  {key: 'railways', label: 'Railways', category: WayCategory.RAIL},
+  {key: 'roads', label: 'Roads', category: WayCategory.ROAD},
+  {key: 'waterways', label: 'Waterways', category: WayCategory.WATERWAY},
+];
+
+/**
+ * Narrows OSM_PATHS to the ways descending from the categories. The loader drops a way no line
+ * styles, so the rest also leave the index and stop catching the drawing tools.
+ */
+export function osmPathsOf(categories: WayCategory[]): Style {
+  const lines = [];
+  for (const line of OSM_PATHS.lines) {
+    const filters = line.filters.map(filter =>
+        filter.match === 'category_in'
+            ? {...filter, value: filter.value.filter(v => categories.some(c => aDescendsB(v, c)))}
+            : filter);
+    if (filters.every(filter => filter.match !== 'category_in' || filter.value.length > 0)) {
+      lines.push({...line, filters});
+    }
+  }
+  return {lines, polygons: OSM_PATHS.polygons};
+}
 
 export const NATURE_WITHOUT_DETAILED_WAYS: MbtileStyle = withoutWayLines(NATURE);
 
 // Translated after dropping the ways because withoutWayLines and wayLines both read OpenMapTiles
 // layer names and classes.
 export const NATURE_PROTOMAPS: MbtileStyle = toProtomaps(NATURE_WITHOUT_DETAILED_WAYS);
+
+// The OpenMapTiles layers whose points are features on the ground rather than names of areas.
+// Chosen before translating because toProtomaps sends park names to pois alongside them.
+const POI_LAYERS = new Set(['mountain_peak']);
+
+export const NATURE_PROTOMAPS_WITHOUT_POIS: MbtileStyle =
+    toProtomaps({
+      layers: NATURE_WITHOUT_DETAILED_WAYS.layers.filter(layer => !POI_LAYERS.has(layer.layerName)),
+    });
 
 export const PUBLIC_LAND: Style = {
   lines: [],

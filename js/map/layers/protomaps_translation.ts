@@ -106,12 +106,15 @@ const LAYERS: ReadonlyMap<string, LayerTranslation> = new Map<string, LayerTrans
       ['ice', {key: 'kind', values: ['glacier']}],
     ]),
   }],
+  // Protomaps files most national parks and every wilderness under nature_reserve, Mount Rainier
+  // National Park and Tatoosh Wilderness among them, so both classes take it along with the state
+  // forests and wildlife areas it also holds.
   ['park', {
     points: 'pois',
     polygons: 'landuse',
     classes: new Map([
-      ['national_park', {key: 'kind', values: ['national_park']}],
-      ['wilderness_area', {key: 'kind', values: ['protected_area']}],
+      ['national_park', {key: 'kind', values: ['national_park', 'nature_reserve']}],
+      ['wilderness_area', {key: 'kind', values: ['protected_area', 'nature_reserve']}],
       ['state_wilderness', {key: 'kind', values: ['protected_area']}],
       ['nature_reserve', {key: 'kind', values: ['nature_reserve']}],
       ['open_space_preserve', {key: 'kind', values: ['nature_reserve']}],
@@ -119,6 +122,13 @@ const LAYERS: ReadonlyMap<string, LayerTranslation> = new Map<string, LayerTrans
       ['county_park', {key: 'kind', values: ['park']}],
       ['regional_park', {key: 'kind', values: ['park']}],
       ['state_park', {key: 'kind', values: ['park']}],
+    ]),
+  }],
+  ['mountain_peak', {
+    points: 'pois',
+    classes: new Map([
+      ['peak', {key: 'kind', values: ['peak']}],
+      ['volcano', {key: 'kind', values: ['volcano']}],
     ]),
   }],
   ['place', {

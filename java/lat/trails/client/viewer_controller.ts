@@ -1,4 +1,4 @@
-import { checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts';
+import { checkExhaustive, checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
@@ -21,6 +21,7 @@ import { MapController } from 'js/map/map_controller';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
+import { Search } from 'js/map/workers/earth_search_loader';
 import { Elevations } from 'js/map/workers/elevations';
 import { Style } from 'js/map/workers/mbtile_loader';
 import { LocationIndex } from 'js/map/workers/location_index';
@@ -39,7 +40,15 @@ import {
 } from 'trails_lat/proto/data_pb';
 
 import { CollectionLayer } from './collection_layer';
-import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
+import {
+  NATURE_PROTOMAPS,
+  NATURE_PROTOMAPS_WITHOUT_POIS,
+  NATURE_WITHOUT_DETAILED_WAYS,
+  OSM_PATHS,
+  osmPathsOf,
+  PUBLIC_LAND,
+  WAY_KINDS,
+} from './styles';
 import { invalidateCurrentUser, requestData } from './data';
 import {
   ConfirmDeleteCollectionDialog,
@@ -78,6 +87,16 @@ import {
   toWrite,
 } from './features';
 import { parseImport } from './importer';
+import {
+  ControlValues,
+  findLayerNode,
+  LayerEntry,
+  layerEntries,
+  LayerNode,
+  LayerTreeState,
+  sortLayerNodes,
+  updateLayerNode,
+} from './layer_tree';
 import { insertVertex, joinLines, removeVertex, reverseLine, splitLine } from './line_edits';
 import { IconPickerDialog } from './icon_picker';
 import { GradeLimitState, MeasureState } from './measure_panel';
@@ -109,14 +128,6 @@ const COPERNICUS_COPYRIGHT = {
 // The zoom where the contours and the trails around a point come in at full detail
 const POINT_ZOOM = 14;
 
-export interface LayerState {
-  name: string;
-  enabled: boolean;
-  layer: Layer;
-  // Set for a CollectionLayer, whose objects the properties dialog shows
-  schema?: Schema;
-}
-
 export interface Args {
   // The id of the open collection or none
   collection: string|undefined;
@@ -132,7 +143,7 @@ export interface State {
   drawnLength: {x: number; y: number; meters: number}|undefined;
   // Set while the next line clicked joins the one Join with started from
   joining: boolean;
-  layers: LayerState[];
+  layers: LayerTreeState;
   // The profile of the selected feature or the inspected object, when that is a line
   lineProfile: LineProfileState|undefined;
   measure: MeasureState;
@@ -366,210 +377,152 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       metric: this.newContourLayer(CONTOURS_METERS),
     };
 
-    const allLayers = [{
-      name: 'Hillshades',
+    const ways =
+        new CollectionLayer(
+            '/api/collections/00000000-0000-0000-0000-000000000001',
+            OSM_PATHS,
+            [
+              // Snap to about a pixel at each zoom, which is level z + 6. A level L cell's half
+              // diagonal is 0.388 * 2^-L in Mercator units and a pixel at zoom z is 2^-(z+7).
+              //
+              // This is where most of the geometry goes: consecutive OSM nodes on a path sit about
+              // 15 m apart, against 38 m to the pixel at zoom 12.
+              //
+              // One band per zoom is cheap because zooming out reuses what is already held. Only
+              // zooming in asks for a finer snap, and a finer snap is a different URL.
+              {minZoom: 0, snap: 16},
+              {minZoom: 11, snap: 17},
+              {minZoom: 12, snap: 18},
+              {minZoom: 13, snap: 19},
+              {minZoom: 14, snap: 20},
+              {minZoom: 15, snap: undefined},
+            ],
+            [
+              // Tile at zoom - 2, which holds requests near 50 and offscreen reach near 5x at every
+              // zoom. Requests go as the viewport divided by the tile and reach goes as the tile
+              // divided by the viewport, so a fixed bottom loses at one end or the other: bottom 11
+              // costs 903 requests at zoom 10 and reaches 30x at zoom 15.
+              //
+              // Only the tiling moves between bands. They all carry levels 11 and deeper, so
+              // crossing a zoom boundary can never leave a level uncovered.
+              //
+              // Level 9 is the coarsest safe tiling. The worst level 9 cell on the planet is
+              // central Berlin at 221k paths for 3.7 MB, against 94k at level 10 and 34k at level
+              // 11.
+              {minZoom: 10, maxZoom: 12, indexBottom: 9, fromLevel: 11, toLevel: undefined},
+              {minZoom: 12, maxZoom: 14, indexBottom: 10, fromLevel: 11, toLevel: undefined},
+              {minZoom: 14, maxZoom: undefined, indexBottom: 11, fromLevel: 11, toLevel: undefined},
+              // Carry the long ways separately, or a river keeps its short ways and loses the long
+              // stretches of its mainstem. A way is assigned to the smallest cell containing it and
+              // a range query only reaches cells at or below its own level, so nothing above can
+              // pick these up. 153k paths sit above level 10, 42% of them waterways, and the share
+              // climbs with length: 87 of the 101 paths at level 4.
+              //
+              // Tile the two ends differently because they cost differently. Levels 0 to 8 are
+              // rare enough for level 4, where the worst tile on the planet holds 188 and a real
+              // one runs about 25 kb. Levels 9 and 10 are 25x more numerous, so they need level 7
+              // for 9 to 42 kb against the 1.5 MB a level 4 tile of them costs.
+              //
+              // fromLevel 0 buys the 18 ways above level 4 for 8 to 19 ancestor requests a
+              // viewport. They are ferry routes and a rail line, and a layer that draws every way
+              // draws those.
+              {minZoom: 10, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: 8},
+              {minZoom: 10, maxZoom: undefined, indexBottom: 7, fromLevel: 9, toLevel: 10},
+            ],
+            locations,
+            this.mapController.camera,
+            this.mapController.renderer,
+        );
+    const protomaps =
+        new MbtileLayer(
+            [
+              {
+                long: 'Base political and transportation data provided by the OpenStreetMap project',
+                short: 'OpenStreetMap contributors',
+                url: 'https://www.openstreetmap.org/copyright',
+              },
+            ],
+            'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
+            NATURE_PROTOMAPS,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            /* maxZoom= */ 15,
+            this.mapController.renderer,
+        );
+    const yearAgo = new Date();
+    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+    const sentinelValues = {from: isoDay(yearAgo), to: isoDay(new Date()), cloud: 5};
+    const sentinel =
+        new EarthSearchLayer(
+            'sentinel-2-l2a',
+            sentinelSearch(sentinelValues),
+            Z_BASE_SATELLITE,
+            this.mapController.renderer);
+
+    // The map layers sort by z, so the order here only decides the sidebar and which layer hears a
+    // click first.
+    const nodes = sortLayerNodes([{
+      kind: 'group',
+      id: 'osm',
+      name: 'OpenStreetMap',
       enabled: true,
-      layer: new RasterTileLayer(
-          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
-            long: 'Contains modified NASADEM data 2000',
-          }],
-          'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
-          /* tint= */ 0xFFFFFF30 as RgbaU32,
-          /* z= */ Z_BASE_TERRAIN,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          /* maxZoom= */ 12,
-          this.mapController.renderer,
-      ),
+      children: [{
+        kind: 'layer',
+        id: 'osm/ways',
+        name: 'Ways',
+        // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
+        enabled: true,
+        schema: OSM_PATHS_SCHEMA,
+        layer: ways,
+        controls: WAY_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
+        values: Object.fromEntries(WAY_KINDS.map(({key}) => [key, true])),
+        configure: values => {
+          ways.setStyle(
+              osmPathsOf(WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
+        },
+      }, {
+        kind: 'layer',
+        id: 'osm/protomaps',
+        name: 'Protomaps',
+        enabled: true,
+        layer: protomaps,
+        controls: [{kind: 'checkbox', key: 'pois', label: 'Points of interest'}],
+        values: {pois: true},
+        configure: values => {
+          protomaps.setStyle(values.pois ? NATURE_PROTOMAPS : NATURE_PROTOMAPS_WITHOUT_POIS);
+        },
+      }, {
+        kind: 'layer',
+        id: 'osm/maptiler',
+        name: 'MapTiler',
+        enabled: false,
+        layer: new MbtileLayer(
+            [
+              {
+                long: 'Base political and transportation packaged and served by MapTiler',
+                short: 'MapTiler',
+                url: 'https://www.maptiler.com/copyright/',
+              },
+              {
+                long: 'Base political and transportation data provided by the OpenStreetMap project',
+                short: 'OpenStreetMap contributors',
+                url: 'https://www.openstreetmap.org/copyright',
+              },
+            ],
+            'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
+                + 'key=UGTHB0b969Xa1xpZvnvB',
+            NATURE_WITHOUT_DETAILED_WAYS,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            /* maxZoom= */ 15,
+            this.mapController.renderer,
+        ),
+        controls: [],
+        values: {},
+      }],
     }, {
-      name: 'Contours',
-      enabled: true,
-      layer: this.contours[getUnitSystem()],
-    }, {
-      name: 'MapTiler vector',
-      enabled: false,
-      layer: new MbtileLayer(
-          [
-            {
-              long: 'Base political and transportation packaged and served by MapTiler',
-              short: 'MapTiler',
-              url: 'https://www.maptiler.com/copyright/',
-            },
-            {
-              long: 'Base political and transportation data provided by the OpenStreetMap project',
-              short: 'OpenStreetMap contributors',
-              url: 'https://www.openstreetmap.org/copyright',
-            },
-          ],
-          'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
-              + 'key=UGTHB0b969Xa1xpZvnvB',
-          NATURE_WITHOUT_DETAILED_WAYS,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          /* maxZoom= */ 15,
-          this.mapController.renderer,
-      ),
-    }, {
-      name: 'MapTiler satellite',
-      enabled: false,
-      layer: new RasterTileLayer(
-          [
-            {
-              long: 'Satellite imagery packaged and served by MapTiler',
-              short: 'MapTiler',
-              url: 'https://www.maptiler.com/copyright/',
-            },
-            {
-              long: 'Base political and transportation data provided by the OpenStreetMap project',
-              short: 'OpenStreetMap contributors',
-              url: 'https://www.openstreetmap.org/copyright',
-            },
-          ],
-          'https://api.maptiler.com/tiles/satellite-mediumres-2021/${id.zoom}/${id.x}/${id.y}.jpg?key=UGTHB0b969Xa1xpZvnvB',
-          /* tint= */ 0xFFFFFFFF as RgbaU32,
-          /* z= */ Z_BASE_SATELLITE,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          /* maxZoom= */ 14,
-          this.mapController.renderer,
-      ),
-    }, {
-      name: 'Protomaps',
-      enabled: true,
-      layer: new MbtileLayer(
-          [
-            {
-              long: 'Base political and transportation data provided by the OpenStreetMap project',
-              short: 'OpenStreetMap contributors',
-              url: 'https://www.openstreetmap.org/copyright',
-            },
-          ],
-          'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
-          NATURE_PROTOMAPS,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          /* maxZoom= */ 15,
-          this.mapController.renderer,
-      ),
-    }, {
-      name: 'Sentinel L2A (last 7 days)',
-      enabled: false,
-      layer: new EarthSearchLayer(
-        'sentinel-2-l2a',
-        7 /* days */,
-        {},
-        Z_BASE_SATELLITE,
-        this.mapController.renderer),
-    }, {
-      name: 'Sentinel L2A (cloud-free)',
-      enabled: false,
-      layer: new EarthSearchLayer(
-        'sentinel-2-l2a',
-        365 /* days */,
-        {'eo:cloud_cover': {'gte': 0, 'lte': 5}},
-        Z_BASE_SATELLITE,
-        this.mapController.renderer),
-    }, {
-      name: 'GOES-East GeoColor',
-      enabled: false,
-      layer: new RasterTileLayer(
-          [
-            {
-              long: 'GOES-East ABI imagery from NOAA, tiled by NASA Global Imagery Browse Services',
-              short: 'NOAA/NASA GIBS',
-              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
-            },
-          ],
-          // The path is style/time/matrix set, and "default" for time means the most recent scan
-          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
-          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor'
-              + '/default/default/GoogleMapsCompatible_Level7'
-              + '/${id.zoom}/${id.y}/${id.x}.png',
-          /* tint= */ 0xFFFFFFFF as RgbaU32,
-          /* z= */ Z_OVERLAY_TERRAIN,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
-          // gives away from the sub-satellite point anyway.
-          /* maxZoom= */ 7,
-          this.mapController.renderer,
-      ),
-    }, {
-      name: 'GOES-East fire temperature',
-      enabled: false,
-      layer: new RasterTileLayer(
-          [
-            {
-              long: 'GOES-East ABI imagery from NOAA, tiled by NASA Global Imagery Browse Services',
-              short: 'NOAA/NASA GIBS',
-              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
-            },
-          ],
-          // The path is style/time/matrix set, and "default" for time means the most recent scan
-          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
-          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_FireTemp'
-              + '/default/default/GoogleMapsCompatible_Level7'
-              + '/${id.zoom}/${id.y}/${id.x}.png',
-          /* tint= */ 0xFFFFFFFF as RgbaU32,
-          /* z= */ Z_OVERLAY_TERRAIN,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
-          // gives away from the sub-satellite point anyway.
-          /* maxZoom= */ 7,
-          this.mapController.renderer,
-      ),
-    }, {
-      name: 'GOES-West GeoColor',
-      enabled: false,
-      layer: new RasterTileLayer(
-          [
-            {
-              long: 'GOES-West ABI imagery from NOAA, tiled by NASA Global Imagery Browse Services',
-              short: 'NOAA/NASA GIBS',
-              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
-            },
-          ],
-          // The path is style/time/matrix set, and "default" for time means the most recent scan
-          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
-          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-West_ABI_GeoColor'
-              + '/default/default/GoogleMapsCompatible_Level7'
-              + '/${id.zoom}/${id.y}/${id.x}.png',
-          /* tint= */ 0xFFFFFFFF as RgbaU32,
-          /* z= */ Z_OVERLAY_TERRAIN,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
-          // gives away from the sub-satellite point anyway.
-          /* maxZoom= */ 7,
-          this.mapController.renderer,
-      ),
-    }, {
-      name: 'GOES-West fire temperature',
-      enabled: false,
-      layer: new RasterTileLayer(
-          [
-            {
-              long: 'GOES-West ABI imagery from NOAA, tiled by NASA Global Imagery Browse Services',
-              short: 'NOAA/NASA GIBS',
-              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
-            },
-          ],
-          // The path is style/time/matrix set, and "default" for time means the most recent scan
-          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
-          'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-West_ABI_FireTemp'
-              + '/default/default/GoogleMapsCompatible_Level7'
-              + '/${id.zoom}/${id.y}/${id.x}.png',
-          /* tint= */ 0xFFFFFFFF as RgbaU32,
-          /* z= */ Z_OVERLAY_TERRAIN,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
-          // gives away from the sub-satellite point anyway.
-          /* maxZoom= */ 7,
-          this.mapController.renderer,
-      ),
-    }, {
+      kind: 'layer',
+      id: 'public_land',
       name: 'US public land',
       enabled: false,
       schema: PUBLIC_LAND_SCHEMA,
@@ -601,74 +554,115 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.mapController.camera,
           this.mapController.renderer,
       ),
+      controls: [],
+      values: {},
     }, {
-      name: 'OSM paths',
-      // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
+      kind: 'group',
+      id: 'satellite',
+      name: 'Satellite',
       enabled: true,
-      schema: OSM_PATHS_SCHEMA,
-      layer: new CollectionLayer(
-          '/api/collections/00000000-0000-0000-0000-000000000001',
-          OSM_PATHS,
-          [
-            // Snap to about a pixel at each zoom, which is level z + 6. A level L cell's half
-            // diagonal is 0.388 * 2^-L in Mercator units and a pixel at zoom z is 2^-(z+7).
-            //
-            // This is where most of the geometry goes: consecutive OSM nodes on a path sit about
-            // 15 m apart, against 38 m to the pixel at zoom 12.
-            //
-            // One band per zoom is cheap because zooming out reuses what is already held. Only
-            // zooming in asks for a finer snap, and a finer snap is a different URL.
-            {minZoom: 0, snap: 16},
-            {minZoom: 11, snap: 17},
-            {minZoom: 12, snap: 18},
-            {minZoom: 13, snap: 19},
-            {minZoom: 14, snap: 20},
-            {minZoom: 15, snap: undefined},
-          ],
-          [
-            // Tile at zoom - 2, which holds requests near 50 and offscreen reach near 5x at every
-            // zoom. Requests go as the viewport divided by the tile and reach goes as the tile
-            // divided by the viewport, so a fixed bottom loses at one end or the other: bottom 11
-            // costs 903 requests at zoom 10 and reaches 30x at zoom 15.
-            //
-            // Only the tiling moves between bands. They all carry levels 11 and deeper, so crossing
-            // a zoom boundary can never leave a level uncovered.
-            //
-            // Level 9 is the coarsest safe tiling. The worst level 9 cell on the planet is central
-            // Berlin at 221k paths for 3.7 MB, against 94k at level 10 and 34k at level 11.
-            {minZoom: 10, maxZoom: 12, indexBottom: 9, fromLevel: 11, toLevel: undefined},
-            {minZoom: 12, maxZoom: 14, indexBottom: 10, fromLevel: 11, toLevel: undefined},
-            {minZoom: 14, maxZoom: undefined, indexBottom: 11, fromLevel: 11, toLevel: undefined},
-            // Carry the long ways separately, or a river keeps its short ways and loses the long
-            // stretches of its mainstem. A way is assigned to the smallest cell containing it and a
-            // range query only reaches cells at or below its own level, so nothing above can pick
-            // these up. 153k paths sit above level 10, 42% of them waterways, and the share climbs
-            // with length: 87 of the 101 paths at level 4.
-            //
-            // Tile the two ends differently because they cost differently. Levels 0 to 8 are rare
-            // enough for level 4, where the worst tile on the planet holds 188 and a real one runs
-            // about 25 kb. Levels 9 and 10 are 25x more numerous, so they need level 7 for 9 to
-            // 42 kb against the 1.5 MB a level 4 tile of them costs.
-            //
-            // fromLevel 0 buys the 18 ways above level 4 for 8 to 19 ancestor requests a viewport.
-            // They are ferry routes and a rail line, and a layer that draws every way draws those.
-            {minZoom: 10, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: 8},
-            {minZoom: 10, maxZoom: undefined, indexBottom: 7, fromLevel: 9, toLevel: 10},
-          ],
-          locations,
-          this.mapController.camera,
-          this.mapController.renderer,
-      ),
-    }];
-    const owned = new Set([...allLayers.map(l => l.layer), ...Object.values(this.contours)]);
+      children: [{
+        kind: 'group',
+        id: 'satellite/goes',
+        name: 'GOES',
+        enabled: true,
+        children: [
+          this.newGoesEntry('East', 'GeoColor', 'GeoColor'),
+          this.newGoesEntry('East', 'FireTemp', 'fire temperature'),
+          this.newGoesEntry('West', 'GeoColor', 'GeoColor'),
+          this.newGoesEntry('West', 'FireTemp', 'fire temperature'),
+        ],
+      }, {
+        kind: 'layer',
+        id: 'satellite/sentinel',
+        name: 'Sentinel L2A',
+        enabled: false,
+        layer: sentinel,
+        controls: [
+          {kind: 'date', key: 'from', label: 'From'},
+          {kind: 'date', key: 'to', label: 'To'},
+          {kind: 'percent', key: 'cloud', label: 'Max cloud cover'},
+        ],
+        values: sentinelValues,
+        configure: values => {
+          sentinel.setSearch(sentinelSearch(values));
+        },
+      }, {
+        kind: 'layer',
+        id: 'satellite/maptiler',
+        name: 'MapTiler',
+        enabled: false,
+        layer: new RasterTileLayer(
+            [
+              {
+                long: 'Satellite imagery packaged and served by MapTiler',
+                short: 'MapTiler',
+                url: 'https://www.maptiler.com/copyright/',
+              },
+              {
+                long: 'Base political and transportation data provided by the OpenStreetMap project',
+                short: 'OpenStreetMap contributors',
+                url: 'https://www.openstreetmap.org/copyright',
+              },
+            ],
+            'https://api.maptiler.com/tiles/satellite-mediumres-2021/${id.zoom}/${id.x}/${id.y}.jpg?key=UGTHB0b969Xa1xpZvnvB',
+            /* tint= */ 0xFFFFFFFF as RgbaU32,
+            /* z= */ Z_BASE_SATELLITE,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            /* maxZoom= */ 14,
+            this.mapController.renderer,
+        ),
+        controls: [],
+        values: {},
+      }],
+    }, {
+      kind: 'group',
+      id: 'topography',
+      name: 'Topography',
+      enabled: true,
+      children: [{
+        kind: 'layer',
+        id: 'topography/contours',
+        name: 'Contours',
+        enabled: true,
+        layer: this.contours[getUnitSystem()],
+        controls: [],
+        values: {},
+      }, {
+        kind: 'layer',
+        id: 'topography/hillshades',
+        name: 'Hillshades',
+        enabled: true,
+        layer: new RasterTileLayer(
+            [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
+              long: 'Contains modified NASADEM data 2000',
+            }],
+            'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
+            /* tint= */ 0xFFFFFF30 as RgbaU32,
+            /* z= */ Z_BASE_TERRAIN,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            /* maxZoom= */ 12,
+            this.mapController.renderer,
+        ),
+        controls: [],
+        values: {},
+      }],
+    }]);
+    const owned =
+        new Set([
+          ...layerEntries(nodes).map(({entry}) => entry.layer),
+          ...Object.values(this.contours),
+        ]);
     for (const layer of owned) {
       this.registerDisposable(layer);
     }
     this.updateState({
       ...this.state,
-      layers: allLayers,
+      layers: {nodes, expanded: new Set(['osm', 'satellite', 'topography'])},
     });
-    this.setMapLayers(allLayers);
+    this.setMapLayers(nodes);
 
     const collection = response.args.collection;
     if (collection) {
@@ -749,7 +743,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(undefined);
     this.inspected = object;
     const data = object.value.data;
-    const schema = checkExists(this.state.layers.find(l => l.layer === layer)?.schema);
+    const schema =
+        checkExists(
+            layerEntries(this.state.layers.nodes).find(({entry}) => entry.layer === layer)
+                ?.entry.schema);
     const titleValue = data[schema.title.key];
     const wayId =
         schema.title.kind === 'osm_way' && typeof titleValue === 'number' ? titleValue : undefined;
@@ -1179,9 +1176,62 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.history.silentlyReplaceUrl(url.toString());
   }
 
-  layerToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const index = checkExists(e.actionElement.data('index')).number();
-    this.setLayerEnabled(index, !this.state.layers[index].enabled);
+  // A group's row opens it and a layer's row shows it, since a group has nothing else to click for.
+  layerRowClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    // The chevron and the eye sit inside the row and have their own handlers.
+    if (e.detail.target instanceof Element && e.detail.target.closest('[data-role="toggle"]')) {
+      return;
+    }
+
+    const node = this.layerNodeOf(e);
+    if (node.kind === 'group') {
+      this.toggleLayerExpanded(node.id);
+    } else {
+      this.setLayerEnabled(node.id, !node.enabled);
+    }
+  }
+
+  layerExpandToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.toggleLayerExpanded(this.layerNodeOf(e).id);
+  }
+
+  layerVisibilityToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const node = this.layerNodeOf(e);
+    this.setLayerEnabled(node.id, !node.enabled);
+  }
+
+  layerControlChanged(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const entry = this.layerNodeOf(e);
+    if (entry.kind !== 'layer') {
+      throw new Error(`Group ${entry.id} has no controls`);
+    }
+
+    const key = checkExists(e.actionElement.data('key')).string();
+    const control = checkExists(entry.controls.find(c => c.key === key));
+    const input = e.actionElement.element() as HTMLInputElement;
+    let value;
+    if (control.kind === 'checkbox') {
+      value = input.checked;
+    } else if (control.kind === 'date') {
+      value = input.value;
+    } else if (control.kind === 'percent') {
+      value = input.valueAsNumber;
+      if (!(value >= 0 && value <= 100)) {
+        return;
+      }
+    } else {
+      throw checkExhaustive(control);
+    }
+
+    const values = {...entry.values, [key]: value};
+    this.updateState({
+      ...this.state,
+      layers: {
+        ...this.state.layers,
+        nodes: updateLayerNode(this.state.layers.nodes, entry.id, () => ({...entry, values})),
+      },
+    });
+    entry.configure?.(values);
   }
 
   fileMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -1374,7 +1424,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.featureLayer.setInteractive(tool === 'pointer');
     this.featureLayer.setPointsDraggable(tool === 'point');
     // Refreshes the credits, because the measure layer's only count while it is active
-    this.setMapLayers(this.state.layers);
+    this.setMapLayers(this.state.layers.nodes);
     if (tool === 'line') {
       this.lineLayer.setActive(true);
     } else if (tool === 'measure') {
@@ -2291,15 +2341,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // caching on would skip every element whose props are unchanged.
   private setUnitSystem(system: UnitSystem): void {
     setUnitSystem(system);
-    const contours = Object.values(this.contours) as Layer[];
-    const layers =
-        this.state.layers.map(
-            l => contours.includes(l.layer) ? {...l, layer: this.contours[system]} : l);
+    const nodes =
+        updateLayerNode(
+            this.state.layers.nodes,
+            'topography/contours',
+            node => ({...node as LayerEntry, layer: this.contours[system]}));
     corgi.vdomCaching.disable();
-    this.updateState({...this.state, layers}).then(() => {
+    this.updateState({...this.state, layers: {...this.state.layers, nodes}}).then(() => {
       corgi.vdomCaching.enable();
     });
-    this.setMapLayers(layers);
+    this.setMapLayers(nodes);
   }
 
   private newContourLayer(style: Readonly<Style>): MbtileLayer {
@@ -2315,27 +2366,72 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         this.mapController.renderer);
   }
 
-  private setLayerEnabled(index: number, enabled: boolean): void {
-    const layers = [...this.state.layers];
-    layers[index] = {
-      ...layers[index],
-      enabled,
+  private newGoesEntry(satellite: 'East'|'West', product: string, label: string): LayerEntry {
+    return {
+      kind: 'layer',
+      id: `satellite/goes/${satellite}_${product}`,
+      name: `${satellite} ${label}`,
+      enabled: false,
+      layer: new RasterTileLayer(
+          [
+            {
+              long:
+                  `GOES-${satellite} ABI imagery from NOAA, tiled by NASA Global Imagery Browse `
+                      + 'Services',
+              short: 'NOAA/NASA GIBS',
+              url: 'https://nasa-gibs.github.io/gibs-api-docs/',
+            },
+          ],
+          // The path is style/time/matrix set, and "default" for time means the most recent scan
+          // GIBS has finished tiling, which runs about 20 minutes behind the satellite.
+          `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-${satellite}_ABI_${product}`
+              + '/default/default/GoogleMapsCompatible_Level7'
+              + '/${id.zoom}/${id.y}/${id.x}.png',
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ Z_OVERLAY_TERRAIN,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
+          // gives away from the sub-satellite point anyway.
+          /* maxZoom= */ 7,
+          this.mapController.renderer,
+      ),
+      controls: [],
+      values: {},
     };
-
-    this.updateState({
-      ...this.state,
-      layers,
-    });
-    this.setMapLayers(layers);
   }
 
-  private setMapLayers(layers: LayerState[]): void {
-    for (const {enabled, layer} of layers) {
-      if (layer instanceof CollectionLayer) {
+  private layerNodeOf(e: CorgiEvent<typeof DOM_MOUSE>): LayerNode {
+    const id = checkExists(e.actionElement.data('id')).string();
+    return checkExists(findLayerNode(this.state.layers.nodes, id));
+  }
+
+  private toggleLayerExpanded(id: string): void {
+    const expanded = new Set(this.state.layers.expanded);
+    if (!expanded.delete(id)) {
+      expanded.add(id);
+    }
+    this.updateState({...this.state, layers: {...this.state.layers, expanded}});
+  }
+
+  private setLayerEnabled(id: string, enabled: boolean): void {
+    const nodes = updateLayerNode(this.state.layers.nodes, id, node => ({...node, enabled}));
+    this.updateState({
+      ...this.state,
+      layers: {...this.state.layers, nodes},
+    });
+    this.setMapLayers(nodes);
+  }
+
+  private setMapLayers(nodes: LayerNode[]): void {
+    const entries = layerEntries(nodes);
+    for (const {entry, shown} of entries) {
+      if (entry.layer instanceof CollectionLayer) {
         // A hidden layer's geometry would otherwise answer hovers and catch the line tool.
-        layer.setIndexed(enabled);
+        entry.layer.setIndexed(shown);
       }
     }
+    // The tree lists the topmost first and the map takes them bottom first.
     this.mapController.setLayers(
         [
           this.pointLayer,
@@ -2344,7 +2440,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.terrainLayer,
           this.featureLayer as Layer,
         ]
-            .concat(layers.filter(l => l.enabled).map(l => l.layer))
+            .concat(entries.filter(({shown}) => shown).map(({entry}) => entry.layer).reverse())
             .concat([this.skyboxLayer]));
   }
 }
@@ -2384,6 +2480,25 @@ function stripUndefined(data: FeatureData): FeatureData {
     }
   }
   return stripped;
+}
+
+// The local day, because that is what a date input shows and edits
+function isoDay(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+// An empty day leaves that end open, which STAC writes as ..
+function sentinelSearch(values: ControlValues): Search {
+  const from = String(values.from);
+  const to = String(values.to);
+  return {
+    // Without a zone, Date reads these as local time.
+    from: from ? new Date(`${from}T00:00:00`).toISOString() : '..',
+    to: to ? new Date(`${to}T23:59:59.999`).toISOString() : '..',
+    query: {'eo:cloud_cover': {lte: values.cloud}},
+  };
 }
 
 function newCollectionName(): string {

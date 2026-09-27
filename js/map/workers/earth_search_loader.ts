@@ -11,11 +11,23 @@ import { clamp } from 'external/dev_april_corgi+/js/common/math';
 import { projectLatLngRect, unprojectS2LatLng } from '../camera';
 import { TileId } from '../common/types';
 
+export interface Search {
+  // ISO 8601 instants bounding when the imagery was taken
+  from: string;
+  to: string;
+  // STAC query extension filters, like {'eo:cloud_cover': {lte: 5}}
+  query: object;
+}
+
 interface InitializeRequest {
   kind: 'ir';
   collection: string;
-  daysToFetch: number;
-  query: object;
+  search: Search;
+}
+
+interface UpdateSearchRequest {
+  kind: 'usr';
+  search: Search;
 }
 
 interface Viewport {
@@ -29,7 +41,7 @@ interface UpdateViewportRequest {
   viewport: Viewport;
 }
 
-export type Request = InitializeRequest|UpdateViewportRequest;
+export type Request = InitializeRequest|UpdateSearchRequest|UpdateViewportRequest;
 
 export interface LoadTileCommand {
   kind: 'ltc';
@@ -192,6 +204,8 @@ class EarthSearchLoader {
   // Resolved sources for tiles we couldn't draw yet, so waiting on a COG to open doesn't mean
   // redoing the polygon work for every tile on screen.
   private readonly tileSources: HashMap<TileId, TileSources>;
+  // Bumped by every query and every search change, so that paging and tiles drawn from an older
+  // set of results stop.
   private epoch: number;
   private fetching: boolean;
   private generation: number;
@@ -199,11 +213,13 @@ class EarthSearchLoader {
   private lastRequest: UpdateViewportRequest;
   private refreshQueued: boolean;
   private refreshing: Promise<void>|undefined;
+  // Set once a viewport deep enough to tile has arrived, because lastRequest is a placeholder
+  // until then.
+  private viewed: boolean;
 
   constructor(
       private readonly collection: string,
-      private readonly daysToFetch: number,
-      private readonly query: object,
+      private search: Search,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
     this.active = [];
@@ -229,6 +245,29 @@ class EarthSearchLoader {
     };
     this.refreshQueued = false;
     this.refreshing = undefined;
+    this.viewed = false;
+  }
+
+  // Clears what the last search drew rather than letting the new results replace it, because a tile
+  // the new search has no imagery for would otherwise keep the old imagery.
+  updateSearch(search: Search): void {
+    this.search = search;
+    this.epoch += 1;
+    this.lastQuery = S2LatLngRect.empty();
+    this.tileSources.clear();
+    this.provisional.clear();
+    if (this.loaded.size > 0) {
+      this.postMessage({
+        kind: 'utc',
+        ids: [...this.loaded],
+      });
+      this.loaded.clear();
+    }
+
+    this.generation += 1;
+    if (this.viewed) {
+      this.refreshDebouncer.trigger();
+    }
   }
 
   updateViewport(request: UpdateViewportRequest): void {
@@ -244,6 +283,7 @@ class EarthSearchLoader {
     }
 
     this.lastRequest = request;
+    this.viewed = true;
     // Panning posts a viewport every frame and tiling one costs far more than the debounce, so
     // coalesce them. Bumping the generation also lets a refresh already in flight give up at its
     // next tile instead of finishing tiles that have scrolled off.
@@ -452,10 +492,15 @@ class EarthSearchLoader {
       this.provisional.add(tile.id);
     }
 
+    const epoch = this.epoch;
     try {
       const bitmap =
           await drawTile(
               tile.x, tile.y, halfWorldSize, sources, tileLow, tileHigh, this.geotiffPool);
+      if (epoch !== this.epoch) {
+        bitmap.close();
+        return 'drawn';
+      }
       this.postMessage({
         kind: 'ltc',
         id: tile.id,
@@ -546,22 +591,22 @@ class EarthSearchLoader {
                 size.lngRadians() * QUERY_MARGIN_FRACTION));
     const low = expanded.lo();
     const high = expanded.hi();
-    const now = new Date();
-    const was = new Date();
-    was.setDate(now.getDate() - this.daysToFetch);
-
+    const epoch = this.epoch;
     const response =
         await fetchFeatures(
             'https://earth-search.aws.element84.com/v1/search?' + new URLSearchParams({
-              datetime: `${was.toISOString()}/${now.toISOString()}`,
+              datetime: `${this.search.from}/${this.search.to}`,
               limit: String(RESULTS_PER_PAGE),
               collections: this.collection,
               bbox:
                   `${low.lngDegrees()},${low.latDegrees()}`
                       + `,${high.lngDegrees()},${high.latDegrees()}`,
-              query: JSON.stringify(this.query),
+              query: JSON.stringify(this.search.query),
               sortby: '-properties.datetime',
             }));
+    if (epoch !== this.epoch) {
+      return;
+    }
 
     this.epoch += 1;
     this.mergeFeatures(response, /* replace= */ true);
@@ -674,13 +719,14 @@ function start(ir: InitializeRequest) {
   const fetcher =
       new EarthSearchLoader(
           ir.collection,
-          ir.daysToFetch,
-          ir.query,
+          ir.search,
           (self as any).postMessage.bind(self));
   self.onmessage = e => {
     const request = e.data as Request;
     if (request.kind === 'ir') {
       throw new Error('Already initialized');
+    } else if (request.kind === 'usr') {
+      fetcher.updateSearch(request.search);
     } else if (request.kind === 'uvr') {
       fetcher.updateViewport(request);
     } else {

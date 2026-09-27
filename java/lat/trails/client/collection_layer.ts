@@ -94,6 +94,7 @@ export class CollectionLayer extends Layer {
   private lastRenderGeneration: number;
   // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
   private styleZoom: number;
+  private styleEpoch: number;
 
   constructor(
       url: string,
@@ -135,6 +136,7 @@ export class CollectionLayer extends Layer {
     this.highlightedIn = undefined;
     this.lastRenderGeneration = -1;
     this.styleZoom = -1;
+    this.styleEpoch = 0;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
@@ -167,6 +169,16 @@ export class CollectionLayer extends Layer {
       kind: 'ir',
       style,
     });
+  }
+
+  /** Redraws and reindexes every held cell with the style, without refetching. */
+  setStyle(style: Style): void {
+    this.styleEpoch += 1;
+    this.loader.broadcast({
+      kind: 'sr',
+      style,
+    });
+    this.restyle();
   }
 
   /** Puts this layer's geometry in the shared index or takes it out, for showing and hiding. */
@@ -426,9 +438,20 @@ export class CollectionLayer extends Layer {
     const newStyleZoom = Math.floor(zoom);
     if (newStyleZoom !== this.styleZoom) {
       this.styleZoom = newStyleZoom;
-      for (const [key, {data, tolerance}] of this.rawBytes) {
-        this.loader.post({kind: 'lr', key, styleZoom: newStyleZoom, tolerance, data});
-      }
+      this.restyle();
+    }
+  }
+
+  private restyle(): void {
+    for (const [key, {data, tolerance}] of this.rawBytes) {
+      this.loader.post({
+        kind: 'lr',
+        key,
+        styleZoom: this.styleZoom,
+        styleEpoch: this.styleEpoch,
+        tolerance,
+        data,
+      });
     }
   }
 
@@ -483,6 +506,7 @@ export class CollectionLayer extends Layer {
       kind: 'lr',
       key: command.key,
       styleZoom: this.styleZoom,
+      styleEpoch: this.styleEpoch,
       tolerance,
       data: command.data,
     });
@@ -494,9 +518,9 @@ export class CollectionLayer extends Layer {
       return;
     }
 
-    // A restyle at a newer zoom has already gone out, so this answer is for a band nobody is
-    // looking at.
-    if (response.styleZoom !== this.styleZoom) {
+    // A restyle at a newer zoom or with a newer style has already gone out, so nobody is looking at
+    // this answer.
+    if (response.styleZoom !== this.styleZoom || response.styleEpoch !== this.styleEpoch) {
       return;
     }
 

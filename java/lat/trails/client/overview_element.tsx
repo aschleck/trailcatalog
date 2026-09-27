@@ -18,7 +18,8 @@ import {
   POINT_PLACED,
   TOOL_REQUESTED,
 } from './events';
-import { FeatureTree, LayerList, NewFolderButton, Properties } from './feature_list';
+import { FeatureTree, NewFolderButton, Properties } from './feature_list';
+import { LayerTree } from './layer_tree';
 import { formatDistance } from './measurements';
 import { MeasurePanel } from './measure_panel';
 import { SidebarElement, SidebarSection } from './sidebar_element';
@@ -50,7 +51,7 @@ export function OverviewElement(
       drawnLength: undefined,
       inspected: undefined,
       joining: false,
-      layers: [],
+      layers: {nodes: [], expanded: new Set()},
       lineProfile: undefined,
       measure: {
         lengthMeters: 0,
@@ -190,7 +191,7 @@ export function OverviewElement(
             <FeatureTree readOnly={readOnly} state={state.features} />
           </SidebarSection>
           <SidebarSection label="Layers" open={false}>
-            <LayerList layers={state.layers} />
+            <LayerTree state={state.layers} />
           </SidebarSection>
         </SidebarElement>
       </div>

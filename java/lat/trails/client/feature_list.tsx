@@ -124,34 +124,7 @@ export function NewFolderButton() {
   );
 }
 
-/**
- * Lists the map's layers topmost first, the way they stack, which is the reverse of the order they
- * come in and the map draws them.
- */
-export function LayerList({layers}: {layers: Array<{name: string; enabled: boolean}>}) {
-  const rows = [];
-  for (let i = layers.length - 1; i >= 0; --i) {
-    const layer = layers[i];
-    rows.push(
-        <div
-            className={
-              'cursor-pointer flex gap-1.5 h-7 hover:bg-gray-100 items-center pl-6 pr-2 '
-                  + 'select-none '
-                  + (layer.enabled ? '' : 'opacity-50')
-            }
-            data={{index: i}}
-            unboundEvents={{click: 'layerToggled'}}
-        >
-          <span className="grow truncate">{layer.name}</span>
-          <span className="text-gray-500">
-            <Eye visible={layer.enabled} />
-          </span>
-        </div>);
-  }
-  return <div>{rows}</div>;
-}
-
-function Chevron({expanded}: {expanded: boolean}) {
+export function Chevron({expanded}: {expanded: boolean}) {
   return (
     <svg className="h-3 shrink-0 stroke-current text-gray-500 w-3" fill="none" viewBox="0 0 16 16">
       <path d={expanded ? 'M3 6 L8 11 L13 6' : 'M6 3 L11 8 L6 13'} strokeWidth="2" />
@@ -159,7 +132,7 @@ function Chevron({expanded}: {expanded: boolean}) {
   );
 }
 
-function Eye({visible}: {visible: boolean}) {
+export function Eye({visible}: {visible: boolean}) {
   return (
     <svg className="h-4 shrink-0 stroke-current w-4" fill="none" viewBox="0 0 16 16">
       <path d={EYE_OUTLINE} strokeWidth="1.3" />

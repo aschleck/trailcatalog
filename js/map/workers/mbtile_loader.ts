@@ -16,6 +16,11 @@ interface InitializeRequest {
   style: Style;
 }
 
+interface SetStyleRequest {
+  kind: 'sr';
+  style: Style;
+}
+
 export interface Style {
   layers: LayerStyle[];
 }
@@ -144,10 +149,12 @@ interface LoadRequest {
   // tile fetches use a lower zoom than the viewport (commit 9af3745) but
   // the rendered layer-style detail should still match the viewport.
   styleZoom: number;
+  // Counts the layer's calls to setStyle, echoed so that a tile styled before the last one drops.
+  styleEpoch: number;
   data: ArrayBuffer;
 }
 
-export type Request = InitializeRequest|LoadRequest;
+export type Request = InitializeRequest|LoadRequest|SetStyleRequest;
 
 export interface LoadResponse {
   kind: 'lr';
@@ -155,6 +162,7 @@ export interface LoadResponse {
   // Echoed from the request so the layer can drop results whose styleZoom
   // has already been superseded by a viewport change.
   styleZoom: number;
+  styleEpoch: number;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
   labels: Label[];
@@ -220,9 +228,13 @@ const TEXT_DECODER = new TextDecoder();
 class MbtileLoader {
 
   constructor(
-      private readonly style: Style,
+      private style: Style,
       private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
   ) {}
+
+  setStyle(style: Style): void {
+    this.style = style;
+  }
 
   load(request: LoadRequest) {
     // Who amonst us hasn't written a proto parser manually...
@@ -394,6 +406,7 @@ class MbtileLoader {
       kind: 'lr',
       id: request.id,
       styleZoom: request.styleZoom,
+      styleEpoch: request.styleEpoch,
       geometry: geometry.buffer,
       index: index.buffer,
       labels: [],
@@ -603,6 +616,8 @@ function start(ir: InitializeRequest) {
       throw new Error('Already initialized');
     } else if (request.kind === 'lr') {
       fetcher.load(request);
+    } else if (request.kind === 'sr') {
+      fetcher.setStyle(request.style);
     } else {
       checkExhaustive(request);
     }
