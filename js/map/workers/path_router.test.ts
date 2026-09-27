@@ -257,6 +257,33 @@ test('routes over either kind between ends on different kinds', () => {
   expect(Array.from(via ?? [])).toEqual([0, 0, 2, -1]);
 });
 
+test('keeps a route between two land ends off a lift', () => {
+  const router = new PathRouter();
+  load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');
+  load(router, 'lift', [Float64Array.of(0, 0, 4, 0)], /* tolerance= */ 0, false, 'aerial');
+
+  const via =
+      router.route(
+          anchor([-0.5, 0], [-1, 0], [0, 0], 'land'),
+          anchor([4.5, 0], [4, 0], [5, 0], 'land'),
+          REACH);
+  expect(Array.from(via ?? [])).toEqual([0, 0, 2, 3, 4, 0]);
+});
+
+test('rides a lift from an end on it and walks on from the station', () => {
+  const router = new PathRouter();
+  load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');
+  load(router, 'water', OVER_THE_FALLS.water, /* tolerance= */ 0, false, 'water');
+  load(router, 'lift', [Float64Array.of(0, 0, 4, 0)], /* tolerance= */ 0, false, 'aerial');
+
+  const via =
+      router.route(
+          anchor([3, 0], [0, 0], [4, 0], 'aerial'),
+          anchor([-0.5, 0], [-1, 0], [0, 0], 'land'),
+          REACH);
+  expect(Array.from(via ?? [])).toEqual([0, 0]);
+});
+
 test('treats an end on a line of any kind as agreeing with the other end', () => {
   const router = new PathRouter();
   load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');

@@ -8,9 +8,10 @@ import { Heap } from './heap';
 /**
  * What kind of ground a line runs over. A route between two ends on the same kind stays on that
  * kind, so that a hike from above a waterfall to below it doesn't follow the river down it.
+ * Aerial is a lift, which a route rides only from an end on it because most charge a fare.
  * Undefined is any kind, for lines like the ones a person drew, which go anywhere.
  */
-export type Terrain = 'land'|'water';
+export type Terrain = 'land'|'water'|'aerial';
 
 /** An end of a route: a point on the network and the segment it lies on. */
 export interface Anchor {
@@ -29,9 +30,15 @@ export interface RoutableLine {
   terrain: Terrain|undefined;
 }
 
-// Terrain as stored per edge
+// Terrain as stored per edge, one bit each so that a route can allow several
 const ANY = 0;
-const TERRAIN_CODES = {land: 1, water: 2} as const;
+const LAND = 1;
+const WATER = 2;
+const AERIAL = 4;
+const TERRAIN_CODES = {land: LAND, water: WATER, aerial: AERIAL} as const;
+
+// What a route may use when an end is on each kind. An end on a lift walks on from the station.
+const ALLOWED_FROM = {land: LAND, water: WATER, aerial: AERIAL | LAND} as const;
 
 // The lines loaded under one group id, and the edges they become once noded. Noding waits for
 // prepare or the next route, because it walks a hash map per vertex and a group that arrives while
@@ -239,7 +246,7 @@ export class PathRouter {
       const end = offsets[u + 1];
       for (let i = offsets[u]; i < end; ++i) {
         const v = neighbors[i];
-        if (settled[v] || (allowed !== ANY && terrain[i] !== ANY && terrain[i] !== allowed)) {
+        if (settled[v] || (allowed !== ANY && terrain[i] !== ANY && !(terrain[i] & allowed))) {
           continue;
         }
 
@@ -724,11 +731,7 @@ interface Adjacency {
 // The terrain a route between two ends may use, or ANY when it may use everything. Ends on
 // different kinds need both, and an end on a line of any kind agrees with whatever the other is on.
 function allowedTerrain(from: Terrain|undefined, to: Terrain|undefined): number {
-  if (from && to && from !== to) {
-    return ANY;
-  }
-  const either = from ?? to;
-  return either ? TERRAIN_CODES[either] : ANY;
+  return (from ? ALLOWED_FROM[from] : ANY) | (to ? ALLOWED_FROM[to] : ANY);
 }
 
 // Where segment ab crosses segment cd, or undefined when they meet at an end or not at all. Ends

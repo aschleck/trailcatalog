@@ -22,6 +22,9 @@ export const VERTEX_STRIDE =
             + /* stipple= */ 1
     );
 
+/** True dashes the line, and ticks crosses it with a bar every so often like a lift's pylons. */
+export type Stipple = boolean|'ticks';
+
 /** Renders instanced lines as rectangles without mitering. */
 export class LineProgram extends Program<LineProgramData> {
 
@@ -38,7 +41,7 @@ export class LineProgram extends Program<LineProgramData> {
       colorFill: RgbaU32,
       colorStroke: RgbaU32,
       radius: number,
-      stipple: boolean,
+      stipple: Stipple,
       points: ArrayLike<number>,
       buffer: ArrayBuffer,
       offset: number,
@@ -70,7 +73,7 @@ export class LineProgram extends Program<LineProgramData> {
       uint32s[vertexOffset + 5] = colorStroke;
       floats[vertexOffset + 6] = distanceAlong;
       floats[vertexOffset + 7] = radius;
-      uint32s[vertexOffset + 8] = stipple ? 1 : 0;
+      uint32s[vertexOffset + 8] = stipple === 'ticks' ? 2 : stipple ? 1 : 0;
 
       distanceAlong += Math.sqrt((xp - x) * (xp - x) + (yp - y) * (yp - y));
       vertexOffset += stride;
@@ -109,7 +112,7 @@ export class LineProgram extends Program<LineProgramData> {
       colorFill: RgbaU32,
       colorStroke: RgbaU32,
       radius: number,
-      stipple: boolean,
+      stipple: Stipple,
       z: number,
       points: ArrayLike<number>,
       buffer: ArrayBuffer,
@@ -305,7 +308,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in highp float distanceAlong;
       // This is a radius in pixels
       in highp float radius;
-      // We treat this as a boolean for now
+      // 0 is solid, 1 is dashed, and 2 is ticked, see Stipple
       in uint stipple;
 
       // See https://github.com/visgl/luma.gl/issues/1764
@@ -315,7 +318,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       out lowp vec4 fragColorStroke;
       out lowp float fragDistanceAlong;
       out lowp float fragRadius;
+      out lowp float fragCore;
       out lowp float fragStipple;
+      out lowp float fragTicks;
       out lowp float fragDistanceOrtho;
       out mediump float fragBehindHorizon;
 
@@ -337,7 +342,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         } else if (location.x + location.y < -1.) {
           location.x += 2.;
         }
-        highp float actualRadius = renderBorder ? radius : radius - 1.;
+        // Ticks stick out 2 pixels past either side of the line, so the quad has to cover them.
+        highp float extent = stipple == 2u ? radius + 2. : radius;
+        highp float actualRadius = renderBorder ? extent : extent - 1.;
         vec2 push = perp * actualRadius * position.y;
         vec4 worldCoord =
             sum_fp64(
@@ -377,8 +384,10 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
             exp2(floor(2. * log2(halfWorldSize)) / 2.)
                 * (distanceAlong + position.x * length(direction));
         fragDistanceOrtho = position.y * actualRadius;
-        fragRadius = radius;
-        fragStipple = stipple > 0u ? 0.5 : 1.0;
+        fragRadius = extent;
+        fragCore = radius;
+        fragStipple = stipple == 1u ? 0.5 : 1.0;
+        fragTicks = stipple == 2u ? 1.0 : 0.0;
       }
     `;
   const fs = `#version 300 es
@@ -389,7 +398,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in lowp float fragDistanceAlong;
       in lowp float fragDistanceOrtho;
       in lowp float fragRadius;
+      in lowp float fragCore;
       in lowp float fragStipple;
+      in lowp float fragTicks;
       in mediump float fragBehindHorizon;
 
       out lowp vec4 fragColor;
@@ -406,7 +417,11 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
         lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
         lowp float stipple = fract(fragDistanceAlong / 8.) <= fragStipple ? 1. : 0.;
-        fragColor = stipple * vec4(color.rgb * color.a, color.a) * a;
+        // Outside the line itself only the 1 pixel wide ticks draw, one every 24 pixels.
+        lowp float core = 1. - clamp(abs(fragDistanceOrtho) - fragCore + 0.5, 0., 1.);
+        lowp float tick = mod(fragDistanceAlong, 24.) < 1. ? 1. : 0.;
+        lowp float ticked = mix(1., max(core, tick), fragTicks);
+        fragColor = stipple * ticked * vec4(color.rgb * color.a, color.a) * a;
       }
   `;
 

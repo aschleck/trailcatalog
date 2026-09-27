@@ -251,6 +251,49 @@ const PATH_LINES: LineStyle[] = [
   },
 ];
 
+// The lifts a person rides. Drag lifts, freight, and stations draw nothing, so they neither clutter
+// the map nor route.
+//
+// The hand-pulled baskets that carry a trail over a river are in here too, so a route only crosses
+// one from an end on it, even though they're free and the trail depends on them. OSM tags them
+// aerialway=cable_car or zip_line like any ticketed lift, and nothing else on the way reliably sets
+// them apart: fee=no is rare, and hiking route relations also run over gondolas and chair lifts.
+// Walbran Creek Cable Car on the West Coast Trail is way 472864003.
+const RIDDEN_AERIALWAYS = [
+  WayCategory.AERIALWAY_CABLE_CAR,
+  WayCategory.AERIALWAY_GONDOLA,
+  WayCategory.AERIALWAY_MIXED_LIFT,
+  WayCategory.AERIALWAY_CHAIR_LIFT,
+  WayCategory.AERIALWAY_ZIP_LINE,
+];
+
+const AERIALWAY_COLOR = 0x8E8E8EFF as RgbaU32;
+
+// Above every road, because a lift passes over whatever is under it, but narrower than the trail
+// in each of PATH_LINES' bands so that it never outweighs one.
+const AERIALWAY_LINES: LineStyle[] = [
+  {
+    filters: [{match: 'category_in', key: 'type', value: RIDDEN_AERIALWAYS}],
+    minZoom: 12,
+    maxZoom: 15,
+    fill: AERIALWAY_COLOR,
+    stroke: AERIALWAY_COLOR,
+    radius: 0.5,
+    stipple: 'ticks',
+    z: Z_OVERLAY_TRANSPORTATION + 0.95,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: RIDDEN_AERIALWAYS}],
+    minZoom: 15,
+    maxZoom: 31,
+    fill: AERIALWAY_COLOR,
+    stroke: AERIALWAY_COLOR,
+    radius: 0.8,
+    stipple: 'ticks',
+    z: Z_OVERLAY_TRANSPORTATION + 0.95,
+  },
+];
+
 // The track rules MapTiler's basemap has no reason to carry, per NATURE transportation band, keyed
 // by the band's minZoom. These stay in the mbtile style because track is a real OpenMapTiles class,
 // so NATURE_WITH_TRACKS is still a style that would draw the tiles it claims to.
@@ -328,7 +371,7 @@ export const NATURE_WITH_TRACKS: MbtileStyle = withTracks(NATURE);
 // PATH_LINES first to keep the lowest z first, which is only cosmetic: it names categories no road,
 // aeroway, or waterway rule can match, so nothing depends on which one findZoomedStyle reaches.
 export const OSM_PATHS: Style = {
-  lines: [...PATH_LINES, ...wayLines(NATURE_WITH_TRACKS)],
+  lines: [...PATH_LINES, ...wayLines(NATURE_WITH_TRACKS), ...AERIALWAY_LINES],
   polygons: [],
 };
 

@@ -7,7 +7,7 @@ import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Deltas, projectS2Loop, skipE7Deltas } from 'js/map/camera';
 import { LatLngRect, RawUuid, RgbaU32 } from 'js/map/common/types';
-import { LineProgram } from 'js/map/rendering/line_program';
+import { LineProgram, Stipple } from 'js/map/rendering/line_program';
 import { CellKey } from 'js/map/workers/s2_data_fetcher';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
@@ -31,7 +31,7 @@ export interface LineStyle {
   fill: RgbaU32;
   stroke: RgbaU32;
   radius: number;
-  stipple: boolean;
+  stipple: Stipple;
   z: number;
 }
 
