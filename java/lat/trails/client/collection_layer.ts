@@ -48,6 +48,12 @@ interface LoadedCell {
   tolerance: number;
 }
 
+// One cell's copy of an object. Zoom bands tile the same objects at different levels, so while one
+// band replaces another both cells hold it.
+type HeldObject =
+    | {kind: 'line'; key: CellKey; value: Line}
+    | {kind: 'polygon'; key: CellKey; value: Polygon};
+
 // The object the cursor is over, drawn from its own buffers so it can sit above its cell. Which
 // object that is lives in lastHoverTarget.
 interface Highlight {
@@ -69,13 +75,10 @@ export class CollectionLayer extends Layer {
   private readonly rawBytes: Map<CellKey, {data: ArrayBuffer; tolerance: number}>;
   // Prefixed to the cell keys this layer loads into the shared index
   private readonly producer: string;
-  // Keyed by objectKey, which is also the id the index answers queries with
-  private readonly objects:
-    Map<
-      string,
-      | {kind: 'line'; key: CellKey; value: Line}
-      | {kind: 'polygon'; key: CellKey; value: Polygon}
-    >;
+  // Every cell's copy of each object, newest last, keyed by objectKey, which is also the id the
+  // index answers queries with. A cell unloading takes only its own copy, or else the band that
+  // replaced it loses objects it still draws and indexes.
+  private readonly objects: Map<string, HeldObject[]>;
   // Bumped on every hover and hoverLost, so that an answer for a point the pointer has left is
   // dropped.
   private hoverGeneration: number;
@@ -83,9 +86,11 @@ export class CollectionLayer extends Layer {
   private indexed: boolean;
   private generation: number;
   private readonly highlight: Highlight;
-  // The object the highlight is drawing. Its geometry is blanked in its own cell so that only the
-  // highlight draws it, which leaves the highlight free to be narrower or translucent.
+  // The object the highlight is drawing. Its geometry is blanked in the cell it was drawn from so
+  // that only the highlight draws it, which leaves the highlight free to be narrower or
+  // translucent.
   private lastHoverTarget: string|undefined;
+  private highlightedIn: CellKey|undefined;
   private lastRenderGeneration: number;
   // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
   private styleZoom: number;
@@ -127,6 +132,7 @@ export class CollectionLayer extends Layer {
       glIndexBuffer: this.renderer.createIndexBuffer(/* byteSize= */ 64 * 1024),
     };
     this.lastHoverTarget = undefined;
+    this.highlightedIn = undefined;
     this.lastRenderGeneration = -1;
     this.styleZoom = -1;
 
@@ -190,7 +196,7 @@ export class CollectionLayer extends Layer {
       const target = ids.find(id => this.objects.has(id));
       const last = this.lastClick;
       this.lastClick = target ? {id: target, timeMs: now} : undefined;
-      const object = target ? this.objects.get(target) : undefined;
+      const object = target ? this.held(target) : undefined;
       if (object && last && last.id === target && now - last.timeMs < DOUBLE_CLICK_MS) {
         source.trigger(OBJECT_OPENED, {layer: this, object});
       }
@@ -217,7 +223,7 @@ export class CollectionLayer extends Layer {
       this.lastHoverTarget = target;
       const highlight = this.highlight;
 
-      const object = target ? this.objects.get(target) : undefined;
+      const object = target ? this.held(target) : undefined;
       source.trigger(HOVER_CHANGED, {target: object?.value});
       if (!object) {
         return;
@@ -227,6 +233,7 @@ export class CollectionLayer extends Layer {
       if (!cell) {
         return;
       }
+      this.highlightedIn = object.key;
 
       if (object.kind === 'line') {
         const line = object.value;
@@ -498,11 +505,10 @@ export class CollectionLayer extends Layer {
     this.release(response.key);
 
     for (const line of response.lines) {
-      this.objects.set(objectKey(line.id), {kind: 'line', key: response.key, value: line});
+      this.hold(objectKey(line.id), {kind: 'line', key: response.key, value: line});
     }
     for (const polygon of response.polygons) {
-      this.objects.set(
-          objectKey(polygon.id), {kind: 'polygon', key: response.key, value: polygon});
+      this.hold(objectKey(polygon.id), {kind: 'polygon', key: response.key, value: polygon});
     }
 
     this.index(response.key, response.lines, response.polygons, response.tolerance);
@@ -576,10 +582,10 @@ export class CollectionLayer extends Layer {
     }
 
     for (const line of cell.lines) {
-      this.objects.delete(objectKey(line.id));
+      this.drop(objectKey(line.id), key);
     }
     for (const polygon of cell.polygons) {
-      this.objects.delete(objectKey(polygon.id));
+      this.drop(objectKey(polygon.id), key);
     }
     this.locations.unload([this.groupKey(key)]);
 
@@ -587,14 +593,38 @@ export class CollectionLayer extends Layer {
     this.renderer.deleteBuffer(cell.glIndexBuffer);
 
     // The highlight blanked geometry in a buffer that is now gone, so there is nothing to put back.
-    if (this.lastHoverTarget && !this.objects.has(this.lastHoverTarget)) {
+    if (this.highlightedIn === key) {
       this.dropHighlight();
+    }
+  }
+
+  // The newest copy, which belongs to the band the viewport is moving into
+  private held(id: string): HeldObject|undefined {
+    const copies = this.objects.get(id);
+    return copies?.[copies.length - 1];
+  }
+
+  private hold(id: string, object: HeldObject): void {
+    const copies = (this.objects.get(id) ?? []).filter(c => c.key !== object.key);
+    copies.push(object);
+    this.objects.set(id, copies);
+  }
+
+  private drop(id: string, key: CellKey): void {
+    const copies = this.objects.get(id)?.filter(c => c.key !== key) ?? [];
+    if (copies.length > 0) {
+      this.objects.set(id, copies);
+    } else {
+      this.objects.delete(id);
     }
   }
 
   // Puts back the geometry the highlight hid, then stops drawing it.
   private clearHighlight(): void {
-    const object = this.lastHoverTarget ? this.objects.get(this.lastHoverTarget) : undefined;
+    const object =
+        this.lastHoverTarget
+            ? this.objects.get(this.lastHoverTarget)?.find(c => c.key === this.highlightedIn)
+            : undefined;
     const cell = object ? this.cells.get(object.key) : undefined;
     if (object && cell) {
       if (object.kind === 'line') {
@@ -628,6 +658,7 @@ export class CollectionLayer extends Layer {
   private dropHighlight(): void {
     this.highlight.drawables.length = 0;
     this.lastHoverTarget = undefined;
+    this.highlightedIn = undefined;
   }
 }
 
