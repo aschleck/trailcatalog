@@ -33,6 +33,8 @@ import lat.trails.proto.Collection
 import lat.trails.proto.CreateCollectionRequest
 import lat.trails.proto.CreateCollectionResponse
 import lat.trails.proto.Delete
+import lat.trails.proto.DeleteCollectionRequest
+import lat.trails.proto.DeleteCollectionResponse
 import lat.trails.proto.FeatureKind
 import lat.trails.proto.Folder
 import lat.trails.proto.GetCollectionRequest
@@ -43,6 +45,8 @@ import lat.trails.proto.GetSharingResponse
 import lat.trails.proto.Line
 import lat.trails.proto.ListCollectionsResponse
 import lat.trails.proto.Point
+import lat.trails.proto.RenameCollectionRequest
+import lat.trails.proto.RenameCollectionResponse
 import lat.trails.proto.Role
 import lat.trails.proto.SaveRequest
 import lat.trails.proto.SaveResponse
@@ -111,12 +115,16 @@ private fun fetchData(ctx: Context) {
     val value = when (method) {
       "lat.trails.DataService/CreateCollection" ->
         createCollection(ctx, CreateCollectionRequest.newBuilder().mergeJson(payload).build())
+      "lat.trails.DataService/DeleteCollection" ->
+        deleteCollection(ctx, DeleteCollectionRequest.newBuilder().mergeJson(payload).build())
       "lat.trails.DataService/GetCollection" ->
         getCollection(ctx, GetCollectionRequest.newBuilder().mergeJson(payload).build())
       "lat.trails.DataService/GetCurrentUser" -> getCurrentUser(ctx)
       "lat.trails.DataService/GetSharing" ->
         getSharing(ctx, GetSharingRequest.newBuilder().mergeJson(payload).build())
       "lat.trails.DataService/ListCollections" -> listCollections(ctx)
+      "lat.trails.DataService/RenameCollection" ->
+        renameCollection(ctx, RenameCollectionRequest.newBuilder().mergeJson(payload).build())
       "lat.trails.DataService/Save" ->
         save(ctx, SaveRequest.newBuilder().mergeJson(payload).build())
       "lat.trails.DataService/SetSharing" ->
@@ -329,6 +337,66 @@ private fun createCollection(
         }
   }
   return response.build()
+}
+
+private fun renameCollection(
+    ctx: Context, request: RenameCollectionRequest): RenameCollectionResponse {
+  val user = requireUser(ctx)
+  val collection = parseUuid(request.id)
+  val name = request.name.trim()
+  if (name.isEmpty()) {
+    throw BadRequestResponse("A collection needs a name")
+  }
+
+  return transact { connection ->
+    val access = lockCollection(connection, collection, user)
+    connection
+        .prepareStatement("UPDATE collections SET name = ? WHERE id = ?")
+        .apply {
+          setString(1, name)
+          setObject(2, collection)
+        }
+        .executeUpdate()
+    RenameCollectionResponse.newBuilder()
+        .apply {
+          collectionBuilder
+              .setId(request.id)
+              .setName(name)
+              .setVersion(access.version)
+              .setRole(access.role)
+        }
+        .build()
+  }
+}
+
+private fun deleteCollection(
+    ctx: Context, request: DeleteCollectionRequest): DeleteCollectionResponse {
+  val user = requireUser(ctx)
+  val collection = parseUuid(request.id)
+  transact { connection ->
+    val access = lockCollection(connection, collection, user)
+    if (access.role != Role.ROLE_OWNER) {
+      throw ForbiddenResponse()
+    }
+
+    // The foreign keys to collections don't cascade, so everything pointing at it goes first. A
+    // save waiting on the lock finds no collection once we commit and gets a 404.
+    for (sql in listOf(
+        "DELETE FROM collection_grants WHERE collection_id = ?",
+        "DELETE FROM folders WHERE collection = ?",
+        "DELETE FROM lines WHERE collection = ?",
+        "DELETE FROM points WHERE collection = ?",
+        "DELETE FROM polygons WHERE collection = ?",
+        "DELETE FROM collections WHERE id = ?")) {
+      connection
+          .prepareStatement(sql)
+          .apply {
+            setObject(1, collection)
+          }
+          .executeUpdate()
+    }
+  }
+  return DeleteCollectionResponse.getDefaultInstance()
 }
 
 private fun getSharing(ctx: Context, request: GetSharingRequest): GetSharingResponse {

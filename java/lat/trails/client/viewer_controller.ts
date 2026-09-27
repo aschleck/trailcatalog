@@ -29,6 +29,7 @@ import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
   Collection,
   CreateCollectionResponse,
+  DeleteCollectionResponse,
   GetCollectionResponse,
   GetCurrentUserResponse,
   ListCollectionsResponse,
@@ -39,7 +40,12 @@ import {
 import { CollectionLayer } from './collection_layer';
 import { NATURE_PROTOMAPS, NATURE_WITHOUT_DETAILED_WAYS, OSM_PATHS, PUBLIC_LAND } from './styles';
 import { invalidateCurrentUser, requestData } from './data';
-import { ConfirmDeleteDialog, ImportFailedDialog, SaveFailedDialog } from './dialogs';
+import {
+  ConfirmDeleteCollectionDialog,
+  ConfirmDeleteDialog,
+  ImportFailedDialog,
+  SaveFailedDialog,
+} from './dialogs';
 import { DrawingLayer, toE7Array } from './drawing_layer';
 import {
   FEATURE_CLICKED,
@@ -76,6 +82,7 @@ import { PointToolLayer } from './point_tool_layer';
 import { pathLengthMeters, profileSamples, ProfileSamples, profileStats } from './measurements';
 import { MENU_CLASSES } from './menubar';
 import { SaveEntry, SaveQueue } from './save_queue';
+import { RenameDialog } from './rename_dialog';
 import { ShareDialog } from './share_dialog';
 
 const MAPTERHORN_COPYRIGHT = {
@@ -167,6 +174,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }|undefined;
   private readonly loginWatcher: Timer;
   private readonly saves: SaveQueue;
+  // The menubar item whose menu is open or loading. A File menu still waiting on ListCollections
+  // when another menu takes over sees it change and stays closed.
+  private menuTrigger: Element|undefined;
+  // What MenuService#open appended, so the menubar can close it
+  private menuOverlay: Element|undefined;
   // A failure the dialog is already up for stays quiet, or else every retry that fails for the
   // same reason stacks another one on the page.
   private warnedUnsaved: boolean;
@@ -199,6 +211,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.refreshFeatureList();
     });
     this.warnedUnsaved = false;
+    this.menuTrigger = undefined;
+    this.menuOverlay = undefined;
     this.lastChange = Date.now();
 
     // The popup runs on another origin, so the only thing we can see about it is that it closed.
@@ -943,6 +957,56 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   fileMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.fileMenu(e.actionElement.element());
+  }
+
+  viewMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.viewMenu(e.actionElement.element());
+  }
+
+  userMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.userMenu(e.actionElement.element());
+  }
+
+  menubarMenuEntered(e: CorgiEvent<typeof DOM_POINTER>): void {
+    const trigger = e.actionElement.element();
+    if (!this.menuOverlay?.isConnected || this.menuTrigger === trigger) {
+      return;
+    }
+
+    const menu = checkExists(e.actionElement.data('menu')).string();
+    if (menu === 'file') {
+      this.fileMenu(trigger);
+    } else if (menu === 'view') {
+      this.viewMenu(trigger);
+    } else if (menu === 'user') {
+      this.userMenu(trigger);
+    }
+  }
+
+  // Clicks on the bar's empty space close the open menu, because the bar covers that part of the
+  // menu's overlay.
+  menubarClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    if (e.targetElement.element() === e.actionElement.element()) {
+      this.closeMenu();
+    }
+  }
+
+  toolClicked(e: CorgiEvent<typeof ACTION>): void {
+    this.setTool(checkExists(e.actionElement.data('tool')).string() as Tool);
+  }
+
+  loginClicked(): void {
+    this.requireLogin().catch(e => {
+      console.error(e);
+    });
+  }
+
+  private fileMenu(trigger: Element): void {
+    if (!this.claimMenu(trigger)) {
+      return;
+    }
+
     const collections: Future<ListCollectionsResponse> =
         requestData('lat.trails.DataService/ListCollections', {});
     collections.then(response => {
@@ -984,6 +1048,26 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           }
         },
       });
+      items.push({
+        kind: 'menu_item',
+        label: 'Rename',
+        disabled: open?.role !== Role.OWNER && open?.role !== Role.WRITE,
+        action: () => {
+          if (open) {
+            this.renameCollection(open);
+          }
+        },
+      });
+      items.push({
+        kind: 'menu_item',
+        label: 'Delete',
+        disabled: open?.role !== Role.OWNER,
+        action: () => {
+          if (open) {
+            this.deleteCollection(open);
+          }
+        },
+      });
       items.push({kind: 'divider'});
       items.push({
         kind: 'menu_item',
@@ -1010,11 +1094,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           },
         }],
       });
-      this.openMenu(items, e);
+      this.openMenu(items, trigger);
     });
   }
 
-  viewMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+  private viewMenu(trigger: Element): void {
+    if (!this.claimMenu(trigger)) {
+      return;
+    }
+
     const system = getUnitSystem();
     this.openMenu([{
       kind: 'checkbox_menu_item',
@@ -1030,14 +1118,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       action: () => {
         this.setUnitSystem('metric');
       },
-    }], e);
+    }], trigger);
   }
 
-  toolClicked(e: CorgiEvent<typeof ACTION>): void {
-    this.setTool(checkExists(e.actionElement.data('tool')).string() as Tool);
-  }
+  private userMenu(trigger: Element): void {
+    if (!this.claimMenu(trigger)) {
+      return;
+    }
 
-  userMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.openMenu([{
       kind: 'menu_item',
       label: 'Log out',
@@ -1045,13 +1133,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         // Force a page refresh as part of logging out
         window.location.href = '/logout';
       },
-    }], e);
-  }
-
-  loginClicked(): void {
-    this.requireLogin().catch(e => {
-      console.error(e);
-    });
+    }], trigger);
   }
 
   // Deactivates before activating, because both drawing layers share the index's routing switch.
@@ -1363,6 +1445,35 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.loadCollection(collection.id);
   }
 
+  private renameCollection(collection: Collection): void {
+    this.dialog.display(RenameDialog({
+      collection,
+      renamed: renamed => {
+        if (this.state.collection?.id === renamed.id) {
+          this.updateState({...this.state, collection: renamed});
+        }
+      },
+    })).catch(() => {});
+  }
+
+  private deleteCollection(collection: Collection): void {
+    const count = [...this.store.all()].length;
+    this.dialog.display(ConfirmDeleteCollectionDialog({count, name: collection.name}))
+        .then(() => {
+          const deleted: Future<DeleteCollectionResponse> =
+              requestData('lat.trails.DataService/DeleteCollection', {id: collection.id});
+          return deleted;
+        }, () => undefined)
+        .then(response => {
+          if (response && this.state.collection?.id === collection.id) {
+            this.newCollection();
+          }
+        })
+        .catch(e => {
+          console.error(e);
+        });
+  }
+
   private loadCollection(id: string): void {
     const loading: Future<GetCollectionResponse> =
         requestData('lat.trails.DataService/GetCollection', {id});
@@ -1530,13 +1641,33 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     return promise;
   }
 
-  private openMenu(items: MenuEntries, e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const bound = e.actionElement.element().getBoundingClientRect();
+  // Closes whatever menu is open and makes trigger's the one to open. Answers false when trigger's
+  // own menu was the open one, so that clicking it again only closes it.
+  private claimMenu(trigger: Element): boolean {
+    const toggled = this.menuOverlay?.isConnected && this.menuTrigger === trigger;
+    this.closeMenu();
+    this.menuTrigger = toggled ? undefined : trigger;
+    return !toggled;
+  }
+
+  private closeMenu(): void {
+    this.menuOverlay?.remove();
+    this.menuOverlay = undefined;
+    this.menuTrigger = undefined;
+  }
+
+  private openMenu(items: MenuEntries, trigger: Element): void {
+    if (this.menuTrigger !== trigger) {
+      return;
+    }
+
+    const bound = trigger.getBoundingClientRect();
     this.menu.open(
         items,
         {x: bound.left, y: bound.bottom},
         this.root,
         {anchor: 'top_left', classes: MENU_CLASSES});
+    this.menuOverlay = this.root.lastElementChild ?? undefined;
   }
 
   // The formatters read the unit system from a global rather than from props, so a rerender with

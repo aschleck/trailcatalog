@@ -13,12 +13,18 @@ export const MENU_CLASSES: MenuClassNames = {
 
 // Menus are opened by whatever controller wraps the bar, because that is what owns the state they
 // show. Clicks reach it through unboundEvents, so the bar itself binds no controller.
+//
+// The bar sits above the overlay an open menu covers the page with, or else the overlay swallows
+// the hover that switches to another menu.
 export function Menubar({children, user}: {
   children?: VElementOrPrimitive|VElementOrPrimitive[];
   user: User|undefined;
 }) {
   return <>
-    <div className="bg-gray-900 flex gap-1 items-center px-2 py-1 text-white">
+    <div
+        className="bg-gray-900 flex gap-1 items-center px-2 py-1 relative text-white z-20"
+        unboundEvents={{click: 'menubarClicked'}}
+    >
       <a className="no-underline px-2 py-1" href="/">
         <img alt="trails.lat" className="h-8" src="/static/cat_moon.webp" />
       </a>
@@ -36,7 +42,8 @@ export function Menubar({children, user}: {
                     select-none
                     truncate
                 "
-                unboundEvents={{click: 'userMenuClicked'}}
+                data={{menu: 'user'}}
+                unboundEvents={{click: 'userMenuClicked', pointerenter: 'menubarMenuEntered'}}
             >
               {user.pictureUrl
                   ? <img
@@ -53,11 +60,20 @@ export function Menubar({children, user}: {
   </>;
 }
 
-export function MenubarItem({label, onClick}: {label: string; onClick: string}) {
+// Hovering an item with a menu while another menu is open switches to it, so the controller's
+// menubarMenuEntered has to know which menu the item opens.
+export function MenubarItem({label, menu, onClick}: {
+  label: string;
+  menu?: string;
+  onClick: string;
+}) {
   return <>
     <div
         className="cursor-pointer hover:bg-gray-800 px-2 py-1 rounded select-none"
-        unboundEvents={{click: onClick}}
+        data={menu ? {menu} : {}}
+        unboundEvents={
+          menu ? {click: onClick, pointerenter: 'menubarMenuEntered'} : {click: onClick}
+        }
     >
       {label}
     </div>

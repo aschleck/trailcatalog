@@ -7,10 +7,12 @@ option java_package = "lat.trails.proto";
 
 service DataService {
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
+  rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
   rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
   rpc GetSharing(GetSharingRequest) returns (GetSharingResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+  rpc RenameCollection(RenameCollectionRequest) returns (RenameCollectionResponse);
   rpc Save(SaveRequest) returns (SaveResponse);
   rpc SetSharing(SetSharingRequest) returns (SetSharingResponse);
 }
@@ -22,6 +24,14 @@ message CreateCollectionRequest {
 message CreateCollectionResponse {
   Collection collection = 1;
 }
+
+// Only the owner may delete. Everything in the collection goes with it, and nothing is kept to
+// restore it from.
+message DeleteCollectionRequest {
+  string id = 1;
+}
+
+message DeleteCollectionResponse {}
 
 message GetCollectionRequest {
   string id = 1;
@@ -56,6 +66,16 @@ message ListCollectionsResponse {
   repeated Collection collections = 1;
   // Granted to the caller by email, not to anyone
   repeated Collection shared = 2;
+}
+
+// Anyone who can edit the collection may rename it.
+message RenameCollectionRequest {
+  string id = 1;
+  string name = 2;
+}
+
+message RenameCollectionResponse {
+  Collection collection = 1;
 }
 
 // Writes apply in order in one transaction, so a batch lands whole or not at all. Any stale

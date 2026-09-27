@@ -110,8 +110,8 @@ export function OverviewElement(
         className="flex flex-col h-full relative"
     >
       <Menubar user={state.self.finished ? state.self.value().user : undefined}>
-        <MenubarItem label="File" onClick="fileMenuClicked" />
-        <MenubarItem label="View" onClick="viewMenuClicked" />
+        <MenubarItem label="File" menu="file" onClick="fileMenuClicked" />
+        <MenubarItem label="View" menu="view" onClick="viewMenuClicked" />
       </Menubar>
       <div className="flex grow min-h-0">
         <div className="grow min-w-0 relative">

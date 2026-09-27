@@ -40,6 +40,34 @@ export function ConfirmDeleteDialog({count}: {count: number}) {
   </>;
 }
 
+export function ConfirmDeleteCollectionDialog({count, name}: {count: number; name: string}) {
+  return <>
+    <div className="bg-white max-w-prose p-4 rounded text-gray-900">
+      <div className="font-bold">{`Delete ${name}?`}</div>
+      <p className="mt-2">
+        {count > 0
+            ? `This deletes the ${count} ${count === 1 ? 'item' : 'items'} in it for everyone it is `
+                + 'shared with, and cannot be undone.'
+            : 'This cannot be undone.'}
+      </p>
+      <div className="flex gap-2 justify-end mt-4">
+        <Button
+            className="hover:bg-black/10 px-3 py-1 rounded"
+            unboundEvents={{corgi: [[ACTION, 'outsideClose']]}}
+        >
+          Cancel
+        </Button>
+        <Button
+            className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-white"
+            unboundEvents={{corgi: [[ACTION, 'close']]}}
+        >
+          Delete
+        </Button>
+      </div>
+    </div>
+  </>;
+}
+
 export function SaveFailedDialog({}: {}) {
   return <>
     <Shell title="Saving failed">
