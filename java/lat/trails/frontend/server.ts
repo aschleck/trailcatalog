@@ -109,7 +109,7 @@ function page(content: string, title: string, initialData: string): string {
   <head>
     <meta charset="utf-8"/>
     <title>${title}</title>
-    <meta name="description" content="Organizing trails from OpenStreetMap">
+    <meta name="description" content="Mapping software for backcountry trip planning">
     <meta
         name="viewport"
         content="height=device-height, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width" />

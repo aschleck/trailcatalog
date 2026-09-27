@@ -1,6 +1,7 @@
 import { resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
 import { floatCoalesce } from 'external/dev_april_corgi+/js/common/math';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { setTitle } from 'external/dev_april_corgi+/js/server/ssr_aware';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 import { Role } from 'trails_lat/proto/data_pb';
@@ -73,6 +74,7 @@ export function OverviewElement(
   }
   const state = inState;
   const readOnly = state.collection?.role === Role.READ;
+  setTitle(state.collection?.name ? `${state.collection.name} - trails.lat` : 'trails.lat');
 
   if (!state.self.finished) {
     state.self.then(self => {
