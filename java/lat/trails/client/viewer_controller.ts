@@ -137,9 +137,27 @@ const POINT_ZOOM = 14;
 // Where trailcatalog starts drawing its points, see trail_layer.ts#RENDER_POINT_ZOOM_THRESHOLD
 const POINT_ICON_ZOOM = 14;
 
+// Flattens the points and line vertices of some features into lat,lng pairs in degrees.
+function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
+  const latLngDegrees = [];
+  for (const feature of features) {
+    if (feature.kind === 'point') {
+      latLngDegrees.push(feature.latE7 / 1e7, feature.lngE7 / 1e7);
+    } else if (feature.kind === 'line') {
+      for (let i = 0; i < feature.latLngE7.length; i += 2) {
+        latLngDegrees.push(feature.latLngE7[i] / 1e7, feature.latLngE7[i + 1] / 1e7);
+      }
+    }
+  }
+  return latLngDegrees;
+}
+
 export interface Args {
   // The id of the open collection or none
   collection: string|undefined;
+  // Whether to move the camera onto the collection once it loads, which a camera in the URL
+  // overrides
+  fitCollection: boolean;
 }
 
 export interface State {
@@ -730,7 +748,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     const collection = response.args.collection;
     if (collection) {
-      this.loadCollection(collection);
+      this.loadCollection(collection, response.args.fitCollection);
     }
   }
 
@@ -1137,43 +1155,42 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // A folder centers on everything inside it.
   centerClicked(): void {
-    let low = [Infinity, Infinity] as Vec2;
-    let high = [-Infinity, -Infinity] as Vec2;
-    const include = (latDegrees: number, lngDegrees: number) => {
-      low = [Math.min(low[0], latDegrees), Math.min(low[1], lngDegrees)] as Vec2;
-      high = [Math.max(high[0], latDegrees), Math.max(high[1], lngDegrees)] as Vec2;
-    };
     const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
     const features =
         !selected
             ? []
             : selected.kind === 'folder' ? this.store.descendants(selected.id) : [selected];
-    for (const feature of features) {
-      if (feature.kind === 'point') {
-        include(feature.latE7 / 1e7, feature.lngE7 / 1e7);
-      } else if (feature.kind === 'line') {
-        for (let i = 0; i < feature.latLngE7.length; i += 2) {
-          include(feature.latLngE7[i] / 1e7, feature.latLngE7[i + 1] / 1e7);
-        }
-      }
-    }
+    const latLngDegrees = featureLatLngDegrees(features);
     const inspected = this.inspected;
     if (inspected?.kind === 'polygon') {
       const bound = inspected.value.bound;
-      include(bound.low[0], bound.low[1]);
-      include(bound.high[0], bound.high[1]);
+      latLngDegrees.push(bound.low[0], bound.low[1], bound.high[0], bound.high[1]);
     } else if (inspected?.kind === 'point') {
       const ll = unprojectS2LatLng(inspected.value.position[0], inspected.value.position[1]);
-      include(ll.latDegrees(), ll.lngDegrees());
+      latLngDegrees.push(ll.latDegrees(), ll.lngDegrees());
     } else if (inspected?.kind === 'line') {
       const points = inspected.value.points;
       for (let i = 0; i < points.length; i += 2) {
         const ll = unprojectS2LatLng(points[i], points[i + 1]);
-        include(ll.latDegrees(), ll.lngDegrees());
+        latLngDegrees.push(ll.latDegrees(), ll.lngDegrees());
       }
     }
-    if (low[0] > high[0]) {
+    this.fitCamera(latLngDegrees);
+  }
+
+  // Moves the camera to show every point in a flat lat,lng array, or nowhere when it's empty.
+  private fitCamera(latLngDegrees: number[]): void {
+    if (latLngDegrees.length === 0) {
       return;
+    }
+
+    let low = [Infinity, Infinity] as Vec2;
+    let high = [-Infinity, -Infinity] as Vec2;
+    for (let i = 0; i < latLngDegrees.length; i += 2) {
+      const lat = latLngDegrees[i];
+      const lng = latLngDegrees[i + 1];
+      low = [Math.min(low[0], lat), Math.min(low[1], lng)] as Vec2;
+      high = [Math.max(high[0], lat), Math.max(high[1], lng)] as Vec2;
     }
 
     if (low[0] === high[0] && low[1] === high[1]) {
@@ -2152,7 +2169,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       collection,
     });
     this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
-    this.loadCollection(collection.id);
+    this.loadCollection(collection.id, /* fit= */ true);
   }
 
   private renameCollection(collection: Collection): void {
@@ -2184,7 +2201,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         });
   }
 
-  private loadCollection(id: string): void {
+  private loadCollection(id: string, fit: boolean): void {
     this.collectionGeneration += 1;
     const generation = this.collectionGeneration;
     this.setHidden([]);
@@ -2208,6 +2225,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ...response.lines.map(lineFromProto),
             ...response.points.map(pointFromProto),
           ], readOnly);
+          if (fit) {
+            this.fitCamera(featureLatLngDegrees(this.store.all()));
+          }
           if (readOnly && (this.state.tool === 'point' || this.state.tool === 'line')) {
             this.setTool('pointer');
           }

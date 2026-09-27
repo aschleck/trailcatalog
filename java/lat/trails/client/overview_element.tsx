@@ -94,7 +94,7 @@ export function OverviewElement(
     <div
         js={corgi.bind({
           controller: ViewerController,
-          args: {collection},
+          args: {collection, fitCollection: !parameters.lat || !parameters.lng},
           events: {
             corgi: [
               [FEATURE_CLICKED, 'onFeatureClicked'],
