@@ -18,7 +18,7 @@ private val trailcatalogDatabaseUsernamePassword = createFlag("unset")
 private val trailcatalogDatabaseUrl = createFlag("unset")
 
 // Keep in sync with frontend/server.ts#SCHEMA
-const val TRAILS_LAT_SCHEMA = "migration_4_points_and_folders"
+const val TRAILS_LAT_SCHEMA = "migration_5_sharing"
 const val TRAILCATALOG_SCHEMA = "migration_3_names"
 
 fun createBaseConnection(): HikariDataSource {

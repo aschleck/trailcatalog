@@ -31,6 +31,8 @@ export class FeatureStore {
   private readonly undoStack: Edit[];
   private readonly redoStack: Edit[];
   private readonly listeners: Array<() => void>;
+  // Set for a collection shared with the user to view, where every edit would fail to save.
+  private readOnly: boolean;
   // Moves on every change so that readers can tell whether they are stale.
   generation: number;
 
@@ -40,6 +42,7 @@ export class FeatureStore {
     this.undoStack = [];
     this.redoStack = [];
     this.listeners = [];
+    this.readOnly = false;
     this.generation = 0;
   }
 
@@ -47,8 +50,12 @@ export class FeatureStore {
     this.listeners.push(listener);
   }
 
-  /** Replaces every feature without saving, for opening a collection or starting a new one. */
-  reset(features: EditableFeature[]): void {
+  /**
+   * Replaces every feature without saving, for opening a collection or starting a new one. A
+   * read only store drops every edit.
+   */
+  reset(features: EditableFeature[], readOnly: boolean): void {
+    this.readOnly = readOnly;
     this.live.clear();
     this.removed.clear();
     this.undoStack.length = 0;
@@ -57,6 +64,10 @@ export class FeatureStore {
       this.live.set(feature.id, feature);
     }
     this.changed();
+  }
+
+  isReadOnly(): boolean {
+    return this.readOnly;
   }
 
   get(id: string): EditableFeature|undefined {
@@ -122,7 +133,7 @@ export class FeatureStore {
    * before it folds into that one, keeping its before states.
    */
   apply(changes: Change[], mergeKey?: string): void {
-    if (changes.length === 0) {
+    if (changes.length === 0 || this.readOnly) {
       return;
     }
 

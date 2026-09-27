@@ -77,6 +77,7 @@ export async function addGoogle(
 
     if (!claims.email_verified) {
       reply.code(403).send('Email is unverified');
+      return;
     }
 
     // TODO(april): we can have a uuid conflict but #yolo
@@ -85,12 +86,13 @@ export async function addGoogle(
     const result =
         await sql`
           INSERT INTO users (
-                  id, oidc_issuer, oidc_id, display_name, picture_url, enabled, last_login)
+                  id, oidc_issuer, oidc_id, display_name, email, picture_url, enabled, last_login)
               VALUES (
                   gen_random_uuid(),
                   ${claims.iss},
                   ${claims.sub},
                   ${checkExists(claims.email)},
+                  ${checkExists(claims.email).toLowerCase()},
                   ${claims.picture ?? null},
                   ${true},
                   ${new Date()}
@@ -98,6 +100,7 @@ export async function addGoogle(
               ON CONFLICT (oidc_issuer, oidc_id)
               DO UPDATE SET
                   display_name = EXCLUDED.display_name,
+                  email = EXCLUDED.email,
                   picture_url = EXCLUDED.picture_url,
                   last_login = EXCLUDED.last_login
               RETURNING id

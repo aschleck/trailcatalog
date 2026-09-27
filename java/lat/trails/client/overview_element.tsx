@@ -3,6 +3,7 @@ import { floatCoalesce } from 'external/dev_april_corgi+/js/common/math';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
+import { Role } from 'trails_lat/proto/data_pb';
 
 import { State, ViewerController } from './viewer_controller';
 import { requestData } from './data';
@@ -17,6 +18,7 @@ import {
   TOOL_REQUESTED,
 } from './events';
 import {
+  FeatureDetails,
   FeatureProperties,
   FeatureTree,
   LayerList,
@@ -63,6 +65,7 @@ export function OverviewElement(
     };
   }
   const state = inState;
+  const readOnly = state.collection?.role === Role.READ;
 
   if (!state.self.finished) {
     state.self.then(self => {
@@ -116,7 +119,7 @@ export function OverviewElement(
               camera={camera}
               ref="map"
           />
-          <Toolbar tool={state.tool} />
+          <Toolbar readOnly={readOnly} tool={state.tool} />
           {/* Spans the map's height so a tall dialog scrolls, and passes clicks to the map. */}
           <div className="
               absolute
@@ -132,11 +135,13 @@ export function OverviewElement(
           ">
             {state.tool === 'measure' ? <MeasurePanel state={state.measure} /> : ''}
             {state.features.selected
-                ? <FeatureProperties
-                      feature={state.features.selected}
-                      folders={state.features.folders}
-                      descendants={state.features.selectedDescendants}
-                  />
+                ? readOnly
+                    ? <FeatureDetails feature={state.features.selected} />
+                    : <FeatureProperties
+                          feature={state.features.selected}
+                          folders={state.features.folders}
+                          descendants={state.features.selectedDescendants}
+                      />
                 : state.inspected
                     ? <ObjectProperties object={state.inspected} />
                     : ''
@@ -144,7 +149,7 @@ export function OverviewElement(
           </div>
         </div>
         <SidebarElement>
-          <SidebarSection controls={<NewFolderButton />} label="Features">
+          <SidebarSection controls={readOnly ? undefined : <NewFolderButton />} label="Features">
             <FeatureTree state={state.features} />
           </SidebarSection>
           <SidebarSection label="Layers" open={false}>

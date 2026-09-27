@@ -376,6 +376,22 @@ export function FeatureProperties({descendants, feature, folders}: {
   );
 }
 
+/** Shows the selected feature of a collection the user can only view. */
+export function FeatureDetails({feature}: {feature: EditableFeature}) {
+  return (
+    <PropertiesDialog title={`Viewing ${feature.kind}`}>
+      <div className="flex flex-col gap-2">
+        <div className="font-bold">{feature.data.name || untitled(feature)}</div>
+        {feature.data.description
+            ? <div className="whitespace-pre-wrap">{feature.data.description}</div>
+            : ''
+        }
+        <Stats feature={feature} />
+      </div>
+    </PropertiesDialog>
+  );
+}
+
 /** Shows what a map layer knows about the object double clicked on it. */
 export function ObjectProperties({object}: {object: InspectedObject}) {
   return (
