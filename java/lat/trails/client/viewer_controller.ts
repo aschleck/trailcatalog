@@ -521,41 +521,70 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         values: {},
       }],
     }, {
-      kind: 'layer',
-      id: 'public_land',
-      name: 'US public land',
-      enabled: false,
-      schema: PUBLIC_LAND_SCHEMA,
-      layer: new CollectionLayer(
-          '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
-          PUBLIC_LAND,
-          // Snapping to a level whose cells are a few pixels across is invisible and saves most of
-          // the geometry, but past zoom 10 we want the real boundaries.
-          [
-            {minZoom: 0, snap: 11},
-            {minZoom: 7, snap: 14},
-            {minZoom: 10, snap: undefined},
-          ],
-          [
-            // Anything wider than a level 10 cell, so about 7 km up. That reaches the national
-            // parks, which sit at levels 6 to 9, and it is everything the coarsest snap can draw:
-            // snapping to level 11 erases whatever is smaller than a level 11 cell anyway.
-            //
-            // Tiled at level 5 rather than 4 because a tile carries its objects across its whole
-            // cell, so a coarser tiling means pulling parks hundreds of km offscreen once zoomed
-            // in. Level 5 costs 205 requests for a view of the western US instead of 68, and 2.9 MB
-            // instead of 4.5 MB at zoom 11.
-            {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
-            // Everything smaller. A level 6 cell holds up to 11k of these, which is why they wait
-            // until the viewport is small enough to be worth it.
-            {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
-          ],
-          locations,
-          this.mapController.camera,
-          this.mapController.renderer,
-      ),
-      controls: [],
-      values: {},
+      kind: 'group',
+      id: 'us',
+      name: 'United States',
+      enabled: true,
+      children: [{
+        kind: 'layer',
+        id: 'us/public_land',
+        name: 'Public land',
+        enabled: false,
+        schema: PUBLIC_LAND_SCHEMA,
+        layer: new CollectionLayer(
+            '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
+            PUBLIC_LAND,
+            // Snapping to a level whose cells are a few pixels across is invisible and saves most
+            // of the geometry, but past zoom 10 we want the real boundaries.
+            [
+              {minZoom: 0, snap: 11},
+              {minZoom: 7, snap: 14},
+              {minZoom: 10, snap: undefined},
+            ],
+            [
+              // Anything wider than a level 10 cell, so about 7 km up. That reaches the national
+              // parks, which sit at levels 6 to 9, and it is everything the coarsest snap can draw:
+              // snapping to level 11 erases whatever is smaller than a level 11 cell anyway.
+              //
+              // Tiled at level 5 rather than 4 because a tile carries its objects across its whole
+              // cell, so a coarser tiling means pulling parks hundreds of km offscreen once zoomed
+              // in. Level 5 costs 205 requests for a view of the western US instead of 68, and 2.9
+              // MB instead of 4.5 MB at zoom 11.
+              {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
+              // Everything smaller. A level 6 cell holds up to 11k of these, which is why they wait
+              // until the viewport is small enough to be worth it.
+              {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
+            ],
+            locations,
+            this.mapController.camera,
+            this.mapController.renderer,
+        ),
+        controls: [],
+        values: {},
+      }, {
+        kind: 'layer',
+        id: 'us/topo',
+        name: 'US Topo',
+        enabled: false,
+        layer: new RasterTileLayer(
+            [{
+              long: 'Topographic base map from The National Map, US Geological Survey',
+              short: 'USGS',
+              url: 'https://www.usgs.gov/programs/national-geospatial-program/national-map',
+            }],
+            'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile'
+                + '/${id.zoom}/${id.y}/${id.x}',
+            /* tint= */ 0xFFFFFFFF as RgbaU32,
+            /* z= */ Z_BASE_SATELLITE,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            // USGS caches tiles through zoom 15 and 404s past it.
+            /* maxZoom= */ 15,
+            this.mapController.renderer,
+        ),
+        controls: [],
+        values: {},
+      }],
     }, {
       kind: 'group',
       id: 'satellite',
@@ -660,7 +689,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
     this.updateState({
       ...this.state,
-      layers: {nodes, expanded: new Set(['osm', 'satellite', 'topography'])},
+      layers: {nodes, expanded: new Set(['osm', 'satellite', 'topography', 'us'])},
     });
     this.setMapLayers(nodes);
 
