@@ -122,6 +122,9 @@ export interface State {
   features: FeatureListState;
   // The map layer object open in the dialog, when no feature is selected
   inspected: InspectedObject|undefined;
+  // How far the line or measurement under construction reaches, shown beside the pointer. In
+  // pixels from the viewer's top left.
+  drawnLength: {x: number; y: number; meters: number}|undefined;
   // Set while the next line clicked joins the one Join with started from
   joining: boolean;
   layers: LayerState[];
@@ -190,6 +193,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private dropTarget: {folder: string|undefined}|undefined;
   // The line Join with started from
   private joining: string|undefined;
+  // Where the pointer last was, in pixels from the viewer's top left
+  private pointer: [number, number]|undefined;
   // Logins run in a popup on Google's origin, so a caller waiting on one waits on this.
   private login: {
     popup: Window;
@@ -238,6 +243,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.draggedFeature = undefined;
     this.dropTarget = undefined;
     this.joining = undefined;
+    this.pointer = undefined;
     this.store.listen(() => {
       this.refreshFeatureList();
     });
@@ -291,7 +297,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             'line',
             locations,
             camera,
-            renderer);
+            renderer,
+            () => {
+              this.drawnLengthChanged();
+            });
     this.registerDisposable(this.lineLayer);
     this.measureLayer =
         new DrawingLayer(
@@ -301,6 +310,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             renderer,
             () => {
               this.measureChanged();
+              this.drawnLengthChanged();
             },
             [MAPTERHORN_COPYRIGHT]);
     this.registerDisposable(this.measureLayer);
@@ -309,6 +319,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     this.registerListener(window, 'keydown', e => {
       this.keyPressed(e);
+    });
+    // On the root, which hears a move before the map's own listener on document does, so the
+    // drawing's change sees where the pointer is now.
+    this.registerListener(this.root, 'pointermove', e => {
+      const bounds = this.root.getBoundingClientRect();
+      this.pointer = [e.clientX - bounds.left, e.clientY - bounds.top];
     });
 
     this.skyboxLayer = new SkyboxLayer(Z_BOTTOM, this.mapController.renderer);
@@ -627,6 +643,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
+  // Selects the new line, like onPointPlaced, so that the panel is open to name it.
   onLineDrawn(e: CorgiEvent<typeof LINE_DRAWN>): void {
     const line: EditableLine = {
       kind: 'line',
@@ -638,6 +655,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       timeSeconds: undefined,
     };
     this.store.apply([{id: line.id, before: undefined, after: line}]);
+    this.select(line.id);
   }
 
   // Selects the new point so that the panel is open to name it, and stays in the tool so that
@@ -1722,6 +1740,27 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     this.dropTarget = target;
     this.refreshFeatureList();
+  }
+
+  // Follows the pointer with the length drawn so far, which includes the segment to it.
+  private drawnLengthChanged(): void {
+    const layer =
+        this.state.tool === 'line'
+            ? this.lineLayer
+            : this.state.tool === 'measure' ? this.measureLayer : undefined;
+    const pointer = this.pointer;
+    const drawnLength =
+        layer?.followsPointer() && pointer
+            ? {x: pointer[0], y: pointer[1], meters: pathLengthMeters(toDegrees(layer.points()))}
+            : undefined;
+    const shown = this.state.drawnLength;
+    if (
+        drawnLength?.x === shown?.x
+            && drawnLength?.y === shown?.y
+            && drawnLength?.meters === shown?.meters) {
+      return;
+    }
+    this.updateState({...this.state, drawnLength});
   }
 
   private stopJoining(): void {

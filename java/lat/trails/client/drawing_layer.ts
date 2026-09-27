@@ -86,6 +86,8 @@ export class DrawingLayer extends Layer {
   private reach: number;
   // Shift suspends the router, so a segment stays straight for as long as it is down.
   private shiftHeld: boolean;
+  // A click drops the cursor until the next move, so this is what says the pointer is still here.
+  private pointerOver: boolean;
 
   constructor(
       private readonly mode: DrawingMode,
@@ -118,6 +120,7 @@ export class DrawingLayer extends Layer {
     this.routingCursor = undefined;
     this.reach = 0;
     this.shiftHeld = false;
+    this.pointerOver = false;
 
     // Read from shiftKey rather than key, so that any keystroke corrects a missed shift release.
     this.registerListener(window, 'keydown', e => {
@@ -155,6 +158,14 @@ export class DrawingLayer extends Layer {
   /** Returns the placed vertices and the paths between them in mercator, without the cursor. */
   placedPoints(): Float64Array {
     return this.drawing ? drawnPoints(this.drawing.vertices) : STRAIGHT;
+  }
+
+  /**
+   * Whether the drawing is under way with the pointer over the map, so that points() reaches the
+   * pointer.
+   */
+  followsPointer(): boolean {
+    return this.pointerOver && !!this.drawing && !this.drawing.finished;
   }
 
   /** Returns the drawn polyline in mercator, including the segment to the cursor. */
@@ -235,6 +246,7 @@ export class DrawingLayer extends Layer {
       return false;
     }
 
+    this.pointerOver = true;
     const drawing = this.drawing;
     if (drawing && !drawing.finished) {
       const at = projectS2LatLng(point);
@@ -250,13 +262,20 @@ export class DrawingLayer extends Layer {
 
   // Drops the segment to the cursor, or else it stays pointing at wherever the pointer left.
   override hoverLost(source: EventSource): void {
+    const wasOver = this.pointerOver;
+    this.pointerOver = false;
     const drawing = this.drawing;
-    if (!this.active || !drawing?.cursor) {
+    if (!this.active || !drawing) {
       return;
     }
 
-    drawing.cursor = undefined;
-    this.changed();
+    if (drawing.cursor) {
+      drawing.cursor = undefined;
+      this.changed();
+    } else if (wasOver) {
+      // Nothing to draw again, but followsPointer changed.
+      this.onChanged();
+    }
   }
 
   override keyPressed(key: string, source: EventSource): boolean {

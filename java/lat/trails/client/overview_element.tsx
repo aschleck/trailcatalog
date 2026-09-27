@@ -25,6 +25,7 @@ import {
   NewFolderButton,
   ObjectProperties,
 } from './feature_list';
+import { formatDistance } from './measurements';
 import { MeasurePanel } from './measure_panel';
 import { SidebarElement, SidebarSection } from './sidebar_element';
 import { Menubar, MenubarItem } from './menubar';
@@ -52,6 +53,7 @@ export function OverviewElement(
         expanded: new Set(),
         dropTarget: undefined,
       },
+      drawnLength: undefined,
       inspected: undefined,
       joining: false,
       layers: [],
@@ -184,6 +186,27 @@ export function OverviewElement(
           </SidebarSection>
         </SidebarElement>
       </div>
+      {state.drawnLength
+          ? <div
+                className="
+                    absolute
+                    bg-yellow-100
+                    pointer-events-none
+                    px-2
+                    py-1
+                    rounded
+                    shadow
+                    text-gray-900
+                    text-sm
+                    whitespace-nowrap
+                    z-20
+                "
+                style={`left: ${state.drawnLength.x + 16}px; top: ${state.drawnLength.y + 16}px`}
+            >
+              {formatDistance(state.drawnLength.meters)}
+            </div>
+          : ''
+      }
     </div>
   </>;
 }
