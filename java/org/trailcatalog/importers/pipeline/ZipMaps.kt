@@ -4,7 +4,6 @@ import com.google.common.collect.ImmutableList
 import com.google.common.reflect.TypeParameter
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
-import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.PMap
@@ -29,13 +28,15 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
   override fun act(input: Pair<PMap<K, V1>, PMap<K, V2>>, dependants: Int):
       DisposableSupplier<PMap<K, Pair<List<V1>, List<V2>>>> {
     return if (dependants > 1) {
-      actMultishot(input)
+      actMultishot(input, dependants)
     } else {
       actOneshot(input)
     }
   }
 
-  private fun actMultishot(input: Pair<PMap<K, V1>, PMap<K, V2>>):
+  // Several readers need their own cursors, so the zip is written out. It goes through the same
+  // workers as any other stage, which read the zip a key range apiece when both sides split.
+  private fun actMultishot(input: Pair<PMap<K, V1>, PMap<K, V2>>, dependants: Int):
       DisposableSupplier<PMap<K, Pair<List<V1>, List<V2>>>> {
     val estimate =
         (estimateRatio() * (input.first.estimatedByteSize() + input.second.estimatedByteSize()))
@@ -48,50 +49,12 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
         context,
         keyType,
         pairType,
-        estimate) { emitter ->
-      zip(input, emitter)
+        estimate,
+        ZippedPMap(input.first, input.second, estimate),
+        resolvedParallelism,
+        dependants) { entry, emitter ->
+      emitter.emit(entry.key, entry.values[0])
     }
-  }
-
-  private fun zip(
-      input: Pair<PMap<K, V1>, PMap<K, V2>>, emitter: Emitter2<K, Pair<List<V1>, List<V2>>>) {
-    val left = input.first
-    val right = input.second
-
-    var nl = if (left.hasNext()) left.next() else null
-    var nr = if (right.hasNext()) right.next() else null
-
-    while (nl != null && nr != null) {
-      when (nl.key.compareTo(nr.key)) {
-        -1 -> {
-          emitter.emit(nl.key, Pair(nl.values, ImmutableList.of()))
-          nl = if (left.hasNext()) left.next() else null
-        }
-        0 -> {
-          emitter.emit(nl.key, Pair(nl.values, nr.values))
-          nl = if (left.hasNext()) left.next() else null
-          nr = if (right.hasNext()) right.next() else null
-        }
-        1 -> {
-          emitter.emit(nl.key, Pair(ImmutableList.of(), nr.values))
-          nr = if (right.hasNext()) right.next() else null
-        }
-        else -> throw AssertionError("Unknown compareTo return value")
-      }
-    }
-
-    while (nl != null) {
-      emitter.emit(nl.key, Pair(nl.values, ImmutableList.of()))
-      nl = if (left.hasNext()) left.next() else null
-    }
-
-    while (nr != null) {
-      emitter.emit(nr.key, Pair(ImmutableList.of(), nr.values))
-      nr = if (right.hasNext()) right.next() else null
-    }
-
-    left.close()
-    right.close()
   }
 
   private fun actOneshot(input: Pair<PMap<K, V1>, PMap<K, V2>>):
