@@ -53,6 +53,12 @@ fun createFlag(initial: String): Flag<String> {
   }
 }
 
+fun createNullableFlag(initial: Int? = null): Flag<Int?> {
+  return object : Flag<Int?>(initial) {
+    override fun parseFrom(s: String) = s.toInt()
+  }
+}
+
 fun createNullableFlag(initial: Path? = null): Flag<Path?> {
   return object : Flag<Path?>(initial) {
     override fun parseFrom(s: String) = Path.of(s)

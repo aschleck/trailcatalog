@@ -58,6 +58,14 @@ private val SHOWN_POINT_CATEGORIES =
         PointCategory.WATER_DRINKING,
     ).map { it.id }.toTypedArray()
 
+/**
+ * Returns the YYMMDD an epoch was imported from. Epochs carry two more digits counting imports of
+ * the same date, except the six digit ones from before that. See Importer.kt#chooseEpoch.
+ */
+private fun epochDate(epoch: Int): Int {
+  return if (epoch >= 1_000_000) epoch / 100 else epoch
+}
+
 private fun ok(value: Any): Map<String, Any> = mapOf("kind" to "result", "value" to value)
 private fun err(code: Int): Map<String, Any> = mapOf("kind" to "error", "code" to code)
 
@@ -179,9 +187,10 @@ private fun fetchData(ctx: Context) {
         responses.add(ok(ImmutableMap.of("boundaries", data)))
       }
       "epoch" -> {
-        val year = epochTracker.epoch / 100_00
-        val month = epochTracker.epoch / 100 - year * 100
-        val day = epochTracker.epoch - year * 100_00 - month * 100 + 1
+        val epochDate = epochDate(epochTracker.epoch)
+        val year = epochDate / 100_00
+        val month = epochDate / 100 - year * 100
+        val day = epochDate - year * 100_00 - month * 100 + 1
         val date = LocalDate.of(2000 + year, month, day).atStartOfDay(ZoneId.systemDefault());
         responses.add(ok(ImmutableMap.of("timestampS", date.toEpochSecond())))
       };

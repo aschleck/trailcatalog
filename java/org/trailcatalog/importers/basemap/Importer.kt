@@ -52,8 +52,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
 @FlagSpec(name = "elevation_profile")
 private val elevationProfilePath = createNullableFlag(null as Path?)
 
+// Picked by chooseEpoch unless given.
 @FlagSpec(name = "epoch")
-private val epoch = createFlag(calculateEpoch())
+private val epochFlag = createNullableFlag(null as Int?)
 
 @FlagSpec(name = "parallelism")
 private val importerParallelism = createFlag((Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1))
@@ -84,12 +85,14 @@ fun main(args: Array<String>) {
 
   val pbfs = pbfPaths.value.split(",").filter { it.isNotEmpty() }.map { Path.of(it) }
   createConnectionSource(syncCommit = false).use { hikari ->
-    processPbfs(epoch.value, pbfs, hikari)
+    processPbfs(pbfs, hikari)
   }
 }
 
-private fun processPbfs(epoch: Int, pbfs: List<Path>, hikari: HikariDataSource) {
+private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   val activeEpochs = hikari.connection.use { readActiveEpochs(it) }
+  val epoch = epochFlag.value ?: chooseEpoch(activeEpochs)
+  println("Importing epoch ${epoch}")
 
   hikari.connection.use {
     // An import that dies partway never reaches the INSERT into active_epoch, so a cleanup driven
@@ -451,12 +454,20 @@ private class ClaimingIterator<V>(private val shared: Iterator<V>) : Iterator<V>
   }
 }
 
-private fun calculateEpoch(): Int {
-    val now = LocalDateTime.now(ZoneOffset.UTC)
-    return if (now.hour >= 1 || now.minute >= 15) {
-        // TODO(april): roll back month
-        (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
-    } else {
-        throw RuntimeException("Don't do this")
-    }
+/**
+ * Returns the date the import's data is from as YYMMDD, followed by two digits counting the
+ * imports already made of that date. Keep in sync with Frontend.kt#epochDate.
+ */
+private fun chooseEpoch(activeEpochs: Set<Int>): Int {
+  val now = LocalDateTime.now(ZoneOffset.UTC)
+  if (now.hour < 1 && now.minute < 15) {
+    throw RuntimeException("Don't do this")
+  }
+  // TODO(april): roll back month
+  val date = (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
+  val first = date * 100
+  val sameDate = activeEpochs.filter { it in first until first + 100 }
+  val next = if (sameDate.isEmpty()) first else sameDate.max() + 1
+  // Finishing drops every epoch but the new one, so it has to sort after the live one too.
+  return maxOf(next, (activeEpochs.maxOrNull() ?: 0) + 1)
 }
