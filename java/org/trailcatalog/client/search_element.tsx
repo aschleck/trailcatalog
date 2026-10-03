@@ -95,7 +95,7 @@ function SearchResults({boundaries, className, query, trails}: {
           absolute
           bg-white
           inset-x-0
-          overflow-y-scroll
+          overflow-y-auto
           max-h-[85vh]
           rounded
           text-black

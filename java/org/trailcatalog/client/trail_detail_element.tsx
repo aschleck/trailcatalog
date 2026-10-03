@@ -186,7 +186,7 @@ function TrailSidebar({state}: {state: State}) {
       </span>;
 
   return <>
-    <div className="p-4 text-sm md:overflow-y-scroll md:w-[32rem]">
+    <div className="p-4 text-sm md:overflow-y-auto md:w-[32rem]">
       <header className="flex gap-2 items-center">
         <span className="font-bold font-sans text-3xl">
           {trail.name}
