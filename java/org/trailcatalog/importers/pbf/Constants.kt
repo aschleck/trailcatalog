@@ -385,3 +385,7 @@ val TOURISM_BS = ByteString.copyFromUtf8("tourism")
 val TOWER_BS = ByteString.copyFromUtf8("tower")
 val TOWER_TYPE_BS = ByteString.copyFromUtf8("tower:type")
 val WATERWAY_BS = ByteString.copyFromUtf8("waterway")
+val WIKIDATA_BS = ByteString.copyFromUtf8("wikidata")
+val WIKIPEDIA_BS = ByteString.copyFromUtf8("wikipedia")
+// Articles in other languages, like wikipedia:de
+val WIKIPEDIA_PREFIX_BS = ByteString.copyFromUtf8("wikipedia:")

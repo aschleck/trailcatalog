@@ -42,6 +42,7 @@ class MakeWayPoints
             way.pointType,
             way.name.ifEmpty { null },
             way.names,
+            way.notable,
             LatLngE7.fromS2Point(loop.centroid)))
   }
 

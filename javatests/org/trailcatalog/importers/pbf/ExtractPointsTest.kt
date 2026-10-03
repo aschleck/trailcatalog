@@ -92,7 +92,8 @@ class ExtractPointsTest {
             "Camp",
             longArrayOf(10, 11, 12, 13, 10),
             PointCategory.LODGING_CAMP_SITE.id,
-            listOf(Name(null, "Camp")))
+            listOf(Name(null, "Camp")),
+            /* notable= */ false)
     val points = ArrayList<Point>()
     MakeWayPoints().act(PEntry(7L, listOf(Pair(listOf(way), corners))), object : Emitter<Point> {
       override fun emit(v: Point) {
@@ -115,6 +116,13 @@ class ExtractPointsTest {
         .isEqualTo(PointCategory.ANY)
     assertThat(wayPointCategory(listOf(1, 2), longArrayOf(1, 2, 3, 1), table))
         .isEqualTo(PointCategory.LODGING_ROOM_HOTEL)
+  }
+
+  @Test
+  fun testNotableNeedsItsOwnLink() {
+    assertThat(extract("natural" to "peak", "wikidata" to "Q194057")!!.notable).isTrue()
+    assertThat(extract("natural" to "peak", "wikipedia:de" to "Mount Rainier")!!.notable).isTrue()
+    assertThat(extract("tourism" to "hotel", "brand:wikidata" to "Q1234")!!.notable).isFalse()
   }
 
   @Test

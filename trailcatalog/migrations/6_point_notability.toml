@@ -1,0 +1,11 @@
+[[actions]]
+type = "add_column"
+table = "points"
+
+  # Whether the element links to Wikidata or Wikipedia, which search ranks first. The default is
+  # only reached by epochs imported before this column existed.
+  [actions.column]
+  name = "notable"
+  default = "false"
+  nullable = false
+  type = "BOOLEAN"

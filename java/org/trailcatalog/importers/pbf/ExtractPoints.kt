@@ -56,7 +56,13 @@ class ExtractPoints : PTransformer<PrimitiveBlock, Point>(TypeToken.of(Point::cl
               listOf()
             }
         emitter.emit(
-            Point(nodePointId(id), category.id, tagName(kvs, input.stringtable), names, latLng))
+            Point(
+                nodePointId(id),
+                category.id,
+                tagName(kvs, input.stringtable),
+                names,
+                isNotable(kvs, input.stringtable),
+                latLng))
       }
     }
   }
@@ -177,6 +183,18 @@ fun tagName(kvs: List<Int>, stringTable: StringTable): String? {
     }
   }
   return null
+}
+
+// Only the element's own links count, because brand:wikidata names a chain and every one of its
+// stores carries it.
+fun isNotable(kvs: List<Int>, stringTable: StringTable): Boolean {
+  for (i in 0 until kvs.size step 2) {
+    val key = stringTable.getS(kvs[i])
+    if (key == WIKIDATA_BS || key == WIKIPEDIA_BS || key.startsWith(WIKIPEDIA_PREFIX_BS)) {
+      return true
+    }
+  }
+  return false
 }
 
 fun tagNames(kvs: List<Int>, stringTable: StringTable): List<Name> {

@@ -36,7 +36,8 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
       tagName(kvs, stringTable) ?: "",
       refs,
       pointCategory.id,
-      if (pointCategory == PointCategory.ANY) listOf() else tagNames(kvs, stringTable))
+      if (pointCategory == PointCategory.ANY) listOf() else tagNames(kvs, stringTable),
+      pointCategory != PointCategory.ANY && isNotable(kvs, stringTable))
 }
 
 /** Returns the tags of [way] as interleaved key and value string indices. */
