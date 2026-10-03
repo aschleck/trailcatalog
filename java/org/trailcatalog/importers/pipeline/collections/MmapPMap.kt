@@ -58,12 +58,12 @@ private const val PARALLEL_BATCH_SIZE = 1024
 // are what G1 spends its time copying.
 private const val ARENA_BYTES = 64 * 1024 * 1024
 
-// What a buffered record costs besides its value bytes with primitive keys:
+// What each slot of a primitive buffer's capacity costs, whether or not it holds a record:
 //    8  the key
 //    8  where the value sits
 //    4  the value length
 //   24  the radix sort's key and order arrays and their scratch copies
-private const val PRIMITIVE_RECORD_OVERHEAD_BYTES = 44
+private const val PRIMITIVE_SLOT_BYTES = 44L
 
 // What a buffered record costs besides its value bytes with other keys:
 //   32  SortKey, a 16 byte header plus the key and value references
@@ -555,9 +555,11 @@ private fun <K : Comparable<K>> mapExtents(
 /** Records waiting to be sorted into a run. */
 private interface RunBuffer<K, V> {
 
-  val heldBytes: Long
-
-  fun add(key: K, value: V)
+  /**
+   * Takes the record, or returns false if holding it would go over budget and the buffer should
+   * be written out first. An empty buffer always takes it.
+   */
+  fun add(key: K, value: V): Boolean
 
   /** Writes everything held in key order and empties the buffer. */
   fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>)
@@ -565,11 +567,13 @@ private interface RunBuffer<K, V> {
 
 /**
  * Holds keys as longs and values in shared arenas, so a full buffer is a handful of large arrays
- * rather than tens of millions of small objects.
+ * rather than tens of millions of small objects. The budget covers everything allocated, which
+ * runs ahead of what's held: arrays grow by doubling and arenas come in whole.
  */
 private class PrimitiveRunBuffer<K : Comparable<K>, V>(
     private val codec: KeyCodec<K>,
     private val valueSerializer: Serializer<V>,
+    private val budget: Long,
 ) : RunBuffer<K, V> {
 
   private var keys = LongArray(1 shl 16)
@@ -580,28 +584,43 @@ private class PrimitiveRunBuffer<K : Comparable<K>, V>(
   private val arenas = ArrayList<ByteArray>()
   private var arena = -1
   private var arenaOffset = 0
+  private var arenaBytes = 0L
   private val sorter = RadixSorter()
 
-  override var heldBytes = 0L
-    private set
-
-  override fun add(key: K, value: V) {
+  override fun add(key: K, value: V): Boolean {
     val scratch = BYTE_BUFFER.get()
+    scratch.clear()
     valueSerializer.write(value, ByteBufferEncodedOutputStream(scratch))
     val length = scratch.position()
 
+    val capacity = keys.size.toLong()
     if (count == keys.size) {
+      // The old arrays live until the copies finish, and the sorter's until it next sorts.
+      if (count > 0 && PRIMITIVE_SLOT_BYTES * 3 * capacity + arenaBytes > budget) {
+        return false
+      }
       keys = keys.copyOf(2 * count)
       locations = locations.copyOf(2 * count)
       lengths = lengths.copyOf(2 * count)
     }
     if (arena < 0 || arenas[arena].size - arenaOffset < length) {
-      arena += 1
-      arenaOffset = 0
-      if (arena == arenas.size || arenas[arena].size < length) {
-        val fresh = ByteArray(maxOf(ARENA_BYTES, length))
-        if (arena == arenas.size) arenas.add(fresh) else arenas[arena] = fresh
+      val next = arena + 1
+      if (next == arenas.size || arenas[next].size < length) {
+        val size = maxOf(ARENA_BYTES, length).toLong()
+        if (count > 0 && PRIMITIVE_SLOT_BYTES * keys.size + arenaBytes + size > budget) {
+          return false
+        }
+        val fresh = ByteArray(size.toInt())
+        if (next == arenas.size) {
+          arenas.add(fresh)
+        } else {
+          arenaBytes -= arenas[next].size
+          arenas[next] = fresh
+        }
+        arenaBytes += size
       }
+      arena = next
+      arenaOffset = 0
     }
     System.arraycopy(scratch.array(), 0, arenas[arena], arenaOffset, length)
     scratch.clear()
@@ -611,7 +630,7 @@ private class PrimitiveRunBuffer<K : Comparable<K>, V>(
     lengths[count] = length
     count += 1
     arenaOffset += length
-    heldBytes += PRIMITIVE_RECORD_OVERHEAD_BYTES + length
+    return true
   }
 
   override fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>) {
@@ -634,7 +653,6 @@ private class PrimitiveRunBuffer<K : Comparable<K>, V>(
     count = 0
     arena = -1
     arenaOffset = 0
-    heldBytes = 0
   }
 }
 
@@ -696,22 +714,27 @@ private class RadixSorter {
 private class ObjectRunBuffer<K : Comparable<K>, V>(
     private val codec: KeyCodec<K>,
     private val valueSerializer: Serializer<V>,
+    private val budget: Long,
 ) : RunBuffer<K, V> {
 
   private val items = ArrayList<SortKey<K>>()
+  private var heldBytes = 0L
 
-  override var heldBytes = 0L
-    private set
-
-  override fun add(key: K, value: V) {
+  override fun add(key: K, value: V): Boolean {
     val scratch = BYTE_BUFFER.get()
+    scratch.clear()
     valueSerializer.write(value, ByteBufferEncodedOutputStream(scratch))
+    val cost = OBJECT_RECORD_OVERHEAD_BYTES + scratch.position()
+    if (items.isNotEmpty() && heldBytes + cost > budget) {
+      return false
+    }
     scratch.flip()
     val bytes = ByteArray(scratch.limit())
     scratch.get(bytes)
     scratch.clear()
     items.add(SortKey(key, bytes))
-    heldBytes += OBJECT_RECORD_OVERHEAD_BYTES + bytes.size
+    heldBytes += cost
+    return true
   }
 
   override fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>) {
@@ -745,20 +768,20 @@ private class RunWriter<K : Comparable<K>, V : Any>(
     val file: File,
     codec: KeyCodec<K>,
     valueSerializer: Serializer<V>,
-    private val budget: Long,
+    budget: Long,
 ) {
 
   private val raf = RandomAccessFile(file, "rw")
   private val output = ChannelEncodedOutputStream(raf.channel)
   private val buffer: RunBuffer<K, V> =
-      if (codec.primitive) PrimitiveRunBuffer(codec, valueSerializer)
-      else ObjectRunBuffer(codec, valueSerializer)
+      if (codec.primitive) PrimitiveRunBuffer(codec, valueSerializer, budget)
+      else ObjectRunBuffer(codec, valueSerializer, budget)
   val index = IndexBuilder<K>()
 
   fun emit(key: K, value: V) {
-    buffer.add(key, value)
-    if (buffer.heldBytes > budget) {
+    if (!buffer.add(key, value)) {
       dump()
+      check(buffer.add(key, value))
     }
   }
 
