@@ -8,6 +8,7 @@ import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.collections.createPMap
+import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.WayCategory
 
 /** A set of non-negative ids, one bit apiece, growing to the largest id added. */
@@ -53,7 +54,8 @@ class CollectMemberWays : PStage<PMap<Long, Relation>, LongBitSet>() {
 /**
  * Groups ways by id, dropping the ones that no table wants. DumpPaths skips WayCategory.ANY, and
  * most planet ways are untagged buildings and landuse that are ANY, but a relation's member ways
- * are often untagged too and its geometry needs them.
+ * are often untagged too and its geometry needs them, and MakeWayPoints needs the ways with a
+ * point type.
  */
 class GroupWays
   : PStage<Pair<LongBitSet, PCollection<WaySkeleton>>, PMap<Long, WaySkeleton>>() {
@@ -70,7 +72,9 @@ class GroupWays
         ways,
         resolvedParallelism,
         dependants) { way, emitter ->
-      if (way.type != WayCategory.ANY.id || way.id in members) {
+      if (way.type != WayCategory.ANY.id
+          || way.pointType != PointCategory.ANY.id
+          || way.id in members) {
         emitter.emit(way.id, way)
       }
     }

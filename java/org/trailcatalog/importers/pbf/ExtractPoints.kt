@@ -7,13 +7,56 @@ import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.models.PointCategory
 
+// The categories whose names are worth searching, and the only ones a way becomes a point for.
+// Bus stops, convenience stores, supermarkets, fuel, and pharmacies are mostly chains or street
+// names, guide posts, parking, ruins, toilets, and camp pitches are mostly numbers or
+// descriptions, and shelters are mostly bus stops and picnic roofs.
+private val SEARCHABLE_POINT_CATEGORIES =
+    setOf(
+        PointCategory.ACCESS_TRAILHEAD,
+        PointCategory.ACCESS_TRANSIT_AIRPORT,
+        PointCategory.ACCESS_TRANSIT_FERRY_TERMINAL,
+        PointCategory.ACCESS_TRANSIT_STATION,
+        PointCategory.INFORMATION_RANGER_STATION,
+        PointCategory.INFORMATION_VISITOR_CENTER,
+        PointCategory.LODGING_CAMP_CARAVAN_SITE,
+        PointCategory.LODGING_CAMP_SITE,
+        PointCategory.LODGING_HOSTEL,
+        PointCategory.LODGING_HUT_ALPINE,
+        PointCategory.LODGING_HUT_WILDERNESS,
+        PointCategory.LODGING_ROOM_CHALET,
+        PointCategory.LODGING_ROOM_GUEST_HOUSE,
+        PointCategory.LODGING_ROOM_HOTEL,
+        PointCategory.LODGING_ROOM_MOTEL,
+        PointCategory.NATURAL_CAVE_ENTRANCE,
+        PointCategory.NATURAL_HOT_SPRING,
+        PointCategory.NATURAL_MOUNTAIN_PASS,
+        PointCategory.NATURAL_PEAK,
+        PointCategory.NATURAL_SADDLE,
+        PointCategory.NATURAL_VOLCANO,
+        PointCategory.NATURAL_WATERFALL,
+        PointCategory.SAFETY_CLINIC,
+        PointCategory.SAFETY_MOUNTAIN_RESCUE,
+        PointCategory.SIGHT_OBSERVATION_TOWER,
+        PointCategory.SIGHT_VIEWPOINT,
+        PointCategory.WATER_SPRING,
+        PointCategory.WATER_TAP,
+    )
+
 class ExtractPoints : PTransformer<PrimitiveBlock, Point>(TypeToken.of(Point::class.java)) {
 
   override fun act(input: PrimitiveBlock, emitter: Emitter<Point>) {
     forEachNode(input) { id, kvs, latLng, _ ->
       val category = pointCategory(kvs, input.stringtable)
       if (category != PointCategory.ANY) {
-        emitter.emit(Point(id, category.id, nodeName(kvs, input.stringtable), latLng))
+        val names =
+            if (category in SEARCHABLE_POINT_CATEGORIES) {
+              tagNames(kvs, input.stringtable)
+            } else {
+              listOf()
+            }
+        emitter.emit(
+            Point(nodePointId(id), category.id, tagName(kvs, input.stringtable), names, latLng))
       }
     }
   }
@@ -21,6 +64,24 @@ class ExtractPoints : PTransformer<PrimitiveBlock, Point>(TypeToken.of(Point::cl
   override fun estimateRatio(): Double {
     return 0.01
   }
+}
+
+// Node and way ids overlap, so a point's id carries which one it came from in its low bit. Keep in
+// sync with types.ts#Point and viewer_controller.ts#osmElementOf.
+fun nodePointId(nodeId: Long): Long = 2 * nodeId
+
+fun wayPointId(wayId: Long): Long = 2 * wayId + 1
+
+/**
+ * Returns the point category of a closed way that should also become a point, or
+ * [PointCategory.ANY].
+ */
+fun wayPointCategory(kvs: List<Int>, nodes: LongArray, stringTable: StringTable): PointCategory {
+  if (nodes.size < 4 || nodes[0] != nodes[nodes.size - 1]) {
+    return PointCategory.ANY
+  }
+  val category = pointCategory(kvs, stringTable)
+  return if (category in SEARCHABLE_POINT_CATEGORIES) category else PointCategory.ANY
 }
 
 /**
@@ -82,6 +143,7 @@ fun pointCategory(kvs: List<Int>, stringTable: StringTable): PointCategory {
   for (i in 0 until kvs.size step 2) {
     val value = stringTable.getS(kvs[i + 1])
     when (stringTable.getS(kvs[i])) {
+      AEROWAY_BS -> category = category.coerceAtLeast(POINT_AEROWAY_CATEGORY_NAMES[value])
       AMENITY_BS -> category = category.coerceAtLeast(POINT_AMENITY_CATEGORY_NAMES[value])
       EMERGENCY_BS -> category = category.coerceAtLeast(POINT_EMERGENCY_CATEGORY_NAMES[value])
       HIGHWAY_BS -> category = category.coerceAtLeast(POINT_HIGHWAY_CATEGORY_NAMES[value])
@@ -108,13 +170,21 @@ fun pointCategory(kvs: List<Int>, stringTable: StringTable): PointCategory {
   return category
 }
 
-private fun nodeName(kvs: List<Int>, stringTable: StringTable): String? {
+fun tagName(kvs: List<Int>, stringTable: StringTable): String? {
   for (i in 0 until kvs.size step 2) {
     if (stringTable.getS(kvs[i]) == NAME_BS) {
       return stringTable.getS(kvs[i + 1]).toStringUtf8()
     }
   }
   return null
+}
+
+fun tagNames(kvs: List<Int>, stringTable: StringTable): List<Name> {
+  val names = NameCollector()
+  for (i in 0 until kvs.size step 2) {
+    names.add(stringTable.getS(kvs[i]), stringTable.getS(kvs[i + 1]))
+  }
+  return names.toList()
 }
 
 private fun <V> Iterator<V>.takeWhile(predicate: (V) -> Boolean): List<V> {

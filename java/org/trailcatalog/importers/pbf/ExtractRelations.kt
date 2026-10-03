@@ -36,28 +36,55 @@ class ExtractRelations : PTransformer<PrimitiveBlock, Relation>(TypeToken.of(Rel
 
 fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relation {
   var name: String? = null
-  // Keyed by the name so that a value carried by several tags, like name and name:en on anything
-  // in an English speaking country, only becomes one row. A bare key overwrites a suffixed one so
-  // that a shared value ends up with no language whichever order the tags arrive in.
-  val languagesByName = LinkedHashMap<String, String?>()
+  val names = NameCollector()
   for (i in 0 until relation.keysCount) {
     val key = stringTable.getS(relation.getKeys(i))
+    val value = stringTable.getS(relation.getVals(i))
     if (key == NAME_BS) {
-      name = stringTable.getS(relation.getVals(i)).toStringUtf8()
+      name = value.toStringUtf8()
     }
-
-    val tagged = tagToName(key, stringTable.getS(relation.getVals(i))) ?: continue
-    if (tagged.language == null || !languagesByName.containsKey(tagged.value)) {
-      languagesByName[tagged.value] = tagged.language
-    }
+    names.add(key, value)
   }
 
   return Relation(
       relation.id,
       relationCategory(relation, stringTable).id,
       name ?: "",
-      languagesByName.map { (value, language) -> Name(language, value) },
+      names.toList(),
       relationToSkeleton(relation, stringTable))
+}
+
+/** Gathers the distinct names among an element's tags. */
+class NameCollector {
+
+  // Keyed by the name so that a value carried by several tags, like name and name:en on anything
+  // in an English speaking country, only becomes one row. A bare key overwrites a suffixed one so
+  // that a shared value ends up with no language whichever order the tags arrive in.
+  private val languagesByName = LinkedHashMap<String, String?>()
+
+  fun add(key: ByteString, raw: ByteString) {
+    val tagged =
+        if (key == IATA_BS || key == ICAO_BS) {
+          // An airport's code is what people type to find it.
+          Name(null, raw.toStringUtf8())
+        } else {
+          tagToName(key, raw) ?: return
+        }
+    // https://wiki.openstreetmap.org/wiki/Semi-colon_value_separator
+    for (part in tagged.value.split(';')) {
+      val value = part.trim()
+      if (value.isEmpty()) {
+        continue
+      }
+      if (tagged.language == null || !languagesByName.containsKey(value)) {
+        languagesByName[value] = tagged.language
+      }
+    }
+  }
+
+  fun toList(): List<Name> {
+    return languagesByName.map { (value, language) -> Name(language, value) }
+  }
 }
 
 fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): RelationCategory {

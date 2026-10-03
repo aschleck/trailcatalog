@@ -49,11 +49,13 @@ enum class PointCategory(override val id: Int) : Category<PointCategory> {
       LODGING_HUT(LODGING.id * ENUM_SIZE + 2),
         LODGING_HUT_ALPINE(LODGING_HUT.id * ENUM_SIZE + 1),
         LODGING_HUT_WILDERNESS(LODGING_HUT.id * ENUM_SIZE + 2),
-      LODGING_CHALET(LODGING.id * ENUM_SIZE + 3),
-      LODGING_GUEST_HOUSE(LODGING.id * ENUM_SIZE + 4),
-      LODGING_HOSTEL(LODGING.id * ENUM_SIZE + 5),
-      LODGING_HOTEL(LODGING.id * ENUM_SIZE + 6),
-      LODGING_MOTEL(LODGING.id * ENUM_SIZE + 7),
+      LODGING_HOSTEL(LODGING.id * ENUM_SIZE + 3),
+      // A private room or cabin by the night, where OSM's distinctions are mostly about size.
+      LODGING_ROOM(LODGING.id * ENUM_SIZE + 4),
+        LODGING_ROOM_CHALET(LODGING_ROOM.id * ENUM_SIZE + 1),
+        LODGING_ROOM_GUEST_HOUSE(LODGING_ROOM.id * ENUM_SIZE + 2),
+        LODGING_ROOM_HOTEL(LODGING_ROOM.id * ENUM_SIZE + 3),
+        LODGING_ROOM_MOTEL(LODGING_ROOM.id * ENUM_SIZE + 4),
     FACILITY(ANY.id * ENUM_SIZE + 4),
       FACILITY_FIRE(FACILITY.id * ENUM_SIZE + 1),
         FACILITY_FIRE_BARBECUE(FACILITY_FIRE.id * ENUM_SIZE + 1),
@@ -83,8 +85,8 @@ enum class PointCategory(override val id: Int) : Category<PointCategory> {
       NATURAL_CAVE_ENTRANCE(NATURAL.id * ENUM_SIZE + 1),
       NATURAL_HOT_SPRING(NATURAL.id * ENUM_SIZE + 2),
       NATURAL_PEAK(NATURAL.id * ENUM_SIZE + 3),
-      // After the saddle because a pass is usually also tagged as one.
       NATURAL_SADDLE(NATURAL.id * ENUM_SIZE + 4),
+      // After the saddle because a pass is usually also tagged as one.
       NATURAL_MOUNTAIN_PASS(NATURAL.id * ENUM_SIZE + 5),
       NATURAL_VOLCANO(NATURAL.id * ENUM_SIZE + 6),
       NATURAL_WATERFALL(NATURAL.id * ENUM_SIZE + 7),
@@ -95,6 +97,7 @@ enum class PointCategory(override val id: Int) : Category<PointCategory> {
         ACCESS_TRANSIT_BUS_STOP(ACCESS_TRANSIT.id * ENUM_SIZE + 1),
         ACCESS_TRANSIT_FERRY_TERMINAL(ACCESS_TRANSIT.id * ENUM_SIZE + 2),
         ACCESS_TRANSIT_STATION(ACCESS_TRANSIT.id * ENUM_SIZE + 3),
+        ACCESS_TRANSIT_AIRPORT(ACCESS_TRANSIT.id * ENUM_SIZE + 4),
 }
 
 enum class RelationCategory(override val id: Int) : Category<RelationCategory> {

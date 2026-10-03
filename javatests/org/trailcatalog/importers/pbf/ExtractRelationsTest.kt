@@ -84,6 +84,16 @@ class ExtractRelationsTest {
   }
 
   @Test
+  fun testSplitsSemicolonSeparatedValues() {
+    val relation =
+        relationWithTags("name" to "Sea-Tac", "alt_name" to "Sea-Tac Airport; SEA Airport;")
+
+    assertThat(relation.names)
+        .containsExactly(
+            Name(null, "Sea-Tac"), Name(null, "Sea-Tac Airport"), Name(null, "SEA Airport"))
+  }
+
+  @Test
   fun testNoNames() {
     val relation = relationWithTags("boundary" to "administrative")
 

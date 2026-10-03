@@ -1,0 +1,83 @@
+# point_names is a search index like boundary_names and trail_names, and only carries points in a
+# searchable category. See ExtractPoints.kt#SEARCHABLE_POINT_CATEGORIES.
+
+[[actions]]
+type = "create_table"
+name = "point_names"
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+  # The suffix the tag key carried, or NULL when it carried none.
+  [[actions.columns]]
+  name = "language"
+  nullable = true
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "name"
+  nullable = false
+  type = "TEXT"
+
+  [actions.partition_by]
+  list = ["epoch"]
+
+[[actions]]
+type = "add_index"
+table = "point_names"
+
+  [actions.index]
+  name = "point_names_by_id_epoch_idx"
+  columns = ["id", "epoch"]
+  concurrently = false
+
+[[actions]]
+type = "create_table"
+name = "points_in_boundaries"
+primary_key = ["boundary_id", "point_id", "epoch"]
+
+  [[actions.columns]]
+  name = "boundary_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "point_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+  [actions.partition_by]
+  list = ["epoch"]
+
+[[actions]]
+type = "add_index"
+table = "points_in_boundaries"
+
+  [actions.index]
+  name = "points_in_boundaries_by_point_id_epoch_idx"
+  columns = ["point_id", "epoch"]
+  concurrently = false
+
+[[actions]]
+type = "custom"
+
+start = """
+  CREATE INDEX IF NOT EXISTS search_point_names_idx
+      ON point_names USING gist (epoch, name gist_trgm_ops(siglen=256));
+"""
+
+abort = """
+  DROP INDEX IF EXISTS search_point_names_idx;
+"""

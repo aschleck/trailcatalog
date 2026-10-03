@@ -836,14 +836,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             layerEntries(this.state.layers.nodes).find(({entry}) => entry.layer === layer)
                 ?.entry.schema);
     const titleValue = data[schema.title.key];
-    const osmType =
-        schema.title.kind === 'osm_node' ? 'node' as const
-            : schema.title.kind === 'osm_way' ? 'way' as const
+    const element =
+        typeof titleValue !== 'number' ? undefined
+            : schema.title.kind === 'osm_point' ? osmElementOf(titleValue)
+            : schema.title.kind === 'osm_way' ? {type: 'way' as const, id: titleValue}
             : undefined;
-    const osm =
-        osmType && typeof titleValue === 'number'
-            ? {type: osmType, id: titleValue, tags: 'loading' as const}
-            : undefined;
+    const osm = element ? {...element, tags: 'loading' as const} : undefined;
     const common = {data, schema, osm};
     if (object.kind === 'line') {
       const path = toDegrees(object.value.points);
@@ -2664,3 +2662,10 @@ function newCollectionName(): string {
   return `Untitled collection ${new Date().toLocaleDateString()}`;
 }
 
+// A point's id is twice its node's id, or twice its way's id plus one. Keep in sync with
+// ExtractPoints.kt#nodePointId.
+function osmElementOf(pointId: number): {type: 'node'|'way'; id: number} {
+  return pointId % 2 === 0
+      ? {type: 'node', id: pointId / 2}
+      : {type: 'way', id: (pointId - 1) / 2};
+}

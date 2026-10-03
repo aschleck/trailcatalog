@@ -28,11 +28,12 @@ const POINT_CATEGORY_TO_LABEL =
       [PointCategory.LODGING_HUT, 'Hut'],
       [PointCategory.LODGING_HUT_ALPINE, 'Alpine hut'],
       [PointCategory.LODGING_HUT_WILDERNESS, 'Wilderness hut'],
-      [PointCategory.LODGING_CHALET, 'Chalet'],
-      [PointCategory.LODGING_GUEST_HOUSE, 'Guest house'],
       [PointCategory.LODGING_HOSTEL, 'Hostel'],
-      [PointCategory.LODGING_HOTEL, 'Hotel'],
-      [PointCategory.LODGING_MOTEL, 'Motel'],
+      [PointCategory.LODGING_ROOM, 'Room'],
+      [PointCategory.LODGING_ROOM_CHALET, 'Chalet'],
+      [PointCategory.LODGING_ROOM_GUEST_HOUSE, 'Guest house'],
+      [PointCategory.LODGING_ROOM_HOTEL, 'Hotel'],
+      [PointCategory.LODGING_ROOM_MOTEL, 'Motel'],
       [PointCategory.FACILITY, 'Facility'],
       [PointCategory.FACILITY_FIRE, 'Fire'],
       [PointCategory.FACILITY_FIRE_BARBECUE, 'Barbecue'],
@@ -99,7 +100,7 @@ function Link({item}: {item: Path|Point|Trail}) {
   if (item instanceof Path) {
     return <OsmWayLink path={item} />;
   } else if (item instanceof Point) {
-    return <OsmNodeLink point={item} />;
+    return <OsmPointLink point={item} />;
   } else if (item instanceof Trail) {
     return <TrailLink trail={item} />;
   } else {
@@ -136,13 +137,16 @@ function TrailLink({trail}: {trail: Trail}) {
   </>;
 }
 
-function OsmNodeLink({point}: {point: Point}) {
+function OsmPointLink({point}: {point: Point}) {
+  const {type, id} = point.source;
   const label =
-      point.name ?? POINT_CATEGORY_TO_LABEL.get(point.type) ?? `Node ${point.sourceNode}`;
+      point.name
+          ?? POINT_CATEGORY_TO_LABEL.get(point.type)
+          ?? `${type === 'node' ? 'Node' : 'Way'} ${id}`;
   return <>
     <a
         className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
-        href={`https://www.openstreetmap.org/node/${point.sourceNode}`}
+        href={`https://www.openstreetmap.org/${type}/${id}`}
         target="_blank"
     >
       <header className="font-bold font-lg grow">

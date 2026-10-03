@@ -1,8 +1,9 @@
 // What the keys of a collection's feature data mean, so that the properties dialog can show them.
 export interface Schema {
   title: {kind: 'text'; key: string}
-      // The key holds an OpenStreetMap node or way id, whose tags we fetch from OpenStreetMap
-      |{kind: 'osm_node'; key: string}
+      // The key holds an OpenStreetMap way id, or a point id that came from a node or a way, and
+      // we fetch that element's tags
+      |{kind: 'osm_point'; key: string}
       |{kind: 'osm_way'; key: string};
   description: string|undefined;
   // Shown in this order after the stats, skipping any the feature lacks
@@ -47,9 +48,9 @@ export const OSM_WAYS_SCHEMA: Schema = {
   fields: [],
 };
 
-// The type key is a PointCategory, which the node's own tags say better.
+// The type key is a PointCategory, which the element's own tags say better.
 export const OSM_NODES_SCHEMA: Schema = {
-  title: {kind: 'osm_node', key: 'id'},
+  title: {kind: 'osm_point', key: 'id'},
   description: undefined,
   fields: [],
 };

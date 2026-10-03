@@ -27,6 +27,7 @@ import org.trailcatalog.importers.pbf.ExtractWayRelationPairs
 import org.trailcatalog.importers.pbf.GatherRelationWays
 import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
+import org.trailcatalog.importers.pbf.MakeWayPoints
 import org.trailcatalog.importers.pbf.PbfReader
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.BoundStage
@@ -71,7 +72,9 @@ private val PARTITIONED_TABLES =
         "path_elevations",
         "paths",
         "paths_in_trails",
+        "point_names",
         "points",
+        "points_in_boundaries",
         "source_tags",
         "trail_identifiers",
         "trail_names",
@@ -123,7 +126,6 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   // Every pass over the PBF is its own read. The first one learns which blobs hold which kind of
   // element, so the later ones skip what they don't want without inflating it. First, the elements
   // that need no geometry from anything else.
-  pipeline.readPbfs(pbfs, nodes = true, extract = ExtractPoints()).write(DumpPoints(epoch, hikari))
   pipeline
       .readPbfs(pbfs, nodes = true, extract = ExtractNodeTags())
       .write(DumpSourceTags(epoch, hikari))
@@ -153,10 +155,17 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
       pipeline
           .join2("JoinNodesForWayPoints", nodes, ways.then(ExtractNodeWayPairs()))
           .then(GatherWayNodes())
-  val waysWithGeometry =
-      pipeline
-          .join2("JoinWaysForGeometry", ways, waysToPoints)
-          .then(MakeWayGeometries())
+  val waysWithNodes = pipeline.join2("JoinWaysForGeometry", ways, waysToPoints)
+  val waysWithGeometry = waysWithNodes.then(MakeWayGeometries())
+
+  // Points come from nodes and from closed ways, like a campground drawn as its outline.
+  val points =
+      pipeline.cat(
+          listOf(
+              pipeline.readPbfs(pbfs, nodes = true, extract = ExtractPoints()),
+              waysWithNodes.then(MakeWayPoints())))
+  points.write(DumpPoints(epoch, hikari))
+  points.write(DumpPointNames(epoch, hikari))
 
   // Now, take the way geometries, filter it down to ways in likely trail relations, and calculate
   // the required elevation profiles.
@@ -207,6 +216,9 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   boundaryIndex
       .then(FindBoundariesInBoundaries())
       .write(DumpBoundariesInBoundaries(epoch, hikari))
+  pipeline
+      .zip2(boundaryIndex, points, FindPointsInBoundaries())
+      .write(DumpPointsInBoundaries(epoch, hikari))
   val trailsInBoundaries = pipeline.zip2(boundaryIndex, trails, FindTrailsInBoundaries())
   val trailIdToContainingBoundaries =
       pipeline

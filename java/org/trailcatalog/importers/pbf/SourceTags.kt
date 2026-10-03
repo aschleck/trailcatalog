@@ -34,14 +34,16 @@ class ExtractNodeTags
   }
 }
 
-/** Extracts the tags of the ways that become paths. See also DumpPaths. */
+/** Extracts the tags of the ways that become paths or points. See also DumpPaths. */
 class ExtractWayTags
   : PTransformer<PrimitiveBlock, SourceTags>(TypeToken.of(SourceTags::class.java)) {
 
   override fun act(input: PrimitiveBlock, emitter: Emitter<SourceTags>) {
     for (group in input.primitivegroupList) {
       for (way in group.waysList) {
-        if (wayCategory(way, input.stringtable) != WayCategory.ANY) {
+        if (wayCategory(way, input.stringtable) != WayCategory.ANY
+            || wayPointCategory(wayKvs(way), wayRefs(way), input.stringtable)
+                != PointCategory.ANY) {
           val json =
               tagsToJson(way.keysCount, way::getKeys, way::getVals, input.stringtable)
           val version = if (way.hasInfo()) way.info.version else null

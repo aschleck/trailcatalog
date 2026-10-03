@@ -6,6 +6,7 @@ import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2Polyline
 import com.google.common.geometry.S2RegionCoverer
 import com.google.common.reflect.TypeToken
+import org.trailcatalog.importers.pbf.Point
 import org.trailcatalog.importers.pipeline.PStage
 import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 import org.trailcatalog.importers.pipeline.collections.PCollection
@@ -228,6 +229,44 @@ class FindTrailsInBoundaries
   // => 421,637 trails at 57 bytes is 24 MB against a 1.6 GB Trail list
   override fun estimateRatio(): Double {
     return 0.015
+  }
+}
+
+class FindPointsInBoundaries
+  : PStage<Pair<BoundaryIndex, PCollection<Point>>, PMap<Long, Long>>() {
+
+  override fun act(
+      input: Pair<BoundaryIndex, PCollection<Point>>,
+      dependants: Int): DisposableSupplier<PMap<Long, Long>> {
+    val (index, points) = input
+    return createPMap(
+        "FindPointsInBoundaries",
+        TypeToken.of(Long::class.java),
+        TypeToken.of(Long::class.java),
+        estimateSize(points.estimatedByteSize()),
+        points,
+        resolvedParallelism,
+        dependants,
+    ) { point, emitter ->
+      // Only search reads these, and it only finds points with names.
+      if (point.names.isEmpty()) {
+        return@createPMap
+      }
+
+      val cell = S2CellId.fromLatLng(point.latLng.toS2LatLng()).parent(SNAP_CELL_LEVEL)
+      index.forEachContaining(longArrayOf(cell.id()), NO_SKIP) { boundary ->
+        emitter.emit(point.id, boundary)
+      }
+    }
+  }
+
+  // Epoch 261002 had 12.4M points at about 30 bytes each, and 1.9M of them were named and
+  // searchable. A point should land in more boundaries than a trail's 6 and fewer than a boundary's
+  // 18, so call it 10.
+  // => 8 + 1 + 10 * 8 = 89 bytes a searchable point
+  // => 1.9M * 89 / (12.4M * 30) = 0.45
+  override fun estimateRatio(): Double {
+    return 0.45
   }
 }
 

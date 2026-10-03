@@ -62,8 +62,9 @@ export class Point {
       readonly mouseBound: PixelRect,
   ) {}
 
-  get sourceNode(): bigint {
-    return this.id;
+  // Keep in sync with ExtractPoints.kt#nodePointId.
+  get source(): {type: 'node'|'way'; id: bigint} {
+    return {type: (this.id & 1n) === 0n ? 'node' : 'way', id: this.id >> 1n};
   }
 }
 

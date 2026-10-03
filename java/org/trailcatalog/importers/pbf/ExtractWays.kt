@@ -7,6 +7,7 @@ import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.WayCategory
 
 class ExtractWays
@@ -26,19 +27,37 @@ class ExtractWays
 }
 
 private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
-  var name: String? = null
+  val kvs = wayKvs(way)
+  val refs = wayRefs(way)
+  val pointCategory = wayPointCategory(kvs, refs, stringTable)
+  return WaySkeleton(
+      way.id,
+      wayCategory(way, stringTable).id,
+      tagName(kvs, stringTable) ?: "",
+      refs,
+      pointCategory.id,
+      if (pointCategory == PointCategory.ANY) listOf() else tagNames(kvs, stringTable))
+}
+
+/** Returns the tags of [way] as interleaved key and value string indices. */
+fun wayKvs(way: Osmformat.Way): List<Int> {
+  val kvs = ArrayList<Int>(2 * way.keysCount)
   for (i in 0 until way.keysCount) {
-    if (stringTable.getS(way.getKeys(i)) == NAME_BS) {
-      name = stringTable.getS(way.getVals(i)).toStringUtf8()
-    }
+    kvs.add(way.getKeys(i))
+    kvs.add(way.getVals(i))
   }
+  return kvs
+}
+
+/** Returns the node ids of [way], which the file delta codes. */
+fun wayRefs(way: Osmformat.Way): LongArray {
   val refs = LongArray(way.refsCount)
   var nodeId = 0L
   for (i in 0 until way.refsCount) {
     nodeId += way.getRefs(i)
     refs[i] = nodeId
   }
-  return WaySkeleton(way.id, wayCategory(way, stringTable).id, name ?: "", refs)
+  return refs
 }
 
 fun wayCategory(way: Osmformat.Way, stringTable: StringTable): WayCategory {

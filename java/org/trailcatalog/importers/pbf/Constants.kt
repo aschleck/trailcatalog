@@ -10,6 +10,11 @@ const val TRAIL_FROM_RELATION_OFFSET = 0
 const val TRAIL_FROM_WAY_OFFSET = Long.MAX_VALUE / 2
 const val NANO = .000000001
 
+val POINT_AEROWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("aerodrome"), PointCategory.ACCESS_TRANSIT_AIRPORT)
+
+    .build()
+
 val POINT_AMENITY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
     .put(ByteString.copyFromUtf8("bbq"), PointCategory.FACILITY_FIRE_BARBECUE)
     .put(ByteString.copyFromUtf8("bicycle_repair_station"), PointCategory.FACILITY_BICYCLE_REPAIR)
@@ -98,11 +103,11 @@ val POINT_TOURISM_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategor
     .put(ByteString.copyFromUtf8("camp_pitch"), PointCategory.LODGING_CAMP_PITCH)
     .put(ByteString.copyFromUtf8("camp_site"), PointCategory.LODGING_CAMP_SITE)
     .put(ByteString.copyFromUtf8("caravan_site"), PointCategory.LODGING_CAMP_CARAVAN_SITE)
-    .put(ByteString.copyFromUtf8("chalet"), PointCategory.LODGING_CHALET)
-    .put(ByteString.copyFromUtf8("guest_house"), PointCategory.LODGING_GUEST_HOUSE)
+    .put(ByteString.copyFromUtf8("chalet"), PointCategory.LODGING_ROOM_CHALET)
+    .put(ByteString.copyFromUtf8("guest_house"), PointCategory.LODGING_ROOM_GUEST_HOUSE)
     .put(ByteString.copyFromUtf8("hostel"), PointCategory.LODGING_HOSTEL)
-    .put(ByteString.copyFromUtf8("hotel"), PointCategory.LODGING_HOTEL)
-    .put(ByteString.copyFromUtf8("motel"), PointCategory.LODGING_MOTEL)
+    .put(ByteString.copyFromUtf8("hotel"), PointCategory.LODGING_ROOM_HOTEL)
+    .put(ByteString.copyFromUtf8("motel"), PointCategory.LODGING_ROOM_MOTEL)
     .put(ByteString.copyFromUtf8("picnic_site"), PointCategory.FACILITY_PICNIC_SITE)
     .put(ByteString.copyFromUtf8("viewpoint"), PointCategory.SIGHT_VIEWPOINT)
     .put(ByteString.copyFromUtf8("wilderness_hut"), PointCategory.LODGING_HUT_WILDERNESS)
@@ -365,6 +370,8 @@ val INFORMATION_BS = ByteString.copyFromUtf8("information")
 val LEISURE_BS = ByteString.copyFromUtf8("leisure")
 val MAN_MADE_BS = ByteString.copyFromUtf8("man_made")
 val MOUNTAIN_PASS_BS = ByteString.copyFromUtf8("mountain_pass")
+val IATA_BS = ByteString.copyFromUtf8("iata")
+val ICAO_BS = ByteString.copyFromUtf8("icao")
 val NAME_BS = ByteString.copyFromUtf8("name")
 val NATURAL_BS = ByteString.copyFromUtf8("natural")
 val OBSERVATION_BS = ByteString.copyFromUtf8("observation")
