@@ -241,7 +241,7 @@
   systemd.services."trailcatalog-import" = {
     enable = true;
     after = [ "podman.service" ];
-    startAt = "Mon,Thu *-*-* 02:00:00";
+    startAt = "*-*-* 02:00:00";
     restartIfChanged = false;
 
     path = with pkgs; [
