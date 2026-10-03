@@ -33,6 +33,7 @@ import { formatDistance } from './measurements';
 import { MeasurePanel } from './measure_panel';
 import { SidebarElement, SidebarSection } from './sidebar_element';
 import { Menubar, MenubarItem } from './menubar';
+import { EMPTY_SEARCH, SearchBox } from './search_box';
 import { Toolbar } from './toolbar';
 
 export function OverviewElement(
@@ -86,6 +87,7 @@ export function OverviewElement(
         route: undefined,
       },
       grades: {climbPercent: 25, descentPercent: 25},
+      search: EMPTY_SEARCH,
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
       tool: 'pointer',
     };
@@ -142,6 +144,9 @@ export function OverviewElement(
         <MenubarItem label="File" menu="file" onClick="fileMenuClicked" />
         <MenubarItem label="Edit" menu="edit" onClick="editMenuClicked" />
         <MenubarItem label="View" menu="view" onClick="viewMenuClicked" />
+        <div className="flex grow justify-center px-2">
+          <SearchBox state={state.search} />
+        </div>
       </Menubar>
       <div className="flex flex-col grow min-h-0 md:flex-row">
         <div className="grow min-h-0 min-w-0 relative">

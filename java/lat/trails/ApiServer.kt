@@ -54,6 +54,7 @@ import lat.trails.proto.RenameCollectionResponse
 import lat.trails.proto.Role
 import lat.trails.proto.SaveRequest
 import lat.trails.proto.SaveResponse
+import lat.trails.proto.SearchRequest
 import lat.trails.proto.SetSharingRequest
 import lat.trails.proto.SetSharingResponse
 import lat.trails.proto.SetViewStateRequest
@@ -165,6 +166,10 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
       renameCollection(ctx, RenameCollectionRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/Save" ->
       save(ctx, SaveRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/Search" ->
+      hikariTrailcatalog.connection.use {
+        search(SearchRequest.newBuilder().mergeJson(payload).build(), it, epochTracker.epoch)
+      }
     "lat.trails.DataService/SetSharing" ->
       setSharing(ctx, SetSharingRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/SetViewState" ->

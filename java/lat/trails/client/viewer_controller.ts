@@ -7,7 +7,7 @@ import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/control
 import { CorgiEvent, DOM_MOUSE, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
 import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
 import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
-import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
+import { ACTION, CHANGED, PRESSED } from 'external/dev_april_corgi+/js/emu/events';
 import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
 import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
@@ -37,6 +37,7 @@ import {
   ListCollectionsResponse,
   Role,
   SaveResponse,
+  SearchResponse,
   SetViewStateResponse,
   OsmElementType,
 } from 'trails_lat/proto/data_pb';
@@ -115,6 +116,7 @@ import { PointToolLayer } from './point_tool_layer';
 import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA, PUBLIC_LAND_SCHEMA, Schema } from './schema';
 import {
   cumulativeMeters,
+  haversineMeters,
   pathLengthMeters,
   profileSamples,
   ProfileSamples,
@@ -125,6 +127,7 @@ import { MarkerToolLayer } from './marker_tool_layer';
 import { MENU_CLASSES } from './menubar';
 import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
+import { parseCoordinates, SearchHit, searchLabel, SearchState } from './search_box';
 import { RenameDialog } from './rename_dialog';
 import { ShareDialog } from './share_dialog';
 
@@ -182,6 +185,7 @@ export interface State {
   measure: MeasureState;
   // What the terrain tool routes within
   grades: GradeLimitState;
+  search: SearchState;
   self: Future<GetCurrentUserResponse>;
   tool: Tool;
 }
@@ -240,6 +244,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private inspected: LayerObject|undefined;
   // Moves with every object opened or closed, so that tags arriving for an earlier one are dropped
   private inspectGeneration: number;
+  // Waits for typing to pause, so that each keystroke doesn't send a search
+  private readonly searchDebouncer: Debouncer;
+  // Moves with every search sent or closed, so that a slow answer to an older query is dropped
+  private searchGeneration: number;
   // Moves with every collection opened or created, so that a slow load of an earlier one is dropped
   private collectionGeneration: number;
   // The feature being dragged in the list, and the folder it would drop into, where undefined is
@@ -296,6 +304,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.selected = undefined;
     this.inspected = undefined;
     this.inspectGeneration = 0;
+    this.searchDebouncer = new Debouncer(/* delayMs= */ 150, () => {
+      this.search();
+    });
+    this.searchGeneration = 0;
     this.collectionGeneration = 0;
     this.draggedFeature = undefined;
     this.dropTarget = undefined;
@@ -1931,6 +1943,112 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ...this.state,
             inspected: {...inspected, osm: {...inspected.osm, tags}},
           });
+        });
+  }
+
+  searchChanged(e: CorgiEvent<typeof CHANGED>): void {
+    this.updateState({...this.state, search: {...this.state.search, query: e.detail.value}});
+    this.searchDebouncer.trigger();
+  }
+
+  searchFocused(): void {
+    this.searchDebouncer.trigger();
+  }
+
+  searchBlurred(): void {
+    this.searchGeneration += 1;
+    this.updateState({...this.state, search: {...this.state.search, results: undefined}});
+  }
+
+  searchKeyPressed(e: CorgiEvent<typeof PRESSED>): void {
+    const {results, highlighted} = this.state.search;
+    if (!results) {
+      return;
+    }
+
+    if (e.detail.key === 'Escape') {
+      this.searchBlurred();
+    } else if (e.detail.key === 'ArrowDown' || e.detail.key === 'ArrowUp') {
+      const step = e.detail.key === 'ArrowDown' ? 1 : -1;
+      const next = Math.max(0, Math.min(results.length - 1, highlighted + step));
+      this.updateState({...this.state, search: {...this.state.search, highlighted: next}});
+    }
+  }
+
+  searchSubmitted(): void {
+    const {results, highlighted} = this.state.search;
+    const hit = results?.[highlighted];
+    if (hit) {
+      this.pickSearchHit(hit);
+    }
+  }
+
+  searchResultPicked(e: CorgiEvent<typeof DOM_POINTER>): void {
+    const index = Number(checkExists(e.actionElement.data('index')).string());
+    const hit = this.state.search.results?.[index];
+    if (hit) {
+      this.pickSearchHit(hit);
+    }
+  }
+
+  private pickSearchHit(hit: SearchHit): void {
+    this.searchGeneration += 1;
+    this.updateState({
+      ...this.state,
+      search: {...this.state.search, results: undefined, highlighted: 0},
+    });
+    this.fitCamera([...hit.low, ...hit.high]);
+  }
+
+  private search(): void {
+    const query = this.state.search.query.trim();
+    const generation = ++this.searchGeneration;
+    if (!query) {
+      this.updateState({...this.state, search: {...this.state.search, results: undefined}});
+      return;
+    }
+
+    const coordinates = parseCoordinates(query);
+    if (coordinates) {
+      this.updateState({
+        ...this.state,
+        search: {...this.state.search, results: [coordinates], highlighted: 0},
+      });
+      return;
+    }
+
+    const center = this.mapController.camera.center;
+    const corner = this.mapController.viewportBounds.lo();
+    const loading: Future<SearchResponse> =
+        requestData('lat.trails.DataService/Search', {
+          query,
+          centerLatDegrees: center.latDegrees(),
+          centerLngDegrees: center.lngDegrees(),
+          radiusMeters:
+              haversineMeters(
+                  center.latDegrees(),
+                  center.lngDegrees(),
+                  corner.latDegrees(),
+                  corner.lngDegrees()),
+        });
+    loading.then(
+        response => {
+          if (generation !== this.searchGeneration) {
+            return;
+          }
+
+          const results: SearchHit[] = response.results.map(result => ({
+            name: result.name,
+            label: searchLabel(result.kind, result.type),
+            matched: result.matchedName,
+            within: result.within,
+            low: [result.lowLatDegrees, result.lowLngDegrees],
+            high: [result.highLatDegrees, result.highLngDegrees],
+          }));
+          this.updateState({...this.state, search: {...this.state.search, results, highlighted: 0}});
+        },
+        e => {
+          console.error(e);
         });
   }
 

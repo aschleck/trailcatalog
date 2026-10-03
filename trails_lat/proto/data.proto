@@ -15,6 +15,7 @@ service DataService {
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
   rpc RenameCollection(RenameCollectionRequest) returns (RenameCollectionResponse);
   rpc Save(SaveRequest) returns (SaveResponse);
+  rpc Search(SearchRequest) returns (SearchResponse);
   rpc SetSharing(SetSharingRequest) returns (SetSharingResponse);
   rpc SetViewState(SetViewStateRequest) returns (SetViewStateResponse);
 }
@@ -102,6 +103,45 @@ message RenameCollectionRequest {
 
 message RenameCollectionResponse {
   Collection collection = 1;
+}
+
+// Finds boundaries, trails, and points by name. Of two results that match equally well, the one
+// nearer the center ranks first.
+message SearchRequest {
+  string query = 1;
+  double center_lat_degrees = 2;
+  double center_lng_degrees = 3;
+  // How far the map reaches from its center, so that zooming out widens what counts as near
+  double radius_meters = 4;
+}
+
+message SearchResponse {
+  // Best first
+  repeated SearchResult results = 1;
+}
+
+message SearchResult {
+  SearchResultKind kind = 1;
+  int64 id = 2;
+  string name = 3;
+  // A RelationCategory for a boundary or a trail and a PointCategory for a point
+  int32 type = 4;
+  // The name the query matched when that isn't name, like an airport's code or a translation
+  string matched_name = 5;
+  // The names of the boundaries around it, smallest first
+  repeated string within = 6;
+  // Where to move the camera. A point's low and high are both where it is.
+  double low_lat_degrees = 7;
+  double low_lng_degrees = 8;
+  double high_lat_degrees = 9;
+  double high_lng_degrees = 10;
+}
+
+enum SearchResultKind {
+  SEARCH_RESULT_KIND_UNSPECIFIED = 0;
+  SEARCH_RESULT_KIND_BOUNDARY = 1;
+  SEARCH_RESULT_KIND_POINT = 2;
+  SEARCH_RESULT_KIND_TRAIL = 3;
 }
 
 // Writes apply in order in one transaction, so a batch lands whole or not at all. Any stale
