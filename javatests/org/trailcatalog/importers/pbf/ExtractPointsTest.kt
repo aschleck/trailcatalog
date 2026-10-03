@@ -5,6 +5,7 @@ import com.google.protobuf.ByteString
 import crosby.binary.Osmformat
 import org.junit.Test
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.PointCategory
 
@@ -94,8 +95,17 @@ class ExtractPointsTest {
             PointCategory.LODGING_CAMP_SITE.id,
             listOf(Name(null, "Camp")),
             /* notable= */ false)
+    // MakeWayGeometries is what hands the way's point fields on to MakeWayPoints.
+    val geometries = ArrayList<Way>()
+    MakeWayGeometries().act(
+        PEntry(7L, listOf(Pair(listOf(way), corners))),
+        object : Emitter2<Long, Way> {
+          override fun emit(a: Long, b: Way) {
+            geometries.add(b)
+          }
+        })
     val points = ArrayList<Point>()
-    MakeWayPoints().act(PEntry(7L, listOf(Pair(listOf(way), corners))), object : Emitter<Point> {
+    MakeWayPoints().act(PEntry(7L, geometries), object : Emitter<Point> {
       override fun emit(v: Point) {
         points.add(v)
       }

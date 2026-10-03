@@ -155,15 +155,17 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
       pipeline
           .join2("JoinNodesForWayPoints", nodes, ways.then(ExtractNodeWayPairs()))
           .then(GatherWayNodes())
-  val waysWithNodes = pipeline.join2("JoinWaysForGeometry", ways, waysToPoints)
-  val waysWithGeometry = waysWithNodes.then(MakeWayGeometries())
+  val waysWithGeometry =
+      pipeline
+          .join2("JoinWaysForGeometry", ways, waysToPoints)
+          .then(MakeWayGeometries())
 
   // Points come from nodes and from closed ways, like a campground drawn as its outline.
   val points =
       pipeline.cat(
           listOf(
               pipeline.readPbfs(pbfs, nodes = true, extract = ExtractPoints()),
-              waysWithNodes.then(MakeWayPoints())))
+              waysWithGeometry.then(MakeWayPoints())))
   points.write(DumpPoints(epoch, hikari))
   points.write(DumpPointNames(epoch, hikari))
 

@@ -138,7 +138,13 @@ fun registerPbfSerializers() {
       repeat(pointsLength) {
         points.add(LatLngE7(from.readInt(), from.readInt()))
       }
-      return Way(id, hash, type, down, up, length, points)
+      val point =
+          if (from.readBoolean()) {
+            WayPoint(from.readVarInt(), readString(from), readNames(from), from.readBoolean())
+          } else {
+            null
+          }
+      return Way(id, hash, type, down, up, length, points, point)
     }
 
     override fun write(v: Way, to: EncodedOutputStream) {
@@ -152,6 +158,14 @@ fun registerPbfSerializers() {
       v.points.forEach {
         to.writeInt(it.lat)
         to.writeInt(it.lng)
+      }
+      val point = v.point
+      to.writeBoolean(point != null)
+      if (point != null) {
+        to.writeVarInt(point.type)
+        writeString(point.name, to)
+        writeNames(point.names, to)
+        to.writeBoolean(point.notable)
       }
     }
   })

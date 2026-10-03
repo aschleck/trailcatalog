@@ -4,6 +4,7 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.PMapTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
+import org.trailcatalog.models.PointCategory
 
 class MakeWayGeometries
   : PMapTransformer<PEntry<Long, Pair<List<WaySkeleton>, List<Node>>>, Long, Way>(
@@ -31,7 +32,14 @@ class MakeWayGeometries
       hash = 31 * hash + node.lng
       geometry.add(node)
     }
-    emitter.emit(way.id, Way(way.id, hash, way.type, Float.NaN, Float.NaN, Float.NaN, geometry))
+    val point =
+        if (way.pointType != PointCategory.ANY.id) {
+          WayPoint(way.pointType, way.name, way.names, way.notable)
+        } else {
+          null
+        }
+    emitter.emit(
+        way.id, Way(way.id, hash, way.type, Float.NaN, Float.NaN, Float.NaN, geometry, point))
   }
 
   override fun estimateRatio(): Double {

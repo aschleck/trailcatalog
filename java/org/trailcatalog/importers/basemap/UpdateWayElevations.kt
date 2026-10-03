@@ -24,7 +24,7 @@ class UpdateWayElevations
     // Ways outside of route relations never get a profile, and arclength beats no length at all.
     val length = (profile?.length ?: latLngsToMeters(way.points)).toFloat()
 
-    emitter.emit(way.id, Way(way.id, way.hash, way.type, down, up, length, way.points))
+    emitter.emit(way.id, Way(way.id, way.hash, way.type, down, up, length, way.points, way.point))
   }
 
   override fun estimateRatio(): Double {
