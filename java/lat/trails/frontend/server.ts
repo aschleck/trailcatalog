@@ -130,6 +130,12 @@ function page(content: string, title: string, initialData: string): string {
 `;
 }
 
+// Node exits on an unhandled rejection, and a render that drops one would take every other request
+// down with it.
+process.on('unhandledRejection', reason => {
+  console.error('Unhandled rejection', reason);
+});
+
 (async () => {
   await serve(App as any, page, {
     dataServer: 'http://127.0.0.1:7051/api/data',

@@ -17,7 +17,8 @@ import { Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
-import { fetchData } from './data';
+import { failedStatusCode, fetchData } from './data';
+import { ErrorElement } from './error_element';
 import { Header } from './page';
 import { searchTrailsFromRaw } from './search_controller';
 import { LIMIT, SearchResultsOverviewController, State } from './search_results_overview_controller';
@@ -84,25 +85,31 @@ export function SearchResultsOverviewElement(
     state.searchTrails ?? resolvedFuture(undefined),
     state.searchTrailsIds ?? resolvedFuture(undefined),
   ];
+  const failedCode = failedStatusCode(futures);
   let ready;
-  if (futures.filter(f => !f.finished).length > 0) {
-    Promise.all(futures).then(() => {
+  if (failedCode === undefined && futures.some(f => !f.finished)) {
+    // A rejection has to re-render too, or else the page sits on Loading forever and Node exits
+    // on the unhandled rejection.
+    const rerender = () => {
       updateState(state);
-    });
+    };
+    Promise.all(futures).then(rerender, rerender);
     ready = false;
   } else {
     ready = true;
   }
 
   return <>
-      {ready
-          ? <Content
-              boundaryId={boundaryId}
-              query={query}
-              parameters={parameters}
-              state={state}
-              updateState={updateState} />
-          : 'Loading...'
+      {failedCode !== undefined
+          ? <ErrorElement statusCode={failedCode} />
+          : ready
+              ? <Content
+                  boundaryId={boundaryId}
+                  query={query}
+                  parameters={parameters}
+                  state={state}
+                  updateState={updateState} />
+              : 'Loading...'
       }
   </>;
 }

@@ -13,7 +13,8 @@ import { Boundary, Trail } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { BoundaryDetailController, boundaryFromRaw, containingBoundariesFromRaw, State, trailsInBoundaryFromRaw } from './boundary_detail_controller';
-import { fetchData } from './data';
+import { failedStatusCode, fetchData } from './data';
+import { ErrorElement } from './error_element';
 import { Header } from './page';
 import { setTitle } from './title';
 import { TrailPopup } from './trail_popup';
@@ -39,18 +40,23 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
   }
   const state = inState;
 
-  setTitle(state.boundary.finished ? state.boundary.value().name : undefined);
+  setTitle(
+      state.boundary.finished && state.boundary.ok ? state.boundary.value().name : undefined);
 
   const futures = [
     state.boundary,
     state.containingBoundaries,
     state.trailsInBoundary,
   ];
+  const failedCode = failedStatusCode(futures);
   let ready;
-  if (futures.filter(f => !f.finished).length > 0) {
-    Promise.all(futures).then(() => {
+  if (failedCode === undefined && futures.some(f => !f.finished)) {
+    // A rejection has to re-render too, or else the page sits on Loading forever and Node exits
+    // on the unhandled rejection.
+    const rerender = () => {
       updateState(state);
-    });
+    };
+    Promise.all(futures).then(rerender, rerender);
     ready = false;
   } else {
     ready = true;
@@ -59,9 +65,11 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
   return <>
     <div className="flex flex-col h-full items-center">
       <Header />
-      {ready
-        ? <Content boundaryId={boundaryId} state={state} updateState={updateState} />
-        : 'Loading...'
+      {failedCode !== undefined
+        ? <ErrorElement statusCode={failedCode} />
+        : ready
+          ? <Content boundaryId={boundaryId} state={state} updateState={updateState} />
+          : 'Loading...'
       }
     </div>
   </>;

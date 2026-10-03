@@ -14,7 +14,8 @@ import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { fetchData } from './data';
+import { failedStatusCode, fetchData } from './data';
+import { ErrorElement } from './error_element';
 import { Header } from './page';
 import { setTitle } from './title';
 import { TrailDetailController, State } from './trail_detail_controller';
@@ -51,7 +52,7 @@ export function TrailDetailElement({trailId, parameters}: {
   }
   const state = inState;
 
-  setTitle(state.trail.finished ? state.trail.value().name : undefined);
+  setTitle(state.trail.finished && state.trail.ok ? state.trail.value().name : undefined);
 
   const futures = [
     state.containingBoundaries,
@@ -60,11 +61,15 @@ export function TrailDetailElement({trailId, parameters}: {
     state.tags,
     state.trail,
   ];
+  const failedCode = failedStatusCode(futures);
   let ready;
-  if (futures.filter(f => !f.finished).length > 0) {
-    Promise.all(futures).then(() => {
+  if (failedCode === undefined && futures.some(f => !f.finished)) {
+    // A rejection has to re-render too, or else the page sits on Loading forever and Node exits
+    // on the unhandled rejection.
+    const rerender = () => {
       updateState(state);
-    });
+    };
+    Promise.all(futures).then(rerender, rerender);
     ready = false;
   } else {
     ready = true;
@@ -74,9 +79,11 @@ export function TrailDetailElement({trailId, parameters}: {
     <div className="flex flex-col h-full">
       <Header />
 
-      {ready
-          ? <Content trailId={trailId} state={state} updateState={updateState} />
-          : 'Loading...'
+      {failedCode !== undefined
+          ? <ErrorElement statusCode={failedCode} />
+          : ready
+              ? <Content trailId={trailId} state={state} updateState={updateState} />
+              : 'Loading...'
       }
     </div>
   </>;

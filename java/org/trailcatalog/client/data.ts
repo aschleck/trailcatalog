@@ -2,6 +2,7 @@ import { deepEqual } from 'external/dev_april_corgi+/js/common/comparisons';
 import {
   Future,
   asFuture,
+  rejectedFuture,
   resolvedFuture,
 } from 'external/dev_april_corgi+/js/common/futures';
 import {
@@ -14,10 +15,35 @@ import {
 // and lie at the boundary about the JsonValue/ServerResponse types from the new ssr_aware.
 const MAX_CACHE_ENTRIES = process.env.CORGI_FOR_BROWSER ? 10 : 0;
 const cache: Array<[key: DataKey, response: object]> = [];
+// The server render's failures, answered once so the first render in the browser matches its
+// markup, and then dropped so a retry still reaches the server.
+const initialFailures: Array<[key: DataKey, code: number]> = [];
 for (const [key, value] of initialData()) {
   if (value.kind === 'result') {
     cache.push([key, value.value as unknown as object]);
+  } else {
+    initialFailures.push([key, value.code]);
   }
+}
+
+export class DataRequestError extends Error {
+  constructor(readonly method: string, readonly code: number) {
+    super(`Request for ${method} failed with code ${code}`);
+  }
+}
+
+/**
+ * Returns the status code of the first of the given futures that failed, or undefined if none
+ * have. A failure that isn't a DataRequestError counts as a 500.
+ */
+export function failedStatusCode(futures: Array<Future<unknown>>): number|undefined {
+  for (const future of futures) {
+    if (future.finished && !future.ok) {
+      const error = future.error();
+      return error instanceof DataRequestError ? error.code : 500;
+    }
+  }
+  return undefined;
 }
 
 function fetchDataBatchUnsafe(
@@ -45,8 +71,7 @@ function fetchDataBatchUnsafe(
     for (let i = 0; i < responses.length; ++i) {
       const response = responses[i];
       if (response.kind !== 'result') {
-        throw new Error(
-            `Request for ${missing[i].method} failed with code ${response.code}`);
+        throw new DataRequestError(missing[i].method, response.code);
       }
       const value = response.value as unknown as object;
       data[missingIndices[i]] = value;
@@ -221,6 +246,13 @@ export function fetchData<K extends keyof DataRequests>(
   const cached = getCache(method, request);
   if (cached) {
     return resolvedFuture(cached as DataResponses[K]);
+  }
+
+  const key = {method, request: request as never};
+  const failure = initialFailures.findIndex(([candidate]) => deepEqual(candidate, key));
+  if (failure >= 0) {
+    const [[, code]] = initialFailures.splice(failure, 1);
+    return rejectedFuture(new DataRequestError(method, code));
   }
 
   if (!fetchFuture || !fetchQueue) {
