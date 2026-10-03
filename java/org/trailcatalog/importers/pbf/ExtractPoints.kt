@@ -69,43 +69,34 @@ private fun maybeEmitPoint(
     emitter: Emitter<Point>) {
   var category = PointCategory.ANY
   var name: String? = null
+  var tower = false
+  var observation = false
   for (i in 0 until kvs.size step 2) {
+    val value = stringTable.getS(kvs[i + 1])
     when (stringTable.getS(kvs[i])) {
-      AMENITY_BS ->
-        category =
-            category
-                .coerceAtLeast(POINT_AMENITY_CATEGORY_NAMES[stringTable.getS(kvs[i + 1])])
-      HIGHWAY_BS ->
-        category =
-            category
-                .coerceAtLeast(POINT_HIGHWAY_CATEGORY_NAMES[stringTable.getS(kvs[i + 1])])
-      INFORMATION_BS ->
-        category =
-            category
-                .coerceAtLeast(POINT_INFORMATION_CATEGORY_NAMES[stringTable.getS(kvs[i + 1])])
-      LEISURE_BS ->
-        category =
-            category
-                .coerceAtLeast(POINT_LEISURE_CATEGORY_NAMES[stringTable.getS(kvs[i + 1])])
+      AMENITY_BS -> category = category.coerceAtLeast(POINT_AMENITY_CATEGORY_NAMES[value])
+      EMERGENCY_BS -> category = category.coerceAtLeast(POINT_EMERGENCY_CATEGORY_NAMES[value])
+      HIGHWAY_BS -> category = category.coerceAtLeast(POINT_HIGHWAY_CATEGORY_NAMES[value])
+      HISTORIC_BS -> category = category.coerceAtLeast(POINT_HISTORIC_CATEGORY_NAMES[value])
+      INFORMATION_BS -> category = category.coerceAtLeast(POINT_INFORMATION_CATEGORY_NAMES[value])
+      LEISURE_BS -> category = category.coerceAtLeast(POINT_LEISURE_CATEGORY_NAMES[value])
+      MAN_MADE_BS -> {
+        category = category.coerceAtLeast(POINT_MAN_MADE_CATEGORY_NAMES[value])
+        tower = value == TOWER_BS
+      }
       MOUNTAIN_PASS_BS ->
-        category =
-            category
-                .coerceAtLeast(POINT_MOUNTAIN_PASS_CATEGORY_NAMES[stringTable.getS(kvs[i + 1])])
-      NAME_BS ->
-        name = stringTable.getS(kvs[i + 1]).toStringUtf8()
-      NATURAL_BS ->
-        category =
-            category
-                .coerceAtLeast(POINT_NATURAL_CATEGORY_NAMES[stringTable.getS(kvs[i + 1])])
-      TOURISM_BS ->
-        category =
-            category
-                .coerceAtLeast(POINT_TOURISM_CATEGORY_NAMES[stringTable.getS(kvs[i + 1])])
-      WATERWAY_BS ->
-        category =
-            category
-                .coerceAtLeast(POINT_WATERWAY_CATEGORY_NAMES[stringTable.getS(kvs[i + 1])])
+        category = category.coerceAtLeast(POINT_MOUNTAIN_PASS_CATEGORY_NAMES[value])
+      NAME_BS -> name = value.toStringUtf8()
+      NATURAL_BS -> category = category.coerceAtLeast(POINT_NATURAL_CATEGORY_NAMES[value])
+      RAILWAY_BS -> category = category.coerceAtLeast(POINT_RAILWAY_CATEGORY_NAMES[value])
+      SHOP_BS -> category = category.coerceAtLeast(POINT_SHOP_CATEGORY_NAMES[value])
+      TOURISM_BS -> category = category.coerceAtLeast(POINT_TOURISM_CATEGORY_NAMES[value])
+      TOWER_TYPE_BS -> observation = value == OBSERVATION_BS
+      WATERWAY_BS -> category = category.coerceAtLeast(POINT_WATERWAY_CATEGORY_NAMES[value])
     }
+  }
+  if (tower && observation) {
+    category = category.coerceAtLeast(PointCategory.SIGHT_OBSERVATION_TOWER)
   }
 
   if (category != PointCategory.ANY) {

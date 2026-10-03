@@ -480,11 +480,15 @@ export function osmWaysOf(categories: WayCategory[]): Style {
 
 // What the Nodes layer offers to show, by the top level PointCategory each group is.
 export const NODE_KINDS: ReadonlyArray<{key: string; label: string; category: PointCategory}> = [
-  {key: 'amenities', label: 'Amenities', category: PointCategory.AMENITY},
-  {key: 'information', label: 'Information', category: PointCategory.INFORMATION},
   {key: 'natural', label: 'Natural features', category: PointCategory.NATURAL},
-  // Mountain passes, trailheads, and viewpoints
-  {key: 'trail', label: 'Trail features', category: PointCategory.WAY},
+  {key: 'water', label: 'Water', category: PointCategory.WATER},
+  {key: 'lodging', label: 'Lodging', category: PointCategory.LODGING},
+  {key: 'facilities', label: 'Facilities', category: PointCategory.FACILITY},
+  {key: 'access', label: 'Access', category: PointCategory.ACCESS},
+  {key: 'information', label: 'Information', category: PointCategory.INFORMATION},
+  {key: 'sights', label: 'Sights', category: PointCategory.SIGHT},
+  {key: 'resupply', label: 'Resupply', category: PointCategory.RESUPPLY},
+  {key: 'safety', label: 'Safety', category: PointCategory.SAFETY},
 ];
 
 export const NATURE_WITHOUT_DETAILED_WAYS: MbtileStyle = withoutWayLines(NATURE);

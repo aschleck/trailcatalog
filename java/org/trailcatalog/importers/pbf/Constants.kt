@@ -11,16 +11,38 @@ const val TRAIL_FROM_WAY_OFFSET = Long.MAX_VALUE / 2
 const val NANO = .000000001
 
 val POINT_AMENITY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
-    .put(ByteString.copyFromUtf8("bbq"), PointCategory.AMENITY_FIRE_BARBECUE)
-    .put(ByteString.copyFromUtf8("drinking_water"), PointCategory.AMENITY_WATER_DRINKING)
-    .put(ByteString.copyFromUtf8("parking"), PointCategory.AMENITY_PARKING)
-    .put(ByteString.copyFromUtf8("shelter"), PointCategory.AMENITY_SHELTER)
-    .put(ByteString.copyFromUtf8("toilets"), PointCategory.AMENITY_TOILETS)
+    .put(ByteString.copyFromUtf8("bbq"), PointCategory.FACILITY_FIRE_BARBECUE)
+    .put(ByteString.copyFromUtf8("bicycle_repair_station"), PointCategory.FACILITY_BICYCLE_REPAIR)
+    .put(ByteString.copyFromUtf8("clinic"), PointCategory.SAFETY_CLINIC)
+    .put(ByteString.copyFromUtf8("drinking_water"), PointCategory.WATER_DRINKING)
+    .put(ByteString.copyFromUtf8("ferry_terminal"), PointCategory.ACCESS_TRANSIT_FERRY_TERMINAL)
+    .put(ByteString.copyFromUtf8("fuel"), PointCategory.RESUPPLY_FUEL)
+    .put(ByteString.copyFromUtf8("parking"), PointCategory.ACCESS_PARKING)
+    .put(ByteString.copyFromUtf8("pharmacy"), PointCategory.SAFETY_PHARMACY)
+    .put(ByteString.copyFromUtf8("post_office"), PointCategory.RESUPPLY_POST_OFFICE)
+    .put(ByteString.copyFromUtf8("ranger_station"), PointCategory.INFORMATION_RANGER_STATION)
+    .put(ByteString.copyFromUtf8("shelter"), PointCategory.FACILITY_SHELTER)
+    .put(ByteString.copyFromUtf8("shower"), PointCategory.FACILITY_SHOWER)
+    .put(ByteString.copyFromUtf8("toilets"), PointCategory.FACILITY_TOILETS)
+    .put(ByteString.copyFromUtf8("water_point"), PointCategory.WATER_POINT)
+
+    .build()
+
+val POINT_EMERGENCY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("defibrillator"), PointCategory.SAFETY_DEFIBRILLATOR)
+    .put(ByteString.copyFromUtf8("mountain_rescue"), PointCategory.SAFETY_MOUNTAIN_RESCUE)
+    .put(ByteString.copyFromUtf8("phone"), PointCategory.SAFETY_EMERGENCY_PHONE)
 
     .build()
 
 val POINT_HIGHWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
-    .put(ByteString.copyFromUtf8("trailhead"), PointCategory.WAY_PATH_TRAILHEAD)
+    .put(ByteString.copyFromUtf8("bus_stop"), PointCategory.ACCESS_TRANSIT_BUS_STOP)
+    .put(ByteString.copyFromUtf8("trailhead"), PointCategory.ACCESS_TRAILHEAD)
+
+    .build()
+
+val POINT_HISTORIC_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("ruins"), PointCategory.SIGHT_RUINS)
 
     .build()
 
@@ -31,31 +53,59 @@ val POINT_INFORMATION_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCat
     .build()
 
 val POINT_LEISURE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
-    .put(ByteString.copyFromUtf8("firepit"), PointCategory.AMENITY_FIRE_PIT)
-    .put(ByteString.copyFromUtf8("picnic_table"), PointCategory.AMENITY_PICNIC_TABLE)
+    .put(ByteString.copyFromUtf8("firepit"), PointCategory.FACILITY_FIRE_PIT)
+    .put(ByteString.copyFromUtf8("picnic_table"), PointCategory.FACILITY_PICNIC_TABLE)
+
+    .build()
+
+// man_made=tower is only a sight with tower:type=observation, so ExtractPoints handles it.
+val POINT_MAN_MADE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("water_tap"), PointCategory.WATER_TAP)
 
     .build()
 
 val POINT_MOUNTAIN_PASS_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
-    .put(ByteString.copyFromUtf8("yes"), PointCategory.WAY_MOUNTAIN_PASS)
+    .put(ByteString.copyFromUtf8("yes"), PointCategory.NATURAL_MOUNTAIN_PASS)
 
     .build()
 
 val POINT_NATURAL_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
     .put(ByteString.copyFromUtf8("cave_entrance"), PointCategory.NATURAL_CAVE_ENTRANCE)
+    .put(ByteString.copyFromUtf8("hot_spring"), PointCategory.NATURAL_HOT_SPRING)
     .put(ByteString.copyFromUtf8("peak"), PointCategory.NATURAL_PEAK)
     .put(ByteString.copyFromUtf8("saddle"), PointCategory.NATURAL_SADDLE)
+    .put(ByteString.copyFromUtf8("spring"), PointCategory.WATER_SPRING)
     .put(ByteString.copyFromUtf8("volcano"), PointCategory.NATURAL_VOLCANO)
 
     .build()
 
+val POINT_RAILWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("halt"), PointCategory.ACCESS_TRANSIT_STATION)
+    .put(ByteString.copyFromUtf8("station"), PointCategory.ACCESS_TRANSIT_STATION)
+
+    .build()
+
+val POINT_SHOP_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("convenience"), PointCategory.RESUPPLY_CONVENIENCE)
+    .put(ByteString.copyFromUtf8("laundry"), PointCategory.FACILITY_LAUNDRY)
+    .put(ByteString.copyFromUtf8("outdoor"), PointCategory.RESUPPLY_OUTDOOR)
+    .put(ByteString.copyFromUtf8("supermarket"), PointCategory.RESUPPLY_SUPERMARKET)
+
+    .build()
+
 val POINT_TOURISM_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
-    .put(ByteString.copyFromUtf8("alpine_hut"), PointCategory.AMENITY_HUT_ALPINE)
-    .put(ByteString.copyFromUtf8("camp_pitch"), PointCategory.AMENITY_CAMP_PITCH)
-    .put(ByteString.copyFromUtf8("camp_site"), PointCategory.AMENITY_CAMP_SITE)
-    .put(ByteString.copyFromUtf8("picnic_site"), PointCategory.AMENITY_PICNIC_SITE)
-    .put(ByteString.copyFromUtf8("viewpoint"), PointCategory.WAY_VIEWPOINT)
-    .put(ByteString.copyFromUtf8("wilderness_hut"), PointCategory.AMENITY_HUT_WILDERNESS)
+    .put(ByteString.copyFromUtf8("alpine_hut"), PointCategory.LODGING_HUT_ALPINE)
+    .put(ByteString.copyFromUtf8("camp_pitch"), PointCategory.LODGING_CAMP_PITCH)
+    .put(ByteString.copyFromUtf8("camp_site"), PointCategory.LODGING_CAMP_SITE)
+    .put(ByteString.copyFromUtf8("caravan_site"), PointCategory.LODGING_CAMP_CARAVAN_SITE)
+    .put(ByteString.copyFromUtf8("chalet"), PointCategory.LODGING_CHALET)
+    .put(ByteString.copyFromUtf8("guest_house"), PointCategory.LODGING_GUEST_HOUSE)
+    .put(ByteString.copyFromUtf8("hostel"), PointCategory.LODGING_HOSTEL)
+    .put(ByteString.copyFromUtf8("hotel"), PointCategory.LODGING_HOTEL)
+    .put(ByteString.copyFromUtf8("motel"), PointCategory.LODGING_MOTEL)
+    .put(ByteString.copyFromUtf8("picnic_site"), PointCategory.FACILITY_PICNIC_SITE)
+    .put(ByteString.copyFromUtf8("viewpoint"), PointCategory.SIGHT_VIEWPOINT)
+    .put(ByteString.copyFromUtf8("wilderness_hut"), PointCategory.LODGING_HUT_WILDERNESS)
 
     .build()
 
@@ -307,18 +357,24 @@ val AEROWAY_BS = ByteString.copyFromUtf8("aeroway")
 val AMENITY_BS = ByteString.copyFromUtf8("amenity")
 val BOUNDARY_BS = ByteString.copyFromUtf8("boundary")
 val CONSTRUCTION_BS = ByteString.copyFromUtf8("construction")
+val EMERGENCY_BS = ByteString.copyFromUtf8("emergency")
 val FOOTWAY_BS = ByteString.copyFromUtf8("footway")
 val HIGHWAY_BS = ByteString.copyFromUtf8("highway")
+val HISTORIC_BS = ByteString.copyFromUtf8("historic")
 val INFORMATION_BS = ByteString.copyFromUtf8("information")
 val LEISURE_BS = ByteString.copyFromUtf8("leisure")
 val MAN_MADE_BS = ByteString.copyFromUtf8("man_made")
 val MOUNTAIN_PASS_BS = ByteString.copyFromUtf8("mountain_pass")
 val NAME_BS = ByteString.copyFromUtf8("name")
 val NATURAL_BS = ByteString.copyFromUtf8("natural")
+val OBSERVATION_BS = ByteString.copyFromUtf8("observation")
 val PISTE_TYPE_BS = ByteString.copyFromUtf8("piste:type")
 val PROTECT_CLASS_BS = ByteString.copyFromUtf8("protect_class")
 val RAILWAY_BS = ByteString.copyFromUtf8("railway")
 val ROUTE_BS = ByteString.copyFromUtf8("route")
 val SERVICE_BS = ByteString.copyFromUtf8("service")
+val SHOP_BS = ByteString.copyFromUtf8("shop")
 val TOURISM_BS = ByteString.copyFromUtf8("tourism")
+val TOWER_BS = ByteString.copyFromUtf8("tower")
+val TOWER_TYPE_BS = ByteString.copyFromUtf8("tower:type")
 val WATERWAY_BS = ByteString.copyFromUtf8("waterway")

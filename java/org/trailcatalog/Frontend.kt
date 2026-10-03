@@ -13,6 +13,7 @@ import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.common.DeltaLatLngE7
 import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.models.ENUM_SIZE
+import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.snapEpsilon
@@ -27,6 +28,35 @@ import kotlin.math.pow
 private val connectionSource = createConnectionSource()
 private val epochTracker = EpochTracker(connectionSource)
 private val startTime = Instant.now().getEpochSecond() % 10000 // make it shorter
+
+// The categories with an icon, so that the points trails.lat imports for trip planning stay out of
+// trailcatalog instead of drawing as generic dots. Keep in sync with
+// static/images/atlases/points/def.json.
+private val SHOWN_POINT_CATEGORIES =
+    listOf(
+        PointCategory.ACCESS_PARKING,
+        PointCategory.ACCESS_TRAILHEAD,
+        PointCategory.FACILITY_FIRE_BARBECUE,
+        PointCategory.FACILITY_FIRE_PIT,
+        PointCategory.FACILITY_PICNIC_SITE,
+        PointCategory.FACILITY_PICNIC_TABLE,
+        PointCategory.FACILITY_SHELTER,
+        PointCategory.FACILITY_TOILETS,
+        PointCategory.INFORMATION_GUIDE_POST,
+        PointCategory.INFORMATION_VISITOR_CENTER,
+        PointCategory.LODGING_CAMP_PITCH,
+        PointCategory.LODGING_CAMP_SITE,
+        PointCategory.LODGING_HUT_ALPINE,
+        PointCategory.LODGING_HUT_WILDERNESS,
+        PointCategory.NATURAL_CAVE_ENTRANCE,
+        PointCategory.NATURAL_MOUNTAIN_PASS,
+        PointCategory.NATURAL_PEAK,
+        PointCategory.NATURAL_SADDLE,
+        PointCategory.NATURAL_VOLCANO,
+        PointCategory.NATURAL_WATERFALL,
+        PointCategory.SIGHT_VIEWPOINT,
+        PointCategory.WATER_DRINKING,
+    ).map { it.id }.toTypedArray()
 
 private fun ok(value: Any): Map<String, Any> = mapOf("kind" to "result", "value" to value)
 private fun err(code: Int): Map<String, Any> = mapOf("kind" to "error", "code" to code)
@@ -665,12 +695,14 @@ private fun fetchFine(ctx: Context) {
               + "WHERE "
               + "(p.cell >= ? AND p.cell <= ?) "
               + "AND p.epoch = ? "
+              + "AND p.type = ANY(?) "
       ).apply {
         val min = cell.rangeMin()
         val max = cell.rangeMax()
         setLong(1, min.id())
         setLong(2, max.id())
         setInt(3, epochTracker.epoch)
+        setArray(4, it.createArrayOf("INTEGER", SHOWN_POINT_CATEGORIES))
       }
     } else {
       it.prepareStatement(
@@ -679,9 +711,11 @@ private fun fetchFine(ctx: Context) {
               + "WHERE "
               + "p.cell = ? "
               + "AND p.epoch = ? "
+              + "AND p.type = ANY(?) "
       ).apply {
         setLong(1, cell.id())
         setInt(2, epochTracker.epoch)
+        setArray(3, it.createArrayOf("INTEGER", SHOWN_POINT_CATEGORIES))
       }
     }
     val results = query.executeQuery()
