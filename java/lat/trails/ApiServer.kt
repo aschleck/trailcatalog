@@ -41,10 +41,13 @@ import lat.trails.proto.Folder
 import lat.trails.proto.GetCollectionRequest
 import lat.trails.proto.GetCollectionResponse
 import lat.trails.proto.GetCurrentUserResponse
+import lat.trails.proto.GetOsmTagsRequest
+import lat.trails.proto.GetOsmTagsResponse
 import lat.trails.proto.GetSharingRequest
 import lat.trails.proto.GetSharingResponse
 import lat.trails.proto.Line
 import lat.trails.proto.ListCollectionsResponse
+import lat.trails.proto.OsmElementType
 import lat.trails.proto.Point
 import lat.trails.proto.RenameCollectionRequest
 import lat.trails.proto.RenameCollectionResponse
@@ -153,6 +156,8 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
     "lat.trails.DataService/GetCollection" ->
       getCollection(ctx, GetCollectionRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetCurrentUser" -> getCurrentUser(ctx)
+    "lat.trails.DataService/GetOsmTags" ->
+      getOsmTags(GetOsmTagsRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetSharing" ->
       getSharing(ctx, GetSharingRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/ListCollections" -> listCollections(ctx)
@@ -459,6 +464,44 @@ private fun deleteCollection(
     }
   }
   return DeleteCollectionResponse.getDefaultInstance()
+}
+
+private fun getOsmTags(request: GetOsmTagsRequest): GetOsmTagsResponse {
+  // Keep in sync with SourceTags.kt#SourceType.
+  val type = when (request.type) {
+    OsmElementType.OSM_ELEMENT_TYPE_NODE -> 0
+    OsmElementType.OSM_ELEMENT_TYPE_WAY -> 1
+    OsmElementType.OSM_ELEMENT_TYPE_RELATION -> 2
+    else -> throw BadRequestResponse("Unknown source type ${request.type}")
+  }
+
+  hikariTrailcatalog.connection.use { connection ->
+    connection
+        .prepareStatement(
+            "SELECT version, tags::text FROM source_tags "
+                + "WHERE source_type = ? AND source_id = ? AND epoch = ?")
+        .apply {
+          setShort(1, type.toShort())
+          setLong(2, request.id)
+          setInt(3, epochTracker.epoch)
+        }
+        .executeQuery()
+        .use { results ->
+          if (!results.next()) {
+            throw NotFoundResponse()
+          }
+
+          val response = GetOsmTagsResponse.newBuilder()
+          val version = results.getInt(1)
+          if (!results.wasNull()) {
+            response.setVersion(version)
+          }
+          for ((key, value) in ObjectMapper().readTree(results.getString(2)).fields()) {
+            response.putTags(key, value.asText())
+          }
+          return response.build()
+        }
+  }
 }
 
 private fun getSharing(ctx: Context, request: GetSharingRequest): GetSharingResponse {

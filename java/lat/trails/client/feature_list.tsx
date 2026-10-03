@@ -480,7 +480,7 @@ function OsmTags({tags}: {tags: OsmElementState['tags']}) {
   return tags === 'loading'
       ? <div className="text-gray-500">Loading tags</div>
       : tags === 'failed'
-          ? <div className="text-gray-500">OpenStreetMap failed to return this way's tags</div>
+          ? <div className="text-gray-500">Failed to load tags</div>
           : <DataTable rows={Object.entries(tags).sort(([a], [b]) => a.localeCompare(b))} />;
 }
 

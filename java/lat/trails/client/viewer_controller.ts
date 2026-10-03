@@ -33,10 +33,12 @@ import {
   DeleteCollectionResponse,
   GetCollectionResponse,
   GetCurrentUserResponse,
+  GetOsmTagsResponse,
   ListCollectionsResponse,
   Role,
   SaveResponse,
   SetViewStateResponse,
+  OsmElementType,
 } from 'trails_lat/proto/data_pb';
 
 import { CollectionLayer } from './collection_layer';
@@ -1909,16 +1911,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private loadOsmTags(type: 'node'|'way', id: number): void {
     const generation = this.inspectGeneration;
-    fetch(`https://api.openstreetmap.org/api/0.6/${type}/${id}.json`)
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`OpenStreetMap answered ${response.status} for ${type} ${id}`);
-          }
-          return response.json();
-        })
+    const loading: Future<GetOsmTagsResponse> =
+        requestData('lat.trails.DataService/GetOsmTags', {
+          type: type === 'node' ? OsmElementType.NODE : OsmElementType.WAY,
+          id: BigInt(id),
+        });
+    loading
         .then(
-            (json: {elements?: Array<{tags?: {[key: string]: string}}>}) =>
-                json.elements?.[0]?.tags ?? {},
+            response => response.tags,
             e => {
               console.error(e);
               return 'failed' as const;

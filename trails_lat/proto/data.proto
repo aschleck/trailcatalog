@@ -10,6 +10,7 @@ service DataService {
   rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
   rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
+  rpc GetOsmTags(GetOsmTagsRequest) returns (GetOsmTagsResponse);
   rpc GetSharing(GetSharingRequest) returns (GetSharingResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
   rpc RenameCollection(RenameCollectionRequest) returns (RenameCollectionResponse);
@@ -55,6 +56,25 @@ message GetCurrentUserRequest {}
 message GetCurrentUserResponse {
   // Unset when nobody is signed in.
   optional User user = 1;
+}
+
+// Answers from the latest import, and 404s for an element the import did not keep.
+message GetOsmTagsRequest {
+  OsmElementType type = 1;
+  int64 id = 2;
+}
+
+message GetOsmTagsResponse {
+  map<string, string> tags = 1;
+  // Unset when the import's file carried no metadata
+  optional int32 version = 2;
+}
+
+enum OsmElementType {
+  OSM_ELEMENT_TYPE_UNSPECIFIED = 0;
+  OSM_ELEMENT_TYPE_NODE = 1;
+  OSM_ELEMENT_TYPE_WAY = 2;
+  OSM_ELEMENT_TYPE_RELATION = 3;
 }
 
 message GetSharingRequest {
