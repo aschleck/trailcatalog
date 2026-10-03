@@ -44,12 +44,15 @@ if [[ -z "$(find "${planet}" -mtime -60 2>/dev/null)" ]]; then
   mv /mnt/horse/planet-2*.osm.pbf "${planet}"
 fi
 
-# Without -o it writes beside the input and renames over it only on success.
+# Without -o it writes beside the input and renames over it only on success. 64 CPU shares come out
+# as a cgroup weight of 12 against the frontends' 100, so this and the importer only take cores the
+# frontends aren't using.
 registry_login
 podman run \
     --name 'planet_update' \
     --pull always \
     --rm \
+    --cpu-shares 64 \
     --mount type=bind,source=/mnt/horse,target=/tmp \
     --network host \
     us-west1-docker.pkg.dev/trailcatalog/containers/planet_update:latest \
@@ -64,6 +67,7 @@ podman run \
     --name=importer \
     --pull always \
     --rm \
+    --cpu-shares 64 \
     --env DATABASE_URL="postgresql://localhost/trailcatalog" \
     --env DATABASE_USERNAME_PASSWORD="trailcatalog:${pg_pwd}" \
     --env JAVA_TOOL_OPTIONS="-XX:InitialHeapSize=24g -XX:MaxHeapSize=40g -XX:MaxMetaspaceSize=1g -XX:StartFlightRecording=filename=/tmp/import.jfr,settings=profile,dumponexit=true,maxsize=4g" \
