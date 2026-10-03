@@ -14,6 +14,19 @@ const FLAT_VERTEX_COUNT = 6;
 // Vertices for the 4 cells x 4 cells lattice the sphere needs to curve the billboard.
 const GRID_VERTEX_COUNT = 4 * 4 * 6;
 
+const TEXTURE_FRAGMENT_SHADER = `#version 300 es
+    uniform sampler2D color;
+
+    in mediump vec2 fragColorPosition;
+    in mediump vec4 fragColorTint;
+    out mediump vec4 fragColor;
+
+    void main() {
+      mediump vec4 tex = texture(color, fragColorPosition);
+      fragColor = tex * vec4(fragColorTint.rgb, 1) * fragColorTint.a;
+    }
+`;
+
 export class BillboardProgram extends Program<BillboardProgramData> {
 
   /** Bytes that {@link plan} will write into the supplied buffer. */
@@ -29,8 +42,8 @@ export class BillboardProgram extends Program<BillboardProgramData> {
   private readonly latticeBuffer: WebGLBuffer;
   private flattenFactor: number;
 
-  constructor(gl: WebGL2RenderingContext) {
-    super(createBillboardProgram(gl), gl, gl.TRIANGLES);
+  constructor(gl: WebGL2RenderingContext, fs: string = TEXTURE_FRAGMENT_SHADER) {
+    super(createBillboardProgram(gl, fs), gl, gl.TRIANGLES);
     this.registerDisposer(() => {
       gl.deleteProgram(this.program.handle);
     });
@@ -403,7 +416,7 @@ interface BillboardProgramData extends ProgramData {
   };
 }
 
-function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramData {
+function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): BillboardProgramData {
   const programId = checkExists(gl.createProgram());
 
   const vs = `#version 300 es
@@ -432,7 +445,8 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
       // See https://github.com/visgl/luma.gl/issues/1764
       invariant gl_Position;
 
-      out mediump vec2 fragColorPosition;
+      // highp because overzoomed slope tiles address a texel across thousands of pixels
+      out highp vec2 fragColorPosition;
       out mediump vec4 fragColorTint;
 
       ${COLOR_OPERATIONS}
@@ -514,19 +528,6 @@ function createBillboardProgram(gl: WebGL2RenderingContext): BillboardProgramDat
         fragColorTint = uint32ToVec4(tint);
       }
     `;
-  const fs = `#version 300 es
-      uniform sampler2D color;
-
-      in mediump vec2 fragColorPosition;
-      in mediump vec4 fragColorTint;
-      out mediump vec4 fragColor;
-
-      void main() {
-        mediump vec4 tex = texture(color, fragColorPosition);
-        fragColor = tex * vec4(fragColorTint.rgb, 1) * fragColorTint.a;
-      }
-  `;
-
   const vertexId = checkExists(gl.createShader(gl.VERTEX_SHADER));
   gl.shaderSource(vertexId, vs);
   gl.compileShader(vertexId);

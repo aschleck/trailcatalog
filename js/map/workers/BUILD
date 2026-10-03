@@ -54,6 +54,14 @@ esbuild_binary(
 )
 
 esbuild_binary(
+    name = "slope_loader_worker",
+    entry_point = "slope_loader.ts",
+    deps = [
+        ":workers",
+    ],
+)
+
+esbuild_binary(
     name = "xyz_data_fetcher_worker",
     entry_point = "xyz_data_fetcher.ts",
     deps = [

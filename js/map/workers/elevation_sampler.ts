@@ -2,17 +2,9 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { Vec2 } from '../common/types';
 
+import { BASE_ZOOM, fetchTerrarium, TILE_SIZE } from './terrarium';
 import { GradeLimits, routeOverTerrain, simplifyCells } from './terrain_router';
 
-// Mapterhorn serves terrarium encoded WebP tiles, 512 pixels to a side, at z12 everywhere it has
-// land and deeper where a finer source covers the area.
-// https://mapterhorn.com/attribution
-const TILE_URL = 'https://tiles.mapterhorn.com/${z}/${x}/${y}.webp';
-const TILE_SIZE = 512;
-// Everywhere with data has z12, so a missing tile there is ocean rather than coarser coverage.
-const BASE_ZOOM = 12;
-// Terrarium packs meters as r * 256 + g + b / 256 - 32768.
-const TERRARIUM_OFFSET = 32768;
 // Each tile decodes to a megabyte of floats, and a long measurement reaches a few dozen.
 const TILE_CACHE_SIZE = 48;
 // Keep in sync with SimpleS2#EARTH_RADIUS_METERS
@@ -242,8 +234,9 @@ class ElevationSampler {
       return cached;
     }
 
-    const loading = decode(z, x, y);
-    // A fetch that failed is worth trying again, unlike a 404, which decode answers as undefined.
+    const loading = fetchTerrarium({x, y, zoom: z});
+    // A fetch that failed is worth trying again, unlike a 404, which fetchTerrarium answers as
+    // undefined.
     loading.catch(() => {
       this.tiles.delete(key);
     });
@@ -253,31 +246,6 @@ class ElevationSampler {
     }
     return loading;
   }
-}
-
-// Decodes without color management or premultiplying, either of which would shift the channels
-// and so the meters they encode.
-async function decode(z: number, x: number, y: number): Promise<Tile> {
-  const url =
-      TILE_URL.replace('${z}', String(z)).replace('${x}', String(x)).replace('${y}', String(y));
-  const response = await fetch(url);
-  if (!response.ok) {
-    return undefined;
-  }
-
-  const bitmap =
-      await createImageBitmap(
-          await response.blob(), {colorSpaceConversion: 'none', premultiplyAlpha: 'none'});
-  const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE);
-  const context = canvas.getContext('2d', {willReadFrequently: true})!;
-  context.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  const rgba = context.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data;
-  const meters = new Float32Array(TILE_SIZE * TILE_SIZE);
-  for (let i = 0; i < meters.length; ++i) {
-    meters[i] = rgba[4 * i] * 256 + rgba[4 * i + 1] + rgba[4 * i + 2] / 256 - TERRARIUM_OFFSET;
-  }
-  return meters;
 }
 
 // Answers requests one at a time, in order, so that tiles a request loads are cached for the next.

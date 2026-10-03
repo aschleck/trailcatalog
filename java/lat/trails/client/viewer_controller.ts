@@ -21,11 +21,12 @@ import { MapController } from 'js/map/map_controller';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
+import { SlopeLayer } from 'js/map/layers/slope_layer';
 import { Search } from 'js/map/workers/earth_search_loader';
 import { Elevations } from 'js/map/workers/elevations';
 import { Style } from 'js/map/workers/mbtile_loader';
 import { LocationIndex } from 'js/map/workers/location_index';
-import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
+import { Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
   Collection,
@@ -732,6 +733,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             /* maxZoom= */ 12,
             this.mapController.renderer,
         ),
+        controls: [],
+        values: {},
+      }, {
+        kind: 'layer',
+        id: 'topography/slopes',
+        name: 'Slope angles',
+        enabled: false,
+        layer: new SlopeLayer([MAPTERHORN_COPYRIGHT], Z_BASE_SLOPE, this.mapController.renderer),
         controls: [],
         values: {},
       }],
