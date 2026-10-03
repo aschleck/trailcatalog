@@ -35,7 +35,6 @@ class ExtractRelations : PTransformer<PrimitiveBlock, Relation>(TypeToken.of(Rel
 }
 
 fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relation {
-  var category = RelationCategory.ANY
   var name: String? = null
   // Keyed by the name so that a value carried by several tags, like name and name:en on anything
   // in an English speaking country, only becomes one row. A bare key overwrites a suffixed one so
@@ -43,7 +42,28 @@ fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relatio
   val languagesByName = LinkedHashMap<String, String?>()
   for (i in 0 until relation.keysCount) {
     val key = stringTable.getS(relation.getKeys(i))
-    when (key) {
+    if (key == NAME_BS) {
+      name = stringTable.getS(relation.getVals(i)).toStringUtf8()
+    }
+
+    val tagged = tagToName(key, stringTable.getS(relation.getVals(i))) ?: continue
+    if (tagged.language == null || !languagesByName.containsKey(tagged.value)) {
+      languagesByName[tagged.value] = tagged.language
+    }
+  }
+
+  return Relation(
+      relation.id,
+      relationCategory(relation, stringTable).id,
+      name ?: "",
+      languagesByName.map { (value, language) -> Name(language, value) },
+      relationToSkeleton(relation, stringTable))
+}
+
+fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): RelationCategory {
+  var category = RelationCategory.ANY
+  for (i in 0 until relation.keysCount) {
+    when (stringTable.getS(relation.getKeys(i))) {
       ADMIN_LEVEL_BS ->
         category =
             category
@@ -54,8 +74,6 @@ fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relatio
             category
                 .coerceAtLeast(RelationCategory.BOUNDARY)
                 .coerceAtLeast(BOUNDARY_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
-      NAME_BS ->
-        name = stringTable.getS(relation.getVals(i)).toStringUtf8()
       PROTECT_CLASS_BS ->
         category =
             category
@@ -67,19 +85,8 @@ fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relatio
                 .coerceAtLeast(RelationCategory.ROUTE)
                 .coerceAtLeast(ROUTE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
     }
-
-    val tagged = tagToName(key, stringTable.getS(relation.getVals(i))) ?: continue
-    if (tagged.language == null || !languagesByName.containsKey(tagged.value)) {
-      languagesByName[tagged.value] = tagged.language
-    }
   }
-
-  return Relation(
-      relation.id,
-      category.id,
-      name ?: "",
-      languagesByName.map { (value, language) -> Name(language, value) },
-      relationToSkeleton(relation, stringTable))
+  return category
 }
 
 // Matches a language code: a two or three letter primary subtag plus anything hanging off it. The

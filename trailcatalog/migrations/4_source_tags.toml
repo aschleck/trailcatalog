@@ -1,0 +1,38 @@
+# The tags of the elements that points, paths, boundaries, and trails come from, so that clients
+# can show them without asking the OpenStreetMap API. A path's source_id is its source_way, not
+# its id.
+
+[[actions]]
+type = "create_table"
+name = "source_tags"
+primary_key = ["source_type", "source_id", "epoch"]
+
+  # 0 for a node, 1 for a way, 2 for a relation. Keep in sync with SourceTags.kt#SourceType.
+  [[actions.columns]]
+  name = "source_type"
+  nullable = false
+  type = "SMALLINT"
+
+  [[actions.columns]]
+  name = "source_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+  # NULL when the file was written without metadata. Editing needs it to detect conflicts.
+  [[actions.columns]]
+  name = "version"
+  nullable = true
+  type = "INT"
+
+  [[actions.columns]]
+  name = "tags"
+  nullable = false
+  type = "JSONB"
+
+  [actions.partition_by]
+  list = ["epoch"]

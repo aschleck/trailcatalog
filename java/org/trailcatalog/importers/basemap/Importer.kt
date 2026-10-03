@@ -12,11 +12,14 @@ import org.trailcatalog.flags.createNullableFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.pipeline.groupBy
 import org.trailcatalog.importers.pipeline.Pipeline
+import org.trailcatalog.importers.pbf.ExtractNodeTags
 import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
 import org.trailcatalog.importers.pbf.ExtractNodes
 import org.trailcatalog.importers.pbf.ExtractPoints
 import org.trailcatalog.importers.pbf.ExtractRelationGeometriesWithWays
+import org.trailcatalog.importers.pbf.ExtractRelationTags
 import org.trailcatalog.importers.pbf.ExtractRelations
+import org.trailcatalog.importers.pbf.ExtractWayTags
 import org.trailcatalog.importers.pbf.ExtractWays
 import org.trailcatalog.importers.pbf.GatherWayNodes
 import org.trailcatalog.importers.pbf.ExtractWayRelationPairs
@@ -65,6 +68,7 @@ private val PARTITIONED_TABLES =
         "paths",
         "paths_in_trails",
         "points",
+        "source_tags",
         "trail_identifiers",
         "trail_names",
         "trails",
@@ -118,6 +122,23 @@ private fun processPbfs(epoch: Int, pbfs: List<Path>, hikari: HikariDataSource) 
                 .read(PbfBlockReader(p, readNodes = true, readRelations = false, readWays = false))
           });
   nodeBlocks.then(ExtractPoints()).write(DumpPoints(epoch, hikari))
+  nodeBlocks.then(ExtractNodeTags()).write(DumpSourceTags(epoch, hikari))
+  pipeline
+      .cat(
+          pbfs.map { p ->
+            pipeline
+                .read(PbfBlockReader(p, readNodes = false, readRelations = false, readWays = true))
+                .then(ExtractWayTags())
+          })
+      .write(DumpSourceTags(epoch, hikari))
+  pipeline
+      .cat(
+          pbfs.map { p ->
+            pipeline
+                .read(PbfBlockReader(p, readNodes = false, readRelations = true, readWays = false))
+                .then(ExtractRelationTags())
+          })
+      .write(DumpSourceTags(epoch, hikari))
   val nodes = nodeBlocks.then(ExtractNodes()).groupBy("GroupNodes") { it.id }
   val ways =
       pipeline.cat(

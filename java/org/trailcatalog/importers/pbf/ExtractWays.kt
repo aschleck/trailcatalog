@@ -26,8 +26,23 @@ class ExtractWays
 }
 
 private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
-  var category = WayCategory.ANY
   var name: String? = null
+  for (i in 0 until way.keysCount) {
+    if (stringTable.getS(way.getKeys(i)) == NAME_BS) {
+      name = stringTable.getS(way.getVals(i)).toStringUtf8()
+    }
+  }
+  val refs = LongArray(way.refsCount)
+  var nodeId = 0L
+  for (i in 0 until way.refsCount) {
+    nodeId += way.getRefs(i)
+    refs[i] = nodeId
+  }
+  return WaySkeleton(way.id, wayCategory(way, stringTable).id, name ?: "", refs)
+}
+
+fun wayCategory(way: Osmformat.Way, stringTable: StringTable): WayCategory {
+  var category = WayCategory.ANY
   // construction=*, footway=*, and service=* each name a subtype of whatever the way already is, so
   // they can only be resolved once every other tag has been read. service=* also appears on
   // highway=service, where it means something else.
@@ -76,8 +91,6 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
                 .coerceAtLeast(HIGHWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
         category = category.coerceAtLeast(highway)
       }
-      NAME_BS ->
-        name = stringTable.getS(way.getVals(i)).toStringUtf8()
       NATURAL_BS ->
         // Prefer road categories to naturals
         if (!WayCategory.ROAD.isParentOf(category)) {
@@ -116,11 +129,5 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   if (footway != null && category == WayCategory.PATH_FOOTWAY) {
     category = category.coerceAtLeast(FOOTWAY_CATEGORY_NAMES[footway])
   }
-  val refs = LongArray(way.refsCount)
-  var nodeId = 0L
-  for (i in 0 until way.refsCount) {
-    nodeId += way.getRefs(i)
-    refs[i] = nodeId
-  }
-  return WaySkeleton(way.id, category.id, name ?: "", refs)
+  return category
 }

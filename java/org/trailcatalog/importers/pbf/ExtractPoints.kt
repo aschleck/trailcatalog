@@ -10,48 +10,10 @@ import org.trailcatalog.models.PointCategory
 class ExtractPoints : PTransformer<PrimitiveBlock, Point>(TypeToken.of(Point::class.java)) {
 
   override fun act(input: PrimitiveBlock, emitter: Emitter<Point>) {
-    for (group in input.primitivegroupList) {
-      for (node in group.nodesList) {
-        val latDegrees = (input.latOffset + input.granularity * node.lat) * NANO
-        val lngDegrees = (input.lonOffset + input.granularity * node.lon) * NANO
-        val kvs = ArrayList<Int>()
-        for (i in 0 until node.keysList.size) {
-          kvs.add(node.keysList[i])
-          kvs.add(node.valsList[i])
-        }
-        maybeEmitPoint(
-            node.id,
-            kvs,
-            LatLngE7(latDegrees.toIntE7(), lngDegrees.toIntE7()),
-            input.stringtable,
-            emitter)
-      }
-
-      var denseId = 0L
-      var denseLat = 0L
-      var denseLon = 0L
-      val kvIter =
-          group.dense.keysValsList.let {
-            if (it.isEmpty()) {
-              generateSequence { 0 }
-            } else {
-              it.asSequence()
-            }
-          }.iterator()
-      for (index in 0 until group.dense.idCount) {
-        denseId += group.dense.idList[index]
-        denseLat += group.dense.latList[index]
-        denseLon += group.dense.lonList[index]
-
-        val latDegrees = (input.latOffset + input.granularity * denseLat) * NANO
-        val lngDegrees = (input.lonOffset + input.granularity * denseLon) * NANO
-        val kvs = kvIter.takeWhile { it != 0 }.toList()
-        maybeEmitPoint(
-            denseId,
-            kvs,
-            LatLngE7(latDegrees.toIntE7(), lngDegrees.toIntE7()),
-            input.stringtable,
-            emitter)
+    forEachNode(input) { id, kvs, latLng, _ ->
+      val category = pointCategory(kvs, input.stringtable)
+      if (category != PointCategory.ANY) {
+        emitter.emit(Point(id, category.id, nodeName(kvs, input.stringtable), latLng))
       }
     }
   }
@@ -61,14 +23,60 @@ class ExtractPoints : PTransformer<PrimitiveBlock, Point>(TypeToken.of(Point::cl
   }
 }
 
-private fun maybeEmitPoint(
-    id: Long,
-    kvs: List<Int>,
-    latLng: LatLngE7,
-    stringTable: StringTable,
-    emitter: Emitter<Point>) {
+/**
+ * Calls [fn] with every node in [block], its tags as interleaved key and value string indices, and
+ * its version when the file carries one.
+ */
+fun forEachNode(
+    block: PrimitiveBlock,
+    fn: (id: Long, kvs: List<Int>, latLng: LatLngE7, version: Int?) -> Unit) {
+  for (group in block.primitivegroupList) {
+    for (node in group.nodesList) {
+      val latDegrees = (block.latOffset + block.granularity * node.lat) * NANO
+      val lngDegrees = (block.lonOffset + block.granularity * node.lon) * NANO
+      val kvs = ArrayList<Int>()
+      for (i in 0 until node.keysList.size) {
+        kvs.add(node.keysList[i])
+        kvs.add(node.valsList[i])
+      }
+      fn(
+          node.id,
+          kvs,
+          LatLngE7(latDegrees.toIntE7(), lngDegrees.toIntE7()),
+          if (node.hasInfo()) node.info.version else null)
+    }
+
+    var denseId = 0L
+    var denseLat = 0L
+    var denseLon = 0L
+    val kvIter =
+        group.dense.keysValsList.let {
+          if (it.isEmpty()) {
+            generateSequence { 0 }
+          } else {
+            it.asSequence()
+          }
+        }.iterator()
+    // Unlike the ids and coordinates, DenseInfo versions are not delta coded.
+    val versions = group.dense.denseinfo.versionList
+    for (index in 0 until group.dense.idCount) {
+      denseId += group.dense.idList[index]
+      denseLat += group.dense.latList[index]
+      denseLon += group.dense.lonList[index]
+
+      val latDegrees = (block.latOffset + block.granularity * denseLat) * NANO
+      val lngDegrees = (block.lonOffset + block.granularity * denseLon) * NANO
+      fn(
+          denseId,
+          kvIter.takeWhile { it != 0 }.toList(),
+          LatLngE7(latDegrees.toIntE7(), lngDegrees.toIntE7()),
+          if (index < versions.size) versions[index] else null)
+    }
+  }
+}
+
+fun pointCategory(kvs: List<Int>, stringTable: StringTable): PointCategory {
   var category = PointCategory.ANY
-  var name: String? = null
   var tower = false
   var observation = false
   for (i in 0 until kvs.size step 2) {
@@ -86,7 +94,6 @@ private fun maybeEmitPoint(
       }
       MOUNTAIN_PASS_BS ->
         category = category.coerceAtLeast(POINT_MOUNTAIN_PASS_CATEGORY_NAMES[value])
-      NAME_BS -> name = value.toStringUtf8()
       NATURAL_BS -> category = category.coerceAtLeast(POINT_NATURAL_CATEGORY_NAMES[value])
       RAILWAY_BS -> category = category.coerceAtLeast(POINT_RAILWAY_CATEGORY_NAMES[value])
       SHOP_BS -> category = category.coerceAtLeast(POINT_SHOP_CATEGORY_NAMES[value])
@@ -98,10 +105,16 @@ private fun maybeEmitPoint(
   if (tower && observation) {
     category = category.coerceAtLeast(PointCategory.SIGHT_OBSERVATION_TOWER)
   }
+  return category
+}
 
-  if (category != PointCategory.ANY) {
-    emitter.emit(Point(id, category.id, name, latLng))
+private fun nodeName(kvs: List<Int>, stringTable: StringTable): String? {
+  for (i in 0 until kvs.size step 2) {
+    if (stringTable.getS(kvs[i]) == NAME_BS) {
+      return stringTable.getS(kvs[i + 1]).toStringUtf8()
+    }
   }
+  return null
 }
 
 private fun <V> Iterator<V>.takeWhile(predicate: (V) -> Boolean): List<V> {
