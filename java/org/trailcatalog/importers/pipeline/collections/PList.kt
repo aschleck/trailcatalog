@@ -12,8 +12,7 @@ fun <T : Any> createPList(
 }
 
 /**
- * Parallel variant: drives [input] on the caller thread and dispatches batches to [workers]
- * worker threads. Each worker runs [perItem] and writes into its own output file.
+ * Parallel variant: [workers] threads each run [perItem] and write their own output file.
  *
  * Passing `workers <= 1` falls back to the single-threaded path.
  */

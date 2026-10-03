@@ -3,11 +3,14 @@ package org.trailcatalog.importers.pipeline.collections
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.common.ChannelEncodedOutputStream
 import org.trailcatalog.common.EncodedByteBufferInputStream
+import org.trailcatalog.common.EncodedInputStream
+import org.trailcatalog.common.EncodedOutputStream
 import org.trailcatalog.common.Extents
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 import org.trailcatalog.importers.pipeline.io.ByteBufferEncodedOutputStream
 import org.trailcatalog.importers.pipeline.progress.longProgress
+import java.io.Closeable
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
@@ -16,96 +19,67 @@ import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
 import java.util.PriorityQueue
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
-// Heap reserved for everything that isn't a queued pre-sort record: the scratch buffers, the input
+// A PMap is written as sorted runs. Each worker buffers what it's handed, sorts it once the buffer
+// fills, and writes it out as a run. Readers then merge the runs, either on the fly for a single
+// consumer or into a merged file for several.
+//
+// Run records:    key, value byte length, value
+// Merged records: key, value count, total value byte length, values
+//
+// Both carry a byte length so that finding a key can skip over records without deserializing them.
+
+// Heap reserved for everything that isn't a buffered record: the scratch buffers, the input
 // pipeline, and the garbage G1 hasn't reclaimed yet. maxMemory minus this is split evenly across
 // the workers.
 @FlagSpec(name = "heap_dump_threshold")
 private val heapDumpThreshold = createFlag(256 * 1024 * 1024L)
-// ThreadLocal so worker threads in parallel-extract mode don't race on the same scratch buffer.
-// Each thread serializes one record at a time before copying the bytes out into the shard list.
+
+// ThreadLocal so workers don't race on the same scratch buffer. Each serializes one value at a time
+// before copying the bytes into its run buffer.
 private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
   ByteBuffer.allocate(256 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
 }
 
-// Workers check the number of bytes they've written to track when to dump. However we also keep a
-// SortKey in memory in a list per value, and values are often smaller than that so keys can become
-// a dominant cost.
-//
-// Claude's accounting:
+// Splitting a run into key ranges seeks to the index entry before each split key and scans
+// forward, so this bounds that scan. 240 GB of planet node runs cost a million entries.
+private const val INDEX_GRANULARITY_BYTES = 256L * 1024L
+
+// Key ranges handed out per worker, so that a worker that drew a dense range doesn't hold up the
+// rest.
+private const val PARTS_PER_WORKER = 4
+
+private const val PARALLEL_BATCH_SIZE = 1024
+
+// Values land in arenas this big rather than one ByteArray each, because millions of small arrays
+// are what G1 spends its time copying.
+private const val ARENA_BYTES = 64 * 1024 * 1024
+
+// What a buffered record costs besides its value bytes with primitive keys:
+//    8  the key
+//    8  where the value sits
+//    4  the value length
+//   24  the radix sort's key and order arrays and their scratch copies
+private const val PRIMITIVE_RECORD_OVERHEAD_BYTES = 44
+
+// What a buffered record costs besides its value bytes with other keys:
 //   32  SortKey, a 16 byte header plus the key and value references
-//   24  the boxed Long key
+//   24  the boxed key
 //   24  the ByteArray header
 //    8  the ArrayList slot
-private const val RECORD_OVERHEAD_BYTES = 88
+private const val OBJECT_RECORD_OVERHEAD_BYTES = 88
 
-// Bytes of queued records a single worker may hold.
+// Sentinel passed through the work queue to signal a worker should drain and exit. Reference
+// equality is what matters; the empty list contents are irrelevant.
+private val SENTINEL_BATCH: List<Any?> = emptyList()
+
+// Bytes of buffered records a single worker may hold.
 private fun calculateMemoryBudgetPerShard(workers: Int): Long {
   return ((Runtime.getRuntime().maxMemory() - heapDumpThreshold.value) / workers)
       .coerceAtLeast(64 * 1024 * 1024)
-}
-
-/**
- * One entry every ~1 MB of merged output, paired with a fixed-size footer at the end of the
- * file. Lets Phase 2's parallel zip pick split keys without scanning gigabytes of data.
- */
-private const val INDEX_GRANULARITY_BYTES = 1024L * 1024L
-
-// Footer (24 bytes, little-endian) sits at the very end of every merged PMap file:
-//   8 bytes  magic
-//   8 bytes  file offset where the index begins
-//   8 bytes  number of index entries
-private const val INDEX_FOOTER_MAGIC: Long = 0x504D6170496E6478L  // "PMapIndx"
-private const val INDEX_FOOTER_SIZE: Long = 24L
-
-/** An index entry: a key from the merged data and the file offset where its record starts. */
-data class PMapIndexEntry<K>(val key: K, val offset: Long)
-
-class MmapPMap<K : Comparable<K>, V>(
-    private val maps: List<EncodedByteBufferInputStream>,
-    private val keySerializer: Serializer<K>,
-    private val valueSerializer: Serializer<V>,
-    private val size: Long,
-    /**
-     * Sparse (key, file-offset) entries — one every ~1 MB of merged output. Populated for PMaps
-     * produced by [mergeSortedShards]; may be empty for PMaps with no producer-side index
-     * (parallel emit fallback paths, tests). Phase 2's parallel zip uses this to pick split
-     * keys without scanning the data.
-     */
-    val index: List<PMapIndexEntry<K>> = emptyList(),
-) : PMap<K, V> {
-
-  var shard = 0
-
-  override fun close() {
-    maps.forEach { it.close() }
-  }
-
-  override fun estimatedByteSize(): Long {
-    return size
-  }
-
-  override fun hasNext(): Boolean {
-    return shard < maps.size
-  }
-
-  override fun next(): PEntry<K, V> {
-    val buffer = maps[shard]
-    val key = keySerializer.read(buffer)
-    val count = buffer.readVarInt()
-    val list = ArrayList<V>()
-    repeat(count) {
-      list.add(valueSerializer.read(buffer))
-    }
-
-    while (shard < maps.size && !maps[shard].hasRemaining()) {
-      shard += 1
-    }
-
-    return PEntry(key, list)
-  }
 }
 
 fun <K : Comparable<K>, V : Any> createMmapPMap(
@@ -113,33 +87,22 @@ fun <K : Comparable<K>, V : Any> createMmapPMap(
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
     estimatedByteSize: Long,
-    fn: (Emitter2<K, V>) -> Unit): DisposableSupplier<MmapPMap<K, V>> {
-  val keySerializer = getSerializer(keyType)
+    fn: (Emitter2<K, V>) -> Unit): DisposableSupplier<PMap<K, V>> {
+  val codec = KeyCodec(keyType)
   val valueSerializer = getSerializer(valueType)
 
   val startTime = System.currentTimeMillis()
-  val (shardedFiles, shards) =
-      emitToSortedShards(context, keyType, valueType, keySerializer, valueSerializer, fn)
-  return mergeSortedShards(
-      context,
-      keyType,
-      valueType,
-      shards,
-      keySerializer,
-      valueSerializer,
-      estimatedByteSize,
-  ).also {
-    shards.forEach { it.close() }
-    shardedFiles.forEach { it.delete() }
+  val runs = emitRuns(context, keyType, valueType, codec, valueSerializer, fn)
+  return materialize(context, keyType, valueType, codec, valueSerializer, runs, workers = 1).also {
     val seconds = (System.currentTimeMillis() - startTime) / 1000
     println("  PMap ${context} total ${seconds}s")
   }
 }
 
 /**
- * Parallel variant: drives [input] iteration on the caller thread and dispatches batches to
- * [workers] worker threads, each running [perItem] and writing into its own pre-sort shard file.
- * The K-way merge picks up shards from all worker files transparently.
+ * Parallel variant: [workers] threads each run [perItem] and write their own runs. Input that
+ * can be partitioned is read by the workers directly, a key range at a time, and anything else is
+ * driven on the caller thread and handed out in batches.
  *
  * With `workers <= 1` this delegates to the single-threaded path, so callers can pass the
  * resolved parallelism directly.
@@ -166,227 +129,781 @@ fun <I, K : Comparable<K>, V : Any> createMmapPMap(
     }
   }
 
-  val keySerializer = getSerializer(keyType)
+  val codec = KeyCodec(keyType)
   val valueSerializer = getSerializer(valueType)
 
   val startTime = System.currentTimeMillis()
-  val (shardedFiles, shards) =
-      emitToSortedShardsParallel(
-          context, keyType, valueType, keySerializer, valueSerializer, input, workers, perItem)
+  val runs =
+      emitRunsParallel(
+          context, keyType, valueType, codec, valueSerializer, input, workers, perItem)
 
   if (dependants <= 1) {
     val seconds = (System.currentTimeMillis() - startTime) / 1000
-    val size = shards.sumOf { it.size().toLong() }
     println(
         "  PMap ${context} emitted ${seconds}s (parallel x${workers}), merging on read" +
-            " (${shards.size} shards, size ${size})")
+            " (${runs.chunks.size} shards, size ${runs.size})")
     val opened = AtomicInteger(0)
-    // Unlinking a shard leaves its mappings readable, which is what the merged path already
-    // relies on when BoundStage closes the supplier before the consumer reads. Closing a stream
-    // unmaps it through Unsafe.invokeCleaner and would crash the reader, so that waits for the
-    // consumer to close the PMap.
-    return DisposableSupplier({ shardedFiles.forEach { it.delete() } }) {
+    // Unlinking a run leaves its mappings readable, which is what the merged path already relies
+    // on when BoundStage closes the supplier before the consumer reads. Unmapping would crash the
+    // reader, so that waits for the consumer to close the PMap.
+    return DisposableSupplier({ runs.files.forEach { it.delete() } }) {
       if (opened.incrementAndGet() != 1) {
         throw RuntimeException("Streaming merge can only be used once")
       }
-      StreamingMergePMap(shards, keySerializer, valueSerializer, size)
+      StreamingMergePMap(runs.chunks, codec, valueSerializer, runs.size, runs::unmap)
     }
   }
 
-  return mergeSortedShards(
-      context,
-      keyType,
-      valueType,
-      shards,
-      keySerializer,
-      valueSerializer,
-      estimatedByteSize,
-  ).also {
-    shards.forEach { it.close() }
-    shardedFiles.forEach { it.delete() }
+  return materialize(context, keyType, valueType, codec, valueSerializer, runs, workers).also {
     val seconds = (System.currentTimeMillis() - startTime) / 1000
     println("  PMap ${context} total ${seconds}s (parallel x${workers})")
   }
 }
 
-private fun <K : Comparable<K>, V : Any> emitToSortedShards(
-    context: String,
-    keyType: TypeToken<K>,
-    valueType: TypeToken<out V>,
-    keySerializer: Serializer<K>,
-    valueSerializer: Serializer<V>,
-    fn: (Emitter2<K, V>) -> Unit): Pair<List<File>, List<EncodedByteBufferInputStream>> {
-  val sharded =
-      File.createTempFile(cleanFilename("mmap-map-sharded-${keyType}-${valueType}"), null)
-  sharded.deleteOnExit()
-  val shards = RandomAccessFile(sharded, "rw").use {
-    val stream = ChannelEncodedOutputStream(it.channel)
-    val budget = calculateMemoryBudgetPerShard(1)
-    stream.use { output ->
-      val itemsInShard = ArrayList<SortKey<K>>()
-      var heldBytes = 0L
+/**
+ * Reads and writes keys. Long and Int keys are fixed width, so they also travel as a primitive
+ * long and sort without boxing.
+ */
+private class KeyCodec<K : Comparable<K>>(type: TypeToken<K>) {
 
-      val dumpShard = {
-        itemsInShard.sort()
-        for (item in itemsInShard) {
-          keySerializer.write(item.key, output)
-          output.writeVarInt(item.value.size)
-          output.write(item.value)
-          output.checkBufferSpace()
-        }
-
-        output.shard()
-        itemsInShard.clear()
-        heldBytes = 0
+  val serializer: Serializer<K> = getSerializer(type)
+  private val width =
+      when (type.rawType) {
+        Long::class.javaPrimitiveType, Long::class.javaObjectType -> 8
+        Int::class.javaPrimitiveType, Int::class.javaObjectType -> 4
+        else -> 0
       }
+  val primitive = width > 0
 
-      val emitter = object : Emitter2<K, V> {
-        override fun emit(a: K, b: V) {
-          val buffer = BYTE_BUFFER.get()
-          valueSerializer.write(b, ByteBufferEncodedOutputStream(buffer))
-          buffer.flip()
-          val bytes = ByteArray(buffer.limit())
-          buffer.get(bytes)
-          buffer.clear()
-          itemsInShard.add(SortKey(a, bytes))
-          heldBytes += RECORD_OVERHEAD_BYTES + bytes.size
+  fun toLong(key: K): Long {
+    return (key as Number).toLong()
+  }
 
-          if (heldBytes > budget) {
-            dumpShard()
-          }
-        }
-      }
+  @Suppress("UNCHECKED_CAST")
+  fun fromLong(key: Long): K {
+    return (if (width == 8) key else key.toInt()) as K
+  }
 
-      longProgress("${context} emitting to shard") { progress ->
-        val logged = object : Emitter2<K, V> {
-          override fun emit(a: K, b: V) {
-            progress.increment()
-            emitter.emit(a, b)
-          }
-        }
-        fn(logged)
+  // Matches the Long and Int serializers in Memory.kt
+  fun readLong(from: EncodedInputStream): Long {
+    return if (width == 8) from.readLong() else from.readInt().toLong()
+  }
 
-        dumpShard()
+  fun writeLong(key: Long, to: EncodedOutputStream) {
+    if (width == 8) to.writeLong(key) else to.writeInt(key.toInt())
+  }
+}
+
+/** A sorted stretch of records within one mapping, with where some of its keys start. */
+private class Chunk<K : Comparable<K>>(
+    val buffer: ByteBuffer,
+    val indexKeys: List<K>,
+    val indexPositions: IntArray,
+) {
+
+  val start: Int
+    get() = buffer.position()
+
+  val end: Int
+    get() = buffer.limit()
+
+  fun slice(from: Int, to: Int): Chunk<K> {
+    val view = buffer.duplicate()
+    view.limit(to)
+    view.position(from)
+    var first = 0
+    while (first < indexPositions.size && indexPositions[first] < from) {
+      first += 1
+    }
+    var last = first
+    while (last < indexPositions.size && indexPositions[last] < to) {
+      last += 1
+    }
+    return Chunk(
+        view,
+        indexKeys.subList(first, last),
+        indexPositions.copyOfRange(first, last))
+  }
+
+  /** Returns where the first record with a key at or past [key] starts, or [end] if none does. */
+  fun positionOf(key: K, codec: KeyCodec<K>, grouped: Boolean): Int {
+    var low = 0
+    var high = indexKeys.size
+    while (low < high) {
+      val mid = (low + high) ushr 1
+      if (indexKeys[mid] < key) {
+        low = mid + 1
+      } else {
+        high = mid
       }
     }
 
-    stream.shards()
+    val view = buffer.duplicate()
+    if (low > 0) {
+      view.position(indexPositions[low - 1])
+    }
+    val stream = EncodedByteBufferInputStream(view, owned = false)
+    while (view.hasRemaining()) {
+      val position = view.position()
+      if (codec.serializer.read(stream) >= key) {
+        return position
+      }
+      if (grouped) {
+        stream.readVarInt()
+      }
+      val length = stream.readVarInt()
+      view.position(view.position() + length)
+    }
+    return end
   }
-
-  val size = if (shards.isNotEmpty()) shards[shards.size - 1].let { it.start + it.length } else 0
-  println("  PMap (mmap) ${keyType} -> ${valueType} in ${shards.size} shards (size ${size})")
-
-  val fileChannel = FileChannel.open(sharded.toPath())
-  return Pair(listOf(sharded), shards.map { s ->
-    EncodedByteBufferInputStream(fileChannel.map(MapMode.READ_ONLY, s.start, s.length))
-  })
 }
 
-private const val PARALLEL_BATCH_SIZE = 1024
+/** Cuts every chunk at [splits], returning the pieces of each key range in chunk order. */
+private fun <K : Comparable<K>> splitChunks(
+    chunks: List<Chunk<K>>,
+    splits: List<K>,
+    codec: KeyCodec<K>,
+    grouped: Boolean): List<List<Chunk<K>>> {
+  val parts = (0..splits.size).map { ArrayList<Chunk<K>>() }
+  for (chunk in chunks) {
+    var from = chunk.start
+    for (i in 0..splits.size) {
+      val to = if (i < splits.size) chunk.positionOf(splits[i], codec, grouped) else chunk.end
+      if (to > from) {
+        parts[i].add(chunk.slice(from, to))
+        from = to
+      }
+    }
+  }
+  return parts
+}
 
-// Sentinel passed through the work queue to signal a worker should drain and exit. Reference
-// equality is what matters; the empty list contents are irrelevant.
-private val SENTINEL_BATCH: List<Any?> = emptyList()
+private fun bytesIn(chunks: List<Chunk<*>>): Long {
+  return chunks.sumOf { (it.end - it.start).toLong() }
+}
 
-private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
+/** Reads one run a record at a time for a merge. */
+private class RunCursor<K : Comparable<K>>(
+    chunk: Chunk<K>,
+    private val id: Int,
+    private val codec: KeyCodec<K>,
+) : Comparable<RunCursor<K>> {
+
+  val buffer: ByteBuffer = chunk.buffer.duplicate()
+  private val stream = EncodedByteBufferInputStream(buffer, owned = false)
+  var longKey = 0L
+    private set
+  var objectKey: K? = null
+    private set
+  var valueStart = buffer.position()
+    private set
+  var valueLength = 0
+    private set
+
+  val key: K
+    get() = if (codec.primitive) codec.fromLong(longKey) else objectKey!!
+
+  /** Moves to the next record, returning false once the run is spent. */
+  fun advance(): Boolean {
+    buffer.position(valueStart + valueLength)
+    if (!buffer.hasRemaining()) {
+      return false
+    }
+
+    if (codec.primitive) {
+      longKey = codec.readLong(stream)
+    } else {
+      objectKey = codec.serializer.read(stream)
+    }
+    valueLength = stream.readVarInt()
+    valueStart = buffer.position()
+    return true
+  }
+
+  fun <V> readValue(serializer: Serializer<V>): V {
+    buffer.position(valueStart)
+    return serializer.read(stream)
+  }
+
+  fun hasKey(long: Long, obj: K?): Boolean {
+    return if (codec.primitive) longKey == long else objectKey!!.compareTo(obj!!) == 0
+  }
+
+  // Ties go to the earlier run, so values for one key come out in a stable order.
+  override fun compareTo(other: RunCursor<K>): Int {
+    val byKey =
+        if (codec.primitive) longKey.compareTo(other.longKey)
+        else objectKey!!.compareTo(other.objectKey!!)
+    return if (byKey != 0) byKey else id.compareTo(other.id)
+  }
+}
+
+/** Merges runs by key. */
+private class RunMerger<K : Comparable<K>>(chunks: List<Chunk<K>>, codec: KeyCodec<K>) {
+
+  private val heap = PriorityQueue<RunCursor<K>>(chunks.size.coerceAtLeast(1))
+
+  init {
+    chunks.forEachIndexed { i, chunk ->
+      val cursor = RunCursor(chunk, i, codec)
+      if (cursor.advance()) {
+        heap.add(cursor)
+      }
+    }
+  }
+
+  fun hasNext(): Boolean {
+    return heap.isNotEmpty()
+  }
+
+  /**
+   * Hands every cursor holding the smallest key to [consume], which reads its value, and returns
+   * that key.
+   */
+  fun nextGroup(consume: (RunCursor<K>) -> Unit): K {
+    // A cursor's key is its heap position, so it comes out before advancing and goes back after.
+    val first = heap.poll()
+    val key = first.key
+    val long = first.longKey
+    val obj = first.objectKey
+    consume(first)
+    if (first.advance()) {
+      heap.add(first)
+    }
+
+    // A run can hold the same key twice, so the re-added cursor gets rechecked here.
+    while (heap.isNotEmpty() && heap.peek().hasKey(long, obj)) {
+      val next = heap.poll()
+      consume(next)
+      if (next.advance()) {
+        heap.add(next)
+      }
+    }
+    return key
+  }
+}
+
+/**
+ * Lazy merge over the runs, standing in for a merged file.
+ *
+ * Materializing costs the stage's size twice over, once writing the merged file and once reading
+ * it back. A single consumer only ever asks for one cursor, so the merge can happen in next() and
+ * the pass disappears. Splitting it hands each part its own slice of every run, so that several
+ * threads can merge at once.
+ */
+private class StreamingMergePMap<K : Comparable<K>, V : Any>(
+    private val chunks: List<Chunk<K>>,
+    private val codec: KeyCodec<K>,
+    private val valueSerializer: Serializer<V>,
+    private val size: Long,
+    private val onClose: Closeable?,
+) : SplittablePMap<K, V> {
+
+  private val merger by lazy { RunMerger(chunks, codec) }
+
+  override fun estimatedByteSize(): Long {
+    return size
+  }
+
+  override fun close() {
+    onClose?.close()
+  }
+
+  override fun hasNext(): Boolean {
+    return merger.hasNext()
+  }
+
+  override fun next(): PEntry<K, V> {
+    val values = ArrayList<V>()
+    val key = merger.nextGroup { values.add(it.readValue(valueSerializer)) }
+    return PEntry(key, values)
+  }
+
+  override fun sampleKeys(): List<K> {
+    return chunks.flatMap { it.indexKeys }
+  }
+
+  override fun split(splits: List<K>): List<PMap<K, V>> {
+    return splitChunks(chunks, splits, codec, grouped = false).map {
+      StreamingMergePMap(it, codec, valueSerializer, bytesIn(it), null)
+    }
+  }
+}
+
+/** A merged map, read from its chunks in order. */
+private class MmapPMap<K : Comparable<K>, V>(
+    private val chunks: List<Chunk<K>>,
+    private val codec: KeyCodec<K>,
+    private val valueSerializer: Serializer<V>,
+    private val size: Long,
+    private val onClose: Closeable?,
+) : SplittablePMap<K, V> {
+
+  private var chunk = -1
+  private var stream: EncodedByteBufferInputStream? = null
+
+  override fun close() {
+    onClose?.close()
+  }
+
+  override fun estimatedByteSize(): Long {
+    return size
+  }
+
+  override fun hasNext(): Boolean {
+    while (stream?.hasRemaining() != true) {
+      chunk += 1
+      if (chunk >= chunks.size) {
+        return false
+      }
+      stream = EncodedByteBufferInputStream(chunks[chunk].buffer.duplicate(), owned = false)
+    }
+    return true
+  }
+
+  override fun next(): PEntry<K, V> {
+    if (!hasNext()) {
+      throw NoSuchElementException()
+    }
+    val stream = stream!!
+    val key = codec.serializer.read(stream)
+    val count = stream.readVarInt()
+    stream.readVarInt()
+    val values = ArrayList<V>(count)
+    repeat(count) {
+      values.add(valueSerializer.read(stream))
+    }
+    return PEntry(key, values)
+  }
+
+  override fun sampleKeys(): List<K> {
+    return chunks.flatMap { it.indexKeys }
+  }
+
+  override fun split(splits: List<K>): List<PMap<K, V>> {
+    return splitChunks(chunks, splits, codec, grouped = true).map {
+      MmapPMap(it, codec, valueSerializer, bytesIn(it), null)
+    }
+  }
+}
+
+/** Records written so far, with an entry every [INDEX_GRANULARITY_BYTES] of output. */
+private class IndexBuilder<K> {
+
+  val keys = ArrayList<K>()
+  var offsets = LongArray(1024)
+    private set
+  private var lastOffset = -INDEX_GRANULARITY_BYTES
+
+  /** Starts a new run, whose first record always gets an entry. */
+  fun startRun() {
+    lastOffset = -INDEX_GRANULARITY_BYTES
+  }
+
+  fun wants(offset: Long): Boolean {
+    return offset - lastOffset >= INDEX_GRANULARITY_BYTES
+  }
+
+  fun add(key: K, offset: Long) {
+    if (keys.size == offsets.size) {
+      offsets = offsets.copyOf(2 * offsets.size)
+    }
+    offsets[keys.size] = offset
+    keys.add(key)
+    lastOffset = offset
+  }
+}
+
+/** Runs sitting in files, mapped. */
+private class Runs<K : Comparable<K>>(
+    val files: List<File>,
+    val chunks: List<Chunk<K>>,
+    private val mappings: List<ByteBuffer>,
+) {
+
+  val size = bytesIn(chunks)
+
+  fun unmap() {
+    mappings.forEach { EncodedByteBufferInputStream(it).close() }
+  }
+}
+
+/** Maps each extent of [file] and hands it the index entries that fall inside it. */
+private fun <K : Comparable<K>> mapExtents(
+    file: File,
+    extents: List<Extents>,
+    index: IndexBuilder<K>,
+): Pair<List<Chunk<K>>, List<ByteBuffer>> {
+  val chunks = ArrayList<Chunk<K>>()
+  val mappings = ArrayList<ByteBuffer>()
+  var entry = 0
+  FileChannel.open(file.toPath()).use { channel ->
+    for (extent in extents) {
+      val mapping = channel.map(MapMode.READ_ONLY, extent.start, extent.length)
+      mappings.add(mapping)
+      val from = entry
+      while (entry < index.keys.size && index.offsets[entry] < extent.start + extent.length) {
+        entry += 1
+      }
+      val positions = IntArray(entry - from) { (index.offsets[from + it] - extent.start).toInt() }
+      chunks.add(Chunk(mapping, index.keys.subList(from, entry), positions))
+    }
+  }
+  return Pair(chunks, mappings)
+}
+
+/** Records waiting to be sorted into a run. */
+private interface RunBuffer<K, V> {
+
+  val heldBytes: Long
+
+  fun add(key: K, value: V)
+
+  /** Writes everything held in key order and empties the buffer. */
+  fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>)
+}
+
+/**
+ * Holds keys as longs and values in shared arenas, so a full buffer is a handful of large arrays
+ * rather than tens of millions of small objects.
+ */
+private class PrimitiveRunBuffer<K : Comparable<K>, V>(
+    private val codec: KeyCodec<K>,
+    private val valueSerializer: Serializer<V>,
+) : RunBuffer<K, V> {
+
+  private var keys = LongArray(1 shl 16)
+  // The arena in the high 32 bits and the offset within it in the low 32
+  private var locations = LongArray(1 shl 16)
+  private var lengths = IntArray(1 shl 16)
+  private var count = 0
+  private val arenas = ArrayList<ByteArray>()
+  private var arena = -1
+  private var arenaOffset = 0
+  private val sorter = RadixSorter()
+
+  override var heldBytes = 0L
+    private set
+
+  override fun add(key: K, value: V) {
+    val scratch = BYTE_BUFFER.get()
+    valueSerializer.write(value, ByteBufferEncodedOutputStream(scratch))
+    val length = scratch.position()
+
+    if (count == keys.size) {
+      keys = keys.copyOf(2 * count)
+      locations = locations.copyOf(2 * count)
+      lengths = lengths.copyOf(2 * count)
+    }
+    if (arena < 0 || arenas[arena].size - arenaOffset < length) {
+      arena += 1
+      arenaOffset = 0
+      if (arena == arenas.size || arenas[arena].size < length) {
+        val fresh = ByteArray(maxOf(ARENA_BYTES, length))
+        if (arena == arenas.size) arenas.add(fresh) else arenas[arena] = fresh
+      }
+    }
+    System.arraycopy(scratch.array(), 0, arenas[arena], arenaOffset, length)
+    scratch.clear()
+
+    keys[count] = codec.toLong(key)
+    locations[count] = (arena.toLong() shl 32) or arenaOffset.toLong()
+    lengths[count] = length
+    count += 1
+    arenaOffset += length
+    heldBytes += PRIMITIVE_RECORD_OVERHEAD_BYTES + length
+  }
+
+  override fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>) {
+    val order = sorter.sort(keys, count)
+    for (i in 0 until count) {
+      val record = order[i]
+      val offset = output.nextWriteOffset()
+      if (index.wants(offset)) {
+        index.add(codec.fromLong(keys[record]), offset)
+      }
+      codec.writeLong(keys[record], output)
+      output.writeVarInt(lengths[record])
+      val location = locations[record]
+      output.write(
+          arenas[(location ushr 32).toInt()], (location and 0xFFFFFFFFL).toInt(), lengths[record])
+      output.checkBufferSpace()
+    }
+
+    // The arenas and arrays stay allocated for the next run.
+    count = 0
+    arena = -1
+    arenaOffset = 0
+    heldBytes = 0
+  }
+}
+
+/** Sorts record indices by long key, stably, sixteen bits a pass. */
+private class RadixSorter {
+
+  private var keys = LongArray(0)
+  private var scratchKeys = LongArray(0)
+  private var order = IntArray(0)
+  private var scratchOrder = IntArray(0)
+  private val counts = IntArray(65536 + 1)
+
+  /** Returns record indices in key order. The array is reused by the next call. */
+  fun sort(input: LongArray, n: Int): IntArray {
+    if (keys.size < n) {
+      keys = LongArray(input.size)
+      scratchKeys = LongArray(input.size)
+      order = IntArray(input.size)
+      scratchOrder = IntArray(input.size)
+    }
+
+    // Flipping the sign bit makes signed order and unsigned digit order agree.
+    for (i in 0 until n) {
+      keys[i] = input[i] xor Long.MIN_VALUE
+      order[i] = i
+    }
+
+    var fromKeys = keys
+    var fromOrder = order
+    var toKeys = scratchKeys
+    var toOrder = scratchOrder
+    for (shift in 0 until 64 step 16) {
+      counts.fill(0)
+      for (i in 0 until n) {
+        counts[((fromKeys[i] ushr shift) and 0xFFFF).toInt() + 1] += 1
+      }
+      // A pass where every key shares the digit would only copy, which is most high digits.
+      if (counts.any { it == n }) {
+        continue
+      }
+      for (d in 1 until counts.size) {
+        counts[d] += counts[d - 1]
+      }
+      for (i in 0 until n) {
+        val digit = ((fromKeys[i] ushr shift) and 0xFFFF).toInt()
+        val to = counts[digit]
+        counts[digit] = to + 1
+        toKeys[to] = fromKeys[i]
+        toOrder[to] = fromOrder[i]
+      }
+      fromKeys = toKeys.also { toKeys = fromKeys }
+      fromOrder = toOrder.also { toOrder = fromOrder }
+    }
+    return fromOrder
+  }
+}
+
+/** Holds each record as an object, for keys that aren't a fixed width number. */
+private class ObjectRunBuffer<K : Comparable<K>, V>(
+    private val codec: KeyCodec<K>,
+    private val valueSerializer: Serializer<V>,
+) : RunBuffer<K, V> {
+
+  private val items = ArrayList<SortKey<K>>()
+
+  override var heldBytes = 0L
+    private set
+
+  override fun add(key: K, value: V) {
+    val scratch = BYTE_BUFFER.get()
+    valueSerializer.write(value, ByteBufferEncodedOutputStream(scratch))
+    scratch.flip()
+    val bytes = ByteArray(scratch.limit())
+    scratch.get(bytes)
+    scratch.clear()
+    items.add(SortKey(key, bytes))
+    heldBytes += OBJECT_RECORD_OVERHEAD_BYTES + bytes.size
+  }
+
+  override fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>) {
+    // List.sort is stable, so equal keys keep the order they arrived in.
+    items.sort()
+    for (item in items) {
+      val offset = output.nextWriteOffset()
+      if (index.wants(offset)) {
+        index.add(item.key, offset)
+      }
+      codec.serializer.write(item.key, output)
+      output.writeVarInt(item.value.size)
+      output.write(item.value)
+      output.checkBufferSpace()
+    }
+    items.clear()
+    heldBytes = 0
+  }
+}
+
+private class SortKey<K : Comparable<K>>(val key: K, val value: ByteArray)
+  : Comparable<SortKey<K>> {
+
+  override fun compareTo(other: SortKey<K>): Int {
+    return key.compareTo(other.key)
+  }
+}
+
+/** Buffers records and writes them to [file] as sorted runs. */
+private class RunWriter<K : Comparable<K>, V : Any>(
+    val file: File,
+    codec: KeyCodec<K>,
+    valueSerializer: Serializer<V>,
+    private val budget: Long,
+) {
+
+  private val raf = RandomAccessFile(file, "rw")
+  private val output = ChannelEncodedOutputStream(raf.channel)
+  private val buffer: RunBuffer<K, V> =
+      if (codec.primitive) PrimitiveRunBuffer(codec, valueSerializer)
+      else ObjectRunBuffer(codec, valueSerializer)
+  val index = IndexBuilder<K>()
+
+  fun emit(key: K, value: V) {
+    buffer.add(key, value)
+    if (buffer.heldBytes > budget) {
+      dump()
+    }
+  }
+
+  private fun dump() {
+    index.startRun()
+    buffer.writeSorted(output, index)
+    output.shard()
+  }
+
+  /** Writes what's left and returns the extents of every run. */
+  fun finish(): List<Extents> {
+    try {
+      dump()
+      output.close()
+      return output.shards()
+    } finally {
+      raf.close()
+    }
+  }
+}
+
+private fun <K : Comparable<K>, V : Any> emitRuns(
     context: String,
     keyType: TypeToken<K>,
     valueType: TypeToken<out V>,
-    keySerializer: Serializer<K>,
+    codec: KeyCodec<K>,
+    valueSerializer: Serializer<V>,
+    fn: (Emitter2<K, V>) -> Unit): Runs<K> {
+  val file = File.createTempFile(cleanFilename("mmap-map-sharded-${keyType}-${valueType}"), null)
+  file.deleteOnExit()
+  val writer = RunWriter(file, codec, valueSerializer, calculateMemoryBudgetPerShard(1))
+  longProgress("${context} emitting to shard") { progress ->
+    fn(object : Emitter2<K, V> {
+      override fun emit(a: K, b: V) {
+        progress.increment()
+        writer.emit(a, b)
+      }
+    })
+  }
+  val extents = writer.finish()
+  val (chunks, mappings) = mapExtents(file, extents, writer.index)
+  val runs = Runs(listOf(file), chunks, mappings)
+  println("  PMap (mmap) ${keyType} -> ${valueType} in ${chunks.size} shards (size ${runs.size})")
+  return runs
+}
+
+private fun <I, K : Comparable<K>, V : Any> emitRunsParallel(
+    context: String,
+    keyType: TypeToken<K>,
+    valueType: TypeToken<out V>,
+    codec: KeyCodec<K>,
     valueSerializer: Serializer<V>,
     input: PCollection<I>,
     workers: Int,
     perItem: (I, Emitter2<K, V>) -> Unit,
-): Pair<List<File>, List<EncodedByteBufferInputStream>> {
-  val workerFiles =
-      (0 until workers).map { w ->
-        File.createTempFile(
-            cleanFilename("mmap-map-sharded-${keyType}-${valueType}-w${w}"),
-            null,
-        ).also { it.deleteOnExit() }
-      }
-
-  // Queue of input batches to dispatch to workers. Cap at 2x workers so the producer can stay
-  // a step ahead without unbounded memory growth.
-  val queueCapacity = (workers * 2).coerceAtLeast(2)
-  val queue = ArrayBlockingQueue<List<I>>(queueCapacity)
-
-  val perWorkerShards = arrayOfNulls<List<Extents>>(workers)
+): Runs<K> {
   val budget = calculateMemoryBudgetPerShard(workers)
-  val failure = AtomicReference<Throwable>()
+  val writers =
+      (0 until workers).map { w ->
+        val file =
+            File.createTempFile(
+                cleanFilename("mmap-map-sharded-${keyType}-${valueType}-w${w}"), null)
+        file.deleteOnExit()
+        RunWriter(file, codec, valueSerializer, budget)
+      }
+  val extents = arrayOfNulls<List<Extents>>(workers)
 
   longProgress("${context} emitting to shards (parallel x${workers})") { progress ->
-    val workerThreads =
-        (0 until workers).map { workerId ->
-          Thread(
-              {
-                try {
-                  val raf = RandomAccessFile(workerFiles[workerId], "rw")
-                  try {
-                    val stream = ChannelEncodedOutputStream(raf.channel)
-                    stream.use { output ->
-                      val itemsInShard = ArrayList<SortKey<K>>()
-                      var heldBytes = 0L
-
-                      val dumpShard = {
-                        itemsInShard.sort()
-                        for (item in itemsInShard) {
-                          keySerializer.write(item.key, output)
-                          output.writeVarInt(item.value.size)
-                          output.write(item.value)
-                          output.checkBufferSpace()
-                        }
-                        output.shard()
-                        itemsInShard.clear()
-                        heldBytes = 0
-                      }
-
-                      val emitter =
-                          object : Emitter2<K, V> {
-                            override fun emit(a: K, b: V) {
-                              val buffer = BYTE_BUFFER.get()
-                              valueSerializer.write(b, ByteBufferEncodedOutputStream(buffer))
-                              buffer.flip()
-                              val bytes = ByteArray(buffer.limit())
-                              buffer.get(bytes)
-                              buffer.clear()
-                              itemsInShard.add(SortKey(a, bytes))
-                              heldBytes += RECORD_OVERHEAD_BYTES + bytes.size
-                              progress.increment()
-
-                              if (heldBytes > budget) {
-                                dumpShard()
-                              }
-                            }
-                          }
-
-                      while (true) {
-                        val batch = queue.take()
-                        if (batch === SENTINEL_BATCH) break
-                        for (item in batch) {
-                          perItem(item, emitter)
-                        }
-                      }
-
-                      dumpShard()
-                    }
-                    perWorkerShards[workerId] = stream.shards()
-                  } finally {
-                    raf.close()
-                  }
-                } catch (e: Throwable) {
-                  // Letting the thread die here leaves this worker's shards null, and the caller
-                  // reports that instead of what perItem threw.
-                  failure.compareAndSet(null, e)
-                }
-              },
-              "mmap-pmap-${context}-w${workerId}",
-          )
+    runWorkers(context, input, workers, "mmap-pmap") { workerId, items ->
+      val writer = writers[workerId]
+      val emitter = object : Emitter2<K, V> {
+        override fun emit(a: K, b: V) {
+          writer.emit(a, b)
+          progress.increment()
         }
+      }
+      items { perItem(it, emitter) }
+      extents[workerId] = writer.finish()
+    }
+  }
 
-    workerThreads.forEach { it.start() }
+  val chunks = ArrayList<Chunk<K>>()
+  val mappings = ArrayList<ByteBuffer>()
+  for ((i, writer) in writers.withIndex()) {
+    val (c, m) = mapExtents(writer.file, extents[i]!!, writer.index)
+    chunks.addAll(c)
+    mappings.addAll(m)
+  }
+  val runs = Runs(writers.map { it.file }, chunks, mappings)
+  println(
+      "  PMap (mmap parallel x${workers}) ${keyType} -> ${valueType} in ${chunks.size} shards" +
+          " (size ${runs.size})")
+  return runs
+}
 
-    // Producer (this thread): batch input items and push to queue.
+/**
+ * Runs [work] on [workers] threads, each given a way to pull its share of [input]. Partitionable
+ * input is cut into key ranges that the workers take turns claiming. Anything else is read on the
+ * caller thread and handed out in batches.
+ */
+internal fun <I> runWorkers(
+    context: String,
+    input: PCollection<I>,
+    workers: Int,
+    threadPrefix: String,
+    work: (workerId: Int, items: ((I) -> Unit) -> Unit) -> Unit) {
+  val failure = AtomicReference<Throwable>()
+  val parts = (input as? Partitionable<I>)?.partition(workers * PARTS_PER_WORKER)
+  val claimable = parts?.let { ConcurrentLinkedQueue(it) }
+  // Cap at 2x workers so the producer can stay a step ahead without unbounded memory growth.
+  val queue = ArrayBlockingQueue<List<I>>((workers * 2).coerceAtLeast(2))
+
+  val threads =
+      (0 until workers).map { workerId ->
+        Thread(
+            {
+              try {
+                work(workerId) { each ->
+                  if (claimable != null) {
+                    while (true) {
+                      val part = claimable.poll() ?: break
+                      while (part.hasNext()) {
+                        each(part.next())
+                      }
+                    }
+                  } else {
+                    while (true) {
+                      val batch = queue.take()
+                      if (batch === SENTINEL_BATCH) break
+                      for (item in batch) {
+                        each(item)
+                      }
+                    }
+                  }
+                }
+              } catch (e: Throwable) {
+                failure.compareAndSet(null, e)
+              }
+            },
+            "${threadPrefix}-${context}-w${workerId}",
+        )
+      }
+  threads.forEach { it.start() }
+
+  if (claimable == null) {
     var batch = ArrayList<I>(PARALLEL_BATCH_SIZE)
     while (input.hasNext()) {
       batch.add(input.next())
@@ -402,291 +919,136 @@ private fun <I, K : Comparable<K>, V : Any> emitToSortedShardsParallel(
     }
     @Suppress("UNCHECKED_CAST")
     repeat(workers) { offerToWorkers(queue, SENTINEL_BATCH as List<I>, failure) }
-
-    // offerToWorkers drops those sentinels once a worker has failed, so the workers that are still
-    // alive sit on take() and join never returns. The interrupt loses to the recorded failure at
-    // compareAndSet, so we still report what perItem threw.
-    if (failure.get() != null) {
-      workerThreads.forEach { it.interrupt() }
-    }
-
-    workerThreads.forEach { it.join() }
   }
 
+  // offerToWorkers drops the sentinels once a worker has failed, so the workers that are still
+  // alive sit on take() and join never returns. The interrupt loses to the recorded failure at
+  // compareAndSet, so we still report what the worker threw.
+  if (failure.get() != null) {
+    threads.forEach { it.interrupt() }
+  }
+  threads.forEach { it.join() }
   input.close()
 
   failure.get()?.let {
-    throw RuntimeException("PMap ${context} worker failed", it)
-  }
-
-  val combinedFileShards =
-      workerFiles.mapIndexed { i, file -> file to perWorkerShards[i]!! }
-  val totalShards = combinedFileShards.sumOf { it.second.size }
-  val totalSize = combinedFileShards.sumOf { (_, shards) -> shards.sumOf { it.length } }
-  println(
-      "  PMap (mmap parallel x${workers}) ${keyType} -> ${valueType} in ${totalShards} shards" +
-          " (size ${totalSize})")
-
-  // Open every worker file's shards as mmap'd input streams. Each worker file gets one
-  // FileChannel; we map each shard's extent into its own buffer.
-  val streams =
-      combinedFileShards.flatMap { (file, shards) ->
-        val channel = FileChannel.open(file.toPath())
-        channel.use { fc ->
-          shards.map { s ->
-            EncodedByteBufferInputStream(fc.map(MapMode.READ_ONLY, s.start, s.length))
-          }
-        }
-      }
-
-  return Pair(workerFiles, streams)
-}
-
-private fun <K : Comparable<K>, V : Any> mergeSortedShards(
-    context: String,
-    keyType: TypeToken<K>,
-    valueType: TypeToken<out V>,
-    unmergedShards: List<EncodedByteBufferInputStream>,
-    keySerializer: Serializer<K>,
-    valueSerializer: Serializer<V>,
-    estimatedByteSize: Long,
-): DisposableSupplier<MmapPMap<K, V>> {
-  val merged =
-      File.createTempFile(cleanFilename("mmap-map-merged-${keyType}-${valueType}"), null)
-  merged.deleteOnExit()
-
-  // Index entries accumulated while the data is being written. One entry per ~1 MB.
-  val indexKeys = ArrayList<K>()
-  val indexOffsets = ArrayList<Long>()
-
-  // After the data is fully written, snapshot the data shards (so MmapPMap only mmaps the
-  // data extents, not the trailing index/footer region).
-  var dataShards: List<org.trailcatalog.common.Extents> = emptyList()
-  var indexStart: Long = 0L
-
-  RandomAccessFile(merged, "rw").use {
-    val stream = ChannelEncodedOutputStream(it.channel)
-    stream.use { output ->
-      val heap = PriorityQueue<MergeKey<K>>()
-      for (shard in unmergedShards) {
-        if (shard.hasRemaining()) {
-          val key = keySerializer.read(shard)
-          val size = shard.readVarInt()
-          val value = ByteArray(size)
-          shard.read(value)
-          heap.add(MergeKey(key, value, shard))
-        }
-      }
-
-      var lastIndexedOffset = -INDEX_GRANULARITY_BYTES
-
-      fun maybeIndex(key: K, recordOffset: Long) {
-        if (recordOffset - lastIndexedOffset >= INDEX_GRANULARITY_BYTES) {
-          indexKeys.add(key)
-          indexOffsets.add(recordOffset)
-          lastIndexedOffset = recordOffset
-        }
-      }
-
-      longProgress("${context} merging shards") { progress ->
-        var last: K? = null
-        val values = ArrayList<ByteArray>()
-        while (heap.isNotEmpty()) {
-          val min = heap.poll()
-          if (last == null) {
-            last = min.key
-          } else if (last.compareTo(min.key) != 0) {
-            val recordOffset = output.nextWriteOffset()
-            maybeIndex(last, recordOffset)
-            keySerializer.write(last, output)
-            output.writeVarInt(values.size)
-            for (value in values) {
-              output.write(value)
-            }
-            output.checkBufferSpace()
-            progress.incrementBy(values.size)
-            values.clear()
-            last = min.key
-          }
-
-          values.add(min.value)
-
-          val source = min.source
-          if (source.hasRemaining()) {
-            val key = keySerializer.read(source)
-            val size = source.readVarInt()
-            val value = ByteArray(size)
-            source.read(value)
-            heap.add(MergeKey(key, value, min.source))
-          }
-        }
-
-        if (last != null) {
-          val recordOffset = output.nextWriteOffset()
-          maybeIndex(last, recordOffset)
-          keySerializer.write(last, output)
-          output.writeVarInt(values.size)
-          for (value in values) {
-            output.write(value)
-          }
-          progress.incrementBy(values.size)
-          values.clear()
-        }
-      }
-
-      // Close the data region as a shard so MmapPMap doesn't mmap the index/footer as data.
-      output.shard()
-      dataShards = output.shardsSnapshot()
-
-      // Write the sparse index, then a fixed-size footer pointing at it.
-      indexStart = output.nextWriteOffset()
-      for (i in indexKeys.indices) {
-        keySerializer.write(indexKeys[i], output)
-        output.writeLong(indexOffsets[i])
-      }
-
-      output.writeLong(INDEX_FOOTER_MAGIC)
-      output.writeLong(indexStart)
-      output.writeLong(indexKeys.size.toLong())
-    }
-  }
-
-  val size =
-      if (dataShards.isNotEmpty()) dataShards[dataShards.size - 1].let { it.start + it.length }
-      else 0
-  println("  PMap (mmap) ${keyType} -> ${valueType} size ${size} (index ${indexKeys.size})")
-  println("  -> estimated ${estimatedByteSize} bytes (${estimatedByteSize * 100.0 / size}%)")
-
-  val fileReference = FileReference(merged)
-  val indexEntries = indexKeys.indices.map { PMapIndexEntry(indexKeys[it], indexOffsets[it]) }
-
-  return DisposableSupplier(fileReference) {
-    val opened = FileChannel.open(merged.toPath()).use { postsortChannel ->
-      dataShards.map { s ->
-        EncodedByteBufferInputStream(postsortChannel.map(MapMode.READ_ONLY, s.start, s.length))
-      }
-    }
-    MmapPMap(
-        opened,
-        keySerializer,
-        valueSerializer,
-        opened.sumOf { it.size().toLong() },
-        index = indexEntries,
-    )
+    throw RuntimeException("${context} worker failed", it)
   }
 }
 
 /**
- * Lazy K-way merge over the pre-sort shards, standing in for a merged file.
- *
- * Materializing costs the stage's size twice over, once writing the merged file and once reading
- * it back, and that pass is the disk's throughput end to end. A single consumer only ever asks for
- * one cursor, so the merge can happen in next() and the pass disappears. In exchange the merge now
- * runs on whichever thread drives the consumer, over one open mapping per shard rather than one
- * sequential file.
+ * Merges [runs] into files of grouped records, one key range per worker, and deletes the runs.
+ * Each call of the returned supplier maps the files afresh, so every dependant reads on its own.
  */
-private class StreamingMergePMap<K : Comparable<K>, V : Any>(
-    private val shards: List<EncodedByteBufferInputStream>,
-    keySerializer: Serializer<K>,
+private fun <K : Comparable<K>, V : Any> materialize(
+    context: String,
+    keyType: TypeToken<K>,
+    valueType: TypeToken<out V>,
+    codec: KeyCodec<K>,
     valueSerializer: Serializer<V>,
-    private val size: Long,
-) : PMap<K, V> {
+    runs: Runs<K>,
+    workers: Int,
+): DisposableSupplier<PMap<K, V>> {
+  val splits = chooseSplits(runs.chunks.flatMap { it.indexKeys }, workers)
+  val parts = splitChunks(runs.chunks, splits, codec, grouped = false)
+  val files =
+      parts.indices.map {
+        File.createTempFile(cleanFilename("mmap-map-merged-${keyType}-${valueType}-p${it}"), null)
+            .also { file -> file.deleteOnExit() }
+      }
+  val extents = arrayOfNulls<List<Extents>>(parts.size)
+  val indexes = arrayOfNulls<IndexBuilder<K>>(parts.size)
+  val failure = AtomicReference<Throwable>()
 
-  private val heap = PriorityQueue<ShardCursor<K, V>>()
+  longProgress("${context} merging shards") { progress ->
+    val threads =
+        parts.indices.map { p ->
+          Thread(
+              {
+                try {
+                  val index = IndexBuilder<K>()
+                  extents[p] = mergeInto(files[p], parts[p], codec, index) {
+                    progress.incrementBy(it)
+                  }
+                  indexes[p] = index
+                } catch (e: Throwable) {
+                  failure.compareAndSet(null, e)
+                }
+              },
+              "mmap-merge-${context}-p${p}")
+        }
+    threads.forEach { it.start() }
+    threads.forEach { it.join() }
+  }
 
-  init {
-    for (shard in shards) {
-      val cursor = ShardCursor<K, V>(shard, keySerializer, valueSerializer)
-      if (cursor.advance()) {
-        heap.add(cursor)
+  runs.unmap()
+  runs.files.forEach { it.delete() }
+  failure.get()?.let {
+    throw RuntimeException("PMap ${context} merge failed", it)
+  }
+
+  val size = extents.sumOf { e -> e!!.sumOf { it.length } }
+  val entries = indexes.sumOf { it!!.keys.size }
+  println("  PMap (mmap) ${keyType} -> ${valueType} size ${size} (index ${entries})")
+
+  return DisposableSupplier({ files.forEach { it.delete() } }) {
+    val chunks = ArrayList<Chunk<K>>()
+    val mappings = ArrayList<ByteBuffer>()
+    for (p in files.indices) {
+      val (c, m) = mapExtents(files[p], extents[p]!!, indexes[p]!!)
+      chunks.addAll(c)
+      mappings.addAll(m)
+    }
+    MmapPMap(chunks, codec, valueSerializer, size) {
+      mappings.forEach { EncodedByteBufferInputStream(it).close() }
+    }
+  }
+}
+
+/** Merges [chunks] into [file] as grouped records, copying value bytes without decoding them. */
+private fun <K : Comparable<K>> mergeInto(
+    file: File,
+    chunks: List<Chunk<K>>,
+    codec: KeyCodec<K>,
+    index: IndexBuilder<K>,
+    progress: (Int) -> Unit): List<Extents> {
+  RandomAccessFile(file, "rw").use { raf ->
+    val output = ChannelEncodedOutputStream(raf.channel)
+    output.use {
+      val merger = RunMerger(chunks, codec)
+      var buffers = arrayOfNulls<ByteBuffer>(16)
+      var starts = IntArray(16)
+      var lengths = IntArray(16)
+      var count = 0
+      while (merger.hasNext()) {
+        val offset = output.nextWriteOffset()
+        count = 0
+        var total = 0
+        val key = merger.nextGroup {
+          if (count == buffers.size) {
+            buffers = buffers.copyOf(2 * count)
+            starts = starts.copyOf(2 * count)
+            lengths = lengths.copyOf(2 * count)
+          }
+          buffers[count] = it.buffer
+          starts[count] = it.valueStart
+          lengths[count] = it.valueLength
+          total += it.valueLength
+          count += 1
+        }
+
+        if (index.wants(offset)) {
+          index.add(key, offset)
+        }
+        codec.serializer.write(key, output)
+        output.writeVarInt(count)
+        output.writeVarInt(total)
+        for (i in 0 until count) {
+          output.write(buffers[i]!!, starts[i], lengths[i])
+        }
+        output.checkBufferSpace()
+        progress(count)
       }
     }
-  }
-
-  override fun estimatedByteSize(): Long {
-    return size
-  }
-
-  override fun close() {
-    shards.forEach { it.close() }
-  }
-
-  override fun hasNext(): Boolean {
-    return heap.isNotEmpty()
-  }
-
-  override fun next(): PEntry<K, V> {
-    // A cursor's key is its heap position, so it comes out before advancing and goes back after.
-    val first = heap.poll()
-    val key = first.key
-    val values = ArrayList<V>()
-    values.add(first.value)
-    if (first.advance()) {
-      heap.add(first)
-    }
-
-    // A shard can hold the same key twice, so the re-added cursor gets rechecked here.
-    while (heap.isNotEmpty() && heap.peek().key.compareTo(key) == 0) {
-      val next = heap.poll()
-      values.add(next.value)
-      if (next.advance()) {
-        heap.add(next)
-      }
-    }
-
-    return PEntry(key, values)
-  }
-}
-
-private class ShardCursor<K : Comparable<K>, V : Any>(
-    private val source: EncodedByteBufferInputStream,
-    private val keySerializer: Serializer<K>,
-    private val valueSerializer: Serializer<V>,
-) : Comparable<ShardCursor<K, V>> {
-
-  private var currentKey: K? = null
-  private var currentValue: V? = null
-
-  val key: K
-    get() = currentKey!!
-
-  val value: V
-    get() = currentValue!!
-
-  /** Reads the next record, returning false once the shard is spent. */
-  fun advance(): Boolean {
-    if (!source.hasRemaining()) {
-      currentKey = null
-      currentValue = null
-      return false
-    }
-
-    currentKey = keySerializer.read(source)
-    // The length prefix exists so the merged path can copy value bytes without deserializing them.
-    // Reading past it keeps the stream aligned.
-    source.readVarInt()
-    currentValue = valueSerializer.read(source)
-    return true
-  }
-
-  override fun compareTo(other: ShardCursor<K, V>): Int {
-    return key.compareTo(other.key)
-  }
-}
-
-private data class MergeKey<K : Comparable<K>>(
-    val key: K, val value: ByteArray, val source: EncodedByteBufferInputStream)
-  : Comparable<MergeKey<K>> {
-
-  override fun compareTo(other: MergeKey<K>): Int {
-    return key.compareTo(other.key)
-  }
-}
-
-private data class SortKey<K : Comparable<K>>(val key: K, val value: ByteArray)
-  : Comparable<SortKey<K>> {
-
-  override fun compareTo(other: SortKey<K>): Int {
-    return key.compareTo(other.key)
+    return output.shards()
   }
 }

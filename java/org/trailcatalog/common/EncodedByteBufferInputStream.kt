@@ -5,7 +5,14 @@ import java.nio.ByteBuffer
 import java.nio.MappedByteBuffer
 import kotlin.math.min
 
-class EncodedByteBufferInputStream(private val buffer: ByteBuffer) : EncodedInputStream() {
+/**
+ * Reads [buffer] from its current position. Closing unmaps a mapped buffer unless [owned] is
+ * false, which views over a mapping someone else closes have to pass.
+ */
+class EncodedByteBufferInputStream(
+    private val buffer: ByteBuffer,
+    private val owned: Boolean = true,
+) : EncodedInputStream() {
 
   override fun available(): Int {
     return buffer.limit() - buffer.position()
@@ -41,7 +48,7 @@ class EncodedByteBufferInputStream(private val buffer: ByteBuffer) : EncodedInpu
   }
 
   override fun close() {
-    if (buffer is MappedByteBuffer) {
+    if (owned && buffer is MappedByteBuffer) {
       close(buffer)
     }
   }

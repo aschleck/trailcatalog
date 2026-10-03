@@ -34,3 +34,16 @@ kt_jvm_test(
         "@maven//:org_junit_jupiter_junit_jupiter",
     ],
 )
+
+kt_jvm_test(
+    name = "partition",
+    srcs = glob(["*.kt"]),
+    test_class = "org.trailcatalog.importers.pipeline.PartitionTest",
+    deps = [
+        "//java/org/trailcatalog/importers/pipeline",
+        "//java/org/trailcatalog/importers/pipeline/collections",
+        "@maven//:com_google_guava_guava",
+        "@maven//:com_google_truth_truth",
+        "@maven//:org_junit_jupiter_junit_jupiter",
+    ],
+)

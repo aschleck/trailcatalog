@@ -6,7 +6,11 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
+import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.PMap
+import org.trailcatalog.importers.pipeline.collections.Partitionable
+import org.trailcatalog.importers.pipeline.collections.SplittablePMap
+import org.trailcatalog.importers.pipeline.collections.chooseSplits
 import org.trailcatalog.importers.pipeline.collections.createPMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -92,8 +96,6 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
 
   private fun actOneshot(input: Pair<PMap<K, V1>, PMap<K, V2>>):
       DisposableSupplier<PMap<K, Pair<List<V1>, List<V2>>>> {
-    val left = input.first
-    val right = input.second
     val openCount = AtomicInteger(0)
 
     return DisposableSupplier<PMap<K, Pair<List<V1>, List<V2>>>>({ }) {
@@ -102,60 +104,109 @@ class ZipMaps2<K : Comparable<K>, V1 : Any, V2 : Any>(
       }
 
       println("${context} (zipping oneshot)")
-      object : PMap<K, Pair<List<V1>, List<V2>>> {
-        var nl = if (left.hasNext()) left.next() else null
-        var nr = if (right.hasNext()) right.next() else null
-
-        override fun estimatedByteSize(): Long {
-          return (
-              estimateRatio() * (input.first.estimatedByteSize() + input.second.estimatedByteSize()))
-              .toLong()
-        }
-
-        override fun close() {
-          left.close()
-          right.close()
-        }
-
-        override fun hasNext(): Boolean {
-          return nl != null || nr != null
-        }
-
-        override fun next(): PEntry<K, Pair<List<V1>, List<V2>>> {
-          val nl = this.nl
-          val nr = this.nr
-
-          val entry: PEntry<K, Pair<List<V1>, List<V2>>>
-          if (nl != null && nr != null) {
-            when (nl.key.compareTo(nr.key)) {
-              -1 -> {
-                entry = PEntry(nl.key, ImmutableList.of(Pair(nl.values, ImmutableList.of())))
-                this.nl = if (left.hasNext()) left.next() else null
-              }
-              0 -> {
-                entry = PEntry(nl.key, ImmutableList.of(Pair(nl.values, nr.values)))
-                this.nl = if (left.hasNext()) left.next() else null
-                this.nr = if (right.hasNext()) right.next() else null
-              }
-              1 -> {
-                entry = PEntry(nl.key, ImmutableList.of(Pair(ImmutableList.of(), nr.values)))
-                this.nr = if (right.hasNext()) right.next() else null
-              }
-              else -> throw AssertionError("Unknown compareTo return value")
-            }
-          } else if (nl != null) {
-            entry = PEntry(nl.key, ImmutableList.of(Pair(nl.values, ImmutableList.of())))
-            this.nl = if (left.hasNext()) left.next() else null
-          } else if (nr != null) {
-            entry = PEntry(nr.key, ImmutableList.of(Pair(ImmutableList.of(), nr.values)))
-            this.nr = if (right.hasNext()) right.next() else null
-          } else {
-            throw AssertionError("next was called when none remain")
-          }
-          return entry
-        }
-      }
+      ZippedPMap(
+          input.first,
+          input.second,
+          (estimateRatio() * (input.first.estimatedByteSize() + input.second.estimatedByteSize()))
+              .toLong())
     }
   }
 }
 
+/**
+ * Zips two maps as they're read. When both can be split, so can the zip: each piece zips the same
+ * key range of both sides.
+ */
+private class ZippedPMap<K : Comparable<K>, V1 : Any, V2 : Any>(
+    private val left: PMap<K, V1>,
+    private val right: PMap<K, V2>,
+    private val size: Long,
+) : PMap<K, Pair<List<V1>, List<V2>>>, Partitionable<PEntry<K, Pair<List<V1>, List<V2>>>> {
+
+  private val whole by lazy { ZippedRange(left, right, size) }
+
+  override fun estimatedByteSize(): Long {
+    return size
+  }
+
+  override fun close() {
+    left.close()
+    right.close()
+  }
+
+  override fun hasNext(): Boolean {
+    return whole.hasNext()
+  }
+
+  override fun next(): PEntry<K, Pair<List<V1>, List<V2>>> {
+    return whole.next()
+  }
+
+  override fun partition(parts: Int): List<PCollection<PEntry<K, Pair<List<V1>, List<V2>>>>> {
+    if (left !is SplittablePMap<K, V1> || right !is SplittablePMap<K, V2>) {
+      return listOf(whole)
+    }
+
+    val splits = chooseSplits(left.sampleKeys() + right.sampleKeys(), parts)
+    val lefts = left.split(splits)
+    val rights = right.split(splits)
+    return lefts.indices.map {
+      ZippedRange(
+          lefts[it], rights[it], lefts[it].estimatedByteSize() + rights[it].estimatedByteSize())
+    }
+  }
+}
+
+/** Zips [left] and [right] in key order. Closing it leaves them open. */
+private class ZippedRange<K : Comparable<K>, V1 : Any, V2 : Any>(
+    private val left: PMap<K, V1>,
+    private val right: PMap<K, V2>,
+    private val size: Long,
+) : PMap<K, Pair<List<V1>, List<V2>>> {
+
+  private var nl = if (left.hasNext()) left.next() else null
+  private var nr = if (right.hasNext()) right.next() else null
+
+  override fun estimatedByteSize(): Long {
+    return size
+  }
+
+  override fun close() {}
+
+  override fun hasNext(): Boolean {
+    return nl != null || nr != null
+  }
+
+  override fun next(): PEntry<K, Pair<List<V1>, List<V2>>> {
+    val nl = this.nl
+    val nr = this.nr
+
+    val entry: PEntry<K, Pair<List<V1>, List<V2>>>
+    if (nl != null && nr != null) {
+      when (nl.key.compareTo(nr.key).coerceIn(-1, 1)) {
+        -1 -> {
+          entry = PEntry(nl.key, ImmutableList.of(Pair(nl.values, ImmutableList.of())))
+          this.nl = if (left.hasNext()) left.next() else null
+        }
+        0 -> {
+          entry = PEntry(nl.key, ImmutableList.of(Pair(nl.values, nr.values)))
+          this.nl = if (left.hasNext()) left.next() else null
+          this.nr = if (right.hasNext()) right.next() else null
+        }
+        else -> {
+          entry = PEntry(nr.key, ImmutableList.of(Pair(ImmutableList.of(), nr.values)))
+          this.nr = if (right.hasNext()) right.next() else null
+        }
+      }
+    } else if (nl != null) {
+      entry = PEntry(nl.key, ImmutableList.of(Pair(nl.values, ImmutableList.of())))
+      this.nl = if (left.hasNext()) left.next() else null
+    } else if (nr != null) {
+      entry = PEntry(nr.key, ImmutableList.of(Pair(ImmutableList.of(), nr.values)))
+      this.nr = if (right.hasNext()) right.next() else null
+    } else {
+      throw NoSuchElementException()
+    }
+    return entry
+  }
+}

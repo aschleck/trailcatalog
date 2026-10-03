@@ -63,6 +63,23 @@ class ChannelEncodedOutputStream(private val channel: WritableByteChannel) : Enc
     }
   }
 
+  /** Writes [length] bytes of [source] starting at [start], leaving its position alone. */
+  fun write(source: ByteBuffer, start: Int, length: Int) {
+    val view = source.duplicate()
+    view.limit(start + length)
+    view.position(start)
+    if (length <= buffer.limit() - buffer.position()) {
+      buffer.put(view)
+    } else {
+      if (buffer.position() > 0) {
+        flush()
+      }
+      while (view.hasRemaining()) {
+        position += channel.write(view)
+      }
+    }
+  }
+
   override fun close() {
     shard()
     super.close()
