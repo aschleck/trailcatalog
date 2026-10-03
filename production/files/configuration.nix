@@ -152,6 +152,7 @@
           proxy_hide_header 'Access-Control-Allow-Origin';
           # nginx doesn't inherit add_header from parent blocks so we duplicate
           add_header 'Access-Control-Allow-Origin' $http_origin always;
+          add_header 'Cache-Control' 'public, max-age=31536000, immutable';
           add_header 'Vary' 'Origin' always;
         '';
       };
