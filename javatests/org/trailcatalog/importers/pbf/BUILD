@@ -31,3 +31,19 @@ kt_jvm_test(
         "@osmpbf//osmpbf:java_proto",
     ],
 )
+
+kt_jvm_test(
+    name = "pbf_reader",
+    srcs = ["PbfReaderTest.kt"],
+    test_class = "org.trailcatalog.importers.pbf.PbfReaderTest",
+    deps = [
+        "//java/org/trailcatalog/importers/pbf",
+        "//java/org/trailcatalog/importers/pipeline",
+        "//java/org/trailcatalog/importers/pipeline/collections",
+        "@maven//:com_google_guava_guava",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_truth_truth",
+        "@maven//:org_junit_jupiter_junit_jupiter",
+        "@osmpbf//osmpbf:java_proto",
+    ],
+)

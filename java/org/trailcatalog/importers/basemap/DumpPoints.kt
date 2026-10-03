@@ -6,7 +6,7 @@ import java.nio.ByteOrder
 import org.apache.commons.text.StringEscapeUtils
 import org.trailcatalog.importers.pbf.Point
 import org.trailcatalog.importers.pipeline.PSink
-import org.trailcatalog.importers.pipeline.collections.PList
+import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.models.PointCategory
 import org.trailcatalog.s2.latLngToCell
 
@@ -15,9 +15,9 @@ private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
 }
 
 class DumpPoints(private val epoch: Int, private val hikari: HikariDataSource)
-  : PSink<PList<Point>>() {
+  : PSink<PCollection<Point>>() {
 
-  override fun write(input: PList<Point>) {
+  override fun write(input: PCollection<Point>) {
     input.use {
       val stream =
           StringifyingInputStream(input) { point, csv ->

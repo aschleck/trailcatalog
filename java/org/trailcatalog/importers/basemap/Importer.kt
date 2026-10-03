@@ -3,6 +3,7 @@ package org.trailcatalog.importers.basemap
 import com.google.common.geometry.S2CellId
 import com.google.common.reflect.TypeToken
 import com.zaxxer.hikari.HikariDataSource
+import crosby.binary.Osmformat.PrimitiveBlock
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
 import org.trailcatalog.createConnectionSource
@@ -26,7 +27,7 @@ import org.trailcatalog.importers.pbf.ExtractWayRelationPairs
 import org.trailcatalog.importers.pbf.GatherRelationWays
 import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
-import org.trailcatalog.importers.pbf.PbfBlockReader
+import org.trailcatalog.importers.pbf.PbfReader
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.BoundStage
 import org.trailcatalog.importers.pipeline.PMapTransformer
@@ -35,6 +36,7 @@ import org.trailcatalog.importers.pipeline.binaryStructListReader
 import org.trailcatalog.importers.pipeline.binaryStructListWriter
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.Emitter2
+import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.importers.pipeline.invert
@@ -45,6 +47,7 @@ import java.nio.file.Path
 import java.sql.Connection
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import java.util.concurrent.ConcurrentLinkedQueue
 
 @FlagSpec(name = "elevation_profile")
 private val elevationProfilePath = createNullableFlag(null as Path?)
@@ -114,40 +117,35 @@ private fun processPbfs(epoch: Int, pbfs: List<Path>, hikari: HikariDataSource) 
   val pipeline = Pipeline(parallelism = importerParallelism.value)
   println("Pipeline parallelism cap: ${importerParallelism.value}")
 
-  // First, get basic way geometries
-  val nodeBlocks =
-      pipeline.cat(
-          pbfs.map { p ->
-            pipeline
-                .read(PbfBlockReader(p, readNodes = true, readRelations = false, readWays = false))
-          });
-  nodeBlocks.then(ExtractPoints()).write(DumpPoints(epoch, hikari))
-  nodeBlocks.then(ExtractNodeTags()).write(DumpSourceTags(epoch, hikari))
+  // Every pass over the PBF is its own read. The first one learns which blobs hold which kind of
+  // element, so the later ones skip what they don't want without inflating it. First, the elements
+  // that need no geometry from anything else.
+  pipeline.readPbfs(pbfs, nodes = true, extract = ExtractPoints()).write(DumpPoints(epoch, hikari))
   pipeline
-      .cat(
-          pbfs.map { p ->
-            pipeline
-                .read(PbfBlockReader(p, readNodes = false, readRelations = false, readWays = true))
-                .then(ExtractWayTags())
-          })
+      .readPbfs(pbfs, nodes = true, extract = ExtractNodeTags())
       .write(DumpSourceTags(epoch, hikari))
   pipeline
-      .cat(
-          pbfs.map { p ->
-            pipeline
-                .read(PbfBlockReader(p, readNodes = false, readRelations = true, readWays = false))
-                .then(ExtractRelationTags())
-          })
+      .readPbfs(pbfs, ways = true, extract = ExtractWayTags())
       .write(DumpSourceTags(epoch, hikari))
-  val nodes = nodeBlocks.then(ExtractNodes()).groupBy("GroupNodes") { it.id }
+  pipeline
+      .readPbfs(pbfs, relations = true, extract = ExtractRelationTags())
+      .write(DumpSourceTags(epoch, hikari))
+
+  // Then get basic way geometries. Relations come first because they decide which untagged ways
+  // GroupWays keeps.
+  val relations =
+      pipeline
+          .readPbfs(pbfs, relations = true, extract = ExtractRelations())
+          .groupBy("GroupRelations") { it.id }
+  val nodes =
+      pipeline
+          .readPbfs(pbfs, nodes = true, extract = ExtractNodes())
+          .groupBy("GroupNodes") { it.id }
   val ways =
-      pipeline.cat(
-          pbfs.map { p ->
-            pipeline
-                .read(PbfBlockReader(p, readNodes = false, readRelations = false, readWays = true))
-                .then(ExtractWays())
-          })
-      .groupBy("GroupWays") { it.id }
+      pipeline.zip2(
+          relations.then(CollectMemberWays()),
+          pipeline.readPbfs(pbfs, ways = true, extract = ExtractWays()),
+          GroupWays())
   val waysToPoints =
       pipeline
           .join2("JoinNodesForWayPoints", nodes, ways.then(ExtractNodeWayPairs()))
@@ -159,14 +157,6 @@ private fun processPbfs(epoch: Int, pbfs: List<Path>, hikari: HikariDataSource) 
 
   // Now, take the way geometries, filter it down to ways in likely trail relations, and calculate
   // the required elevation profiles.
-  val relations =
-      pipeline.cat(
-          pbfs.map { p ->
-            pipeline
-                .read(PbfBlockReader(p, readNodes = false, readRelations = true, readWays = false))
-                .then(ExtractRelations())
-          })
-          .groupBy("GroupRelations") { it.id }
   val relationsToGeometriesWithWays = relations.then(ExtractRelationGeometriesWithWays())
   val waysInRouteRelations =
       pipeline.join2("JoinOnRelation", relations, relationsToGeometriesWithWays)
@@ -259,6 +249,18 @@ private fun processPbfs(epoch: Int, pbfs: List<Path>, hikari: HikariDataSource) 
       setInt(1, epoch)
     }.execute()
   }
+}
+
+private inline fun <reified T : Any> Pipeline.readPbfs(
+    pbfs: List<Path>,
+    nodes: Boolean = false,
+    ways: Boolean = false,
+    relations: Boolean = false,
+    extract: PTransformer<PrimitiveBlock, T>): BoundStage<*, out PCollection<T>> {
+  return cat(
+      pbfs.map { p ->
+        read(PbfReader(p, readNodes = nodes, readRelations = relations, readWays = ways, extract))
+      })
 }
 
 private fun readActiveEpochs(connection: Connection): Set<Int> {
@@ -388,6 +390,64 @@ fun copyStreamToPg(table: String, stream: InputStream, hikari: HikariDataSource)
   hikari.connection.use { connection ->
     val pg = connection.unwrap(PgConnection::class.java)
     CopyManager(pg).copyIn("COPY ${table} FROM STDIN WITH (FORMAT CSV, HEADER, NULL 'NULL')", stream)
+  }
+}
+
+/**
+ * Copies [rows] into [table] over [streams] connections at once, so that both stringifying the rows
+ * and Postgres ingesting them get more than one core.
+ */
+fun <V> copyToPgInParallel(
+    table: String,
+    rows: Iterator<V>,
+    streams: Int,
+    hikari: HikariDataSource,
+    convert: (value: V, csv: StringBuilder) -> Unit) {
+  val errors = ConcurrentLinkedQueue<Throwable>()
+  val threads =
+      (0 until streams).map {
+        Thread {
+          try {
+            copyStreamToPg(table, StringifyingInputStream(ClaimingIterator(rows), convert), hikari)
+          } catch (e: Throwable) {
+            errors.add(e)
+          }
+        }
+      }
+  threads.forEach { it.start() }
+  threads.forEach { it.join() }
+  // Once one stream's iterator throws, the others see Kotlin's "Iterator has failed" instead, and
+  // whichever stream finishes failing first is not necessarily the one with the real cause.
+  val first = errors.poll() ?: return
+  errors.forEach { first.addSuppressed(it) }
+  throw first
+}
+
+// Rows each stream claims at once from the shared iterator, which only one thread can advance at a
+// time.
+private const val CLAIM_BATCH_SIZE = 1024
+
+/** Takes rows off an iterator shared with other threads, a batch at a time. */
+private class ClaimingIterator<V>(private val shared: Iterator<V>) : Iterator<V> {
+
+  private val batch = ArrayDeque<V>()
+
+  override fun hasNext(): Boolean {
+    if (batch.isEmpty()) {
+      synchronized(shared) {
+        while (batch.size < CLAIM_BATCH_SIZE && shared.hasNext()) {
+          batch.addLast(shared.next())
+        }
+      }
+    }
+    return batch.isNotEmpty()
+  }
+
+  override fun next(): V {
+    if (!hasNext()) {
+      throw NoSuchElementException()
+    }
+    return batch.removeFirst()
   }
 }
 

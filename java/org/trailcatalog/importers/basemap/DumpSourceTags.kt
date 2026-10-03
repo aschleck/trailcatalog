@@ -11,7 +11,7 @@ class DumpSourceTags(private val epoch: Int, private val hikari: HikariDataSourc
 
   override fun write(input: PCollection<SourceTags>) {
     input.use {
-      val stream = StringifyingInputStream(input) { tags, csv ->
+      copyToPgInParallel("source_tags", input, resolvedParallelism, hikari) { tags, csv ->
         // source_type,source_id,epoch,version,tags
         csv.append(tags.type.id)
         csv.append(",")
@@ -24,7 +24,6 @@ class DumpSourceTags(private val epoch: Int, private val hikari: HikariDataSourc
         csv.append(StringEscapeUtils.escapeCsv(tags.tagsJson))
         csv.append("\n")
       }
-      copyStreamToPg("source_tags", stream, hikari)
     }
   }
 }
