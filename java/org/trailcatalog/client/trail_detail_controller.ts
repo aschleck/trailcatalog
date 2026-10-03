@@ -32,11 +32,14 @@ export interface State extends VState {
     cursorFraction?: number;
     extremes: [number, number];
     heights: string;
+    // The main line's length, which is all of a trail that traces as one line
+    lengthMeters: number;
     points: LatLngAltitude[];
     resolution: Vec2;
   },
   epochDate: Future<Date>;
   pathProfiles: Future<Map<bigint, ElevationProfile>>;
+  tags: Future<{[key: string]: string}>;
   trail: Future<Trail>;
   trailId: string;
   weather?: {
@@ -151,6 +154,7 @@ export function calculateGraph(
     trail: Trail): {
   extremes: [number, number];
   heights: string;
+  lengthMeters: number;
   points: LatLngAltitude[];
   resolution: Vec2;
 } {
@@ -232,6 +236,7 @@ export function calculateGraph(
   return {
     extremes: [min, max],
     heights: heightsString,
+    lengthMeters: length,
     points: latLngs,
     resolution: [ELEVATION_GRAPH_RESOLUTION_WIDTH, resolutionHeight],
   };

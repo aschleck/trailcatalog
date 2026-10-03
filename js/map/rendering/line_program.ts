@@ -22,8 +22,11 @@ export const VERTEX_STRIDE =
             + /* stipple= */ 1
     );
 
-/** True dashes the line, and ticks crosses it with a bar every so often like a lift's pylons. */
-export type Stipple = boolean|'ticks';
+/**
+ * True dashes the line, ticks crosses it with a bar every so often like a lift's pylons, and
+ * alternating dashes it with the fill and stroke colors instead of leaving gaps.
+ */
+export type Stipple = boolean|'alternating'|'ticks';
 
 /** Renders instanced lines as rectangles without mitering. */
 export class LineProgram extends Program<LineProgramData> {
@@ -74,7 +77,7 @@ export class LineProgram extends Program<LineProgramData> {
       uint32s[vertexOffset + 5] = colorStroke;
       floats[vertexOffset + 6] = distanceAlong;
       floats[vertexOffset + 7] = typeof radius === 'number' ? radius : radius[i / 2];
-      uint32s[vertexOffset + 8] = stipple === 'ticks' ? 2 : stipple ? 1 : 0;
+      uint32s[vertexOffset + 8] = stippleToUint(stipple);
 
       distanceAlong += Math.sqrt((xp - x) * (xp - x) + (yp - y) * (yp - y));
       vertexOffset += stride;
@@ -309,7 +312,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in highp float distanceAlong;
       // This is a radius in pixels
       in highp float radius;
-      // 0 is solid, 1 is dashed, and 2 is ticked, see Stipple
+      // 0 is solid, 1 is dashed, 2 is ticked, and 3 is alternating, see Stipple
       in uint stipple;
 
       // See https://github.com/visgl/luma.gl/issues/1764
@@ -321,6 +324,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       out lowp float fragRadius;
       out lowp float fragCore;
       out lowp float fragStipple;
+      out lowp float fragAlternate;
       out lowp float fragTicks;
       out lowp float fragDistanceOrtho;
       out mediump float fragBehindHorizon;
@@ -381,13 +385,16 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         fragColorStroke = uint32FToVec4(colorStroke);
         // We want to avoid stipples "dancing" as zoom changes, so we make this more of a step
         // change.
+        // Alternating dashes run twice as long, because a dash of fill reads as a gap otherwise.
         fragDistanceAlong =
             exp2(floor(2. * log2(halfWorldSize)) / 2.)
-                * (distanceAlong + position.x * length(direction));
+                * (distanceAlong + position.x * length(direction))
+                * (stipple == 3u ? 0.5 : 1.);
         fragDistanceOrtho = position.y * actualRadius;
         fragRadius = extent;
         fragCore = radius;
-        fragStipple = stipple == 1u ? 0.5 : 1.0;
+        fragStipple = stipple == 1u ? 0.5 : stipple == 3u ? 0.65 : 1.0;
+        fragAlternate = stipple == 3u ? 1.0 : 0.0;
         fragTicks = stipple == 2u ? 1.0 : 0.0;
       }
     `;
@@ -401,6 +408,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in lowp float fragRadius;
       in lowp float fragCore;
       in lowp float fragStipple;
+      in lowp float fragAlternate;
       in lowp float fragTicks;
       in mediump float fragBehindHorizon;
 
@@ -412,12 +420,16 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         }
         mediump float a =
             1. - smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 0.75 - fragRadius, 0., 1.));
-        // 0 is fill, 1 is stroke
+        // 0 is fill, 1 is stroke. Alternating widens the stroke to 2 pixels so the dashes sit
+        // inside a casing.
         mediump float m =
-            smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 1. - fragRadius, 0., 1.));
+            smoothstep(
+                0., 1., clamp(abs(fragDistanceOrtho) + 1. + fragAlternate - fragRadius, 0., 1.));
 
-        lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
-        lowp float stipple = fract(fragDistanceAlong / 8.) <= fragStipple ? 1. : 0.;
+        lowp float on = fract(fragDistanceAlong / 8.) <= fragStipple ? 1. : 0.;
+        // Alternating fills the gaps between dashes with the stroke color instead of dropping them.
+        lowp vec4 color = mix(fragColorFill, fragColorStroke, max(m, fragAlternate * (1. - on)));
+        lowp float stipple = max(on, fragAlternate);
         // Outside the line itself only the 1 pixel wide ticks draw, one every 24 pixels.
         lowp float core = 1. - clamp(abs(fragDistanceOrtho) - fragCore + 0.5, 0., 1.);
         lowp float tick = mod(fragDistanceAlong, 24.) < 1. ? 1. : 0.;
@@ -472,3 +484,13 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
   };
 }
 
+// The stipple attribute's encoding, which LineCapProgram reads too.
+function stippleToUint(stipple: Stipple): number {
+  if (stipple === 'alternating') {
+    return 3;
+  } else if (stipple === 'ticks') {
+    return 2;
+  } else {
+    return stipple ? 1 : 0;
+  }
+}

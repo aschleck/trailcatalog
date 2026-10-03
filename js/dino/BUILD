@@ -8,5 +8,12 @@ tc_ts_project(
         "@dev_april_corgi//js/corgi",
         "@dev_april_corgi//js/emu",
     ],
+    data = [":fonts"],
 )
 
+filegroup(
+    name = "fonts",
+    srcs = [
+        "fabric-icons.woff",
+    ],
+)

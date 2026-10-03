@@ -218,7 +218,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       in highp float distanceAlong;
       // This is a radius in pixels
       in highp float radius;
-      // We treat this as a boolean for now
+      // See LineProgram's stipple, except that caps never draw ticks
       in uint stipple;
 
       // See https://github.com/visgl/luma.gl/issues/1764
@@ -229,6 +229,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       out lowp float fragDistanceAlong;
       out lowp float fragRadius;
       out lowp float fragStipple;
+      out lowp float fragAlternate;
       out lowp float fragDistanceOrtho;
       out mediump float fragBehindHorizon;
 
@@ -245,7 +246,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
         } else if (location.x + location.y < -1.) {
           location.x += 2.;
         }
-        highp float actualRadius = renderBorder ? radius : radius - 1.;
+        // Alternating shrinks the fill to match LineProgram's 2 pixel stroke.
+        highp float actualRadius =
+            renderBorder ? radius : radius - 1. - (stipple == 3u ? 1. : 0.);
         vec2 push = actualRadius * position;
         vec4 worldCoord =
             sum_fp64(
@@ -270,13 +273,16 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
         // We want to avoid stipples "dancing" as zoom changes, so we make this more of a step
-        // change.
+        // change. The whole cap takes the dash at its vertex, or else it cuts slivers across the
+        // joint. See LineProgram for why alternating halves it.
         fragDistanceAlong =
             exp2(floor(2. * log2(halfWorldSize)) / 2.)
-                * (distanceAlong + position.x * length(direction));
+                * (distanceAlong + (side == 0u ? 0. : length(direction)))
+                * (stipple == 3u ? 0.5 : 1.);
         fragDistanceOrtho = actualRadius;
         fragRadius = radius;
-        fragStipple = stipple > 0u ? 0.5 : 1.0;
+        fragStipple = stipple == 3u ? 0.65 : stipple > 0u ? 0.5 : 1.0;
+        fragAlternate = stipple == 3u ? 1.0 : 0.0;
       }
     `;
   const fs = `#version 300 es
@@ -288,6 +294,7 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
       in lowp float fragDistanceOrtho;
       in lowp float fragRadius;
       in lowp float fragStipple;
+      in lowp float fragAlternate;
       in mediump float fragBehindHorizon;
 
       out lowp vec4 fragColor;
@@ -302,8 +309,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
         mediump float m =
             smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 1. - fragRadius, 0., 1.));
 
-        lowp vec4 color = mix(fragColorFill, fragColorStroke, m);
-        lowp float stipple = fract(fragDistanceAlong / 8.) <= fragStipple ? 1. : 0.;
+        lowp float on = fract(fragDistanceAlong / 8.) <= fragStipple ? 1. : 0.;
+        lowp vec4 color = mix(fragColorFill, fragColorStroke, max(m, fragAlternate * (1. - on)));
+        lowp float stipple = max(on, fragAlternate);
         fragColor = stipple * vec4(color.rgb * color.a, color.a) * a;
       }
   `;

@@ -102,6 +102,9 @@ interface DataRequests {
   trail: {
     trail_id: TrailId;
   };
+  trail_tags: {
+    trail_id: TrailId;
+  };
   trails_in_boundary: {
     boundary_id: string;
   };
@@ -181,6 +184,9 @@ export interface DataResponses {
     elevation_down_meters: number;
     elevation_up_meters: number;
     length_meters: number;
+  };
+  trail_tags: {
+    tags: {[key: string]: string};
   };
   trails_in_boundary: {
     trails: Array<{

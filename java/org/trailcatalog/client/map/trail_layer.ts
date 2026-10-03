@@ -10,7 +10,7 @@ import { RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { GLYPHER, toGraphemes } from 'js/map/rendering/glypher';
-import { LineProgram } from 'js/map/rendering/line_program';
+import { LineProgram, Stipple } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -23,7 +23,13 @@ import { Listener, MapDataService } from '../data/map_data_service';
 import { Path, Point, Trail } from '../models/types';
 import { COARSE_ZOOM_THRESHOLD, FINE_ZOOM_THRESHOLD } from '../workers/data_constants';
 
-import { DEFAULT_PALETTE, DEFAULT_HEX_PALETTE, HOVER_PALETTE, LinePalette } from './colors';
+import {
+  DEFAULT_PALETTE,
+  DEFAULT_HEX_PALETTE,
+  ERROR_PALETTE,
+  HOVER_PALETTE,
+  LinePalette,
+} from './colors';
 import { HOVER_CHANGED, SELECTION_CHANGED } from './events';
 import { PinRenderer } from './pin_renderer';
 import { POINTS_ATLAS_SIZE, pointsAtlasIndex } from '../points/points_atlas';
@@ -42,6 +48,8 @@ const Z_TRAIL_MARKER = 112;
 const Z_RAISED_PATH = 113;
 const Z_RAISED_TRAIL_MARKER = 114;
 const PATH_RADIUS_PX = 1.5;
+// An 8 pixel line, so the 2 pixel alternating stroke on each side leaves 4 pixels of fill.
+const BROKEN_PATH_RADIUS_PX = 4;
 const RAISED_PATH_RADIUS_PX = 4;
 const TRAIL_MARKER_TEXT_SCALE = 0.5;
 
@@ -549,6 +557,29 @@ export class TrailLayer extends Layer implements Listener {
         || this.dataService.pinnedPaths.has(path.id);
   }
 
+  // The look of a path that nothing highlights. A path that a working trail shares with a broken
+  // one still dashes, because the black dashes read as the working trail.
+  private restingStyle(path: Path, onTrail: boolean):
+      {fill: RgbaU32; stroke: RgbaU32; radius: number; stipple: Stipple} {
+    const broken =
+        (this.dataService.pathsToTrails.get(path.id) ?? []).some(t => t.lengthMeters < 0);
+    if (broken) {
+      return {
+        fill: ERROR_PALETTE.raw.fill,
+        stroke: ERROR_PALETTE.raw.stroke,
+        radius: BROKEN_PATH_RADIUS_PX,
+        stipple: 'alternating',
+      };
+    } else {
+      return {
+        fill: DEFAULT_PALETTE.fill,
+        stroke: DEFAULT_PALETTE.stroke,
+        radius: PATH_RADIUS_PX,
+        stipple: !onTrail,
+      };
+    }
+  }
+
   private drawsAsTrail(path: Path): boolean {
     return this.onTrail(path) || isPath(path.type);
   }
@@ -650,13 +681,21 @@ export class TrailLayer extends Layer implements Listener {
     for (const [id, palette] of planned) {
       const path = this.pathToPlan(id);
       if (path) {
-        const onTrail = this.onTrail(path);
+        const style =
+            palette
+                ? {
+                  fill: palette.raw.fill,
+                  stroke: palette.raw.stroke,
+                  radius: RAISED_PATH_RADIUS_PX,
+                  stipple: !this.onTrail(path),
+                }
+                : this.restingStyle(path, this.onTrail(path));
         const drawable =
             this.renderer.lineProgram.plan(
-                palette ? palette.raw.fill : DEFAULT_PALETTE.fill,
-                palette ? palette.raw.stroke : DEFAULT_PALETTE.stroke,
-                palette ? RAISED_PATH_RADIUS_PX : PATH_RADIUS_PX,
-                !onTrail,
+                style.fill,
+                style.stroke,
+                style.radius,
+                style.stipple,
                 palette ? Z_RAISED_PATH : Z_PATH,
                 path.line,
                 buffer,
@@ -753,12 +792,13 @@ export class TrailLayer extends Layer implements Listener {
         continue;
       }
 
+      const style = this.restingStyle(path, onTrail);
       const drawable =
           this.renderer.lineProgram.plan(
-              DEFAULT_PALETTE.fill,
-              DEFAULT_PALETTE.stroke,
-              PATH_RADIUS_PX,
-              /* stipple= */ !onTrail,
+              style.fill,
+              style.stroke,
+              style.radius,
+              style.stipple,
               Z_PATH,
               path.line,
               buffer,
@@ -812,12 +852,13 @@ export class TrailLayer extends Layer implements Listener {
         continue;
       }
 
+      const style = this.restingStyle(path, onTrail);
       const drawable =
           this.renderer.lineProgram.plan(
-              DEFAULT_PALETTE.fill,
-              DEFAULT_PALETTE.stroke,
-              PATH_RADIUS_PX,
-              !onTrail,
+              style.fill,
+              style.stroke,
+              style.radius,
+              style.stipple,
               Z_PATH,
               path.line,
               buffer,

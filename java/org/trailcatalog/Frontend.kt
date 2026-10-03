@@ -269,6 +269,27 @@ private fun fetchData(ctx: Context) {
         }
         responses.add(if (found) ok(data) else err(404))
       }
+      "trail_tags" -> {
+        val (idColumn, setId) = parseTrailId(request.get("trail_id"))
+        var tags: JsonNode = mapper.createObjectNode()
+        connectionSource.connection.use {
+          // Keep source_type in sync with SourceTags.kt#SourceType.
+          val results = it.prepareStatement(
+              "SELECT st.tags::text "
+                  + "FROM source_tags st "
+                  + "JOIN trail_identifiers ti "
+                  + "ON st.source_id = ti.numeric_id AND st.epoch = ti.epoch "
+                  + "WHERE ${idColumn} = ? AND st.source_type = 2 AND st.epoch = ?")
+              .apply {
+                setId(this, 1)
+                setInt(2, epochTracker.epoch)
+              }.executeQuery()
+          if (results.next()) {
+            tags = mapper.readTree(results.getString(1))
+          }
+        }
+        responses.add(ok(ImmutableMap.of("tags", tags)))
+      }
       "trails_in_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()
         val id = request.get("boundary_id").asLong()

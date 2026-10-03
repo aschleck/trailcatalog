@@ -148,12 +148,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   onDataChange(e: CorgiEvent<typeof DATA_CHANGED>): void {
     this.updateState({
       ...this.state,
-      nearbyTrails:
-          this.listTrailsInViewport()
-              .sort(
-                  (a, b) =>
-                      (b.lengthMeters >= 0 ? b.lengthMeters : Number.MAX_VALUE)
-                          - (a.lengthMeters >= 0 ? a.lengthMeters : Number.MAX_VALUE)),
+      nearbyTrails: this.listTrailsInViewport().sort(compareNearbyTrails),
     });
   }
 
@@ -174,8 +169,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
 
     this.updateState({
       ...this.state,
-      nearbyTrails: this.listTrailsInViewport()
-          .sort((a, b) => b.lengthMeters - a.lengthMeters),
+      nearbyTrails: this.listTrailsInViewport().sort(compareNearbyTrails),
     });
   }
 
@@ -217,6 +211,11 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   }
 
   viewTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    if (e.detail.target instanceof Element
+        && e.detail.target.closest('[data-role="trail-issue"]')) {
+      return;
+    }
+
     const raw = e.actionElement.data('trailId')?.string();
     if (raw === undefined) {
       console.error('Unable to find trail ID');
@@ -252,3 +251,8 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   }
 }
 
+// Broken trails first, then the longest.
+function compareNearbyTrails(a: Trail, b: Trail): number {
+  return (b.lengthMeters >= 0 ? b.lengthMeters : Number.MAX_VALUE)
+      - (a.lengthMeters >= 0 ? a.lengthMeters : Number.MAX_VALUE);
+}

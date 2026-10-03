@@ -20,6 +20,9 @@ esbuild_binary(
         ":css",
         ":ts",
     ],
+    external = [
+        "fabric-icons.woff",
+    ],
 )
 
 genrule(

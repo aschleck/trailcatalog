@@ -1,5 +1,6 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { RelationCategory } from 'java/org/trailcatalog/models/categories';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FabricIcon, FabricIconName } from 'js/dino/fabric';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
@@ -8,7 +9,7 @@ import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
 import { formatDistance, formatHeight, formatTemperature, getUnitSystem, shouldUseImperial } from 'js/units/formatters';
-import { metersToFeet, metersToMiles } from 'js/units/formatters';
+import { formatCount, metersToFeet, metersToMiles } from 'js/units/formatters';
 import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
 
@@ -17,10 +18,14 @@ import { fetchData } from './data';
 import { Header } from './page';
 import { setTitle } from './title';
 import { TrailDetailController, State } from './trail_detail_controller';
+import { TrailIssue } from './trail_issue';
 import { TrailPopup } from './trail_popup';
 import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
-const GRAPH_TEXT_SPACE_PX = [0, 32] as const;
+// The graph holds its height before the elevation loads, or else the map shrinks under the camera
+// when it arrives.
+const ELEVATION_GRAPH_CLASSES = 'border-t border-tc-gray-200 h-48 shrink-0';
+const FACT_CELL_CLASSES = 'border-b border-tc-gray-200 flex items-center min-h-12 px-4 py-2';
 
 export function TrailDetailElement({trailId, parameters}: {
   trailId: string;
@@ -39,6 +44,7 @@ export function TrailDetailElement({trailId, parameters}: {
               .then(pathProfilesInTrailFromRaw),
       selected: [],
       selectedCardPosition: [-1, -1],
+      tags: fetchData('trail_tags', {trail_id: wrapped}).then(raw => raw.tags),
       trail: fetchData('trail', {trail_id: wrapped}).then(trailFromRaw),
       trailId,
     };
@@ -51,6 +57,7 @@ export function TrailDetailElement({trailId, parameters}: {
     state.containingBoundaries,
     state.epochDate,
     state.pathProfiles,
+    state.tags,
     state.trail,
   ];
   let ready;
@@ -124,17 +131,23 @@ function Content({trailId, state, updateState}: {
         className="flex flex-col-reverse grow md:flex-row md:overflow-hidden"
     >
       <TrailSidebar state={state} />
-      <div className="grow min-h-[50vh] relative md:h-full">
-        <MapElement camera={trail.bound} ref="map" />
-        <div className="absolute flex flex-col gap-2 right-2 top-2">
-          <div unboundEvents={{corgi: [[ACTION, 'zoomToFit']]}}>
-            <FlatButton ariaLabel="Zoom to trail" className="bg-white" icon="ZoomToFit" />
+      <div className="flex flex-col grow md:h-full md:min-w-0">
+        <div className="grow min-h-[50vh] relative md:min-h-0">
+          <MapElement camera={trail.bound} ref="map" />
+          <div className="absolute flex flex-col gap-2 right-2 top-2">
+            <div unboundEvents={{corgi: [[ACTION, 'zoomToFit']]}}>
+              <FlatButton ariaLabel="Zoom to trail" className="bg-white" icon="ZoomToFit" />
+            </div>
+            <div unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
+              <FlatButton ariaLabel="Browse the map" className="bg-white" icon="ScaleVolume" />
+            </div>
           </div>
-          <div unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
-            <FlatButton ariaLabel="Browse the map" className="bg-white" icon="ScaleVolume" />
-          </div>
+          {trailDetails ?? <></>}
         </div>
-        {trailDetails ?? <></>}
+        {state.elevation
+            ? <ElevationGraph {...state} />
+            : <div className={ELEVATION_GRAPH_CLASSES} />
+        }
       </div>
     </div>
   </>;
@@ -172,21 +185,10 @@ function TrailSidebar({state}: {state: State}) {
     isOneWay = (trail.paths[0] & ~1n) !== (trail.paths[trail.paths.length - 1] & ~1n);
   }
 
-  const badData =
-      <span
-          className="
-              bg-tc-error-100
-              inline-block
-              px-3
-              py-1
-              rounded
-              text-tc-error-500
-          ">
-        OSM data issue
-      </span>;
+  const tags = state.tags.value();
 
   return <>
-    <div className="p-4 text-sm md:overflow-y-auto md:w-[32rem]">
+    <div className="p-4 text-sm md:overflow-y-auto md:w-[24rem]">
       <header className="flex gap-2 items-center">
         <span className="font-bold font-sans text-3xl">
           {trail.name}
@@ -198,52 +200,90 @@ function TrailSidebar({state}: {state: State}) {
         </div>
         <BoundaryCrumbs boundaries={containingBoundaries} />
       </aside>
-      <div className="border gap-x-8 gap-y-2 grid p-2 mt-4 [grid-template-columns:_auto_1fr]">
-        <div>{isOneWay ? "One-way distance" : "Round-trip distance"}</div>
-        <div>
+      <div
+          className="
+              border-t
+              border-tc-gray-200
+              grid
+              -mx-4
+              mt-4
+              [grid-template-columns:_5fr_4fr_4fr]
+          "
+      >
+        {valid
+            ? <></>
+            : <FactRow label="Data status">
+                <div className="relative">
+                  <TrailIssue
+                      label="1 issue with trail data"
+                      position="pt-1 right-0 top-full md:w-72"
+                      sourceRelation={trail.sourceRelation}
+                  />
+                </div>
+              </FactRow>
+        }
+        <FactRow label={isOneWay ? "One-way distance" : "Round-trip distance"}>
           {valid
               ? <>
                   <FabricIcon name="CharticulatorLine" className="mr-2" />
                   <NumericCrumb value={distance.value} unit={distance.unit} />
                 </>
-              : badData
+              : <Unknown />
           }
-        </div>
-        <div className="border-b col-span-2 -mx-2"></div>
-        <div>Gain and loss</div>
-        <div>
-          {valid
-              ? <>
-                  <FabricIcon name="Market" className="mr-2" />
-                  <NumericCrumb value={elevationUp.value} unit={elevationUp.unit} />
-                  <FabricIcon name="MarketDown" className="ml-4 mr-2" />
-                  <NumericCrumb value={elevationDown.value} unit={elevationDown.unit} />
-                </>
-              : badData
-          }
-        </div>
-        <div className="border-b col-span-2 -mx-2"></div>
-        <div>Highest and lowest</div>
-        <div>
-          <FabricIcon name="SortUp" className="mr-2" />
-          <NumericCrumb value={elevationHigh?.value ?? ''} unit={elevationHigh?.unit ?? ''} />
-          <FabricIcon name="SortDown" className="ml-4 mr-2" />
-          <NumericCrumb value={elevationLow?.value ?? ''} unit={elevationLow?.unit ?? ''} />
-        </div>
-        <div className="border-b col-span-2 -mx-2"></div>
-        <div>Weather</div>
-        <div>
+        </FactRow>
+        <FactRow label="Trail type">
+          {trailTypeLabel(trail.type)}
+        </FactRow>
+        <FactPairRow
+            label="Ascent & descent"
+            left={
+              valid
+                  ? <>
+                      <FabricIcon name="Market" className="mr-2" />
+                      <NumericCrumb value={elevationUp.value} unit={elevationUp.unit} />
+                    </>
+                  : <Unknown />
+            }
+            right={
+              valid
+                  ? <>
+                      <FabricIcon name="MarketDown" className="mr-2" />
+                      <NumericCrumb value={elevationDown.value} unit={elevationDown.unit} />
+                    </>
+                  : <Unknown />
+            }
+        />
+        <FactPairRow
+            label="Highest & lowest"
+            left={
+              <>
+                <FabricIcon name="SortUp" className="mr-2" />
+                <NumericCrumb
+                    value={elevationHigh?.value ?? ''}
+                    unit={elevationHigh?.unit ?? ''}
+                />
+              </>
+            }
+            right={
+              <>
+                <FabricIcon name="SortDown" className="mr-2" />
+                <NumericCrumb value={elevationLow?.value ?? ''} unit={elevationLow?.unit ?? ''} />
+              </>
+            }
+        />
+        <FactRow label="Weather">
           {weather?.icon ? <FabricIcon name={weather.icon} className="mr-2" /> : ''}
           <span>
             <NumericCrumb value={weather?.label ?? ''} unit={temperature?.unit ?? ''} />
           </span>
-        </div>
-        <div className="border-b col-span-2 -mx-2"></div>
-        <div>
-          OSM relation
-        </div>
-        <div>
+        </FactRow>
+        {tags['operator']
+            ? <FactRow label="Operator">{tags['operator']}</FactRow>
+            : <></>
+        }
+        <FactRow label="OSM relation">
           <a
+              className="underline"
               href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
               target="_blank"
           >
@@ -254,178 +294,234 @@ function TrailSidebar({state}: {state: State}) {
             />
             {trail.sourceRelation}
           </a>
-        </div>
-        <div className="border-b col-span-2 -mx-2"></div>
-        <div>
-          Synced
-        </div>
-        <div>
+        </FactRow>
+        {tags['website']
+            ? <FactRow label="Website">
+                <a className="underline" href={tags['website']} target="_blank">
+                  <FabricIcon name="Globe" className="mr-1 text-tc-highlight-3" />
+                  Website
+                </a>
+              </FactRow>
+            : <></>
+        }
+        <FactRow label="Synced">
           {
               // We *need* this be in the pacific time because the client and server generated text
               // *must* match.
               state.epochDate.value()
                   .toLocaleDateString(undefined, {timeZone: 'America/Los_Angeles'})
           }
-        </div>
+        </FactRow>
       </div>
-      {state.elevation
-          ? <section className="mt-4">
-              <div className="font-medium text-lg">Elevation</div>
-              <ElevationGraph {...state} />
-            </section>
-          : <></>
-      }
     </div>
   </>;
+}
+
+function FactRow({children, label}: {
+  children?: corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
+  label: string;
+}) {
+  return <>
+    <FactLabel label={label} />
+    <div className={`${FACT_CELL_CLASSES} col-span-2`}><div>{children ?? []}</div></div>
+  </>;
+}
+
+function FactPairRow({label, left, right}: {
+  label: string;
+  left: corgi.VElementOrPrimitive;
+  right: corgi.VElementOrPrimitive;
+}) {
+  return <>
+    <FactLabel label={label} />
+    <div className={`${FACT_CELL_CLASSES} border-r`}><div>{left}</div></div>
+    <div className={FACT_CELL_CLASSES}><div>{right}</div></div>
+  </>;
+}
+
+function FactLabel({label}: {label: string}) {
+  return <>
+    <div className={`${FACT_CELL_CLASSES} border-r text-tc-gray-400`}>{label}</div>
+  </>;
+}
+
+function Unknown() {
+  return <>
+    <span className="text-tc-gray-400">Unknown</span>
+  </>;
+}
+
+function trailTypeLabel(type: number): string {
+  switch (type) {
+    case RelationCategory.TRAIL_BICYCLE:
+      return 'Bicycle';
+    case RelationCategory.TRAIL_CANOE:
+      return 'Canoe';
+    case RelationCategory.TRAIL_FOOT:
+      return 'Foot';
+    case RelationCategory.TRAIL_HIKING:
+      return 'Hiking';
+    case RelationCategory.TRAIL_HORSE:
+      return 'Horse';
+    case RelationCategory.TRAIL_INLINE_SKATES:
+      return 'Inline skating';
+    case RelationCategory.TRAIL_MTB:
+      return 'Mountain biking';
+    case RelationCategory.TRAIL_PISTE:
+      return 'Piste';
+    case RelationCategory.TRAIL_RUNNING:
+      return 'Running';
+    case RelationCategory.TRAIL_SKIING:
+      return 'Skiing';
+    default:
+      return 'Trail';
+  }
 }
 
 function NumericCrumb({value, unit}: {value: string; unit: string;}) {
   return <>
-    <span className="font-medium mr-0.5">{value}</span>
-    <span className="text-tc-gray-400 text-xs">{unit}</span>
+    <span className="font-medium">{value}</span>
+    <span className="ml-1 text-tc-gray-400">{unit}</span>
   </>;
 }
 
 function ElevationGraph(state: State) {
-  const trail = state.trail.value();
   const elevation = checkExists(state.elevation);
   const [resWidth, resHeight] = elevation.resolution;
-
-  // SVG has a flipped y coordinate, so we do everything negatively to flip properly. The controller
-  // calculates points in a particular resolution, so we determine what elevations we want to show
-  // and then transform the points into our frame.
-
   const [minMeters, maxMeters] = elevation.extremes;
+
+  let heightUnit;
   let length;
   let lengthUnit;
-  let min;
-  let max;
+  let toHeight;
   if (shouldUseImperial()) {
-    length = metersToMiles(trail.lengthMeters);
+    heightUnit = 'ft';
+    length = metersToMiles(elevation.lengthMeters);
     lengthUnit = 'mi';
-    min = metersToFeet(minMeters);
-    max = metersToFeet(maxMeters);
+    toHeight = metersToFeet;
   } else {
-    length = trail.lengthMeters / 1000;
+    heightUnit = 'm';
+    length = elevation.lengthMeters / 1000;
     lengthUnit = 'km';
-    min = minMeters;
-    max = maxMeters;
+    toHeight = (meters: number) => meters;
   }
 
-  const gridEvery = Math.ceil((max - min) / 8 / 100) * 100;
+  const step = niceStep((toHeight(maxMeters) - toHeight(minMeters)) / 4);
+  const lowest = Math.floor(toHeight(minMeters) / step) * step;
+  const highest = Math.max(Math.ceil(toHeight(maxMeters) / step) * step, lowest + step);
+  const topPercent = (height: number) => (highest - height) / (highest - lowest) * 100;
+
   const gridLines = [];
-  const gridText = [];
-  const rawLowestGrid = (Math.floor(min / gridEvery) - 1) * gridEvery;
-  // It's weird to show negative elevation values for trails that go to sea level.
-  const lowestGrid = min >= 0 ? Math.max(0, rawLowestGrid) : rawLowestGrid;
-  const highestGrid = (Math.ceil(max / gridEvery) + 1) * gridEvery;
-  const height = 300;
-  const scale = 300 / (highestGrid - lowestGrid);
-  for (let y = lowestGrid; y <= highestGrid; y += gridEvery) {
-    gridLines.push(<line x1="0" y1={-y * scale} x2={resWidth} y2={-y * scale} />);
-    gridText.push(
-        <text
-            dominantBaseline="hanging"
-            textAnchor="end"
-            x="-8"
-            y={-y * scale}
+  const heightLabels = [];
+  for (let y = lowest; y <= highest; y += step) {
+    gridLines.push(
+        <div
+            className="absolute border-t border-dotted border-tc-gray-400 inset-x-0"
+            style={`top: ${topPercent(y)}%`}
+        />
+    );
+    heightLabels.push(
+        <span
+            className="absolute right-3 -translate-y-1/2 whitespace-nowrap"
+            style={`top: ${topPercent(y)}%`}
         >
-          {y}
-        </text>
+          {formatCount(y)} {heightUnit}
+        </span>
     );
   }
 
-  const estimatedTextWidth = 11 * Math.ceil(Math.log10(highestGrid));
-
-  const indicateEvery = Math.ceil(length / 7 * 2) / 2;
-  const distanceIndicators = [];
-  for (let x = 0; x <= length; x += indicateEvery) {
-    distanceIndicators.push(
-        <text
-            dominantBaseline="hanging"
-            x={x / length * resWidth}
-            y={-lowestGrid * scale + 8}
+  const lengthStep = niceStep(length / 6);
+  const lengthLabels = [];
+  // i * lengthStep rather than a running sum, or else 0.1 + 0.2 prints as 0.30000000000000004.
+  for (let i = 0; i * lengthStep <= length; ++i) {
+    const x = Number((i * lengthStep).toFixed(2));
+    lengthLabels.push(
+        <span
+            className="absolute mt-1 top-full -translate-x-1/2 whitespace-nowrap"
+            style={`left: ${x / length * 100}%`}
         >
           {x} {lengthUnit}
-        </text>
+        </span>
     );
   }
 
-  const sampleProjectionStyle = [
-    'transform:',
-    `translateY(${-max * scale}px)`,
-    `scaleY(${(max - min) / resHeight * scale})`,
-  ].join(' ');
+  // The samples span minMeters to maxMeters over the height of the resolution, so the grid's wider
+  // range is the same linear map carried past both ends.
+  const viewTop = (toHeight(maxMeters) - highest) / (toHeight(maxMeters) - toHeight(minMeters));
+  const viewHeight = (highest - lowest) / (toHeight(maxMeters) - toHeight(minMeters));
 
-  let indicator;
-  if (!!elevation.cursor
+  let cursor;
+  if (elevation.cursor
       && elevation.cursorFraction !== undefined
-      && elevation.cursorFraction >= 0) {
-    const x = elevation.cursorFraction * resWidth;
-    const y = elevation.cursor.altitude;
-    // We follow the same projection routine as the samples do.
-    const fy = (maxMeters - y) / (maxMeters - minMeters) * resHeight;
-    const scaleY = (max - min) / resHeight * scale;
-    const translateY = -max * scale;
-    const ypx = scaleY * fy + translateY;
-    indicator =
-        <circle
-            fill="white"
-            stroke="black"
-            strokeWidth={2}
-            cx={x}
-            cy={ypx}
-            r={7}
-        />;
+      && 0 <= elevation.cursorFraction
+      && elevation.cursorFraction <= 1) {
+    const left = elevation.cursorFraction * 100;
+    cursor = <>
+      <div className="absolute border-l border-tc-gray-400 inset-y-0" style={`left: ${left}%`} />
+      <div
+          className="
+              absolute
+              bg-white
+              border-2
+              border-black
+              h-3
+              -translate-x-1/2
+              -translate-y-1/2
+              rounded-full
+              w-3
+          "
+          style={`left: ${left}%; top: ${topPercent(toHeight(elevation.cursor.altitude))}%`}
+      />
+    </>;
   } else {
-    indicator = <circle cx="0" cy="0" r="0" />;
+    cursor = <></>;
   }
 
   return <>
-    <div className="border py-2 mt-4 rounded">
-      <svg
-          className={`relative select-none touch-none w-full`}
-          unboundEvents={{
-            'pointerleave': 'clearElevationCursor',
-            'pointermove': 'moveElevationCursor',
-          }}
-          viewBox={
-            [
-              -GRAPH_TEXT_SPACE_PX[0] - estimatedTextWidth,
-              -highestGrid * scale,
-              resWidth + GRAPH_TEXT_SPACE_PX[0] + estimatedTextWidth,
-              height + GRAPH_TEXT_SPACE_PX[1],
-            ].join(' ')
-          }>
-        <g className="stroke-tc-gray-400">
-          <g style="stroke-dasharray: 4">
-            {gridLines}
-          </g>
-        </g>
-        <g className="fill-tc-gray-400">
-          {gridText}
-        </g>
-        <g className="fill-black">
-          {distanceIndicators}
-        </g>
-        <polyline
-            fill="none"
-            points={elevation.heights}
-            stroke="black"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            vectorEffect="non-scaling-stroke"
-            style={
-              [
-                'transform:',
-                `translateY(${-max * scale}px)`,
-                `scaleY(${(max - min) / resHeight * scale})`,
-              ].join(' ')
-            }
-        />
-        {indicator}
-      </svg>
+    <div
+        className={
+          `${ELEVATION_GRAPH_CLASSES} flex pb-7 pr-8 pt-4 select-none text-tc-gray-400 text-xs`
+        }
+    >
+      <div className="relative shrink-0 w-20">
+        {heightLabels}
+      </div>
+      <div className="grow relative">
+        {gridLines}
+        {lengthLabels}
+        <svg
+            className="absolute h-full inset-0 overflow-visible touch-none w-full"
+            preserveAspectRatio="none"
+            unboundEvents={{
+              'pointerleave': 'clearElevationCursor',
+              'pointermove': 'moveElevationCursor',
+            }}
+            viewBox={[0, viewTop * resHeight, resWidth, viewHeight * resHeight].join(' ')}
+        >
+          <polyline
+              fill="none"
+              points={elevation.heights}
+              stroke="black"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        <div className="absolute inset-0 pointer-events-none">
+          {cursor}
+        </div>
+      </div>
     </div>
   </>;
 }
 
+// The smallest 1, 2, or 5 times a power of ten that is at least the given step.
+function niceStep(raw: number): number {
+  const power = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-3))));
+  for (const multiple of [1, 2, 5]) {
+    if (multiple * power >= raw) {
+      return multiple * power;
+    }
+  }
+  return 10 * power;
+}

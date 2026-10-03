@@ -17,6 +17,7 @@ const FABRIC_ICON_CODES = [
   'Fog',
   'Feedback',
   'Globe',
+  'Info',
   'LightSnow',
   'Location',
   'Market',
@@ -54,6 +55,7 @@ EF66
 E9CB
 ED15
 E774
+E946
 EA02
 E81D
 EAFC

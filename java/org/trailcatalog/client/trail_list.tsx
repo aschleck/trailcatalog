@@ -4,6 +4,7 @@ import { formatCount, formatDistance, formatHeight } from 'js/units/formatters';
 import { Path, Point, Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
+import { TrailIssue } from './trail_issue';
 
 const TRAIL_COUNT_MAX = 100;
 
@@ -122,33 +123,32 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
               : ''
         }
       </td>
-      <td>
-        {
-          valid
-              ? <>
+      {
+        valid
+            ? <>
+                <td>
                   <span className="font-medium text-md">
                     {distance.value}
                   </span>
                   {' '}
                   <span className="text-xs text-tc-gray-400">{distance.unit}</span>
-                </>
-              : '!'
-        }
-      </td>
-      <td></td>
-      <td>
-        {
-          valid
-              ? <>
+                </td>
+                <td></td>
+                <td>
                   <span className="font-medium text-md">
                     {elevationUp.value}
                   </span>
                   {' '}
                   <span className="text-xs text-tc-gray-400">{elevationUp.unit}</span>
-                </>
-              : '!'
-        }
-      </td>
+                </td>
+              </>
+            // The explanation is wider than either column, so it hangs from the right of both or
+            // else it runs off the left of the sidebar. Its padding starts at the middle of the
+            // cell, which is under the icon, so the hover carries from the icon into it.
+            : <td className="relative" colspan="3">
+                <TrailIssue position="pt-3 right-0 top-1/2" sourceRelation={trail.id} />
+              </td>
+      }
       <td></td>
     </tr>
   </>;
