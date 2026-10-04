@@ -58,6 +58,37 @@ class PartitionTest {
     assertZipPartitionsCleanly(TypeToken.of(String::class.java)) { "k${it}" }
   }
 
+  // Bigger than both the 1 MB scratch buffer a worker starts with and a 2 MB arena.
+  @Test
+  fun valuesLargerThanTheScratchBufferRoundTrip() {
+    val out = HashMap<Int, List<String>>()
+    val pipeline = Pipeline(parallelism = 2)
+    pipeline.read(SequenceSource((0 until 12).asSequence()))
+        .then(
+            object : PMapTransformer<Int, Int, String>(
+                "Big", TypeToken.of(Int::class.java), TypeToken.of(String::class.java)) {
+              override fun act(input: Int, emitter: Emitter2<Int, String>) {
+                emitter.emit(input % 4, "${input}".repeat(1_500_000))
+              }
+            })
+        .write(object : PSink<PMap<Int, String>>() {
+          override fun write(input: PMap<Int, String>) {
+            input.use {
+              while (input.hasNext()) {
+                val entry = input.next()
+                out[entry.key] = entry.values.sorted()
+              }
+            }
+          }
+        })
+    pipeline.execute()
+
+    assertThat(out)
+        .isEqualTo(
+            (0 until 12).groupBy({ it % 4 }, { "${it}".repeat(1_500_000) })
+                .mapValues { it.value.sorted() })
+  }
+
   @Test
   fun parallelStageOverZipMatchesExpected() {
     val out = ArrayList<String>()

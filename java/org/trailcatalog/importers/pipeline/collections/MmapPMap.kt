@@ -13,6 +13,7 @@ import org.trailcatalog.importers.pipeline.progress.longProgress
 import java.io.Closeable
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.BufferOverflowException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
@@ -39,9 +40,24 @@ import java.util.concurrent.atomic.AtomicReference
 private val heapDumpThreshold = createFlag(256 * 1024 * 1024L)
 
 // ThreadLocal so workers don't race on the same scratch buffer. Each serializes one value at a time
-// before copying the bytes into its run buffer.
-private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
-  ByteBuffer.allocate(256 * 1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+// before copying the bytes into its run buffer. Values are almost always small, and a buffer of the
+// largest one per worker per stage is what fragments the heap. See PIECE_BYTES.
+private val SCRATCH: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
+  ByteBuffer.allocate(1024 * 1024).order(ByteOrder.LITTLE_ENDIAN)
+}
+
+/** Serializes [value] into this thread's scratch buffer, growing it to fit, and returns it. */
+private fun <V> serialize(value: V, serializer: Serializer<V>): ByteBuffer {
+  while (true) {
+    val scratch = SCRATCH.get()
+    scratch.clear()
+    try {
+      serializer.write(value, ByteBufferEncodedOutputStream(scratch))
+      return scratch
+    } catch (e: BufferOverflowException) {
+      SCRATCH.set(ByteBuffer.allocate(2 * scratch.capacity()).order(ByteOrder.LITTLE_ENDIAN))
+    }
+  }
 }
 
 // Splitting a run into key ranges seeks to the index entry before each split key and scans
@@ -54,9 +70,11 @@ private const val PARTS_PER_WORKER = 4
 
 private const val PARALLEL_BATCH_SIZE = 1024
 
-// Values land in arenas this big rather than one ByteArray each, because millions of small arrays
-// are what G1 spends its time copying.
-private const val ARENA_BYTES = 64 * 1024 * 1024
+// Run buffers allocate in pieces of this many bytes. G1 treats an object of half a region or more
+// as humongous, which it never moves, so a heap full of large buffers fragments until one more
+// large allocation fails with plenty free. Regions are at least 4 MB on any heap of 8 GB or more,
+// so this keeps every piece an ordinary object.
+private const val PIECE_BYTES = 2 * 1024 * 1024
 
 // What each slot of a primitive buffer's capacity costs, whether or not it holds a record:
 //    8  the key
@@ -565,10 +583,57 @@ private interface RunBuffer<K, V> {
   fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>)
 }
 
+// Longs per piece, so that a LongArray piece is PIECE_BYTES
+private const val PIECE_SHIFT = 18
+private const val PIECE_SLOTS = 1 shl PIECE_SHIFT
+private const val PIECE_MASK = PIECE_SLOTS - 1
+
+/** A growable long array kept in pieces, so growing never copies or allocates anything large. */
+private class LongPieces {
+
+  private val pieces = ArrayList<LongArray>()
+
+  val capacity: Int
+    get() = pieces.size * PIECE_SLOTS
+
+  fun grow() {
+    pieces.add(LongArray(PIECE_SLOTS))
+  }
+
+  operator fun get(i: Int): Long {
+    return pieces[i ushr PIECE_SHIFT][i and PIECE_MASK]
+  }
+
+  operator fun set(i: Int, value: Long) {
+    pieces[i ushr PIECE_SHIFT][i and PIECE_MASK] = value
+  }
+}
+
+/** A growable int array kept in pieces, like [LongPieces]. */
+private class IntPieces {
+
+  private val pieces = ArrayList<IntArray>()
+
+  val capacity: Int
+    get() = pieces.size * PIECE_SLOTS
+
+  fun grow() {
+    pieces.add(IntArray(PIECE_SLOTS))
+  }
+
+  operator fun get(i: Int): Int {
+    return pieces[i ushr PIECE_SHIFT][i and PIECE_MASK]
+  }
+
+  operator fun set(i: Int, value: Int) {
+    pieces[i ushr PIECE_SHIFT][i and PIECE_MASK] = value
+  }
+}
+
 /**
- * Holds keys as longs and values in shared arenas, so a full buffer is a handful of large arrays
- * rather than tens of millions of small objects. The budget covers everything allocated, which
- * runs ahead of what's held: arrays grow by doubling and arenas come in whole.
+ * Holds keys as longs and values in shared arenas, so a full buffer is a few thousand modest
+ * arrays rather than tens of millions of small objects. The budget covers everything allocated,
+ * which runs ahead of what's held because slots and arenas come a piece at a time.
  */
 private class PrimitiveRunBuffer<K : Comparable<K>, V>(
     private val codec: KeyCodec<K>,
@@ -576,10 +641,10 @@ private class PrimitiveRunBuffer<K : Comparable<K>, V>(
     private val budget: Long,
 ) : RunBuffer<K, V> {
 
-  private var keys = LongArray(1 shl 16)
+  private val keys = LongPieces()
   // The arena in the high 32 bits and the offset within it in the low 32
-  private var locations = LongArray(1 shl 16)
-  private var lengths = IntArray(1 shl 16)
+  private val locations = LongPieces()
+  private val lengths = IntPieces()
   private var count = 0
   private val arenas = ArrayList<ByteArray>()
   private var arena = -1
@@ -588,26 +653,24 @@ private class PrimitiveRunBuffer<K : Comparable<K>, V>(
   private val sorter = RadixSorter()
 
   override fun add(key: K, value: V): Boolean {
-    val scratch = BYTE_BUFFER.get()
-    scratch.clear()
-    valueSerializer.write(value, ByteBufferEncodedOutputStream(scratch))
+    val scratch = serialize(value, valueSerializer)
     val length = scratch.position()
 
-    val capacity = keys.size.toLong()
-    if (count == keys.size) {
-      // The old arrays live until the copies finish, and the sorter's until it next sorts.
-      if (count > 0 && PRIMITIVE_SLOT_BYTES * 3 * capacity + arenaBytes > budget) {
+    if (count == keys.capacity) {
+      val slots = keys.capacity.toLong() + PIECE_SLOTS
+      if (count > 0 && PRIMITIVE_SLOT_BYTES * slots + arenaBytes > budget) {
         return false
       }
-      keys = keys.copyOf(2 * count)
-      locations = locations.copyOf(2 * count)
-      lengths = lengths.copyOf(2 * count)
+      keys.grow()
+      locations.grow()
+      lengths.grow()
     }
     if (arena < 0 || arenas[arena].size - arenaOffset < length) {
       val next = arena + 1
       if (next == arenas.size || arenas[next].size < length) {
-        val size = maxOf(ARENA_BYTES, length).toLong()
-        if (count > 0 && PRIMITIVE_SLOT_BYTES * keys.size + arenaBytes + size > budget) {
+        // A value bigger than a piece gets an arena of its own.
+        val size = maxOf(PIECE_BYTES, length).toLong()
+        if (count > 0 && PRIMITIVE_SLOT_BYTES * keys.capacity + arenaBytes + size > budget) {
           return false
         }
         val fresh = ByteArray(size.toInt())
@@ -649,7 +712,7 @@ private class PrimitiveRunBuffer<K : Comparable<K>, V>(
       output.checkBufferSpace()
     }
 
-    // The arenas and arrays stay allocated for the next run.
+    // The arenas and pieces stay allocated for the next run.
     count = 0
     arena = -1
     arenaOffset = 0
@@ -659,19 +722,19 @@ private class PrimitiveRunBuffer<K : Comparable<K>, V>(
 /** Sorts record indices by long key, stably, sixteen bits a pass. */
 private class RadixSorter {
 
-  private var keys = LongArray(0)
-  private var scratchKeys = LongArray(0)
-  private var order = IntArray(0)
-  private var scratchOrder = IntArray(0)
+  private var keys = LongPieces()
+  private var scratchKeys = LongPieces()
+  private var order = IntPieces()
+  private var scratchOrder = IntPieces()
   private val counts = IntArray(65536 + 1)
 
-  /** Returns record indices in key order. The array is reused by the next call. */
-  fun sort(input: LongArray, n: Int): IntArray {
-    if (keys.size < n) {
-      keys = LongArray(input.size)
-      scratchKeys = LongArray(input.size)
-      order = IntArray(input.size)
-      scratchOrder = IntArray(input.size)
+  /** Returns record indices in key order. The pieces are reused by the next call. */
+  fun sort(input: LongPieces, n: Int): IntPieces {
+    while (keys.capacity < n) {
+      keys.grow()
+      scratchKeys.grow()
+      order.grow()
+      scratchOrder.grow()
     }
 
     // Flipping the sign bit makes signed order and unsigned digit order agree.
@@ -697,10 +760,11 @@ private class RadixSorter {
         counts[d] += counts[d - 1]
       }
       for (i in 0 until n) {
-        val digit = ((fromKeys[i] ushr shift) and 0xFFFF).toInt()
+        val key = fromKeys[i]
+        val digit = ((key ushr shift) and 0xFFFF).toInt()
         val to = counts[digit]
         counts[digit] = to + 1
-        toKeys[to] = fromKeys[i]
+        toKeys[to] = key
         toOrder[to] = fromOrder[i]
       }
       fromKeys = toKeys.also { toKeys = fromKeys }
@@ -721,9 +785,7 @@ private class ObjectRunBuffer<K : Comparable<K>, V>(
   private var heldBytes = 0L
 
   override fun add(key: K, value: V): Boolean {
-    val scratch = BYTE_BUFFER.get()
-    scratch.clear()
-    valueSerializer.write(value, ByteBufferEncodedOutputStream(scratch))
+    val scratch = serialize(value, valueSerializer)
     val cost = OBJECT_RECORD_OVERHEAD_BYTES + scratch.position()
     if (items.isNotEmpty() && heldBytes + cost > budget) {
       return false
