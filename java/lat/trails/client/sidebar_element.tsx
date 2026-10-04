@@ -1,3 +1,4 @@
+import { debugMode } from 'external/dev_april_corgi+/js/common/debug';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
@@ -79,16 +80,20 @@ interface SectionState {
 
 /** A titled part of the sidebar that opens and closes itself. Open sections share the space. */
 export function SidebarSection(
-    {children, controls, label, open}: {
+    {children, controls, label, open, persist}: {
       children?: Children;
       // Beside the title, and outside the toggle so they reach the controller their events name
       controls?: Children;
       label: string;
       open?: boolean;
+      // The key in SidebarCookie#sections to remember whether the section is open under, which then
+      // wins over open
+      persist?: string;
     },
     inState: SectionState|undefined,
     updateState: (newState: SectionState) => void) {
-  const state = inState ?? {open: open ?? true};
+  const remembered = persist ? readSidebarCookie().sections?.[persist] : undefined;
+  const state = inState ?? {open: remembered ?? open ?? true};
   return (
     <div
         className={'border-b border-gray-300 flex flex-col ' + (state.open ? 'min-h-0' : 'shrink-0')}
@@ -98,6 +103,7 @@ export function SidebarSection(
         <div
             js={corgi.bind({
               controller: SidebarSectionController,
+              args: {persist},
               events: {
                 click: 'toggle',
               },
@@ -126,13 +132,59 @@ export function SidebarSection(
   );
 }
 
-class SidebarSectionController extends Controller<{}, EmptyDeps, HTMLElement, SectionState> {
+class SidebarSectionController
+    extends Controller<{persist: string|undefined}, EmptyDeps, HTMLElement, SectionState> {
+
+  private readonly persist: string|undefined;
 
   constructor(response: Response<SidebarSectionController>) {
     super(response);
+    this.persist = response.args.persist;
   }
 
   toggle(): void {
-    this.updateState({open: !this.state.open});
+    const open = !this.state.open;
+    this.updateState({open});
+    const persist = this.persist;
+    if (persist) {
+      const cookie = readSidebarCookie();
+      writeSidebarCookie({...cookie, sections: {...cookie.sections, [persist]: open}});
+    }
   }
+}
+
+const SIDEBAR_COOKIE = 'sidebar';
+
+// How the sidebar was left, kept in a cookie rather than local storage so that the server render
+// comes up the same way. Every field is optional because an older client may have written it.
+export interface SidebarCookie {
+  // Whether each section is open, by SidebarSection#persist
+  sections?: {[key: string]: boolean};
+}
+
+export function readSidebarCookie(): SidebarCookie {
+  const raw =
+      (window.SERVER_SIDE_RENDER?.cookies() ?? window.document?.cookie)
+          ?.split('; ')
+          ?.find(c => c.startsWith(`${SIDEBAR_COOKIE}=`))
+          ?.substring(SIDEBAR_COOKIE.length + 1);
+  if (!raw) {
+    return {};
+  }
+
+  // A cookie the user mangled shouldn't break the page, so start over from the defaults.
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw));
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeSidebarCookie(cookie: SidebarCookie): void {
+  const secure = debugMode() ? '' : '; Secure';
+  // a year, so that it outlives the browser session
+  document.cookie =
+      `${SIDEBAR_COOKIE}=${encodeURIComponent(JSON.stringify(cookie))}; Max-Age=31536000; `
+          + `Path=/; SameSite=Strict${secure}`;
 }

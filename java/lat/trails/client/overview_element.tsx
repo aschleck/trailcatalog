@@ -237,7 +237,7 @@ export function OverviewElement(
                 tree={tree}
             />
           </SidebarSection>
-          <SidebarSection label="Layers" open={false}>
+          <SidebarSection label="Layers" open={false} persist="layers">
             <LayerTree state={state.layers} />
           </SidebarSection>
         </SidebarElement>
