@@ -149,10 +149,20 @@ function Content({boundaryId, state, updateState}: {
         />
         <div className="absolute flex flex-col gap-2 right-2 top-2">
           <div unboundEvents={{corgi: [[ACTION, 'zoomToFit']]}}>
-            <FlatButton ariaLabel="Zoom to boundary" className="bg-white" icon="ZoomToFit" />
+            <FlatButton
+                ariaLabel="Recenter boundary"
+                className="bg-white"
+                icon="ZoomToFit"
+                title="Recenter boundary"
+            />
           </div>
           <div unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
-            <FlatButton ariaLabel="Browse the map" className="bg-white" icon="ScaleVolume" />
+            <FlatButton
+                ariaLabel="Browse the map"
+                className="bg-white"
+                icon="ScaleVolume"
+                title="Browse the map"
+            />
           </div>
         </div>
         {trailDetails ?? <></>}

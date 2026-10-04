@@ -143,10 +143,20 @@ function Content({trailId, state, updateState}: {
           <MapElement camera={trail.bound} ref="map" />
           <div className="absolute flex flex-col gap-2 right-2 top-2">
             <div unboundEvents={{corgi: [[ACTION, 'zoomToFit']]}}>
-              <FlatButton ariaLabel="Zoom to trail" className="bg-white" icon="ZoomToFit" />
+              <FlatButton
+                  ariaLabel="Recenter trail"
+                  className="bg-white"
+                  icon="ZoomToFit"
+                  title="Recenter trail"
+              />
             </div>
             <div unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
-              <FlatButton ariaLabel="Browse the map" className="bg-white" icon="ScaleVolume" />
+              <FlatButton
+                  ariaLabel="Browse the map"
+                  className="bg-white"
+                  icon="ScaleVolume"
+                  title="Browse the map"
+              />
             </div>
           </div>
           {trailDetails ?? <></>}

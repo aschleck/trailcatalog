@@ -31,15 +31,17 @@ export function OutlinedButton({className, ...props}: ButtonProps) {
   </>;
 }
 
-export function Button({className, dense, icon, label, ...props}: ButtonProps) {
+export function Button({ariaLabel, className, dense, icon, label, title}: ButtonProps) {
   return <>
     <EmuButton
+        ariaLabel={ariaLabel}
         className={
           'inline-block leading-none rounded select-none space-x-2'
               + ' active:bg-tc-gray-400'
               + (!dense ? ' p-2 ' : '-m-1 p-1')
               + (className ? ` ${className}` : '')
         }
+        title={title}
     >
       {icon ? <><FabricIcon name={icon} className="align-bottom" />{' '}</> : ''}
       {label ? <span>{label}</span> : ''}
