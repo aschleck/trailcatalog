@@ -102,11 +102,16 @@ import {
 } from './features';
 import { parseImport } from './importer';
 import {
+  applyLayerSettings,
   ControlValues,
+  diffLayerSettings,
   findLayerNode,
+  layerDefaultsOf,
   LayerEntry,
   layerEntries,
   LayerNode,
+  LayerSetting,
+  LayerSettings,
   LayerTreeState,
   sortLayerNodes,
   updateLayerNode,
@@ -285,6 +290,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }|undefined;
   private readonly loginWatcher: Timer;
   private readonly saves: SaveQueue;
+  // What the layer tree starts as, which saved layer settings are relative to
+  private readonly layerDefaults: Map<string, LayerSetting>;
+  // Moves with every layer toggle or control change, so that a collection's saved layers don't
+  // undo one made while it loaded
+  private layerEdits: number;
   // Serialized so that an older view state cannot land after a newer one
   private viewStateWrites: Promise<void>;
   // The menubar item whose menu is open or loading. A File menu still waiting on ListCollections
@@ -832,6 +842,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     for (const layer of owned) {
       this.registerDisposable(layer);
     }
+    this.layerDefaults = layerDefaultsOf(nodes);
+    this.layerEdits = 0;
     this.updateState({
       ...this.state,
       layers: {nodes, expanded: new Set(['osm', 'satellite', 'topography', 'us'])},
@@ -1435,6 +1447,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       },
     });
     entry.configure?.(values);
+    this.layerEdits += 1;
+    this.saveViewState();
   }
 
   fileMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -2441,6 +2455,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.collectionGeneration += 1;
     const generation = this.collectionGeneration;
     const hidden = this.state.features.hidden;
+    const layerEdits = this.layerEdits;
     this.updateState({...this.state, collectionStatus: 'loading'});
     const loading: Future<GetCollectionResponse> =
         requestData('lat.trails.DataService/GetCollection', {id});
@@ -2459,6 +2474,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           // what the response read.
           if (this.state.features.hidden === hidden) {
             this.setHidden(response.hiddenFeatureIds);
+          }
+          if (this.layerEdits === layerEdits) {
+            this.setLayerSettings(
+                response.layers ? JSON.parse(response.layers) as LayerSettings : {});
           }
           const features = [
             ...response.folders.map(folderFromProto),
@@ -2590,8 +2609,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             collection,
           });
           this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
-          // Anything hidden before the collection existed had nowhere to save to.
-          if (this.state.features.hidden.size > 0) {
+          // Anything hidden or any layer changed before the collection existed had nowhere to save
+          // to.
+          if (this.state.features.hidden.size > 0 || this.layerEdits > 0) {
             this.saveViewState();
           }
           return collection.id;
@@ -2619,6 +2639,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const request = {
       collectionId: collection.id,
       hiddenFeatureIds: [...this.state.features.hidden],
+      layers: JSON.stringify(diffLayerSettings(this.state.layers.nodes, this.layerDefaults)),
     };
     this.viewStateWrites = this.viewStateWrites
         .then(() => {
@@ -2827,7 +2848,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Switches the snow layers to today if today's archive exists. Today's archive is tiled at 13:30
   // UTC. We check for the 0/0/0 tile because every archive has it, see Snodas.kt.
   private showLatestSnow(): void {
-    const yesterday = utcDay(-1);
     const today = utcDay(0);
     fetch(`${SNODAS_URL}${today}/0/0/0.png`).then(response => {
       if (!response.ok) {
@@ -2836,9 +2856,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
       let nodes = this.state.layers.nodes;
       for (const id of [SNOW_DEPTH_ID, SNOW_WATER_ID]) {
+        // Saved settings only pin a day someone picked, so the default follows the latest.
+        const defaults = checkExists(this.layerDefaults.get(id));
+        this.layerDefaults.set(id, {...defaults, values: {...defaults.values, day: today}});
         const entry = checkExists(findLayerNode(nodes, id)) as LayerEntry;
-        // The user picked a different day while we were checking, so keep it
-        if (entry.values.day !== yesterday) {
+        // The user or the collection picked a different day, so keep it
+        if (entry.values.day !== defaults.values.day) {
           continue;
         }
         const values = {...entry.values, day: today};
@@ -2906,6 +2929,21 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       ...this.state,
       layers: {...this.state.layers, nodes},
     });
+    this.setMapLayers(nodes);
+    this.layerEdits += 1;
+    this.saveViewState();
+  }
+
+  private setLayerSettings(settings: LayerSettings): void {
+    const before = this.state.layers.nodes;
+    const nodes = applyLayerSettings(before, this.layerDefaults, settings);
+    for (const {entry} of layerEntries(nodes)) {
+      const previous = findLayerNode(before, entry.id) as LayerEntry;
+      if (entry.values !== previous.values) {
+        entry.configure?.(entry.values);
+      }
+    }
+    this.updateState({...this.state, layers: {...this.state.layers, nodes}});
     this.setMapLayers(nodes);
   }
 

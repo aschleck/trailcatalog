@@ -275,7 +275,7 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
     val own = if (user != null && canEdit(access.role)) user else access.creator
     connection
         .prepareStatement(
-            "SELECT hidden_feature_ids FROM view_states "
+            "SELECT hidden_feature_ids, layers FROM view_states "
                 + "WHERE collection_id = ? AND user_id IN (?, ?) "
                 + "ORDER BY user_id = ? DESC "
                 + "LIMIT 1")
@@ -291,6 +291,7 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
             for (hidden in results.getArray(1).array as Array<*>) {
               response.addHiddenFeatureIds((hidden as UUID).toString())
             }
+            response.setLayers(results.getString(2) ?: "")
           }
         }
 
@@ -614,14 +615,16 @@ private fun setViewState(ctx: Context, request: SetViewStateRequest): SetViewSta
 
     connection
         .prepareStatement(
-            "INSERT INTO view_states (collection_id, user_id, hidden_feature_ids) "
-                + "VALUES (?, ?, ?) "
+            "INSERT INTO view_states (collection_id, user_id, hidden_feature_ids, layers) "
+                + "VALUES (?, ?, ?, ?::jsonb) "
                 + "ON CONFLICT (collection_id, user_id) DO UPDATE SET "
-                + "hidden_feature_ids = EXCLUDED.hidden_feature_ids")
+                + "hidden_feature_ids = EXCLUDED.hidden_feature_ids, "
+                + "layers = EXCLUDED.layers")
         .apply {
           setObject(1, collection)
           setObject(2, user)
           setArray(3, connection.createArrayOf("UUID", hidden.toTypedArray()))
+          setString(4, request.layers.ifEmpty { null })
         }
         .executeUpdate()
   }

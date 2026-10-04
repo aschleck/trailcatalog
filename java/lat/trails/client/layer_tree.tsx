@@ -1,3 +1,4 @@
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { Layer } from 'js/map/layer';
@@ -21,6 +22,12 @@ export type LayerControl = {
 };
 
 export type ControlValues = {[key: string]: boolean|number|string};
+
+const CONTROL_TYPES = {
+  checkbox: 'boolean',
+  date: 'string',
+  percent: 'number',
+} as const satisfies Record<LayerControl['kind'], string>;
 
 export interface LayerEntry {
   kind: 'layer';
@@ -91,6 +98,98 @@ export function updateLayerNode(
     } else {
       return node;
     }
+  });
+}
+
+// What a node is set to, which for a group is only enabled
+export interface LayerSetting {
+  enabled: boolean;
+  values: ControlValues;
+}
+
+// Keyed by node id. Only what differs from the defaults is kept, so that a default we change
+// reaches the collections that never touched it.
+export type LayerSettings = {[id: string]: Partial<LayerSetting>};
+
+export function layerDefaultsOf(nodes: LayerNode[]): Map<string, LayerSetting> {
+  const defaults = new Map<string, LayerSetting>();
+  for (const node of nodes) {
+    if (node.kind === 'group') {
+      defaults.set(node.id, {enabled: node.enabled, values: {}});
+      for (const [id, setting] of layerDefaultsOf(node.children)) {
+        defaults.set(id, setting);
+      }
+    } else {
+      defaults.set(node.id, {enabled: node.enabled, values: node.values});
+    }
+  }
+  return defaults;
+}
+
+/** Lists where the tree differs from the defaults. */
+export function diffLayerSettings(
+    nodes: LayerNode[], defaults: ReadonlyMap<string, LayerSetting>): LayerSettings {
+  const settings: LayerSettings = {};
+  for (const node of nodes) {
+    const original = checkExists(defaults.get(node.id));
+    const setting: Partial<LayerSetting> = {};
+    if (node.enabled !== original.enabled) {
+      setting.enabled = node.enabled;
+    }
+    if (node.kind === 'group') {
+      Object.assign(settings, diffLayerSettings(node.children, defaults));
+    } else {
+      const values: ControlValues = {};
+      for (const [key, value] of Object.entries(node.values)) {
+        if (value !== original.values[key]) {
+          values[key] = value;
+        }
+      }
+      if (Object.keys(values).length > 0) {
+        setting.values = values;
+      }
+    }
+    if (Object.keys(setting).length > 0) {
+      settings[node.id] = setting;
+    }
+  }
+  return settings;
+}
+
+/**
+ * Returns the tree set to the defaults with the settings on top. A node whose setting is unchanged
+ * is returned as is.
+ *
+ * Settings for ids and keys the tree doesn't have, or of the wrong type, are dropped because an
+ * older client saved them.
+ */
+export function applyLayerSettings(
+    nodes: LayerNode[],
+    defaults: ReadonlyMap<string, LayerSetting>,
+    settings: LayerSettings): LayerNode[] {
+  return nodes.map(node => {
+    const original = checkExists(defaults.get(node.id));
+    const setting = settings[node.id] ?? {};
+    const enabled = typeof setting.enabled === 'boolean' ? setting.enabled : original.enabled;
+    if (node.kind === 'group') {
+      const children = applyLayerSettings(node.children, defaults, settings);
+      const same =
+          enabled === node.enabled && children.every((child, i) => child === node.children[i]);
+      return same ? node : {...node, enabled, children};
+    }
+
+    const values = {...original.values};
+    for (const control of node.controls) {
+      const value = setting.values?.[control.key];
+      if (typeof value === CONTROL_TYPES[control.kind]) {
+        values[control.key] = value as boolean|number|string;
+      }
+    }
+    const sameValues = Object.entries(values).every(([key, value]) => node.values[key] === value);
+    if (enabled === node.enabled && sameValues) {
+      return node;
+    }
+    return {...node, enabled, values: sameValues ? node.values : values};
   });
 }
 

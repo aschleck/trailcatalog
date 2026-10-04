@@ -50,6 +50,9 @@ message GetCollectionResponse {
   repeated Point points = 4;
   // The caller's if they can edit and have saved one, or else the owner's.
   repeated string hidden_feature_ids = 5;
+  // JSON from the same view state as hidden_feature_ids, see layer_tree.ts#LayerSettings. Empty
+  // means the defaults.
+  string layers = 6;
 }
 
 message GetCurrentUserRequest {}
@@ -194,6 +197,8 @@ message SetViewStateRequest {
   string collection_id = 1;
   // Replaces what the caller had hidden before.
   repeated string hidden_feature_ids = 2;
+  // Replaces the caller's layers as well, see GetCollectionResponse#layers.
+  string layers = 3;
 }
 
 message SetViewStateResponse {}

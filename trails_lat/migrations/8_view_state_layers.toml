@@ -1,0 +1,10 @@
+[[actions]]
+type = "add_column"
+table = "view_states"
+
+  # JSON keyed by layer id with where the layer tree differs from the client's defaults, see
+  # layer_tree.ts#LayerSettings. Null means the defaults.
+  [actions.column]
+  name = "layers"
+  nullable = true
+  type = "JSONB"
