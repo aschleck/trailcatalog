@@ -23,15 +23,22 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.util.zip.Deflater
+import java.util.zip.Inflater
 
 // A PMap is written as sorted runs. Each worker buffers what it's handed, sorts it once the buffer
 // fills, and writes it out as a run. Readers then merge the runs, either on the fly for a single
 // consumer or into a merged file for several.
 //
-// Run records:    key, value byte length, value
-// Merged records: key, value count, total value byte length, values
+// Runs and merged files are a series of compressed blocks, each holding whole records:
+//   block:          compressed length, raw length, the records Deflated
+//   run record:     key, value byte length, value
+//   merged record:  key, value count, total value byte length, values
 //
-// Both carry a byte length so that finding a key can skip over records without deserializing them.
+// The stages that write and merge these are bound by the scratch disk while the CPU idles, so
+// trading CPU for bytes pays. Long and Int keys are stored as the difference from the previous key
+// in the block, which the sort makes small. Records carry a byte length so that finding a key can
+// skip over them without deserializing values.
 
 // Heap reserved for everything that isn't a buffered record: the scratch buffers, the input
 // pipeline, and the garbage G1 hasn't reclaimed yet. maxMemory minus this is split evenly across
@@ -60,9 +67,15 @@ private fun <V> serialize(value: V, serializer: Serializer<V>): ByteBuffer {
   }
 }
 
-// Splitting a run into key ranges seeks to the index entry before each split key and scans
-// forward, so this bounds that scan. 240 GB of planet node runs cost a million entries.
-private const val INDEX_GRANULARITY_BYTES = 256L * 1024L
+// Records go into blocks of about this many bytes before compression. Every block gets an index
+// entry, and splitting a run decompresses and scans the block before each split key, so this
+// bounds that scan. 240 GB of planet node runs cost a million entries.
+private const val BLOCK_BYTES = 256 * 1024
+
+// Reused per thread, because each holds a native zlib stream.
+private val DEFLATER: ThreadLocal<Deflater> =
+    ThreadLocal.withInitial { Deflater(Deflater.BEST_SPEED) }
+private val INFLATER: ThreadLocal<Inflater> = ThreadLocal.withInitial { Inflater() }
 
 // Key ranges handed out per worker, so that a worker that drew a dense range doesn't hold up the
 // rest.
@@ -202,49 +215,78 @@ private class KeyCodec<K : Comparable<K>>(type: TypeToken<K>) {
     return (if (width == 8) key else key.toInt()) as K
   }
 
-  // Matches the Long and Int serializers in Memory.kt
-  fun readLong(from: EncodedInputStream): Long {
-    return if (width == 8) from.readLong() else from.readInt().toLong()
-  }
-
-  fun writeLong(key: Long, to: EncodedOutputStream) {
-    if (width == 8) to.writeLong(key) else to.writeInt(key.toInt())
-  }
 }
 
-/** A sorted stretch of records within one mapping, with where some of its keys start. */
+// A position within a chunk: the block's offset in the mapping in the high 32 bits and the offset
+// of a record within the block's decompressed bytes in the low 32.
+private fun position(block: Int, offset: Int): Long {
+  return (block.toLong() shl 32) or offset.toLong()
+}
+
+private fun blockOf(position: Long): Int {
+  return (position ushr 32).toInt()
+}
+
+private fun offsetOf(position: Long): Int {
+  return (position and 0xFFFFFFFFL).toInt()
+}
+
+/** A decompressed block, and where the block after it starts in the mapping. */
+private class Block(val raw: ByteArray, val next: Int)
+
+// A fresh array per block, because a merge holds onto value bytes from a block it has moved past.
+private fun readBlock(mapping: ByteBuffer, offset: Int): Block {
+  val view = mapping.duplicate()
+  view.position(offset)
+  val header = EncodedByteBufferInputStream(view, owned = false)
+  val compressed = header.readVarInt()
+  val raw = ByteArray(header.readVarInt())
+  val data = view.position()
+  view.limit(data + compressed)
+
+  val inflater = INFLATER.get()
+  inflater.reset()
+  inflater.setInput(view)
+  var inflated = 0
+  while (inflated < raw.size) {
+    val got = inflater.inflate(raw, inflated, raw.size - inflated)
+    if (got == 0 && (inflater.needsInput() || inflater.finished())) {
+      throw IllegalStateException("Block at ${offset} inflated to ${inflated} of ${raw.size} bytes")
+    }
+    inflated += got
+  }
+  return Block(raw, data + compressed)
+}
+
+/** A sorted stretch of records within one mapping, with each block's first key. */
 private class Chunk<K : Comparable<K>>(
-    val buffer: ByteBuffer,
+    // The whole mapping, which positions are relative to
+    val mapping: ByteBuffer,
+    val start: Long,
+    val end: Long,
     val indexKeys: List<K>,
-    val indexPositions: IntArray,
+    // Where each block whose first key is in indexKeys starts in the mapping
+    val indexBlocks: IntArray,
 ) {
 
-  val start: Int
-    get() = buffer.position()
+  val compressedBytes: Long
+    get() = (blockOf(end) - blockOf(start)).toLong()
 
-  val end: Int
-    get() = buffer.limit()
-
-  fun slice(from: Int, to: Int): Chunk<K> {
-    val view = buffer.duplicate()
-    view.limit(to)
-    view.position(from)
+  fun slice(from: Long, to: Long): Chunk<K> {
     var first = 0
-    while (first < indexPositions.size && indexPositions[first] < from) {
+    while (first < indexBlocks.size && indexBlocks[first] < blockOf(from)) {
       first += 1
     }
     var last = first
-    while (last < indexPositions.size && indexPositions[last] < to) {
+    while (last < indexBlocks.size && position(indexBlocks[last], 0) < to) {
       last += 1
     }
     return Chunk(
-        view,
-        indexKeys.subList(first, last),
-        indexPositions.copyOfRange(first, last))
+        mapping, from, to, indexKeys.subList(first, last), indexBlocks.copyOfRange(first, last))
   }
 
   /** Returns where the first record with a key at or past [key] starts, or [end] if none does. */
-  fun positionOf(key: K, codec: KeyCodec<K>, grouped: Boolean): Int {
+  fun positionOf(key: K, codec: KeyCodec<K>, grouped: Boolean): Long {
     var low = 0
     var high = indexKeys.size
     while (low < high) {
@@ -255,24 +297,23 @@ private class Chunk<K : Comparable<K>>(
         high = mid
       }
     }
+    // Every block is indexed, so the first record at or past the key is in the last block that
+    // starts before it, or else it starts the next block.
+    if (low == 0) {
+      return start
+    }
 
-    val view = buffer.duplicate()
-    if (low > 0) {
-      view.position(indexPositions[low - 1])
-    }
-    val stream = EncodedByteBufferInputStream(view, owned = false)
-    while (view.hasRemaining()) {
-      val position = view.position()
-      if (codec.serializer.read(stream) >= key) {
-        return position
+    val block = indexBlocks[low - 1]
+    val reader = RecordReader(slice(position(block, 0), end), codec, grouped)
+    while (reader.advance()) {
+      if (reader.compareKeyTo(key) >= 0) {
+        return maxOf(start, reader.position)
       }
-      if (grouped) {
-        stream.readVarInt()
+      if (blockOf(reader.position) != block) {
+        break
       }
-      val length = stream.readVarInt()
-      view.position(view.position() + length)
     }
-    return end
+    return if (reader.exhausted) end else maxOf(start, reader.position)
   }
 }
 
@@ -297,7 +338,114 @@ private fun <K : Comparable<K>> splitChunks(
 }
 
 private fun bytesIn(chunks: List<Chunk<*>>): Long {
-  return chunks.sumOf { (it.end - it.start).toLong() }
+  return chunks.sumOf { it.compressedBytes }
+}
+
+/** Reads a chunk's records in order, decompressing a block at a time. */
+private class RecordReader<K : Comparable<K>>(
+    private val chunk: Chunk<K>,
+    private val codec: KeyCodec<K>,
+    private val grouped: Boolean,
+) {
+
+  var raw = ByteArray(0)
+    private set
+  private var buffer = ByteBuffer.wrap(raw)
+  private var stream = EncodedByteBufferInputStream(buffer, owned = false)
+  private var block = -1
+  private var nextBlock = blockOf(chunk.start)
+  private var previousKey = 0L
+  var exhausted = false
+    private set
+
+  /** Where the current record starts. */
+  var position = chunk.start
+    private set
+  var longKey = 0L
+    private set
+  var objectKey: K? = null
+    private set
+  var count = 1
+    private set
+  var valueStart = 0
+    private set
+  var valueLength = 0
+    private set
+
+  val key: K
+    get() = if (codec.primitive) codec.fromLong(longKey) else objectKey!!
+
+  /** Moves to the next record, returning false once the chunk is spent. */
+  fun advance(): Boolean {
+    if (exhausted) {
+      return false
+    }
+
+    if (block < 0) {
+      // A chunk can start partway into a block, and decoding a key needs the ones before it.
+      openNextBlock()
+      while (buffer.position() < offsetOf(chunk.start)) {
+        readHeader()
+        buffer.position(valueStart + valueLength)
+      }
+    } else {
+      buffer.position(valueStart + valueLength)
+    }
+
+    if (!buffer.hasRemaining()) {
+      if (nextBlock >= blockOf(chunk.end) && offsetOf(chunk.end) == 0) {
+        exhausted = true
+        return false
+      }
+      openNextBlock()
+    }
+
+    position = position(block, buffer.position())
+    if (position >= chunk.end) {
+      exhausted = true
+      return false
+    }
+    readHeader()
+    return true
+  }
+
+  fun compareKeyTo(other: K): Int {
+    return if (codec.primitive) {
+      longKey.compareTo(codec.toLong(other))
+    } else {
+      objectKey!!.compareTo(other)
+    }
+  }
+
+  /** Returns a stream at the start of the current record's values. */
+  fun values(): EncodedInputStream {
+    buffer.position(valueStart)
+    return stream
+  }
+
+  private fun openNextBlock() {
+    val read = readBlock(chunk.mapping, nextBlock)
+    block = nextBlock
+    nextBlock = read.next
+    raw = read.raw
+    buffer = ByteBuffer.wrap(raw)
+    stream = EncodedByteBufferInputStream(buffer, owned = false)
+    previousKey = 0L
+  }
+
+  private fun readHeader() {
+    if (codec.primitive) {
+      longKey = previousKey + stream.readVarLong()
+      previousKey = longKey
+    } else {
+      objectKey = codec.serializer.read(stream)
+    }
+    if (grouped) {
+      count = stream.readVarInt()
+    }
+    valueLength = stream.readVarInt()
+    valueStart = buffer.position()
+  }
 }
 
 /** Reads one run a record at a time for a merge. */
@@ -307,40 +455,33 @@ private class RunCursor<K : Comparable<K>>(
     private val codec: KeyCodec<K>,
 ) : Comparable<RunCursor<K>> {
 
-  val buffer: ByteBuffer = chunk.buffer.duplicate()
-  private val stream = EncodedByteBufferInputStream(buffer, owned = false)
-  var longKey = 0L
-    private set
-  var objectKey: K? = null
-    private set
-  var valueStart = buffer.position()
-    private set
-  var valueLength = 0
-    private set
+  private val reader = RecordReader(chunk, codec, grouped = false)
+
+  val raw: ByteArray
+    get() = reader.raw
+
+  val longKey: Long
+    get() = reader.longKey
+
+  val objectKey: K?
+    get() = reader.objectKey
 
   val key: K
-    get() = if (codec.primitive) codec.fromLong(longKey) else objectKey!!
+    get() = reader.key
+
+  val valueStart: Int
+    get() = reader.valueStart
+
+  val valueLength: Int
+    get() = reader.valueLength
 
   /** Moves to the next record, returning false once the run is spent. */
   fun advance(): Boolean {
-    buffer.position(valueStart + valueLength)
-    if (!buffer.hasRemaining()) {
-      return false
-    }
-
-    if (codec.primitive) {
-      longKey = codec.readLong(stream)
-    } else {
-      objectKey = codec.serializer.read(stream)
-    }
-    valueLength = stream.readVarInt()
-    valueStart = buffer.position()
-    return true
+    return reader.advance()
   }
 
   fun <V> readValue(serializer: Serializer<V>): V {
-    buffer.position(valueStart)
-    return serializer.read(stream)
+    return serializer.read(reader.values())
   }
 
   fun hasKey(long: Long, obj: K?): Boolean {
@@ -458,7 +599,8 @@ private class MmapPMap<K : Comparable<K>, V>(
 ) : SplittablePMap<K, V> {
 
   private var chunk = -1
-  private var stream: EncodedByteBufferInputStream? = null
+  private var reader: RecordReader<K>? = null
+  private var ready = false
 
   override fun close() {
     onClose?.close()
@@ -469,12 +611,17 @@ private class MmapPMap<K : Comparable<K>, V>(
   }
 
   override fun hasNext(): Boolean {
-    while (stream?.hasRemaining() != true) {
-      chunk += 1
-      if (chunk >= chunks.size) {
-        return false
+    while (!ready) {
+      val current = reader
+      if (current != null && current.advance()) {
+        ready = true
+      } else {
+        chunk += 1
+        if (chunk >= chunks.size) {
+          return false
+        }
+        reader = RecordReader(chunks[chunk], codec, grouped = true)
       }
-      stream = EncodedByteBufferInputStream(chunks[chunk].buffer.duplicate(), owned = false)
     }
     return true
   }
@@ -483,15 +630,14 @@ private class MmapPMap<K : Comparable<K>, V>(
     if (!hasNext()) {
       throw NoSuchElementException()
     }
-    val stream = stream!!
-    val key = codec.serializer.read(stream)
-    val count = stream.readVarInt()
-    stream.readVarInt()
-    val values = ArrayList<V>(count)
-    repeat(count) {
+    ready = false
+    val reader = reader!!
+    val stream = reader.values()
+    val values = ArrayList<V>(reader.count)
+    repeat(reader.count) {
       values.add(valueSerializer.read(stream))
     }
-    return PEntry(key, values)
+    return PEntry(reader.key, values)
   }
 
   override fun sampleKeys(): List<K> {
@@ -505,22 +651,12 @@ private class MmapPMap<K : Comparable<K>, V>(
   }
 }
 
-/** Records written so far, with an entry every [INDEX_GRANULARITY_BYTES] of output. */
+/** The first key of every block written so far, and where the block starts. */
 private class IndexBuilder<K> {
 
   val keys = ArrayList<K>()
   var offsets = LongArray(1024)
     private set
-  private var lastOffset = -INDEX_GRANULARITY_BYTES
-
-  /** Starts a new run, whose first record always gets an entry. */
-  fun startRun() {
-    lastOffset = -INDEX_GRANULARITY_BYTES
-  }
-
-  fun wants(offset: Long): Boolean {
-    return offset - lastOffset >= INDEX_GRANULARITY_BYTES
-  }
 
   fun add(key: K, offset: Long) {
     if (keys.size == offsets.size) {
@@ -528,7 +664,102 @@ private class IndexBuilder<K> {
     }
     offsets[keys.size] = offset
     keys.add(key)
-    lastOffset = offset
+  }
+}
+
+/** A growable byte array to build a block in. */
+private class RawBuffer : EncodedOutputStream() {
+
+  // Room for a block and the record that overflows it, which is usually small
+  var bytes = ByteArray(2 * BLOCK_BYTES)
+    private set
+  var size = 0
+    private set
+
+  override fun write(b: Byte) {
+    ensure(1)
+    bytes[size] = b
+    size += 1
+  }
+
+  override fun write(b: ByteArray, off: Int, len: Int) {
+    ensure(len)
+    System.arraycopy(b, off, bytes, size, len)
+    size += len
+  }
+
+  fun clear() {
+    size = 0
+  }
+
+  private fun ensure(more: Int) {
+    if (size + more > bytes.size) {
+      bytes = bytes.copyOf(maxOf(2 * bytes.size, size + more))
+    }
+  }
+}
+
+/** Packs records into compressed blocks on [output], indexing each block's first key. */
+private class BlockWriter<K : Comparable<K>>(
+    private val output: ChannelEncodedOutputStream,
+    private val codec: KeyCodec<K>,
+    private val index: IndexBuilder<K>,
+) {
+
+  private val raw = RawBuffer()
+  private var compressed = ByteArray(BLOCK_BYTES)
+  private var firstKey: K? = null
+  private var previousKey = 0L
+  var rawBytes = 0L
+    private set
+
+  /**
+   * Writes a record's key, starting a new block first if the current one is full, and returns the
+   * stream the rest of the record goes to. Pass [key] for object keys and [longKey] for primitive
+   * ones.
+   */
+  fun startRecord(key: K?, longKey: Long): EncodedOutputStream {
+    if (raw.size >= BLOCK_BYTES) {
+      flush()
+    }
+    if (raw.size == 0) {
+      firstKey = key ?: codec.fromLong(longKey)
+      previousKey = 0L
+    }
+    if (codec.primitive) {
+      raw.writeVarLong(longKey - previousKey)
+      previousKey = longKey
+    } else {
+      codec.serializer.write(key!!, raw)
+    }
+    return raw
+  }
+
+  /** Writes out the block in progress. A run ends with this so no block spans two runs. */
+  fun flush() {
+    if (raw.size == 0) {
+      return
+    }
+
+    val deflater = DEFLATER.get()
+    deflater.reset()
+    deflater.setInput(raw.bytes, 0, raw.size)
+    deflater.finish()
+    var length = 0
+    while (!deflater.finished()) {
+      if (length == compressed.size) {
+        compressed = compressed.copyOf(2 * compressed.size)
+      }
+      length += deflater.deflate(compressed, length, compressed.size - length)
+    }
+
+    index.add(firstKey!!, output.nextWriteOffset())
+    output.writeVarInt(length)
+    output.writeVarInt(raw.size)
+    output.write(compressed, 0, length)
+    output.checkBufferSpace()
+    rawBytes += raw.size
+    raw.clear()
   }
 }
 
@@ -537,6 +768,7 @@ private class Runs<K : Comparable<K>>(
     val files: List<File>,
     val chunks: List<Chunk<K>>,
     private val mappings: List<ByteBuffer>,
+    val rawBytes: Long,
 ) {
 
   val size = bytesIn(chunks)
@@ -546,7 +778,7 @@ private class Runs<K : Comparable<K>>(
   }
 }
 
-/** Maps each extent of [file] and hands it the index entries that fall inside it. */
+/** Maps each extent of [file] and hands it the index entries of the blocks inside it. */
 private fun <K : Comparable<K>> mapExtents(
     file: File,
     extents: List<Extents>,
@@ -563,15 +795,21 @@ private fun <K : Comparable<K>> mapExtents(
       while (entry < index.keys.size && index.offsets[entry] < extent.start + extent.length) {
         entry += 1
       }
-      val positions = IntArray(entry - from) { (index.offsets[from + it] - extent.start).toInt() }
-      chunks.add(Chunk(mapping, index.keys.subList(from, entry), positions))
+      val blocks = IntArray(entry - from) { (index.offsets[from + it] - extent.start).toInt() }
+      chunks.add(
+          Chunk(
+              mapping,
+              position(0, 0),
+              position(extent.length.toInt(), 0),
+              index.keys.subList(from, entry),
+              blocks))
     }
   }
   return Pair(chunks, mappings)
 }
 
 /** Records waiting to be sorted into a run. */
-private interface RunBuffer<K, V> {
+private interface RunBuffer<K : Comparable<K>, V> {
 
   /**
    * Takes the record, or returns false if holding it would go over budget and the buffer should
@@ -580,7 +818,7 @@ private interface RunBuffer<K, V> {
   fun add(key: K, value: V): Boolean
 
   /** Writes everything held in key order and empties the buffer. */
-  fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>)
+  fun writeSorted(writer: BlockWriter<K>)
 }
 
 // Longs per piece, so that a LongArray piece is PIECE_BYTES
@@ -696,20 +934,15 @@ private class PrimitiveRunBuffer<K : Comparable<K>, V>(
     return true
   }
 
-  override fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>) {
+  override fun writeSorted(writer: BlockWriter<K>) {
     val order = sorter.sort(keys, count)
     for (i in 0 until count) {
       val record = order[i]
-      val offset = output.nextWriteOffset()
-      if (index.wants(offset)) {
-        index.add(codec.fromLong(keys[record]), offset)
-      }
-      codec.writeLong(keys[record], output)
+      val output = writer.startRecord(null, keys[record])
       output.writeVarInt(lengths[record])
       val location = locations[record]
       output.write(
           arenas[(location ushr 32).toInt()], (location and 0xFFFFFFFFL).toInt(), lengths[record])
-      output.checkBufferSpace()
     }
 
     // The arenas and pieces stay allocated for the next run.
@@ -799,18 +1032,13 @@ private class ObjectRunBuffer<K : Comparable<K>, V>(
     return true
   }
 
-  override fun writeSorted(output: ChannelEncodedOutputStream, index: IndexBuilder<K>) {
+  override fun writeSorted(writer: BlockWriter<K>) {
     // List.sort is stable, so equal keys keep the order they arrived in.
     items.sort()
     for (item in items) {
-      val offset = output.nextWriteOffset()
-      if (index.wants(offset)) {
-        index.add(item.key, offset)
-      }
-      codec.serializer.write(item.key, output)
+      val output = writer.startRecord(item.key, 0L)
       output.writeVarInt(item.value.size)
       output.write(item.value)
-      output.checkBufferSpace()
     }
     items.clear()
     heldBytes = 0
@@ -839,6 +1067,10 @@ private class RunWriter<K : Comparable<K>, V : Any>(
       if (codec.primitive) PrimitiveRunBuffer(codec, valueSerializer, budget)
       else ObjectRunBuffer(codec, valueSerializer, budget)
   val index = IndexBuilder<K>()
+  private val blocks = BlockWriter(output, codec, index)
+
+  val rawBytes: Long
+    get() = blocks.rawBytes
 
   fun emit(key: K, value: V) {
     if (!buffer.add(key, value)) {
@@ -848,8 +1080,8 @@ private class RunWriter<K : Comparable<K>, V : Any>(
   }
 
   private fun dump() {
-    index.startRun()
-    buffer.writeSorted(output, index)
+    buffer.writeSorted(blocks)
+    blocks.flush()
     output.shard()
   }
 
@@ -885,8 +1117,10 @@ private fun <K : Comparable<K>, V : Any> emitRuns(
   }
   val extents = writer.finish()
   val (chunks, mappings) = mapExtents(file, extents, writer.index)
-  val runs = Runs(listOf(file), chunks, mappings)
-  println("  PMap (mmap) ${keyType} -> ${valueType} in ${chunks.size} shards (size ${runs.size})")
+  val runs = Runs(listOf(file), chunks, mappings, writer.rawBytes)
+  println(
+      "  PMap (mmap) ${keyType} -> ${valueType} in ${chunks.size} shards" +
+          " (size ${runs.size}, raw ${runs.rawBytes})")
   return runs
 }
 
@@ -932,10 +1166,10 @@ private fun <I, K : Comparable<K>, V : Any> emitRunsParallel(
     chunks.addAll(c)
     mappings.addAll(m)
   }
-  val runs = Runs(writers.map { it.file }, chunks, mappings)
+  val runs = Runs(writers.map { it.file }, chunks, mappings, writers.sumOf { it.rawBytes })
   println(
       "  PMap (mmap parallel x${workers}) ${keyType} -> ${valueType} in ${chunks.size} shards" +
-          " (size ${runs.size})")
+          " (size ${runs.size}, raw ${runs.rawBytes})")
   return runs
 }
 
@@ -1042,6 +1276,7 @@ private fun <K : Comparable<K>, V : Any> materialize(
       }
   val extents = arrayOfNulls<List<Extents>>(parts.size)
   val indexes = arrayOfNulls<IndexBuilder<K>>(parts.size)
+  val rawBytes = LongArray(parts.size)
   val failure = AtomicReference<Throwable>()
 
   longProgress("${context} merging shards") { progress ->
@@ -1051,9 +1286,10 @@ private fun <K : Comparable<K>, V : Any> materialize(
               {
                 try {
                   val index = IndexBuilder<K>()
-                  extents[p] = mergeInto(files[p], parts[p], codec, index) {
-                    progress.incrementBy(it)
-                  }
+                  val (written, raw) =
+                      mergeInto(files[p], parts[p], codec, index) { progress.incrementBy(it) }
+                  extents[p] = written
+                  rawBytes[p] = raw
                   indexes[p] = index
                 } catch (e: Throwable) {
                   failure.compareAndSet(null, e)
@@ -1073,7 +1309,9 @@ private fun <K : Comparable<K>, V : Any> materialize(
 
   val size = extents.sumOf { e -> e!!.sumOf { it.length } }
   val entries = indexes.sumOf { it!!.keys.size }
-  println("  PMap (mmap) ${keyType} -> ${valueType} size ${size} (index ${entries})")
+  println(
+      "  PMap (mmap) ${keyType} -> ${valueType} size ${size}, raw ${rawBytes.sum()}" +
+          " (index ${entries})")
 
   return DisposableSupplier({ files.forEach { it.delete() } }) {
     val chunks = ArrayList<Chunk<K>>()
@@ -1089,51 +1327,53 @@ private fun <K : Comparable<K>, V : Any> materialize(
   }
 }
 
-/** Merges [chunks] into [file] as grouped records, copying value bytes without decoding them. */
+/**
+ * Merges [chunks] into [file] as grouped records, copying value bytes without decoding them, and
+ * returns the file's extents and how many bytes the blocks held before compression.
+ */
 private fun <K : Comparable<K>> mergeInto(
     file: File,
     chunks: List<Chunk<K>>,
     codec: KeyCodec<K>,
     index: IndexBuilder<K>,
-    progress: (Int) -> Unit): List<Extents> {
+    progress: (Int) -> Unit): Pair<List<Extents>, Long> {
   RandomAccessFile(file, "rw").use { raf ->
     val output = ChannelEncodedOutputStream(raf.channel)
+    val blocks = BlockWriter(output, codec, index)
     output.use {
       val merger = RunMerger(chunks, codec)
-      var buffers = arrayOfNulls<ByteBuffer>(16)
+      var raws = arrayOfNulls<ByteArray>(16)
       var starts = IntArray(16)
       var lengths = IntArray(16)
-      var count = 0
       while (merger.hasNext()) {
-        val offset = output.nextWriteOffset()
-        count = 0
+        var count = 0
         var total = 0
+        var longKey = 0L
         val key = merger.nextGroup {
-          if (count == buffers.size) {
-            buffers = buffers.copyOf(2 * count)
+          if (count == raws.size) {
+            raws = raws.copyOf(2 * count)
             starts = starts.copyOf(2 * count)
             lengths = lengths.copyOf(2 * count)
           }
-          buffers[count] = it.buffer
+          raws[count] = it.raw
           starts[count] = it.valueStart
           lengths[count] = it.valueLength
           total += it.valueLength
+          longKey = it.longKey
           count += 1
         }
 
-        if (index.wants(offset)) {
-          index.add(key, offset)
-        }
-        codec.serializer.write(key, output)
-        output.writeVarInt(count)
-        output.writeVarInt(total)
+        val record =
+            if (codec.primitive) blocks.startRecord(null, longKey) else blocks.startRecord(key, 0L)
+        record.writeVarInt(count)
+        record.writeVarInt(total)
         for (i in 0 until count) {
-          output.write(buffers[i]!!, starts[i], lengths[i])
+          record.write(raws[i]!!, starts[i], lengths[i])
         }
-        output.checkBufferSpace()
         progress(count)
       }
+      blocks.flush()
     }
-    return output.shards()
+    return Pair(output.shards(), blocks.rawBytes)
   }
 }

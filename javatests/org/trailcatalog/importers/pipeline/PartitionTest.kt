@@ -58,6 +58,40 @@ class PartitionTest {
     assertZipPartitionsCleanly(TypeToken.of(String::class.java)) { "k${it}" }
   }
 
+  // Keys are stored as the difference from the previous one in a block, and these differences wrap
+  // past Long.MAX_VALUE.
+  @Test
+  fun extremeLongKeysRoundTrip() {
+    val keys =
+        listOf(Long.MIN_VALUE, Long.MIN_VALUE + 1, -5L, 0L, 7L, Long.MAX_VALUE - 1, Long.MAX_VALUE)
+    for (sinks in listOf(1, 2)) {
+      val out = ArrayList<PEntry<Long, Int>>()
+      val pipeline = Pipeline(parallelism = 2)
+      val map =
+          pipeline.read(SequenceSource((0 until 700).asSequence()))
+              .then(KeyBy(TypeToken.of(Long::class.java)) { keys[it % keys.size] })
+      repeat(sinks) { i ->
+        map.write(object : PSink<PMap<Long, Int>>() {
+          override fun write(input: PMap<Long, Int>) {
+            input.use {
+              while (input.hasNext()) {
+                val entry = input.next()
+                if (i == 0) out.add(PEntry(entry.key, entry.values.sorted()))
+              }
+            }
+          }
+        })
+      }
+      pipeline.execute()
+
+      assertThat(out)
+          .isEqualTo(
+              keys.sorted().map { key ->
+                PEntry(key, (0 until 700).filter { keys[it % keys.size] == key })
+              })
+    }
+  }
+
   // Bigger than both the 1 MB scratch buffer a worker starts with and a 2 MB arena.
   @Test
   fun valuesLargerThanTheScratchBufferRoundTrip() {
