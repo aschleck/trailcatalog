@@ -444,6 +444,7 @@ export const NATURE_WITH_TRACKS: MbtileStyle = withTracks(NATURE);
 // aeroway, or waterway rule can match, so nothing depends on which one findZoomedStyle reaches.
 export const OSM_WAYS: Style = {
   lines: [...PATH_LINES, ...wayLines(NATURE_WITH_TRACKS), ...AERIALWAY_LINES, ...FERRY_LINES],
+  points: [],
   polygons: [],
 };
 
@@ -475,7 +476,7 @@ export function osmWaysOf(categories: WayCategory[]): Style {
       lines.push({...line, filters});
     }
   }
-  return {lines, polygons: OSM_WAYS.polygons};
+  return {lines, points: [], polygons: OSM_WAYS.polygons};
 }
 
 // What the Nodes layer offers to show, by the top level PointCategory each group is.
@@ -536,6 +537,7 @@ export function basemapOf(boundaries: boolean, labeled: ReadonlySet<string>): Mb
 
 export const PUBLIC_LAND: Style = {
   lines: [],
+  points: [],
   polygons: [
     {
       filters: [{match: 'string_equals', key: 'owner', value: 'BLM/BR'}],

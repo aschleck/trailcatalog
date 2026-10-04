@@ -73,7 +73,14 @@ export interface UpdateStateCommand {
   fetching: boolean;
 }
 
-export type Command = LoadCellCommand|UnloadCellsCommand|UpdateStateCommand;
+// The collection's presentation JSON. It comes with the covering, so it arrives before any cell.
+export interface SetPresentationCommand {
+  kind: 'spc';
+  presentation: string|undefined;
+}
+
+export type Command =
+    LoadCellCommand|SetPresentationCommand|UnloadCellsCommand|UpdateStateCommand;
 
 interface WantedCell {
   key: CellKey;
@@ -153,7 +160,7 @@ class S2DataFetcher {
         .then(data => {
           const source = new LittleEndianView(data);
           const version = source.getVarInt32();
-          if (version !== 2) {
+          if (version !== 3) {
             throw new Error("Unhandled version");
           }
 
@@ -172,6 +179,15 @@ class S2DataFetcher {
           } else {
             throw new Error(`Unhandled covering version ${coveringVersion}`);
           }
+
+          const presentationByteLength = source.getVarInt32();
+          this.postMessage({
+            kind: 'spc',
+            presentation:
+                presentationByteLength > 0
+                    ? new TextDecoder().decode(source.sliceInt8(presentationByteLength))
+                    : undefined,
+          });
 
           // It's possible we got a viewport before this covering
           this.refresh();

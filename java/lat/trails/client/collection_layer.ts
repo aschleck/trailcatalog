@@ -3,11 +3,11 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
-import { Camera } from 'js/map/camera';
-import { RawUuid, RgbaU32 } from 'js/map/common/types';
+import { Camera, projectS2LatLng } from 'js/map/camera';
+import { Copyright, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { LineProgram } from 'js/map/rendering/line_program';
+import { LineProgram, Stipple } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -16,7 +16,8 @@ import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as Fetcher
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { DOUBLE_CLICK_MS, HOVER_CHANGED, OBJECT_OPENED } from './events';
-import { Line, LoadedLines, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
+import { Schema } from './schema';
+import { Line, LoadedLines, LoadResponse, Match, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
 // makes it read as lifted, over pale roads and over landcover alike.
@@ -32,6 +33,10 @@ const HOVER_POLYGON_OUTLINE_RADIUS_PX = 1.5;
 // and all that is left is a black line. Same floor trailcatalog draws a raised path at.
 const HOVER_LINE_PADDING_PX = 1;
 const HOVER_LINE_MIN_RADIUS_PX = 4;
+// Hovered points get bigger instead of changing color, because the color shows the data.
+const HOVER_POINT_PADDING_PX = 2;
+
+const NO_STYLE: Style = {lines: [], points: [], polygons: []};
 
 // How close the cursor has to come to a line to hover it, measured from the center, so it reaches
 // past the edge of everything but the widest motorway.
@@ -45,6 +50,7 @@ interface LoadedCell {
   // Counts loads across every cell, so that a line id the index answered with before this cell
   // was restyled can't name whatever line took its index since.
   serial: number;
+  points: Point[];
   polygons: Polygon[];
   // How far the server may have moved its lines, in mercator
   tolerance: number;
@@ -54,6 +60,7 @@ interface LoadedCell {
 // band replaces another both cells hold it.
 type HeldObject =
     | {kind: 'line'; key: CellKey; value: Line}
+    | {kind: 'point'; key: CellKey; value: Point}
     | {kind: 'polygon'; key: CellKey; value: Polygon};
 
 // The object the cursor is over, drawn from its own buffers so it can sit above its cell. Which
@@ -104,17 +111,20 @@ export class CollectionLayer extends Layer {
   private styleEpoch: number;
   // The zooms where a line style starts or stops, since the loader's output changes only there
   private styleBreaks: number[];
+  private rowSchema: Schema|undefined;
 
   constructor(
+      copyrights: Copyright[],
       url: string,
-      style: Style,
+      // undefined to use the style from the collection's presentation
+      style: Style|undefined,
       snaps: Snap[],
       streams: Stream[],
       private readonly locations: LocationIndex,
       private readonly camera: Camera,
       private readonly renderer: Renderer,
   ) {
-    super(/* copyright= */ []);
+    super(copyrights);
     this.producer = locations.producer();
     this.fetcher = new WorkerPool(new URL('s2_data_fetcher_worker.js', import.meta.url).href, 1);
     this.fetching = false;
@@ -149,7 +159,8 @@ export class CollectionLayer extends Layer {
     this.lastRenderGeneration = -1;
     this.styleZoom = -1;
     this.styleEpoch = 0;
-    this.styleBreaks = styleBreaks(style);
+    this.styleBreaks = styleBreaks(style ?? NO_STYLE);
+    this.rowSchema = undefined;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
@@ -158,6 +169,14 @@ export class CollectionLayer extends Layer {
         this.unloadCells(command);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+      } else if (command.kind === 'spc') {
+        if (command.presentation) {
+          const presentation = JSON.parse(command.presentation) as Presentation;
+          this.rowSchema = parseSchema(presentation);
+          if (!style) {
+            this.setStyle(parseStyle(presentation));
+          }
+        }
       } else {
         checkExhaustive(command);
       }
@@ -180,8 +199,13 @@ export class CollectionLayer extends Layer {
     });
     this.loader.broadcast({
       kind: 'ir',
-      style,
+      style: style ?? NO_STYLE,
     });
+  }
+
+  /** Returns the schema from the collection's presentation, or undefined until it loads. */
+  schema(): Schema|undefined {
+    return this.rowSchema;
   }
 
   /** Redraws and reindexes every held cell with the style, without refetching. */
@@ -218,14 +242,23 @@ export class CollectionLayer extends Layer {
   // Takes the time before querying, because the query's latency is not the person's.
   override click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
     const now = performance.now();
-    this.queryPoint(point).then(ids => {
-      const target = ids.find(id => this.resolve(id));
+    const clicked = (target: string|undefined, object: HeldObject|undefined) => {
       const last = this.lastClick;
       this.lastClick = target ? {id: target, timeMs: now} : undefined;
-      const object = target ? this.resolve(target) : undefined;
       if (object && last && last.id === target && now - last.timeMs < DOUBLE_CLICK_MS) {
         source.trigger(OBJECT_OPENED, {layer: this, object});
       }
+    };
+
+    const dot = this.pointAt(point);
+    if (dot) {
+      clicked(objectKey(dot.value.id), dot);
+      // Return true so the line or polygon under the point doesn't also get the click.
+      return true;
+    }
+    this.queryPoint(point).then(ids => {
+      const target = ids.find(id => this.resolve(id));
+      clicked(target, target ? this.resolve(target) : undefined);
     });
     return false;
   }
@@ -233,6 +266,11 @@ export class CollectionLayer extends Layer {
   override hover(point: S2LatLng, source: EventSource): boolean {
     this.hoverGeneration += 1;
     const generation = this.hoverGeneration;
+    const dot = this.pointAt(point);
+    if (dot) {
+      this.retarget(objectKey(dot.value.id), dot, source);
+      return true;
+    }
     this.queryPoint(point).then(ids => {
       if (generation !== this.hoverGeneration) {
         return;
@@ -240,159 +278,197 @@ export class CollectionLayer extends Layer {
 
       // A point can land in several nested units, so take the first one we still hold.
       const target = ids.find(id => this.resolve(id));
-      if (target === this.lastHoverTarget) {
-        return;
+      this.retarget(target, target ? this.resolve(target) : undefined, source);
+    });
+    return false;
+  }
+
+  // Highlights object. target is its key in the location index.
+  private retarget(
+      target: string|undefined, object: HeldObject|undefined, source: EventSource): void {
+    if (target === this.lastHoverTarget) {
+      return;
+    }
+
+    this.lastRenderGeneration += 1;
+    this.clearHighlight();
+    this.lastHoverTarget = target;
+    const highlight = this.highlight;
+
+    source.trigger(HOVER_CHANGED, {target: object?.value});
+    if (!object) {
+      return;
+    }
+
+    const cell = this.cells.get(object.key);
+    if (!cell) {
+      return;
+    }
+    this.highlighted = object;
+
+    if (object.kind === 'point') {
+      const point = object.value;
+      const [x, y] = point.position;
+      highlight.geometry = growBuffer(highlight.geometry, LineProgram.bytesNeeded(2));
+      const result =
+          LineProgram.push(
+              point.style.fill,
+              HOVER_STROKE,
+              point.style.radius + HOVER_POINT_PADDING_PX,
+              /* stipple= */ false,
+              [x, y, x, y],
+              highlight.geometry,
+              /* offset= */ 0);
+      highlight.drawables.push({
+        elements: undefined,
+        geometry: highlight.glGeometryBuffer,
+        geometryByteLength: result.geometryByteLength,
+        geometryOffset: 0,
+        instanced: {
+          count: result.instanceCount,
+        },
+        program: this.renderer.lineCapProgram,
+        texture: undefined,
+        vertexCount: result.vertexCount,
+        z: Z_USER_DATA_HIGHLIGHT,
+      });
+
+      // Hide the existing object
+      this.renderer.uploadDataSubset(
+        new ArrayBuffer(point.geometryByteLength),
+        point.geometryOffset,
+        point.geometryByteLength,
+        cell.glGeometryBuffer);
+    } else if (object.kind === 'line') {
+      const line = object.value;
+      highlight.geometry =
+          growBuffer(highlight.geometry, LineProgram.bytesNeeded(line.points.length / 2));
+
+      const result =
+          LineProgram.push(
+              HOVER_FILL,
+              HOVER_STROKE,
+              Math.max(line.style.radius + HOVER_LINE_PADDING_PX, HOVER_LINE_MIN_RADIUS_PX),
+              /* stipple= */ false,
+              line.points,
+              highlight.geometry,
+              /* offset= */ 0);
+
+      const drawable = {
+        elements: undefined,
+        geometry: highlight.glGeometryBuffer,
+        geometryByteLength: result.geometryByteLength,
+        geometryOffset: 0,
+        instanced: {
+          count: result.instanceCount,
+        },
+        program: this.renderer.lineProgram,
+        texture: undefined,
+        vertexCount: result.vertexCount,
+        z: Z_USER_DATA_HIGHLIGHT,
+      };
+      highlight.drawables.push(drawable);
+      // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
+      highlight.drawables.push({...drawable, program: this.renderer.lineCapProgram});
+
+      // Hide the existing object
+      this.renderer.uploadDataSubset(
+        new ArrayBuffer(line.geometryByteLength),
+        line.geometryOffset,
+        line.geometryByteLength,
+        cell.glGeometryBuffer);
+    } else if (object.kind === 'polygon') {
+      const polygon = object.value;
+      const triangles = polygon.triangles;
+      // A fill color rides in front of the vertices, so the buffer holds one extra float.
+      const fillByteLength = 4 * (1 + triangles.geometry.length);
+      let outlineByteLength = 0;
+      for (const ring of polygon.outline) {
+        outlineByteLength += LineProgram.bytesNeeded(ring.length / 2);
       }
+      highlight.geometry =
+          growBuffer(highlight.geometry, fillByteLength + outlineByteLength);
+      highlight.index = growBuffer(highlight.index, 4 * triangles.index.length);
 
-      this.lastRenderGeneration += 1;
-      this.clearHighlight();
-      this.lastHoverTarget = target;
-      const highlight = this.highlight;
+      const geometryFloats = new Float32Array(highlight.geometry);
+      const geometryUints = new Uint32Array(highlight.geometry);
+      geometryUints[0] = raiseAlpha(polygon.style.fill, HOVER_POLYGON_ALPHA);
+      geometryFloats.set(triangles.geometry, /* offset= */ 1);
+      const index = new Uint32Array(highlight.index);
+      index.set(triangles.index);
 
-      const object = target ? this.resolve(target) : undefined;
-      source.trigger(HOVER_CHANGED, {target: object?.value});
-      if (!object) {
-        return;
-      }
+      highlight.drawables.push({
+        elements: {
+          count: triangles.index.length,
+          index: highlight.glIndexBuffer,
+          offset: 0,
+        },
+        geometry: highlight.glGeometryBuffer,
+        geometryByteLength: fillByteLength,
+        geometryOffset: 0,
+        instanced: undefined,
+        program: this.renderer.triangleProgram,
+        texture: undefined,
+        vertexCount: undefined,
+        z: Z_USER_DATA_HIGHLIGHT - 0.5,
+      });
 
-      const cell = this.cells.get(object.key);
-      if (!cell) {
-        return;
-      }
-      this.highlighted = object;
-
-      if (object.kind === 'line') {
-        const line = object.value;
-        highlight.geometry =
-            growBuffer(highlight.geometry, LineProgram.bytesNeeded(line.points.length / 2));
-
+      // The boundary, above the fill, so the shape reads as picked out rather than just
+      // brighter. An owner keeps its own color, which is the whole point of the layer.
+      //
+      // A ring only ever produces segments of its own, so laying every ring end to end and
+      // drawing the lot as one run of instances joins nothing that should not be joined. A state
+      // forest reaches a few thousand rings, and one drawable is what keeps the planner from
+      // sorting all of them every frame.
+      let outlineOffset = fillByteLength;
+      let outlineInstances = 0;
+      for (const ring of polygon.outline) {
         const result =
             LineProgram.push(
-                HOVER_FILL,
                 HOVER_STROKE,
-                Math.max(line.style.radius + HOVER_LINE_PADDING_PX, HOVER_LINE_MIN_RADIUS_PX),
+                HOVER_STROKE,
+                HOVER_POLYGON_OUTLINE_RADIUS_PX,
                 /* stipple= */ false,
-                line.points,
+                ring,
                 highlight.geometry,
-                /* offset= */ 0);
+                outlineOffset);
+        outlineOffset += result.geometryByteLength;
+        outlineInstances += result.instanceCount;
+      }
 
+      if (outlineInstances > 0) {
         const drawable = {
           elements: undefined,
           geometry: highlight.glGeometryBuffer,
-          geometryByteLength: result.geometryByteLength,
-          geometryOffset: 0,
+          geometryByteLength: outlineOffset - fillByteLength,
+          geometryOffset: fillByteLength,
           instanced: {
-            count: result.instanceCount,
+            count: outlineInstances,
           },
           program: this.renderer.lineProgram,
           texture: undefined,
-          vertexCount: result.vertexCount,
+          vertexCount: /* a rectangle per segment= */ 4,
           z: Z_USER_DATA_HIGHLIGHT,
         };
         highlight.drawables.push(drawable);
-        // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
         highlight.drawables.push({...drawable, program: this.renderer.lineCapProgram});
-
-        // Hide the existing object
-        this.renderer.uploadDataSubset(
-          new ArrayBuffer(line.geometryByteLength),
-          line.geometryOffset,
-          line.geometryByteLength,
-          cell.glGeometryBuffer);
-      } else if (object.kind === 'polygon') {
-        const polygon = object.value;
-        const triangles = polygon.triangles;
-        // A fill color rides in front of the vertices, so the buffer holds one extra float.
-        const fillByteLength = 4 * (1 + triangles.geometry.length);
-        let outlineByteLength = 0;
-        for (const ring of polygon.outline) {
-          outlineByteLength += LineProgram.bytesNeeded(ring.length / 2);
-        }
-        highlight.geometry =
-            growBuffer(highlight.geometry, fillByteLength + outlineByteLength);
-        highlight.index = growBuffer(highlight.index, 4 * triangles.index.length);
-
-        const geometryFloats = new Float32Array(highlight.geometry);
-        const geometryUints = new Uint32Array(highlight.geometry);
-        geometryUints[0] = raiseAlpha(polygon.style.fill, HOVER_POLYGON_ALPHA);
-        geometryFloats.set(triangles.geometry, /* offset= */ 1);
-        const index = new Uint32Array(highlight.index);
-        index.set(triangles.index);
-
-        highlight.drawables.push({
-          elements: {
-            count: triangles.index.length,
-            index: highlight.glIndexBuffer,
-            offset: 0,
-          },
-          geometry: highlight.glGeometryBuffer,
-          geometryByteLength: fillByteLength,
-          geometryOffset: 0,
-          instanced: undefined,
-          program: this.renderer.triangleProgram,
-          texture: undefined,
-          vertexCount: undefined,
-          z: Z_USER_DATA_HIGHLIGHT - 0.5,
-        });
-
-        // The boundary, above the fill, so the shape reads as picked out rather than just
-        // brighter. An owner keeps its own color, which is the whole point of the layer.
-        //
-        // A ring only ever produces segments of its own, so laying every ring end to end and
-        // drawing the lot as one run of instances joins nothing that should not be joined. A state
-        // forest reaches a few thousand rings, and one drawable is what keeps the planner from
-        // sorting all of them every frame.
-        let outlineOffset = fillByteLength;
-        let outlineInstances = 0;
-        for (const ring of polygon.outline) {
-          const result =
-              LineProgram.push(
-                  HOVER_STROKE,
-                  HOVER_STROKE,
-                  HOVER_POLYGON_OUTLINE_RADIUS_PX,
-                  /* stipple= */ false,
-                  ring,
-                  highlight.geometry,
-                  outlineOffset);
-          outlineOffset += result.geometryByteLength;
-          outlineInstances += result.instanceCount;
-        }
-
-        if (outlineInstances > 0) {
-          const drawable = {
-            elements: undefined,
-            geometry: highlight.glGeometryBuffer,
-            geometryByteLength: outlineOffset - fillByteLength,
-            geometryOffset: fillByteLength,
-            instanced: {
-              count: outlineInstances,
-            },
-            program: this.renderer.lineProgram,
-            texture: undefined,
-            vertexCount: /* a rectangle per segment= */ 4,
-            z: Z_USER_DATA_HIGHLIGHT,
-          };
-          highlight.drawables.push(drawable);
-          highlight.drawables.push({...drawable, program: this.renderer.lineCapProgram});
-        }
-
-        // Hide the existing object
-        this.renderer.uploadDataSubset(
-          new ArrayBuffer(polygon.geometryByteLength),
-          polygon.geometryOffset,
-          polygon.geometryByteLength,
-          cell.glGeometryBuffer);
-
-        this.renderer.uploadIndices(
-          highlight.index, highlight.index.byteLength, highlight.glIndexBuffer);
-      } else {
-        throw checkExhaustive(object);
       }
 
-      this.renderer.uploadData(
-        highlight.geometry, highlight.geometry.byteLength, highlight.glGeometryBuffer);
-    });
-    return false;
+      // Hide the existing object
+      this.renderer.uploadDataSubset(
+        new ArrayBuffer(polygon.geometryByteLength),
+        polygon.geometryOffset,
+        polygon.geometryByteLength,
+        cell.glGeometryBuffer);
+
+      this.renderer.uploadIndices(
+        highlight.index, highlight.index.byteLength, highlight.glIndexBuffer);
+    } else {
+      throw checkExhaustive(object);
+    }
+
+    this.renderer.uploadData(
+      highlight.geometry, highlight.geometry.byteLength, highlight.glGeometryBuffer);
   }
 
   override hoverLost(source: EventSource): void {
@@ -481,6 +557,33 @@ export class CollectionLayer extends Layer {
   private cancel(key: CellKey): void {
     this.loading.get(key)?.cancel();
     this.loading.delete(key);
+  }
+
+  // Finds the closest point within HOVER_RADIUS_PX. We search points here because they aren't in the
+  // location index, since the router would try to route along anything in it.
+  private pointAt(at: S2LatLng): HeldObject|undefined {
+    // the layer is hidden, see setIndexed
+    if (!this.indexed) {
+      return undefined;
+    }
+
+    const [x, y] = projectS2LatLng(at);
+    // converts pixels to mercator
+    const radius = HOVER_RADIUS_PX * this.camera.inverseWorldRadius;
+    let best: HeldObject|undefined = undefined;
+    let bestDistance2 = radius * radius;
+    for (const [key, cell] of this.cells) {
+      for (const point of cell?.points ?? []) {
+        const dx = point.position[0] - x;
+        const dy = point.position[1] - y;
+        const distance2 = dx * dx + dy * dy;
+        if (distance2 < bestDistance2) {
+          best = {kind: 'point', key, value: point};
+          bestDistance2 = distance2;
+        }
+      }
+    }
+    return best;
   }
 
   private queryPoint(point: S2LatLng): Promise<string[]> {
@@ -583,6 +686,22 @@ export class CollectionLayer extends Layer {
       });
     }
 
+    for (const point of response.pointGeometries) {
+      drawables.push({
+        elements: undefined,
+        geometry,
+        geometryByteLength: point.geometryByteLength,
+        geometryOffset: point.geometryOffset,
+        instanced: {
+          count: point.instanceCount,
+        },
+        program: this.renderer.lineCapProgram,
+        texture: undefined,
+        vertexCount: point.vertexCount,
+        z: point.z,
+      });
+    }
+
     for (const polygon of response.polygonGeometries) {
       drawables.push({
         elements: {
@@ -607,6 +726,7 @@ export class CollectionLayer extends Layer {
       drawables,
       lines: response.lines,
       serial,
+      points: response.points,
       polygons: response.polygons,
       tolerance: response.tolerance,
     });
@@ -705,6 +825,20 @@ export class CollectionLayer extends Layer {
             /* offset= */ 0);
         this.renderer.uploadDataSubset(
           restored, line.geometryOffset, line.geometryByteLength, cell.glGeometryBuffer);
+      } else if (object.kind === 'point') {
+        const point = object.value;
+        const [x, y] = point.position;
+        const restored = new ArrayBuffer(point.geometryByteLength);
+        LineProgram.push(
+            point.style.fill,
+            point.style.stroke,
+            point.style.radius,
+            /* stipple= */ false,
+            [x, y, x, y],
+            restored,
+            /* offset= */ 0);
+        this.renderer.uploadDataSubset(
+          restored, point.geometryOffset, point.geometryByteLength, cell.glGeometryBuffer);
       } else if (object.kind === 'polygon') {
         const polygon = object.value;
         this.renderer.uploadDataSubset(
@@ -725,6 +859,72 @@ export class CollectionLayer extends Layer {
     this.lastHoverTarget = undefined;
     this.highlighted = undefined;
   }
+}
+
+// The JSON in collections.presentation, see 7_collection_presentation.toml. lines, points, and
+// polygons are a Style with #RRGGBBAA colors and without z, which the client picks. The rest is a
+// Schema with a plain text title.
+interface Presentation {
+  title?: string;
+  description?: string;
+  fields?: Array<{key: string; label: string; values?: {[raw: string]: string}}>;
+  lines?: Array<{
+    filters: Match[];
+    fill: string;
+    stroke: string;
+    radius: number;
+    minZoom?: number;
+    maxZoom?: number;
+    stipple?: Stipple;
+  }>;
+  points?: Array<{filters: Match[]; fill: string; stroke: string; radius: number}>;
+  polygons?: Array<{filters: Match[]; fill: string}>;
+}
+
+// Converts a presentation into a Style, filling in what the client decides like z.
+function parseStyle(presentation: Presentation): Style {
+  return {
+    lines: (presentation.lines ?? []).map(line => ({
+      filters: line.filters,
+      minZoom: line.minZoom ?? 0,
+      maxZoom: line.maxZoom ?? Infinity,
+      fill: parseColor(line.fill),
+      stroke: parseColor(line.stroke),
+      radius: line.radius,
+      stipple: line.stipple ?? false,
+      z: Z_USER_DATA,
+    })),
+    points: (presentation.points ?? []).map(point => ({
+      filters: point.filters,
+      fill: parseColor(point.fill),
+      stroke: parseColor(point.stroke),
+      radius: point.radius,
+      z: Z_USER_DATA,
+    })),
+    polygons: (presentation.polygons ?? []).map(polygon => ({
+      filters: polygon.filters,
+      fill: parseColor(polygon.fill),
+      z: Z_USER_DATA,
+    })),
+  };
+}
+
+function parseSchema(presentation: Presentation): Schema|undefined {
+  if (!presentation.title) {
+    return undefined;
+  }
+  return {
+    title: {kind: 'text', key: presentation.title},
+    description: presentation.description,
+    fields: presentation.fields ?? [],
+  };
+}
+
+function parseColor(hex: string): RgbaU32 {
+  if (!/^#[0-9a-fA-F]{8}$/.test(hex)) {
+    throw new Error(`Expected #RRGGBBAA, got ${hex}`);
+  }
+  return parseInt(hex.substring(1), 16) as RgbaU32;
 }
 
 // The id an object goes into the index under, and the key objects holds it by.

@@ -6,7 +6,7 @@ import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Deltas, projectS2Loop, skipE7Deltas } from 'js/map/camera';
-import { LatLngRect, RawUuid, RgbaU32 } from 'js/map/common/types';
+import { LatLngRect, RawUuid, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LineProgram, Stipple } from 'js/map/rendering/line_program';
 import { PackedLines } from 'js/map/workers/location_querier';
 import { Terrain, TERRAINS } from 'js/map/workers/path_router';
@@ -27,6 +27,7 @@ interface SetStyleRequest {
 
 export interface Style {
   lines: LineStyle[];
+  points: PointStyle[];
   polygons: PolygonStyle[];
 }
 
@@ -39,6 +40,14 @@ export interface LineStyle {
   stroke: RgbaU32;
   radius: number;
   stipple: Stipple;
+  z: number;
+}
+
+export interface PointStyle {
+  filters: Match[];
+  fill: RgbaU32;
+  stroke: RgbaU32;
+  radius: number;
   z: number;
 }
 
@@ -93,6 +102,8 @@ export interface LoadResponse {
   // one object then we keep the non-*Geometry arrays too.
   lines: LoadedLines;
   lineGeometries: LineGeometry[];
+  points: Point[];
+  pointGeometries: PointGeometry[];
   polygons: Polygon[];
   polygonGeometries: PolygonGeometry[];
 }
@@ -129,6 +140,27 @@ export interface Line {
 }
 
 export interface LineGeometry {
+  geometryByteLength: number;
+  geometryOffset: number;
+  instanceCount: number;
+  vertexCount: number;
+  z: number;
+}
+
+export interface Point {
+  id: RawUuid;
+  data: Data;
+  // where the point is in the cell's geometry buffer, so hovering can hide and restore it
+  geometryByteLength: number;
+  geometryOffset: number;
+  // in mercator
+  position: Vec2;
+  style: PointStyle;
+}
+
+// We draw a point as a zero length line with LineCapProgram, which draws a circle at each end of a
+// line, so we get one circle. See also feature_layer.ts#ShapeBatch.push.
+export interface PointGeometry {
   geometryByteLength: number;
   geometryOffset: number;
   instanceCount: number;
@@ -187,8 +219,10 @@ class CollectionLoader {
 
   load(request: LoadRequest) {
     const source = new LittleEndianView(request.data);
+    // We still accept version 2 because browsers cache public collection tiles forever, see
+    // ApiServer.kt#cacheAndCheckIfCached. Version 2 is version 3 without points.
     const version = source.getVarInt32();
-    if (version !== 2) {
+    if (version !== 2 && version !== 3) {
       throw new Error("Unhandled version");
     }
 
@@ -278,6 +312,24 @@ class CollectionLoader {
       });
     }
 
+    const dotCount = version >= 3 ? source.getVarInt32() : 0;
+    const styledPoints: Array<{id: RawUuid; data: Data; position: Vec2; style: PointStyle}> = [];
+    for (let i = 0; i < dotCount; ++i) {
+      const idLsb = source.getBigInt64();
+      const idMsb = source.getBigInt64();
+      const dataByteSize = source.getVarInt32();
+      const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
+      const style = findStyle(data, this.style.points);
+      if (!style) {
+        skipE7Deltas(source);
+        continue;
+      }
+
+      const [x, y] = projectE7Deltas(source);
+      styledPoints.push({id: {lsb: idLsb, msb: idMsb}, data, position: [x, y], style});
+    }
+    styledPoints.sort((a, b) => a.style.z - b.style.z);
+
     triangulated.sort((a, b) => {
       if (a.style.z !== b.style.z) {
         return a.style.z - b.style.z;
@@ -300,9 +352,12 @@ class CollectionLoader {
       merged.push(triangulated.slice(last, triangulated.length));
     }
 
-    // Geometry layout: lines first, then a fill float per polygon group, then polygon vertices.
+    // Geometry layout: lines first, then points, then a fill float per polygon group, then polygon
+    // vertices.
+    const pointGeometryBytes = styledPoints.length * LineProgram.bytesNeeded(2);
     const geometry =
-        new Float32Array(lineGeometryBytes / 4 + merged.length + polygonGeometryFloats);
+        new Float32Array(
+            (lineGeometryBytes + pointGeometryBytes) / 4 + merged.length + polygonGeometryFloats);
     const geometryUints = new Uint32Array(geometry.buffer);
     const index = new Uint32Array(indexCount);
     let geometryOffset = 0;
@@ -342,6 +397,8 @@ class CollectionLoader {
       index: index.buffer,
       lines,
       lineGeometries: [],
+      points: [],
+      pointGeometries: [],
       polygons: [],
       polygonGeometries: [],
     };
@@ -406,6 +463,52 @@ class CollectionLoader {
         z: groupZ,
       });
     }
+
+    // Points with the same z draw in one instanced call, like the lines
+    let dotZ: number|undefined = undefined;
+    let dotStart = geometryOffset;
+    let dotInstances = 0;
+    let dotVertexCount = 0;
+    const flushDots = () => {
+      if (dotZ !== undefined && dotInstances > 0) {
+        response.pointGeometries.push({
+          geometryByteLength: 4 * (geometryOffset - dotStart),
+          geometryOffset: 4 * dotStart,
+          instanceCount: dotInstances,
+          vertexCount: dotVertexCount,
+          z: dotZ,
+        });
+      }
+      dotStart = geometryOffset;
+      dotInstances = 0;
+    };
+    for (const point of styledPoints) {
+      if (point.style.z !== dotZ) {
+        flushDots();
+        dotZ = point.style.z;
+      }
+      const [x, y] = point.position;
+      const result = LineProgram.push(
+          point.style.fill,
+          point.style.stroke,
+          point.style.radius,
+          /* stipple= */ false,
+          [x, y, x, y],
+          geometry.buffer,
+          4 * geometryOffset);
+      response.points.push({
+        id: point.id,
+        data: point.data,
+        geometryByteLength: result.geometryByteLength,
+        geometryOffset: 4 * geometryOffset,
+        position: point.position,
+        style: point.style,
+      });
+      geometryOffset += result.geometryByteLength / 4;
+      dotInstances += result.instanceCount;
+      dotVertexCount = result.vertexCount;
+    }
+    flushDots();
 
     for (const group of merged) {
       const geometryStart = geometryOffset;

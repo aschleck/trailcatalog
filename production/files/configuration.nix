@@ -257,6 +257,49 @@
     };
   };
 
+  systemd.services."trails-lat-conditions" = {
+    enable = true;
+    after = [ "podman.service" ];
+    # Hourly because AirNow updates its contours hourly.
+    startAt = "*-*-* *:15:00";
+    restartIfChanged = false;
+
+    path = with pkgs; [
+      bash
+      crun
+      google-cloud-sdk
+      jq
+      podman
+    ];
+
+    serviceConfig = {
+      ExecStart = "/home/april/conditions.sh";
+      Type = "oneshot";
+    };
+  };
+
+  systemd.services."trails-lat-snodas" = {
+    enable = true;
+    after = [ "podman.service" ];
+    # NSIDC publishes each day at 13:00 UTC. The second run is for days it publishes late.
+    startAt = [ "*-*-* 13:30:00 UTC" "*-*-* 19:30:00 UTC" ];
+    restartIfChanged = false;
+
+    path = with pkgs; [
+      bash
+      coreutils
+      crun
+      google-cloud-sdk
+      pmtiles
+      podman
+    ];
+
+    serviceConfig = {
+      ExecStart = "/home/april/snodas.sh";
+      Type = "oneshot";
+    };
+  };
+
   systemd.services."trailcatalog-pmtiles" = {
     enable = true;
     after = [ "podman.service" ];

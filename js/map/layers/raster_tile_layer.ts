@@ -12,7 +12,7 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-import { LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
+import { Decode, LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
 import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
 
 const NO_OFFSET: Vec2 = [0, 0];
@@ -38,6 +38,7 @@ export class RasterTileLayer extends Layer {
       minZoom: number,
       maxZoom: number,
       private readonly renderer: Renderer,
+      decode: Decode = 'image',
   ) {
     super(copyrights);
     this.buffer = this.renderer.createDataBuffer(0);
@@ -84,6 +85,15 @@ export class RasterTileLayer extends Layer {
     });
     this.loader.broadcast({
       kind: 'ir',
+      decode,
+    });
+  }
+
+  /** Swaps in tiles from another URL template, such as another day's. */
+  setUrl(url: string): void {
+    this.fetcher.broadcast({
+      kind: 'sur',
+      url,
     });
   }
 

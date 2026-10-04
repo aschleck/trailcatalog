@@ -99,6 +99,8 @@ export class PointCollectionLayer extends Layer {
         this.unloadCells(command);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+      } else if (command.kind === 'spc') {
+        // trailcatalog points have no presentation
       } else {
         checkExhaustive(command);
       }
@@ -276,8 +278,9 @@ export class PointCollectionLayer extends Layer {
 
   private loadCell(command: LoadCellCommand): void {
     const source = new LittleEndianView(command.data);
+    // Version 3 only changed the other kinds, so packed points read the same in 2 and 3.
     const version = source.getVarInt32();
-    if (version !== 2) {
+    if (version !== 2 && version !== 3) {
       throw new Error(`Unhandled version ${version}`);
     }
     const kind = source.getVarInt32();

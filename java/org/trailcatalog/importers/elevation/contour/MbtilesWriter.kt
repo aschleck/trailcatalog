@@ -40,6 +40,14 @@ class MbtilesWriter(path: Path) : Closeable {
     connection.close()
   }
 
+  fun setMetadata(name: String, value: String) {
+    connection.prepareStatement("INSERT INTO metadata (name, value) VALUES (?, ?)").use {
+      it.setString(1, name)
+      it.setString(2, value)
+      it.executeUpdate()
+    }
+  }
+
   fun insertTile(x: Int, y: Int, z: Int, data: ByteArray) {
     synchronized (insertStatement) {
       insertStatement.setInt(1, z)

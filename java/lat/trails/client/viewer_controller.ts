@@ -13,7 +13,7 @@ import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service'
 
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
-import { RgbaU32, Vec2 } from 'js/map/common/types';
+import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { CLICKED, MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
@@ -21,11 +21,13 @@ import { MapController } from 'js/map/map_controller';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
+import { Decode } from 'js/map/workers/raster_loader';
 import { SlopeLayer } from 'js/map/layers/slope_layer';
 import { Search } from 'js/map/workers/earth_search_loader';
 import { Elevations } from 'js/map/workers/elevations';
 import { Style } from 'js/map/workers/mbtile_loader';
 import { LocationIndex } from 'js/map/workers/location_index';
+import { Stream } from 'js/map/workers/s2_data_fetcher';
 import { Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
@@ -137,10 +139,25 @@ const MAPTERHORN_COPYRIGHT = {
   short: 'Mapterhorn',
   url: 'https://mapterhorn.com/attribution',
 };
+const SNODAS_COPYRIGHT = {
+  long:
+      'SNODAS snow analysis from the NOAA National Operational Hydrologic Remote Sensing Center, '
+          + 'archived by NSIDC',
+  short: 'NOAA NOHRSC',
+  url: 'https://nsidc.org/data/g02158',
+};
+// Keep in sync with snodas.sh, which writes one archive per day named snodas_<day>.pmtiles
+const SNODAS_URL = 'https://tiles.trailcatalog.org/snodas_';
+const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
+const SNOW_WATER_ID = 'us/conditions/snow_water';
 // No short form, so that it shows in the full list and leaves the credit bar to Mapterhorn
 const COPERNICUS_COPYRIGHT = {
   long: 'Contains modified Copernicus Sentinel data 2021',
 };
+// Keep in sync with Conditions.kt
+const AIR_QUALITY_COLLECTION_ID = '09afe7ea-ffe9-41b3-ac05-580758a5ac2f';
+const FIRE_PERIMETERS_COLLECTION_ID = '77ac6377-5725-40bb-bfb5-c0bbcb353617';
+const RIVER_GAUGES_COLLECTION_ID = 'b94ce6bf-753b-4886-8dde-224d5ebcfb7a';
 // The zoom where the contours and the trails around a point come in at full detail
 const POINT_ZOOM = 14;
 // Where trailcatalog starts drawing its points, see trail_layer.ts#RENDER_POINT_ZOOM_THRESHOLD
@@ -428,6 +445,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     const ways =
         new CollectionLayer(
+            /* copyrights= */ [],
             '/api/collections/00000000-0000-0000-0000-000000000001',
             OSM_WAYS,
             [
@@ -584,12 +602,73 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name: 'United States',
       enabled: true,
       children: [{
+        kind: 'group',
+        id: 'us/conditions',
+        name: 'Conditions',
+        enabled: true,
+        children: [
+          this.newConditionsEntry(
+              'us/conditions/fire_perimeters',
+              'Fire perimeters',
+              FIRE_PERIMETERS_COLLECTION_ID,
+              {
+                long: 'Current interagency fire perimeters from the National Interagency Fire Center',
+                short: 'NIFC',
+                url: 'https://data-nifc.opendata.arcgis.com/',
+              },
+              // Few enough to load the whole country at once: 113 perimeters were 413 kB on
+              // 2026-10-03.
+              {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+              locations),
+          this.newConditionsEntry(
+              'us/conditions/air_quality',
+              'Air quality',
+              AIR_QUALITY_COLLECTION_ID,
+              {
+                long: 'Current air quality index contours from AirNow, preliminary and unverified',
+                short: 'AirNow',
+                url: 'https://www.airnow.gov/',
+              },
+              // Few enough to load the whole country at once: 79 contours were 180 kB of GeoJSON on
+              // 2026-10-03.
+              {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+              locations),
+          this.newArcGisExportEntry(
+              'us/conditions/radar',
+              'NOAA radar',
+              {
+                long: 'Multi-Radar Multi-Sensor base reflectivity from NOAA',
+                short: 'NOAA MRMS',
+                url: 'https://radar.weather.gov/',
+              },
+              'eventdriven/rest/services/radar/radar_base_reflectivity/MapServer',
+              /* layers= */ undefined,
+              // MRMS has 1 km cells and a zoom 9 pixel is about 300 m, so more zoom adds no detail.
+              /* maxZoom= */ 9),
+          this.newConditionsEntry(
+              'us/conditions/river_gauges',
+              'River gauges',
+              RIVER_GAUGES_COLLECTION_ID,
+              {
+                long: 'River observations from the NOAA National Water Prediction Service',
+                short: 'NOAA NWPS',
+                url: 'https://water.noaa.gov/',
+              },
+              // Conditions.kt puts every gauge in a level 13 cell. There are about 11,500 gauges, too
+              // many to draw zoomed out, so they start at zoom 6.
+              {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+              locations),
+          this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'snow_depth'),
+          this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
+        ],
+      }, {
         kind: 'layer',
         id: 'us/public_land',
         name: 'Public land',
         enabled: false,
         schema: PUBLIC_LAND_SCHEMA,
         layer: new CollectionLayer(
+            /* copyrights= */ [],
             '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
             PUBLIC_LAND,
             // Snapping to a level whose cells are a few pixels across is invisible and saves most
@@ -757,6 +836,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       ...this.state,
       layers: {nodes, expanded: new Set(['osm', 'satellite', 'topography', 'us'])},
     });
+    this.showLatestSnow();
     this.setMapLayers(nodes);
 
     const collection = response.args.collection;
@@ -852,10 +932,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(undefined);
     this.inspected = object;
     const data = object.value.data;
+    const entry =
+        layerEntries(this.state.layers.nodes).find(({entry}) => entry.layer === layer)?.entry;
     const schema =
         checkExists(
-            layerEntries(this.state.layers.nodes).find(({entry}) => entry.layer === layer)
-                ?.entry.schema);
+            entry?.schema ?? (layer instanceof CollectionLayer ? layer.schema() : undefined));
     const titleValue = data[schema.title.key];
     const element =
         typeof titleValue !== 'number' ? undefined
@@ -2681,6 +2762,131 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     };
   }
 
+  private newConditionsEntry(
+      id: string,
+      name: string,
+      collection: string,
+      copyright: Copyright,
+      stream: Stream,
+      locations: LocationIndex): LayerEntry {
+    return {
+      kind: 'layer',
+      id,
+      name,
+      enabled: false,
+      layer: new CollectionLayer(
+          [copyright],
+          `/api/collections/${collection}`,
+          /* style= */ undefined,
+          // Same snapping as the public land layer, see there for why
+          [
+            {minZoom: 0, snap: 11},
+            {minZoom: 7, snap: 14},
+            {minZoom: 10, snap: undefined},
+          ],
+          [stream],
+          locations,
+          this.mapController.camera,
+          this.mapController.renderer,
+      ),
+      controls: [],
+      values: {},
+    };
+  }
+
+  // Shows yesterday because today's may not be published yet. showLatestSnow switches to today if
+  // it exists.
+  private newSnowEntry(id: string, name: string, decode: Decode): LayerEntry {
+    const day = utcDay(-1);
+    const layer =
+        new RasterTileLayer(
+            [SNODAS_COPYRIGHT],
+            snodasUrl(day),
+            /* tint= */ 0xFFFFFFFF as RgbaU32,
+            /* z= */ Z_OVERLAY_TERRAIN,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            // See Snodas.kt#MAX_ZOOM
+            /* maxZoom= */ 7,
+            this.mapController.renderer,
+            decode);
+    return {
+      kind: 'layer',
+      id,
+      name,
+      enabled: false,
+      layer,
+      controls: [{kind: 'date', key: 'day', label: 'Day'}],
+      values: {day},
+      configure: values => {
+        layer.setUrl(snodasUrl(String(values.day)));
+      },
+    };
+  }
+
+  // Switches the snow layers to today if today's archive exists. Today's archive is tiled at 13:30
+  // UTC. We check for the 0/0/0 tile because every archive has it, see Snodas.kt.
+  private showLatestSnow(): void {
+    const yesterday = utcDay(-1);
+    const today = utcDay(0);
+    fetch(`${SNODAS_URL}${today}/0/0/0.png`).then(response => {
+      if (!response.ok) {
+        return;
+      }
+
+      let nodes = this.state.layers.nodes;
+      for (const id of [SNOW_DEPTH_ID, SNOW_WATER_ID]) {
+        const entry = checkExists(findLayerNode(nodes, id)) as LayerEntry;
+        // The user picked a different day while we were checking, so keep it
+        if (entry.values.day !== yesterday) {
+          continue;
+        }
+        const values = {...entry.values, day: today};
+        nodes = updateLayerNode(nodes, id, () => ({...entry, values}));
+        entry.configure?.(values);
+      }
+      this.updateState({...this.state, layers: {...this.state.layers, nodes}});
+    }, () => {});
+  }
+
+  private newArcGisExportEntry(
+      id: string,
+      name: string,
+      copyright: Copyright,
+      service: string,
+      layers: string|undefined,
+      maxZoom: number): LayerEntry {
+    const params = new URLSearchParams({
+      bboxSR: '3857',
+      imageSR: '3857',
+      size: '256,256',
+      format: 'png32',
+      transparent: 'true',
+      f: 'image',
+    });
+    if (layers) {
+      params.set('layers', layers);
+    }
+    return {
+      kind: 'layer',
+      id,
+      name,
+      enabled: false,
+      layer: new RasterTileLayer(
+          [copyright],
+          `https://mapservices.weather.noaa.gov/${service}/export?bbox=\${bbox}&${params}`,
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ Z_OVERLAY_TERRAIN,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          maxZoom,
+          this.mapController.renderer,
+      ),
+      controls: [],
+      values: {},
+    };
+  }
+
   private layerNodeOf(e: CorgiEvent<typeof DOM_MOUSE>): LayerNode {
     const id = checkExists(e.actionElement.data('id')).string();
     return checkExists(findLayerNode(this.state.layers.nodes, id));
@@ -2764,6 +2970,15 @@ function stripUndefined(data: FeatureData): FeatureData {
     }
   }
   return stripped;
+}
+
+// Today plus offset days, as a UTC date because SNODAS days are UTC
+function utcDay(offset: number): string {
+  return new Date(Date.now() + offset * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+}
+
+function snodasUrl(day: string): string {
+  return `${SNODAS_URL}${day}/\${id.zoom}/\${id.x}/\${id.y}.png`;
 }
 
 // The local day, because that is what a date input shows and edits

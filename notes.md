@@ -115,3 +115,15 @@ bazelisk run //java/lat/trails/importers:public_access -- \
     --database_username_password="trails_lat:trails_lat"
 ```
 
+## Conditions
+
+`conditions` replaces the objects of fixed public collections with NIFC's current fire perimeters,
+AirNow's air quality contours, and NWPS's river gauges, and bumps their versions. The
+`trails-lat-conditions` service runs production/files/conditions.sh hourly. To run it locally:
+
+```
+bazelisk run //java/lat/trails/importers:conditions -- \
+    --database_url="postgresql://localhost:5432/trails_lat" \
+    --database_username_password="trails_lat:trails_lat"
+```
+

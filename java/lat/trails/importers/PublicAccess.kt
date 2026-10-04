@@ -1,15 +1,11 @@
 package lat.trails.importers
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2CellUnion
 import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2Loop
 import com.google.common.geometry.S2Polygon
-import com.google.common.geometry.S2PolygonBuilder
-import com.google.common.geometry.S2Projections
 import com.google.common.geometry.S2RegionCoverer
 import java.io.ByteArrayOutputStream
 import java.nio.file.Path
@@ -207,36 +203,15 @@ private fun S2Polygon.duplicates(other: S2Polygon): Boolean =
         && S2LatLng(centroid).getDistance(S2LatLng(other.centroid)) < DUPLICATE_CENTROID_DISTANCE
 
 private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform): S2Polygon {
-  val builder = S2PolygonBuilder(S2PolygonBuilder.Options.DIRECTED_UNION)
-  for (polygon in geometry.polygons) {
-    var exterior = true
-    for (ring in polygon.rings) {
-      val loop =
-          // The first and last points are the same
-          S2Loop(ring.points.drop(1).map {
-            val source = ProjCoordinate(it.x, it.y)
-            val destination = transform.transform(source, ProjCoordinate())
-            S2LatLng.fromDegrees(destination.y, destination.x).toPoint()
-          })
-      loop.normalize()
-      if (!exterior) {
-        loop.invert()
-      } else {
-        exterior = false
+  return assemblePolygon(geometry.polygons.map { polygon ->
+    polygon.rings.map { ring ->
+      ring.points.map {
+        val source = ProjCoordinate(it.x, it.y)
+        val destination = transform.transform(source, ProjCoordinate())
+        S2LatLng.fromDegrees(destination.y, destination.x).toPoint()
       }
-      builder.addLoop(loop)
     }
-  }
-
-  val snapped = S2Polygon()
-  snapped.initToSimplified(
-      builder.assemblePolygon(),
-      S1Angle.radians(S2Projections.MAX_DIAG.getValue(21) / 2.0 + 1e-15),
-      /* snapToCellCenters= */ true)
-
-  val normalized = S2PolygonBuilder()
-  normalized.addPolygon(snapped)
-  return normalized.assemblePolygon()
+  })
 }
 
 private fun dumpPolygons(polygons: List<Feature>) {

@@ -1081,6 +1081,8 @@ private data class WireLine(val id: UUID, val data: String, val latLngDegrees: B
 private data class WirePath(
     val id: Long, val sourceWay: Long, val type: Int, val latLngDegrees: ByteArray)
 
+private data class WirePoint(val id: UUID, val data: String, val latLngDegrees: ByteArray)
+
 private data class WirePolygon(val id: UUID, val data: String, val s2Polygon: ByteArray)
 
 private fun fetchCollectionCovering(ctx: Context) {
@@ -1092,9 +1094,9 @@ private fun fetchCollectionCovering(ctx: Context) {
   val bytes = AlignableByteArrayOutputStream()
   DelegatingEncodedOutputStream(bytes).use {
     // version
-    it.writeVarInt(2)
+    it.writeVarInt(3)
 
-    // collection version, then covering
+    // collection version, then covering, then presentation
     if (isTrailcatalog(collection)) {
       // The epoch is the version: the paths and points a tile holds only change when an import
       // lands.
@@ -1110,6 +1112,8 @@ private fun fetchCollectionCovering(ctx: Context) {
       }
       it.writeVarInt(covering.size)
       it.write(covering)
+      // no presentation because the client has its own style for these
+      it.writeVarInt(0)
     } else {
       hikari.connection.use { connection ->
         val id = parseUuid(collection)
@@ -1119,7 +1123,7 @@ private fun fetchCollectionCovering(ctx: Context) {
         }
 
         connection
-          .prepareStatement("SELECT covering, version FROM collections WHERE id = ?")
+          .prepareStatement("SELECT covering, version, presentation FROM collections WHERE id = ?")
           .apply {
             setObject(1, id)
           }
@@ -1130,6 +1134,9 @@ private fun fetchCollectionCovering(ctx: Context) {
             val covering = results.getBytes(1)
             it.writeVarInt(covering.size)
             it.write(covering)
+            val presentation = (results.getString(3) ?: "").toByteArray(StandardCharsets.UTF_8)
+            it.writeVarInt(presentation.size)
+            it.write(presentation)
           }
       }
     }
@@ -1166,7 +1173,7 @@ private fun fetchCollectionObjects(ctx: Context) {
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   DelegatingEncodedOutputStream(bytes).use {
     // version
-    it.writeVarInt(2)
+    it.writeVarInt(3)
 
     if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
       it.writeVarInt(KIND_PACKED_PATH)
@@ -1317,6 +1324,54 @@ private fun fetchRealCollection(
           it.write(polygon.s2Polygon)
         }
       }
+
+    // points
+    connection
+      .prepareStatement(
+        "SELECT p.id, p.data, p.lat_lng_degrees "
+                + "FROM points p "
+                + "WHERE "
+                + "p.collection = ? AND "
+                + "p.deleted IS NULL AND "
+                + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
+                + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
+                + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
+      )
+      .apply {
+        setObject(1, UUID.fromString(collection))
+        if (single) {
+          setLong(2, cell.id())
+        } else {
+          setLong(2, cell.rangeMin().id())
+          setLong(3, cell.rangeMax().id())
+        }
+        var index = if (single) 3 else 4
+        if (levelFloor != null) {
+          setLong(index++, levelFloor)
+        }
+        if (levelCeiling != null) {
+          setLong(index, levelCeiling)
+        }
+      }
+      .executeQuery()
+      .use { results ->
+        val points = ArrayList<WirePoint>()
+        while (results.next()) {
+          points.add(
+            WirePoint(results.getObject(1) as UUID, results.getString(2), results.getBytes(3)))
+        }
+        it.writeVarInt(points.size)
+        for (point in points) {
+          it.writeLong(point.id.leastSignificantBits)
+          it.writeLong(point.id.mostSignificantBits)
+          point.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
+            it.writeVarInt(utf8.size)
+            it.write(utf8)
+          }
+          // already encoded with DeltaLatLngE7
+          it.write(point.latLngDegrees)
+        }
+      }
   }
 }
 
@@ -1384,7 +1439,8 @@ private fun fetchTrailcatalogPaths(
         }
       }
 
-    // polygons, which the paths table has none of
+    // no polygons or points, because the paths table only has paths
+    it.writeVarInt(0)
     it.writeVarInt(0)
   }
 }

@@ -9,6 +9,9 @@ import { projectLatLngRect } from '../camera';
 import { tilesIntersect } from '../common/math';
 import { TileId } from '../common/types';
 
+// pi times the WGS84 semi-major axis of 6378137 m
+const WEB_MERCATOR_HALF_WORLD_METERS = 20037508.342789244;
+
 interface InitializeRequest {
   kind: 'ir';
   url: string;
@@ -41,7 +44,13 @@ interface UpdateViewportRequest {
   viewport: Viewport;
 }
 
-export type Request = InitializeRequest|TileLoadedRequest|UpdateViewportRequest;
+// Switches to a different tile URL, such as another day's, and unloads all tiles from the old one.
+interface SetUrlRequest {
+  kind: 'sur';
+  url: string;
+}
+
+export type Request = InitializeRequest|SetUrlRequest|TileLoadedRequest|UpdateViewportRequest;
 
 export interface LoadTileCommand {
   kind: 'ltc';
@@ -70,7 +79,7 @@ class XyzDataFetcher {
   private lastViewport: Viewport;
 
   constructor(
-      private readonly url: string,
+      private url: string,
       private readonly extraZoom: number,
       private readonly minZoom: number,
       private readonly maxZoom: number,
@@ -92,6 +101,24 @@ class XyzDataFetcher {
       this.pending.delete(request.id);
       this.loaded.add(request.id);
     }
+  }
+
+  setUrl(request: SetUrlRequest): void {
+    this.url = request.url;
+    for (const abort of this.inFlight.values()) {
+      abort.abort();
+    }
+    this.inFlight.clear();
+    const unload = [...this.pending, ...this.loaded];
+    this.pending.clear();
+    this.loaded.clear();
+    if (unload.length > 0) {
+      this.postMessage({
+        kind: 'utc',
+        ids: unload,
+      });
+    }
+    this.updateViewport({kind: 'uvr', viewport: this.lastViewport});
   }
 
   updateViewport(request: UpdateViewportRequest): void {
@@ -157,6 +184,10 @@ class XyzDataFetcher {
               }
             })
             .then(data => {
+              // setUrl was called after this download finished, so it's a tile from the old URL.
+              if (this.inFlight.get(id) !== abort) {
+                return;
+              }
               this.pending.add(id);
               this.postMessage({
                 kind: 'ltc',
@@ -306,7 +337,13 @@ class XyzDataFetcher {
   }
 
   private getTileUrl(id: TileId): string {
+    // ArcGIS export and WMS servers render any box you ask for instead of serving fixed tiles, so we
+    // pass the tile's bounds in EPSG:3857 meters as xmin,ymin,xmax,ymax.
+    const size = 2 * WEB_MERCATOR_HALF_WORLD_METERS / Math.pow(2, id.zoom);
+    const left = -WEB_MERCATOR_HALF_WORLD_METERS + id.x * size;
+    const top = WEB_MERCATOR_HALF_WORLD_METERS - id.y * size;
     return this.url
+        .replace('${bbox}', `${left},${top - size},${left + size},${top}`)
         .replace('${id.x}', String(id.x))
         .replace('${id.y}', String(id.y))
         .replace('${id.zoom}', String(id.zoom));
@@ -325,6 +362,8 @@ function start(ir: InitializeRequest) {
     const request = e.data as Request;
     if (request.kind === 'ir') {
       throw new Error('Already initialized');
+    } else if (request.kind === 'sur') {
+      fetcher.setUrl(request);
     } else if (request.kind === 'tlr') {
       fetcher.tileLoaded(request);
     } else if (request.kind === 'uvr') {
