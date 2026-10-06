@@ -79,6 +79,7 @@ podman run \
     --elevation_profile /tmp/elevation_profile.pb \
     --elevation_source MAPTERHORN \
     --heap_dump_threshold 8048000000 \
+    --parallelism 10 \
     --mapterhorn_dir /tmp/mapterhorn \
     --pbfs /tmp/planet-latest.osm.pbf \
     | tee /mnt/horse/import_log.txt
