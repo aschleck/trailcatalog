@@ -18,7 +18,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.nio.channels.FileChannel.MapMode
-import java.util.PriorityQueue
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
@@ -451,9 +450,8 @@ private class RecordReader<K : Comparable<K>>(
 /** Reads one run a record at a time for a merge. */
 private class RunCursor<K : Comparable<K>>(
     chunk: Chunk<K>,
-    private val id: Int,
     private val codec: KeyCodec<K>,
-) : Comparable<RunCursor<K>> {
+) {
 
   private val reader = RecordReader(chunk, codec, grouped = false)
 
@@ -488,31 +486,37 @@ private class RunCursor<K : Comparable<K>>(
     return if (codec.primitive) longKey == long else objectKey!!.compareTo(obj!!) == 0
   }
 
-  // Ties go to the earlier run, so values for one key come out in a stable order.
-  override fun compareTo(other: RunCursor<K>): Int {
-    val byKey =
-        if (codec.primitive) longKey.compareTo(other.longKey)
-        else objectKey!!.compareTo(other.objectKey!!)
-    return if (byKey != 0) byKey else id.compareTo(other.id)
-  }
 }
 
-/** Merges runs by key. */
-private class RunMerger<K : Comparable<K>>(chunks: List<Chunk<K>>, codec: KeyCodec<K>) {
+/**
+ * Merges runs by key with a tournament of losers. Each internal node holds the run that lost the
+ * match played there and the root holds the winner, so replacing the winner replays one match per
+ * level against the stored losers. A binary heap's poll and add compare about three times as often,
+ * and the comparisons are the bulk of a merge. Ties go to the earlier run, so values for one key
+ * come out in a stable order.
+ */
+private class RunMerger<K : Comparable<K>>(chunks: List<Chunk<K>>, private val codec: KeyCodec<K>) {
 
-  private val heap = PriorityQueue<RunCursor<K>>(chunks.size.coerceAtLeast(1))
+  private val cursors = chunks.map { RunCursor(it, codec) }
+  private val count = cursors.size
+  private val spent = BooleanArray(count)
+  // The current key of each run, so primitive keys compare without a call through the cursor
+  private val keys = LongArray(count)
+  // Index 0 is the winner and 1 until count are the losers. Leaves sit at count until 2 * count, so
+  // run i's leaf is count + i.
+  private val tree = IntArray(maxOf(count, 1))
 
   init {
-    chunks.forEachIndexed { i, chunk ->
-      val cursor = RunCursor(chunk, i, codec)
-      if (cursor.advance()) {
-        heap.add(cursor)
-      }
+    for (i in 0 until count) {
+      load(i, cursors[i].advance())
+    }
+    if (count > 0) {
+      tree[0] = play(1)
     }
   }
 
   fun hasNext(): Boolean {
-    return heap.isNotEmpty()
+    return count > 0 && !spent[tree[0]]
   }
 
   /**
@@ -520,25 +524,68 @@ private class RunMerger<K : Comparable<K>>(chunks: List<Chunk<K>>, codec: KeyCod
    * that key.
    */
   fun nextGroup(consume: (RunCursor<K>) -> Unit): K {
-    // A cursor's key is its heap position, so it comes out before advancing and goes back after.
-    val first = heap.poll()
+    val first = cursors[tree[0]]
     val key = first.key
     val long = first.longKey
     val obj = first.objectKey
-    consume(first)
-    if (first.advance()) {
-      heap.add(first)
-    }
-
-    // A run can hold the same key twice, so the re-added cursor gets rechecked here.
-    while (heap.isNotEmpty() && heap.peek().hasKey(long, obj)) {
-      val next = heap.poll()
-      consume(next)
-      if (next.advance()) {
-        heap.add(next)
-      }
+    while (hasNext() && cursors[tree[0]].hasKey(long, obj)) {
+      val winner = tree[0]
+      consume(cursors[winner])
+      load(winner, cursors[winner].advance())
+      replay(winner)
     }
     return key
+  }
+
+  private fun load(run: Int, present: Boolean) {
+    spent[run] = !present
+    if (present && codec.primitive) {
+      keys[run] = cursors[run].longKey
+    }
+  }
+
+  /** Plays the matches below [node] and returns their winner, filling in the losers. */
+  private fun play(node: Int): Int {
+    if (node >= count) {
+      return node - count
+    }
+    val a = play(2 * node)
+    val b = play(2 * node + 1)
+    return if (beats(a, b)) {
+      tree[node] = b
+      a
+    } else {
+      tree[node] = a
+      b
+    }
+  }
+
+  private fun replay(run: Int) {
+    var winner = run
+    var node = (count + run) ushr 1
+    while (node >= 1) {
+      val loser = tree[node]
+      if (beats(loser, winner)) {
+        tree[node] = winner
+        winner = loser
+      }
+      node = node ushr 1
+    }
+    tree[0] = winner
+  }
+
+  // Whether run a's current record comes before run b's. A spent run loses to everything.
+  private fun beats(a: Int, b: Int): Boolean {
+    if (spent[a]) {
+      return false
+    }
+    if (spent[b]) {
+      return true
+    }
+    val byKey =
+        if (codec.primitive) keys[a].compareTo(keys[b])
+        else cursors[a].objectKey!!.compareTo(cursors[b].objectKey!!)
+    return if (byKey != 0) byKey < 0 else a < b
   }
 }
 
