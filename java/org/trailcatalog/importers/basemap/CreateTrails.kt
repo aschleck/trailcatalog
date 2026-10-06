@@ -188,8 +188,10 @@ private class OrientedPaths(val ids: LongArray, val continuous: Boolean)
  *
  * Ordering every way into one line is an Eulerian path problem. We chain up the stretches that
  * have no choice in them, hang those on each other longest first, and splice in the detours that
- * come back, which finds one line whenever one exists. Relations that branch have no such line at
- * all, and there taking the longest first leaves the main line whole and puts the spurs after it.
+ * come back. This misses the line when the route retraces a stretch whose ends both join the rest
+ * of it, but in practice that's a mapping mistake rather than a route anyone walks. Relations that
+ * branch have no one line at all, and there taking the longest first leaves the main line whole
+ * and puts the spurs after it.
  */
 private fun orientPaths(
     ordered: List<Long>, pathPolylines: Map<Long, List<LatLngE7>>): OrientedPaths {
