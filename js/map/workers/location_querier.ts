@@ -76,6 +76,15 @@ interface QueryRouteRequest {
   reach: number;
 }
 
+interface QuerySnapRequest {
+  kind: 'qsr';
+  generation: number;
+  // mercator
+  point: Vec2;
+  // How far a line may sit from the point and still take it, in mercator units.
+  radius: number;
+}
+
 // Whether somebody is drawing, and so whether the router should keep up with loads as they land
 interface RoutingRequest {
   kind: 'rr';
@@ -83,7 +92,13 @@ interface RoutingRequest {
 }
 
 export type Request =
-    InitializeRequest|LoadRequest|UnloadRequest|QueryPointRequest|QueryRouteRequest|RoutingRequest;
+    InitializeRequest
+    |LoadRequest
+    |UnloadRequest
+    |QueryPointRequest
+    |QueryRouteRequest
+    |QuerySnapRequest
+    |RoutingRequest;
 
 export interface QueryPointResponse {
   kind: 'qpr';
@@ -105,7 +120,14 @@ export interface QueryRouteResponse extends Route {
   generation: number;
 }
 
-export type Response = QueryPointResponse|QueryRouteResponse;
+export interface QuerySnapResponse {
+  kind: 'qsr';
+  generation: number;
+  // The closest point on a line, or undefined when none came within radius
+  point: Vec2|undefined;
+}
+
+export type Response = QueryPointResponse|QueryRouteResponse|QuerySnapResponse;
 
 interface LineEntry {
   kind: 'line';
@@ -283,6 +305,15 @@ class LocationQuerier {
     this.postMessage(response, via ? [via.buffer] : []);
   }
 
+  querySnap(request: QuerySnapRequest) {
+    const response: QuerySnapResponse = {
+      kind: 'qsr',
+      generation: request.generation,
+      point: this.anchor(request.point, request.radius)?.point,
+    };
+    this.postMessage(response);
+  }
+
   // The closest point on a loaded line, or undefined when none of them comes within radius.
   private anchor(point: Vec2, radius: number): Anchor|undefined {
     const ll = unprojectS2LatLng(point[0], point[1]);
@@ -334,6 +365,8 @@ function start(ir: InitializeRequest) {
       querier.queryPoint(request);
     } else if (request.kind === 'qrr') {
       querier.queryRoute(request);
+    } else if (request.kind === 'qsr') {
+      querier.querySnap(request);
     } else if (request.kind === 'rr') {
       querier.setRouting(request);
     } else if (request.kind === 'ur') {

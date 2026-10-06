@@ -19,6 +19,8 @@ import {
   handleBytesNeeded,
   planHandles,
 } from './handles';
+import { LatestQuery } from './latest_query';
+import { ShiftKey } from './shift_key';
 
 // What finishing a drawing does. A line hands itself off to be saved and clears. A measurement
 // stays on the map until the next click starts another, so that its numbers can still be read.
@@ -41,7 +43,7 @@ export interface RouteStatus {
 const FINISH_RADIUS_PX = 8;
 // How close the pointer has to come to a line to snap onto it. Wider than the collection layer
 // hovers at because a vertex only has to reach a line, not name which one.
-const SNAP_RADIUS_PX = 12;
+export const SNAP_RADIUS_PX = 12;
 // One segment's worth, so the common case of drawing a line fits without a realloc.
 const INITIAL_BUFFER_BYTES = 8 * 1024;
 const LINE_COLOR = HANDLE_COLOR;
@@ -97,15 +99,12 @@ export class DrawingLayer extends Layer {
   // Moves whenever the drawing does, and planned catches up in render.
   private generation: number;
   private planned: number;
-  // The cursor whose route is in flight. The pointer moves faster than a search runs, so the
-  // cursor asks again once this lands rather than on every move, or else routes queue up in the
-  // worker.
-  private routingCursor: Vertex|undefined;
+  private readonly cursorQuery: LatestQuery<Vertex, void>;
   // How far a route may stray from the line between its ends: half the viewport's shorter side, so
   // the detour stays on screen when the segment is centered.
   private reach: number;
   // Shift suspends the router, so a segment stays straight for as long as it is down.
-  private shiftHeld: boolean;
+  private readonly shift: ShiftKey;
   // A click drops the cursor until the next move, so this is what says the pointer is still here.
   private pointerOver: boolean;
   private routeRequests: number;
@@ -141,23 +140,17 @@ export class DrawingLayer extends Layer {
     this.drawables = [];
     this.generation = 0;
     this.planned = -1;
-    this.routingCursor = undefined;
+    this.cursorQuery = new LatestQuery(cursor => {
+      const vertices = this.drawing?.vertices;
+      return vertices ? this.resolve(cursor, vertices[vertices.length - 1]) : Promise.resolve();
+    });
     this.reach = 0;
-    this.shiftHeld = false;
+    this.shift = new ShiftKey(() => {
+      this.shiftChanged();
+    });
+    this.registerDisposable(this.shift);
     this.pointerOver = false;
     this.routeRequests = 0;
-
-    // Read from shiftKey rather than key, so that any keystroke corrects a missed shift release.
-    this.registerListener(window, 'keydown', e => {
-      this.setShiftHeld(e.shiftKey);
-    });
-    this.registerListener(window, 'keyup', e => {
-      this.setShiftHeld(e.shiftKey);
-    });
-    // A shift released while another window has focus sends us no keyup.
-    this.registerListener(window, 'blur', () => {
-      this.setShiftHeld(false);
-    });
   }
 
   override get copyrights(): Copyright[] {
@@ -379,12 +372,7 @@ export class DrawingLayer extends Layer {
     this.onChanged();
   }
 
-  private setShiftHeld(held: boolean): void {
-    if (held === this.shiftHeld) {
-      return;
-    }
-
-    this.shiftHeld = held;
+  private shiftChanged(): void {
     const drawing = this.drawing;
     if (drawing?.cursor) {
       // A fresh cursor is straight until the router answers, which is what shift asks for and a
@@ -393,44 +381,34 @@ export class DrawingLayer extends Layer {
     }
   }
 
-  // Puts a vertex under the pointer and starts resolving it unless another cursor already is.
+  // Puts a vertex under the pointer and starts resolving it.
   private setCursor(drawing: Drawing, cursor: Vertex): void {
     drawing.cursor = cursor;
     this.changed();
-    if (!this.routingCursor) {
-      this.routeCursor();
-    }
-  }
-
-  private routeCursor(): void {
-    const drawing = this.drawing;
-    const cursor = drawing?.cursor;
-    if (!drawing || !cursor) {
-      return;
-    }
-
-    this.routingCursor = cursor;
-    this.resolve(cursor, drawing.vertices[drawing.vertices.length - 1]).then(() => {
-      this.routingCursor = undefined;
-      if (this.drawing?.cursor !== cursor) {
-        this.routeCursor();
-      }
-    });
+    this.cursorQuery.set(cursor);
   }
 
   // Snaps a vertex onto the lines and routes to it from the vertex before. The first vertex of a
-  // line has nothing to route from, so it asks about itself and keeps only the snap.
+  // line has nothing to route from, so it only snaps.
   private resolve(vertex: Vertex, previous: Vertex|undefined): Promise<void> {
     if (this.router) {
       return this.resolveWithRouter(this.router, vertex, previous);
-    } else if (this.shiftHeld) {
+    } else if (this.shift.held) {
       return Promise.resolve();
     }
 
-    const from = previous ?? vertex;
+    const radius = SNAP_RADIUS_PX * this.camera.inverseWorldRadius;
+    if (!previous) {
+      return this.locations.querySnap(vertex.at, radius).then(snapped => {
+        if (this.isDrawn(vertex)) {
+          vertex.point = snapped ?? vertex.at;
+          this.changed();
+        }
+      });
+    }
+
     return this.locations
-        .queryRoute(
-            from.at, vertex.at, SNAP_RADIUS_PX * this.camera.inverseWorldRadius, this.reach)
+        .queryRoute(previous.at, vertex.at, radius, this.reach)
         .then(route => {
           // Answers still arrive for a cursor the pointer has left and for lines that were
           // finished or dropped, and applying one would replan for a vertex nobody draws.
@@ -484,7 +462,7 @@ export class DrawingLayer extends Layer {
   // Writes a route onto the vertex it was asked about. The vertex moves to the route's snapped
   // end and the way there becomes its via. A route the network could not find leaves the segment
   // straight.
-  private apply(vertex: Vertex, previous: Vertex|undefined, route: Route): void {
+  private apply(vertex: Vertex, previous: Vertex, route: Route): void {
     vertex.point = route.to;
     const via = route.via;
     if (!via) {
@@ -494,7 +472,7 @@ export class DrawingLayer extends Layer {
 
     // route.from is the previous vertex snapped onto a line. When that vertex sits off the lines,
     // the segment has to reach route.from before it can follow the route.
-    if (!previous || same(previous.point, route.from)) {
+    if (same(previous.point, route.from)) {
       vertex.via = via;
       return;
     }

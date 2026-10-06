@@ -4,6 +4,7 @@ import {
   joinLines,
   moveVertex,
   removeVertex,
+  rerouteLine,
   reverseLine,
   splitLine,
 } from './line_edits';
@@ -30,6 +31,18 @@ test('inserts at either end by copying the end sample', () => {
       .toEqual([100, 100, 200, 300]);
   expect(Array.from(insertVertex(line(), 3, 30, 30).elevationCentimeters!))
       .toEqual([100, 200, 300, 300]);
+});
+
+test('reroutes without repeated vertices or samples', () => {
+  const rerouted = rerouteLine(line(), Int32Array.from([0, 0, 0, 0, 5, 5, 5, 5, 20, 20]))!;
+
+  expect(Array.from(rerouted.latLngE7)).toEqual([0, 0, 5, 5, 20, 20]);
+  expect(rerouted.elevationCentimeters).toBeUndefined();
+  expect(rerouted.timeSeconds).toBeUndefined();
+});
+
+test('refuses a reroute that collapses to one vertex', () => {
+  expect(rerouteLine(line(), Int32Array.from([3, 3, 3, 3]))).toBeUndefined();
 });
 
 test('removes a vertex and its samples', () => {

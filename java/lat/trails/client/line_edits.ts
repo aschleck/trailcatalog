@@ -173,3 +173,29 @@ export function joinLines(a: EditableLine, b: EditableLine): EditableLine {
 
   return {...a, data: {...a.data}, latLngE7, elevationCentimeters, timeSeconds};
 }
+
+/**
+ * Replaces a line's geometry with a new route, dropping repeated vertices where routed pieces meet
+ * and where rounding to E7 merged neighbors. Returns undefined when fewer than two distinct
+ * vertices remain. Samples belong to the old vertices, so the line loses them.
+ */
+export function rerouteLine(line: EditableLine, latLngE7: Int32Array): EditableLine|undefined {
+  const kept = [];
+  for (let i = 0; i < latLngE7.length; i += 2) {
+    const n = kept.length;
+    if (n === 0 || kept[n - 2] !== latLngE7[i] || kept[n - 1] !== latLngE7[i + 1]) {
+      kept.push(latLngE7[i], latLngE7[i + 1]);
+    }
+  }
+  if (kept.length < 4) {
+    return undefined;
+  }
+
+  return {
+    ...line,
+    data: {...line.data},
+    latLngE7: Int32Array.from(kept),
+    elevationCentimeters: undefined,
+    timeSeconds: undefined,
+  };
+}

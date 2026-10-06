@@ -9,6 +9,7 @@ import {
   PackedLines,
   QueryPointResponse,
   QueryRouteResponse,
+  QuerySnapResponse,
   Request,
   Response,
   Route,
@@ -91,6 +92,12 @@ export class LocationIndex {
   queryRoute(from: Vec2, to: Vec2, radius: number, reach: number): Promise<Route> {
     return this.query<QueryRouteResponse>(
         generation => ({kind: 'qrr', generation, from, to, radius, reach}));
+  }
+
+  /** The closest point on a line within radius of point, both in mercator. */
+  querySnap(point: Vec2, radius: number): Promise<Vec2|undefined> {
+    return this.query<QuerySnapResponse>(generation => ({kind: 'qsr', generation, point, radius}))
+        .then(response => response.point);
   }
 
   private query<R extends Response>(request: (generation: number) => Request): Promise<R> {

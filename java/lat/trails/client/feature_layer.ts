@@ -17,12 +17,12 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { LocationIndex } from 'js/map/workers/location_index';
+import { Route } from 'js/map/workers/location_querier';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
-import { toE7Array } from './drawing_layer';
+import { SNAP_RADIUS_PX, toE7Array } from './drawing_layer';
 import { FeatureStore } from './feature_store';
 import {
-  DOUBLE_CLICK_MS,
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
   FEATURE_EDITED,
@@ -51,8 +51,10 @@ import {
   INSERT_HANDLE_SIZE_PX,
   planHandles,
 } from './handles';
-import { insertVertex, moveVertex, removeVertex } from './line_edits';
+import { LatestQuery } from './latest_query';
+import { insertVertex, moveVertex, removeVertex, rerouteLine } from './line_edits';
 import { DEFAULT_MARKER_WIDTH_PX, MarkerOutline, outlineMarker, pushMarker } from './marker';
+import { ShiftKey } from './shift_key';
 
 // How far past a feature's drawn edge a click still lands on it
 const CLICK_SLOP_PX = 3;
@@ -63,6 +65,9 @@ const HOVERED_CASING = 0xFFFFFF99 as RgbaU32;
 // Same as the measure tool's, see drawing_layer.ts
 const MARKER_RADIUS_PX = 6;
 const MARKER_STROKE = 0xFFFFFFFF as RgbaU32;
+// A little wider than a default line, so it shows on the line rather than in it
+const GRAB_RADIUS_PX = 5;
+const GRAB_FILL = 0xFFFFFFFF as RgbaU32;
 const LABEL_FILL = 0x1A1A1AFF as RgbaU32;
 const LABEL_STROKE = 0xFFFFFFFF as RgbaU32;
 // FONT_SIZE is 28, so labels are 14px.
@@ -122,9 +127,34 @@ interface ProjectedPoint {
 // moved, or inserted where the insert marker was, which becomes the edit when the drag ends.
 type Drag =
     {kind: 'point'; point: EditablePoint; at: Vec2}
-    |{kind: 'vertex'|'insert'; line: ProjectedLine; index: number; points: Float64Array}
     // A marker stroke moves whole, by how far the pointer has come from where it was pressed.
-    |{kind: 'marker'; line: ProjectedLine; from: Vec2; by: Vec2};
+    |{kind: 'marker'; line: ProjectedLine; from: Vec2; by: Vec2}
+    |LineDrag;
+
+type LineDrag = VertexDrag|Reroute;
+
+// A press that never moves is a click, so the line stays in the index until the first move. After
+// the drop it waits on its last query before becoming an edit.
+type LineDragPhase = 'pressed'|'moving'|'settling';
+
+// Pointer is where the vertex would go unsnapped, and query snaps it onto a line under it.
+interface VertexDrag {
+  kind: 'vertex'|'insert';
+  phase: LineDragPhase;
+  line: ProjectedLine;
+  index: number;
+  points: Float64Array;
+  pointer: Vec2;
+  query: LatestQuery<Vec2, Vec2>;
+}
+
+// A line routed again from its start through the pointer to its end
+interface Reroute {
+  kind: 'reroute';
+  phase: LineDragPhase;
+  line: ProjectedLine;
+  query: LatestQuery<Vec2, Float64Array>;
+}
 
 // Geometry in one buffer and the drawables that read it, replanned when generation moves past
 // planned.
@@ -178,7 +208,7 @@ export class FeatureLayer extends Layer {
   // Points stay draggable under the point tool, so that one placed in the wrong spot can be moved
   // without switching tools.
   private pointsDraggable: boolean;
-  // The line showing its vertex handles, entered by double clicking it
+  // The line showing its vertex handles, entered by clicking it
   private editing: string|undefined;
   // The handle a click picked, which Delete removes
   private activeVertex: number|undefined;
@@ -186,8 +216,12 @@ export class FeatureLayer extends Layer {
   private inserting: {index: number; at: Vec2}|undefined;
   // The vertices of the edited line that have handles, as of the last overlay plan
   private handles: number[];
+  // Includes a dropped line drag until it settles, which draws in place of its line until then
   private dragging: Drag|undefined;
-  private lastClick: {id: string; timeMs: number}|undefined;
+  // Where on the hovered line a drag would grab it to reroute
+  private grab: {line: ProjectedLine; at: Vec2}|undefined;
+  // Shift suspends snapping, so a vertex can sit just off a line.
+  private readonly shift: ShiftKey;
   // In mercator, for culling handles to what is on screen
   private viewport: {low: Vec2; high: Vec2};
   // The spot a line profile's pointer is over, in mercator
@@ -238,7 +272,7 @@ export class FeatureLayer extends Layer {
     this.inserting = undefined;
     this.handles = [];
     this.dragging = undefined;
-    this.lastClick = undefined;
+    this.grab = undefined;
     this.viewport = {low: [-1, -1], high: [1, 1]};
     this.marker = undefined;
     this.registerDisposer(() => {
@@ -250,6 +284,12 @@ export class FeatureLayer extends Layer {
     store.listen(() => {
       this.refresh();
     });
+
+    // A dragged vertex follows the pointer rather than its snap while shift is down.
+    this.shift = new ShiftKey(() => {
+      this.overlay.generation += 1;
+    });
+    this.registerDisposable(this.shift);
   }
 
   /** Hides the features with these ids, and everything inside the folders among them. */
@@ -332,18 +372,13 @@ export class FeatureLayer extends Layer {
     }
 
     const hit = this.hitTest(at);
-    const now = performance.now();
-    const doubled =
-        hit?.kind === 'line'
-            && !isMarker(hit)
-            && this.lastClick?.id === hit.id
-            && now - this.lastClick.timeMs < DOUBLE_CLICK_MS;
-    if (doubled && !this.store.isReadOnly()) {
-      this.startEditing(hit.id);
-    } else if (hit?.id !== this.editing) {
+    if (hit?.kind === 'line' && !isMarker(hit) && !this.store.isReadOnly()) {
+      if (hit.id !== this.editing) {
+        this.startEditing(hit.id);
+      }
+    } else {
       this.stopEditing();
     }
-    this.lastClick = hit ? {id: hit.id, timeMs: now} : undefined;
     source.trigger(FEATURE_CLICKED, {id: hit?.id});
     return !!hit;
   }
@@ -370,12 +405,29 @@ export class FeatureLayer extends Layer {
       this.setHovered(hit?.id);
       source.trigger(FEATURE_HOVERED, {id: hit?.id});
     }
+
+    // The edited line already shows where a drag inserts a vertex.
+    const grabbable =
+        hit?.kind === 'line'
+            && !isMarker(hit)
+            && hit.id !== this.editing
+            && !this.store.isReadOnly();
+    const line = grabbable ? this.projected.get(hit.id) : undefined;
+    const nearest = line && nearestOnPolyline(line.points, at);
+    if (line && nearest) {
+      this.grab = {line, at: nearest.at};
+      this.overlay.generation += 1;
+    } else if (this.grab) {
+      this.grab = undefined;
+      this.overlay.generation += 1;
+    }
     return !!hit;
   }
 
   override hoverLost(source: EventSource): void {
-    if (this.inserting) {
+    if (this.inserting || this.grab) {
       this.inserting = undefined;
+      this.grab = undefined;
       this.overlay.generation += 1;
     }
     if (this.hovered !== undefined) {
@@ -396,8 +448,7 @@ export class FeatureLayer extends Layer {
       const vertex = this.vertexAt(editing.points, at);
       if (vertex !== undefined) {
         this.activeVertex = vertex;
-        this.startDrag(
-            {kind: 'vertex', line: editing, index: vertex, points: editing.points.slice()});
+        this.startDrag(this.vertexDrag('vertex', editing, vertex, editing.points.slice(), at));
         return true;
       }
 
@@ -411,7 +462,7 @@ export class FeatureLayer extends Layer {
         points.set(editing.points.subarray(2 * index), 2 * index + 2);
         this.activeVertex = index;
         this.inserting = undefined;
-        this.startDrag({kind: 'insert', line: editing, index, points});
+        this.startDrag(this.vertexDrag('insert', editing, index, points, at));
         return true;
       }
     }
@@ -429,6 +480,21 @@ export class FeatureLayer extends Layer {
       this.startDrag({kind: 'marker', line: stroke, from: at, by: [0, 0]});
       return true;
     }
+
+    // Only from the grab handle, so that a touch, which never hovers, pans across lines instead of
+    // grabbing them.
+    const path = this.grab && line?.id === this.grab.line.feature.id ? this.grab.line : undefined;
+    if (path) {
+      this.startDrag({
+        kind: 'reroute',
+        phase: 'pressed',
+        line: path,
+        query: new LatestQuery(
+            through => this.routeThrough(path.points, through)
+                .then(points => this.redrawOverlay(points))),
+      });
+      return true;
+    }
     return false;
   }
 
@@ -438,22 +504,36 @@ export class FeatureLayer extends Layer {
       return;
     }
 
+    if (isLineDrag(dragging) && dragging.phase === 'pressed') {
+      dragging.phase = 'moving';
+      this.publish();
+    }
+
     const at = projectS2LatLng(point);
     if (dragging.kind === 'point') {
       dragging.at = at;
     } else if (dragging.kind === 'marker') {
       dragging.by = [at[0] - dragging.from[0], at[1] - dragging.from[1]];
       this.markers.generation += 1;
+    } else if (dragging.kind === 'reroute') {
+      dragging.query.set(at);
     } else {
-      dragging.points[2 * dragging.index] = at[0];
-      dragging.points[2 * dragging.index + 1] = at[1];
+      dragging.pointer = at;
+      dragging.query.set(at);
     }
     this.overlay.generation += 1;
   }
 
   override dragEnd(point: S2LatLng, moved: boolean, source: EventSource): void {
     const dragging = this.dragging;
-    this.dragging = undefined;
+    if (isLineDrag(dragging) && moved) {
+      dragging.phase = 'settling';
+      dragging.query.settled().then(() => {
+        this.settle(dragging, source);
+      });
+    } else {
+      this.setDragging(undefined);
+    }
     this.geometry.generation += 1;
     this.overlay.generation += 1;
     this.markers.generation += 1;
@@ -465,9 +545,9 @@ export class FeatureLayer extends Layer {
       return;
     }
 
-    const latE7 = Math.round(point.latDegrees() * 1e7);
-    const lngE7 = Math.round(point.lngDegrees() * 1e7);
     if (dragging.kind === 'point') {
+      const latE7 = Math.round(point.latDegrees() * 1e7);
+      const lngE7 = Math.round(point.lngDegrees() * 1e7);
       const before = snapshot(dragging.point);
       // The old elevation belongs to where the point was
       const after = {...snapshot(dragging.point), latE7, lngE7, elevationCentimeters: undefined};
@@ -481,13 +561,6 @@ export class FeatureLayer extends Layer {
       };
       source.trigger(FEATURE_EDITED, {before: snapshot(line.feature), after});
       source.trigger(FEATURE_CLICKED, {id: line.feature.id});
-    } else {
-      const line = dragging.line.feature;
-      const after =
-          dragging.kind === 'vertex'
-              ? moveVertex(line, dragging.index, latE7, lngE7)
-              : insertVertex(line, dragging.index, latE7, lngE7);
-      source.trigger(FEATURE_EDITED, {before: snapshot(line), after, vertex: dragging.index});
     }
   }
 
@@ -605,6 +678,7 @@ export class FeatureLayer extends Layer {
   private startEditing(id: string): void {
     this.editing = id;
     this.activeVertex = undefined;
+    this.grab = undefined;
     this.overlay.generation += 1;
   }
 
@@ -620,14 +694,133 @@ export class FeatureLayer extends Layer {
   }
 
   private startDrag(dragging: Drag): void {
-    this.dragging = dragging;
+    this.setDragging(dragging);
+    this.grab = undefined;
     this.geometry.generation += 1;
     this.overlay.generation += 1;
     this.markers.generation += 1;
   }
 
+  // Republishes when the line out of the index changes.
+  private setDragging(dragging: Drag|undefined): void {
+    const before = this.unindexed();
+    this.dragging = dragging;
+    if (this.unindexed() !== before) {
+      this.publish();
+    }
+  }
+
+  // The dragged line from its first move until it settles
+  private unindexed(): string|undefined {
+    const dragging = this.dragging;
+    return isLineDrag(dragging) && dragging.phase !== 'pressed'
+        ? dragging.line.feature.id
+        : undefined;
+  }
+
+  private vertexDrag(
+      kind: 'vertex'|'insert', line: ProjectedLine, index: number, points: Float64Array, at: Vec2):
+      VertexDrag {
+    // Only a line under the dragged handle, so a vertex can still be placed close beside one
+    const radius = HANDLE_SIZE_PX / 2 * this.camera.inverseWorldRadius;
+    return {
+      kind,
+      phase: 'pressed',
+      line,
+      index,
+      points,
+      pointer: at,
+      query: new LatestQuery(
+          pointer => this.locations
+              .querySnap(pointer, radius)
+              .then(snapped => this.redrawOverlay(snapped ?? pointer))),
+    };
+  }
+
+  // Writes where the vertex is drawn into its points. It waits for its snap instead of jumping
+  // between the pointer and the line, and keeps snapping while shift is down so that releasing it
+  // lands on a fresh answer.
+  private placeVertex(drag: VertexDrag): void {
+    const at = this.shift.held ? drag.pointer : drag.query.latest;
+    if (drag.phase !== 'pressed' && at) {
+      drag.points[2 * drag.index] = at[0];
+      drag.points[2 * drag.index + 1] = at[1];
+    }
+  }
+
+  private redrawOverlay<T>(value: T): T {
+    this.overlay.generation += 1;
+    return value;
+  }
+
+  // The line from its start through via to its end, along the lines in the index. A half that
+  // finds no route is straight, like a segment drawn with the line tool.
+  private routeThrough(points: Float64Array, via: Vec2): Promise<Float64Array> {
+    const last = points.length - 2;
+    const start: Vec2 = [points[0], points[1]];
+    const end: Vec2 = [points[last], points[last + 1]];
+    const radius = SNAP_RADIUS_PX * this.camera.inverseWorldRadius;
+    // A reach of the diagonal of the line's bound, with via in it, lets the route stray as far as
+    // the line already did.
+    let lowX = via[0];
+    let lowY = via[1];
+    let highX = via[0];
+    let highY = via[1];
+    for (let i = 0; i < points.length; i += 2) {
+      lowX = Math.min(lowX, points[i]);
+      lowY = Math.min(lowY, points[i + 1]);
+      highX = Math.max(highX, points[i]);
+      highY = Math.max(highY, points[i + 1]);
+    }
+    const reach = Math.hypot(highX - lowX, highY - lowY);
+    return Promise.all([
+      this.locations.queryRoute(start, via, radius, reach),
+      this.locations.queryRoute(via, end, radius, reach),
+    ]).then(([a, b]) => joinRoutes(start, a, b, end));
+  }
+
+  // Ends a dropped line drag once its last query lands. A drag started since then owns the
+  // layer's state, but the dropped one still applies.
+  private settle(drag: LineDrag, source: EventSource): void {
+    if (this.dragging === drag) {
+      this.setDragging(undefined);
+      this.geometry.generation += 1;
+      this.overlay.generation += 1;
+    }
+    this.applyDrag(drag, source);
+  }
+
+  // Skipped when the line changed while the drag's query ran, like from an undo, because the query
+  // was asked about the old geometry.
+  private applyDrag(drag: LineDrag, source: EventSource): void {
+    const live = this.store.get(drag.line.feature.id);
+    if (live?.kind !== 'line' || live.latLngE7 !== drag.line.latLngE7) {
+      return;
+    }
+
+    if (drag.kind === 'reroute') {
+      const points = drag.query.latest;
+      const after = points && rerouteLine(live, toE7Array(points));
+      if (after) {
+        source.trigger(FEATURE_EDITED, {before: snapshot(live), after});
+      }
+      return;
+    }
+
+    // Where the vertex is drawn, which is snapped, rather than where the pointer let go
+    this.placeVertex(drag);
+    const placed = unprojectS2LatLng(drag.points[2 * drag.index], drag.points[2 * drag.index + 1]);
+    const latE7 = Math.round(placed.latDegrees() * 1e7);
+    const lngE7 = Math.round(placed.lngDegrees() * 1e7);
+    const after =
+        drag.kind === 'vertex'
+            ? moveVertex(live, drag.index, latE7, lngE7)
+            : insertVertex(live, drag.index, latE7, lngE7);
+    source.trigger(FEATURE_EDITED, {before: snapshot(live), after, vertex: drag.index});
+  }
+
   // Reports what was hit and where, which the viewer selects so that its menu is plainly about
-  // it. A right click never counts toward a double click.
+  // it.
   private contextClick(
       point: S2LatLng, at: Vec2, px: [number, number], source: EventSource): void {
     const editing = this.editingLine();
@@ -643,7 +836,6 @@ export class FeatureLayer extends Layer {
     if (hit?.id !== this.editing) {
       this.stopEditing();
     }
-    this.lastClick = undefined;
     source.trigger(FEATURE_CONTEXT_MENU, {
       id: hit?.id,
       spot,
@@ -776,10 +968,15 @@ export class FeatureLayer extends Layer {
   //
   // Each line is its own group, keyed by its id, so that editing one line does not reproject
   // every other. Marker strokes are left out because a scribble is nothing to route along.
+  //
+  // The unindexed line is left out too, or else its vertex would snap onto the segments it is
+  // leaving and its reroute would follow the way it already goes. A store change mid-drag, like
+  // the DEM answering for the vertex placed before, republishes, so the exclusion lives here.
   private publish(): void {
+    const unindexed = this.unindexed();
     const wanted = new Map<string, ProjectedLine>();
     for (const line of this.visibleLines) {
-      if (!line.marker) {
+      if (!line.marker && line.feature.id !== unindexed) {
         wanted.set(line.feature.id, line);
       }
     }
@@ -815,8 +1012,8 @@ export class FeatureLayer extends Layer {
   }
 
   private planGeometry(): void {
-    const dragged =
-        this.dragging?.kind === 'point' ? this.dragging.point.id : this.dragging?.line.feature.id;
+    const dragging = this.dragging;
+    const dragged = dragging?.kind === 'point' ? dragging.point.id : dragging?.line.feature.id;
     const lines = this.visibleLines.filter(l => l.feature.id !== dragged && !l.marker);
     const selectedLine = lines.find(l => l.feature.id === this.selected);
     let needed = 0;
@@ -850,6 +1047,12 @@ export class FeatureLayer extends Layer {
     const editing = this.editingLine();
     const vertexDrag =
         dragging?.kind === 'vertex' || dragging?.kind === 'insert' ? dragging : undefined;
+    if (vertexDrag) {
+      this.placeVertex(vertexDrag);
+    }
+    // The line as it is until the first route lands
+    const reroute = dragging?.kind === 'reroute' ? dragging : undefined;
+    const reroutePoints = reroute && (reroute.query.latest ?? reroute.line.points);
     const linePoints = vertexDrag ? vertexDrag.points : editing?.points;
 
     // The same squares the drawing tools place, hollow except for the vertex picked last
@@ -896,12 +1099,17 @@ export class FeatureLayer extends Layer {
         this.hovered !== this.selected && !dragging ? this.hovered : undefined;
     const hoveredLine = this.visibleLines.find(l => l.feature.id === hoveredId && !l.marker);
     const marker = this.marker;
+    const grab = dragging ? undefined : this.grab;
     let needed =
         handleBytesNeeded(handles.length)
             + (hoveredLine ? LineProgram.bytesNeeded(hoveredLine.points.length / 2) : 0)
-            + (marker ? LineProgram.bytesNeeded(2) : 0);
+            + (marker ? LineProgram.bytesNeeded(2) : 0)
+            + (grab ? LineProgram.bytesNeeded(2) : 0);
     if (vertexDrag) {
       needed += LineProgram.bytesNeeded(vertexDrag.points.length / 2);
+    }
+    if (reroutePoints) {
+      needed += LineProgram.bytesNeeded(reroutePoints.length / 2);
     }
 
     const batch = new ShapeBatch(this.overlay, needed, this.renderer);
@@ -921,6 +1129,11 @@ export class FeatureLayer extends Layer {
       batch.push(
           color, SELECTED_CASING, lineRadius(line) + 2, vertexDrag.points, Z_DRAGGED, 'both');
     }
+    if (reroute && reroutePoints) {
+      const line = reroute.line.feature;
+      const color = parseColor(line.data.stroke ?? DEFAULT_LINE_COLOR);
+      batch.push(color, SELECTED_CASING, lineRadius(line) + 2, reroutePoints, Z_DRAGGED, 'both');
+    }
     batch.pushHandles(handles, Z_HANDLE, this.handleTexture);
     if (marker) {
       // A zero length segment, which the cap program draws as a circle
@@ -931,6 +1144,11 @@ export class FeatureLayer extends Layer {
           [marker[0], marker[1], marker[0], marker[1]],
           Z_HANDLE,
           'caps');
+    }
+    if (grab) {
+      const color = parseColor(grab.line.feature.data.stroke ?? DEFAULT_LINE_COLOR);
+      const [x, y] = grab.at;
+      batch.push(GRAB_FILL, darken(color), GRAB_RADIUS_PX, [x, y, x, y], Z_HANDLE, 'caps');
     }
     batch.finish();
   }
@@ -1232,6 +1450,30 @@ function outlineOf(line: ProjectedLine): ProjectedLine['marker'] {
     return line.marker;
   }
   return {widthPx, zoom, outline: outlineMarker(line.points, widthPx, 1 / worldRadiusAt(zoom))};
+}
+
+// The routes from start to via and from via to end laid end to end, including where each snapped
+// onto the lines. A route that missed every line has no via and so goes straight.
+function joinRoutes(start: Vec2, a: Route, b: Route, end: Vec2): Float64Array {
+  const pieces = [start, a.from, a.via, a.to, b.via, b.to, end];
+  let length = 0;
+  for (const piece of pieces) {
+    length += piece?.length ?? 0;
+  }
+
+  const points = new Float64Array(length);
+  let at = 0;
+  for (const piece of pieces) {
+    if (piece) {
+      points.set(piece, at);
+      at += piece.length;
+    }
+  }
+  return points;
+}
+
+function isLineDrag(drag: Drag|undefined): drag is LineDrag {
+  return drag?.kind === 'vertex' || drag?.kind === 'insert' || drag?.kind === 'reroute';
 }
 
 function translate(points: Float64Array, by: Vec2): Float64Array {
