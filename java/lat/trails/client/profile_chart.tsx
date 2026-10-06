@@ -37,12 +37,18 @@ export function ProfileChart({distanceMeters, hovered, meters, source}: {
   }
   const area = `${line}L${PLOT_RIGHT} ${PLOT_BOTTOM} L${PLOT_LEFT} ${PLOT_BOTTOM} Z`;
 
+  // A touch that the browser takes for a pan is canceled and leaves, so horizontal drags stay ours
+  // and only vertical ones scroll the sidebar.
   return (
     <svg
-        className="bg-slate-50 rounded w-full"
+        className="bg-slate-50 rounded touch-pan-y w-full"
         data={{left: PLOT_LEFT, right: PLOT_RIGHT, source, width: CHART_WIDTH}}
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        unboundEvents={{pointerleave: 'profileLeft', pointermove: 'profileHovered'}}
+        unboundEvents={{
+          pointerdown: 'profileHovered',
+          pointerleave: 'profileLeft',
+          pointermove: 'profileHovered',
+        }}
     >
       <path d={area} fill="#93c5fd" fillOpacity="0.5" />
       <path d={line} fill="none" stroke="#1d4ed8" strokeWidth="1.5" />
