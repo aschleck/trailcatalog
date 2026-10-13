@@ -12,6 +12,12 @@ java_binary(
 )
 
 java_binary(
+    name = "european_designated_areas",
+    main_class = "lat.trails.importers.EuropeanDesignatedAreasKt",
+    runtime_deps = [":importers"],
+)
+
+java_binary(
     name = "public_access",
     main_class = "lat.trails.importers.PublicAccessKt",
     runtime_deps = [":importers"],

@@ -6,10 +6,17 @@ import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Polygon
 import java.io.ByteArrayOutputStream
+import java.nio.file.Files
+import java.nio.file.Path
 import java.sql.Connection
+import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Base64
 import java.util.TreeMap
 import java.util.UUID
@@ -21,6 +28,8 @@ import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
 import org.slf4j.LoggerFactory
 import org.trailcatalog.common.DeltaLatLngE7
+import org.trailcatalog.flags.FlagSpec
+import org.trailcatalog.flags.createNullableFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.basemap.StringifyingInputStream
 import org.trailcatalog.importers.basemap.appendByteArray
@@ -29,8 +38,17 @@ import org.trailcatalog.s2.polygonToCell
 
 private val logger = LoggerFactory.getLogger("Conditions")
 
+// pyAvaCore's output directory, see conditions.sh
+@FlagSpec(name = "avalanche_bulletins")
+val avalancheBulletins = createNullableFlag(null as Path?)
+
 // Keep in sync with viewer_controller.ts
 private val AIR_QUALITY_COLLECTION_ID = UUID.fromString("09afe7ea-ffe9-41b3-ac05-580758a5ac2f")
+private val AVALANCHE_DANGER_COLLECTION_ID =
+    UUID.fromString("18881694-9486-478f-aa7e-25edc7cf80f4")
+private val BURNT_AREAS_COLLECTION_ID = UUID.fromString("c0e8127d-7dd0-4eca-83e8-19a3abda8620")
+private val EUROPEAN_AIR_QUALITY_COLLECTION_ID =
+    UUID.fromString("51787c46-2a9e-4374-b26a-50b7475608e1")
 private val FIRE_PERIMETERS_COLLECTION_ID = UUID.fromString("77ac6377-5725-40bb-bfb5-c0bbcb353617")
 private val RIVER_GAUGES_COLLECTION_ID = UUID.fromString("b94ce6bf-753b-4886-8dde-224d5ebcfb7a")
 
@@ -49,6 +67,33 @@ private const val AIR_QUALITY_URL =
 // https://water.noaa.gov/about/gis-data
 private const val RIVER_GAUGES_URL =
     "https://water.noaa.gov/resources/downloads/shapefiles/national_shapefile_obs.tgz"
+
+// Burnt areas mapped in the last 30 days. EFFIS maps them from MODIS and VIIRS twice a day.
+// https://forest-fire.emergency.copernicus.eu/applications/data-and-services
+private const val BURNT_AREAS_URL =
+    "https://maps.effis.emergency.copernicus.eu/effis?service=WFS&version=1.1.0" +
+        "&request=GetFeature&typename=ms:modis.ba.poly.month&outputformat=geojson"
+
+// The station index behind the EEA's viewer. The EEA doesn't document it, but its documented
+// download service hands out a year of readings per station and pollutant, so an hour of Europe
+// costs about 2.2 GB there and 160 kB here.
+// https://airindex.eea.europa.eu/AQI/index.html
+private const val EUROPEAN_AIR_QUALITY_URL =
+    "https://dis2datalake.blob.core.windows.net/airquality-derivated/AQI-noRunningMeans/"
+
+// Every hour from now on is a CAMS forecast, and the EEA's viewer opens three hours back.
+private val EUROPEAN_AIR_QUALITY_LAG = Duration.ofHours(3)
+
+// The micro-regions avalanche bulletins refer to, one file per warning service, and their names
+// https://gitlab.com/eaws/eaws-regions
+private const val AVALANCHE_REGIONS_URL = "https://regions.avalanches.org/"
+
+// pyAvaCore names its CAAMLv6 output <date>-<region>.json. Other languages and its summaries add
+// another dot, like <date>-<region>.ratings.json.
+private val AVALANCHE_BULLETIN_FILE = Regex("\\d{4}-\\d{2}-\\d{2}-([A-Za-z0-9-]+)\\.json")
+
+private val AVALANCHE_DANGER_LEVELS =
+    listOf("low", "moderate", "considerable", "high", "very_high")
 
 private val AIR_QUALITY_CATEGORIES =
     listOf(
@@ -165,11 +210,115 @@ private val RIVER_GAUGES_PRESENTATION =
             },
     )
 
+// The EAWS danger scale colors
+// https://www.avalanches.org/standards/avalanche-danger-scale/
+private val AVALANCHE_DANGER_PRESENTATION =
+    mapOf(
+        "title" to "name",
+        "fields" to
+            listOf(
+                field(
+                    "danger",
+                    "Danger",
+                    mapOf(
+                        "1" to "1 Low",
+                        "2" to "2 Moderate",
+                        "3" to "3 Considerable",
+                        "4" to "4 High",
+                        "5" to "5 Very high",
+                    )),
+                field("ratings", "Ratings"),
+                field("valid", "Valid"),
+                field("published", "Published"),
+                field("provider", "Warning service"),
+                field("region", "Region"),
+            ),
+        "polygons" to
+            listOf(
+                "1" to "#CCFF6688",
+                "2" to "#FFFF0088",
+                "3" to "#FF990088",
+                "4" to "#FF000088",
+                "5" to "#000000AA",
+            ).map { (danger, fill) ->
+              mapOf("filters" to listOf(stringEquals("danger", danger)), "fill" to fill)
+            },
+    )
+
+private val BURNT_AREAS_PRESENTATION =
+    mapOf(
+        "title" to "name",
+        "fields" to
+            listOf(
+                field("hectares", "Hectares"),
+                field("detected", "Detected"),
+                field("updated", "Updated"),
+                field("natura2000", "In Natura 2000"),
+                field("country", "Country"),
+            ),
+        "polygons" to
+            listOf(
+                mapOf("filters" to listOf(stringEquals("recent", "true")), "fill" to "#E8200088"),
+                mapOf("filters" to listOf(ALWAYS), "fill" to "#80303066"),
+            ),
+    )
+
+// The EEA's band colors and names
+// https://airindex.eea.europa.eu/AQI/index.html
+private val EUROPEAN_AIR_QUALITY_PRESENTATION =
+    mapOf(
+        "title" to "name",
+        "fields" to
+            listOf(
+                field(
+                    "band",
+                    "Air quality index",
+                    mapOf(
+                        "1" to "Good",
+                        "2" to "Fair",
+                        "3" to "Moderate",
+                        "4" to "Poor",
+                        "5" to "Very poor",
+                        "6" to "Extremely poor",
+                    )),
+                field(
+                    "complete",
+                    "Pollutants",
+                    mapOf(
+                        "true" to "Enough for the full index",
+                        "false" to "Too few for the full index",
+                    )),
+                field("hour", "Hour"),
+                field("type", "Station type"),
+                field("area", "Area"),
+                field("network", "Network"),
+                field("station", "Station"),
+            ),
+        "points" to
+            listOf(
+                "1" to "#50F0E6FF",
+                "2" to "#50CCAAFF",
+                "3" to "#F0E641FF",
+                "4" to "#FF5050FF",
+                "5" to "#960032FF",
+                "6" to "#7D2181FF",
+            ).map { (band, fill) ->
+              mapOf(
+                  "filters" to listOf(stringEquals("band", band)),
+                  "fill" to fill,
+                  "stroke" to "#000000FF",
+                  "radius" to 4,
+              )
+            },
+    )
+
 // Gauges with these statuses still list their last reading, which can be old, so we skip them.
 private val STALE_FLOOD_CATEGORIES = setOf("obs_not_current", "out_of_service")
 
 private val DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC)
 private val TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'").withZone(ZoneOffset.UTC)
+// The EEA's hourly files are named like 2026-10-13T04.json
+private val HOUR_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH").withZone(ZoneOffset.UTC)
 
 private val mapper = ObjectMapper()
 
@@ -189,7 +338,12 @@ fun main(args: Array<String>) {
   parseFlags(args)
 
   var failed = false
-  for (fetch in listOf(::firePerimeters, ::airQuality, ::riverGauges)) {
+  val fetches =
+      arrayListOf(::firePerimeters, ::airQuality, ::riverGauges, ::burntAreas, ::europeanAirQuality)
+  if (avalancheBulletins.value != null) {
+    fetches.add(::avalancheDanger)
+  }
+  for (fetch in fetches) {
     try {
       replace(fetch())
     } catch (e: Exception) {
@@ -285,6 +439,200 @@ private fun riverGauges(): Collection {
       RIVER_GAUGES_COLLECTION_ID, "NWPS river gauges", RIVER_GAUGES_PRESENTATION, points = points)
 }
 
+private fun burntAreas(): Collection {
+  val polygons =
+      fetchJson(BURNT_AREAS_URL)["features"].mapNotNull { feature ->
+        val properties = feature["properties"]
+        // Formatted like 2026-09-13 00:00:00, in UTC
+        val detected = properties.text("FIREDATE")!!.substringBefore(" ")
+        val hectares = properties.text("AREA_HA")!!.toDouble()
+        val place =
+            listOfNotNull(properties.text("COMMUNE"), properties.text("PROVINCE"))
+                .filter { it != "N.A." }
+                .firstOrNull()
+        val data =
+            hashMapOf(
+                "name" to if (place != null) "Burnt area near ${place}" else "Burnt area",
+                "hectares" to "%,d".format(Math.round(hectares)),
+                "detected" to detected,
+                // CLASS is 1DAY, 7DAYS, or 30DAYS, or FireSeason for an area EFFIS has updated
+                // since the start of the season
+                "recent" to (properties.text("CLASS") in setOf("1DAY", "7DAYS")).toString(),
+            )
+        properties.text("LASTUPDATE")?.let { data["updated"] = it.substringBefore(" ") }
+        properties.text("COUNTRY")?.let { data["country"] = it }
+        properties.text("PERCNA2K")
+            ?.toDouble()
+            ?.takeIf { it > 0 }
+            ?.let { data["natura2000"] = "${Math.round(it)}%" }
+        polygonRow(BURNT_AREAS_COLLECTION_ID, properties.text("id"), data, feature["geometry"])
+      }
+  return Collection(
+      BURNT_AREAS_COLLECTION_ID, "EFFIS burnt areas", BURNT_AREAS_PRESENTATION, polygons)
+}
+
+private fun europeanAirQuality(): Collection {
+  // Named like raw_stations.json.26100900, so the newest sorts last
+  val stationsFile =
+      fetchJson("${EUROPEAN_AIR_QUALITY_URL}content/index.json")["contents"]
+          .map { it.asText() }
+          .max()
+  val stations = fetchJson("${EUROPEAN_AIR_QUALITY_URL}content/${stationsFile}")
+  val hour = Instant.now().truncatedTo(ChronoUnit.HOURS).minus(EUROPEAN_AIR_QUALITY_LAG)
+  // Keys are station codes, with a code_cp of 2 when the station measures enough pollutants for
+  // the full index and 1 when it doesn't.
+  val indices =
+      fetchJson("${EUROPEAN_AIR_QUALITY_URL}map/${HOUR_FORMAT.format(hour)}.json")
+
+  val points = ArrayList<Row<ByteArray>>()
+  for (station in stations) {
+    val code = station.text("code")!!
+    // The viewer floors the index to pick a band
+    val band = indices.number(code)?.toInt() ?: continue
+    if (band < 1) {
+      continue
+    }
+
+    val data =
+        hashMapOf(
+            "band" to band.toString(),
+            "complete" to (indices.number("${code}_cp") == 2.0).toString(),
+            "hour" to TIME_FORMAT.format(hour),
+            "station" to code,
+        )
+    station.text("name")?.let { data["name"] = it }
+    station.text("station_type")?.let { data["type"] = it }
+    station.text("area_classification")?.let { data["area"] = it }
+    station.text("network")?.let { data["network"] = it }
+
+    val latLng = S2LatLng.fromDegrees(station.number("lat")!!, station.number("lon")!!)
+    points.add(
+        Row(
+            stableId(EUROPEAN_AIR_QUALITY_COLLECTION_ID, code),
+            data,
+            S2CellId.fromLatLng(latLng).parent(SimpleS2.HIGHEST_INDEX_LEVEL),
+            DeltaLatLngE7.encode(intArrayOf(latLng.lat().e7(), latLng.lng().e7()))))
+  }
+  return Collection(
+      EUROPEAN_AIR_QUALITY_COLLECTION_ID,
+      "EEA European Air Quality Index",
+      EUROPEAN_AIR_QUALITY_PRESENTATION,
+      points = points)
+}
+
+// Joins the bulletins pyAvaCore downloaded to the EAWS micro-regions they rate.
+private fun avalancheDanger(): Collection {
+  val now = Instant.now()
+  // pyAvaCore writes a directory per validity date, and a bulletin can sit in more than one
+  val bulletins = HashMap<String, JsonNode>()
+  val services = HashSet<String>()
+  Files.walk(avalancheBulletins.value!!).use { paths ->
+    for (path in paths) {
+      val match = AVALANCHE_BULLETIN_FILE.matchEntire(path.fileName.toString()) ?: continue
+      val service = match.groupValues[1]
+      services.add(service)
+
+      for (bulletin in mapper.readTree(path.toFile())["bulletins"]) {
+        val (start, end) = validTime(bulletin)
+        if (start > now || end <= now) {
+          continue
+        }
+        // When bulletins overlap the latest one is an update to the others.
+        for (region in bulletin["regions"]) {
+          val id = region.text("regionID")!!
+          val existing = bulletins[id]
+          if (existing == null || publicationTime(existing) < publicationTime(bulletin)) {
+            bulletins[id] = bulletin
+          }
+        }
+      }
+    }
+  }
+
+  // For bulletins that leave out region names, like NVE's
+  val names = fetchJson("${AVALANCHE_REGIONS_URL}micro-regions_names/en.json")
+  val today = LocalDate.now(ZoneOffset.UTC).toString()
+  val polygons = ArrayList<Row<S2Polygon>>()
+  for (service in services) {
+    val regions =
+        fetchJson("${AVALANCHE_REGIONS_URL}micro-regions/${service}_micro-regions.geojson.json")
+    for (feature in regions["features"]) {
+      val properties = feature["properties"]
+      // Regions get redrawn between seasons, and the file keeps the old ones with an end date.
+      // The dates are ISO 8601, so they compare as strings.
+      if (properties.text("start_date")?.let { it > today } == true
+          || properties.text("end_date")?.let { it <= today } == true) {
+        continue
+      }
+
+      val id = properties.text("id")!!
+      val bulletin = bulletins[id] ?: continue
+      val ratings =
+          bulletin.path("dangerRatings").mapNotNull { rating ->
+            val level = AVALANCHE_DANGER_LEVELS.indexOf(rating.text("mainValue")) + 1
+            if (level == 0) null else level to rating
+          }
+      if (ratings.isEmpty()) {
+        continue
+      }
+
+      val (start, end) = validTime(bulletin)
+      val data =
+          hashMapOf(
+              "danger" to ratings.maxOf { it.first }.toString(),
+              "ratings" to ratings.joinToString("; ") { (_, rating) -> describeRating(rating) },
+              "region" to id,
+              "valid" to "${TIME_FORMAT.format(start)} to ${TIME_FORMAT.format(end)}",
+          )
+      bulletin.text("publicationTime")
+          ?.let { data["published"] = TIME_FORMAT.format(toInstant(it)) }
+      (bulletin["regions"].firstOrNull { it.text("regionID") == id }?.text("name")
+          ?: names.text(id))
+          ?.let { data["name"] = it }
+      bulletin.path("source").path("provider").text("name")?.let { data["provider"] = it }
+      polygonRow(AVALANCHE_DANGER_COLLECTION_ID, id, data, feature["geometry"])
+          ?.let { polygons.add(it) }
+    }
+  }
+  return Collection(
+      AVALANCHE_DANGER_COLLECTION_ID,
+      "EAWS avalanche danger",
+      AVALANCHE_DANGER_PRESENTATION,
+      polygons)
+}
+
+// Some services don't say when they published, which sorts their bulletins first.
+private fun publicationTime(bulletin: JsonNode): Instant =
+    bulletin.text("publicationTime")?.let(::toInstant) ?: Instant.EPOCH
+
+private fun validTime(bulletin: JsonNode): Pair<Instant, Instant> {
+  val valid = bulletin["validTime"]
+  return toInstant(valid.text("startTime")!!) to toInstant(valid.text("endTime")!!)
+}
+
+// Describes a CAAMLv6 danger rating like "Considerable above 2200 m in the afternoon".
+private fun describeRating(rating: JsonNode): String {
+  val level = rating.text("mainValue")!!.replace('_', ' ')
+  val parts = arrayListOf(level.replaceFirstChar { it.uppercase() })
+  val elevation = rating.path("elevation")
+  val lower = elevation.text("lowerBound")?.let(::describeElevation)
+  val upper = elevation.text("upperBound")?.let(::describeElevation)
+  when {
+    lower != null && upper != null -> parts.add("from ${lower} to ${upper}")
+    lower != null -> parts.add("above ${lower}")
+    upper != null -> parts.add("below ${upper}")
+  }
+  when (rating.text("validTimePeriod")) {
+    "earlier" -> parts.add("earlier in the day")
+    "later" -> parts.add("later in the day")
+  }
+  return parts.joinToString(" ")
+}
+
+// CAAMLv6 bounds are meters or the word treeline
+private fun describeElevation(bound: String): String =
+    if (bound.all { it.isDigit() }) "${bound} m" else bound
+
 private fun polygonRow(
     collection: UUID, key: String?, data: Map<String, String>, geometry: JsonNode):
     Row<S2Polygon>? {
@@ -331,6 +679,13 @@ private fun JsonNode.number(key: String): Double? = get(key)?.takeIf { it.isNumb
 
 // ArcGIS sends dates as milliseconds since the epoch.
 private fun toInstant(millis: Double): Instant = Instant.ofEpochMilli(millis.toLong())
+
+// pyAvaCore leaves NVE's times without an offset, so we read those as UTC and accept that Norway's
+// bulletins switch an hour or two off.
+private fun toInstant(iso: String): Instant =
+    DateTimeFormatter.ISO_DATE_TIME.parseBest(iso, OffsetDateTime::from, LocalDateTime::from).let {
+      if (it is OffsetDateTime) it.toInstant() else (it as LocalDateTime).toInstant(ZoneOffset.UTC)
+    }
 
 private fun toS2Polygon(geometry: JsonNode): S2Polygon {
   val polygons =

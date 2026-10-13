@@ -1,47 +1,24 @@
 package lat.trails.importers
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2CellUnion
 import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2RegionCoverer
-import java.io.ByteArrayOutputStream
-import java.nio.file.Path
-import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import lat.trails.common.FEATURE_COVERING_MAX_LEVEL
-import lat.trails.common.createBaseConnection
-import lat.trails.common.encodeCovering
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
-import org.apache.commons.text.StringEscapeUtils
 import org.locationtech.proj4j.CRSFactory
 import org.locationtech.proj4j.CoordinateReferenceSystem
-import org.locationtech.proj4j.CoordinateTransform
 import org.locationtech.proj4j.CoordinateTransformFactory
-import org.locationtech.proj4j.ProjCoordinate
 import org.slf4j.LoggerFactory
-import org.trailcatalog.flags.FlagSpec
-import org.trailcatalog.flags.createNullableFlag
 import org.trailcatalog.flags.parseFlags
-import org.trailcatalog.importers.basemap.StringifyingInputStream
-import org.trailcatalog.importers.basemap.appendByteArray
-import org.trailcatalog.importers.basemap.copyStreamToPg
 import org.trailcatalog.s2.polygonToCell
 
 private val logger = LoggerFactory.getLogger("PublicAccess")
-
-@FlagSpec(name = "collection_id")
-val collectionId = createNullableFlag(null as String?)
-
-@FlagSpec(name = "creator_id")
-val creatorId = createNullableFlag(null as String?)
-
-@FlagSpec(name = "source")
-val source = createNullableFlag(null as Path?)
 
 private data class Feature(
     val data: Map<String, String>,
@@ -173,7 +150,7 @@ fun main(args: Array<String>) {
 
   // Does this work...? Too bad I gave away Java Concurrency in Practice...
   synchronized (polygons) {
-    dumpPolygons(deduplicate(polygons))
+    dumpPolygons("PAD-US 4.1", deduplicate(polygons).map { it.data to it.polygon })
   }
 }
 
@@ -201,66 +178,3 @@ private fun deduplicate(polygons: List<Feature>): List<Feature> {
 private fun S2Polygon.duplicates(other: S2Polygon): Boolean =
     Math.abs(area - other.area) <= 0.01 * area
         && S2LatLng(centroid).getDistance(S2LatLng(other.centroid)) < DUPLICATE_CENTROID_DISTANCE
-
-private fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform): S2Polygon {
-  return assemblePolygon(geometry.polygons.map { polygon ->
-    polygon.rings.map { ring ->
-      ring.points.map {
-        val source = ProjCoordinate(it.x, it.y)
-        val destination = transform.transform(source, ProjCoordinate())
-        S2LatLng.fromDegrees(destination.y, destination.x).toPoint()
-      }
-    }
-  })
-}
-
-private fun dumpPolygons(polygons: List<Feature>) {
-  createBaseConnection().use { hikari ->
-    val collection =
-        hikari.connection
-            .prepareStatement(
-                "INSERT INTO collections (id, creator, name, covering) "
-                    + "VALUES (COALESCE(?, gen_random_uuid()), ?, ?, ?) "
-                    + "RETURNING id")
-            .apply {
-              setObject(
-                1,
-                if (collectionId.value != null)
-                  UUID.fromString(collectionId.value)
-                else
-                  null)
-              setObject(
-                2,
-                if (creatorId.value != null)
-                  UUID.fromString(creatorId.value)
-                else
-                  UUID(0, 0)
-              )
-              setString(3, "PAD-US 4.1")
-              setBytes(4, encodeCovering(polygons.map { it.cell }))
-            }
-            .executeQuery()
-            .use {
-              it.next()
-              it.getString(1)
-            }
-
-    val mapper = ObjectMapper()
-    val stream = StringifyingInputStream(polygons.iterator()) { feature, csv ->
-      // id,collection,cell,created,data,s2_polygon
-      csv.append(UUID.randomUUID())
-      csv.append(",")
-      csv.append(collection)
-      csv.append(",")
-      csv.append(polygonToCell(feature.polygon).id())
-      csv.append(",now(),")
-      csv.append(StringEscapeUtils.escapeCsv(mapper.writeValueAsString(feature.data)))
-      csv.append(",")
-      appendByteArray(ByteArrayOutputStream().also {
-        feature.polygon.encode(it)
-      }.toByteArray(), csv)
-      csv.append("\n")
-    }
-    copyStreamToPg("polygons", stream, hikari)
-  }
-}

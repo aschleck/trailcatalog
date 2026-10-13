@@ -535,6 +535,35 @@ export function basemapOf(boundaries: boolean, labeled: ReadonlySet<string>): Mb
   return {layers};
 }
 
+// Wilderness and national parks in green, species and landscape protection lighter, and everything
+// without an IUCN category in gray. See EuropeanDesignatedAreas.kt.
+export const EUROPEAN_DESIGNATED_AREAS: Style = {
+  lines: [],
+  points: [],
+  polygons: [
+    ...['Ia', 'Ib', 'II'].map(iucn => ({
+      filters: [{match: 'string_equals' as const, key: 'iucn', value: iucn}],
+      fill: 0x00A04088 as RgbaU32,
+      z: Z_USER_DATA,
+    })),
+    ...['III', 'IV'].map(iucn => ({
+      filters: [{match: 'string_equals' as const, key: 'iucn', value: iucn}],
+      fill: 0x40C0A088 as RgbaU32,
+      z: Z_USER_DATA,
+    })),
+    ...['V', 'VI'].map(iucn => ({
+      filters: [{match: 'string_equals' as const, key: 'iucn', value: iucn}],
+      fill: 0xA0C04088 as RgbaU32,
+      z: Z_USER_DATA,
+    })),
+    {
+      filters: [{match: 'always'}],
+      fill: 0x80808066 as RgbaU32,
+      z: Z_USER_DATA,
+    },
+  ],
+};
+
 export const PUBLIC_LAND: Style = {
   lines: [],
   points: [],

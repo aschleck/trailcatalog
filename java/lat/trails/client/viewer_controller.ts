@@ -51,6 +51,7 @@ import { CollectionLayer } from './collection_layer';
 import {
   BASEMAP_LABEL_KINDS,
   basemapOf,
+  EUROPEAN_DESIGNATED_AREAS,
   NATURE_PROTOMAPS,
   NODE_KINDS,
   OSM_WAYS,
@@ -123,7 +124,13 @@ import { IconPickerDialog } from './icon_picker';
 import { GradeLimitState, MeasureState } from './measure_panel';
 import { PointCollectionLayer } from './point_collection_layer';
 import { PointToolLayer } from './point_tool_layer';
-import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA, PUBLIC_LAND_SCHEMA, Schema } from './schema';
+import {
+  EUROPEAN_DESIGNATED_AREAS_SCHEMA,
+  OSM_NODES_SCHEMA,
+  OSM_WAYS_SCHEMA,
+  PUBLIC_LAND_SCHEMA,
+  Schema,
+} from './schema';
 import {
   cumulativeMeters,
   haversineMeters,
@@ -149,12 +156,20 @@ const SNODAS_COPYRIGHT: Copyright = {
   url: 'https://nsidc.org/data/g02158',
   publicDomain: true,
 };
+const SWISSTOPO_COPYRIGHT: Copyright = {
+  long: 'Federal Office of Topography swisstopo',
+  short: 'swisstopo',
+  url: 'https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices',
+};
 // Keep in sync with snodas.sh, which writes one archive per day named snodas_<day>.pmtiles
 const SNODAS_URL = 'https://tiles.trailcatalog.org/snodas_';
 const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
 const SNOW_WATER_ID = 'us/conditions/snow_water';
 // Keep in sync with Conditions.kt
 const AIR_QUALITY_COLLECTION_ID = '09afe7ea-ffe9-41b3-ac05-580758a5ac2f';
+const AVALANCHE_DANGER_COLLECTION_ID = '18881694-9486-478f-aa7e-25edc7cf80f4';
+const BURNT_AREAS_COLLECTION_ID = 'c0e8127d-7dd0-4eca-83e8-19a3abda8620';
+const EUROPEAN_AIR_QUALITY_COLLECTION_ID = '51787c46-2a9e-4374-b26a-50b7475608e1';
 const FIRE_PERIMETERS_COLLECTION_ID = '77ac6377-5725-40bb-bfb5-c0bbcb353617';
 const RIVER_GAUGES_COLLECTION_ID = 'b94ce6bf-753b-4886-8dde-224d5ebcfb7a';
 // The zoom where the contours and the trails around a point come in at full detail
@@ -599,141 +614,277 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       }],
     }, {
       kind: 'group',
-      id: 'us',
-      name: 'United States',
+      id: 'national',
+      name: 'National',
       enabled: true,
+      // Children keep their top level ids because saved view states refer to layers by id.
       children: [{
         kind: 'group',
-        id: 'us/conditions',
-        name: 'Conditions',
+        id: 'us',
+        name: 'United States',
+        enabled: true,
+        children: [{
+          kind: 'group',
+          id: 'us/conditions',
+          name: 'Conditions',
+          enabled: true,
+          children: [
+            this.newConditionsEntry(
+                'us/conditions/fire_perimeters',
+                'Fire perimeters',
+                FIRE_PERIMETERS_COLLECTION_ID,
+                {
+                  long:
+                      'Current interagency fire perimeters from the National Interagency Fire '
+                          + 'Center',
+                  short: 'NIFC',
+                  url: 'https://data-nifc.opendata.arcgis.com/',
+                  publicDomain: true,
+                },
+                // Few enough to load the whole country at once: 113 perimeters were 413 kB on
+                // 2026-10-03.
+                {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+                locations),
+            this.newConditionsEntry(
+                'us/conditions/air_quality',
+                'Air quality',
+                AIR_QUALITY_COLLECTION_ID,
+                {
+                  long:
+                      'Current air quality index contours from AirNow, preliminary and '
+                          + 'unverified',
+                  short: 'AirNow',
+                  url: 'https://www.airnow.gov/',
+                  publicDomain: true,
+                },
+                // Few enough to load the whole country at once: 79 contours were 180 kB of GeoJSON
+                // on 2026-10-03.
+                {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+                locations),
+            this.newArcGisExportEntry(
+                'us/conditions/radar',
+                'NOAA radar',
+                {
+                  long: 'Multi-Radar Multi-Sensor base reflectivity from NOAA',
+                  short: 'NOAA MRMS',
+                  url: 'https://radar.weather.gov/',
+                  publicDomain: true,
+                },
+                'eventdriven/rest/services/radar/radar_base_reflectivity/MapServer',
+                /* layers= */ undefined,
+                // MRMS has 1 km cells and a zoom 9 pixel is about 300 m, so more zoom adds no
+                // detail.
+                /* maxZoom= */ 9),
+            this.newConditionsEntry(
+                'us/conditions/river_gauges',
+                'River gauges',
+                RIVER_GAUGES_COLLECTION_ID,
+                {
+                  long: 'River observations from the NOAA National Water Prediction Service',
+                  short: 'NOAA NWPS',
+                  url: 'https://water.noaa.gov/',
+                  publicDomain: true,
+                },
+                // Conditions.kt puts every gauge in a level 13 cell. There are about 11,500 gauges,
+                // too many to draw zoomed out, so they start at zoom 6.
+                {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+                locations),
+            this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'snow_depth'),
+            this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
+          ],
+        }, {
+          kind: 'layer',
+          id: 'us/public_land',
+          name: 'Public land',
+          enabled: false,
+          schema: PUBLIC_LAND_SCHEMA,
+          layer: new CollectionLayer(
+              [{
+                long:
+                    'Protected Areas Database of the United States (PAD-US) 4.1 from the USGS Gap '
+                        + 'Analysis Project',
+                short: 'USGS PAD-US',
+                url: 'https://doi.org/10.5066/P96WBCHS',
+                publicDomain: true,
+              }],
+              '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
+              PUBLIC_LAND,
+              // Snapping to a level whose cells are a few pixels across is invisible and saves most
+              // of the geometry, but past zoom 10 we want the real boundaries.
+              [
+                {minZoom: 0, snap: 11},
+                {minZoom: 7, snap: 14},
+                {minZoom: 10, snap: undefined},
+              ],
+              [
+                // Anything wider than a level 10 cell, so about 7 km up. That reaches the national
+                // parks, which sit at levels 6 to 9, and it is everything the coarsest snap can
+                // draw: snapping to level 11 erases whatever is smaller than a level 11 cell
+                // anyway.
+                //
+                // Tiled at level 5 rather than 4 because a tile carries its objects across its
+                // whole cell, so a coarser tiling means pulling parks hundreds of km offscreen once
+                // zoomed in. Level 5 costs 205 requests for a view of the western US instead of 68,
+                // and 2.9 MB instead of 4.5 MB at zoom 11.
+                {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
+                // Everything smaller. A level 6 cell holds up to 11k of these, which is why they
+                // wait until the viewport is small enough to be worth it.
+                {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
+              ],
+              locations,
+              this.mapController.camera,
+              this.mapController.renderer,
+          ),
+          controls: [],
+          values: {},
+        }, {
+          kind: 'layer',
+          id: 'us/topo',
+          name: 'US Topo',
+          enabled: false,
+          layer: new RasterTileLayer(
+              [{
+                long: 'Topographic base map from The National Map, US Geological Survey',
+                short: 'USGS',
+                url: 'https://www.usgs.gov/programs/national-geospatial-program/national-map',
+                publicDomain: true,
+              }],
+              'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile'
+                  + '/${id.zoom}/${id.y}/${id.x}',
+              /* tint= */ 0xFFFFFFFF as RgbaU32,
+              /* z= */ Z_BASE_SATELLITE,
+              /* extraZoom= */ 0,
+              /* minZoom= */ 0,
+              // USGS caches tiles through zoom 15 and 404s past it.
+              /* maxZoom= */ 15,
+              this.mapController.renderer,
+          ),
+          controls: [],
+          values: {},
+        }],
+      }, {
+        kind: 'group',
+        id: 'europe',
+        name: 'Europe',
         enabled: true,
         children: [
           this.newConditionsEntry(
-              'us/conditions/fire_perimeters',
-              'Fire perimeters',
-              FIRE_PERIMETERS_COLLECTION_ID,
-              {
-                long: 'Current interagency fire perimeters from the National Interagency Fire Center',
-                short: 'NIFC',
-                url: 'https://data-nifc.opendata.arcgis.com/',
-                publicDomain: true,
-              },
-              // Few enough to load the whole country at once: 113 perimeters were 413 kB on
-              // 2026-10-03.
-              {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
-              locations),
-          this.newConditionsEntry(
-              'us/conditions/air_quality',
+              'europe/air_quality',
               'Air quality',
-              AIR_QUALITY_COLLECTION_ID,
+              EUROPEAN_AIR_QUALITY_COLLECTION_ID,
               {
-                long: 'Current air quality index contours from AirNow, preliminary and unverified',
-                short: 'AirNow',
-                url: 'https://www.airnow.gov/',
-                publicDomain: true,
+                long: 'European Air Quality Index from the European Environment Agency, unverified',
+                short: 'EEA',
+                url: 'https://airindex.eea.europa.eu/AQI/index.html',
               },
-              // Few enough to load the whole country at once: 79 contours were 180 kB of GeoJSON on
-              // 2026-10-03.
+              // Conditions.kt puts every station in a level 13 cell. There are about 3,500, few
+              // enough to draw all of Europe from zoom 4.
+              {minZoom: 4, maxZoom: undefined, indexBottom: 4, fromLevel: 13, toLevel: 13},
+              locations),
+          this.newConditionsEntry(
+              'europe/avalanche_danger',
+              'Avalanche danger',
+              AVALANCHE_DANGER_COLLECTION_ID,
+              {
+                long: 'Avalanche bulletins from the EAWS warning services, gathered by pyAvaCore',
+                short: 'EAWS',
+                url: 'https://www.avalanches.org/',
+              },
+              // Few enough to load all of Europe at once: 281 regions from six services on
+              // 2026-02-15.
               {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
               locations),
-          this.newArcGisExportEntry(
-              'us/conditions/radar',
-              'NOAA radar',
-              {
-                long: 'Multi-Radar Multi-Sensor base reflectivity from NOAA',
-                short: 'NOAA MRMS',
-                url: 'https://radar.weather.gov/',
-                publicDomain: true,
-              },
-              'eventdriven/rest/services/radar/radar_base_reflectivity/MapServer',
-              /* layers= */ undefined,
-              // MRMS has 1 km cells and a zoom 9 pixel is about 300 m, so more zoom adds no detail.
-              /* maxZoom= */ 9),
           this.newConditionsEntry(
-              'us/conditions/river_gauges',
-              'River gauges',
-              RIVER_GAUGES_COLLECTION_ID,
+              'europe/burnt_areas',
+              'Burnt areas',
+              BURNT_AREAS_COLLECTION_ID,
               {
-                long: 'River observations from the NOAA National Water Prediction Service',
-                short: 'NOAA NWPS',
-                url: 'https://water.noaa.gov/',
-                publicDomain: true,
+                long:
+                    'Burnt areas from the last 30 days from the European Forest Fire Information '
+                        + 'System',
+                short: 'EFFIS',
+                url: 'https://forest-fire.emergency.copernicus.eu/',
               },
-              // Conditions.kt puts every gauge in a level 13 cell. There are about 11,500 gauges, too
-              // many to draw zoomed out, so they start at zoom 6.
-              {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+              // Few enough to load all of Europe at once: 1,318 areas were 7.4 MB of GeoJSON on
+              // 2026-10-13.
+              {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
               locations),
-          this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'snow_depth'),
-          this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
+          {
+            kind: 'layer',
+            id: 'europe/protected_areas',
+            name: 'Protected areas',
+            enabled: false,
+            schema: EUROPEAN_DESIGNATED_AREAS_SCHEMA,
+            layer: new CollectionLayer(
+                [{
+                  long: 'Nationally designated areas 2026 from the European Environment Agency',
+                  short: 'EEA',
+                  url: 'https://doi.org/10.2909/028003e7-7585-4d69-92fc-7f81e0cc2340',
+                }],
+                '/api/collections/26f6d026-6b2b-47bc-b2d6-1454061b996d',
+                EUROPEAN_DESIGNATED_AREAS,
+                // Same snapping and tiling as the public land layer, see there for why
+                [
+                  {minZoom: 0, snap: 11},
+                  {minZoom: 7, snap: 14},
+                  {minZoom: 10, snap: undefined},
+                ],
+                [
+                  {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
+                  {
+                    minZoom: 7,
+                    maxZoom: undefined,
+                    indexBottom: 6,
+                    fromLevel: 11,
+                    toLevel: undefined,
+                  },
+                ],
+                locations,
+                this.mapController.camera,
+                this.mapController.renderer,
+            ),
+            controls: [],
+            values: {},
+          },
         ],
       }, {
-        kind: 'layer',
-        id: 'us/public_land',
-        name: 'Public land',
-        enabled: false,
-        schema: PUBLIC_LAND_SCHEMA,
-        layer: new CollectionLayer(
-            [{
-              long:
-                  'Protected Areas Database of the United States (PAD-US) 4.1 from the USGS Gap '
-                      + 'Analysis Project',
-              short: 'USGS PAD-US',
-              url: 'https://doi.org/10.5066/P96WBCHS',
-              publicDomain: true,
-            }],
-            '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
-            PUBLIC_LAND,
-            // Snapping to a level whose cells are a few pixels across is invisible and saves most
-            // of the geometry, but past zoom 10 we want the real boundaries.
-            [
-              {minZoom: 0, snap: 11},
-              {minZoom: 7, snap: 14},
-              {minZoom: 10, snap: undefined},
-            ],
-            [
-              // Anything wider than a level 10 cell, so about 7 km up. That reaches the national
-              // parks, which sit at levels 6 to 9, and it is everything the coarsest snap can draw:
-              // snapping to level 11 erases whatever is smaller than a level 11 cell anyway.
-              //
-              // Tiled at level 5 rather than 4 because a tile carries its objects across its whole
-              // cell, so a coarser tiling means pulling parks hundreds of km offscreen once zoomed
-              // in. Level 5 costs 205 requests for a view of the western US instead of 68, and 2.9
-              // MB instead of 4.5 MB at zoom 11.
-              {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
-              // Everything smaller. A level 6 cell holds up to 11k of these, which is why they wait
-              // until the viewport is small enough to be worth it.
-              {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
-            ],
-            locations,
-            this.mapController.camera,
-            this.mapController.renderer,
-        ),
-        controls: [],
-        values: {},
+        kind: 'group',
+        id: 'ch',
+        name: 'Switzerland',
+        enabled: true,
+        children: [
+          this.newSwisstopoEntry(
+              'ch/topo', 'Swiss Topo', [SWISSTOPO_COPYRIGHT], 'ch.swisstopo.pixelkarte-farbe',
+              'jpeg', Z_BASE_SATELLITE, /* maxZoom= */ 19),
+          this.newSwisstopoEntry(
+              'ch/wildlife_rest_zones',
+              'Wildlife rest zones',
+              [{
+                long:
+                    'Wildlife rest zones from the Federal Office for the Environment and the '
+                        + 'cantons',
+                short: 'FOEN, cantons',
+                url: 'https://www.geo.admin.ch/en/general-terms-of-use-fsdi',
+                provider: {name: 'swisstopo', url: 'https://www.geo.admin.ch/'},
+              }],
+              'ch.bafu.wrz-wildruhezonen_portal',
+              'png',
+              Z_OVERLAY_TERRAIN,
+              /* maxZoom= */ 18),
+        ],
       }, {
-        kind: 'layer',
-        id: 'us/topo',
-        name: 'US Topo',
-        enabled: false,
-        layer: new RasterTileLayer(
-            [{
-              long: 'Topographic base map from The National Map, US Geological Survey',
-              short: 'USGS',
-              url: 'https://www.usgs.gov/programs/national-geospatial-program/national-map',
-              publicDomain: true,
-            }],
-            'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile'
-                + '/${id.zoom}/${id.y}/${id.x}',
-            /* tint= */ 0xFFFFFFFF as RgbaU32,
-            /* z= */ Z_BASE_SATELLITE,
-            /* extraZoom= */ 0,
-            /* minZoom= */ 0,
-            // USGS caches tiles through zoom 15 and 404s past it.
-            /* maxZoom= */ 15,
-            this.mapController.renderer,
-        ),
-        controls: [],
-        values: {},
+        kind: 'group',
+        id: 'fr',
+        name: 'France',
+        enabled: true,
+        children: [
+          this.newIgnEntry(
+              'fr/plan_ign', 'Plan IGN', 'Plan IGN v2', 'GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2',
+              'image/png'),
+          this.newIgnEntry(
+              'fr/orthophotos', 'Orthophotos', 'BD ORTHO orthophotos', 'ORTHOIMAGERY.ORTHOPHOTOS',
+              'image/jpeg'),
+        ],
       }],
     }, {
       kind: 'group',
@@ -2792,6 +2943,82 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           // GoogleMapsCompatible_Level7 stops at zoom 7, which is about the 2 km resolution ABI
           // gives away from the sub-satellite point anyway.
           /* maxZoom= */ 7,
+          this.mapController.renderer,
+      ),
+      controls: [],
+      values: {},
+    };
+  }
+
+  // https://www.geo.admin.ch/en/wmts-available-services-and-data
+  private newSwisstopoEntry(
+      id: string,
+      name: string,
+      copyrights: Copyright[],
+      layer: string,
+      extension: string,
+      z: number,
+      maxZoom: number): LayerEntry {
+    return {
+      kind: 'layer',
+      id,
+      name,
+      enabled: false,
+      layer: new RasterTileLayer(
+          copyrights,
+          `https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/3857`
+              + `/\${id.zoom}/\${id.x}/\${id.y}.${extension}`,
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          z,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          maxZoom,
+          this.mapController.renderer,
+      ),
+      controls: [],
+      values: {},
+    };
+  }
+
+  // The public Géoplateforme WMTS is the only IGN service without a per-IP quota, and it only
+  // takes KVP requests.
+  // https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/limites-d-usage/
+  private newIgnEntry(
+      id: string,
+      name: string,
+      product: string,
+      layer: string,
+      format: string): LayerEntry {
+    const params = new URLSearchParams({
+      SERVICE: 'WMTS',
+      REQUEST: 'GetTile',
+      VERSION: '1.0.0',
+      LAYER: layer,
+      STYLE: 'normal',
+      FORMAT: format,
+      TILEMATRIXSET: 'PM',
+    });
+    return {
+      kind: 'layer',
+      id,
+      name,
+      enabled: false,
+      layer: new RasterTileLayer(
+          [{
+            long:
+                `${product} from the Institut national de l'information géographique et `
+                    + 'forestière',
+            short: 'IGN',
+            url: 'https://cartes.gouv.fr/',
+          }],
+          `https://data.geopf.fr/wmts?${params}`
+              + '&TILEMATRIX=${id.zoom}&TILEROW=${id.y}&TILECOL=${id.x}',
+          /* tint= */ 0xFFFFFFFF as RgbaU32,
+          /* z= */ Z_BASE_SATELLITE,
+          /* extraZoom= */ 0,
+          /* minZoom= */ 0,
+          // PM_0_19 in the capabilities
+          /* maxZoom= */ 19,
           this.mapController.renderer,
       ),
       controls: [],

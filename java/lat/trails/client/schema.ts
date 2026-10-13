@@ -24,6 +24,30 @@ export const USER_COLLECTION_SCHEMA: Schema = {
   fields: [],
 };
 
+// See EuropeanDesignatedAreas.kt
+export const EUROPEAN_DESIGNATED_AREAS_SCHEMA: Schema = {
+  title: {kind: 'text', key: 'name'},
+  description: undefined,
+  fields: [
+    {key: 'designation', label: 'Designation'},
+    {
+      key: 'iucn',
+      label: 'IUCN category',
+      values: {
+        'Ia': 'Ia Strict nature reserve',
+        'Ib': 'Ib Wilderness area',
+        'II': 'II National park',
+        'III': 'III Natural monument',
+        'IV': 'IV Habitat or species management area',
+        'V': 'V Protected landscape',
+        'VI': 'VI Protected area with sustainable use',
+      },
+    },
+    {key: 'designated', label: 'Designated'},
+    {key: 'country', label: 'Country'},
+  ],
+};
+
 // See PublicAccess.kt, which writes owner as a label and access as PAD-US's code.
 export const PUBLIC_LAND_SCHEMA: Schema = {
   title: {kind: 'text', key: 'name'},
