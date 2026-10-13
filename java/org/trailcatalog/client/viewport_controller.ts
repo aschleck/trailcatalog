@@ -4,6 +4,7 @@ import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/histo
 import { ViewsService } from 'external/dev_april_corgi+/js/corgi/history/views_service';
 
 import { rgbaToUint32 } from 'js/map/common/math';
+import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT } from 'js/map/common/copyrights';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
 import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/layers/mbtile_layer';
@@ -22,17 +23,6 @@ import { Filters, TrailLayer } from './map/trail_layer';
 import { Path, Point, Trail } from './models/types';
 
 import * as routes from './routes';
-
-// Mapterhorn is also where trail elevation profiles come from, see CalculateWayElevations.
-const MAPTERHORN_COPYRIGHT = {
-  long: '© Mapterhorn',
-  short: 'Mapterhorn',
-  url: 'https://mapterhorn.com/attribution',
-};
-// No short form, so that it shows in the full list and leaves the credit bar to Mapterhorn
-const COPERNICUS_COPYRIGHT = {
-  long: 'Contains modified Copernicus Sentinel data 2021',
-};
 
 // Translated once, because the layer list is rebuilt for every response.
 const NATURE_PROTOMAPS = toProtomaps(NATURE);
@@ -90,6 +80,8 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
 
     this.mapData =
         new TrailLayer(
+            // Trail elevation profiles come from Mapterhorn, see CalculateWayElevations
+            [OSM_COPYRIGHT, MAPTERHORN_COPYRIGHT],
             this.mapController.camera,
             response.deps.services.mapData,
             response.args.filters ?? {},
@@ -107,9 +99,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Hillshades',
       enabled: true,
       layer: new RasterTileLayer(
-          [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
-            long: 'Contains modified NASADEM data 2000',
-          }],
+          [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
           /* tint= */ 0xFFFFFF30 as RgbaU32,
           /* z= */ Z_BASE_TERRAIN,
@@ -122,9 +112,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Contours (imperial)',
       enabled: response.args.units === 'imperial',
       layer: new MbtileLayer(
-          [COPERNICUS_COPYRIGHT, {
-            long: 'Contains modified NASADEM data 2000',
-          }],
+          [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
           'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
           CONTOURS_FEET,
           /* extraZoom= */ 0,
@@ -136,9 +124,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Contours (metric)',
       enabled: response.args.units === 'metric',
       layer: new MbtileLayer(
-          [COPERNICUS_COPYRIGHT, {
-            long: 'Contains modified NASADEM data 2000',
-          }],
+          [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
           'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
           CONTOURS_METERS,
           /* extraZoom= */ 0,
@@ -150,13 +136,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Protomaps',
       enabled: true,
       layer: new MbtileLayer(
-          [
-            {
-              long: 'Base political and transportation data provided by the OpenStreetMap project',
-              short: 'OpenStreetMap contributors',
-              url: 'https://www.openstreetmap.org/copyright',
-            },
-          ],
+          [PROTOMAPS_COPYRIGHT],
           'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
           NATURE_PROTOMAPS,
           /* extraZoom= */ 0,
@@ -174,11 +154,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
               short: 'MapTiler',
               url: 'https://www.maptiler.com/copyright/',
             },
-            {
-              long: 'Base political and transportation data provided by the OpenStreetMap project',
-              short: 'OpenStreetMap contributors',
-              url: 'https://www.openstreetmap.org/copyright',
-            },
+            OSM_COPYRIGHT,
           ],
           'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
               + 'key=UGTHB0b969Xa1xpZvnvB',

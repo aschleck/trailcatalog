@@ -6,7 +6,7 @@ import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { Camera, projectLatLngRect, projectS2LatLng } from 'js/map/camera';
 import { WorldBoundsQuadtree } from 'js/map/common/bounds_quadtree';
 import { DPI } from 'js/map/common/dpi';
-import { RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
+import { Copyright, RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { GLYPHER, toGraphemes } from 'js/map/rendering/glypher';
@@ -137,12 +137,13 @@ export class TrailLayer extends Layer implements Listener {
   private viewportBounds: S2LatLngRect;
 
   constructor(
+      copyrights: Copyright[],
       private readonly camera: Camera,
       private readonly dataService: MapDataService,
       private filters: Filters,
       private readonly renderer: Renderer,
   ) {
-    super();
+    super(copyrights);
     this.overviewBounds = new WorldBoundsQuadtree<Handle>();
     this.coarseBounds = new WorldBoundsQuadtree<Handle>();
     this.fineBounds = new WorldBoundsQuadtree<Handle>();

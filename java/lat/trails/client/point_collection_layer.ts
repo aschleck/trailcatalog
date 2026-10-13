@@ -5,7 +5,7 @@ import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { POINTS_ATLAS_SIZE, pointsAtlasIndex } from 'java/org/trailcatalog/client/points/points_atlas';
 import { aDescendsB, PointCategory } from 'java/org/trailcatalog/models/categories';
 import { Camera, projectS2LatLng } from 'js/map/camera';
-import { RawUuid, RgbaU32, Vec2 } from 'js/map/common/types';
+import { Copyright, RawUuid, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { growBuffer } from 'js/map/rendering/buffers';
@@ -65,6 +65,7 @@ export class PointCollectionLayer extends Layer {
   private lastClick: {point: Point; timeMs: number}|undefined;
 
   constructor(
+      copyrights: Copyright[],
       url: string,
       streams: Stream[],
       categories: PointCategory[],
@@ -72,7 +73,7 @@ export class PointCollectionLayer extends Layer {
       private readonly camera: Camera,
       private readonly renderer: Renderer,
   ) {
-    super(/* copyright= */ []);
+    super(copyrights);
     this.fetcher = new WorkerPool(new URL('s2_data_fetcher_worker.js', import.meta.url).href, 1);
     this.fetching = false;
     this.cells = new Map();

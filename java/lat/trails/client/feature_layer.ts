@@ -8,7 +8,7 @@ import {
   unprojectS2LatLng,
   worldRadiusAt,
 } from 'js/map/camera';
-import { RgbaU32, Vec2 } from 'js/map/common/types';
+import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { GLYPHER, toGraphemes, wrap } from 'js/map/rendering/glypher';
@@ -231,13 +231,14 @@ export class FeatureLayer extends Layer {
   private labelsMissingGlyphs: boolean;
 
   constructor(
+      copyrights: Copyright[],
       private readonly store: FeatureStore,
       // Where lines go so that drawing snaps and routes along them
       private readonly locations: LocationIndex,
       private readonly camera: Camera,
       private readonly renderer: Renderer,
   ) {
-    super(/* copyright= */ []);
+    super(copyrights);
     this.producer = locations.producer();
     this.hidden = new Set();
     this.selected = undefined;

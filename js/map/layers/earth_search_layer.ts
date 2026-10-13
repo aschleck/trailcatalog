@@ -3,7 +3,7 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 
-import { RgbaU32, TileId, Vec2 } from '../common/types';
+import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { BillboardProgram } from '../rendering/billboard_program';
 import { Planner } from '../rendering/planner';
@@ -15,6 +15,8 @@ import { Command as LoaderCommand, LoadTileCommand, Request as LoaderRequest, Se
 const NO_OFFSET: Vec2 = [0, 0];
 // A viewport holds well under 64 billboards, so the buffer never grows in practice.
 const TILE_BUFFER_BYTES = 65536;
+// Sentinel-2A launched in June 2015
+const SENTINEL_2_FIRST_YEAR = 2015;
 
 export class EarthSearchLayer extends Layer {
 
@@ -25,6 +27,7 @@ export class EarthSearchLayer extends Layer {
   private fetching: boolean;
   private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
+  private search: Search;
 
   constructor(
       collection: string,
@@ -32,12 +35,7 @@ export class EarthSearchLayer extends Layer {
       private readonly z: number,
       private readonly renderer: Renderer,
   ) {
-    super(
-      [{
-        long: 'Copernicus Sentinel data 2021',
-        short: 'Copernicus 2021',
-      }],
-    );
+    super();
 
     this.buffer = this.renderer.createDataBuffer(TILE_BUFFER_BYTES);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
@@ -65,6 +63,7 @@ export class EarthSearchLayer extends Layer {
       }
     };
 
+    this.search = search;
     this.loader.broadcast({
       kind: 'ir',
       collection,
@@ -74,10 +73,22 @@ export class EarthSearchLayer extends Layer {
 
   /** Replaces the imagery on screen with what the search finds. */
   setSearch(search: Search): void {
+    this.search = search;
     this.loader.broadcast({
       kind: 'usr',
       search,
     });
+  }
+
+  // https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
+  override get copyrights(): Copyright[] {
+    const from = yearOf(this.search.from) ?? SENTINEL_2_FIRST_YEAR;
+    const to = yearOf(this.search.to) ?? new Date().getFullYear();
+    const years = from === to ? `${from}` : `${from}-${to}`;
+    return [{
+      long: `Contains modified Copernicus Sentinel data ${years}`,
+      short: `Copernicus Sentinel ${years}`,
+    }];
   }
 
   override hasNewData(): boolean {
@@ -169,4 +180,10 @@ export class EarthSearchLayer extends Layer {
 
     this.generation += 1;
   }
+}
+
+// Local time, because callers build the instants from local days and a UTC year would put January
+// 1st east of UTC in the year before.
+function yearOf(instant: string): number|undefined {
+  return instant === '..' ? undefined : new Date(instant).getFullYear();
 }

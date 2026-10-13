@@ -1,5 +1,4 @@
 import { S2Polygon } from 'java/org/trailcatalog/s2';
-import { HashSet } from 'external/dev_april_corgi+/js/common/collections';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Link } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
@@ -77,28 +76,20 @@ function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
     return <></>;
   }
 
-  const unique =
-      [...new HashSet(c => `${c.short}|${c.url}`, copyrights)];
-  const shorts =
-      unique
-          .filter(hasShort)
-          .map(c => ({
-            source: c.short,
-            url: c.url,
-          }));
-  shorts.sort((a, b) => a.source < b.source ? -1 : a.source === b.source ? 0 : 1);
+  const unique = new Map<string, Copyright & {short: string}>();
+  for (const c of copyrights.filter(hasShort)) {
+    const key = `${c.short}|${c.url}`;
+    // Several layers credit OpenStreetMap, and the one naming its provider says the most
+    if (!unique.get(key)?.provider) {
+      unique.set(key, c);
+    }
+  }
+  const shorts = [...unique.values()];
+  shorts.sort((a, b) => a.short < b.short ? -1 : a.short === b.short ? 0 : 1);
   const notices = shorts.flatMap(c => [
-    `©`,
-    c.url
-        ? <>
-            <a
-                className="pointer-events-auto"
-                href={c.url}
-                target="_blank">
-              {c.source}
-            </a>
-          </>
-        : c.source,
+    ...(c.provider ? [creditLink(c.provider.name, c.provider.url), ' '] : []),
+    c.publicDomain ? '' : '© ',
+    creditLink(c.short, c.url),
     ', ',
   ]);
   notices.pop();
@@ -118,11 +109,20 @@ function CopyrightNotices({copyrights}: {copyrights: Copyright[]}) {
   </>;
 }
 
-function hasShort(c: Copyright): c is {
-  long: string;
-  short: string;
-  url: string|undefined;
-} {
+function creditLink(text: string, url: string|undefined) {
+  return url
+      ? <>
+          <a
+              className="pointer-events-auto"
+              href={url}
+              target="_blank">
+            {text}
+          </a>
+        </>
+      : text;
+}
+
+function hasShort(c: Copyright): c is Copyright & {short: string} {
   if (c.short === undefined) {
     return false;
   } else {

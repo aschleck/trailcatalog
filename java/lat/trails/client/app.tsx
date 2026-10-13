@@ -1,7 +1,6 @@
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
-import { CitationsElement } from './citations_element';
 import { NotFoundElement } from './not_found_element';
 import { RouteController, State } from './route_controller';
 import { OverviewElement } from './overview_element';
@@ -18,8 +17,6 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
   let route;
   if (!state.active) {
     route = <NotFoundElement />;
-  } else if (state.active.kind === 'citations') {
-    route = <CitationsElement parameters={state.parameters} />;
   } else if (state.active.kind === 'collection') {
     route = <OverviewElement collection={state.active.id} parameters={state.parameters} />;
   } else if (state.active.kind === 'overview') {

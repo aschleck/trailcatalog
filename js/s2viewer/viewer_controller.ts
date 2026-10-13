@@ -8,6 +8,7 @@ import { Long, S2CellId, S2LatLng, S2LatLngRect, S2Loop, S2Polygon } from 'java/
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map/camera';
 import { rgbaToUint32 } from 'js/map/common/math';
+import { COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT } from 'js/map/common/copyrights';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
@@ -72,11 +73,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
               short: 'MapTiler',
               url: 'https://www.maptiler.com/copyright/',
             },
-            {
-              long: 'Base political and transportation data provided by the OpenStreetMap project',
-              short: 'OpenStreetMap contributors',
-              url: 'https://www.openstreetmap.org/copyright',
-            },
+            OSM_COPYRIGHT,
           ],
           'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
               + 'key=UGTHB0b969Xa1xpZvnvB',
@@ -87,7 +84,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           this.mapController.renderer,
       ),
       new RasterTileLayer(
-          /* copyright= */ [],
+          [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
           'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
           /* tint= */ 0xFFFFFF30 as RgbaU32,
           Z_BASE_TERRAIN,

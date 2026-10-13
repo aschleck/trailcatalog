@@ -13,6 +13,7 @@ import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service'
 
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
+import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT } from 'js/map/common/copyrights';
 import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { CLICKED, MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
@@ -140,26 +141,18 @@ import { parseCoordinates, SearchHit, searchLabel, SearchState } from './search_
 import { RenameDialog } from './rename_dialog';
 import { ShareDialog } from './share_dialog';
 
-const MAPTERHORN_COPYRIGHT = {
-  long: 'Mapterhorn',
-  short: 'Mapterhorn',
-  url: 'https://mapterhorn.com/attribution',
-};
-const SNODAS_COPYRIGHT = {
+const SNODAS_COPYRIGHT: Copyright = {
   long:
       'SNODAS snow analysis from the NOAA National Operational Hydrologic Remote Sensing Center, '
           + 'archived by NSIDC',
   short: 'NOAA NOHRSC',
   url: 'https://nsidc.org/data/g02158',
+  publicDomain: true,
 };
 // Keep in sync with snodas.sh, which writes one archive per day named snodas_<day>.pmtiles
 const SNODAS_URL = 'https://tiles.trailcatalog.org/snodas_';
 const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
 const SNOW_WATER_ID = 'us/conditions/snow_water';
-// No short form, so that it shows in the full list and leaves the credit bar to Mapterhorn
-const COPERNICUS_COPYRIGHT = {
-  long: 'Contains modified Copernicus Sentinel data 2021',
-};
 // Keep in sync with Conditions.kt
 const AIR_QUALITY_COLLECTION_ID = '09afe7ea-ffe9-41b3-ac05-580758a5ac2f';
 const FIRE_PERIMETERS_COLLECTION_ID = '77ac6377-5725-40bb-bfb5-c0bbcb353617';
@@ -388,7 +381,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const locations = new LocationIndex();
     const camera = this.mapController.camera;
     const renderer = this.mapController.renderer;
-    this.featureLayer = new FeatureLayer(this.store, locations, camera, renderer);
+    // Line profiles and new vertices sample their elevations from Mapterhorn
+    this.featureLayer =
+        new FeatureLayer([MAPTERHORN_COPYRIGHT], this.store, locations, camera, renderer);
     this.registerDisposable(this.featureLayer);
     this.featureLayer.setHidden(this.state.features.hidden);
     this.lineLayer =
@@ -456,7 +451,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     const ways =
         new CollectionLayer(
-            /* copyrights= */ [],
+            [OSM_COPYRIGHT],
             '/api/collections/00000000-0000-0000-0000-000000000001',
             OSM_WAYS,
             [
@@ -513,6 +508,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         );
     const osmNodes =
         new PointCollectionLayer(
+            [OSM_COPYRIGHT],
             '/api/collections/00000000-0000-0000-0000-000000000002',
             [
               // Every point sits in a level 13 cell, see DumpPoints.kt. Level 11 tiles hold a
@@ -527,13 +523,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         );
     const protomaps =
         new MbtileLayer(
-            [
-              {
-                long: 'Base political and transportation data provided by the OpenStreetMap project',
-                short: 'OpenStreetMap contributors',
-                url: 'https://www.openstreetmap.org/copyright',
-              },
-            ],
+            [PROTOMAPS_COPYRIGHT],
             'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
             NATURE_PROTOMAPS,
             /* extraZoom= */ 0,
@@ -586,7 +576,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       }, {
         kind: 'layer',
         id: 'osm/protomaps',
-        name: 'Basemap (Protomaps)',
+        name: 'Basemap',
         enabled: true,
         layer: protomaps,
         controls: [
@@ -626,6 +616,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 long: 'Current interagency fire perimeters from the National Interagency Fire Center',
                 short: 'NIFC',
                 url: 'https://data-nifc.opendata.arcgis.com/',
+                publicDomain: true,
               },
               // Few enough to load the whole country at once: 113 perimeters were 413 kB on
               // 2026-10-03.
@@ -639,6 +630,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 long: 'Current air quality index contours from AirNow, preliminary and unverified',
                 short: 'AirNow',
                 url: 'https://www.airnow.gov/',
+                publicDomain: true,
               },
               // Few enough to load the whole country at once: 79 contours were 180 kB of GeoJSON on
               // 2026-10-03.
@@ -651,6 +643,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 long: 'Multi-Radar Multi-Sensor base reflectivity from NOAA',
                 short: 'NOAA MRMS',
                 url: 'https://radar.weather.gov/',
+                publicDomain: true,
               },
               'eventdriven/rest/services/radar/radar_base_reflectivity/MapServer',
               /* layers= */ undefined,
@@ -664,6 +657,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 long: 'River observations from the NOAA National Water Prediction Service',
                 short: 'NOAA NWPS',
                 url: 'https://water.noaa.gov/',
+                publicDomain: true,
               },
               // Conditions.kt puts every gauge in a level 13 cell. There are about 11,500 gauges, too
               // many to draw zoomed out, so they start at zoom 6.
@@ -679,7 +673,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         enabled: false,
         schema: PUBLIC_LAND_SCHEMA,
         layer: new CollectionLayer(
-            /* copyrights= */ [],
+            [{
+              long:
+                  'Protected Areas Database of the United States (PAD-US) 4.1 from the USGS Gap '
+                      + 'Analysis Project',
+              short: 'USGS PAD-US',
+              url: 'https://doi.org/10.5066/P96WBCHS',
+              publicDomain: true,
+            }],
             '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
             PUBLIC_LAND,
             // Snapping to a level whose cells are a few pixels across is invisible and saves most
@@ -719,6 +720,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               long: 'Topographic base map from The National Map, US Geological Survey',
               short: 'USGS',
               url: 'https://www.usgs.gov/programs/national-geospatial-program/national-map',
+              publicDomain: true,
             }],
             'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile'
                 + '/${id.zoom}/${id.y}/${id.x}',
@@ -776,11 +778,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 short: 'MapTiler',
                 url: 'https://www.maptiler.com/copyright/',
               },
-              {
-                long: 'Base political and transportation data provided by the OpenStreetMap project',
-                short: 'OpenStreetMap contributors',
-                url: 'https://www.openstreetmap.org/copyright',
-              },
+              OSM_COPYRIGHT,
             ],
             'https://api.maptiler.com/tiles/satellite-mediumres-2021/${id.zoom}/${id.x}/${id.y}.jpg?key=UGTHB0b969Xa1xpZvnvB',
             /* tint= */ 0xFFFFFFFF as RgbaU32,
@@ -812,9 +810,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         name: 'Hillshades',
         enabled: true,
         layer: new RasterTileLayer(
-            [MAPTERHORN_COPYRIGHT, COPERNICUS_COPYRIGHT, {
-              long: 'Contains modified NASADEM data 2000',
-            }],
+            [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
             'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
             /* tint= */ 0xFFFFFF30 as RgbaU32,
             /* z= */ Z_BASE_TERRAIN,
@@ -1466,6 +1462,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       },
     });
     entry.configure?.(values);
+    // The Sentinel layer credits the years it searches
+    this.mapController.copyrightsChanged();
     this.layerEdits += 1;
     this.saveViewState();
   }
@@ -2756,9 +2754,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private newContourLayer(style: Readonly<Style>): MbtileLayer {
     return new MbtileLayer(
-        [COPERNICUS_COPYRIGHT, {
-          long: 'Contains modified NASADEM data 2000',
-        }],
+        [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
         'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
         style,
         /* extraZoom= */ 0,
@@ -2781,6 +2777,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                       + 'Services',
               short: 'NOAA/NASA GIBS',
               url: 'https://nasa-gibs.github.io/gibs-api-docs/',
+              publicDomain: true,
             },
           ],
           // The path is style/time/matrix set, and "default" for time means the most recent scan

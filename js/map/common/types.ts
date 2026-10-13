@@ -2,6 +2,10 @@ export interface Copyright {
   long: string;
   short?: string;
   url?: string;
+  // Who serves the data, credited ahead of its source as in "Protomaps © OpenStreetMap"
+  provider?: {name: string; url: string};
+  // Nobody holds a copyright on public domain data, so the credit bar leaves off the ©
+  publicDomain?: true;
 }
 
 export type Vec2 = Readonly<[number, number]>;

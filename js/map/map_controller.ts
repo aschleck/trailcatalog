@@ -221,7 +221,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   setLayers(layers: Layer[]): void {
     this.layers = layers;
     this.enterIdle();
+    this.copyrightsChanged();
+  }
 
+  // For a layer whose copyrights depend on its settings
+  copyrightsChanged(): void {
     this.updateState({
       ...this.state,
       // TODO(april): deduplicate
