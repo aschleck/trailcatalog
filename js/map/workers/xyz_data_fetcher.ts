@@ -1,5 +1,5 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
+import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_throttler';
@@ -76,7 +76,7 @@ class XyzDataFetcher {
   private readonly pending: HashSet<TileId>;
   private readonly loaded: HashSet<TileId>;
   private readonly throttler: FetchThrottler;
-  private lastViewport: Viewport;
+  private lastViewport: Viewport|undefined;
 
   constructor(
       private url: string,
@@ -89,11 +89,7 @@ class XyzDataFetcher {
     this.pending = createTileHashSet();
     this.loaded = createTileHashSet();
     this.throttler = new FetchThrottler();
-    this.lastViewport = {
-      lat: [1, -1],
-      lng: [1, -1],
-      zoom: 31,
-    };
+    this.lastViewport = undefined;
   }
 
   tileLoaded(request: TileLoadedRequest): void {
@@ -118,7 +114,10 @@ class XyzDataFetcher {
         ids: unload,
       });
     }
-    this.updateViewport({kind: 'uvr', viewport: this.lastViewport});
+    // A layer that was never shown has no viewport to fetch for
+    if (this.lastViewport) {
+      this.updateViewport({kind: 'uvr', viewport: this.lastViewport});
+    }
   }
 
   updateViewport(request: UpdateViewportRequest): void {
@@ -241,7 +240,7 @@ class XyzDataFetcher {
   }
 
   private cull(): void {
-    const viewport = this.lastViewport;
+    const viewport = checkExists(this.lastViewport);
 
     const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
     const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
