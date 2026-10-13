@@ -6,15 +6,20 @@ import { BillboardProgram } from './billboard_program';
 // Each band is 27 to 30, 30 to 35, 35 to 40, 40 to 45, and over 45 degrees, premultiplied.
 const SLOPE_FRAGMENT_SHADER = `#version 300 es
     uniform sampler2D color;
+    uniform mediump float flattenFactor;
 
     in highp vec2 fragColorPosition;
     in mediump vec4 fragColorTint;
+    in mediump float fragBehindHorizon;
     out mediump vec4 fragColor;
 
     const highp float TILE_SIZE = 512.;
     const mediump float ALPHA = 0.45;
 
     void main() {
+      if (flattenFactor < 1.0 && fragBehindHorizon < 0.0) {
+        discard;
+      }
       highp vec2 texel = (fragColorPosition * TILE_SIZE + 1.) / (TILE_SIZE + 2.);
       mediump float slope = texture(color, texel).r * 90.;
       mediump vec3 band =

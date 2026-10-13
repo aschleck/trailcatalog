@@ -2,7 +2,7 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
+import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData, SPHERE_OPERATIONS } from './program';
 
 // A billboard is drawn as instances of a static lattice, so plan() writes only the per-instance
 // attributes: 9 floats and 5 uint32s, all 4 bytes.
@@ -16,12 +16,17 @@ const GRID_VERTEX_COUNT = 4 * 4 * 6;
 
 const TEXTURE_FRAGMENT_SHADER = `#version 300 es
     uniform sampler2D color;
+    uniform mediump float flattenFactor;
 
     in mediump vec2 fragColorPosition;
     in mediump vec4 fragColorTint;
+    in mediump float fragBehindHorizon;
     out mediump vec4 fragColor;
 
     void main() {
+      if (flattenFactor < 1.0 && fragBehindHorizon < 0.0) {
+        discard;
+      }
       mediump vec4 tex = texture(color, fragColorPosition);
       fragColor = tex * vec4(fragColorTint.rgb, 1) * fragColorTint.a;
     }
@@ -448,9 +453,11 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
       // highp because overzoomed slope tiles address a texel across thousands of pixels
       out highp vec2 fragColorPosition;
       out mediump vec4 fragColorTint;
+      out mediump float fragBehindHorizon;
 
       ${COLOR_OPERATIONS}
       ${FP64_OPERATIONS}
+      ${SPHERE_OPERATIONS}
 
       const float PI = 3.141592653589793;
 
@@ -486,18 +493,17 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
         // discards all of it once flattenFactor reaches 1. flattenFactor is a uniform, so the
         // branch is coherent across the draw.
         vec4 spherical = vec4(0.);
+        highp float behindHorizon = 1.;
         if (flattenFactor < 1.) {
           vec4 sphericalOrigin = split(center) + (sizeIsPixels > 0u ? vec4(0) : rotated);
           float sinLat = tanh((sphericalOrigin.z + sphericalOrigin.w) * PI);
           float lat = asin(sinLat);
           float cosLat = cos(lat);
           float lng = (sphericalOrigin.x + sphericalOrigin.y) * PI;
-          vec4 sphericalCenter = sphericalMvp * vec4(
-              cosLat * cos(lng), // x
-              sinLat,            // y
-              cosLat * sin(lng), // z
-              1.0                // w
-          );
+          vec3 spherePos = vec3(cosLat * cos(lng), sinLat, cosLat * sin(lng));
+          vec4 sphericalCenter = sphericalMvp * vec4(spherePos, 1.0);
+          // See triangle_program.ts for why the back of the globe is culled by fragment.
+          behindHorizon = horizonDistance(spherePos);
           vec4 sphericalSplit =
             sum_fp64(
               split(sphericalCenter.xy),
@@ -517,7 +523,11 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
-        gl_Position.z = z * gl_Position.z + (1. - z);
+        // Depth is the layer alone, the same as triangle_program.ts, or else a tile's flat cells sag
+        // behind the polygons of lower layers near the limb and lose the depth test to them.
+        gl_Position.z = 1. - 2. * z;
+
+        fragBehindHorizon = behindHorizon;
 
         uvec2 atlasXy = uvec2(
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);
