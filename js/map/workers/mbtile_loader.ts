@@ -10,12 +10,15 @@ import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track, wrap } from '../renderin
 
 import {
   clipAround,
+  Contour,
   lineAnchors,
   maxTurnWithin,
   mergeLines,
   polylineLength,
+  reverse,
   sampleAt,
   smoothLine,
+  uphillSide,
 } from './line_labels';
 import { GeometryType } from './mbtile_types';
 import { ringArea, Triangles, triangulateMb } from './triangulate';
@@ -88,6 +91,13 @@ interface LineTextStyle {
   fill: RgbaU32;
   stroke: RgbaU32;
   scale: number;
+  // LINE_LABEL_SPACING_PX if unset
+  spacingPx?: number;
+  // Clear space the placer keeps around each glyph, label_placer.ts#PAD_PX if unset
+  padPx?: number;
+  // Reads the text as a height and turns its top toward the higher of the neighboring lines, see
+  // MAX_UPHILL_TILT
+  uphill?: boolean;
   z: number;
 }
 
@@ -213,6 +223,9 @@ export interface Label {
   z: number;
   // Orders labels of the same z for placement, highest first. See line_labels#lineAnchors.
   rank: number;
+  // Lays the glyphs in the direction of path even where that reads upside down
+  keepDirection?: boolean;
+  padPx?: number;
 }
 
 export type Response = LoadResponse;
@@ -240,6 +253,10 @@ const PREFERRED_LANGUAGE = navigator.language.split('-')[0];
 // How far apart candidate labels along a line start at styleZoom, which the viewport zoom
 // stretches up to twice as far by the next bucket. The placer thins them to its repeat distance.
 const LINE_LABEL_SPACING_PX = 128;
+// How far from upright a label may turn to face uphill, or else every label on a north-facing slope
+// reads upside down. The 20 degrees past vertical keeps labels on a contour that wavers about
+// vertical from flipping back and forth.
+const MAX_UPHILL_TILT = Math.PI / 2 + Math.PI / 9;
 // A point has one place to put its name, so it goes before any line label of the same z.
 const POINT_LABEL_RANK = 64;
 const TEXT_DECODER = new TextDecoder();
@@ -467,18 +484,40 @@ class MbtileLoader {
 
     // Pixels per mercator unit at styleZoom, where the world is -1 to 1.
     const pixelsPerWorld = 256 * Math.pow(2, request.styleZoom - 1);
-    const spacing = LINE_LABEL_SPACING_PX / pixelsPerWorld;
+    // By layer, the lines that uphill labels look across to
+    const contours = new DefaultMap<Layer, Contour[]>(() => []);
     for (const [style, lineTexts] of lineTextGroups) {
+      const spacing = (style.spacingPx ?? LINE_LABEL_SPACING_PX) / pixelsPerWorld;
       const byText = new DefaultMap<string, number[][]>(() => []);
+      if (style.uphill) {
+        for (const {layer} of lineTexts) {
+          if (contours.has(layer)) {
+            continue;
+          }
+          const heights = contours.get(layer);
+          for (const line of layer.lines) {
+            for (let i = 0; i < line.tags.length; i += 2) {
+              if (layer.keys[line.tags[i + 0]] === style.fallback) {
+                heights.push({
+                  height: Number(layer.values[line.tags[i + 1]]),
+                  geometry: line.geometry,
+                  starts: line.starts,
+                });
+              }
+            }
+          }
+        }
+      }
       for (const lineText of lineTexts) {
         let textFallback;
         let textPreferred;
         for (let i = 0; i < lineText.tags.length; i += 2) {
           const key = lineText.layer.keys[lineText.tags[i + 0]];
+          // Contours label their numeric height
           if (key === style.fallback) {
-            textFallback = lineText.layer.values[lineText.tags[i + 1]] as string;
+            textFallback = String(lineText.layer.values[lineText.tags[i + 1]]);
           } else if (key === style.preferred) {
-            textPreferred = lineText.layer.values[lineText.tags[i + 1]] as string;
+            textPreferred = String(lineText.layer.values[lineText.tags[i + 1]]);
           }
         }
 
@@ -527,8 +566,23 @@ class MbtileLoader {
             }
 
             const [centerX, centerY, heading] = sampleAt(line, at);
+            const side =
+                style.uphill
+                    ? uphillSide(
+                        centerX,
+                        centerY,
+                        heading,
+                        Number(text),
+                        contours.get(lineTexts[0].layer))
+                    : 0;
+            // The top of the text faces the left of its path
+            const uphillAngle =
+                side >= 0 ? heading : heading > 0 ? heading - Math.PI : heading + Math.PI;
+            const facesUphill = side !== 0 && Math.abs(uphillAngle) <= MAX_UPHILL_TILT;
             let angle = heading;
-            if (angle < -Math.PI / 2) {
+            if (facesUphill) {
+              angle = uphillAngle;
+            } else if (angle < -Math.PI / 2) {
               angle = angle + Math.PI;
             } else if (angle > Math.PI / 2) {
               angle = angle - Math.PI;
@@ -537,7 +591,9 @@ class MbtileLoader {
             response.labels.push({
               angle,
               center: [centerX, centerY],
-              path,
+              path: facesUphill && side < 0 ? reverse(path) : path,
+              keepDirection: facesUphill,
+              padPx: style.padPx,
               // Line labels render rotated along the line direction. Wrapping turns them into
               // a tilted multi-line block which looks wrong; keep them single-line.
               graphemes,

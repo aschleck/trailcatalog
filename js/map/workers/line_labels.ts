@@ -77,7 +77,7 @@ export function mergeLines(parts: number[][]): number[][] {
   return merged;
 }
 
-function reverse(line: number[]): number[] {
+export function reverse(line: number[]): number[] {
   const reversed = new Array<number>(line.length);
   for (let i = 0; i < line.length; i += 2) {
     reversed[line.length - 2 - i] = line[i];
@@ -126,6 +126,58 @@ export function polylineLength(geometry: ArrayLike<number>): number {
     length += Math.sqrt(dx * dx + dy * dy);
   }
   return length;
+}
+
+/** A contour line from a tile, see uphillSide. */
+export interface Contour {
+  height: number;
+  geometry: ArrayLike<number>;
+  // offsets into geometry where each part begins
+  starts: ArrayLike<number>;
+}
+
+/**
+ * Returns which side of a contour of the given height rises at x, y as it heads the given way: 1
+ * for the left, -1 for the right, and 0 when no other contour crosses the perpendicular there.
+ */
+export function uphillSide(
+    x: number, y: number, heading: number, height: number, contours: Contour[]): number {
+  // The perpendicular runs to the left, so a positive t is on the left
+  const nx = -Math.sin(heading);
+  const ny = Math.cos(heading);
+  let nearestT = Infinity;
+  let nearestHeight = height;
+  for (const contour of contours) {
+    if (contour.height === height) {
+      continue;
+    }
+
+    const {geometry, starts} = contour;
+    for (let p = 0; p < starts.length; ++p) {
+      const end = p + 1 < starts.length ? starts[p + 1] : geometry.length;
+      for (let i = starts[p]; i + 3 < end; i += 2) {
+        const ax = geometry[i + 0];
+        const ay = geometry[i + 1];
+        const ex = geometry[i + 2] - ax;
+        const ey = geometry[i + 3] - ay;
+        const denominator = nx * ey - ny * ex;
+        if (denominator === 0) {
+          continue;
+        }
+        const t = ((ax - x) * ey - (ay - y) * ex) / denominator;
+        const u = ((ax - x) * ny - (ay - y) * nx) / denominator;
+        if (0 <= u && u <= 1 && Math.abs(t) < Math.abs(nearestT)) {
+          nearestT = t;
+          nearestHeight = contour.height;
+        }
+      }
+    }
+  }
+
+  if (nearestT === Infinity) {
+    return 0;
+  }
+  return (nearestHeight > height) === (nearestT > 0) ? 1 : -1;
 }
 
 /** Returns the x, y, and heading at an arc length along geometry. */

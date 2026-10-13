@@ -243,7 +243,13 @@ export class LabelPlacer {
     const glyphs = this.glyphs;
     const placements = this.placements;
     if (!GLYPHER.layOutCurved(
-        label.graphemes, path, pixelsPerWorld, label.scale, glyphs, placements)) {
+        label.graphemes,
+        path,
+        pixelsPerWorld,
+        label.scale,
+        glyphs,
+        placements,
+        label.keepDirection ?? false)) {
       return undefined;
     }
 
@@ -256,7 +262,7 @@ export class LabelPlacer {
 
     // Each glyph gets a square as tall as the font, centered half an advance on from its pen
     // along its own angle. It ignores the rotation, which costs a little space on steep text.
-    const half = FONT_SIZE * label.scale / 2 + PAD_PX;
+    const half = FONT_SIZE * label.scale / 2 + (label.padPx ?? PAD_PX);
     for (let pass = 0; pass < 2; ++pass) {
       for (let i = 0; i < glyphs.length; ++i) {
         const advance = glyphs[i].glyphAdvance * label.scale / 2;
@@ -302,8 +308,9 @@ export class LabelPlacer {
 
     const cos = Math.abs(Math.cos(label.angle));
     const sin = Math.abs(Math.sin(label.angle));
-    const halfX = (size[0] * cos + size[1] * sin) / 2 + PAD_PX;
-    const halfY = (size[0] * sin + size[1] * cos) / 2 + PAD_PX;
+    const pad = label.padPx ?? PAD_PX;
+    const halfX = (size[0] * cos + size[1] * sin) / 2 + pad;
+    const halfY = (size[0] * sin + size[1] * cos) / 2 + pad;
     if (this.grid.hits(x - halfX, y - halfY, x + halfX, y + halfY)) {
       return undefined;
     }

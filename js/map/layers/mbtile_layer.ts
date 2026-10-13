@@ -47,6 +47,42 @@ function labelKey(label: Label): string {
 const PREFERRED_LANGUAGE = getLanguage().split('-')[0];
 
 // TODO(april): we should glaciate the contours if it looks good
+type LineTextStyle = Style['layers'][number]['lineTexts'][number];
+
+// Heights on the bold contours, every tenth line, in their color. The stroke is the clear color
+// so it breaks the line under the text.
+const INDEX_CONTOUR_LABEL: LineTextStyle = {
+  filters: [{
+    match: 'greater_than',
+    key: 'nth_line',
+    value: 5,
+  }],
+  preferred: 'height',
+  fallback: 'height',
+  fill: 0x8A6E4BFF as RgbaU32,
+  stroke: 0xF4F0E8FF as RgbaU32,
+  scale: 0.45,
+  spacingPx: 512,
+  // Steep slopes pack index contours a few pixels apart, so labels keep their distance from each
+  // other rather than labeling every line
+  padPx: 24,
+  uphill: true,
+  z: Z_OVERLAY_TERRAIN,
+};
+
+const GLACIER_INDEX_CONTOUR_LABEL: LineTextStyle = {
+  ...INDEX_CONTOUR_LABEL,
+  filters: [
+    ...INDEX_CONTOUR_LABEL.filters,
+    {
+      match: 'number_equals',
+      key: 'glacier',
+      value: 1,
+    },
+  ],
+  fill: 0x048AB9FF as RgbaU32,
+};
+
 export const CONTOURS_FEET: Readonly<Style> = {
   layers: [
     {
@@ -91,7 +127,7 @@ export const CONTOURS_FEET: Readonly<Style> = {
       layerName: 'contour_ft',
       minZoom: 13,
       maxZoom: 14,
-      lineTexts: [],
+      lineTexts: [GLACIER_INDEX_CONTOUR_LABEL, INDEX_CONTOUR_LABEL],
       lines: [
         {
           filters: [{
@@ -103,8 +139,8 @@ export const CONTOURS_FEET: Readonly<Style> = {
             key: 'glacier',
             value: 1,
           }],
-          fill: 0x048AB960 as RgbaU32,
-          stroke: 0x048AB960 as RgbaU32,
+          fill: 0x048AB9A0 as RgbaU32,
+          stroke: 0x048AB9A0 as RgbaU32,
           radius: 0.5,
           stipple: false,
           z: Z_OVERLAY_TERRAIN,
@@ -115,8 +151,8 @@ export const CONTOURS_FEET: Readonly<Style> = {
             key: 'nth_line',
             value: 5,
           }],
-          fill: 0x8A6E4B50 as RgbaU32,
-          stroke: 0x8A6E4B50 as RgbaU32,
+          fill: 0x8A6E4B90 as RgbaU32,
+          stroke: 0x8A6E4B90 as RgbaU32,
           radius: 0.5,
           stipple: false,
           z: Z_OVERLAY_TERRAIN,
@@ -129,7 +165,7 @@ export const CONTOURS_FEET: Readonly<Style> = {
       layerName: 'contour_ft',
       minZoom: 14,
       maxZoom: 31,
-      lineTexts: [],
+      lineTexts: [GLACIER_INDEX_CONTOUR_LABEL, INDEX_CONTOUR_LABEL],
       lines: [
         {
           filters: [{
@@ -141,8 +177,8 @@ export const CONTOURS_FEET: Readonly<Style> = {
             key: 'glacier',
             value: 1,
           }],
-          fill: 0x048AB960 as RgbaU32,
-          stroke: 0x048AB960 as RgbaU32,
+          fill: 0x048AB9A0 as RgbaU32,
+          stroke: 0x048AB9A0 as RgbaU32,
           radius: 0.75,
           stipple: false,
           z: Z_OVERLAY_TERRAIN,
@@ -153,8 +189,8 @@ export const CONTOURS_FEET: Readonly<Style> = {
             key: 'nth_line',
             value: 5,
           }],
-          fill: 0x8A6E4B50 as RgbaU32,
-          stroke: 0x8A6E4B50 as RgbaU32,
+          fill: 0x8A6E4B90 as RgbaU32,
+          stroke: 0x8A6E4B90 as RgbaU32,
           radius: 0.75,
           stipple: false,
           z: Z_OVERLAY_TERRAIN,
@@ -230,7 +266,7 @@ export const CONTOURS_METERS: Readonly<Style> = {
       layerName: 'contour',
       minZoom: 13,
       maxZoom: 14,
-      lineTexts: [],
+      lineTexts: [GLACIER_INDEX_CONTOUR_LABEL, INDEX_CONTOUR_LABEL],
       lines: [
         {
           filters: [{
@@ -242,8 +278,8 @@ export const CONTOURS_METERS: Readonly<Style> = {
             key: 'glacier',
             value: 1,
           }],
-          fill: 0x048AB960 as RgbaU32,
-          stroke: 0x048AB960 as RgbaU32,
+          fill: 0x048AB9A0 as RgbaU32,
+          stroke: 0x048AB9A0 as RgbaU32,
           radius: 0.75,
           stipple: false,
           z: Z_OVERLAY_TERRAIN,
@@ -254,8 +290,8 @@ export const CONTOURS_METERS: Readonly<Style> = {
             key: 'nth_line',
             value: 5,
           }],
-          fill: 0x8A6E4B50 as RgbaU32,
-          stroke: 0x8A6E4B50 as RgbaU32,
+          fill: 0x8A6E4B90 as RgbaU32,
+          stroke: 0x8A6E4B90 as RgbaU32,
           radius: 0.75,
           stipple: false,
           z: Z_OVERLAY_TERRAIN,
@@ -296,7 +332,7 @@ export const CONTOURS_METERS: Readonly<Style> = {
       layerName: 'contour',
       minZoom: 14,
       maxZoom: 31,
-      lineTexts: [],
+      lineTexts: [GLACIER_INDEX_CONTOUR_LABEL, INDEX_CONTOUR_LABEL],
       lines: [
         {
           filters: [{
@@ -308,8 +344,8 @@ export const CONTOURS_METERS: Readonly<Style> = {
             key: 'glacier',
             value: 1,
           }],
-          fill: 0x048AB960 as RgbaU32,
-          stroke: 0x048AB960 as RgbaU32,
+          fill: 0x048AB9A0 as RgbaU32,
+          stroke: 0x048AB9A0 as RgbaU32,
           radius: 0.75,
           stipple: false,
           z: Z_OVERLAY_TERRAIN,
@@ -320,8 +356,8 @@ export const CONTOURS_METERS: Readonly<Style> = {
             key: 'nth_line',
             value: 5,
           }],
-          fill: 0x8A6E4B50 as RgbaU32,
-          stroke: 0x8A6E4B50 as RgbaU32,
+          fill: 0x8A6E4B90 as RgbaU32,
+          stroke: 0x8A6E4B90 as RgbaU32,
           radius: 0.75,
           stipple: false,
           z: Z_OVERLAY_TERRAIN,

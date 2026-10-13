@@ -1,4 +1,4 @@
-import { lineAnchors, maxTurnWithin, mergeLines, polylineLength, smoothLine } from './line_labels';
+import { lineAnchors, maxTurnWithin, mergeLines, polylineLength, smoothLine, uphillSide } from './line_labels';
 
 test('merges pieces that share endpoints in either direction', () => {
   const merged = mergeLines([
@@ -69,4 +69,21 @@ test('smoothing flattens jitter', () => {
 
   expect(maxTurnWithin(zigzag, /* window= */ 1)).toBeGreaterThan(Math.PI / 4);
   expect(maxTurnWithin(smoothed, /* window= */ 1)).toBeLessThan(Math.PI / 16);
+});
+
+test('finds the side that rises from the nearest crossing contour', () => {
+  // Contours run east at y = -1, 0, and 2, climbing to the north
+  const contours = [
+    {height: 100, geometry: [-5, -1, 5, -1], starts: [0]},
+    {height: 200, geometry: [-5, 0, 5, 0], starts: [0]},
+    {height: 300, geometry: [-5, 2, 5, 2], starts: [0]},
+  ];
+
+  // Heading east, north is on the left
+  expect(uphillSide(0, 0, 0, 200, contours)).toBe(1);
+  // Heading west, north is on the right
+  expect(uphillSide(0, 0, Math.PI, 200, contours)).toBe(-1);
+  // Only the 200 line crosses, to the north on the left, and it's higher
+  expect(uphillSide(0, -1, 0, 100, contours.slice(1, 2))).toBe(1);
+  expect(uphillSide(0, 0, 0, 200, [])).toBe(0);
 });

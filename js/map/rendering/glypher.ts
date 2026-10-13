@@ -335,7 +335,8 @@ class Glypher {
       pixelsPerWorld: number,
       scale: number,
       glyphs: Glyph[],
-      placements: number[]): boolean {
+      placements: number[],
+      keepDirection: boolean = false): boolean {
     glyphs.length = 0;
     let regenerate = false;
     let widthPx = 0;
@@ -375,7 +376,7 @@ class Glypher {
     // way while the stretch under the text points the other.
     const heading =
         layOutAlong(glyphs, path, length, width, pixelsPerWorld, scale, true, placements);
-    if (heading < 0) {
+    if (heading < 0 && !keepDirection) {
       layOutAlong(glyphs, path, length, width, pixelsPerWorld, scale, false, placements);
     }
 
