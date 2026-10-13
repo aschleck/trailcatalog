@@ -28,7 +28,8 @@ import { Elevations } from 'js/map/workers/elevations';
 import { Style } from 'js/map/workers/mbtile_loader';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { Stream } from 'js/map/workers/s2_data_fetcher';
-import { Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
+import { BASE_ZOOM as TERRARIUM_BASE_ZOOM, TILE_URL as TERRARIUM_TILE_URL } from 'js/map/workers/terrarium';
+import { Z_BASE_ELEVATION, Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_BOTTOM, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
   Collection,
@@ -821,6 +822,24 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             /* minZoom= */ 0,
             /* maxZoom= */ 12,
             this.mapController.renderer,
+        ),
+        controls: [],
+        values: {},
+      }, {
+        kind: 'layer',
+        id: 'topography/elevations',
+        name: 'Elevation colors',
+        enabled: false,
+        layer: new RasterTileLayer(
+            [MAPTERHORN_COPYRIGHT],
+            TERRARIUM_TILE_URL,
+            /* tint= */ 0xFFFFFFFF as RgbaU32,
+            /* z= */ Z_BASE_ELEVATION,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            /* maxZoom= */ TERRARIUM_BASE_ZOOM,
+            this.mapController.renderer,
+            'elevation',
         ),
         controls: [],
         values: {},

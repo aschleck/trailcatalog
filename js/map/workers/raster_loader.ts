@@ -2,9 +2,11 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { TileId } from '../common/types';
 
-// How to draw a tile. 'image' draws it as is, and the others color one of the values in a SNODAS
-// tile.
-export type Decode = 'image'|'snow_depth'|'snow_water';
+import { decodeTerrarium } from './terrarium';
+
+// How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height, and the
+// snow kinds color one of the values in a SNODAS tile.
+export type Decode = 'elevation'|'image'|'snow_depth'|'snow_water';
 
 interface InitializeRequest {
   kind: 'ir';
@@ -40,6 +42,13 @@ const SNOW_COLORS = [
 const SNOW_DEPTH_CM_STOPS = [1, 5, 15, 30, 60, 100, 150, 200, 300];
 const SNOW_WATER_MM_STOPS = SNOW_DEPTH_CM_STOPS.map(cm => 3 * cm);
 
+// Green lowlands through tan and brown to white peaks, interpolated between stops
+const ELEVATION_METER_STOPS = [0, 100, 300, 600, 1000, 1500, 2200, 3000, 4000, 4800, 5600];
+const ELEVATION_COLORS = [
+  0x377A26, 0x4A9A3A, 0x92C672, 0xEEE6B0, 0xE3C58A, 0xC98A4C, 0xA85A28, 0x8C3A20, 0x7A2A28, 0xB4ACAC,
+  0xFFFFFF,
+];
+
 class RasterLoader {
 
   constructor(
@@ -52,7 +61,9 @@ class RasterLoader {
     const bitmap =
         this.decode === 'image'
             ? createImageBitmap(blob)
-            : decodeSnow(blob, this.decode === 'snow_depth');
+            : this.decode === 'elevation'
+                ? decodeElevation(blob)
+                : decodeSnow(blob, this.decode === 'snow_depth');
     bitmap
         .then(bitmap => {
           this.postMessage({
@@ -95,6 +106,36 @@ async function decodeSnow(blob: Blob, depth: boolean): Promise<ImageBitmap> {
     rgba[i + 1] = (color >>> 8) & 0xFF;
     rgba[i + 2] = color & 0xFF;
     rgba[i + 3] = SNOW_ALPHA;
+  }
+  return createImageBitmap(pixels);
+}
+
+// Mapterhorn has no bathymetry and stores the sea as 0 m, but so does land on the 0 m contour after
+// its quantization, so we color the sea as lowland and leave it to the basemap's water to cover.
+async function decodeElevation(blob: Blob): Promise<ImageBitmap> {
+  const meters = await decodeTerrarium(blob);
+  const size = Math.sqrt(meters.length);
+  const pixels = new ImageData(size, size);
+  const rgba = pixels.data;
+  const last = ELEVATION_METER_STOPS.length - 1;
+  for (let i = 0; i < meters.length; ++i) {
+    const m = meters[i];
+    let band = 0;
+    while (band + 1 < last && ELEVATION_METER_STOPS[band + 1] <= m) {
+      band += 1;
+    }
+    const lo = ELEVATION_METER_STOPS[band];
+    const hi = ELEVATION_METER_STOPS[band + 1];
+    const t = Math.min(Math.max((m - lo) / (hi - lo), 0), 1);
+    const from = ELEVATION_COLORS[band];
+    const to = ELEVATION_COLORS[band + 1];
+    for (let c = 0; c < 3; ++c) {
+      const shift = 16 - 8 * c;
+      const a = (from >>> shift) & 0xFF;
+      const b = (to >>> shift) & 0xFF;
+      rgba[4 * i + c] = a + (b - a) * t;
+    }
+    rgba[4 * i + 3] = 0xFF;
   }
   return createImageBitmap(pixels);
 }

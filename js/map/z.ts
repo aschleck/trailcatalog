@@ -1,5 +1,7 @@
 export const Z_BOTTOM = 0;
 export const Z_BASE_TERRAIN = 1;
+// Over the landcover fills, which stack thick enough to hide anything under them, and under water
+export const Z_BASE_ELEVATION = Z_BASE_TERRAIN + 0.9;
 export const Z_BASE_WATER = 2;
 export const Z_BASE_SATELLITE = 3;
 export const Z_BASE_SLOPE = 4;
