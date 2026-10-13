@@ -8,6 +8,9 @@ CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     gcloud auth print-access-token \
     | podman login -u oauth2accesstoken --password-stdin us-west1-docker.pkg.dev
 
+# The secrets reach the container as flags on the podman command line, so xtrace stays off
+# through it or else it prints them into the journal.
+set +x
 secrets="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     gcloud \
     secrets \

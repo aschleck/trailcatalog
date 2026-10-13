@@ -10,6 +10,7 @@ registry_login() {
       | podman login -u oauth2accesstoken --password-stdin us-west1-docker.pkg.dev
 }
 
+set +x
 pg_pwd="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     gcloud \
     secrets \
@@ -20,6 +21,8 @@ pg_pwd="$(CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/home/april/frontend_key.json \
     --secret db-authorization \
     --quiet \
     | sed 's/^[^:]*://' | tail -n 1)"
+export DATABASE_USERNAME_PASSWORD="trailcatalog:${pg_pwd}"
+set -x
 
 # The planet is kept between runs and brought forward with the daily diffs. Each update renames over
 # it, so its mtime is the last successful update, and planet_update refuses a file more than 90
@@ -69,7 +72,7 @@ podman run \
     --rm \
     --cpu-shares 64 \
     --env DATABASE_URL="postgresql://localhost/trailcatalog" \
-    --env DATABASE_USERNAME_PASSWORD="trailcatalog:${pg_pwd}" \
+    --env DATABASE_USERNAME_PASSWORD \
     --env JAVA_TOOL_OPTIONS="-XX:InitialHeapSize=24g -XX:MaxHeapSize=40g -XX:MaxMetaspaceSize=1g -XX:StartFlightRecording=filename=/tmp/import.jfr,settings=profile,dumponexit=true,maxsize=4g" \
     --mount type=bind,source=/mnt/horse,target=/tmp \
     --network host \
