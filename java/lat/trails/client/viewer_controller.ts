@@ -52,6 +52,7 @@ import {
   BASEMAP_LABEL_KINDS,
   basemapOf,
   EUROPEAN_DESIGNATED_AREAS,
+  JAPAN_NATIONAL_PARKS,
   NATURE_PROTOMAPS,
   NODE_KINDS,
   OSM_WAYS,
@@ -126,6 +127,7 @@ import { PointCollectionLayer } from './point_collection_layer';
 import { PointToolLayer } from './point_tool_layer';
 import {
   EUROPEAN_DESIGNATED_AREAS_SCHEMA,
+  JAPAN_NATIONAL_PARKS_SCHEMA,
   OSM_NODES_SCHEMA,
   OSM_WAYS_SCHEMA,
   PUBLIC_LAND_SCHEMA,
@@ -885,6 +887,48 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               'fr/orthophotos', 'Orthophotos', 'BD ORTHO orthophotos', 'ORTHOIMAGERY.ORTHOPHOTOS',
               'image/jpeg'),
         ],
+      }, {
+        kind: 'group',
+        id: 'jp',
+        name: 'Japan',
+        enabled: true,
+        children: [{
+          kind: 'layer',
+          id: 'jp/national_parks',
+          name: 'National parks',
+          enabled: false,
+          schema: JAPAN_NATIONAL_PARKS_SCHEMA,
+          layer: new CollectionLayer(
+              [{
+                long: 'National park zones from the Ministry of the Environment',
+                short: 'MOE',
+                url: 'https://www.biodic.go.jp/nps_nwp_nca_cz.html',
+              }],
+              '/api/collections/4e9dde6b-0ccb-4287-adf6-c179f7a08c95',
+              JAPAN_NATIONAL_PARKS,
+              // Same snapping and tiling as the public land layer, see there for why
+              [
+                {minZoom: 0, snap: 11},
+                {minZoom: 7, snap: 14},
+                {minZoom: 10, snap: undefined},
+              ],
+              [
+                {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
+                {
+                  minZoom: 7,
+                  maxZoom: undefined,
+                  indexBottom: 6,
+                  fromLevel: 11,
+                  toLevel: undefined,
+                },
+              ],
+              locations,
+              this.mapController.camera,
+              this.mapController.renderer,
+          ),
+          controls: [],
+          values: {},
+        }],
       }],
     }, {
       kind: 'group',

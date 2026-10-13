@@ -564,6 +564,30 @@ export const EUROPEAN_DESIGNATED_AREAS: Style = {
   ],
 };
 
+// The zones mapped onto EUROPEAN_DESIGNATED_AREAS' IUCN colors by how strictly they're regulated.
+// See JapanNationalParks.kt.
+export const JAPAN_NATIONAL_PARKS: Style = {
+  lines: [],
+  points: [],
+  polygons: [
+    ...['Special protection zone', 'Class I special zone'].map(zone => ({
+      filters: [{match: 'string_equals' as const, key: 'zone', value: zone}],
+      fill: 0x00A04088 as RgbaU32,
+      z: Z_USER_DATA,
+    })),
+    ...['Class II special zone', 'Class III special zone', 'Marine park zone'].map(zone => ({
+      filters: [{match: 'string_equals' as const, key: 'zone', value: zone}],
+      fill: 0x40C0A088 as RgbaU32,
+      z: Z_USER_DATA,
+    })),
+    {
+      filters: [{match: 'always'}],
+      fill: 0xA0C04088 as RgbaU32,
+      z: Z_USER_DATA,
+    },
+  ],
+};
+
 export const PUBLIC_LAND: Style = {
   lines: [],
   points: [],

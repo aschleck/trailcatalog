@@ -18,6 +18,12 @@ java_binary(
 )
 
 java_binary(
+    name = "japan_national_parks",
+    main_class = "lat.trails.importers.JapanNationalParksKt",
+    runtime_deps = [":importers"],
+)
+
+java_binary(
     name = "public_access",
     main_class = "lat.trails.importers.PublicAccessKt",
     runtime_deps = [":importers"],

@@ -48,6 +48,15 @@ export const EUROPEAN_DESIGNATED_AREAS_SCHEMA: Schema = {
   ],
 };
 
+// See JapanNationalParks.kt
+export const JAPAN_NATIONAL_PARKS_SCHEMA: Schema = {
+  title: {kind: 'text', key: 'name'},
+  description: undefined,
+  fields: [
+    {key: 'zone', label: 'Zone'},
+  ],
+};
+
 // See PublicAccess.kt, which writes owner as a label and access as PAD-US's code.
 export const PUBLIC_LAND_SCHEMA: Schema = {
   title: {kind: 'text', key: 'name'},
