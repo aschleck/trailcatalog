@@ -7,7 +7,7 @@ import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
 import { projectLatLngRect } from '../camera';
 import { tilesIntersect } from '../common/math';
-import { TileId } from '../common/types';
+import { Rect, TileId } from '../common/types';
 
 // pi times the WGS84 semi-major axis of 6378137 m
 const WEB_MERCATOR_HALF_WORLD_METERS = 20037508.342789244;
@@ -124,16 +124,7 @@ class XyzDataFetcher {
     const viewport = request.viewport;
     this.lastViewport = viewport;
 
-    const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
-    const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
-    const bounds = S2LatLngRect.fromPointPair(low, high);
-    let projected = projectLatLngRect(bounds);
-    if (projected.low[0] > projected.high[0]) {
-      projected = {
-        low: [projected.high[0], projected.low[1]],
-        high: [projected.low[0], projected.high[1]],
-      };
-    }
+    let projected = projectViewport(viewport);
 
     const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
     if (tz < this.minZoom) {
@@ -242,16 +233,7 @@ class XyzDataFetcher {
   private cull(): void {
     const viewport = checkExists(this.lastViewport);
 
-    const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
-    const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
-    const bounds = S2LatLngRect.fromPointPair(low, high);
-    let projected = projectLatLngRect(bounds);
-    if (projected.low[0] > projected.high[0]) {
-      projected = {
-        low: [projected.high[0], projected.low[1]],
-        high: [projected.low[0], projected.high[1]],
-      };
-    }
+    let projected = projectViewport(viewport);
 
     const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
     const worldSize = Math.pow(2, tz);
@@ -382,6 +364,24 @@ self.onmessage = e => {
   start(request);
 };
 
+function projectViewport(viewport: Viewport): Rect {
+  const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);
+  const high = S2LatLng.fromRadians(viewport.lat[1], viewport.lng[1]);
+  const projected = projectLatLngRect(S2LatLngRect.fromPointPair(low, high));
+  // fromPointPair takes -pi and pi as the same point, so a viewport around a pole would span no
+  // longitude at all.
+  if (viewport.lng[1] - viewport.lng[0] >= 2 * Math.PI) {
+    return {low: [-1, projected.low[1]], high: [1, projected.high[1]]};
+  } else if (projected.low[0] > projected.high[0]) {
+    return {
+      low: [projected.high[0], projected.low[1]],
+      high: [projected.low[0], projected.high[1]],
+    };
+  } else {
+    return projected;
+  }
+}
+
 function createTileHashMap<V>(): HashMap<TileId, V> {
   return new HashMap(id => `${id.x},${id.y},${id.zoom}`);
 }
@@ -392,11 +392,14 @@ function createTileHashSet(): HashSet<TileId> {
 
 // Returns true if the tile's geographic patch intersects the camera's
 // visible cap. The cap is the set of unit-sphere points P with
-// dot(P, camDir) >= cosThetaT. We maximize dot(P, camDir) over the patch by
-// clamping (camLat, camLng) into the patch's lat/lng box: the max of the
-// dot product on a lat/lng rectangle is attained at that clamped point,
-// since the dot product is concave in each angular axis with the unique
-// unconstrained maximum at P = camDir.
+// dot(P, camDir) >= cosThetaT, so we maximize dot(P, camDir) over the patch.
+//
+// dot(P, camDir) = cos(lat) cos(camLat) cos(dLng) + sin(lat) sin(camLat).
+// cos(lat) cos(camLat) is never negative, so the dot only grows as dLng
+// shrinks and the best longitude is the patch's nearest to camLng at any
+// latitude. With dLng fixed, the dot is a sinusoid in lat peaking at
+// atan2(sin(camLat), cos(camLat) cos(dLng)), which is camLat only when dLng is
+// 0. Clamping camLat instead picks the far edge of a tile across the pole.
 function tileInCone(id: TileId, worldSize: number, cone?: Viewport['cone']): boolean {
   if (!cone) {
     return true;
@@ -413,19 +416,17 @@ function tileInCone(id: TileId, worldSize: number, cone?: Viewport['cone']): boo
   const lat1 = Math.asin(Math.tanh(myHigh * PI));
 
   const camLat = Math.asin(Math.max(-1, Math.min(1, cone.camDir[1])));
-  let camLng = Math.atan2(cone.camDir[2], cone.camDir[0]);
-  // Wrap camLng into [lng0 - PI, lng0 + PI] so the clamp picks the nearest
-  // lng on the +/-PI seam correctly.
-  while (camLng < lng0 - PI) camLng += 2 * PI;
-  while (camLng > lng0 + PI) camLng -= 2 * PI;
+  const camLng = Math.atan2(cone.camDir[2], cone.camDir[0]);
+  // in [0, 2pi), how far east of the tile's west edge the camera sits
+  const east = ((camLng - lng0) % (2 * PI) + 2 * PI) % (2 * PI);
+  const dLng = east <= lng1 - lng0 ? 0 : Math.min(east - (lng1 - lng0), 2 * PI - east);
 
-  const clampedLat = Math.max(lat0, Math.min(lat1, camLat));
-  const clampedLng = Math.max(lng0, Math.min(lng1, camLng));
-  const cosLat = Math.cos(clampedLat);
-  const px = cosLat * Math.cos(clampedLng);
-  const py = Math.sin(clampedLat);
-  const pz = cosLat * Math.sin(clampedLng);
-  const d = px * cone.camDir[0] + py * cone.camDir[1] + pz * cone.camDir[2];
+  const dot = (lat: number) =>
+      Math.cos(lat) * Math.cos(camLat) * Math.cos(dLng) + Math.sin(lat) * Math.sin(camLat);
+  const bestLat = Math.atan2(Math.sin(camLat), Math.cos(camLat) * Math.cos(dLng));
+  // The peak can sit past a pole, where the nearer edge around the circle isn't the one a clamp
+  // picks, so outside the patch we try both edges.
+  const d = lat0 <= bestLat && bestLat <= lat1 ? dot(bestLat) : Math.max(dot(lat0), dot(lat1));
   return d >= cone.cosThetaT;
 }
 

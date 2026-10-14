@@ -347,13 +347,17 @@ export class Camera {
     }
 
     if (coversPole || sinThetaT >= cosLatC) {
-      minLngOff = -Math.PI;
-      maxLngOff = Math.PI;
       if (this._center.latRadians() >= 0) {
         maxLat = MERCATOR_MAX_LAT_RADIANS;
       } else {
         minLat = -MERCATOR_MAX_LAT_RADIANS;
       }
+      // S2 takes lngC - pi and lngC + pi as the same point and fromPointPair would span nothing, so
+      // we widen to every longitude this way instead.
+      return S2LatLngRect.fromPointPair(
+          S2LatLng.fromRadians(Math.max(-MERCATOR_MAX_LAT_RADIANS, minLat), lngC),
+          S2LatLng.fromRadians(Math.min(MERCATOR_MAX_LAT_RADIANS, maxLat), lngC))
+          .expanded(S2LatLng.fromRadians(0, Math.PI));
     }
 
     return S2LatLngRect.fromPointPair(
