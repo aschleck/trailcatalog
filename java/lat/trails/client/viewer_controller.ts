@@ -384,7 +384,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         self.then(response => {
           if (response.user) {
             login.resolve();
-            this.saves.flush();
+            // Now that the user is logged in, they may have edit rights to the open collection. So
+            // reload if they're currently in a read-only mode.
+            const open = this.state.collection;
+            if (open && this.store.isReadOnly()) {
+              this.loadCollection(open.id, /* fit= */ false);
+            } else {
+              this.saves.flush();
+            }
           } else {
             login.reject(new Error('Nobody signed in'));
           }
