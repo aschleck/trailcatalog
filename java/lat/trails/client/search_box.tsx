@@ -104,6 +104,8 @@ export function SearchBox({state}: {state: SearchState}) {
           className="bg-gray-800 px-2 py-1 rounded"
           forceValue={true}
           placeholder="Search places, trails, or coordinates"
+          // The default size of 20 sets a min-content width that pushes Log in off narrow screens.
+          size={1}
           type="search"
           value={state.query}
           unboundEvents={{

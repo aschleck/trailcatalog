@@ -25,7 +25,11 @@ export const MENU_CLASSES: MenuClassNames = {
 //
 // The bar sits above the overlay an open menu covers the page with, or else the overlay swallows
 // the hover that switches to another menu.
-export function Menubar({children, user}: {
+//
+// The sides grow equally from zero so center sits in the middle of the bar, not in the middle of
+// whatever the menus leave over.
+export function Menubar({center, children, user}: {
+  center?: VElementOrPrimitive;
   children?: VElementOrPrimitive|VElementOrPrimitive[];
   user: User|undefined;
 }) {
@@ -34,37 +38,45 @@ export function Menubar({children, user}: {
         className="bg-gray-900 flex gap-1 items-center px-2 py-1 relative text-white z-20"
         unboundEvents={{click: 'menubarClicked'}}
     >
-      <a className="no-underline px-2 py-1" href="/">
-        <img alt="trails.lat" className="h-8" src="/static/cat_moon.webp" />
-      </a>
-      {children ?? []}
-      <div className="grow" />
-      {user
-          ? <div
-                className="
-                    cursor-pointer
-                    hover:bg-gray-800
-                    max-w-64
-                    px-2
-                    py-1
-                    rounded
-                    select-none
-                    truncate
-                "
-                data={{menu: 'user'}}
-                unboundEvents={{click: 'userMenuClicked', pointerenter: 'menubarMenuEntered'}}
-            >
-              {user.pictureUrl
-                  ? <img
-                        alt={user.displayName}
-                        className="h-6 rounded-full w-6"
-                        src={user.pictureUrl}
-                    />
-                  : user.displayName
-              }
-            </div>
-          : <MenubarItem label="Log in" onClick="loginClicked" />
+      <div className="flex flex-1 gap-1 items-center">
+        <a className="hidden no-underline px-2 py-1 shrink-0 sm:block" href="/">
+          <img alt="trails.lat" className="h-8" src="/static/cat_moon.webp" />
+        </a>
+        {children ?? []}
+      </div>
+      {center
+          ? <div className="flex flex-1 justify-center min-w-0 px-1 sm:px-2">{center}</div>
+          : ''
       }
+      <div className="flex flex-1 justify-end">
+        {user
+            ? <div
+                  className="
+                      cursor-pointer
+                      hover:bg-gray-800
+                      max-w-64
+                      px-2
+                      py-1
+                      rounded
+                      select-none
+                      shrink-0
+                      truncate
+                  "
+                  data={{menu: 'user'}}
+                  unboundEvents={{click: 'userMenuClicked', pointerenter: 'menubarMenuEntered'}}
+              >
+                {user.pictureUrl
+                    ? <img
+                          alt={user.displayName}
+                          className="h-6 rounded-full w-6"
+                          src={user.pictureUrl}
+                      />
+                    : user.displayName
+                }
+              </div>
+            : <MenubarItem label="Log in" onClick="loginClicked" />
+        }
+      </div>
     </div>
   </>;
 }
@@ -78,7 +90,7 @@ export function MenubarItem({label, menu, onClick}: {
 }) {
   return <>
     <div
-        className="cursor-pointer hover:bg-gray-800 px-2 py-1 rounded select-none"
+        className="cursor-pointer hover:bg-gray-800 px-2 py-1 rounded select-none shrink-0"
         data={menu ? {menu} : {}}
         unboundEvents={
           menu ? {click: onClick, pointerenter: 'menubarMenuEntered'} : {click: onClick}

@@ -24,3 +24,7 @@ a:not(.no-underline):hover {
   @apply underline;
 }
 
+
+input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
+}

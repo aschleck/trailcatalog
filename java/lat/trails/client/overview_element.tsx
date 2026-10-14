@@ -140,13 +140,13 @@ export function OverviewElement(
         })}
         className="flex flex-col h-full relative"
     >
-      <Menubar user={state.self.finished ? state.self.value().user : undefined}>
+      <Menubar
+          center={<SearchBox state={state.search} />}
+          user={state.self.finished ? state.self.value().user : undefined}
+      >
         <MenubarItem label="File" menu="file" onClick="fileMenuClicked" />
         <MenubarItem label="Edit" menu="edit" onClick="editMenuClicked" />
         <MenubarItem label="View" menu="view" onClick="viewMenuClicked" />
-        <div className="flex grow justify-center px-2">
-          <SearchBox state={state.search} />
-        </div>
       </Menubar>
       <div className="flex flex-col grow min-h-0 md:flex-row">
         <div className="grow min-h-0 min-w-0 relative">
