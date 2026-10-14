@@ -3,7 +3,7 @@ import { RgbaU32 } from 'js/map/common/types';
 import { NATURE } from 'js/map/layers/mbtile_layer';
 import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { Style as MbtileStyle } from 'js/map/workers/mbtile_loader';
-import { Z_OVERLAY_TRANSPORTATION, Z_USER_DATA } from 'js/map/z';
+import { Z_OVERLAY_TRANSPORTATION } from 'js/map/z';
 
 import { LineStyle, Style } from './workers/collection_loader';
 
@@ -534,83 +534,3 @@ export function basemapOf(boundaries: boolean, labeled: ReadonlySet<string>): Mb
   }
   return {layers};
 }
-
-// Wilderness and national parks in green, species and landscape protection lighter, and everything
-// without an IUCN category in gray. See EuropeanDesignatedAreas.kt.
-export const EUROPEAN_DESIGNATED_AREAS: Style = {
-  lines: [],
-  points: [],
-  polygons: [
-    ...['Ia', 'Ib', 'II'].map(iucn => ({
-      filters: [{match: 'string_equals' as const, key: 'iucn', value: iucn}],
-      fill: 0x00A04088 as RgbaU32,
-      z: Z_USER_DATA,
-    })),
-    ...['III', 'IV'].map(iucn => ({
-      filters: [{match: 'string_equals' as const, key: 'iucn', value: iucn}],
-      fill: 0x40C0A088 as RgbaU32,
-      z: Z_USER_DATA,
-    })),
-    ...['V', 'VI'].map(iucn => ({
-      filters: [{match: 'string_equals' as const, key: 'iucn', value: iucn}],
-      fill: 0xA0C04088 as RgbaU32,
-      z: Z_USER_DATA,
-    })),
-    {
-      filters: [{match: 'always'}],
-      fill: 0x80808066 as RgbaU32,
-      z: Z_USER_DATA,
-    },
-  ],
-};
-
-// The zones mapped onto EUROPEAN_DESIGNATED_AREAS' IUCN colors by how strictly they're regulated.
-// See JapanNationalParks.kt.
-export const JAPAN_NATIONAL_PARKS: Style = {
-  lines: [],
-  points: [],
-  polygons: [
-    ...['Special protection zone', 'Class I special zone'].map(zone => ({
-      filters: [{match: 'string_equals' as const, key: 'zone', value: zone}],
-      fill: 0x00A04088 as RgbaU32,
-      z: Z_USER_DATA,
-    })),
-    ...['Class II special zone', 'Class III special zone', 'Marine park zone'].map(zone => ({
-      filters: [{match: 'string_equals' as const, key: 'zone', value: zone}],
-      fill: 0x40C0A088 as RgbaU32,
-      z: Z_USER_DATA,
-    })),
-    {
-      filters: [{match: 'always'}],
-      fill: 0xA0C04088 as RgbaU32,
-      z: Z_USER_DATA,
-    },
-  ],
-};
-
-export const PUBLIC_LAND: Style = {
-  lines: [],
-  points: [],
-  polygons: [
-    {
-      filters: [{match: 'string_equals', key: 'owner', value: 'BLM/BR'}],
-      fill: 0xFFFF0088 as RgbaU32,
-      z: Z_USER_DATA,
-    },
-    {
-      filters: [{match: 'string_equals', key: 'owner', value: 'NPS'}],
-      fill: 0x00FF0088 as RgbaU32,
-      z: Z_USER_DATA,
-    },
-    {
-      filters: [{match: 'string_equals', key: 'owner', value: 'USFS'}],
-      fill: 0x0000FF88 as RgbaU32,
-      z: Z_USER_DATA,
-    },
-    {
-      filters: [{match: 'always'}],
-      fill: 0xFF000088 as RgbaU32,
-      z: Z_USER_DATA,
-    },
-  ],
-};

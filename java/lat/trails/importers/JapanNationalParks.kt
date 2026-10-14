@@ -22,6 +22,24 @@ private val ZONES =
         "海域公園地区" to "Marine park zone",
     )
 
+// The zones in the European designated areas' IUCN colors by how strictly they're regulated, see
+// EuropeanDesignatedAreas.kt
+private val PRESENTATION =
+    mapOf(
+        "title" to "name",
+        "fields" to listOf(field("zone", "Zone")),
+        "polygons" to
+            listOf(
+                "Special protection zone" to "#00A04088",
+                "Class I special zone" to "#00A04088",
+                "Class II special zone" to "#40C0A088",
+                "Class III special zone" to "#40C0A088",
+                "Marine park zone" to "#40C0A088",
+            ).map { (zone, fill) ->
+              mapOf("filters" to listOf(stringEquals("zone", zone)), "fill" to fill)
+            } + listOf(mapOf("filters" to listOf(ALWAYS), "fill" to "#A0C04088")),
+    )
+
 // Imports the Ministry of the Environment's national park zones, converted from the JGD2000
 // shapefile to a GeoPackage. JGD2000 is within a meter of WGS84, so we don't reproject.
 // https://www.biodic.go.jp/nps_nwp_nca_cz.html
@@ -54,6 +72,6 @@ fun main(args: Array<String>) {
   logger.info("Converted {} zones", polygons.size)
 
   synchronized (polygons) {
-    dumpPolygons("Japanese national parks 2025", polygons)
+    dumpPolygons("Japanese national parks 2025", PRESENTATION, polygons)
   }
 }

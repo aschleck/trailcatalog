@@ -24,56 +24,6 @@ export const USER_COLLECTION_SCHEMA: Schema = {
   fields: [],
 };
 
-// See EuropeanDesignatedAreas.kt
-export const EUROPEAN_DESIGNATED_AREAS_SCHEMA: Schema = {
-  title: {kind: 'text', key: 'name'},
-  description: undefined,
-  fields: [
-    {key: 'designation', label: 'Designation'},
-    {
-      key: 'iucn',
-      label: 'IUCN category',
-      values: {
-        'Ia': 'Ia Strict nature reserve',
-        'Ib': 'Ib Wilderness area',
-        'II': 'II National park',
-        'III': 'III Natural monument',
-        'IV': 'IV Habitat or species management area',
-        'V': 'V Protected landscape',
-        'VI': 'VI Protected area with sustainable use',
-      },
-    },
-    {key: 'designated', label: 'Designated'},
-    {key: 'country', label: 'Country'},
-  ],
-};
-
-// See JapanNationalParks.kt
-export const JAPAN_NATIONAL_PARKS_SCHEMA: Schema = {
-  title: {kind: 'text', key: 'name'},
-  description: undefined,
-  fields: [
-    {key: 'zone', label: 'Zone'},
-  ],
-};
-
-// See PublicAccess.kt, which writes owner as a label and access as PAD-US's code.
-export const PUBLIC_LAND_SCHEMA: Schema = {
-  title: {kind: 'text', key: 'name'},
-  description: undefined,
-  fields: [
-    {key: 'owner', label: 'Owner'},
-    {
-      key: 'access',
-      label: 'Access',
-      values: {
-        'OA': 'Open',
-        'RA': 'Restricted',
-      },
-    },
-  ],
-};
-
 // The type key is a WayCategory, which the way's own tags say better.
 export const OSM_WAYS_SCHEMA: Schema = {
   title: {kind: 'osm_way', key: 'id'},

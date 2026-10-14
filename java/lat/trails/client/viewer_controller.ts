@@ -51,13 +51,10 @@ import { CollectionLayer } from './collection_layer';
 import {
   BASEMAP_LABEL_KINDS,
   basemapOf,
-  EUROPEAN_DESIGNATED_AREAS,
-  JAPAN_NATIONAL_PARKS,
   NATURE_PROTOMAPS,
   NODE_KINDS,
   OSM_WAYS,
   osmWaysOf,
-  PUBLIC_LAND,
   WAY_KINDS,
 } from './styles';
 import { invalidateCurrentUser, requestData } from './data';
@@ -126,11 +123,8 @@ import { GradeLimitState, MeasureState } from './measure_panel';
 import { PointCollectionLayer } from './point_collection_layer';
 import { PointToolLayer } from './point_tool_layer';
 import {
-  EUROPEAN_DESIGNATED_AREAS_SCHEMA,
-  JAPAN_NATIONAL_PARKS_SCHEMA,
   OSM_NODES_SCHEMA,
   OSM_WAYS_SCHEMA,
-  PUBLIC_LAND_SCHEMA,
   Schema,
 } from './schema';
 import {
@@ -699,7 +693,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           id: 'us/public_land',
           name: 'Public land',
           enabled: false,
-          schema: PUBLIC_LAND_SCHEMA,
           layer: new CollectionLayer(
               [{
                 long:
@@ -710,7 +703,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 publicDomain: true,
               }],
               '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
-              PUBLIC_LAND,
+              /* style= */ undefined,
               // Snapping to a level whose cells are a few pixels across is invisible and saves most
               // of the geometry, but past zoom 10 we want the real boundaries.
               [
@@ -816,7 +809,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             id: 'europe/protected_areas',
             name: 'Protected areas',
             enabled: false,
-            schema: EUROPEAN_DESIGNATED_AREAS_SCHEMA,
             layer: new CollectionLayer(
                 [{
                   long: 'Nationally designated areas 2026 from the European Environment Agency',
@@ -824,7 +816,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                   url: 'https://doi.org/10.2909/028003e7-7585-4d69-92fc-7f81e0cc2340',
                 }],
                 '/api/collections/26f6d026-6b2b-47bc-b2d6-1454061b996d',
-                EUROPEAN_DESIGNATED_AREAS,
+                /* style= */ undefined,
                 // Same snapping and tiling as the public land layer, see there for why
                 [
                   {minZoom: 0, snap: 11},
@@ -897,7 +889,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           id: 'jp/national_parks',
           name: 'National parks',
           enabled: false,
-          schema: JAPAN_NATIONAL_PARKS_SCHEMA,
           layer: new CollectionLayer(
               [{
                 long: 'National park zones from the Ministry of the Environment',
@@ -905,7 +896,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 url: 'https://www.biodic.go.jp/nps_nwp_nca_cz.html',
               }],
               '/api/collections/4e9dde6b-0ccb-4287-adf6-c179f7a08c95',
-              JAPAN_NATIONAL_PARKS,
+              /* style= */ undefined,
               // Same snapping and tiling as the public land layer, see there for why
               [
                 {minZoom: 0, snap: 11},

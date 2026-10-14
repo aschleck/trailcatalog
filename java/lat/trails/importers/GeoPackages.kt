@@ -47,8 +47,16 @@ fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform?): S2Poly
   })
 }
 
-/** Inserts a new collection named name holding polygons, each with its data. */
-fun dumpPolygons(name: String, polygons: List<Pair<Map<String, String>, S2Polygon>>) {
+/**
+ * Inserts a new collection named name holding polygons, each with its data. presentation is the
+ * JSON for collections.presentation, see collection_layer.ts#Presentation.
+ */
+fun dumpPolygons(
+    name: String,
+    presentation: Map<String, Any>,
+    polygons: List<Pair<Map<String, String>, S2Polygon>>,
+) {
+  val mapper = ObjectMapper()
   createBaseConnection().use { hikari ->
     hikari.connection.use { connection ->
       // One transaction so a failed copy doesn't leave an empty collection behind
@@ -56,14 +64,15 @@ fun dumpPolygons(name: String, polygons: List<Pair<Map<String, String>, S2Polygo
       val collection =
           connection
               .prepareStatement(
-                  "INSERT INTO collections (id, creator, name, covering) "
-                      + "VALUES (COALESCE(?, gen_random_uuid()), ?, ?, ?) "
+                  "INSERT INTO collections (id, creator, name, covering, presentation) "
+                      + "VALUES (COALESCE(?, gen_random_uuid()), ?, ?, ?, ?::jsonb) "
                       + "RETURNING id")
               .apply {
                 setObject(1, collectionId.value?.let { UUID.fromString(it) })
                 setObject(2, creatorId.value?.let { UUID.fromString(it) } ?: UUID(0, 0))
                 setString(3, name)
                 setBytes(4, encodeCovering(polygons.map { polygonToCell(it.second) }))
+                setString(5, mapper.writeValueAsString(presentation))
               }
               .executeQuery()
               .use {
@@ -71,7 +80,6 @@ fun dumpPolygons(name: String, polygons: List<Pair<Map<String, String>, S2Polygo
                 it.getString(1)
               }
 
-      val mapper = ObjectMapper()
       val stream = StringifyingInputStream(polygons.iterator()) { (data, polygon), csv ->
         // id,collection,cell,data,s2_polygon
         csv.append(UUID.randomUUID())
