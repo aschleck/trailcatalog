@@ -1,8 +1,7 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
-import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
-import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
+import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 
 import { SphericalCone } from '../camera';
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
@@ -12,17 +11,18 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-import { Decode, LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
-import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
+import { loaderCount, PoolClient, sharedPool } from '../workers/client_pool';
+import { Decode, Initialize as LoaderInitialize, LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 
 const NO_OFFSET: Vec2 = [0, 0];
 
 export class RasterTileLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
-  private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private readonly fetcher: PoolClient<FetcherInitialize, FetcherRequest, FetcherCommand>;
   private fetching: boolean;
-  private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
+  private readonly loader: PoolClient<LoaderInitialize, LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
@@ -43,9 +43,19 @@ export class RasterTileLayer extends Layer {
     super(copyrights);
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
-    this.fetcher = new WorkerPool(new URL('xyz_data_fetcher_worker.js', import.meta.url).href, 1);
+    this.fetcher =
+        sharedPool<FetcherInitialize, FetcherRequest, FetcherCommand>(
+            new URL('xyz_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
+            .connect({url, extraZoom, minZoom, maxZoom});
     this.fetching = false;
-    this.loader = new QueuedWorkerPool(new URL('raster_loader_worker.js', import.meta.url).href, 6);
+    this.loader =
+        sharedPool<LoaderInitialize, LoaderRequest, LoaderResponse>(
+            new URL('raster_loader_worker.js', import.meta.url).href, loaderCount())
+            .connect({decode});
+    this.registerDisposer(() => {
+      this.fetcher.dispose();
+      this.loader.dispose();
+    });
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
@@ -76,17 +86,12 @@ export class RasterTileLayer extends Layer {
       }
     };
 
-    this.fetcher.broadcast({
-      kind: 'ir',
-      url,
-      extraZoom,
-      minZoom,
-      maxZoom,
-    });
-    this.loader.broadcast({
-      kind: 'ir',
-      decode,
-    });
+    // A tile whose load failed would otherwise count as loading forever
+    this.loader.onfailure = (request, task) => {
+      if (request.kind === 'lr' && this.loading.get(request.id) === task) {
+        this.loading.delete(request.id);
+      }
+    };
   }
 
   /** Swaps in tiles from another URL template, such as another day's. */
@@ -151,7 +156,7 @@ export class RasterTileLayer extends Layer {
       bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
-    this.fetcher.post({
+    this.fetcher.broadcast({
       kind: 'uvr',
       viewport: {
         lat: [lat.lo(), lat.hi()],

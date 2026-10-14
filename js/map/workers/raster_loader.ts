@@ -2,14 +2,14 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { TileId } from '../common/types';
 
+import { Reply, serveClients } from './client_pool';
 import { decodeTerrarium } from './terrarium';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height, and the
 // snow kinds color one of the values in a SNODAS tile.
 export type Decode = 'elevation'|'image'|'snow_depth'|'snow_water';
 
-interface InitializeRequest {
-  kind: 'ir';
+export interface Initialize {
   decode: Decode;
 }
 
@@ -19,7 +19,7 @@ interface LoadRequest {
   data: ArrayBuffer;
 }
 
-export type Request = InitializeRequest|LoadRequest;
+export type Request = LoadRequest;
 
 export interface LoadResponse {
   kind: 'lr';
@@ -51,12 +51,9 @@ const ELEVATION_COLORS = [
 
 class RasterLoader {
 
-  constructor(
-      private readonly decode: Decode,
-      private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
-  ) {}
+  constructor(private readonly decode: Decode) {}
 
-  render(request: LoadRequest) {
+  render(request: LoadRequest): Promise<Reply<Response>> {
     const blob = new Blob([request.data]);
     const bitmap =
         this.decode === 'image'
@@ -64,16 +61,14 @@ class RasterLoader {
             : this.decode === 'elevation'
                 ? decodeElevation(blob)
                 : decodeSnow(blob, this.decode === 'snow_depth');
-    bitmap
-        .then(bitmap => {
-          this.postMessage({
-            kind: 'lr',
-            id: request.id,
-            bitmap,
-          }, [bitmap]);
-        }, e => {
-          console.error(e);
-        });
+    return bitmap.then(bitmap => ({
+      message: {
+        kind: 'lr',
+        id: request.id,
+        bitmap,
+      },
+      transfer: [bitmap],
+    }));
   }
 }
 
@@ -140,26 +135,14 @@ async function decodeElevation(blob: Blob): Promise<ImageBitmap> {
   return createImageBitmap(pixels);
 }
 
-function start(ir: InitializeRequest) {
-  const fetcher = new RasterLoader(ir.decode, (self as any).postMessage.bind(self));
-  self.onmessage = e => {
-    const request = e.data as Request;
-    if (request.kind === 'ir') {
-      throw new Error('Already initialized');
-    } else if (request.kind === 'lr') {
-      fetcher.render(request);
+serveClients<Initialize, Request, Response>(init => {
+  const loader = new RasterLoader(init.decode);
+  return request => {
+    if (request.kind === 'lr') {
+      return loader.render(request);
     } else {
-      checkExhaustive(request);
+      throw checkExhaustive(request.kind);
     }
   };
-}
-
-self.onmessage = e => {
-  const request = e.data as Request;
-  if (request.kind !== 'ir') {
-    throw new Error('Expected an initialization request');
-  }
-
-  start(request);
-};
+});
 

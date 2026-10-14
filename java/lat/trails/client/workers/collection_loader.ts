@@ -8,6 +8,7 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Deltas, projectS2Loop, skipE7Deltas } from 'js/map/camera';
 import { LatLngRect, RawUuid, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LineProgram, Stipple } from 'js/map/rendering/line_program';
+import { Reply, serveClients } from 'js/map/workers/client_pool';
 import { PackedLines } from 'js/map/workers/location_querier';
 import { Terrain, TERRAINS } from 'js/map/workers/path_router';
 import { CellKey } from 'js/map/workers/s2_data_fetcher';
@@ -15,8 +16,7 @@ import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
 import { Z_USER_DATA } from 'js/map/z';
 
-interface InitializeRequest {
-  kind: 'ir';
+export interface Initialize {
   style: Style;
 }
 
@@ -88,7 +88,7 @@ interface LoadRequest {
   data: ArrayBuffer;
 }
 
-export type Request = InitializeRequest|LoadRequest|SetStyleRequest;
+export type Request = LoadRequest|SetStyleRequest;
 
 export interface LoadResponse {
   kind: 'lr';
@@ -208,16 +208,13 @@ const KIND_PACKED_PATH = 1;
 
 class CollectionLoader {
 
-  constructor(
-      private style: Style,
-      private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
-  ) {}
+  constructor(private style: Style) {}
 
   setStyle(style: Style): void {
     this.style = style;
   }
 
-  load(request: LoadRequest) {
+  load(request: LoadRequest): Reply<Response> {
     const source = new LittleEndianView(request.data);
     // We still accept version 2 because browsers cache public collection tiles forever, see
     // ApiServer.kt#cacheAndCheckIfCached. Version 2 is version 3 without points.
@@ -551,45 +548,39 @@ class CollectionLoader {
       });
     }
 
-    this.postMessage(response, [
-      geometry.buffer,
-      index.buffer,
-      lines.ids.buffer,
-      lines.geometryByteLengths.buffer,
-      lines.geometryOffsets.buffer,
-      lines.points.buffer,
-      lines.starts.buffer,
-      lines.styleIndices.buffer,
-      lines.terrains.buffer,
-      ...(lines.data.kind === 'packed_path' ? [lines.data.ids.buffer, lines.data.types.buffer] : []),
-    ]);
+    return {
+      message: response,
+      transfer: [
+        geometry.buffer,
+        index.buffer,
+        lines.ids.buffer,
+        lines.geometryByteLengths.buffer,
+        lines.geometryOffsets.buffer,
+        lines.points.buffer,
+        lines.starts.buffer,
+        lines.styleIndices.buffer,
+        lines.terrains.buffer,
+        ...(lines.data.kind === 'packed_path'
+            ? [lines.data.ids.buffer, lines.data.types.buffer]
+            : []),
+      ],
+    };
   }
 }
 
-function start(ir: InitializeRequest) {
-  const fetcher = new CollectionLoader(ir.style, (self as any).postMessage.bind(self));
-  self.onmessage = e => {
-    const request = e.data as Request;
-    if (request.kind === 'ir') {
-      throw new Error('Already initialized');
-    } else if (request.kind === 'lr') {
-      fetcher.load(request);
+serveClients<Initialize, Request, Response>(init => {
+  const loader = new CollectionLoader(init.style);
+  return request => {
+    if (request.kind === 'lr') {
+      return loader.load(request);
     } else if (request.kind === 'sr') {
-      fetcher.setStyle(request.style);
+      loader.setStyle(request.style);
+      return undefined;
     } else {
-      checkExhaustive(request);
+      throw checkExhaustive(request);
     }
   };
-}
-
-self.onmessage = e => {
-  const request = e.data as Request;
-  if (request.kind !== 'ir') {
-    throw new Error('Expected an initialization request');
-  }
-
-  start(request);
-};
+});
 
 // projectS2Loop drops the repeated first vertex and splits a loop that crosses the antimeridian,
 // so each piece has to be closed again or the outline is missing its last edge.

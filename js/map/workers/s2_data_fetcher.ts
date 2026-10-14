@@ -7,6 +7,8 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 
 import { S2CellToken } from '../common/types';
 
+import { serveClients } from './client_pool';
+
 // How hard the server may simplify geometry at a given zoom, as the S2 level whose cell diagonal is
 // about the error we accept. Undefined is full detail.
 export interface Snap {
@@ -34,8 +36,7 @@ export function cellKey(stream: number, token: S2CellToken): CellKey {
   return `${stream}/${token}` as CellKey;
 }
 
-interface InitializeRequest {
-  kind: 'ir';
+export interface Initialize {
   covering: string;
   snaps: Snap[];
   streams: Stream[];
@@ -53,7 +54,7 @@ interface UpdateViewportRequest {
   viewport: Viewport;
 }
 
-export type Request = InitializeRequest|UpdateViewportRequest;
+export type Request = UpdateViewportRequest;
 
 export interface LoadCellCommand {
   kind: 'lcc';
@@ -389,31 +390,13 @@ class S2DataFetcher {
   }
 }
 
-async function start(ir: InitializeRequest) {
-  const fetcher =
-      new S2DataFetcher(
-          ir.covering,
-          ir.snaps,
-          ir.streams,
-          ir.url,
-          (self as any).postMessage.bind(self));
-  self.onmessage = e => {
-    const request = e.data as Request;
-    if (request.kind === 'ir') {
-      throw new Error('Already initialized');
-    } else if (request.kind === 'uvr') {
+serveClients<Initialize, Request, Command>((init, emit) => {
+  const fetcher = new S2DataFetcher(init.covering, init.snaps, init.streams, init.url, emit);
+  return request => {
+    if (request.kind === 'uvr') {
       fetcher.updateViewport(request);
     } else {
-      checkExhaustive(request);
+      checkExhaustive(request.kind);
     }
   };
-}
-
-self.onmessage = e => {
-  const request = e.data as Request;
-  if (request.kind !== 'ir') {
-    throw new Error('Expected an initialization request');
-  }
-
-  start(request);
-};
+});

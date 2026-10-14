@@ -2,6 +2,7 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { TileId } from '../common/types';
 
+import { serveClients } from './client_pool';
 import { decodeTerrarium, fetchTerrarium, TILE_SIZE } from './terrarium';
 
 // Horn's method reads a pixel past each output pixel, and the output reaches a pixel into each
@@ -203,12 +204,13 @@ function computeSlopes(id: TileId, padded: Float32Array): Uint8Array {
 }
 
 // Loads tiles concurrently so that one waiting on its neighbors doesn't hold up the rest.
-const loader = new SlopeLoader((self as any).postMessage.bind(self));
-self.onmessage = e => {
-  const request = e.data as Request;
-  if (request.kind === 'lr') {
-    loader.load(request);
-  } else {
-    checkExhaustive(request.kind);
-  }
-};
+serveClients<undefined, Request, Response>((init, emit) => {
+  const loader = new SlopeLoader(emit);
+  return request => {
+    if (request.kind === 'lr') {
+      loader.load(request);
+    } else {
+      checkExhaustive(request.kind);
+    }
+  };
+});

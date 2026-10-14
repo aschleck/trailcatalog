@@ -20,11 +20,11 @@ import {
   smoothLine,
   uphillSide,
 } from './line_labels';
+import { Reply, serveClients } from './client_pool';
 import { GeometryType } from './mbtile_types';
 import { Triangles, triangulateMb } from './triangulate';
 
-interface InitializeRequest {
-  kind: 'ir';
+export interface Initialize {
   style: Style;
 }
 
@@ -177,7 +177,7 @@ interface LoadRequest {
   data: ArrayBuffer;
 }
 
-export type Request = InitializeRequest|LoadRequest|SetStyleRequest;
+export type Request = LoadRequest|SetStyleRequest;
 
 export interface LoadResponse {
   kind: 'lr';
@@ -263,16 +263,13 @@ const TEXT_DECODER = new TextDecoder();
 
 class MbtileLoader {
 
-  constructor(
-      private style: Style,
-      private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
-  ) {}
+  constructor(private style: Style) {}
 
   setStyle(style: Style): void {
     this.style = style;
   }
 
-  load(request: LoadRequest) {
+  load(request: LoadRequest): Reply<Response> {
     // Who amonst us hasn't written a proto parser manually...
     // https://github.com/mapbox/vector-tile-spec/blob/master/2.1/vector_tile.proto
     // I (Josh) have nothing really to back this up but I feel like this would be like 10x faster in WASM.
@@ -699,34 +696,23 @@ class MbtileLoader {
       });
     }
 
-    this.postMessage(response, [geometry.buffer, index.buffer]);
+    return {message: response, transfer: [geometry.buffer, index.buffer]};
   }
 }
 
-function start(ir: InitializeRequest) {
-  const fetcher = new MbtileLoader(ir.style, (self as any).postMessage.bind(self));
-  self.onmessage = e => {
-    const request = e.data as Request;
-    if (request.kind === 'ir') {
-      throw new Error('Already initialized');
-    } else if (request.kind === 'lr') {
-      fetcher.load(request);
+serveClients<Initialize, Request, Response>(init => {
+  const loader = new MbtileLoader(init.style);
+  return request => {
+    if (request.kind === 'lr') {
+      return loader.load(request);
     } else if (request.kind === 'sr') {
-      fetcher.setStyle(request.style);
+      loader.setStyle(request.style);
+      return undefined;
     } else {
-      checkExhaustive(request);
+      throw checkExhaustive(request);
     }
   };
-}
-
-self.onmessage = e => {
-  const request = e.data as Request;
-  if (request.kind !== 'ir') {
-    throw new Error('Expected an initialization request');
-  }
-
-  start(request);
-};
+});
 
 function loadLayer(source: LittleEndianView, tile: TileId): Layer {
   let version;

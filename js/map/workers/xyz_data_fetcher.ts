@@ -9,11 +9,12 @@ import { projectLatLngRect } from '../camera';
 import { tilesIntersect } from '../common/math';
 import { Rect, TileId } from '../common/types';
 
+import { serveClients } from './client_pool';
+
 // pi times the WGS84 semi-major axis of 6378137 m
 const WEB_MERCATOR_HALF_WORLD_METERS = 20037508.342789244;
 
-interface InitializeRequest {
-  kind: 'ir';
+export interface Initialize {
   url: string;
   extraZoom: number;
   minZoom: number;
@@ -50,7 +51,7 @@ interface SetUrlRequest {
   url: string;
 }
 
-export type Request = InitializeRequest|SetUrlRequest|TileLoadedRequest|UpdateViewportRequest;
+export type Request = SetUrlRequest|TileLoadedRequest|UpdateViewportRequest;
 
 export interface LoadTileCommand {
   kind: 'ltc';
@@ -331,19 +332,10 @@ class XyzDataFetcher {
   }
 }
 
-function start(ir: InitializeRequest) {
-  const fetcher =
-      new XyzDataFetcher(
-          ir.url,
-          ir.extraZoom,
-          ir.minZoom,
-          ir.maxZoom,
-          (self as any).postMessage.bind(self));
-  self.onmessage = e => {
-    const request = e.data as Request;
-    if (request.kind === 'ir') {
-      throw new Error('Already initialized');
-    } else if (request.kind === 'sur') {
+serveClients<Initialize, Request, Command>((init, emit) => {
+  const fetcher = new XyzDataFetcher(init.url, init.extraZoom, init.minZoom, init.maxZoom, emit);
+  return request => {
+    if (request.kind === 'sur') {
       fetcher.setUrl(request);
     } else if (request.kind === 'tlr') {
       fetcher.tileLoaded(request);
@@ -353,16 +345,7 @@ function start(ir: InitializeRequest) {
       checkExhaustive(request);
     }
   };
-}
-
-self.onmessage = e => {
-  const request = e.data as Request;
-  if (request.kind !== 'ir') {
-    throw new Error('Expected an initialization request');
-  }
-
-  start(request);
-};
+});
 
 function projectViewport(viewport: Viewport): Rect {
   const low = S2LatLng.fromRadians(viewport.lat[0], viewport.lng[0]);

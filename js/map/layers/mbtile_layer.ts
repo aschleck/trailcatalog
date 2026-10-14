@@ -1,8 +1,7 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
-import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
-import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
+import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { ScreenProjection, SphericalCone } from '../camera';
@@ -12,8 +11,9 @@ import { GLYPHER } from '../rendering/glypher';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
-import { Label, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Style } from '../workers/mbtile_loader';
-import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, UnloadTilesCommand } from '../workers/xyz_data_fetcher';
+import { loaderCount, PoolClient, sharedPool } from '../workers/client_pool';
+import { Initialize as LoaderInitialize, Label, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Style } from '../workers/mbtile_loader';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 import { Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
 
 import { compareLabels, LabelCandidate, LabelPlacer } from './label_placer';
@@ -2170,10 +2170,10 @@ export const NATURE: Readonly<Style> = {
 
 export class MbtileLayer extends Layer {
 
-  private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private readonly fetcher: PoolClient<FetcherInitialize, FetcherRequest, FetcherCommand>;
   private fetching: boolean;
   private readonly labels: Map<string, IndexedLabel>;
-  private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
+  private readonly loader: PoolClient<LoaderInitialize, LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   // Holds the raw MVT bytes for every currently-known tile so that when the
   // viewport's styleZoom bucket changes we can re-post each tile to the
@@ -2204,16 +2204,24 @@ export class MbtileLayer extends Layer {
       private readonly renderer: Renderer,
   ) {
     super(copyrights);
-    this.fetcher = new WorkerPool(new URL('xyz_data_fetcher_worker.js', import.meta.url).href, 1);
+    this.fetcher =
+        sharedPool<FetcherInitialize, FetcherRequest, FetcherCommand>(
+            new URL('xyz_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
+            .connect({url, extraZoom, minZoom, maxZoom});
     this.fetching = false;
     this.labels = new Map();
-    this.loader = new QueuedWorkerPool(new URL('mbtile_loader_worker.js', import.meta.url).href, 6);
+    this.loader =
+        sharedPool<LoaderInitialize, LoaderRequest, LoaderResponse>(
+            new URL('mbtile_loader_worker.js', import.meta.url).href, loaderCount())
+            .connect({style});
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.rawBytes = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.textBuffer = new ArrayBuffer(4194304);
     this.textGlBuffer = renderer.createDataBuffer(this.textBuffer.byteLength);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.registerDisposer(() => {
+      this.fetcher.dispose();
+      this.loader.dispose();
       this.renderer.deleteBuffer(this.textGlBuffer);
 
       for (const response of this.tiles.values()) {
@@ -2251,17 +2259,12 @@ export class MbtileLayer extends Layer {
       }
     };
 
-    this.fetcher.broadcast({
-      kind: 'ir',
-      url,
-      extraZoom,
-      minZoom,
-      maxZoom,
-    });
-    this.loader.broadcast({
-      kind: 'ir',
-      style,
-    });
+    // A tile whose load failed would otherwise count as loading forever
+    this.loader.onfailure = (request, task) => {
+      if (request.kind === 'lr' && this.loading.get(request.id) === task) {
+        this.loading.delete(request.id);
+      }
+    };
   }
 
   override hasNewData(): boolean {
@@ -2310,7 +2313,7 @@ export class MbtileLayer extends Layer {
       bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
-    this.fetcher.post({
+    this.fetcher.broadcast({
       kind: 'uvr',
       viewport: {
         lat: [lat.lo(), lat.hi()],

@@ -1,7 +1,6 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
-import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 
 import { SphericalCone } from '../camera';
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
@@ -11,9 +10,10 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
+import { PoolClient, sharedPool } from '../workers/client_pool';
 import { Request as LoaderRequest, Response as LoaderResponse, LoadResponse } from '../workers/slope_loader';
 import { BASE_ZOOM, TILE_SIZE, TILE_URL } from '../workers/terrarium';
-import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 
 const NO_OFFSET: Vec2 = [0, 0];
 // Keep in sync with slope_loader.ts#SLOPES_SIZE
@@ -24,9 +24,9 @@ const OPAQUE = 0xFFFFFFFF as RgbaU32;
 export class SlopeLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
-  private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private readonly fetcher: PoolClient<FetcherInitialize, FetcherRequest, FetcherCommand>;
   private fetching: boolean;
-  private readonly loader: WorkerPool<LoaderRequest, LoaderResponse>;
+  private readonly loader: PoolClient<undefined, LoaderRequest, LoaderResponse>;
   private readonly loading: HashSet<TileId>;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
@@ -41,10 +41,20 @@ export class SlopeLayer extends Layer {
     super(copyrights);
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
-    this.fetcher = new WorkerPool(new URL('xyz_data_fetcher_worker.js', import.meta.url).href, 1);
+    this.fetcher =
+        sharedPool<FetcherInitialize, FetcherRequest, FetcherCommand>(
+            new URL('xyz_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
+            .connect({url: TILE_URL, extraZoom: 1, minZoom: BASE_ZOOM, maxZoom: BASE_ZOOM});
     this.fetching = false;
     // One worker, so that every tile shares its cache of the neighbors' edges
-    this.loader = new WorkerPool(new URL('slope_loader_worker.js', import.meta.url).href, 1);
+    this.loader =
+        sharedPool<undefined, LoaderRequest, LoaderResponse>(
+            new URL('slope_loader_worker.js', import.meta.url).href, /* count= */ 1)
+            .connect(undefined);
+    this.registerDisposer(() => {
+      this.fetcher.dispose();
+      this.loader.dispose();
+    });
     this.loading = new HashSet(id => `${id.zoom},${id.x},${id.y}`);
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
@@ -74,14 +84,6 @@ export class SlopeLayer extends Layer {
         checkExhaustive(response.kind);
       }
     };
-
-    this.fetcher.broadcast({
-      kind: 'ir',
-      url: TILE_URL,
-      extraZoom: 1,
-      minZoom: BASE_ZOOM,
-      maxZoom: BASE_ZOOM,
-    });
   }
 
   override hasNewData(): boolean {
@@ -135,7 +137,7 @@ export class SlopeLayer extends Layer {
       bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
-    this.fetcher.post({
+    this.fetcher.broadcast({
       kind: 'uvr',
       viewport: {
         lat: [lat.lo(), lat.hi()],
@@ -152,7 +154,9 @@ export class SlopeLayer extends Layer {
     }
 
     this.loading.add(command.id);
-    this.loader.post({
+    // Not a task, because a task holds the worker until it answers and a tile waits on the
+    // neighbors that later messages bring.
+    this.loader.broadcast({
       kind: 'lr',
       id: command.id,
       data: command.data,

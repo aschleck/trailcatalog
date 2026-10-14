@@ -1,7 +1,6 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
-import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 import { POINTS_ATLAS_SIZE, pointsAtlasIndex } from 'java/org/trailcatalog/client/points/points_atlas';
 import { aDescendsB, PointCategory } from 'java/org/trailcatalog/models/categories';
 import { Camera, projectS2LatLng } from 'js/map/camera';
@@ -13,7 +12,8 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
-import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
+import { PoolClient, sharedPool } from 'js/map/workers/client_pool';
+import { CellKey, Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_OVERLAY_TEXT, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { DOUBLE_CLICK_MS, HOVER_CHANGED, OBJECT_OPENED } from './events';
@@ -48,7 +48,7 @@ export interface Point {
 /** Draws a collection of points as trailcatalog's icons, and opens one on a double click. */
 export class PointCollectionLayer extends Layer {
 
-  private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private readonly fetcher: PoolClient<FetcherInitialize, FetcherRequest, FetcherCommand>;
   private fetching: boolean;
   private readonly cells: Map<CellKey, Point[]>;
   private readonly atlas: WebGLTexture;
@@ -74,7 +74,16 @@ export class PointCollectionLayer extends Layer {
       private readonly renderer: Renderer,
   ) {
     super(copyrights);
-    this.fetcher = new WorkerPool(new URL('s2_data_fetcher_worker.js', import.meta.url).href, 1);
+    this.fetcher =
+        sharedPool<FetcherInitialize, FetcherRequest, FetcherCommand>(
+            new URL('s2_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
+            .connect({
+              covering: url + '/covering',
+              snaps: NO_SNAP,
+              streams,
+              url: url + '/objects',
+            });
+    this.registerDisposer(() => { this.fetcher.dispose(); });
     this.fetching = false;
     this.cells = new Map();
     const pool = new TexturePool(renderer);
@@ -106,13 +115,6 @@ export class PointCollectionLayer extends Layer {
         checkExhaustive(command);
       }
     };
-    this.fetcher.broadcast({
-      kind: 'ir',
-      covering: url + '/covering',
-      snaps: NO_SNAP,
-      streams,
-      url: url + '/objects',
-    });
 
     fetch(new URL('images/atlases/points.png', import.meta.url))
         .then(response => {
@@ -194,7 +196,7 @@ export class PointCollectionLayer extends Layer {
   override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
-    this.fetcher.post({
+    this.fetcher.broadcast({
       kind: 'uvr',
       viewport: {
         lat: [lat.lo(), lat.hi()],

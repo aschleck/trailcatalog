@@ -1,8 +1,7 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
-import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
-import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
+import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { Camera, projectS2LatLng } from 'js/map/camera';
 import { Copyright, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
@@ -11,13 +10,14 @@ import { LineProgram, Stipple } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
+import { loaderCount, PoolClient, sharedPool } from 'js/map/workers/client_pool';
 import { LocationIndex } from 'js/map/workers/location_index';
-import { CellKey, Command as FetcherCommand, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
+import { CellKey, Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { DOUBLE_CLICK_MS, HOVER_CHANGED, OBJECT_OPENED } from './events';
 import { Schema } from './schema';
-import { Line, LoadedLines, LoadResponse, Match, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
+import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Match, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
 // makes it read as lifted, over pale roads and over landcover alike.
@@ -75,9 +75,9 @@ interface Highlight {
 
 export class CollectionLayer extends Layer {
 
-  private readonly fetcher: WorkerPool<FetcherRequest, FetcherCommand>;
+  private readonly fetcher: PoolClient<FetcherInitialize, FetcherRequest, FetcherCommand>;
   private fetching: boolean;
-  private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderResponse>;
+  private readonly loader: PoolClient<LoaderInitialize, LoaderRequest, LoaderResponse>;
   // The request each cell is waiting on, so that a newer one can cancel it before a worker spends
   // time on it and we spend time cloning the answer
   private readonly loading: Map<CellKey, Task<LoaderResponse>>;
@@ -126,16 +126,23 @@ export class CollectionLayer extends Layer {
   ) {
     super(copyrights);
     this.producer = locations.producer();
-    this.fetcher = new WorkerPool(new URL('s2_data_fetcher_worker.js', import.meta.url).href, 1);
+    this.fetcher =
+        sharedPool<FetcherInitialize, FetcherRequest, FetcherCommand>(
+            new URL('s2_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
+            .connect({covering: url + '/covering', snaps, streams, url: url + '/objects'});
     this.fetching = false;
     this.loader =
-        new QueuedWorkerPool(new URL('collection_loader_worker.js', import.meta.url).href, 6);
+        sharedPool<LoaderInitialize, LoaderRequest, LoaderResponse>(
+            new URL('collection_loader_worker.js', import.meta.url).href, loaderCount())
+            .connect({style: style ?? NO_STYLE});
     this.loading = new Map();
     this.cells = new Map();
     this.rawBytes = new Map();
     this.objects = new Map();
     this.serial = 0;
     this.registerDisposer(() => {
+      this.fetcher.dispose();
+      this.loader.dispose();
       for (const cell of this.cells.values()) {
         if (cell) {
           this.renderer.deleteBuffer(cell.glGeometryBuffer);
@@ -190,17 +197,17 @@ export class CollectionLayer extends Layer {
       }
     };
 
-    this.fetcher.broadcast({
-      kind: 'ir',
-      covering: url + '/covering',
-      snaps,
-      streams,
-      url: url + '/objects',
-    });
-    this.loader.broadcast({
-      kind: 'ir',
-      style: style ?? NO_STYLE,
-    });
+    this.loader.onfailure = (request, task) => {
+      if (request.kind !== 'lr' || this.loading.get(request.key) !== task) {
+        return;
+      }
+      this.loading.delete(request.key);
+      // A cell that never drew would otherwise count as loading forever, while one being restyled
+      // keeps its old geometry.
+      if (this.cells.get(request.key) === undefined) {
+        this.cells.delete(request.key);
+      }
+    };
   }
 
   /** Returns the schema from the collection's presentation, or undefined until it loads. */
@@ -515,7 +522,7 @@ export class CollectionLayer extends Layer {
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
     const lat = bounds.lat();
     const lng = bounds.lng();
-    this.fetcher.post({
+    this.fetcher.broadcast({
       kind: 'uvr',
       viewport: {
         lat: [lat.lo(), lat.hi()],
