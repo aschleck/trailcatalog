@@ -20,7 +20,14 @@ import { Layer } from 'js/map/layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
 import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
-import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS } from 'js/map/layers/mbtile_layer';
+import {
+  ANTARCTIC_CAP,
+  ARCTIC_CAP,
+  CONTOURS_FEET,
+  CONTOURS_METERS,
+  MbtileLayer,
+} from 'js/map/layers/mbtile_layer';
+import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Decode } from 'js/map/workers/raster_loader';
 import { SlopeLayer } from 'js/map/layers/slope_layer';
@@ -245,6 +252,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly terrainLayer: DrawingLayer;
   private readonly pointLayer: PointToolLayer;
   private readonly markerLayer: MarkerToolLayer;
+  private readonly polarCapLayer: PolarCapLayer;
   private readonly skyboxLayer: SkyboxLayer;
   private readonly contours: Record<UnitSystem, MbtileLayer>;
   private readonly store: FeatureStore;
@@ -452,6 +460,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.pointer = [e.clientX - bounds.left, e.clientY - bounds.top];
     });
 
+    this.polarCapLayer =
+        new PolarCapLayer(ARCTIC_CAP, ANTARCTIC_CAP, this.mapController.renderer);
+    this.registerDisposable(this.polarCapLayer);
     this.skyboxLayer = new SkyboxLayer(Z_BOTTOM, this.mapController.renderer);
     this.registerDisposable(this.skyboxLayer);
 
@@ -3247,7 +3258,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         ]
             .concat(shown.filter(layer => layer instanceof PointCollectionLayer))
             .concat(shown.filter(layer => !(layer instanceof PointCollectionLayer)))
-            .concat([this.skyboxLayer]));
+            .concat([this.polarCapLayer, this.skyboxLayer]));
   }
 }
 

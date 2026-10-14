@@ -7,7 +7,15 @@ import { rgbaToUint32 } from 'js/map/common/math';
 import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT } from 'js/map/common/copyrights';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { Layer } from 'js/map/layer';
-import { MbtileLayer, CONTOURS_FEET, CONTOURS_METERS, NATURE } from 'js/map/layers/mbtile_layer';
+import {
+  ANTARCTIC_CAP,
+  ARCTIC_CAP,
+  CONTOURS_FEET,
+  CONTOURS_METERS,
+  MbtileLayer,
+  NATURE,
+} from 'js/map/layers/mbtile_layer';
+import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
 import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
@@ -95,6 +103,10 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       name: 'Skybox',
       enabled: true,
       layer: new SkyboxLayer(Z_BOTTOM, this.mapController.renderer),
+    }, {
+      name: 'Polar caps',
+      enabled: true,
+      layer: new PolarCapLayer(ARCTIC_CAP, ANTARCTIC_CAP, this.mapController.renderer),
     }, {
       name: 'Hillshades',
       enabled: true,

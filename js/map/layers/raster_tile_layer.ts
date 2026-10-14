@@ -107,10 +107,8 @@ export class RasterTileLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.hasNewData()) {
-      // Reserve room for a body + cap per tile; pole-row tiles need both.
-      const perTileBytes =
-          BillboardProgram.bytesNeeded() + BillboardProgram.capBytesNeeded();
-      const buffer = new ArrayBuffer(Math.max(perTileBytes * this.tiles.size, 65536));
+      const buffer =
+          new ArrayBuffer(Math.max(BillboardProgram.bytesNeeded() * this.tiles.size, 65536));
       const drawables = [];
       let offset = 0;
 
@@ -137,26 +135,6 @@ export class RasterTileLayer extends Layer {
                 texture);
         drawables.push(drawable);
         offset += byteSize;
-
-        // Pole-row tiles get an extra cap quad sampling the tile's edge
-        // row. At zoom 0 the single tile is both top and bottom row.
-        const worldSize = 2 * halfWorldSize;
-        if (id.y === 0) {
-          const cap = this.renderer.billboardProgram.planCap(
-              centerX, size, 'north', this.tint, this.z,
-              /* atlasIndex= */ 0, /* atlasSize= */ [1, 1],
-              buffer, offset, this.buffer, texture);
-          drawables.push(cap.drawable);
-          offset += cap.byteSize;
-        }
-        if (id.y === worldSize - 1) {
-          const cap = this.renderer.billboardProgram.planCap(
-              centerX, size, 'south', this.tint, this.z,
-              /* atlasIndex= */ 0, /* atlasSize= */ [1, 1],
-              buffer, offset, this.buffer, texture);
-          drawables.push(cap.drawable);
-          offset += cap.byteSize;
-        }
       }
 
       this.renderer.uploadData(buffer, offset, this.buffer);

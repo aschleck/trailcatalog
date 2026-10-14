@@ -17,6 +17,7 @@ import { Command as FetcherCommand, LoadTileCommand, Request as FetcherRequest, 
 import { Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
 
 import { compareLabels, LabelCandidate, LabelPlacer } from './label_placer';
+import { Cap } from './polar_cap_layer';
 
 interface LoadedTile {
   drawables: Drawable[];
@@ -45,6 +46,14 @@ function labelKey(label: Label): string {
 }
 
 const PREFERRED_LANGUAGE = getLanguage().split('-')[0];
+
+const ICE_FILL = 0xFFFFFF80 as RgbaU32;
+const WATER_FILL = 0x7FC2E0FF as RgbaU32;
+
+// What PolarCapLayer draws past the tiles' reach, as the basemap would: the Arctic Ocean and the
+// Antarctic ice sheet
+export const ARCTIC_CAP: Cap = {fill: WATER_FILL, z: Z_BASE_WATER + 0.1};
+export const ANTARCTIC_CAP: Cap = {fill: ICE_FILL, z: Z_BASE_TERRAIN + 0.5};
 
 // TODO(april): we should glaciate the contours if it looks good
 type LineTextStyle = Style['layers'][number]['lineTexts'][number];
@@ -951,7 +960,7 @@ export const NATURE: Readonly<Style> = {
               'snow',
             ],
           }],
-          fill: 0xFFFFFF80 as RgbaU32,
+          fill: ICE_FILL,
           stroke: 0 as RgbaU32,
           strokeRadius: 0,
           strokeStipple: false,
@@ -1019,7 +1028,7 @@ export const NATURE: Readonly<Style> = {
               'ice',
             ],
           }],
-          fill: 0xFFFFFF80 as RgbaU32,
+          fill: ICE_FILL,
           stroke: 0 as RgbaU32,
           strokeRadius: 0,
           strokeStipple: false,
@@ -2055,7 +2064,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [
         {
           filters: [],
-          fill: 0x7FC2E0FF as RgbaU32,
+          fill: WATER_FILL,
           stroke: 0 as RgbaU32,
           strokeRadius: 0,
           strokeStipple: false,

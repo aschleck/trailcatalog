@@ -21,7 +21,7 @@ import {
   uphillSide,
 } from './line_labels';
 import { GeometryType } from './mbtile_types';
-import { ringArea, Triangles, triangulateMb } from './triangulate';
+import { Triangles, triangulateMb } from './triangulate';
 
 interface InitializeRequest {
   kind: 'ir';
@@ -883,9 +883,6 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
   const tx = tile.x / halfWorldSize - 1;
   const ty = 1 - tile.y / halfWorldSize;
   const increment = 1 / halfWorldSize / extent;
-  const worldSize = 2 * halfWorldSize;
-  const extendTop = tile.y === 0;
-  const extendBottom = tile.y === worldSize - 1;
 
    for (const [crop, loop, source] of [
       [cropLine, false, layer.lines],
@@ -906,25 +903,6 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
    layer.polygonBounds =
       layer.polygonBounds.filter(f => f.geometry.length > 0 && f.starts.length > 0);
 
-  // Pole-row tiles: extend any exterior polygon ring that runs along the
-  // pole-side boundary outward toward the pole. The mbtile data has no
-  // coverage past +/-85 lat (the Mercator limit), so without this the polar
-  // cap shows through to the clear color. Picking up the actual polygon
-  // colors here means whatever the style produces (water, ice, ...) flows
-  // naturally into the cap, with no hardcoded fallback.
-  if (extendTop || extendBottom) {
-    // y = -poleReachTile maps via the projection below to mercator y = ty + 2
-    // = 3 on a top-row tile, which tanh-projects to ~lat 89.998°.
-    const poleReachTile = 2 * halfWorldSize * extent;
-    for (const feature of layer.polygons) {
-      const [geometry, starts] = extendPoleEdges(
-          feature.geometry, feature.starts, extent, poleReachTile,
-          extendTop, extendBottom);
-      feature.geometry = geometry;
-      feature.starts = starts;
-    }
-  }
-
   for (const source of [layer.lines, layer.points, layer.polygons, layer.polygonBounds]) {
     for (const feature of source) {
       const g = feature.geometry;
@@ -934,61 +912,6 @@ function projectLayer(tile: TileId, extent: number, layer: Layer): void {
       }
     }
   }
-}
-
-// Walks each polygon ring and inserts pole-extending vertices wherever two
-// consecutive vertices both lie on the tile's pole-side boundary. Skips hole
-// rings (negative signed area) so the cap inherits the surrounding
-// exterior's color rather than being cut out of it.
-function extendPoleEdges(
-    geometry: number[],
-    starts: number[],
-    extent: number,
-    poleReachTile: number,
-    extendTop: boolean,
-    extendBottom: boolean): [number[], number[]] {
-  const out: number[] = [];
-  const outStarts: number[] = [];
-
-  for (let r = 0; r < starts.length; ++r) {
-    const start = starts[r];
-    const end = r < starts.length - 1 ? starts[r + 1] : geometry.length;
-    outStarts.push(out.length);
-    if (end - start < 6) {
-      for (let i = start; i < end; ++i) {
-        out.push(geometry[i]);
-      }
-      continue;
-    }
-
-    // Still in tile coordinates, where y increases downward, so shells come out negative — the
-    // opposite of the sign the triangulator looks for after the projection below flips y.
-    const isExterior = ringArea(geometry, start, end) < 0;
-
-    const n = (end - start) / 2;
-    for (let i = 0; i < n; ++i) {
-      const px = geometry[start + 2 * i + 0];
-      const py = geometry[start + 2 * i + 1];
-      out.push(px, py);
-
-      if (!isExterior) {
-        continue;
-      }
-
-      const j = (i + 1) % n;
-      const nx = geometry[start + 2 * j + 0];
-      const ny = geometry[start + 2 * j + 1];
-      if (extendTop && py === 0 && ny === 0) {
-        out.push(px, -poleReachTile);
-        out.push(nx, -poleReachTile);
-      } else if (extendBottom && py === extent && ny === extent) {
-        out.push(px, extent + poleReachTile);
-        out.push(nx, extent + poleReachTile);
-      }
-    }
-  }
-
-  return [out, outStarts];
 }
 
 function cropLine(geometry: number[], starts: number[], extent: number, loop: boolean):

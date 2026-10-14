@@ -5,8 +5,8 @@ import { RgbaU32, Vec2 } from '../common/types';
 import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData, SPHERE_OPERATIONS } from './program';
 
 // A billboard is drawn as instances of a static lattice, so plan() writes only the per-instance
-// attributes: 9 floats and 5 uint32s, all 4 bytes.
-const INSTANCE_STRIDE = 4 * (9 + 5);
+// attributes: 7 floats and 5 uint32s, all 4 bytes.
+const INSTANCE_STRIDE = 4 * (7 + 5);
 
 // Vertices for the whole billboard as one quad, which is exact once flattenFactor reaches 1
 // because the mercator branch is affine in position.
@@ -37,11 +37,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
   /** Bytes that {@link plan} will write into the supplied buffer. */
   static bytesNeeded(): number {
     return INSTANCE_STRIDE;
-  }
-
-  /** Bytes that {@link planCap} will write into the supplied buffer. */
-  static capBytesNeeded(): number {
-    return BillboardProgram.bytesNeeded();
   }
 
   private readonly latticeBuffer: WebGLBuffer;
@@ -88,80 +83,11 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         size[0],
         size[1],
         angle,
-        /* vScale= */ 1,
-        /* vOffset= */ 0,
         atlasIndex,
         atlasSize[0],
         atlasSize[1],
         tint,
         /* sizeIsPixels= */ size[0] >= 1 ? 1 : 0, // well this is sketchy
-        buffer,
-        offset);
-
-    return {
-      byteSize: INSTANCE_STRIDE,
-      drawable: {
-        elements: undefined,
-        geometry: glBuffer,
-        geometryByteLength: INSTANCE_STRIDE,
-        geometryOffset: offset,
-        instanced: {
-          count: 1,
-        },
-        program: this,
-        texture: glTexture,
-        vertexCount: GRID_VERTEX_COUNT,
-        z,
-      },
-    };
-  }
-
-  // Plans a polar cap quad for a tile that sits in the top or bottom row of
-  // its zoom level. The cap geometry spans mercator y in [+1, +3] (north)
-  // or [-3, -1] (south); the vertex shader's tanh(mercator_y * PI) maps
-  // those to ~lat +/-89.998° while the bottom seams cleanly against the
-  // tile body at +/-MERCATOR_MAX_LAT. The texture v coordinate is locked
-  // to 0 (north) or 1 (south), which vRemap does by zeroing the lattice's own v, so the whole cap
-  // samples the tile texture's edge row.
-  planCap(
-      centerX: number,
-      sizeX: number,
-      side: 'north' | 'south',
-      tint: RgbaU32,
-      z: number,
-      atlasIndex: number,
-      atlasSize: Vec2,
-      buffer: ArrayBuffer,
-      offset: number,
-      glBuffer: WebGLBuffer,
-      glTexture: WebGLTexture,
-  ): {byteSize: number; drawable: Drawable;} {
-    // size.y stays positive for both poles so position.y -> mercator y has
-    // the same sign as the tile body. The cap is placed at center.y = +/-2
-    // with size 2, putting mercator y in [+1, +3] (north) or [-3, -1]
-    // (south). Flipping size.y would put the geometry in the right place
-    // but invert the winding, causing backface culling to drop the south
-    // cap.
-    const isNorth = side === 'north';
-    const centerY = isNorth ? 2 : -2;
-    const sizeY = 2;
-    const vEdge = isNorth ? 0 : 1;
-
-    pushInstance(
-        centerX,
-        centerY,
-        /* offsetPxX= */ 0,
-        /* offsetPxY= */ 0,
-        sizeX,
-        sizeY,
-        /* angle= */ 0,
-        /* vScale= */ 0,
-        /* vOffset= */ vEdge,
-        atlasIndex,
-        atlasSize[0],
-        atlasSize[1],
-        tint,
-        /* sizeIsPixels= */ 0,
         buffer,
         offset);
 
@@ -224,7 +150,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
       this.program.attributes.offsetPx,
       this.program.attributes.size,
       this.program.attributes.angle,
-      this.program.attributes.vRemap,
       this.program.attributes.atlasIndex,
       this.program.attributes.atlasSize,
       this.program.attributes.tint,
@@ -266,37 +191,30 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         /* normalize= */ false,
         /* stride= */ INSTANCE_STRIDE,
         /* offset= */ offset + 24);
-    gl.vertexAttribPointer(
-        this.program.attributes.vRemap,
-        2,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ INSTANCE_STRIDE,
-        /* offset= */ offset + 28);
     gl.vertexAttribIPointer(
         this.program.attributes.atlasIndex,
         1,
         gl.UNSIGNED_INT,
         /* stride= */ INSTANCE_STRIDE,
-        /* offset= */ offset + 36);
+        /* offset= */ offset + 28);
     gl.vertexAttribIPointer(
         this.program.attributes.atlasSize,
         2,
         gl.UNSIGNED_INT,
         /* stride= */ INSTANCE_STRIDE,
-        /* offset= */ offset + 40);
+        /* offset= */ offset + 32);
     gl.vertexAttribIPointer(
         this.program.attributes.tint,
         1,
         gl.UNSIGNED_INT,
         /* stride= */ INSTANCE_STRIDE,
-        /* offset= */ offset + 48);
+        /* offset= */ offset + 40);
     gl.vertexAttribIPointer(
         this.program.attributes.sizeIsPixels,
         1,
         gl.UNSIGNED_INT,
         /* stride= */ INSTANCE_STRIDE,
-        /* offset= */ offset + 52);
+        /* offset= */ offset + 44);
   }
 
   protected override draw(drawable: Drawable): void {
@@ -326,7 +244,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
       this.program.attributes.offsetPx,
       this.program.attributes.size,
       this.program.attributes.angle,
-      this.program.attributes.vRemap,
       this.program.attributes.atlasIndex,
       this.program.attributes.atlasSize,
       this.program.attributes.tint,
@@ -366,8 +283,6 @@ function pushInstance(
     sizeX: number,
     sizeY: number,
     angle: number,
-    vScale: number,
-    vOffset: number,
     atlasIndex: number,
     atlasSizeX: number,
     atlasSizeY: number,
@@ -386,13 +301,11 @@ function pushInstance(
   floats[4] = sizeX;
   floats[5] = sizeY;
   floats[6] = angle;
-  floats[7] = vScale;
-  floats[8] = vOffset;
-  uint32s[9] = atlasIndex;
-  uint32s[10] = atlasSizeX;
-  uint32s[11] = atlasSizeY;
-  uint32s[12] = tint;
-  uint32s[13] = sizeIsPixels;
+  uint32s[7] = atlasIndex;
+  uint32s[8] = atlasSizeX;
+  uint32s[9] = atlasSizeY;
+  uint32s[10] = tint;
+  uint32s[11] = sizeIsPixels;
 }
 
 interface BillboardProgramData extends ProgramData {
@@ -403,7 +316,6 @@ interface BillboardProgramData extends ProgramData {
     offsetPx: number;
     size: number;
     angle: number;
-    vRemap: number;
     atlasIndex: number;
     atlasSize: number;
     tint: number;
@@ -441,7 +353,6 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
       in highp vec2 offsetPx; // pixels
       in highp vec2 size; // Mercator or pixels
       in highp float angle; // Radians
-      in mediump vec2 vRemap; // scale, offset
       in uint atlasIndex;
       in uvec2 atlasSize;
       in uint tint;
@@ -533,8 +444,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
             atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);
         vec2 scale = 1. / vec2(atlasSize);
         vec2 translate = vec2(atlasXy) * scale;
-        vec2 tile = vec2(colorPosition.x, colorPosition.y * vRemap.x + vRemap.y);
-        fragColorPosition = translate + scale * tile;
+        fragColorPosition = translate + scale * colorPosition;
         fragColorTint = uint32ToVec4(tint);
       }
     `;
@@ -568,7 +478,6 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
       offsetPx: gl.getAttribLocation(programId, 'offsetPx'),
       size: gl.getAttribLocation(programId, 'size'),
       angle: gl.getAttribLocation(programId, 'angle'),
-      vRemap: gl.getAttribLocation(programId, 'vRemap'),
       atlasIndex: gl.getAttribLocation(programId, 'atlasIndex'),
       atlasSize: gl.getAttribLocation(programId, 'atlasSize'),
       tint: gl.getAttribLocation(programId, 'tint'),

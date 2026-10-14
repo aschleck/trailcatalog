@@ -12,7 +12,8 @@ import { COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT } from 'js/m
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
-import { MbtileLayer, NATURE } from 'js/map/layers/mbtile_layer';
+import { ANTARCTIC_CAP, ARCTIC_CAP, MbtileLayer, NATURE } from 'js/map/layers/mbtile_layer';
+import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
@@ -66,6 +67,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
     this.mapController.setLayers([
       this.layer,
       new SkyboxLayer(Z_BOTTOM, this.mapController.renderer),
+      new PolarCapLayer(ARCTIC_CAP, ANTARCTIC_CAP, this.mapController.renderer),
       new MbtileLayer(
           [
             {
