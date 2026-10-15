@@ -17,7 +17,7 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { LocationIndex } from 'js/map/workers/location_index';
-import { Route } from 'js/map/workers/location_querier';
+import { LineRef, Route } from 'js/map/workers/location_querier';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { SNAP_RADIUS_PX, toE7Array } from './drawing_layer';
@@ -53,6 +53,16 @@ import {
 } from './handles';
 import { LatestQuery } from './latest_query';
 import { insertVertex, moveVertex, removeVertex, rerouteLine } from './line_edits';
+import {
+  appendRoute,
+  emptyTrace,
+  nearestOn,
+  pushPoint,
+  refine,
+  Traced,
+  traceRefs,
+} from './line_matching';
+import { LineRefiner } from './line_refiner';
 import { DEFAULT_MARKER_WIDTH_PX, MarkerOutline, outlineMarker, pushMarker } from './marker';
 import { ShiftKey } from './shift_key';
 
@@ -145,7 +155,9 @@ interface VertexDrag {
   index: number;
   points: Float64Array;
   pointer: Vec2;
-  query: LatestQuery<Vec2, Vec2>;
+  query: LatestQuery<Vec2, {point: Vec2; line: LineRef|undefined}>;
+  // The last snap moved onto the unsimplified line, once the drop has fetched it
+  refined: Vec2|undefined;
 }
 
 // A line routed again from its start through the pointer to its end
@@ -153,7 +165,9 @@ interface Reroute {
   kind: 'reroute';
   phase: LineDragPhase;
   line: ProjectedLine;
-  query: LatestQuery<Vec2, Float64Array>;
+  query: LatestQuery<Vec2, Traced>;
+  // The last route along the unsimplified lines, once the drop has fetched them
+  refined: Float64Array|undefined;
 }
 
 // Geometry in one buffer and the drawables that read it, replanned when generation moves past
@@ -235,6 +249,8 @@ export class FeatureLayer extends Layer {
       private readonly store: FeatureStore,
       // Where lines go so that drawing snaps and routes along them
       private readonly locations: LocationIndex,
+      // Swaps the simplified lines a drag snapped or routed along for unsimplified ones
+      private readonly refiner: LineRefiner,
       private readonly camera: Camera,
       private readonly renderer: Renderer,
   ) {
@@ -492,7 +508,8 @@ export class FeatureLayer extends Layer {
         line: path,
         query: new LatestQuery(
             through => this.routeThrough(path.points, through)
-                .then(points => this.redrawOverlay(points))),
+                .then(route => this.redrawOverlay(route))),
+        refined: undefined,
       });
       return true;
     }
@@ -529,9 +546,11 @@ export class FeatureLayer extends Layer {
     const dragging = this.dragging;
     if (isLineDrag(dragging) && moved) {
       dragging.phase = 'settling';
-      dragging.query.settled().then(() => {
-        this.settle(dragging, source);
-      });
+      dragging.query.settled()
+          .then(() => this.refineDrag(dragging))
+          .then(() => {
+            this.settle(dragging, source);
+          });
     } else {
       this.setDragging(undefined);
     }
@@ -734,15 +753,43 @@ export class FeatureLayer extends Layer {
       query: new LatestQuery(
           pointer => this.locations
               .querySnap(pointer, radius)
-              .then(snapped => this.redrawOverlay(snapped ?? pointer))),
+              .then(snapped => this.redrawOverlay(snapped ?? {point: pointer, line: undefined}))),
+      refined: undefined,
     };
+  }
+
+  // Moves what a dropped drag snapped or routed along onto the unsimplified lines, or else the
+  // edit saves the simplified ones.
+  private refineDrag(drag: LineDrag): Promise<void> {
+    if (drag.kind === 'reroute') {
+      const route = drag.query.latest;
+      if (!route) {
+        return Promise.resolve();
+      }
+
+      const refs = traceRefs(route);
+      return this.refiner.load(refs).then(() => {
+        const geometry = (ref: LineRef) => this.refiner.geometry(ref);
+        drag.refined = refine(route, geometry).points;
+      });
+    }
+
+    const snapped = drag.query.latest;
+    const line = snapped?.line;
+    if (!snapped || !line || this.shift.held) {
+      return Promise.resolve();
+    }
+    return this.refiner.load([line]).then(() => {
+      const fine = this.refiner.geometry(line);
+      drag.refined = fine ? nearestOn(snapped.point[0], snapped.point[1], fine) : undefined;
+    });
   }
 
   // Writes where the vertex is drawn into its points. It waits for its snap instead of jumping
   // between the pointer and the line, and keeps snapping while shift is down so that releasing it
   // lands on a fresh answer.
   private placeVertex(drag: VertexDrag): void {
-    const at = this.shift.held ? drag.pointer : drag.query.latest;
+    const at = this.shift.held ? drag.pointer : drag.refined ?? drag.query.latest?.point;
     if (drag.phase !== 'pressed' && at) {
       drag.points[2 * drag.index] = at[0];
       drag.points[2 * drag.index + 1] = at[1];
@@ -756,7 +803,7 @@ export class FeatureLayer extends Layer {
 
   // The line from its start through via to its end, along the lines in the index. A half that
   // finds no route is straight, like a segment drawn with the line tool.
-  private routeThrough(points: Float64Array, via: Vec2): Promise<Float64Array> {
+  private routeThrough(points: Float64Array, via: Vec2): Promise<Traced> {
     const last = points.length - 2;
     const start: Vec2 = [points[0], points[1]];
     const end: Vec2 = [points[last], points[last + 1]];
@@ -800,7 +847,8 @@ export class FeatureLayer extends Layer {
     }
 
     if (drag.kind === 'reroute') {
-      const points = drag.query.latest;
+      const traced = drag.query.latest?.points;
+      const points = drag.refined ?? (traced && Float64Array.from(traced));
       const after = points && rerouteLine(live, toE7Array(points));
       if (after) {
         source.trigger(FEATURE_EDITED, {before: snapshot(live), after});
@@ -1053,7 +1101,8 @@ export class FeatureLayer extends Layer {
     }
     // The line as it is until the first route lands
     const reroute = dragging?.kind === 'reroute' ? dragging : undefined;
-    const reroutePoints = reroute && (reroute.query.latest ?? reroute.line.points);
+    const reroutePoints =
+        reroute && (reroute.refined ?? reroute.query.latest?.points ?? reroute.line.points);
     const linePoints = vertexDrag ? vertexDrag.points : editing?.points;
 
     // The same squares the drawing tools place, hollow except for the vertex picked last
@@ -1455,22 +1504,13 @@ function outlineOf(line: ProjectedLine): ProjectedLine['marker'] {
 
 // The routes from start to via and from via to end laid end to end, including where each snapped
 // onto the lines. A route that missed every line has no via and so goes straight.
-function joinRoutes(start: Vec2, a: Route, b: Route, end: Vec2): Float64Array {
-  const pieces = [start, a.from, a.via, a.to, b.via, b.to, end];
-  let length = 0;
-  for (const piece of pieces) {
-    length += piece?.length ?? 0;
-  }
-
-  const points = new Float64Array(length);
-  let at = 0;
-  for (const piece of pieces) {
-    if (piece) {
-      points.set(piece, at);
-      at += piece.length;
-    }
-  }
-  return points;
+function joinRoutes(start: Vec2, a: Route, b: Route, end: Vec2): Traced {
+  const trace = emptyTrace();
+  pushPoint(trace, start, undefined, undefined);
+  appendRoute(trace, a);
+  appendRoute(trace, b);
+  pushPoint(trace, end, undefined, undefined);
+  return trace;
 }
 
 function isLineDrag(drag: Drag|undefined): drag is LineDrag {

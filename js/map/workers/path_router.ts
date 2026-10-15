@@ -25,12 +25,29 @@ export interface Anchor {
   b: Vec2;
   // What the segment it lies on runs over
   terrain: Terrain|undefined;
+  // The line the segment it lies on belongs to
+  line: LineKey|undefined;
 }
 
 /** A line to route over. */
 export interface RoutableLine {
   points: Float64Array;
   terrain: Terrain|undefined;
+  // Names the line in a route's lines
+  key: number;
+}
+
+// A line as its group and the key it was loaded with
+export interface LineKey {
+  group: string;
+  key: number;
+}
+
+// The vertices strictly between two anchors and the line each segment runs along
+export interface PathRoute {
+  via: Float64Array;
+  // One per segment of from, via, to, undefined only where an anchor names no line
+  lines: Array<LineKey|undefined>;
 }
 
 // Terrain as stored per edge, one bit each so that a route can allow several
@@ -47,6 +64,7 @@ const ALLOWED_FROM = {land: LAND, water: WATER, aerial: AERIAL | LAND} as const;
 // prepare or the next route, because it walks a hash map per vertex and a group that arrives while
 // nobody is drawing should cost nothing.
 interface Group {
+  id: string;
   lines: RoutableLine[]|undefined;
   // How far these lines may sit from the geometry they stand for, in mercator.
   tolerance: number;
@@ -55,6 +73,10 @@ interface Group {
   edges: Int32Array|undefined;
   // One per edge, see TERRAIN_CODES
   edgeTerrain: Uint8Array|undefined;
+  // One per edge, the key of the line it came from
+  edgeKeys: Int32Array|undefined;
+  // One more than the largest key, so that every group's keys fit one numbering, see Adjacency
+  keyCount: number;
   // The node at each end of each line, which is where a line from another group may meet it
   // without sharing a vertex.
   ends: Int32Array|undefined;
@@ -80,13 +102,16 @@ interface Run {
 }
 
 // An end joined onto the segment from a to b, with partner the group that doesn't hold the join.
-// The join edges stand in for parts of that segment, so they run over its terrain.
+// The join edges stand in for parts of that segment, so they run over its terrain and along its
+// line, which is key in owner.
 interface Join {
   partner: Group;
   end: number;
   a: number;
   b: number;
   terrain: number;
+  owner: Group;
+  key: number;
 }
 
 // Room for a tile's vertices, so the first group in doesn't reallocate.
@@ -130,6 +155,8 @@ export class PathRouter {
   private adjacency: Adjacency|undefined;
   private cost: Float64Array;
   private cameFrom: Int32Array;
+  // The slot in Adjacency the cheapest way to each node arrived through
+  private cameBy: Int32Array;
   private settled: Uint8Array;
 
   constructor() {
@@ -144,6 +171,7 @@ export class PathRouter {
     this.adjacency = undefined;
     this.cost = new Float64Array(0);
     this.cameFrom = new Int32Array(0);
+    this.cameBy = new Int32Array(0);
     this.settled = new Uint8Array(0);
   }
 
@@ -154,12 +182,19 @@ export class PathRouter {
    */
   load(groupId: string, lines: RoutableLine[], tolerance: number, crossings = false): void {
     this.unload(groupId);
+    let keyCount = 0;
+    for (const line of lines) {
+      keyCount = Math.max(keyCount, line.key + 1);
+    }
     this.groups.set(groupId, {
+      id: groupId,
       lines,
       tolerance,
       crossings,
       edges: undefined,
       edgeTerrain: undefined,
+      edgeKeys: undefined,
+      keyCount,
       ends: undefined,
       bound: undefined,
       runs: [],
@@ -194,11 +229,12 @@ export class PathRouter {
   }
 
   /**
-   * The vertices strictly between two anchors, or undefined when the network doesn't join them
-   * without straying further than reach from the line between them.
+   * The way between two anchors, or undefined when the network doesn't join them without straying
+   * further than reach from the line between them.
    */
-  route(from: Anchor, to: Anchor, reach: number): Float64Array|undefined {
-    const {offsets, neighbors, terrain} = this.buildAdjacency();
+  route(from: Anchor, to: Anchor, reach: number): PathRoute|undefined {
+    const adjacency = this.buildAdjacency();
+    const {offsets, neighbors, terrain} = adjacency;
     const allowed = allowedTerrain(from.terrain, to.terrain);
     const fromA = this.nodeAt(from.a);
     const fromB = this.nodeAt(from.b);
@@ -210,12 +246,13 @@ export class PathRouter {
 
     // Both ends on one segment, so no vertex lies between them.
     if ((fromA === toA && fromB === toB) || (fromA === toB && fromB === toA)) {
-      return new Float64Array(0);
+      return {via: new Float64Array(0), lines: [from.line]};
     }
 
     const nodeCount = this.nodeCount;
     const cost = this.cost;
     const cameFrom = this.cameFrom;
+    const cameBy = this.cameBy;
     const settled = this.settled;
     cost.fill(Number.POSITIVE_INFINITY, 0, nodeCount);
     cameFrom.fill(-1, 0, nodeCount);
@@ -241,7 +278,7 @@ export class PathRouter {
       // A* settles nodes in order of their total cost, so the first node of the goal segment to
       // settle holds the cheapest route to it.
       if (goals.includes(u)) {
-        return this.unwind(u, from.point, to.point);
+        return this.unwind(u, from, to, adjacency);
       }
 
       const ux = this.x[u];
@@ -264,6 +301,7 @@ export class PathRouter {
         if (through < cost[v]) {
           cost[v] = through;
           cameFrom[v] = u;
+          cameBy[v] = i;
           heap.push(through + distance(vx, vy, to.point[0], to.point[1]), v);
         }
       }
@@ -307,13 +345,28 @@ export class PathRouter {
       joined.add(group);
     }
 
+    // Numbers every group's keys in one run, so that an edge names its line in one int.
+    const bases = new Map<Group, number>();
+    const owners: Array<{group: string; base: number}> = [];
+    let keyCount = 0;
+    for (const group of this.groups.values()) {
+      bases.set(group, keyCount);
+      owners.push({group: group.id, base: keyCount});
+      keyCount += group.keyCount;
+    }
+    const lineOf = (owner: Group, key: number) => checkExists(bases.get(owner)) + key;
+
     this.joined = new Map();
     const joins = [];
     const joinTerrain = [];
+    const joinLines = [];
     for (const group of this.groups.values()) {
-      for (const {end, a, b, terrain} of group.joins) {
+      for (const join of group.joins) {
+        const {end, a, b, terrain} = join;
         joins.push(end, a, end, b);
         joinTerrain.push(terrain, terrain);
+        const line = lineOf(join.owner, join.key);
+        joinLines.push(line, line);
         const key = segmentKey(a, b);
         const onto = this.joined.get(key);
         if (onto) {
@@ -327,6 +380,15 @@ export class PathRouter {
     edgeLists.push(Int32Array.from(joins));
     const terrainLists = [...this.groups.values()].map(group => checkExists(group.edgeTerrain));
     terrainLists.push(Uint8Array.from(joinTerrain));
+    const lineLists = [...this.groups.values()].map(group => {
+      const keys = checkExists(group.edgeKeys);
+      const lines = new Int32Array(keys.length);
+      for (let i = 0; i < keys.length; ++i) {
+        lines[i] = lineOf(group, keys[i]);
+      }
+      return lines;
+    });
+    lineLists.push(Int32Array.from(joinLines));
 
     const nodeCount = this.nodeCount;
     const offsets = new Int32Array(nodeCount + 1);
@@ -342,19 +404,24 @@ export class PathRouter {
 
     const neighbors = new Int32Array(offsets[nodeCount]);
     const terrain = new Uint8Array(offsets[nodeCount]);
+    const lines = new Int32Array(offsets[nodeCount]);
     const filled = offsets.slice(0, nodeCount);
     for (let list = 0; list < edgeLists.length; ++list) {
       const edges = edgeLists[list];
       const edgeTerrain = terrainLists[list];
+      const edgeLines = lineLists[list];
       for (let i = 0; i < edges.length; i += 2) {
         const u = edges[i];
         const v = edges[i + 1];
         const t = edgeTerrain[i / 2];
+        const l = edgeLines[i / 2];
         neighbors[filled[u]] = v;
         terrain[filled[u]] = t;
+        lines[filled[u]] = l;
         filled[u] += 1;
         neighbors[filled[v]] = u;
         terrain[filled[v]] = t;
+        lines[filled[v]] = l;
         filled[v] += 1;
       }
     }
@@ -362,10 +429,11 @@ export class PathRouter {
     if (this.cost.length < nodeCount) {
       this.cost = new Float64Array(nodeCount);
       this.cameFrom = new Int32Array(nodeCount);
+      this.cameBy = new Int32Array(nodeCount);
       this.settled = new Uint8Array(nodeCount);
     }
 
-    this.adjacency = {offsets, neighbors, terrain};
+    this.adjacency = {offsets, neighbors, terrain, lines, owners};
     return this.adjacency;
   }
 
@@ -379,9 +447,10 @@ export class PathRouter {
 
     const edges = new Int32Array(2 * segments);
     const edgeTerrain = new Uint8Array(segments);
+    const edgeKeys = new Int32Array(segments);
     const ends = [];
     let at = 0;
-    for (const {points, terrain} of lines) {
+    for (const {points, terrain, key} of lines) {
       const code = terrain ? TERRAIN_CODES[terrain] : ANY;
       const start = at;
       let previous = -1;
@@ -392,6 +461,7 @@ export class PathRouter {
           edges[at] = previous;
           edges[at + 1] = node;
           edgeTerrain[at / 2] = code;
+          edgeKeys[at / 2] = key;
           at += 2;
         }
         previous = node;
@@ -415,6 +485,7 @@ export class PathRouter {
     }
     group.edges = edges.subarray(0, at);
     group.edgeTerrain = edgeTerrain.subarray(0, at / 2);
+    group.edgeKeys = edgeKeys.subarray(0, at / 2);
     group.ends = Int32Array.from(ends);
   }
 
@@ -514,10 +585,24 @@ export class PathRouter {
             }
 
             const node = this.nodeFor(crossing[0], crossing[1]);
-            const groupTerrain = checkExists(group.edgeTerrain)[i / 2];
-            const otherTerrain = checkExists(other.edgeTerrain)[j / 2];
-            group.joins.push({partner: other, end: node, a, b, terrain: groupTerrain});
-            group.joins.push({partner: other, end: node, a: c, b: d, terrain: otherTerrain});
+            group.joins.push({
+              partner: other,
+              end: node,
+              a,
+              b,
+              terrain: checkExists(group.edgeTerrain)[i / 2],
+              owner: group,
+              key: checkExists(group.edgeKeys)[i / 2],
+            });
+            group.joins.push({
+              partner: other,
+              end: node,
+              a: c,
+              b: d,
+              terrain: checkExists(other.edgeTerrain)[j / 2],
+              owner: other,
+              key: checkExists(other.edgeKeys)[j / 2],
+            });
           }
         }
       }
@@ -527,7 +612,7 @@ export class PathRouter {
   // The nearest segment of a run to one end, if it is within tolerance and doesn't already share
   // the end as a vertex.
   private nearestJoin(endGroup: Group, end: number, runGroup: Group, run: Run):
-      {end: number; a: number; b: number; terrain: number}|undefined {
+      Omit<Join, 'partner'>|undefined {
     const tolerance = Math.max(endGroup.tolerance, runGroup.tolerance);
     const edges = checkExists(runGroup.edges);
     const px = this.x[end];
@@ -555,7 +640,8 @@ export class PathRouter {
     const a = edges[bestAt];
     const b = edges[bestAt + 1];
     const terrain = checkExists(runGroup.edgeTerrain)[bestAt / 2];
-    return a === end || b === end ? undefined : {end, a, b, terrain};
+    const key = checkExists(runGroup.edgeKeys)[bestAt / 2];
+    return a === end || b === end ? undefined : {end, a, b, terrain, owner: runGroup, key};
   }
 
   private runBound(edges: Int32Array, start: number, end: number): Rect {
@@ -667,18 +753,22 @@ export class PathRouter {
 
   // Walks back from the goal to the seed that reached it and writes the positions out forwards. An
   // end that repeats its anchor is dropped, which happens when the anchor sits on a vertex.
-  private unwind(goal: number, from: Vec2, to: Vec2): Float64Array {
+  private unwind(goal: number, from: Anchor, to: Anchor, adjacency: Adjacency): PathRoute {
     const backwards = [];
     for (let node = goal; node >= 0; node = this.cameFrom[node]) {
       backwards.push(node);
     }
 
     let first = backwards.length - 1;
-    if (this.x[backwards[first]] === from[0] && this.y[backwards[first]] === from[1]) {
+    const fromDropped =
+        this.x[backwards[first]] === from.point[0] && this.y[backwards[first]] === from.point[1];
+    if (fromDropped) {
       first -= 1;
     }
     let last = 0;
-    if (this.x[backwards[last]] === to[0] && this.y[backwards[last]] === to[1]) {
+    const toDropped =
+        this.x[backwards[last]] === to.point[0] && this.y[backwards[last]] === to.point[1];
+    if (toDropped) {
       last += 1;
     }
 
@@ -689,7 +779,20 @@ export class PathRouter {
       via[at + 1] = this.y[backwards[i]];
       at += 2;
     }
-    return via;
+
+    // The seed is reached along from's segment and the goal leaves along to's, and every node in
+    // between along the edge cameBy names.
+    const lines: Array<LineKey|undefined> = [];
+    if (!fromDropped) {
+      lines.push(from.line);
+    }
+    for (let i = backwards.length - 2; i >= 0; --i) {
+      lines.push(lineKey(adjacency, adjacency.lines[this.cameBy[backwards[i]]]));
+    }
+    if (!toDropped) {
+      lines.push(to.line);
+    }
+    return {via, lines};
   }
 
   // The node at a position, or -1 when there is none. The querier anchors onto the lines this
@@ -729,6 +832,25 @@ interface Adjacency {
   neighbors: Int32Array;
   // The terrain of the edge to each neighbor, see TERRAIN_CODES
   terrain: Uint8Array;
+  // The line of the edge to each neighbor, as an owner's base plus its key
+  lines: Int32Array;
+  // Each group with where its keys start in lines, ascending
+  owners: Array<{group: string; base: number}>;
+}
+
+function lineKey(adjacency: Adjacency, line: number): LineKey {
+  const owners = adjacency.owners;
+  let low = 0;
+  let high = owners.length - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >> 1;
+    if (owners[middle].base <= line) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return {group: owners[low].group, key: line - owners[low].base};
 }
 
 // The terrain a route between two ends may use, or ANY when it may use everything. Ends on

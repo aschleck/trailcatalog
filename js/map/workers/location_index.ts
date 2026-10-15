@@ -6,6 +6,7 @@ import { LatLng, Vec2 } from '../common/types';
 import {
   IndexedLine,
   IndexedPolygon,
+  LineRef,
   PackedLines,
   QueryPointResponse,
   QueryRouteResponse,
@@ -58,15 +59,18 @@ export class LocationIndex {
   /**
    * Replaces everything held under a group id. Tolerance is how far its lines may sit from the
    * geometry they stand for, in mercator, which is how far apart two lines may end and still meet.
-   * Crossings lets routes turn wherever these lines cross another group's.
+   * Crossings lets routes turn wherever these lines cross another group's. Source is the
+   * collection that serves the lines unsimplified, which routes name them by, and needs PackedLines
+   * with ids.
    */
   load(
       groupId: string,
       tolerance: number,
       lines: IndexedLine[]|PackedLines,
       polygons: IndexedPolygon[],
-      crossings = false): void {
-    this.worker.post({kind: 'lr', groupId, tolerance, crossings, lines, polygons});
+      crossings = false,
+      source: string|undefined = undefined): void {
+    this.worker.post({kind: 'lr', groupId, tolerance, crossings, lines, polygons, source});
   }
 
   unload(groupIds: string[]): void {
@@ -94,10 +98,11 @@ export class LocationIndex {
         generation => ({kind: 'qrr', generation, from, to, radius, reach}));
   }
 
-  /** The closest point on a line within radius of point, both in mercator. */
-  querySnap(point: Vec2, radius: number): Promise<Vec2|undefined> {
+  /** The closest point on a line within radius of point, both in mercator, and that line. */
+  querySnap(point: Vec2, radius: number):
+      Promise<{point: Vec2; line: LineRef|undefined}|undefined> {
     return this.query<QuerySnapResponse>(generation => ({kind: 'qsr', generation, point, radius}))
-        .then(response => response.point);
+        .then(({point, line}) => point ? {point, line} : undefined);
   }
 
   private query<R extends Response>(request: (generation: number) => Request): Promise<R> {

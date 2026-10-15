@@ -4,9 +4,9 @@ import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_
 
 import { projectS2LatLng, unprojectS2LatLng } from '../camera';
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
-import { LatLng, LatLngRect, Rect, Vec2 } from '../common/types';
+import { LatLng, LatLngRect, RawUuid, Rect, Vec2 } from '../common/types';
 
-import { Anchor, PathRouter, Terrain, TERRAINS } from './path_router';
+import { Anchor, LineKey, PathRouter, Terrain, TERRAINS } from './path_router';
 
 interface InitializeRequest {
   kind: 'ir';
@@ -31,6 +31,15 @@ export interface PackedLines {
   starts: Uint32Array;
   // Indices into path_router.ts#TERRAINS
   terrains: Uint8Array;
+  // lsb then msb for each line, for answering with LineRefs
+  ids: BigInt64Array|undefined;
+}
+
+// A line by the collection that serves it and its id there, see line_refiner.ts
+export interface LineRef {
+  // The collection's API root, which serves the line unsimplified under /lines
+  url: string;
+  id: RawUuid;
 }
 
 export interface IndexedPolygon {
@@ -48,6 +57,8 @@ interface LoadRequest {
   crossings: boolean;
   lines: IndexedLine[]|PackedLines;
   polygons: IndexedPolygon[];
+  // Where the lines can be fetched unsimplified, which needs lines to be PackedLines with ids
+  source: string|undefined;
 }
 
 interface UnloadRequest {
@@ -113,6 +124,11 @@ export interface Route {
   // The vertices between from and to along the lines, or undefined when an end missed every line
   // or the network doesn't join them
   via: Float64Array|undefined;
+  // One per segment of from, via, to, naming the line it runs along, or undefined along one with
+  // no source. Undefined when via is.
+  lines: Array<LineRef|undefined>|undefined;
+  // The line to landed on
+  toLine: LineRef|undefined;
 }
 
 export interface QueryRouteResponse extends Route {
@@ -125,6 +141,8 @@ export interface QuerySnapResponse {
   generation: number;
   // The closest point on a line, or undefined when none came within radius
   point: Vec2|undefined;
+  // The line point is on
+  line: LineRef|undefined;
 }
 
 export type Response = QueryPointResponse|QueryRouteResponse|QuerySnapResponse;
@@ -134,6 +152,8 @@ interface LineEntry {
   id: string;
   points: Float64Array;
   terrain: Terrain|undefined;
+  // The line as the router knows it
+  line: LineKey;
 }
 
 interface PolygonEntry {
@@ -156,6 +176,8 @@ const NORMALIZED_PER_MERCATOR = 2;
 class LocationQuerier {
 
   private readonly groups: Map<string, Array<Rect>>;
+  // The groups that can name their lines, by group id
+  private readonly sources: Map<string, {url: string; ids: BigInt64Array}>;
   private readonly tree: WorldBoundsQuadtree<Entry>;
   // A second copy of the lines, because the tree only finds what is near a point and a route needs
   // what connects to what.
@@ -168,6 +190,7 @@ class LocationQuerier {
       private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
   ) {
     this.groups = new Map();
+    this.sources = new Map();
     this.tree = new WorldBoundsQuadtree<Entry>();
     this.router = new PathRouter();
     this.routing = false;
@@ -184,9 +207,12 @@ class LocationQuerier {
     // groups has forgotten them.
     this.unload({kind: 'ur', groupIds: [request.groupId]});
 
+    const groupId = request.groupId;
     const bounds = [];
     const lines = [];
-    for (const line of unpack(request.lines)) {
+    const unpacked = unpack(request.lines);
+    for (let key = 0; key < unpacked.length; ++key) {
+      const line = unpacked[key];
       const latLng = lineBound(line.points);
       if (!latLng) {
         continue;
@@ -194,9 +220,14 @@ class LocationQuerier {
 
       const bound = normalize(latLng);
       bounds.push(bound);
-      lines.push({points: line.points, terrain: line.terrain});
-      this.tree.insert(
-          {kind: 'line', id: line.id, points: line.points, terrain: line.terrain}, bound);
+      lines.push({points: line.points, terrain: line.terrain, key});
+      this.tree.insert({
+        kind: 'line',
+        id: line.id,
+        points: line.points,
+        terrain: line.terrain,
+        line: {group: groupId, key},
+      }, bound);
     }
     for (const polygon of request.polygons) {
       // A polygon that simplified away has an empty bound and can never be hit.
@@ -209,8 +240,12 @@ class LocationQuerier {
       this.tree.insert(
           {kind: 'polygon', id: polygon.id, raw: polygon.raw, polygon: undefined}, bound);
     }
-    this.groups.set(request.groupId, bounds);
-    this.router.load(request.groupId, lines, request.tolerance, request.crossings);
+    this.groups.set(groupId, bounds);
+    const ids = Array.isArray(request.lines) ? undefined : request.lines.ids;
+    if (request.source && ids) {
+      this.sources.set(groupId, {url: request.source, ids});
+    }
+    this.router.load(groupId, lines, request.tolerance, request.crossings);
     this.prepareSoon();
   }
 
@@ -221,6 +256,7 @@ class LocationQuerier {
         this.tree.delete(bound);
       }
       this.groups.delete(groupId);
+      this.sources.delete(groupId);
       this.router.unload(groupId);
     }
     this.prepareSoon();
@@ -290,10 +326,8 @@ class LocationQuerier {
   queryRoute(request: QueryRouteRequest) {
     const from = this.anchor(request.from, request.radius);
     const to = this.anchor(request.to, request.radius);
-    let via: Float64Array|undefined = undefined;
-    if (from && to) {
-      via = this.router.route(from, to, request.reach);
-    }
+    const route = from && to ? this.router.route(from, to, request.reach) : undefined;
+    const via = route?.via;
 
     const response: QueryRouteResponse = {
       kind: 'qrr',
@@ -301,17 +335,30 @@ class LocationQuerier {
       from: from?.point ?? request.from,
       to: to?.point ?? request.to,
       via,
+      lines: route?.lines.map(line => this.lineRef(line)),
+      toLine: this.lineRef(to?.line),
     };
     this.postMessage(response, via ? [via.buffer] : []);
   }
 
   querySnap(request: QuerySnapRequest) {
+    const anchor = this.anchor(request.point, request.radius);
     const response: QuerySnapResponse = {
       kind: 'qsr',
       generation: request.generation,
-      point: this.anchor(request.point, request.radius)?.point,
+      point: anchor?.point,
+      line: this.lineRef(anchor?.line),
     };
     this.postMessage(response);
+  }
+
+  private lineRef(line: LineKey|undefined): LineRef|undefined {
+    const source = line ? this.sources.get(line.group) : undefined;
+    if (!line || !source) {
+      return undefined;
+    }
+    const ids = source.ids;
+    return {url: source.url, id: {lsb: ids[2 * line.key], msb: ids[2 * line.key + 1]}};
   }
 
   // The closest point on a loaded line, or undefined when none of them comes within radius.
@@ -349,6 +396,7 @@ class LocationQuerier {
       a: [points[best.at], points[best.at + 1]],
       b: [points[best.at + 2], points[best.at + 3]],
       terrain: bestLine.terrain,
+      line: bestLine.line,
     };
   }
 }

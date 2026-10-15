@@ -72,6 +72,7 @@ import {
   SaveFailedDialog,
 } from './dialogs';
 import { DrawingLayer, toE7Array } from './drawing_layer';
+import { LineRefiner } from './line_refiner';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -405,17 +406,21 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     // One index for every layer, so that the drawing tools snap onto and route across drawn
     // lines and paths alike.
     const locations = new LocationIndex();
+    // One cache, so that measuring a line just drawn doesn't fetch its lines again
+    const refiner = new LineRefiner();
     const camera = this.mapController.camera;
     const renderer = this.mapController.renderer;
     // Line profiles and new vertices sample their elevations from Mapterhorn
     this.featureLayer =
-        new FeatureLayer([MAPTERHORN_COPYRIGHT], this.store, locations, camera, renderer);
+        new FeatureLayer(
+            [MAPTERHORN_COPYRIGHT], this.store, locations, refiner, camera, renderer);
     this.registerDisposable(this.featureLayer);
     this.featureLayer.setHidden(this.state.features.hidden);
     this.lineLayer =
         new DrawingLayer(
             'line',
             locations,
+            refiner,
             camera,
             renderer,
             () => {
@@ -426,6 +431,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         new DrawingLayer(
             'measure',
             locations,
+            refiner,
             camera,
             renderer,
             () => {
@@ -439,6 +445,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         new DrawingLayer(
             'line',
             locations,
+            refiner,
             camera,
             renderer,
             () => {

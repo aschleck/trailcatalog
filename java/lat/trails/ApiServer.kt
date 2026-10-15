@@ -23,6 +23,7 @@ import io.javalin.http.UnauthorizedResponse
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.sql.Connection
+import java.sql.ResultSet
 import java.sql.Types
 import java.util.UUID
 import kotlin.collections.ArrayList
@@ -103,6 +104,10 @@ private const val KIND_UUID_JSON = 0
 private const val KIND_PACKED_PATH = 1
 private const val KIND_PACKED_POINT = 2
 
+// A batch from line_refiner.ts#BATCH. 128 ids at 37 characters each is 4.7 KB, under the 8 KB
+// buffer nginx's large_client_header_buffers default holds a request line in.
+private const val MAX_LINES_BY_ID = 128
+
 private const val LINE_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters, time_seconds"
 private const val POINT_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters"
 
@@ -119,6 +124,7 @@ fun main(args: Array<String>) {
     config.routes.post("/api/data", ::fetchData)
     config.routes.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
     config.routes.get("/api/collections/{id}/objects/{cell}", ::fetchCollectionObjects)
+    config.routes.get("/api/collections/{id}/lines", ::fetchCollectionLines)
   }.start(port.value)
 }
 
@@ -1191,6 +1197,78 @@ private fun fetchCollectionObjects(ctx: Context) {
   }
 
   ctx.result(bytes.toByteArray())
+}
+
+// Unsimplified geometry for a handful of lines named by id, for the drawing tools to swap in for
+// the simplified copies they routed along. Paths are named by a UUID whose lsb is the path id,
+// which is the RawUuid the objects endpoint gives them.
+private fun fetchCollectionLines(ctx: Context) {
+  val collection = ctx.pathParam("id")
+  val ids = (ctx.queryParam("ids") ?: "").split(",").filter { it.isNotEmpty() }.map(::parseUuid)
+  if (ids.size > MAX_LINES_BY_ID) {
+    throw BadRequestResponse("Too many ids")
+  }
+
+  val bytes = AlignableByteArrayOutputStream()
+  DelegatingEncodedOutputStream(bytes).use {
+    if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
+      fetchTrailcatalogPathsById(it, ids)
+    } else {
+      hikari.connection.use { connection ->
+        // The query below trusts this, because it filters on nothing else.
+        accessTo(connection, parseUuid(collection), optionalUser(ctx))
+            ?: throw NotFoundResponse()
+        connection
+          .prepareStatement(
+            "SELECT id, lat_lng_degrees "
+                    + "FROM lines "
+                    + "WHERE collection = ? AND deleted IS NULL AND id = ANY (?)"
+          )
+          .apply {
+            setObject(1, UUID.fromString(collection))
+            setArray(2, connection.createArrayOf("UUID", ids.toTypedArray()))
+          }
+          .executeQuery()
+          .use { results ->
+            writeLinesById(it, results) { results.getObject(1) as UUID }
+          }
+      }
+    }
+  }
+  ctx.header("Cache-Control", "no-cache,private")
+  ctx.result(bytes.toByteArray())
+}
+
+private fun fetchTrailcatalogPathsById(it: DelegatingEncodedOutputStream, ids: List<UUID>) {
+  hikariTrailcatalog.connection.use { connection ->
+    connection
+      .prepareStatement("SELECT id, lat_lng_degrees FROM paths WHERE epoch = ? AND id = ANY (?)")
+      .apply {
+        setInt(1, epochTracker.epoch)
+        setArray(
+          2, connection.createArrayOf("BIGINT", ids.map { it.leastSignificantBits }.toTypedArray()))
+      }
+      .executeQuery()
+      .use { results ->
+        writeLinesById(it, results) { UUID(0, results.getLong(1)) }
+      }
+  }
+}
+
+// count, then id_lsb,id_msb,lat_lng_degrees for each. Keep in sync with
+// line_refiner.ts#decodeLines.
+private fun writeLinesById(
+    it: DelegatingEncodedOutputStream, results: ResultSet, id: () -> UUID) {
+  val lines = ArrayList<Pair<UUID, ByteArray>>()
+  while (results.next()) {
+    lines.add(Pair(id(), results.getBytes(2)))
+  }
+  it.writeVarInt(lines.size)
+  for ((uuid, latLngDegrees) in lines) {
+    it.writeLong(uuid.leastSignificantBits)
+    it.writeLong(uuid.mostSignificantBits)
+    it.write(latLngDegrees)
+  }
 }
 
 private fun fetchRealCollection(

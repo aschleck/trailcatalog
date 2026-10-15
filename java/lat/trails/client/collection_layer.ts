@@ -115,7 +115,7 @@ export class CollectionLayer extends Layer {
 
   constructor(
       copyrights: Copyright[],
-      url: string,
+      private readonly url: string,
       // undefined to use the style from the collection's presentation
       style: Style|undefined,
       snaps: Snap[],
@@ -618,12 +618,16 @@ export class CollectionLayer extends Layer {
           points: lines.points,
           starts: lines.starts,
           terrains: lines.terrains,
+          ids: lines.ids,
         },
         polygons.map(polygon => ({
           id: objectKey(polygon.id),
           bound: polygon.bound,
           raw: polygon.raw,
-        })));
+        })),
+        /* crossings= */ false,
+        // Unsimplified lines need no refining.
+        tolerance > 0 ? this.url : undefined);
   }
 
   private loadRawCell(command: LoadCellCommand): void {

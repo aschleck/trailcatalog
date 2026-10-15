@@ -8,7 +8,6 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { LocationIndex } from 'js/map/workers/location_index';
-import { Route } from 'js/map/workers/location_querier';
 import { Z_EDITING } from 'js/map/z';
 
 import { LINE_DRAWN, TOOL_REQUESTED } from './events';
@@ -20,6 +19,17 @@ import {
   planHandles,
 } from './handles';
 import { LatestQuery } from './latest_query';
+import {
+  appendTrace,
+  emptyTrace,
+  pushPoint,
+  Refined,
+  refine,
+  routeTrace,
+  Traced,
+  traceRefs,
+} from './line_matching';
+import { LineRefiner } from './line_refiner';
 import { ShiftKey } from './shift_key';
 
 // What finishing a drawing does. A line hands itself off to be saved and clears. A measurement
@@ -57,22 +67,19 @@ const MARKER_STROKE = 0xFFFFFFFF as RgbaU32;
 // Held in mercator and converted to E7 only when the line is finished, because the cursor vertex
 // changes on every pointer move and its route can run to thousands of points.
 interface Vertex {
-  // Where the pointer was. Queries ask about this rather than point, so that routing again after
-  // shift or backspace snaps from what was clicked.
+  // Where the pointer was. Queries ask about this rather than where the vertex sits, so that
+  // routing again after shift or backspace snaps from what was clicked.
   at: Vec2;
-  // Where the vertex sits, which is at until a route snaps it onto a line
-  point: Vec2;
-  // The path from the previous vertex to this one, excluding both, and empty for a straight
-  // segment
-  via: Float64Array;
+  // The path from just past the previous vertex up to and including this one, whose last point is
+  // where the vertex sits. That is at until a route snaps it onto a line.
+  trace: Traced;
   // How a SegmentRouter answered for the segment reaching this vertex
   routed: 'routing'|'routed'|'unroutable'|'failed'|undefined;
   // The latest request to the SegmentRouter, so that an answer to one it replaced is dropped
   request: number;
 }
 
-// Shared because a straight segment is the common case and nothing writes through it.
-const STRAIGHT = new Float64Array(0);
+const NO_POINTS = new Float64Array(0);
 
 interface Drawing {
   vertices: Vertex[];
@@ -108,11 +115,16 @@ export class DrawingLayer extends Layer {
   // A click drops the cursor until the next move, so this is what says the pointer is still here.
   private pointerOver: boolean;
   private routeRequests: number;
+  // The last refine of the placed vertices, and the vertex traces and refiner version it was made
+  // from, because points() runs on every pointer move and the placed part rarely changes.
+  private refinedFrom: {traces: Traced[]; version: number; refined: Refined}|undefined;
 
   constructor(
       private readonly mode: DrawingMode,
       // What vertices snap and route onto
       private readonly locations: LocationIndex,
+      // Swaps the simplified lines the drawing routed along for unsimplified ones
+      private readonly refiner: LineRefiner,
       private readonly camera: Camera,
       private readonly renderer: Renderer,
       // Called whenever the drawing changes, including when a route lands after the input that
@@ -151,6 +163,7 @@ export class DrawingLayer extends Layer {
     this.registerDisposable(this.shift);
     this.pointerOver = false;
     this.routeRequests = 0;
+    this.refinedFrom = undefined;
   }
 
   override get copyrights(): Copyright[] {
@@ -177,7 +190,7 @@ export class DrawingLayer extends Layer {
 
   /** Returns the placed vertices and the paths between them in mercator, without the cursor. */
   placedPoints(): Float64Array {
-    return this.drawing ? drawnPoints(this.drawing.vertices) : STRAIGHT;
+    return this.drawing ? this.refined(this.drawing.vertices).points : NO_POINTS;
   }
 
   /**
@@ -192,9 +205,18 @@ export class DrawingLayer extends Layer {
   points(): Float64Array {
     const drawing = this.drawing;
     if (!drawing) {
-      return STRAIGHT;
+      return NO_POINTS;
     }
-    return drawnPoints(drawing.cursor ? [...drawing.vertices, drawing.cursor] : drawing.vertices);
+
+    const placed = this.refined(drawing.vertices).points;
+    const cursor = drawing.cursor?.trace.points;
+    if (!cursor) {
+      return placed;
+    }
+    const points = new Float64Array(placed.length + cursor.length);
+    points.set(placed);
+    points.set(cursor, placed.length);
+    return points;
   }
 
   /** Asks the SegmentRouter again for every placed segment, like after its limits change. */
@@ -278,6 +300,7 @@ export class DrawingLayer extends Layer {
     // answer lands.
     const placed = cursor && same(cursor.at, at) ? {...cursor} : vertexAt(at);
     drawing.vertices.push(placed);
+    this.loadLines(placed);
     this.resolve(placed, previous);
     this.changed();
     return true;
@@ -401,7 +424,9 @@ export class DrawingLayer extends Layer {
     if (!previous) {
       return this.locations.querySnap(vertex.at, radius).then(snapped => {
         if (this.isDrawn(vertex)) {
-          vertex.point = snapped ?? vertex.at;
+          vertex.trace = emptyTrace();
+          pushPoint(vertex.trace, snapped?.point ?? vertex.at, undefined, snapped?.line);
+          this.loadLines(vertex);
           this.changed();
         }
       });
@@ -416,7 +441,10 @@ export class DrawingLayer extends Layer {
             return;
           }
 
-          this.apply(vertex, previous, route);
+          // The vertex moves to the route's snapped end and the way there becomes its trace. A
+          // route the network could not find leaves the segment straight.
+          vertex.trace = routeTrace(pointOf(previous), route);
+          this.loadLines(vertex);
           this.changed();
         });
   }
@@ -436,7 +464,12 @@ export class DrawingLayer extends Layer {
         return;
       }
 
-      vertex.via = via ?? STRAIGHT;
+      const trace = emptyTrace();
+      for (let i = 0; i < (via?.length ?? 0); i += 2) {
+        pushPoint(trace, [via![i], via![i + 1]], undefined, undefined);
+      }
+      pushPoint(trace, pointOf(vertex), undefined, undefined);
+      vertex.trace = trace;
       vertex.routed = routed;
       this.changed();
       const finishing = this.drawing?.finishing;
@@ -444,7 +477,7 @@ export class DrawingLayer extends Layer {
         this.finish(finishing);
       }
     };
-    return router(previous.point, vertex.point).then(
+    return router(pointOf(previous), pointOf(vertex)).then(
         via => {
           answered(via, via ? 'routed' : 'unroutable');
         },
@@ -459,29 +492,45 @@ export class DrawingLayer extends Layer {
     return !!drawing && (drawing.cursor === vertex || drawing.vertices.includes(vertex));
   }
 
-  // Writes a route onto the vertex it was asked about. The vertex moves to the route's snapped
-  // end and the way there becomes its via. A route the network could not find leaves the segment
-  // straight.
-  private apply(vertex: Vertex, previous: Vertex, route: Route): void {
-    vertex.point = route.to;
-    const via = route.via;
-    if (!via) {
-      vertex.via = STRAIGHT;
+  // Fetches the unsimplified lines under a placed vertex's segment, and draws again once they land.
+  private loadLines(vertex: Vertex): void {
+    if (this.router || !this.drawing?.vertices.includes(vertex)) {
       return;
     }
 
-    // route.from is the previous vertex snapped onto a line. When that vertex sits off the lines,
-    // the segment has to reach route.from before it can follow the route.
-    if (same(previous.point, route.from)) {
-      vertex.via = via;
-      return;
+    const refs = traceRefs(vertex.trace);
+    if (refs.length > 0) {
+      this.refiner.load(refs).then(() => {
+        if (this.isDrawn(vertex)) {
+          this.changed();
+        }
+      });
+    }
+  }
+
+  private refined(vertices: Vertex[]): Refined {
+    const traces = vertices.map(v => v.trace);
+    const version = this.refiner.version;
+    const held = this.refinedFrom;
+    if (
+        held
+            && held.version === version
+            && held.traces.length === traces.length
+            && held.traces.every((trace, i) => trace === traces[i])) {
+      return held.refined;
     }
 
-    const withStart = new Float64Array(via.length + 2);
-    withStart[0] = route.from[0];
-    withStart[1] = route.from[1];
-    withStart.set(via, 2);
-    vertex.via = withStart;
+    const trace = drawnTrace(vertices);
+    let refined;
+    if (this.router) {
+      // A SegmentRouter's routes follow no lines.
+      const points = Float64Array.from(trace.points);
+      refined = {points, at: Uint32Array.from({length: points.length / 2}, (_, i) => i)};
+    } else {
+      refined = refine(trace, ref => this.refiner.geometry(ref));
+    }
+    this.refinedFrom = {traces, version, refined};
+    return refined;
   }
 
   private finish(source: EventSource): void {
@@ -502,7 +551,21 @@ export class DrawingLayer extends Layer {
       return;
     }
 
-    const latLngE7 = toE7Array(drawnPoints(drawing.vertices));
+    // Waits on the unsimplified lines too, or else the line saves with the simplified ones.
+    const refs = traceRefs(drawnTrace(drawing.vertices));
+    if (!this.router && !refs.every(ref => this.refiner.settled(ref))) {
+      drawing.cursor = undefined;
+      drawing.finishing = source;
+      this.changed();
+      this.refiner.load(refs).then(() => {
+        if (this.drawing === drawing && drawing.finishing === source) {
+          this.finish(source);
+        }
+      });
+      return;
+    }
+
+    const latLngE7 = toE7Array(this.refined(drawing.vertices).points);
     this.clear();
     if (distinctPointCount(latLngE7) >= 2) {
       source.trigger(LINE_DRAWN, {latLngE7});
@@ -515,7 +578,7 @@ export class DrawingLayer extends Layer {
       return false;
     }
 
-    const last = drawing.vertices[drawing.vertices.length - 1].point;
+    const last = pointOf(drawing.vertices[drawing.vertices.length - 1]);
     const radius = FINISH_RADIUS_PX * this.camera.inverseWorldRadius;
     const dx = point[0] - last[0];
     const dy = point[1] - last[1];
@@ -531,6 +594,7 @@ export class DrawingLayer extends Layer {
 
     const points = this.points();
     const vertices = drawing.vertices;
+    const at = this.refined(vertices).at;
     const marker = this.marker;
     this.geometry =
         growBuffer(
@@ -570,8 +634,8 @@ export class DrawingLayer extends Layer {
     // Placed vertices are hollow squares, and the last one placed is filled.
     const handles =
         planHandles(
-            vertices.map((vertex, i) => ({
-              at: vertex.point,
+            vertexIndices(vertices).map((index, i) => ({
+              at: [points[2 * at[index]], points[2 * at[index] + 1]] as Vec2,
               filled: i === vertices.length - 1,
               sizePx: HANDLE_SIZE_PX,
             })),
@@ -616,23 +680,29 @@ export class DrawingLayer extends Layer {
   }
 }
 
-// The vertices and the paths reaching them, laid end to end, in mercator.
-function drawnPoints(vertices: Vertex[]): Float64Array {
-  let count = 0;
+// The vertices and the paths reaching them, laid end to end
+function drawnTrace(vertices: Vertex[]): Traced {
+  const trace = emptyTrace();
   for (const vertex of vertices) {
-    count += vertex.via.length + 2;
+    appendTrace(trace, vertex.trace);
   }
+  return trace;
+}
 
-  const points = new Float64Array(count);
-  let at = 0;
+// Where each vertex sits in what drawnTrace lays out, as a point index
+function vertexIndices(vertices: Vertex[]): number[] {
+  const indices = [];
+  let at = -1;
   for (const vertex of vertices) {
-    points.set(vertex.via, at);
-    at += vertex.via.length;
-    points[at] = vertex.point[0];
-    points[at + 1] = vertex.point[1];
-    at += 2;
+    at += vertex.trace.points.length / 2;
+    indices.push(at);
   }
-  return points;
+  return indices;
+}
+
+function pointOf(vertex: Vertex): Vec2 {
+  const points = vertex.trace.points;
+  return [points[points.length - 2], points[points.length - 1]];
 }
 
 export function toE7Array(points: Float64Array): Int32Array {
@@ -646,7 +716,9 @@ export function toE7Array(points: Float64Array): Int32Array {
 }
 
 function vertexAt(at: Vec2): Vertex {
-  return {at, point: at, via: STRAIGHT, routed: undefined, request: 0};
+  const trace = emptyTrace();
+  pushPoint(trace, at, undefined, undefined);
+  return {at, trace, routed: undefined, request: 0};
 }
 
 function same(a: Vec2|undefined, b: Vec2): boolean {
