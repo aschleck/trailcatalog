@@ -1,4 +1,4 @@
-import * as raw from './s2_raw';
+import * as raw from './s2_raw.js';
 
 export const ArrayList = raw.java.util.ArrayList;
 export type ArrayList<V> = java.util.ArrayList<V>;

@@ -172,4 +172,7 @@ declare global {
   }
 }
 
-export = global;
+export declare const com: typeof globalThis.com;
+export declare const java: typeof globalThis.java;
+export declare const nativebootstrap: typeof globalThis.nativebootstrap;
+export declare const org: typeof globalThis.org;

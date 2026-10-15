@@ -26,8 +26,24 @@ js_library(
     ],
 )
 
+# Closure hangs the namespaces off `this`, which a module doesn't have. This allows us to wrap it
+# for export.
+genrule(
+    name = "s2_raw_module",
+    srcs = [":s2_closure.js"],
+    outs = ["s2_raw.js"],
+    cmd = """
+        {
+          printf 'const namespaces = {}; (function() {'
+          cat $<
+          printf '\\n}).call(namespaces);\\n'
+          printf 'export const {com, java, nativebootstrap, org} = namespaces;\\n'
+        } > $@
+    """,
+)
+
 j2cl_application(
-    name = "s2_raw",
+    name = "s2_closure",
     entry_points = ["org.trailcatalog.s2.externs"],
     extra_production_args = [
         "--compilation_level=ADVANCED",
