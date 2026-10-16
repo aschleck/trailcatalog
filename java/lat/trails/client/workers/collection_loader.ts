@@ -16,6 +16,8 @@ import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
 import { Z_USER_DATA } from 'js/map/z';
 
+import { Match, matches } from './filters';
+
 export interface Initialize {
   style: Style;
 }
@@ -56,26 +58,6 @@ export interface PolygonStyle {
   fill: RgbaU32;
   z: number;
 }
-
-export interface AlwaysMatch {
-  match: 'always';
-}
-
-export interface StringEqualsMatch {
-  match: 'string_equals';
-  key: string;
-  value: string;
-}
-
-// Categories are a tree packed into an int, so naming a parent takes everything under it. See
-// Categories.kt.
-export interface CategoryInMatch {
-  match: 'category_in';
-  key: string;
-  value: number[];
-}
-
-export type Match = AlwaysMatch|CategoryInMatch|StringEqualsMatch;
 
 interface LoadRequest {
   kind: 'lr';
@@ -646,31 +628,5 @@ function findZoomedStyle<S extends {filters: Match[]; minZoom: number; maxZoom: 
     }
   }
   return undefined;
-}
-
-function matches(data: Data, filters: Match[]): boolean {
-  for (const filter of filters) {
-    if (!matchesOne(data, filter)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function matchesOne(data: Data, filter: Match): boolean {
-  switch (filter.match) {
-    case 'always':
-      return true;
-    case 'category_in':
-      const category = data[filter.key];
-      if (typeof category !== 'number') {
-        return false;
-      }
-      return filter.value.some(parent => aDescendsB(category, parent));
-    case 'string_equals':
-      return data[filter.key] === filter.value;
-    default:
-      throw checkExhaustive(filter);
-  }
 }
 

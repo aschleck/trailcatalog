@@ -17,7 +17,8 @@ import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { DOUBLE_CLICK_MS, HOVER_CHANGED, OBJECT_OPENED } from './events';
 import { Schema } from './schema';
-import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Match, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
+import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
+import { Match } from './workers/filters';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
 // makes it read as lifted, over pale roads and over landcover alike.
