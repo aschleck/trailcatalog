@@ -52,6 +52,10 @@
     wget
   ];
 
+  # Without channels NIX_PATH points nix-shell at the flake's nixpkgs.
+  nix.channel.enable = false;
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
   nix.gc = {
     automatic = true;
     dates = "weekly";
@@ -323,9 +327,16 @@
   };
 
   system.autoUpgrade = {
-    channel = "https://nixos.org/channels/nixos-unstable";
     enable = true;
+    flake = "/etc/nixos#violet";
+    upgrade = false;
   };
+
+  # Nix removed --update-input and --recreate-lock-file, so the upgrade can't update the lock
+  # itself.
+  # https://nix.dev/manual/nix/latest/release-notes/rl-2.19
+  systemd.services.nixos-upgrade.preStart =
+    "${config.nix.package}/bin/nix flake update --flake /etc/nixos";
 
   virtualisation.podman = {
     enable = true;
