@@ -50,6 +50,7 @@ import lat.trails.proto.Line
 import lat.trails.proto.ListCollectionsResponse
 import lat.trails.proto.OsmElementType
 import lat.trails.proto.Point
+import lat.trails.proto.PutSchema
 import lat.trails.proto.RenameCollectionRequest
 import lat.trails.proto.RenameCollectionResponse
 import lat.trails.proto.Role
@@ -302,6 +303,19 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
         }
 
     connection
+        .prepareStatement("SELECT schema, schema_version FROM collections WHERE id = ?")
+        .apply {
+          setObject(1, id)
+        }
+        .executeQuery()
+        .use { results ->
+          if (results.next()) {
+            response.setSchema(results.getString(1) ?: "")
+            response.setSchemaVersion(results.getLong(2))
+          }
+        }
+
+    connection
         .prepareStatement(
             "SELECT id, data, version FROM folders WHERE collection = ? AND deleted IS NULL")
         .apply {
@@ -391,18 +405,22 @@ private fun createCollection(
   if (request.name.isEmpty()) {
     throw BadRequestResponse("A collection needs a name")
   }
+  if (request.schema.isEmpty()) {
+    throw BadRequestResponse("A collection needs a schema")
+  }
 
   val response = CreateCollectionResponse.newBuilder()
   hikari.connection.use { connection ->
     connection
         .prepareStatement(
-            "INSERT INTO collections (id, creator, name, covering) "
-                + "VALUES (gen_random_uuid(), ?, ?, ?) "
+            "INSERT INTO collections (id, creator, name, covering, schema) "
+                + "VALUES (gen_random_uuid(), ?, ?, ?, ?::jsonb) "
                 + "RETURNING id")
         .apply {
           setObject(1, creator)
           setString(2, request.name)
           setBytes(3, encodeCovering(listOf()))
+          setString(4, request.schema)
         }
         .executeQuery()
         .use { results ->
@@ -669,12 +687,12 @@ private fun save(ctx: Context, request: SaveRequest): SaveResponse {
   val collection = parseUuid(request.collectionId)
   // Validated and encoded up front so that a bad write fails before we take the collection lock.
   val writes = request.writesList.map { prepareWrite(it) }
-  val seen = HashSet<Pair<Table, UUID>>()
+  val seen = HashSet<WriteKey>()
   for (write in writes) {
     // The version check reads what the batch already wrote, so a second write to the same feature
     // would always look stale.
-    if (!seen.add(write.table to write.id)) {
-      throw BadRequestResponse("${write.id} is written twice")
+    if (!seen.add(write.key)) {
+      throw BadRequestResponse("${write.key} is written twice")
     }
   }
 
@@ -694,7 +712,18 @@ private enum class Table(val sql: String) {
   POINTS("points"),
 }
 
-private abstract class PreparedWrite(val table: Table, val id: UUID) {
+// What a write writes, which a batch may write only once
+private sealed interface WriteKey
+
+private data class FeatureKey(val table: Table, val id: UUID) : WriteKey {
+  override fun toString() = "${table.sql} $id"
+}
+
+private data object SchemaKey : WriteKey {
+  override fun toString() = "The schema"
+}
+
+private abstract class PreparedWrite(val key: WriteKey) {
   abstract fun apply(connection: Connection, collection: UUID, version: Long)
 }
 
@@ -704,6 +733,7 @@ private fun prepareWrite(write: Write): PreparedWrite {
     Write.WriteCase.PUT_LINE -> prepareLine(write.putLine)
     Write.WriteCase.PUT_POINT -> preparePoint(write.putPoint)
     Write.WriteCase.DELETE -> prepareDelete(write.delete)
+    Write.WriteCase.PUT_SCHEMA -> prepareSchema(write.putSchema)
     else -> throw BadRequestResponse("A write needs a feature")
   }
 }
@@ -712,9 +742,9 @@ private fun prepareFolder(folder: Folder): PreparedWrite {
   val id = parseUuid(folder.id)
   val data = jsonbData(folder.data)
 
-  return object : PreparedWrite(Table.FOLDERS, id) {
+  return object : PreparedWrite(FeatureKey(Table.FOLDERS, id)) {
     override fun apply(connection: Connection, collection: UUID, version: Long) {
-      checkPut(connection, table, collection, id, folder.version)
+      checkPut(connection, Table.FOLDERS, collection, id, folder.version)
       connection
           .prepareStatement(
               "INSERT INTO folders (id, collection, created, updated, data, version) "
@@ -772,9 +802,9 @@ private fun prepareLine(line: Line): PreparedWrite {
   val geometry = DeltaLatLngE7.encode(latLngE7)
   val data = jsonbData(line.data)
 
-  return object : PreparedWrite(Table.LINES, id) {
+  return object : PreparedWrite(FeatureKey(Table.LINES, id)) {
     override fun apply(connection: Connection, collection: UUID, version: Long) {
-      checkPut(connection, table, collection, id, line.version)
+      checkPut(connection, Table.LINES, collection, id, line.version)
       connection
           .prepareStatement(
               "INSERT INTO lines "
@@ -814,9 +844,9 @@ private fun preparePoint(point: Point): PreparedWrite {
   val geometry = DeltaLatLngE7.encode(intArrayOf(point.latE7, point.lngE7))
   val data = jsonbData(point.data)
 
-  return object : PreparedWrite(Table.POINTS, id) {
+  return object : PreparedWrite(FeatureKey(Table.POINTS, id)) {
     override fun apply(connection: Connection, collection: UUID, version: Long) {
-      checkPut(connection, table, collection, id, point.version)
+      checkPut(connection, Table.POINTS, collection, id, point.version)
       connection
           .prepareStatement(
               "INSERT INTO points "
@@ -856,7 +886,7 @@ private fun prepareDelete(delete: Delete): PreparedWrite {
         else -> throw BadRequestResponse("A delete needs a kind")
       }
 
-  return object : PreparedWrite(table, id) {
+  return object : PreparedWrite(FeatureKey(table, id)) {
     override fun apply(connection: Connection, collection: UUID, version: Long) {
       val existing = readVersion(connection, table, collection, id)
       // Check if someone else already deleted this
@@ -879,6 +909,39 @@ private fun prepareDelete(delete: Delete): PreparedWrite {
           .apply {
             setLong(1, version)
             setObject(2, id)
+            setObject(3, collection)
+          }
+          .executeUpdate()
+    }
+  }
+}
+
+private fun prepareSchema(put: PutSchema): PreparedWrite {
+  val schema = jsonbData(put.schema)
+
+  return object : PreparedWrite(SchemaKey) {
+    override fun apply(connection: Connection, collection: UUID, version: Long) {
+      val existing =
+          connection
+              .prepareStatement("SELECT schema_version FROM collections WHERE id = ?")
+              .apply {
+                setObject(1, collection)
+              }
+              .executeQuery()
+              .use { results ->
+                results.next()
+                results.getLong(1)
+              }
+      if (existing != put.version) {
+        throw ConflictResponse("The schema changed since it was read")
+      }
+
+      connection
+          .prepareStatement(
+              "UPDATE collections SET schema = ?::jsonb, schema_version = ? WHERE id = ?")
+          .apply {
+            setString(1, schema)
+            setLong(2, version)
             setObject(3, collection)
           }
           .executeUpdate()

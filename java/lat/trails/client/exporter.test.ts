@@ -2,6 +2,7 @@ import { EditableFeature } from './features';
 import { toGeoJson, toGpx } from './exporter';
 import { parseGeoJson } from './geojson';
 import { parseGpx } from './gpx';
+import { CollectionSchema, DEFAULT_COLLECTION_SCHEMA } from './schema';
 
 const FOLDER: EditableFeature = {
   kind: 'folder',
@@ -48,6 +49,38 @@ test('GeoJSON keeps a marker stroke a marker', () => {
   const marker = {...LINE, data: {marker_zoom: 14.5, width_px: 4.5}};
   const [line] = parseGeoJson(toGeoJson([marker]));
   expect(line.data).toEqual({marker_zoom: 14.5, width_px: 4.5});
+});
+
+test('GeoJSON writes the description field and other fields under their labels', () => {
+  const schema: CollectionSchema = {
+    ...DEFAULT_COLLECTION_SCHEMA,
+    fields: [
+      ...DEFAULT_COLLECTION_SCHEMA.fields.filter(f => f.id !== 'description'),
+      {id: 'notes', label: 'Notes', type: 'text', multiline: true},
+      {id: 'nights', label: 'Nights', type: 'number'},
+      {id: 'booked', label: 'Booked', type: 'checkbox'},
+      {
+        id: 'site',
+        label: 'Site',
+        type: 'select',
+        options: [{id: 'a', label: 'Lakeside'}],
+      },
+    ],
+  };
+  const camp = {
+    ...POINT,
+    data: {...POINT.data, notes: 'Quiet', nights: 2, booked: true, site: 'a'},
+  };
+  const {features: [{properties}]} = JSON.parse(toGeoJson([camp], schema));
+  expect(properties).toEqual({
+    'title': 'Les Houches',
+    'description': 'Quiet',
+    'marker-color': '#00ff00',
+    'marker-symbol': '⛺',
+    'Nights': 2,
+    'Booked': true,
+    'Site': 'Lakeside',
+  });
 });
 
 test('GPX reads back as what was written, less what GPX cannot hold', () => {

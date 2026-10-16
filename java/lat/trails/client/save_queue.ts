@@ -1,15 +1,24 @@
 import { EditableFeature, SaveOp } from './features';
+import { SavedSchema } from './schema';
 
-export interface SaveEntry {
+export type SaveEntry = {
+  kind: 'feature';
   feature: EditableFeature;
   op: SaveOp;
-}
+}|{
+  kind: 'schema';
+  schema: SavedSchema;
+};
+
+// The key of the collection's schema among the unsaved, which no feature's uuid can collide with
+const SCHEMA_KEY = 'schema';
 
 /** Saves features to the server in batches, holding each write until a batch carrying it lands. */
 export class SaveQueue {
 
-  // One entry per feature, the last write to it. Ordered by when that write happened, which a Map
-  // iterates in once we reinsert on every write, so a folder's delete follows its children's.
+  // One entry per feature and one for the schema, the last write to each. Ordered by when that
+  // write happened, which a Map iterates in once we reinsert on every write, so a folder's delete
+  // follows its children's.
   private readonly unsaved: Map<string, SaveEntry>;
   // Serialized so that two saves cannot each decide the collection does not exist yet and create
   // their own.
@@ -27,8 +36,14 @@ export class SaveQueue {
   write(op: SaveOp, features: EditableFeature[]): void {
     for (const feature of features) {
       this.unsaved.delete(feature.id);
-      this.unsaved.set(feature.id, {feature, op});
+      this.unsaved.set(feature.id, {kind: 'feature', feature, op});
     }
+    this.flush();
+  }
+
+  writeSchema(schema: SavedSchema): void {
+    this.unsaved.delete(SCHEMA_KEY);
+    this.unsaved.set(SCHEMA_KEY, {kind: 'schema', schema});
     this.flush();
   }
 
@@ -53,11 +68,13 @@ export class SaveQueue {
     return this.save(batch).then(
         version => {
           for (const entry of batch) {
-            entry.feature.version = version;
-            // A feature written again while the batch was in flight has a newer entry, which
+            const saved = entry.kind === 'schema' ? entry.schema : entry.feature;
+            const key = entry.kind === 'schema' ? SCHEMA_KEY : entry.feature.id;
+            saved.version = version;
+            // Something written again while the batch was in flight has a newer entry, which
             // still needs saving.
-            if (this.unsaved.get(entry.feature.id) === entry) {
-              this.unsaved.delete(entry.feature.id);
+            if (this.unsaved.get(key) === entry) {
+              this.unsaved.delete(key);
             }
           }
           return this.saveUnsaved();

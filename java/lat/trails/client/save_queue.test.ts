@@ -1,5 +1,6 @@
 import { EditablePoint } from './features';
 import { SaveEntry, SaveQueue } from './save_queue';
+import { DEFAULT_COLLECTION_SCHEMA } from './schema';
 
 test('saves features in the order they were written', async () => {
   const saved: string[][] = [];
@@ -68,7 +69,7 @@ test('saves a feature again when it was written during its batch', async () => {
   let finish = (version: bigint) => {};
   const queue = new SaveQueue(entries => {
     saved.push(entries.map(describe));
-    versions.push(entries[0].feature.version);
+    versions.push(versionOf(entries[0]));
     return new Promise(resolve => {
       finish = resolve;
     });
@@ -123,6 +124,23 @@ test('forgets what it was holding on clear', async () => {
   expect(saved).toEqual([['put a']]);
 });
 
+test('saves the schema beside features and stamps its version', async () => {
+  const saved: string[][] = [];
+  const queue = new SaveQueue(entries => {
+    saved.push(entries.map(describe));
+    return Promise.resolve(5n);
+  }, unexpected);
+
+  const schema = {schema: DEFAULT_COLLECTION_SCHEMA, version: 0n};
+  queue.write('put', [point('a')]);
+  queue.writeSchema(schema);
+  queue.writeSchema(schema);
+  await settle();
+
+  expect(saved).toEqual([['put a', 'put schema']]);
+  expect(schema.version).toBe(5n);
+});
+
 function point(id: string): EditablePoint {
   return {
     kind: 'point',
@@ -136,7 +154,11 @@ function point(id: string): EditablePoint {
 }
 
 function describe(entry: SaveEntry): string {
-  return `${entry.op} ${entry.feature.id}`;
+  return entry.kind === 'schema' ? 'put schema' : `${entry.op} ${entry.feature.id}`;
+}
+
+function versionOf(entry: SaveEntry): bigint {
+  return entry.kind === 'schema' ? entry.schema.version : entry.feature.version;
 }
 
 function unexpected(e: unknown): void {

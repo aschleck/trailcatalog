@@ -22,6 +22,8 @@ service DataService {
 
 message CreateCollectionRequest {
   string name = 1;
+  // The collections.schema JSON the collection starts with
+  string schema = 2;
 }
 
 message CreateCollectionResponse {
@@ -53,6 +55,11 @@ message GetCollectionResponse {
   // JSON from the same view state as hidden_feature_ids, see layer_tree.ts#LayerSettings. Empty
   // means the defaults.
   string layers = 6;
+  // JSON with the collection's fields and what styles its features, see
+  // schema.ts#CollectionSchema. Empty means the client's default.
+  string schema = 7;
+  // See Line#version, with 0 for a schema that was never saved.
+  int64 schema_version = 8;
 }
 
 message GetCurrentUserRequest {}
@@ -161,7 +168,15 @@ message Write {
     Line put_line = 2;
     Point put_point = 3;
     Delete delete = 4;
+    PutSchema put_schema = 5;
   }
+}
+
+// Replaces the collection's schema, see GetCollectionResponse#schema.
+message PutSchema {
+  string schema = 1;
+  // A stale version is a 409, as for a feature.
+  int64 version = 2;
 }
 
 message Delete {

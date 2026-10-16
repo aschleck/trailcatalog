@@ -12,7 +12,7 @@ import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { GLYPHER, toGraphemes, wrap } from 'js/map/rendering/glypher';
-import { LineProgram } from 'js/map/rendering/line_program';
+import { LineProgram, Stipple } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -64,6 +64,7 @@ import {
 } from './line_matching';
 import { LineRefiner } from './line_refiner';
 import { DEFAULT_MARKER_WIDTH_PX, MarkerOutline, outlineMarker, pushMarker } from './marker';
+import { CollectionSchema, lineLook, pointLook, toStipple } from './schema';
 import { ShiftKey } from './shift_key';
 
 // How far past a feature's drawn edge a click still lands on it
@@ -126,11 +127,13 @@ interface ProjectedLine {
   label: {zoom: number; points: Float64Array; anchors: number[]}|undefined;
   // Set on a marker stroke, as of the size and zoom it was outlined at
   marker: {widthPx: number; zoom: number; outline: MarkerOutline}|undefined;
+  look: {label: string|undefined; stipple: Stipple; stroke: RgbaU32; widthPx: number};
 }
 
 interface ProjectedPoint {
   feature: EditablePoint;
   at: Vec2;
+  look: {fill: RgbaU32; icon: string; label: string|undefined};
 }
 
 // What the pointer is moving. Line drags work on a mercator copy of the line with the vertex
@@ -623,7 +626,7 @@ export class FeatureLayer extends Layer {
       const radius =
           line.marker
               ? line.marker.outline.maxRadius + CLICK_SLOP_PX * pixel
-              : (lineRadius(line.feature) + CLICK_SLOP_PX) * pixel;
+              : (lineRadius(line) + CLICK_SLOP_PX) * pixel;
       const distance = distanceToPolyline(line.points, at, radius);
       if (distance <= radius && distance < bestDistance) {
         best = line.feature;
@@ -685,9 +688,9 @@ export class FeatureLayer extends Layer {
         || (this.dragging?.kind === 'point' && feature.id === this.dragging.point.id);
   }
 
-  private iconScale(feature: EditablePoint): number {
-    const scale = this.isHighlighted(feature) ? HIGHLIGHTED_ICON_SCALE : ICON_SCALE;
-    return pointIcon(feature.data.icon) === DEFAULT_ICON ? scale * DEFAULT_ICON_SHRINK : scale;
+  private iconScale(point: ProjectedPoint): number {
+    const scale = this.isHighlighted(point.feature) ? HIGHLIGHTED_ICON_SCALE : ICON_SCALE;
+    return point.look.icon === DEFAULT_ICON ? scale * DEFAULT_ICON_SHRINK : scale;
   }
 
   private editingLine(): ProjectedLine|undefined {
@@ -945,7 +948,7 @@ export class FeatureLayer extends Layer {
   // The nearest spot on the edited line to at, if the pointer is over the line, and the index a
   // vertex inserted there takes.
   private insertAt(line: ProjectedLine, at: Vec2): {index: number; at: Vec2}|undefined {
-    const radius = (lineRadius(line.feature) + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    const radius = (lineRadius(line) + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
     const nearest = nearestOnPolyline(line.points, at);
     return nearest && nearest.distance <= radius ? nearest : undefined;
   }
@@ -965,6 +968,7 @@ export class FeatureLayer extends Layer {
   }
 
   private refresh(): void {
+    const schema = this.store.schema();
     const lines = this.store.lines();
     const live = new Set<string>();
     this.visibleLines = [];
@@ -979,10 +983,12 @@ export class FeatureLayer extends Layer {
           points,
           label: undefined,
           marker: undefined,
+          look: lookOf(schema, line),
         };
         this.projected.set(line.id, projected);
       }
       projected.feature = line;
+      projected.look = lookOf(schema, line);
       projected.marker = outlineOf(projected);
       if (this.isVisible(line)) {
         this.visibleLines.push(projected);
@@ -997,9 +1003,15 @@ export class FeatureLayer extends Layer {
     this.visiblePoints = [];
     for (const point of this.store.points()) {
       if (this.isVisible(point)) {
+        const look = pointLook(schema, point.data);
         this.visiblePoints.push({
           feature: point,
           at: projectS2LatLng(S2LatLng.fromE7(point.latE7, point.lngE7)),
+          look: {
+            fill: parseColor(look.fill ?? DEFAULT_POINT_COLOR),
+            icon: pointIcon(look.icon),
+            label: look.label,
+          },
         });
       }
     }
@@ -1075,18 +1087,20 @@ export class FeatureLayer extends Layer {
 
     const batch = new ShapeBatch(this.geometry, needed, this.renderer);
     for (const line of lines) {
-      const color = parseColor(line.feature.data.stroke ?? DEFAULT_LINE_COLOR);
-      batch.push(color, darken(color), lineRadius(line.feature), line.points, Z_LINE, 'both');
+      const {stroke, stipple} = line.look;
+      batch.push(
+          stroke, darken(stroke), lineRadius(line), line.points, Z_LINE, 'both', stipple);
     }
     if (selectedLine) {
-      const color = parseColor(selectedLine.feature.data.stroke ?? DEFAULT_LINE_COLOR);
+      const {stroke, stipple} = selectedLine.look;
       batch.push(
-          color,
+          stroke,
           SELECTED_CASING,
-          lineRadius(selectedLine.feature) + 2,
+          lineRadius(selectedLine) + 2,
           selectedLine.points,
           Z_SELECTED_LINE,
-          'both');
+          'both',
+          stipple);
     }
     batch.finish();
   }
@@ -1164,25 +1178,37 @@ export class FeatureLayer extends Layer {
 
     const batch = new ShapeBatch(this.overlay, needed, this.renderer);
     if (hoveredLine) {
-      const color = parseColor(hoveredLine.feature.data.stroke ?? DEFAULT_LINE_COLOR);
+      const {stroke, stipple} = hoveredLine.look;
       batch.push(
-          color,
+          stroke,
           HOVERED_CASING,
-          lineRadius(hoveredLine.feature) + 2,
+          lineRadius(hoveredLine) + 2,
           hoveredLine.points,
           Z_SELECTED_LINE,
-          'both');
+          'both',
+          stipple);
     }
     if (vertexDrag) {
-      const line = vertexDrag.line.feature;
-      const color = parseColor(line.data.stroke ?? DEFAULT_LINE_COLOR);
+      const line = vertexDrag.line;
       batch.push(
-          color, SELECTED_CASING, lineRadius(line) + 2, vertexDrag.points, Z_DRAGGED, 'both');
+          line.look.stroke,
+          SELECTED_CASING,
+          lineRadius(line) + 2,
+          vertexDrag.points,
+          Z_DRAGGED,
+          'both',
+          line.look.stipple);
     }
     if (reroute && reroutePoints) {
-      const line = reroute.line.feature;
-      const color = parseColor(line.data.stroke ?? DEFAULT_LINE_COLOR);
-      batch.push(color, SELECTED_CASING, lineRadius(line) + 2, reroutePoints, Z_DRAGGED, 'both');
+      const line = reroute.line;
+      batch.push(
+          line.look.stroke,
+          SELECTED_CASING,
+          lineRadius(line) + 2,
+          reroutePoints,
+          Z_DRAGGED,
+          'both',
+          line.look.stipple);
     }
     batch.pushHandles(handles, Z_HANDLE, this.handleTexture);
     if (marker) {
@@ -1196,7 +1222,7 @@ export class FeatureLayer extends Layer {
           'caps');
     }
     if (grab) {
-      const color = parseColor(grab.line.feature.data.stroke ?? DEFAULT_LINE_COLOR);
+      const color = grab.line.look.stroke;
       const [x, y] = grab.at;
       batch.push(GRAB_FILL, darken(color), GRAB_RADIUS_PX, [x, y, x, y], Z_HANDLE, 'caps');
     }
@@ -1216,7 +1242,7 @@ export class FeatureLayer extends Layer {
     for (const line of strokes) {
       const outline = line.marker!.outline;
       const id = line.feature.id;
-      const color = parseColor(line.feature.data.stroke ?? DEFAULT_LINE_COLOR);
+      const color = line.look.stroke;
       if (id === dragging?.line.feature.id) {
         const moved = {...outline, points: translate(outline.points, dragging.by)};
         batch.pushMarker(color, SELECTED_CASING, moved, 2, worldRadius, Z_DRAGGED);
@@ -1240,21 +1266,21 @@ export class FeatureLayer extends Layer {
         point.feature.id === dragging?.point.id ? dragging.at : point.at;
     let needed = 0;
     for (const line of this.visibleLines) {
-      const name = line.feature.data.name;
-      if (name && !line.marker) {
-        const graphemes = toGraphemes(name);
+      const label = line.look.label;
+      if (label) {
+        const graphemes = toGraphemes(label);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({graphemes, line});
       }
     }
     for (const point of this.visiblePoints) {
-      const name = point.feature.data.name;
-      if (name) {
-        const graphemes = wrap(toGraphemes(name), LABEL_LINE_GRAPHEMES);
+      const label = point.look.label;
+      if (label) {
+        const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({graphemes, point});
       }
-      const graphemes = toGraphemes(pointIcon(point.feature.data.icon));
+      const graphemes = toGraphemes(point.look.icon);
       needed += GLYPHER.bytesNeeded(graphemes);
       icons.push({graphemes, point});
     }
@@ -1276,9 +1302,9 @@ export class FeatureLayer extends Layer {
               graphemes,
               at(point),
               /* offsetPx= */ [0, 0],
-              this.iconScale(point.feature),
+              this.iconScale(point),
               /* angle= */ 0,
-              parseColor(point.feature.data.fill ?? DEFAULT_POINT_COLOR),
+              point.look.fill,
               LABEL_STROKE,
               Z_LABEL,
               this.labels,
@@ -1301,7 +1327,7 @@ export class FeatureLayer extends Layer {
                 graphemes,
                 at(point),
                 // Beside the icon, however big it is drawn
-                [LABEL_GAP_PX + ICON_RADIUS_PX * this.iconScale(point.feature) / ICON_SCALE, 0],
+                [LABEL_GAP_PX + ICON_RADIUS_PX * this.iconScale(point) / ICON_SCALE, 0],
                 LABEL_SCALE,
                 /* angle= */ 0,
                 LABEL_FILL,
@@ -1374,10 +1400,10 @@ class ShapeBatch {
       radius: number,
       points: ArrayLike<number>,
       z: number,
-      joins: 'line'|'caps'|'both'): void {
+      joins: 'line'|'caps'|'both',
+      stipple: Stipple = false): void {
     const result =
-        LineProgram.push(
-            fill, stroke, radius, /* stipple= */ false, points, this.plan.buffer, this.offset);
+        LineProgram.push(fill, stroke, radius, stipple, points, this.plan.buffer, this.offset);
     this.add(result, z, joins);
   }
 
@@ -1495,7 +1521,7 @@ function outlineOf(line: ProjectedLine): ProjectedLine['marker'] {
     return undefined;
   }
 
-  const widthPx = line.feature.data.width_px ?? DEFAULT_MARKER_WIDTH_PX;
+  const widthPx = line.look.widthPx;
   if (line.marker?.widthPx === widthPx && line.marker.zoom === zoom) {
     return line.marker;
   }
@@ -1526,8 +1552,19 @@ function translate(points: Float64Array, by: Vec2): Float64Array {
   return moved;
 }
 
-function lineRadius(line: EditableLine): number {
-  return (line.data.width_px ?? DEFAULT_WIDTH_PX) / 2 + CASING_PX;
+function lineRadius(line: ProjectedLine): number {
+  return line.look.widthPx / 2 + CASING_PX;
+}
+
+// A marker stroke's default width differs from a line's.
+function lookOf(schema: CollectionSchema, line: EditableLine): ProjectedLine['look'] {
+  const look = lineLook(schema, line);
+  return {
+    label: look.label,
+    stipple: toStipple(look.pattern),
+    stroke: parseColor(look.stroke ?? DEFAULT_LINE_COLOR),
+    widthPx: look.widthPx ?? (isMarker(line) ? DEFAULT_MARKER_WIDTH_PX : DEFAULT_WIDTH_PX),
+  };
 }
 
 function labelPath(line: ProjectedLine, zoom: number):

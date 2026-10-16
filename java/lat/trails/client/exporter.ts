@@ -1,17 +1,36 @@
 import { EditableFeature, EditableLine, EditablePoint } from './features';
+import {
+  channelOf,
+  CollectionSchema,
+  DEFAULT_COLLECTION_SCHEMA,
+  descriptionField,
+  fieldKindOf,
+  fieldsFor,
+  formatField,
+  lineLook,
+  PARTS,
+  pointLook,
+  titleField,
+  titleOf,
+} from './schema';
 
 /**
  * Writes features as a GeoJSON FeatureCollection that parseGeoJson reads back, folders included.
+ * Colors, widths, and icons are what the schema draws each feature with, so that other tools show
+ * them the same. Every other field with a value is written under its label.
  */
-export function toGeoJson(features: EditableFeature[]): string {
+export function toGeoJson(
+    features: EditableFeature[], schema: CollectionSchema = DEFAULT_COLLECTION_SCHEMA): string {
   return JSON.stringify({
     type: 'FeatureCollection',
     features: features.map(feature => {
-      const properties: {[key: string]: number|string} = {};
-      const {name, description, folder_id} = feature.data;
-      if (name !== undefined) {
-        properties.title = name;
+      const properties: {[key: string]: boolean|number|string} = {};
+      const {folder_id} = feature.data;
+      const title = titleOf(schema, feature);
+      if (title !== undefined) {
+        properties.title = title;
       }
+      const description = descriptionOf(schema, feature);
       if (description !== undefined) {
         properties.description = description;
       }
@@ -24,24 +43,31 @@ export function toGeoJson(features: EditableFeature[]): string {
         properties.class = 'Folder';
         geometry = null;
       } else if (feature.kind === 'line') {
-        if (feature.data.stroke !== undefined) {
-          properties.stroke = feature.data.stroke;
+        const look = lineLook(schema, feature);
+        if (look.stroke !== undefined) {
+          properties.stroke = look.stroke;
         }
-        if (feature.data.width_px !== undefined) {
-          properties['stroke-width'] = feature.data.width_px;
+        if (look.widthPx !== undefined) {
+          properties['stroke-width'] = look.widthPx;
         }
         if (feature.data.marker_zoom !== undefined) {
           properties.markerZoom = feature.data.marker_zoom;
         }
         geometry = {type: 'LineString', coordinates: lineCoordinates(feature)};
       } else {
-        if (feature.data.fill !== undefined) {
-          properties['marker-color'] = feature.data.fill;
+        const look = pointLook(schema, feature.data);
+        if (look.fill !== undefined) {
+          properties['marker-color'] = look.fill;
         }
-        if (feature.data.icon !== undefined) {
-          properties['marker-symbol'] = feature.data.icon;
+        if (look.icon !== undefined) {
+          properties['marker-symbol'] = look.icon;
         }
         geometry = {type: 'Point', coordinates: pointCoordinates(feature)};
+      }
+      // A label that collides with a key written above loses, since those keys are what other tools
+      // read.
+      for (const [label, value] of otherFields(schema, feature)) {
+        properties[label] ??= value;
       }
       return {type: 'Feature', id: feature.id, geometry, properties};
     }),
@@ -52,7 +78,8 @@ export function toGeoJson(features: EditableFeature[]): string {
  * Writes points as waypoints and lines as single segment tracks. GPX has no folders, colors, or
  * icons, so those are left behind.
  */
-export function toGpx(features: EditableFeature[]): string {
+export function toGpx(
+    features: EditableFeature[], schema: CollectionSchema = DEFAULT_COLLECTION_SCHEMA): string {
   const gpx = new DOMParser().parseFromString(
       '<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="trails.lat"/>',
       'application/xml');
@@ -75,20 +102,24 @@ export function toGpx(features: EditableFeature[]): string {
     if (point.elevationCentimeters !== undefined) {
       element(waypoint, 'ele', String(point.elevationCentimeters / 100));
     }
-    if (point.data.name !== undefined) {
-      element(waypoint, 'name', point.data.name);
+    const title = titleOf(schema, point);
+    if (title !== undefined) {
+      element(waypoint, 'name', title);
     }
-    if (point.data.description !== undefined) {
-      element(waypoint, 'desc', point.data.description);
+    const description = descriptionOf(schema, point);
+    if (description !== undefined) {
+      element(waypoint, 'desc', description);
     }
   }
   for (const line of features.filter(f => f.kind === 'line')) {
     const track = element(root, 'trk');
-    if (line.data.name !== undefined) {
-      element(track, 'name', line.data.name);
+    const title = titleOf(schema, line);
+    if (title !== undefined) {
+      element(track, 'name', title);
     }
-    if (line.data.description !== undefined) {
-      element(track, 'desc', line.data.description);
+    const description = descriptionOf(schema, line);
+    if (description !== undefined) {
+      element(track, 'desc', description);
     }
     const segment = element(track, 'trkseg');
     for (let i = 0; i < line.latLngE7.length / 2; ++i) {
@@ -104,6 +135,38 @@ export function toGpx(features: EditableFeature[]): string {
     }
   }
   return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(root);
+}
+
+function descriptionOf(schema: CollectionSchema, feature: EditableFeature): string|undefined {
+  const field = descriptionField(schema, fieldKindOf(feature));
+  const value = field ? feature.data[field.id] : undefined;
+  return typeof value === 'string' ? value : undefined;
+}
+
+// The fields not already written as the title, the description, or a color, width, or icon
+function otherFields(schema: CollectionSchema, feature: EditableFeature):
+    Array<[string, boolean|number|string]> {
+  const kind = fieldKindOf(feature);
+  if (kind === 'folder') {
+    return [];
+  }
+
+  const written = new Set([titleField(schema, feature), descriptionField(schema, kind)?.id]);
+  for (const {part, type} of PARTS.filter(p => p.kind === kind)) {
+    const channel = channelOf(schema, kind, part);
+    if (type !== 'label' && type !== 'pattern' && channel.kind === 'field') {
+      written.add(channel.field);
+    }
+  }
+  return fieldsFor(schema, kind).flatMap(field => {
+    const value = feature.data[field.id];
+    if (value === undefined || written.has(field.id)) {
+      return [];
+    }
+    const shown =
+        field.type === 'checkbox' || field.type === 'number' ? value : formatField(field, value);
+    return [[field.label, shown]];
+  });
 }
 
 function lineCoordinates(line: EditableLine): number[][] {

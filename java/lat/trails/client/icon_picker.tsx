@@ -44,6 +44,32 @@ export function PointMarker({color, icon}: {color: string; icon: string|undefine
   );
 }
 
+/** Shows an icon the way the map draws it, on a button that opens IconPickerDialog. */
+export function IconPickerButton({color, icon, ...props}: {
+  color: string;
+  icon: string|undefined;
+} & corgi.Properties) {
+  return (
+    <button
+        className="
+            border
+            border-gray-300
+            flex
+            h-7
+            hover:bg-gray-100
+            items-center
+            justify-center
+            rounded
+            shrink-0
+            w-8
+        "
+        {...props}
+    >
+      <PointMarker color={color} icon={icon} />
+    </button>
+  );
+}
+
 /** Picks an icon for a point and calls onChosen with it before closing. */
 export function IconPickerDialog(props: {
   color: string;

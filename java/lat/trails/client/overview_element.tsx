@@ -36,6 +36,7 @@ import {
 import { LayerTree } from './layer_tree';
 import { formatDistance } from './measurements';
 import { MeasurePanel } from './measure_panel';
+import { CollectionSchema, parseCollectionSchema, titleOf } from './schema';
 import { SidebarElement, SidebarSection } from './sidebar_element';
 import { Menubar, MenubarItem } from './menubar';
 import { EMPTY_SEARCH, SearchBox } from './search_box';
@@ -69,6 +70,7 @@ export function OverviewElement(
       ...(loaded?.points ?? []).map(pointFromProto),
     ];
     const hidden = new Set(loaded?.hiddenFeatureIds);
+    const schema = parseCollectionSchema(loaded?.schema ?? '');
     inState = {
       collection: loaded?.collection,
       collectionStatus:
@@ -77,12 +79,13 @@ export function OverviewElement(
               : !outline?.finished ? 'loading' : outline.ok ? 'loaded' : 'failed',
       features: {
         all,
+        schema,
         selected: undefined,
         selectedDescendants: 0,
         hovered: undefined,
         hoveredAncestors: new Set(),
         hidden,
-        expanded: new Set(topLevelFolderIds(all, hidden)),
+        expanded: new Set(topLevelFolderIds(all, schema, hidden)),
         dropTarget: undefined,
       },
       drawnLength: undefined,
@@ -106,9 +109,9 @@ export function OverviewElement(
   }
   const state = inState;
   const readOnly = state.collection?.role === Role.READ;
-  const tree = buildTree(state.features.all);
+  const tree = buildTree(state.features.all, state.features.schema);
   setTitle(state.collection?.name ? `${state.collection.name} - trails.lat` : 'trails.lat');
-  setDescription(describe(state.collection?.name, state.features.all));
+  setDescription(describe(state.collection?.name, state.features.all, state.features.schema));
   // The camera parameters would otherwise make every view of a collection its own page.
   setCanonicalPath(collection ? `/collection/${collection}` : '/');
   // A collection that failed to load is usually one a logged out crawler can't read.
@@ -227,6 +230,7 @@ export function OverviewElement(
                       subject={{
                         source: 'feature',
                         feature: state.features.selected,
+                        schema: state.features.schema,
                         editing: readOnly
                             ? undefined
                             : {
@@ -284,7 +288,8 @@ export function OverviewElement(
   </>;
 }
 
-function describe(name: string|undefined, features: EditableFeature[]): string {
+function describe(
+    name: string|undefined, features: EditableFeature[], schema: CollectionSchema): string {
   if (!name) {
     return DEFAULT_DESCRIPTION;
   }
@@ -292,7 +297,7 @@ function describe(name: string|undefined, features: EditableFeature[]): string {
   let description = name;
   let separator = ': ';
   for (const feature of features) {
-    const featureName = feature.data.name?.trim();
+    const featureName = titleOf(schema, feature)?.trim();
     if (!featureName) {
       continue;
     }

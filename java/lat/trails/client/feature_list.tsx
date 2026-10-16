@@ -1,3 +1,4 @@
+import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
@@ -7,16 +8,29 @@ import { Select } from 'external/dev_april_corgi+/js/emu/select';
 import {
   DEFAULT_LINE_COLOR,
   DEFAULT_POINT_COLOR,
-  DEFAULT_WIDTH_PX,
   EditableFeature,
   EditableFolder,
+  FeatureData,
   isMarker,
 } from './features';
-import { PointMarker } from './icon_picker';
-import { DEFAULT_MARKER_WIDTH_PX } from './marker';
+import { IconPickerButton, PointMarker } from './icon_picker';
 import { formatDistance, formatHeight, measureLine, profileStats } from './measurements';
 import { LineProfile, LineProfileState } from './profile_chart';
-import { Schema, USER_COLLECTION_SCHEMA } from './schema';
+import {
+  CollectionSchema,
+  FieldDefinition,
+  fieldKindOf,
+  fieldsFor,
+  formatField,
+  lineLook,
+  PATTERN_LABELS,
+  PATTERN_NAMES,
+  PatternName,
+  pointLook,
+  Schema,
+  titleField,
+  titleOf,
+} from './schema';
 import { Data } from './workers/collection_loader';
 
 export interface TreeItem {
@@ -53,6 +67,7 @@ export type InspectedObject = {
 export type Subject = {
   source: 'feature';
   feature: EditableFeature;
+  schema: CollectionSchema;
   // Unset when the collection is read only
   editing: {
     // How many features deleting a folder takes with it
@@ -72,6 +87,8 @@ interface Climb {
 export interface FeatureListState {
   // Copies of every feature in the open collection, which buildTree arranges into folders
   all: EditableFeature[];
+  // The open collection's, which says what each feature's fields are and how it draws
+  schema: CollectionSchema;
   selected: EditableFeature|undefined;
   // How many features deleting the selected folder takes with it
   selectedDescendants: number;
@@ -86,7 +103,6 @@ export interface FeatureListState {
 
 export type CollectionStatus = 'failed'|'loaded'|'loading';
 
-const WIDTHS_PX = [1, 2, 3, 4, 6, 8];
 const EYE_OUTLINE =
     'M1.5 8 C3.5 4.5 5.5 3.5 8 3.5 C10.5 3.5 12.5 4.5 14.5 8 '
         + 'C12.5 11.5 10.5 12.5 8 12.5 C5.5 12.5 3.5 11.5 1.5 8 Z';
@@ -186,6 +202,7 @@ function rows(
                   // A collapsed folder stands in for whatever inside it is hovered.
                   || (!expanded && state.hoveredAncestors.has(feature.id))
             }
+            schema={state.schema}
             selected={state.selected?.id === feature.id}
             visible={!state.hidden.has(feature.id)}
         />);
@@ -199,7 +216,8 @@ function rows(
   return rendered;
 }
 
-function Row({dimmed, draggable, dropTarget, expanded, feature, hovered, selected, visible}: {
+function Row(
+    {dimmed, draggable, dropTarget, expanded, feature, hovered, schema, selected, visible}: {
   dimmed: boolean;
   draggable: boolean;
   // Whether a feature dragged in the list would drop into this folder
@@ -208,9 +226,11 @@ function Row({dimmed, draggable, dropTarget, expanded, feature, hovered, selecte
   feature: EditableFeature;
   hovered: boolean;
   key: string;
+  schema: CollectionSchema;
   selected: boolean;
   visible: boolean;
 }) {
+  const title = titleOf(schema, feature);
   return (
     <div
         className={
@@ -242,15 +262,15 @@ function Row({dimmed, draggable, dropTarget, expanded, feature, hovered, selecte
             </span>
           : <span className="shrink-0 w-4" />
       }
-      <FeatureIcon feature={feature} />
+      <FeatureIcon feature={feature} schema={schema} />
       <span
           className={
             'grow truncate '
                 + (selected ? 'text-blue-900 ' : '')
-                + (feature.data.name ? '' : 'italic text-gray-500')
+                + (title ? '' : 'italic text-gray-500')
           }
       >
-        {feature.data.name || untitled(kindName(feature))}
+        {title || untitled(kindName(feature))}
       </span>
       <span
           ariaLabel={visible ? 'Hide' : 'Show'}
@@ -265,7 +285,7 @@ function Row({dimmed, draggable, dropTarget, expanded, feature, hovered, selecte
   );
 }
 
-function FeatureIcon({feature}: {feature: EditableFeature}) {
+function FeatureIcon({feature, schema}: {feature: EditableFeature; schema: CollectionSchema}) {
   if (feature.kind === 'folder') {
     return (
       <svg
@@ -282,7 +302,7 @@ function FeatureIcon({feature}: {feature: EditableFeature}) {
         <path
             d={isMarker(feature) ? 'M2 11 C4 5 6 13 9 8 S12 4 14 6' : 'M2 12 L6 6 L10 10 L14 4'}
             fill="none"
-            stroke={feature.data.stroke ?? DEFAULT_LINE_COLOR}
+            stroke={lineLook(schema, feature).stroke ?? DEFAULT_LINE_COLOR}
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth="2"
@@ -290,8 +310,8 @@ function FeatureIcon({feature}: {feature: EditableFeature}) {
       </svg>
     );
   } else {
-    const color = feature.data.fill ?? DEFAULT_POINT_COLOR;
-    return <PointMarker color={color} icon={feature.data.icon} />;
+    const look = pointLook(schema, feature.data);
+    return <PointMarker color={look.fill ?? DEFAULT_POINT_COLOR} icon={look.icon} />;
   }
 }
 
@@ -309,31 +329,29 @@ export function Properties({profile, subject}: {
   profile: LineProfileState|undefined;
   subject: Subject;
 }) {
-  const schema = subject.source === 'feature' ? USER_COLLECTION_SCHEMA : subject.object.schema;
   const kind = subject.source === 'feature' ? subject.feature.kind : subject.object.kind;
   const name = subject.source === 'feature' ? kindName(subject.feature) : kind;
-  const data: {[key: string]: boolean|number|string|undefined} =
-      subject.source === 'feature' ? subject.feature.data : subject.object.data;
   const editing = subject.source === 'feature' ? subject.editing : undefined;
   const osm = subject.source === 'object' ? subject.object.osm : undefined;
-  const title = data[schema.title.key];
-  const description = schema.description ? data[schema.description] : undefined;
-  const fields = schema.fields.flatMap(({key, label, values}): Array<[string, string]> => {
-    const value = data[key];
-    return value === undefined ? [] : [[label, values?.[String(value)] ?? String(value)]];
-  });
+  const {title, paragraphs, fields} =
+      subject.source === 'feature'
+          ? featureText(subject.schema, subject.feature)
+          : objectText(subject.object.schema, subject.object.data);
 
   return (
     <PropertiesDialog title={`${editing ? 'Editing' : 'Viewing'} ${name}`}>
       <div className="flex flex-col gap-2">
         {editing
-            ? <Input
-                  className="border border-gray-300 px-1 rounded"
-                  forceValue={true}
-                  placeholder={untitled(name)}
-                  value={title !== undefined ? String(title) : ''}
-                  unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
-              />
+            // A folder has no fields, so its name gets a box of its own.
+            ? kind === 'folder'
+                ? <Input
+                      className="border border-gray-300 h-7 px-1 rounded"
+                      forceValue={true}
+                      placeholder={untitled(name)}
+                      value={title ?? ''}
+                      unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
+                  />
+                : ''
             : osm
                 ? <a
                       className="font-bold text-blue-700 underline"
@@ -343,29 +361,26 @@ export function Properties({profile, subject}: {
                   >
                     {`OpenStreetMap ${osm.type} ${osm.id}`}
                   </a>
-                : <div className="font-bold">{title ? String(title) : untitled(name)}</div>
+                : <div className="font-bold">{title || untitled(name)}</div>
         }
-        {editing && kind !== 'folder'
-            ? <textarea
-                  className="border border-gray-300 px-1 rounded"
-                  placeholder="Description"
-                  value={description !== undefined ? String(description) : ''}
-                  unboundEvents={{input: 'descriptionChanged'}}
-              />
-            : !editing && description
-                ? <div className="whitespace-pre-wrap">{String(description)}</div>
-                : ''
+        {editing
+            ? ''
+            : paragraphs.map(text => <div className="whitespace-pre-wrap">{text}</div>)
         }
         {editing && subject.source === 'feature'
-            ? <StyleControls feature={subject.feature} folders={editing.folders} />
+            ? <FieldControls
+                  feature={subject.feature}
+                  folders={editing.folders}
+                  schema={subject.schema}
+              />
             : ''
         }
         {subject.source === 'feature'
             ? <Stats feature={subject.feature} profile={profile} />
             : subject.object.kind === 'line'
                 ? <LineStats
-                      lengthMeters={subject.object.lengthMeters}
                       climb={subject.object.climb}
+                      lengthMeters={subject.object.lengthMeters}
                   />
                 : subject.object.kind === 'point'
                     ? <div className="text-gray-700">
@@ -377,7 +392,7 @@ export function Properties({profile, subject}: {
         {profile ? <LineProfile state={profile} /> : ''}
         {osm
             ? <OsmTags tags={osm.tags} />
-            : fields.length > 0 ? <DataTable rows={fields} /> : ''
+            : fields.length > 0 && !editing ? <DataTable rows={fields} /> : ''
         }
         {editing
             ? <Button
@@ -396,70 +411,56 @@ export function Properties({profile, subject}: {
   );
 }
 
-function StyleControls({feature, folders}: {
+// How the editor lays out a run of fields. Labeled fields line up in a grid, unlabeled text and
+// dates take a row of their own, and the other unlabeled fields share a row.
+type FieldBlock =
+    {kind: 'inline'; fields: FieldDefinition[]}
+    |{kind: 'labeled'; fields: FieldDefinition[]}
+    |{kind: 'wide'; field: FieldDefinition};
+
+function blocksOf(fields: FieldDefinition[]): FieldBlock[] {
+  const blocks: FieldBlock[] = [];
+  for (const field of fields) {
+    const last = blocks[blocks.length - 1];
+    const kind =
+        !field.hideLabel ? 'labeled'
+            : field.type === 'date' || field.type === 'text' ? 'wide'
+            : 'inline';
+    if (kind === 'wide') {
+      blocks.push({kind, field});
+    } else if (last?.kind === kind) {
+      last.fields.push(field);
+    } else {
+      blocks.push({kind, fields: [field]});
+    }
+  }
+  return blocks;
+}
+
+// The schema's fields in order, and then the folder picker, which lays out like an unlabeled field
+// so it joins a trailing row of them
+function FieldControls({feature, folders, schema}: {
   feature: EditableFeature;
   folders: Array<{folder: EditableFolder; depth: number}>;
+  schema: CollectionSchema;
 }) {
-  return (
-    <div className="flex gap-2 items-center">
-      {feature.kind === 'point'
-          ? <button
-                ariaLabel="Icon"
-                className="
-                    border
-                    border-gray-300
-                    flex
-                    h-7
-                    hover:bg-gray-100
-                    items-center
-                    justify-center
-                    rounded
-                    shrink-0
-                    w-8
-                "
-                title="Icon"
-                unboundEvents={{click: 'iconButtonClicked'}}
-            >
-              <PointMarker
-                  color={feature.data.fill ?? DEFAULT_POINT_COLOR}
-                  icon={feature.data.icon}
-              />
-            </button>
-          : ''
-      }
-      {feature.kind !== 'folder'
-          ? <input
-                ariaLabel="Color"
-                className="h-7 shrink-0 w-10"
-                type="color"
-                value={
-                  feature.kind === 'line'
-                      ? feature.data.stroke ?? DEFAULT_LINE_COLOR
-                      : feature.data.fill ?? DEFAULT_POINT_COLOR
-                }
-                unboundEvents={{input: 'colorChanged'}}
-            />
-          : ''
-      }
-      {feature.kind === 'line'
-          ? <Select
-                ariaLabel="Width"
-                className="border border-gray-300 rounded shrink-0 w-20"
-                options={WIDTHS_PX.map(width => ({
-                  label: `${width} px`,
-                  value: String(width),
-                  selected:
-                      width === (
-                          feature.data.width_px
-                              ?? (isMarker(feature) ? DEFAULT_MARKER_WIDTH_PX : DEFAULT_WIDTH_PX)),
-                }))}
-                unboundEvents={{corgi: [[CHANGED, 'widthChanged']]}}
-            />
-          : ''
-      }
+  const blocks = blocksOf(fieldsFor(schema, fieldKindOf(feature)));
+  const joined = blocks[blocks.length - 1]?.kind === 'inline';
+  const iconColor =
+      (feature.kind === 'point' ? pointLook(schema, feature.data).fill : undefined)
+          ?? DEFAULT_POINT_COLOR;
+  const input = (field: FieldDefinition, compact: boolean) =>
+      <FieldInput
+          key={`${feature.id}:${field.id}`}
+          compact={compact}
+          data={feature.data}
+          field={field}
+          iconColor={iconColor}
+      />;
+  const folder =
       <Select
           ariaLabel="Folder"
-          className="border border-gray-300 grow min-w-0 rounded"
+          className="border border-gray-300 grow h-7 min-w-0 rounded"
           options={[
             {label: 'No folder', value: '', selected: !feature.data.folder_id},
             ...folders
@@ -471,9 +472,200 @@ function StyleControls({feature, folders}: {
                 })),
           ]}
           unboundEvents={{corgi: [[CHANGED, 'folderChanged']]}}
-      />
+      />;
+  return (
+    <div className="flex flex-col gap-2">
+      {blocks.map((block, i) =>
+          block.kind === 'inline'
+              ? <div className="flex flex-wrap gap-2 items-center">
+                  {block.fields.map(field => input(field, /* compact= */ true))}
+                  {joined && i === blocks.length - 1 ? folder : ''}
+                </div>
+              : block.kind === 'labeled'
+                  ? <div className="gap-x-2 gap-y-1 grid grid-cols-[auto_1fr] items-center">
+                      {block.fields.flatMap(field => [
+                        <span className="text-gray-600 whitespace-nowrap">{field.label}</span>,
+                        input(field, /* compact= */ false),
+                      ])}
+                    </div>
+                  : input(block.field, /* compact= */ false))}
+      {joined ? '' : folder}
     </div>
   );
+}
+
+// Keyed by feature and field, because the raw inputs only take their value when created. A
+// compact input sizes to what it holds and names its field in a tooltip, since it has no label.
+//
+// An input shows only its own field's value, so an unset color shows the default color rather than
+// the drawn one, because a schema may draw a feature by some other field.
+function FieldInput({compact, data, field, iconColor}: {
+  compact: boolean;
+  data: FeatureData;
+  field: FieldDefinition;
+  // What an icon is previewed in, which is the feature's drawn fill
+  iconColor: string;
+  key: string;
+}) {
+  const value = data[field.id];
+  const bound = {ariaLabel: field.label, data: {field: field.id}, title: field.label};
+  const boxed = 'border border-gray-300 h-7 px-1 rounded';
+  const width = (compactWidth: string) => compact ? `${compactWidth} shrink-0` : 'w-full';
+  switch (field.type) {
+    case 'checkbox':
+      return compact
+          ? <label className="flex gap-1 h-7 items-center shrink-0">
+              <input
+                  {...bound}
+                  checked={value === true || undefined}
+                  type="checkbox"
+                  unboundEvents={{change: 'fieldToggled'}}
+              />
+              {field.label}
+            </label>
+          : <input
+                {...bound}
+                checked={value === true || undefined}
+                type="checkbox"
+                unboundEvents={{change: 'fieldToggled'}}
+            />;
+    case 'color':
+      return (
+        <input
+            {...bound}
+            className="h-7 shrink-0 w-10"
+            type="color"
+            value={typeof value === 'string' ? value : DEFAULT_POINT_COLOR}
+            unboundEvents={{input: 'fieldInput'}}
+        />
+      );
+    case 'date':
+      return (
+        <input
+            {...bound}
+            className={`${boxed} ${width('w-36')}`}
+            type="date"
+            value={typeof value === 'string' ? value : ''}
+            unboundEvents={{change: 'fieldInput'}}
+        />
+      );
+    case 'icon':
+      return (
+        <IconPickerButton
+            {...bound}
+            color={iconColor}
+            icon={typeof value === 'string' ? value : undefined}
+            unboundEvents={{click: 'iconButtonClicked'}}
+        />
+      );
+    case 'number':
+      return (
+        <input
+            {...bound}
+            className={`${boxed} ${width('w-16')}`}
+            placeholder={compact ? field.label : ''}
+            type="number"
+            value={typeof value === 'number' ? String(value) : ''}
+            unboundEvents={{input: 'fieldInput'}}
+        />
+      );
+    case 'select':
+      return (
+        <Select
+            {...bound}
+            className={`${boxed} ${width('w-32')}`}
+            options={[
+              ...unsetOption(field, compact, (field.options ?? []).some(o => o.id === value)),
+              ...(field.options ?? []).map(option => ({
+                label: option.label,
+                value: option.id,
+                selected: option.id === value,
+              })),
+            ]}
+            unboundEvents={{corgi: [[CHANGED, 'fieldChanged']]}}
+        />
+      );
+    case 'pattern':
+      return (
+        <Select
+            {...bound}
+            className={`${boxed} ${width('w-28')}`}
+            options={[
+              ...unsetOption(field, compact, PATTERN_NAMES.includes(value as PatternName)),
+              ...PATTERN_NAMES.map(name => ({
+                label: PATTERN_LABELS[name],
+                value: name,
+                selected: name === value,
+              })),
+            ]}
+            unboundEvents={{corgi: [[CHANGED, 'fieldChanged']]}}
+        />
+      );
+    case 'text':
+      return field.multiline
+          ? <textarea
+                {...bound}
+                className="border border-gray-300 px-1 py-0.5 rounded w-full"
+                placeholder={field.hideLabel ? field.label : ''}
+                value={typeof value === 'string' ? value : ''}
+                unboundEvents={{input: 'fieldInput'}}
+            />
+          : <Input
+                {...bound}
+                className={`${boxed} ${width('w-32')}`}
+                forceValue={true}
+                placeholder={field.hideLabel ? field.label : ''}
+                value={typeof value === 'string' ? value : ''}
+                unboundEvents={{corgi: [[CHANGED, 'fieldChanged']]}}
+            />;
+    default:
+      throw checkExhaustive(field.type);
+  }
+}
+
+// A blank to show while the feature holds none of the options, which goes away once one is picked.
+// Choosing it does nothing, so clearing a value is up to an option the user made for it.
+function unsetOption(field: FieldDefinition, compact: boolean, known: boolean):
+    Array<{label: string; value: string; selected: boolean}> {
+  return known ? [] : [{label: compact ? field.label : '', value: '', selected: true}];
+}
+
+interface ReadOnlyText {
+  title: string|undefined;
+  // Long text, which would only crowd the table
+  paragraphs: string[];
+  fields: Array<[string, string]>;
+}
+
+// How each field with a value reads, for a feature somebody can only view. The field the title
+// comes from is left out, since the title already shows it.
+function featureText(schema: CollectionSchema, feature: EditableFeature): ReadOnlyText {
+  const text: ReadOnlyText = {title: titleOf(schema, feature), paragraphs: [], fields: []};
+  const titled = titleField(schema, feature);
+  for (const field of fieldsFor(schema, fieldKindOf(feature))) {
+    const value = feature.data[field.id];
+    if (value === undefined || field.id === titled) {
+      continue;
+    } else if (field.type === 'text' && field.multiline) {
+      text.paragraphs.push(String(value));
+      continue;
+    }
+    text.fields.push([field.label, formatField(field, value)]);
+  }
+  return text;
+}
+
+function objectText(schema: Schema, data: Data): ReadOnlyText {
+  const title = data[schema.title.key];
+  const description = schema.description ? data[schema.description] : undefined;
+  return {
+    title: title !== undefined ? String(title) : undefined,
+    paragraphs: description !== undefined ? [String(description)] : [],
+    fields: schema.fields.flatMap(({key, label, values}): Array<[string, string]> => {
+      const value = data[key];
+      return value === undefined ? [] : [[label, values?.[String(value)] ?? String(value)]];
+    }),
+  };
 }
 
 function OsmTags({tags}: {tags: OsmElementState['tags']}) {
@@ -600,8 +792,9 @@ function kindName(feature: EditableFeature): string {
   return feature.kind === 'line' && isMarker(feature) ? 'drawing' : feature.kind;
 }
 
-/** Sorts folders ahead of everything else and names in the order a person would number them. */
-export function buildTree(features: Iterable<EditableFeature>): TreeItem[] {
+/** Sorts folders ahead of everything else and titles in the order a person would number them. */
+export function buildTree(features: Iterable<EditableFeature>, schema: CollectionSchema):
+    TreeItem[] {
   const children = new Map<string|undefined, TreeItem[]>();
   const items = new Map<string, TreeItem>();
   for (const feature of features) {
@@ -617,9 +810,9 @@ export function buildTree(features: Iterable<EditableFeature>): TreeItem[] {
     children.set(parent, siblings);
   }
   for (const item of items.values()) {
-    item.children = sortItems(children.get(item.feature.id) ?? []);
+    item.children = sortItems(children.get(item.feature.id) ?? [], schema);
   }
-  return sortItems(children.get(undefined) ?? []);
+  return sortItems(children.get(undefined) ?? [], schema);
 }
 
 /** Flattens a tree's folders in order with their depth, skipping excluded and what's in it. */
@@ -637,20 +830,21 @@ export function foldersOf(tree: TreeItem[], excluded: string|undefined, depth = 
 
 /** Returns the shown folders not inside another folder, which start open. */
 export function topLevelFolderIds(
-    features: Iterable<EditableFeature>, hidden: ReadonlySet<string>): string[] {
-  return buildTree(features)
+    features: Iterable<EditableFeature>, schema: CollectionSchema, hidden: ReadonlySet<string>):
+    string[] {
+  return buildTree(features, schema)
       .filter(i => i.feature.kind === 'folder' && !hidden.has(i.feature.id))
       .map(i => i.feature.id);
 }
 
-function sortItems(items: TreeItem[]): TreeItem[] {
+function sortItems(items: TreeItem[], schema: CollectionSchema): TreeItem[] {
   return items.sort((a, b) => {
     const aFolder = a.feature.kind === 'folder';
     const bFolder = b.feature.kind === 'folder';
     if (aFolder !== bFolder) {
       return aFolder ? -1 : 1;
     }
-    return (a.feature.data.name ?? '').localeCompare(
-        b.feature.data.name ?? '', undefined, {numeric: true});
+    return (titleOf(schema, a.feature) ?? '').localeCompare(
+        titleOf(schema, b.feature) ?? '', undefined, {numeric: true});
   });
 }

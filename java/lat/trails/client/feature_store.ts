@@ -1,10 +1,12 @@
 import { EditableFeature, EditableFolder, EditableLine, EditablePoint, snapshot } from './features';
 import { SaveQueue } from './save_queue';
+import { CollectionSchema, DEFAULT_COLLECTION_SCHEMA, SavedSchema } from './schema';
 
 // An edit, which undo reverts as a unit. Edits sharing a merge key in a row become one, so typing
 // a name is one undo rather than one per keystroke.
 interface Edit {
   changes: Change[];
+  schema: {before: CollectionSchema; after: CollectionSchema}|undefined;
   mergeKey: string|undefined;
 }
 
@@ -28,6 +30,7 @@ export class FeatureStore {
   private readonly live: Map<string, EditableFeature>;
   // Deleted features, kept so that undoing the delete puts at the version the delete landed at.
   private readonly removed: Map<string, EditableFeature>;
+  private savedSchema: SavedSchema;
   private readonly undoStack: Edit[];
   private readonly redoStack: Edit[];
   private readonly listeners: Array<() => void>;
@@ -39,6 +42,7 @@ export class FeatureStore {
   constructor(private readonly saves: SaveQueue) {
     this.live = new Map();
     this.removed = new Map();
+    this.savedSchema = {schema: DEFAULT_COLLECTION_SCHEMA, version: 0n};
     this.undoStack = [];
     this.redoStack = [];
     this.listeners = [];
@@ -54,8 +58,12 @@ export class FeatureStore {
    * Replaces every feature without saving, for opening a collection or starting a new one. A
    * read only store drops every edit.
    */
-  reset(features: EditableFeature[], readOnly: boolean): void {
+  reset(
+      features: EditableFeature[],
+      readOnly: boolean,
+      schema: SavedSchema = {schema: DEFAULT_COLLECTION_SCHEMA, version: 0n}): void {
     this.readOnly = readOnly;
+    this.savedSchema = schema;
     this.live.clear();
     this.removed.clear();
     this.undoStack.length = 0;
@@ -68,6 +76,10 @@ export class FeatureStore {
 
   isReadOnly(): boolean {
     return this.readOnly;
+  }
+
+  schema(): CollectionSchema {
+    return this.savedSchema.schema;
   }
 
   get(id: string): EditableFeature|undefined {
@@ -134,13 +146,27 @@ export class FeatureStore {
    * before it folds into that one, keeping its before states.
    */
   apply(changes: Change[], mergeKey?: string): void {
-    if (changes.length === 0 || this.readOnly) {
+    if (changes.length === 0) {
+      return;
+    }
+    this.record({changes, schema: undefined, mergeKey});
+  }
+
+  /** Replaces the schema as one edit, merging like apply. */
+  setSchema(after: CollectionSchema, mergeKey?: string): void {
+    this.record({changes: [], schema: {before: this.savedSchema.schema, after}, mergeKey});
+  }
+
+  private record(edit: Edit): void {
+    if (this.readOnly) {
       return;
     }
 
     const last = this.undoStack[this.undoStack.length - 1];
-    if (mergeKey !== undefined && last?.mergeKey === mergeKey && this.redoStack.length === 0) {
-      for (const change of changes) {
+    if (edit.mergeKey !== undefined
+        && last?.mergeKey === edit.mergeKey
+        && this.redoStack.length === 0) {
+      for (const change of edit.changes) {
         const existing = last.changes.find(c => c.id === change.id);
         if (existing) {
           existing.after = change.after;
@@ -148,11 +174,14 @@ export class FeatureStore {
           last.changes.push(change);
         }
       }
+      if (edit.schema) {
+        last.schema = {before: last.schema?.before ?? edit.schema.before, after: edit.schema.after};
+      }
     } else {
-      this.undoStack.push({changes, mergeKey});
+      this.undoStack.push(edit);
     }
     this.redoStack.length = 0;
-    this.commit(changes, 'forward');
+    this.commit(edit, 'forward');
   }
 
   undo(): void {
@@ -164,7 +193,7 @@ export class FeatureStore {
     // Undone edits never merge again, or else redoing and then typing would fold into a stale edit.
     edit.mergeKey = undefined;
     this.redoStack.push(edit);
-    this.commit(edit.changes, 'backward');
+    this.commit(edit, 'backward');
   }
 
   redo(): void {
@@ -174,14 +203,18 @@ export class FeatureStore {
     }
 
     this.undoStack.push(edit);
-    this.commit(edit.changes, 'forward');
+    this.commit(edit, 'forward');
   }
 
   // Backward runs the changes in reverse, so undoing a folder delete that emptied the folder
   // first puts the folder back before its children, and undoing an import deletes the children
   // before their folders.
-  private commit(changes: Change[], direction: 'backward'|'forward'): void {
-    const ordered = direction === 'forward' ? changes : [...changes].reverse();
+  private commit(edit: Edit, direction: 'backward'|'forward'): void {
+    if (edit.schema) {
+      this.savedSchema.schema = direction === 'forward' ? edit.schema.after : edit.schema.before;
+      this.saves.writeSchema(this.savedSchema);
+    }
+    const ordered = direction === 'forward' ? edit.changes : [...edit.changes].reverse();
     for (const change of ordered) {
       const state = direction === 'forward' ? change.after : change.before;
       if (state) {

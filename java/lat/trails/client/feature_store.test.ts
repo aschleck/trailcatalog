@@ -1,6 +1,7 @@
 import { Change, FeatureStore } from './feature_store';
 import { EditableFeature, EditableFolder, EditablePoint, snapshot } from './features';
 import { SaveEntry, SaveQueue } from './save_queue';
+import { DEFAULT_COLLECTION_SCHEMA, removeFieldFrom } from './schema';
 
 test('undoes and redoes an edit', async () => {
   const {saved, store} = setUp();
@@ -27,7 +28,7 @@ test('puts back with the version the server last stamped', async () => {
   const versions: bigint[] = [];
   let next = 1n;
   const saves = new SaveQueue(entries => {
-    versions.push(...entries.map(e => e.feature.version));
+    versions.push(...entries.map(versionOf));
     return Promise.resolve(next++);
   }, unexpected);
   const store = new FeatureStore(saves);
@@ -116,6 +117,35 @@ test('puts a feature whose folder is gone at the root', () => {
   expect(store.children(undefined)).toEqual([orphan]);
 });
 
+test('undoes and redoes a schema edit', async () => {
+  const {saved, store} = setUp();
+  const after = removeFieldFrom(DEFAULT_COLLECTION_SCHEMA, 'stroke', 'line');
+  store.setSchema(after);
+  await settle();
+  expect(store.schema()).toBe(after);
+
+  store.undo();
+  await settle();
+  expect(store.schema()).toBe(DEFAULT_COLLECTION_SCHEMA);
+
+  store.redo();
+  await settle();
+  expect(store.schema()).toBe(after);
+  expect(saved).toEqual([['put schema'], ['put schema'], ['put schema']]);
+});
+
+test('merges schema edits sharing a merge key into one undo', () => {
+  const {store} = setUp();
+  const first = removeFieldFrom(DEFAULT_COLLECTION_SCHEMA, 'stroke', 'line');
+  const second = removeFieldFrom(first, 'fill', 'point');
+  store.setSchema(first, 'fields');
+  store.setSchema(second, 'fields');
+
+  store.undo();
+  expect(store.schema()).toBe(DEFAULT_COLLECTION_SCHEMA);
+  expect(store.canUndo).toBe(false);
+});
+
 function setUp(): {saved: string[][]; store: FeatureStore} {
   const saved: string[][] = [];
   const saves = new SaveQueue(entries => {
@@ -146,7 +176,11 @@ function point(id: string, data: EditablePoint['data']): EditablePoint {
 }
 
 function describe(entry: SaveEntry): string {
-  return `${entry.op} ${entry.feature.id}`;
+  return entry.kind === 'schema' ? 'put schema' : `${entry.op} ${entry.feature.id}`;
+}
+
+function versionOf(entry: SaveEntry): bigint {
+  return entry.kind === 'schema' ? entry.schema.version : entry.feature.version;
 }
 
 function unexpected(e: unknown): void {

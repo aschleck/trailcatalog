@@ -1,0 +1,27 @@
+[[actions]]
+type = "add_column"
+table = "collections"
+# schema.ts#DEFAULT_COLLECTION_SCHEMA as of this migration, which is how collections saved before it
+# draw
+up = """CASE WHEN creator = '00000000-0000-0000-0000-000000000000' THEN NULL ELSE '{"fields":[{"id":"name","label":"Name","type":"text","hideLabel":true},{"id":"description","label":"Description","type":"text","hideLabel":true,"multiline":true},{"id":"stroke","label":"Stroke","type":"color","kinds":["drawing","line"],"hideLabel":true},{"id":"width_px","label":"Width (px)","type":"number","kinds":["drawing","line"],"hideLabel":true},{"id":"icon","label":"Icon","type":"icon","kinds":["point"],"hideLabel":true},{"id":"fill","label":"Fill","type":"color","kinds":["point"],"hideLabel":true}],"style":{"drawing":{"stroke":{"kind":"field","field":"stroke"},"width":{"kind":"field","field":"width_px"},"label":{"kind":"field","field":"name"}},"line":{"stroke":{"kind":"field","field":"stroke"},"width":{"kind":"field","field":"width_px"},"pattern":{"kind":"constant","value":"solid"},"label":{"kind":"field","field":"name"}},"point":{"fill":{"kind":"field","field":"fill"},"icon":{"kind":"field","field":"icon"},"label":{"kind":"field","field":"name"}}}}'::jsonb END"""
+
+  # JSON with the collection's fields and what styles its features, see
+  # schema.ts#CollectionSchema. A user collection gets the client's default when it is created, so
+  # that changing the default's fields leaves existing collections alone. A part added to the
+  # default later still reaches them, see schema.ts#parseCollectionSchema. Null on the collections
+  # importers build, which draw from their presentation.
+  [actions.column]
+  name = "schema"
+  nullable = true
+  type = "JSONB"
+
+[[actions]]
+type = "add_column"
+table = "collections"
+
+  # The collections.version the schema was last written at, see lines.version.
+  [actions.column]
+  name = "schema_version"
+  nullable = false
+  type = "BIGINT"
+  default = "0"

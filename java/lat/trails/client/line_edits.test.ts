@@ -58,7 +58,7 @@ test('refuses to leave fewer than two vertices', () => {
 });
 
 test('splits at a vertex that both halves keep', () => {
-  const [first, second] = splitLine(line(), 1, 'b')!;
+  const [first, second] = splitLine(line(), 1, 'b', 'name')!;
 
   expect(first.id).toBe('a');
   expect(first.version).toBe(3n);
@@ -75,12 +75,12 @@ test('splits at a vertex that both halves keep', () => {
 });
 
 test('refuses to split at an end', () => {
-  expect(splitLine(line(), 0, 'b')).toBeUndefined();
-  expect(splitLine(line(), 2, 'b')).toBeUndefined();
+  expect(splitLine(line(), 0, 'b', 'name')).toBeUndefined();
+  expect(splitLine(line(), 2, 'b', 'name')).toBeUndefined();
 });
 
 test('leaves an unnamed line unnamed when splitting', () => {
-  const [first, second] = splitLine({...line(), data: {}}, 1, 'b')!;
+  const [first, second] = splitLine({...line(), data: {}}, 1, 'b', 'name')!;
 
   expect(first.data.name).toBeUndefined();
   expect(second.data.name).toBeUndefined();
@@ -97,7 +97,7 @@ test('reverses a line with its samples', () => {
 });
 
 test('joins the halves of a split back together', () => {
-  const [first, second] = splitLine(line(), 1, 'b')!;
+  const [first, second] = splitLine(line(), 1, 'b', 'name')!;
   const joined = joinLines({...first, data: {name: 'a'}}, second);
 
   expect(joined.id).toBe('a');
@@ -126,7 +126,7 @@ test('turns the second line around to meet at both starts', () => {
 });
 
 test('splits partway along a segment into halves that share only the new vertex', () => {
-  const [first, second] = splitLine(insertVertex(line(), 2, 15, 15), 2, 'b')!;
+  const [first, second] = splitLine(insertVertex(line(), 2, 15, 15), 2, 'b', 'name')!;
 
   expect(Array.from(first.latLngE7)).toEqual([0, 0, 10, 10, 15, 15]);
   expect(Array.from(second.latLngE7)).toEqual([15, 15, 20, 20]);

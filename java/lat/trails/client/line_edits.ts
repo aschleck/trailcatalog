@@ -84,22 +84,27 @@ function without<T extends Int32Array|BigInt64Array>(array: T, index: number): T
 
 /**
  * Splits a line at one of its vertices, which both halves keep. The first half keeps the line's
- * id and the second takes secondId. Returns undefined for an end, which would leave a half with a
- * single vertex.
+ * id and the second takes secondId. The halves' titles, in the field titleField names, get "1"
+ * and "2" after them. Returns undefined for an end, which would leave a half with a single
+ * vertex.
  */
-export function splitLine(line: EditableLine, index: number, secondId: string):
+export function splitLine(
+    line: EditableLine, index: number, secondId: string, titleField: string|undefined):
     [EditableLine, EditableLine]|undefined {
   const count = line.latLngE7.length / 2;
   if (index <= 0 || index >= count - 1) {
     return undefined;
   }
 
-  const name = line.data.name;
+  const title = titleField !== undefined ? line.data[titleField] : undefined;
   const half = (start: number, end: number, id: string, suffix: string): EditableLine => ({
     ...line,
     id,
     version: id === line.id ? line.version : 0n,
-    data: name ? {...line.data, name: `${name} ${suffix}`} : {...line.data},
+    data:
+        typeof title === 'string' && title && titleField !== undefined
+            ? {...line.data, [titleField]: `${title} ${suffix}`}
+            : {...line.data},
     latLngE7: line.latLngE7.slice(2 * start, 2 * end),
     elevationCentimeters: line.elevationCentimeters?.slice(start, end),
     timeSeconds: line.timeSeconds?.slice(start, end),

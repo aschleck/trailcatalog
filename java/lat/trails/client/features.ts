@@ -8,6 +8,8 @@ import {
   WriteSchema,
 } from 'trails_lat/proto/data_pb';
 
+import { SavedSchema } from './schema';
+
 // The jsonb every feature carries. Colors are #rrggbb.
 export interface FeatureData {
   name?: string;
@@ -174,6 +176,15 @@ export function toWrite(
       },
     };
   }
+}
+
+export function schemaToWrite(saved: SavedSchema): MessageInitShape<typeof WriteSchema> {
+  return {
+    write: {
+      case: 'putSchema',
+      value: {schema: JSON.stringify(saved.schema), version: saved.version},
+    },
+  };
 }
 
 const FEATURE_KINDS = {

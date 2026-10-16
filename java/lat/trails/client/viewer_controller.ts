@@ -107,6 +107,7 @@ import {
   isMarker,
   lineFromProto,
   pointFromProto,
+  schemaToWrite,
   snapshot,
   toWrite,
 } from './features';
@@ -133,9 +134,13 @@ import { GradeLimitState, MeasureState } from './measure_panel';
 import { PointCollectionLayer } from './point_collection_layer';
 import { PointToolLayer } from './point_tool_layer';
 import {
+  adoptImported,
   OSM_NODES_SCHEMA,
   OSM_WAYS_SCHEMA,
+  parseCollectionSchema,
+  pointLook,
   Schema,
+  titleField,
 } from './schema';
 import {
   cumulativeMeters,
@@ -152,6 +157,7 @@ import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
 import { parseCoordinates, SearchHit, searchLabel, SearchState } from './search_box';
 import { RenameDialog } from './rename_dialog';
+import { SchemaDialog } from './schema_dialog';
 import { ShareDialog } from './share_dialog';
 
 const ECMWF_COPYRIGHT: Copyright = {
@@ -1587,16 +1593,30 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.editSelectedData(data => ({...data, name: name || undefined}), 'name');
   }
 
-  descriptionChanged(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const description = (e.actionElement.element() as HTMLTextAreaElement).value;
-    this.editSelectedData(
-        data => ({...data, description: description || undefined}), 'description');
+  // A color, date, or number field's input, where clearing a number or a date clears the field
+  fieldInput(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const id = checkExists(e.actionElement.data('field')).string();
+    const raw = (e.actionElement.element() as HTMLInputElement).value;
+    const field = this.store.schema().fields.find(f => f.id === id);
+    if (field?.type === 'number') {
+      const value = Number(raw);
+      if (raw === '' || Number.isFinite(value)) {
+        this.editField(id, raw === '' ? undefined : value);
+      }
+    } else {
+      this.editField(id, raw || undefined);
+    }
   }
 
-  colorChanged(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const color = (e.actionElement.element() as HTMLInputElement).value;
-    const key = this.store.get(this.selected ?? '')?.kind === 'line' ? 'stroke' : 'fill';
-    this.editSelectedData(data => ({...data, [key]: color}), 'color');
+  // A select, pattern, or text field, where an empty text box clears the field
+  fieldChanged(e: CorgiEvent<typeof CHANGED>): void {
+    const id = checkExists(e.actionElement.data('field')).string();
+    this.editField(id, e.detail.value || undefined);
+  }
+
+  fieldToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const id = checkExists(e.actionElement.data('field')).string();
+    this.editField(id, (e.actionElement.element() as HTMLInputElement).checked);
   }
 
   // A folder centers on everything inside it.
@@ -1656,33 +1676,33 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(undefined);
   }
 
-  iconButtonClicked(): void {
+  iconButtonClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const id = checkExists(e.actionElement.data('field')).string();
     const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
-    if (selected?.kind !== 'point') {
+    if (!selected) {
       return;
     }
 
     const counts = new Map<string, number>();
-    for (const point of this.store.points()) {
-      const icon = importableIcon(point.data.icon);
+    for (const feature of this.store.all()) {
+      const value = feature.data[id];
+      const icon = typeof value === 'string' ? importableIcon(value) : undefined;
       if (icon) {
         counts.set(icon, (counts.get(icon) ?? 0) + 1);
       }
     }
 
+    const current = selected.data[id];
+    const fill =
+        selected.kind === 'point' ? pointLook(this.store.schema(), selected.data).fill : undefined;
     this.dialog.display(IconPickerDialog({
-      color: selected.data.fill ?? DEFAULT_POINT_COLOR,
-      current: selected.data.icon,
+      color: fill ?? DEFAULT_POINT_COLOR,
+      current: typeof current === 'string' ? current : undefined,
       onChosen: icon => {
-        this.editSelectedData(data => ({...data, icon}));
+        this.editField(id, icon);
       },
       used: [...counts].sort((a, b) => b[1] - a[1]).map(([icon]) => icon),
     })).catch(() => {});
-  }
-
-  widthChanged(e: CorgiEvent<typeof CHANGED>): void {
-    const width = Number(e.detail.value);
-    this.editSelectedData(data => ({...data, width_px: width}));
   }
 
   folderChanged(e: CorgiEvent<typeof CHANGED>): void {
@@ -1915,13 +1935,19 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           kind: 'menu_item',
           label: 'GPX',
           action: () => {
-            this.download(toGpx([...this.store.all()]), 'gpx', 'application/gpx+xml');
+            this.download(
+                toGpx([...this.store.all()], this.store.schema()),
+                'gpx',
+                'application/gpx+xml');
           },
         }, {
           kind: 'menu_item',
           label: 'GeoJSON',
           action: () => {
-            this.download(toGeoJson([...this.store.all()]), 'geojson', 'application/geo+json');
+            this.download(
+                toGeoJson([...this.store.all()], this.store.schema()),
+                'geojson',
+                'application/geo+json');
           },
         }],
       });
@@ -1950,6 +1976,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       shortcut: mac ? '⇧⌘Z' : 'Ctrl+Y',
       action: () => {
         this.store.redo();
+      },
+    }, {
+      kind: 'divider',
+    }, {
+      kind: 'menu_item',
+      label: 'Schema',
+      disabled: this.store.isReadOnly(),
+      action: () => {
+        this.editSchema();
       },
     }], trigger);
   }
@@ -2486,6 +2521,21 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         });
   }
 
+  // Merged per field, so that dragging across the color picker is one undo
+  private editField(id: string, value: boolean|number|string|undefined): void {
+    this.editSelectedData(data => ({...data, [id]: value}), `field:${id}`);
+  }
+
+  // One undo for everything the dialog changed
+  private editSchema(): void {
+    this.dialog.display(SchemaDialog({
+      schema: this.store.schema(),
+      onSaved: schema => {
+        this.store.setSchema(schema);
+      },
+    })).catch(() => {});
+  }
+
   private editSelectedData(update: (data: FeatureData) => FeatureData, mergeKey?: string): void {
     const live = this.selected !== undefined ? this.store.get(this.selected) : undefined;
     if (!live) {
@@ -2609,7 +2659,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     const line =
         spot.kind === 'segment' ? insertVertex(live, spot.index, spot.latE7, spot.lngE7) : live;
-    const halves = splitLine(line, spot.index, crypto.randomUUID());
+    const halves =
+        splitLine(
+            line, spot.index, crypto.randomUUID(), titleField(this.store.schema(), line));
     if (!halves) {
       return;
     }
@@ -2687,8 +2739,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
 
     const copy = {...snapshot(live), id: crypto.randomUUID(), version: 0n};
-    if (copy.data.name) {
-      copy.data.name = `${copy.data.name} copy`;
+    const field = titleField(this.store.schema(), copy);
+    const title = field !== undefined ? copy.data[field] : undefined;
+    if (field !== undefined && typeof title === 'string' && title) {
+      copy.data[field] = `${title} copy`;
     }
     this.store.apply([{id: copy.id, before: undefined, after: copy}]);
     this.select(copy.id);
@@ -2713,6 +2767,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       features: {
         ...this.state.features,
         all: [...this.store.all()].map(snapshot),
+        schema: this.store.schema(),
         selected,
         selectedDescendants:
             selected?.kind === 'folder' ? this.store.descendants(selected.id).length : 0,
@@ -2814,8 +2869,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ...response.lines.map(lineFromProto),
             ...response.points.map(pointFromProto),
           ];
-          this.expand(topLevelFolderIds(features, this.state.features.hidden));
-          this.store.reset(features, readOnly);
+          const schema = parseCollectionSchema(response.schema);
+          this.expand(topLevelFolderIds(features, schema, this.state.features.hidden));
+          this.store.reset(features, readOnly, {schema, version: response.schemaVersion});
           if (fit) {
             this.fitCamera(featureLatLngDegrees(this.store.all()));
           }
@@ -2882,6 +2938,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           };
           for (const feature of features) {
             feature.data.folder_id ??= folder.id;
+            adoptImported(this.store.schema(), feature);
           }
           return {
             changes: [folder, ...features].map(f => ({id: f.id, before: undefined, after: f})),
@@ -2899,7 +2956,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           const saved: Future<SaveResponse> =
               requestData('lat.trails.DataService/Save', {
                 collectionId,
-                writes: entries.map(e => toWrite(e.op, e.feature)),
+                writes:
+                    entries.map(e =>
+                        e.kind === 'schema'
+                            ? schemaToWrite(e.schema)
+                            : toWrite(e.op, e.feature)),
               });
           return saved;
         })
@@ -2929,7 +2990,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         .then(() => {
           const created: Future<CreateCollectionResponse> =
               requestData(
-                  'lat.trails.DataService/CreateCollection', {name: newCollectionName()});
+                  'lat.trails.DataService/CreateCollection', {
+                    name: newCollectionName(),
+                    schema: JSON.stringify(this.store.schema()),
+                  });
           return created;
         })
         .then(response => {
