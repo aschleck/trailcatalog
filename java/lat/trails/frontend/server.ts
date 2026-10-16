@@ -82,7 +82,8 @@ async function initialize(server: FastifyInstance): Promise<void> {
       // TODO(april): we should check the user against the database
     } catch (e: unknown) {
       if (e instanceof ExpiredCredentialError) {
-        console.log('expired');
+        // The login route runs this hook too, so a cookie left in place redirects it to itself.
+        loginEnforcer.logout(reply);
         reply.redirect(`/login/${e.issuerEndpoint}`);
         return reply;
       } else {
