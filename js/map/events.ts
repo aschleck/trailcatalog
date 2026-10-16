@@ -15,4 +15,11 @@ export const MAP_MOVED = declareEvent<{
   zoom: number;
 }>('map_moved');
 
+// A click that no layer claimed, so the page can offer what lies under it
+export const UNCLAIMED_CLICKED = declareEvent<{
+  point: S2LatLng;
+  // relative to the canvas
+  px: Vec2;
+}>('unclaimed_clicked');
+
 export const ZOOMED = declareEvent<{}>('zoomed');

@@ -391,16 +391,18 @@ export class FeatureLayer extends Layer {
       return true;
     }
 
-    const hit = this.hitTest(at);
-    if (hit?.kind === 'line' && !isMarker(hit) && !this.store.isReadOnly()) {
-      if (hit.id !== this.editing) {
-        this.startEditing(hit.id);
+    return false;
+  }
+
+  /** Shows the vertex handles of the feature when it's an editable line, and hides any others. */
+  edit(feature: EditableFeature|undefined): void {
+    if (feature?.kind === 'line' && !isMarker(feature) && !this.store.isReadOnly()) {
+      if (feature.id !== this.editing) {
+        this.startEditing(feature.id);
       }
     } else {
       this.stopEditing();
     }
-    source.trigger(FEATURE_CLICKED, {id: hit?.id});
-    return !!hit;
   }
 
   override hover(point: S2LatLng, source: EventSource): boolean {
@@ -487,7 +489,7 @@ export class FeatureLayer extends Layer {
       }
     }
 
-    const hit = this.pointAt(at);
+    const hit = this.pointsAt(at)[0];
     if (hit) {
       this.startDrag({kind: 'point', point: hit.feature, at: hit.at});
       return true;
@@ -612,28 +614,28 @@ export class FeatureLayer extends Layer {
     this.overlay.generation += 1;
   }
 
-  // Points win over lines because they sit on top of them.
   hitTest(at: Vec2): EditableFeature|undefined {
-    const hit = this.pointAt(at);
-    if (hit) {
-      return hit.feature;
-    }
+    return this.featuresAt(at)[0];
+  }
 
+  // Points come ahead of lines because they sit on top of them, and then the nearest line first.
+  featuresAt(at: Vec2): EditableFeature[] {
     const pixel = this.camera.inverseWorldRadius;
-    let best: EditableFeature|undefined = undefined;
-    let bestDistance = Infinity;
+    const points = this.pointsAt(at).map(point => point.feature);
+
+    const lines: Array<{feature: EditableFeature; distance: number}> = [];
     for (const line of this.visibleLines) {
       const radius =
           line.marker
               ? line.marker.outline.maxRadius + CLICK_SLOP_PX * pixel
               : (lineRadius(line) + CLICK_SLOP_PX) * pixel;
       const distance = distanceToPolyline(line.points, at, radius);
-      if (distance <= radius && distance < bestDistance) {
-        best = line.feature;
-        bestDistance = distance;
+      if (distance <= radius) {
+        lines.push({feature: line.feature, distance});
       }
     }
-    return best;
+    lines.sort((a, b) => a.distance - b.distance);
+    return [...points, ...lines.map(({feature}) => feature)];
   }
 
   override hasNewData(): boolean {
@@ -918,16 +920,10 @@ export class FeatureLayer extends Layer {
     };
   }
 
-  private pointAt(at: Vec2): ProjectedPoint|undefined {
-    const pixel = this.camera.inverseWorldRadius;
-    for (const point of this.visiblePoints) {
-      const radius =
-          (ICON_RADIUS_PX + CLICK_SLOP_PX) * pixel;
-      if (Math.hypot(point.at[0] - at[0], point.at[1] - at[1]) <= radius) {
-        return point;
-      }
-    }
-    return undefined;
+  private pointsAt(at: Vec2): ProjectedPoint[] {
+    const radius = (ICON_RADIUS_PX + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    return this.visiblePoints.filter(
+        point => Math.hypot(point.at[0] - at[0], point.at[1] - at[1]) <= radius);
   }
 
   // The nearest vertex handle under at, if any.

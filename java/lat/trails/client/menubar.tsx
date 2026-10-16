@@ -23,9 +23,6 @@ export const MENU_CLASSES: MenuClassNames = {
 // Menus are opened by whatever controller wraps the bar, because that is what owns the state they
 // show. Clicks reach it through unboundEvents, so the bar itself binds no controller.
 //
-// The bar sits above the overlay an open menu covers the page with, or else the overlay swallows
-// the hover that switches to another menu.
-//
 // The sides grow equally from zero so center sits in the middle of the bar, not in the middle of
 // whatever the menus leave over.
 export function Menubar({center, children, user}: {
@@ -36,7 +33,6 @@ export function Menubar({center, children, user}: {
   return <>
     <div
         className="bg-gray-900 flex gap-1 items-center px-2 py-1 relative text-white z-20"
-        unboundEvents={{click: 'menubarClicked'}}
     >
       <div className="flex flex-1 gap-1 items-center">
         <a className="hidden no-underline px-2 py-1 shrink-0 sm:block" href="/">

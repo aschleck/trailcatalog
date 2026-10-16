@@ -285,7 +285,8 @@ function Row(
   );
 }
 
-function FeatureIcon({feature, schema}: {feature: EditableFeature; schema: CollectionSchema}) {
+export function FeatureIcon(
+    {feature, schema}: {feature: EditableFeature; schema: CollectionSchema}) {
   if (feature.kind === 'folder') {
     return (
       <svg
@@ -784,11 +785,11 @@ export function LineStats({climb, lengthMeters}: {climb: Climb|undefined; length
   );
 }
 
-function untitled(kind: string): string {
+export function untitled(kind: string): string {
   return kind === 'polygon' ? 'Untitled area' : `Untitled ${kind}`;
 }
 
-function kindName(feature: EditableFeature): string {
+export function kindName(feature: EditableFeature): string {
   return feature.kind === 'line' && isMarker(feature) ? 'drawing' : feature.kind;
 }
 

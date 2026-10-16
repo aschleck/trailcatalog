@@ -9,13 +9,15 @@ import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/histo
 import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 import { ACTION, CHANGED, PRESSED } from 'external/dev_april_corgi+/js/emu/events';
 import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
-import { MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
+import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_element';
+import { MenuHandle, MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
+import { PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
 import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT } from 'js/map/common/copyrights';
-import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
-import { CLICKED, MAP_MOVED } from 'js/map/events';
+import { Copyright, LatLngZoom, RgbaU32, Vec2 } from 'js/map/common/types';
+import { CLICKED, MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
@@ -57,7 +59,7 @@ import {
   OsmElementType,
 } from 'trails_lat/proto/data_pb';
 
-import { CollectionLayer } from './collection_layer';
+import { CollectionLayer, HeldObject } from './collection_layer';
 import {
   BASEMAP_LABEL_KINDS,
   basemapOf,
@@ -85,7 +87,6 @@ import {
   LINE_DRAWN,
   LineSpot,
   MARKER_DRAWN,
-  OBJECT_OPENED,
   POINT_PLACED,
   Tool,
   TOOL_REQUESTED,
@@ -133,7 +134,8 @@ import {
 import { insertVertex, joinLines, removeVertex, reverseLine, splitLine } from './line_edits';
 import { IconPickerDialog } from './icon_picker';
 import { GradeLimitState, MeasureState } from './measure_panel';
-import { PointCollectionLayer } from './point_collection_layer';
+import { Choice, choiceItem, PICK_MENU_CLASSES, readingItem } from './pick_menu';
+import { Point, PointCollectionLayer } from './point_collection_layer';
 import { PointToolLayer } from './point_tool_layer';
 import {
   adoptImported,
@@ -157,6 +159,7 @@ import { MarkerToolLayer } from './marker_tool_layer';
 import { MENU_CLASSES } from './menubar';
 import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
+import { readSnodas, readWeather } from './readings';
 import { parseCoordinates, SearchHit, searchLabel, SearchState } from './search_box';
 import { RenameDialog } from './rename_dialog';
 import { SchemaDialog } from './schema_dialog';
@@ -227,6 +230,12 @@ function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
   }
   return latLngDegrees;
 }
+
+// Something a click landed on
+type Pick =
+    {kind: 'feature'; feature: EditableFeature}
+    |{kind: 'object'; entry: LayerEntry; layer: CollectionLayer; object: HeldObject}
+    |{kind: 'point'; entry: LayerEntry; layer: PointCollectionLayer; point: Point};
 
 export interface Args {
   // The id of the open collection or none
@@ -311,6 +320,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private selected: string|undefined;
   // Kept for centering on, which needs the geometry the dialog's state leaves out
   private inspected: LayerObject|undefined;
+  // Moves with every click, so that a slow query for an earlier one is dropped
+  private pickGeneration: number;
+  // The pick menu and the camera when it opened. The map reports a move whenever it settles, even
+  // when the camera stayed put, and only a real move takes the menu away from its click.
+  private picked: {camera: LatLngZoom; menu: MenuHandle}|undefined;
   // Moves with every object opened or closed, so that tags arriving for an earlier one are dropped
   private inspectGeneration: number;
   // Waits for typing to pause, so that each keystroke doesn't send a search
@@ -351,8 +365,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // The menubar item whose menu is open or loading. A File menu still waiting on ListCollections
   // when another menu takes over sees it change and stays closed.
   private menuTrigger: Element|undefined;
-  // What MenuService#open appended, so the menubar can close it
-  private menuOverlay: Element|undefined;
+  // The open menu, whether the menubar's, a context menu, or a click's pick menu
+  private openedMenu: MenuHandle|undefined;
   // A failure the dialog is already up for stays quiet, or else every retry that fails for the
   // same reason stacks another one on the page.
   private warnedUnsaved: boolean;
@@ -382,6 +396,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.lineProfileGeneration = 0;
     this.selected = undefined;
     this.inspected = undefined;
+    this.pickGeneration = 0;
+    this.picked = undefined;
     this.inspectGeneration = 0;
     this.searchDebouncer = new Debouncer(/* delayMs= */ 150, () => {
       this.search();
@@ -397,7 +413,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
     this.warnedUnsaved = false;
     this.menuTrigger = undefined;
-    this.menuOverlay = undefined;
+    this.openedMenu = undefined;
     this.lastChange = Date.now();
     // We start on the current run and day, and showLatestWeather and showLatestSnow fall back to
     // older ones when those aren't tiled yet.
@@ -1076,10 +1092,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           name: 'Clouds',
           enabled: true,
           children: [
-            this.newWeatherEntry('clouds', 'Total'),
-            this.newWeatherEntry('low_clouds', 'Low'),
-            this.newWeatherEntry('medium_clouds', 'Medium'),
-            this.newWeatherEntry('high_clouds', 'High'),
+            this.newWeatherEntry('clouds', 'Total', 'Clouds'),
+            this.newWeatherEntry('low_clouds', 'Low', 'Low clouds'),
+            this.newWeatherEntry('medium_clouds', 'Medium', 'Medium clouds'),
+            this.newWeatherEntry('high_clouds', 'High', 'High clouds'),
           ],
         },
         // Pressure levels are labeled by their usual altitude in the standard atmosphere.
@@ -1089,12 +1105,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           name: 'Icing',
           enabled: true,
           children: [
-            this.newWeatherEntry('icing_850', 'FL050, 850 hPa'),
-            this.newWeatherEntry('icing_700', 'FL100, 700 hPa'),
-            this.newWeatherEntry('icing_600', 'FL140, 600 hPa'),
-            this.newWeatherEntry('icing_500', 'FL180, 500 hPa'),
-            this.newWeatherEntry('icing_400', 'FL240, 400 hPa'),
-            this.newWeatherEntry('icing_300', 'FL300, 300 hPa'),
+            this.newWeatherEntry('icing_850', 'FL050, 850 hPa', 'Icing at FL050'),
+            this.newWeatherEntry('icing_700', 'FL100, 700 hPa', 'Icing at FL100'),
+            this.newWeatherEntry('icing_600', 'FL140, 600 hPa', 'Icing at FL140'),
+            this.newWeatherEntry('icing_500', 'FL180, 500 hPa', 'Icing at FL180'),
+            this.newWeatherEntry('icing_400', 'FL240, 400 hPa', 'Icing at FL240'),
+            this.newWeatherEntry('icing_300', 'FL300, 300 hPa', 'Icing at FL300'),
           ],
         },
         {
@@ -1103,10 +1119,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           name: 'Clear air turbulence',
           enabled: true,
           children: [
-            this.newWeatherEntry('turbulence_400_300', 'FL240 to FL300'),
-            this.newWeatherEntry('turbulence_300_250', 'FL300 to FL340'),
-            this.newWeatherEntry('turbulence_250_200', 'FL340 to FL390'),
-            this.newWeatherEntry('turbulence_200_150', 'FL390 to FL450'),
+            this.newWeatherEntry(
+                'turbulence_400_300', 'FL240 to FL300', 'Turbulence, FL240 to FL300'),
+            this.newWeatherEntry(
+                'turbulence_300_250', 'FL300 to FL340', 'Turbulence, FL300 to FL340'),
+            this.newWeatherEntry(
+                'turbulence_250_200', 'FL340 to FL390', 'Turbulence, FL340 to FL390'),
+            this.newWeatherEntry(
+                'turbulence_200_150', 'FL390 to FL450', 'Turbulence, FL390 to FL450'),
           ],
         },
       ],
@@ -1238,10 +1258,153 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setTool(e.detail.tool);
   }
 
+  onFeatureClicked(e: CorgiEvent<typeof FEATURE_CLICKED>): void {
+    this.clickFeature(e.detail.id);
+  }
+
+  // Selects or opens the one thing a click landed on, or else offers what it landed on beside what
+  // the shown layers read there. A click on nothing clears the selection.
+  onUnclaimedClicked(e: CorgiEvent<typeof UNCLAIMED_CLICKED>): void {
+    if (this.state.tool !== 'pointer') {
+      return;
+    }
+
+    const {point, px} = e.detail;
+    this.pickGeneration += 1;
+    const generation = this.pickGeneration;
+    const joining = this.joining;
+    const shown =
+        layerEntries(this.state.layers.nodes).filter(({shown}) => shown).map(({entry}) => entry);
+    const readings: Array<{name: string; value: string}> = [];
+    for (const {readout} of joining === undefined ? shown : []) {
+      const value = readout?.read(point);
+      if (readout && value !== undefined) {
+        readings.push({name: readout.name, value});
+      }
+    }
+    const features: Pick[] =
+        this.featureLayer.featuresAt(projectS2LatLng(point))
+            // Join with waits on another line, so nothing else is worth offering.
+            .filter(f => joining === undefined || (f.kind === 'line' && f.id !== joining))
+            .map(feature => ({kind: 'feature', feature}));
+    const others = joining === undefined ? shown.map(entry => this.picksIn(entry, point)) : [];
+    Promise.all(others).then(found => {
+      if (generation !== this.pickGeneration) {
+        return;
+      }
+
+      const picks = [...features, ...found.flat()];
+      if (picks.length === 0) {
+        this.featureLayer.edit(undefined);
+        this.clickFeature(undefined);
+      } else if (picks.length === 1 && readings.length === 0) {
+        this.openPick(picks[0]);
+      }
+      // Opening one thing beside a menu of readings reads as two answers to one click, so the
+      // person chooses whenever the menu has more than one row.
+      const choices = picks.length + readings.length > 1 ? picks : [];
+      if (readings.length === 0 && choices.length === 0) {
+        return;
+      }
+
+      const items: MenuEntries = choices.map(pick =>
+          choiceItem(
+              this.choiceOf(pick),
+              () => {
+                this.openPick(pick);
+              },
+              active => {
+                this.highlightPick(pick, active);
+              }));
+      if (choices.length > 0 && readings.length > 0) {
+        items.push({kind: 'divider'});
+      }
+      items.push(...readings.map(readingItem));
+      this.picked = {
+        camera: this.mapController.cameraLlz,
+        menu: this.openContextMenu(items, px, PICK_MENU_CLASSES),
+      };
+    });
+  }
+
+  private picksIn(entry: LayerEntry, point: S2LatLng): Promise<Pick[]> {
+    const layer = entry.layer;
+    if (layer instanceof CollectionLayer) {
+      return layer.objectsAt(point).then(objects =>
+          objects.map(object => ({kind: 'object', entry, layer, object})));
+    } else if (layer instanceof PointCollectionLayer) {
+      return Promise.resolve(
+          layer.pointsAt(point).map(value => ({kind: 'point', entry, layer, point: value})));
+    } else {
+      return Promise.resolve([]);
+    }
+  }
+
+  private openPick(pick: Pick): void {
+    if (pick.kind === 'feature') {
+      this.chooseFeature(pick.feature);
+      return;
+    }
+
+    this.featureLayer.edit(undefined);
+    this.stopJoining();
+    if (pick.kind === 'object') {
+      this.openObject(pick.layer, pick.object);
+    } else if (pick.kind === 'point') {
+      this.openObject(pick.layer, {kind: 'point', value: pick.point});
+    } else {
+      checkExhaustive(pick);
+    }
+  }
+
+  private chooseFeature(feature: EditableFeature): void {
+    this.featureLayer.edit(feature);
+    this.clickFeature(feature.id);
+  }
+
+  private highlightPick(pick: Pick, on: boolean): void {
+    if (pick.kind === 'feature') {
+      const id = on ? pick.feature.id : undefined;
+      this.featureLayer.setHovered(id);
+      this.setHovered(id);
+    } else if (pick.kind === 'object') {
+      pick.layer.highlightObject(on ? pick.object : undefined, this.mapController);
+    } else if (pick.kind === 'point') {
+      pick.layer.highlightPoint(on ? pick.point : undefined, this.mapController);
+    } else {
+      checkExhaustive(pick);
+    }
+  }
+
+  private choiceOf(pick: Pick): Choice {
+    if (pick.kind === 'feature') {
+      return {kind: 'feature', feature: pick.feature, schema: this.store.schema()};
+    }
+
+    const data = pick.kind === 'object' ? pick.object.value.data : pick.point.data;
+    const layerSchema = pick.layer instanceof CollectionLayer ? pick.layer.schema() : undefined;
+    const schema = pick.entry.schema ?? layerSchema;
+    // An OSM title is an element id, and the element's name is beside it in the data. An element
+    // without one is still told apart from its neighbors by its category.
+    const categories =
+        schema?.title.kind === 'osm_way'
+            ? WayCategory
+            : schema?.title.kind === 'osm_point' ? PointCategory : undefined;
+    const title =
+        schema?.title.kind === 'text'
+            ? data[schema.title.key]
+            : data.name ?? (categories && categoryName(categories, data.type));
+    return {
+      kind: 'object',
+      shape: pick.kind === 'object' ? pick.object.kind : 'point',
+      title: title !== undefined ? String(title) : undefined,
+      source: pick.entry.name,
+    };
+  }
+
   // Joins the line clicked while Join with is waiting on one. Anything else cancels the join and
   // selects as usual.
-  onFeatureClicked(e: CorgiEvent<typeof FEATURE_CLICKED>): void {
-    const id = e.detail.id;
+  private clickFeature(id: string|undefined): void {
     const from = this.joining;
     this.stopJoining();
     const a = from !== undefined ? this.store.get(from) : undefined;
@@ -1270,13 +1433,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
-  // Only the pointer tool opens objects, or else finishing a line with a double click would too.
-  onObjectOpened(e: CorgiEvent<typeof OBJECT_OPENED>): void {
-    if (this.state.tool !== 'pointer') {
-      return;
-    }
-
-    const {layer, object} = e.detail;
+  private openObject(layer: Layer, object: LayerObject): void {
     this.select(undefined);
     this.inspected = object;
     const data = object.value.data;
@@ -1412,10 +1569,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       });
     }
 
-    const canvas = checkExists(this.root.querySelector('canvas')).getBoundingClientRect();
-    const root = this.root.getBoundingClientRect();
-    this.openContextMenu(
-        items, canvas.left - root.left + px[0], canvas.top - root.top + px[1]);
+    this.openContextMenu(items, px);
   }
 
   onFeatureHovered(e: CorgiEvent<typeof FEATURE_HOVERED>): void {
@@ -1734,6 +1888,18 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
     const {center, zoom} = e.detail;
+    const picked = this.picked?.camera;
+    if (
+        picked
+            && (picked.lat !== center.latDegrees()
+                || picked.lng !== center.lngDegrees()
+                || picked.zoom !== zoom)) {
+      // Another menu may have replaced the pick menu since, and that one stays.
+      if (this.openedMenu === this.picked?.menu) {
+        this.closeMenu();
+      }
+      this.picked = undefined;
+    }
     const url = new URL(window.location.href);
     url.searchParams.set('lat', center.latDegrees().toFixed(7));
     url.searchParams.set('lng', center.lngDegrees().toFixed(7));
@@ -1823,7 +1989,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   menubarMenuEntered(e: CorgiEvent<typeof DOM_POINTER>): void {
     const trigger = e.actionElement.element();
-    if (!this.menuOverlay?.isConnected || this.menuTrigger === trigger) {
+    // Only a menubar menu has a trigger, and a context or pick menu stays put.
+    if (
+        !this.openedMenu?.isOpen
+            || this.menuTrigger === undefined
+            || this.menuTrigger === trigger) {
       return;
     }
 
@@ -1836,14 +2006,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.viewMenu(trigger);
     } else if (menu === 'user') {
       this.userMenu(trigger);
-    }
-  }
-
-  // Clicks on the bar's empty space close the open menu, because the bar covers that part of the
-  // menu's overlay.
-  menubarClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    if (e.targetElement.element() === e.actionElement.element()) {
-      this.closeMenu();
     }
   }
 
@@ -3085,36 +3247,47 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Closes whatever menu is open and makes trigger's the one to open. Answers false when trigger's
   // own menu was the open one, so that clicking it again only closes it.
   private claimMenu(trigger: Element): boolean {
-    const toggled = this.menuOverlay?.isConnected && this.menuTrigger === trigger;
+    const toggled = this.openedMenu?.isOpen && this.menuTrigger === trigger;
     this.closeMenu();
     this.menuTrigger = toggled ? undefined : trigger;
     return !toggled;
   }
 
   private closeMenu(): void {
-    this.menuOverlay?.remove();
-    this.menuOverlay = undefined;
+    this.openedMenu?.close();
+    this.openedMenu = undefined;
     this.menuTrigger = undefined;
   }
 
-  private openContextMenu(items: MenuEntries, x: number, y: number): void {
+  // Opens a menu at px, which is relative to the map's canvas.
+  private openContextMenu(
+      items: MenuEntries, px: Vec2, classes: MenuClassNames = MENU_CLASSES): MenuHandle {
     this.closeMenu();
-    this.menu.open(items, {x, y}, this.root, {anchor: 'top_left', classes: MENU_CLASSES});
-    this.menuOverlay = this.root.lastElementChild ?? undefined;
+    const canvas = checkExists(this.root.querySelector('canvas')).getBoundingClientRect();
+    const root = this.root.getBoundingClientRect();
+    const menu =
+        this.menu.open(
+            items,
+            {x: canvas.left - root.left + px[0], y: canvas.top - root.top + px[1]},
+            this.root,
+            {anchor: 'top_left', classes});
+    this.openedMenu = menu;
+    return menu;
   }
 
+  // Skips a trigger that lost its claim or whose menu an earlier load already opened.
   private openMenu(items: MenuEntries, trigger: Element): void {
-    if (this.menuTrigger !== trigger) {
+    if (this.menuTrigger !== trigger || this.openedMenu?.isOpen) {
       return;
     }
 
     const bound = trigger.getBoundingClientRect();
-    this.menu.open(
-        items,
-        {x: bound.left, y: bound.bottom},
-        this.root,
-        {anchor: 'top_left', classes: MENU_CLASSES});
-    this.menuOverlay = this.root.lastElementChild ?? undefined;
+    this.openedMenu =
+        this.menu.open(
+            items,
+            {x: bound.left, y: bound.bottom},
+            this.root,
+            {anchor: 'top_left', classes: MENU_CLASSES, trigger});
   }
 
   // The formatters read the unit system from a global rather than from props, so a rerender with
@@ -3310,6 +3483,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       layer,
       controls: [],
       values: {},
+      readout: {
+        name: `${name} (SNODAS)`,
+        read: point => {
+          const packed = layer.packedAt(point);
+          return packed !== undefined ? readSnodas(decode === 'snow_depth', packed) : undefined;
+        },
+      },
       configure: () => {
         // setUrl drops every loaded tile, so we only call it when the URL changes.
         const next = snodasUrl(this.snodasDay);
@@ -3349,7 +3529,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
-  private newWeatherEntry(view: WeatherView, name: string): LayerEntry {
+  // readoutName labels a click's reading, for an entry whose name only makes sense in its group.
+  private newWeatherEntry(view: WeatherView, name: string, readoutName = name): LayerEntry {
     const archive = WEATHER_VIEWS[view].layer;
     let url = ecmwfUrl(this.ecmwfRun, archive);
     const layer =
@@ -3372,6 +3553,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       layer,
       controls: [],
       values: {},
+      readout: {
+        name: readoutName,
+        read: point => {
+          const packed = layer.packedAt(point);
+          return packed !== undefined ? readWeather(view, packed) : undefined;
+        },
+      },
       configure: () => {
         // setUrl drops every loaded tile, so we only call it when the URL changes.
         const next = ecmwfUrl(this.ecmwfRun, archive);
@@ -3559,6 +3747,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             .concat(shown.filter(layer => !(layer instanceof PointCollectionLayer)))
             .concat([this.polarCapLayer, this.skyboxLayer]));
   }
+}
+
+// The most specific part of a category's name, like Footway for PATH_FOOTWAY
+function categoryName(names: Record<number, string>, type: unknown): string|undefined {
+  const name = typeof type === 'number' ? names[type] : undefined;
+  if (!name) {
+    return undefined;
+  }
+  const parts = name.split('_');
+  const words = (parts.length > 1 ? parts.slice(1) : parts).join(' ').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.substring(1);
 }
 
 // Mercator to interleaved lat then lng degrees

@@ -1,9 +1,9 @@
-import { S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 
-import { SphericalCone } from '../camera';
+import { projectS2LatLng, SphericalCone } from '../camera';
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { BillboardProgram } from '../rendering/billboard_program';
@@ -31,6 +31,8 @@ export class RasterTileLayer extends Layer {
   private fetching: boolean;
   private readonly loader: PoolClient<LoaderInitialize, LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
+  // Each tile's RGBA before coloring, for the decodes that pack values
+  private readonly packed: HashMap<TileId, Uint8ClampedArray>;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
   private generation: number;
@@ -64,6 +66,7 @@ export class RasterTileLayer extends Layer {
       this.loader.dispose();
     });
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
+    this.packed = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
@@ -107,6 +110,31 @@ export class RasterTileLayer extends Layer {
       kind: 'sur',
       url,
     });
+  }
+
+  /**
+   * Returns the 24 packed bits of the most detailed loaded pixel under the point, for a decode
+   * whose pixels pack values.
+   */
+  packedAt(point: S2LatLng): number|undefined {
+    const [x, y] = projectS2LatLng(point);
+    let best: {zoom: number; packed: number}|undefined = undefined;
+    for (const [id, rgba] of this.packed) {
+      if (best && best.zoom >= id.zoom) {
+        continue;
+      }
+
+      const size = Math.sqrt(rgba.length / 4);
+      const tiles = 2 ** id.zoom;
+      const px = Math.floor(((x + 1) / 2 * tiles - id.x) * size);
+      const py = Math.floor(((1 - y) / 2 * tiles - id.y) * size);
+      if (px < 0 || py < 0 || px >= size || py >= size) {
+        continue;
+      }
+      const i = 4 * (py * size + px);
+      best = {zoom: id.zoom, packed: (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]};
+    }
+    return best?.packed;
   }
 
   override hasNewData(): boolean {
@@ -205,6 +233,9 @@ export class RasterTileLayer extends Layer {
 
     this.loading.delete(response.id);
     this.tiles.set(response.id, texture);
+    if (response.packed) {
+      this.packed.set(response.id, response.packed);
+    }
     this.generation += 1;
 
     this.fetcher.broadcast({
@@ -221,6 +252,7 @@ export class RasterTileLayer extends Layer {
         task.cancel();
       }
 
+      this.packed.delete(id);
       const texture = this.tiles.get(id);
       if (texture) {
         this.tiles.delete(id);

@@ -15,7 +15,7 @@ import { LocationIndex } from 'js/map/workers/location_index';
 import { CellKey, Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
-import { DOUBLE_CLICK_MS, HOVER_CHANGED, OBJECT_OPENED } from './events';
+import { HOVER_CHANGED } from './events';
 import { Schema } from './schema';
 import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 import { Match } from './workers/filters';
@@ -59,7 +59,7 @@ interface LoadedCell {
 
 // One cell's copy of an object. Zoom bands tile the same objects at different levels, so while one
 // band replaces another both cells hold it.
-type HeldObject =
+export type HeldObject =
     | {kind: 'line'; key: CellKey; value: Line}
     | {kind: 'point'; key: CellKey; value: Point}
     | {kind: 'polygon'; key: CellKey; value: Polygon};
@@ -97,7 +97,6 @@ export class CollectionLayer extends Layer {
   // Bumped on every hover and hoverLost, so that an answer for a point the pointer has left is
   // dropped.
   private hoverGeneration: number;
-  private lastClick: {id: string; timeMs: number}|undefined;
   private indexed: boolean;
   private generation: number;
   private readonly highlight: Highlight;
@@ -152,7 +151,6 @@ export class CollectionLayer extends Layer {
       }
     });
     this.hoverGeneration = 0;
-    this.lastClick = undefined;
     this.indexed = true;
     this.generation = 0;
     this.highlight = {
@@ -247,34 +245,31 @@ export class CollectionLayer extends Layer {
     }
   }
 
-  // Takes the time before querying, because the query's latency is not the person's.
-  override click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
-    const now = performance.now();
-    const clicked = (target: string|undefined, object: HeldObject|undefined) => {
-      const last = this.lastClick;
-      this.lastClick = target ? {id: target, timeMs: now} : undefined;
-      if (object && last && last.id === target && now - last.timeMs < DOUBLE_CLICK_MS) {
-        source.trigger(OBJECT_OPENED, {layer: this, object});
+  /** Returns the objects under the point: points, then lines nearest first, then polygons. */
+  async objectsAt(point: S2LatLng): Promise<HeldObject[]> {
+    const dots = this.pointsAt(point);
+    const ids = await this.queryPoint(point);
+    const objects = new Map<string, HeldObject>();
+    for (const object of [...dots, ...ids.map(id => this.resolve(id))]) {
+      // Two zoom bands can both hold an object while one replaces the other.
+      if (object && !objects.has(objectKey(object.value.id))) {
+        objects.set(objectKey(object.value.id), object);
       }
-    };
-
-    const dot = this.pointAt(point);
-    if (dot) {
-      clicked(objectKey(dot.value.id), dot);
-      // Return true so the line or polygon under the point doesn't also get the click.
-      return true;
     }
-    this.queryPoint(point).then(ids => {
-      const target = ids.find(id => this.resolve(id));
-      clicked(target, target ? this.resolve(target) : undefined);
-    });
-    return false;
+    return [...objects.values()];
+  }
+
+  /** Highlights the object as if the pointer were over it, or clears the highlight. */
+  highlightObject(object: HeldObject|undefined, source: EventSource): void {
+    // A hover query in flight would otherwise replace it.
+    this.hoverGeneration += 1;
+    this.retarget(object && objectKey(object.value.id), object, source);
   }
 
   override hover(point: S2LatLng, source: EventSource): boolean {
     this.hoverGeneration += 1;
     const generation = this.hoverGeneration;
-    const dot = this.pointAt(point);
+    const dot = this.pointsAt(point)[0];
     if (dot) {
       this.retarget(objectKey(dot.value.id), dot, source);
       return true;
@@ -567,31 +562,30 @@ export class CollectionLayer extends Layer {
     this.loading.delete(key);
   }
 
-  // Finds the closest point within HOVER_RADIUS_PX. We search points here because they aren't in the
-  // location index, since the router would try to route along anything in it.
-  private pointAt(at: S2LatLng): HeldObject|undefined {
+  // Finds the points within HOVER_RADIUS_PX, closest first. We search points here because they
+  // aren't in the location index, since the router would try to route along anything in it.
+  private pointsAt(at: S2LatLng): HeldObject[] {
     // the layer is hidden, see setIndexed
     if (!this.indexed) {
-      return undefined;
+      return [];
     }
 
     const [x, y] = projectS2LatLng(at);
     // converts pixels to mercator
     const radius = HOVER_RADIUS_PX * this.camera.inverseWorldRadius;
-    let best: HeldObject|undefined = undefined;
-    let bestDistance2 = radius * radius;
+    const found: Array<{object: HeldObject; distance2: number}> = [];
     for (const [key, cell] of this.cells) {
       for (const point of cell?.points ?? []) {
         const dx = point.position[0] - x;
         const dy = point.position[1] - y;
         const distance2 = dx * dx + dy * dy;
-        if (distance2 < bestDistance2) {
-          best = {kind: 'point', key, value: point};
-          bestDistance2 = distance2;
+        if (distance2 < radius * radius) {
+          found.push({object: {kind: 'point', key, value: point}, distance2});
         }
       }
     }
-    return best;
+    found.sort((a, b) => a.distance2 - b.distance2);
+    return found.map(({object}) => object);
   }
 
   private queryPoint(point: S2LatLng): Promise<string[]> {

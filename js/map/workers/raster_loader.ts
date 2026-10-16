@@ -4,7 +4,7 @@ import { TileId } from '../common/types';
 
 import { Reply, serveClients } from './client_pool';
 import { decodeTerrarium } from './terrarium';
-import { colorWeather, readPacked, WeatherView } from './weather';
+import { colorWeather, readPacked, unpackSnodas, WeatherView } from './weather';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height, the
 // snow kinds color one of the values in a SNODAS tile, and the weather kinds color an ECMWF tile.
@@ -26,13 +26,12 @@ export interface LoadResponse {
   kind: 'lr';
   id: TileId;
   bitmap: ImageBitmap;
+  // The tile's RGBA before coloring, for the decodes whose pixels pack values worth reading back
+  packed: Uint8ClampedArray|undefined;
 }
 
 export type Response = LoadResponse;
 
-// Keep in sync with Snodas.kt#pack. Each pixel's 24 RGB bits hold snow depth in cm in the high 12
-// bits and snow water equivalent in mm in the low 12 bits. A depth of 4095 means no data.
-const SNOW_NO_DATA = 4095;
 const SNOW_ALPHA = 160;
 // Light to dark. Depth and water use the same colors so a depth and its water look the same.
 const SNOW_COLORS = [
@@ -54,48 +53,46 @@ class RasterLoader {
 
   constructor(private readonly decode: Decode) {}
 
-  render(request: LoadRequest): Promise<Reply<Response>> {
+  async render(request: LoadRequest): Promise<Reply<Response>> {
     const blob = new Blob([request.data]);
     let bitmap;
+    let packed;
     if (this.decode === 'image') {
-      bitmap = createImageBitmap(blob);
+      bitmap = await createImageBitmap(blob);
     } else if (this.decode === 'elevation') {
-      bitmap = decodeElevation(blob);
-    } else if (this.decode === 'snow_depth' || this.decode === 'snow_water') {
-      bitmap = decodeSnow(blob, this.decode === 'snow_depth');
+      bitmap = await decodeElevation(blob);
     } else {
-      bitmap = decodeWeather(blob, this.decode.substring('weather/'.length) as WeatherView);
+      const pixels = await readPacked(blob);
+      packed = pixels.data.slice();
+      if (this.decode === 'snow_depth' || this.decode === 'snow_water') {
+        colorSnow(pixels.data, this.decode === 'snow_depth');
+      } else {
+        colorWeather(this.decode.substring('weather/'.length) as WeatherView, pixels.data);
+      }
+      bitmap = await createImageBitmap(pixels);
     }
-    return bitmap.then(bitmap => ({
+    return {
       message: {
         kind: 'lr',
         id: request.id,
         bitmap,
+        packed,
       },
-      transfer: [bitmap],
-    }));
+      transfer: packed ? [bitmap, packed.buffer] : [bitmap],
+    };
   }
 }
 
-async function decodeWeather(blob: Blob, view: WeatherView): Promise<ImageBitmap> {
-  const pixels = await readPacked(blob);
-  colorWeather(view, pixels.data);
-  return createImageBitmap(pixels);
-}
-
-async function decodeSnow(blob: Blob, depth: boolean): Promise<ImageBitmap> {
-  const pixels = await readPacked(blob);
-  const rgba = pixels.data;
+function colorSnow(rgba: Uint8ClampedArray, depth: boolean): void {
   const stops = depth ? SNOW_DEPTH_CM_STOPS : SNOW_WATER_MM_STOPS;
   for (let i = 0; i < rgba.length; i += 4) {
-    const packedValue = (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2];
-    const depthCm = packedValue >>> 12;
-    const value = depth ? depthCm : packedValue & 0xFFF;
+    const snow = unpackSnodas((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]);
+    const value = depth ? snow?.depthCm : snow?.waterMm;
     let band = -1;
-    while (band + 1 < stops.length && stops[band + 1] <= value) {
+    while (value !== undefined && band + 1 < stops.length && stops[band + 1] <= value) {
       band += 1;
     }
-    if (depthCm === SNOW_NO_DATA || band < 0) {
+    if (band < 0) {
       rgba[i + 3] = 0;
       continue;
     }
@@ -105,7 +102,6 @@ async function decodeSnow(blob: Blob, depth: boolean): Promise<ImageBitmap> {
     rgba[i + 2] = color & 0xFF;
     rgba[i + 3] = SNOW_ALPHA;
   }
-  return createImageBitmap(pixels);
 }
 
 // Mapterhorn has no bathymetry and stores the sea as 0 m, but so does land on the 0 m contour after

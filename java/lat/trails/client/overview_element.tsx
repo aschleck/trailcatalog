@@ -7,7 +7,7 @@ import {
   setIndexable,
   setTitle,
 } from 'external/dev_april_corgi+/js/server/ssr_aware';
-import { MAP_MOVED } from 'js/map/events';
+import { MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 import { GetCollectionResponse, Role } from 'trails_lat/proto/data_pb';
 
@@ -21,7 +21,6 @@ import {
   FEATURE_HOVERED,
   LINE_DRAWN,
   MARKER_DRAWN,
-  OBJECT_OPENED,
   POINT_PLACED,
   TOOL_REQUESTED,
 } from './events';
@@ -150,9 +149,9 @@ export function OverviewElement(
               [LINE_DRAWN, 'onLineDrawn'],
               [MARKER_DRAWN, 'onMarkerDrawn'],
               [MAP_MOVED, 'onMove'],
-              [OBJECT_OPENED, 'onObjectOpened'],
               [POINT_PLACED, 'onPointPlaced'],
               [TOOL_REQUESTED, 'onToolRequested'],
+              [UNCLAIMED_CLICKED, 'onUnclaimedClicked'],
             ],
             render: 'wakeup',
           },

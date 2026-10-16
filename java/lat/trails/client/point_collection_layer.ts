@@ -16,7 +16,7 @@ import { PoolClient, sharedPool } from 'js/map/workers/client_pool';
 import { CellKey, Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
 import { Z_OVERLAY_TEXT, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
-import { DOUBLE_CLICK_MS, HOVER_CHANGED, OBJECT_OPENED } from './events';
+import { HOVER_CHANGED } from './events';
 import { Data } from './workers/collection_loader';
 
 // Keep in sync with ApiServer.kt#KIND_PACKED_POINT.
@@ -45,7 +45,7 @@ export interface Point {
   position: Vec2;
 }
 
-/** Draws a collection of points as trailcatalog's icons, and opens one on a double click. */
+/** Draws a collection of points as trailcatalog's icons. */
 export class PointCollectionLayer extends Layer {
 
   private readonly fetcher: PoolClient<FetcherInitialize, FetcherRequest, FetcherCommand>;
@@ -62,7 +62,6 @@ export class PointCollectionLayer extends Layer {
   // Only points descending from these draw and answer the cursor
   private categories: PointCategory[];
   private hovered: Point|undefined;
-  private lastClick: {point: Point; timeMs: number}|undefined;
 
   constructor(
       copyrights: Copyright[],
@@ -100,7 +99,6 @@ export class PointCollectionLayer extends Layer {
     this.lastRenderGeneration = -1;
     this.categories = categories;
     this.hovered = undefined;
-    this.lastClick = undefined;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
@@ -140,25 +138,18 @@ export class PointCollectionLayer extends Layer {
     this.generation += 1;
   }
 
-  override click(point: S2LatLng, px: [number, number], contextual: boolean, source: EventSource): boolean {
-    const now = performance.now();
-    const target = this.pointAt(point);
-    const last = this.lastClick;
-    this.lastClick = target ? {point: target, timeMs: now} : undefined;
-    if (target && last && last.point === target && now - last.timeMs < DOUBLE_CLICK_MS) {
-      source.trigger(OBJECT_OPENED, {layer: this, object: {kind: 'point', value: target}});
+  /** Highlights the point as if the pointer were over it, or clears the highlight. */
+  highlightPoint(point: Point|undefined, source: EventSource): void {
+    if (point !== this.hovered) {
+      this.hovered = point;
+      this.generation += 1;
+      source.trigger(HOVER_CHANGED, {target: point});
     }
-    // Claimed, or else the way under the icon opens instead.
-    return target !== undefined;
   }
 
   override hover(point: S2LatLng, source: EventSource): boolean {
-    const target = this.pointAt(point);
-    if (target !== this.hovered) {
-      this.hovered = target;
-      this.generation += 1;
-      source.trigger(HOVER_CHANGED, {target});
-    }
+    const target = this.pointsAt(point)[0];
+    this.highlightPoint(target, source);
     return target !== undefined;
   }
 
@@ -246,17 +237,16 @@ export class PointCollectionLayer extends Layer {
     this.drawables = drawables;
   }
 
-  // The nearest point within HOVER_RADIUS_PX, since icons overlap where points crowd together
-  private pointAt(point: S2LatLng): Point|undefined {
+  /** Returns the shown points within HOVER_RADIUS_PX of the point, closest first. */
+  pointsAt(point: S2LatLng): Point[] {
     if (this.camera.zoom < this.minZoom) {
-      return undefined;
+      return [];
     }
 
     const [x, y] = projectS2LatLng(point);
     // A mercator unit is worldRadius pixels.
     const radius = HOVER_RADIUS_PX * this.camera.inverseWorldRadius;
-    let best = undefined;
-    let bestDistance2 = radius * radius;
+    const found: Array<{point: Point; distance2: number}> = [];
     for (const points of this.cells.values()) {
       for (const candidate of points) {
         if (!this.shows(candidate)) {
@@ -265,13 +255,13 @@ export class PointCollectionLayer extends Layer {
         const dx = candidate.position[0] - x;
         const dy = candidate.position[1] - y;
         const distance2 = dx * dx + dy * dy;
-        if (distance2 < bestDistance2) {
-          best = candidate;
-          bestDistance2 = distance2;
+        if (distance2 < radius * radius) {
+          found.push({point: candidate, distance2});
         }
       }
     }
-    return best;
+    found.sort((a, b) => a.distance2 - b.distance2);
+    return found.map(({point}) => point);
   }
 
   private shows(point: Point): boolean {

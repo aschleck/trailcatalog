@@ -16,7 +16,7 @@ import { Renderer } from './rendering/renderer';
 
 import { Camera } from './camera';
 import { CopyrightDialog } from './copyright_dialog';
-import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from './events';
+import { CLICKED, DATA_CHANGED, MAP_MOVED, UNCLAIMED_CLICKED, ZOOMED } from './events';
 import { Layer } from './layer';
 import { PointerInterpreter } from './pointer_interpreter';
 
@@ -281,8 +281,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
 
     for (const layer of this.layers) {
       if (layer.click(ll, [offsetX, offsetY], contextual, this)) {
-        break;
+        return;
       }
+    }
+    if (!contextual) {
+      this.trigger(UNCLAIMED_CLICKED, {point: ll, px: [offsetX, offsetY]});
     }
   }
 

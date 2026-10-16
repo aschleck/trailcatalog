@@ -1,6 +1,7 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
+import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { Layer } from 'js/map/layer';
 
 import { Chevron, Eye } from './feature_list';
@@ -47,6 +48,9 @@ export interface LayerEntry {
   values: ControlValues;
   // Called with the new values whenever a control changes
   configure?: (values: ControlValues) => void;
+  // Set for a layer whose pixels hold values, which a click shows under name. Read returns
+  // undefined where the layer has no tile loaded.
+  readout?: {name: string; read: (point: S2LatLng) => string|undefined};
 }
 
 export interface LayerGroup {

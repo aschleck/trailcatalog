@@ -86,8 +86,8 @@ function lookaheadLong(scale: number): Layer {
   ]};
 }
 
-// Channel values by name, NaN where a channel has no data
-type Values = Record<string, number>;
+/** Channel values by name, NaN where a channel has no data. */
+export type Values = Record<string, number>;
 type Rgba = [number, number, number, number];
 type Ramp = Array<[number, number]>;
 
@@ -140,7 +140,7 @@ const WAVE_HEIGHT_M: Ramp = [
 ];
 
 // https://codes.ecmwf.int/grib/param-db/260015
-const SNOW_TYPES = new Set([5, 6, 7]);
+export const SNOW_TYPES = new Set([5, 6, 7]);
 // Convective energy above this is enough for thunderstorms where it also rains hard.
 const THUNDER_CAPE = 1000;
 const THUNDER_MM_PER_HOUR = 1;
@@ -202,17 +202,9 @@ export type WeatherView = keyof typeof WEATHER_VIEWS;
 /** Colors a tile's packed pixels in place. */
 export function colorWeather(view: WeatherView, rgba: Uint8ClampedArray): void {
   const {color, layer}: View = WEATHER_VIEWS[view];
-  const channels = ECMWF_LAYERS[layer].channels;
   const values: Values = {};
   for (let i = 0; i < rgba.length; i += 4) {
-    const packed = (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2];
-    let shift = 24;
-    for (const channel of channels) {
-      shift -= channel.bits;
-      const noData = (1 << channel.bits) - 1;
-      const code = (packed >>> shift) & noData;
-      values[channel.name] = code === noData ? NaN : channel.offset + channel.scale * code;
-    }
+    unpackPixel(layer, (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2], values);
     const rgbaOut = color(values);
     if (rgbaOut) {
       rgba.set(rgbaOut, i);
@@ -220,6 +212,18 @@ export function colorWeather(view: WeatherView, rgba: Uint8ClampedArray): void {
       rgba[i + 3] = 0;
     }
   }
+}
+
+/** Unpacks every channel of a pixel's 24 packed bits into values. */
+export function unpackPixel(layer: EcmwfLayer, packed: number, values: Values = {}): Values {
+  let shift = 24;
+  for (const channel of ECMWF_LAYERS[layer].channels as Channel[]) {
+    shift -= channel.bits;
+    const noData = (1 << channel.bits) - 1;
+    const code = (packed >>> shift) & noData;
+    values[channel.name] = code === noData ? NaN : channel.offset + channel.scale * code;
+  }
+  return values;
 }
 
 /** Unpacks one channel of each of a tile's packed pixels, with NaN where there's no data. */
@@ -245,6 +249,16 @@ export function unpackChannel(
     values[i] = code === noData ? NaN : channel.offset + channel.scale * code;
   }
   return values;
+}
+
+// Keep in sync with Snodas.kt#pack. Each pixel's 24 RGB bits hold snow depth in cm in the high 12
+// bits and snow water equivalent in mm in the low 12 bits. A depth of 4095 means no data.
+const SNODAS_NO_DATA = 4095;
+
+/** Unpacks a SNODAS pixel's 24 packed bits, or returns undefined where it has no data. */
+export function unpackSnodas(packed: number): {depthCm: number; waterMm: number}|undefined {
+  const depthCm = packed >>> 12;
+  return depthCm === SNODAS_NO_DATA ? undefined : {depthCm, waterMm: packed & 0xFFF};
 }
 
 // Decodes without color management or alpha premultiplication, because either would change the
@@ -293,10 +307,15 @@ function precipitationColor(v: Values): Rgba|undefined {
   if (!(v.rate >= 0.1)) {
     return undefined;
   }
-  if (v.cape >= THUNDER_CAPE && v.rate >= THUNDER_MM_PER_HOUR) {
+  if (thunders(v)) {
     return THUNDER_COLOR;
   }
   return ramp(SNOW_TYPES.has(v.type) ? SNOW_MM_PER_HOUR : RAIN_MM_PER_HOUR, v.rate);
+}
+
+/** Returns whether a precipitation pixel's values are enough for a thunderstorm. */
+export function thunders(v: Values): boolean {
+  return v.cape >= THUNDER_CAPE && v.rate >= THUNDER_MM_PER_HOUR;
 }
 
 // White, more opaque the more cover there is
@@ -308,13 +327,13 @@ function cloudColor(percent: number): Rgba|undefined {
 }
 
 // Magnus's formula with Alduchov and Eskridge's constants
-function relativeHumidity(celsius: number, dewPoint: number): number {
+export function relativeHumidity(celsius: number, dewPoint: number): number {
   const saturation = (t: number) => Math.exp(17.625 * t / (243.04 + t));
   return Math.min(100, 100 * saturation(dewPoint) / saturation(celsius));
 }
 
 // https://doi.org/10.1175/JAMC-D-11-0143.1
-function wetBulb(celsius: number, humidity: number): number {
+export function wetBulb(celsius: number, humidity: number): number {
   return celsius * Math.atan(0.151977 * Math.sqrt(humidity + 8.313659))
       + Math.atan(celsius + humidity)
       - Math.atan(humidity - 1.676331)
