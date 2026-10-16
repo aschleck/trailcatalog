@@ -1,14 +1,19 @@
 import { Future, resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
 import { floatCoalesce } from 'external/dev_april_corgi+/js/common/math';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
-import { setTitle } from 'external/dev_april_corgi+/js/server/ssr_aware';
+import {
+  setCanonicalPath,
+  setDescription,
+  setIndexable,
+  setTitle,
+} from 'external/dev_april_corgi+/js/server/ssr_aware';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 import { GetCollectionResponse, Role } from 'trails_lat/proto/data_pb';
 
 import { State, ViewerController } from './viewer_controller';
 import { requestData } from './data';
-import { folderFromProto, lineFromProto, pointFromProto } from './features';
+import { EditableFeature, folderFromProto, lineFromProto, pointFromProto } from './features';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -36,6 +41,11 @@ import { Menubar, MenubarItem } from './menubar';
 import { EMPTY_SEARCH, SearchBox } from './search_box';
 import { Toolbar } from './toolbar';
 
+export const DEFAULT_DESCRIPTION = 'Mapping software for backcountry trip planning';
+
+// Search results cut a description off at around this many characters.
+const DESCRIPTION_CHARS = 155;
+
 export function OverviewElement(
   {collection, parameters}: {
     collection: string|undefined;
@@ -62,7 +72,9 @@ export function OverviewElement(
     inState = {
       collection: loaded?.collection,
       collectionStatus:
-          !collection ? 'loaded' : outline?.finished && !outline.ok ? 'failed' : 'loading',
+          !collection
+              ? 'loaded'
+              : !outline?.finished ? 'loading' : outline.ok ? 'loaded' : 'failed',
       features: {
         all,
         selected: undefined,
@@ -96,6 +108,11 @@ export function OverviewElement(
   const readOnly = state.collection?.role === Role.READ;
   const tree = buildTree(state.features.all);
   setTitle(state.collection?.name ? `${state.collection.name} - trails.lat` : 'trails.lat');
+  setDescription(describe(state.collection?.name, state.features.all));
+  // The camera parameters would otherwise make every view of a collection its own page.
+  setCanonicalPath(collection ? `/collection/${collection}` : '/');
+  // A collection that failed to load is usually one a logged out crawler can't read.
+  setIndexable(state.collectionStatus !== 'failed');
 
   if (!state.self.finished) {
     state.self.then(self => {
@@ -265,4 +282,25 @@ export function OverviewElement(
       }
     </div>
   </>;
+}
+
+function describe(name: string|undefined, features: EditableFeature[]): string {
+  if (!name) {
+    return DEFAULT_DESCRIPTION;
+  }
+
+  let description = name;
+  let separator = ': ';
+  for (const feature of features) {
+    const featureName = feature.data.name?.trim();
+    if (!featureName) {
+      continue;
+    }
+    if (description.length + separator.length + featureName.length > DESCRIPTION_CHARS) {
+      break;
+    }
+    description += separator + featureName;
+    separator = ', ';
+  }
+  return description;
 }

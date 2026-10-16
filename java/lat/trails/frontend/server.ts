@@ -6,9 +6,10 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import postgres from 'postgres';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
-import { serve } from 'external/dev_april_corgi+/js/server/server';
+import { PageOptions, serve } from 'external/dev_april_corgi+/js/server/server';
 
 import { App } from '../client/app';
+import { DEFAULT_DESCRIPTION } from '../client/overview_element';
 
 import { STATIC_PREFIX } from './assets';
 import { ExpiredCredentialError, LoginEnforcer } from './auth';
@@ -103,14 +104,19 @@ async function initialize(server: FastifyInstance): Promise<void> {
   await oidc.addGoogle(server, encrypter, loginEnforcer, sql);
 }
 
-function page(content: string, title: string, initialData: string): string {
+const ORIGIN = 'https://trails.lat';
+
+function page(
+    {canonicalPath, content, description, escapedData, indexable, title}: PageOptions): string {
   return `
 <!DOCTYPE html>
 <html dir="ltr" lang="en" class="h-full">
   <head>
     <meta charset="utf-8"/>
     <title>${title}</title>
-    <meta name="description" content="Mapping software for backcountry trip planning">
+    <meta name="description" content="${description ?? DEFAULT_DESCRIPTION}">
+    ${canonicalPath === undefined ? '' : `<link rel="canonical" href="${ORIGIN}${canonicalPath}">`}
+    ${indexable ? '' : '<meta name="robots" content="noindex">'}
     <meta
         name="viewport"
         content="height=device-height, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width" />
@@ -119,7 +125,7 @@ function page(content: string, title: string, initialData: string): string {
   </head>
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
-    <script>${process.env.DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${initialData}</script>
+    <script>${process.env.DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${escapedData}</script>
     <script type="module" src="${STATIC_PREFIX}/client.js"></script>
     <script
         async
