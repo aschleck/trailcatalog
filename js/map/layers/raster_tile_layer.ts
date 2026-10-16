@@ -16,6 +16,13 @@ import { Decode, Initialize as LoaderInitialize, LoadResponse, Request as Loader
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 
 const NO_OFFSET: Vec2 = [0, 0];
+// A billboard curves onto the globe as a 4x4 lattice, so a z3 tile's cells are 11 degrees across
+// and visibly slide as the globe flattens. Coarser tiles are drawn as z7 pieces, whose cells are
+// 0.7 degrees.
+const PIECE_ZOOM = 7;
+// Splitting a z0 tile into z7 pieces would be 16k instances, so tiles that coarse stop at 16x16.
+// Those only draw zoomed out, where a 5.6 degree cell is a few pixels.
+const MAX_PIECES = 16;
 
 export class RasterTileLayer extends Layer {
 
@@ -112,8 +119,11 @@ export class RasterTileLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.hasNewData()) {
-      const buffer =
-          new ArrayBuffer(Math.max(BillboardProgram.bytesNeeded() * this.tiles.size, 65536));
+      let instances = 0;
+      for (const [id] of this.tiles) {
+        instances += piecesPerSide(id.zoom) ** 2;
+      }
+      const buffer = new ArrayBuffer(Math.max(BillboardProgram.bytesNeeded() * instances, 65536));
       const drawables = [];
       let offset = 0;
 
@@ -121,25 +131,30 @@ export class RasterTileLayer extends Layer {
       const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
       for (const [id, texture] of sorted) {
         const halfWorldSize = Math.pow(2, id.zoom - 1);
-        const size = 1 / halfWorldSize;
-        const centerX = (id.x + 0.5 - halfWorldSize) / halfWorldSize;
-        const centerY = (halfWorldSize - (id.y + 0.5)) / halfWorldSize;
-        const {byteSize, drawable} =
-            this.renderer.billboardProgram.plan(
-                [centerX, centerY],
-                NO_OFFSET,
-                [size, size],
-                /* angle= */ 0,
-                this.tint,
-                this.z,
-                /* atlasIndex= */ 0,
-                /* atlasSize= */ [1, 1],
-                buffer,
-                offset,
-                this.buffer,
-                texture);
-        drawables.push(drawable);
-        offset += byteSize;
+        const pieces = piecesPerSide(id.zoom);
+        const size = 1 / halfWorldSize / pieces;
+        const left = (id.x - halfWorldSize) / halfWorldSize;
+        const top = (halfWorldSize - id.y) / halfWorldSize;
+        for (let y = 0; y < pieces; ++y) {
+          for (let x = 0; x < pieces; ++x) {
+            const {byteSize, drawable} =
+                this.renderer.billboardProgram.plan(
+                    [left + size * (x + 0.5), top - size * (y + 0.5)],
+                    NO_OFFSET,
+                    [size, size],
+                    /* angle= */ 0,
+                    this.tint,
+                    this.z,
+                    /* atlasIndex= */ y * pieces + x,
+                    /* atlasSize= */ [pieces, pieces],
+                    buffer,
+                    offset,
+                    this.buffer,
+                    texture);
+            drawables.push(drawable);
+            offset += byteSize;
+          }
+        }
       }
 
       this.renderer.uploadData(buffer, offset, this.buffer);
@@ -217,3 +232,6 @@ export class RasterTileLayer extends Layer {
   }
 }
 
+function piecesPerSide(zoom: number): number {
+  return Math.min(2 ** Math.max(PIECE_ZOOM - zoom, 0), MAX_PIECES);
+}

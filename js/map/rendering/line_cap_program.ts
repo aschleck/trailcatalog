@@ -264,7 +264,9 @@ function createLineCapProgram(gl: WebGL2RenderingContext): LineCapProgramData {
 
         gl_Position = mix(spherical, mercator, flattenFactor);
         gl_Position /= gl_Position.w;
-        gl_Position.z = z * gl_Position.z + (1. - z);
+        // Depth is the layer alone, the same as triangle_program.ts, or else a line that is farther
+        // from the camera loses the depth test to a lower layer's raster tile.
+        gl_Position.z = 1. - 2. * z;
 
         // Signed horizon distance for fragment-level cull on the back of the
         // globe — see triangle_program for context.
