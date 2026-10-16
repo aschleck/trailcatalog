@@ -1,0 +1,286 @@
+// Keep in sync with WeatherLayers.kt#WEATHER_LAYERS and #LOOKAHEAD_LAYERS. Each pixel's 24 RGB
+// bits hold the channels packed from the high bits down as round((value - offset) / scale), and a
+// channel's largest code means no data.
+interface Channel {
+  name: string;
+  bits: number;
+  scale: number;
+  offset: number;
+}
+
+interface Layer {
+  stepHours: number;
+  // Set when each step looks this many hours ahead, so the last steps of a run have no tiles
+  lookaheadHours?: number;
+  channels: Channel[];
+}
+
+export const ECMWF_LAYERS = {
+  clouds: {stepHours: 6, channels: [
+    {name: 'total', bits: 6, scale: 100 / 62, offset: 0},
+    {name: 'low', bits: 6, scale: 100 / 62, offset: 0},
+    {name: 'medium', bits: 6, scale: 100 / 62, offset: 0},
+    {name: 'high', bits: 6, scale: 100 / 62, offset: 0},
+  ]},
+  freezing: {stepHours: 3, channels: [
+    {name: 'altitude', bits: 12, scale: 5, offset: 0},
+  ]},
+  gust: {stepHours: 3, channels: [
+    {name: 'gust', bits: 12, scale: 0.1, offset: 0},
+  ]},
+  peak_gust: lookahead(0.1),
+  peak_gust_long: lookaheadLong(0.1),
+  rain: lookahead(0.1),
+  rain_long: lookaheadLong(0.5),
+  snowfall: lookahead(0.1),
+  snowfall_long: lookaheadLong(0.5),
+  icing: {stepHours: 3, channels: [850, 700, 600, 500, 400, 300].map(level =>
+    ({name: `${level}hpa`, bits: 4, scale: 1, offset: 0})),
+  },
+  precipitation: {stepHours: 3, channels: [
+    {name: 'rate', bits: 14, scale: 0.01, offset: 0},
+    {name: 'type', bits: 4, scale: 1, offset: 0},
+    {name: 'cape', bits: 6, scale: 100, offset: 0},
+  ]},
+  pressure: {stepHours: 3, channels: [
+    {name: 'pressure', bits: 12, scale: 0.1, offset: 850},
+  ]},
+  snow: {stepHours: 3, channels: [
+    {name: 'depth', bits: 12, scale: 1, offset: 0},
+  ]},
+  temperature: {stepHours: 3, channels: [
+    {name: 'temperature', bits: 12, scale: 0.05, offset: -100},
+    {name: 'dew_point', bits: 12, scale: 0.05, offset: -100},
+  ]},
+  thermals: {stepHours: 3, channels: [
+    {name: 'top', bits: 12, scale: 5, offset: 0},
+    {name: 'cloud_base', bits: 12, scale: 5, offset: 0},
+  ]},
+  turbulence: {stepHours: 3, channels: [[400, 300], [300, 250], [250, 200], [200, 150]].map(
+    ([bottom, top]) => ({name: `${bottom}_${top}hpa`, bits: 6, scale: 0.5, offset: 0})),
+  },
+  waves: {stepHours: 3, channels: [
+    {name: 'height', bits: 9, scale: 0.05, offset: 0},
+    {name: 'direction', bits: 8, scale: 360 / 254, offset: 0},
+    {name: 'period', bits: 7, scale: 0.25, offset: 0},
+  ]},
+  wind: {stepHours: 3, channels: [
+    {name: 'u', bits: 12, scale: 0.1, offset: -204.7},
+    {name: 'v', bits: 12, scale: 0.1, offset: -204.7},
+  ]},
+} satisfies Record<string, Layer>;
+
+export type EcmwfLayer = keyof typeof ECMWF_LAYERS;
+
+function lookahead(scale: number): Layer {
+  return {stepHours: 3, lookaheadHours: 24, channels: [
+    {name: 'next_12h', bits: 12, scale, offset: 0},
+    {name: 'next_24h', bits: 12, scale, offset: 0},
+  ]};
+}
+
+function lookaheadLong(scale: number): Layer {
+  return {stepHours: 3, lookaheadHours: 120, channels: [
+    {name: 'next_72h', bits: 12, scale, offset: 0},
+    {name: 'next_120h', bits: 12, scale, offset: 0},
+  ]};
+}
+
+// Channel values by name, NaN where a channel has no data
+type Values = Record<string, number>;
+type Rgba = [number, number, number, number];
+type Ramp = Array<[number, number]>;
+
+interface View {
+  layer: EcmwfLayer;
+  // undefined leaves the pixel clear
+  color: (values: Values) => Rgba|undefined;
+}
+
+const ALPHA = 180;
+
+// Value to 0xRRGGBB stops, interpolated between and clamped past the ends
+const TEMPERATURE_C: Ramp = [
+  [-40, 0x3C006E], [-25, 0x3C3CBE], [-10, 0x4696DC], [0, 0x96D7E6], [10, 0xAADC8C],
+  [20, 0xFADC5A], [30, 0xF58232], [40, 0xBE1E28], [50, 0x6E001E],
+];
+const SPEED_MPS: Ramp = [
+  [0, 0x6271B7], [3, 0x39619F], [6, 0x4A94A9], [9, 0x4D8D7B], [12, 0x53A553], [15, 0xA79D51],
+  [20, 0x9F7F3A], [25, 0xA16C5C], [30, 0x813A4E], [40, 0xAF5088], [50, 0x754A93],
+];
+const PRESSURE_HPA: Ramp = [
+  [960, 0x4B2991], [990, 0x3C6EC8], [1005, 0x50AAAA], [1013, 0x8CC864], [1025, 0xE6C850],
+  [1040, 0xD2643C],
+];
+const HUMIDITY_PERCENT: Ramp = [[0, 0xAD5538], [40, 0xD9B36C], [70, 0x6FB28A], [100, 0x2F5FA8]];
+const RAIN_MM_PER_HOUR: Ramp = [
+  [0.1, 0xA0D8EF], [0.5, 0x4FA3E0], [2, 0x2A6BD1], [5, 0x3AB54A], [10, 0xF2E33A], [20, 0xF28C28],
+  [50, 0xD7263D],
+];
+const SNOW_MM_PER_HOUR: Ramp = [[0.1, 0xE6E6F5], [1, 0xB4A0E6], [5, 0x8C5AC8]];
+const ACCUMULATION_MM: Ramp = [
+  [1, 0xA0D8EF], [5, 0x4FA3E0], [10, 0x2A6BD1], [25, 0x3AB54A], [50, 0xF2E33A], [100, 0xF28C28],
+  [200, 0xD7263D],
+];
+// The same stops as raster_loader.ts#SNOW_COLORS so SNODAS and ECMWF snow read alike
+const SNOW_DEPTH_CM: Ramp = [
+  [1, 0xDCEFFA], [5, 0xB5DAF2], [15, 0x85BDE6], [30, 0x5A9DD8], [60, 0x3A7BC8], [100, 0x3F55B5],
+  [150, 0x5A3FA0], [200, 0x77308A], [300, 0x8E1F6E],
+];
+const ALTITUDE_M: Ramp = [
+  [0, 0x8C3A20], [500, 0xC98A4C], [1000, 0xEEE6B0], [2000, 0x92C672], [3000, 0x4FA3E0],
+  [4500, 0x3C3CBE], [6000, 0x4B2991],
+];
+// Ellrod's index in 10^-7 s^-2, where 4 is light, 8 moderate, and 12 severe
+const TURBULENCE: Ramp = [[2, 0xF5E6A0], [4, 0xF2C53A], [8, 0xF28C28], [12, 0xD7263D]];
+const ICING: Ramp = [[1, 0xC8E6F5], [5, 0x6FB2E0], [10, 0x3C6EC8], [15, 0x4B2991]];
+const WAVE_HEIGHT_M: Ramp = [
+  [0, 0x2F5FA8], [1, 0x4A94A9], [2, 0x53A553], [4, 0xE6C850], [6, 0xF28C28], [9, 0xD7263D],
+  [14, 0x754A93],
+];
+
+// https://codes.ecmwf.int/grib/param-db/260015
+const SNOW_TYPES = new Set([5, 6, 7]);
+// Convective energy above this is enough for thunderstorms where it also rains hard.
+const THUNDER_CAPE = 1000;
+const THUNDER_MM_PER_HOUR = 1;
+const THUNDER_COLOR: Rgba = [230, 40, 200, ALPHA];
+
+export const WEATHER_VIEWS = {
+  wind: {layer: 'wind', color: v => ramp(SPEED_MPS, Math.hypot(v.u, v.v))},
+  gust: {layer: 'gust', color: v => ramp(SPEED_MPS, v.gust)},
+  wind_accumulation_12: {layer: 'peak_gust', color: v => ramp(SPEED_MPS, v.next_12h)},
+  wind_accumulation_24: {layer: 'peak_gust', color: v => ramp(SPEED_MPS, v.next_24h)},
+  wind_accumulation_72: {layer: 'peak_gust_long', color: v => ramp(SPEED_MPS, v.next_72h)},
+  wind_accumulation_120: {layer: 'peak_gust_long', color: v => ramp(SPEED_MPS, v.next_120h)},
+  pressure: {layer: 'pressure', color: v => ramp(PRESSURE_HPA, v.pressure)},
+  temperature: {layer: 'temperature', color: v => ramp(TEMPERATURE_C, v.temperature)},
+  dew_point: {layer: 'temperature', color: v => ramp(TEMPERATURE_C, v.dew_point)},
+  humidity: {
+    layer: 'temperature',
+    color: v => ramp(HUMIDITY_PERCENT, relativeHumidity(v.temperature, v.dew_point)),
+  },
+  wet_bulb: {
+    layer: 'temperature',
+    color: v =>
+        ramp(
+            TEMPERATURE_C,
+            wetBulb(v.temperature, relativeHumidity(v.temperature, v.dew_point))),
+  },
+  precipitation: {layer: 'precipitation', color: precipitationColor},
+  rain_12: {layer: 'rain', color: v => ramp(ACCUMULATION_MM, v.next_12h, 1)},
+  rain_24: {layer: 'rain', color: v => ramp(ACCUMULATION_MM, v.next_24h, 1)},
+  rain_72: {layer: 'rain_long', color: v => ramp(ACCUMULATION_MM, v.next_72h, 1)},
+  rain_120: {layer: 'rain_long', color: v => ramp(ACCUMULATION_MM, v.next_120h, 1)},
+  // in mm of water, about a cm of snow each
+  snowfall_12: {layer: 'snowfall', color: v => ramp(ACCUMULATION_MM, v.next_12h, 1)},
+  snowfall_24: {layer: 'snowfall', color: v => ramp(ACCUMULATION_MM, v.next_24h, 1)},
+  snowfall_72: {layer: 'snowfall_long', color: v => ramp(ACCUMULATION_MM, v.next_72h, 1)},
+  snowfall_120: {layer: 'snowfall_long', color: v => ramp(ACCUMULATION_MM, v.next_120h, 1)},
+  snow_depth: {layer: 'snow', color: v => ramp(SNOW_DEPTH_CM, v.depth, 1)},
+  clouds: {layer: 'clouds', color: v => cloudColor(v.total)},
+  low_clouds: {layer: 'clouds', color: v => cloudColor(v.low)},
+  medium_clouds: {layer: 'clouds', color: v => cloudColor(v.medium)},
+  high_clouds: {layer: 'clouds', color: v => cloudColor(v.high)},
+  thermals: {layer: 'thermals', color: v => ramp(ALTITUDE_M, v.top)},
+  freezing: {layer: 'freezing', color: v => ramp(ALTITUDE_M, v.altitude)},
+  waves: {layer: 'waves', color: v => ramp(WAVE_HEIGHT_M, v.height)},
+  icing_850: icingView(850),
+  icing_700: icingView(700),
+  icing_600: icingView(600),
+  icing_500: icingView(500),
+  icing_400: icingView(400),
+  icing_300: icingView(300),
+  turbulence_400_300: turbulenceView('400_300'),
+  turbulence_300_250: turbulenceView('300_250'),
+  turbulence_250_200: turbulenceView('250_200'),
+  turbulence_200_150: turbulenceView('200_150'),
+} satisfies Record<string, View>;
+
+export type WeatherView = keyof typeof WEATHER_VIEWS;
+
+/** Colors a tile's packed pixels in place. */
+export function colorWeather(view: WeatherView, rgba: Uint8ClampedArray): void {
+  const {color, layer}: View = WEATHER_VIEWS[view];
+  const channels = ECMWF_LAYERS[layer].channels;
+  const values: Values = {};
+  for (let i = 0; i < rgba.length; i += 4) {
+    const packed = (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2];
+    let shift = 24;
+    for (const channel of channels) {
+      shift -= channel.bits;
+      const noData = (1 << channel.bits) - 1;
+      const code = (packed >>> shift) & noData;
+      values[channel.name] = code === noData ? NaN : channel.offset + channel.scale * code;
+    }
+    const rgbaOut = color(values);
+    if (rgbaOut) {
+      rgba.set(rgbaOut, i);
+    } else {
+      rgba[i + 3] = 0;
+    }
+  }
+}
+
+// Values below min stay clear, and so do NaNs.
+function ramp(stops: Ramp, value: number, min = -Infinity): Rgba|undefined {
+  if (!(value >= min)) {
+    return undefined;
+  }
+  let band = 0;
+  while (band + 2 < stops.length && stops[band + 1][0] <= value) {
+    band += 1;
+  }
+  const [lo, from] = stops[band];
+  const [hi, to] = stops[Math.min(band + 1, stops.length - 1)];
+  const t = hi === lo ? 0 : Math.min(Math.max((value - lo) / (hi - lo), 0), 1);
+  const out: Rgba = [0, 0, 0, ALPHA];
+  for (let c = 0; c < 3; ++c) {
+    const shift = 16 - 8 * c;
+    const a = (from >>> shift) & 0xFF;
+    const b = (to >>> shift) & 0xFF;
+    out[c] = a + (b - a) * t;
+  }
+  return out;
+}
+
+function icingView(level: number): View {
+  return {layer: 'icing', color: v => ramp(ICING, v[`${level}hpa`], 1)};
+}
+
+function turbulenceView(layers: string): View {
+  return {layer: 'turbulence', color: v => ramp(TURBULENCE, v[`${layers}hpa`], 2)};
+}
+
+function precipitationColor(v: Values): Rgba|undefined {
+  if (!(v.rate >= 0.1)) {
+    return undefined;
+  }
+  if (v.cape >= THUNDER_CAPE && v.rate >= THUNDER_MM_PER_HOUR) {
+    return THUNDER_COLOR;
+  }
+  return ramp(SNOW_TYPES.has(v.type) ? SNOW_MM_PER_HOUR : RAIN_MM_PER_HOUR, v.rate);
+}
+
+// White, more opaque the more cover there is
+function cloudColor(percent: number): Rgba|undefined {
+  if (!(percent >= 5)) {
+    return undefined;
+  }
+  return [245, 245, 250, Math.round(220 * percent / 100)];
+}
+
+// Magnus's formula with Alduchov and Eskridge's constants
+function relativeHumidity(celsius: number, dewPoint: number): number {
+  const saturation = (t: number) => Math.exp(17.625 * t / (243.04 + t));
+  return Math.min(100, 100 * saturation(dewPoint) / saturation(celsius));
+}
+
+// https://doi.org/10.1175/JAMC-D-11-0143.1
+function wetBulb(celsius: number, humidity: number): number {
+  return celsius * Math.atan(0.151977 * Math.sqrt(humidity + 8.313659))
+      + Math.atan(celsius + humidity)
+      - Math.atan(humidity - 1.676331)
+      + 0.00391838 * Math.pow(humidity, 1.5) * Math.atan(0.023101 * humidity)
+      - 4.686035;
+}

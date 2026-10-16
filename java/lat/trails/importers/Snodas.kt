@@ -24,7 +24,8 @@ import org.trailcatalog.importers.elevation.contour.MbtilesWriter
 
 private val logger = LoggerFactory.getLogger("Snodas")
 
-// The day to tile, defaulting to today in UTC. NSIDC publishes each day at 13:00 UTC.
+// The day to tile, defaulting to today in UTC. NSIDC publishes each day at 13:00 UTC, or 14:00 while
+// the US is on standard time.
 @FlagSpec(name = "date")
 private val date = createFlag("")
 
@@ -89,8 +90,9 @@ fun main(args: Array<String>) {
 
   MbtilesWriter(output.value).use { mbtiles ->
     mbtiles.setMetadata("name", "SNODAS ${day}")
-    // PNG because the pixels are data, and lossy compression would corrupt them. Lossless WebP is
-    // 30% smaller, but the Java encoder needs a native library that has no arm64 Mac build.
+    // PNG because the pixels are data, and lossy compression would corrupt them.
+    // TODO(april): write lossless WebP instead, which is 30% smaller. The encoder has natives for
+    // every platform we build on, but raster_loader.ts#decodeSnow and SNODAS_URL expect PNG.
     mbtiles.setMetadata("format", "png")
     mbtiles.setMetadata("minzoom", "0")
     mbtiles.setMetadata("maxzoom", MAX_ZOOM.toString())

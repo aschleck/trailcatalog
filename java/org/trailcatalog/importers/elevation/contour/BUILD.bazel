@@ -22,8 +22,8 @@ kt_jvm_library(
         "//java/org/trailcatalog/scrapers:decog",
     ],
     runtime_deps = [
+        "@maven//:com_github_usefulness_webp_imageio",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib_jdk8",
-        "@maven//:org_sejda_imageio_webp_imageio",
         "@maven//:org_xerial_sqlite_jdbc",
     ],
     deps = [

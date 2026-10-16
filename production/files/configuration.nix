@@ -295,8 +295,33 @@
   systemd.services."trails-lat-snodas" = {
     enable = true;
     after = [ "podman.service" ];
-    # NSIDC publishes each day at 13:00 UTC. The second run is for days it publishes late.
-    startAt = [ "*-*-* 13:30:00 UTC" "*-*-* 19:30:00 UTC" ];
+    # NSIDC posts each day at 13:00 UTC, or 14:00 while the US is on standard time, and once in 16
+    # months at 21:00. snodas.sh skips until the day is posted.
+    startAt = "hourly";
+    restartIfChanged = false;
+
+    path = with pkgs; [
+      bash
+      coreutils
+      crun
+      curl
+      google-cloud-sdk
+      pmtiles
+      podman
+    ];
+
+    serviceConfig = {
+      ExecStart = "/home/april/snodas.sh";
+      Type = "oneshot";
+    };
+  };
+
+  systemd.services."trails-lat-ecmwf" = {
+    enable = true;
+    after = [ "podman.service" ];
+    # ECMWF finishes publishing each 6 hourly run at an uneven time, and ecmwf.sh skips runs it
+    # already tiled.
+    startAt = "hourly";
     restartIfChanged = false;
 
     path = with pkgs; [
@@ -309,7 +334,7 @@
     ];
 
     serviceConfig = {
-      ExecStart = "/home/april/snodas.sh";
+      ExecStart = "/home/april/ecmwf.sh";
       Type = "oneshot";
     };
   };

@@ -6,7 +6,7 @@ kt_jvm_library(
     name = "elevation",
     srcs = glob(["*.kt"]),
     runtime_deps = [
-        "@maven//:org_sejda_imageio_webp_imageio",
+        "@maven//:com_github_usefulness_webp_imageio",
     ],
     deps = [
         "//java/org/trailcatalog/common",

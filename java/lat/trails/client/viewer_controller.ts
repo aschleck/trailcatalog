@@ -30,6 +30,7 @@ import {
 import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Decode } from 'js/map/workers/raster_loader';
+import { ECMWF_LAYERS, EcmwfLayer, WEATHER_VIEWS, WeatherView } from 'js/map/workers/weather';
 import { SlopeLayer } from 'js/map/layers/slope_layer';
 import { Search } from 'js/map/workers/earth_search_loader';
 import { Elevations } from 'js/map/workers/elevations';
@@ -117,6 +118,7 @@ import {
   findLayerNode,
   layerDefaultsOf,
   LayerEntry,
+  LayerGroup,
   layerEntries,
   LayerNode,
   LayerSetting,
@@ -152,6 +154,22 @@ import { parseCoordinates, SearchHit, searchLabel, SearchState } from './search_
 import { RenameDialog } from './rename_dialog';
 import { ShareDialog } from './share_dialog';
 
+const ECMWF_COPYRIGHT: Copyright = {
+  long:
+      'Forecasts from the European Centre for Medium-Range Weather Forecasts open data, CC BY '
+          + '4.0',
+  short: 'ECMWF',
+  url: 'https://www.ecmwf.int/en/forecasts/datasets/open-data',
+};
+// Keep in sync with ecmwf.sh, which writes ecmwf_<run>_<layer>_<step>.pmtiles
+const ECMWF_URL = 'https://tiles.trailcatalog.org/ecmwf_';
+// See Weather.kt#maxStep
+const ECMWF_MAX_STEP = 144;
+// ECMWF starts a run every 6 hours.
+const ECMWF_CYCLE_HOURS = 6;
+const HOUR_MS = 60 * 60 * 1000;
+// ECMWF tiles a run every 6 hours and its step closest to now moves every 3, so we check hourly.
+const CONDITIONS_REFRESH_MS = HOUR_MS;
 const SNODAS_COPYRIGHT: Copyright = {
   long:
       'SNODAS snow analysis from the NOAA National Operational Hydrologic Remote Sensing Center, '
@@ -167,6 +185,12 @@ const SWISSTOPO_COPYRIGHT: Copyright = {
 };
 // Keep in sync with snodas.sh, which writes one archive per day named snodas_<day>.pmtiles
 const SNODAS_URL = 'https://tiles.trailcatalog.org/snodas_';
+// NSIDC posts every day, so a newest day older than yesterday means snodas.sh stopped tiling. We
+// reach back far enough to ride out a couple of days of that.
+const SNODAS_LOOKBACK_DAYS = 3;
+// Runs land 6 to 9 hours after they start, and past that a stale run means ecmwf.sh stopped
+// tiling. A 3 day old run still forecasts now, so we reach back that far.
+const ECMWF_LOOKBACK_CYCLES = 12;
 const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
 const SNOW_WATER_ID = 'us/conditions/snow_water';
 // Keep in sync with Conditions.kt
@@ -309,6 +333,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Moves with every layer toggle or control change, so that a collection's saved layers don't
   // undo one made while it loaded
   private layerEdits: number;
+  // The start of the newest ECMWF run we know is tiled, in ms
+  private ecmwfRun: number;
+  // The newest SNODAS day we know is tiled
+  private snodasDay: string;
+  private readonly conditionsRefresh: Timer;
   // Serialized so that an older view state cannot land after a newer one
   private viewStateWrites: Promise<void>;
   // The menubar item whose menu is open or loading. A File menu still waiting on ListCollections
@@ -362,6 +391,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.menuTrigger = undefined;
     this.menuOverlay = undefined;
     this.lastChange = Date.now();
+    // We start on the current run and day, and showLatestWeather and showLatestSnow fall back to
+    // older ones when those aren't tiled yet.
+    const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
+    this.ecmwfRun = Math.floor(Date.now() / cycleMs) * cycleMs;
+    this.snodasDay = utcDay(0);
+    this.conditionsRefresh = new Timer(CONDITIONS_REFRESH_MS, () => {
+      this.showLatestSnow();
+      this.showLatestWeather();
+    });
+    this.registerDisposable(this.conditionsRefresh);
 
     // The popup runs on another origin, so the only thing we can see about it is that it closed.
     this.loginWatcher = new Timer(250 /* ms */, () => {
@@ -1004,6 +1043,67 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       }],
     }, {
       kind: 'group',
+      id: 'weather',
+      name: 'Weather',
+      enabled: true,
+      children: [
+        this.newWeatherEntry('wind', 'Wind'),
+        this.newWeatherEntry('gust', 'Wind gusts'),
+        this.newWeatherEntry('pressure', 'Pressure'),
+        this.newWeatherEntry('temperature', 'Temperature'),
+        this.newWeatherEntry('dew_point', 'Dew point'),
+        this.newWeatherEntry('humidity', 'Humidity'),
+        this.newWeatherEntry('wet_bulb', 'Wet-bulb temperature'),
+        this.newWeatherEntry('precipitation', 'Rain and thunder'),
+        this.newWeatherEntry('snow_depth', 'Snow depth'),
+        this.newWeatherEntry('thermals', 'Thermals'),
+        this.newWeatherEntry('freezing', 'Freezing altitude'),
+        this.newWeatherEntry('waves', 'Waves'),
+        this.newLookaheadGroup('wind_accumulation', 'Wind accumulation', 'Strongest gust'),
+        this.newLookaheadGroup('rain', 'Rain accumulation', 'Rain'),
+        this.newLookaheadGroup('snowfall', 'Snow accumulation', 'Snow'),
+        {
+          kind: 'group',
+          id: 'weather/cloud_cover',
+          name: 'Clouds',
+          enabled: true,
+          children: [
+            this.newWeatherEntry('clouds', 'Total'),
+            this.newWeatherEntry('low_clouds', 'Low'),
+            this.newWeatherEntry('medium_clouds', 'Medium'),
+            this.newWeatherEntry('high_clouds', 'High'),
+          ],
+        },
+        // Pressure levels are labeled by their usual altitude in the standard atmosphere.
+        {
+          kind: 'group',
+          id: 'weather/icing',
+          name: 'Icing',
+          enabled: true,
+          children: [
+            this.newWeatherEntry('icing_850', 'FL050, 850 hPa'),
+            this.newWeatherEntry('icing_700', 'FL100, 700 hPa'),
+            this.newWeatherEntry('icing_600', 'FL140, 600 hPa'),
+            this.newWeatherEntry('icing_500', 'FL180, 500 hPa'),
+            this.newWeatherEntry('icing_400', 'FL240, 400 hPa'),
+            this.newWeatherEntry('icing_300', 'FL300, 300 hPa'),
+          ],
+        },
+        {
+          kind: 'group',
+          id: 'weather/turbulence',
+          name: 'Clear air turbulence',
+          enabled: true,
+          children: [
+            this.newWeatherEntry('turbulence_400_300', 'FL240 to FL300'),
+            this.newWeatherEntry('turbulence_300_250', 'FL300 to FL340'),
+            this.newWeatherEntry('turbulence_250_200', 'FL340 to FL390'),
+            this.newWeatherEntry('turbulence_200_150', 'FL390 to FL450'),
+          ],
+        },
+      ],
+    }, {
+      kind: 'group',
       id: 'topography',
       name: 'Topography',
       enabled: true,
@@ -1075,6 +1175,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       layers: {nodes, expanded: new Set(['osm', 'satellite', 'topography', 'us'])},
     });
     this.showLatestSnow();
+    this.showLatestWeather();
+    this.conditionsRefresh.start();
     this.setMapLayers(nodes);
 
     const collection = response.args.collection;
@@ -3118,14 +3220,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     };
   }
 
-  // Shows yesterday because today's may not be published yet. showLatestSnow switches to today if
-  // it exists.
   private newSnowEntry(id: string, name: string, decode: Decode): LayerEntry {
-    const day = utcDay(-1);
+    let url = snodasUrl(this.snodasDay);
     const layer =
         new RasterTileLayer(
             [SNODAS_COPYRIGHT],
-            snodasUrl(day),
+            url,
             /* tint= */ 0xFFFFFFFF as RgbaU32,
             /* z= */ Z_OVERLAY_TERRAIN,
             /* extraZoom= */ 0,
@@ -3140,39 +3240,115 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name,
       enabled: false,
       layer,
-      controls: [{kind: 'date', key: 'day', label: 'Day'}],
-      values: {day},
-      configure: values => {
-        layer.setUrl(snodasUrl(String(values.day)));
+      controls: [],
+      values: {},
+      configure: () => {
+        // setUrl drops every loaded tile, so we only call it when the URL changes.
+        const next = snodasUrl(this.snodasDay);
+        if (next !== url) {
+          url = next;
+          layer.setUrl(next);
+        }
       },
     };
   }
 
-  // Switches the snow layers to today if today's archive exists. Today's archive is tiled at 13:30
-  // UTC. We check for the 0/0/0 tile because every archive has it, see Snodas.kt.
+  // Points the snow layers at the newest tiled day. We check for the 0/0/0 tile because every
+  // archive has it, see Snodas.kt.
   private showLatestSnow(): void {
-    const today = utcDay(0);
-    fetch(`${SNODAS_URL}${today}/0/0/0.png`).then(response => {
-      if (!response.ok) {
+    const tryDay = (offset: number) => {
+      if (offset < -SNODAS_LOOKBACK_DAYS) {
         return;
       }
-
-      let nodes = this.state.layers.nodes;
-      for (const id of [SNOW_DEPTH_ID, SNOW_WATER_ID]) {
-        // Saved settings only pin a day someone picked, so the default follows the latest.
-        const defaults = checkExists(this.layerDefaults.get(id));
-        this.layerDefaults.set(id, {...defaults, values: {...defaults.values, day: today}});
-        const entry = checkExists(findLayerNode(nodes, id)) as LayerEntry;
-        // The user or the collection picked a different day, so keep it
-        if (entry.values.day !== defaults.values.day) {
-          continue;
+      const day = utcDay(offset);
+      fetch(`${SNODAS_URL}${day}/0/0/0.png`).then(response => {
+        if (!response.ok) {
+          tryDay(offset - 1);
+          return;
         }
-        const values = {...entry.values, day: today};
-        nodes = updateLayerNode(nodes, id, () => ({...entry, values}));
-        entry.configure?.(values);
+        this.snodasDay = day;
+        this.configureEntries(id => id === SNOW_DEPTH_ID || id === SNOW_WATER_ID);
+      }, () => {});
+    };
+    tryDay(0);
+  }
+
+  private configureEntries(matches: (id: string) => boolean): void {
+    for (const {entry} of layerEntries(this.state.layers.nodes)) {
+      if (matches(entry.id)) {
+        entry.configure?.(entry.values);
       }
-      this.updateState({...this.state, layers: {...this.state.layers, nodes}});
-    }, () => {});
+    }
+  }
+
+  private newWeatherEntry(view: WeatherView, name: string): LayerEntry {
+    const archive = WEATHER_VIEWS[view].layer;
+    let url = ecmwfUrl(this.ecmwfRun, archive);
+    const layer =
+        new RasterTileLayer(
+            [ECMWF_COPYRIGHT],
+            url,
+            /* tint= */ 0xFFFFFFFF as RgbaU32,
+            /* z= */ Z_OVERLAY_TERRAIN,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            // See Weather.kt#MAX_ZOOM
+            /* maxZoom= */ 3,
+            this.mapController.renderer,
+            `weather/${view}`);
+    return {
+      kind: 'layer',
+      id: `weather/${view}`,
+      name,
+      enabled: false,
+      layer,
+      controls: [],
+      values: {},
+      configure: () => {
+        // setUrl drops every loaded tile, so we only call it when the URL changes.
+        const next = ecmwfUrl(this.ecmwfRun, archive);
+        if (next !== url) {
+          url = next;
+          layer.setUrl(next);
+        }
+      },
+    };
+  }
+
+  // Groups the views that total the next 12 hours through the next 5 days, see
+  // WeatherLayers.kt#LOOKAHEAD_LAYERS.
+  private newLookaheadGroup(prefix: string, name: string, what: string): LayerGroup {
+    const windows = [[12, '12 hours'], [24, '24 hours'], [72, '3 days'], [120, '5 days']] as const;
+    return {
+      kind: 'group',
+      id: `weather/${prefix}`,
+      name,
+      enabled: true,
+      children: windows.map(([hours, label]) =>
+          this.newWeatherEntry(`${prefix}_${hours}` as WeatherView, `${what}, next ${label}`)),
+    };
+  }
+
+  // Points the weather layers at the newest tiled run. ecmwf.sh writes wind at step 0 last, so we
+  // take its 0/0/0 tile to mean the whole run is there.
+  private showLatestWeather(): void {
+    const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
+    const newest = Math.floor(Date.now() / cycleMs) * cycleMs;
+    const tryRun = (run: number) => {
+      if (run < newest - ECMWF_LOOKBACK_CYCLES * cycleMs) {
+        return;
+      }
+      const tile = ecmwfStepUrl(run, 'wind', 0).replace('${id.zoom}/${id.x}/${id.y}', '0/0/0');
+      fetch(tile).then(response => {
+        if (!response.ok) {
+          tryRun(run - cycleMs);
+          return;
+        }
+        this.ecmwfRun = run;
+        this.configureEntries(id => id.startsWith('weather/'));
+      }, () => {});
+    };
+    tryRun(newest);
   }
 
   private newArcGisExportEntry(
@@ -3316,6 +3492,24 @@ function stripUndefined(data: FeatureData): FeatureData {
 // Today plus offset days, as a UTC date because SNODAS days are UTC
 function utcDay(offset: number): string {
   return new Date(Date.now() + offset * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
+}
+
+// The step closest to now, or the last one the archive has
+function ecmwfUrl(run: number, archive: EcmwfLayer): string {
+  const {lookaheadHours, stepHours}: {lookaheadHours?: number; stepHours: number} =
+      ECMWF_LAYERS[archive];
+  const last = ECMWF_MAX_STEP - (lookaheadHours ?? 0);
+  const fromRun = (Date.now() - run) / HOUR_MS;
+  const step =
+      Math.min(Math.max(Math.round(fromRun / stepHours) * stepHours, 0), last - last % stepHours);
+  return ecmwfStepUrl(run, archive, step);
+}
+
+function ecmwfStepUrl(run: number, archive: EcmwfLayer, step: number): string {
+  // Runs are named like 2026101518
+  const iso = new Date(run).toISOString();
+  const name = iso.substring(0, 10).replaceAll('-', '') + iso.substring(11, 13);
+  return `${ECMWF_URL}${name}_${archive}_${step}/\${id.zoom}/\${id.x}/\${id.y}.webp`;
 }
 
 function snodasUrl(day: string): string {

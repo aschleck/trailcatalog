@@ -81,11 +81,14 @@ register_toolchains("@remotejdk21_macos//:all")
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(
     artifacts = [
+        "com.github.usefulness:webp-imageio:0.10.0",
         "com.google.guava:guava:33.7.1-jre",
         "com.google.truth:truth:1.4.5",
         "com.squareup.okhttp3:okhttp-jvm:5.5.0",
         "com.zaxxer:HikariCP:7.1.0",
         "de.westnordost:osmapi:5.2",
+        "edu.ucar:grib:5.11.0",
+        "edu.ucar.unidata:libaec-native:1.1.7.0",
         "io.javalin:javalin:7.2.3",
         "mil.nga.geopackage:geopackage:6.6.5",
         "org.apache.commons:commons-text:1.15.0",
@@ -96,10 +99,15 @@ maven.install(
         "org.locationtech.proj4j:proj4j:1.4.3",
         "org.postgresql:postgresql:42.7.13",
         "org.reflections:reflections:0.10.2",
-        "org.sejda.imageio:webp-imageio:0.1.6",
         "org.slf4j:slf4j-simple:2.0.20",
         "org.wololo:flatgeobuf:3.29.0",
         "tools.jackson.core:jackson-databind:3.2.3",
+    ],
+    lock_file = "//:maven_install.json",
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        # netcdf-java only publishes here
+        "https://artifacts.unidata.ucar.edu/repository/unidata-all",
     ],
 )
 use_repo(maven, "maven")

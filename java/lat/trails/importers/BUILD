@@ -35,6 +35,12 @@ java_binary(
     runtime_deps = [":importers"],
 )
 
+java_binary(
+    name = "weather",
+    main_class = "lat.trails.importers.WeatherKt",
+    runtime_deps = [":importers"],
+)
+
 pkg_tar(
     name = "conditions_tar",
     srcs = [":conditions_deploy.jar"],
@@ -97,9 +103,43 @@ oci_push(
     repository = "us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_snodas",
 )
 
+pkg_tar(
+    name = "weather_tar",
+    srcs = [":weather_deploy.jar"],
+    include_runfiles = True,
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "weather_container",
+    base = "@distroless_java_linux_amd64",
+    entrypoint = [
+        "java",
+        "-jar",
+        "weather_deploy.jar",
+    ],
+    tars = [":weather_tar"],
+)
+
+oci_load(
+    name = "weather_container_load",
+    image = ":weather_container",
+    repo_tags = ["latest"],
+)
+
+oci_push(
+    name = "weather_container_push",
+    image = ":weather_container",
+    remote_tags = ["latest"],
+    repository = "us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_weather",
+)
+
 kt_jvm_library(
     name = "importers",
     srcs = glob(["*.kt"]),
+    runtime_deps = [
+        "@maven//:edu_ucar_unidata_libaec_native",
+    ],
     deps = [
         "//java/lat/trails/common",
         "//java/org/trailcatalog/common",
@@ -107,7 +147,10 @@ kt_jvm_library(
         "//java/org/trailcatalog/importers/basemap",
         "//java/org/trailcatalog/importers/elevation/contour",
         "@com_google_geometry_s2//:s2",
+        "@maven//:com_github_usefulness_webp_imageio",
         "@maven//:com_fasterxml_jackson_core_jackson_databind",
+        "@maven//:edu_ucar_cdm_core",
+        "@maven//:edu_ucar_grib",
         "@maven//:mil_nga_geopackage_geopackage",
         "@maven//:mil_nga_sf",
         "@maven//:mil_nga_tiff",

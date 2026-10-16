@@ -4,10 +4,11 @@ import { TileId } from '../common/types';
 
 import { Reply, serveClients } from './client_pool';
 import { decodeTerrarium } from './terrarium';
+import { colorWeather, WeatherView } from './weather';
 
-// How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height, and the
-// snow kinds color one of the values in a SNODAS tile.
-export type Decode = 'elevation'|'image'|'snow_depth'|'snow_water';
+// How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height, the
+// snow kinds color one of the values in a SNODAS tile, and the weather kinds color an ECMWF tile.
+export type Decode = 'elevation'|'image'|'snow_depth'|'snow_water'|`weather/${WeatherView}`;
 
 export interface Initialize {
   decode: Decode;
@@ -55,12 +56,16 @@ class RasterLoader {
 
   render(request: LoadRequest): Promise<Reply<Response>> {
     const blob = new Blob([request.data]);
-    const bitmap =
-        this.decode === 'image'
-            ? createImageBitmap(blob)
-            : this.decode === 'elevation'
-                ? decodeElevation(blob)
-                : decodeSnow(blob, this.decode === 'snow_depth');
+    let bitmap;
+    if (this.decode === 'image') {
+      bitmap = createImageBitmap(blob);
+    } else if (this.decode === 'elevation') {
+      bitmap = decodeElevation(blob);
+    } else if (this.decode === 'snow_depth' || this.decode === 'snow_water') {
+      bitmap = decodeSnow(blob, this.decode === 'snow_depth');
+    } else {
+      bitmap = decodeWeather(blob, this.decode.substring('weather/'.length) as WeatherView);
+    }
     return bitmap.then(bitmap => ({
       message: {
         kind: 'lr',
@@ -74,14 +79,24 @@ class RasterLoader {
 
 // Decodes without color management or alpha premultiplication, because either would change the
 // pixel values and corrupt the data.
-async function decodeSnow(blob: Blob, depth: boolean): Promise<ImageBitmap> {
+async function readPacked(blob: Blob): Promise<ImageData> {
   const packed =
       await createImageBitmap(blob, {colorSpaceConversion: 'none', premultiplyAlpha: 'none'});
   const canvas = new OffscreenCanvas(packed.width, packed.height);
   const context = canvas.getContext('2d', {willReadFrequently: true})!;
   context.drawImage(packed, 0, 0);
   packed.close();
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  return context.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+async function decodeWeather(blob: Blob, view: WeatherView): Promise<ImageBitmap> {
+  const pixels = await readPacked(blob);
+  colorWeather(view, pixels.data);
+  return createImageBitmap(pixels);
+}
+
+async function decodeSnow(blob: Blob, depth: boolean): Promise<ImageBitmap> {
+  const pixels = await readPacked(blob);
   const rgba = pixels.data;
   const stops = depth ? SNOW_DEPTH_CM_STOPS : SNOW_WATER_MM_STOPS;
   for (let i = 0; i < rgba.length; i += 4) {
