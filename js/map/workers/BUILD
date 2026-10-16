@@ -62,6 +62,14 @@ esbuild_binary(
 )
 
 esbuild_binary(
+    name = "wind_loader_worker",
+    entry_point = "wind_loader.ts",
+    deps = [
+        ":workers",
+    ],
+)
+
+esbuild_binary(
     name = "xyz_data_fetcher_worker",
     entry_point = "xyz_data_fetcher.ts",
     deps = [

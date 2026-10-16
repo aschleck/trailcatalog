@@ -19,6 +19,11 @@ export type LayerControl = {
   kind: 'percent';
   key: string;
   label: string;
+}|{
+  kind: 'select';
+  key: string;
+  label: string;
+  options: Array<{value: string; label: string}>;
 };
 
 export type ControlValues = {[key: string]: boolean|number|string};
@@ -27,6 +32,7 @@ const CONTROL_TYPES = {
   checkbox: 'boolean',
   date: 'string',
   percent: 'number',
+  select: 'string',
 } as const satisfies Record<LayerControl['kind'], string>;
 
 export interface LayerEntry {
@@ -181,7 +187,10 @@ export function applyLayerSettings(
     const values = {...original.values};
     for (const control of node.controls) {
       const value = setting.values?.[control.key];
-      if (typeof value === CONTROL_TYPES[control.kind]) {
+      // A saved choice may name an option that no longer exists.
+      const known =
+          control.kind !== 'select' || control.options.some(option => option.value === value);
+      if (typeof value === CONTROL_TYPES[control.kind] && known) {
         values[control.key] = value as boolean|number|string;
       }
     }
@@ -299,6 +308,23 @@ function LayerControls({dimmed, entry}: {dimmed: boolean; entry: LayerEntry}) {
                   unboundEvents={{change: 'layerControlChanged'}}
               />
               <span>{control.label}</span>
+            </label>
+          );
+        } else if (control.kind === 'select') {
+          return (
+            <label className="flex gap-1.5 items-center">
+              <span className="grow text-gray-700">{control.label}</span>
+              <select
+                  className="border border-gray-300 px-1 rounded"
+                  data={data}
+                  unboundEvents={{change: 'layerControlChanged'}}
+              >
+                {control.options.map(option =>
+                    <option selected={option.value === value || undefined} value={option.value}>
+                      {option.label}
+                    </option>
+                )}
+              </select>
             </label>
           );
         } else if (control.kind === 'date') {

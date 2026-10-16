@@ -222,6 +222,43 @@ export function colorWeather(view: WeatherView, rgba: Uint8ClampedArray): void {
   }
 }
 
+/** Unpacks one channel of each of a tile's packed pixels, with NaN where there's no data. */
+export function unpackChannel(
+    layer: EcmwfLayer, name: string, rgba: Uint8ClampedArray): Float32Array {
+  const channels: Channel[] = ECMWF_LAYERS[layer].channels;
+  let shift = 24;
+  let channel;
+  for (channel of channels) {
+    shift -= channel.bits;
+    if (channel.name === name) {
+      break;
+    }
+  }
+  if (channel?.name !== name) {
+    throw new Error(`No channel ${name} in ${layer}`);
+  }
+  const noData = (1 << channel.bits) - 1;
+  const values = new Float32Array(rgba.length / 4);
+  for (let i = 0; i < values.length; ++i) {
+    const packed = (rgba[4 * i] << 16) | (rgba[4 * i + 1] << 8) | rgba[4 * i + 2];
+    const code = (packed >>> shift) & noData;
+    values[i] = code === noData ? NaN : channel.offset + channel.scale * code;
+  }
+  return values;
+}
+
+// Decodes without color management or alpha premultiplication, because either would change the
+// pixel values and corrupt the data.
+export async function readPacked(blob: Blob): Promise<ImageData> {
+  const packed =
+      await createImageBitmap(blob, {colorSpaceConversion: 'none', premultiplyAlpha: 'none'});
+  const canvas = new OffscreenCanvas(packed.width, packed.height);
+  const context = canvas.getContext('2d', {willReadFrequently: true})!;
+  context.drawImage(packed, 0, 0);
+  packed.close();
+  return context.getImageData(0, 0, canvas.width, canvas.height);
+}
+
 // Values below min stay clear, and so do NaNs.
 function ramp(stops: Ramp, value: number, min = -Infinity): Rgba|undefined {
   if (!(value >= min)) {

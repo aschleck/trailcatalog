@@ -4,7 +4,7 @@ import { TileId } from '../common/types';
 
 import { Reply, serveClients } from './client_pool';
 import { decodeTerrarium } from './terrarium';
-import { colorWeather, WeatherView } from './weather';
+import { colorWeather, readPacked, WeatherView } from './weather';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height, the
 // snow kinds color one of the values in a SNODAS tile, and the weather kinds color an ECMWF tile.
@@ -75,18 +75,6 @@ class RasterLoader {
       transfer: [bitmap],
     }));
   }
-}
-
-// Decodes without color management or alpha premultiplication, because either would change the
-// pixel values and corrupt the data.
-async function readPacked(blob: Blob): Promise<ImageData> {
-  const packed =
-      await createImageBitmap(blob, {colorSpaceConversion: 'none', premultiplyAlpha: 'none'});
-  const canvas = new OffscreenCanvas(packed.width, packed.height);
-  const context = canvas.getContext('2d', {willReadFrequently: true})!;
-  context.drawImage(packed, 0, 0);
-  packed.close();
-  return context.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 async function decodeWeather(blob: Blob, view: WeatherView): Promise<ImageBitmap> {

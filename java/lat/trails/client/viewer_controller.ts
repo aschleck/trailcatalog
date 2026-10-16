@@ -27,11 +27,13 @@ import {
   CONTOURS_METERS,
   MbtileLayer,
 } from 'js/map/layers/mbtile_layer';
+import { CompositeLayer } from 'js/map/layers/composite_layer';
 import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { Decode } from 'js/map/workers/raster_loader';
 import { ECMWF_LAYERS, EcmwfLayer, WEATHER_VIEWS, WeatherView } from 'js/map/workers/weather';
 import { SlopeLayer } from 'js/map/layers/slope_layer';
+import { WindVectorLayer } from 'js/map/layers/wind_vector_layer';
 import { Search } from 'js/map/workers/earth_search_loader';
 import { Elevations } from 'js/map/workers/elevations';
 import { Style } from 'js/map/workers/mbtile_loader';
@@ -1053,7 +1055,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name: 'Weather',
       enabled: true,
       children: [
-        this.newWeatherEntry('wind', 'Wind'),
+        this.newWindEntry(),
         this.newWeatherEntry('gust', 'Wind gusts'),
         this.newWeatherEntry('pressure', 'Pressure'),
         this.newWeatherEntry('temperature', 'Temperature'),
@@ -1782,6 +1784,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       if (!(value >= 0 && value <= 100)) {
         return;
       }
+    } else if (control.kind === 'select') {
+      value = (e.actionElement.element() as HTMLSelectElement).value;
     } else {
       throw checkExhaustive(control);
     }
@@ -3374,6 +3378,47 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         if (next !== url) {
           url = next;
           layer.setUrl(next);
+        }
+      },
+    };
+  }
+
+  // Wind speed colors, with streamlines or barbs over them
+  private newWindEntry(): LayerEntry {
+    const speed = this.newWeatherEntry('wind', 'Wind');
+    let url = ecmwfUrl(this.ecmwfRun, 'wind');
+    const vectors =
+        new WindVectorLayer(
+            [ECMWF_COPYRIGHT],
+            url,
+            /* z= */ Z_OVERLAY_TERRAIN + 0.5,
+            // See Weather.kt#MAX_ZOOM
+            /* maxZoom= */ 3,
+            this.mapController.renderer);
+    vectors.setStyle('streamlines');
+    return {
+      ...speed,
+      layer: new CompositeLayer([speed.layer, vectors]),
+      controls: [{
+        kind: 'select',
+        key: 'arrows',
+        label: 'Arrows',
+        options: [
+          {value: 'none', label: 'None'},
+          {value: 'streamlines', label: 'Streamlines'},
+          {value: 'barbs', label: 'Barbs'},
+        ],
+      }],
+      values: {arrows: 'streamlines'},
+      configure: values => {
+        speed.configure?.(values);
+        const arrows = values.arrows;
+        vectors.setStyle(arrows === 'streamlines' || arrows === 'barbs' ? arrows : undefined);
+        // setUrl drops every loaded tile, so we only call it when the URL changes.
+        const next = ecmwfUrl(this.ecmwfRun, 'wind');
+        if (next !== url) {
+          url = next;
+          vectors.setUrl(next);
         }
       },
     };
