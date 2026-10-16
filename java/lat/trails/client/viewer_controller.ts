@@ -1891,16 +1891,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       const open = this.state.collection;
       items.push({
         kind: 'menu_item',
-        label: 'Share',
-        disabled: open?.role !== Role.OWNER,
-        action: () => {
-          if (open) {
-            this.dialog.display(ShareDialog({collection: open})).catch(() => {});
-          }
-        },
-      });
-      items.push({
-        kind: 'menu_item',
         label: 'Rename',
         disabled: open?.role !== Role.OWNER && open?.role !== Role.WRITE,
         action: () => {
@@ -1961,6 +1951,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
 
     const mac = navigator.platform.startsWith('Mac');
+    const open = this.state.collection;
     this.openMenu([{
       kind: 'menu_item',
       label: 'Undo',
@@ -1985,6 +1976,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       disabled: this.store.isReadOnly(),
       action: () => {
         this.editSchema();
+      },
+    }, {
+      kind: 'menu_item',
+      label: 'Sharing',
+      disabled: open?.role !== Role.OWNER,
+      action: () => {
+        if (open) {
+          this.dialog.display(ShareDialog({collection: open})).catch(() => {});
+        }
       },
     }], trigger);
   }
