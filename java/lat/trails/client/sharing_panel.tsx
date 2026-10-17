@@ -6,11 +6,10 @@ import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/control
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
 import { CorgiEvent } from 'external/dev_april_corgi+/js/corgi/events';
 import { Checkbox } from 'external/dev_april_corgi+/js/emu/checkbox';
-import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events';
+import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
 import {
-  Collection,
   CreateInviteResponse,
   GetSharingResponse,
   Grant,
@@ -24,8 +23,7 @@ import {
 
 import {
   LIST,
-  PanelCloseButton,
-  PrimaryButton,
+  PANEL,
   RemoveButton,
   SecondaryButton,
   Section,
@@ -43,8 +41,8 @@ const EXPIRY_OPTIONS: Array<{label: string; seconds: number|undefined}> = [
 ];
 
 /** Edits who can open a collection. Every change saves as soon as it's made. */
-export function ShareDialog({collection}: {collection: Collection}) {
-  return <Share collection={collection} />;
+export function SharingPanel(props: {collectionId: string; shown: boolean}) {
+  return <SharingEditor {...props} />;
 }
 
 interface State {
@@ -62,8 +60,8 @@ interface State {
   error: string|undefined;
 }
 
-function Share(
-    {collection}: {collection: Collection},
+function SharingEditor(
+    {collectionId, shown}: {collectionId: string; shown: boolean},
     inState: State|undefined,
     updateState: (newState: State) => void) {
   const state = inState ?? {
@@ -85,41 +83,23 @@ function Share(
     body =
         <div className="py-8 text-center text-red-700">Loading the sharing settings failed</div>;
   } else {
-    body = <ShareForm collectionId={collection.id} state={state} />;
+    body = <ShareForm collectionId={collectionId} state={state} />;
   }
 
   return <>
     <div
         js={corgi.bind({
           controller: ShareController,
-          args: {collectionId: collection.id},
+          args: {collectionId},
           events: {
             render: 'wakeup',
           },
           state: [state, updateState],
         })}
-        className="
-            bg-white
-            flex
-            flex-col
-            max-h-[85vh]
-            max-w-[calc(100vw-2rem)]
-            rounded-lg
-            shadow-xl
-            text-gray-900
-            text-sm
-            w-[30rem]
-        "
+        className={`${shown ? 'flex' : 'hidden'} ${PANEL}`}
     >
-      <div className="flex gap-4 items-center justify-between pl-5 pr-3 pt-3">
-        <span className="font-semibold text-base truncate">{`Share ${collection.name}`}</span>
-        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}} />
-      </div>
-      <div className="flex flex-col gap-6 min-h-0 overflow-y-auto px-5 py-4">{body}</div>
-      <div className="border-gray-200 border-t flex gap-4 items-center px-5 py-3">
-        <span className="grow text-red-700">{state.error ?? ''}</span>
-        <PrimaryButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}}>Done</PrimaryButton>
-      </div>
+      {state.error ? <div className="text-red-700">{state.error}</div> : ''}
+      {body}
     </div>
   </>;
 }
@@ -163,7 +143,7 @@ function ShareForm({collectionId, state}: {collectionId: string; state: State}) 
             className="select-none"
             unboundEvents={{corgi: [[ACTION, 'anyoneToggled']]}}
         >
-          <span className="ml-2">Anyone with the link can view</span>
+          <span className="ms-2">Anyone with the link can view</span>
         </Checkbox>
         <SecondaryButton unboundEvents={{corgi: [[ACTION, 'copyLinkClicked']]}}>
           <CopyLabel copied={state.copied === collectionUrl(collectionId)} idle="Copy link" />
@@ -408,10 +388,6 @@ class ShareController extends Controller<Args, EmptyDeps, HTMLElement, State> {
             this.copy(inviteUrl(checkExists(response.invite).code));
           }
         });
-  }
-
-  dismiss(): void {
-    this.trigger(CLOSE, {kind: 'resolve'});
   }
 
   private load(): void {

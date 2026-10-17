@@ -1,0 +1,9 @@
+[[actions]]
+type = "add_column"
+table = "collections"
+
+  [actions.column]
+  name = "data"
+  nullable = false
+  type = "JSONB"
+  default = "'{}'::jsonb"

@@ -60,6 +60,7 @@ import {
 } from 'trails_lat/proto/data_pb';
 
 import { CollectionLayer, HeldObject } from './collection_layer';
+import { CollectionSettingsDialog, SettingsPanel } from './collection_settings_dialog';
 import {
   BASEMAP_LABEL_KINDS,
   basemapOf,
@@ -162,9 +163,6 @@ import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
 import { readElevation, readSnodas, readWeather } from './readings';
 import { parseCoordinates, SearchHit, searchLabel, SearchState } from './search_box';
-import { RenameDialog } from './rename_dialog';
-import { SchemaDialog } from './schema_dialog';
-import { ShareDialog } from './share_dialog';
 
 const CC_BY_4 = {name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/'};
 // ECMWF's terms dictate the wording, the note that we modified the data, and the disclaimer.
@@ -2030,22 +2028,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       const open = this.state.collection;
       items.push({
         kind: 'menu_item',
-        label: 'Rename',
-        disabled: open?.role !== Role.OWNER && open?.role !== Role.WRITE,
+        label: 'Settings',
+        disabled: !open,
         action: () => {
-          if (open) {
-            this.renameCollection(open);
-          }
-        },
-      });
-      items.push({
-        kind: 'menu_item',
-        label: 'Delete',
-        disabled: open?.role !== Role.OWNER,
-        action: () => {
-          if (open) {
-            this.deleteCollection(open);
-          }
+          this.openSettings('overview');
         },
       });
       items.push({kind: 'divider'});
@@ -2090,7 +2076,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
 
     const mac = navigator.platform.startsWith('Mac');
-    const open = this.state.collection;
     this.openMenu([{
       kind: 'menu_item',
       label: 'Undo',
@@ -2106,24 +2091,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       shortcut: mac ? '⇧⌘Z' : 'Ctrl+Y',
       action: () => {
         this.store.redo();
-      },
-    }, {
-      kind: 'divider',
-    }, {
-      kind: 'menu_item',
-      label: 'Schema',
-      disabled: this.store.isReadOnly(),
-      action: () => {
-        this.editSchema();
-      },
-    }, {
-      kind: 'menu_item',
-      label: 'Sharing',
-      disabled: open?.role !== Role.OWNER,
-      action: () => {
-        if (open) {
-          this.dialog.display(ShareDialog({collection: open})).catch(() => {});
-        }
       },
     }], trigger);
   }
@@ -2685,16 +2652,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.editSelectedData(data => ({...data, [id]: value}), `field:${id}`);
   }
 
-  // One undo for everything the dialog changed
-  private editSchema(): void {
-    this.dialog.display(SchemaDialog({
-      schema: this.store.schema(),
-      onSaved: schema => {
-        this.store.setSchema(schema);
-      },
-    })).catch(() => {});
-  }
-
   private editSelectedData(update: (data: FeatureData) => FeatureData, mergeKey?: string): void {
     const live = this.selected !== undefined ? this.store.get(this.selected) : undefined;
     if (!live) {
@@ -2951,20 +2908,34 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.history.goTo(`/collection/${collection.id}`);
   }
 
-  private renameCollection(collection: Collection): void {
-    this.dialog.display(RenameDialog({
+  // One undo for every schema edit made while the dialog is open
+  private openSettings(panel: SettingsPanel): void {
+    const collection = this.state.collection;
+    if (!collection) {
+      return;
+    }
+
+    const mergeKey = `settings:${crypto.randomUUID()}`;
+    this.dialog.display(CollectionSettingsDialog({
       collection,
-      renamed: renamed => {
-        if (this.state.collection?.id === renamed.id) {
-          this.updateState({...this.state, collection: renamed});
+      editable: !this.store.isReadOnly(),
+      panel,
+      schema: this.store.schema(),
+      onDelete: () => this.deleteCollection(collection),
+      onSchemaChanged: schema => {
+        this.store.setSchema(schema, mergeKey);
+      },
+      onUpdated: updated => {
+        if (this.state.collection?.id === updated.id) {
+          this.updateState({...this.state, collection: updated});
         }
       },
     })).catch(() => {});
   }
 
-  private deleteCollection(collection: Collection): void {
+  private deleteCollection(collection: Collection): Promise<boolean> {
     const count = [...this.store.all()].length;
-    this.dialog.display(ConfirmDeleteCollectionDialog({count, name: collection.name}))
+    return this.dialog.display(ConfirmDeleteCollectionDialog({count, name: collection.name}))
         .then(() => {
           const deleted: Future<DeleteCollectionResponse> =
               requestData('lat.trails.DataService/DeleteCollection', {id: collection.id});
@@ -2975,9 +2946,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           if (response && this.state.collection?.id === collection.id) {
             this.history.replaceTo('/');
           }
+          return !!response;
         })
         .catch(e => {
           console.error(e);
+          return false;
         });
   }
 

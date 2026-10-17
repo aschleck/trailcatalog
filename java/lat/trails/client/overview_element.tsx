@@ -12,6 +12,7 @@ import { MapElement } from 'js/map/map_element';
 import { GetCollectionResponse, Role } from 'trails_lat/proto/data_pb';
 
 import { State, ViewerController } from './viewer_controller';
+import { descriptionOf } from './collection_data';
 import { requestData } from './data';
 import { EditableFeature, folderFromProto, lineFromProto, pointFromProto } from './features';
 import {
@@ -111,7 +112,9 @@ export function OverviewElement(
   const readOnly = state.collection?.role === Role.READ;
   const tree = buildTree(state.features.all, state.features.schema);
   setTitle(state.collection?.name ? `${state.collection.name} - trails.lat` : 'trails.lat');
-  setDescription(describe(state.collection?.name, state.features.all, state.features.schema));
+  setDescription(
+      descriptionOf(state.collection)
+          || describe(state.collection?.name, state.features.all, state.features.schema));
   // The camera parameters would otherwise make every view of a collection its own page.
   setCanonicalPath(collection ? `/collection/${collection}` : '/');
   // A collection that failed to load is usually one a logged out crawler can't read.

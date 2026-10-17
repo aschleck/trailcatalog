@@ -17,12 +17,12 @@ const WRITES: string[] = [
   'lat.trails.DataService/CreateCollection',
   'lat.trails.DataService/CreateInvite',
   'lat.trails.DataService/DeleteCollection',
-  'lat.trails.DataService/RenameCollection',
   'lat.trails.DataService/RevokeInvite',
   'lat.trails.DataService/Save',
   'lat.trails.DataService/SetAnyoneCanView',
   'lat.trails.DataService/SetGrant',
   'lat.trails.DataService/SetViewState',
+  'lat.trails.DataService/UpdateCollection',
 ] satisfies Array<keyof FqMethods<typeof BACKENDS>>;
 
 // Read RPCs that are invalidated when a write comes through or somebody signs in

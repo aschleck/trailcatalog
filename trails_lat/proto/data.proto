@@ -16,13 +16,13 @@ service DataService {
   rpc GetOsmTags(GetOsmTagsRequest) returns (GetOsmTagsResponse);
   rpc GetSharing(GetSharingRequest) returns (GetSharingResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
-  rpc RenameCollection(RenameCollectionRequest) returns (RenameCollectionResponse);
   rpc RevokeInvite(RevokeInviteRequest) returns (RevokeInviteResponse);
   rpc Save(SaveRequest) returns (SaveResponse);
   rpc Search(SearchRequest) returns (SearchResponse);
   rpc SetAnyoneCanView(SetAnyoneCanViewRequest) returns (SetAnyoneCanViewResponse);
   rpc SetGrant(SetGrantRequest) returns (SetGrantResponse);
   rpc SetViewState(SetViewStateRequest) returns (SetViewStateResponse);
+  rpc UpdateCollection(UpdateCollectionRequest) returns (UpdateCollectionResponse);
 }
 
 // 404s for an invite that expired or was revoked. Accepting one at or below the
@@ -152,16 +152,6 @@ message ListCollectionsResponse {
   repeated Collection shared = 2;
 }
 
-// Anyone who can edit the collection may rename it.
-message RenameCollectionRequest {
-  string id = 1;
-  string name = 2;
-}
-
-message RenameCollectionResponse {
-  Collection collection = 1;
-}
-
 // Only the owner may revoke. Whoever already accepted keeps their grant.
 message RevokeInviteRequest {
   string code = 1;
@@ -283,6 +273,18 @@ message SetViewStateRequest {
 
 message SetViewStateResponse {}
 
+// Anyone who can edit the collection may update it.
+message UpdateCollectionRequest {
+  string id = 1;
+  optional string name = 2;
+  // Merged into Collection#data, where a null removes its key
+  string data = 3;
+}
+
+message UpdateCollectionResponse {
+  Collection collection = 1;
+}
+
 // Every sharing change answers with this, so the share dialog shows what actually saved.
 message Sharing {
   bool anyone_can_view = 1;
@@ -320,6 +322,7 @@ message Collection {
   int64 version = 3;
   // The caller's
   Role role = 4;
+  string data = 5;
 }
 
 message Folder {

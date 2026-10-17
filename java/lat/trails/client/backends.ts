@@ -20,8 +20,6 @@ import {
   GetSharingResponseSchema,
   ListCollectionsRequestSchema,
   ListCollectionsResponseSchema,
-  RenameCollectionRequestSchema,
-  RenameCollectionResponseSchema,
   RevokeInviteRequestSchema,
   RevokeInviteResponseSchema,
   SaveRequestSchema,
@@ -34,6 +32,8 @@ import {
   SetGrantResponseSchema,
   SetViewStateRequestSchema,
   SetViewStateResponseSchema,
+  UpdateCollectionRequestSchema,
+  UpdateCollectionResponseSchema,
 } from 'trails_lat/proto/data_pb';
 
 export const BACKENDS = {
@@ -50,13 +50,13 @@ export const BACKENDS = {
       getOsmTags: [GetOsmTagsRequestSchema, GetOsmTagsResponseSchema],
       getSharing: [GetSharingRequestSchema, GetSharingResponseSchema],
       listCollections: [ListCollectionsRequestSchema, ListCollectionsResponseSchema],
-      renameCollection: [RenameCollectionRequestSchema, RenameCollectionResponseSchema],
       revokeInvite: [RevokeInviteRequestSchema, RevokeInviteResponseSchema],
       save: [SaveRequestSchema, SaveResponseSchema],
       search: [SearchRequestSchema, SearchResponseSchema],
       setAnyoneCanView: [SetAnyoneCanViewRequestSchema, SetAnyoneCanViewResponseSchema],
       setGrant: [SetGrantRequestSchema, SetGrantResponseSchema],
       setViewState: [SetViewStateRequestSchema, SetViewStateResponseSchema],
+      updateCollection: [UpdateCollectionRequestSchema, UpdateCollectionResponseSchema],
     },
   },
 } as const;

@@ -15,6 +15,8 @@ const DANGER_BUTTON =
     `${BUTTON} active:bg-red-900 bg-red-700 border-red-700 hover:bg-red-800 text-white`;
 // Rows in a dialog list, each giving itself padding
 export const LIST = 'border border-gray-200 divide-gray-200 divide-y rounded';
+// The scrolling body of a settings panel, which adds flex or hidden itself
+export const PANEL = 'flex-col gap-6 grow min-h-0 overflow-y-auto px-5 py-4';
 
 type ButtonProps = {
   children?: corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];

@@ -2,17 +2,15 @@ import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/commo
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
-import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
-import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events';
+import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
 import {
   IconButton,
   LIST,
-  PanelCloseButton,
-  PrimaryButton,
+  PANEL,
   RemoveButton,
   SecondaryButton,
   Section,
@@ -42,10 +40,11 @@ import {
   withChannel,
 } from './schema';
 
-/** Edits a collection's fields and what styles its features, and calls onSaved before closing. */
-export function SchemaDialog(props: {
+export function SchemaPanel(props: {
   schema: CollectionSchema;
-  onSaved: (schema: CollectionSchema) => void;
+  shown: boolean;
+  styling: boolean;
+  onChanged: (schema: CollectionSchema) => void;
 }) {
   return <SchemaEditor {...props} />;
 }
@@ -80,8 +79,6 @@ const KIND_LABELS: {[kind in FieldKind]: string} = {
   point: 'Points',
 };
 
-type Tab = 'properties'|'styling';
-
 // A text box that only shows its border when it is pointed at or typed in
 const QUIET_TEXT_BOX =
     'border border-transparent focus-within:border-blue-500 grow h-7 hover:border-gray-300 '
@@ -90,7 +87,6 @@ const SWATCH = 'bg-white border border-gray-300 cursor-pointer h-7 p-0.5 rounded
 
 interface State {
   draft: CollectionSchema;
-  tab: Tab;
   // What each part was before being set to something else, by kind, part, and source key, so that
   // switching back finds the values again
   sourceCache: {[key: string]: Channel<unknown>};
@@ -103,16 +99,18 @@ interface State {
   dropTarget: {kind: FieldKind; id: string; side: 'after'|'before'}|undefined;
 }
 
+// Schema and style are one panel so that they edit the same draft.
 function SchemaEditor(
-    {schema, onSaved}: {
+    {schema, shown, styling, onChanged}: {
       schema: CollectionSchema;
-      onSaved: (schema: CollectionSchema) => void;
+      shown: boolean;
+      styling: boolean;
+      onChanged: (schema: CollectionSchema) => void;
     },
     inState: State|undefined,
     updateState: (newState: State) => void) {
   const state = inState ?? {
     draft: schema,
-    tab: 'properties',
     sourceCache: {},
     newFields:
         Object.fromEntries(FIELD_KINDS.map(kind => [kind, {label: '', type: 'text'}])) as
@@ -127,77 +125,33 @@ function SchemaEditor(
     <div
         js={corgi.bind({
           controller: SchemaController,
-          args: {onSaved},
+          args: {onChanged},
           events: {
             render: 'wakeup',
           },
           state: [state, updateState],
         })}
-        className="
-            bg-white
-            flex
-            flex-col
-            max-h-[85vh]
-            max-w-[calc(100vw-2rem)]
-            rounded-lg
-            shadow-xl
-            text-gray-900
-            text-sm
-            w-[30rem]
-        "
+        className={`${shown ? 'flex' : 'hidden'} ${PANEL}`}
     >
-      <div className="flex items-center justify-between pl-5 pr-3 pt-3">
-        <span className="font-semibold text-base">Edit schema</span>
-        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}} />
-      </div>
-      <div className="border-b border-gray-200 flex gap-2 px-4">
-        <TabButton label="Properties" selected={state.tab === 'properties'} tab="properties" />
-        <TabButton label="Styling" selected={state.tab === 'styling'} tab="styling" />
-      </div>
-      <div className="flex flex-col gap-5 min-h-0 overflow-y-auto px-5 py-4">
-        {state.tab === 'properties'
-            ? FIELD_KINDS.map(kind =>
-                <KindSection
-                    draft={draft}
-                    dropTarget={state.dropTarget?.kind === kind ? state.dropTarget : undefined}
-                    kind={kind}
-                    newField={state.newFields[kind]}
-                    newOptions={state.newOptions}
-                />)
-            : FIELD_KINDS.map(kind =>
-                <Section label={KIND_LABELS[kind]}>
-                  <div className={LIST}>
-                    {PARTS.filter(p => p.kind === kind).map(part =>
-                        <PartRow key={`${kind}.${part.part}`} draft={draft} part={part} />)}
-                  </div>
-                </Section>)
-        }
-      </div>
-      <div className="border-gray-200 border-t flex gap-2 justify-end px-5 py-3">
-        <SecondaryButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}}>Cancel</SecondaryButton>
-        <PrimaryButton unboundEvents={{corgi: [[ACTION, 'saveClicked']]}}>Save</PrimaryButton>
-      </div>
+      {styling
+          ? FIELD_KINDS.map(kind =>
+              <Section label={KIND_LABELS[kind]}>
+                <div className={LIST}>
+                  {PARTS.filter(p => p.kind === kind).map(part =>
+                      <PartRow key={`${kind}.${part.part}`} draft={draft} part={part} />)}
+                </div>
+              </Section>)
+          : FIELD_KINDS.map(kind =>
+              <KindSection
+                  draft={draft}
+                  dropTarget={state.dropTarget?.kind === kind ? state.dropTarget : undefined}
+                  kind={kind}
+                  newField={state.newFields[kind]}
+                  newOptions={state.newOptions}
+              />)
+      }
     </div>
   </>;
-}
-
-function TabButton({label, selected, tab}: {label: string; selected: boolean; tab: Tab}) {
-  return (
-    <Button
-        ariaLabel={label}
-        className={
-          '-mb-px active:bg-black/10 border-b-2 cursor-pointer hover:bg-black/5 px-2 py-2 '
-              + 'rounded-t '
-              + (selected
-                  ? 'border-gray-900 font-semibold'
-                  : 'border-transparent hover:text-gray-900 text-gray-500')
-        }
-        data={{tab}}
-        unboundEvents={{corgi: [[ACTION, 'tabClicked']]}}
-    >
-      {label}
-    </Button>
-  );
 }
 
 // A field shown on several kinds of feature is listed under each of them.
@@ -541,7 +495,7 @@ function iconColorOf(schema: CollectionSchema): string {
 }
 
 interface Args {
-  onSaved: (schema: CollectionSchema) => void;
+  onChanged: (schema: CollectionSchema) => void;
 }
 
 type Deps = typeof SchemaController.deps;
@@ -557,17 +511,12 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
   }
 
   private readonly dialog: DialogService;
-  private readonly onSaved: (schema: CollectionSchema) => void;
+  private readonly onChanged: (schema: CollectionSchema) => void;
 
   constructor(response: Response<SchemaController>) {
     super(response);
     this.dialog = response.deps.services.dialog;
-    this.onSaved = response.args.onSaved;
-  }
-
-  tabClicked(e: CorgiEvent<typeof ACTION>): void {
-    const tab = checkExists(e.actionElement.data('tab')).string() as Tab;
-    this.updateState({...this.state, tab});
+    this.onChanged = response.args.onChanged;
   }
 
   newLabelChanged(e: CorgiEvent<typeof CHANGED>): void {
@@ -748,15 +697,6 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
     this.setValue(e, e.detail.value);
   }
 
-  saveClicked(): void {
-    this.onSaved(this.state.draft);
-    this.trigger(CLOSE, {kind: 'resolve'});
-  }
-
-  dismiss(): void {
-    this.trigger(CLOSE, {kind: 'reject'});
-  }
-
   private setValue(e: CorgiEvent<typeof CHANGED>|CorgiEvent<typeof DOM_MOUSE>, raw: string):
       void {
     const option = checkExists(e.actionElement.data('option')).string();
@@ -818,5 +758,6 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
 
   private setDraft(draft: CollectionSchema, also: Partial<State> = {}): void {
     this.updateState({...this.state, ...also, draft});
+    this.onChanged(draft);
   }
 }

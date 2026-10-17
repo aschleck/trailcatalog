@@ -59,8 +59,6 @@ import lat.trails.proto.ListCollectionsResponse
 import lat.trails.proto.OsmElementType
 import lat.trails.proto.Point
 import lat.trails.proto.PutSchema
-import lat.trails.proto.RenameCollectionRequest
-import lat.trails.proto.RenameCollectionResponse
 import lat.trails.proto.RevokeInviteRequest
 import lat.trails.proto.RevokeInviteResponse
 import lat.trails.proto.Role
@@ -74,6 +72,8 @@ import lat.trails.proto.SetGrantResponse
 import lat.trails.proto.SetViewStateRequest
 import lat.trails.proto.SetViewStateResponse
 import lat.trails.proto.Sharing
+import lat.trails.proto.UpdateCollectionRequest
+import lat.trails.proto.UpdateCollectionResponse
 import lat.trails.proto.Write
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
@@ -196,8 +196,6 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
     "lat.trails.DataService/GetSharing" ->
       getSharing(ctx, GetSharingRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/ListCollections" -> listCollections(ctx)
-    "lat.trails.DataService/RenameCollection" ->
-      renameCollection(ctx, RenameCollectionRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/RevokeInvite" ->
       revokeInvite(ctx, RevokeInviteRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/Save" ->
@@ -212,6 +210,8 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
       setGrant(ctx, SetGrantRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/SetViewState" ->
       setViewState(ctx, SetViewStateRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/UpdateCollection" ->
+      updateCollection(ctx, UpdateCollectionRequest.newBuilder().mergeJson(payload).build())
     else -> throw IllegalArgumentException("Unknown method $method")
   }
 }
@@ -307,6 +307,7 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
         .setName(access.name)
         .setVersion(access.version)
         .setRole(access.role)
+        .setData(access.data)
 
     // Everyone else sees the owner's, including a viewer whose own row is from when they could
     // edit.
@@ -466,33 +467,46 @@ private fun createCollection(
   return response.build()
 }
 
-private fun renameCollection(
-    ctx: Context, request: RenameCollectionRequest): RenameCollectionResponse {
+private fun updateCollection(
+    ctx: Context, request: UpdateCollectionRequest): UpdateCollectionResponse {
   val user = requireUser(ctx)
   val collection = parseUuid(request.id)
-  val name = request.name.trim()
-  if (name.isEmpty()) {
+  val name = if (request.hasName()) request.name.trim() else null
+  if (name?.isEmpty() == true) {
     throw BadRequestResponse("A collection needs a name")
+  }
+  val data = request.data.ifEmpty { "{}" }
+  if (!ObjectMapper().readTree(data).isObject) {
+    throw BadRequestResponse("Collection data must be an object")
   }
 
   return transact { connection ->
     val access = lockEditableCollection(connection, collection, user)
     connection
-        .prepareStatement("UPDATE collections SET name = ? WHERE id = ?")
+        .prepareStatement(
+            "UPDATE collections "
+                + "SET name = COALESCE(?, name), data = jsonb_strip_nulls(data || ?::jsonb) "
+                + "WHERE id = ? "
+                + "RETURNING name, data")
         .apply {
           setString(1, name)
-          setObject(2, collection)
+          setString(2, data)
+          setObject(3, collection)
         }
-        .executeUpdate()
-    RenameCollectionResponse.newBuilder()
-        .apply {
-          collectionBuilder
-              .setId(request.id)
-              .setName(name)
-              .setVersion(access.version)
-              .setRole(access.role)
+        .executeQuery()
+        .use { results ->
+          results.next()
+          UpdateCollectionResponse.newBuilder()
+              .apply {
+                collectionBuilder
+                    .setId(request.id)
+                    .setName(results.getString(1))
+                    .setData(results.getString(2))
+                    .setVersion(access.version)
+                    .setRole(access.role)
+              }
+              .build()
         }
-        .build()
   }
 }
 
@@ -1245,7 +1259,8 @@ private fun canEdit(role: Role): Boolean {
   return role == Role.ROLE_OWNER || role == Role.ROLE_WRITE
 }
 
-private data class Access(val name: String, val version: Long, val creator: UUID, val role: Role)
+private data class Access(
+    val name: String, val data: String, val version: Long, val creator: UUID, val role: Role)
 
 // Answers null for a collection the user may not see, so that it looks the same as one that does
 // not exist. A null user is signed out and sees what was shared with anyone.
@@ -1255,7 +1270,7 @@ private fun getCollectionAccess(connection: Connection, collection: UUID, user: 
   val grantees = if (user != null) arrayOf(ANONYMOUS_USER_ID, user) else arrayOf(ANONYMOUS_USER_ID)
   connection
       .prepareStatement(
-          "SELECT c.name, c.version, c.creator, g.grantee_id, g.role "
+          "SELECT c.name, c.data, c.version, c.creator, g.grantee_id, g.role "
               + "FROM collections c "
               + "LEFT JOIN collection_grants g "
               + "ON g.collection_id = c.id AND g.grantee_id = ANY (?) "
@@ -1269,9 +1284,10 @@ private fun getCollectionAccess(connection: Connection, collection: UUID, user: 
         var access: Access? = null
         while (results.next()) {
           val name = results.getString(1)
-          val version = results.getLong(2)
-          val creator = results.getObject(3) as UUID
-          val grantee = results.getObject(4) as UUID?
+          val data = results.getString(2)
+          val version = results.getLong(3)
+          val creator = results.getObject(4) as UUID
+          val grantee = results.getObject(5) as UUID?
           val role =
               when {
                 user != null && creator == user -> Role.ROLE_OWNER
@@ -1279,10 +1295,10 @@ private fun getCollectionAccess(connection: Connection, collection: UUID, user: 
                 // Only a grant naming the user can write. The table refuses a write grant to
                 // anyone too, but a stray one would otherwise open the collection to everybody.
                 grantee != user -> Role.ROLE_READ
-                else -> parseRole(results.getString(5))
+                else -> parseRole(results.getString(6))
               }
           if (role != null && (access == null || role.number > access.role.number)) {
-            access = Access(name, version, creator, role)
+            access = Access(name, data, version, creator, role)
           }
         }
         return access
