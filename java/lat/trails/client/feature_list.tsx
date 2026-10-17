@@ -13,6 +13,7 @@ import {
   FeatureData,
   isMarker,
 } from './features';
+import { DangerButton, PanelButton, PanelCloseButton } from './controls';
 import { IconPickerButton, PointMarker } from './icon_picker';
 import { formatDistance, formatHeight, measureLine, profileStats } from './measurements';
 import { LineProfile, LineProfileState } from './profile_chart';
@@ -396,15 +397,15 @@ export function Properties({profile, subject}: {
             : fields.length > 0 && !editing ? <DataTable rows={fields} /> : ''
         }
         {editing
-            ? <Button
-                  className="bg-red-700 hover:bg-red-800 px-2 py-1 rounded self-start text-white"
+            ? <DangerButton
+                  className="self-start"
                   unboundEvents={{corgi: [[ACTION, 'deleteClicked']]}}
               >
                 {kind === 'folder' && editing.descendants > 0
                     ? `Delete folder and ${editing.descendants} ${
                         editing.descendants === 1 ? 'item' : 'items'}`
                     : 'Delete'}
-              </Button>
+              </DangerButton>
             : ''
         }
       </div>
@@ -712,29 +713,13 @@ function PropertiesDialog({children, title}: {
         text-gray-900
         text-sm
     ">
-      <div className="border-b border-gray-300 flex items-center px-3 py-2">
+      <div className="border-b border-gray-300 flex gap-2 items-center p-3">
         <span className="font-bold grow">{title}</span>
-        <Button
-            ariaLabel="Center on map"
-            className="hover:bg-black/10 p-1 rounded"
-            title="Center on map"
-            unboundEvents={{corgi: [[ACTION, 'centerClicked']]}}
-        >
-          <svg className="h-3 stroke-current w-3" fill="none" viewBox="0 0 12 12">
-            <circle cx="6" cy="6" r="3.5" strokeWidth="1.3" />
-            <path d="M6 0 V3 M6 9 V12 M0 6 H3 M9 6 H12" strokeWidth="1.3" />
-          </svg>
-        </Button>
-        <Button
-            ariaLabel="Close"
-            className="hover:bg-black/10 p-1 rounded"
-            title="Close"
-            unboundEvents={{corgi: [[ACTION, 'deselectClicked']]}}
-        >
-          <svg className="h-3 stroke-current w-3" viewBox="0 0 12 12">
-            <path d="M1 1 L11 11 M1 11 L11 1" strokeWidth="1.5" />
-          </svg>
-        </Button>
+        <PanelButton label="Center on map" unboundEvents={{corgi: [[ACTION, 'centerClicked']]}}>
+          <circle cx="10" cy="10" r="5" strokeWidth="1.5" />
+          <path d="M10 2 V5 M10 15 V18 M2 10 H5 M15 10 H18" strokeWidth="1.5" />
+        </PanelButton>
+        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'deselectClicked']]}} />
       </div>
       <div className="min-h-0 overflow-y-auto p-3">
         {children ?? []}

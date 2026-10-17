@@ -8,6 +8,17 @@ import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events'
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
+import {
+  IconButton,
+  LIST,
+  PanelCloseButton,
+  PrimaryButton,
+  RemoveButton,
+  SecondaryButton,
+  Section,
+  SELECT_BOX,
+  TEXT_BOX,
+} from './controls';
 import { DEFAULT_ICON, DEFAULT_POINT_COLOR } from './features';
 import { IconPickerButton, IconPickerDialog } from './icon_picker';
 import {
@@ -71,21 +82,11 @@ const KIND_LABELS: {[kind in FieldKind]: string} = {
 
 type Tab = 'properties'|'styling';
 
-// Sizes every control to one height, so rows of mixed controls line up
-const TEXT_BOX =
-    'bg-white border border-gray-300 focus-within:border-blue-500 h-7 min-w-0 px-2 rounded';
 // A text box that only shows its border when it is pointed at or typed in
 const QUIET_TEXT_BOX =
     'border border-transparent focus-within:border-blue-500 grow h-7 hover:border-gray-300 '
         + 'min-w-0 px-2 rounded';
-const SELECT_BOX = 'bg-white border border-gray-300 h-7 min-w-0 px-1 rounded';
-const SECONDARY_BUTTON =
-    'active:bg-gray-100 bg-white border border-gray-300 cursor-pointer h-7 hover:bg-gray-50 px-3 '
-        + 'rounded';
-const PRIMARY_BUTTON =
-    'active:bg-gray-700 bg-gray-900 cursor-pointer h-7 hover:bg-gray-800 px-3 rounded text-white';
 const SWATCH = 'bg-white border border-gray-300 cursor-pointer h-7 p-0.5 rounded shrink-0 w-9';
-const LIST = 'border border-gray-200 divide-gray-200 divide-y rounded';
 
 interface State {
   draft: CollectionSchema;
@@ -147,9 +148,7 @@ function SchemaEditor(
     >
       <div className="flex items-center justify-between pl-5 pr-3 pt-3">
         <span className="font-semibold text-base">Edit schema</span>
-        <IconButton label="Close" unboundEvents={{corgi: [[ACTION, 'dismiss']]}}>
-          <path d="M2 2 L10 10 M2 10 L10 2" strokeWidth="1.5" />
-        </IconButton>
+        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}} />
       </div>
       <div className="border-b border-gray-200 flex gap-2 px-4">
         <TabButton label="Properties" selected={state.tab === 'properties'} tab="properties" />
@@ -175,27 +174,11 @@ function SchemaEditor(
         }
       </div>
       <div className="border-gray-200 border-t flex gap-2 justify-end px-5 py-3">
-        <Button className={SECONDARY_BUTTON} unboundEvents={{corgi: [[ACTION, 'dismiss']]}}>
-          Cancel
-        </Button>
-        <Button className={PRIMARY_BUTTON} unboundEvents={{corgi: [[ACTION, 'saveClicked']]}}>
-          Save
-        </Button>
+        <SecondaryButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}}>Cancel</SecondaryButton>
+        <PrimaryButton unboundEvents={{corgi: [[ACTION, 'saveClicked']]}}>Save</PrimaryButton>
       </div>
     </div>
   </>;
-}
-
-function Section({children, label}: {
-  children?: corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
-  label: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="font-semibold text-gray-500 text-xs tracking-wide uppercase">{label}</div>
-      {children ?? []}
-    </div>
-  );
 }
 
 function TabButton({label, selected, tab}: {label: string; selected: boolean; tab: Tab}) {
@@ -214,52 +197,6 @@ function TabButton({label, selected, tab}: {label: string; selected: boolean; ta
     >
       {label}
     </Button>
-  );
-}
-
-function IconButton({children, data, label, unboundEvents}: {
-  children?: corgi.VElementOrPrimitive;
-  data?: corgi.Properties['data'];
-  label: string;
-  unboundEvents: corgi.Properties['unboundEvents'];
-}) {
-  return (
-    <Button
-        ariaLabel={label}
-        className="
-            active:bg-black/10
-            cursor-pointer
-            flex
-            h-7
-            hover:bg-black/5
-            hover:text-gray-800
-            items-center
-            justify-center
-            rounded
-            shrink-0
-            text-gray-400
-            w-7
-        "
-        data={data}
-        title={label}
-        unboundEvents={unboundEvents}
-    >
-      <svg className="h-3 stroke-current w-3" fill="none" viewBox="0 0 12 12">
-        {children ?? ''}
-      </svg>
-    </Button>
-  );
-}
-
-function RemoveButton({data, label, unboundEvents}: {
-  data: corgi.Properties['data'];
-  label: string;
-  unboundEvents: corgi.Properties['unboundEvents'];
-}) {
-  return (
-    <IconButton data={data} label={label} unboundEvents={unboundEvents}>
-      <path d="M2 2 L10 10 M2 10 L10 2" strokeWidth="1.5" />
-    </IconButton>
   );
 }
 
@@ -303,13 +240,9 @@ function KindSection({draft, dropTarget, kind, newField, newOptions}: {
               }))}
               unboundEvents={{corgi: [[CHANGED, 'newTypeChanged']]}}
           />
-          <Button
-              className={SECONDARY_BUTTON}
-              data={{kind}}
-              unboundEvents={{corgi: [[ACTION, 'fieldAdded']]}}
-          >
+          <SecondaryButton data={{kind}} unboundEvents={{corgi: [[ACTION, 'fieldAdded']]}}>
             Add
-          </Button>
+          </SecondaryButton>
         </div>
       </div>
     </Section>
@@ -420,30 +353,13 @@ function FieldRow({drop, field, kind, newOption}: {
                     />
                   </div>)}
               <div className="flex gap-2 items-center">
-                <Button
+                <IconButton
                     {...bound}
-                    ariaLabel={`Add a choice to ${field.label}`}
-                    className="
-                        active:bg-black/10
-                        cursor-pointer
-                        flex
-                        h-6
-                        hover:bg-black/5
-                        hover:text-gray-800
-                        items-center
-                        justify-center
-                        rounded
-                        shrink-0
-                        text-gray-400
-                        w-6
-                    "
-                    title="Add a choice"
+                    label={`Add a choice to ${field.label}`}
                     unboundEvents={{corgi: [[ACTION, 'optionAdded']]}}
                 >
-                  <svg className="h-3 stroke-current w-3" fill="none" viewBox="0 0 12 12">
-                    <path d="M6 1 V11 M1 6 H11" strokeWidth="1.5" />
-                  </svg>
-                </Button>
+                  <path d="M6 1 V11 M1 6 H11" strokeWidth="1.5" />
+                </IconButton>
                 <Input
                     {...bound}
                     className={QUIET_TEXT_BOX}

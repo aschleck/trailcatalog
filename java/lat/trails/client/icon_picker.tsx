@@ -2,10 +2,10 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
 import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
-import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 
+import { PanelCloseButton, TEXT_BOX } from './controls';
 import { DEFAULT_ICON, DEFAULT_ICON_SHRINK, pointIcon } from './features';
 
 // The default, then outdoor places and hazards
@@ -146,15 +146,11 @@ function IconPicker(
     >
       <div className="flex font-bold items-center justify-between">
         Icon
-        <Button ariaLabel="Close" unboundEvents={{corgi: [[ACTION, 'dismiss']]}}>
-          <svg className="h-4 stroke-current w-4" viewBox="0 0 12 12">
-            <path d="M0 0 L12 12 M0 12 L12 0" />
-          </svg>
-        </Button>
+        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}} />
       </div>
       <Input
           autofocus={true}
-          className="border border-gray-300 px-1 rounded"
+          className={TEXT_BOX}
           placeholder="Search"
           type="search"
           unboundEvents={{corgi: [[CHANGED, 'queryChanged'], [ACTION, 'queryEntered']]}}

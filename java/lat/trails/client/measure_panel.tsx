@@ -1,7 +1,7 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
-import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
+import { PanelButton, PanelCloseButton, PrimaryButton } from './controls';
 import { RouteStatus } from './drawing_layer';
 import { LineStats } from './feature_list';
 import { formatHeight, ProfileStats } from './measurements';
@@ -55,12 +55,13 @@ export function MeasurePanel({grades, state}: {
           {grades ? <TerrainIcon /> : <MeasureIcon />}
         </svg>
         <span className="font-bold grow">{grades ? 'Route off trail' : 'Measure'}</span>
-        <IconButton label="Undo last point" onAction="measureUndoClicked">
-          <path d="M7 5 L3 9 L7 13 M3 9 H12 A4 4 0 0 1 12 17 H9" fill="none" strokeWidth="1.5" />
-        </IconButton>
-        <IconButton label="Close" onAction="measureClosed">
-          <path d="M5 5 L15 15 M5 15 L15 5" strokeWidth="1.5" />
-        </IconButton>
+        <PanelButton
+            label="Undo last point"
+            unboundEvents={{corgi: [[ACTION, 'measureUndoClicked']]}}
+        >
+          <path d="M7 4 L3 8 L7 12 M3 8 H12 A4 4 0 0 1 12 16 H9" strokeWidth="1.5" />
+        </PanelButton>
+        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'measureClosed']]}} />
       </div>
       {grades ? <GradeLimits grades={grades} /> : ''}
       {state.route ? <RouteReadout status={state.route} /> : ''}
@@ -161,31 +162,12 @@ function Readout({state}: {state: MeasureState}) {
             </div>
           : ''
       }
-      <Button
-          className="bg-gray-900 hover:bg-gray-700 px-3 py-1 rounded self-start text-white"
+      <PrimaryButton
+          className="self-start"
           unboundEvents={{corgi: [[ACTION, 'saveMeasurementClicked']]}}
       >
         Save as line
-      </Button>
+      </PrimaryButton>
     </div>
-  );
-}
-
-function IconButton({children, label, onAction}: {
-  children?: corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
-  label: string;
-  onAction: string;
-}) {
-  return (
-    <Button
-        ariaLabel={label}
-        className="hover:bg-black/10 p-1 rounded"
-        title={label}
-        unboundEvents={{corgi: [[ACTION, onAction]]}}
-    >
-      <svg className="h-5 stroke-current w-5" viewBox="0 0 20 20">
-        {children ?? []}
-      </svg>
-    </Button>
   );
 }

@@ -4,12 +4,12 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
 import { CorgiEvent } from 'external/dev_april_corgi+/js/corgi/events';
-import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 
 import { Collection, RenameCollectionResponse } from 'trails_lat/proto/data_pb';
 
+import { PrimaryButton, SecondaryButton, TEXT_BOX } from './controls';
 import { requestData } from './data';
 
 // DialogService#display resolves without a value, so the renamed collection comes back through a
@@ -47,7 +47,7 @@ function Rename(
       <div className="font-bold">Rename collection</div>
       <Input
           autofocus={true}
-          className="border border-gray-300 px-1 rounded"
+          className={TEXT_BOX}
           placeholder="Name"
           value={state.name}
           unboundEvents={{corgi: [[CHANGED, 'nameChanged'], [ACTION, 'saveClicked']]}}
@@ -57,18 +57,10 @@ function Rename(
           : ''
       }
       <div className="flex gap-2 justify-end">
-        <Button
-            className="hover:bg-black/10 px-3 py-1 rounded"
-            unboundEvents={{corgi: [[ACTION, 'dismiss']]}}
-        >
-          Cancel
-        </Button>
-        <Button
-            className="bg-gray-900 hover:bg-gray-800 px-3 py-1 rounded text-white"
-            unboundEvents={{corgi: [[ACTION, 'saveClicked']]}}
-        >
+        <SecondaryButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}}>Cancel</SecondaryButton>
+        <PrimaryButton unboundEvents={{corgi: [[ACTION, 'saveClicked']]}}>
           {state.status === 'saving' ? 'Saving' : 'Save'}
-        </Button>
+        </PrimaryButton>
       </div>
     </div>
   </>;
