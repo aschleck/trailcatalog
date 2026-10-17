@@ -1,7 +1,7 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { VElementOrPrimitive } from 'external/dev_april_corgi+/js/corgi';
 import { IconCheckbox } from 'js/dino/checkbox';
-import { FabricIcon } from 'js/dino/fabric';
+import { FluentIcon } from 'js/dino/fluent';
 import { Radio } from 'js/dino/radio';
 
 import { SearchElement } from './search_element';
@@ -55,7 +55,7 @@ export function Header({query, extra}: {
               href="https://docs.google.com/forms/d/e/1FAIpQLSd4RQWYpziXa5yns-lDk3U-4egwVL2AxFcQ2aW4gOBx5wdehw/viewform"
               target="_blank"
           >
-            <FabricIcon name="Feedback" title="Share feedback" />
+            <FluentIcon name="PersonFeedback" title="Share feedback" />
           </a>
         </div>
       </div>

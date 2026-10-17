@@ -1,7 +1,7 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { InputCheckboxProperties } from 'external/dev_april_corgi+/js/corgi/elements';
 
-import { FabricIcon, FabricIconName } from './fabric';
+import { FluentIcon, FluentIconName } from './fluent';
 
 type CheckboxProps = Omit<InputCheckboxProperties, 'type'>;
 
@@ -10,7 +10,7 @@ export function Checkbox({label, ...props}: {
 } & CheckboxProps) {
   return <>
     <IconCheckbox
-        icons={{checked:'CheckboxCompositeReversed', unchecked:'Checkbox'}}
+        icons={{checked:'CheckboxCheckedFilled', unchecked:'CheckboxUnchecked'}}
         label={label}
         {...props}
     />
@@ -19,7 +19,7 @@ export function Checkbox({label, ...props}: {
 
 export function IconCheckbox({checked, className, icons, label, ...props}: {
   className?: string,
-  icons: {checked: FabricIconName, unchecked: FabricIconName},
+  icons: {checked: FluentIconName, unchecked: FluentIconName},
   label?: corgi.VElementOrPrimitive,
 } & CheckboxProps) {
   return <>
@@ -30,7 +30,7 @@ export function IconCheckbox({checked, className, icons, label, ...props}: {
           type="checkbox"
           {...props}
       />
-      <FabricIcon name={checked ?? false ? icons.checked : icons.unchecked} />
+      <FluentIcon name={checked ?? false ? icons.checked : icons.unchecked} />
       {label ?? ''}
     </label>
   </>;

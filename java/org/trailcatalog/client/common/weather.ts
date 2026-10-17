@@ -1,21 +1,21 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
-import { FabricIconName } from 'js/dino/fabric';
+import { FluentIconName } from 'js/dino/fluent';
 
-export const WEATHER_LABEL_TO_ICON: {[k: string]: FabricIconName} = {
-  'Unknown': 'Checkbox',
-  'Clear': 'Sunny',
-  'Partly cloudy': 'PartlySunnyDay',
-  'Cloudy': 'Cloudy',
-  'Fog': 'Fog',
-  'Rain': 'Rain',
-  'Snow': 'Snow',
-  'Rain showers': 'Rain',
-  'Snow showers': 'LightSnow',
-  'Thunderstorms': 'Thunderstorms',
+export const WEATHER_LABEL_TO_ICON: {[k: string]: FluentIconName} = {
+  'Unknown': 'CheckboxUnchecked',
+  'Clear': 'WeatherSunny',
+  'Partly cloudy': 'WeatherPartlyCloudyDay',
+  'Cloudy': 'WeatherCloudy',
+  'Fog': 'WeatherFog',
+  'Rain': 'WeatherRain',
+  'Snow': 'WeatherSnow',
+  'Rain showers': 'WeatherRain',
+  'Snow showers': 'WeatherSnowShowerDay',
+  'Thunderstorms': 'WeatherThunderstorm',
 } as const;
 
 export function formatWeatherCode(code: number): {
-  icon: FabricIconName,
+  icon: FluentIconName,
   label: keyof typeof WEATHER_LABEL_TO_ICON,
 } {
   let label;

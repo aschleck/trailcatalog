@@ -1,7 +1,7 @@
 import { aDescendsB, RelationCategory } from 'java/org/trailcatalog/models/categories';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { FlatButton } from 'js/dino/button';
-import { FabricIcon } from 'js/dino/fabric';
+import { FluentIcon } from 'js/dino/fluent';
 import { OutlinedInput } from 'js/dino/input';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
@@ -48,7 +48,7 @@ export function SearchElement(
                       <FlatButton
                           className="text-white"
                           dense={true}
-                          icon="ChromeClose"
+                          icon="Dismiss"
                       />
                     </span>
                   </>

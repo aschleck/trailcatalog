@@ -9,9 +9,6 @@ esbuild_binary(
         ":css",
         ":ts",
     ],
-    external = [
-        "fabric-icons.woff",
-    ],
 )
 
 tc_ts_project(

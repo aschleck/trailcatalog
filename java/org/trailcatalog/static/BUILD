@@ -12,8 +12,6 @@ genrule(
     srcs = [
         "//java/org/trailcatalog/client",
         "//java/org/trailcatalog/client/workers:data_fetcher_worker",
-        # Not sure why we can't pull this from the `data` attr of `:dino`
-        "//js/dino:fonts",
         "//js/map/workers:mbtile_loader_worker",
         "//js/map/workers:raster_loader_worker",
         "//js/map/workers:xyz_data_fetcher_worker",
@@ -24,7 +22,6 @@ genrule(
         "client.js.map",
         "data_fetcher_worker.js",
         "data_fetcher_worker.js.map",
-        "fabric-icons.woff",
         "mbtile_loader_worker.js",
         "mbtile_loader_worker.js.map",
         "raster_loader_worker.js",

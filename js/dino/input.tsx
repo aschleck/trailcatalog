@@ -3,13 +3,13 @@ import { InputOtherProperties } from 'external/dev_april_corgi+/js/corgi/element
 
 import { Input as EmuInput } from 'external/dev_april_corgi+/js/emu/input';
 
-import { FabricIcon, FabricIconName } from './fabric';
+import { FluentIcon, FluentIconName } from './fluent';
 
 type InputProps = {
   className?: string,
   dense?: boolean,
   forceValue?: boolean,
-  icon?: FabricIconName,
+  icon?: FluentIconName,
   inset?: corgi.VElementOrPrimitive,
   placeholder?: string,
   ref?: string,
@@ -34,7 +34,7 @@ function Input({className, dense, icon, ...props}: InputProps) {
         className={
           (dense !== true ? ' px-3 py-1' : '') + (className ? ` ${className} ` : '')
         }
-        icon={icon ? <FabricIcon name={icon} /> : <></>}
+        icon={icon ? <FluentIcon name={icon} /> : <></>}
         {...props}
     />
   </>;

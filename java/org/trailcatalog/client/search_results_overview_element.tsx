@@ -6,7 +6,7 @@ import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
-import { FabricIcon } from 'js/dino/fabric';
+import { FluentIcon } from 'js/dino/fluent';
 import { LatLngRect, Vec2 } from 'js/map/common/types';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
@@ -237,7 +237,7 @@ function Content({
                 }}
             >
               <OutlinedButton
-                  icon="Location"
+                  icon="Record"
                   label="Locate me"
               />
             </span>
@@ -305,7 +305,7 @@ function SearchFilter({state}: {state: State}) {
             ],
           }}
       >
-        <FlatButton icon="ChromeClose" />
+        <FlatButton icon="Dismiss" />
       </span>
     </aside>
   </>;

@@ -1,13 +1,13 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { Button as EmuButton } from 'external/dev_april_corgi+/js/emu/button';
-import { FabricIcon, FabricIconName } from './fabric';
+import { FluentIcon, FluentIconName } from './fluent';
 
 type ButtonProps = {
   ariaLabel?: string,
   className?: string,
   dense?: boolean,
-  icon?: FabricIconName,
+  icon?: FluentIconName,
   label?: string,
 } & corgi.Properties;
 
@@ -43,7 +43,7 @@ export function Button({ariaLabel, className, dense, icon, label, title}: Button
         }
         title={title}
     >
-      {icon ? <><FabricIcon name={icon} className="align-bottom" />{' '}</> : ''}
+      {icon ? <><FluentIcon name={icon} />{' '}</> : ''}
       {label ? <span>{label}</span> : ''}
     </EmuButton>
   </>;

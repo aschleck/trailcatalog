@@ -2,7 +2,7 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { RelationCategory } from 'java/org/trailcatalog/models/categories';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
-import { FabricIcon, FabricIconName } from 'js/dino/fabric';
+import { FluentIcon, FluentIconName } from 'js/dino/fluent';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 import { LatLng } from 'js/map/common/types';
 import { CLICKED, ZOOMED } from 'js/map/events';
@@ -146,7 +146,7 @@ function Content({trailId, state, updateState}: {
               <FlatButton
                   ariaLabel="Recenter trail"
                   className="bg-white"
-                  icon="ZoomToFit"
+                  icon="ZoomFit"
                   title="Recenter trail"
               />
             </div>
@@ -154,7 +154,7 @@ function Content({trailId, state, updateState}: {
               <FlatButton
                   ariaLabel="Browse the map"
                   className="bg-white"
-                  icon="ScaleVolume"
+                  icon="ArrowExpand"
                   title="Browse the map"
               />
             </div>
@@ -213,7 +213,7 @@ function TrailSidebar({state}: {state: State}) {
       </header>
       <aside className="flex flex-wrap gap-2 items-center mt-2 text-tc-gray-400">
         <div className="text-black" unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
-          <OutlinedButton dense={true} icon="Nav2DMapView" label="Browse map" />
+          <OutlinedButton dense={true} icon="Map" label="Browse map" />
         </div>
         <BoundaryCrumbs boundaries={containingBoundaries} />
       </aside>
@@ -242,7 +242,7 @@ function TrailSidebar({state}: {state: State}) {
         <FactRow label={isOneWay ? "One-way distance" : "Round-trip distance"}>
           {valid
               ? <>
-                  <FabricIcon name="CharticulatorLine" className="mr-2" />
+                  <FluentIcon name="DataLine" className="mr-2" />
                   <NumericCrumb value={distance.value} unit={distance.unit} />
                 </>
               : <Unknown />
@@ -256,7 +256,7 @@ function TrailSidebar({state}: {state: State}) {
             left={
               valid
                   ? <>
-                      <FabricIcon name="Market" className="mr-2" />
+                      <FluentIcon name="ArrowTrending" className="mr-2" />
                       <NumericCrumb value={elevationUp.value} unit={elevationUp.unit} />
                     </>
                   : <Unknown />
@@ -264,7 +264,7 @@ function TrailSidebar({state}: {state: State}) {
             right={
               valid
                   ? <>
-                      <FabricIcon name="MarketDown" className="mr-2" />
+                      <FluentIcon name="ArrowTrendingDown" className="mr-2" />
                       <NumericCrumb value={elevationDown.value} unit={elevationDown.unit} />
                     </>
                   : <Unknown />
@@ -274,7 +274,7 @@ function TrailSidebar({state}: {state: State}) {
             label="Highest & lowest"
             left={
               <>
-                <FabricIcon name="SortUp" className="mr-2" />
+                <FluentIcon name="ArrowSortUp" className="mr-2" />
                 <NumericCrumb
                     value={elevationHigh?.value ?? ''}
                     unit={elevationHigh?.unit ?? ''}
@@ -283,13 +283,13 @@ function TrailSidebar({state}: {state: State}) {
             }
             right={
               <>
-                <FabricIcon name="SortDown" className="mr-2" />
+                <FluentIcon name="ArrowSortDown" className="mr-2" />
                 <NumericCrumb value={elevationLow?.value ?? ''} unit={elevationLow?.unit ?? ''} />
               </>
             }
         />
         <FactRow label="Weather">
-          {weather?.icon ? <FabricIcon name={weather.icon} className="mr-2" /> : ''}
+          {weather?.icon ? <FluentIcon name={weather.icon} className="mr-2" /> : ''}
           <span>
             <NumericCrumb value={weather?.label ?? ''} unit={temperature?.unit ?? ''} />
           </span>
@@ -315,7 +315,7 @@ function TrailSidebar({state}: {state: State}) {
         {tags['website']
             ? <FactRow label="Website">
                 <a className="underline" href={tags['website']} target="_blank">
-                  <FabricIcon name="Globe" className="mr-1 text-tc-highlight-3" />
+                  <FluentIcon name="Globe" className="mr-1 text-tc-highlight-3" />
                   Website
                 </a>
               </FactRow>

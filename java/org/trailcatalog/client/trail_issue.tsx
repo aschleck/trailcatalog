@@ -1,5 +1,5 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
-import { FabricIcon } from 'js/dino/fabric';
+import { FluentIcon } from 'js/dino/fluent';
 
 /**
  * Explains a trail whose ways don't trace one line, shown on hover or focus. The explanation is
@@ -21,7 +21,7 @@ export function TrailIssue({label, position, sourceRelation}: {
           }
       >
         {label ? <span>{label}</span> : ''}
-        <FabricIcon name="Info" />
+        <FluentIcon name="Info" />
       </button>
       <div
           className={

@@ -3,7 +3,7 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { FlatButton, OutlinedButton } from 'js/dino/button';
-import { FabricIcon, FabricIconName } from 'js/dino/fabric';
+import { FluentIcon, FluentIconName } from 'js/dino/fluent';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
@@ -123,7 +123,7 @@ function Content({boundaryId, state, updateState}: {
       </header>
       <aside className="flex flex-wrap gap-2 items-center mt-2 text-tc-gray-400">
         <div className="text-black" unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
-          <OutlinedButton dense={true} icon="Nav2DMapView" label="Browse map" />
+          <OutlinedButton dense={true} icon="Map" label="Browse map" />
         </div>
         <BoundaryCrumbs boundaries={containingBoundaries} />
         •
@@ -152,7 +152,7 @@ function Content({boundaryId, state, updateState}: {
             <FlatButton
                 ariaLabel="Recenter boundary"
                 className="bg-white"
-                icon="ZoomToFit"
+                icon="ZoomFit"
                 title="Recenter boundary"
             />
           </div>
@@ -160,7 +160,7 @@ function Content({boundaryId, state, updateState}: {
             <FlatButton
                 ariaLabel="Browse the map"
                 className="bg-white"
-                icon="ScaleVolume"
+                icon="ArrowExpand"
                 title="Browse the map"
             />
           </div>
