@@ -1,8 +1,13 @@
+import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
+import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { CHANGED, ACTION, FOCUSED, PRESSED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { PointCategory } from 'java/org/trailcatalog/models/categories';
-import { SearchResultKind } from 'trails_lat/proto/data_pb';
+import { S2LatLng } from 'java/org/trailcatalog/s2';
+import { SearchResponse, SearchResultKind } from 'trails_lat/proto/data_pb';
+
+import { requestData } from './data';
 
 export interface SearchState {
   query: string;
@@ -94,6 +99,79 @@ export function parseCoordinates(query: string): SearchHit|undefined {
     low: [lat, lng],
     high: [lat, lng],
   };
+}
+
+/** Searches for what is typed into the box once typing pauses. */
+export class SearchQuery {
+
+  // Waits for typing to pause, so that each keystroke doesn't send a search
+  private readonly debouncer: Debouncer;
+  // Moves with every search sent or closed, so that a slow answer to an older query is dropped
+  private generation: number;
+
+  constructor(
+      // Where to rank results around, and how far out
+      private readonly near: () => {center: S2LatLng; radiusMeters: number},
+      private readonly current: () => SearchState,
+      private readonly show: (search: SearchState) => void) {
+    this.debouncer = new Debouncer(/* delayMs= */ 150, () => {
+      this.search();
+    });
+    this.generation = 0;
+  }
+
+  trigger(): void {
+    this.debouncer.trigger();
+  }
+
+  // Hides the results, including ones still on their way.
+  close(): void {
+    this.generation += 1;
+    this.show({...this.current(), results: undefined, highlighted: 0});
+  }
+
+  private search(): void {
+    const query = this.current().query.trim();
+    const generation = ++this.generation;
+    if (!query) {
+      this.show({...this.current(), results: undefined});
+      return;
+    }
+
+    const coordinates = parseCoordinates(query);
+    if (coordinates) {
+      this.show({...this.current(), results: [coordinates], highlighted: 0});
+      return;
+    }
+
+    const {center, radiusMeters} = this.near();
+    const loading: Future<SearchResponse> =
+        requestData('lat.trails.DataService/Search', {
+          query,
+          centerLatDegrees: center.latDegrees(),
+          centerLngDegrees: center.lngDegrees(),
+          radiusMeters,
+        });
+    loading.then(
+        response => {
+          if (generation !== this.generation) {
+            return;
+          }
+
+          const results: SearchHit[] = response.results.map(result => ({
+            name: result.name,
+            label: searchLabel(result.kind, result.type),
+            matched: result.matchedName,
+            within: result.within,
+            low: [result.lowLatDegrees, result.lowLngDegrees],
+            high: [result.highLatDegrees, result.highLngDegrees],
+          }));
+          this.show({...this.current(), results, highlighted: 0});
+        },
+        e => {
+          console.error(e);
+        });
+  }
 }
 
 export function SearchBox({state}: {state: SearchState}) {

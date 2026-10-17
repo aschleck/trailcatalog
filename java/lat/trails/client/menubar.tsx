@@ -59,7 +59,7 @@ export function Menubar({center, children, user}: {
                       truncate
                   "
                   data={{menu: 'user'}}
-                  unboundEvents={{click: 'userMenuClicked', pointerenter: 'menubarMenuEntered'}}
+                  unboundEvents={{click: 'menubarMenuClicked', pointerenter: 'menubarMenuEntered'}}
               >
                 {user.pictureUrl
                     ? <img
