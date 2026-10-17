@@ -140,8 +140,8 @@ export interface Point {
   style: PointStyle;
 }
 
-// We draw a point as a zero length line with LineCapProgram, which draws a circle at each end of a
-// line, so we get one circle. See also feature_layer.ts#ShapeBatch.push.
+// We draw a point as a zero length line, which LineProgram draws as a circle. See also
+// feature_layer.ts#ShapeBatch.push.
 export interface PointGeometry {
   geometryByteLength: number;
   geometryOffset: number;

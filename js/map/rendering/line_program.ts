@@ -28,7 +28,7 @@ export const VERTEX_STRIDE =
  */
 export type Stipple = boolean|'alternating'|'ticks';
 
-/** Renders instanced lines as rectangles without mitering. */
+/** Renders instanced line segments as capsules, so joins and ends come out round. */
 export class LineProgram extends Program<LineProgramData> {
 
   /**
@@ -327,6 +327,10 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       out lowp float fragAlternate;
       out lowp float fragTicks;
       out lowp float fragDistanceOrtho;
+      // Pixels past each end of the segment, positive only beyond that end
+      out highp float fragPastStart;
+      out highp float fragPastEnd;
+      out mediump float fragCapRadius;
       out mediump float fragBehindHorizon;
 
       ${COLOR_OPERATIONS}
@@ -340,17 +344,28 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       void main() {
         vec2 center = position.x < 0.5 ? previous : next;
         vec2 direction = next - previous;
-        vec2 perp = perpendicular(normalize(direction));
+        // A zero length segment draws as a circle, which is how we draw points.
+        vec2 along = direction == vec2(0.) ? vec2(1., 0.) : normalize(direction);
+        vec2 perp = perpendicular(along);
         vec4 location = sub_fp64(split(center), cameraCenter);
         if (location.x + location.y > 1.) {
           location.x -= 2.;
         } else if (location.x + location.y < -1.) {
           location.x += 2.;
         }
-        // Ticks stick out 2 pixels past either side of the line, so the quad has to cover them.
-        highp float extent = stipple == 2u ? radius + 2. : radius;
-        highp float actualRadius = renderBorder ? extent : extent - 1.;
-        vec2 push = perp * actualRadius * position.y;
+        // Ticks reach three times the line's radius, so the quad has to cover them. The casing
+        // reaches a quarter pixel further to fit its antialiasing.
+        highp float extent = stipple == 2u ? 3. * radius : radius;
+        highp float actualRadius = renderBorder ? extent + 0.25 : extent - 1.;
+        // The quad runs past each end by the cap's radius. The fill stops at the core's own fill
+        // radius, or else at a join its casing-colored edge would ring the line beside it. Ticks
+        // don't widen the cap.
+        highp float capRadius =
+            renderBorder
+                ? radius + 0.25
+                : max(0., radius - 1. - (stipple == 3u ? 1. : 0.));
+        highp float endSign = 2. * position.x - 1.;
+        vec2 push = perp * actualRadius * position.y + along * capRadius * endSign;
         vec4 worldCoord =
             sum_fp64(
                 mul_fp64(location, vec4(split(halfWorldSize), split(halfWorldSize))),
@@ -388,11 +403,19 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         // We want to avoid stipples "dancing" as zoom changes, so we make this more of a step
         // change.
         // Alternating dashes run twice as long, because a dash of fill reads as a gap otherwise.
+        // The dashes continue into the caps, or else a vertex inside a dash fills the gaps on either
+        // side with a whole circle.
         fragDistanceAlong =
             exp2(floor(2. * log2(halfWorldSize)) / 2.)
-                * (distanceAlong + position.x * length(direction))
+                * (distanceAlong
+                    + position.x * length(direction)
+                    + endSign * capRadius / halfWorldSize)
                 * (stipple == 3u ? 0.5 : 1.);
         fragDistanceOrtho = position.y * actualRadius;
+        highp float span = length(direction) * halfWorldSize + 2. * capRadius;
+        fragPastStart = capRadius - position.x * span;
+        fragPastEnd = capRadius - (1. - position.x) * span;
+        fragCapRadius = capRadius;
         fragRadius = extent;
         fragCore = radius;
         fragStipple = stipple == 1u ? 0.5 : stipple == 3u ? 0.65 : 1.0;
@@ -412,29 +435,37 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in lowp float fragStipple;
       in lowp float fragAlternate;
       in lowp float fragTicks;
+      in highp float fragPastStart;
+      in highp float fragPastEnd;
+      in mediump float fragCapRadius;
       in mediump float fragBehindHorizon;
 
       out lowp vec4 fragColor;
 
       void main() {
-        if (flattenFactor < 1.0 && fragBehindHorizon < 0.0) {
+        // Distance from the segment itself, which is the distance from the nearest endpoint past
+        // either end.
+        highp float past = max(max(fragPastStart, fragPastEnd), 0.);
+        mediump float distance = length(vec2(past, fragDistanceOrtho));
+        if ((flattenFactor < 1.0 && fragBehindHorizon < 0.0)
+            || (past > 0. && distance > fragCapRadius)) {
           discard;
         }
-        mediump float a =
-            1. - smoothstep(0., 1., clamp(abs(fragDistanceOrtho) + 0.75 - fragRadius, 0., 1.));
+        mediump float a = 1. - smoothstep(0., 1., clamp(distance + 0.75 - fragRadius, 0., 1.));
         // 0 is fill, 1 is stroke. Alternating widens the stroke to 2 pixels so the dashes sit
         // inside a casing.
         mediump float m =
-            smoothstep(
-                0., 1., clamp(abs(fragDistanceOrtho) + 1. + fragAlternate - fragRadius, 0., 1.));
+            smoothstep(0., 1., clamp(distance + 1. + fragAlternate - fragRadius, 0., 1.));
 
         lowp float on = fract(fragDistanceAlong / 8.) <= fragStipple ? 1. : 0.;
         // Alternating fills the gaps between dashes with the stroke color instead of dropping them.
         lowp vec4 color = mix(fragColorFill, fragColorStroke, max(m, fragAlternate * (1. - on)));
         lowp float stipple = max(on, fragAlternate);
-        // Outside the line itself only the 1 pixel wide ticks draw, one every 24 pixels.
-        lowp float core = 1. - clamp(abs(fragDistanceOrtho) - fragCore + 0.5, 0., 1.);
-        lowp float tick = mod(fragDistanceAlong, 24.) < 1. ? 1. : 0.;
+        // Outside the line itself only the ticks draw, one every 24 pixels, as thick as the line
+        // up to 2 pixels. The caps have no ticks, or else a tick near a join fans out.
+        lowp float core = 1. - clamp(distance - fragCore + 0.75, 0., 1.);
+        mediump float width = min(2., 2. * fragCore);
+        lowp float tick = past == 0. && mod(fragDistanceAlong, 24.) < width ? 1. : 0.;
         lowp float ticked = mix(1., max(core, tick), fragTicks);
         fragColor = stipple * ticked * vec4(color.rgb * color.a, color.a) * a;
       }
@@ -486,7 +517,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
   };
 }
 
-// The stipple attribute's encoding, which LineCapProgram reads too.
+// The stipple attribute's encoding
 function stippleToUint(stipple: Stipple): number {
   if (stipple === 'alternating') {
     return 3;

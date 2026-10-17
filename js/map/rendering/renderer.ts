@@ -5,7 +5,6 @@ import { Vec2 } from '../common/types';
 
 import { BillboardProgram } from './billboard_program';
 import { LineProgram } from './line_program';
-import { LineCapProgram } from './line_cap_program';
 import { SdfProgram } from './sdf_program';
 import { SkyboxProgram } from './skybox_program';
 import { SlopeProgram } from './slope_program';
@@ -14,7 +13,6 @@ import { TriangleProgram } from './triangle_program';
 export class Renderer extends Disposable {
 
   readonly billboardProgram: BillboardProgram;
-  readonly lineCapProgram: LineCapProgram;
   readonly lineProgram: LineProgram;
   readonly sdfProgram: SdfProgram;
   readonly skyboxProgram: SkyboxProgram;
@@ -27,9 +25,6 @@ export class Renderer extends Disposable {
     this.registerDisposable(this.billboardProgram);
     this.lineProgram = new LineProgram(this.gl);
     this.registerDisposable(this.lineProgram);
-    // Ensure this is always after LineProgram
-    this.lineCapProgram = new LineCapProgram(this.gl);
-    this.registerDisposable(this.lineCapProgram);
     this.sdfProgram = new SdfProgram(this.gl);
     this.registerDisposable(this.sdfProgram);
     this.skyboxProgram = new SkyboxProgram(this.gl);

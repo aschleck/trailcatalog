@@ -179,8 +179,7 @@ export class MarkerToolLayer extends Layer {
       vertexCount: result.vertexCount,
       z: Z_EDITING,
     };
-    // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
-    this.drawables = [drawable, {...drawable, program: this.renderer.lineCapProgram}];
+    this.drawables = [drawable];
   }
 }
 

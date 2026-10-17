@@ -703,10 +703,6 @@ export class TrailLayer extends Layer implements Listener {
                 offset,
                 this.interactivePlan.buffer);
         this.interactivePlan.paths.push(drawable);
-        this.interactivePlan.paths.push({
-          ...drawable,
-          program: this.renderer.lineCapProgram,
-        });
         offset += drawable.geometryByteLength;
       }
 
@@ -806,10 +802,6 @@ export class TrailLayer extends Layer implements Listener {
               offset,
               glBuffer);
       drawables.push(drawable);
-      drawables.push({
-        ...drawable,
-        program: this.renderer.lineCapProgram,
-      });
       offset += drawable.geometryByteLength;
 
       this.coarseBounds.insert({
@@ -866,10 +858,6 @@ export class TrailLayer extends Layer implements Listener {
               offset,
               glBuffer);
       pathDrawables.push(drawable);
-      pathDrawables.push({
-        ...drawable,
-        program: this.renderer.lineCapProgram,
-      });
       offset += drawable.geometryByteLength;
 
       this.fineBounds.insert({

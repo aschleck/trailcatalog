@@ -177,10 +177,6 @@ export class OverlayLayer extends Layer {
                 this.buffer);
         offset += drawable.geometryByteLength;
         drawables.push(drawable);
-        drawables.push({
-          ...drawable,
-          program: this.renderer.lineCapProgram,
-        });
         last = i;
       }
     }

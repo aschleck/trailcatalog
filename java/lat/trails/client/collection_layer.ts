@@ -330,7 +330,7 @@ export class CollectionLayer extends Layer {
         instanced: {
           count: result.instanceCount,
         },
-        program: this.renderer.lineCapProgram,
+        program: this.renderer.lineProgram,
         texture: undefined,
         vertexCount: result.vertexCount,
         z: Z_USER_DATA_HIGHLIGHT,
@@ -371,8 +371,6 @@ export class CollectionLayer extends Layer {
         z: Z_USER_DATA_HIGHLIGHT,
       };
       highlight.drawables.push(drawable);
-      // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
-      highlight.drawables.push({...drawable, program: this.renderer.lineCapProgram});
 
       // Hide the existing object
       this.renderer.uploadDataSubset(
@@ -454,7 +452,6 @@ export class CollectionLayer extends Layer {
           z: Z_USER_DATA_HIGHLIGHT,
         };
         highlight.drawables.push(drawable);
-        highlight.drawables.push({...drawable, program: this.renderer.lineCapProgram});
       }
 
       // Hide the existing object
@@ -677,7 +674,7 @@ export class CollectionLayer extends Layer {
     const drawables = [];
 
     for (const line of response.lineGeometries) {
-      drawables.push({
+      const drawable = {
         elements: undefined,
         geometry,
         geometryByteLength: line.geometryByteLength,
@@ -689,7 +686,8 @@ export class CollectionLayer extends Layer {
         texture: undefined,
         vertexCount: line.vertexCount,
         z: line.z,
-      });
+      };
+      drawables.push(drawable);
     }
 
     for (const point of response.pointGeometries) {
@@ -701,7 +699,7 @@ export class CollectionLayer extends Layer {
         instanced: {
           count: point.instanceCount,
         },
-        program: this.renderer.lineCapProgram,
+        program: this.renderer.lineProgram,
         texture: undefined,
         vertexCount: point.vertexCount,
         z: point.z,

@@ -627,8 +627,7 @@ export class DrawingLayer extends Layer {
         vertexCount: line.vertexCount,
         z: Z_EDITING,
       };
-      // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
-      drawables.push(drawable, {...drawable, program: this.renderer.lineCapProgram});
+      drawables.push(drawable);
     }
 
     // Placed vertices are hollow squares, and the last one placed is filled.
@@ -665,7 +664,7 @@ export class DrawingLayer extends Layer {
         geometryByteLength: result.geometryByteLength,
         geometryOffset: result.geometryOffset,
         instanced: {count: result.instanceCount},
-        program: this.renderer.lineCapProgram,
+        program: this.renderer.lineProgram,
         texture: undefined,
         vertexCount: result.vertexCount,
         z: Z_EDITING + 2,

@@ -69,7 +69,7 @@ import { ShiftKey } from './shift_key';
 
 // How far past a feature's drawn edge a click still lands on it
 const CLICK_SLOP_PX = 3;
-// The casing LineProgram draws is a pixel wide on each side, see line_cap_program.ts.
+// The casing LineProgram draws is a pixel wide on each side, see line_program.ts.
 const CASING_PX = 1;
 const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
 const HOVERED_CASING = 0xFFFFFF99 as RgbaU32;
@@ -1085,7 +1085,7 @@ export class FeatureLayer extends Layer {
     for (const line of lines) {
       const {stroke, stipple} = line.look;
       batch.push(
-          stroke, darken(stroke), lineRadius(line), line.points, Z_LINE, 'both', stipple);
+          stroke, darken(stroke), lineRadius(line), line.points, Z_LINE, stipple);
     }
     if (selectedLine) {
       const {stroke, stipple} = selectedLine.look;
@@ -1095,7 +1095,6 @@ export class FeatureLayer extends Layer {
           lineRadius(selectedLine) + 2,
           selectedLine.points,
           Z_SELECTED_LINE,
-          'both',
           stipple);
     }
     batch.finish();
@@ -1181,7 +1180,6 @@ export class FeatureLayer extends Layer {
           lineRadius(hoveredLine) + 2,
           hoveredLine.points,
           Z_SELECTED_LINE,
-          'both',
           stipple);
     }
     if (vertexDrag) {
@@ -1192,7 +1190,6 @@ export class FeatureLayer extends Layer {
           lineRadius(line) + 2,
           vertexDrag.points,
           Z_DRAGGED,
-          'both',
           line.look.stipple);
     }
     if (reroute && reroutePoints) {
@@ -1203,24 +1200,22 @@ export class FeatureLayer extends Layer {
           lineRadius(line) + 2,
           reroutePoints,
           Z_DRAGGED,
-          'both',
           line.look.stipple);
     }
     batch.pushHandles(handles, Z_HANDLE, this.handleTexture);
     if (marker) {
-      // A zero length segment, which the cap program draws as a circle
+      // A zero length segment, which LineProgram draws as a circle
       batch.push(
           HANDLE_COLOR,
           MARKER_STROKE,
           MARKER_RADIUS_PX,
           [marker[0], marker[1], marker[0], marker[1]],
-          Z_HANDLE,
-          'caps');
+          Z_HANDLE);
     }
     if (grab) {
       const color = grab.line.look.stroke;
       const [x, y] = grab.at;
-      batch.push(GRAB_FILL, darken(color), GRAB_RADIUS_PX, [x, y, x, y], Z_HANDLE, 'caps');
+      batch.push(GRAB_FILL, darken(color), GRAB_RADIUS_PX, [x, y, x, y], Z_HANDLE);
     }
     batch.finish();
   }
@@ -1389,18 +1384,16 @@ class ShapeBatch {
     this.offset += planned.byteSize;
   }
 
-  // Caps alone draw a circle at every vertex.
   push(
       fill: RgbaU32,
       stroke: RgbaU32,
       radius: number,
       points: ArrayLike<number>,
       z: number,
-      joins: 'line'|'caps'|'both',
       stipple: Stipple = false): void {
     const result =
         LineProgram.push(fill, stroke, radius, stipple, points, this.plan.buffer, this.offset);
-    this.add(result, z, joins);
+    this.add(result, z);
   }
 
   pushMarker(
@@ -1413,7 +1406,7 @@ class ShapeBatch {
     const result =
         pushMarker(
             fill, stroke, outline, extraPx, worldRadius, this.plan.buffer, this.offset);
-    this.add(result, z, 'both');
+    this.add(result, z);
   }
 
   finish(): void {
@@ -1423,8 +1416,7 @@ class ShapeBatch {
     this.plan.drawables = this.drawables;
   }
 
-  private add(
-      result: ReturnType<typeof LineProgram.push>, z: number, joins: 'line'|'caps'|'both'): void {
+  private add(result: ReturnType<typeof LineProgram.push>, z: number): void {
     this.offset += result.geometryByteLength;
     if (result.instanceCount === 0) {
       return;
@@ -1443,13 +1435,7 @@ class ShapeBatch {
       vertexCount: result.vertexCount,
       z,
     };
-    if (joins !== 'caps') {
-      this.drawables.push(drawable);
-    }
-    // Circles at the joins, or else a corner shows the gap between two unmitered rectangles.
-    if (joins !== 'line') {
-      this.drawables.push({...drawable, program: this.renderer.lineCapProgram});
-    }
+    this.drawables.push(drawable);
   }
 }
 
