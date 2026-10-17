@@ -34,6 +34,17 @@ genrule(
     outs = ["s2_raw.js"],
     cmd = """
         {
+          cat <<'EOF'
+/*!
+ S2 Geometry Library, Copyright Google Inc.
+ Guava, Copyright The Guava Authors
+ J2CL, jsinterop-base, and Elemental2, Copyright Google Inc.
+ GWT, Copyright The GWT Authors
+ Closure Library and Closure Compiler, Copyright The Closure Authors
+ Licensed under the Apache License, Version 2.0
+ https://www.apache.org/licenses/LICENSE-2.0
+*/
+EOF
           printf 'const namespaces = {}; (function() {'
           cat $<
           printf '\\n}).call(namespaces);\\n'
