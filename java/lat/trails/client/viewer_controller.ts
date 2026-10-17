@@ -338,6 +338,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private searchGeneration: number;
   // Moves with every collection opened or created, so that a slow load of an earlier one is dropped
   private collectionGeneration: number;
+  // The collection id from the URL that the store holds or is loading, so that a render with the
+  // same route doesn't reload it
+  private routedCollection: string|undefined;
   // The feature being dragged in the list, and the folder it would drop into, where undefined is
   // the root
   private draggedFeature: string|undefined;
@@ -409,6 +412,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
     this.searchGeneration = 0;
     this.collectionGeneration = 0;
+    this.routedCollection = response.args.collection;
     this.draggedFeature = undefined;
     this.dropTarget = undefined;
     this.joining = undefined;
@@ -1184,6 +1188,31 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     // The server render already answered with the outline's failure, and a reload is the retry.
     if (collection && this.state.collectionStatus !== 'failed') {
       this.loadCollection(collection, response.args.fitCollection);
+    }
+  }
+
+  // Opens whatever collection the URL names, including after the back and forward buttons.
+  updateArgs(newArgs: Args): void {
+    if (newArgs.collection === this.routedCollection) {
+      return;
+    }
+
+    const id = newArgs.collection;
+    this.routedCollection = id;
+    this.collectionGeneration += 1;
+    this.saves.clear();
+    this.select(undefined);
+    this.setHidden([]);
+    // Empties the list while the collection loads, or else the last one's rows are left to click.
+    this.store.reset([], id ? this.store.isReadOnly() : false);
+    this.updateState({
+      ...this.state,
+      collection: this.state.collection?.id === id ? this.state.collection : undefined,
+      collectionStatus: 'loaded',
+      features: {...this.state.features, expanded: new Set()},
+    });
+    if (id) {
+      this.loadCollection(id, newArgs.fitCollection);
     }
   }
 
@@ -2944,32 +2973,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private newCollection(): void {
-    this.collectionGeneration += 1;
-    this.saves.clear();
-    this.select(undefined);
-    this.setHidden([]);
-    this.store.reset([], /* readOnly= */ false);
-    this.updateState({
-      ...this.state,
-      collection: undefined,
-      collectionStatus: 'loaded',
-    });
-    this.history.silentlyReplaceUrl('/');
+    this.history.goTo('/');
   }
 
-  // Empties the list while the collection loads, or else the last one's rows are left to click.
+  // Shows the name from the listing while the rest loads.
   private openCollection(collection: Collection): void {
-    this.saves.clear();
-    this.select(undefined);
-    this.setHidden([]);
-    this.store.reset([], this.store.isReadOnly());
-    this.updateState({
-      ...this.state,
-      collection,
-      features: {...this.state.features, expanded: new Set()},
-    });
-    this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
-    this.loadCollection(collection.id, /* fit= */ true);
+    if (collection.id === this.routedCollection) {
+      return;
+    }
+
+    this.updateState({...this.state, collection});
+    this.history.goTo(`/collection/${collection.id}`);
   }
 
   private renameCollection(collection: Collection): void {
@@ -2992,8 +3006,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           return deleted;
         }, () => undefined)
         .then(response => {
+          // Replaced rather than pushed so that back doesn't land on the deleted collection.
           if (response && this.state.collection?.id === collection.id) {
-            this.newCollection();
+            this.history.replaceTo('/');
           }
         })
         .catch(e => {
@@ -3167,7 +3182,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ...this.state,
             collection,
           });
-          this.history.silentlyReplaceUrl(`/collection/${collection.id}`);
+          this.routedCollection = collection.id;
+          this.history.replaceTo(`/collection/${collection.id}`);
           // Anything hidden or any layer changed before the collection existed had nowhere to save
           // to.
           if (this.state.features.hidden.size > 0 || this.layerEdits > 0) {

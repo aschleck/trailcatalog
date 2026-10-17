@@ -54,6 +54,7 @@ export function OverviewElement(
   inState: State|undefined,
   updateState: (newState: State) => void,
 ) {
+  const initial = !inState;
   if (!inState) {
     // Settled on the server's later render passes, and in the browser from the data the server
     // rendered with. ViewerController loads the geometry.
@@ -125,8 +126,11 @@ export function OverviewElement(
     });
   }
 
+  // A route without a camera, like a collection just opened, keeps the map where it is until the
+  // collection loads and fits it.
+  const fitCollection = !parameters.lat || !parameters.lng;
   let camera = undefined;
-  if (!parameters._used) {
+  if (!parameters._used && (initial || !fitCollection)) {
     parameters._used = "true";
     camera = {
       lat: floatCoalesce(parameters.lat, 46.859369),
@@ -139,7 +143,7 @@ export function OverviewElement(
     <div
         js={corgi.bind({
           controller: ViewerController,
-          args: {collection, fitCollection: !parameters.lat || !parameters.lng},
+          args: {collection, fitCollection},
           events: {
             corgi: [
               [FEATURE_CLICKED, 'onFeatureClicked'],
