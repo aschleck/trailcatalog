@@ -1411,7 +1411,7 @@ private fun fetchCollectionCovering(ctx: Context) {
     // version
     it.writeVarInt(3)
 
-    // collection version, then covering, then presentation
+    // collection version, then covering, then schema
     if (isTrailcatalogCollection(collection)) {
       // The epoch is the version: the paths and points a tile holds only change when an import
       // lands.
@@ -1427,7 +1427,7 @@ private fun fetchCollectionCovering(ctx: Context) {
       }
       it.writeVarInt(covering.size)
       it.write(covering)
-      // no presentation because the client has its own style for these
+      // no schema because the client has its own style for these
       it.writeVarInt(0)
     } else {
       hikari.connection.use { connection ->
@@ -1438,7 +1438,7 @@ private fun fetchCollectionCovering(ctx: Context) {
         }
 
         connection
-          .prepareStatement("SELECT covering, version, presentation FROM collections WHERE id = ?")
+          .prepareStatement("SELECT covering, version, schema FROM collections WHERE id = ?")
           .apply {
             setObject(1, id)
           }
@@ -1449,9 +1449,9 @@ private fun fetchCollectionCovering(ctx: Context) {
             val covering = results.getBytes(1)
             it.writeVarInt(covering.size)
             it.write(covering)
-            val presentation = (results.getString(3) ?: "").toByteArray(StandardCharsets.UTF_8)
-            it.writeVarInt(presentation.size)
-            it.write(presentation)
+            val schema = (results.getString(3) ?: "").toByteArray(StandardCharsets.UTF_8)
+            it.writeVarInt(schema.size)
+            it.write(schema)
           }
       }
     }

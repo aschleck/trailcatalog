@@ -74,14 +74,14 @@ export interface UpdateStateCommand {
   fetching: boolean;
 }
 
-// The collection's presentation JSON. It comes with the covering, so it arrives before any cell.
-export interface SetPresentationCommand {
-  kind: 'spc';
-  presentation: string|undefined;
+// The collection's schema JSON. It comes with the covering, so it arrives before any cell.
+export interface SetSchemaCommand {
+  kind: 'ssc';
+  schema: string|undefined;
 }
 
 export type Command =
-    LoadCellCommand|SetPresentationCommand|UnloadCellsCommand|UpdateStateCommand;
+    LoadCellCommand|SetSchemaCommand|UnloadCellsCommand|UpdateStateCommand;
 
 interface WantedCell {
   key: CellKey;
@@ -181,12 +181,12 @@ class S2DataFetcher {
             throw new Error(`Unhandled covering version ${coveringVersion}`);
           }
 
-          const presentationByteLength = source.getVarInt32();
+          const schemaByteLength = source.getVarInt32();
           this.postMessage({
-            kind: 'spc',
-            presentation:
-                presentationByteLength > 0
-                    ? new TextDecoder().decode(source.sliceInt8(presentationByteLength))
+            kind: 'ssc',
+            schema:
+                schemaByteLength > 0
+                    ? new TextDecoder().decode(source.sliceInt8(schemaByteLength))
                     : undefined,
           });
 

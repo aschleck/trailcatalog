@@ -31,9 +31,9 @@ import {
 } from './events';
 import {
   DEFAULT_ICON,
-  DEFAULT_ICON_SHRINK,
   DEFAULT_LINE_COLOR,
   DEFAULT_POINT_COLOR,
+  DEFAULT_POINT_RADIUS_PX,
   DEFAULT_WIDTH_PX,
   EditableFeature,
   EditableLine,
@@ -87,12 +87,13 @@ const LABEL_GAP_PX = 4;
 // Point names are often notes that run to a sentence, so we wrap them wider than the basemap's
 // place names.
 const LABEL_LINE_GRAPHEMES = 20;
-// FONT_SIZE is 28, so icons are about 17px.
+// FONT_SIZE is 28, so icons are about 17px, which sits with a circle of DEFAULT_POINT_RADIUS_PX.
 const ICON_SCALE = 0.6;
 // A hovered or selected icon grows, the way a hovered or selected line widens, because a ring
 // behind it vanishes against some icons and terrain.
 const HIGHLIGHTED_ICON_SCALE = 0.8;
-// Wide enough to ring an icon, and how far from its center a click still lands on it
+// Wide enough to ring an icon at the default radius, and how far from its center a click still
+// lands on it
 const ICON_RADIUS_PX = 10;
 // Tracks recorded by GPS wiggle every few meters, and Glypher refuses to bend text around turns
 // that sharp, so a label follows the line simplified to about this many pixels.
@@ -133,7 +134,7 @@ interface ProjectedLine {
 interface ProjectedPoint {
   feature: EditablePoint;
   at: Vec2;
-  look: {fill: RgbaU32; icon: string; label: string|undefined};
+  look: {fill: RgbaU32; icon: string; label: string|undefined; radiusPx: number};
 }
 
 // What the pointer is moving. Line drags work on a mercator copy of the line with the vertex
@@ -209,6 +210,8 @@ export class FeatureLayer extends Layer {
   private markersZoom: number;
   private readonly glLabels: WebGLBuffer;
   private readonly handleTexture: WebGLTexture;
+  // Points drawn as circles, which replan with the icons
+  private readonly circles: Plan;
   private labels: ArrayBuffer;
   private labelDrawables: Drawable[];
   // Icons draw with the labels, so the hovered one changing replans them too.
@@ -273,6 +276,8 @@ export class FeatureLayer extends Layer {
     // A few dozen strokes
     this.markers = this.createPlan(64 * 1024);
     this.markersZoom = -1;
+    // A few hundred points
+    this.circles = this.createPlan(16 * 1024);
     this.glLabels = renderer.createDataBuffer(16 * 1024);
     this.handleTexture = createHandleTexture(renderer);
     this.labels = new ArrayBuffer(16 * 1024);
@@ -681,6 +686,7 @@ export class FeatureLayer extends Layer {
     planner.add(this.geometry.drawables);
     planner.add(this.overlay.drawables);
     planner.add(this.markers.drawables);
+    planner.add(this.circles.drawables);
     planner.add(this.labelDrawables);
   }
 
@@ -690,9 +696,22 @@ export class FeatureLayer extends Layer {
         || (this.dragging?.kind === 'point' && feature.id === this.dragging.point.id);
   }
 
+  // A hovered or selected point grows past the radius its look asks for.
+  private radiusPx(point: ProjectedPoint): number {
+    const growth = this.isHighlighted(point.feature) ? HIGHLIGHTED_ICON_SCALE / ICON_SCALE : 1;
+    return point.look.radiusPx * growth;
+  }
+
   private iconScale(point: ProjectedPoint): number {
-    const scale = this.isHighlighted(point.feature) ? HIGHLIGHTED_ICON_SCALE : ICON_SCALE;
-    return point.look.icon === DEFAULT_ICON ? scale * DEFAULT_ICON_SHRINK : scale;
+    return ICON_SCALE * this.radiusPx(point) / DEFAULT_POINT_RADIUS_PX;
+  }
+
+  // How far a point's label sits from its center, past the edge of its circle or icon
+  private labelReachPx(point: ProjectedPoint): number {
+    const radius = this.radiusPx(point);
+    return point.look.icon === DEFAULT_ICON
+        ? radius
+        : ICON_RADIUS_PX * radius / DEFAULT_POINT_RADIUS_PX;
   }
 
   private editingLine(): ProjectedLine|undefined {
@@ -921,9 +940,12 @@ export class FeatureLayer extends Layer {
   }
 
   private pointsAt(at: Vec2): ProjectedPoint[] {
-    const radius = (ICON_RADIUS_PX + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
+    const inverse = this.camera.inverseWorldRadius;
     return this.visiblePoints.filter(
-        point => Math.hypot(point.at[0] - at[0], point.at[1] - at[1]) <= radius);
+        point =>
+            Math.hypot(point.at[0] - at[0], point.at[1] - at[1])
+                <= (ICON_RADIUS_PX * point.look.radiusPx / DEFAULT_POINT_RADIUS_PX + CLICK_SLOP_PX)
+                    * inverse);
   }
 
   // The nearest vertex handle under at, if any.
@@ -1007,6 +1029,7 @@ export class FeatureLayer extends Layer {
             fill: parseColor(look.fill ?? DEFAULT_POINT_COLOR),
             icon: pointIcon(look.icon),
             label: look.label,
+            radiusPx: look.radiusPx ?? DEFAULT_POINT_RADIUS_PX,
           },
         });
       }
@@ -1251,6 +1274,7 @@ export class FeatureLayer extends Layer {
   private planLabels(zoom: number): void {
     const labeled: Array<{graphemes: string[]; line?: ProjectedLine; point?: ProjectedPoint}> = [];
     const icons: Array<{graphemes: string[]; point: ProjectedPoint}> = [];
+    const circles: ProjectedPoint[] = [];
     const dragging = this.dragging?.kind === 'point' ? this.dragging : undefined;
     // A dragged point's icon and label follow the pointer.
     const at = (point: ProjectedPoint) =>
@@ -1271,11 +1295,25 @@ export class FeatureLayer extends Layer {
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({graphemes, point});
       }
-      const graphemes = toGraphemes(point.look.icon);
-      needed += GLYPHER.bytesNeeded(graphemes);
-      icons.push({graphemes, point});
+      if (point.look.icon === DEFAULT_ICON) {
+        circles.push(point);
+      } else {
+        const graphemes = toGraphemes(point.look.icon);
+        needed += GLYPHER.bytesNeeded(graphemes);
+        icons.push({graphemes, point});
+      }
     }
     this.labels = growBuffer(this.labels, needed);
+
+    // A zero length segment, which LineProgram draws as a circle, ringed like the icons
+    const batch =
+        new ShapeBatch(this.circles, LineProgram.bytesNeeded(2) * circles.length, this.renderer);
+    for (const point of circles) {
+      const [x, y] = at(point);
+      batch.push(
+          point.look.fill, LABEL_STROKE, this.radiusPx(point), [x, y, x, y], Z_LABEL);
+    }
+    batch.finish();
 
     // Pixels per mercator unit, see mbtile_layer.ts#render.
     const pixelsPerWorld = 256 * Math.pow(2, zoom - 1);
@@ -1318,7 +1356,7 @@ export class FeatureLayer extends Layer {
                 graphemes,
                 at(point),
                 // Beside the icon, however big it is drawn
-                [LABEL_GAP_PX + ICON_RADIUS_PX * this.iconScale(point) / ICON_SCALE, 0],
+                [LABEL_GAP_PX + this.labelReachPx(point), 0],
                 LABEL_SCALE,
                 /* angle= */ 0,
                 LABEL_FILL,

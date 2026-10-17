@@ -48,12 +48,12 @@ fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform?): S2Poly
 }
 
 /**
- * Inserts a new collection named name holding polygons, each with its data. presentation is the
- * JSON for collections.presentation, see collection_layer.ts#Presentation.
+ * Inserts a new collection named name holding polygons, each with its data. schema is the JSON for
+ * collections.schema, see schema.ts#CollectionSchema.
  */
 fun dumpPolygons(
     name: String,
-    presentation: Map<String, Any>,
+    schema: Map<String, Any>,
     polygons: List<Pair<Map<String, String>, S2Polygon>>,
 ) {
   val mapper = ObjectMapper()
@@ -64,7 +64,7 @@ fun dumpPolygons(
       val collection =
           connection
               .prepareStatement(
-                  "INSERT INTO collections (id, creator, name, covering, presentation) "
+                  "INSERT INTO collections (id, creator, name, covering, schema) "
                       + "VALUES (COALESCE(?, gen_random_uuid()), ?, ?, ?, ?::jsonb) "
                       + "RETURNING id")
               .apply {
@@ -72,7 +72,7 @@ fun dumpPolygons(
                 setObject(2, creatorId.value?.let { UUID.fromString(it) } ?: UUID(0, 0))
                 setString(3, name)
                 setBytes(4, encodeCovering(polygons.map { polygonToCell(it.second) }))
-                setString(5, mapper.writeValueAsString(presentation))
+                setString(5, mapper.writeValueAsString(schema))
               }
               .executeQuery()
               .use {

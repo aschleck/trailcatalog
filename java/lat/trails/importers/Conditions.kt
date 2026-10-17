@@ -81,166 +81,141 @@ private val AIR_QUALITY_CATEGORIES =
         "Hazardous",
     )
 
-private val FIRE_PERIMETERS_PRESENTATION =
-    mapOf(
-        "title" to "name",
-        "fields" to
-            listOf(
-                field("type", "Type", mapOf("RX" to "Prescribed fire", "WF" to "Wildfire")),
-                field("acres", "Acres"),
-                field("contained", "Contained"),
-                field("discovered", "Discovered"),
-                field("mapped", "Perimeter mapped"),
-                field("incident", "Incident"),
-            ),
-        "polygons" to
-            listOf(
-                mapOf("filters" to listOf(stringEquals("type", "RX")), "fill" to "#FFA00066"),
-                mapOf("filters" to listOf(ALWAYS), "fill" to "#E8200088"),
-            ),
+private val FIRE_PERIMETERS_SCHEMA =
+    schema(
+        listOf(
+            field("type", "Type", mapOf("RX" to "Prescribed fire", "WF" to "Wildfire")),
+            field("acres", "Acres"),
+            field("contained", "Contained"),
+            field("discovered", "Discovered"),
+            field("mapped", "Perimeter mapped"),
+            field("incident", "Incident"),
+        ),
+        listOf(
+            polygonLayer(listOf(stringEquals("type", "RX")), "#FFA00066"),
+            polygonLayer(listOf(ALWAYS), "#E8200088"),
+        ),
     )
 
 // AirNow's category colors. We don't draw Good because most of the country is Good, and drawing
 // it would cover the map in green.
 // https://www.airnow.gov/aqi/aqi-basics/
-private val AIR_QUALITY_PRESENTATION =
-    mapOf(
-        "title" to "name",
-        "fields" to
-            listOf(
-                field(
-                    "category",
-                    "Air quality index",
-                    mapOf(
-                        "1" to "Good (0 to 50)",
-                        "2" to "Moderate (51 to 100)",
-                        "3" to "Unhealthy for sensitive groups (101 to 150)",
-                        "4" to "Unhealthy (151 to 200)",
-                        "5" to "Very unhealthy (201 to 300)",
-                        "6" to "Hazardous (301 and up)",
-                    )),
-                field("observed", "Observed"),
-            ),
-        "polygons" to
-            listOf(
-                "2" to "#FFFF0066",
-                "3" to "#FF7E0077",
-                "4" to "#FF000077",
-                "5" to "#8F3F9788",
-                "6" to "#7E002388",
-            ).map { (category, fill) ->
-              mapOf("filters" to listOf(stringEquals("category", category)), "fill" to fill)
-            },
+private val AIR_QUALITY_SCHEMA =
+    schema(
+        listOf(
+            field(
+                "category",
+                "Air quality index",
+                mapOf(
+                    "1" to "Good (0 to 50)",
+                    "2" to "Moderate (51 to 100)",
+                    "3" to "Unhealthy for sensitive groups (101 to 150)",
+                    "4" to "Unhealthy (151 to 200)",
+                    "5" to "Very unhealthy (201 to 300)",
+                    "6" to "Hazardous (301 and up)",
+                )),
+            field("observed", "Observed"),
+        ),
+        listOf(
+            "2" to "#FFFF0066",
+            "3" to "#FF7E0077",
+            "4" to "#FF000077",
+            "5" to "#8F3F9788",
+            "6" to "#7E002388",
+        ).map { (category, fill) ->
+          polygonLayer(listOf(stringEquals("category", category)), fill)
+        },
     )
 
 // The same colors water.noaa.gov uses for its gauges
-private val RIVER_GAUGES_PRESENTATION =
-    mapOf(
-        "title" to "name",
-        "fields" to
-            listOf(
-                field(
-                    "flood",
-                    "Status",
-                    mapOf(
-                        "action" to "Near flood stage",
-                        "low_threshold" to "Below low water threshold",
-                        "major" to "Major flooding",
-                        "minor" to "Minor flooding",
-                        "moderate" to "Moderate flooding",
-                        "no_flooding" to "Not flooding",
-                        "not_defined" to "No flood stages defined",
-                    )),
-                field("waterbody", "Waterbody"),
-                field("stage", "Stage"),
-                field("flow", "Flow"),
-                field("observed", "Observed"),
-                field("gauge", "Gauge"),
-            ),
-        "points" to
-            listOf(
-                "major" to "#CC33FFFF",
-                "moderate" to "#FF0000FF",
-                "minor" to "#FF9900FF",
-                "action" to "#FFFF00FF",
-                "no_flooding" to "#00C000FF",
-                "low_threshold" to "#A0522DFF",
-                "not_defined" to "#9E9E9EFF",
-            ).map { (flood, fill) ->
-              mapOf(
-                  "filters" to listOf(stringEquals("flood", flood)),
-                  "fill" to fill,
-                  "stroke" to "#000000FF",
-                  "radius" to 4,
-              )
-            },
+private val RIVER_GAUGES_SCHEMA =
+    schema(
+        listOf(
+            field(
+                "flood",
+                "Status",
+                mapOf(
+                    "action" to "Near flood stage",
+                    "low_threshold" to "Below low water threshold",
+                    "major" to "Major flooding",
+                    "minor" to "Minor flooding",
+                    "moderate" to "Moderate flooding",
+                    "no_flooding" to "Not flooding",
+                    "not_defined" to "No flood stages defined",
+                )),
+            field("waterbody", "Waterbody"),
+            field("stage", "Stage"),
+            field("flow", "Flow"),
+            field("observed", "Observed"),
+            field("gauge", "Gauge"),
+        ),
+        listOf(
+            "major" to "#CC33FFFF",
+            "moderate" to "#FF0000FF",
+            "minor" to "#FF9900FF",
+            "action" to "#FFFF00FF",
+            "no_flooding" to "#00C000FF",
+            "low_threshold" to "#A0522DFF",
+            "not_defined" to "#9E9E9EFF",
+        ).map { (flood, fill) ->
+          pointLayer(listOf(stringEquals("flood", flood)), fill)
+        },
     )
 
-private val BURNT_AREAS_PRESENTATION =
-    mapOf(
-        "title" to "name",
-        "fields" to
-            listOf(
-                field("hectares", "Hectares"),
-                field("detected", "Detected"),
-                field("updated", "Updated"),
-                field("natura2000", "In Natura 2000"),
-                field("country", "Country"),
-            ),
-        "polygons" to
-            listOf(
-                mapOf("filters" to listOf(stringEquals("recent", "true")), "fill" to "#E8200088"),
-                mapOf("filters" to listOf(ALWAYS), "fill" to "#80303066"),
-            ),
+private val BURNT_AREAS_SCHEMA =
+    schema(
+        listOf(
+            field("hectares", "Hectares"),
+            field("detected", "Detected"),
+            field("updated", "Updated"),
+            field("natura2000", "In Natura 2000"),
+            field("country", "Country"),
+        ),
+        listOf(
+            polygonLayer(listOf(stringEquals("recent", "true")), "#E8200088"),
+            polygonLayer(listOf(ALWAYS), "#80303066"),
+        ),
     )
 
 // The EEA's band colors and names
 // https://airindex.eea.europa.eu/AQI/index.html
-private val EUROPEAN_AIR_QUALITY_PRESENTATION =
-    mapOf(
-        "title" to "name",
-        "fields" to
-            listOf(
-                field(
-                    "band",
-                    "Air quality index",
-                    mapOf(
-                        "1" to "Good",
-                        "2" to "Fair",
-                        "3" to "Moderate",
-                        "4" to "Poor",
-                        "5" to "Very poor",
-                        "6" to "Extremely poor",
-                    )),
-                field(
-                    "complete",
-                    "Pollutants",
-                    mapOf(
-                        "true" to "Enough for the full index",
-                        "false" to "Too few for the full index",
-                    )),
-                field("hour", "Hour"),
-                field("type", "Station type"),
-                field("area", "Area"),
-                field("network", "Network"),
-                field("station", "Station"),
-            ),
-        "points" to
-            listOf(
-                "1" to "#50F0E6FF",
-                "2" to "#50CCAAFF",
-                "3" to "#F0E641FF",
-                "4" to "#FF5050FF",
-                "5" to "#960032FF",
-                "6" to "#7D2181FF",
-            ).map { (band, fill) ->
-              mapOf(
-                  "filters" to listOf(stringEquals("band", band)),
-                  "fill" to fill,
-                  "stroke" to "#000000FF",
-                  "radius" to 4,
-              )
-            },
+private val EUROPEAN_AIR_QUALITY_SCHEMA =
+    schema(
+        listOf(
+            field(
+                "band",
+                "Air quality index",
+                mapOf(
+                    "1" to "Good",
+                    "2" to "Fair",
+                    "3" to "Moderate",
+                    "4" to "Poor",
+                    "5" to "Very poor",
+                    "6" to "Extremely poor",
+                )),
+            field(
+                "complete",
+                "Pollutants",
+                mapOf(
+                    "true" to "Enough for the full index",
+                    "false" to "Too few for the full index",
+                )),
+            field("hour", "Hour"),
+            field("type", "Station type"),
+            field("area", "Area"),
+            field("network", "Network"),
+            field("station", "Station"),
+        ),
+        listOf(
+            "1" to "#50F0E6FF",
+            "2" to "#50CCAAFF",
+            "3" to "#F0E641FF",
+            "4" to "#FF5050FF",
+            "5" to "#960032FF",
+            "6" to "#7D2181FF",
+        ).map { (band, fill) ->
+          pointLayer(listOf(stringEquals("band", band)), fill)
+        },
     )
 
 // Gauges with these statuses still list their last reading, which can be old, so we skip them.
@@ -258,8 +233,8 @@ private data class Row<G>(val id: UUID, val data: Map<String, String>, val cell:
 private class Collection(
     val id: UUID,
     val name: String,
-    // the JSON for collections.presentation, see collection_layer.ts#Presentation
-    val presentation: Map<String, Any>,
+    // the JSON for collections.schema, see schema.ts#CollectionSchema
+    val schema: Map<String, Any>,
     val polygons: List<Row<S2Polygon>> = listOf(),
     // encoded with DeltaLatLngE7
     val points: List<Row<ByteArray>> = listOf(),
@@ -312,7 +287,7 @@ private fun firePerimeters(): Collection {
   return Collection(
       FIRE_PERIMETERS_COLLECTION_ID,
       "WFIGS current interagency fire perimeters",
-      FIRE_PERIMETERS_PRESENTATION,
+      FIRE_PERIMETERS_SCHEMA,
       polygons)
 }
 
@@ -332,7 +307,7 @@ private fun airQuality(): Collection {
         polygonRow(AIR_QUALITY_COLLECTION_ID, null, data, feature["geometry"])
       }
   return Collection(
-      AIR_QUALITY_COLLECTION_ID, "AirNow current air quality", AIR_QUALITY_PRESENTATION, polygons)
+      AIR_QUALITY_COLLECTION_ID, "AirNow current air quality", AIR_QUALITY_SCHEMA, polygons)
 }
 
 private fun riverGauges(): Collection {
@@ -364,7 +339,7 @@ private fun riverGauges(): Collection {
             DeltaLatLngE7.encode(latLngE7)))
   }
   return Collection(
-      RIVER_GAUGES_COLLECTION_ID, "NWPS river gauges", RIVER_GAUGES_PRESENTATION, points = points)
+      RIVER_GAUGES_COLLECTION_ID, "NWPS river gauges", RIVER_GAUGES_SCHEMA, points = points)
 }
 
 private fun burntAreas(): Collection {
@@ -396,7 +371,7 @@ private fun burntAreas(): Collection {
         polygonRow(BURNT_AREAS_COLLECTION_ID, properties.text("id"), data, feature["geometry"])
       }
   return Collection(
-      BURNT_AREAS_COLLECTION_ID, "EFFIS burnt areas", BURNT_AREAS_PRESENTATION, polygons)
+      BURNT_AREAS_COLLECTION_ID, "EFFIS burnt areas", BURNT_AREAS_SCHEMA, polygons)
 }
 
 private fun europeanAirQuality(): Collection {
@@ -444,7 +419,7 @@ private fun europeanAirQuality(): Collection {
   return Collection(
       EUROPEAN_AIR_QUALITY_COLLECTION_ID,
       "EEA European Air Quality Index",
-      EUROPEAN_AIR_QUALITY_PRESENTATION,
+      EUROPEAN_AIR_QUALITY_SCHEMA,
       points = points)
 }
 
@@ -574,14 +549,14 @@ private fun replace(collection: Collection) {
 
       connection
           .prepareStatement(
-              "UPDATE collections SET covering = ?, version = ?, presentation = ?::jsonb WHERE id = ?")
+              "UPDATE collections SET covering = ?, version = ?, schema = ?::jsonb WHERE id = ?")
           .apply {
             setBytes(
                 1,
                 encodeCovering(
                     collection.polygons.map { it.cell } + collection.points.map { it.cell }))
             setLong(2, version)
-            setString(3, mapper.writeValueAsString(collection.presentation))
+            setString(3, mapper.writeValueAsString(collection.schema))
             setObject(4, collection.id)
           }
           .executeUpdate()
@@ -593,9 +568,9 @@ private fun replace(collection: Collection) {
 
 // Compares data and geometry but not ids, because air quality contours get new ids every run.
 private fun unchanged(connection: Connection, collection: Collection): Boolean {
-  val presentation =
+  val schema =
       connection
-          .prepareStatement("SELECT presentation FROM collections WHERE id = ?")
+          .prepareStatement("SELECT schema FROM collections WHERE id = ?")
           .apply {
             setObject(1, collection.id)
           }
@@ -604,8 +579,7 @@ private fun unchanged(connection: Connection, collection: Collection): Boolean {
             it.next()
             it.getString(1)
           }
-  if (presentation == null
-      || mapper.readTree(presentation) != mapper.valueToTree(collection.presentation)) {
+  if (schema == null || mapper.readTree(schema) != mapper.valueToTree(collection.schema)) {
     return false
   }
 

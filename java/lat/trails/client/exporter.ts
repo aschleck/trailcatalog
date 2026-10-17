@@ -155,7 +155,7 @@ function otherFields(schema: CollectionSchema, feature: EditableFeature):
   for (const {part, type} of PARTS.filter(p => p.kind === kind)) {
     const channel = channelOf(schema, kind, part);
     if (type !== 'label' && type !== 'pattern' && channel.kind === 'field') {
-      written.add(channel.field);
+      written.add(channel.key);
     }
   }
   return fieldsFor(schema, kind).flatMap(field => {

@@ -28,21 +28,18 @@ private data class Feature(
 )
 
 // owner is a label and access is PAD-US's code
-private val PRESENTATION =
-    mapOf(
-        "title" to "name",
-        "fields" to
-            listOf(
-                field("owner", "Owner"),
-                field("access", "Access", mapOf("OA" to "Open", "RA" to "Restricted")),
-            ),
-        "polygons" to
-            listOf(
-                mapOf("filters" to listOf(stringEquals("owner", "BLM/BR")), "fill" to "#FFFF0088"),
-                mapOf("filters" to listOf(stringEquals("owner", "NPS")), "fill" to "#00FF0088"),
-                mapOf("filters" to listOf(stringEquals("owner", "USFS")), "fill" to "#0000FF88"),
-                mapOf("filters" to listOf(ALWAYS), "fill" to "#FF000088"),
-            ),
+private val SCHEMA =
+    schema(
+        listOf(
+            field("owner", "Owner"),
+            field("access", "Access", mapOf("OA" to "Open", "RA" to "Restricted")),
+        ),
+        listOf(
+            polygonLayer(listOf(stringEquals("owner", "BLM/BR")), "#FFFF0088"),
+            polygonLayer(listOf(stringEquals("owner", "NPS")), "#00FF0088"),
+            polygonLayer(listOf(stringEquals("owner", "USFS")), "#0000FF88"),
+            polygonLayer(listOf(ALWAYS), "#FF000088"),
+        ),
     )
 
 fun main(args: Array<String>) {
@@ -168,7 +165,7 @@ fun main(args: Array<String>) {
 
   // Does this work...? Too bad I gave away Java Concurrency in Practice...
   synchronized (polygons) {
-    dumpPolygons("PAD-US 4.1", PRESENTATION, deduplicate(polygons).map { it.data to it.polygon })
+    dumpPolygons("PAD-US 4.1", SCHEMA, deduplicate(polygons).map { it.data to it.polygon })
   }
 }
 

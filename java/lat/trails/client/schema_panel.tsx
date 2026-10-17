@@ -26,7 +26,7 @@ import {
   Channel,
   channelOf,
   CollectionSchema,
-  FIELD_KINDS,
+  EDITABLE_KINDS,
   FieldDefinition,
   FieldKind,
   FieldType,
@@ -77,6 +77,7 @@ const KIND_LABELS: {[kind in FieldKind]: string} = {
   drawing: 'Drawings',
   line: 'Lines',
   point: 'Points',
+  polygon: 'Polygons',
 };
 
 // A text box that only shows its border when it is pointed at or typed in
@@ -113,7 +114,7 @@ function SchemaEditor(
     draft: schema,
     sourceCache: {},
     newFields:
-        Object.fromEntries(FIELD_KINDS.map(kind => [kind, {label: '', type: 'text'}])) as
+        Object.fromEntries(EDITABLE_KINDS.map(kind => [kind, {label: '', type: 'text'}])) as
             State['newFields'],
     newOptions: {},
     dragging: undefined,
@@ -134,14 +135,14 @@ function SchemaEditor(
         className={`${shown ? 'flex' : 'hidden'} ${PANEL}`}
     >
       {styling
-          ? FIELD_KINDS.map(kind =>
+          ? EDITABLE_KINDS.map(kind =>
               <Section label={KIND_LABELS[kind]}>
                 <div className={LIST}>
                   {PARTS.filter(p => p.kind === kind).map(part =>
                       <PartRow key={`${kind}.${part.part}`} draft={draft} part={part} />)}
                 </div>
               </Section>)
-          : FIELD_KINDS.map(kind =>
+          : EDITABLE_KINDS.map(kind =>
               <KindSection
                   draft={draft}
                   dropTarget={state.dropTarget?.kind === kind ? state.dropTarget : undefined}
@@ -338,7 +339,7 @@ function PartRow({draft, part}: {draft: CollectionSchema; key: string; part: Par
   const channel = channelOf(draft, part.kind, part.part);
   const current = sourceKey(channel);
   const split =
-      channel.kind === 'by_option' ? draft.fields.find(f => f.id === channel.field) : undefined;
+      channel.kind === 'by_option' ? draft.fields.find(f => f.id === channel.key) : undefined;
   return (
     <div className="flex flex-col gap-1.5 px-3 py-2">
       <div className="flex gap-2 items-center">
@@ -474,7 +475,7 @@ function sourcesFor(draft: CollectionSchema, part: Part): Source[] {
     ...usable.filter(f => READS[part.type].includes(f.type)).map(f => ({
       key: `field:${f.id}`,
       label: f.label,
-      make: () => ({kind: 'field', field: f.id}) as const,
+      make: () => ({kind: 'field', key: f.id}) as const,
     })),
     ...selects.map(f => ({
       key: `by_option:${f.id}`,
@@ -485,13 +486,13 @@ function sourcesFor(draft: CollectionSchema, part: Part): Source[] {
 }
 
 function sourceKey(channel: Channel<unknown>): string {
-  return channel.kind === 'constant' ? 'constant' : `${channel.kind}:${channel.field}`;
+  return channel.kind === 'constant' ? 'constant' : `${channel.kind}:${channel.key}`;
 }
 
 // A constant point color, or else the default, since a color read from a field varies by point
 function iconColorOf(schema: CollectionSchema): string {
-  const fill = schema.style.point.fill;
-  return fill.kind === 'constant' ? fill.value : DEFAULT_POINT_COLOR;
+  const fill = channelOf(schema, 'point', 'fill');
+  return fill.kind === 'constant' ? String(fill.value) : DEFAULT_POINT_COLOR;
 }
 
 interface Args {

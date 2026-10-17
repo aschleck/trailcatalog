@@ -62,12 +62,12 @@ export type SaveOp = 'delete'|'put';
 
 export const DEFAULT_LINE_COLOR = '#de29db';
 export const DEFAULT_POINT_COLOR = '#de29db';
+// The radius a point's circle draws at, and the size every other icon scales from
+export const DEFAULT_POINT_RADIUS_PX = 6;
 export const DEFAULT_WIDTH_PX = 3;
 
 // What a point without an icon of its own is drawn as
 export const DEFAULT_ICON = '⬤';
-// The default dot is solid ink, so at the size of the outlined emoji it outweighs them.
-export const DEFAULT_ICON_SHRINK = 0.6;
 
 /**
  * Returns the glyph a point is drawn as. Plain ASCII is a symbol name from whatever tool wrote the

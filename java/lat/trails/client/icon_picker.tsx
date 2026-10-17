@@ -6,7 +6,7 @@ import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events'
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 
 import { PanelCloseButton, TEXT_BOX } from './controls';
-import { DEFAULT_ICON, DEFAULT_ICON_SHRINK, pointIcon } from './features';
+import { DEFAULT_ICON, DEFAULT_POINT_RADIUS_PX, pointIcon } from './features';
 
 // The default, then outdoor places and hazards
 const OUTDOORS = [
@@ -26,13 +26,20 @@ const CATALOG_URL = new URL('emoji.json', import.meta.url).href;
  */
 export function PointMarker({color, icon}: {color: string; icon: string|undefined}) {
   const glyph = pointIcon(icon);
-  const size = glyph === DEFAULT_ICON ? 15 * DEFAULT_ICON_SHRINK : 15;
+  if (glyph === DEFAULT_ICON) {
+    // ringed in white like FeatureLayer's circles, with the stroke inside the radius
+    return (
+      <svg className="h-4 shrink-0 w-4" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" fill={color} r={DEFAULT_POINT_RADIUS_PX - 0.5} stroke="white" />
+      </svg>
+    );
+  }
   return (
     <svg className="h-4 shrink-0 w-4" viewBox="0 0 16 16">
       <text
           dominantBaseline="central"
           fill={color}
-          fontSize={`${size}px`}
+          fontSize="15px"
           style={GLYPH_FONT}
           textAnchor="middle"
           x="8"

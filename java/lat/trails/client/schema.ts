@@ -1,9 +1,11 @@
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Stipple } from 'js/map/rendering/line_program';
 
 import {
   DEFAULT_ICON,
   DEFAULT_LINE_COLOR,
   DEFAULT_POINT_COLOR,
+  DEFAULT_POINT_RADIUS_PX,
   DEFAULT_WIDTH_PX,
   EditableFeature,
   EditableLine,
@@ -11,6 +13,7 @@ import {
   isMarker,
 } from './features';
 import { DEFAULT_MARKER_WIDTH_PX } from './marker';
+import { Match, matches } from './workers/filters';
 
 // What the keys of a collection's feature data mean, so that the properties dialog can show them.
 export interface Schema {
@@ -45,12 +48,18 @@ export const OSM_NODES_SCHEMA: Schema = {
   fields: [],
 };
 
-// A user collection's fields and what each part of a feature's look comes from, the JSON in
+// A collection's fields and what each part of a feature's look comes from, the JSON in
 // collections.schema. A feature keeps a field's value in its data under the field's id.
 export interface CollectionSchema {
   fields: FieldDefinition[];
-  style: {[K in FieldKind]: {[P in PartName<K>]: Channel<ValueOf<K, P>>}};
+  layers: StyleLayer[];
 }
+
+// A feature draws with the first layer of its kind whose filters all match, as in
+// collection_loader.ts#findStyle, and one that no layer matches doesn't draw.
+export type StyleLayer = {[K in FieldKind]: {kind: K; filters: Match[]} & Parts<K>}[FieldKind];
+
+type Parts<K extends FieldKind> = {[P in PartName<K>]: Channel<ValueOf<K, P>>};
 
 // The open collection's schema, with the version the server last stamped on it, which a put of it
 // sends back the way a feature's does
@@ -60,9 +69,12 @@ export interface SavedSchema {
 }
 
 // A drawing is a line made with the marker. Folders have no fields.
-export type FieldKind = 'drawing'|'line'|'point';
+export type FieldKind = 'drawing'|'line'|'point'|'polygon';
 
-export const FIELD_KINDS: FieldKind[] = ['drawing', 'line', 'point'];
+export const FIELD_KINDS: FieldKind[] = ['drawing', 'line', 'point', 'polygon'];
+
+// Only importers make polygons.
+export const EDITABLE_KINDS: FieldKind[] = ['drawing', 'line', 'point'];
 
 export type FieldType = 'checkbox'|'color'|'date'|'icon'|'number'|'pattern'|'select'|'text';
 
@@ -135,6 +147,11 @@ export const STYLE = {
   point: {
     fill: {label: 'Fill', type: 'color', fallback: DEFAULT_POINT_COLOR},
     icon: {label: 'Icon', type: 'icon', fallback: DEFAULT_ICON},
+    radius: {label: 'Radius', type: 'number', fallback: DEFAULT_POINT_RADIUS_PX},
+    label: {label: 'Label', type: 'label', fallback: ''},
+  },
+  polygon: {
+    fill: {label: 'Fill', type: 'color', fallback: DEFAULT_POINT_COLOR},
     label: {label: 'Label', type: 'label', fallback: ''},
   },
 } as const satisfies {[kind in FieldKind]: {[part: string]: PartSpec}};
@@ -161,10 +178,10 @@ export const READS: {[type in StyleType]: FieldType[]} = {
 
 export type Channel<T> =
     {kind: 'constant'; value: T}
-    |{kind: 'field'; field: string}
+    |{kind: 'field'; key: string}
     // Each option of a select draws with its own value, and a feature with no option draws with
     // none.
-    |{kind: 'by_option'; field: string; values: {[option: string]: T}};
+    |{kind: 'by_option'; key: string; values: {[option: string]: T}};
 
 // What a collection without a schema of its own has. Its field ids are the keys geojson.ts writes
 // simplestyle into, which adoptImported moves wherever another schema reads them.
@@ -183,48 +200,72 @@ export const DEFAULT_COLLECTION_SCHEMA: CollectionSchema = {
     {id: 'icon', label: 'Icon', type: 'icon', kinds: ['point'], hideLabel: true},
     {id: 'fill', label: 'Fill', type: 'color', kinds: ['point'], hideLabel: true},
   ],
-  style: {
-    drawing: {
-      stroke: {kind: 'field', field: 'stroke'},
-      width: {kind: 'field', field: 'width_px'},
-      label: {kind: 'field', field: 'name'},
-    },
-    line: {
-      stroke: {kind: 'field', field: 'stroke'},
-      width: {kind: 'field', field: 'width_px'},
-      pattern: {kind: 'constant', value: 'solid'},
-      label: {kind: 'field', field: 'name'},
-    },
-    point: {
-      fill: {kind: 'field', field: 'fill'},
-      icon: {kind: 'field', field: 'icon'},
-      label: {kind: 'field', field: 'name'},
-    },
-  },
+  layers: [{
+    kind: 'drawing',
+    filters: [],
+    stroke: {kind: 'field', key: 'stroke'},
+    width: {kind: 'field', key: 'width_px'},
+    label: {kind: 'field', key: 'name'},
+  }, {
+    kind: 'line',
+    filters: [],
+    stroke: {kind: 'field', key: 'stroke'},
+    width: {kind: 'field', key: 'width_px'},
+    pattern: {kind: 'constant', value: 'solid'},
+    label: {kind: 'field', key: 'name'},
+  }, {
+    kind: 'point',
+    filters: [],
+    fill: {kind: 'field', key: 'fill'},
+    icon: {kind: 'field', key: 'icon'},
+    radius: {kind: 'constant', value: DEFAULT_POINT_RADIUS_PX},
+    label: {kind: 'field', key: 'name'},
+  }],
 };
 
-/**
- * Parses collections.schema as the server sends it, which is empty on a collection an importer
- * built. Parts missing from a schema saved before they existed, or that aren't channels, take the
- * default's channel, and fields that aren't fields are dropped, or else drawing would throw.
- */
 export function parseCollectionSchema(json: string): CollectionSchema {
   if (!json) {
     return DEFAULT_COLLECTION_SCHEMA;
   }
-  const parsed =
-      JSON.parse(json) as {fields?: unknown; style?: {[kind: string]: {[part: string]: unknown}}};
-  const style = {} as {[kind: string]: {[part: string]: Channel<unknown>}};
-  for (const {kind, part} of PARTS) {
-    const channel = parsed.style?.[kind]?.[part];
-    style[kind] ??= {};
-    style[kind][part] =
-        isChannel(channel) ? channel : channelOf(DEFAULT_COLLECTION_SCHEMA, kind, part);
-  }
+  const parsed = JSON.parse(json) as {fields?: unknown; layers?: unknown; style?: unknown};
+  const raw = Array.isArray(parsed.layers) ? parsed.layers : legacyLayers(parsed.style);
   return {
     fields: Array.isArray(parsed.fields) ? parsed.fields.filter(isField) : [],
-    style: style as CollectionSchema['style'],
+    layers: raw.flatMap(layer => {
+      const {kind, filters} = (layer ?? {}) as {kind?: unknown; filters?: unknown};
+      if (!FIELD_KINDS.includes(kind as FieldKind) || !Array.isArray(filters)) {
+        return [];
+      }
+      const parts = {} as {[part: string]: Channel<unknown>};
+      for (const {fallback, part} of PARTS.filter(p => p.kind === kind)) {
+        const channel = (layer as {[part: string]: unknown})[part];
+        parts[part] = isChannel(channel) ? channel : defaultChannel(kind as FieldKind, part);
+      }
+      return [{kind, filters, ...parts} as StyleLayer];
+    }),
   };
+}
+
+function legacyLayers(style: unknown): unknown[] {
+  if (typeof style !== 'object' || style === null) {
+    return [];
+  }
+  return EDITABLE_KINDS.map(kind => {
+    const layer: {[part: string]: unknown} = {kind, filters: []};
+    for (const [part, channel] of Object.entries((style as {[kind: string]: object})[kind] ?? {})) {
+      const {field, ...rest} = channel as {field?: unknown};
+      layer[part] = field === undefined ? rest : {...rest, key: field};
+    }
+    return layer;
+  });
+}
+
+function defaultChannel(kind: FieldKind, part: string): Channel<unknown> {
+  const layer =
+      DEFAULT_COLLECTION_SCHEMA.layers.find(l => l.kind === kind) as
+          {[part: string]: Channel<unknown>}|undefined;
+  const fallback = checkExists(PARTS.find(p => p.kind === kind && p.part === part)).fallback;
+  return layer?.[part] ?? {kind: 'constant', value: fallback};
 }
 
 const FIELD_TYPES: FieldType[] =
@@ -241,7 +282,7 @@ function isField(value: unknown): value is FieldDefinition {
 
 // A channel's value is checked when it draws, so only its shape matters here.
 function isChannel(value: unknown): value is Channel<unknown> {
-  const channel = value as {kind?: unknown; field?: unknown; values?: unknown}|null;
+  const channel = value as {kind?: unknown; key?: unknown; values?: unknown}|null;
   if (typeof channel !== 'object' || channel === null) {
     return false;
   }
@@ -249,9 +290,9 @@ function isChannel(value: unknown): value is Channel<unknown> {
     case 'constant':
       return 'value' in channel;
     case 'field':
-      return typeof channel.field === 'string';
+      return typeof channel.key === 'string';
     case 'by_option':
-      return typeof channel.field === 'string'
+      return typeof channel.key === 'string'
           && typeof channel.values === 'object'
           && channel.values !== null;
     default:
@@ -259,15 +300,31 @@ function isChannel(value: unknown): value is Channel<unknown> {
   }
 }
 
+/** Returns a part's channel in the first layer of a kind, which the style panel edits. */
 export function channelOf(schema: CollectionSchema, kind: FieldKind, part: string):
     Channel<unknown> {
-  return (schema.style[kind] as {[part: string]: Channel<unknown>})[part];
+  const layer =
+      schema.layers.find(l => l.kind === kind) as {[part: string]: Channel<unknown>}|undefined;
+  return layer?.[part] ?? defaultChannel(kind, part);
 }
 
 export function withChannel(
     schema: CollectionSchema, kind: FieldKind, part: string, channel: Channel<unknown>):
     CollectionSchema {
-  return {...schema, style: {...schema.style, [kind]: {...schema.style[kind], [part]: channel}}};
+  const at = schema.layers.findIndex(l => l.kind === kind);
+  if (at < 0) {
+    const parts = {} as {[part: string]: Channel<unknown>};
+    for (const p of PARTS.filter(p => p.kind === kind)) {
+      parts[p.part] = defaultChannel(kind, p.part);
+    }
+    parts[part] = channel;
+    const layer = {kind, filters: [], ...parts} as unknown as StyleLayer;
+    return {...schema, layers: [...schema.layers, layer]};
+  }
+  return {
+    ...schema,
+    layers: schema.layers.map((l, i) => i === at ? {...l, [part]: channel} as StyleLayer : l),
+  };
 }
 
 /** Returns a channel that reads a select, with colors from OPTION_COLORS when it is a color. */
@@ -278,7 +335,7 @@ export function byOption(field: FieldDefinition, type: StyleType): Channel<unkno
       values[option.id] = OPTION_COLORS[i % OPTION_COLORS.length];
     });
   }
-  return {kind: 'by_option', field: field.id, values};
+  return {kind: 'by_option', key: field.id, values};
 }
 
 /** Moves a field to just before or after another, or does nothing if either is missing. */
@@ -320,7 +377,7 @@ export function removeFieldFrom(schema: CollectionSchema, id: string, kind: Fiel
   };
   for (const {fallback, part} of PARTS.filter(p => p.kind === kind)) {
     const channel = channelOf(removed, kind, part);
-    if (channel.kind !== 'constant' && channel.field === id) {
+    if (channel.kind !== 'constant' && channel.key === id) {
       removed = withChannel(removed, kind, part, {kind: 'constant', value: fallback});
     }
   }
@@ -343,7 +400,7 @@ export function addOption(schema: CollectionSchema, id: string, label: string): 
   const color = OPTION_COLORS[options.length % OPTION_COLORS.length];
   for (const {kind, part, type} of PARTS) {
     const channel = channelOf(added, kind, part);
-    if (type === 'color' && channel.kind === 'by_option' && channel.field === id) {
+    if (type === 'color' && channel.kind === 'by_option' && channel.key === id) {
       added =
           withChannel(
               added, kind, part, {...channel, values: {...channel.values, [option.id]: color}});
@@ -363,7 +420,7 @@ export function removeOption(schema: CollectionSchema, id: string, option: strin
   };
   for (const {kind, part} of PARTS) {
     const channel = channelOf(removed, kind, part);
-    if (channel.kind === 'by_option' && channel.field === id && option in channel.values) {
+    if (channel.kind === 'by_option' && channel.key === id && option in channel.values) {
       const values = {...channel.values};
       delete values[option];
       removed = withChannel(removed, kind, part, {...channel, values});
@@ -390,9 +447,9 @@ export function adoptImported(schema: CollectionSchema, feature: EditableFeature
     if (from.kind !== 'field' || to.kind !== 'field') {
       continue;
     }
-    const fromType = DEFAULT_COLLECTION_SCHEMA.fields.find(f => f.id === from.field)?.type;
-    if (schema.fields.find(f => f.id === to.field)?.type === fromType) {
-      moves.push([from.field, to.field]);
+    const fromType = DEFAULT_COLLECTION_SCHEMA.fields.find(f => f.id === from.key)?.type;
+    if (schema.fields.find(f => f.id === to.key)?.type === fromType) {
+      moves.push([from.key, to.key]);
     }
   }
   const description = descriptionField(schema, kind);
@@ -452,8 +509,8 @@ export function titleField(schema: CollectionSchema, feature: EditableFeature): 
     return 'name';
   }
   const label = channelOf(schema, kind, 'label');
-  return label.kind === 'field' && schema.fields.find(f => f.id === label.field)?.type === 'text'
-      ? label.field
+  return label.kind === 'field' && schema.fields.find(f => f.id === label.key)?.type === 'text'
+      ? label.key
       : undefined;
 }
 
@@ -487,6 +544,7 @@ export interface PointLook {
   fill: string|undefined;
   icon: string|undefined;
   label: string|undefined;
+  radiusPx: number|undefined;
 }
 
 /** Resolves a line's look, or a drawing's, which has no pattern. */
@@ -512,6 +570,7 @@ export function pointLook(schema: CollectionSchema, data: FeatureData): PointLoo
     fill: resolve(schema, 'point', 'fill', data),
     icon: resolve(schema, 'point', 'icon', data),
     label: resolve(schema, 'point', 'label', data),
+    radiusPx: resolve(schema, 'point', 'radius', data),
   };
 }
 
@@ -531,20 +590,25 @@ const VALID: {[type in StyleType]: (value: unknown) => boolean} = {
   pattern: value => PATTERN_NAMES.includes(value as PatternName),
 };
 
+// TODO(april): a feature that no layer matches should not draw, but the feature layer draws it
+// with its defaults. Nothing makes a layer with filters for a feature the user can edit yet.
 function resolve<K extends FieldKind, P extends PartName<K>>(
     schema: CollectionSchema, kind: K, part: P, data: FeatureData): ValueOf<K, P>|undefined {
   const type = (STYLE[kind][part] as PartSpec).type;
-  const channel = channelOf(schema, kind, part);
+  const layer = schema.layers.find(l => l.kind === kind && matches(data, l.filters));
+  const channel = (layer as {[part: string]: Channel<unknown>}|undefined)?.[part];
   let value: unknown;
-  if (channel.kind === 'constant') {
+  if (channel === undefined) {
+    value = undefined;
+  } else if (channel.kind === 'constant') {
     value = channel.value;
   } else if (channel.kind === 'by_option') {
-    const option = data[channel.field];
+    const option = data[channel.key];
     value = typeof option === 'string' ? channel.values[option] : undefined;
   } else if (type === 'label') {
-    value = labelOf(schema, channel.field, data);
+    value = labelOf(schema, channel.key, data);
   } else {
-    value = data[channel.field];
+    value = data[channel.key];
   }
   return VALID[type](value) ? value as ValueOf<K, P> : undefined;
 }

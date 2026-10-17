@@ -107,8 +107,8 @@ export class PointCollectionLayer extends Layer {
         this.unloadCells(command);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
-      } else if (command.kind === 'spc') {
-        // trailcatalog points have no presentation
+      } else if (command.kind === 'ssc') {
+        // trailcatalog points have no schema
       } else {
         checkExhaustive(command);
       }

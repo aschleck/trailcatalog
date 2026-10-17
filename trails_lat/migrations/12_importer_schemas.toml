@@ -1,0 +1,59 @@
+[[actions]]
+type = "custom"
+
+# Converts every importer collection's presentation, including those no importer updates.
+# See schema.ts#CollectionSchema.
+start = """
+  UPDATE collections SET schema = jsonb_build_object(
+      'fields',
+      COALESCE(
+          (SELECT jsonb_agg(
+               CASE WHEN f ? 'values'
+                   THEN jsonb_build_object(
+                       'id', f->'key',
+                       'label', f->'label',
+                       'type', 'select',
+                       'options',
+                       (SELECT jsonb_agg(jsonb_build_object('id', v.key, 'label', v.value))
+                        FROM jsonb_each(f->'values') AS v))
+                   ELSE jsonb_build_object('id', f->'key', 'label', f->'label', 'type', 'text')
+               END
+               ORDER BY i)
+           FROM jsonb_array_elements(presentation->'fields') WITH ORDINALITY AS t(f, i)),
+          '[]'::jsonb),
+      'layers',
+      COALESCE(
+          (SELECT jsonb_agg(layer ORDER BY i)
+           FROM (
+               SELECT
+                   jsonb_build_object(
+                       'kind', 'polygon',
+                       'filters', p->'filters',
+                       'fill', jsonb_build_object('kind', 'constant', 'value', p->'fill'),
+                       'label', jsonb_build_object('kind', 'field', 'key', presentation->'title')),
+                   i
+               FROM jsonb_array_elements(presentation->'polygons') WITH ORDINALITY AS t(p, i)
+               UNION ALL
+               SELECT
+                   jsonb_build_object(
+                       'kind', 'point',
+                       'filters', p->'filters',
+                       'fill', jsonb_build_object('kind', 'constant', 'value', p->'fill'),
+                       'icon', jsonb_build_object('kind', 'constant', 'value', '⬤'),
+                       'radius', jsonb_build_object('kind', 'constant', 'value', p->'radius'),
+                       'label', jsonb_build_object('kind', 'field', 'key', presentation->'title')),
+                   i
+               FROM jsonb_array_elements(presentation->'points') WITH ORDINALITY AS t(p, i)
+           ) AS layers(layer, i)),
+          '[]'::jsonb))
+  WHERE presentation IS NOT NULL;
+"""
+
+abort = """
+  UPDATE collections SET schema = NULL WHERE presentation IS NOT NULL;
+"""
+
+[[actions]]
+type = "remove_column"
+table = "collections"
+column = "presentation"

@@ -2,6 +2,8 @@ import { EditableFeature, EditableLine, EditablePoint, FeatureData } from './fea
 import {
   addOption,
   adoptImported,
+  Channel,
+  channelOf,
   CollectionSchema,
   DEFAULT_COLLECTION_SCHEMA,
   fieldKindOf,
@@ -15,35 +17,34 @@ import {
   removeOption,
   titleField,
   titleOf,
+  withChannel,
 } from './schema';
 
 // Lines colored by whether their night is booked, with a pattern field and a constant width
-const BOOKED: CollectionSchema = {
-  fields: [
-    {
-      id: 'booked',
-      label: 'Booked',
-      type: 'select',
-      options: [{id: 'yes', label: 'Booked'}, {id: 'no', label: 'Unbooked'}],
-    },
-    {id: 'pattern', label: 'Pattern', type: 'pattern', kinds: ['line']},
-    {id: 'fill', label: 'Point color', type: 'color', kinds: ['point']},
-  ],
-  style: {
-    ...DEFAULT_COLLECTION_SCHEMA.style,
-    line: {
-      ...DEFAULT_COLLECTION_SCHEMA.style.line,
-      stroke: {kind: 'by_option', field: 'booked', values: {yes: '#00aa00', no: '#aa0000'}},
-      width: {kind: 'constant', value: 5},
-      pattern: {kind: 'field', field: 'pattern'},
-    },
-    point: {
-      ...DEFAULT_COLLECTION_SCHEMA.style.point,
-      fill: {kind: 'field', field: 'fill'},
-      icon: {kind: 'constant', value: '⛺'},
-    },
-  },
-};
+const BOOKED: CollectionSchema =
+    restyle(
+        restyle(
+            {
+              ...DEFAULT_COLLECTION_SCHEMA,
+              fields: [
+                {
+                  id: 'booked',
+                  label: 'Booked',
+                  type: 'select',
+                  options: [{id: 'yes', label: 'Booked'}, {id: 'no', label: 'Unbooked'}],
+                },
+                {id: 'pattern', label: 'Pattern', type: 'pattern', kinds: ['line']},
+                {id: 'fill', label: 'Point color', type: 'color', kinds: ['point']},
+              ],
+            },
+            'line',
+            {
+              stroke: {kind: 'by_option', key: 'booked', values: {yes: '#00aa00', no: '#aa0000'}},
+              width: {kind: 'constant', value: 5},
+              pattern: {kind: 'field', key: 'pattern'},
+            }),
+        'point',
+        {fill: {kind: 'field', key: 'fill'}, icon: {kind: 'constant', value: '⛺'}});
 
 test('the default schema draws the keys features already carry', () => {
   expect(lineLook(DEFAULT_COLLECTION_SCHEMA, line({stroke: '#ff0000', width_px: 4}))).toEqual({
@@ -54,6 +55,7 @@ test('the default schema draws the keys features already carry', () => {
   expect(pointLook(DEFAULT_COLLECTION_SCHEMA, {fill: '#00ff00', icon: '⛺'})).toEqual({
     fill: '#00ff00',
     icon: '⛺',
+    radiusPx: 6,
   });
 });
 
@@ -61,24 +63,81 @@ test('an empty schema column is the default', () => {
   expect(parseCollectionSchema('')).toBe(DEFAULT_COLLECTION_SCHEMA);
 });
 
-test('parts a saved schema lacks take the default', () => {
+test('parts a saved layer lacks take the default', () => {
   const parsed = parseCollectionSchema(JSON.stringify({
     fields: [],
-    style: {line: {width: {kind: 'constant', value: 7}}},
+    layers: [{kind: 'line', filters: [], width: {kind: 'constant', value: 7}}],
   }));
-  expect(parsed.style.line.width).toEqual({kind: 'constant', value: 7});
-  expect(parsed.style.line.stroke).toBe(DEFAULT_COLLECTION_SCHEMA.style.line.stroke);
-  expect(parsed.style.point).toEqual(DEFAULT_COLLECTION_SCHEMA.style.point);
+  expect(channelOf(parsed, 'line', 'width')).toEqual({kind: 'constant', value: 7});
+  expect(channelOf(parsed, 'line', 'stroke'))
+      .toBe(channelOf(DEFAULT_COLLECTION_SCHEMA, 'line', 'stroke'));
+  expect(parsed.layers.map(l => l.kind)).toEqual(['line']);
 });
 
-test('malformed parts take the default and malformed fields are dropped', () => {
+test('malformed parts take the default and malformed fields and layers are dropped', () => {
   const parsed = parseCollectionSchema(JSON.stringify({
     fields: [{id: 'ok', label: 'Ok', type: 'text'}, {id: 'bad', type: 'text'}, 'nope'],
-    style: {line: {stroke: {kind: 'field'}, width: 'wide'}},
+    layers: [
+      {kind: 'line', filters: [], stroke: {kind: 'field'}, width: 'wide'},
+      {kind: 'blob', filters: []},
+      {kind: 'point'},
+    ],
   }));
   expect(parsed.fields.map(f => f.id)).toEqual(['ok']);
-  expect(parsed.style.line.stroke).toBe(DEFAULT_COLLECTION_SCHEMA.style.line.stroke);
-  expect(parsed.style.line.width).toBe(DEFAULT_COLLECTION_SCHEMA.style.line.width);
+  expect(parsed.layers.map(l => l.kind)).toEqual(['line']);
+  expect(channelOf(parsed, 'line', 'stroke'))
+      .toBe(channelOf(DEFAULT_COLLECTION_SCHEMA, 'line', 'stroke'));
+  expect(channelOf(parsed, 'line', 'width'))
+      .toBe(channelOf(DEFAULT_COLLECTION_SCHEMA, 'line', 'width'));
+});
+
+test('a schema saved with one style per kind becomes one layer per kind', () => {
+  const parsed = parseCollectionSchema(JSON.stringify({
+    fields: [],
+    style: {line: {stroke: {kind: 'field', field: 'tint'}, width: {kind: 'constant', value: 3}}},
+  }));
+  expect(parsed.layers.map(l => l.kind)).toEqual(['drawing', 'line', 'point']);
+  expect(channelOf(parsed, 'line', 'stroke')).toEqual({kind: 'field', key: 'tint'});
+  expect(channelOf(parsed, 'line', 'width')).toEqual({kind: 'constant', value: 3});
+  expect(channelOf(parsed, 'point', 'icon'))
+      .toBe(channelOf(DEFAULT_COLLECTION_SCHEMA, 'point', 'icon'));
+});
+
+test('styling a kind without a layer adds one', () => {
+  const lines = parseCollectionSchema(JSON.stringify({
+    fields: [],
+    layers: [{kind: 'line', filters: []}],
+  }));
+  const restyled = withChannel(lines, 'point', 'icon', {kind: 'constant', value: '⛺'});
+  expect(restyled.layers.map(l => l.kind)).toEqual(['line', 'point']);
+  expect(channelOf(restyled, 'point', 'icon')).toEqual({kind: 'constant', value: '⛺'});
+  expect(channelOf(restyled, 'point', 'fill'))
+      .toBe(channelOf(DEFAULT_COLLECTION_SCHEMA, 'point', 'fill'));
+});
+
+test('a feature draws with the first layer whose filters match', () => {
+  const schema: CollectionSchema = {
+    fields: [],
+    layers: [{
+      kind: 'point',
+      filters: [{match: 'string_equals', key: 'status', value: 'closed'}],
+      fill: {kind: 'constant', value: '#ff0000'},
+      icon: {kind: 'constant', value: '⛺'},
+      radius: {kind: 'constant', value: 6},
+      label: {kind: 'constant', value: 'Closed'},
+    }, {
+      kind: 'point',
+      filters: [{match: 'always'}],
+      fill: {kind: 'constant', value: '#00ff00'},
+      icon: {kind: 'constant', value: '⛺'},
+      radius: {kind: 'constant', value: 6},
+      label: {kind: 'field', key: 'name'},
+    }],
+  };
+  expect(pointLook(schema, {status: 'closed', name: 'Camp'}))
+      .toEqual({fill: '#ff0000', icon: '⛺', label: 'Closed', radiusPx: 6});
+  expect(pointLook(schema, {name: 'Camp'}))
+      .toEqual({fill: '#00ff00', icon: '⛺', label: 'Camp', radiusPx: 6});
 });
 
 test('a value per option picks by the feature\'s option and leaves the rest unset', () => {
@@ -96,6 +155,15 @@ test('constants apply to every feature', () => {
   expect(pointLook(BOOKED, {}).icon).toBe('⛺');
 });
 
+test('a schema saved before points had a radius draws them at the default', () => {
+  const parsed = parseCollectionSchema(JSON.stringify({
+    fields: [],
+    style: {point: {icon: {kind: 'constant', value: '⛺'}}},
+  }));
+  expect(channelOf(parsed, 'point', 'radius')).toEqual({kind: 'constant', value: 6});
+  expect(pointLook(parsed, {}).radiusPx).toBe(6);
+});
+
 test('a field value of the wrong type draws as unset', () => {
   expect(lineLook(BOOKED, line({pattern: 'wavy'})).pattern).toBeUndefined();
   expect(lineLook(BOOKED, line({pattern: 'dashed'})).pattern).toBe('dashed');
@@ -105,16 +173,17 @@ test('a field value of the wrong type draws as unset', () => {
 
 test('removing a field from lines unbinds only the line parts that read it', () => {
   const removed = removeFieldFrom(BOOKED, 'booked', 'line');
-  expect(removed.fields.find(f => f.id === 'booked')?.kinds).toEqual(['drawing', 'point']);
-  expect(removed.style.line.stroke).toEqual({kind: 'constant', value: '#de29db'});
-  expect(removed.style.line.pattern).toBe(BOOKED.style.line.pattern);
-  expect(removed.style.point).toBe(BOOKED.style.point);
+  expect(removed.fields.find(f => f.id === 'booked')?.kinds)
+      .toEqual(['drawing', 'point', 'polygon']);
+  expect(channelOf(removed, 'line', 'stroke')).toEqual({kind: 'constant', value: '#de29db'});
+  expect(channelOf(removed, 'line', 'pattern')).toBe(channelOf(BOOKED, 'line', 'pattern'));
+  expect(removed.layers[2]).toBe(BOOKED.layers[2]);
 });
 
 test('removing a field from its last kind removes it', () => {
   const removed = removeFieldFrom(BOOKED, 'pattern', 'line');
   expect(removed.fields.map(f => f.id)).toEqual(['booked', 'fill']);
-  expect(removed.style.line.pattern).toEqual({kind: 'constant', value: 'solid'});
+  expect(channelOf(removed, 'line', 'pattern')).toEqual({kind: 'constant', value: 'solid'});
 });
 
 test('fields show on the kinds they name', () => {
@@ -132,13 +201,8 @@ test('moves a field before or after another', () => {
 });
 
 test('a drawing takes its look from the drawing parts', () => {
-  const schema: CollectionSchema = {
-    ...DEFAULT_COLLECTION_SCHEMA,
-    style: {
-      ...DEFAULT_COLLECTION_SCHEMA.style,
-      drawing: {...DEFAULT_COLLECTION_SCHEMA.style.drawing, width: {kind: 'constant', value: 12}},
-    },
-  };
+  const schema =
+      restyle(DEFAULT_COLLECTION_SCHEMA, 'drawing', {width: {kind: 'constant', value: 12}});
   const drawing = line({marker_zoom: 14, stroke: '#123456', width_px: 3});
   expect(fieldKindOf(drawing)).toBe('drawing');
   expect(lineLook(schema, drawing)).toEqual({pattern: undefined, stroke: '#123456', widthPx: 12});
@@ -148,28 +212,17 @@ test('a drawing takes its look from the drawing parts', () => {
 test('removing a field from drawings leaves lines reading it', () => {
   const removed = removeFieldFrom(DEFAULT_COLLECTION_SCHEMA, 'stroke', 'drawing');
   expect(removed.fields.find(f => f.id === 'stroke')?.kinds).toEqual(['line']);
-  expect(removed.style.drawing.stroke).toEqual({kind: 'constant', value: '#de29db'});
-  expect(removed.style.line.stroke).toBe(DEFAULT_COLLECTION_SCHEMA.style.line.stroke);
+  expect(channelOf(removed, 'drawing', 'stroke')).toEqual({kind: 'constant', value: '#de29db'});
+  expect(channelOf(removed, 'line', 'stroke'))
+      .toBe(channelOf(DEFAULT_COLLECTION_SCHEMA, 'line', 'stroke'));
 });
 
 test('labels come from text, numbers, and option labels', () => {
   expect(lineLook(BOOKED, line({name: 'Day 1'})).label).toBe('Day 1');
   expect(lineLook(BOOKED, line({})).label).toBeUndefined();
-  const byBooking: CollectionSchema = {
-    ...BOOKED,
-    style: {
-      ...BOOKED.style,
-      point: {...BOOKED.style.point, label: {kind: 'field', field: 'booked'}},
-    },
-  };
+  const byBooking = restyle(BOOKED, 'point', {label: {kind: 'field', key: 'booked'}});
   expect(pointLook(byBooking, {booked: 'yes'}).label).toBe('Booked');
-  const byNumber: CollectionSchema = {
-    ...BOOKED,
-    style: {
-      ...BOOKED.style,
-      point: {...BOOKED.style.point, label: {kind: 'field', field: 'elevation'}},
-    },
-  };
+  const byNumber = restyle(BOOKED, 'point', {label: {kind: 'field', key: 'elevation'}});
   expect(pointLook(byNumber, {elevation: 2400}).label).toBe('2400');
   expect(lineLook(BOOKED, line({marker_zoom: 14, name: 'Scribble'})).label).toBe('Scribble');
 });
@@ -184,8 +237,8 @@ test('a new option gets the next color in every color split by its select', () =
 test('removing an option drops the values given to it', () => {
   const removed = removeOption(BOOKED, 'booked', 'no');
   expect(removed.fields[0].options!.map(o => o.id)).toEqual(['yes']);
-  expect(removed.style.line.stroke)
-      .toEqual({kind: 'by_option', field: 'booked', values: {yes: '#00aa00'}});
+  expect(channelOf(removed, 'line', 'stroke'))
+      .toEqual({kind: 'by_option', key: 'booked', values: {yes: '#00aa00'}});
 });
 
 test('imported style keys move to the fields the schema reads', () => {
@@ -193,23 +246,18 @@ test('imported style keys move to the fields the schema reads', () => {
   adoptImported(BOOKED, imported);
   expect(imported.data).toEqual({name: 'Camp', fill: '#00ff00', icon: '⛺'});
 
-  const elsewhere: CollectionSchema = {
-    fields: [...BOOKED.fields, {id: 'tint', label: 'Tint', type: 'color'}],
-    style: {...BOOKED.style, point: {...BOOKED.style.point, fill: {kind: 'field', field: 'tint'}}},
-  };
+  const elsewhere =
+      restyle(
+          {...BOOKED, fields: [...BOOKED.fields, {id: 'tint', label: 'Tint', type: 'color'}]},
+          'point',
+          {fill: {kind: 'field', key: 'tint'}});
   adoptImported(elsewhere, imported);
   expect(imported.data).toEqual({name: 'Camp', tint: '#00ff00', icon: '⛺'});
 });
 
 test('imported keys stay put when the field read instead is of another type', () => {
   const imported = point({name: 'Camp'});
-  const byStatus: CollectionSchema = {
-    ...BOOKED,
-    style: {
-      ...BOOKED.style,
-      point: {...BOOKED.style.point, label: {kind: 'field', field: 'booked'}},
-    },
-  };
+  const byStatus = restyle(BOOKED, 'point', {label: {kind: 'field', key: 'booked'}});
   adoptImported(byStatus, imported);
   expect(imported.data).toEqual({name: 'Camp'});
 });
@@ -233,13 +281,7 @@ test('a feature is titled by its label and renamed through the text field it rea
   expect(titleOf(DEFAULT_COLLECTION_SCHEMA, camp)).toBe('Camp');
   expect(titleField(DEFAULT_COLLECTION_SCHEMA, camp)).toBe('name');
 
-  const byStatus: CollectionSchema = {
-    ...BOOKED,
-    style: {
-      ...BOOKED.style,
-      point: {...BOOKED.style.point, label: {kind: 'field', field: 'booked'}},
-    },
-  };
+  const byStatus = restyle(BOOKED, 'point', {label: {kind: 'field', key: 'booked'}});
   expect(titleOf(byStatus, camp)).toBe('Booked');
   expect(titleField(byStatus, camp)).toBeUndefined();
 
@@ -247,6 +289,14 @@ test('a feature is titled by its label and renamed through the text field it rea
   expect(titleOf(byStatus, folder)).toBe('Trip');
   expect(titleField(byStatus, folder)).toBe('name');
 });
+
+function restyle(
+    schema: CollectionSchema,
+    kind: 'drawing'|'line'|'point',
+    parts: {[part: string]: Channel<unknown>}): CollectionSchema {
+  return Object.entries(parts)
+      .reduce((restyled, [part, channel]) => withChannel(restyled, kind, part, channel), schema);
+}
 
 function line(data: FeatureData): EditableLine {
   return {

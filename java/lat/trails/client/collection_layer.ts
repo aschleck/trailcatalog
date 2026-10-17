@@ -6,7 +6,7 @@ import { Camera, projectS2LatLng } from 'js/map/camera';
 import { Copyright, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { LineProgram, Stipple } from 'js/map/rendering/line_program';
+import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -16,8 +16,9 @@ import { CellKey, Command as FetcherCommand, Initialize as FetcherInitialize, Lo
 import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { HOVER_CHANGED } from './events';
-import { Schema } from './schema';
-import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
+import { DEFAULT_POINT_RADIUS_PX } from './features';
+import { Channel, CollectionSchema, parseCollectionSchema, Schema } from './schema';
+import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, PointStyle, PolygonStyle, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
 import { Match } from './workers/filters';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
@@ -38,6 +39,8 @@ const HOVER_LINE_MIN_RADIUS_PX = 4;
 const HOVER_POINT_PADDING_PX = 2;
 
 const NO_STYLE: Style = {lines: [], points: [], polygons: []};
+
+const POINT_STROKE = 0x000000FF as RgbaU32;
 
 // How close the cursor has to come to a line to hover it, measured from the center, so it reaches
 // past the edge of everything but the widest motorway.
@@ -116,7 +119,7 @@ export class CollectionLayer extends Layer {
   constructor(
       copyrights: Copyright[],
       private readonly url: string,
-      // undefined to use the style from the collection's presentation
+      // undefined to use the style from the collection's schema
       style: Style|undefined,
       snaps: Snap[],
       streams: Stream[],
@@ -175,12 +178,12 @@ export class CollectionLayer extends Layer {
         this.unloadCells(command);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
-      } else if (command.kind === 'spc') {
-        if (command.presentation) {
-          const presentation = JSON.parse(command.presentation) as Presentation;
-          this.rowSchema = parseSchema(presentation);
+      } else if (command.kind === 'ssc') {
+        if (command.schema) {
+          const schema = parseCollectionSchema(command.schema);
+          this.rowSchema = rowSchemaOf(schema);
           if (!style) {
-            this.setStyle(parseStyle(presentation));
+            this.setStyle(compileStyle(schema));
           }
         }
       } else {
@@ -209,7 +212,7 @@ export class CollectionLayer extends Layer {
     };
   }
 
-  /** Returns the schema from the collection's presentation, or undefined until it loads. */
+  /** Returns what the properties dialog shows for a row, or undefined until the schema loads. */
   schema(): Schema|undefined {
     return this.rowSchema;
   }
@@ -865,70 +868,69 @@ export class CollectionLayer extends Layer {
   }
 }
 
-// The JSON in collections.presentation, see 7_collection_presentation.toml. lines, points, and
-// polygons are a Style with #RRGGBBAA colors and without z, which the client picks. The rest is a
-// Schema with a plain text title.
-interface Presentation {
-  title?: string;
-  description?: string;
-  fields?: Array<{key: string; label: string; values?: {[raw: string]: string}}>;
-  lines?: Array<{
-    filters: Match[];
-    fill: string;
-    stroke: string;
-    radius: number;
-    minZoom?: number;
-    maxZoom?: number;
-    stipple?: Stipple;
-  }>;
-  points?: Array<{filters: Match[]; fill: string; stroke: string; radius: number}>;
-  polygons?: Array<{filters: Match[]; fill: string}>;
+// TODO(april): a feature whose color reads a field doesn't draw, a radius that isn't a constant
+// draws at the default, a point draws as a circle whatever its icon, and lines aren't compiled,
+// because no importer writes any of them yet.
+function compileStyle(schema: CollectionSchema): Style {
+  const points: PointStyle[] = [];
+  const polygons: PolygonStyle[] = [];
+  for (const layer of schema.layers) {
+    if (layer.kind === 'point') {
+      const radius =
+          layer.radius.kind === 'constant' ? layer.radius.value : DEFAULT_POINT_RADIUS_PX;
+      for (const [filters, fill] of byColor(layer.filters, layer.fill)) {
+        points.push({filters, fill, stroke: POINT_STROKE, radius, z: Z_USER_DATA});
+      }
+    } else if (layer.kind === 'polygon') {
+      for (const [filters, fill] of byColor(layer.filters, layer.fill)) {
+        polygons.push({filters, fill, z: Z_USER_DATA});
+      }
+    }
+  }
+  return {lines: [], points, polygons};
 }
 
-// Converts a presentation into a Style, filling in what the client decides like z.
-function parseStyle(presentation: Presentation): Style {
-  return {
-    lines: (presentation.lines ?? []).map(line => ({
-      filters: line.filters,
-      minZoom: line.minZoom ?? 0,
-      maxZoom: line.maxZoom ?? Infinity,
-      fill: parseColor(line.fill),
-      stroke: parseColor(line.stroke),
-      radius: line.radius,
-      stipple: line.stipple ?? false,
-      z: Z_USER_DATA,
-    })),
-    points: (presentation.points ?? []).map(point => ({
-      filters: point.filters,
-      fill: parseColor(point.fill),
-      stroke: parseColor(point.stroke),
-      radius: point.radius,
-      z: Z_USER_DATA,
-    })),
-    polygons: (presentation.polygons ?? []).map(polygon => ({
-      filters: polygon.filters,
-      fill: parseColor(polygon.fill),
-      z: Z_USER_DATA,
-    })),
-  };
+// A color split by a select becomes a filter per option, and a feature with no option doesn't
+// draw.
+function byColor(filters: Match[], channel: Channel<string>): Array<[Match[], RgbaU32]> {
+  switch (channel.kind) {
+    case 'constant':
+      return [[filters, parseColor(channel.value)]];
+    case 'by_option':
+      return Object.entries(channel.values).map(([option, color]) => [
+        [...filters, {match: 'string_equals', key: channel.key, value: option}],
+        parseColor(color),
+      ]);
+    case 'field':
+      return [];
+    default:
+      throw checkExhaustive(channel);
+  }
 }
 
-function parseSchema(presentation: Presentation): Schema|undefined {
-  if (!presentation.title) {
+// What the properties dialog shows: the title from the first label that reads a field, and each
+// select's values by their option labels
+function rowSchemaOf(schema: CollectionSchema): Schema|undefined {
+  const label = schema.layers.map(l => l.label).find(c => c.kind === 'field');
+  if (label?.kind !== 'field') {
     return undefined;
   }
   return {
-    title: {kind: 'text', key: presentation.title},
-    description: presentation.description,
-    fields: presentation.fields ?? [],
+    title: {kind: 'text', key: label.key},
+    description: undefined,
+    fields: schema.fields.map(field => ({
+      key: field.id,
+      label: field.label,
+      values: field.options && Object.fromEntries(field.options.map(o => [o.id, o.label])),
+    })),
   };
 }
 
 function parseColor(hex: string): RgbaU32 {
-  if (!/^#[0-9a-fA-F]{8}$/.test(hex)) {
-    throw new Error(`Expected #RRGGBBAA, got ${hex}`);
+  if (!/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(hex)) {
+    throw new Error(`Expected #RRGGBB or #RRGGBBAA, got ${hex}`);
   }
-  return parseInt(hex.substring(1), 16) as RgbaU32;
+  return parseInt(hex.length === 7 ? `${hex.substring(1)}FF` : hex.substring(1), 16) as RgbaU32;
 }
 
 // The id an object goes into the index under, and the key objects holds it by.

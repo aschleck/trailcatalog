@@ -16,39 +16,36 @@ private val IUCN_CATEGORIES = setOf("Ia", "Ib", "II", "III", "IV", "V", "VI")
 
 // Wilderness and national parks in green, species and landscape protection lighter, and everything
 // without an IUCN category in gray
-private val PRESENTATION =
-    mapOf(
-        "title" to "name",
-        "fields" to
-            listOf(
-                field("designation", "Designation"),
-                field(
-                    "iucn",
-                    "IUCN category",
-                    mapOf(
-                        "Ia" to "Ia Strict nature reserve",
-                        "Ib" to "Ib Wilderness area",
-                        "II" to "II National park",
-                        "III" to "III Natural monument",
-                        "IV" to "IV Habitat or species management area",
-                        "V" to "V Protected landscape",
-                        "VI" to "VI Protected area with sustainable use",
-                    )),
-                field("designated", "Designated"),
-                field("country", "Country"),
-            ),
-        "polygons" to
-            listOf(
-                "Ia" to "#00A04088",
-                "Ib" to "#00A04088",
-                "II" to "#00A04088",
-                "III" to "#40C0A088",
-                "IV" to "#40C0A088",
-                "V" to "#A0C04088",
-                "VI" to "#A0C04088",
-            ).map { (iucn, fill) ->
-              mapOf("filters" to listOf(stringEquals("iucn", iucn)), "fill" to fill)
-            } + listOf(mapOf("filters" to listOf(ALWAYS), "fill" to "#80808066")),
+private val SCHEMA =
+    schema(
+        listOf(
+            field("designation", "Designation"),
+            field(
+                "iucn",
+                "IUCN category",
+                mapOf(
+                    "Ia" to "Ia Strict nature reserve",
+                    "Ib" to "Ib Wilderness area",
+                    "II" to "II National park",
+                    "III" to "III Natural monument",
+                    "IV" to "IV Habitat or species management area",
+                    "V" to "V Protected landscape",
+                    "VI" to "VI Protected area with sustainable use",
+                )),
+            field("designated", "Designated"),
+            field("country", "Country"),
+        ),
+        listOf(
+            "Ia" to "#00A04088",
+            "Ib" to "#00A04088",
+            "II" to "#00A04088",
+            "III" to "#40C0A088",
+            "IV" to "#40C0A088",
+            "V" to "#A0C04088",
+            "VI" to "#A0C04088",
+        ).map { (iucn, fill) ->
+          polygonLayer(listOf(stringEquals("iucn", iucn)), fill)
+        } + listOf(polygonLayer(listOf(ALWAYS), "#80808066")),
     )
 
 // Imports the EEA's Nationally designated areas, the European counterpart to PAD-US, from the
@@ -108,6 +105,6 @@ fun main(args: Array<String>) {
   logger.info("Skipped {} sites without boundaries", points)
 
   synchronized (polygons) {
-    dumpPolygons("Nationally designated areas 2026", PRESENTATION, polygons)
+    dumpPolygons("Nationally designated areas 2026", SCHEMA, polygons)
   }
 }
