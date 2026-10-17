@@ -78,7 +78,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
   server.addHook('preHandler', async (request, reply) => {
     let maybeUserId;
     try {
-      maybeUserId = loginEnforcer.checkLogin(request);
+      maybeUserId = loginEnforcer.checkLogin(request, reply);
       // TODO(april): we should check the user against the database
     } catch (e: unknown) {
       if (e instanceof ExpiredCredentialError) {
