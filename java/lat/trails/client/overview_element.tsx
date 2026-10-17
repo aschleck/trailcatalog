@@ -166,6 +166,7 @@ export function OverviewElement(
         <MenubarItem label="File" menu="file" onClick="fileMenuClicked" />
         <MenubarItem label="Edit" menu="edit" onClick="editMenuClicked" />
         <MenubarItem label="View" menu="view" onClick="viewMenuClicked" />
+        <MenubarItem label="Help" menu="help" onClick="helpMenuClicked" />
       </Menubar>
       <div className="flex flex-col grow min-h-0 md:flex-row">
         <div className="grow min-h-0 min-w-0 relative">

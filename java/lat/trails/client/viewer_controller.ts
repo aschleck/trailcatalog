@@ -1956,6 +1956,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.viewMenu(e.actionElement.element());
   }
 
+  helpMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.helpMenu(e.actionElement.element());
+  }
+
   userMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.userMenu(e.actionElement.element());
   }
@@ -1977,6 +1981,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       this.editMenu(trigger);
     } else if (menu === 'view') {
       this.viewMenu(trigger);
+    } else if (menu === 'help') {
+      this.helpMenu(trigger);
     } else if (menu === 'user') {
       this.userMenu(trigger);
     }
@@ -2147,6 +2153,26 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       checked: system === 'metric',
       action: () => {
         this.setUnitSystem('metric');
+      },
+    }], trigger);
+  }
+
+  private helpMenu(trigger: Element): void {
+    if (!this.claimMenu(trigger)) {
+      return;
+    }
+
+    this.openMenu([{
+      kind: 'menu_item',
+      label: 'Visit the open-source project',
+      action: () => {
+        window.open('https://github.com/aschleck/trailcatalog', '_blank', 'noopener');
+      },
+    }, {
+      kind: 'menu_item',
+      label: 'Report a bug',
+      action: () => {
+        window.open('https://github.com/aschleck/trailcatalog/issues', '_blank', 'noopener');
       },
     }], trigger);
   }
