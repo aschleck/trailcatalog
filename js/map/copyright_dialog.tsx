@@ -8,10 +8,11 @@ import { Copyright } from './common/types';
 export function CopyrightDialog({copyrights}: {copyrights: Copyright[]}) {
   const elements = [];
   for (const copyright of copyrights) {
-    if (copyright.url) {
-      elements.push(<a href={copyright.url}>{copyright.long}</a>);
+    const credit = copyright.url ? <a href={copyright.url}>{copyright.long}</a> : copyright.long;
+    if (copyright.license) {
+      elements.push(<>{credit} (<a href={copyright.license.url}>{copyright.license.name}</a>)</>);
     } else {
-      elements.push(copyright.long);
+      elements.push(credit);
     }
   }
   return <>

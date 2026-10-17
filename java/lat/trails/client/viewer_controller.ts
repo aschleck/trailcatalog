@@ -165,12 +165,17 @@ import { RenameDialog } from './rename_dialog';
 import { SchemaDialog } from './schema_dialog';
 import { ShareDialog } from './share_dialog';
 
+const CC_BY_4 = {name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/'};
+// ECMWF's terms dictate the wording, the note that we modified the data, and the disclaimer.
+// https://apps.ecmwf.int/datasets/licences/general/
 const ECMWF_COPYRIGHT: Copyright = {
   long:
-      'Forecasts from the European Centre for Medium-Range Weather Forecasts open data, CC BY '
-          + '4.0',
+      'Based on data and products of the European Centre for Medium-Range Weather Forecasts '
+          + '(ECMWF), retiled and modified by trails.lat. ECMWF does not accept any liability '
+          + 'whatsoever for any error or omission in the data.',
   short: 'ECMWF',
   url: 'https://www.ecmwf.int/en/forecasts/datasets/open-data',
+  license: CC_BY_4,
 };
 // Keep in sync with ecmwf.sh, which writes ecmwf_<run>_<layer>_<step>.pmtiles
 const ECMWF_URL = 'https://tiles.trailcatalog.org/ecmwf_';
@@ -181,12 +186,13 @@ const ECMWF_CYCLE_HOURS = 6;
 const HOUR_MS = 60 * 60 * 1000;
 // ECMWF tiles a run every 6 hours and its step closest to now moves every 3, so we check hourly.
 const CONDITIONS_REFRESH_MS = HOUR_MS;
+// NSIDC makes citing the data set a condition of using it.
 const SNODAS_COPYRIGHT: Copyright = {
   long:
-      'SNODAS snow analysis from the NOAA National Operational Hydrologic Remote Sensing Center, '
-          + 'archived by NSIDC',
+      'National Operational Hydrologic Remote Sensing Center. 2004. Snow Data Assimilation System '
+          + '(SNODAS) Data Products at NSIDC, Version 1. Boulder, Colorado USA. NSIDC.',
   short: 'NOAA NOHRSC',
-  url: 'https://nsidc.org/data/g02158',
+  url: 'https://doi.org/10.7265/N5TB14TC',
   publicDomain: true,
 };
 const SWISSTOPO_COPYRIGHT: Copyright = {
@@ -206,7 +212,6 @@ const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
 const SNOW_WATER_ID = 'us/conditions/snow_water';
 // Keep in sync with Conditions.kt
 const AIR_QUALITY_COLLECTION_ID = '09afe7ea-ffe9-41b3-ac05-580758a5ac2f';
-const AVALANCHE_DANGER_COLLECTION_ID = '18881694-9486-478f-aa7e-25edc7cf80f4';
 const BURNT_AREAS_COLLECTION_ID = 'c0e8127d-7dd0-4eca-83e8-19a3abda8620';
 const EUROPEAN_AIR_QUALITY_COLLECTION_ID = '51787c46-2a9e-4374-b26a-50b7475608e1';
 const FIRE_PERIMETERS_COLLECTION_ID = '77ac6377-5725-40bb-bfb5-c0bbcb353617';
@@ -745,8 +750,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 'Air quality',
                 AIR_QUALITY_COLLECTION_ID,
                 {
+                  // AirNow's guidelines ask for the agencies to be credited first.
+                  // https://docs.airnowapi.org/docs/DataUseGuidelines.pdf
                   long:
-                      'Current air quality index contours from AirNow, preliminary and '
+                      'Current air quality index contours from state, local, and tribal air '
+                          + 'quality agencies and the US EPA AirNow program, preliminary and '
                           + 'unverified',
                   short: 'AirNow',
                   url: 'https://www.airnow.gov/',
@@ -838,7 +846,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           enabled: false,
           layer: new RasterTileLayer(
               [{
-                long: 'Topographic base map from The National Map, US Geological Survey',
+                long:
+                    'Map services and data available from U.S. Geological Survey, National '
+                        + 'Geospatial Program',
                 short: 'USGS',
                 url: 'https://www.usgs.gov/programs/national-geospatial-program/national-map',
                 publicDomain: true,
@@ -870,23 +880,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                 long: 'European Air Quality Index from the European Environment Agency, unverified',
                 short: 'EEA',
                 url: 'https://airindex.eea.europa.eu/AQI/index.html',
+                license: CC_BY_4,
               },
               // Conditions.kt puts every station in a level 13 cell. There are about 3,500, few
               // enough to draw all of Europe from zoom 4.
               {minZoom: 4, maxZoom: undefined, indexBottom: 4, fromLevel: 13, toLevel: 13},
-              locations),
-          this.newConditionsEntry(
-              'europe/avalanche_danger',
-              'Avalanche danger',
-              AVALANCHE_DANGER_COLLECTION_ID,
-              {
-                long: 'Avalanche bulletins from the EAWS warning services, gathered by pyAvaCore',
-                short: 'EAWS',
-                url: 'https://www.avalanches.org/',
-              },
-              // Few enough to load all of Europe at once: 281 regions from six services on
-              // 2026-02-15.
-              {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
               locations),
           this.newConditionsEntry(
               'europe/burnt_areas',
@@ -895,9 +893,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               {
                 long:
                     'Burnt areas from the last 30 days from the European Forest Fire Information '
-                        + 'System',
+                        + 'System. Contains modified Copernicus Emergency Management Service '
+                        + `information ${new Date().getUTCFullYear()}`,
                 short: 'EFFIS',
                 url: 'https://forest-fire.emergency.copernicus.eu/',
+                license: CC_BY_4,
               },
               // Few enough to load all of Europe at once: 1,318 areas were 7.4 MB of GeoJSON on
               // 2026-10-13.
@@ -913,6 +913,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
                   long: 'Nationally designated areas 2026 from the European Environment Agency',
                   short: 'EEA',
                   url: 'https://doi.org/10.2909/028003e7-7585-4d69-92fc-7f81e0cc2340',
+                  license: CC_BY_4,
                 }],
                 '/api/collections/26f6d026-6b2b-47bc-b2d6-1454061b996d',
                 /* style= */ undefined,
@@ -949,21 +950,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.newSwisstopoEntry(
               'ch/topo', 'Swiss Topo', [SWISSTOPO_COPYRIGHT], 'ch.swisstopo.pixelkarte-farbe',
               'jpeg', Z_BASE_SATELLITE, /* maxZoom= */ 19),
-          this.newSwisstopoEntry(
-              'ch/wildlife_rest_zones',
-              'Wildlife rest zones',
-              [{
-                long:
-                    'Wildlife rest zones from the Federal Office for the Environment and the '
-                        + 'cantons',
-                short: 'FOEN, cantons',
-                url: 'https://www.geo.admin.ch/en/general-terms-of-use-fsdi',
-                provider: {name: 'swisstopo', url: 'https://www.geo.admin.ch/'},
-              }],
-              'ch.bafu.wrz-wildruhezonen_portal',
-              'png',
-              Z_OVERLAY_TERRAIN,
-              /* maxZoom= */ 18),
         ],
       }, {
         kind: 'group',
@@ -990,7 +976,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           enabled: false,
           layer: new CollectionLayer(
               [{
-                long: 'National park zones from the Ministry of the Environment',
+                // PDL 1.0 requires saying the data was processed and by whom.
+                long:
+                    'National park zones from the Biodiversity Center of Japan, Ministry of the '
+                        + 'Environment, processed by trails.lat',
                 short: 'MOE',
                 url: 'https://www.biodic.go.jp/nps_nwp_nca_cz.html',
               }],
@@ -1051,30 +1040,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         configure: values => {
           sentinel.setSearch(sentinelSearch(values));
         },
-      }, {
-        kind: 'layer',
-        id: 'satellite/maptiler',
-        name: 'MapTiler',
-        enabled: false,
-        layer: new RasterTileLayer(
-            [
-              {
-                long: 'Satellite imagery packaged and served by MapTiler',
-                short: 'MapTiler',
-                url: 'https://www.maptiler.com/copyright/',
-              },
-              OSM_COPYRIGHT,
-            ],
-            'https://api.maptiler.com/tiles/satellite-mediumres-2021/${id.zoom}/${id.x}/${id.y}.jpg?key=UGTHB0b969Xa1xpZvnvB',
-            /* tint= */ 0xFFFFFFFF as RgbaU32,
-            /* z= */ Z_BASE_SATELLITE,
-            /* extraZoom= */ 0,
-            /* minZoom= */ 0,
-            /* maxZoom= */ 14,
-            this.mapController.renderer,
-        ),
-        controls: [],
-        values: {},
       }],
     }, {
       kind: 'group',
@@ -3415,12 +3380,18 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       name,
       enabled: false,
       layer: new RasterTileLayer(
+          // The Licence Ouverte asks for the date of the last update, and the Géoplateforme
+          // serves the current edition.
           [{
             long:
                 `${product} from the Institut national de l'information géographique et `
-                    + 'forestière',
+                    + `forestière, current edition as of ${new Date().getUTCFullYear()}`,
             short: 'IGN',
             url: 'https://cartes.gouv.fr/',
+            license: {
+              name: 'Licence Ouverte 2.0',
+              url: 'https://www.etalab.gouv.fr/licence-ouverte-open-licence/',
+            },
           }],
           `https://data.geopf.fr/wmts?${params}`
               + '&TILEMATRIX=${id.zoom}&TILEROW=${id.y}&TILECOL=${id.x}',

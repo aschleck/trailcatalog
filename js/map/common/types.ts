@@ -4,6 +4,8 @@ export interface Copyright {
   url?: string;
   // Who serves the data, credited ahead of its source as in "Protomaps © OpenStreetMap"
   provider?: {name: string; url: string};
+  // Linked after the credit because CC BY requires a link to the license
+  license?: {name: string; url: string};
   // Nobody holds a copyright on public domain data, so the credit bar leaves off the ©
   publicDomain?: true;
 }

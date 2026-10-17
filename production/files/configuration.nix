@@ -274,17 +274,7 @@
       google-cloud-sdk
       jq
       podman
-      python3
     ];
-
-    # conditions.sh runs pyAvaCore for the avalanche bulletins. It's GPL, so it runs beside the
-    # importer instead of inside it.
-    environment.PYAVACORE = pkgs.fetchFromGitLab {
-      owner = "albina-euregio";
-      repo = "pyAvaCore";
-      rev = "7ce8a296a950173634507b426d01245bc1f1107e";
-      hash = "sha256-OCYi4oOQIwTuKADsD69z6kIWzkIUE7umV1DgGKp+vNc=";
-    };
 
     serviceConfig = {
       ExecStart = "/home/april/conditions.sh";

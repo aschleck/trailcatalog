@@ -1,16 +1,20 @@
 import { Copyright } from './types';
 
-// https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM
+// The license for GLO-30 dictates this wording, including the liability sentence.
+// https://dataspace.copernicus.eu/sites/default/files/media/files/2025-06/copernicus_contributing_mission_data_access_v2_cop_dem_licenses.pdf
 export const COPERNICUS_DEM_COPYRIGHT: Copyright = {
   long:
-      '© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under '
-          + 'COPERNICUS by the European Union and ESA; all rights reserved',
+      'Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space '
+          + 'GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights '
+          + 'reserved. The organisations in charge of the Copernicus programme by law or by '
+          + 'delegation do not incur any liability for any use of the Copernicus WorldDEM-30.',
   short: 'Copernicus DEM',
   url: 'https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM',
 };
 
+// Most of Mapterhorn's sources are CC BY, which asks us to say that we changed them.
 export const MAPTERHORN_COPYRIGHT: Copyright = {
-  long: 'Mapterhorn',
+  long: `Terrain from Mapterhorn's open data sources, modified for this map`,
   short: 'Mapterhorn',
   url: 'https://mapterhorn.com/attribution',
 };
