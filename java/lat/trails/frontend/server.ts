@@ -26,7 +26,7 @@ const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
 const DEBUG = process.env.DEBUG !== 'false';
 
 // Keep in sync with common/Database.kt#SCHEMA.
-const SCHEMA = 'migration_9_collection_schema';
+const SCHEMA = 'migration_10_invites_and_logins';
 
 // A GPX point costs about 45 bytes of JSON across its lat, lng, elevation, and time, so this fits
 // saving a track of a million and a half points. Keep in sync with nginx.conf and the trails.lat
@@ -102,7 +102,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
     reply.redirect('/');
   });
 
-  await oidc.addGoogle(server, encrypter, loginEnforcer, sql);
+  await oidc.addProviders(server, encrypter, loginEnforcer, sql);
 }
 
 const ORIGIN = 'https://trails.lat';

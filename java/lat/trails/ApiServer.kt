@@ -24,6 +24,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.sql.Connection
 import java.sql.ResultSet
+import java.security.SecureRandom
 import java.sql.Types
 import java.util.UUID
 import kotlin.collections.ArrayList
@@ -31,9 +32,13 @@ import java.nio.charset.StandardCharsets
 import lat.trails.common.createBaseConnection
 import lat.trails.common.createTrailcatalogConnection
 import lat.trails.common.encodeCovering
+import lat.trails.proto.AcceptInviteRequest
+import lat.trails.proto.AcceptInviteResponse
 import lat.trails.proto.Collection
 import lat.trails.proto.CreateCollectionRequest
 import lat.trails.proto.CreateCollectionResponse
+import lat.trails.proto.CreateInviteRequest
+import lat.trails.proto.CreateInviteResponse
 import lat.trails.proto.Delete
 import lat.trails.proto.DeleteCollectionRequest
 import lat.trails.proto.DeleteCollectionResponse
@@ -42,10 +47,13 @@ import lat.trails.proto.Folder
 import lat.trails.proto.GetCollectionRequest
 import lat.trails.proto.GetCollectionResponse
 import lat.trails.proto.GetCurrentUserResponse
+import lat.trails.proto.GetInviteRequest
+import lat.trails.proto.GetInviteResponse
 import lat.trails.proto.GetOsmTagsRequest
 import lat.trails.proto.GetOsmTagsResponse
 import lat.trails.proto.GetSharingRequest
 import lat.trails.proto.GetSharingResponse
+import lat.trails.proto.Invite
 import lat.trails.proto.Line
 import lat.trails.proto.ListCollectionsResponse
 import lat.trails.proto.OsmElementType
@@ -53,12 +61,16 @@ import lat.trails.proto.Point
 import lat.trails.proto.PutSchema
 import lat.trails.proto.RenameCollectionRequest
 import lat.trails.proto.RenameCollectionResponse
+import lat.trails.proto.RevokeInviteRequest
+import lat.trails.proto.RevokeInviteResponse
 import lat.trails.proto.Role
 import lat.trails.proto.SaveRequest
 import lat.trails.proto.SaveResponse
 import lat.trails.proto.SearchRequest
-import lat.trails.proto.SetSharingRequest
-import lat.trails.proto.SetSharingResponse
+import lat.trails.proto.SetAnyoneCanViewRequest
+import lat.trails.proto.SetAnyoneCanViewResponse
+import lat.trails.proto.SetGrantRequest
+import lat.trails.proto.SetGrantResponse
 import lat.trails.proto.SetViewStateRequest
 import lat.trails.proto.SetViewStateResponse
 import lat.trails.proto.Sharing
@@ -88,6 +100,7 @@ private lateinit var hikari: HikariDataSource
 private lateinit var hikariTrailcatalog: HikariDataSource
 
 private val logger = LoggerFactory.getLogger("ApiServer")
+private val random = SecureRandom()
 
 private val ANONYMOUS_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
@@ -111,6 +124,14 @@ private const val MAX_LINES_BY_ID = 128
 
 private const val LINE_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters, time_seconds"
 private const val POINT_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters"
+// See parseInvite.
+private const val INVITE_COLUMNS = "code, role, uses, expires"
+
+private const val INVITE_CODE_ALPHABET =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+// 62^8 is 2.2e14 codes, so guessing one of a thousand live invites at a thousand requests a second
+// takes about 7 years.
+private const val INVITE_CODE_CHARS = 8
 
 private val JSON_PARSER = JsonFormat.parser()
 private val JSON_PRINTER = JsonFormat.printer().omittingInsignificantWhitespace()
@@ -157,13 +178,19 @@ private fun fetchData(ctx: Context) {
 
 private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message {
   return when (method) {
+    "lat.trails.DataService/AcceptInvite" ->
+      acceptInvite(ctx, AcceptInviteRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/CreateCollection" ->
       createCollection(ctx, CreateCollectionRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/CreateInvite" ->
+      createInvite(ctx, CreateInviteRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/DeleteCollection" ->
       deleteCollection(ctx, DeleteCollectionRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetCollection" ->
       getCollection(ctx, GetCollectionRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetCurrentUser" -> getCurrentUser(ctx)
+    "lat.trails.DataService/GetInvite" ->
+      getInvite(ctx, GetInviteRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetOsmTags" ->
       getOsmTags(GetOsmTagsRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetSharing" ->
@@ -171,14 +198,18 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
     "lat.trails.DataService/ListCollections" -> listCollections(ctx)
     "lat.trails.DataService/RenameCollection" ->
       renameCollection(ctx, RenameCollectionRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/RevokeInvite" ->
+      revokeInvite(ctx, RevokeInviteRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/Save" ->
       save(ctx, SaveRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/Search" ->
       hikariTrailcatalog.connection.use {
         search(SearchRequest.newBuilder().mergeJson(payload).build(), it, epochTracker.epoch)
       }
-    "lat.trails.DataService/SetSharing" ->
-      setSharing(ctx, SetSharingRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/SetAnyoneCanView" ->
+      setAnyoneCanView(ctx, SetAnyoneCanViewRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/SetGrant" ->
+      setGrant(ctx, SetGrantRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/SetViewState" ->
       setViewState(ctx, SetViewStateRequest.newBuilder().mergeJson(payload).build())
     else -> throw IllegalArgumentException("Unknown method $method")
@@ -270,7 +301,7 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
   val user = optionalUser(ctx)
   val response = GetCollectionResponse.newBuilder()
   hikari.connection.use { connection ->
-    val access = accessTo(connection, id, user) ?: throw NotFoundResponse()
+    val access = getCollectionAccess(connection, id, user) ?: throw NotFoundResponse()
     response.collectionBuilder
         .setId(request.id)
         .setName(access.name)
@@ -445,7 +476,7 @@ private fun renameCollection(
   }
 
   return transact { connection ->
-    val access = lockCollection(connection, collection, user)
+    val access = lockEditableCollection(connection, collection, user)
     connection
         .prepareStatement("UPDATE collections SET name = ? WHERE id = ?")
         .apply {
@@ -470,7 +501,7 @@ private fun deleteCollection(
   val user = requireUser(ctx)
   val collection = parseUuid(request.id)
   transact { connection ->
-    val access = lockCollection(connection, collection, user)
+    val access = lockEditableCollection(connection, collection, user)
     if (access.role != Role.ROLE_OWNER) {
       throw ForbiddenResponse()
     }
@@ -479,6 +510,7 @@ private fun deleteCollection(
     // save waiting on the lock finds no collection once we commit and gets a 404.
     for (sql in listOf(
         "DELETE FROM collection_grants WHERE collection_id = ?",
+        "DELETE FROM collection_invites WHERE collection_id = ?",
         "DELETE FROM view_states WHERE collection_id = ?",
         "DELETE FROM folders WHERE collection = ?",
         "DELETE FROM lines WHERE collection = ?",
@@ -538,92 +570,72 @@ private fun getSharing(ctx: Context, request: GetSharingRequest): GetSharingResp
   val user = requireUser(ctx)
   val collection = parseUuid(request.collectionId)
   hikari.connection.use { connection ->
-    val access = accessTo(connection, collection, user) ?: throw NotFoundResponse()
-    if (access.role != Role.ROLE_OWNER) {
-      throw ForbiddenResponse()
-    }
+    requireOwner(connection, collection, user)
     return GetSharingResponse.newBuilder().setSharing(readSharing(connection, collection)).build()
   }
 }
 
-private fun setSharing(ctx: Context, request: SetSharingRequest): SetSharingResponse {
+private fun setAnyoneCanView(
+    ctx: Context, request: SetAnyoneCanViewRequest): SetAnyoneCanViewResponse {
   val user = requireUser(ctx)
   val collection = parseUuid(request.collectionId)
-  val roles = HashMap<String, String>()
-  for (grant in request.sharing.grantsList) {
-    val email = grant.email.trim().lowercase()
-    val role =
-        when (grant.role) {
-          Role.ROLE_READ -> "read"
-          Role.ROLE_WRITE -> "write"
-          else -> throw BadRequestResponse("${grant.email} needs a role of read or write")
-        }
-    if (roles.put(email, role) != null) {
-      throw BadRequestResponse("$email is listed twice")
-    }
-  }
-
+  val sql =
+      if (request.anyoneCanView) {
+        ("INSERT INTO collection_grants (collection_id, grantee_id, role) VALUES (?, ?, 'read') "
+            + "ON CONFLICT (collection_id, grantee_id) DO NOTHING")
+      } else {
+        "DELETE FROM collection_grants WHERE collection_id = ? AND grantee_id = ?"
+      }
   return transact { connection ->
-    val owner =
-        connection
-            .prepareStatement("SELECT creator FROM collections WHERE id = ? FOR UPDATE")
-            .apply {
-              setObject(1, collection)
-            }
-            .executeQuery()
-            .use { results ->
-              if (!results.next()) {
-                throw NotFoundResponse()
-              }
-              results.getObject(1) as UUID
-            }
-    if (owner != user) {
-      throw if (accessTo(connection, collection, user) == null) NotFoundResponse()
-          else ForbiddenResponse()
-    }
-
-    val ids = HashMap<String, UUID>()
+    lockOwnedCollection(connection, collection, user)
     connection
-        .prepareStatement("SELECT email, id FROM users WHERE email = ANY (?) AND enabled")
-        .apply {
-          setArray(1, connection.createArrayOf("TEXT", roles.keys.toTypedArray()))
-        }
-        .executeQuery()
-        .use { results ->
-          while (results.next()) {
-            ids[results.getString(1)] = results.getObject(2) as UUID
-          }
-        }
-    val unknown = roles.keys.filter { it !in ids }.sorted()
-    if (unknown.isNotEmpty()) {
-      return@transact SetSharingResponse.newBuilder().addAllUnknownEmails(unknown).build()
-    }
-
-    connection
-        .prepareStatement("DELETE FROM collection_grants WHERE collection_id = ?")
+        .prepareStatement(sql)
         .apply {
           setObject(1, collection)
+          setObject(2, ANONYMOUS_USER_ID)
         }
         .executeUpdate()
-    connection
-        .prepareStatement(
-            "INSERT INTO collection_grants (collection_id, grantee_id, role) VALUES (?, ?, ?)")
-        .use { insert ->
-          val grants = roles.map { (email, role) -> ids.getValue(email) to role }.toMutableList()
-          grants.removeAll { it.first == owner }
-          if (request.sharing.anyoneCanView) {
-            grants.add(ANONYMOUS_USER_ID to "read")
-          }
-          for ((grantee, role) in grants) {
-            insert.setObject(1, collection)
-            insert.setObject(2, grantee)
-            insert.setString(3, role)
-            insert.addBatch()
-          }
-          insert.executeBatch()
-        }
+    SetAnyoneCanViewResponse.newBuilder().setSharing(readSharing(connection, collection)).build()
+  }
+}
 
-    SetSharingResponse.newBuilder().setSharing(readSharing(connection, collection)).build()
+private fun setGrant(ctx: Context, request: SetGrantRequest): SetGrantResponse {
+  val user = requireUser(ctx)
+  val collection = parseUuid(request.collectionId)
+  val grantee = parseUuid(request.userId)
+  if (grantee == ANONYMOUS_USER_ID) {
+    throw BadRequestResponse("Use SetAnyoneCanView")
+  }
+  val role = if (request.role == Role.ROLE_UNSPECIFIED) null else formatRole(request.role)
+
+  return transact { connection ->
+    lockOwnedCollection(connection, collection, user)
+    val changed =
+        if (role == null) {
+          connection
+              .prepareStatement(
+                  "DELETE FROM collection_grants WHERE collection_id = ? AND grantee_id = ?")
+              .apply {
+                setObject(1, collection)
+                setObject(2, grantee)
+              }
+              .executeUpdate()
+        } else {
+          connection
+              .prepareStatement(
+                  "UPDATE collection_grants SET role = ? "
+                      + "WHERE collection_id = ? AND grantee_id = ?")
+              .apply {
+                setString(1, role)
+                setObject(2, collection)
+                setObject(3, grantee)
+              }
+              .executeUpdate()
+        }
+    if (changed == 0) {
+      throw NotFoundResponse()
+    }
+    SetGrantResponse.newBuilder().setSharing(readSharing(connection, collection)).build()
   }
 }
 
@@ -632,7 +644,7 @@ private fun setViewState(ctx: Context, request: SetViewStateRequest): SetViewSta
   val collection = parseUuid(request.collectionId)
   val hidden = request.hiddenFeatureIdsList.map { parseUuid(it) }.distinct()
   hikari.connection.use { connection ->
-    val access = accessTo(connection, collection, user) ?: throw NotFoundResponse()
+    val access = getCollectionAccess(connection, collection, user) ?: throw NotFoundResponse()
     if (!canEdit(access.role)) {
       throw ForbiddenResponse()
     }
@@ -659,11 +671,11 @@ private fun readSharing(connection: Connection, collection: UUID): Sharing {
   val sharing = Sharing.newBuilder()
   connection
       .prepareStatement(
-          "SELECT g.grantee_id, u.email, g.role "
+          "SELECT g.grantee_id, u.display_name, g.role, u.email "
               + "FROM collection_grants g "
               + "JOIN users u ON u.id = g.grantee_id "
               + "WHERE g.collection_id = ? "
-              + "ORDER BY u.email")
+              + "ORDER BY LOWER(u.display_name)")
       .apply {
         setObject(1, collection)
       }
@@ -674,12 +686,203 @@ private fun readSharing(connection: Connection, collection: UUID): Sharing {
             sharing.anyoneCanView = true
           } else {
             sharing.addGrantsBuilder()
-                .setEmail(results.getString(2))
+                .setUserId((results.getObject(1) as UUID).toString())
+                .setDisplayName(results.getString(2))
                 .setRole(parseRole(results.getString(3)))
+                .setEmail(results.getString(4) ?: "")
           }
         }
       }
-  return sharing.build()
+  return sharing.addAllInvites(listUnexpiredInvites(connection, collection)).build()
+}
+
+private fun createInvite(ctx: Context, request: CreateInviteRequest): CreateInviteResponse {
+  val user = requireUser(ctx)
+  val collection = parseUuid(request.collectionId)
+  val role = formatRole(request.role)
+  if (request.hasExpiresAfterSeconds() && request.expiresAfterSeconds <= 0) {
+    throw BadRequestResponse("expires_after_seconds must be positive")
+  }
+
+  val code = (0 until INVITE_CODE_CHARS)
+      .map { INVITE_CODE_ALPHABET[random.nextInt(INVITE_CODE_ALPHABET.length)] }
+      .joinToString("")
+  return transact { connection ->
+    lockOwnedCollection(connection, collection, user)
+    connection
+        .prepareStatement(
+            "INSERT INTO collection_invites "
+                + "(code, collection_id, role, created_by, expires) "
+                + "VALUES (?, ?, ?, ?, NOW() + ? * INTERVAL '1 second') "
+                + "RETURNING $INVITE_COLUMNS")
+        .apply {
+          setString(1, code)
+          setObject(2, collection)
+          setString(3, role)
+          setObject(4, user)
+          if (request.hasExpiresAfterSeconds()) {
+            setLong(5, request.expiresAfterSeconds)
+          } else {
+            setNull(5, Types.BIGINT)
+          }
+        }
+        .executeQuery()
+        .use { results ->
+          results.next()
+          CreateInviteResponse.newBuilder()
+              .setInvite(parseInvite(results))
+              .setSharing(readSharing(connection, collection))
+              .build()
+        }
+  }
+}
+
+private fun getInvite(ctx: Context, request: GetInviteRequest): GetInviteResponse {
+  val user = optionalUser(ctx)
+  hikari.connection.use { connection ->
+    val invite = getUnexpiredInvite(connection, request.code, user)
+    return GetInviteResponse.newBuilder()
+        .setCollectionId(invite.collection.toString())
+        .setCollectionName(invite.collectionName)
+        .setInviterName(invite.inviterName)
+        .setRole(invite.role)
+        .setCurrentRole(invite.userRole)
+        .build()
+  }
+}
+
+private fun acceptInvite(ctx: Context, request: AcceptInviteRequest): AcceptInviteResponse {
+  val user = requireUser(ctx)
+  return transact { connection ->
+    val invite = getUnexpiredInvite(connection, request.code, user)
+    if (invite.userRole.number < invite.role.number) {
+      connection
+          .prepareStatement(
+              "INSERT INTO collection_grants (collection_id, grantee_id, role) VALUES (?, ?, ?) "
+                  + "ON CONFLICT (collection_id, grantee_id) DO UPDATE SET role = EXCLUDED.role")
+          .apply {
+            setObject(1, invite.collection)
+            setObject(2, user)
+            setString(3, formatRole(invite.role))
+          }
+          .executeUpdate()
+      connection
+          .prepareStatement("UPDATE collection_invites SET uses = uses + 1 WHERE code = ?")
+          .apply {
+            setString(1, request.code)
+          }
+          .executeUpdate()
+    }
+    AcceptInviteResponse.newBuilder().setCollectionId(invite.collection.toString()).build()
+  }
+}
+
+private fun revokeInvite(ctx: Context, request: RevokeInviteRequest): RevokeInviteResponse {
+  val user = requireUser(ctx)
+  return transact { connection ->
+    val collection =
+        connection
+            .prepareStatement(
+                "SELECT collection_id FROM collection_invites WHERE code = ? FOR UPDATE")
+            .apply {
+              setString(1, request.code)
+            }
+            .executeQuery()
+            .use { results ->
+              if (!results.next()) {
+                throw NotFoundResponse()
+              }
+              results.getObject(1) as UUID
+            }
+    requireOwner(connection, collection, user)
+    connection
+        .prepareStatement("DELETE FROM collection_invites WHERE code = ?")
+        .apply {
+          setString(1, request.code)
+        }
+        .executeUpdate()
+    RevokeInviteResponse.newBuilder().setSharing(readSharing(connection, collection)).build()
+  }
+}
+
+private data class UnexpiredInvite(
+    val collection: UUID,
+    val collectionName: String,
+    val inviterName: String,
+    val role: Role,
+    // What the user has through ownership or their own grant. Sharing with anyone doesn't count, so
+    // that accepting a read invite to a collection anyone can view still adds it to their list.
+    val userRole: Role,
+)
+
+// Throws a 404 for a code that was revoked or expired, so they look the same.
+private fun getUnexpiredInvite(
+    connection: Connection, code: String, user: UUID?): UnexpiredInvite {
+  connection
+      .prepareStatement(
+          "SELECT i.collection_id, c.name, c.creator, u.display_name, i.role, g.role "
+              + "FROM collection_invites i "
+              + "JOIN collections c ON c.id = i.collection_id "
+              + "JOIN users u ON u.id = i.created_by "
+              + "LEFT JOIN collection_grants g "
+              + "ON g.collection_id = i.collection_id AND g.grantee_id = ? "
+              + "WHERE i.code = ? "
+              + "AND (i.expires IS NULL OR i.expires > NOW()) "
+              + "FOR SHARE OF c")
+      .apply {
+        setObject(1, user)
+        setString(2, code)
+      }
+      .executeQuery()
+      .use { results ->
+        if (!results.next()) {
+          throw NotFoundResponse()
+        }
+        val grant = results.getString(6)
+        return UnexpiredInvite(
+            collection = results.getObject(1) as UUID,
+            collectionName = results.getString(2),
+            inviterName = results.getString(4),
+            role = parseRole(results.getString(5)),
+            userRole =
+                when {
+                  user != null && results.getObject(3) == user -> Role.ROLE_OWNER
+                  grant != null -> parseRole(grant)
+                  else -> Role.ROLE_UNSPECIFIED
+                },
+        )
+      }
+}
+
+private fun listUnexpiredInvites(connection: Connection, collection: UUID): List<Invite> {
+  val invites = ArrayList<Invite>()
+  connection
+      .prepareStatement(
+          "SELECT $INVITE_COLUMNS "
+              + "FROM collection_invites "
+              + "WHERE collection_id = ? "
+              + "AND (expires IS NULL OR expires > NOW()) "
+              + "ORDER BY created DESC")
+      .apply {
+        setObject(1, collection)
+      }
+      .executeQuery()
+      .use { results ->
+        while (results.next()) {
+          invites.add(parseInvite(results))
+        }
+      }
+  return invites
+}
+
+private fun parseInvite(results: ResultSet): Invite {
+  val invite =
+      Invite.newBuilder()
+          .setCode(results.getString(1))
+          .setRole(parseRole(results.getString(2)))
+          .setUses(results.getInt(3))
+  results.getTimestamp(4)?.let { invite.setExpiresEpochMs(it.time) }
+  return invite.build()
 }
 
 private fun save(ctx: Context, request: SaveRequest): SaveResponse {
@@ -697,7 +900,7 @@ private fun save(ctx: Context, request: SaveRequest): SaveResponse {
   }
 
   return transact { connection ->
-    val version = lockCollection(connection, collection, user).version + 1
+    val version = lockEditableCollection(connection, collection, user).version + 1
     for (write in writes) {
       write.apply(connection, collection, version)
     }
@@ -740,11 +943,11 @@ private fun prepareWrite(write: Write): PreparedWrite {
 
 private fun prepareFolder(folder: Folder): PreparedWrite {
   val id = parseUuid(folder.id)
-  val data = jsonbData(folder.data)
+  val data = jsonOrEmptyObject(folder.data)
 
   return object : PreparedWrite(FeatureKey(Table.FOLDERS, id)) {
     override fun apply(connection: Connection, collection: UUID, version: Long) {
-      checkPut(connection, Table.FOLDERS, collection, id, folder.version)
+      checkPutVersion(connection, Table.FOLDERS, collection, id, folder.version)
       connection
           .prepareStatement(
               "INSERT INTO folders (id, collection, created, updated, data, version) "
@@ -800,11 +1003,11 @@ private fun prepareLine(line: Line): PreparedWrite {
         null
       }
   val geometry = DeltaLatLngE7.encode(latLngE7)
-  val data = jsonbData(line.data)
+  val data = jsonOrEmptyObject(line.data)
 
   return object : PreparedWrite(FeatureKey(Table.LINES, id)) {
     override fun apply(connection: Connection, collection: UUID, version: Long) {
-      checkPut(connection, Table.LINES, collection, id, line.version)
+      checkPutVersion(connection, Table.LINES, collection, id, line.version)
       connection
           .prepareStatement(
               "INSERT INTO lines "
@@ -842,11 +1045,11 @@ private fun preparePoint(point: Point): PreparedWrite {
       S2CellId.fromLatLng(S2LatLng.fromE7(point.latE7, point.lngE7))
           .parent(SimpleS2.HIGHEST_INDEX_LEVEL)
   val geometry = DeltaLatLngE7.encode(intArrayOf(point.latE7, point.lngE7))
-  val data = jsonbData(point.data)
+  val data = jsonOrEmptyObject(point.data)
 
   return object : PreparedWrite(FeatureKey(Table.POINTS, id)) {
     override fun apply(connection: Connection, collection: UUID, version: Long) {
-      checkPut(connection, Table.POINTS, collection, id, point.version)
+      checkPutVersion(connection, Table.POINTS, collection, id, point.version)
       connection
           .prepareStatement(
               "INSERT INTO points "
@@ -917,7 +1120,7 @@ private fun prepareDelete(delete: Delete): PreparedWrite {
 }
 
 private fun prepareSchema(put: PutSchema): PreparedWrite {
-  val schema = jsonbData(put.schema)
+  val schema = jsonOrEmptyObject(put.schema)
 
   return object : PreparedWrite(SchemaKey) {
     override fun apply(connection: Connection, collection: UUID, version: Long) {
@@ -973,7 +1176,7 @@ private fun readVersion(
 // Rejects a put unless the client read the version the feature is at now. A tombstone keeps the
 // version that deleted it, so a put at that version is the deleter undoing the delete, and anyone
 // who read the feature before it was deleted is a 409.
-private fun checkPut(
+private fun checkPutVersion(
     connection: Connection, table: Table, collection: UUID, id: UUID, version: Long) {
   val existing = readVersion(connection, table, collection, id)
   if ((existing?.version ?: 0L) != version) {
@@ -1001,13 +1204,27 @@ private fun folderHasChildren(connection: Connection, collection: UUID, folder: 
 }
 
 // jsonb rejects an empty string.
-private fun jsonbData(data: String): String {
+private fun jsonOrEmptyObject(data: String): String {
   return data.ifEmpty { "{}" }
 }
 
 // Holds the collection row until the transaction ends so we can go back and update covering after a
 // geometry change, and so that concurrent saves to one collection apply one after the other.
-private fun lockCollection(connection: Connection, collection: UUID, user: UUID): Access {
+private fun lockEditableCollection(connection: Connection, collection: UUID, user: UUID): Access {
+  lockCollectionRow(connection, collection)
+  val access = getCollectionAccess(connection, collection, user) ?: throw NotFoundResponse()
+  if (!canEdit(access.role)) {
+    throw ForbiddenResponse()
+  }
+  return access
+}
+
+private fun lockOwnedCollection(connection: Connection, collection: UUID, user: UUID) {
+  lockCollectionRow(connection, collection)
+  requireOwner(connection, collection, user)
+}
+
+private fun lockCollectionRow(connection: Connection, collection: UUID) {
   connection
       .prepareStatement("SELECT 1 FROM collections WHERE id = ? FOR UPDATE")
       .apply {
@@ -1015,11 +1232,13 @@ private fun lockCollection(connection: Connection, collection: UUID, user: UUID)
       }
       .executeQuery()
       .close()
-  val access = accessTo(connection, collection, user) ?: throw NotFoundResponse()
-  if (!canEdit(access.role)) {
+}
+
+private fun requireOwner(connection: Connection, collection: UUID, user: UUID) {
+  val access = getCollectionAccess(connection, collection, user) ?: throw NotFoundResponse()
+  if (access.role != Role.ROLE_OWNER) {
     throw ForbiddenResponse()
   }
-  return access
 }
 
 private fun canEdit(role: Role): Boolean {
@@ -1032,7 +1251,7 @@ private data class Access(val name: String, val version: Long, val creator: UUID
 // not exist. A null user is signed out and sees what was shared with anyone.
 //
 // A collection the anonymous user created is public, which is how PublicAccess imports land.
-private fun accessTo(connection: Connection, collection: UUID, user: UUID?): Access? {
+private fun getCollectionAccess(connection: Connection, collection: UUID, user: UUID?): Access? {
   val grantees = if (user != null) arrayOf(ANONYMOUS_USER_ID, user) else arrayOf(ANONYMOUS_USER_ID)
   connection
       .prepareStatement(
@@ -1075,6 +1294,14 @@ private fun parseRole(role: String): Role {
     "read" -> Role.ROLE_READ
     "write" -> Role.ROLE_WRITE
     else -> throw IllegalStateException("Unknown role $role")
+  }
+}
+
+private fun formatRole(role: Role): String {
+  return when (role) {
+    Role.ROLE_READ -> "read"
+    Role.ROLE_WRITE -> "write"
+    else -> throw BadRequestResponse("$role is not read or write")
   }
 }
 
@@ -1159,7 +1386,7 @@ private data class WirePolygon(val id: UUID, val data: String, val s2Polygon: By
 
 private fun fetchCollectionCovering(ctx: Context) {
   // Revalidate this one response, because it is what tells a client the collection version.
-  // Everything it points at is immutable, see cacheAndCheckIfCached.
+  // Everything it points at is immutable, see setCacheHeadersAndCheckNotModified.
   ctx.header("Cache-Control", "no-cache,private")
 
   val collection = ctx.pathParam("id")
@@ -1169,7 +1396,7 @@ private fun fetchCollectionCovering(ctx: Context) {
     it.writeVarInt(3)
 
     // collection version, then covering, then presentation
-    if (isTrailcatalog(collection)) {
+    if (isTrailcatalogCollection(collection)) {
       // The epoch is the version: the paths and points a tile holds only change when an import
       // lands.
       it.writeVarLong(epochTracker.epoch.toLong())
@@ -1189,7 +1416,7 @@ private fun fetchCollectionCovering(ctx: Context) {
     } else {
       hikari.connection.use { connection ->
         val id = parseUuid(collection)
-        if (accessTo(connection, id, optionalUser(ctx)) == null) {
+        if (getCollectionAccess(connection, id, optionalUser(ctx)) == null) {
           ctx.status(HttpStatus.NOT_FOUND)
           return@fetchCollectionCovering
         }
@@ -1218,19 +1445,19 @@ private fun fetchCollectionCovering(ctx: Context) {
 
 private fun fetchCollectionObjects(ctx: Context) {
   val collection = ctx.pathParam("id")
-  val trailcatalog = isTrailcatalog(collection)
+  val trailcatalog = isTrailcatalogCollection(collection)
   // The object queries trust that this checked access, because they filter on nothing else.
   val currentVersion =
       if (trailcatalog) {
         epochTracker.epoch.toLong()
       } else {
         hikari.connection.use { connection ->
-          accessTo(connection, parseUuid(collection), optionalUser(ctx))?.version
+          getCollectionAccess(connection, parseUuid(collection), optionalUser(ctx))?.version
         } ?: throw NotFoundResponse()
       }
   // Checked before the object queries run, or else a revalidation costs everything a miss does.
   val requestedVersion = ctx.queryParam("version")?.toLong()
-  if (cacheAndCheckIfCached(ctx, requestedVersion, currentVersion, trailcatalog)) {
+  if (setCacheHeadersAndCheckNotModified(ctx, requestedVersion, currentVersion, trailcatalog)) {
     return
   }
 
@@ -1255,7 +1482,7 @@ private fun fetchCollectionObjects(ctx: Context) {
       fetchTrailcatalogPoints(it, cell, indexBottom, levelCeiling, levelFloor)
     } else {
       it.writeVarInt(KIND_UUID_JSON)
-      fetchRealCollection(it, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
+      fetchTrailsLatObjects(it, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
     }
   }
 
@@ -1279,7 +1506,7 @@ private fun fetchCollectionLines(ctx: Context) {
     } else {
       hikari.connection.use { connection ->
         // The query below trusts this, because it filters on nothing else.
-        accessTo(connection, parseUuid(collection), optionalUser(ctx))
+        getCollectionAccess(connection, parseUuid(collection), optionalUser(ctx))
             ?: throw NotFoundResponse()
         connection
           .prepareStatement(
@@ -1334,7 +1561,7 @@ private fun writeLinesById(
   }
 }
 
-private fun fetchRealCollection(
+private fun fetchTrailsLatObjects(
   it: DelegatingEncodedOutputStream,
   cell: S2CellId,
   collection: String,
@@ -1648,7 +1875,7 @@ private fun fetchTrailcatalogPoints(
   }
 }
 
-private fun isTrailcatalog(collection: String): Boolean {
+private fun isTrailcatalogCollection(collection: String): Boolean {
   return collection == TRAILCATALOG_PATHS_COLLECTIONS_ID
       || collection == TRAILCATALOG_POINTS_COLLECTIONS_ID
 }
@@ -1659,7 +1886,7 @@ private fun isTrailcatalog(collection: String): Boolean {
 // Only the trailcatalog collections are public. Every other collection answers only if the
 // requesting user may read it, and the owner can take that back, so it may only ever land in that
 // browser's cache.
-private fun cacheAndCheckIfCached(
+private fun setCacheHeadersAndCheckNotModified(
     ctx: Context, requested: Long?, current: Long, public: Boolean): Boolean {
   // Require the request to name the version it is about to get. A client asking for an older one
   // still gets the current objects, and marking those immutable under the old key would pin them
@@ -1696,7 +1923,7 @@ private fun simplifyPathsForSnap(paths: List<WirePath>, snap: Int?): List<WirePa
   }
 
   val decoded = paths.map { DeltaLatLngE7.decode(it.latLngDegrees) }
-  val shared = sharedVertices(decoded)
+  val shared = findSharedVertices(decoded)
   val epsilon = snapEpsilon(snap)
   return paths.mapIndexed { i, path ->
     val simplified =
@@ -1709,7 +1936,7 @@ private fun simplifyPathsForSnap(paths: List<WirePath>, snap: Int?): List<WirePa
 
 // Sorted, so that callers can binarySearch it. Sorting every vertex rather than counting them in a
 // map because a dense tile holds millions and a map would box each one.
-private fun sharedVertices(lines: List<IntArray>): LongArray {
+private fun findSharedVertices(lines: List<IntArray>): LongArray {
   val all = LongArray(lines.sumOf { it.size / 2 })
   var at = 0
   for (line in lines) {

@@ -6,11 +6,15 @@ export interface Routes {
   collection: {
     id: string;
   };
+  invite: {
+    code: string;
+  };
   overview: {};
 }
 
 const routes: {[k in keyof Routes]: RegExp} = {
   'collection': /^\/collection\/(?<id>[0-9a-f-]{36})$/,
+  'invite': /^\/i\/(?<code>[0-9A-Za-z]+)$/,
   'overview': /^\/$/,
 } as const;
 

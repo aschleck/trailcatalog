@@ -522,7 +522,7 @@ private fun replace(collection: Collection) {
     hikari.connection.use { connection ->
       connection.autoCommit = false
 
-      // The anonymous user owns it so that it's public, see ApiServer.kt#accessTo.
+      // The anonymous user owns it so that it's public, see ApiServer.kt#getCollectionAccess.
       connection
           .prepareStatement(
               "INSERT INTO collections (id, creator, name, covering) VALUES (?, ?, ?, ?) "

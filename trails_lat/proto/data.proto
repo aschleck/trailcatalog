@@ -6,18 +6,33 @@ option java_multiple_files = true;
 option java_package = "lat.trails.proto";
 
 service DataService {
+  rpc AcceptInvite(AcceptInviteRequest) returns (AcceptInviteResponse);
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
+  rpc CreateInvite(CreateInviteRequest) returns (CreateInviteResponse);
   rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
   rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
+  rpc GetInvite(GetInviteRequest) returns (GetInviteResponse);
   rpc GetOsmTags(GetOsmTagsRequest) returns (GetOsmTagsResponse);
   rpc GetSharing(GetSharingRequest) returns (GetSharingResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
   rpc RenameCollection(RenameCollectionRequest) returns (RenameCollectionResponse);
+  rpc RevokeInvite(RevokeInviteRequest) returns (RevokeInviteResponse);
   rpc Save(SaveRequest) returns (SaveResponse);
   rpc Search(SearchRequest) returns (SearchResponse);
-  rpc SetSharing(SetSharingRequest) returns (SetSharingResponse);
+  rpc SetAnyoneCanView(SetAnyoneCanViewRequest) returns (SetAnyoneCanViewResponse);
+  rpc SetGrant(SetGrantRequest) returns (SetGrantResponse);
   rpc SetViewState(SetViewStateRequest) returns (SetViewStateResponse);
+}
+
+// 404s for an invite that expired or was revoked. Accepting one at or below the
+// caller's access changes nothing and spends no use.
+message AcceptInviteRequest {
+  string code = 1;
+}
+
+message AcceptInviteResponse {
+  string collection_id = 1;
 }
 
 message CreateCollectionRequest {
@@ -28,6 +43,20 @@ message CreateCollectionRequest {
 
 message CreateCollectionResponse {
   Collection collection = 1;
+}
+
+// Only the owner may invite.
+message CreateInviteRequest {
+  string collection_id = 1;
+  // ROLE_READ or ROLE_WRITE
+  Role role = 2;
+  // Unset never expires.
+  optional int64 expires_after_seconds = 3;
+}
+
+message CreateInviteResponse {
+  Invite invite = 1;
+  Sharing sharing = 2;
 }
 
 // Only the owner may delete. Everything in the collection goes with it, and nothing is kept to
@@ -69,6 +98,24 @@ message GetCurrentUserResponse {
   optional User user = 1;
 }
 
+// Answers anyone with the code, signed in or not, so they can see what they're accepting. 404s like
+// AcceptInviteRequest.
+message GetInviteRequest {
+  string code = 1;
+}
+
+message GetInviteResponse {
+  string collection_id = 1;
+  string collection_name = 2;
+  // The display name of whoever created the invite
+  string inviter_name = 3;
+  // ROLE_READ or ROLE_WRITE
+  Role role = 4;
+  // The caller's access through their own grant or ownership, unspecified when they have none.
+  // Sharing with anyone doesn't count, so that accepting adds the collection to their list.
+  Role current_role = 5;
+}
+
 // Answers from the latest import, and 404s for an element the import did not keep.
 message GetOsmTagsRequest {
   OsmElementType type = 1;
@@ -101,7 +148,7 @@ message ListCollectionsRequest {}
 message ListCollectionsResponse {
   // Owned by the caller
   repeated Collection collections = 1;
-  // Granted to the caller by email, not to anyone
+  // Granted to the caller, not to anyone
   repeated Collection shared = 2;
 }
 
@@ -113,6 +160,15 @@ message RenameCollectionRequest {
 
 message RenameCollectionResponse {
   Collection collection = 1;
+}
+
+// Only the owner may revoke. Whoever already accepted keeps their grant.
+message RevokeInviteRequest {
+  string code = 1;
+}
+
+message RevokeInviteResponse {
+  Sharing sharing = 1;
 }
 
 // Finds boundaries, trails, and points by name. Of two results that match equally well, the one
@@ -193,18 +249,27 @@ enum FeatureKind {
   FEATURE_KIND_POINT = 3;
 }
 
-// Only the owner may set sharing.
-message SetSharingRequest {
+// Only the owner may change who can view.
+message SetAnyoneCanViewRequest {
   string collection_id = 1;
-  // Replaces everything the collection was shared with. The owner's own email is skipped.
-  Sharing sharing = 2;
+  bool anyone_can_view = 2;
 }
 
-message SetSharingResponse {
-  // Unset when any email is unknown, because then nothing changed.
-  optional Sharing sharing = 1;
-  // Emails in the request with no trails.lat account
-  repeated string unknown_emails = 2;
+message SetAnyoneCanViewResponse {
+  Sharing sharing = 1;
+}
+
+// Only the owner may change a grant. Invites are the only way to add one, so this 404s for a user
+// the collection isn't shared with.
+message SetGrantRequest {
+  string collection_id = 1;
+  string user_id = 2;
+  // ROLE_READ or ROLE_WRITE, or ROLE_UNSPECIFIED to stop sharing with them
+  Role role = 3;
+}
+
+message SetGrantResponse {
+  Sharing sharing = 1;
 }
 
 // Only someone who can edit may save a view state. Viewers start from the owner's.
@@ -218,17 +283,24 @@ message SetViewStateRequest {
 
 message SetViewStateResponse {}
 
+// Every sharing change answers with this, so the share dialog shows what actually saved.
 message Sharing {
   bool anyone_can_view = 1;
   repeated Grant grants = 2;
+  // The ones that can still be accepted, newest first
+  repeated Invite invites = 3;
 }
 
 message Grant {
-  string email = 1;
+  string user_id = 1;
   // ROLE_READ or ROLE_WRITE
   Role role = 2;
+  string display_name = 3;
+  // Empty when their login didn't share one
+  string email = 4;
 }
 
+// Ordered by how much each allows, because AcceptInvite and the invite page compare them.
 enum Role {
   ROLE_UNSPECIFIED = 0;
   ROLE_READ = 1;
@@ -256,6 +328,15 @@ message Folder {
   string data = 2;
   // See Line#version.
   int64 version = 3;
+}
+
+message Invite {
+  string code = 1;
+  // ROLE_READ or ROLE_WRITE
+  Role role = 2;
+  int32 uses = 3;
+  // Unset never expires.
+  optional int64 expires_epoch_ms = 4;
 }
 
 message Line {

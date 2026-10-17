@@ -1,6 +1,7 @@
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
+import { InviteElement } from './invite_element';
 import { NotFoundElement } from './not_found_element';
 import { RouteController, State } from './route_controller';
 import { OverviewElement } from './overview_element';
@@ -19,6 +20,8 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
     route = <NotFoundElement />;
   } else if (state.active.kind === 'collection') {
     route = <OverviewElement collection={state.active.id} parameters={state.parameters} />;
+  } else if (state.active.kind === 'invite') {
+    route = <InviteElement acceptToken={state.parameters['accept']} code={state.active.code} />;
   } else if (state.active.kind === 'overview') {
     route = <OverviewElement collection={undefined} parameters={state.parameters} />;
   } else {

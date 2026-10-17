@@ -199,7 +199,7 @@ class CollectionLoader {
   load(request: LoadRequest): Reply<Response> {
     const source = new LittleEndianView(request.data);
     // We still accept version 2 because browsers cache public collection tiles forever, see
-    // ApiServer.kt#cacheAndCheckIfCached. Version 2 is version 3 without points.
+    // ApiServer.kt#setCacheHeadersAndCheckNotModified. Version 2 is version 3 without points.
     const version = source.getVarInt32();
     if (version !== 2 && version !== 3) {
       throw new Error("Unhandled version");

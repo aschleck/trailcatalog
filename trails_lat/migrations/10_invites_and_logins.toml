@@ -1,0 +1,166 @@
+[[actions]]
+type = "create_table"
+name = "collection_invites"
+primary_key = ["code"]
+
+  # The part of the link after /i/
+  [[actions.columns]]
+  name = "code"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "collection_id"
+  nullable = false
+  type = "UUID"
+
+  # read or write, granted to whoever accepts
+  [[actions.columns]]
+  name = "role"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "created_by"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "created"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+  # Null never expires.
+  [[actions.columns]]
+  name = "expires"
+  nullable = true
+  type = "TIMESTAMPTZ"
+
+  # Times this invite link has been used.
+  [[actions.columns]]
+  name = "uses"
+  nullable = false
+  type = "INTEGER"
+  default = "0"
+
+  [[actions.foreign_keys]]
+  columns = ["collection_id"]
+  referenced_table = "collections"
+  referenced_columns = ["id"]
+
+  [[actions.foreign_keys]]
+  columns = ["created_by"]
+  referenced_table = "users"
+  referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "collection_invites"
+
+  # For listing a collection's invites in its share dialog
+  [actions.index]
+  name = "collection_invites_by_collection_id"
+  columns = ["collection_id"]
+
+[[actions]]
+type = "custom"
+
+start = """
+  ALTER TABLE collection_invites
+      ADD CONSTRAINT collection_invites_role CHECK (role IN ('read', 'write'));
+"""
+
+abort = """
+  ALTER TABLE collection_invites
+      DROP CONSTRAINT collection_invites_role;
+"""
+
+[[actions]]
+type = "create_table"
+name = "logins"
+primary_key = ["issuer", "subject"]
+
+  # The iss claim, like https://accounts.google.com
+  [[actions.columns]]
+  name = "issuer"
+  nullable = false
+  type = "TEXT"
+
+  # The sub claim
+  [[actions.columns]]
+  name = "subject"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "user_id"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "created"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+  [[actions.foreign_keys]]
+  columns = ["user_id"]
+  referenced_table = "users"
+  referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "logins"
+
+  [actions.index]
+  name = "logins_by_user_id"
+  columns = ["user_id"]
+
+# Completing copies again for anyone the old schema signed up after starting. This runs before
+# remove_column drops oidc_issuer and oidc_id, because reshape completes actions in order.
+[[actions]]
+type = "custom"
+
+start = """
+  INSERT INTO logins (issuer, subject, user_id)
+      SELECT oidc_issuer, oidc_id, id
+      FROM users
+      WHERE id <> '00000000-0000-0000-0000-000000000000';
+"""
+
+complete = """
+  INSERT INTO logins (issuer, subject, user_id)
+      SELECT oidc_issuer, oidc_id, id
+      FROM users
+      WHERE id <> '00000000-0000-0000-0000-000000000000' AND oidc_issuer <> ''
+      ON CONFLICT DO NOTHING;
+"""
+
+# Someone's Apple and Google accounts can share an email, and invites replace looking people up by
+# it.
+[[actions]]
+type = "remove_index"
+index = "users_by_email"
+
+# The old schema's unique index on (oidc_issuer, oidc_id) still applies to users the new schema
+# creates, so each needs a distinct pair. The empty issuer also keeps completing from copying them
+# into logins.
+[[actions]]
+type = "remove_column"
+table = "users"
+column = "oidc_issuer"
+down = "''"
+
+[[actions]]
+type = "remove_column"
+table = "users"
+column = "oidc_id"
+down = "id::text"
+
+# Nothing reads it. The old schema requires one, so users the new schema creates get the time.
+[[actions]]
+type = "remove_column"
+table = "users"
+column = "last_login"
+down = "NOW()"

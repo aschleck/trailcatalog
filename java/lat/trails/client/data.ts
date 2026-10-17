@@ -13,17 +13,22 @@ import { BACKENDS } from './backends';
 
 // Write RPCs that cause cache invalidations
 const WRITES: string[] = [
+  'lat.trails.DataService/AcceptInvite',
   'lat.trails.DataService/CreateCollection',
+  'lat.trails.DataService/CreateInvite',
   'lat.trails.DataService/DeleteCollection',
   'lat.trails.DataService/RenameCollection',
+  'lat.trails.DataService/RevokeInvite',
   'lat.trails.DataService/Save',
-  'lat.trails.DataService/SetSharing',
+  'lat.trails.DataService/SetAnyoneCanView',
+  'lat.trails.DataService/SetGrant',
   'lat.trails.DataService/SetViewState',
 ] satisfies Array<keyof FqMethods<typeof BACKENDS>>;
 
 // Read RPCs that are invalidated when a write comes through or somebody signs in
 const USER_DEPENDENT_READS: string[] = [
   'lat.trails.DataService/GetCollection',
+  'lat.trails.DataService/GetInvite',
   'lat.trails.DataService/GetSharing',
   'lat.trails.DataService/ListCollections',
 ] satisfies Array<keyof FqMethods<typeof BACKENDS>>;

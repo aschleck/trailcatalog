@@ -20,7 +20,7 @@ genrule(
 
 js_library(
     name = "glob",
-    srcs = glob(["*.webp"], allow_empty=True),
+    srcs = glob(["*.svg", "*.webp"], allow_empty=True),
 )
 
 genrule(

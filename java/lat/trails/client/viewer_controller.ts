@@ -1,5 +1,5 @@
 import { checkExhaustive, checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts';
-import { Future } from 'external/dev_april_corgi+/js/common/futures';
+import { Future, resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
@@ -69,7 +69,7 @@ import {
   osmWaysOf,
   WAY_KINDS,
 } from './styles';
-import { invalidateCurrentUser, requestData } from './data';
+import { requestData } from './data';
 import {
   ConfirmDeleteCollectionDialog,
   ConfirmDeleteDialog,
@@ -132,6 +132,7 @@ import {
   updateLayerNode,
 } from './layer_tree';
 import { insertVertex, joinLines, removeVertex, reverseLine, splitLine } from './line_edits';
+import { LoginPopup } from './login_popup';
 import { IconPickerDialog } from './icon_picker';
 import { GradeLimitState, MeasureState } from './measure_panel';
 import { Choice, choiceItem, PICK_MENU_CLASSES, readingItem } from './pick_menu';
@@ -349,14 +350,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private joining: string|undefined;
   // Where the pointer last was, in pixels from the viewer's top left
   private pointer: [number, number]|undefined;
-  // Logins run in a popup on Google's origin, so a caller waiting on one waits on this.
-  private login: {
-    popup: Window;
-    promise: Promise<void>;
-    resolve: () => void;
-    reject: (e: unknown) => void;
-  }|undefined;
-  private readonly loginWatcher: Timer;
+  // Settles once the login popup closes and the user is fetched, so concurrent callers share it
+  private login: Promise<void>|undefined;
+  private readonly loginPopup: LoginPopup;
   private readonly saves: SaveQueue;
   // What the layer tree starts as, which saved layer settings are relative to
   private readonly layerDefaults: Map<string, LayerSetting>;
@@ -435,45 +431,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
     this.registerDisposable(this.conditionsRefresh);
 
-    // The popup runs on another origin, so the only thing we can see about it is that it closed.
-    this.loginWatcher = new Timer(250 /* ms */, () => {
-      const login = this.login;
-      if (login && !login.popup.closed) {
-        return;
-      }
-
-      this.loginWatcher.stop();
-      this.login = undefined;
-      invalidateCurrentUser();
-      const self: Future<GetCurrentUserResponse> =
-          requestData('lat.trails.DataService/GetCurrentUser', {});
-      this.updateState({
-        ...this.state,
-        self,
+    this.loginPopup = new LoginPopup(response => {
+      response.then(r => {
+        this.signedIn(r);
+      }, e => {
+        console.error(e);
       });
-      if (login) {
-        // Callers wait on login.promise, so it has to settle even when the user fetch fails, or
-        // else the write queue behind it never runs again.
-        self.then(response => {
-          if (response.user) {
-            login.resolve();
-            // Now that the user is logged in, they may have edit rights to the open collection. So
-            // reload if they're currently in a read-only mode.
-            const open = this.state.collection;
-            if (open && this.store.isReadOnly()) {
-              this.loadCollection(open.id, /* fit= */ false);
-            } else {
-              this.saves.flush();
-            }
-          } else {
-            login.reject(new Error('Nobody signed in'));
-          }
-        }).catch(e => {
-          login.reject(e);
-        });
-      }
     });
-    this.registerDisposable(this.loginWatcher);
+    this.registerDisposable(this.loginPopup);
 
     // One index for every layer, so that the drawing tools snap onto and route across drawn
     // lines and paths alike.
@@ -3229,7 +3194,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private requireLogin(): Promise<void> {
     if (this.login) {
-      return this.login.promise;
+      return this.login;
     }
 
     // Somebody already signed in whose GetCurrentUser has not landed yet gets a popup if we go by
@@ -3240,23 +3205,38 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private openLogin(): Promise<void> {
     if (this.login) {
-      return this.login.promise;
+      return this.login;
     }
 
-    const popup = window.open('/login/google', 'login', 'height=700,popup,width=500');
-    if (!popup) {
-      return Promise.reject(new Error('Unable to open the login window'));
+    // Callers wait on this, so it has to settle even when the user fetch fails, or else the write
+    // queue behind it never runs again.
+    this.login = this.loginPopup.open()
+        .then(response => {
+          this.signedIn(response);
+          if (!response.user) {
+            throw new Error('Nobody signed in');
+          }
+        })
+        .finally(() => {
+          this.login = undefined;
+        });
+    return this.login;
+  }
+
+  private signedIn(response: GetCurrentUserResponse): void {
+    this.updateState({...this.state, self: resolvedFuture(response)});
+    if (!response.user) {
+      return;
     }
 
-    let resolve!: () => void;
-    let reject!: (e: unknown) => void;
-    const promise = new Promise<void>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    this.login = {popup, promise, resolve, reject};
-    this.loginWatcher.start();
-    return promise;
+    // Now that the user is logged in, they may have edit rights to the open collection. So reload
+    // if they're currently in a read-only mode.
+    const open = this.state.collection;
+    if (open && this.store.isReadOnly()) {
+      this.loadCollection(open.id, /* fit= */ false);
+    } else {
+      this.saves.flush();
+    }
   }
 
   // Closes whatever menu is open and makes trigger's the one to open. Answers false when trigger's
