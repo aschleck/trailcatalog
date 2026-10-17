@@ -1,7 +1,6 @@
 import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { RgbaU32 } from 'js/map/common/types';
 import { NATURE } from 'js/map/layers/mbtile_layer';
-import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { Style as MbtileStyle } from 'js/map/workers/mbtile_loader';
 import { Z_OVERLAY_TRANSPORTATION } from 'js/map/z';
 
@@ -14,42 +13,40 @@ type MbtileMatch = MbtileLayerStyle['lines'][number]['filters'][number];
 const FROM_ZOOM = 10;
 
 // The layers of NATURE that draw ways the collection also carries.
-const WAY_LAYERS = new Set(['aeroway', 'transportation', 'waterway']);
+const WAY_LAYERS = new Set(['roads', 'water']);
 
-// The categories the importer assigns for each OpenMapTiles class. A category names a subtree, so
-// PATH would take every kind of path.
-const CLASS_CATEGORIES = new Map<string, WayCategory[]>([
-  ['motorway', [WayCategory.ROAD_MOTORWAY, WayCategory.ROAD_MOTORWAY_LINK]],
-  ['trunk', [WayCategory.ROAD_TRUNK, WayCategory.ROAD_TRUNK_LINK]],
-  ['primary', [WayCategory.ROAD_PRIMARY, WayCategory.ROAD_PRIMARY_LINK]],
-  ['secondary', [WayCategory.ROAD_SECONDARY, WayCategory.ROAD_SECONDARY_LINK]],
-  ['tertiary', [WayCategory.ROAD_TERTIARY, WayCategory.ROAD_TERTIARY_LINK]],
-  ['minor', [
-    WayCategory.ROAD_UNCLASSIFIED,
-    WayCategory.ROAD_RESIDENTIAL,
-    WayCategory.ROAD_LIVING_STREET,
-  ]],
+// The categories the importer assigns for each protomaps kind_detail on a road and kind on a
+// waterway, which are mostly the raw OSM value. A category names a subtree, so PATH would take
+// every kind of path.
+const KIND_CATEGORIES = new Map<string, WayCategory[]>([
+  // Protomaps carries no roads under construction, so their categories ride along with the class
+  // they'll become, which every rule naming that class also draws. A construction way whose
+  // construction=* named no class stays on the bare category, which nothing claims, so it draws as
+  // unbuilt rather than as the narrowest thing that matched.
+  ['motorway', [WayCategory.ROAD_MOTORWAY, WayCategory.ROAD_CONSTRUCTION_MOTORWAY]],
+  ['motorway_link', [WayCategory.ROAD_MOTORWAY_LINK]],
+  ['trunk', [WayCategory.ROAD_TRUNK]],
+  ['trunk_link', [WayCategory.ROAD_TRUNK_LINK]],
+  ['primary', [WayCategory.ROAD_PRIMARY, WayCategory.ROAD_CONSTRUCTION_PRIMARY]],
+  ['primary_link', [WayCategory.ROAD_PRIMARY_LINK]],
+  ['secondary', [WayCategory.ROAD_SECONDARY, WayCategory.ROAD_CONSTRUCTION_SECONDARY]],
+  ['secondary_link', [WayCategory.ROAD_SECONDARY_LINK]],
+  ['tertiary', [WayCategory.ROAD_TERTIARY]],
+  ['tertiary_link', [WayCategory.ROAD_TERTIARY_LINK]],
+  ['residential', [WayCategory.ROAD_RESIDENTIAL, WayCategory.ROAD_CONSTRUCTION_MINOR]],
+  ['unclassified', [WayCategory.ROAD_UNCLASSIFIED]],
+  ['living_street', [WayCategory.ROAD_LIVING_STREET]],
+  // highway=road imports as the bare ROAD category, and ROAD is the subtree of every road.
+  ['road', []],
   ['service', [WayCategory.ROAD_SERVICE]],
-  ['track', [WayCategory.ROAD_TRACK]],
-  ['path', [WayCategory.PATH]],
-  ['rail', [
-    WayCategory.RAIL,
-    WayCategory.RAIL_NARROW_GAUGE,
-    WayCategory.RAIL_PRESERVED,
-    WayCategory.RAIL_FUNICULAR,
-  ]],
-  ['transit', [
-    WayCategory.RAIL_SUBWAY,
-    WayCategory.RAIL_LIGHT_RAIL,
-    WayCategory.RAIL_TRAM,
-    WayCategory.RAIL_MONORAIL,
-  ]],
-  // A construction way whose construction=* named no class stays on the bare category, which no
-  // class claims, so it draws as unbuilt rather than as the narrowest thing that matched.
-  ['motorway_construction', [WayCategory.ROAD_CONSTRUCTION_MOTORWAY]],
-  ['primary_construction', [WayCategory.ROAD_CONSTRUCTION_PRIMARY]],
-  ['secondary_construction', [WayCategory.ROAD_CONSTRUCTION_SECONDARY]],
-  ['minor_construction', [WayCategory.ROAD_CONSTRUCTION_MINOR]],
+  ['rail', [WayCategory.RAIL]],
+  ['narrow_gauge', [WayCategory.RAIL_NARROW_GAUGE]],
+  ['preserved', [WayCategory.RAIL_PRESERVED]],
+  ['funicular', [WayCategory.RAIL_FUNICULAR]],
+  ['subway', [WayCategory.RAIL_SUBWAY]],
+  ['light_rail', [WayCategory.RAIL_LIGHT_RAIL]],
+  ['tram', [WayCategory.RAIL_TRAM]],
+  ['monorail', [WayCategory.RAIL_MONORAIL]],
   ['runway', [WayCategory.AEROWAY_RUNWAY]],
   ['taxiway', [WayCategory.AEROWAY_TAXIWAY, WayCategory.AEROWAY_TAXILANE]],
   ['river', [WayCategory.WATERWAY_RIVER]],
@@ -60,13 +57,15 @@ const CLASS_CATEGORIES = new Map<string, WayCategory[]>([
 function categoriesFor(filters: MbtileMatch[]): WayCategory[] {
   const categories: WayCategory[] = [];
   for (const filter of filters) {
-    if (filter.match !== 'string_in' || filter.key !== 'class') {
-      throw new Error(`Only string_in on class replays against way categories, got ${filter.match}`);
+    if (filter.match !== 'string_in' || (filter.key !== 'kind_detail' && filter.key !== 'kind')) {
+      throw new Error(
+          'Only string_in on kind or kind_detail replays against way categories, got '
+              + JSON.stringify(filter));
     }
     for (const name of filter.value) {
-      const mapped = CLASS_CATEGORIES.get(name);
+      const mapped = KIND_CATEGORIES.get(name);
       if (!mapped) {
-        throw new Error(`Add a WayCategory for the OpenMapTiles class ${name}`);
+        throw new Error(`Add a WayCategory for the protomaps kind ${name}`);
       }
       categories.push(...mapped);
     }
@@ -142,8 +141,8 @@ const TRACK_CORE_COLOR = 0xEFE9DEFF as RgbaU32;
 // it sits under both.
 const PISTE_COLOR = 0x9AAABBFF as RgbaU32;
 
-// The path family, written against WayCategory rather than replayed out of an OpenMapTiles style,
-// because OpenMapTiles names neither a sidewalk nor a piste and MapTiler draws none of this anyway.
+// The path family, written against WayCategory rather than replayed out of NATURE, because NATURE
+// draws none of this and protomaps has no kind for a piste.
 // Bands match NATURE's transportation bands so the widths ramp with the roads, and nothing starts
 // before zoom 11 because a whole wilderness of trails at that scale is a smear.
 //
@@ -366,9 +365,8 @@ const FERRY_LINES: LineStyle[] = [
   },
 ];
 
-// The track rules MapTiler's basemap has no reason to carry, per NATURE transportation band, keyed
-// by the band's minZoom. These stay in the mbtile style because track is a real OpenMapTiles class,
-// so NATURE_WITH_TRACKS is still a style that would draw the tiles it claims to.
+// The tracks, which NATURE leaves to the collection, in NATURE's transportation bands so the widths
+// ramp with the roads.
 //
 // A track draws TRACK_CORE_COLOR inside TRACK_COLOR once the band is wide enough to hold a core,
 // which is past radius 1. The casing pixel is also where the shader fades the line's alpha out, so
@@ -378,72 +376,59 @@ const FERRY_LINES: LineStyle[] = [
 //
 // The z values continue NATURE's transportation ramp downward from service, so a service road's
 // casing covers a track running into it and a track's covers a trail.
-const TRACK_LINES = new Map<number, MbtileLayerStyle['lines']>([
-  [11, [
-    {
-      filters: [{match: 'string_in', key: 'class', value: ['track']}],
-      fill: TRACK_COLOR,
-      stroke: TRACK_COLOR,
-      radius: 0.5,
-      stipple: true,
-      z: Z_OVERLAY_TRANSPORTATION - 0.15,
-    },
-  ]],
-  [12, [
-    {
-      filters: [{match: 'string_in', key: 'class', value: ['track']}],
-      fill: TRACK_COLOR,
-      stroke: TRACK_COLOR,
-      radius: 0.6,
-      stipple: true,
-      z: Z_OVERLAY_TRANSPORTATION - 0.15,
-    },
-  ]],
-  [13, [
-    {
-      filters: [{match: 'string_in', key: 'class', value: ['track']}],
-      fill: TRACK_CORE_COLOR,
-      stroke: TRACK_COLOR,
-      radius: 1.8,
-      stipple: true,
-      z: Z_OVERLAY_TRANSPORTATION - 0.15,
-    },
-  ]],
-  [15, [
-    {
-      filters: [{match: 'string_in', key: 'class', value: ['track']}],
-      fill: TRACK_CORE_COLOR,
-      stroke: TRACK_COLOR,
-      radius: 2.4,
-      stipple: true,
-      z: Z_OVERLAY_TRANSPORTATION - 0.15,
-    },
-  ]],
-]);
-
-/**
- * Adds TRACK_LINES to the transportation bands that already exist, so the widths ramp with the
- * roads.
- */
-function withTracks(style: MbtileStyle): MbtileStyle {
-  const layers = style.layers.map(layer => {
-    const lines = layer.layerName === 'transportation' ? TRACK_LINES.get(layer.minZoom) : undefined;
-    if (!lines) {
-      return layer;
-    }
-
-    // Prepended to keep NATURE's bottom of the ramp first ordering.
-    return {...layer, lines: [...lines, ...layer.lines]};
-  });
-  return {layers};
-}
-
-export const NATURE_WITH_TRACKS: MbtileStyle = withTracks(NATURE);
+const TRACK_LINES: LineStyle[] = [
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}],
+    minZoom: 11,
+    maxZoom: 12,
+    fill: TRACK_COLOR,
+    stroke: TRACK_COLOR,
+    radius: 0.5,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.15,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}],
+    minZoom: 12,
+    maxZoom: 13,
+    fill: TRACK_COLOR,
+    stroke: TRACK_COLOR,
+    radius: 0.6,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.15,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}],
+    minZoom: 13,
+    maxZoom: 15,
+    fill: TRACK_CORE_COLOR,
+    stroke: TRACK_COLOR,
+    radius: 1.8,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.15,
+  },
+  {
+    filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}],
+    minZoom: 15,
+    maxZoom: 31,
+    fill: TRACK_CORE_COLOR,
+    stroke: TRACK_COLOR,
+    radius: 2.4,
+    stipple: true,
+    z: Z_OVERLAY_TRANSPORTATION - 0.15,
+  },
+];
 
 // PATH_LINES first to keep the lowest z first, which is only cosmetic: it names categories no road,
 // aeroway, or waterway rule can match, so nothing depends on which one findZoomedStyle reaches.
 export const OSM_WAYS: Style = {
-  lines: [...PATH_LINES, ...wayLines(NATURE_WITH_TRACKS), ...AERIALWAY_LINES, ...FERRY_LINES],
+  lines: [
+    ...PATH_LINES,
+    ...wayLines(NATURE),
+    ...TRACK_LINES,
+    ...AERIALWAY_LINES,
+    ...FERRY_LINES,
+  ],
   points: [],
   polygons: [],
 };
@@ -494,10 +479,6 @@ export const NODE_KINDS: ReadonlyArray<{key: string; label: string; category: Po
 
 export const NATURE_WITHOUT_DETAILED_WAYS: MbtileStyle = withoutWayLines(NATURE);
 
-// Translated after dropping the ways because withoutWayLines and wayLines both read OpenMapTiles
-// layer names and classes.
-export const NATURE_PROTOMAPS: MbtileStyle = toProtomaps(NATURE_WITHOUT_DETAILED_WAYS);
-
 // What the basemap layer offers to label, by the protomaps layers each one's text comes from.
 // Points in the basemap style only draw text, so dropping a layer's points and lineTexts takes
 // all of its labels.
@@ -508,12 +489,12 @@ export const BASEMAP_LABEL_KINDS:
   {key: 'way_labels', label: 'Way labels', layerNames: ['roads']},
 ];
 
-/** Narrows NATURE_PROTOMAPS to the boundaries and the labels in the protomaps layers named. */
+/** Narrows NATURE_WITHOUT_DETAILED_WAYS to the boundaries and the labels in the protomaps layers named. */
 export function basemapOf(boundaries: boolean, labeled: ReadonlySet<string>): MbtileStyle {
   const unlabeled = new Set(
       BASEMAP_LABEL_KINDS.flatMap(({layerNames}) => layerNames).filter(name => !labeled.has(name)));
   const layers = [];
-  for (const layer of NATURE_PROTOMAPS.layers) {
+  for (const layer of NATURE_WITHOUT_DETAILED_WAYS.layers) {
     if (!boundaries && layer.layerName === 'boundaries') {
       continue;
     }

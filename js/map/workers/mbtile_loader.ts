@@ -263,10 +263,46 @@ const TEXT_DECODER = new TextDecoder();
 
 class MbtileLoader {
 
+  // The bands holding each style zoom, folded into one style per layer name
+  private readonly bands = new Map<number, Map<string, LayerStyle>>();
+
   constructor(private style: Style) {}
 
   setStyle(style: Style): void {
     this.style = style;
+    this.bands.clear();
+  }
+
+  // Concatenates every band holding the zoom in style order, so a style can split one tile layer
+  // across several entries, like the airport and road rules that both draw protomaps' roads, and
+  // findStyle still takes the first match.
+  private layerStyle(layerName: string, zoom: number): LayerStyle|undefined {
+    let byName = this.bands.get(zoom);
+    if (!byName) {
+      byName = new Map();
+      for (const ls of this.style.layers) {
+        if (ls.minZoom > zoom || zoom >= ls.maxZoom) {
+          continue;
+        }
+        const existing = byName.get(ls.layerName);
+        if (existing) {
+          existing.lineTexts.push(...ls.lineTexts);
+          existing.lines.push(...ls.lines);
+          existing.points.push(...ls.points);
+          existing.polygons.push(...ls.polygons);
+        } else {
+          byName.set(ls.layerName, {
+            ...ls,
+            lineTexts: [...ls.lineTexts],
+            lines: [...ls.lines],
+            points: [...ls.points],
+            polygons: [...ls.polygons],
+          });
+        }
+      }
+      this.bands.set(zoom, byName);
+    }
+    return byName.get(layerName);
   }
 
   load(request: LoadRequest): Reply<Response> {
@@ -303,16 +339,7 @@ class MbtileLoader {
     const polygonGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     const polygonBoundGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     for (const layer of layers) {
-      let layerStyle;
-      for (const ls of this.style.layers) {
-        if (ls.minZoom <= request.styleZoom
-            && request.styleZoom < ls.maxZoom
-            && layer.name === ls.layerName) {
-          layerStyle = ls;
-          break;
-        }
-      }
-
+      const layerStyle = this.layerStyle(layer.name, request.styleZoom);
       if (!layerStyle) {
         //console.log(`skipped layer ${layer.name}`);
         continue;
@@ -334,7 +361,7 @@ class MbtileLoader {
           lineGroups.get(style).push(line);
         } else {
           for (let i = 0; i < line.tags.length; i += 2) {
-            if (layer.keys[line.tags[i + 0]] === 'class') {
+            if (layer.keys[line.tags[i + 0]] === 'kind') {
               lineUnstyled.add(layer.values[line.tags[i + 1]]);
             }
           }
@@ -347,7 +374,7 @@ class MbtileLoader {
           pointGroups.get(style).push({...point, layer, layerStyle});
         } else {
           for (let i = 0; i < point.tags.length; i += 2) {
-            if (layer.keys[point.tags[i + 0]] === 'class') {
+            if (layer.keys[point.tags[i + 0]] === 'kind') {
               pointUnstyled.add(layer.values[point.tags[i + 1]]);
             }
           }
@@ -361,7 +388,7 @@ class MbtileLoader {
         } else {
           // TODO(april): double counts with polygonBounds but who cares
           for (let i = 0; i < polygon.tags.length; i += 2) {
-            if (layer.keys[polygon.tags[i + 0]] === 'class') {
+            if (layer.keys[polygon.tags[i + 0]] === 'kind') {
               polygonUnstyled.add(layer.values[polygon.tags[i + 1]]);
             }
           }
@@ -375,7 +402,7 @@ class MbtileLoader {
         } else {
           // TODO(april): double counts with polygons but who cares
           for (let i = 0; i < polygon.tags.length; i += 2) {
-            if (layer.keys[polygon.tags[i + 0]] === 'class') {
+            if (layer.keys[polygon.tags[i + 0]] === 'kind') {
               polygonUnstyled.add(layer.values[polygon.tags[i + 1]]);
             }
           }

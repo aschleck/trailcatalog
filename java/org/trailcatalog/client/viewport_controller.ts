@@ -16,7 +16,6 @@ import {
   NATURE,
 } from 'js/map/layers/mbtile_layer';
 import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
-import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
@@ -31,9 +30,6 @@ import { Filters, TrailLayer } from './map/trail_layer';
 import { Path, Point, Trail } from './models/types';
 
 import * as routes from './routes';
-
-// Translated once, because the layer list is rebuilt for every response.
-const NATURE_PROTOMAPS = toProtomaps(NATURE);
 
 export interface Args {
   active?: {
@@ -150,7 +146,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       layer: new MbtileLayer(
           [PROTOMAPS_COPYRIGHT],
           'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
-          NATURE_PROTOMAPS,
+          NATURE,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 15,

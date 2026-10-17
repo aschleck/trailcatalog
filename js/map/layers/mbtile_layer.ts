@@ -404,12 +404,12 @@ type PointStyle = Style['layers'][number]['points'][number];
 // neighborhoods at a glance. Neighborhoods are gray spaced capitals, a different kind of name
 // rather than a smaller town. The z order follows, so a city never loses its space to a part of
 // itself.
-// A city ranked under 7 is one labeled by zoom 7, like San Francisco and Oakland but not Daly
-// City, which protomaps also calls a city.
+// A city whose min_zoom is under 7 is one protomaps labels by zoom 7, like San Francisco and
+// Oakland but not Daly City, which protomaps also calls a city.
 const MAJOR_CITY_LABEL: PointStyle = {
   filters: [
-    {match: 'string_in', key: 'class', value: ['city']},
-    {match: 'less_than', key: 'rank', value: 7},
+    {match: 'string_in', key: 'kind_detail', value: ['city']},
+    {match: 'less_than', key: 'min_zoom', value: 7},
   ],
   textFill: 0x2B2B2BFF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
@@ -418,7 +418,7 @@ const MAJOR_CITY_LABEL: PointStyle = {
 };
 
 const CITY_LABEL: PointStyle = {
-  filters: [{match: 'string_in', key: 'class', value: ['city']}],
+  filters: [{match: 'string_in', key: 'kind_detail', value: ['city']}],
   textFill: 0x2B2B2BFF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
   textScale: 0.52,
@@ -426,7 +426,7 @@ const CITY_LABEL: PointStyle = {
 };
 
 const TOWN_LABEL: PointStyle = {
-  filters: [{match: 'string_in', key: 'class', value: ['town']}],
+  filters: [{match: 'string_in', key: 'kind_detail', value: ['town']}],
   textFill: 0x3D3D3DFF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
   textScale: 0.48,
@@ -434,16 +434,17 @@ const TOWN_LABEL: PointStyle = {
 };
 
 const VILLAGE_LABEL: PointStyle = {
-  filters: [{match: 'string_in', key: 'class', value: ['village']}],
+  filters: [{match: 'string_in', key: 'kind_detail', value: ['village']}],
   textFill: 0x505050FF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
   textScale: 0.44,
   z: Z_OVERLAY_TEXT + 0.2,
 };
 
-// Under water and park names, which say more about where a trail goes.
+// Under water and park names, which say more about where a trail goes. Protomaps files the big
+// named parts of a city, like Noe Valley, as quarters.
 const SUBURB_LABEL: PointStyle = {
-  filters: [{match: 'string_in', key: 'class', value: ['suburb']}],
+  filters: [{match: 'string_in', key: 'kind_detail', value: ['quarter', 'suburb']}],
   textFill: 0x6E6A64FF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
   textScale: 0.38,
@@ -453,25 +454,30 @@ const SUBURB_LABEL: PointStyle = {
 
 const NEIGHBOURHOOD_LABEL: PointStyle = {
   ...SUBURB_LABEL,
-  filters: [{match: 'string_in', key: 'class', value: ['neighbourhood']}],
+  filters: [{match: 'string_in', key: 'kind_detail', value: ['neighbourhood']}],
   textScale: 0.34,
   z: Z_OVERLAY_TEXT + 0.05,
 };
 
 /**
- * Narrows a style to what protomaps would label before the zoom, because it ranks a place or a
- * park by the zoom its label should first appear at.
+ * Narrows a style to what protomaps would label before the zoom, because its min_zoom on a place
+ * or a park is the zoom the label should first appear at.
  */
 function rankedUnder(style: PointStyle, zoom: number): PointStyle {
   return {
     ...style,
-    filters: [...style.filters, {match: 'less_than', key: 'rank', value: zoom}],
+    filters: [...style.filters, {match: 'less_than', key: 'min_zoom', value: zoom}],
   };
 }
 
+// The national parks and wildernesses. Protomaps files most national parks and every wilderness
+// under nature_reserve, Mount Rainier National Park and Tatoosh Wilderness among them, so this
+// also takes the state forests and wildlife areas it holds.
+const PARKS = ['national_park', 'nature_reserve', 'protected_area'];
+
 // Quieter than the place names, so a park reads as a region and not as a town.
 const PARK_LABEL: PointStyle = {
-  filters: [{match: 'string_in', key: 'class', value: ['national_park', 'wilderness_area']}],
+  filters: [{match: 'string_in', key: 'kind', value: PARKS}],
   textFill: 0x3F7A4AFF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
   textScale: 0.44,
@@ -481,23 +487,9 @@ const PARK_LABEL: PointStyle = {
 
 type PolygonStyle = Style['layers'][number]['polygons'][number];
 
+// TODO(april): this looks gross at the nortern tip of Greenland
 const PARK_OUTLINE: PolygonStyle = {
-  filters: [{
-    match: 'string_in',
-    key: 'class',
-    value: [
-      //'city_park',
-      //'county_park',
-      // TODO(april): this looks gross at the nortern tip of Greenland
-      'national_park',
-      'wilderness_area',
-      //'nature_reserve',
-      //'open_space_preserve',
-      //'regional_park',
-      //'state_park',
-      //'state_wilderness',
-    ],
-  }],
+  filters: [{match: 'string_in', key: 'kind', value: PARKS}],
   fill: 0 as RgbaU32,
   stroke: 0x13653288 as RgbaU32,
   strokeRadius: 1,
@@ -508,16 +500,7 @@ const PARK_OUTLINE: PolygonStyle = {
 // Only from 10 in, because under that a city park is a speck and the lower zooms are where the
 // TODO about Greenland bites.
 const CITY_PARK_FILL: PolygonStyle = {
-  filters: [{
-    match: 'string_in',
-    key: 'class',
-    value: [
-      'city_park',
-      'county_park',
-      'regional_park',
-      'state_park',
-    ],
-  }],
+  filters: [{match: 'string_in', key: 'kind', value: ['park']}],
   fill: 0x8CC96A70 as RgbaU32,
   stroke: 0 as RgbaU32,
   strokeRadius: 0,
@@ -525,13 +508,17 @@ const CITY_PARK_FILL: PolygonStyle = {
   z: Z_BASE_TERRAIN + 0.75,
 };
 
+// Draws protomaps v4 tiles. Several entries can share a layer, like the airport and road rules
+// that both draw roads, because the loader applies every band that holds the zoom.
+// https://docs.protomaps.com/basemaps/layers
 export const NATURE: Readonly<Style> = {
   layers: [
     // An airport is an area with pavement on it, not a pile of fat white lines. Without the
     // aerodrome polygon the runways and taxiways stripe over whatever landcover is underneath,
-    // and grass shows between them.
+    // and grass shows between them. Protomaps leaves out the apron, so the pavement between the
+    // gates and the taxiways doesn't draw.
     {
-      layerName: 'aeroway',
+      layerName: 'roads',
       minZoom: 11,
       maxZoom: 12,
       lineTexts: [],
@@ -539,7 +526,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'runway',
             ],
@@ -552,11 +539,20 @@ export const NATURE: Readonly<Style> = {
         },
       ],
       points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'landuse',
+      minZoom: 11,
+      maxZoom: 12,
+      lineTexts: [],
+      lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'aerodrome',
             ],
@@ -570,7 +566,7 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'aeroway',
+      layerName: 'roads',
       minZoom: 12,
       maxZoom: 13,
       lineTexts: [],
@@ -578,7 +574,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'runway',
             ],
@@ -592,7 +588,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'taxiway',
             ],
@@ -605,11 +601,20 @@ export const NATURE: Readonly<Style> = {
         },
       ],
       points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'landuse',
+      minZoom: 12,
+      maxZoom: 13,
+      lineTexts: [],
+      lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'aerodrome',
             ],
@@ -623,7 +628,7 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'aeroway',
+      layerName: 'roads',
       minZoom: 13,
       maxZoom: 14,
       lineTexts: [],
@@ -631,7 +636,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'runway',
             ],
@@ -645,7 +650,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'taxiway',
             ],
@@ -658,25 +663,20 @@ export const NATURE: Readonly<Style> = {
         },
       ],
       points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'landuse',
+      minZoom: 13,
+      maxZoom: 14,
+      lineTexts: [],
+      lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
-            value: [
-              'apron',
-            ],
-          }],
-          fill: 0xDDE0E8FF as RgbaU32,
-          stroke: 0 as RgbaU32,
-          strokeRadius: 0,
-          strokeStipple: false,
-          z: Z_BASE_TERRAIN + 0.65,
-        },
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'aerodrome',
             ],
@@ -690,7 +690,7 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'aeroway',
+      layerName: 'roads',
       minZoom: 14,
       maxZoom: 15,
       lineTexts: [],
@@ -698,7 +698,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'runway',
             ],
@@ -712,7 +712,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'taxiway',
             ],
@@ -725,25 +725,20 @@ export const NATURE: Readonly<Style> = {
         },
       ],
       points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'landuse',
+      minZoom: 14,
+      maxZoom: 15,
+      lineTexts: [],
+      lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
-            value: [
-              'apron',
-            ],
-          }],
-          fill: 0xDDE0E8FF as RgbaU32,
-          stroke: 0 as RgbaU32,
-          strokeRadius: 0,
-          strokeStipple: false,
-          z: Z_BASE_TERRAIN + 0.65,
-        },
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'aerodrome',
             ],
@@ -757,7 +752,7 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'aeroway',
+      layerName: 'roads',
       minZoom: 15,
       maxZoom: 31,
       lineTexts: [],
@@ -765,7 +760,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'runway',
             ],
@@ -779,7 +774,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'taxiway',
             ],
@@ -792,25 +787,20 @@ export const NATURE: Readonly<Style> = {
         },
       ],
       points: [],
+      polygons: [],
+    },
+    {
+      layerName: 'landuse',
+      minZoom: 15,
+      maxZoom: 31,
+      lineTexts: [],
+      lines: [],
+      points: [],
       polygons: [
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
-            value: [
-              'apron',
-            ],
-          }],
-          fill: 0xDDE0E8FF as RgbaU32,
-          stroke: 0 as RgbaU32,
-          strokeRadius: 0,
-          strokeStipple: false,
-          z: Z_BASE_TERRAIN + 0.65,
-        },
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'aerodrome',
             ],
@@ -824,22 +814,18 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'boundary',
+      layerName: 'boundaries',
       minZoom: 0,
       maxZoom: 3,
       lineTexts: [],
       lines: [
         {
-          // Country borders: admin_level 2 (and any lower disputed/supranational levels).
-          // Skip maritime boundaries so we don't trace the offshore sovereignty line.
+          // Country borders: kind_detail is the admin_level, so 2 and any lower disputed or
+          // supranational levels. Protomaps leaves out the offshore sovereignty line.
           filters: [{
             match: 'less_than',
-            key: 'admin_level',
+            key: 'kind_detail',
             value: 3,
-          }, {
-            match: 'number_equals',
-            key: 'maritime',
-            value: 0,
           }],
           fill: 0x55407099 as RgbaU32,
           stroke: 0x55407055 as RgbaU32,
@@ -852,7 +838,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'boundary',
+      layerName: 'boundaries',
       minZoom: 3,
       maxZoom: 31,
       lineTexts: [],
@@ -861,7 +847,7 @@ export const NATURE: Readonly<Style> = {
           // Country borders (repeated so they keep drawing at state-visible zooms).
           filters: [{
             match: 'less_than',
-            key: 'admin_level',
+            key: 'kind_detail',
             value: 3,
           }],
           fill: 0x55407099 as RgbaU32,
@@ -874,12 +860,8 @@ export const NATURE: Readonly<Style> = {
           // State / province borders.
           filters: [{
             match: 'number_equals',
-            key: 'admin_level',
+            key: 'kind_detail',
             value: 4,
-          }, {
-            match: 'number_equals',
-            key: 'maritime',
-            value: 0,
           }],
           fill: 0x6a587ecc as RgbaU32,
           stroke: 0x6a587e77 as RgbaU32,
@@ -891,30 +873,10 @@ export const NATURE: Readonly<Style> = {
       points: [],
       polygons: [],
     },
+    // Protomaps' landcover is the coarse cover derived from rasters, and the ground cover OSM maps
+    // object by object is in landuse.
     {
-      layerName: 'contour_ft',
-      minZoom: 0,
-      maxZoom: 31,
-      lineTexts: [],
-      lines: [
-        {
-          filters: [{
-            match: 'greater_than',
-            key: 'nth_line',
-            value: 2,
-          }],
-          fill: 0x8A6E4B50 as RgbaU32,
-          stroke: 0x8A6E4B50 as RgbaU32,
-          radius: 0.5,
-          stipple: false,
-          z: Z_OVERLAY_TERRAIN,
-        },
-      ],
-      points: [],
-      polygons: [],
-    },
-    {
-      layerName: 'globallandcover',
+      layerName: 'landcover',
       minZoom: 0,
       maxZoom: 31,
       lineTexts: [],
@@ -924,10 +886,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
-              'crop',
-              'grass',
+              'farmland',
+              'grassland',
               'scrub',
             ],
           }],
@@ -940,10 +902,9 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'forest',
-              'tree',
             ],
           }],
           fill: 0x54AF2F66 as RgbaU32,
@@ -955,9 +916,9 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
-              'snow',
+              'glacier',
             ],
           }],
           fill: ICE_FILL,
@@ -969,7 +930,7 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'landcover',
+      layerName: 'landuse',
       minZoom: 0,
       maxZoom: 31,
       lineTexts: [],
@@ -979,7 +940,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'wetland',
             ],
@@ -993,10 +954,13 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'grass',
+              'grassland',
+              'meadow',
               'wood',
+              'forest',
             ],
           }],
           fill: 0x72B94866 as RgbaU32,
@@ -1008,10 +972,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'sand',
-              'state_beach',
+              'beach',
             ],
           }],
           fill: 0xf5e1bccc as RgbaU32,
@@ -1023,9 +987,9 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
-              'ice',
+              'glacier',
             ],
           }],
           fill: ICE_FILL,
@@ -1037,12 +1001,21 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'park',
+      layerName: 'pois',
       minZoom: 0,
       maxZoom: 10,
       lineTexts: [],
       lines: [],
       points: [PARK_LABEL],
+      polygons: [],
+    },
+    {
+      layerName: 'landuse',
+      minZoom: 0,
+      maxZoom: 10,
+      lineTexts: [],
+      lines: [],
+      points: [],
       polygons: [
         {
           ...PARK_OUTLINE,
@@ -1053,48 +1026,63 @@ export const NATURE: Readonly<Style> = {
       ],
     },
     {
-      layerName: 'park',
+      layerName: 'pois',
       minZoom: 10,
       maxZoom: 12,
       lineTexts: [],
       lines: [],
       // Protomaps ranks only the big regional parks and watersheds at 10.
       points: [rankedUnder(PARK_LABEL, 11)],
+      polygons: [],
+    },
+    {
+      layerName: 'landuse',
+      minZoom: 10,
+      maxZoom: 12,
+      lineTexts: [],
+      lines: [],
+      points: [],
       // No outlines yet, because at this zoom a region's parks are dozens of parcels and their
       // outlines tangle into a mesh.
       polygons: [CITY_PARK_FILL],
     },
     {
-      layerName: 'park',
+      layerName: 'pois',
       minZoom: 12,
       maxZoom: 31,
       lineTexts: [],
       lines: [],
       points: [PARK_LABEL],
+      polygons: [],
+    },
+    {
+      layerName: 'landuse',
+      minZoom: 12,
+      maxZoom: 31,
+      lineTexts: [],
+      lines: [],
+      points: [],
       polygons: [PARK_OUTLINE, CITY_PARK_FILL],
     },
     {
-      layerName: 'place',
+      layerName: 'places',
       minZoom: 0,
       maxZoom: 4,
       lineTexts: [],
       lines: [],
       points: [
         {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'country',
-              ],
-            },
-            {
-              match: 'less_than',
-              key: 'rank',
-              value: 3,
-            },
-          ],
+          filters: [{
+            match: 'string_in',
+            key: 'kind_detail',
+            value: [
+              'country',
+            ],
+          }, {
+            match: 'less_than',
+            key: 'min_zoom',
+            value: 3,
+          }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.55,
@@ -1104,48 +1092,42 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'place',
+      layerName: 'places',
       minZoom: 4,
       maxZoom: 5,
       lineTexts: [],
       lines: [],
       points: [
         {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'country',
-              ],
-            },
-            {
-              match: 'less_than',
-              key: 'rank',
-              value: 4,
-            },
-          ],
+          filters: [{
+            match: 'string_in',
+            key: 'kind_detail',
+            value: [
+              'country',
+            ],
+          }, {
+            match: 'less_than',
+            key: 'min_zoom',
+            value: 4,
+          }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.55,
           z: Z_OVERLAY_TEXT + 0.3,
         },
         {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'province',
-                'state',
-              ],
-            },
-            {
-              match: 'less_than',
-              key: 'rank',
-              value: 2,
-            },
-          ],
+          filters: [{
+            match: 'string_in',
+            key: 'kind_detail',
+            value: [
+              'province',
+              'state',
+            ],
+          }, {
+            match: 'less_than',
+            key: 'min_zoom',
+            value: 2,
+          }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.4,
@@ -1155,48 +1137,42 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'place',
+      layerName: 'places',
       minZoom: 5,
       maxZoom: 7,
       lineTexts: [],
       lines: [],
       points: [
         {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'country',
-              ],
-            },
-            {
-              match: 'less_than',
-              key: 'rank',
-              value: 4,
-            },
-          ],
+          filters: [{
+            match: 'string_in',
+            key: 'kind_detail',
+            value: [
+              'country',
+            ],
+          }, {
+            match: 'less_than',
+            key: 'min_zoom',
+            value: 4,
+          }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.55,
           z: Z_OVERLAY_TEXT + 0.3,
         },
         {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'province',
-                'state',
-              ],
-            },
-            {
-              match: 'less_than',
-              key: 'rank',
-              value: 3,
-            },
-          ],
+          filters: [{
+            match: 'string_in',
+            key: 'kind_detail',
+            value: [
+              'province',
+              'state',
+            ],
+          }, {
+            match: 'less_than',
+            key: 'min_zoom',
+            value: 3,
+          }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.5,
@@ -1204,20 +1180,17 @@ export const NATURE: Readonly<Style> = {
         },
         {
           // Only the very top-tier cities at this zoom — capitals and a few peers.
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'city',
-              ],
-            },
-            {
-              match: 'less_than',
-              key: 'rank',
-              value: 3,
-            },
-          ],
+          filters: [{
+            match: 'string_in',
+            key: 'kind_detail',
+            value: [
+              'city',
+            ],
+          }, {
+            match: 'less_than',
+            key: 'min_zoom',
+            value: 3,
+          }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.45,
@@ -1227,48 +1200,42 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'place',
+      layerName: 'places',
       minZoom: 7,
       maxZoom: 10,
       lineTexts: [],
       lines: [],
       points: [
         {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'city',
-              ],
-            },
-            {
-              match: 'less_than',
-              key: 'rank',
-              value: 8,
-            },
-          ],
+          filters: [{
+            match: 'string_in',
+            key: 'kind_detail',
+            value: [
+              'city',
+            ],
+          }, {
+            match: 'less_than',
+            key: 'min_zoom',
+            value: 8,
+          }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.5,
           z: Z_OVERLAY_TEXT + 0.1,
         },
         {
-          filters: [
-            {
-              match: 'string_in',
-              key: 'class',
-              value: [
-                'province',
-                'state',
-              ],
-            },
-            {
-              match: 'less_than',
-              key: 'rank',
-              value: 4,
-            },
-          ],
+          filters: [{
+            match: 'string_in',
+            key: 'kind_detail',
+            value: [
+              'province',
+              'state',
+            ],
+          }, {
+            match: 'less_than',
+            key: 'min_zoom',
+            value: 4,
+          }],
           textFill: 0x000000FF as RgbaU32,
           textStroke: 0xEFEFEFFF as RgbaU32,
           textScale: 0.55,
@@ -1278,7 +1245,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'place',
+      layerName: 'places',
       minZoom: 10,
       maxZoom: 11,
       lineTexts: [],
@@ -1292,7 +1259,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'place',
+      layerName: 'places',
       minZoom: 11,
       maxZoom: 13,
       lineTexts: [],
@@ -1308,7 +1275,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'place',
+      layerName: 'places',
       minZoom: 13,
       maxZoom: 31,
       lineTexts: [],
@@ -1332,7 +1299,7 @@ export const NATURE: Readonly<Style> = {
     // casing covers the streets running into it. The step has to clear the 0.1 the line program
     // drops the casing by, or else a casing lands on top of the class above it.
     {
-      layerName: 'transportation',
+      layerName: 'roads',
       minZoom: 0,
       maxZoom: 9,
       lineTexts: [],
@@ -1340,10 +1307,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'primary',
-              'primary_construction',
+              'primary_link',
             ],
           }],
           fill: 0x9B9180FF as RgbaU32,
@@ -1355,11 +1322,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
-              'motorway_construction',
+              'motorway_link',
               'trunk',
+              'trunk_link',
             ],
           }],
           fill: 0x8E8474FF as RgbaU32,
@@ -1373,7 +1341,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'transportation',
+      layerName: 'roads',
       minZoom: 9,
       maxZoom: 11,
       lineTexts: [],
@@ -1381,10 +1349,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'secondary',
-              'secondary_construction',
+              'secondary_link',
             ],
           }],
           fill: 0xA49A88FF as RgbaU32,
@@ -1396,10 +1364,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'primary',
-              'primary_construction',
+              'primary_link',
             ],
           }],
           fill: 0x9B9180FF as RgbaU32,
@@ -1411,11 +1379,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
-              'motorway_construction',
+              'motorway_link',
               'trunk',
+              'trunk_link',
             ],
           }],
           fill: 0xB3ACA1FF as RgbaU32,
@@ -1429,7 +1398,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'transportation',
+      layerName: 'roads',
       minZoom: 11,
       maxZoom: 12,
       lineTexts: [],
@@ -1437,10 +1406,16 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'rail',
-              'transit',
+              'narrow_gauge',
+              'preserved',
+              'funicular',
+              'subway',
+              'light_rail',
+              'tram',
+              'monorail',
             ],
           }],
           fill: 0xAAAAAAAA as RgbaU32,
@@ -1452,10 +1427,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
-              'minor',
-              'minor_construction',
+              'residential',
+              'unclassified',
+              'living_street',
+              'road',
             ],
           }],
           fill: 0xB2A998FF as RgbaU32,
@@ -1467,9 +1444,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'tertiary',
+              'tertiary_link',
             ],
           }],
           fill: 0xD8D2C6FF as RgbaU32,
@@ -1481,10 +1459,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'secondary',
-              'secondary_construction',
+              'secondary_link',
             ],
           }],
           fill: 0xE8E4DCFF as RgbaU32,
@@ -1496,10 +1474,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'primary',
-              'primary_construction',
+              'primary_link',
             ],
           }],
           fill: 0xF5F3EFFF as RgbaU32,
@@ -1511,11 +1489,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
-              'motorway_construction',
+              'motorway_link',
               'trunk',
+              'trunk_link',
             ],
           }],
           fill: 0xFAF9F7FF as RgbaU32,
@@ -1529,7 +1508,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'transportation',
+      layerName: 'roads',
       minZoom: 12,
       maxZoom: 13,
       lineTexts: [],
@@ -1537,10 +1516,16 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'rail',
-              'transit',
+              'narrow_gauge',
+              'preserved',
+              'funicular',
+              'subway',
+              'light_rail',
+              'tram',
+              'monorail',
             ],
           }],
           fill: 0xAAAAAAAA as RgbaU32,
@@ -1552,10 +1537,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
-              'minor',
-              'minor_construction',
+              'residential',
+              'unclassified',
+              'living_street',
+              'road',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1567,9 +1554,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'tertiary',
+              'tertiary_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1581,10 +1569,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'secondary',
-              'secondary_construction',
+              'secondary_link',
             ],
           }],
           fill: 0xFCFBF9FF as RgbaU32,
@@ -1596,10 +1584,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'primary',
-              'primary_construction',
+              'primary_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1611,11 +1599,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
-              'motorway_construction',
+              'motorway_link',
               'trunk',
+              'trunk_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1629,7 +1618,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'transportation',
+      layerName: 'roads',
       minZoom: 13,
       maxZoom: 15,
       lineTexts: [],
@@ -1637,7 +1626,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'service',
             ],
@@ -1651,10 +1640,16 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'rail',
-              'transit',
+              'narrow_gauge',
+              'preserved',
+              'funicular',
+              'subway',
+              'light_rail',
+              'tram',
+              'monorail',
             ],
           }],
           fill: 0xAAAAAAAA as RgbaU32,
@@ -1666,10 +1661,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
-              'minor',
-              'minor_construction',
+              'residential',
+              'unclassified',
+              'living_street',
+              'road',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1681,9 +1678,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'tertiary',
+              'tertiary_link',
             ],
           }],
           fill: 0xF8F7F4FF as RgbaU32,
@@ -1695,10 +1693,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'secondary',
-              'secondary_construction',
+              'secondary_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1710,10 +1708,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'primary',
-              'primary_construction',
+              'primary_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1725,11 +1723,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
-              'motorway_construction',
+              'motorway_link',
               'trunk',
+              'trunk_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1743,8 +1742,8 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      // MapTiler stops at zoom 15, so past here we're overzooming and only the pixel widths grow.
-      layerName: 'transportation',
+      // Protomaps stops at zoom 15, so past here we're overzooming and only the pixel widths grow.
+      layerName: 'roads',
       minZoom: 15,
       maxZoom: 31,
       lineTexts: [],
@@ -1752,7 +1751,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'service',
             ],
@@ -1766,10 +1765,16 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'rail',
-              'transit',
+              'narrow_gauge',
+              'preserved',
+              'funicular',
+              'subway',
+              'light_rail',
+              'tram',
+              'monorail',
             ],
           }],
           fill: 0xAAAAAAAA as RgbaU32,
@@ -1781,10 +1786,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
-              'minor',
-              'minor_construction',
+              'residential',
+              'unclassified',
+              'living_street',
+              'road',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1796,9 +1803,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'tertiary',
+              'tertiary_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1810,10 +1818,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'secondary',
-              'secondary_construction',
+              'secondary_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1825,10 +1833,10 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'primary',
-              'primary_construction',
+              'primary_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1840,11 +1848,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
-              'motorway_construction',
+              'motorway_link',
               'trunk',
+              'trunk_link',
             ],
           }],
           fill: 0xFFFFFFFF as RgbaU32,
@@ -1863,45 +1872,26 @@ export const NATURE: Readonly<Style> = {
     // ribbon.
     //
     // A motorway labels with its shield number instead of its name, because "101" orients you and
-    // "Bayshore Freeway" doesn't. That only holds for a route that's actually signed by number:
-    // network is 'road' when there is no shield network, and then the ref is something like
-    // "CR G6" on a road every local calls Central Expressway. Those keep their name, and the
-    // rule has to come first because the first matching style wins.
+    // "Bayshore Freeway" doesn't. Protomaps only fills shield_text for a route that's actually
+    // signed by number, so a road every local calls Central Expressway falls back to its name
+    // rather than to a ref like "CR G6".
     {
-      layerName: 'transportation_name',
+      layerName: 'roads',
       minZoom: 10,
       maxZoom: 13,
       lineTexts: [
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
+              'motorway_link',
               'trunk',
-            ],
-          }, {
-            match: 'string_equals',
-            key: 'network',
-            value: 'road',
-          }],
-          preferred: `name:${PREFERRED_LANGUAGE}`,
-          fallback: 'name',
-          fill: 0x655F57FF as RgbaU32,
-          stroke: 0xFFFFFFDD as RgbaU32,
-          scale: 0.5,
-          z: Z_OVERLAY_TEXT - 0.05,
-        },
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
-            value: [
-              'motorway',
-              'trunk',
+              'trunk_link',
             ],
           }],
-          preferred: 'ref',
+          preferred: 'shield_text',
           fallback: 'name',
           fill: 0x655F57FF as RgbaU32,
           stroke: 0xFFFFFFDD as RgbaU32,
@@ -1914,24 +1904,22 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'transportation_name',
+      layerName: 'roads',
       minZoom: 13,
       maxZoom: 16,
       lineTexts: [
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
+              'motorway_link',
               'trunk',
+              'trunk_link',
             ],
-          }, {
-            match: 'string_equals',
-            key: 'network',
-            value: 'road',
           }],
-          preferred: `name:${PREFERRED_LANGUAGE}`,
+          preferred: 'shield_text',
           fallback: 'name',
           fill: 0x655F57FF as RgbaU32,
           stroke: 0xFFFFFFDD as RgbaU32,
@@ -1941,27 +1929,14 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
-            value: [
-              'motorway',
-              'trunk',
-            ],
-          }],
-          preferred: 'ref',
-          fallback: 'name',
-          fill: 0x655F57FF as RgbaU32,
-          stroke: 0xFFFFFFDD as RgbaU32,
-          scale: 0.5,
-          z: Z_OVERLAY_TEXT - 0.05,
-        },
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'primary',
+              'primary_link',
               'secondary',
+              'secondary_link',
               'tertiary',
+              'tertiary_link',
             ],
           }],
           preferred: `name:${PREFERRED_LANGUAGE}`,
@@ -1977,24 +1952,22 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'transportation_name',
+      layerName: 'roads',
       minZoom: 16,
       maxZoom: 31,
       lineTexts: [
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'motorway',
+              'motorway_link',
               'trunk',
+              'trunk_link',
             ],
-          }, {
-            match: 'string_equals',
-            key: 'network',
-            value: 'road',
           }],
-          preferred: `name:${PREFERRED_LANGUAGE}`,
+          preferred: 'shield_text',
           fallback: 'name',
           fill: 0x655F57FF as RgbaU32,
           stroke: 0xFFFFFFDD as RgbaU32,
@@ -2004,27 +1977,14 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
-            value: [
-              'motorway',
-              'trunk',
-            ],
-          }],
-          preferred: 'ref',
-          fallback: 'name',
-          fill: 0x655F57FF as RgbaU32,
-          stroke: 0xFFFFFFDD as RgbaU32,
-          scale: 0.5,
-          z: Z_OVERLAY_TEXT - 0.05,
-        },
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
               'primary',
+              'primary_link',
               'secondary',
+              'secondary_link',
               'tertiary',
+              'tertiary_link',
             ],
           }],
           preferred: `name:${PREFERRED_LANGUAGE}`,
@@ -2037,9 +1997,12 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind_detail',
             value: [
-              'minor',
+              'residential',
+              'unclassified',
+              'living_street',
+              'road',
             ],
           }],
           preferred: `name:${PREFERRED_LANGUAGE}`,
@@ -2072,8 +2035,10 @@ export const NATURE: Readonly<Style> = {
         },
       ],
     },
+    // Protomaps hangs a lake's name on the polygon rather than on a point, and the renderer only
+    // labels points and lines, so this ends up labeling rivers and canals.
     {
-      layerName: 'water_name',
+      layerName: 'water',
       minZoom: 0,
       maxZoom: 31,
       lineTexts: [{
@@ -2098,7 +2063,7 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'waterway',
+      layerName: 'water',
       minZoom: 0,
       maxZoom: 12,
       lineTexts: [],
@@ -2106,7 +2071,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'canal',
               'river',
@@ -2124,13 +2089,13 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'waterway',
+      layerName: 'water',
       minZoom: 12,
       maxZoom: 31,
       lineTexts: [{
         filters: [{
           match: 'string_in',
-          key: 'class',
+          key: 'kind',
           value: [
             'canal',
             'river',
@@ -2148,7 +2113,7 @@ export const NATURE: Readonly<Style> = {
         {
           filters: [{
             match: 'string_in',
-            key: 'class',
+            key: 'kind',
             value: [
               'canal',
               'river',

@@ -14,7 +14,6 @@ import { MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { ANTARCTIC_CAP, ARCTIC_CAP, MbtileLayer, NATURE } from 'js/map/layers/mbtile_layer';
 import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
-import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
@@ -72,7 +71,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       new MbtileLayer(
           [PROTOMAPS_COPYRIGHT],
           'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
-          toProtomaps(NATURE),
+          NATURE,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 15,

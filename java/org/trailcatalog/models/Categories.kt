@@ -162,7 +162,7 @@ enum class WayCategory(override val id: Int) : Category<WayCategory> {
         RAIL_PRESERVED(RAIL.id * ENUM_SIZE + 2),
         RAIL_FUNICULAR(RAIL.id * ENUM_SIZE + 3),
 
-        // What OpenMapTiles calls transit, as opposed to the mainline rail above.
+        // Transit, as opposed to the mainline rail above.
         RAIL_SUBWAY(RAIL.id * ENUM_SIZE + 4),
         RAIL_LIGHT_RAIL(RAIL.id * ENUM_SIZE + 5),
         RAIL_TRAM(RAIL.id * ENUM_SIZE + 6),

@@ -63,7 +63,7 @@ import { CollectionLayer, HeldObject } from './collection_layer';
 import {
   BASEMAP_LABEL_KINDS,
   basemapOf,
-  NATURE_PROTOMAPS,
+  NATURE_WITHOUT_DETAILED_WAYS,
   NODE_KINDS,
   OSM_WAYS,
   osmWaysOf,
@@ -629,7 +629,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         new MbtileLayer(
             [PROTOMAPS_COPYRIGHT],
             'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
-            NATURE_PROTOMAPS,
+            NATURE_WITHOUT_DETAILED_WAYS,
             /* extraZoom= */ 0,
             /* minZoom= */ 0,
             /* maxZoom= */ 15,
