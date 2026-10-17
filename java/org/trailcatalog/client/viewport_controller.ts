@@ -157,26 +157,6 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           this.mapController.renderer,
       ),
     }, {
-      name: 'MapTiler vector',
-      enabled: false,
-      layer: new MbtileLayer(
-          [
-            {
-              long: 'Base political and transportation packaged and served by MapTiler',
-              short: 'MapTiler',
-              url: 'https://www.maptiler.com/copyright/',
-            },
-            OSM_COPYRIGHT,
-          ],
-          'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
-              + 'key=UGTHB0b969Xa1xpZvnvB',
-          NATURE,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          /* maxZoom= */ 15,
-          this.mapController.renderer,
-      ),
-    }, {
       name: 'Trails',
       enabled: true,
       layer: this.mapData,

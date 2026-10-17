@@ -8,12 +8,13 @@ import { Long, S2CellId, S2LatLng, S2LatLngRect, S2Loop, S2Polygon } from 'java/
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectS2Loop, unprojectS2LatLng } from 'js/map/camera';
 import { rgbaToUint32 } from 'js/map/common/math';
-import { COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT } from 'js/map/common/copyrights';
+import { COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT, PROTOMAPS_COPYRIGHT } from 'js/map/common/copyrights';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { MAP_MOVED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { ANTARCTIC_CAP, ARCTIC_CAP, MbtileLayer, NATURE } from 'js/map/layers/mbtile_layer';
 import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
+import { toProtomaps } from 'js/map/layers/protomaps_translation';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
@@ -69,17 +70,9 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       new SkyboxLayer(Z_BOTTOM, this.mapController.renderer),
       new PolarCapLayer(ARCTIC_CAP, ANTARCTIC_CAP, this.mapController.renderer),
       new MbtileLayer(
-          [
-            {
-              long: 'Base political and transportation packaged and served by MapTiler',
-              short: 'MapTiler',
-              url: 'https://www.maptiler.com/copyright/',
-            },
-            OSM_COPYRIGHT,
-          ],
-          'https://api.maptiler.com/tiles/v3/${id.zoom}/${id.x}/${id.y}.pbf?'
-              + 'key=UGTHB0b969Xa1xpZvnvB',
-          NATURE,
+          [PROTOMAPS_COPYRIGHT],
+          'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
+          toProtomaps(NATURE),
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
           /* maxZoom= */ 15,
