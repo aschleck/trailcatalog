@@ -26,19 +26,28 @@ export async function fetchTerrarium(id: TileId): Promise<Float32Array|undefined
   return decodeTerrarium(await response.blob());
 }
 
+/** Converts a terrarium pixel's 24 packed RGB bits to meters. */
+export function terrariumMeters(packed: number): number {
+  return packed / 256 - TERRARIUM_OFFSET;
+}
+
+export async function decodeTerrarium(blob: Blob): Promise<Float32Array> {
+  const rgba = await readTerrarium(blob);
+  const meters = new Float32Array(TILE_SIZE * TILE_SIZE);
+  for (let i = 0; i < meters.length; ++i) {
+    meters[i] = rgba[4 * i] * 256 + rgba[4 * i + 1] + rgba[4 * i + 2] / 256 - TERRARIUM_OFFSET;
+  }
+  return meters;
+}
+
 // Decodes without color management or premultiplying, either of which would shift the channels
 // and so the meters they encode.
-export async function decodeTerrarium(blob: Blob): Promise<Float32Array> {
+export async function readTerrarium(blob: Blob): Promise<Uint8ClampedArray> {
   const bitmap =
       await createImageBitmap(blob, {colorSpaceConversion: 'none', premultiplyAlpha: 'none'});
   const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE);
   const context = canvas.getContext('2d', {willReadFrequently: true})!;
   context.drawImage(bitmap, 0, 0);
   bitmap.close();
-  const rgba = context.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data;
-  const meters = new Float32Array(TILE_SIZE * TILE_SIZE);
-  for (let i = 0; i < meters.length; ++i) {
-    meters[i] = rgba[4 * i] * 256 + rgba[4 * i + 1] + rgba[4 * i + 2] / 256 - TERRARIUM_OFFSET;
-  }
-  return meters;
+  return context.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data;
 }

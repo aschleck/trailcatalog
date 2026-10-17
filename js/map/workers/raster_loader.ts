@@ -3,7 +3,7 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { TileId } from '../common/types';
 
 import { Reply, serveClients } from './client_pool';
-import { decodeTerrarium } from './terrarium';
+import { readTerrarium, terrariumMeters } from './terrarium';
 import { colorWeather, readPacked, unpackSnodas, WeatherView } from './weather';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height, the
@@ -60,7 +60,8 @@ class RasterLoader {
     if (this.decode === 'image') {
       bitmap = await createImageBitmap(blob);
     } else if (this.decode === 'elevation') {
-      bitmap = await decodeElevation(blob);
+      packed = await readTerrarium(blob);
+      bitmap = await colorElevation(packed);
     } else {
       const pixels = await readPacked(blob);
       packed = pixels.data.slice();
@@ -106,14 +107,15 @@ function colorSnow(rgba: Uint8ClampedArray, depth: boolean): void {
 
 // Mapterhorn has no bathymetry and stores the sea as 0 m, but so does land on the 0 m contour after
 // its quantization, so we color the sea as lowland and leave it to the basemap's water to cover.
-async function decodeElevation(blob: Blob): Promise<ImageBitmap> {
-  const meters = await decodeTerrarium(blob);
-  const size = Math.sqrt(meters.length);
+function colorElevation(terrarium: Uint8ClampedArray): Promise<ImageBitmap> {
+  const size = Math.sqrt(terrarium.length / 4);
   const pixels = new ImageData(size, size);
   const rgba = pixels.data;
   const last = ELEVATION_METER_STOPS.length - 1;
-  for (let i = 0; i < meters.length; ++i) {
-    const m = meters[i];
+  for (let i = 0; i < size * size; ++i) {
+    const m =
+        terrariumMeters(
+            (terrarium[4 * i] << 16) | (terrarium[4 * i + 1] << 8) | terrarium[4 * i + 2]);
     let band = 0;
     while (band + 1 < last && ELEVATION_METER_STOPS[band + 1] <= m) {
       band += 1;

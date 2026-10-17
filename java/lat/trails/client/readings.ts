@@ -9,6 +9,7 @@ import {
   WeatherView,
   wetBulb,
 } from 'js/map/workers/weather';
+import { terrariumMeters } from 'js/map/workers/terrarium';
 import { formatHeight, formatTemperature, shouldUseImperial } from 'js/units/formatters';
 
 const NO_DATA = 'No data';
@@ -80,6 +81,11 @@ export function readSnodas(depth: boolean, packed: number): string {
     return NO_DATA;
   }
   return depth ? snowDepth(snow.depthCm) : water(snow.waterMm);
+}
+
+/** Describes the height of a terrarium pixel from its 24 packed bits. */
+export function readElevation(packed: number): string {
+  return height(terrariumMeters(packed));
 }
 
 function precipitation(v: Values): string {

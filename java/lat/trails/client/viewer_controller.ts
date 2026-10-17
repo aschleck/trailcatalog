@@ -159,7 +159,7 @@ import { MarkerToolLayer } from './marker_tool_layer';
 import { MENU_CLASSES } from './menubar';
 import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
-import { readSnodas, readWeather } from './readings';
+import { readElevation, readSnodas, readWeather } from './readings';
 import { parseCoordinates, SearchHit, searchLabel, SearchState } from './search_box';
 import { RenameDialog } from './rename_dialog';
 import { SchemaDialog } from './schema_dialog';
@@ -639,6 +639,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             sentinelSearch(sentinelValues),
             Z_BASE_SATELLITE,
             this.mapController.renderer);
+    const elevations =
+        new RasterTileLayer(
+            [MAPTERHORN_COPYRIGHT],
+            TERRARIUM_TILE_URL,
+            /* tint= */ 0xFFFFFFFF as RgbaU32,
+            /* z= */ Z_BASE_ELEVATION,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            /* maxZoom= */ TERRARIUM_BASE_ZOOM,
+            this.mapController.renderer,
+            'elevation');
 
     const nodes = sortLayerNodes([{
       kind: 'group',
@@ -1165,19 +1176,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         id: 'topography/elevations',
         name: 'Elevation colors',
         enabled: false,
-        layer: new RasterTileLayer(
-            [MAPTERHORN_COPYRIGHT],
-            TERRARIUM_TILE_URL,
-            /* tint= */ 0xFFFFFFFF as RgbaU32,
-            /* z= */ Z_BASE_ELEVATION,
-            /* extraZoom= */ 0,
-            /* minZoom= */ 0,
-            /* maxZoom= */ TERRARIUM_BASE_ZOOM,
-            this.mapController.renderer,
-            'elevation',
-        ),
+        layer: elevations,
         controls: [],
         values: {},
+        readout: {
+          name: 'Elevation',
+          read: point => {
+            const packed = elevations.packedAt(point);
+            return packed !== undefined ? readElevation(packed) : undefined;
+          },
+        },
       }, {
         kind: 'layer',
         id: 'topography/slopes',
