@@ -21,7 +21,7 @@ import { CLICKED, MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
-import { EarthSearchLayer } from 'js/map/layers/earth_search_layer';
+import { StacLayer } from 'js/map/layers/stac_layer';
 import {
   ANTARCTIC_CAP,
   ARCTIC_CAP,
@@ -36,7 +36,7 @@ import { Decode } from 'js/map/workers/raster_loader';
 import { ECMWF_LAYERS, EcmwfLayer, WEATHER_VIEWS, WeatherView } from 'js/map/workers/weather';
 import { SlopeLayer } from 'js/map/layers/slope_layer';
 import { WindVectorLayer } from 'js/map/layers/wind_vector_layer';
-import { Search } from 'js/map/workers/earth_search_loader';
+import { Bands, Channel, Search } from 'js/map/workers/stac_loader';
 import { Elevations } from 'js/map/workers/elevations';
 import { Style } from 'js/map/workers/mbtile_loader';
 import { LocationIndex } from 'js/map/workers/location_index';
@@ -198,6 +198,86 @@ const SWISSTOPO_COPYRIGHT: Copyright = {
   long: 'Federal Office of Topography swisstopo',
   short: 'swisstopo',
   url: 'https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices',
+};
+// Sentinel-1A's first imagery is from October 2014
+const SENTINEL_1_FIRST_YEAR = 2014;
+// Sentinel-2A launched in June 2015
+const SENTINEL_2_FIRST_YEAR = 2015;
+// Cloud shadows, medium and high probability clouds, and cirrus in the scene classification
+// https://docs.sentinel-hub.com/api/latest/data/sentinel-2-l2a/
+const SENTINEL_2_MASK = {asset: 'scl', hidden: [3, 8, 9, 10]};
+const SENTINEL_2_TRUE_COLOR: [Channel, Channel, Channel] =
+    [byteSample('visual', 0), byteSample('visual', 1), byteSample('visual', 2)];
+// Keyed by the value of the Sentinel-2 entry's bands control. sentinel2Bands adds the mask.
+const SENTINEL_2_BANDS: {[key: string]: Bands} = {
+  true_color: {channels: SENTINEL_2_TRUE_COLOR},
+  // https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/swir-rgb/
+  swir: {channels: [reflectance('swir22'), reflectance('nir08'), reflectance('red')]},
+  // https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/false_color_infrared/
+  infrared: {channels: [reflectance('nir'), reflectance('red'), reflectance('green')]},
+  // https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/ndvi/
+  ndvi: {
+    channels: [normalizedDifference('nir', 'red')],
+    palette: [
+      [-0.5, 0x0c0c0c],
+      [-0.2, 0xbfbfbf],
+      [-0.1, 0xdbdbdb],
+      [0, 0xeaeaea],
+      [0.025, 0xfff9cc],
+      [0.05, 0xede8b5],
+      [0.075, 0xddd89b],
+      [0.1, 0xccc682],
+      [0.125, 0xbcb76b],
+      [0.15, 0xafc160],
+      [0.175, 0xa3cc59],
+      [0.2, 0x91bf51],
+      [0.25, 0x7fb247],
+      [0.3, 0x70a33f],
+      [0.35, 0x609635],
+      [0.4, 0x4f892d],
+      [0.45, 0x3f7c23],
+      [0.5, 0x306d1c],
+      [0.55, 0x216011],
+      [0.6, 0x0f540a],
+      [1, 0x004400],
+    ].map(([at, color]) => ({at: indexByte(at), color})),
+  },
+  // https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/ndsi/
+  ndsi: {
+    channels: SENTINEL_2_TRUE_COLOR,
+    highlight: {
+      channel: normalizedDifference('green', 'swir16'),
+      min: indexByte(0.42),
+      color: 0x00ccff,
+    },
+  },
+  // https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/scene-classification/
+  scl: {
+    channels: [{...byteSample('scl', 0), nearest: true}],
+    palette: [
+      0x000000, // no data
+      0xff0000, // saturated or defective
+      0x2f2f2f, // dark area or topographic shadow
+      0x643200, // cloud shadow
+      0x00a000, // vegetation
+      0xffe65a, // not vegetated
+      0x0000ff, // water
+      0x808080, // unclassified
+      0xc0c0c0, // cloud, medium probability
+      0xffffff, // cloud, high probability
+      0x64c8ff, // thin cirrus
+      0xff96ff, // snow or ice
+    ].map((color, at) => ({at, color})),
+  },
+};
+// Backscatter mostly runs from -25 to 0 dB in VV and -30 to -5 dB in VH, and their ratio from 0 to
+// 15 dB.
+const SENTINEL_1_BANDS: Bands = {
+  channels: [
+    decibels('vv', undefined, -25, 0),
+    decibels('vh', undefined, -30, -5),
+    decibels('vv', 'vh', 0, 15),
+  ],
 };
 // Keep in sync with snodas.sh, which writes one archive per day named snodas_<day>.pmtiles
 const SNODAS_URL = 'https://tiles.trailcatalog.org/snodas_';
@@ -602,13 +682,41 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             /* maxZoom= */ 15,
             this.mapController.renderer,
         );
-    const yearAgo = new Date();
-    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-    const sentinelValues = {from: isoDay(yearAgo), to: isoDay(new Date()), cloud: 5};
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+    const sentinelValues = {
+      bands: 'true_color',
+      fill_clouds: true,
+      from: isoDay(fiveDaysAgo),
+      to: isoDay(new Date()),
+      cloud: 50,
+    };
     const sentinel =
-        new EarthSearchLayer(
-            'sentinel-2-l2a',
+        new StacLayer(
+            {
+              searchUrl: 'https://earth-search.aws.element84.com/v1/search',
+              collection: 'sentinel-2-c1-l2a',
+            },
             sentinelSearch(sentinelValues),
+            sentinel2Bands(sentinelValues),
+            SENTINEL_2_FIRST_YEAR,
+            copernicusCredit,
+            Z_BASE_SATELLITE,
+            this.mapController.renderer);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const sentinel1Values = {from: isoDay(weekAgo), to: isoDay(new Date())};
+    const sentinel1 =
+        new StacLayer(
+            {
+              searchUrl: 'https://planetarycomputer.microsoft.com/api/stac/v1/search',
+              collection: 'sentinel-1-rtc',
+              tokenUrl: 'https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-1-rtc',
+            },
+            sentinelSearch(sentinel1Values),
+            SENTINEL_1_BANDS,
+            SENTINEL_1_FIRST_YEAR,
+            sentinel1Credit,
             Z_BASE_SATELLITE,
             this.mapController.renderer);
     const elevations =
@@ -994,18 +1102,46 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         ],
       }, {
         kind: 'layer',
+        id: 'satellite/sentinel_1',
+        name: 'Sentinel-1 RTC',
+        enabled: false,
+        layer: sentinel1,
+        controls: [
+          {kind: 'date', key: 'from', label: 'From'},
+          {kind: 'date', key: 'to', label: 'To'},
+        ],
+        values: sentinel1Values,
+        configure: values => {
+          sentinel1.setSearch(sentinelSearch(values), SENTINEL_1_BANDS);
+        },
+      }, {
+        kind: 'layer',
         id: 'satellite/sentinel',
-        name: 'Sentinel L2A',
+        name: 'Sentinel-2 L2A',
         enabled: false,
         layer: sentinel,
         controls: [
+          {
+            kind: 'select',
+            key: 'bands',
+            label: 'Bands',
+            options: [
+              {value: 'infrared', label: 'Color infrared'},
+              {value: 'scl', label: 'Scene classification'},
+              {value: 'swir', label: 'Shortwave infrared'},
+              {value: 'ndsi', label: 'Snow index (NDSI)'},
+              {value: 'true_color', label: 'True color'},
+              {value: 'ndvi', label: 'Vegetation index (NDVI)'},
+            ],
+          },
+          {kind: 'checkbox', key: 'fill_clouds', label: 'Fill clouds'},
           {kind: 'date', key: 'from', label: 'From'},
           {kind: 'date', key: 'to', label: 'To'},
           {kind: 'percent', key: 'cloud', label: 'Max cloud cover'},
         ],
         values: sentinelValues,
         configure: values => {
-          sentinel.setSearch(sentinelSearch(values));
+          sentinel.setSearch(sentinelSearch(values), sentinel2Bands(values));
         },
       }],
     }, {
@@ -1930,7 +2066,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       },
     });
     entry.configure?.(values);
-    // The Sentinel layer credits the years it searches
+    // The Sentinel layers credit the years they search
     this.mapController.copyrightsChanged();
     this.layerEdits += 1;
     this.saveViewState();
@@ -3813,8 +3949,92 @@ function sentinelSearch(values: ControlValues): Search {
     // Without a zone, Date reads these as local time.
     from: from ? new Date(`${from}T00:00:00`).toISOString() : '..',
     to: to ? new Date(`${to}T23:59:59.999`).toISOString() : '..',
-    query: {'eo:cloud_cover': {lte: values.cloud}},
+    // Sentinel-1 skips cloud filtering because its radar sees through clouds.
+    query: values.cloud === undefined ? {} : {'eo:cloud_cover': {lte: values.cloud}},
   };
+}
+
+// Defaults to masked true color because older saved views have no bands or fill_clouds value.
+function sentinel2Bands(values: ControlValues): Bands {
+  const bands = SENTINEL_2_BANDS[String(values.bands)] ?? SENTINEL_2_BANDS.true_color;
+  return values.fill_clouds === false ? bands : {...bands, mask: SENTINEL_2_MASK};
+}
+
+function byteSample(asset: string, sample: number): Channel {
+  return {asset, sample, nearest: false, offset: 0, decibels: false, scale: 1, bias: 0};
+}
+
+// Stretches reflectance from 0 to 0.4 across a byte, the gain of 2.5 Sentinel Hub's composites use.
+// Sentinel-2 Collection 1 stores reflectance as 0.0001 * (DN - 1000) in every year.
+function reflectance(asset: string): Channel {
+  return {
+    asset,
+    sample: 0,
+    nearest: false,
+    offset: -1000,
+    decibels: false,
+    scale: 0.0001 * 255 / 0.4,
+    bias: 0,
+  };
+}
+
+// An index like NDVI from two Sentinel-2 bands, written as its indexByte
+function normalizedDifference(a: string, b: string): Channel {
+  return {
+    asset: a,
+    sample: 0,
+    nearest: false,
+    // the 0.0001 scale cancels out of the ratio, but the offset doesn't
+    offset: -1000,
+    combine: {asset: b, sample: 0, op: 'normalized_difference'},
+    decibels: false,
+    scale: 127.5,
+    bias: 127.5,
+  };
+}
+
+// Maps -1 to 1 across a byte, the way normalizedDifference writes it
+function indexByte(index: number): number {
+  return Math.round(127.5 * (index + 1));
+}
+
+function decibels(asset: string, over: string|undefined, low: number, high: number): Channel {
+  return {
+    asset,
+    sample: 0,
+    nearest: false,
+    offset: 0,
+    combine: over === undefined ? undefined : {asset: over, sample: 0, op: 'ratio'},
+    decibels: true,
+    scale: 255 / (high - low),
+    bias: -255 * low / (high - low),
+  };
+}
+
+// https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
+function copernicusCredit(years: string): Copyright[] {
+  return [{
+    long: `Contains modified Copernicus Sentinel data ${years}`,
+    short: `Copernicus Sentinel ${years}`,
+  }];
+}
+
+// Credits Copernicus and Catalyst separately because Catalyst licenses its terrain correction
+// apart from the Copernicus data.
+function sentinel1Credit(years: string): Copyright[] {
+  return [
+    ...copernicusCredit(years),
+    {
+      long: 'Sentinel-1 RTC by Catalyst',
+      short: 'Catalyst',
+      url: 'https://planetarycomputer.microsoft.com/dataset/sentinel-1-rtc',
+      provider: {
+        name: 'Microsoft Planetary Computer',
+        url: 'https://planetarycomputer.microsoft.com',
+      },
+      license: CC_BY_4,
+    },
+  ];
 }
 
 function newCollectionName(): string {

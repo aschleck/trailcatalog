@@ -10,15 +10,13 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-import { Command as LoaderCommand, LoadTileCommand, Request as LoaderRequest, Search } from '../workers/earth_search_loader';
+import { Bands, Catalog, Command as LoaderCommand, LoadTileCommand, Request as LoaderRequest, Search } from '../workers/stac_loader';
 
 const NO_OFFSET: Vec2 = [0, 0];
 // A viewport holds well under 64 billboards, so the buffer never grows in practice.
 const TILE_BUFFER_BYTES = 65536;
-// Sentinel-2A launched in June 2015
-const SENTINEL_2_FIRST_YEAR = 2015;
 
-export class EarthSearchLayer extends Layer {
+export class StacLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderCommand>;
@@ -30,8 +28,13 @@ export class EarthSearchLayer extends Layer {
   private search: Search;
 
   constructor(
-      collection: string,
+      catalog: Catalog,
       search: Search,
+      bands: Bands,
+      // The year the imagery starts, for crediting a search with no start
+      private readonly firstYear: number,
+      // Credits the imagery for a range of years, like "2015-2026"
+      private readonly credit: (years: string) => Copyright[],
       private readonly z: number,
       private readonly renderer: Renderer,
   ) {
@@ -40,7 +43,7 @@ export class EarthSearchLayer extends Layer {
     this.buffer = this.renderer.createDataBuffer(TILE_BUFFER_BYTES);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
     this.loader =
-        new QueuedWorkerPool(new URL('earth_search_loader_worker.js', import.meta.url).href, 1);
+        new QueuedWorkerPool(new URL('stac_loader_worker.js', import.meta.url).href, 1);
     this.fetching = false;
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
@@ -66,29 +69,26 @@ export class EarthSearchLayer extends Layer {
     this.search = search;
     this.loader.broadcast({
       kind: 'ir',
-      collection,
+      catalog,
       search,
+      bands,
     });
   }
 
-  /** Replaces the imagery on screen with what the search finds. */
-  setSearch(search: Search): void {
+  /** Replaces the imagery on screen with what the search finds, drawn with the bands. */
+  setSearch(search: Search, bands: Bands): void {
     this.search = search;
     this.loader.broadcast({
       kind: 'usr',
       search,
+      bands,
     });
   }
 
-  // https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice
   override get copyrights(): Copyright[] {
-    const from = yearOf(this.search.from) ?? SENTINEL_2_FIRST_YEAR;
+    const from = yearOf(this.search.from) ?? this.firstYear;
     const to = yearOf(this.search.to) ?? new Date().getFullYear();
-    const years = from === to ? `${from}` : `${from}-${to}`;
-    return [{
-      long: `Contains modified Copernicus Sentinel data ${years}`,
-      short: `Copernicus Sentinel ${years}`,
-    }];
+    return this.credit(from === to ? `${from}` : `${from}-${to}`);
   }
 
   override hasNewData(): boolean {

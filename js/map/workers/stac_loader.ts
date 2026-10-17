@@ -11,6 +11,15 @@ import { clamp } from 'external/dev_april_corgi+/js/common/math';
 import { projectLatLngRect, unprojectS2LatLng } from '../camera';
 import { TileId } from '../common/types';
 
+export interface Catalog {
+  // A STAC API search endpoint, like https://earth-search.aws.element84.com/v1/search
+  searchUrl: string;
+  collection: string;
+  // Planetary Computer's SAS token endpoint for the collection, because its blob storage refuses
+  // unsigned reads.
+  tokenUrl?: string;
+}
+
 export interface Search {
   // ISO 8601 instants bounding when the imagery was taken
   from: string;
@@ -19,15 +28,55 @@ export interface Search {
   query: object;
 }
 
+/**
+ * Describes how to turn a feature's assets into RGB. Features missing a channel's asset aren't
+ * drawn at all, while one missing the mask is drawn unmasked.
+ */
+export interface Bands {
+  // Three channels are red, green, and blue. One channel is colored by the palette.
+  channels: [Channel, Channel, Channel]|[Channel];
+  // Stops sorted by the channel's byte, with colors as 0xRRGGBB. Bytes between stops blend.
+  palette?: Array<{at: number; color: number}>;
+  // Paints over the channels wherever this channel's byte is at least min
+  highlight?: {channel: Channel; min: number; color: number};
+  mask?: {
+    // A single sample asset of class numbers, like Sentinel-2's SCL
+    asset: string;
+    // Classes treated as missing, so that older imagery shows through instead
+    hidden: number[];
+  };
+}
+
+// Writes clamp(scale * v + bias) where v is the sample plus offset, combined with the other sample
+// plus offset if there is one, and then converted to decibels if requested.
+export interface Channel {
+  asset: string;
+  sample: number;
+  // Class numbers can't be blended, so they want the nearest pixel instead of bilinear
+  nearest: boolean;
+  offset: number;
+  combine?: {
+    asset: string;
+    sample: number;
+    // a / b, or (a - b) / (a + b)
+    op: 'ratio'|'normalized_difference';
+  };
+  decibels: boolean;
+  scale: number;
+  bias: number;
+}
+
 interface InitializeRequest {
   kind: 'ir';
-  collection: string;
+  catalog: Catalog;
   search: Search;
+  bands: Bands;
 }
 
 interface UpdateSearchRequest {
   kind: 'usr';
   search: Search;
+  bands: Bands;
 }
 
 interface Viewport {
@@ -61,24 +110,12 @@ export interface UpdateStateCommand {
 
 export type Command = LoadTileCommand|UnloadTilesCommand|UpdateStateCommand;
 
-interface EarthSearchFeatureCollection {
+interface StacFeatureCollection {
   type: 'FeatureCollection';
-  context: {
-    limit: number;
-    matched: number;
-    returned: number;
-  };
   features: Array<{
     bbox: [lowLng: number, lowLat: number, highLng: number, highLat: number];
     id: string;
-    assets: {
-      visual: {
-        href: string;
-        'proj:shape': string;
-        'proj:transform': string;
-        type: string;
-      };
-    };
+    assets: {[key: string]: {href: string}};
     geometry: {
       type: string;
       coordinates: Array<Array<[lng: number, lat: number]>>;
@@ -98,14 +135,21 @@ interface Feature {
   bound: S2LatLngRect;
   epsg: number;
   polygon: S2Polygon;
-  visualUrl: string;
+  hrefs: Map<string, string>;
+  // Only the assets some view has asked for, keyed like hrefs
+  assets: Map<string, Asset>;
+}
+
+interface Asset {
   loading: Promise<unknown>|undefined;
-  visual: GeoTIFF|undefined;
+  tiff: GeoTIFF|undefined;
+  // When the signature baked into tiff's URL stops working, in epoch milliseconds
+  expires: number;
   // Set once the COG has run out of attempts. Tiles that need this source stop waiting on it, or
   // else the layer sits reporting that it's still fetching and nothing ever wakes it up again.
   failed: boolean;
   // Image 0 plus its overviews, largest first. Finding these walks every image directory in the
-  // COG, so we keep the answer per feature instead of redoing it per tile.
+  // COG, so we keep the answer per asset instead of redoing it per tile.
   images: Promise<GeoTIFFImage[]>|undefined;
 }
 
@@ -115,9 +159,40 @@ interface Raster {
   xBias: number;
   yScale: number;
   yBias: number;
-  pixels: Uint8Array;
+  pixels: Uint8Array|Uint16Array|Float32Array;
+  samples: number;
+  nodata: number;
   width: number;
   height: number;
+}
+
+// A channel with its rasters read for one source
+interface Plane {
+  raster: Raster;
+  sample: number;
+  nearest: boolean;
+  offset: number;
+  other: Raster|undefined;
+  otherSample: number;
+  normalized: boolean;
+  decibels: boolean;
+  scale: number;
+  bias: number;
+}
+
+// The planes for one source, with everything paintRaster needs to color them
+interface Painting {
+  planes: Plane[];
+  palette: Uint32Array|undefined;
+  highlight: {plane: Plane; min: number; color: number}|undefined;
+  mask: Raster|undefined;
+  hidden: Uint8Array;
+}
+
+interface SasToken {
+  token: string;
+  // in epoch milliseconds
+  expires: number;
 }
 
 interface WantedTile {
@@ -133,6 +208,8 @@ interface TileSources {
   // loaded tile never gets revisited, so a tile drawn short of full coverage has to be given up
   // when a later page lands or it keeps whatever holes the first page left.
   covered: boolean;
+  // Older features that also overlap the tile, read only when the mask leaves holes in the sources
+  fills: Feature[];
 }
 
 const MIN_ZOOM = 7;
@@ -165,6 +242,12 @@ const WINDOW_SLACK_METERS = 100;
 // part of why they get dropped.
 const NETWORK_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 250;
+// Each fill is another round of range requests for a tile whose holes may never fill, like snow
+// that the scene classification calls cloud in every pass.
+const MAX_FILL_SOURCES = 3;
+// Planetary Computer's anonymous tokens last 45 minutes. We reopen assets this long before their
+// signature expires so that the window reads for a tile in flight don't outlive it.
+const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 
 // WGS84 and the UTM projection parameters. See llToUtm.
 const EARTH_RADIUS = 6378137;
@@ -188,7 +271,7 @@ const M4 =
         + 45 * ECC_SQUARED * ECC_SQUARED * ECC_SQUARED / 1024;
 const M6 = 35 * ECC_SQUARED * ECC_SQUARED * ECC_SQUARED / 3072;
 
-class EarthSearchLoader {
+class StacLoader {
 
   // Every feature the current query returned, newest first, because sourcesFor prefers the newest
   // imagery that covers a tile.
@@ -213,13 +296,16 @@ class EarthSearchLoader {
   private lastRequest: UpdateViewportRequest;
   private refreshQueued: boolean;
   private refreshing: Promise<void>|undefined;
+  private token: SasToken|undefined;
+  private tokening: Promise<SasToken>|undefined;
   // Set once a viewport deep enough to tile has arrived, because lastRequest is a placeholder
   // until then.
   private viewed: boolean;
 
   constructor(
-      private readonly collection: string,
+      private readonly catalog: Catalog,
       private search: Search,
+      private bands: Bands,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
     this.active = [];
@@ -245,13 +331,16 @@ class EarthSearchLoader {
     };
     this.refreshQueued = false;
     this.refreshing = undefined;
+    this.token = undefined;
+    this.tokening = undefined;
     this.viewed = false;
   }
 
   // Clears what the last search drew rather than letting the new results replace it, because a tile
   // the new search has no imagery for would otherwise keep the old imagery.
-  updateSearch(search: Search): void {
+  updateSearch(search: Search, bands: Bands): void {
     this.search = search;
+    this.bands = bands;
     this.epoch += 1;
     this.lastQuery = S2LatLngRect.empty();
     this.tileSources.clear();
@@ -449,7 +538,7 @@ class EarthSearchLoader {
       Promise<'drawn'|'opening'|'stuck'> {
     const tileLow = unprojectS2LatLng(tile.x / halfWorldSize, (tile.y - 1) / halfWorldSize);
     const tileHigh = unprojectS2LatLng((tile.x + 1) / halfWorldSize, tile.y / halfWorldSize);
-    const {sources, covered} = this.sourcesFor(tile.id, tileLow, tileHigh);
+    const {sources, covered, fills} = this.sourcesFor(tile.id, tileLow, tileHigh);
 
     // We may just not have the data yet. There's probably an edge case where we have one asset
     // for a point but none of the assets just barely in view.
@@ -457,24 +546,24 @@ class EarthSearchLoader {
       return 'drawn';
     }
 
+    const bands = this.bands;
+    const keys = channelAssets(bands);
     let opening = false;
     let stuck = false;
-    for (const source of sources) {
-      if (source.visual) {
-        continue;
+    for (const source of [...sources, ...fills]) {
+      for (const key of keys) {
+        const state = this.prepare(source, key);
+        if (state === 'opening') {
+          opening = true;
+        } else if (state === 'failed' && sources.includes(source)) {
+          stuck = true;
+        }
       }
 
-      if (source.failed) {
-        stuck = true;
-        continue;
+      // A mask that won't open just means drawing the source unmasked
+      if (bands.mask && source.hrefs.has(bands.mask.asset)) {
+        opening = this.prepare(source, bands.mask.asset) === 'opening' || opening;
       }
-
-      if (!source.loading) {
-        // One promise covers every attempt, so a tile waiting on this source sees a single open in
-        // flight instead of starting its own.
-        source.loading = this.openSource(source);
-      }
-      opening = true;
     }
 
     if (opening) {
@@ -496,7 +585,15 @@ class EarthSearchLoader {
     try {
       const bitmap =
           await drawTile(
-              tile.x, tile.y, halfWorldSize, sources, tileLow, tileHigh, this.geotiffPool);
+              tile.x,
+              tile.y,
+              halfWorldSize,
+              sources,
+              fills,
+              bands,
+              tileLow,
+              tileHigh,
+              this.geotiffPool);
       if (epoch !== this.epoch) {
         bitmap.close();
         return 'drawn';
@@ -516,18 +613,70 @@ class EarthSearchLoader {
     }
   }
 
-  private async openSource(source: Feature): Promise<void> {
+  // Starts opening the asset unless it's already open with a signature that will last.
+  private prepare(feature: Feature, key: string): 'open'|'opening'|'failed' {
+    let asset = feature.assets.get(key);
+    if (!asset || (asset.tiff && asset.expires < Date.now() + TOKEN_MARGIN_MS)) {
+      asset = {
+        loading: undefined,
+        tiff: undefined,
+        expires: Infinity,
+        failed: false,
+        images: undefined,
+      };
+      feature.assets.set(key, asset);
+    }
+
+    if (asset.tiff) {
+      return 'open';
+    }
+    if (asset.failed) {
+      return 'failed';
+    }
+    if (!asset.loading) {
+      // One promise covers every attempt, so a tile waiting on this asset sees a single open in
+      // flight instead of starting its own.
+      asset.loading = this.openAsset(asset, checkExists(feature.hrefs.get(key)));
+    }
+    return 'opening';
+  }
+
+  private async openAsset(asset: Asset, href: string): Promise<void> {
     try {
-      source.visual = await retrying(() => geotiff.fromUrl(source.visualUrl));
+      let url = href;
+      let expires = Infinity;
+      if (this.catalog.tokenUrl) {
+        const token = await this.sasToken(this.catalog.tokenUrl);
+        url = `${href}?${token.token}`;
+        expires = token.expires;
+      }
+      asset.tiff = await retrying(() => geotiff.fromUrl(url));
+      asset.expires = expires;
     } catch (e: unknown) {
-      source.failed = true;
+      asset.failed = true;
       console.error(e);
     }
 
     this.refreshDebouncer.trigger();
   }
 
-  // Picks the newest features that between them cover the tile.
+  // https://planetarycomputer.microsoft.com/docs/concepts/sas/
+  private async sasToken(url: string): Promise<SasToken> {
+    if (this.token && this.token.expires >= Date.now() + TOKEN_MARGIN_MS) {
+      return this.token;
+    }
+
+    if (!this.tokening) {
+      this.tokening = retrying(() => fetchToken(url)).finally(() => {
+        this.tokening = undefined;
+      });
+    }
+    this.token = await this.tokening;
+    return this.token;
+  }
+
+  // Picks the newest features that between them cover the tile, and when the bands are masked, the
+  // next few after them for filling in what the mask hides.
   private sourcesFor(id: TileId, tileLow: S2LatLng, tileHigh: S2LatLng): TileSources {
     const cached = this.tileSources.get(id);
     if (cached) {
@@ -543,15 +692,33 @@ class EarthSearchLoader {
     const polygon = SimpleS2.pointsToPolygon(asList);
     const tileArea = polygon.getArea();
 
+    const keys = channelAssets(this.bands);
     const sources = [];
+    const fills = [];
     let have = SimpleS2.newPolygon();
     let haveArea = 0;
     for (const feature of this.active) {
+      if (fills.length >= MAX_FILL_SOURCES) {
+        break;
+      }
+
       if (!feature.bound.intersects(bound)) {
         continue;
       }
 
+      if (keys.some(key => !feature.hrefs.has(key))) {
+        continue;
+      }
+
       if (!feature.polygon.intersects(polygon)) {
+        continue;
+      }
+
+      if (haveArea > COVERED_FRACTION * tileArea) {
+        if (!this.bands.mask) {
+          break;
+        }
+        fills.push(feature);
         continue;
       }
 
@@ -572,12 +739,9 @@ class EarthSearchLoader {
       sources.push(feature);
       have = grown;
       haveArea = grownArea;
-      if (haveArea > COVERED_FRACTION * tileArea) {
-        break;
-      }
     }
 
-    const resolved = {sources, covered: haveArea > COVERED_FRACTION * tileArea};
+    const resolved = {sources, covered: haveArea > COVERED_FRACTION * tileArea, fills};
     this.tileSources.set(id, resolved);
     return resolved;
   }
@@ -594,10 +758,10 @@ class EarthSearchLoader {
     const epoch = this.epoch;
     const response =
         await fetchFeatures(
-            'https://earth-search.aws.element84.com/v1/search?' + new URLSearchParams({
+            this.catalog.searchUrl + '?' + new URLSearchParams({
               datetime: `${this.search.from}/${this.search.to}`,
               limit: String(RESULTS_PER_PAGE),
-              collections: this.collection,
+              collections: this.catalog.collection,
               bbox:
                   `${low.lngDegrees()},${low.latDegrees()}`
                       + `,${high.lngDegrees()},${high.latDegrees()}`,
@@ -620,7 +784,7 @@ class EarthSearchLoader {
   // the rest in the background and redraw as it arrives rather than making the first tile wait on
   // five round trips.
   private pageRemainingFeatures(
-      response: EarthSearchFeatureCollection, limit: number, epoch: number): void {
+      response: StacFeatureCollection, limit: number, epoch: number): void {
     if (limit <= 0 || epoch !== this.epoch) {
       return;
     }
@@ -645,7 +809,7 @@ class EarthSearchLoader {
     });
   }
 
-  private mergeFeatures(response: EarthSearchFeatureCollection, replace: boolean): void {
+  private mergeFeatures(response: StacFeatureCollection, replace: boolean): void {
     if (replace) {
       this.active.length = 0;
     }
@@ -684,11 +848,8 @@ class EarthSearchLoader {
         bound,
         epsg: feature.properties['proj:epsg'],
         polygon: SimpleS2.pointsToPolygon(asList),
-        visualUrl: feature.assets.visual.href,
-        loading: undefined,
-        visual: undefined,
-        failed: false,
-        images: undefined,
+        hrefs: new Map(Object.entries(feature.assets).map(([key, asset]) => [key, asset.href])),
+        assets: new Map(),
       };
       this.features.set(parsed.id, parsed);
       this.active.push(parsed);
@@ -717,16 +878,17 @@ class EarthSearchLoader {
 
 function start(ir: InitializeRequest) {
   const fetcher =
-      new EarthSearchLoader(
-          ir.collection,
+      new StacLoader(
+          ir.catalog,
           ir.search,
+          ir.bands,
           (self as any).postMessage.bind(self));
   self.onmessage = e => {
     const request = e.data as Request;
     if (request.kind === 'ir') {
       throw new Error('Already initialized');
     } else if (request.kind === 'usr') {
-      fetcher.updateSearch(request.search);
+      fetcher.updateSearch(request.search, request.bands);
     } else if (request.kind === 'uvr') {
       fetcher.updateViewport(request);
     } else {
@@ -735,8 +897,20 @@ function start(ir: InitializeRequest) {
   };
 }
 
-function fetchFeatures(url: string): Promise<EarthSearchFeatureCollection> {
-  return fetch(url).then(response => response.json() as Promise<EarthSearchFeatureCollection>);
+function fetchFeatures(url: string): Promise<StacFeatureCollection> {
+  return fetch(url).then(response => response.json() as Promise<StacFeatureCollection>);
+}
+
+async function fetchToken(url: string): Promise<SasToken> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Token request failed with ${response.status}`);
+  }
+  const json = await response.json() as {'msft:expiry': string; token: string};
+  return {
+    token: json.token,
+    expires: new Date(json['msft:expiry']).getTime(),
+  };
 }
 
 // Reissues a dropped geotiff request. See NETWORK_ATTEMPTS.
@@ -786,40 +960,78 @@ async function drawTile(
         tileY: number,
         halfWorldSize: number,
         sources: Feature[],
+        fills: Feature[],
+        bands: Bands,
         tileLow: S2LatLng,
         tileHigh: S2LatLng,
         pool: geotiff.Pool):
     Promise<ImageBitmap> {
+  const colors = {
+    palette: bands.palette ? paletteTable(bands.palette) : undefined,
+    hidden: new Uint8Array(256),
+  };
+  for (const c of bands.mask?.hidden ?? []) {
+    colors.hidden[c] = 1;
+  }
+
   // Fetching every window up front overlaps the range requests, but we paint front to back and
   // skip pixels an earlier source already filled, so a source that's only there to fill holes
   // costs about what its holes are worth.
-  const rasters = await Promise.all(sources.map(s => getRaster(s, tileLow, tileHigh, pool)));
-  const data = new ArrayBuffer(TILE_SIZE * TILE_SIZE * 4);
-  const pixels = new Uint32Array(data);
-  for (let i = 0; i < rasters.length; ++i) {
-    const raster = rasters[i];
-    if (raster) {
-      paintRaster(pixels, raster, epsgToUtmZone(sources[i].epsg), tileX, tileY, halfWorldSize);
+  const reads =
+      await Promise.all(
+          sources.map(s => readSource(s, bands, colors, tileLow, tileHigh, pool)));
+  const pixels = new Uint32Array(TILE_SIZE * TILE_SIZE);
+  for (const read of reads) {
+    if (read) {
+      paintRaster(pixels, read.painting, read.zone, tileX, tileY, halfWorldSize);
     }
   }
 
-  return createImageBitmap(new ImageData(new Uint8ClampedArray(data), TILE_SIZE, TILE_SIZE));
+  // Fills are read one at a time because the first one usually leaves nothing for the rest.
+  for (const fill of fills) {
+    if (!pixels.includes(0)) {
+      break;
+    }
+
+    const read = await readSource(fill, bands, colors, tileLow, tileHigh, pool);
+    if (read) {
+      paintRaster(pixels, read.painting, read.zone, tileX, tileY, halfWorldSize);
+    }
+  }
+
+  // Cloud is better than a hole, so whatever the mask hid that no fill replaced comes back.
+  if (bands.mask && pixels.includes(0)) {
+    for (const read of reads) {
+      if (read) {
+        paintRaster(
+            pixels,
+            {...read.painting, mask: undefined},
+            read.zone,
+            tileX,
+            tileY,
+            halfWorldSize);
+      }
+    }
+  }
+
+  return createImageBitmap(
+      new ImageData(new Uint8ClampedArray(pixels.buffer), TILE_SIZE, TILE_SIZE));
 }
 
 /**
- * Bilinearly samples every pixel of the tile that isn't already painted out of the raster.
+ * Samples every pixel of the tile that isn't already painted out of the planes.
  *
- * Naively each of the 262144 pixels needs an inverse mercator, an llToUtm, and the raster's affine
- * map, which is about ten transcendentals apiece. Nearly all of it is loop invariant: mercator
- * takes latitude from the row alone and longitude from the column alone, and in llToUtm only
- * A = cos(lat) * (lng - lngOrigin) depends on longitude, with A itself linear in the column. So
- * each row computes the latitude-dependent terms once and the inner loop is a polynomial in A.
+ * Naively each of the 262144 pixels needs an inverse mercator and an llToUtm, which is about ten
+ * transcendentals apiece. Nearly all of it is loop invariant: mercator takes latitude from the row
+ * alone and longitude from the column alone, and in llToUtm only A = cos(lat) * (lng - lngOrigin)
+ * depends on longitude, with A itself linear in the column. So each row computes the
+ * latitude-dependent terms once and the inner loop is a polynomial in A.
  *
  * Keep in sync with llToUtm.
  */
 function paintRaster(
     out: Uint32Array,
-    raster: Raster,
+    painting: Painting,
     zone: number,
     tileX: number,
     tileY: number,
@@ -828,10 +1040,8 @@ function paintRaster(
   const lngOrigin = ((zone - 1) * 6 - 180 + 3) / 180 * Math.PI;
   const lngBase = Math.PI * (tileX + 0.5 / TILE_SIZE) / halfWorldSize - lngOrigin;
   const lngStep = Math.PI / (TILE_SIZE * halfWorldSize);
-  const pixels = raster.pixels;
-  const stride = 3 * raster.width;
-  const maxX = raster.width - 1;
-  const maxY = raster.height - 1;
+  const {planes, palette, highlight, mask, hidden} = painting;
+  const [red, green, blue] = planes;
 
   for (let yp = 0; yp < TILE_SIZE; ++yp) {
     const mercY = (tileY - 1 + (TILE_SIZE - yp - 0.5) / TILE_SIZE) / halfWorldSize;
@@ -855,13 +1065,11 @@ function paintRaster(
     const e5 = (5 - 18 * T + T * T + 72 * C - 58 * ECC_PRIME_SQUARED) / 120;
     const n4 = (5 - T + 9 * C + 4 * C * C) / 24;
     const n6 = (61 - 58 * T + T * T + 600 * C - 330 * ECC_PRIME_SQUARED) / 720;
-    // Fold the false easting, the meridional arc, and the raster's affine map into the row so the
-    // inner loop only handles the parts that vary with A.
-    const xBase = raster.xScale * UTM_FALSE_EASTING + raster.xBias;
-    const xScale = raster.xScale * UTM_SCALE * N;
-    const yBase =
-        raster.yScale * ((lat < 0 ? UTM_FALSE_NORTHING : 0) + UTM_SCALE * M) + raster.yBias;
-    const yScale = raster.yScale * UTM_SCALE * N * tanLat;
+    // Fold the meridional arc into the row so the inner loop only handles the parts that vary
+    // with A.
+    const eScale = UTM_SCALE * N;
+    const nBase = (lat < 0 ? UTM_FALSE_NORTHING : 0) + UTM_SCALE * M;
+    const nScale = UTM_SCALE * N * tanLat;
     const row = yp * TILE_SIZE;
 
     for (let xp = 0; xp < TILE_SIZE; ++xp) {
@@ -872,43 +1080,141 @@ function paintRaster(
 
       const A = aBase + xp * aStep;
       const A2 = A * A;
-      const xt = xBase + xScale * A * (1 + A2 * (e3 + A2 * e5));
-      const yt = yBase + yScale * A2 * (0.5 + A2 * (n4 + A2 * n6));
-      if (xt < 0 || yt < 0 || xt > maxX || yt > maxY) {
+      const easting = UTM_FALSE_EASTING + eScale * A * (1 + A2 * (e3 + A2 * e5));
+      const northing = nBase + nScale * A2 * (0.5 + A2 * (n4 + A2 * n6));
+      if (mask && hidden[nearest(mask, 0, easting, northing)]) {
         continue;
       }
 
-      const xl = xt | 0; // xt is non-negative, so this is a floor
-      const yl = yt | 0;
-      const xh = xl < maxX ? xl + 1 : xl;
-      const yh = yl < maxY ? yl + 1 : yl;
-      const xf = xt - xl;
-      const yf = yt - yl;
-      const lowRow = yl * stride;
-      const highRow = yh * stride;
-
-      let v = 0;
-      for (let j = 0; j < 3; ++j) {
-        const ll = pixels[lowRow + 3 * xl + j];
-        const lr = pixels[lowRow + 3 * xh + j];
-        const hl = pixels[highRow + 3 * xl + j];
-        const hr = pixels[highRow + 3 * xh + j];
-        const l = (1 - xf) * ll + xf * lr;
-        const h = (1 - xf) * hl + xf * hr;
-        v |= ((1 - yf) * l + yf * h) << (j * 8);
+      let color: number;
+      const r = planeByte(red, easting, northing);
+      if (r < 0) {
+        continue;
+      } else if (palette) {
+        color = palette[r];
+      } else {
+        const g = planeByte(green, easting, northing);
+        const b = planeByte(blue, easting, northing);
+        if (g < 0 || b < 0) {
+          continue;
+        }
+        color = r | (g << 8) | (b << 16) | (255 << 24);
       }
 
-      if (v) {
-        out[i] = v | (255 << 24);
+      if (highlight && planeByte(highlight.plane, easting, northing) >= highlight.min) {
+        color = highlight.color;
       }
+      out[i] = color;
     }
   }
 }
 
-// Returns undefined when the tile lands entirely outside the source's raster.
-async function getRaster(
-    feature: Feature, tileLow: S2LatLng, tileHigh: S2LatLng, pool: geotiff.Pool):
-        Promise<Raster|undefined> {
+// Returns -1 where the plane has no data.
+function planeByte(plane: Plane, easting: number, northing: number): number {
+  let v =
+      (plane.nearest
+          ? nearest(plane.raster, plane.sample, easting, northing)
+          : bilinear(plane.raster, plane.sample, easting, northing))
+      + plane.offset;
+  if (plane.other) {
+    const w = bilinear(plane.other, plane.otherSample, easting, northing) + plane.offset;
+    v = plane.normalized ? (v - w) / (v + w) : v / w;
+  }
+  if (plane.decibels) {
+    v = 10 * Math.log10(v);
+  }
+
+  const b = plane.scale * v + plane.bias;
+  if (b !== b) { // NaN carries no data through from either sample
+    return -1;
+  }
+  return b < 0 ? 0 : b > 255 ? 255 : b | 0;
+}
+
+// Returns NaN where the raster has no data. Next to missing data we take the nearest pixel instead,
+// or else the edge of the imagery blends toward the no data value.
+function bilinear(raster: Raster, sample: number, easting: number, northing: number): number {
+  const xt = raster.xScale * easting + raster.xBias;
+  const yt = raster.yScale * northing + raster.yBias;
+  const maxX = raster.width - 1;
+  const maxY = raster.height - 1;
+  if (xt < 0 || yt < 0 || xt > maxX || yt > maxY) {
+    return NaN;
+  }
+
+  const xl = xt | 0; // xt is non-negative, so this is a floor
+  const yl = yt | 0;
+  const xh = xl < maxX ? xl + 1 : xl;
+  const yh = yl < maxY ? yl + 1 : yl;
+  const xf = xt - xl;
+  const yf = yt - yl;
+  const pixels = raster.pixels;
+  const samples = raster.samples;
+  const nodata = raster.nodata;
+  const ll = pixels[(yl * raster.width + xl) * samples + sample];
+  const lr = pixels[(yl * raster.width + xh) * samples + sample];
+  const hl = pixels[(yh * raster.width + xl) * samples + sample];
+  const hr = pixels[(yh * raster.width + xh) * samples + sample];
+  if (ll === nodata || lr === nodata || hl === nodata || hr === nodata) {
+    const v = yf < 0.5 ? (xf < 0.5 ? ll : lr) : (xf < 0.5 ? hl : hr);
+    return v === nodata ? NaN : v;
+  }
+
+  const l = (1 - xf) * ll + xf * lr;
+  const h = (1 - xf) * hl + xf * hr;
+  return (1 - yf) * l + yf * h;
+}
+
+// Returns NaN where the raster has no data.
+function nearest(raster: Raster, sample: number, easting: number, northing: number): number {
+  const x = Math.round(raster.xScale * easting + raster.xBias);
+  const y = Math.round(raster.yScale * northing + raster.yBias);
+  if (x < 0 || y < 0 || x >= raster.width || y >= raster.height) {
+    return NaN;
+  }
+  const v = raster.pixels[(y * raster.width + x) * raster.samples + sample];
+  return v === raster.nodata ? NaN : v;
+}
+
+// Expands the stops into a color for every byte, with the alpha set so a painted pixel is never 0.
+function paletteTable(stops: Array<{at: number; color: number}>): Uint32Array {
+  const table = new Uint32Array(256);
+  let next = 0;
+  for (let b = 0; b < 256; ++b) {
+    while (next < stops.length && stops[next].at <= b) {
+      ++next;
+    }
+
+    const low = stops[Math.max(next - 1, 0)];
+    const high = stops[Math.min(next, stops.length - 1)];
+    const f = high.at > low.at ? clamp((b - low.at) / (high.at - low.at), 0, 1) : 0;
+    let rgb = 0;
+    for (let shift = 0; shift < 24; shift += 8) {
+      const l = (low.color >> shift) & 0xff;
+      const h = (high.color >> shift) & 0xff;
+      rgb |= Math.round(l + (h - l) * f) << shift;
+    }
+    table[b] = abgrOf(rgb);
+  }
+  return table;
+}
+
+// 0xRRGGBB puts red highest, while the tile is little-endian RGBA and wants it lowest. The alpha
+// keeps a painted pixel from ever being 0.
+function abgrOf(rgb: number): number {
+  return ((255 << 24) | ((rgb & 0xff) << 16) | (rgb & 0xff00) | ((rgb >> 16) & 0xff)) >>> 0;
+}
+
+// Reads the windows of every asset the bands need. Returns undefined when a channel's asset isn't
+// open or the tile misses its raster.
+async function readSource(
+    feature: Feature,
+    bands: Bands,
+    colors: {palette: Uint32Array|undefined; hidden: Uint8Array},
+    tileLow: S2LatLng,
+    tileHigh: S2LatLng,
+    pool: geotiff.Pool):
+        Promise<{painting: Painting; zone: number}|undefined> {
   // We need to project all corners because UTM isn't axis-aligned with Mercator and the
   // rotation changes depending on whether you're west or east of the meridian.
   const zone = epsgToUtmZone(feature.epsg);
@@ -918,20 +1224,86 @@ async function getRaster(
     llToUtm(tileHigh.latRadians(), tileLow.lngRadians(), zone),
     llToUtm(tileHigh.latRadians(), tileHigh.lngRadians(), zone),
   ];
-  const lowX =
-      Math.min(corners[0][0], corners[1][0], corners[2][0], corners[3][0]) - WINDOW_SLACK_METERS;
-  const lowY =
-      Math.min(corners[0][1], corners[1][1], corners[2][1], corners[3][1]) - WINDOW_SLACK_METERS;
-  const highX =
-      Math.max(corners[0][0], corners[1][0], corners[2][0], corners[3][0]) + WINDOW_SLACK_METERS;
-  const highY =
-      Math.max(corners[0][1], corners[1][1], corners[2][1], corners[3][1]) + WINDOW_SLACK_METERS;
-  const resX = (highX - lowX) / TILE_SIZE;
-  const resY = (highY - lowY) / TILE_SIZE;
+  const low: [number, number] = [
+    Math.min(corners[0][0], corners[1][0], corners[2][0], corners[3][0]) - WINDOW_SLACK_METERS,
+    Math.min(corners[0][1], corners[1][1], corners[2][1], corners[3][1]) - WINDOW_SLACK_METERS,
+  ];
+  const high: [number, number] = [
+    Math.max(corners[0][0], corners[1][0], corners[2][0], corners[3][0]) + WINDOW_SLACK_METERS,
+    Math.max(corners[0][1], corners[1][1], corners[2][1], corners[3][1]) + WINDOW_SLACK_METERS,
+  ];
+
+  const keys = channelAssets(bands);
+  const maskAsset = bands.mask ? feature.assets.get(bands.mask.asset) : undefined;
+  const [mask, ...read] =
+      await Promise.all([
+        maskAsset?.tiff ? getRaster(maskAsset, low, high, pool) : Promise.resolve(undefined),
+        ...keys.map(key => {
+          const asset = feature.assets.get(key);
+          return asset?.tiff ? getRaster(asset, low, high, pool) : Promise.resolve(undefined);
+        }),
+      ]);
+  const rasters = new Map(keys.map((key, i) => [key, read[i]]));
+
+  const planes = [];
+  for (const channel of bands.channels) {
+    const plane = planeOf(channel, rasters);
+    if (!plane) {
+      return undefined;
+    }
+    planes.push(plane);
+  }
+
+  let highlight;
+  if (bands.highlight) {
+    const plane = planeOf(bands.highlight.channel, rasters);
+    if (!plane) {
+      return undefined;
+    }
+    highlight = {
+      plane,
+      min: bands.highlight.min,
+      color: abgrOf(bands.highlight.color),
+    };
+  }
+
+  return {
+    painting: {planes, palette: colors.palette, highlight, mask, hidden: colors.hidden},
+    zone,
+  };
+}
+
+function planeOf(channel: Channel, rasters: Map<string, Raster|undefined>): Plane|undefined {
+  const raster = rasters.get(channel.asset);
+  const other = channel.combine ? rasters.get(channel.combine.asset) : undefined;
+  if (!raster || (channel.combine && !other)) {
+    return undefined;
+  }
+
+  return {
+    raster,
+    sample: channel.sample,
+    nearest: channel.nearest,
+    offset: channel.offset,
+    other,
+    otherSample: channel.combine?.sample ?? 0,
+    normalized: channel.combine?.op === 'normalized_difference',
+    decibels: channel.decibels,
+    scale: channel.scale,
+    bias: channel.bias,
+  };
+}
+
+// Returns undefined when the window lands entirely outside the asset's raster.
+async function getRaster(
+    asset: Asset, low: [number, number], high: [number, number], pool: geotiff.Pool):
+        Promise<Raster|undefined> {
+  const resX = (high[0] - low[0]) / TILE_SIZE;
+  const resY = (high[1] - low[1]) / TILE_SIZE;
 
   // Image 0 carries the georeferencing for the whole file, so all the transforms reference it even
   // when we sample an overview.
-  const images = await overviewsOf(feature);
+  const images = await overviewsOf(asset);
   const full = images[0];
   const bbox = full.getBoundingBox();
   const fullX = bbox[2] - bbox[0];
@@ -947,15 +1319,17 @@ async function getRaster(
   const image = images[choice];
   const width = image.getWidth();
   const height = image.getHeight();
-  const translatePx = full.pixelIsArea() ? 0 : -0.5;
+  // The origin is the corner of the first pixel when pixels are areas, and its center when they
+  // are points. We want centers on whole pixel coordinates.
+  const translatePx = full.pixelIsArea() ? -0.5 : 0;
   const [oX, oY] = full.getOrigin();
   const [sX, sY] = image.getResolution(full);
   // Resolution is negative on whichever axis counts down, so sort the corners rather than assuming
   // which one is the low edge.
-  const pxA = (lowX - oX) / sX + translatePx;
-  const pxB = (highX - oX) / sX + translatePx;
-  const pyA = (lowY - oY) / sY + translatePx;
-  const pyB = (highY - oY) / sY + translatePx;
+  const pxA = (low[0] - oX) / sX + translatePx;
+  const pxB = (high[0] - oX) / sX + translatePx;
+  const pyA = (low[1] - oY) / sY + translatePx;
+  const pyB = (high[1] - oY) / sY + translatePx;
   const window = [
     clamp(Math.floor(Math.min(pxA, pxB)), 0, width),
     clamp(Math.floor(Math.min(pyA, pyB)), 0, height),
@@ -971,23 +1345,38 @@ async function getRaster(
         interleave: true,
         pool,
         window,
-      }) as Promise<Uint8Array>);
+      }) as Promise<Uint8Array|Uint16Array|Float32Array>);
   return {
     xScale: 1 / sX,
     xBias: -oX / sX + translatePx - window[0],
     yScale: 1 / sY,
     yBias: -oY / sY + translatePx - window[1],
     pixels,
+    samples: image.getSamplesPerPixel(),
+    nodata: full.getGDALNoData() ?? NaN,
     width: window[2] - window[0],
     height: window[3] - window[1],
   };
 }
 
-function overviewsOf(feature: Feature): Promise<GeoTIFFImage[]> {
-  if (!feature.images) {
-    feature.images = readOverviews(checkExists(feature.visual));
+// The assets the channels and highlight read, without duplicates
+function channelAssets(bands: Bands): string[] {
+  const keys = new Set<string>();
+  const channels = bands.highlight ? [...bands.channels, bands.highlight.channel] : bands.channels;
+  for (const channel of channels) {
+    keys.add(channel.asset);
+    if (channel.combine) {
+      keys.add(channel.combine.asset);
+    }
   }
-  return feature.images;
+  return [...keys];
+}
+
+function overviewsOf(asset: Asset): Promise<GeoTIFFImage[]> {
+  if (!asset.images) {
+    asset.images = readOverviews(checkExists(asset.tiff));
+  }
+  return asset.images;
 }
 
 async function readOverviews(source: GeoTIFF): Promise<GeoTIFFImage[]> {
