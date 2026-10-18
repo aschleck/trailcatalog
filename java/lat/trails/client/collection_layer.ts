@@ -678,6 +678,7 @@ export class CollectionLayer extends Layer {
 
     for (const line of response.lineGeometries) {
       const drawable = {
+        bounds: line.bounds,
         elements: undefined,
         geometry,
         geometryByteLength: line.geometryByteLength,
@@ -695,6 +696,7 @@ export class CollectionLayer extends Layer {
 
     for (const point of response.pointGeometries) {
       drawables.push({
+        bounds: point.bounds,
         elements: undefined,
         geometry,
         geometryByteLength: point.geometryByteLength,

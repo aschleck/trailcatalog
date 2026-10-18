@@ -366,13 +366,11 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
                 : max(0., radius - 1. - (stipple == 3u ? 1. : 0.));
         highp float endSign = 2. * position.x - 1.;
         vec2 push = perp * actualRadius * position.y + along * capRadius * endSign;
-        vec4 worldCoord =
-            sum_fp64(
-                mul_fp64(location, vec4(split(halfWorldSize), split(halfWorldSize))),
-                split(push));
-
-        vec4 p = mul_fp64(worldCoord, split(inverseHalfViewportSize));
-        vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
+        // Only the camera subtraction needs fp64, because without it the map jitters when panning
+        // at high zoom. The rest can be float32 because gl_Position is float32 anyway.
+        vec2 relative = vec2(location.x + location.y, location.z + location.w);
+        vec2 p = (relative * halfWorldSize + push) * inverseHalfViewportSize;
+        vec4 mercator = vec4(p, -1, 1);
 
         // sphereFromMercator and horizonDistance each cost a tanh, an asin, and four more
         // transcendentals, and mix discards all of it once flattenFactor reaches 1, which happens

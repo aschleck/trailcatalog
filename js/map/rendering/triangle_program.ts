@@ -186,10 +186,11 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
         } else if (relativeCenter.x + relativeCenter.y < -1.) {
           relativeCenter.x += 2.;
         }
-        vec4 screenCoord =
-            mul_fp64(relativeCenter, vec4(split(halfWorldSize), split(halfWorldSize)));
-        vec4 p = mul_fp64(screenCoord, split(inverseHalfViewportSize));
-        vec4 mercator = vec4(p.x + p.y, p.z + p.w, -1, 1);
+        // Only the camera subtraction needs fp64, see line_program.ts.
+        vec2 relative =
+            vec2(relativeCenter.x + relativeCenter.y, relativeCenter.z + relativeCenter.w);
+        vec2 p = relative * halfWorldSize * inverseHalfViewportSize;
+        vec4 mercator = vec4(p, -1, 1);
 
         // sphereFromMercator and horizonDistance each cost a tanh, an asin, and four more
         // transcendentals, and mix discards all of it once flattenFactor reaches 1. flattenFactor

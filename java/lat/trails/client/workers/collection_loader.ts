@@ -6,7 +6,7 @@ import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Deltas, projectS2Loop, skipE7Deltas } from 'js/map/camera';
-import { LatLngRect, RawUuid, RgbaU32, Vec2 } from 'js/map/common/types';
+import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LineProgram, Stipple } from 'js/map/rendering/line_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
 import { PackedLines } from 'js/map/workers/location_querier';
@@ -122,6 +122,7 @@ export interface Line {
 }
 
 export interface LineGeometry {
+  bounds: {box: Rect; margin: number};
   geometryByteLength: number;
   geometryOffset: number;
   instanceCount: number;
@@ -143,6 +144,7 @@ export interface Point {
 // We draw a point as a zero length line, which LineProgram draws as a circle. See also
 // feature_layer.ts#ShapeBatch.push.
 export interface PointGeometry {
+  bounds: {box: Rect; margin: number};
   geometryByteLength: number;
   geometryOffset: number;
   instanceCount: number;
@@ -187,6 +189,34 @@ const TEXT_DECODER = new TextDecoder();
 // Keep in sync with ApiServer.kt#KIND_UUID_JSON.
 const KIND_UUID_JSON = 0;
 const KIND_PACKED_PATH = 1;
+
+// Tracks the bounding box of a group of lines so that Planner can skip the group when it's off
+// screen. The margin is how far a line can draw past its points: its radius plus a pixel for the
+// cap's antialiased edge.
+class Bounds {
+  private lowX = Infinity;
+  private lowY = Infinity;
+  private highX = -Infinity;
+  private highY = -Infinity;
+  private margin = 0;
+
+  add(points: ArrayLike<number>, radius: number): void {
+    for (let i = 0; i < points.length; i += 2) {
+      this.lowX = Math.min(this.lowX, points[i]);
+      this.lowY = Math.min(this.lowY, points[i + 1]);
+      this.highX = Math.max(this.highX, points[i]);
+      this.highY = Math.max(this.highY, points[i + 1]);
+    }
+    this.margin = Math.max(this.margin, radius + 1);
+  }
+
+  done(): {box: Rect; margin: number} {
+    return {
+      box: {low: [this.lowX, this.lowY], high: [this.highX, this.highY]},
+      margin: this.margin,
+    };
+  }
+}
 
 class CollectionLoader {
 
@@ -388,11 +418,13 @@ class CollectionLoader {
     let groupStart = 0;
     let groupInstances = 0;
     let groupVertexCount = 0;
+    let groupBounds = new Bounds();
     let pointOffset = 0;
     for (let i = 0; i < styledLines.length; ++i) {
       const line = styledLines[i];
       if (groupZ !== undefined && line.style.z !== groupZ) {
         response.lineGeometries.push({
+          bounds: groupBounds.done(),
           geometryByteLength: 4 * (geometryOffset - groupStart),
           geometryOffset: 4 * groupStart,
           instanceCount: groupInstances,
@@ -402,8 +434,11 @@ class CollectionLoader {
         groupStart = geometryOffset;
         groupInstances = 0;
         groupVertexCount = 0;
+        groupBounds = new Bounds();
       }
       groupZ = line.style.z;
+      groupBounds.add(
+          line.points, line.style.stipple === 'ticks' ? 3 * line.style.radius : line.style.radius);
 
       const result = LineProgram.push(
           line.style.fill,
@@ -435,6 +470,7 @@ class CollectionLoader {
     lines.starts[styledLines.length] = pointOffset;
     if (groupZ !== undefined && groupInstances > 0) {
       response.lineGeometries.push({
+        bounds: groupBounds.done(),
         geometryByteLength: 4 * (geometryOffset - groupStart),
         geometryOffset: 4 * groupStart,
         instanceCount: groupInstances,
@@ -448,9 +484,11 @@ class CollectionLoader {
     let dotStart = geometryOffset;
     let dotInstances = 0;
     let dotVertexCount = 0;
+    let dotBounds = new Bounds();
     const flushDots = () => {
       if (dotZ !== undefined && dotInstances > 0) {
         response.pointGeometries.push({
+          bounds: dotBounds.done(),
           geometryByteLength: 4 * (geometryOffset - dotStart),
           geometryOffset: 4 * dotStart,
           instanceCount: dotInstances,
@@ -460,6 +498,7 @@ class CollectionLoader {
       }
       dotStart = geometryOffset;
       dotInstances = 0;
+      dotBounds = new Bounds();
     };
     for (const point of styledPoints) {
       if (point.style.z !== dotZ) {
@@ -467,6 +506,7 @@ class CollectionLoader {
         dotZ = point.style.z;
       }
       const [x, y] = point.position;
+      dotBounds.add([x, y], point.style.radius);
       const result = LineProgram.push(
           point.style.fill,
           point.style.stroke,

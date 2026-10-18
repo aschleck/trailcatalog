@@ -1,9 +1,12 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 
-import { RgbaU32, Vec2 } from '../common/types';
+import { Rect, RgbaU32, Vec2 } from '../common/types';
 
 export interface Drawable {
+  // An optional bounding box in Mercator, plus how far past it the program can draw in pixels (the
+  // same units as LineProgram's radius). Planner uses it to skip drawables that are off screen.
+  readonly bounds?: Readonly<{box: Rect; margin: number}>;
   readonly elements: {
     count: number;
     index: WebGLBuffer;
