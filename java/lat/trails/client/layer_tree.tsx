@@ -44,6 +44,10 @@ export interface LayerEntry {
   layer: Layer;
   // Set for a CollectionLayer, whose objects the properties dialog shows
   schema?: Schema;
+  // Set for a layer of weather stations, so that the properties dialog can show a station's latest
+  // METAR and TAF. Names the fields with its ICAO id and the reports it publishes, like "METAR,
+  // TAF".
+  weatherStation?: {id: string; reports: string};
   controls: LayerControl[];
   values: ControlValues;
   // Called with the new values whenever a control changes

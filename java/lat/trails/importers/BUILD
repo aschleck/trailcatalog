@@ -6,6 +6,12 @@ load("@rules_pkg//:pkg.bzl", "pkg_tar")
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
 java_binary(
+    name = "aviation_vectors",
+    main_class = "lat.trails.importers.AviationVectorsKt",
+    runtime_deps = [":importers"],
+)
+
+java_binary(
     name = "conditions",
     main_class = "lat.trails.importers.ConditionsKt",
     runtime_deps = [":importers"],
@@ -39,6 +45,37 @@ java_binary(
     name = "weather",
     main_class = "lat.trails.importers.WeatherKt",
     runtime_deps = [":importers"],
+)
+
+pkg_tar(
+    name = "aviation_vectors_tar",
+    srcs = [":aviation_vectors_deploy.jar"],
+    include_runfiles = True,
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "aviation_vectors_container",
+    base = "@distroless_java_linux_amd64",
+    entrypoint = [
+        "java",
+        "-jar",
+        "aviation_vectors_deploy.jar",
+    ],
+    tars = [":aviation_vectors_tar"],
+)
+
+oci_load(
+    name = "aviation_vectors_container_load",
+    image = ":aviation_vectors_container",
+    repo_tags = ["latest"],
+)
+
+oci_push(
+    name = "aviation_vectors_container_push",
+    image = ":aviation_vectors_container",
+    remote_tags = ["latest"],
+    repository = "us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_aviation_vectors",
 )
 
 pkg_tar(

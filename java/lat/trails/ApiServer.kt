@@ -27,6 +27,8 @@ import java.sql.ResultSet
 import java.security.SecureRandom
 import java.sql.Types
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import kotlin.collections.ArrayList
 import java.nio.charset.StandardCharsets
 import lat.trails.common.assemblePolygon
@@ -45,6 +47,7 @@ import lat.trails.proto.DeleteCollectionRequest
 import lat.trails.proto.DeleteCollectionResponse
 import lat.trails.proto.FeatureKind
 import lat.trails.proto.Folder
+import lat.trails.proto.GetAviationWeatherRequest
 import lat.trails.proto.GetCollectionRequest
 import lat.trails.proto.GetCollectionResponse
 import lat.trails.proto.GetCurrentUserResponse
@@ -153,30 +156,60 @@ fun main(args: Array<String>) {
   }.start(port.value)
 }
 
+// Keep in sync with data.ts#WRITES
+private val WRITES =
+    setOf(
+        "lat.trails.DataService/AcceptInvite",
+        "lat.trails.DataService/CreateCollection",
+        "lat.trails.DataService/CreateInvite",
+        "lat.trails.DataService/DeleteCollection",
+        "lat.trails.DataService/RevokeInvite",
+        "lat.trails.DataService/Save",
+        "lat.trails.DataService/SetAnyoneCanView",
+        "lat.trails.DataService/SetGrant",
+        "lat.trails.DataService/SetViewState",
+        "lat.trails.DataService/UpdateCollection",
+    )
+
+private val dispatcher = Executors.newVirtualThreadPerTaskExecutor()
+
+// Runs the keys in parallel, except that a write waits for every key before it and every key
+// after it waits for the write, so a read batched with a write still sees it.
 private fun fetchData(ctx: Context) {
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyInputStream())
-  val responses = ArrayList<Any>()
+  val responses = ArrayList<Future<Any>>()
+  var barrier = 0
   for (key in request.get("keys").elements()) {
     val method = key.get("method").asText() ?: throw IllegalArgumentException("Key has no method")
     val payload = key.get("request")
-    // Failed per key, because the server side render fails the whole page when the batch does.
-    val value = try {
-      dispatch(ctx, method, payload)
-    } catch (e: HttpResponseException) {
-      responses.add(mapOf("kind" to "error", "code" to e.status, "message" to e.message))
-      continue
-    } catch (e: Exception) {
-      logger.error("$method failed", e)
-      responses.add(mapOf("kind" to "error", "code" to HttpStatus.INTERNAL_SERVER_ERROR.code))
-      continue
-    }
-
+    val write = WRITES.contains(method)
+    val before = if (write) responses.toList() else responses.subList(0, barrier).toList()
     responses.add(
-        mapOf("kind" to "result", "value" to mapper.readTree(JSON_PRINTER.print(value))))
+        dispatcher.submit<Any> {
+          before.forEach { it.get() }
+          dispatchKey(ctx, mapper, method, payload)
+        })
+    if (write) {
+      barrier = responses.size
+    }
   }
 
-  ctx.json(mapOf("values" to responses))
+  ctx.json(mapOf("values" to responses.map { it.get() }))
+}
+
+// Failed per key, because the server side render fails the whole page when the batch does.
+private fun dispatchKey(
+    ctx: Context, mapper: ObjectMapper, method: String, payload: JsonNode?): Any {
+  val value = try {
+    dispatch(ctx, method, payload)
+  } catch (e: HttpResponseException) {
+    return mapOf("kind" to "error", "code" to e.status, "message" to e.message)
+  } catch (e: Exception) {
+    logger.error("$method failed", e)
+    return mapOf("kind" to "error", "code" to HttpStatus.INTERNAL_SERVER_ERROR.code)
+  }
+  return mapOf("kind" to "result", "value" to mapper.readTree(JSON_PRINTER.print(value)))
 }
 
 private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message {
@@ -189,6 +222,8 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
       createInvite(ctx, CreateInviteRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/DeleteCollection" ->
       deleteCollection(ctx, DeleteCollectionRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/GetAviationWeather" ->
+      getAviationWeather(GetAviationWeatherRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetCollection" ->
       getCollection(ctx, GetCollectionRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetCurrentUser" -> getCurrentUser(ctx)

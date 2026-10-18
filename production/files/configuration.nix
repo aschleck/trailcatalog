@@ -282,6 +282,50 @@
     };
   };
 
+  systemd.services."trails-lat-aviation-vectors" = {
+    enable = true;
+    after = [ "podman.service" ];
+    # Weekly because airspace and airports change on the 28 day AIRAC cycle, and openAIP's daily
+    # exports mostly repeat themselves.
+    startAt = "Sun *-*-* 04:45:00";
+    restartIfChanged = false;
+
+    path = with pkgs; [
+      bash
+      crun
+      google-cloud-sdk
+      jq
+      podman
+    ];
+
+    serviceConfig = {
+      ExecStart = "/home/april/aviation_vectors.sh";
+      Type = "oneshot";
+    };
+  };
+
+  systemd.services."trails-lat-faa-sectional" = {
+    enable = true;
+    # The FAA posts each 56 day cycle about three weeks early, and faa_sectional.py skips cycles it
+    # already tiled.
+    startAt = "daily";
+    restartIfChanged = false;
+
+    path = with pkgs; [
+      pmtiles
+      (python3.withPackages (ps: with ps; [ gdal numpy pillow ]))
+    ];
+
+    # faa_sectional.py runs a worker on every core, so it waits for the frontend.
+    serviceConfig = {
+      CPUSchedulingPolicy = "idle";
+      ExecStart = "/home/april/faa_sectional.py";
+      IOSchedulingClass = "idle";
+      Nice = 19;
+      Type = "oneshot";
+    };
+  };
+
   systemd.services."trails-lat-snodas" = {
     enable = true;
     after = [ "podman.service" ];

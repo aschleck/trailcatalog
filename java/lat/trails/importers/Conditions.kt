@@ -2,33 +2,16 @@ package lat.trails.importers
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
-import com.google.common.geometry.S2Polygon
-import java.io.ByteArrayOutputStream
-import java.sql.Connection
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import java.util.Base64
-import java.util.TreeMap
 import java.util.UUID
 import kotlin.system.exitProcess
-import lat.trails.common.assemblePolygon
-import lat.trails.common.createBaseConnection
-import lat.trails.common.encodeCovering
-import org.apache.commons.text.StringEscapeUtils
-import org.postgresql.copy.CopyManager
-import org.postgresql.jdbc.PgConnection
 import org.slf4j.LoggerFactory
-import org.trailcatalog.common.DeltaLatLngE7
 import org.trailcatalog.flags.parseFlags
-import org.trailcatalog.importers.basemap.StringifyingInputStream
-import org.trailcatalog.importers.basemap.appendByteArray
-import org.trailcatalog.s2.SimpleS2
-import org.trailcatalog.s2.polygonToCell
 
 private val logger = LoggerFactory.getLogger("Conditions")
 
@@ -229,18 +212,6 @@ private val HOUR_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH").withZon
 
 private val mapper = ObjectMapper()
 
-private data class Row<G>(val id: UUID, val data: Map<String, String>, val cell: S2CellId, val geometry: G)
-
-private class Collection(
-    val id: UUID,
-    val name: String,
-    // the JSON for collections.schema, see schema.ts#CollectionSchema
-    val schema: Map<String, Any>,
-    val polygons: List<Row<S2Polygon>> = listOf(),
-    // encoded with DeltaLatLngE7
-    val points: List<Row<ByteArray>> = listOf(),
-)
-
 fun main(args: Array<String>) {
   parseFlags(args)
 
@@ -261,7 +232,7 @@ fun main(args: Array<String>) {
   }
 }
 
-private fun firePerimeters(): Collection {
+private fun firePerimeters(): ReplacedCollection {
   val polygons =
       fetchArcGis(
           FIRE_PERIMETERS_URL,
@@ -285,14 +256,14 @@ private fun firePerimeters(): Collection {
             incident?.let { data["incident"] = it }
             polygonRow(FIRE_PERIMETERS_COLLECTION_ID, incident, data, feature["geometry"])
           }
-  return Collection(
+  return ReplacedCollection(
       FIRE_PERIMETERS_COLLECTION_ID,
       "WFIGS current interagency fire perimeters",
       FIRE_PERIMETERS_SCHEMA,
       polygons)
 }
 
-private fun airQuality(): Collection {
+private fun airQuality(): ReplacedCollection {
   val polygons =
       fetchArcGis(AIR_QUALITY_URL, "gridcode,Timestamp").mapNotNull { feature ->
         val properties = feature["properties"]
@@ -307,11 +278,11 @@ private fun airQuality(): Collection {
         // Contours don't have ids, so each run gets new ones.
         polygonRow(AIR_QUALITY_COLLECTION_ID, null, data, feature["geometry"])
       }
-  return Collection(
+  return ReplacedCollection(
       AIR_QUALITY_COLLECTION_ID, "AirNow current air quality", AIR_QUALITY_SCHEMA, polygons)
 }
 
-private fun riverGauges(): Collection {
+private fun riverGauges(): ReplacedCollection {
   val shapefile = readTar(gunzip(fetchBytes(RIVER_GAUGES_URL)))
   val points = ArrayList<Row<ByteArray>>()
   // The .dbf rows include latitude and longitude, so we don't need to read the .shp.
@@ -331,19 +302,13 @@ private fun riverGauges(): Collection {
     gauge["ObsTime"]?.let { data["observed"] = "${it.removeSuffix(":00")} UTC" }
 
     val latLng = S2LatLng.fromDegrees(gauge["Latitude"]!!.toDouble(), gauge["Longitude"]!!.toDouble())
-    val latLngE7 = intArrayOf(latLng.lat().e7(), latLng.lng().e7())
-    points.add(
-        Row(
-            stableId(RIVER_GAUGES_COLLECTION_ID, lid),
-            data,
-            S2CellId.fromLatLng(latLng).parent(SimpleS2.HIGHEST_INDEX_LEVEL),
-            DeltaLatLngE7.encode(latLngE7)))
+    points.add(pointRow(RIVER_GAUGES_COLLECTION_ID, lid, data, latLng))
   }
-  return Collection(
+  return ReplacedCollection(
       RIVER_GAUGES_COLLECTION_ID, "NWPS river gauges", RIVER_GAUGES_SCHEMA, points = points)
 }
 
-private fun burntAreas(): Collection {
+private fun burntAreas(): ReplacedCollection {
   val polygons =
       fetchJson(BURNT_AREAS_URL)["features"].mapNotNull { feature ->
         val properties = feature["properties"]
@@ -371,11 +336,11 @@ private fun burntAreas(): Collection {
             ?.let { data["natura2000"] = "${Math.round(it)}%" }
         polygonRow(BURNT_AREAS_COLLECTION_ID, properties.text("id"), data, feature["geometry"])
       }
-  return Collection(
+  return ReplacedCollection(
       BURNT_AREAS_COLLECTION_ID, "EFFIS burnt areas", BURNT_AREAS_SCHEMA, polygons)
 }
 
-private fun europeanAirQuality(): Collection {
+private fun europeanAirQuality(): ReplacedCollection {
   // Named like raw_stations.json.26100900, so the newest sorts last
   val stationsFile =
       fetchJson("${EUROPEAN_AIR_QUALITY_URL}content/index.json")["contents"]
@@ -410,36 +375,14 @@ private fun europeanAirQuality(): Collection {
     station.text("network")?.let { data["network"] = it }
 
     val latLng = S2LatLng.fromDegrees(station.number("lat")!!, station.number("lon")!!)
-    points.add(
-        Row(
-            stableId(EUROPEAN_AIR_QUALITY_COLLECTION_ID, code),
-            data,
-            S2CellId.fromLatLng(latLng).parent(SimpleS2.HIGHEST_INDEX_LEVEL),
-            DeltaLatLngE7.encode(intArrayOf(latLng.lat().e7(), latLng.lng().e7()))))
+    points.add(pointRow(EUROPEAN_AIR_QUALITY_COLLECTION_ID, code, data, latLng))
   }
-  return Collection(
+  return ReplacedCollection(
       EUROPEAN_AIR_QUALITY_COLLECTION_ID,
       "EEA European Air Quality Index",
       EUROPEAN_AIR_QUALITY_SCHEMA,
       points = points)
 }
-
-private fun polygonRow(
-    collection: UUID, key: String?, data: Map<String, String>, geometry: JsonNode):
-    Row<S2Polygon>? {
-  val polygon = toS2Polygon(geometry)
-  if (polygon.numLoops() == 0) {
-    logger.warn("Dropping {} from {} because its geometry is empty", data, collection)
-    return null
-  }
-  val id = if (key != null) stableId(collection, key) else UUID.randomUUID()
-  return Row(id, data, polygonToCell(polygon), polygon)
-}
-
-// Gives an object the same id on every run, so a client that has it selected keeps it selected
-// after an import.
-private fun stableId(collection: UUID, key: String): UUID =
-    UUID.nameUUIDFromBytes("${collection}/${key}".toByteArray())
 
 // Fetches every feature in a layer, in pages because ArcGIS returns at most 2000 per request.
 private fun fetchArcGis(url: String, outFields: String): List<JsonNode> {
@@ -463,169 +406,5 @@ private fun fetchJson(url: String): JsonNode {
   return json
 }
 
-private fun JsonNode.text(key: String): String? =
-    get(key)?.takeUnless { it.isNull }?.asText()?.trim()?.takeIf { it.isNotEmpty() }
-
-private fun JsonNode.number(key: String): Double? = get(key)?.takeIf { it.isNumber }?.asDouble()
-
 // ArcGIS sends dates as milliseconds since the epoch.
 private fun toInstant(millis: Double): Instant = Instant.ofEpochMilli(millis.toLong())
-
-private fun toS2Polygon(geometry: JsonNode): S2Polygon {
-  val polygons =
-      when (val type = geometry["type"].asText()) {
-        "Polygon" -> listOf(geometry["coordinates"])
-        "MultiPolygon" -> geometry["coordinates"].toList()
-        else -> throw IllegalArgumentException("Unexpected geometry type ${type}")
-      }
-  return assemblePolygon(polygons.map { polygon ->
-    polygon.map { ring ->
-      ring.map { S2LatLng.fromDegrees(it[1].asDouble(), it[0].asDouble()).toPoint() }
-    }
-  })
-}
-
-// Replaces the collection's objects in one transaction, so readers never see a partial import, and
-// bumps its version so clients refetch their cached tiles. Does nothing if the objects are the same
-// as what we already have.
-private fun replace(collection: Collection) {
-  logger.info(
-      "Fetched {} polygons and {} points for {}",
-      collection.polygons.size,
-      collection.points.size,
-      collection.name)
-  createBaseConnection().use { hikari ->
-    hikari.connection.use { connection ->
-      connection.autoCommit = false
-
-      // The anonymous user owns it so that it's public, see ApiServer.kt#getCollectionAccess.
-      connection
-          .prepareStatement(
-              "INSERT INTO collections (id, creator, name, covering) VALUES (?, ?, ?, ?) "
-                  + "ON CONFLICT (id) DO NOTHING")
-          .apply {
-            setObject(1, collection.id)
-            setObject(2, UUID(0, 0))
-            setString(3, collection.name)
-            setBytes(4, encodeCovering(listOf()))
-          }
-          .executeUpdate()
-      val version =
-          connection
-              .prepareStatement("SELECT version FROM collections WHERE id = ? FOR UPDATE")
-              .apply {
-                setObject(1, collection.id)
-              }
-              .executeQuery()
-              .use {
-                it.next()
-                it.getLong(1) + 1
-              }
-      if (unchanged(connection, collection)) {
-        logger.info("{} is unchanged", collection.name)
-        connection.rollback()
-        return
-      }
-
-      for (table in listOf("points", "polygons")) {
-        connection
-            .prepareStatement("DELETE FROM ${table} WHERE collection = ?")
-            .apply {
-              setObject(1, collection.id)
-            }
-            .executeUpdate()
-      }
-
-      // COPY can't write into views, and the connection's schema only has views, so we name the
-      // public tables directly.
-      val copier = CopyManager(connection.unwrap(PgConnection::class.java))
-      copier.copyIn(
-          "COPY public.polygons (id, collection, cell, data, s2_polygon) "
-              + "FROM STDIN WITH (FORMAT CSV, HEADER)",
-          toCsv(collection.id, collection.polygons, ::encodePolygon))
-      copier.copyIn(
-          "COPY public.points (id, collection, cell, data, lat_lng_degrees) "
-              + "FROM STDIN WITH (FORMAT CSV, HEADER)",
-          toCsv(collection.id, collection.points) { it })
-
-      connection
-          .prepareStatement(
-              "UPDATE collections SET covering = ?, version = ?, schema = ?::jsonb WHERE id = ?")
-          .apply {
-            setBytes(
-                1,
-                encodeCovering(
-                    collection.polygons.map { it.cell } + collection.points.map { it.cell }))
-            setLong(2, version)
-            setString(3, mapper.writeValueAsString(collection.schema))
-            setObject(4, collection.id)
-          }
-          .executeUpdate()
-
-      connection.commit()
-    }
-  }
-}
-
-// Compares data and geometry but not ids, because air quality contours get new ids every run.
-private fun unchanged(connection: Connection, collection: Collection): Boolean {
-  val schema =
-      connection
-          .prepareStatement("SELECT schema FROM collections WHERE id = ?")
-          .apply {
-            setObject(1, collection.id)
-          }
-          .executeQuery()
-          .use {
-            it.next()
-            it.getString(1)
-          }
-  if (schema == null || mapper.readTree(schema) != mapper.valueToTree(collection.schema)) {
-    return false
-  }
-
-  val stored = ArrayList<String>()
-  for ((table, geometry) in listOf("polygons" to "s2_polygon", "points" to "lat_lng_degrees")) {
-    connection
-        .prepareStatement("SELECT data, ${geometry} FROM ${table} WHERE collection = ?")
-        .apply {
-          setObject(1, collection.id)
-        }
-        .executeQuery()
-        .use {
-          while (it.next()) {
-            stored.add(
-                rowKey(
-                    mapper.readValue(it.getString(1), Map::class.java) as Map<String, String>,
-                    it.getBytes(2)))
-          }
-        }
-  }
-  val fetched =
-      collection.polygons.map { rowKey(it.data, encodePolygon(it.geometry)) } +
-          collection.points.map { rowKey(it.data, it.geometry) }
-  return stored.sorted() == fetched.sorted()
-}
-
-private fun rowKey(data: Map<String, String>, geometry: ByteArray): String =
-    mapper.writeValueAsString(TreeMap(data)) + Base64.getEncoder().encodeToString(geometry)
-
-private fun encodePolygon(polygon: S2Polygon): ByteArray =
-    ByteArrayOutputStream().also { polygon.encode(it) }.toByteArray()
-
-private fun <G> toCsv(
-    collection: UUID, rows: List<Row<G>>, encode: (G) -> ByteArray): StringifyingInputStream<Row<G>> {
-  return StringifyingInputStream(rows.iterator()) { row, csv ->
-    // id,collection,cell,data,geometry
-    csv.append(row.id)
-    csv.append(",")
-    csv.append(collection)
-    csv.append(",")
-    csv.append(row.cell.id())
-    csv.append(",")
-    csv.append(StringEscapeUtils.escapeCsv(mapper.writeValueAsString(row.data)))
-    csv.append(",")
-    appendByteArray(encode(row.geometry), csv)
-    csv.append("\n")
-  }
-}

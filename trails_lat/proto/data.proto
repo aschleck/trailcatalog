@@ -10,6 +10,7 @@ service DataService {
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
   rpc CreateInvite(CreateInviteRequest) returns (CreateInviteResponse);
   rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
+  rpc GetAviationWeather(GetAviationWeatherRequest) returns (GetAviationWeatherResponse);
   rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
   rpc GetInvite(GetInviteRequest) returns (GetInviteResponse);
@@ -66,6 +67,74 @@ message DeleteCollectionRequest {
 }
 
 message DeleteCollectionResponse {}
+
+// Proxies the Aviation Weather Center, which doesn't allow cross origin requests
+message GetAviationWeatherRequest {
+  // ICAO id, like KSFO
+  string station = 1;
+  bool metar = 2;
+  bool taf = 3;
+}
+
+// Each is unset when it wasn't asked for, or the station has published none recently. Only about a
+// fifth of the stations that send METARs issue TAFs.
+message GetAviationWeatherResponse {
+  Metar metar = 1;
+  Taf taf = 2;
+}
+
+message AviationCloud {
+  // FEW, SCT, BKN, OVC, CLR, or SKC
+  string cover = 1;
+  // Above ground level, and unset for a clear sky
+  optional int32 base_feet = 2;
+}
+
+message AviationConditions {
+  // Unset when the wind is calm or variable
+  optional int32 wind_direction_degrees = 1;
+  optional int32 wind_speed_knots = 2;
+  optional int32 wind_gust_knots = 3;
+  // In statute miles, as reported, so "10+" for ten or more
+  string visibility = 4;
+  // Present weather in METAR's codes, like "-RA BR"
+  string weather = 5;
+  repeated AviationCloud clouds = 6;
+}
+
+// An observation, sent hourly and in between when the weather changes
+message Metar {
+  string raw = 1;
+  int64 observed_epoch_seconds = 2;
+  // VFR, MVFR, IFR, or LIFR, and empty when the report lacks the ceiling or visibility for one
+  string flight_category = 3;
+  optional double temperature_celsius = 4;
+  optional double dewpoint_celsius = 5;
+  optional double altimeter_hpa = 6;
+  AviationConditions conditions = 7;
+}
+
+// A forecast for the five statute miles around an airport, usually for 24 or 30 hours
+message Taf {
+  string raw = 1;
+  int64 issued_epoch_seconds = 2;
+  int64 valid_from_epoch_seconds = 3;
+  int64 valid_to_epoch_seconds = 4;
+  repeated TafPeriod periods = 5;
+}
+
+message TafPeriod {
+  int64 from_epoch_seconds = 1;
+  int64 to_epoch_seconds = 2;
+  // Empty for the forecast the TAF opens with, otherwise FM for a lasting change, BECMG for a
+  // gradual one, TEMPO for fluctuations, or PROB for a chance of them
+  string change = 3;
+  // Set for BECMG, as when the change is complete
+  optional int64 becoming_epoch_seconds = 4;
+  optional int32 probability_percent = 5;
+  // Only what the period changes, so a TEMPO often has no wind
+  AviationConditions conditions = 6;
+}
 
 message GetCollectionRequest {
   string id = 1;

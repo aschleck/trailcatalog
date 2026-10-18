@@ -38,13 +38,30 @@ fun polygonLayer(filters: List<Map<String, Any>>, fill: String) =
         "label" to NAME_LABEL,
     )
 
-fun pointLayer(filters: List<Map<String, Any>>, fill: String) =
+// A polygon drawn by its outline, for overlapping areas that fills would muddy. pattern is one of
+// collection_schema.ts#PatternName.
+//
+// The fill is clear but keeps the stroke's color, because hovering raises a polygon's fill alpha
+// and a clear black fill turns into a black blanket.
+fun outlinedPolygonLayer(
+    filters: List<Map<String, Any>>, stroke: String, widthPx: Int, pattern: String) =
+    mapOf(
+        "kind" to "polygon",
+        "filters" to filters,
+        "fill" to constant(stroke.substring(0, 7) + "00"),
+        "stroke" to constant(stroke),
+        "width" to constant(widthPx),
+        "pattern" to constant(pattern),
+        "label" to NAME_LABEL,
+    )
+
+fun pointLayer(filters: List<Map<String, Any>>, fill: String, radiusPx: Int = 4) =
     mapOf(
         "kind" to "point",
         "filters" to filters,
         "fill" to constant(fill),
         "icon" to constant("⬤"),
-        "radius" to constant(4),
+        "radius" to constant(radiusPx),
         "label" to NAME_LABEL,
     )
 

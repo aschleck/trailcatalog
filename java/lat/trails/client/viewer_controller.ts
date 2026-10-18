@@ -4,6 +4,7 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_MOUSE, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
 import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
+import { invalidateCache } from 'external/dev_april_corgi+/js/data/caching';
 import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 import { ACTION, CHANGED, PRESSED } from 'external/dev_april_corgi+/js/emu/events';
 import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
@@ -29,6 +30,7 @@ import {
   Collection,
   CreateCollectionResponse,
   DeleteCollectionResponse,
+  GetAviationWeatherResponse,
   GetCollectionResponse,
   GetCurrentUserResponse,
   GetOsmTagsResponse,
@@ -734,7 +736,18 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             : schema.title.kind === 'osm_way' ? {type: 'way' as const, id: titleValue}
             : undefined;
     const osm = element ? {...element, tags: 'loading' as const} : undefined;
-    const common = {data, schema, osm};
+    const station = entry?.weatherStation ? data[entry.weatherStation.id] : undefined;
+    const reports = entry?.weatherStation ? String(data[entry.weatherStation.reports] ?? '') : '';
+    const weather =
+        typeof station === 'string'
+            ? {
+              station,
+              metar: reports.includes('METAR'),
+              taf: reports.includes('TAF'),
+              report: 'loading' as const,
+            }
+            : undefined;
+    const common = {data, schema, osm, weather};
     if (object.kind === 'line') {
       const path = toDegrees(object.value.points);
       this.updateState({
@@ -763,6 +776,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
     if (osm) {
       this.loadOsmTags(osm.type, osm.id);
+    }
+    if (weather) {
+      this.loadAviationWeather(weather.station, weather.metar, weather.taf);
     }
   }
 
@@ -1543,6 +1559,33 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.updateState({
             ...this.state,
             inspected: {...inspected, osm: {...inspected.osm, tags}},
+          });
+        });
+  }
+
+  private loadAviationWeather(station: string, metar: boolean, taf: boolean): void {
+    const generation = this.inspectGeneration;
+    // The cache never expires, so reopening a station would show the report it had the first
+    // time. The server caches for a few minutes instead.
+    invalidateCache(method => method === 'lat.trails.DataService/GetAviationWeather');
+    const loading: Future<GetAviationWeatherResponse> =
+        requestData('lat.trails.DataService/GetAviationWeather', {station, metar, taf});
+    loading
+        .then(
+            response => response,
+            e => {
+              console.error(e);
+              return 'failed' as const;
+            })
+        .then(report => {
+          const inspected = this.state.inspected;
+          if (generation !== this.inspectGeneration || !inspected?.weather) {
+            return;
+          }
+
+          this.updateState({
+            ...this.state,
+            inspected: {...inspected, weather: {...inspected.weather, report}},
           });
         });
   }

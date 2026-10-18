@@ -73,6 +73,30 @@ const SNODAS_COPYRIGHT: Copyright = {
   url: 'https://doi.org/10.7265/N5TB14TC',
   publicDomain: true,
 };
+// openAIP's license allows shipping its data in an app as long as the data itself isn't what's
+// sold.
+// https://www.openaip.net/
+const OPENAIP_COPYRIGHT: Copyright = {
+  long: 'Aeronautical data from openAIP, not for navigation',
+  short: 'openAIP',
+  url: 'https://www.openaip.net/',
+  license: {name: 'CC BY-NC 4.0', url: 'https://creativecommons.org/licenses/by-nc/4.0/'},
+};
+// The FAA asks for acknowledgement in products that use its charts.
+const FAA_COPYRIGHT: Copyright = {
+  long: 'Sectional Aeronautical Charts from FAA Aeronautical Information Services',
+  short: 'FAA',
+  url: 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/vfr/',
+  publicDomain: true,
+};
+// Keep in sync with faa_sectional.py, which writes one archive per cycle named
+// faa_sectional_<cycle>.pmtiles
+const FAA_SECTIONAL_URL = 'https://tiles.trailcatalog.org/faa_sectional_';
+// Charts take effect at 0901 UTC on the first day of their cycle. See
+// faa_sectional.py#CYCLE_EPOCH.
+const FAA_CYCLE_EPOCH_MS = Date.UTC(2026, 8, 3, 9, 1);
+const FAA_CYCLE_DAYS = 56;
+const FAA_SECTIONAL_ID = 'us/faa_sectional';
 const SWISSTOPO_COPYRIGHT: Copyright = {
   long: 'Federal Office of Topography swisstopo',
   short: 'swisstopo',
@@ -174,6 +198,12 @@ const BURNT_AREAS_COLLECTION_ID = 'c0e8127d-7dd0-4eca-83e8-19a3abda8620';
 const EUROPEAN_AIR_QUALITY_COLLECTION_ID = '51787c46-2a9e-4374-b26a-50b7475608e1';
 const FIRE_PERIMETERS_COLLECTION_ID = '77ac6377-5725-40bb-bfb5-c0bbcb353617';
 const RIVER_GAUGES_COLLECTION_ID = 'b94ce6bf-753b-4886-8dde-224d5ebcfb7a';
+// Keep in sync with AviationVectors.kt
+const AIRSPACE_COLLECTION_ID = '6febd392-9760-431a-aa30-fa5b0dfcc411';
+const AIRPORTS_COLLECTION_ID = 'c885dc7e-291d-4628-bc8b-7f63231b087a';
+const NAVAIDS_COLLECTION_ID = '73c9b4f8-720b-407d-a503-736dfca2490f';
+const REPORTING_POINTS_COLLECTION_ID = '44fc1319-eae1-4051-8b07-6b1ad24e8861';
+const WEATHER_STATIONS_COLLECTION_ID = '1710b392-414f-4945-b8d3-3c1e13a5436e';
 // Where trailcatalog starts drawing its points, see trail_layer.ts#RENDER_POINT_ZOOM_THRESHOLD
 const POINT_ICON_ZOOM = 14;
 
@@ -187,6 +217,8 @@ export class LayerCatalog extends Disposable {
   private ecmwfRun: number;
   // The newest SNODAS day we know is tiled
   private snodasDay: string;
+  // The newest FAA cycle in effect that we know is tiled
+  private faaCycle: string;
   private readonly conditionsRefresh: Timer;
 
   constructor(
@@ -201,7 +233,9 @@ export class LayerCatalog extends Disposable {
     const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
     this.ecmwfRun = Math.floor(Date.now() / cycleMs) * cycleMs;
     this.snodasDay = utcDay(0);
+    this.faaCycle = faaCycle(0);
     this.conditionsRefresh = new Timer(CONDITIONS_REFRESH_MS, () => {
+      this.showLatestSectional();
       this.showLatestSnow();
       this.showLatestWeather();
     });
@@ -416,7 +450,7 @@ export class LayerCatalog extends Disposable {
           name: 'Conditions',
           enabled: true,
           children: [
-            this.newConditionsEntry(
+            this.newCollectionEntry(
                 'us/conditions/fire_perimeters',
                 'Fire perimeters',
                 FIRE_PERIMETERS_COLLECTION_ID,
@@ -432,7 +466,7 @@ export class LayerCatalog extends Disposable {
                 // 2026-10-03.
                 {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
                 locations),
-            this.newConditionsEntry(
+            this.newCollectionEntry(
                 'us/conditions/air_quality',
                 'Air quality',
                 AIR_QUALITY_COLLECTION_ID,
@@ -465,7 +499,7 @@ export class LayerCatalog extends Disposable {
                 // MRMS has 1 km cells and a zoom 9 pixel is about 300 m, so more zoom adds no
                 // detail.
                 /* maxZoom= */ 9),
-            this.newConditionsEntry(
+            this.newCollectionEntry(
                 'us/conditions/river_gauges',
                 'River gauges',
                 RIVER_GAUGES_COLLECTION_ID,
@@ -552,14 +586,16 @@ export class LayerCatalog extends Disposable {
           ),
           controls: [],
           values: {},
-        }],
+        },
+          this.newSectionalEntry(),
+        ],
       }, {
         kind: 'group',
         id: 'europe',
         name: 'Europe',
         enabled: true,
         children: [
-          this.newConditionsEntry(
+          this.newCollectionEntry(
               'europe/air_quality',
               'Air quality',
               EUROPEAN_AIR_QUALITY_COLLECTION_ID,
@@ -573,7 +609,7 @@ export class LayerCatalog extends Disposable {
               // enough to draw all of Europe from zoom 4.
               {minZoom: 4, maxZoom: undefined, indexBottom: 4, fromLevel: 13, toLevel: 13},
               locations),
-          this.newConditionsEntry(
+          this.newCollectionEntry(
               'europe/burnt_areas',
               'Burnt areas',
               BURNT_AREAS_COLLECTION_ID,
@@ -696,6 +732,87 @@ export class LayerCatalog extends Disposable {
           values: {},
         }],
       }],
+    }, {
+      kind: 'group',
+      id: 'aviation',
+      name: 'Aviation',
+      enabled: true,
+      children: [
+        {
+          kind: 'layer',
+          id: 'aviation/airspace',
+          name: 'Airspace',
+          enabled: false,
+          layer: new CollectionLayer(
+              [OPENAIP_COPYRIGHT],
+              `/api/collections/${AIRSPACE_COLLECTION_ID}`,
+              /* style= */ undefined,
+              // Same snapping and tiling as the public land layer, see there for why. There are
+              // about 34,000 airspaces worldwide, packed densest over Europe.
+              [
+                {minZoom: 0, snap: 11},
+                {minZoom: 7, snap: 14},
+                {minZoom: 10, snap: undefined},
+              ],
+              [
+                {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
+                {
+                  minZoom: 7,
+                  maxZoom: undefined,
+                  indexBottom: 6,
+                  fromLevel: 11,
+                  toLevel: undefined,
+                },
+              ],
+              locations,
+              this.camera,
+              this.renderer,
+          ),
+          controls: [],
+          values: {},
+        },
+        this.newCollectionEntry(
+            'aviation/airports',
+            'Airports',
+            AIRPORTS_COLLECTION_ID,
+            OPENAIP_COPYRIGHT,
+            // AviationVectors.kt puts every point in a level 13 cell. There are about 47,000
+            // airports and almost half of them are in the US, so they wait until zoom 7.
+            {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            locations),
+        this.newCollectionEntry(
+            'aviation/navaids',
+            'Navaids',
+            NAVAIDS_COLLECTION_ID,
+            OPENAIP_COPYRIGHT,
+            // About 4,900, which is as many as the European air quality stations
+            {minZoom: 4, maxZoom: undefined, indexBottom: 4, fromLevel: 13, toLevel: 13},
+            locations),
+        this.newCollectionEntry(
+            'aviation/reporting_points',
+            'Reporting points',
+            REPORTING_POINTS_COLLECTION_ID,
+            OPENAIP_COPYRIGHT,
+            // About 6,000, almost all in Europe and clustered around airports
+            {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            locations),
+        {
+          ...this.newCollectionEntry(
+            'aviation/weather_stations',
+            'Weather stations',
+            WEATHER_STATIONS_COLLECTION_ID,
+            {
+              long: 'Weather stations from the NOAA Aviation Weather Center',
+              short: 'NOAA AWC',
+              url: 'https://aviationweather.gov/',
+              publicDomain: true,
+            },
+            // About 7,700 that report METARs, tiled like the river gauges
+            {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            locations),
+          weatherStation: {id: 'station', reports: 'reports'},
+        },
+      ],
     }, {
       kind: 'group',
       id: 'satellite',
@@ -888,6 +1005,7 @@ export class LayerCatalog extends Disposable {
 
   // Points the conditions layers at the newest tiles, and keeps checking for newer ones.
   start(): void {
+    this.showLatestSectional();
     this.showLatestSnow();
     this.showLatestWeather();
     this.conditionsRefresh.start();
@@ -1022,7 +1140,7 @@ export class LayerCatalog extends Disposable {
     };
   }
 
-  private newConditionsEntry(
+  private newCollectionEntry(
       id: string,
       name: string,
       collection: string,
@@ -1051,6 +1169,38 @@ export class LayerCatalog extends Disposable {
       ),
       controls: [],
       values: {},
+    };
+  }
+
+  private newSectionalEntry(): LayerEntry {
+    let url = faaSectionalUrl(this.faaCycle);
+    const layer =
+        new RasterTileLayer(
+            [FAA_COPYRIGHT],
+            url,
+            /* tint= */ 0xFFFFFFFF as RgbaU32,
+            /* z= */ Z_BASE_SATELLITE,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            // See faa_sectional.py#MAX_ZOOM
+            /* maxZoom= */ 12,
+            this.renderer);
+    return {
+      kind: 'layer',
+      id: FAA_SECTIONAL_ID,
+      name: 'FAA Sectional',
+      enabled: false,
+      layer,
+      controls: [],
+      values: {},
+      configure: () => {
+        // setUrl drops every loaded tile, so we only call it when the URL changes.
+        const next = faaSectionalUrl(this.faaCycle);
+        if (next !== url) {
+          url = next;
+          layer.setUrl(next);
+        }
+      },
     };
   }
 
@@ -1092,6 +1242,26 @@ export class LayerCatalog extends Disposable {
         }
       },
     };
+  }
+
+  // Points the sectional layer at the cycle in effect, or the one before it while ours is late.
+  // Every archive has the 0/0/0 tile, see faa_sectional.py#write_tiles.
+  private showLatestSectional(): void {
+    const tryCycle = (offset: number) => {
+      if (offset < -1) {
+        return;
+      }
+      const cycle = faaCycle(offset);
+      fetch(`${FAA_SECTIONAL_URL}${cycle}/0/0/0.webp`).then(response => {
+        if (!response.ok) {
+          tryCycle(offset - 1);
+          return;
+        }
+        this.faaCycle = cycle;
+        this.configureEntries(id => id === FAA_SECTIONAL_ID);
+      }, () => {});
+    };
+    tryCycle(0);
   }
 
   // Points the snow layers at the newest tiled day. We check for the 0/0/0 tile because every
@@ -1278,6 +1448,17 @@ export class LayerCatalog extends Disposable {
       values: {},
     };
   }
+}
+
+// The first day of the FAA cycle in effect, offset by whole cycles
+function faaCycle(offset: number): string {
+  const cycleMs = FAA_CYCLE_DAYS * 24 * HOUR_MS;
+  const index = Math.floor((Date.now() - FAA_CYCLE_EPOCH_MS) / cycleMs) + offset;
+  return new Date(FAA_CYCLE_EPOCH_MS + index * cycleMs).toISOString().substring(0, 10);
+}
+
+function faaSectionalUrl(cycle: string): string {
+  return `${FAA_SECTIONAL_URL}${cycle}/\${id.zoom}/\${id.x}/\${id.y}.webp`;
 }
 
 // Today plus offset days, as a UTC date because SNODAS days are UTC

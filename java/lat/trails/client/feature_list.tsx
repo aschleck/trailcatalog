@@ -4,6 +4,15 @@ import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
+import { formatTemperature } from 'js/units/formatters';
+import {
+  AviationConditions,
+  GetAviationWeatherResponse,
+  Metar,
+  Taf,
+  TafPeriod,
+} from 'trails_lat/proto/data_pb';
+
 import { EditableFeature, EditableFolder } from './features';
 import { DangerButton, PanelButton, PanelCloseButton } from './controls';
 import { FIELD_EDITED, FIELD_ICON_CLICKED } from './events';
@@ -49,11 +58,21 @@ export interface OsmElementState {
   tags: {[key: string]: string}|'loading'|'failed';
 }
 
+export interface AviationWeatherState {
+  station: string;
+  // Whether the station publishes each
+  metar: boolean;
+  taf: boolean;
+  report: GetAviationWeatherResponse|'loading'|'failed';
+}
+
 export type InspectedObject = {
   data: Data;
   schema: Schema;
   // Set when the schema titles the object by its OpenStreetMap node or way
   osm: OsmElementState|undefined;
+  // Set for a weather station, see LayerEntry#weatherStation
+  weather: AviationWeatherState|undefined;
 } & ({
   kind: 'line';
   // Measured along the tile's geometry, which is simplified for the zoom it loaded at
@@ -417,6 +436,10 @@ export function Properties({profile, subject}: {
             ? <OsmTags tags={osm.tags} />
             : fields.length > 0 && !editing ? <DataTable rows={fields} /> : ''
         }
+        {subject.source === 'object' && subject.object.weather
+            ? <AviationWeather state={subject.object.weather} />
+            : ''
+        }
         {editing
             ? <DangerButton
                   className="self-start"
@@ -567,6 +590,185 @@ function OsmTags({tags}: {tags: OsmElementState['tags']}) {
       : tags === 'failed'
           ? <div className="text-gray-500">Failed to load tags</div>
           : <DataTable rows={Object.entries(tags).sort(([a], [b]) => a.localeCompare(b))} />;
+}
+
+function AviationWeather({state}: {state: AviationWeatherState}) {
+  const report = state.report;
+  if (report === 'loading' || report === 'failed') {
+    return (
+      <div className="text-gray-500">
+        {report === 'loading' ? 'Loading weather' : 'Failed to load weather'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {state.metar ? <MetarSection metar={report.metar} /> : ''}
+      {state.taf ? <TafSection taf={report.taf} /> : ''}
+    </div>
+  );
+}
+
+function MetarSection({metar}: {metar: Metar|undefined}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="font-bold">Latest METAR</div>
+      {metar
+          ? [
+            <DataTable rows={metarRows(metar)} />,
+            <div className="break-all font-mono text-gray-700 text-xs">{metar.raw}</div>,
+          ]
+          : <div className="text-gray-500">No recent report</div>
+      }
+    </div>
+  );
+}
+
+function TafSection({taf}: {taf: Taf|undefined}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="font-bold">Forecast (TAF)</div>
+      {taf
+          ? [
+            <div className="text-gray-700">{`Issued ${formatAgo(taf.issuedEpochSeconds)}`}</div>,
+            <table className="w-full">
+              <tbody>
+                {taf.periods.map(period =>
+                    <tr className="align-top border-gray-200 border-t">
+                      <td className="pr-2 py-0.5 text-gray-600">{describePeriod(period)}</td>
+                      <td className="py-0.5">
+                        {conditionsRows(period.conditions)
+                            .map(([key, value]) => <div>{`${key}: ${value}`}</div>)}
+                      </td>
+                    </tr>)}
+              </tbody>
+            </table>,
+            <div className="break-all font-mono text-gray-700 text-xs">{taf.raw}</div>,
+          ]
+          : <div className="text-gray-500">No current forecast</div>
+      }
+    </div>
+  );
+}
+
+const CLOUD_COVERS: {[cover: string]: string} = {
+  BKN: 'Broken',
+  CLR: 'Clear',
+  FEW: 'Few',
+  OVC: 'Overcast',
+  OVX: 'Sky obscured',
+  SCT: 'Scattered',
+  SKC: 'Clear',
+};
+
+const METERS_PER_FOOT = 0.3048;
+const METERS_PER_MILE = 1609.344;
+
+const PERIOD_TIME_FORMAT =
+    new Intl.DateTimeFormat(undefined, {weekday: 'short', hour: 'numeric', minute: '2-digit'});
+
+function metarRows(metar: Metar): Array<[string, string]> {
+  const rows: Array<[string, string]> = [['Observed', formatAgo(metar.observedEpochSeconds)]];
+  if (metar.flightCategory) {
+    rows.push(['Flight category', metar.flightCategory]);
+  }
+  if (metar.temperatureCelsius !== undefined) {
+    rows.push(['Temperature', formatCelsius(metar.temperatureCelsius)]);
+  }
+  if (metar.dewpointCelsius !== undefined) {
+    rows.push(['Dew point', formatCelsius(metar.dewpointCelsius)]);
+  }
+  rows.push(...conditionsRows(metar.conditions));
+  if (metar.altimeterHpa !== undefined) {
+    rows.push(['Altimeter', `${metar.altimeterHpa.toFixed(1)} hPa`]);
+  }
+  return rows;
+}
+
+// Only what's set, because a TAF period lists just what it changes.
+function conditionsRows(conditions: AviationConditions|undefined): Array<[string, string]> {
+  if (!conditions) {
+    return [];
+  }
+
+  const rows: Array<[string, string]> = [];
+  const {windDirectionDegrees, windSpeedKnots, windGustKnots} = conditions;
+  if (windSpeedKnots === 0) {
+    rows.push(['Wind', 'Calm']);
+  } else if (windSpeedKnots !== undefined) {
+    const direction =
+        windDirectionDegrees === undefined ? 'Variable' : `From ${windDirectionDegrees}°`;
+    const gusts = windGustKnots === undefined ? '' : `, gusting ${windGustKnots} kt`;
+    rows.push(['Wind', `${direction} at ${windSpeedKnots} kt${gusts}`]);
+  }
+  if (conditions.visibility) {
+    rows.push(['Visibility', formatVisibility(conditions.visibility)]);
+  }
+  if (conditions.weather) {
+    rows.push(['Weather', conditions.weather]);
+  }
+  if (conditions.clouds.length > 0) {
+    rows.push([
+      'Clouds',
+      conditions.clouds
+          .map(({cover, baseFeet}) => {
+            const name = CLOUD_COVERS[cover] ?? cover;
+            return baseFeet === undefined
+                ? name
+                : `${name} at ${formatHeight(baseFeet * METERS_PER_FOOT)}`;
+          })
+          .join(', '),
+    ]);
+  }
+  return rows;
+}
+
+// The API gives statute miles whatever unit the station reported in, with a trailing + for "more
+// than", like 6+.
+function formatVisibility(visibility: string): string {
+  const over = visibility.endsWith('+');
+  const miles = Number(over ? visibility.slice(0, -1) : visibility);
+  if (Number.isNaN(miles)) {
+    return `${visibility} mi`;
+  }
+  const distance = formatDistance(miles * METERS_PER_MILE);
+  return over ? `Over ${distance}` : distance;
+}
+
+function describePeriod(period: TafPeriod): string {
+  const from = formatPeriodTime(period.fromEpochSeconds);
+  const to = formatPeriodTime(period.toEpochSeconds);
+  const chance =
+      period.probabilityPercent === undefined ? '' : `${period.probabilityPercent}% chance, `;
+  let text;
+  if (period.change === 'FM') {
+    text = `from ${from}`;
+  } else if (period.change === 'BECMG') {
+    const done = period.becomingEpochSeconds ?? period.toEpochSeconds;
+    text = `becoming ${from} to ${formatPeriodTime(done)}`;
+  } else if (period.change === 'TEMPO') {
+    text = `${chance}temporarily ${from} to ${to}`;
+  } else {
+    text = `${chance}${from} to ${to}`;
+  }
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function formatPeriodTime(epochSeconds: bigint): string {
+  return PERIOD_TIME_FORMAT.format(new Date(Number(epochSeconds) * 1000));
+}
+
+function formatAgo(epochSeconds: bigint): string {
+  const minutes = Math.round((Date.now() / 1000 - Number(epochSeconds)) / 60);
+  return minutes < 60
+      ? `${minutes} min ago`
+      : `${Math.floor(minutes / 60)} h ${minutes % 60} min ago`;
+}
+
+function formatCelsius(celsius: number): string {
+  const {value, unit} = formatTemperature(celsius);
+  return `${value} ${unit}`;
 }
 
 function DataTable({rows}: {rows: Array<[string, string]>}) {

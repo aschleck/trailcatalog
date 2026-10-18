@@ -11,7 +11,7 @@ import { DataRequestor, FqMethods } from 'external/dev_april_corgi+/js/data/requ
 
 import { BACKENDS } from './backends';
 
-// Write RPCs that cause cache invalidations
+// Write RPCs that cause cache invalidations. Keep in sync with ApiServer.kt#WRITES.
 const WRITES: string[] = [
   'lat.trails.DataService/AcceptInvite',
   'lat.trails.DataService/CreateCollection',
