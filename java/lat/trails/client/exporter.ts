@@ -1,18 +1,16 @@
 import { EditableFeature, EditableLine, EditablePoint } from './features';
+import { toSimplestyleColor } from './geojson';
 import {
   channelOf,
-  CollectionSchema,
   DEFAULT_COLLECTION_SCHEMA,
   descriptionField,
-  fieldKindOf,
   fieldsFor,
   formatField,
-  lineLook,
-  PARTS,
-  pointLook,
+  getFieldKind,
+  getTitle,
   titleField,
-  titleOf,
 } from './schema';
+import { CollectionSchema, lineLook, PARTS, pointLook } from './workers/collection_schema';
 
 /**
  * Writes features as a GeoJSON FeatureCollection that parseGeoJson reads back, folders included.
@@ -26,7 +24,7 @@ export function toGeoJson(
     features: features.map(feature => {
       const properties: {[key: string]: boolean|number|string} = {};
       const {folder_id} = feature.data;
-      const title = titleOf(schema, feature);
+      const title = getTitle(schema, feature);
       if (title !== undefined) {
         properties.title = title;
       }
@@ -43,11 +41,13 @@ export function toGeoJson(
         properties.class = 'Folder';
         geometry = null;
       } else if (feature.kind === 'line') {
-        const look = lineLook(schema, feature);
-        if (look.stroke !== undefined) {
-          properties.stroke = look.stroke;
-        }
-        if (look.widthPx !== undefined) {
+        const look = lineLook(schema, feature.data);
+        if (look) {
+          const {color, opacity} = toSimplestyleColor(look.stroke);
+          properties.stroke = color;
+          if (opacity !== undefined) {
+            properties['stroke-opacity'] = opacity;
+          }
           properties['stroke-width'] = look.widthPx;
         }
         if (feature.data.marker_zoom !== undefined) {
@@ -56,10 +56,9 @@ export function toGeoJson(
         geometry = {type: 'LineString', coordinates: lineCoordinates(feature)};
       } else {
         const look = pointLook(schema, feature.data);
-        if (look.fill !== undefined) {
-          properties['marker-color'] = look.fill;
-        }
-        if (look.icon !== undefined) {
+        if (look) {
+          // Simplestyle has no opacity for a marker.
+          properties['marker-color'] = toSimplestyleColor(look.fill).color;
           properties['marker-symbol'] = look.icon;
         }
         geometry = {type: 'Point', coordinates: pointCoordinates(feature)};
@@ -102,7 +101,7 @@ export function toGpx(
     if (point.elevationCentimeters !== undefined) {
       element(waypoint, 'ele', String(point.elevationCentimeters / 100));
     }
-    const title = titleOf(schema, point);
+    const title = getTitle(schema, point);
     if (title !== undefined) {
       element(waypoint, 'name', title);
     }
@@ -113,7 +112,7 @@ export function toGpx(
   }
   for (const line of features.filter(f => f.kind === 'line')) {
     const track = element(root, 'trk');
-    const title = titleOf(schema, line);
+    const title = getTitle(schema, line);
     if (title !== undefined) {
       element(track, 'name', title);
     }
@@ -138,7 +137,7 @@ export function toGpx(
 }
 
 function descriptionOf(schema: CollectionSchema, feature: EditableFeature): string|undefined {
-  const field = descriptionField(schema, fieldKindOf(feature));
+  const field = descriptionField(schema, getFieldKind(feature));
   const value = field ? feature.data[field.id] : undefined;
   return typeof value === 'string' ? value : undefined;
 }
@@ -146,7 +145,7 @@ function descriptionOf(schema: CollectionSchema, feature: EditableFeature): stri
 // The fields not already written as the title, the description, or a color, width, or icon
 function otherFields(schema: CollectionSchema, feature: EditableFeature):
     Array<[string, boolean|number|string]> {
-  const kind = fieldKindOf(feature);
+  const kind = getFieldKind(feature);
   if (kind === 'folder') {
     return [];
   }

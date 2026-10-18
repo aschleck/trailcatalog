@@ -36,11 +36,12 @@ import {
 import { LayerTree } from './layer_tree';
 import { formatDistance } from './measurements';
 import { MeasurePanel } from './measure_panel';
-import { CollectionSchema, parseCollectionSchema, titleOf } from './schema';
+import { parseCollectionSchema, getTitle } from './schema';
 import { SidebarElement, SidebarSection } from './sidebar_element';
 import { Menubar, MenubarItem } from './menubar';
 import { EMPTY_SEARCH, SearchBox } from './search_box';
 import { Toolbar } from './toolbar';
+import { CollectionSchema } from './workers/collection_schema';
 
 export const DEFAULT_DESCRIPTION = 'Mapping software for backcountry trip planning';
 
@@ -304,7 +305,7 @@ function describe(
   let description = name;
   let separator = ': ';
   for (const feature of features) {
-    const featureName = titleOf(schema, feature)?.trim();
+    const featureName = getTitle(schema, feature)?.trim();
     if (!featureName) {
       continue;
     }

@@ -6,7 +6,8 @@ import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events'
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 
 import { PanelCloseButton, TEXT_BOX } from './controls';
-import { DEFAULT_ICON, DEFAULT_POINT_RADIUS_PX, pointIcon } from './features';
+import { pointIcon } from './features';
+import { DEFAULT_ICON, DEFAULT_POINT_RADIUS_PX } from './workers/collection_schema';
 
 // The default, then outdoor places and hazards
 const OUTDOORS = [

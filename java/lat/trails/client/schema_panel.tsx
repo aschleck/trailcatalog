@@ -17,28 +17,38 @@ import {
   SELECT_BOX,
   TEXT_BOX,
 } from './controls';
-import { DEFAULT_ICON, DEFAULT_POINT_COLOR } from './features';
+import { ColorPickerButton } from './color_picker';
+import { FIELD_EDITED, FIELD_ICON_CLICKED } from './events';
+import { FieldInput } from './field_input';
 import { IconPickerButton, IconPickerDialog } from './icon_picker';
 import {
   addOption,
-  appliesTo,
   byOption,
-  Channel,
   channelOf,
-  CollectionSchema,
   EDITABLE_KINDS,
-  FieldDefinition,
-  FieldKind,
-  FieldType,
+  fieldsFor,
   moveField,
-  PARTS,
   PATTERN_LABELS,
-  PATTERN_NAMES,
   READS,
-  removeFieldFrom,
+  removeField,
   removeOption,
   withChannel,
 } from './schema';
+import {
+  Channel,
+  CollectionSchema,
+  DEFAULT_COLOR,
+  DEFAULT_ICON,
+  FieldDefinition,
+  FieldKind,
+  FieldRef,
+  FieldType,
+  getField,
+  PARTS,
+  PATTERN_NAMES,
+  splitOptions,
+  splitsParts,
+} from './workers/collection_schema';
 
 export function SchemaPanel(props: {
   schema: CollectionSchema;
@@ -80,11 +90,13 @@ const KIND_LABELS: {[kind in FieldKind]: string} = {
   polygon: 'Polygons',
 };
 
+// The types whose input has no empty state, so a default of theirs clears by a button. The others
+// clear by emptying or unchecking the input.
+const CLEARED_BY_BUTTON: FieldType[] = ['color', 'icon', 'pattern', 'select'];
 // A text box that only shows its border when it is pointed at or typed in
 const QUIET_TEXT_BOX =
     'border border-transparent focus-within:border-blue-500 grow h-7 hover:border-gray-300 '
         + 'min-w-0 px-2 rounded';
-const SWATCH = 'bg-white border border-gray-300 cursor-pointer h-7 p-0.5 rounded shrink-0 w-9';
 
 interface State {
   draft: CollectionSchema;
@@ -93,8 +105,8 @@ interface State {
   sourceCache: {[key: string]: Channel<unknown>};
   // What is typed into each kind's new field row
   newFields: {[kind in FieldKind]: {label: string; type: FieldType}};
-  // Typed into each select field's new option box, by field id
-  newOptions: {[field: string]: string};
+  // Typed into each select field's new option box, by optionDraftKey
+  newOptions: {[key: string]: string};
   // The field being dragged to reorder it, which only drops within the section it started in
   dragging: {kind: FieldKind; id: string}|undefined;
   dropTarget: {kind: FieldKind; id: string; side: 'after'|'before'}|undefined;
@@ -155,15 +167,14 @@ function SchemaEditor(
   </>;
 }
 
-// A field shown on several kinds of feature is listed under each of them.
 function KindSection({draft, dropTarget, kind, newField, newOptions}: {
   draft: CollectionSchema;
   dropTarget: {id: string; side: 'after'|'before'}|undefined;
   kind: FieldKind;
   newField: {label: string; type: FieldType};
-  newOptions: {[field: string]: string};
+  newOptions: {[key: string]: string};
 }) {
-  const fields = draft.fields.filter(field => appliesTo(field, kind));
+  const fields = fieldsFor(draft, kind);
   return (
     <Section label={KIND_LABELS[kind]}>
       <div className={LIST}>
@@ -172,8 +183,9 @@ function KindSection({draft, dropTarget, kind, newField, newOptions}: {
                 key={`${kind}:${field.id}`}
                 drop={dropTarget?.id === field.id ? dropTarget.side : undefined}
                 field={field}
+                iconColor={getIconColor(draft)}
                 kind={kind}
-                newOption={newOptions[field.id] ?? ''}
+                newOption={newOptions[optionDraftKey(field)] ?? ''}
             />)}
         <div className="bg-gray-50 flex gap-2 items-center p-2">
           <Input
@@ -205,14 +217,15 @@ function KindSection({draft, dropTarget, kind, newField, newOptions}: {
 }
 
 // A line along the top or bottom edge shows where a dragged field would drop.
-function FieldRow({drop, field, kind, newOption}: {
+function FieldRow({drop, field, iconColor, kind, newOption}: {
   drop: 'after'|'before'|undefined;
   field: FieldDefinition;
+  iconColor: string;
   key: string;
   kind: FieldKind;
   newOption: string;
 }) {
-  const bound = {data: {field: field.id}};
+  const bound = {data: {field: field.id, kind}};
   const labelAction = field.hideLabel ? 'Show the label' : 'Hide the label';
   return (
     <div
@@ -260,12 +273,37 @@ function FieldRow({drop, field, kind, newOption}: {
             value={field.label}
             unboundEvents={{corgi: [[CHANGED, 'fieldLabelChanged']]}}
         />
-        <span className="bg-gray-100 px-1.5 py-0.5 rounded shrink-0 text-gray-600 text-xs">
+        <span
+            className="bg-gray-100 py-0.5 rounded shrink-0 text-center text-gray-600 text-xs w-16"
+        >
           {TYPE_LABELS[field.type]}
         </span>
+        <div className="flex gap-2 items-center shrink-0 w-48">
+          <FieldInput
+              compact={false}
+              field={field}
+              iconColor={iconColor}
+              key={`${kind}:${field.id}`}
+              values={{[field.id]: field.default}}
+              unboundEvents={{
+                corgi: [
+                  [FIELD_EDITED, 'fieldEdited'],
+                  [FIELD_ICON_CLICKED, 'fieldIconClicked'],
+                ],
+              }}
+          />
+          {field.default !== undefined && CLEARED_BY_BUTTON.includes(field.type)
+              ? <RemoveButton
+                    {...bound}
+                    label={`Clear the default for ${field.label}`}
+                    unboundEvents={{corgi: [[ACTION, 'defaultCleared']]}}
+                />
+              : ''
+          }
+        </div>
         {field.type === 'text'
             ? <IconButton
-                  data={{field: field.id}}
+                  {...bound}
                   label={field.multiline ? 'Make it a single line' : 'Make it multiple lines'}
                   unboundEvents={{corgi: [[ACTION, 'multilineToggled']]}}
               >
@@ -274,10 +312,10 @@ function FieldRow({drop, field, kind, newOption}: {
                     : <path d="M1.5 6 H10.5" strokeWidth="1.2" />
                 }
               </IconButton>
-            : ''
+            : <span className="shrink-0 w-7" />
         }
         <IconButton
-            data={{field: field.id}}
+            {...bound}
             label={`${labelAction} in the feature editor`}
             unboundEvents={{corgi: [[ACTION, 'labelToggled']]}}
         >
@@ -296,13 +334,13 @@ function FieldRow({drop, field, kind, newOption}: {
                   <div className="flex gap-2 items-center" key={option.id}>
                     <Input
                         className={QUIET_TEXT_BOX}
-                        data={{field: field.id, option: option.id}}
+                        data={{field: field.id, kind, option: option.id}}
                         forceValue={true}
                         value={option.label}
                         unboundEvents={{corgi: [[CHANGED, 'optionLabelChanged']]}}
                     />
                     <RemoveButton
-                        data={{field: field.id, option: option.id}}
+                        data={{field: field.id, kind, option: option.id}}
                         label={`Remove ${option.label}`}
                         unboundEvents={{corgi: [[ACTION, 'optionRemoved']]}}
                     />
@@ -339,7 +377,7 @@ function PartRow({draft, part}: {draft: CollectionSchema; key: string; part: Par
   const channel = channelOf(draft, part.kind, part.part);
   const current = sourceKey(channel);
   const split =
-      channel.kind === 'by_option' ? draft.fields.find(f => f.id === channel.key) : undefined;
+      channel.kind === 'by_option' ? getField(draft, part.kind, channel.key) : undefined;
   return (
     <div className="flex flex-col gap-1.5 px-3 py-2">
       <div className="flex gap-2 items-center">
@@ -358,7 +396,7 @@ function PartRow({draft, part}: {draft: CollectionSchema; key: string; part: Par
         {channel.kind === 'constant'
             ? <ValueInput
                   key={`${part.kind}.${part.part}:constant`}
-                  iconColor={iconColorOf(draft)}
+                  iconColor={getIconColor(draft)}
                   option=""
                   part={part}
                   value={channel.value}
@@ -368,12 +406,12 @@ function PartRow({draft, part}: {draft: CollectionSchema; key: string; part: Par
       </div>
       {channel.kind === 'by_option'
           ? <div className="flex flex-col gap-1 pl-[6.5rem]">
-              {(split?.options ?? []).map(option =>
+              {(split ? splitOptions(split) : []).map(option =>
                   <div className="flex gap-2 items-center">
                     <span className="grow min-w-0 text-gray-600 truncate">{option.label}</span>
                     <ValueInput
                         key={`${part.kind}.${part.part}:${option.id}`}
-                        iconColor={iconColorOf(draft)}
+                        iconColor={getIconColor(draft)}
                         option={option.id}
                         part={part}
                         value={channel.values[option.id]}
@@ -401,13 +439,12 @@ function ValueInput({iconColor, option, part, value}: {
   switch (part.type) {
     case 'color':
       return (
-        <input
+        <ColorPickerButton
             {...bound}
             ariaLabel={part.label}
-            className={SWATCH}
-            type="color"
-            value={String(shown)}
-            unboundEvents={{input: 'valueInput'}}
+            color={String(shown)}
+            title={part.label}
+            unboundEvents={{corgi: [[CHANGED, 'valueChanged']]}}
         />
       );
     case 'icon':
@@ -462,10 +499,8 @@ function ValueInput({iconColor, option, part, value}: {
   }
 }
 
-// A label never splits by a select because it shows the option's label.
 function sourcesFor(draft: CollectionSchema, part: Part): Source[] {
-  const usable = draft.fields.filter(f => appliesTo(f, part.kind));
-  const selects = part.type === 'label' ? [] : usable.filter(f => f.type === 'select');
+  const usable = fieldsFor(draft, part.kind);
   return [
     {
       key: 'constant',
@@ -477,7 +512,7 @@ function sourcesFor(draft: CollectionSchema, part: Part): Source[] {
       label: f.label,
       make: () => ({kind: 'field', key: f.id}) as const,
     })),
-    ...selects.map(f => ({
+    ...usable.filter(splitsParts).map(f => ({
       key: `by_option:${f.id}`,
       label: `By ${f.label}`,
       make: () => byOption(f, part.type),
@@ -490,9 +525,14 @@ function sourceKey(channel: Channel<unknown>): string {
 }
 
 // A constant point color, or else the default, since a color read from a field varies by point
-function iconColorOf(schema: CollectionSchema): string {
+function getIconColor(schema: CollectionSchema): string {
   const fill = channelOf(schema, 'point', 'fill');
-  return fill.kind === 'constant' ? String(fill.value) : DEFAULT_POINT_COLOR;
+  return fill.kind === 'constant' ? String(fill.value) : DEFAULT_COLOR;
+}
+
+// Options are typed per field, and two kinds can each have a field with the same id.
+function optionDraftKey(field: FieldDefinition): string {
+  return `${field.kind}:${field.id}`;
 }
 
 interface Args {
@@ -521,17 +561,17 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
   }
 
   newLabelChanged(e: CorgiEvent<typeof CHANGED>): void {
-    const kind = this.kindOf(e);
+    const kind = this.getEventKind(e);
     this.setNewField(kind, {...this.state.newFields[kind], label: e.detail.value});
   }
 
   newTypeChanged(e: CorgiEvent<typeof CHANGED>): void {
-    const kind = this.kindOf(e);
+    const kind = this.getEventKind(e);
     this.setNewField(kind, {...this.state.newFields[kind], type: e.detail.value as FieldType});
   }
 
   fieldAdded(e: CorgiEvent<typeof ACTION>): void {
-    const kind = this.kindOf(e);
+    const kind = this.getEventKind(e);
     const {label, type} = this.state.newFields[kind];
     if (!label.trim()) {
       return;
@@ -539,9 +579,9 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
 
     const field: FieldDefinition = {
       id: crypto.randomUUID(),
+      kind,
       label: label.trim(),
       type,
-      kinds: [kind],
       ...(type === 'select' ? {options: []} : {}),
     };
     this.setDraft({...this.state.draft, fields: [...this.state.draft.fields, field]}, {
@@ -550,19 +590,18 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
   }
 
   fieldLabelChanged(e: CorgiEvent<typeof CHANGED>): void {
-    const id = this.fieldId(e);
-    this.editField(id, field => ({...field, label: e.detail.value}));
+    this.editField(this.getEventField(e), field => ({...field, label: e.detail.value}));
   }
 
   multilineToggled(e: CorgiEvent<typeof ACTION>): void {
-    this.editField(this.fieldId(e), field => {
+    this.editField(this.getEventField(e), field => {
       const {multiline, ...rest} = field;
       return multiline ? rest : {...rest, multiline: true};
     });
   }
 
   labelToggled(e: CorgiEvent<typeof ACTION>): void {
-    this.editField(this.fieldId(e), field => {
+    this.editField(this.getEventField(e), field => {
       const {hideLabel, ...rest} = field;
       return hideLabel ? rest : {...rest, hideLabel: true};
     });
@@ -608,7 +647,8 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
     const target = this.state.dropTarget;
     (e.detail as DragEvent).preventDefault();
     if (dragging && target && dragging.kind === target.kind) {
-      this.setDraft(moveField(this.state.draft, dragging.id, target.id, target.side), {
+      const moved = moveField(this.state.draft, dragging, target.id, target.side);
+      this.setDraft(moved, {
         dragging: undefined,
         dropTarget: undefined,
       });
@@ -620,30 +660,34 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
   }
 
   fieldRemoved(e: CorgiEvent<typeof ACTION>): void {
-    this.setDraft(removeFieldFrom(this.state.draft, this.fieldId(e), this.kindOf(e)));
+    const field = this.getEventField(e);
+    this.setDraft(removeField(this.state.draft, field));
   }
 
   newOptionChanged(e: CorgiEvent<typeof CHANGED>): void {
-    const id = this.fieldId(e);
-    this.updateState({...this.state, newOptions: {...this.state.newOptions, [id]: e.detail.value}});
+    const key = optionDraftKey(this.getEventField(e));
+    this.updateState({
+      ...this.state,
+      newOptions: {...this.state.newOptions, [key]: e.detail.value},
+    });
   }
 
   optionAdded(e: CorgiEvent<typeof ACTION>): void {
-    const id = this.fieldId(e);
-    const label = (this.state.newOptions[id] ?? '').trim();
+    const field = this.getEventField(e);
+    const key = optionDraftKey(field);
+    const label = (this.state.newOptions[key] ?? '').trim();
     if (!label) {
       return;
     }
 
-    this.setDraft(addOption(this.state.draft, id, label), {
-      newOptions: {...this.state.newOptions, [id]: ''},
+    this.setDraft(addOption(this.state.draft, field, label), {
+      newOptions: {...this.state.newOptions, [key]: ''},
     });
   }
 
   optionLabelChanged(e: CorgiEvent<typeof CHANGED>): void {
-    const id = this.fieldId(e);
     const option = checkExists(e.actionElement.data('option')).string();
-    this.editField(id, field => ({
+    this.editField(this.getEventField(e), field => ({
       ...field,
       options: (field.options ?? []).map(o => o.id === option ? {...o, label: e.detail.value} : o),
     }));
@@ -651,12 +695,35 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
 
   optionRemoved(e: CorgiEvent<typeof ACTION>): void {
     const option = checkExists(e.actionElement.data('option')).string();
-    this.setDraft(removeOption(this.state.draft, this.fieldId(e), option));
+    const field = this.getEventField(e);
+    this.setDraft(removeOption(this.state.draft, field, option));
+  }
+
+  fieldEdited(e: CorgiEvent<typeof FIELD_EDITED>): void {
+    this.setDefault(e.detail.field, e.detail.value);
+  }
+
+  // The picker gives no icon for DEFAULT_ICON, which is what no default draws anyway.
+  fieldIconClicked(e: CorgiEvent<typeof FIELD_ICON_CLICKED>): void {
+    const field = e.detail.field;
+    const current = getField(this.state.draft, field.kind, field.id)?.default;
+    this.dialog.display(IconPickerDialog({
+      color: getIconColor(this.state.draft),
+      current: typeof current === 'string' ? current : undefined,
+      onChosen: icon => {
+        this.setDefault(field, icon);
+      },
+      used: [],
+    })).catch(() => {});
+  }
+
+  defaultCleared(e: CorgiEvent<typeof ACTION>): void {
+    this.setDefault(this.getEventField(e), undefined);
   }
 
   // A source starts at the part's fallback, unless the part was set that way earlier in the dialog.
   sourceChanged(e: CorgiEvent<typeof CHANGED>): void {
-    const part = this.partOf(e);
+    const part = this.getEventPart(e);
     const draft = this.state.draft;
     const source = sourcesFor(draft, part).find(s => s.key === e.detail.value);
     if (!source) {
@@ -677,7 +744,7 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
 
   // The picker stores its default as no icon, which a channel draws as DEFAULT_ICON anyway.
   iconValueClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const part = this.partOf(e);
+    const part = this.getEventPart(e);
     const option = checkExists(e.actionElement.data('option')).string();
     const channel = channelOf(this.state.draft, part.kind, part.part);
     const current =
@@ -685,7 +752,7 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
             : channel.kind === 'by_option' ? channel.values[option]
             : undefined;
     this.dialog.display(IconPickerDialog({
-      color: iconColorOf(this.state.draft),
+      color: getIconColor(this.state.draft),
       current: typeof current === 'string' ? current : undefined,
       onChosen: icon => {
         this.setValueAt(part, option, icon ?? DEFAULT_ICON);
@@ -701,7 +768,7 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
   private setValue(e: CorgiEvent<typeof CHANGED>|CorgiEvent<typeof DOM_MOUSE>, raw: string):
       void {
     const option = checkExists(e.actionElement.data('option')).string();
-    this.setValueAt(this.partOf(e), option, raw);
+    this.setValueAt(this.getEventPart(e), option, raw);
   }
 
   private setValueAt(part: Part, option: string, raw: string): void {
@@ -729,17 +796,26 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
     }
   }
 
-  private partOf(e: CorgiEvent<typeof CHANGED>|CorgiEvent<typeof DOM_MOUSE>): Part {
+  private getEventPart(e: CorgiEvent<typeof CHANGED>|CorgiEvent<typeof DOM_MOUSE>): Part {
     const kind = checkExists(e.actionElement.data('kind')).string();
     const part = checkExists(e.actionElement.data('part')).string();
     return checkExists(PARTS.find(p => p.kind === kind && p.part === part));
   }
 
-  private fieldId(e: CorgiEvent<typeof ACTION>|CorgiEvent<typeof CHANGED>): string {
-    return checkExists(e.actionElement.data('field')).string();
+  // The draft's field that an event's row is for
+  private getEventField(
+      e: CorgiEvent<typeof ACTION>|CorgiEvent<typeof CHANGED>|CorgiEvent<typeof DOM_MOUSE>):
+      FieldDefinition {
+    return checkExists(
+        getField(
+            this.state.draft,
+            this.getEventKind(e),
+            checkExists(e.actionElement.data('field')).string()));
   }
 
-  private kindOf(e: CorgiEvent<typeof ACTION>|CorgiEvent<typeof CHANGED>): FieldKind {
+  private getEventKind(
+      e: CorgiEvent<typeof ACTION>|CorgiEvent<typeof CHANGED>|CorgiEvent<typeof DOM_MOUSE>):
+      FieldKind {
     return checkExists(e.actionElement.data('kind')).string() as FieldKind;
   }
 
@@ -747,13 +823,24 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
     this.updateState({...this.state, newFields: {...this.state.newFields, [kind]: field}});
   }
 
+  private setDefault(field: FieldRef, value: boolean|number|string|undefined): void {
+    this.editField(field, edited => {
+      const {default: _, ...rest} = edited;
+      return value === undefined ? rest : {...rest, default: value};
+    });
+  }
+
+  // Matched by kind and id rather than identity, because the icon picker edits after the draft may
+  // have changed.
   private editField(
-      id: string,
+      {kind, id}: FieldRef,
       edit: (field: FieldDefinition) => FieldDefinition,
       also: Partial<State> = {}): void {
     this.setDraft({
       ...this.state.draft,
-      fields: this.state.draft.fields.map(field => field.id === id ? edit(field) : field),
+      fields:
+          this.state.draft.fields.map(field =>
+              field.kind === kind && field.id === id ? edit(field) : field),
     }, also);
   }
 

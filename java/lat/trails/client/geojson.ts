@@ -102,7 +102,7 @@ function parsePoint(
     return undefined;
   }
 
-  const fill = colorOf(properties['marker-color']);
+  const fill = colorOf(properties['marker-color'], undefined);
   if (fill !== undefined) {
     data.fill = fill;
   }
@@ -148,7 +148,7 @@ function parseLine(
     }
   }
 
-  const stroke = colorOf(properties.stroke);
+  const stroke = colorOf(properties.stroke, properties['stroke-opacity']);
   if (stroke !== undefined) {
     data.stroke = stroke;
   }
@@ -191,13 +191,32 @@ function positionOf(position: Json): [lng: number, lat: number, altitude?: numbe
   return [lng, lat, finite ? altitude : undefined];
 }
 
-function colorOf(value: Json|undefined): string|undefined {
+// Simplestyle colors are #rgb or #rrggbb, with opacity from 0 to 1 in a property of its own.
+// https://github.com/mapbox/simplestyle-spec/tree/master/1.1.0
+function colorOf(value: Json|undefined, opacity: Json|undefined): string|undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
 
-  const hex = value.trim().toLowerCase();
-  return /^#[0-9a-f]{6}$/.test(hex) ? hex : undefined;
+  const trimmed = value.trim().toLowerCase();
+  const hex =
+      /^#[0-9a-f]{3}$/.test(trimmed)
+          ? `#${[...trimmed.slice(1)].map(c => c + c).join('')}`
+          : trimmed;
+  if (!/^#[0-9a-f]{6}$/.test(hex)) {
+    return undefined;
+  }
+  if (typeof opacity !== 'number' || !(opacity >= 0 && opacity < 1)) {
+    return hex;
+  }
+  return hex + Math.round(opacity * 255).toString(16).padStart(2, '0');
+}
+
+/** Splits a #rrggbb or #rrggbbaa color into simplestyle's opaque color and its opacity. */
+export function toSimplestyleColor(hex: string): {color: string; opacity: number|undefined} {
+  return hex.length === 9
+      ? {color: hex.slice(0, 7), opacity: parseInt(hex.slice(7), 16) / 255}
+      : {color: hex, opacity: undefined};
 }
 
 function stringOf(value: Json|undefined): string|undefined {

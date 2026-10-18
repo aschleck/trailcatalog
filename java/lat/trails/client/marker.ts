@@ -5,9 +5,6 @@ import { LineProgram } from 'js/map/rendering/line_program';
 // pressure is simulated from how far the pointer moves between samples.
 // https://github.com/steveruizok/perfect-freehand
 
-// Close to tldraw's default m, whose perfect-freehand size of 4.5 draws 6.4 px wide
-export const DEFAULT_MARKER_WIDTH_PX = 6;
-
 const THINNING = 0.5;
 const RATE_OF_PRESSURE_CHANGE = 0.275;
 // A stroke almost always starts slow, which would otherwise make it start fat.

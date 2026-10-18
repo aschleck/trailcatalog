@@ -134,3 +134,23 @@ test('rejects what is not GeoJSON', () => {
   expect(() => parseGeoJson('[]')).toThrow();
   expect(() => parseGeoJson('{"type": "Topology"}')).toThrow();
 });
+
+test('short colors expand and opaque strokes stay six digits', () => {
+  const [short, opaque] = parseGeoJson(JSON.stringify({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        geometry: {type: 'Point', coordinates: [6.78, 45.74]},
+        properties: {'marker-color': '#F80'},
+      },
+      {
+        type: 'Feature',
+        geometry: {type: 'LineString', coordinates: [[6.78, 45.74], [6.79, 45.75]]},
+        properties: {stroke: '#123456', 'stroke-opacity': 1},
+      },
+    ],
+  }));
+  expect(short.data.fill).toBe('#ff8800');
+  expect(opaque.data.stroke).toBe('#123456');
+});

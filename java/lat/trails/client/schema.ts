@@ -1,19 +1,28 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
-import { Stipple } from 'js/map/rendering/line_program';
 
+import { EditableFeature, FeatureData } from './features';
 import {
-  DEFAULT_ICON,
-  DEFAULT_LINE_COLOR,
-  DEFAULT_POINT_COLOR,
+  Channel,
+  CollectionSchema,
+  DEFAULT_COLOR,
   DEFAULT_POINT_RADIUS_PX,
-  DEFAULT_WIDTH_PX,
-  EditableFeature,
-  EditableLine,
-  FeatureData,
-  isMarker,
-} from './features';
-import { DEFAULT_MARKER_WIDTH_PX } from './marker';
-import { Match, matches } from './workers/filters';
+  FIELD_KINDS,
+  FieldDefinition,
+  FieldKind,
+  FieldRef,
+  FieldType,
+  getField,
+  getLineKind,
+  isValidFieldValue,
+  lineLook,
+  PARTS,
+  PatternName,
+  pointLook,
+  SelectOption,
+  splitOptions,
+  StyleLayer,
+  StyleType,
+} from './workers/collection_schema';
 
 // What the keys of a collection's feature data mean, so that the properties dialog can show them.
 export interface Schema {
@@ -48,19 +57,6 @@ export const OSM_NODES_SCHEMA: Schema = {
   fields: [],
 };
 
-// A collection's fields and what each part of a feature's look comes from, the JSON in
-// collections.schema. A feature keeps a field's value in its data under the field's id.
-export interface CollectionSchema {
-  fields: FieldDefinition[];
-  layers: StyleLayer[];
-}
-
-// A feature draws with the first layer of its kind whose filters all match, as in
-// collection_loader.ts#findStyle, and one that no layer matches doesn't draw.
-export type StyleLayer = {[K in FieldKind]: {kind: K; filters: Match[]} & Parts<K>}[FieldKind];
-
-type Parts<K extends FieldKind> = {[P in PartName<K>]: Channel<ValueOf<K, P>>};
-
 // The open collection's schema, with the version the server last stamped on it, which a put of it
 // sends back the way a feature's does
 export interface SavedSchema {
@@ -68,43 +64,26 @@ export interface SavedSchema {
   version: bigint;
 }
 
-// A drawing is a line made with the marker. Folders have no fields.
-export type FieldKind = 'drawing'|'line'|'point'|'polygon';
-
-export const FIELD_KINDS: FieldKind[] = ['drawing', 'line', 'point', 'polygon'];
-
 // Only importers make polygons.
 export const EDITABLE_KINDS: FieldKind[] = ['drawing', 'line', 'point'];
 
-export type FieldType = 'checkbox'|'color'|'date'|'icon'|'number'|'pattern'|'select'|'text';
-
-export interface FieldDefinition {
-  id: string;
-  label: string;
-  type: FieldType;
-  // Which features show the field, every kind when unset
-  kinds?: FieldKind[];
-  hideLabel?: boolean;
-  // Only for text, which is a single line unless set
-  multiline?: boolean;
-  // Only for a select
-  options?: SelectOption[];
-}
-
-export interface SelectOption {
-  // What a feature's data holds, so that relabeling an option keeps every value
-  id: string;
-  label: string;
-}
-
-// Given to new options in turn, so that a color split by a select starts out telling them apart
+// Given to new options in turn, so that a color split by a select starts out telling them apart.
+// Every pair is at least 15 OKLab ΔE×100 apart, and every adjacent pair at least 8 under simulated
+// protanopia and deuteranopia, so the first few options stay distinct for colorblind readers too.
+// Gold and cyan are under 3:1 against the basemap's cream, so lines in them lean on the darkened
+// edge LineProgram draws.
+//
+// magenta, green, blue, orange, cyan, red, charcoal, gold
 export const OPTION_COLORS = [
-  '#de29db', '#1f77b4', '#2ca02c', '#d62728', '#ff7f0e', '#9467bd', '#17becf', '#8c564b',
+  DEFAULT_COLOR,
+  '#179a53',
+  '#0d3bea',
+  '#dc6322',
+  '#13adcf',
+  '#c10231',
+  '#2a3045',
+  '#c5a101',
 ];
-
-export type PatternName = 'alternating'|'dashed'|'solid'|'ticks';
-
-export const PATTERN_NAMES: PatternName[] = ['alternating', 'dashed', 'solid', 'ticks'];
 
 export const PATTERN_LABELS: {[name in PatternName]: string} = {
   alternating: 'Alternating',
@@ -112,60 +91,6 @@ export const PATTERN_LABELS: {[name in PatternName]: string} = {
   solid: 'Solid',
   ticks: 'Ticks',
 };
-
-// What a part of a feature's look holds
-export type StyleType = 'color'|'icon'|'label'|'number'|'pattern';
-
-interface StyleValues {
-  color: string;
-  icon: string;
-  label: string;
-  number: number;
-  pattern: PatternName;
-}
-
-// The fallback is what draws when the part's channel gives nothing usable.
-interface PartSpec {
-  label: string;
-  type: StyleType;
-  fallback: number|string;
-}
-
-// The parts of each kind of feature's look, in the order the schema dialog lists them
-export const STYLE = {
-  drawing: {
-    label: {label: 'Label', type: 'label', fallback: ''},
-    stroke: {label: 'Stroke', type: 'color', fallback: DEFAULT_LINE_COLOR},
-    width: {label: 'Width', type: 'number', fallback: DEFAULT_MARKER_WIDTH_PX},
-  },
-  line: {
-    label: {label: 'Label', type: 'label', fallback: ''},
-    pattern: {label: 'Pattern', type: 'pattern', fallback: 'solid'},
-    stroke: {label: 'Stroke', type: 'color', fallback: DEFAULT_LINE_COLOR},
-    width: {label: 'Width', type: 'number', fallback: DEFAULT_WIDTH_PX},
-  },
-  point: {
-    fill: {label: 'Fill', type: 'color', fallback: DEFAULT_POINT_COLOR},
-    icon: {label: 'Icon', type: 'icon', fallback: DEFAULT_ICON},
-    radius: {label: 'Radius', type: 'number', fallback: DEFAULT_POINT_RADIUS_PX},
-    label: {label: 'Label', type: 'label', fallback: ''},
-  },
-  polygon: {
-    fill: {label: 'Fill', type: 'color', fallback: DEFAULT_POINT_COLOR},
-    label: {label: 'Label', type: 'label', fallback: ''},
-  },
-} as const satisfies {[kind in FieldKind]: {[part: string]: PartSpec}};
-
-export type PartName<K extends FieldKind> = keyof (typeof STYLE)[K] & string;
-
-type ValueOf<K extends FieldKind, P extends PartName<K>> =
-    (typeof STYLE)[K][P] extends {type: infer T extends StyleType} ? StyleValues[T] : never;
-
-// Every part of every kind, for code that treats them all alike
-export const PARTS: Array<PartSpec & {kind: FieldKind; part: string}> =
-    FIELD_KINDS.flatMap(kind =>
-        Object.entries(STYLE[kind] as {[part: string]: PartSpec})
-            .map(([part, spec]) => ({...spec, kind, part})));
 
 // The field types each part reads directly. A label shows a select by its option's label.
 export const READS: {[type in StyleType]: FieldType[]} = {
@@ -176,29 +101,27 @@ export const READS: {[type in StyleType]: FieldType[]} = {
   pattern: ['pattern'],
 };
 
-export type Channel<T> =
-    {kind: 'constant'; value: T}
-    |{kind: 'field'; key: string}
-    // Each option of a select draws with its own value, and a feature with no option draws with
-    // none.
-    |{kind: 'by_option'; key: string; values: {[option: string]: T}};
-
 // What a collection without a schema of its own has. Its field ids are the keys geojson.ts writes
 // simplestyle into, which adoptImported moves wherever another schema reads them.
 export const DEFAULT_COLLECTION_SCHEMA: CollectionSchema = {
   fields: [
-    {id: 'name', label: 'Name', type: 'text', hideLabel: true},
-    {id: 'description', label: 'Description', type: 'text', hideLabel: true, multiline: true},
-    {id: 'stroke', label: 'Stroke', type: 'color', kinds: ['drawing', 'line'], hideLabel: true},
-    {
-      id: 'width_px',
-      label: 'Width (px)',
-      type: 'number',
-      kinds: ['drawing', 'line'],
-      hideLabel: true,
-    },
-    {id: 'icon', label: 'Icon', type: 'icon', kinds: ['point'], hideLabel: true},
-    {id: 'fill', label: 'Fill', type: 'color', kinds: ['point'], hideLabel: true},
+    ...FIELD_KINDS.flatMap((kind): FieldDefinition[] => [
+      {id: 'name', kind, label: 'Name', type: 'text', hideLabel: true},
+      {
+        id: 'description',
+        kind,
+        label: 'Description',
+        type: 'text',
+        hideLabel: true,
+        multiline: true,
+      },
+    ]),
+    {id: 'stroke', kind: 'drawing', label: 'Stroke', type: 'color', hideLabel: true},
+    {id: 'width_px', kind: 'drawing', label: 'Width (px)', type: 'number', hideLabel: true},
+    {id: 'stroke', kind: 'line', label: 'Stroke', type: 'color', hideLabel: true},
+    {id: 'width_px', kind: 'line', label: 'Width (px)', type: 'number', hideLabel: true},
+    {id: 'icon', kind: 'point', label: 'Icon', type: 'icon', hideLabel: true},
+    {id: 'fill', kind: 'point', label: 'Fill', type: 'color', hideLabel: true},
   ],
   layers: [{
     kind: 'drawing',
@@ -227,11 +150,10 @@ export function parseCollectionSchema(json: string): CollectionSchema {
   if (!json) {
     return DEFAULT_COLLECTION_SCHEMA;
   }
-  const parsed = JSON.parse(json) as {fields?: unknown; layers?: unknown; style?: unknown};
-  const raw = Array.isArray(parsed.layers) ? parsed.layers : legacyLayers(parsed.style);
+  const parsed = JSON.parse(json) as {fields?: unknown; layers?: unknown};
   return {
     fields: Array.isArray(parsed.fields) ? parsed.fields.filter(isField) : [],
-    layers: raw.flatMap(layer => {
+    layers: (Array.isArray(parsed.layers) ? parsed.layers : []).flatMap(layer => {
       const {kind, filters} = (layer ?? {}) as {kind?: unknown; filters?: unknown};
       if (!FIELD_KINDS.includes(kind as FieldKind) || !Array.isArray(filters)) {
         return [];
@@ -244,20 +166,6 @@ export function parseCollectionSchema(json: string): CollectionSchema {
       return [{kind, filters, ...parts} as StyleLayer];
     }),
   };
-}
-
-function legacyLayers(style: unknown): unknown[] {
-  if (typeof style !== 'object' || style === null) {
-    return [];
-  }
-  return EDITABLE_KINDS.map(kind => {
-    const layer: {[part: string]: unknown} = {kind, filters: []};
-    for (const [part, channel] of Object.entries((style as {[kind: string]: object})[kind] ?? {})) {
-      const {field, ...rest} = channel as {field?: unknown};
-      layer[part] = field === undefined ? rest : {...rest, key: field};
-    }
-    return layer;
-  });
 }
 
 function defaultChannel(kind: FieldKind, part: string): Channel<unknown> {
@@ -276,6 +184,7 @@ function isField(value: unknown): value is FieldDefinition {
   return typeof field === 'object'
       && field !== null
       && typeof field.id === 'string'
+      && FIELD_KINDS.includes(field.kind as FieldKind)
       && typeof field.label === 'string'
       && FIELD_TYPES.includes(field.type as FieldType);
 }
@@ -327,27 +236,30 @@ export function withChannel(
   };
 }
 
-/** Returns a channel that reads a select, with colors from OPTION_COLORS when it is a color. */
+/**
+ * Returns a channel that reads a select or checkbox, with colors from OPTION_COLORS when it is a
+ * color.
+ */
 export function byOption(field: FieldDefinition, type: StyleType): Channel<unknown> {
   const values: {[option: string]: unknown} = {};
   if (type === 'color') {
-    (field.options ?? []).forEach((option, i) => {
+    splitOptions(field).forEach((option, i) => {
       values[option.id] = OPTION_COLORS[i % OPTION_COLORS.length];
     });
   }
   return {kind: 'by_option', key: field.id, values};
 }
 
-/** Moves a field to just before or after another, or does nothing if either is missing. */
+/** Moves a field before or after another of its kind, or does nothing if either is missing. */
 export function moveField(
-    schema: CollectionSchema, id: string, target: string, side: 'after'|'before'):
+    schema: CollectionSchema, {kind, id}: FieldRef, target: string, side: 'after'|'before'):
     CollectionSchema {
-  const moved = schema.fields.find(f => f.id === id);
+  const moved = getField(schema, kind, id);
   if (!moved || id === target) {
     return schema;
   }
-  const fields = schema.fields.filter(f => f.id !== id);
-  const at = fields.findIndex(f => f.id === target);
+  const fields = schema.fields.filter(f => f !== moved);
+  const at = fields.findIndex(f => f.kind === kind && f.id === target);
   if (at < 0) {
     return schema;
   }
@@ -356,25 +268,16 @@ export function moveField(
 }
 
 /**
- * Takes a field off one kind of feature, removing it once no kind shows it, and points that kind's
- * parts that read it at their fallbacks. Feature data is left alone so that undoing the removal
- * brings the values back.
+ * Removes a kind's field and points that kind's parts that read it at their fallbacks. Feature data
+ * is left alone so that undoing the removal brings the values back.
  */
-export function removeFieldFrom(schema: CollectionSchema, id: string, kind: FieldKind):
-    CollectionSchema {
-  const field = schema.fields.find(f => f.id === id);
+export function removeField(schema: CollectionSchema, {kind, id}: FieldRef): CollectionSchema {
+  const field = getField(schema, kind, id);
   if (!field) {
     return schema;
   }
 
-  const kinds = (field.kinds ?? FIELD_KINDS).filter(k => k !== kind);
-  let removed = {
-    ...schema,
-    fields:
-        kinds.length > 0
-            ? schema.fields.map(f => f.id === id ? {...f, kinds} : f)
-            : schema.fields.filter(f => f.id !== id),
-  };
+  let removed = {...schema, fields: schema.fields.filter(f => f !== field)};
   for (const {fallback, part} of PARTS.filter(p => p.kind === kind)) {
     const channel = channelOf(removed, kind, part);
     if (channel.kind !== 'constant' && channel.key === id) {
@@ -385,8 +288,9 @@ export function removeFieldFrom(schema: CollectionSchema, id: string, kind: Fiel
 }
 
 /** Adds an option to a select, giving it the next of OPTION_COLORS in every color split by it. */
-export function addOption(schema: CollectionSchema, id: string, label: string): CollectionSchema {
-  const field = schema.fields.find(f => f.id === id);
+export function addOption(schema: CollectionSchema, {kind, id}: FieldRef, label: string):
+    CollectionSchema {
+  const field = getField(schema, kind, id);
   if (!field) {
     return schema;
   }
@@ -395,10 +299,10 @@ export function addOption(schema: CollectionSchema, id: string, label: string): 
   const option = {id: crypto.randomUUID(), label};
   let added = {
     ...schema,
-    fields: schema.fields.map(f => f.id === id ? {...f, options: [...options, option]} : f),
+    fields: schema.fields.map(f => f === field ? {...f, options: [...options, option]} : f),
   };
   const color = OPTION_COLORS[options.length % OPTION_COLORS.length];
-  for (const {kind, part, type} of PARTS) {
+  for (const {part, type} of PARTS.filter(p => p.kind === kind)) {
     const channel = channelOf(added, kind, part);
     if (type === 'color' && channel.kind === 'by_option' && channel.key === id) {
       added =
@@ -410,15 +314,20 @@ export function addOption(schema: CollectionSchema, id: string, label: string): 
 }
 
 /** Removes an option from a select, along with the value each part gave it. */
-export function removeOption(schema: CollectionSchema, id: string, option: string):
+export function removeOption(schema: CollectionSchema, {kind, id}: FieldRef, option: string):
     CollectionSchema {
+  const field = getField(schema, kind, id);
+  if (!field) {
+    return schema;
+  }
+
   let removed = {
     ...schema,
     fields:
         schema.fields.map(f =>
-            f.id === id ? {...f, options: (f.options ?? []).filter(o => o.id !== option)} : f),
+            f === field ? {...f, options: (f.options ?? []).filter(o => o.id !== option)} : f),
   };
-  for (const {kind, part} of PARTS) {
+  for (const {part} of PARTS.filter(p => p.kind === kind)) {
     const channel = channelOf(removed, kind, part);
     if (channel.kind === 'by_option' && channel.key === id && option in channel.values) {
       const values = {...channel.values};
@@ -435,7 +344,7 @@ export function removeOption(schema: CollectionSchema, id: string, option: strin
  * into descriptionField.
  */
 export function adoptImported(schema: CollectionSchema, feature: EditableFeature): void {
-  const kind = fieldKindOf(feature);
+  const kind = getFieldKind(feature);
   if (kind === 'folder') {
     return;
   }
@@ -447,8 +356,8 @@ export function adoptImported(schema: CollectionSchema, feature: EditableFeature
     if (from.kind !== 'field' || to.kind !== 'field') {
       continue;
     }
-    const fromType = DEFAULT_COLLECTION_SCHEMA.fields.find(f => f.id === from.key)?.type;
-    if (schema.fields.find(f => f.id === to.key)?.type === fromType) {
+    const fromType = getField(DEFAULT_COLLECTION_SCHEMA, kind, from.key)?.type;
+    if (getField(schema, kind, to.key)?.type === fromType) {
       moves.push([from.key, to.key]);
     }
   }
@@ -490,13 +399,13 @@ export function formatField(field: FieldDefinition, value: boolean|number|string
 }
 
 /** Returns what titles a feature in lists and exports: its label, or a folder's name. */
-export function titleOf(schema: CollectionSchema, feature: EditableFeature): string|undefined {
+export function getTitle(schema: CollectionSchema, feature: EditableFeature): string|undefined {
   if (feature.kind === 'folder') {
     return feature.data.name || undefined;
   }
-  return feature.kind === 'line'
-      ? lineLook(schema, feature).label
-      : pointLook(schema, feature.data).label;
+  const look =
+      feature.kind === 'line' ? lineLook(schema, feature.data) : pointLook(schema, feature.data);
+  return look?.label || undefined;
 }
 
 /**
@@ -504,19 +413,19 @@ export function titleOf(schema: CollectionSchema, feature: EditableFeature): str
  * nothing when the label is a constant or reads something other than text.
  */
 export function titleField(schema: CollectionSchema, feature: EditableFeature): string|undefined {
-  const kind = fieldKindOf(feature);
+  const kind = getFieldKind(feature);
   if (kind === 'folder') {
     return 'name';
   }
   const label = channelOf(schema, kind, 'label');
-  return label.kind === 'field' && schema.fields.find(f => f.id === label.key)?.type === 'text'
+  return label.kind === 'field' && getField(schema, kind, label.key)?.type === 'text'
       ? label.key
       : undefined;
 }
 
 /** Returns which kind of feature's fields and style a feature takes. */
-export function fieldKindOf(feature: EditableFeature): FieldKind|'folder' {
-  return feature.kind === 'line' && isMarker(feature) ? 'drawing' : feature.kind;
+export function getFieldKind(feature: EditableFeature): FieldKind|'folder' {
+  return feature.kind === 'line' ? getLineKind(feature.data) : feature.kind;
 }
 
 /** Returns the fields a feature of this kind shows, in schema order. */
@@ -524,100 +433,16 @@ export function fieldsFor(schema: CollectionSchema, kind: FieldKind|'folder'): F
   if (kind === 'folder') {
     return [];
   }
-  return schema.fields.filter(field => appliesTo(field, kind));
+  return schema.fields.filter(field => field.kind === kind);
 }
 
-export function appliesTo(field: FieldDefinition, kind: FieldKind): boolean {
-  return !field.kinds || field.kinds.includes(kind);
-}
-
-// Each part is unset when its channel gives nothing usable, so callers fall back to their own
-// default.
-export interface LineLook {
-  label: string|undefined;
-  pattern: PatternName|undefined;
-  stroke: string|undefined;
-  widthPx: number|undefined;
-}
-
-export interface PointLook {
-  fill: string|undefined;
-  icon: string|undefined;
-  label: string|undefined;
-  radiusPx: number|undefined;
-}
-
-/** Resolves a line's look, or a drawing's, which has no pattern. */
-export function lineLook(schema: CollectionSchema, line: EditableLine): LineLook {
-  if (isMarker(line)) {
-    return {
-      label: resolve(schema, 'drawing', 'label', line.data),
-      pattern: undefined,
-      stroke: resolve(schema, 'drawing', 'stroke', line.data),
-      widthPx: resolve(schema, 'drawing', 'width', line.data),
-    };
+/** Returns a new feature's data with its fields' defaults under whatever it already has. */
+export function withDefaults(schema: CollectionSchema, feature: EditableFeature): FeatureData {
+  const defaults: FeatureData = {};
+  for (const field of fieldsFor(schema, getFieldKind(feature))) {
+    if (field.default !== undefined && isValidFieldValue(field, field.default)) {
+      defaults[field.id] = field.default;
+    }
   }
-  return {
-    label: resolve(schema, 'line', 'label', line.data),
-    pattern: resolve(schema, 'line', 'pattern', line.data),
-    stroke: resolve(schema, 'line', 'stroke', line.data),
-    widthPx: resolve(schema, 'line', 'width', line.data),
-  };
-}
-
-export function pointLook(schema: CollectionSchema, data: FeatureData): PointLook {
-  return {
-    fill: resolve(schema, 'point', 'fill', data),
-    icon: resolve(schema, 'point', 'icon', data),
-    label: resolve(schema, 'point', 'label', data),
-    radiusPx: resolve(schema, 'point', 'radius', data),
-  };
-}
-
-/** Converts a pattern into the stipple LineProgram takes. */
-export function toStipple(name: PatternName|undefined): Stipple {
-  return name === 'dashed' ? true
-      : name === 'ticks' || name === 'alternating' ? name
-      : false;
-}
-
-const VALID: {[type in StyleType]: (value: unknown) => boolean} = {
-  color: value =>
-      typeof value === 'string' && /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value),
-  icon: value => typeof value === 'string' && value !== '',
-  label: value => typeof value === 'string' && value !== '',
-  number: value => typeof value === 'number' && Number.isFinite(value) && value > 0,
-  pattern: value => PATTERN_NAMES.includes(value as PatternName),
-};
-
-// TODO(april): a feature that no layer matches should not draw, but the feature layer draws it
-// with its defaults. Nothing makes a layer with filters for a feature the user can edit yet.
-function resolve<K extends FieldKind, P extends PartName<K>>(
-    schema: CollectionSchema, kind: K, part: P, data: FeatureData): ValueOf<K, P>|undefined {
-  const type = (STYLE[kind][part] as PartSpec).type;
-  const layer = schema.layers.find(l => l.kind === kind && matches(data, l.filters));
-  const channel = (layer as {[part: string]: Channel<unknown>}|undefined)?.[part];
-  let value: unknown;
-  if (channel === undefined) {
-    value = undefined;
-  } else if (channel.kind === 'constant') {
-    value = channel.value;
-  } else if (channel.kind === 'by_option') {
-    const option = data[channel.key];
-    value = typeof option === 'string' ? channel.values[option] : undefined;
-  } else if (type === 'label') {
-    value = labelOf(schema, channel.key, data);
-  } else {
-    value = data[channel.key];
-  }
-  return VALID[type](value) ? value as ValueOf<K, P> : undefined;
-}
-
-function labelOf(schema: CollectionSchema, id: string, data: FeatureData): string|undefined {
-  const value = data[id];
-  const field = schema.fields.find(f => f.id === id);
-  if (field?.type === 'select') {
-    return field.options?.find(o => o.id === value)?.label;
-  }
-  return typeof value === 'number' || typeof value === 'string' ? String(value) : undefined;
+  return {...defaults, ...feature.data};
 }

@@ -16,15 +16,27 @@ import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
 import { Z_USER_DATA } from 'js/map/z';
 
+import { CollectionSchema } from './collection_schema';
 import { Match, matches } from './filters';
+import { SchemaStyler } from './schema_styler';
 
 export interface Initialize {
-  style: Style;
+  styling: Styling;
 }
 
 interface SetStyleRequest {
   kind: 'sr';
-  style: Style;
+  styling: Styling;
+}
+
+// Rules written by hand, like the OSM ways', or a collection's own schema
+export type Styling = {kind: 'rules'; style: Style}|{kind: 'schema'; schema: CollectionSchema};
+
+/** Picks how an object draws, or undefined to drop it. */
+export interface Styler {
+  line(data: Data, styleZoom: number): LineStyle|undefined;
+  point(data: Data): PointStyle|undefined;
+  polygon(data: Data): PolygonStyle|undefined;
 }
 
 export interface Style {
@@ -218,12 +230,34 @@ class Bounds {
   }
 }
 
+// Each object draws with the first rule whose filters match it.
+class RulesStyler implements Styler {
+
+  constructor(private readonly style: Style) {}
+
+  line(data: Data, styleZoom: number): LineStyle|undefined {
+    return findZoomedStyle(data, styleZoom, this.style.lines);
+  }
+
+  point(data: Data): PointStyle|undefined {
+    return findStyle(data, this.style.points);
+  }
+
+  polygon(data: Data): PolygonStyle|undefined {
+    return findStyle(data, this.style.polygons);
+  }
+}
+
 class CollectionLoader {
 
-  constructor(private style: Style) {}
+  private styler: Styler;
 
-  setStyle(style: Style): void {
-    this.style = style;
+  constructor(styling: Styling) {
+    this.styler = createStyler(styling);
+  }
+
+  setStyle(styling: Styling): void {
+    this.styler = createStyler(styling);
   }
 
   load(request: LoadRequest): Reply<Response> {
@@ -264,7 +298,7 @@ class CollectionLoader {
         const dataByteSize = source.getVarInt32();
         data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
       }
-      const style = findZoomedStyle(data, request.styleZoom, this.style.lines);
+      const style = this.styler.line(data, request.styleZoom);
       if (!style) {
         // Deltas have no width to multiply past, so a line the style drops still costs a walk.
         skipE7Deltas(source);
@@ -301,7 +335,7 @@ class CollectionLoader {
       const rawPolygon = source.sliceInt8(polygonByteSize).slice().buffer;
       const polygon = SimpleS2.decodePolygon(rawPolygon);
 
-      const style = findStyle(data, this.style.polygons);
+      const style = this.styler.polygon(data);
       if (!style) {
         continue;
       }
@@ -328,7 +362,7 @@ class CollectionLoader {
       const idMsb = source.getBigInt64();
       const dataByteSize = source.getVarInt32();
       const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
-      const style = findStyle(data, this.style.points);
+      const style = this.styler.point(data);
       if (!style) {
         skipE7Deltas(source);
         continue;
@@ -591,12 +625,12 @@ class CollectionLoader {
 }
 
 serveClients<Initialize, Request, Response>(init => {
-  const loader = new CollectionLoader(init.style);
+  const loader = new CollectionLoader(init.styling);
   return request => {
     if (request.kind === 'lr') {
       return loader.load(request);
     } else if (request.kind === 'sr') {
-      loader.setStyle(request.style);
+      loader.setStyle(request.styling);
       return undefined;
     } else {
       throw checkExhaustive(request);
@@ -649,6 +683,17 @@ function latLngBound(polygon: S2Polygon): LatLngRect {
     low: [low.latDegrees(), low.lngDegrees()],
     high: [high.latDegrees(), high.lngDegrees()],
   } as const as LatLngRect;
+}
+
+function createStyler(styling: Styling): Styler {
+  switch (styling.kind) {
+    case 'rules':
+      return new RulesStyler(styling.style);
+    case 'schema':
+      return new SchemaStyler(styling.schema);
+    default:
+      throw checkExhaustive(styling);
+  }
 }
 
 function findStyle<S extends {filters: Match[]}>(data: Data, styles: S[]): S|undefined {

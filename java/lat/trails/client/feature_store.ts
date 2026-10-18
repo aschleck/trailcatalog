@@ -1,6 +1,7 @@
 import { EditableFeature, EditableFolder, EditableLine, EditablePoint, snapshot } from './features';
 import { SaveQueue } from './save_queue';
-import { CollectionSchema, DEFAULT_COLLECTION_SCHEMA, SavedSchema } from './schema';
+import { DEFAULT_COLLECTION_SCHEMA, SavedSchema } from './schema';
+import { CollectionSchema } from './workers/collection_schema';
 
 // An edit, which undo reverts as a unit. Edits sharing a merge key in a row become one, so typing
 // a name is one undo rather than one per keystroke.

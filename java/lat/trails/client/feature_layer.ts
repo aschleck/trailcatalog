@@ -30,15 +30,9 @@ import {
   LineSpot,
 } from './events';
 import {
-  DEFAULT_ICON,
-  DEFAULT_LINE_COLOR,
-  DEFAULT_POINT_COLOR,
-  DEFAULT_POINT_RADIUS_PX,
-  DEFAULT_WIDTH_PX,
   EditableFeature,
   EditableLine,
   EditablePoint,
-  isMarker,
   pointIcon,
   snapshot,
 } from './features';
@@ -63,14 +57,23 @@ import {
   traceRefs,
 } from './line_matching';
 import { LineRefiner } from './line_refiner';
-import { DEFAULT_MARKER_WIDTH_PX, MarkerOutline, outlineMarker, pushMarker } from './marker';
-import { CollectionSchema, lineLook, pointLook, toStipple } from './schema';
+import { MarkerOutline, outlineMarker, pushMarker } from './marker';
 import { ShiftKey } from './shift_key';
+import {
+  CollectionSchema,
+  DEFAULT_ICON,
+  DEFAULT_POINT_RADIUS_PX,
+  darken,
+  getLineKind,
+  lineLook,
+  lineRadiusPx,
+  parseColor,
+  pointLook,
+  toStipple,
+} from './workers/collection_schema';
 
 // How far past a feature's drawn edge a click still lands on it
 const CLICK_SLOP_PX = 3;
-// The casing LineProgram draws is a pixel wide on each side, see line_program.ts.
-const CASING_PX = 1;
 const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
 const HOVERED_CASING = 0xFFFFFF99 as RgbaU32;
 // Same as the measure tool's, see drawing_layer.ts
@@ -101,7 +104,6 @@ const LABEL_PATH_TOLERANCE_PX = 4;
 // Where along a line to try starting its label, as fractions of its length, best first
 const LABEL_ANCHORS = [0.5, 0.3, 0.7, 0.15, 0.85];
 
-
 // A GPS track has a vertex every few meters, which at most zooms is several per pixel, so a vertex
 // only gets a handle once it is this far from the last one that did.
 const HANDLE_SPACING_PX = 12;
@@ -128,13 +130,13 @@ interface ProjectedLine {
   label: {zoom: number; points: Float64Array; anchors: number[]}|undefined;
   // Set on a marker stroke, as of the size and zoom it was outlined at
   marker: {widthPx: number; zoom: number; outline: MarkerOutline}|undefined;
-  look: {label: string|undefined; stipple: Stipple; stroke: RgbaU32; widthPx: number};
+  look: {label: string; stipple: Stipple; stroke: RgbaU32; widthPx: number};
 }
 
 interface ProjectedPoint {
   feature: EditablePoint;
   at: Vec2;
-  look: {fill: RgbaU32; icon: string; label: string|undefined; radiusPx: number};
+  look: {fill: RgbaU32; icon: string; label: string; radiusPx: number};
 }
 
 // What the pointer is moving. Line drags work on a mercator copy of the line with the vertex
@@ -401,7 +403,9 @@ export class FeatureLayer extends Layer {
 
   /** Shows the vertex handles of the feature when it's an editable line, and hides any others. */
   edit(feature: EditableFeature|undefined): void {
-    if (feature?.kind === 'line' && !isMarker(feature) && !this.store.isReadOnly()) {
+    if (feature?.kind === 'line'
+        && getLineKind(feature.data) === 'line'
+        && !this.store.isReadOnly()) {
       if (feature.id !== this.editing) {
         this.startEditing(feature.id);
       }
@@ -436,7 +440,7 @@ export class FeatureLayer extends Layer {
     // The edited line already shows where a drag inserts a vertex.
     const grabbable =
         hit?.kind === 'line'
-            && !isMarker(hit)
+            && getLineKind(hit.data) === 'line'
             && hit.id !== this.editing
             && !this.store.isReadOnly();
     const line = grabbable ? this.projected.get(hit.id) : undefined;
@@ -502,7 +506,9 @@ export class FeatureLayer extends Layer {
 
     const line = this.interactive ? this.hitTest(at) : undefined;
     const stroke =
-        line?.kind === 'line' && isMarker(line) ? this.projected.get(line.id) : undefined;
+        line?.kind === 'line' && getLineKind(line.data) === 'drawing'
+            ? this.projected.get(line.id)
+            : undefined;
     if (stroke) {
       this.startDrag({kind: 'marker', line: stroke, from: at, by: [0, 0]});
       return true;
@@ -902,7 +908,7 @@ export class FeatureLayer extends Layer {
     let spot: LineSpot|undefined = undefined;
     if (vertex !== undefined) {
       spot = {kind: 'vertex', index: vertex, handle: true};
-    } else if (hit?.kind === 'line' && !isMarker(hit)) {
+    } else if (hit?.kind === 'line' && getLineKind(hit.data) === 'line') {
       spot = this.spotOn(this.projected.get(hit.id)!, at);
     }
 
@@ -991,6 +997,11 @@ export class FeatureLayer extends Layer {
     const live = new Set<string>();
     this.visibleLines = [];
     for (const line of lines) {
+      // A line no layer matches isn't drawn, so it isn't projected either and nothing can hit it.
+      const look = getLook(schema, line);
+      if (!look) {
+        continue;
+      }
       live.add(line.id);
       let projected = this.projected.get(line.id);
       if (!projected || projected.latLngE7 !== line.latLngE7) {
@@ -1001,12 +1012,12 @@ export class FeatureLayer extends Layer {
           points,
           label: undefined,
           marker: undefined,
-          look: lookOf(schema, line),
+          look,
         };
         this.projected.set(line.id, projected);
       }
       projected.feature = line;
-      projected.look = lookOf(schema, line);
+      projected.look = look;
       projected.marker = outlineOf(projected);
       if (this.isVisible(line)) {
         this.visibleLines.push(projected);
@@ -1020,16 +1031,16 @@ export class FeatureLayer extends Layer {
 
     this.visiblePoints = [];
     for (const point of this.store.points()) {
-      if (this.isVisible(point)) {
-        const look = pointLook(schema, point.data);
+      const look = pointLook(schema, point.data);
+      if (look && this.isVisible(point)) {
         this.visiblePoints.push({
           feature: point,
           at: projectS2LatLng(S2LatLng.fromE7(point.latE7, point.lngE7)),
           look: {
-            fill: parseColor(look.fill ?? DEFAULT_POINT_COLOR),
+            fill: parseColor(look.fill),
             icon: pointIcon(look.icon),
             label: look.label,
-            radiusPx: look.radiusPx ?? DEFAULT_POINT_RADIUS_PX,
+            radiusPx: look.radiusPx,
           },
         });
       }
@@ -1573,17 +1584,16 @@ function translate(points: Float64Array, by: Vec2): Float64Array {
 }
 
 function lineRadius(line: ProjectedLine): number {
-  return line.look.widthPx / 2 + CASING_PX;
+  return lineRadiusPx(line.look.widthPx);
 }
 
-// A marker stroke's default width differs from a line's.
-function lookOf(schema: CollectionSchema, line: EditableLine): ProjectedLine['look'] {
-  const look = lineLook(schema, line);
-  return {
+function getLook(schema: CollectionSchema, line: EditableLine): ProjectedLine['look']|undefined {
+  const look = lineLook(schema, line.data);
+  return look && {
     label: look.label,
     stipple: toStipple(look.pattern),
-    stroke: parseColor(look.stroke ?? DEFAULT_LINE_COLOR),
-    widthPx: look.widthPx ?? (isMarker(line) ? DEFAULT_MARKER_WIDTH_PX : DEFAULT_WIDTH_PX),
+    stroke: parseColor(look.stroke),
+    widthPx: look.widthPx,
   };
 }
 
@@ -1624,20 +1634,4 @@ function simplify(points: Float64Array, tolerance: number): Float64Array {
     }
   }
   return Float64Array.from(simplified);
-}
-
-/** Parses #rrggbb, which is opaque, or #rrggbbaa. */
-export function parseColor(hex: string): RgbaU32 {
-  const value = parseInt(hex.slice(1), 16);
-  if (Number.isNaN(value)) {
-    return 0x000000FF as RgbaU32;
-  }
-  return (hex.length === 9 ? value >>> 0 : ((value << 8) | 0xFF) >>> 0) as RgbaU32;
-}
-
-function darken(color: RgbaU32): RgbaU32 {
-  const r = Math.round(((color >>> 24) & 0xFF) * 0.4);
-  const g = Math.round(((color >>> 16) & 0xFF) * 0.4);
-  const b = Math.round(((color >>> 8) & 0xFF) * 0.4);
-  return ((r << 24) | (g << 16) | (b << 8) | (color & 0xFF)) >>> 0 as RgbaU32;
 }

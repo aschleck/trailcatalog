@@ -1,7 +1,7 @@
 import { Change, FeatureStore } from './feature_store';
 import { EditableFeature, EditableFolder, EditablePoint, snapshot } from './features';
 import { SaveEntry, SaveQueue } from './save_queue';
-import { DEFAULT_COLLECTION_SCHEMA, removeFieldFrom } from './schema';
+import { DEFAULT_COLLECTION_SCHEMA, removeField } from './schema';
 
 test('undoes and redoes an edit', async () => {
   const {saved, store} = setUp();
@@ -119,7 +119,7 @@ test('puts a feature whose folder is gone at the root', () => {
 
 test('undoes and redoes a schema edit', async () => {
   const {saved, store} = setUp();
-  const after = removeFieldFrom(DEFAULT_COLLECTION_SCHEMA, 'stroke', 'line');
+  const after = removeField(DEFAULT_COLLECTION_SCHEMA, {kind: 'line', id: 'stroke'});
   store.setSchema(after);
   await settle();
   expect(store.schema()).toBe(after);
@@ -136,8 +136,8 @@ test('undoes and redoes a schema edit', async () => {
 
 test('merges schema edits sharing a merge key into one undo', () => {
   const {store} = setUp();
-  const first = removeFieldFrom(DEFAULT_COLLECTION_SCHEMA, 'stroke', 'line');
-  const second = removeFieldFrom(first, 'fill', 'point');
+  const first = removeField(DEFAULT_COLLECTION_SCHEMA, {kind: 'line', id: 'stroke'});
+  const second = removeField(first, {kind: 'point', id: 'fill'});
   store.setSchema(first, 'fields');
   store.setSchema(second, 'fields');
 

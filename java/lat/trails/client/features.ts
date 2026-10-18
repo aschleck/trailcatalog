@@ -9,6 +9,7 @@ import {
 } from 'trails_lat/proto/data_pb';
 
 import { SavedSchema } from './schema';
+import { DEFAULT_ICON } from './workers/collection_schema';
 
 // The jsonb every feature carries. Colors are #rrggbb.
 export interface FeatureData {
@@ -51,23 +52,9 @@ export interface EditablePoint extends FeatureBase {
   elevationCentimeters: number|undefined;
 }
 
-/** Whether a line is a marker stroke rather than a path. */
-export function isMarker(line: EditableLine): boolean {
-  return typeof line.data.marker_zoom === 'number';
-}
-
 export type EditableFeature = EditableFolder|EditableLine|EditablePoint;
 
 export type SaveOp = 'delete'|'put';
-
-export const DEFAULT_LINE_COLOR = '#de29db';
-export const DEFAULT_POINT_COLOR = '#de29db';
-// The radius a point's circle draws at, and the size every other icon scales from
-export const DEFAULT_POINT_RADIUS_PX = 6;
-export const DEFAULT_WIDTH_PX = 3;
-
-// What a point without an icon of its own is drawn as
-export const DEFAULT_ICON = '⬤';
 
 /**
  * Returns the glyph a point is drawn as. Plain ASCII is a symbol name from whatever tool wrote the

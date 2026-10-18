@@ -3,9 +3,10 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { InfoMenuItem, MenuItem } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
 import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_element';
 
-import { FeatureIcon, kindName, untitled } from './feature_list';
+import { FeatureIcon, untitled } from './feature_list';
 import { EditableFeature } from './features';
-import { CollectionSchema, titleOf } from './schema';
+import { getFieldKind, getTitle } from './schema';
+import { CollectionSchema } from './workers/collection_schema';
 
 /** One of the things under a click that the pick menu lets the person choose between. */
 export type Choice =
@@ -30,7 +31,7 @@ export function choiceItem(
   let detail;
   if (choice.kind === 'feature') {
     icon = <FeatureIcon feature={choice.feature} schema={choice.schema} />;
-    label = titleOf(choice.schema, choice.feature) || untitled(kindName(choice.feature));
+    label = getTitle(choice.schema, choice.feature) || untitled(getFieldKind(choice.feature));
     detail = 'Features';
   } else if (choice.kind === 'object') {
     icon = <ShapeIcon shape={choice.shape} />;

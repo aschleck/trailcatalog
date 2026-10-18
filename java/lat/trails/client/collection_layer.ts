@@ -13,13 +13,12 @@ import { Renderer } from 'js/map/rendering/renderer';
 import { loaderCount, PoolClient, sharedPool } from 'js/map/workers/client_pool';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { CellKey, Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
-import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
+import { Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
-import { HOVER_CHANGED } from './events';
-import { DEFAULT_POINT_RADIUS_PX } from './features';
-import { Channel, CollectionSchema, parseCollectionSchema, Schema } from './schema';
-import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, PointStyle, PolygonStyle, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style } from './workers/collection_loader';
-import { Match } from './workers/filters';
+import { HOVER_CHANGED, LayerObject } from './events';
+import { parseCollectionSchema, Schema } from './schema';
+import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style, Styling } from './workers/collection_loader';
+import { CollectionSchema, FieldKind, getLineKind } from './workers/collection_schema';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
 // makes it read as lifted, over pale roads and over landcover alike.
@@ -39,8 +38,6 @@ const HOVER_LINE_MIN_RADIUS_PX = 4;
 const HOVER_POINT_PADDING_PX = 2;
 
 const NO_STYLE: Style = {lines: [], points: [], polygons: []};
-
-const POINT_STROKE = 0x000000FF as RgbaU32;
 
 // How close the cursor has to come to a line to hover it, measured from the center, so it reaches
 // past the edge of everything but the widest motorway.
@@ -114,7 +111,7 @@ export class CollectionLayer extends Layer {
   private styleEpoch: number;
   // The zooms where a line style starts or stops, since the loader's output changes only there
   private styleBreaks: number[];
-  private rowSchema: Schema|undefined;
+  private collectionSchema: CollectionSchema|undefined;
 
   constructor(
       copyrights: Copyright[],
@@ -134,10 +131,11 @@ export class CollectionLayer extends Layer {
             new URL('s2_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
             .connect({covering: url + '/covering', snaps, streams, url: url + '/objects'});
     this.fetching = false;
+    const initial: Styling = {kind: 'rules', style: style ?? NO_STYLE};
     this.loader =
         sharedPool<LoaderInitialize, LoaderRequest, LoaderResponse>(
             new URL('collection_loader_worker.js', import.meta.url).href, loaderCount())
-            .connect({style: style ?? NO_STYLE});
+            .connect({styling: initial});
     this.loading = new Map();
     this.cells = new Map();
     this.rawBytes = new Map();
@@ -168,8 +166,8 @@ export class CollectionLayer extends Layer {
     this.lastRenderGeneration = -1;
     this.styleZoom = -1;
     this.styleEpoch = 0;
-    this.styleBreaks = styleBreaks(style ?? NO_STYLE);
-    this.rowSchema = undefined;
+    this.styleBreaks = styleBreaks(initial);
+    this.collectionSchema = undefined;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
@@ -181,9 +179,9 @@ export class CollectionLayer extends Layer {
       } else if (command.kind === 'ssc') {
         if (command.schema) {
           const schema = parseCollectionSchema(command.schema);
-          this.rowSchema = rowSchemaOf(schema);
+          this.collectionSchema = schema;
           if (!style) {
-            this.setStyle(compileStyle(schema));
+            this.restyleWith({kind: 'schema', schema});
           }
         }
       } else {
@@ -212,20 +210,18 @@ export class CollectionLayer extends Layer {
     };
   }
 
-  /** Returns what the properties dialog shows for a row, or undefined until the schema loads. */
-  schema(): Schema|undefined {
-    return this.rowSchema;
+  /** Returns what the properties dialog shows for an object, undefined until the schema loads. */
+  getSchema(object: LayerObject): Schema|undefined {
+    if (!this.collectionSchema) {
+      return undefined;
+    }
+    const kind = object.kind === 'line' ? getLineKind(object.value.data) : object.kind;
+    return buildRowSchema(this.collectionSchema, kind);
   }
 
   /** Redraws and reindexes every held cell with the style, without refetching. */
   setStyle(style: Style): void {
-    this.styleEpoch += 1;
-    this.styleBreaks = styleBreaks(style);
-    this.loader.broadcast({
-      kind: 'sr',
-      style,
-    });
-    this.restyle();
+    this.restyleWith({kind: 'rules', style});
   }
 
   /** Puts this layer's geometry in the shared index or takes it out, for showing and hiding. */
@@ -536,6 +532,13 @@ export class CollectionLayer extends Layer {
       this.styleZoom = newStyleZoom;
       this.restyle();
     }
+  }
+
+  private restyleWith(styling: Styling): void {
+    this.styleEpoch += 1;
+    this.styleBreaks = styleBreaks(styling);
+    this.loader.broadcast({kind: 'sr', styling});
+    this.restyle();
   }
 
   private restyle(): void {
@@ -870,69 +873,23 @@ export class CollectionLayer extends Layer {
   }
 }
 
-// TODO(april): a feature whose color reads a field doesn't draw, a radius that isn't a constant
-// draws at the default, a point draws as a circle whatever its icon, and lines aren't compiled,
-// because no importer writes any of them yet.
-function compileStyle(schema: CollectionSchema): Style {
-  const points: PointStyle[] = [];
-  const polygons: PolygonStyle[] = [];
-  for (const layer of schema.layers) {
-    if (layer.kind === 'point') {
-      const radius =
-          layer.radius.kind === 'constant' ? layer.radius.value : DEFAULT_POINT_RADIUS_PX;
-      for (const [filters, fill] of byColor(layer.filters, layer.fill)) {
-        points.push({filters, fill, stroke: POINT_STROKE, radius, z: Z_USER_DATA});
-      }
-    } else if (layer.kind === 'polygon') {
-      for (const [filters, fill] of byColor(layer.filters, layer.fill)) {
-        polygons.push({filters, fill, z: Z_USER_DATA});
-      }
-    }
-  }
-  return {lines: [], points, polygons};
-}
-
-// A color split by a select becomes a filter per option, and a feature with no option doesn't
-// draw.
-function byColor(filters: Match[], channel: Channel<string>): Array<[Match[], RgbaU32]> {
-  switch (channel.kind) {
-    case 'constant':
-      return [[filters, parseColor(channel.value)]];
-    case 'by_option':
-      return Object.entries(channel.values).map(([option, color]) => [
-        [...filters, {match: 'string_equals', key: channel.key, value: option}],
-        parseColor(color),
-      ]);
-    case 'field':
-      return [];
-    default:
-      throw checkExhaustive(channel);
-  }
-}
-
-// What the properties dialog shows: the title from the first label that reads a field, and each
-// select's values by their option labels
-function rowSchemaOf(schema: CollectionSchema): Schema|undefined {
-  const label = schema.layers.map(l => l.label).find(c => c.kind === 'field');
+// What the properties dialog shows for one kind: the title from the first of its labels that reads
+// a field, and each of its selects' values by their option labels
+function buildRowSchema(schema: CollectionSchema, kind: FieldKind): Schema|undefined {
+  const label =
+      schema.layers.filter(l => l.kind === kind).map(l => l.label).find(c => c.kind === 'field');
   if (label?.kind !== 'field') {
     return undefined;
   }
   return {
     title: {kind: 'text', key: label.key},
     description: undefined,
-    fields: schema.fields.map(field => ({
+    fields: schema.fields.filter(f => f.kind === kind).map(field => ({
       key: field.id,
       label: field.label,
       values: field.options && Object.fromEntries(field.options.map(o => [o.id, o.label])),
     })),
   };
-}
-
-function parseColor(hex: string): RgbaU32 {
-  if (!/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(hex)) {
-    throw new Error(`Expected #RRGGBB or #RRGGBBAA, got ${hex}`);
-  }
-  return parseInt(hex.length === 7 ? `${hex.substring(1)}FF` : hex.substring(1), 16) as RgbaU32;
 }
 
 // The id an object goes into the index under, and the key objects holds it by.
@@ -960,9 +917,13 @@ function lineAt(lines: LoadedLines, i: number): Line {
   };
 }
 
-function styleBreaks(style: Style): number[] {
+// The zooms where the styling changes, which a schema's never does
+function styleBreaks(styling: Styling): number[] {
+  if (styling.kind === 'schema') {
+    return [];
+  }
   const breaks = new Set<number>();
-  for (const line of style.lines) {
+  for (const line of styling.style.lines) {
     breaks.add(line.minZoom);
     breaks.add(line.maxZoom);
   }

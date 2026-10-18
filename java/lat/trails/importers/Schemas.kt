@@ -7,8 +7,14 @@ val ALWAYS = mapOf("match" to "always")
 fun stringEquals(key: String, value: String) =
     mapOf("match" to "string_equals", "key" to key, "value" to value)
 
-fun schema(fields: List<Map<String, Any>>, layers: List<Map<String, Any>>) =
-    mapOf("fields" to fields, "layers" to layers)
+// Each field goes on every kind the layers draw, since a field belongs to one kind.
+fun schema(fields: List<Map<String, Any>>, layers: List<Map<String, Any>>): Map<String, Any> {
+  val kinds = layers.map { it["kind"]!! }.distinct()
+  return mapOf(
+      "fields" to kinds.flatMap { kind -> fields.map { it + ("kind" to kind) } },
+      "layers" to layers,
+  )
+}
 
 // A field shown in the properties dialog. One with display names for its raw values is a select.
 fun field(id: String, label: String, values: Map<String, String>? = null) =

@@ -1,38 +1,33 @@
-import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
-import {
-  DEFAULT_LINE_COLOR,
-  DEFAULT_POINT_COLOR,
-  EditableFeature,
-  EditableFolder,
-  FeatureData,
-  isMarker,
-} from './features';
+import { EditableFeature, EditableFolder } from './features';
 import { DangerButton, PanelButton, PanelCloseButton } from './controls';
-import { IconPickerButton, PointMarker } from './icon_picker';
+import { FIELD_EDITED, FIELD_ICON_CLICKED } from './events';
+import { FieldInput } from './field_input';
+import { PointMarker } from './icon_picker';
 import { formatDistance, formatHeight, measureLine, profileStats } from './measurements';
 import { LineProfile, LineProfileState } from './profile_chart';
 import {
-  CollectionSchema,
-  FieldDefinition,
-  fieldKindOf,
   fieldsFor,
   formatField,
-  lineLook,
-  PATTERN_LABELS,
-  PATTERN_NAMES,
-  PatternName,
-  pointLook,
+  getFieldKind,
+  getTitle,
   Schema,
   titleField,
-  titleOf,
 } from './schema';
 import { Data } from './workers/collection_loader';
+import {
+  CollectionSchema,
+  DEFAULT_COLOR,
+  FieldDefinition,
+  getLineKind,
+  lineLook,
+  pointLook,
+} from './workers/collection_schema';
 
 export interface TreeItem {
   feature: EditableFeature;
@@ -231,7 +226,7 @@ function Row(
   selected: boolean;
   visible: boolean;
 }) {
-  const title = titleOf(schema, feature);
+  const title = getTitle(schema, feature);
   return (
     <div
         className={
@@ -271,7 +266,7 @@ function Row(
                 + (title ? '' : 'italic text-gray-500')
           }
       >
-        {title || untitled(kindName(feature))}
+        {title || untitled(getFieldKind(feature))}
       </span>
       <span
           ariaLabel={visible ? 'Hide' : 'Show'}
@@ -302,9 +297,13 @@ export function FeatureIcon(
     return (
       <svg className="h-4 shrink-0 w-4" viewBox="0 0 16 16">
         <path
-            d={isMarker(feature) ? 'M2 11 C4 5 6 13 9 8 S12 4 14 6' : 'M2 12 L6 6 L10 10 L14 4'}
+            d={
+              getLineKind(feature.data) === 'drawing'
+                  ? 'M2 11 C4 5 6 13 9 8 S12 4 14 6'
+                  : 'M2 12 L6 6 L10 10 L14 4'
+            }
             fill="none"
-            stroke={lineLook(schema, feature).stroke ?? DEFAULT_LINE_COLOR}
+            stroke={lineLook(schema, feature.data)?.stroke ?? DEFAULT_COLOR}
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth="2"
@@ -313,7 +312,7 @@ export function FeatureIcon(
     );
   } else {
     const look = pointLook(schema, feature.data);
-    return <PointMarker color={look.fill ?? DEFAULT_POINT_COLOR} icon={look.icon} />;
+    return <PointMarker color={look?.fill ?? DEFAULT_COLOR} icon={look?.icon} />;
   }
 }
 
@@ -332,7 +331,7 @@ export function Properties({profile, subject}: {
   subject: Subject;
 }) {
   const kind = subject.source === 'feature' ? subject.feature.kind : subject.object.kind;
-  const name = subject.source === 'feature' ? kindName(subject.feature) : kind;
+  const name = subject.source === 'feature' ? getFieldKind(subject.feature) : kind;
   const editing = subject.source === 'feature' ? subject.editing : undefined;
   const osm = subject.source === 'object' ? subject.object.osm : undefined;
   const {title, paragraphs, fields} =
@@ -446,18 +445,24 @@ function FieldControls({feature, folders, schema}: {
   folders: Array<{folder: EditableFolder; depth: number}>;
   schema: CollectionSchema;
 }) {
-  const blocks = blocksOf(fieldsFor(schema, fieldKindOf(feature)));
+  const blocks = blocksOf(fieldsFor(schema, getFieldKind(feature)));
   const joined = blocks[blocks.length - 1]?.kind === 'inline';
   const iconColor =
-      (feature.kind === 'point' ? pointLook(schema, feature.data).fill : undefined)
-          ?? DEFAULT_POINT_COLOR;
+      (feature.kind === 'point' ? pointLook(schema, feature.data)?.fill : undefined)
+          ?? DEFAULT_COLOR;
   const input = (field: FieldDefinition, compact: boolean) =>
       <FieldInput
           key={`${feature.id}:${field.id}`}
           compact={compact}
-          data={feature.data}
           field={field}
           iconColor={iconColor}
+          values={feature.data}
+          unboundEvents={{
+            corgi: [
+              [FIELD_EDITED, 'fieldEdited'],
+              [FIELD_ICON_CLICKED, 'fieldIconClicked'],
+            ],
+          }}
       />;
   const folder =
       <Select
@@ -496,142 +501,6 @@ function FieldControls({feature, folders, schema}: {
   );
 }
 
-// Keyed by feature and field, because the raw inputs only take their value when created. A
-// compact input sizes to what it holds and names its field in a tooltip, since it has no label.
-//
-// An input shows only its own field's value, so an unset color shows the default color rather than
-// the drawn one, because a schema may draw a feature by some other field.
-function FieldInput({compact, data, field, iconColor}: {
-  compact: boolean;
-  data: FeatureData;
-  field: FieldDefinition;
-  // What an icon is previewed in, which is the feature's drawn fill
-  iconColor: string;
-  key: string;
-}) {
-  const value = data[field.id];
-  const bound = {ariaLabel: field.label, data: {field: field.id}, title: field.label};
-  const boxed = 'border border-gray-300 h-7 px-1 rounded';
-  const width = (compactWidth: string) => compact ? `${compactWidth} shrink-0` : 'w-full';
-  switch (field.type) {
-    case 'checkbox':
-      return compact
-          ? <label className="flex gap-1 h-7 items-center shrink-0">
-              <input
-                  {...bound}
-                  checked={value === true || undefined}
-                  type="checkbox"
-                  unboundEvents={{change: 'fieldToggled'}}
-              />
-              {field.label}
-            </label>
-          : <input
-                {...bound}
-                checked={value === true || undefined}
-                type="checkbox"
-                unboundEvents={{change: 'fieldToggled'}}
-            />;
-    case 'color':
-      return (
-        <input
-            {...bound}
-            className="h-7 shrink-0 w-10"
-            type="color"
-            value={typeof value === 'string' ? value : DEFAULT_POINT_COLOR}
-            unboundEvents={{input: 'fieldInput'}}
-        />
-      );
-    case 'date':
-      return (
-        <input
-            {...bound}
-            className={`${boxed} ${width('w-36')}`}
-            type="date"
-            value={typeof value === 'string' ? value : ''}
-            unboundEvents={{change: 'fieldInput'}}
-        />
-      );
-    case 'icon':
-      return (
-        <IconPickerButton
-            {...bound}
-            color={iconColor}
-            icon={typeof value === 'string' ? value : undefined}
-            unboundEvents={{click: 'iconButtonClicked'}}
-        />
-      );
-    case 'number':
-      return (
-        <input
-            {...bound}
-            className={`${boxed} ${width('w-16')}`}
-            placeholder={compact ? field.label : ''}
-            type="number"
-            value={typeof value === 'number' ? String(value) : ''}
-            unboundEvents={{input: 'fieldInput'}}
-        />
-      );
-    case 'select':
-      return (
-        <Select
-            {...bound}
-            className={`${boxed} ${width('w-32')}`}
-            options={[
-              ...unsetOption(field, compact, (field.options ?? []).some(o => o.id === value)),
-              ...(field.options ?? []).map(option => ({
-                label: option.label,
-                value: option.id,
-                selected: option.id === value,
-              })),
-            ]}
-            unboundEvents={{corgi: [[CHANGED, 'fieldChanged']]}}
-        />
-      );
-    case 'pattern':
-      return (
-        <Select
-            {...bound}
-            className={`${boxed} ${width('w-28')}`}
-            options={[
-              ...unsetOption(field, compact, PATTERN_NAMES.includes(value as PatternName)),
-              ...PATTERN_NAMES.map(name => ({
-                label: PATTERN_LABELS[name],
-                value: name,
-                selected: name === value,
-              })),
-            ]}
-            unboundEvents={{corgi: [[CHANGED, 'fieldChanged']]}}
-        />
-      );
-    case 'text':
-      return field.multiline
-          ? <textarea
-                {...bound}
-                className="border border-gray-300 px-1 py-0.5 rounded w-full"
-                placeholder={field.hideLabel ? field.label : ''}
-                value={typeof value === 'string' ? value : ''}
-                unboundEvents={{input: 'fieldInput'}}
-            />
-          : <Input
-                {...bound}
-                className={`${boxed} ${width('w-32')}`}
-                forceValue={true}
-                placeholder={field.hideLabel ? field.label : ''}
-                value={typeof value === 'string' ? value : ''}
-                unboundEvents={{corgi: [[CHANGED, 'fieldChanged']]}}
-            />;
-    default:
-      throw checkExhaustive(field.type);
-  }
-}
-
-// A blank to show while the feature holds none of the options, which goes away once one is picked.
-// Choosing it does nothing, so clearing a value is up to an option the user made for it.
-function unsetOption(field: FieldDefinition, compact: boolean, known: boolean):
-    Array<{label: string; value: string; selected: boolean}> {
-  return known ? [] : [{label: compact ? field.label : '', value: '', selected: true}];
-}
-
 interface ReadOnlyText {
   title: string|undefined;
   // Long text, which would only crowd the table
@@ -642,9 +511,9 @@ interface ReadOnlyText {
 // How each field with a value reads, for a feature somebody can only view. The field the title
 // comes from is left out, since the title already shows it.
 function featureText(schema: CollectionSchema, feature: EditableFeature): ReadOnlyText {
-  const text: ReadOnlyText = {title: titleOf(schema, feature), paragraphs: [], fields: []};
+  const text: ReadOnlyText = {title: getTitle(schema, feature), paragraphs: [], fields: []};
   const titled = titleField(schema, feature);
-  for (const field of fieldsFor(schema, fieldKindOf(feature))) {
+  for (const field of fieldsFor(schema, getFieldKind(feature))) {
     const value = feature.data[field.id];
     if (value === undefined || field.id === titled) {
       continue;
@@ -734,7 +603,7 @@ function Stats({feature, profile}: {
   feature: EditableFeature;
   profile: LineProfileState|undefined;
 }) {
-  if (feature.kind === 'line' && isMarker(feature)) {
+  if (feature.kind === 'line' && getLineKind(feature.data) === 'drawing') {
     return <div className="hidden" />;
   } else if (feature.kind === 'line') {
     const stats = measureLine(feature.latLngE7, feature.elevationCentimeters);
@@ -772,10 +641,6 @@ export function LineStats({climb, lengthMeters}: {climb: Climb|undefined; length
 
 export function untitled(kind: string): string {
   return kind === 'polygon' ? 'Untitled area' : `Untitled ${kind}`;
-}
-
-export function kindName(feature: EditableFeature): string {
-  return feature.kind === 'line' && isMarker(feature) ? 'drawing' : feature.kind;
 }
 
 /** Sorts folders ahead of everything else and titles in the order a person would number them. */
@@ -830,7 +695,7 @@ function sortItems(items: TreeItem[], schema: CollectionSchema): TreeItem[] {
     if (aFolder !== bFolder) {
       return aFolder ? -1 : 1;
     }
-    return (titleOf(schema, a.feature) ?? '').localeCompare(
-        titleOf(schema, b.feature) ?? '', undefined, {numeric: true});
+    return (getTitle(schema, a.feature) ?? '').localeCompare(
+        getTitle(schema, b.feature) ?? '', undefined, {numeric: true});
   });
 }

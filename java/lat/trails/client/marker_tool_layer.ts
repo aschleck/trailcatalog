@@ -10,9 +10,8 @@ import { Z_EDITING } from 'js/map/z';
 
 import { toE7Array } from './drawing_layer';
 import { MARKER_DRAWN, TOOL_REQUESTED } from './events';
-import { parseColor } from './feature_layer';
-import { DEFAULT_LINE_COLOR } from './features';
-import { DEFAULT_MARKER_WIDTH_PX, outlineMarker, pushMarker, streamline } from './marker';
+import { outlineMarker, pushMarker, streamline } from './marker';
+import { DEFAULT_COLOR, DEFAULT_MARKER_WIDTH_PX, parseColor } from './workers/collection_schema';
 
 // A few seconds of scribbling
 const INITIAL_BUFFER_BYTES = 64 * 1024;
@@ -152,7 +151,7 @@ export class MarkerToolLayer extends Layer {
     const outline = outlineMarker(points, DEFAULT_MARKER_WIDTH_PX, stroke.pixel);
     this.geometry =
         growBuffer(this.geometry, LineProgram.bytesNeeded(outline.points.length / 2));
-    const color = parseColor(DEFAULT_LINE_COLOR);
+    const color = parseColor(DEFAULT_COLOR);
     const result =
         pushMarker(
             color,

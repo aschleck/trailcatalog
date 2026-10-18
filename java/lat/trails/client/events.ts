@@ -4,6 +4,7 @@ import { RawUuid } from 'js/map/common/types';
 import { EditableFeature } from './features';
 import { Point } from './point_collection_layer';
 import { Data, Line, Polygon } from './workers/collection_loader';
+import { FieldRef } from './workers/collection_schema';
 
 /** What pointer tools are possible. */
 export type Tool = 'pointer'|'point'|'line'|'marker'|'measure'|'terrain';
@@ -42,6 +43,17 @@ export const FEATURE_HOVERED = declareEvent<{
   // Undefined when the pointer left every feature
   id: string|undefined;
 }>('feature_hovered');
+
+// Undefined clears the field, which is how an emptied box or an unchecked checkbox reads.
+export const FIELD_EDITED = declareEvent<{
+  field: FieldRef;
+  value: boolean|number|string|undefined;
+}>('field_edited');
+
+// An icon field's button, since what the picker offers depends on who shows it
+export const FIELD_ICON_CLICKED = declareEvent<{
+  field: FieldRef;
+}>('field_icon_clicked');
 
 export const HOVER_CHANGED = declareEvent<{
   target: {

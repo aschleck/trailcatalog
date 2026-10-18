@@ -55,6 +55,8 @@ import {
   FEATURE_CONTEXT_MENU,
   FEATURE_EDITED,
   FEATURE_HOVERED,
+  FIELD_EDITED,
+  FIELD_ICON_CLICKED,
   LayerObject,
   LINE_DRAWN,
   LineSpot,
@@ -73,13 +75,11 @@ import {
 } from './feature_list';
 import { Change, FeatureStore } from './feature_store';
 import {
-  DEFAULT_POINT_COLOR,
   EditableFeature,
   EditableLine,
   FeatureData,
   folderFromProto,
   importableIcon,
-  isMarker,
   lineFromProto,
   pointFromProto,
   schemaToWrite,
@@ -111,9 +111,10 @@ import { Point, PointCollectionLayer } from './point_collection_layer';
 import { PointToolLayer } from './point_tool_layer';
 import {
   adoptImported,
+  getFieldKind,
   parseCollectionSchema,
-  pointLook,
   titleField,
+  withDefaults,
 } from './schema';
 import { haversineMeters, pathLengthMeters, profileSamples } from './measurements';
 import { MarkerToolLayer } from './marker_tool_layer';
@@ -122,6 +123,11 @@ import { editMenu, fileMenu, HELP_MENU, USER_MENU, viewMenu } from './menus';
 import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
 import { SearchHit, SearchQuery, SearchState } from './search_box';
+import {
+  DEFAULT_COLOR,
+  getLineKind,
+  pointLook,
+} from './workers/collection_schema';
 
 // The zoom where the contours and the trails around a point come in at full detail
 const POINT_ZOOM = 14;
@@ -475,8 +481,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       elevationCentimeters: undefined,
       timeSeconds: undefined,
     };
-    this.store.apply([{id: line.id, before: undefined, after: line}]);
-    this.select(line.id);
+    this.addFeature(line);
   }
 
   // Selects the new point so that the panel is open to name it, and stays in the tool so that
@@ -495,8 +500,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     if (parent !== undefined) {
       this.expand([parent]);
     }
-    this.store.apply([{id: point.id, before: undefined, after: point}]);
-    this.select(point.id);
+    this.addFeature(point);
   }
 
   onToolRequested(e: CorgiEvent<typeof TOOL_REQUESTED>): void {
@@ -627,7 +631,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
 
     const data = pick.kind === 'object' ? pick.object.value.data : pick.point.data;
-    const layerSchema = pick.layer instanceof CollectionLayer ? pick.layer.schema() : undefined;
+    const layerSchema = pick.kind === 'object' ? pick.layer.getSchema(pick.object) : undefined;
     const schema = pick.entry.schema ?? layerSchema;
     // An OSM title is an element id, and the element's name is beside it in the data. An element
     // without one is still told apart from its neighbors by its category.
@@ -684,9 +688,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const data = object.value.data;
     const entry =
         layerEntries(this.state.layers.nodes).find(({entry}) => entry.layer === layer)?.entry;
-    const schema =
-        checkExists(
-            entry?.schema ?? (layer instanceof CollectionLayer ? layer.schema() : undefined));
+    const layerSchema = layer instanceof CollectionLayer ? layer.getSchema(object) : undefined;
+    const schema = checkExists(entry?.schema ?? layerSchema);
     const titleValue = data[schema.title.key];
     const element =
         typeof titleValue !== 'number' ? undefined
@@ -995,30 +998,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.editSelectedData(data => ({...data, name: name || undefined}), 'name');
   }
 
-  // A color, date, or number field's input, where clearing a number or a date clears the field
-  fieldInput(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const id = checkExists(e.actionElement.data('field')).string();
-    const raw = (e.actionElement.element() as HTMLInputElement).value;
-    const field = this.store.schema().fields.find(f => f.id === id);
-    if (field?.type === 'number') {
-      const value = Number(raw);
-      if (raw === '' || Number.isFinite(value)) {
-        this.editField(id, raw === '' ? undefined : value);
-      }
-    } else {
-      this.editField(id, raw || undefined);
-    }
-  }
-
-  // A select, pattern, or text field, where an empty text box clears the field
-  fieldChanged(e: CorgiEvent<typeof CHANGED>): void {
-    const id = checkExists(e.actionElement.data('field')).string();
-    this.editField(id, e.detail.value || undefined);
-  }
-
-  fieldToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const id = checkExists(e.actionElement.data('field')).string();
-    this.editField(id, (e.actionElement.element() as HTMLInputElement).checked);
+  fieldEdited(e: CorgiEvent<typeof FIELD_EDITED>): void {
+    this.editField(e.detail.field.id, e.detail.value);
   }
 
   // A folder centers on everything inside it.
@@ -1078,8 +1059,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(undefined);
   }
 
-  iconButtonClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const id = checkExists(e.actionElement.data('field')).string();
+  fieldIconClicked(e: CorgiEvent<typeof FIELD_ICON_CLICKED>): void {
+    const id = e.detail.field.id;
     const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
     if (!selected) {
       return;
@@ -1096,9 +1077,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     const current = selected.data[id];
     const fill =
-        selected.kind === 'point' ? pointLook(this.store.schema(), selected.data).fill : undefined;
+        selected.kind === 'point' ? pointLook(this.store.schema(), selected.data)?.fill : undefined;
     this.dialog.display(IconPickerDialog({
-      color: fill ?? DEFAULT_POINT_COLOR,
+      color: fill ?? DEFAULT_COLOR,
       current: typeof current === 'string' ? current : undefined,
       onChosen: icon => {
         this.editField(id, icon);
@@ -1383,8 +1364,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       elevationCentimeters: undefined,
       timeSeconds: undefined,
     };
-    this.store.apply([{id: line.id, before: undefined, after: line}]);
-    this.select(line.id);
+    this.addFeature(line);
+  }
+
+  // Starts a feature somebody made with its fields' defaults, and selects it.
+  private addFeature(feature: EditableFeature): void {
+    feature.data = withDefaults(this.store.schema(), feature);
+    this.store.apply([{id: feature.id, before: undefined, after: feature}]);
+    this.select(feature.id);
   }
 
   // Resolves undefined when the tiles could not be fetched.
@@ -1484,7 +1471,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // An inspected object's profile belongs to loadClimb, and a marker stroke has none because it
   // marks up the map rather than following the ground.
   private lineProfileFor(live: EditableFeature|undefined): LineProfileState|undefined {
-    if (live?.kind === 'line' && !isMarker(live)) {
+    if (live?.kind === 'line' && getLineKind(live.data) === 'line') {
       return this.lineProfiler.forLine(live);
     } else if (this.state.inspected?.kind === 'line') {
       return this.state.lineProfile;
@@ -1976,9 +1963,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             version: 0n,
             data: {name: file.name.replace(/\.[^.]*$/, '')},
           };
+          const schema = this.store.schema();
           for (const feature of features) {
             feature.data.folder_id ??= folder.id;
-            adoptImported(this.store.schema(), feature);
+            adoptImported(schema, feature);
+            feature.data = withDefaults(schema, feature);
           }
           return {
             changes: [folder, ...features].map(f => ({id: f.id, before: undefined, after: f})),

@@ -22,8 +22,8 @@ import {
 } from './controls';
 import { requestData } from './data';
 import { SchemaPanel } from './schema_panel';
-import { CollectionSchema } from './schema';
 import { SharingPanel } from './sharing_panel';
+import { CollectionSchema } from './workers/collection_schema';
 
 export type SettingsPanel = 'overview'|'sharing'|'schema'|'style';
 
