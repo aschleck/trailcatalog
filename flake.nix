@@ -43,7 +43,7 @@
             jetbrains.idea
             neovim
             nginx
-            nodejs-slim_22
+            nodejs-slim_24
             pnpm
             podman
             postgresql

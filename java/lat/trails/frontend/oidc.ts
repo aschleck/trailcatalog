@@ -2,7 +2,17 @@ import crypto from 'crypto';
 import process from 'process';
 
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { BaseClient, generators, IdTokenClaims, Issuer } from 'openid-client';
+import {
+  authorizationCodeGrant,
+  buildAuthorizationUrl,
+  calculatePKCECodeChallenge,
+  ClientSecretPost,
+  Configuration,
+  discovery,
+  IDToken,
+  randomPKCECodeVerifier,
+  randomState,
+} from 'openid-client';
 import postgres from 'postgres';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
@@ -61,8 +71,8 @@ interface Provider {
   // callback route has to parse a form
   formPost: boolean;
   pkce: boolean;
-  createClient(issuer: Issuer, config: LoginConfig): BaseClient;
-  profile(claims: IdTokenClaims, body: CallbackBody): Profile;
+  clientSecret(config: LoginConfig): string;
+  profile(claims: IDToken, body: CallbackBody): Profile;
 }
 
 // In the order the login page lists them
@@ -74,15 +84,7 @@ const PROVIDERS: {[name in ProviderName]: Provider} = {
     scope: 'openid name email',
     formPost: true,
     pkce: false,
-    createClient: (issuer, config) => {
-      const credentials = checkExists(config.apple);
-      return new issuer.Client({
-        client_id: credentials.client_id,
-        client_secret: appleClientSecret(credentials),
-        response_types: ['code'],
-        token_endpoint_auth_method: 'client_secret_post',
-      });
-    },
+    clientSecret: config => appleClientSecret(checkExists(config.apple)),
     profile: appleProfile,
   },
   google: {
@@ -92,7 +94,7 @@ const PROVIDERS: {[name in ProviderName]: Provider} = {
     scope: 'openid email profile',
     formPost: false,
     pkce: true,
-    createClient: (issuer, config) => basicClient(issuer, checkExists(config.google)),
+    clientSecret: config => checkExists(config.google).client_secret,
     profile: oidcProfile,
   },
   osm: {
@@ -102,7 +104,7 @@ const PROVIDERS: {[name in ProviderName]: Provider} = {
     scope: 'openid',
     formPost: false,
     pkce: true,
-    createClient: (issuer, config) => basicClient(issuer, checkExists(config.osm)),
+    clientSecret: config => checkExists(config.osm).client_secret,
     profile: oidcProfile,
   },
 };
@@ -175,9 +177,17 @@ async function addProvider(
     loginEnforcer: LoginEnforcer,
     sql: postgres.Sql): Promise<void> {
   const provider = PROVIDERS[name];
-  const issuer = await Issuer.discover(provider.issuer);
-  // Per request because Apple's client secret expires
-  const createClient = () => provider.createClient(issuer, config);
+  const clientId = checkExists(config[name]).client_id;
+  const server = (await discovery(new URL(provider.issuer), clientId)).serverMetadata();
+  // Per request because Apple's client secret expires. openid-client's ClientSecretBasic
+  // form-encodes the client ID and secret, and Google rejects that as invalid_client, so every
+  // provider gets client_secret_post.
+  const configure = () =>
+      new Configuration(
+          server,
+          clientId,
+          /* metadata= */ undefined,
+          ClientSecretPost(provider.clientSecret(config)));
 
   const getCallbackUrl = (request: FastifyRequest) => {
     const protocol = request.headers['x-forwarded-proto'] ?? request.protocol;
@@ -189,8 +199,8 @@ async function addProvider(
 
   fastify.get(`/login/${name}`, async (request, reply) => {
     const pending: PendingLogin = {
-      state: generators.state(),
-      codeVerifier: provider.pkce ? generators.codeVerifier() : undefined,
+      state: randomState(),
+      codeVerifier: provider.pkce ? randomPKCECodeVerifier() : undefined,
       returnTo: returnPath(request),
     };
     reply.setCookie(OIDC_COOKIE, encrypter.encrypt(JSON.stringify(pending)), {
@@ -199,17 +209,19 @@ async function addProvider(
       secure: provider.formPost,
     });
 
-    // openid-client leaves out the parameters that are undefined.
-    reply.redirect(
-        createClient().authorizationUrl({
-          code_challenge:
-              pending.codeVerifier ? generators.codeChallenge(pending.codeVerifier) : undefined,
-          code_challenge_method: pending.codeVerifier ? 'S256' : undefined,
-          response_mode: provider.formPost ? 'form_post' : undefined,
-          redirect_uri: getCallbackUrl(request),
-          scope: provider.scope,
-          state: pending.state,
-        }));
+    const parameters: {[key: string]: string} = {
+      redirect_uri: getCallbackUrl(request),
+      scope: provider.scope,
+      state: pending.state,
+    };
+    if (pending.codeVerifier) {
+      parameters.code_challenge = await calculatePKCECodeChallenge(pending.codeVerifier);
+      parameters.code_challenge_method = 'S256';
+    }
+    if (provider.formPost) {
+      parameters.response_mode = 'form_post';
+    }
+    reply.redirect(buildAuthorizationUrl(configure(), parameters).href);
   });
 
   const callback = async (request: FastifyRequest, reply: FastifyReply) => {
@@ -218,12 +230,17 @@ async function addProvider(
     reply.clearCookie(OIDC_COOKIE);
 
     const body = request.body as CallbackBody;
-    const tokenSet =
-        await createClient().callback(
-            getCallbackUrl(request),
-            body ?? request.query as {[key: string]: string},
-            {code_verifier: pending.codeVerifier, state: pending.state});
-    const claims = tokenSet.claims();
+    const callbackUrl = new URL(getCallbackUrl(request));
+    for (const [key, value] of Object.entries(body ?? request.query as {[key: string]: string})) {
+      callbackUrl.searchParams.append(key, value);
+    }
+    const tokens =
+        await authorizationCodeGrant(configure(), callbackUrl, {
+          expectedState: pending.state,
+          idTokenExpected: true,
+          pkceCodeVerifier: pending.codeVerifier,
+        });
+    const claims = checkExists(tokens.claims());
     const profile = provider.profile(claims, body);
 
     const userId = await sql.begin(async sql => {
@@ -300,7 +317,7 @@ function returnPath(request: FastifyRequest): string|undefined {
 }
 
 // https://developer.apple.com/documentation/signinwithapple/incorporating-sign-in-with-apple-into-other-platforms
-function appleProfile(claims: IdTokenClaims, body: CallbackBody): Profile {
+function appleProfile(claims: IDToken, body: CallbackBody): Profile {
   const user = body?.user ? JSON.parse(body.user) : undefined;
   const name =
       [user?.name?.firstName, user?.name?.lastName].filter(n => !!n).join(' ') || undefined;
@@ -312,26 +329,24 @@ function appleProfile(claims: IdTokenClaims, body: CallbackBody): Profile {
 }
 
 // OpenStreetMap only sends preferred_username.
-function oidcProfile(claims: IdTokenClaims): Profile {
+function oidcProfile(claims: IDToken): Profile {
   return {
-    displayName: claims.name ?? claims.preferred_username,
+    displayName: stringClaim(claims, 'name') ?? stringClaim(claims, 'preferred_username'),
     email: verifiedEmail(claims),
-    pictureUrl: claims.picture,
+    pictureUrl: stringClaim(claims, 'picture'),
   };
 }
 
 // Apple sends email_verified as either a boolean or a string.
 // https://developer.apple.com/documentation/signinwithapplejs/authorizationi/id_token
-function verifiedEmail(claims: IdTokenClaims): string|undefined {
-  return String(claims.email_verified) === 'true' ? claims.email : undefined;
+function verifiedEmail(claims: IDToken): string|undefined {
+  return String(claims.email_verified) === 'true' ? stringClaim(claims, 'email') : undefined;
 }
 
-function basicClient(issuer: Issuer, credentials: Credentials): BaseClient {
-  return new issuer.Client({
-    client_id: credentials.client_id,
-    client_secret: credentials.client_secret,
-    response_types: ['code'],
-  });
+// Claims beyond the registered ones can be any JSON, so we only trust one that is a string.
+function stringClaim(claims: IDToken, name: string): string|undefined {
+  const value = claims[name];
+  return typeof value === 'string' ? value : undefined;
 }
 
 // https://developer.apple.com/documentation/accountorganizationaldatasharing/creating-a-client-secret
