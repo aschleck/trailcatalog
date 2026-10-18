@@ -1,4 +1,9 @@
-import { formatDistance as formatUnitDistance, formatHeight as formatUnitHeight } from 'js/units/formatters';
+import {
+  formatDistance as formatUnitDistance,
+  formatHeight as formatUnitHeight,
+  getUnitSystem,
+  UnitSystem,
+} from 'js/units/formatters';
 
 // Keep in sync with SimpleS2#EARTH_RADIUS_METERS. Not read from there because loading S2 here would
 // keep these out of jest, which cannot load the J2CL bundle.
@@ -115,6 +120,49 @@ export function cumulativeMeters(path: ArrayLike<number>): Float64Array {
             + haversineMeters(path[2 * i - 2], path[2 * i - 1], path[2 * i], path[2 * i + 1]);
   }
   return along;
+}
+
+/**
+ * Returns the area a ring of interleaved lat then lng degrees encloses on the sphere, whichever way
+ * it winds. The ring closes back to its first vertex without repeating it.
+ */
+// https://trs.jpl.nasa.gov/handle/2014/41271
+export function ringAreaMeters2(ring: ArrayLike<number>): number {
+  const toRadians = Math.PI / 180;
+  const count = ring.length / 2;
+  let sum = 0;
+  for (let i = 0; i < count; ++i) {
+    const j = (i + 1) % count;
+    const dLng = (ring[2 * j + 1] - ring[2 * i + 1]) * toRadians;
+    sum +=
+        dLng * (2 + Math.sin(ring[2 * i] * toRadians) + Math.sin(ring[2 * j] * toRadians));
+  }
+  return Math.abs(sum) * EARTH_RADIUS_METERS * EARTH_RADIUS_METERS / 2;
+}
+
+// 1609.344 m to a mile, so about 2.59 km² to a square mile
+const METERS2_PER_MILE2 = 1609.344 * 1609.344;
+// 640 acres to a square mile
+const METERS2_PER_ACRE = METERS2_PER_MILE2 / 640;
+
+/**
+ * Formats an area in square miles or kilometers, or in acres or square meters below one of those so
+ * that a campsite doesn't read as zero.
+ */
+export function formatArea(meters2: number, system: UnitSystem = getUnitSystem()): string {
+  const imperial = system === 'imperial';
+  const [large, small] =
+      imperial
+          ? [{per: METERS2_PER_MILE2, unit: 'mi²'}, {per: METERS2_PER_ACRE, unit: 'ac'}]
+          : [{per: 1_000_000, unit: 'km²'}, {per: 1, unit: 'm²'}];
+  if (meters2 >= large.per) {
+    const value =
+        new Intl.NumberFormat(undefined, {maximumFractionDigits: 1}).format(meters2 / large.per);
+    return `${value} ${large.unit}`;
+  }
+  const value =
+      new Intl.NumberFormat(undefined, {maximumSignificantDigits: 2}).format(meters2 / small.per);
+  return `${value} ${small.unit}`;
 }
 
 export function formatDistance(meters: number): string {

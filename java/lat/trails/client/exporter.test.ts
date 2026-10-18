@@ -46,6 +46,18 @@ test('GeoJSON reads back as what was written', () => {
   expect(point).toEqual({...POINT, id: expect.any(String), version: 0n});
 });
 
+test('GeoJSON reads a polygon back as what was written', () => {
+  const polygon: EditableFeature = {
+    kind: 'polygon',
+    id: 'polygon',
+    version: 3n,
+    data: {name: 'Camp', fill: '#00ff0080', stroke: '#0000ff', width_px: 2},
+    latLngE7: Int32Array.from([457368858, 67797574, 457368553, 67797527, 457368000, 67797000]),
+  };
+  const [read] = parseGeoJson(toGeoJson([polygon]));
+  expect(read).toEqual({...polygon, id: expect.any(String), version: 0n});
+});
+
 test('GeoJSON keeps a marker stroke a marker', () => {
   const marker = {...LINE, data: {marker_zoom: 14.5, width_px: 4.5}};
   const [line] = parseGeoJson(toGeoJson([marker]));

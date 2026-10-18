@@ -23,6 +23,10 @@ export interface Ring {
 // triangulateRings takes. The S2 half lives in triangulate_s2.ts so that nothing here has to pull
 // in the J2CL geometry bundle.
 
+// Among other things, the max triangle length affects the amount of overdraw we see at the edge of
+// the globe.
+export const MAX_TRIANGLE_LENGTH_METERS = 200_000;
+
 export function triangulateMb(
   geometry: number[],
   starts: number[],

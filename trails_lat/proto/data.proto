@@ -69,8 +69,8 @@ message DeleteCollectionResponse {}
 
 message GetCollectionRequest {
   string id = 1;
-  // Leaves every line and point with only its id, data, and version, for listing the features
-  // without paying for their geometry.
+  // Leaves every line, point, and polygon with only its id, data, and version, for listing the
+  // features without paying for their geometry.
   bool omit_geometry = 2;
 }
 
@@ -89,6 +89,9 @@ message GetCollectionResponse {
   string schema = 7;
   // See Line#version, with 0 for a schema that was never saved.
   int64 schema_version = 8;
+  // Only polygons drawn in trails.lat. An imported polygon has no ring to edit, so it only comes
+  // from /api/collections/{id}/objects.
+  repeated Polygon polygons = 9;
 }
 
 message GetCurrentUserRequest {}
@@ -215,6 +218,7 @@ message Write {
     Point put_point = 3;
     Delete delete = 4;
     PutSchema put_schema = 5;
+    Polygon put_polygon = 6;
   }
 }
 
@@ -237,6 +241,7 @@ enum FeatureKind {
   FEATURE_KIND_FOLDER = 1;
   FEATURE_KIND_LINE = 2;
   FEATURE_KIND_POINT = 3;
+  FEATURE_KIND_POLYGON = 4;
 }
 
 // Only the owner may change who can view.
@@ -365,6 +370,17 @@ message Point {
   optional sint32 elevation_centimeters = 5;
   // See Line#version.
   int64 version = 6;
+}
+
+message Polygon {
+  string id = 1;
+  // The jsonb column verbatim.
+  string data = 2;
+  // One ring, interleaved lat then lng, without the first point repeated at the end. It may wind
+  // either way and cross itself, and fills wherever an odd number of its turns enclose.
+  repeated sint32 lat_lng_e7 = 3;
+  // See Line#version.
+  int64 version = 4;
 }
 
 message User {

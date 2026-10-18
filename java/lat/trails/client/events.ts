@@ -7,14 +7,14 @@ import { Data, Line, Polygon } from './workers/collection_loader';
 import { FieldRef } from './workers/collection_schema';
 
 /** What pointer tools are possible. */
-export type Tool = 'pointer'|'point'|'line'|'marker'|'measure'|'terrain';
+export type Tool = 'pointer'|'point'|'line'|'polygon'|'marker'|'measure'|'terrain';
 
 export const FEATURE_CLICKED = declareEvent<{
   // Undefined when the click missed every feature
   id: string|undefined;
 }>('feature_clicked');
 
-/** Where on a line a right click was nearest. */
+/** Where on a line or a polygon's ring a right click was nearest. */
 export type LineSpot =
     // Index is the vertex, and handle is whether the click was on its handle while editing.
     {kind: 'vertex'; index: number; handle: boolean}
@@ -24,7 +24,7 @@ export type LineSpot =
 export const FEATURE_CONTEXT_MENU = declareEvent<{
   // Undefined when the click missed every feature
   id: string|undefined;
-  // Set when id is a line
+  // Set when id is a line or a polygon
   spot: LineSpot|undefined;
   latE7: number;
   lngE7: number;
@@ -35,7 +35,8 @@ export const FEATURE_CONTEXT_MENU = declareEvent<{
 export const FEATURE_EDITED = declareEvent<{
   before: EditableFeature;
   after: EditableFeature;
-  // Set when a line edit moved or added this vertex, so that its elevation comes from the DEM
+  // Set when a line or polygon edit moved or added this vertex, so that a line with elevations
+  // reads the new one from the DEM
   vertex?: number;
 }>('feature_edited');
 
@@ -79,6 +80,11 @@ export const POINT_PLACED = declareEvent<{
   latE7: number;
   lngE7: number;
 }>('point_placed');
+
+export const POLYGON_DRAWN = declareEvent<{
+  // One ring, see EditablePolygon
+  latLngE7: Int32Array;
+}>('polygon_drawn');
 
 export const TOOL_REQUESTED = declareEvent<{
   tool: Tool;

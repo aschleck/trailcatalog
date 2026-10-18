@@ -10,7 +10,7 @@ import { Renderer } from 'js/map/rendering/renderer';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_EDITING } from 'js/map/z';
 
-import { LINE_DRAWN, TOOL_REQUESTED } from './events';
+import { LINE_DRAWN, POLYGON_DRAWN, TOOL_REQUESTED } from './events';
 import {
   createHandleTexture,
   HANDLE_COLOR,
@@ -29,12 +29,14 @@ import {
   Traced,
   traceRefs,
 } from './line_matching';
+import { toRing } from './line_edits';
 import { LineRefiner } from './line_refiner';
 import { ShiftKey } from './shift_key';
 
-// What finishing a drawing does. A line hands itself off to be saved and clears. A measurement
-// stays on the map until the next click starts another, so that its numbers can still be read.
-export type DrawingMode = 'line'|'measure';
+// What finishing a drawing does. A line hands itself off to be saved and clears. A polygon closes
+// straight back to its first vertex and then does the same. A measurement stays on the map until
+// the next click starts another, so that its numbers can still be read.
+export type DrawingMode = 'line'|'measure'|'polygon';
 
 /**
  * Finds a way between two mercator points, excluding both, or resolves undefined when there is
@@ -49,7 +51,8 @@ export interface RouteStatus {
   failed: number;
 }
 
-// The click radius from a vertex to count as finishing drawing a line.
+// The click radius from a vertex to count as finishing drawing a line, or from the first vertex to
+// count as closing a polygon.
 const FINISH_RADIUS_PX = 8;
 // How close the pointer has to come to a line to snap onto it. Wider than the collection layer
 // hovers at because a vertex only has to reach a line, not name which one.
@@ -201,7 +204,10 @@ export class DrawingLayer extends Layer {
     return this.pointerOver && !!this.drawing && !this.drawing.finished && !this.drawing.finishing;
   }
 
-  /** Returns the drawn polyline in mercator, including the segment to the cursor. */
+  /**
+   * Returns the drawn polyline in mercator, including the segment to the cursor. A polygon's runs
+   * straight back to its first vertex.
+   */
   points(): Float64Array {
     const drawing = this.drawing;
     if (!drawing) {
@@ -209,13 +215,15 @@ export class DrawingLayer extends Layer {
     }
 
     const placed = this.refined(drawing.vertices).points;
-    const cursor = drawing.cursor?.trace.points;
-    if (!cursor) {
+    const cursor = drawing.cursor?.trace.points ?? NO_POINTS;
+    const closing = this.mode === 'polygon' ? placed.subarray(0, 2) : NO_POINTS;
+    if (cursor.length === 0 && closing.length === 0) {
       return placed;
     }
-    const points = new Float64Array(placed.length + cursor.length);
+    const points = new Float64Array(placed.length + cursor.length + closing.length);
     points.set(placed);
     points.set(cursor, placed.length);
+    points.set(closing, placed.length + cursor.length);
     return points;
   }
 
@@ -283,7 +291,10 @@ export class DrawingLayer extends Layer {
     }
 
     const at = projectS2LatLng(point);
-    if (this.drawing && !this.drawing.finished && this.nearLastVertex(at)) {
+    if (
+        this.drawing
+            && !this.drawing.finished
+            && (this.nearLastVertex(at) || this.nearFirstVertex(at))) {
       this.finish(source);
       return true;
     }
@@ -567,9 +578,23 @@ export class DrawingLayer extends Layer {
 
     const latLngE7 = toE7Array(this.refined(drawing.vertices).points);
     this.clear();
-    if (distinctPointCount(latLngE7) >= 2) {
+    if (this.mode === 'polygon') {
+      const ring = toRing(latLngE7);
+      if (ring) {
+        source.trigger(POLYGON_DRAWN, {latLngE7: ring});
+      }
+    } else if (distinctPointCount(latLngE7) >= 2) {
       source.trigger(LINE_DRAWN, {latLngE7});
     }
+  }
+
+  // Only a polygon closes, and only once it has a segment for the closing one to come back along.
+  private nearFirstVertex(point: Vec2): boolean {
+    const drawing = this.drawing;
+    if (this.mode !== 'polygon' || !drawing || drawing.vertices.length < 2) {
+      return false;
+    }
+    return this.near(point, pointOf(drawing.vertices[0]));
   }
 
   private nearLastVertex(point: Vec2): boolean {
@@ -578,10 +603,13 @@ export class DrawingLayer extends Layer {
       return false;
     }
 
-    const last = pointOf(drawing.vertices[drawing.vertices.length - 1]);
+    return this.near(point, pointOf(drawing.vertices[drawing.vertices.length - 1]));
+  }
+
+  private near(point: Vec2, vertex: Vec2): boolean {
     const radius = FINISH_RADIUS_PX * this.camera.inverseWorldRadius;
-    const dx = point[0] - last[0];
-    const dy = point[1] - last[1];
+    const dx = point[0] - vertex[0];
+    const dy = point[1] - vertex[1];
     return dx * dx + dy * dy <= radius * radius;
   }
 

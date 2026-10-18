@@ -1,10 +1,28 @@
 import {
   cumulativeMeters,
+  formatArea,
   measureLine,
   profileSamples,
   profileStats,
+  ringAreaMeters2,
   slopeMeters,
 } from './measurements';
+
+test('measures a ring the same whichever way it winds', () => {
+  // 0.01 degrees on a side at the equator, about 1112 m
+  const square = [0, 0, 0, 0.01, 0.01, 0.01, 0.01, 0];
+  const reversed = [0.01, 0, 0.01, 0.01, 0, 0.01, 0, 0];
+  expect(ringAreaMeters2(square) / 1e6).toBeCloseTo(1.2364, 3);
+  expect(ringAreaMeters2(reversed)).toBeCloseTo(ringAreaMeters2(square), 3);
+});
+
+test('formats a small area in square meters or acres', () => {
+  expect(formatArea(50, 'metric')).toBe('50 m²');
+  expect(formatArea(483_000, 'metric')).toBe('480,000 m²');
+  expect(formatArea(2_340_000, 'metric')).toBe('2.3 km²');
+  expect(formatArea(4047, 'imperial')).toBe('1 ac');
+  expect(formatArea(5_180_000, 'imperial')).toBe('2 mi²');
+});
 
 test('measures a line along its hypotenuse', () => {
   // Two segments of 0.001 degrees of latitude, about 111 m each

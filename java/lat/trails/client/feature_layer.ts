@@ -11,14 +11,22 @@ import {
 import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { GLYPHER, toGraphemes, wrap } from 'js/map/rendering/glypher';
+import { GLYPHER, TextAnchor, toGraphemes, wrap } from 'js/map/rendering/glypher';
 import { LineProgram, Stipple } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
+import { TriangleProgram } from 'js/map/rendering/triangle_program';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { LineRef, Route } from 'js/map/workers/location_querier';
-import { Z_USER_DATA, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
+import {
+  MAX_TRIANGLE_LENGTH_METERS,
+  ringArea,
+  ringsFrom,
+  Triangles,
+  triangulateRings,
+} from 'js/map/workers/triangulate';
+import { Z_USER_DATA, Z_USER_DATA_FILL, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { SNAP_RADIUS_PX, toE7Array } from './drawing_layer';
 import { FeatureStore } from './feature_store';
@@ -31,8 +39,9 @@ import {
 } from './events';
 import {
   EditableFeature,
-  EditableLine,
   EditablePoint,
+  EditableShape,
+  isShape,
   pointIcon,
   snapshot,
 } from './features';
@@ -69,6 +78,7 @@ import {
   lineRadiusPx,
   parseColor,
   pointLook,
+  polygonLook,
   toStipple,
 } from './workers/collection_schema';
 
@@ -121,16 +131,33 @@ const Z_HANDLE = Z_USER_DATA_HIGHLIGHT + 4;
 // => 4.03e-7 degrees, over 180 degrees to the mercator unit
 const DRAWN_TOLERANCE = 4.03e-7 / 180;
 
-interface ProjectedLine {
-  feature: EditableLine;
+// A line or a polygon's outline, which the pointer tool edits the vertices of the same way
+interface ProjectedShape {
+  feature: EditableShape;
   // The array these points came from, so that reprojecting can be skipped when it is unchanged
   latLngE7: Int32Array;
+  // A polygon's repeats its first vertex at the end, so that the polyline helpers see the segment
+  // closing it.
   points: Float64Array;
   // The line simplified for its label at an integer zoom, and the vertices to try starting it at
   label: {zoom: number; points: Float64Array; anchors: number[]}|undefined;
   // Set on a marker stroke, as of the size and zoom it was outlined at
   marker: {widthPx: number; zoom: number; outline: MarkerOutline}|undefined;
+  // A polygon's outline styles like a line.
   look: {label: string; stipple: Stipple; stroke: RgbaU32; widthPx: number};
+  // Set on a polygon
+  ring: ProjectedRing|undefined;
+}
+
+type ProjectedPolygon = ProjectedShape & {ring: ProjectedRing};
+
+interface ProjectedRing {
+  fill: RgbaU32;
+  triangles: FillTriangles;
+  // In mercator, for sorting nested polygons smallest first
+  area: number;
+  // Where the label goes, in mercator
+  center: Vec2;
 }
 
 interface ProjectedPoint {
@@ -144,7 +171,7 @@ interface ProjectedPoint {
 type Drag =
     {kind: 'point'; point: EditablePoint; at: Vec2}
     // A marker stroke moves whole, by how far the pointer has come from where it was pressed.
-    |{kind: 'marker'; line: ProjectedLine; from: Vec2; by: Vec2}
+    |{kind: 'marker'; line: ProjectedShape; from: Vec2; by: Vec2}
     |LineDrag;
 
 type LineDrag = VertexDrag|Reroute;
@@ -157,7 +184,7 @@ type LineDragPhase = 'pressed'|'moving'|'settling';
 interface VertexDrag {
   kind: 'vertex'|'insert';
   phase: LineDragPhase;
-  line: ProjectedLine;
+  line: ProjectedShape;
   index: number;
   points: Float64Array;
   pointer: Vec2;
@@ -170,7 +197,7 @@ interface VertexDrag {
 interface Reroute {
   kind: 'reroute';
   phase: LineDragPhase;
-  line: ProjectedLine;
+  line: ProjectedShape;
   query: LatestQuery<Vec2, Traced>;
   // The last route along the unsimplified lines, once the drop has fetched them
   refined: Float64Array|undefined;
@@ -181,10 +208,15 @@ interface Reroute {
 interface Plan {
   buffer: ArrayBuffer;
   glBuffer: WebGLBuffer;
+  // Set on a plan of triangles
+  index: {buffer: ArrayBuffer; glBuffer: WebGLBuffer}|undefined;
   drawables: Drawable[];
   generation: number;
   planned: number;
 }
+
+// Converted once, because TriangleProgram reads a typed array
+type FillTriangles = Triangles & {geometry: Float64Array};
 
 /** Draws the open collection's features. */
 export class FeatureLayer extends Layer {
@@ -195,14 +227,16 @@ export class FeatureLayer extends Layer {
   private selected: string|undefined;
   // The feature under the pointer, on the map or in the list
   private hovered: string|undefined;
-  // Every line, visible or not, so that a folder toggling does not reproject its lines
-  private readonly projected: Map<string, ProjectedLine>;
-  private visibleLines: ProjectedLine[];
+  // Every line and polygon, visible or not, so that a folder toggling does not reproject them
+  private readonly projected: Map<string, ProjectedShape>;
+  private visibleShapes: ProjectedShape[];
   private visiblePoints: ProjectedPoint[];
-  // What is in the index, by line id, as the latLngE7 array it was built from
+  // What is in the index, by line or polygon id, as the latLngE7 array it was built from
   private readonly published: Map<string, Int32Array>;
   // Every feature but the one being dragged
   private readonly geometry: Plan;
+  // Polygon fills, which replan with geometry, and with overlay while a polygon's vertex is dragged
+  private readonly fills: Plan;
   // The dragged feature and the handles of the line being edited, which change on every pointer
   // move and would otherwise replan every line each time
   private readonly overlay: Plan;
@@ -230,18 +264,18 @@ export class FeatureLayer extends Layer {
   // Points stay draggable under the point tool, so that one placed in the wrong spot can be moved
   // without switching tools.
   private pointsDraggable: boolean;
-  // The line showing its vertex handles, entered by clicking it
+  // The line or polygon showing its vertex handles, entered by clicking it
   private editing: string|undefined;
   // The handle a click picked, which Delete removes
   private activeVertex: number|undefined;
-  // Where on the edited line the pointer is, and the index a vertex dragged from there takes
+  // Where on the edited shape the pointer is, and the index a vertex dragged from there takes
   private inserting: {index: number; at: Vec2}|undefined;
-  // The vertices of the edited line that have handles, as of the last overlay plan
+  // The vertices of the edited shape that have handles, as of the last overlay plan
   private handles: number[];
   // Includes a dropped line drag until it settles, which draws in place of its line until then
   private dragging: Drag|undefined;
   // Where on the hovered line a drag would grab it to reroute
-  private grab: {line: ProjectedLine; at: Vec2}|undefined;
+  private grab: {line: ProjectedShape; at: Vec2}|undefined;
   // Shift suspends snapping, so a vertex can sit just off a line.
   private readonly shift: ShiftKey;
   // In mercator, for culling handles to what is on screen
@@ -268,11 +302,13 @@ export class FeatureLayer extends Layer {
     this.selected = undefined;
     this.hovered = undefined;
     this.projected = new Map();
-    this.visibleLines = [];
+    this.visibleShapes = [];
     this.visiblePoints = [];
     this.published = new Map();
     // An imported day hike is about 100 kb of geometry.
     this.geometry = this.createPlan(128 * 1024);
+    // A few dozen polygons of a few hundred vertices
+    this.fills = this.createPlan(64 * 1024, /* indexed= */ true);
     // A few hundred handles
     this.overlay = this.createPlan(16 * 1024);
     // A few dozen strokes
@@ -401,11 +437,12 @@ export class FeatureLayer extends Layer {
     return false;
   }
 
-  /** Shows the vertex handles of the feature when it's an editable line, and hides any others. */
+  /**
+   * Shows the vertex handles of the feature when it's an editable line or a polygon, and hides any
+   * others.
+   */
   edit(feature: EditableFeature|undefined): void {
-    if (feature?.kind === 'line'
-        && getLineKind(feature.data) === 'line'
-        && !this.store.isReadOnly()) {
+    if (hasEditableVertices(feature) && !this.store.isReadOnly()) {
       if (feature.id !== this.editing) {
         this.startEditing(feature.id);
       }
@@ -630,12 +667,18 @@ export class FeatureLayer extends Layer {
   }
 
   // Points come ahead of lines because they sit on top of them, and then the nearest line first.
+  // Polygons come last because lines sit on top of them, and the smallest first so that one inside
+  // another can still be picked.
   featuresAt(at: Vec2): EditableFeature[] {
     const pixel = this.camera.inverseWorldRadius;
     const points = this.pointsAt(at).map(point => point.feature);
 
     const lines: Array<{feature: EditableFeature; distance: number}> = [];
-    for (const line of this.visibleLines) {
+    for (const line of this.visibleShapes) {
+      if (line.ring) {
+        continue;
+      }
+
       const radius =
           line.marker
               ? line.marker.outline.maxRadius + CLICK_SLOP_PX * pixel
@@ -646,7 +689,18 @@ export class FeatureLayer extends Layer {
       }
     }
     lines.sort((a, b) => a.distance - b.distance);
-    return [...points, ...lines.map(({feature}) => feature)];
+
+    const polygons = this.visiblePolygons().filter(polygon => {
+      const radius = (lineRadius(polygon) + CLICK_SLOP_PX) * pixel;
+      return insideRing(polygon.points, at)
+          || distanceToPolyline(polygon.points, at, radius) <= radius;
+    });
+    polygons.sort((a, b) => a.ring.area - b.ring.area);
+    return [
+      ...points,
+      ...lines.map(({feature}) => feature),
+      ...polygons.map(({feature}) => feature),
+    ];
   }
 
   override hasNewData(): boolean {
@@ -689,6 +743,7 @@ export class FeatureLayer extends Layer {
       };
     }
 
+    planner.add(this.fills.drawables);
     planner.add(this.geometry.drawables);
     planner.add(this.overlay.drawables);
     planner.add(this.markers.drawables);
@@ -720,9 +775,18 @@ export class FeatureLayer extends Layer {
         : ICON_RADIUS_PX * radius / DEFAULT_POINT_RADIUS_PX;
   }
 
-  private editingLine(): ProjectedLine|undefined {
-    const line = this.editing !== undefined ? this.projected.get(this.editing) : undefined;
-    return line && this.isVisible(line.feature) ? line : undefined;
+  private editingLine(): ProjectedShape|undefined {
+    return this.visibleLine(this.editing);
+  }
+
+  // Leaves out marker strokes, which have no vertices to edit or outline to highlight.
+  private visibleLine(id: string|undefined): ProjectedShape|undefined {
+    const line = id !== undefined ? this.projected.get(id) : undefined;
+    return line && !line.marker && this.isVisible(line.feature) ? line : undefined;
+  }
+
+  private visiblePolygons(): ProjectedPolygon[] {
+    return this.visibleShapes.filter(isPolygon);
   }
 
   private startEditing(id: string): void {
@@ -769,7 +833,7 @@ export class FeatureLayer extends Layer {
   }
 
   private vertexDrag(
-      kind: 'vertex'|'insert', line: ProjectedLine, index: number, points: Float64Array, at: Vec2):
+      kind: 'vertex'|'insert', line: ProjectedShape, index: number, points: Float64Array, at: Vec2):
       VertexDrag {
     // Only a line under the dragged handle, so a vertex can still be placed close beside one
     const radius = HANDLE_SIZE_PX / 2 * this.camera.inverseWorldRadius;
@@ -823,6 +887,11 @@ export class FeatureLayer extends Layer {
     if (drag.phase !== 'pressed' && at) {
       drag.points[2 * drag.index] = at[0];
       drag.points[2 * drag.index + 1] = at[1];
+      // A polygon's first vertex is also the one that closes its ring.
+      if (drag.line.ring && drag.index === 0) {
+        drag.points[drag.points.length - 2] = at[0];
+        drag.points[drag.points.length - 1] = at[1];
+      }
     }
   }
 
@@ -872,11 +941,15 @@ export class FeatureLayer extends Layer {
   // was asked about the old geometry.
   private applyDrag(drag: LineDrag, source: EventSource): void {
     const live = this.store.get(drag.line.feature.id);
-    if (live?.kind !== 'line' || live.latLngE7 !== drag.line.latLngE7) {
+    if (!isShape(live) || live.latLngE7 !== drag.line.latLngE7) {
       return;
     }
 
     if (drag.kind === 'reroute') {
+      if (live.kind !== 'line') {
+        return;
+      }
+
       const traced = drag.query.latest?.points;
       const points = drag.refined ?? (traced && Float64Array.from(traced));
       const after = points && rerouteLine(live, toE7Array(points));
@@ -908,7 +981,7 @@ export class FeatureLayer extends Layer {
     let spot: LineSpot|undefined = undefined;
     if (vertex !== undefined) {
       spot = {kind: 'vertex', index: vertex, handle: true};
-    } else if (hit?.kind === 'line' && getLineKind(hit.data) === 'line') {
+    } else if (hasEditableVertices(hit)) {
       spot = this.spotOn(this.projected.get(hit.id)!, at);
     }
 
@@ -924,16 +997,21 @@ export class FeatureLayer extends Layer {
     });
   }
 
-  // Where on the line at is nearest. A spot at either end of a segment is that vertex, or else
-  // splitting there would put two vertices in the same place.
-  private spotOn(line: ProjectedLine, at: Vec2): LineSpot|undefined {
-    const nearest = nearestOnPolyline(line.points, at);
+  // Where on the line or ring at is nearest. A spot at either end of a segment is that vertex, or
+  // else splitting there would put two vertices in the same place.
+  private spotOn(shape: ProjectedShape, at: Vec2): LineSpot|undefined {
+    const nearest = nearestOnPolyline(shape.points, at);
     if (!nearest) {
       return undefined;
     } else if (nearest.t <= 0) {
       return {kind: 'vertex', index: nearest.index - 1, handle: false};
     } else if (nearest.t >= 1) {
-      return {kind: 'vertex', index: nearest.index, handle: false};
+      // The end of a ring's closing segment is its first vertex.
+      return {
+        kind: 'vertex',
+        index: nearest.index % (shape.feature.latLngE7.length / 2),
+        handle: false,
+      };
     }
 
     const ll = unprojectS2LatLng(nearest.at[0], nearest.at[1]);
@@ -971,20 +1049,25 @@ export class FeatureLayer extends Layer {
 
   // The nearest spot on the edited line to at, if the pointer is over the line, and the index a
   // vertex inserted there takes.
-  private insertAt(line: ProjectedLine, at: Vec2): {index: number; at: Vec2}|undefined {
+  private insertAt(line: ProjectedShape, at: Vec2): {index: number; at: Vec2}|undefined {
     const radius = (lineRadius(line) + CLICK_SLOP_PX) * this.camera.inverseWorldRadius;
     const nearest = nearestOnPolyline(line.points, at);
     return nearest && nearest.distance <= radius ? nearest : undefined;
   }
 
-  private createPlan(byteLength: number): Plan {
+  private createPlan(byteLength: number, indexed = false): Plan {
     const glBuffer = this.renderer.createDataBuffer(byteLength);
+    const glIndex = indexed ? this.renderer.createIndexBuffer(byteLength) : undefined;
     this.registerDisposer(() => {
       this.renderer.deleteBuffer(glBuffer);
+      if (glIndex) {
+        this.renderer.deleteBuffer(glIndex);
+      }
     });
     return {
       buffer: new ArrayBuffer(byteLength),
       glBuffer,
+      index: glIndex && {buffer: new ArrayBuffer(byteLength), glBuffer: glIndex},
       drawables: [],
       generation: 0,
       planned: -1,
@@ -993,36 +1076,33 @@ export class FeatureLayer extends Layer {
 
   private refresh(): void {
     const schema = this.store.schema();
-    const lines = this.store.lines();
     const live = new Set<string>();
-    this.visibleLines = [];
-    for (const line of lines) {
-      // A line no layer matches isn't drawn, so it isn't projected either and nothing can hit it.
-      const look = getLook(schema, line);
-      if (!look) {
+    this.visibleShapes = [];
+    for (const shape of [...this.store.lines(), ...this.store.polygons()]) {
+      // A shape no layer matches isn't drawn, so it isn't projected either and nothing can hit it.
+      const styled = getLook(schema, shape);
+      if (!styled) {
         continue;
       }
-      live.add(line.id);
-      let projected = this.projected.get(line.id);
-      if (!projected || projected.latLngE7 !== line.latLngE7) {
-        const points = projectE7Array(line.latLngE7);
-        projected = {
-          feature: line,
-          latLngE7: line.latLngE7,
-          points,
-          label: undefined,
-          marker: undefined,
-          look,
-        };
-        this.projected.set(line.id, projected);
+      const {fill, ...look} = styled;
+      live.add(shape.id);
+      let projected = this.projected.get(shape.id);
+      if (!projected || projected.latLngE7 !== shape.latLngE7) {
+        projected = projectShape(shape, look, fill);
+        this.projected.set(shape.id, projected);
       }
-      projected.feature = line;
+      projected.feature = shape;
       projected.look = look;
-      projected.marker = outlineOf(projected);
-      if (this.isVisible(line)) {
-        this.visibleLines.push(projected);
+      if (projected.ring && fill !== undefined) {
+        projected.ring.fill = fill;
+      } else {
+        projected.marker = outlineOf(projected);
+      }
+      if (this.isVisible(shape)) {
+        this.visibleShapes.push(projected);
       }
     }
+
     for (const id of [...this.projected.keys()]) {
       if (!live.has(id)) {
         this.projected.delete(id);
@@ -1052,9 +1132,9 @@ export class FeatureLayer extends Layer {
     this.markers.generation += 1;
   }
 
-  // Puts visible lines into the index so that drawing snaps onto them and routes along them. A
-  // vertex that snapped onto a line's vertex sits on it exactly, since E7 round trips those
-  // coordinates, and an end that snapped partway along a segment joins it within
+  // Puts visible lines and polygon rings into the index so that drawing snaps onto them and routes
+  // along them. A vertex that snapped onto a line's vertex sits on it exactly, since E7 round trips
+  // those coordinates, and an end that snapped partway along a segment joins it within
   // DRAWN_TOLERANCE.
   //
   // Each line is its own group, keyed by its id, so that editing one line does not reproject
@@ -1065,8 +1145,8 @@ export class FeatureLayer extends Layer {
   // the DEM answering for the vertex placed before, republishes, so the exclusion lives here.
   private publish(): void {
     const unindexed = this.unindexed();
-    const wanted = new Map<string, ProjectedLine>();
-    for (const line of this.visibleLines) {
+    const wanted = new Map<string, ProjectedShape>();
+    for (const line of this.visibleShapes) {
       if (!line.marker && line.feature.id !== unindexed) {
         wanted.set(line.feature.id, line);
       }
@@ -1105,8 +1185,8 @@ export class FeatureLayer extends Layer {
   private planGeometry(): void {
     const dragging = this.dragging;
     const dragged = dragging?.kind === 'point' ? dragging.point.id : dragging?.line.feature.id;
-    const lines = this.visibleLines.filter(l => l.feature.id !== dragged && !l.marker);
-    const selectedLine = lines.find(l => l.feature.id === this.selected);
+    const lines = this.visibleShapes.filter(l => l.feature.id !== dragged && !l.marker);
+    const selectedLine = this.selected !== dragged ? this.visibleLine(this.selected) : undefined;
     let needed = 0;
     for (const line of lines) {
       needed += LineProgram.bytesNeeded(line.points.length / 2);
@@ -1115,6 +1195,7 @@ export class FeatureLayer extends Layer {
       needed += LineProgram.bytesNeeded(selectedLine.points.length / 2);
     }
 
+    this.planFills();
     const batch = new ShapeBatch(this.geometry, needed, this.renderer);
     for (const line of lines) {
       const {stroke, stipple} = line.look;
@@ -1162,13 +1243,16 @@ export class FeatureLayer extends Layer {
       const kept = new Set(this.handles);
       let lastX = Infinity;
       let lastY = Infinity;
-      const last = linePoints.length / 2 - 1;
+      const ring = !!editing.ring;
+      const last = editing.feature.latLngE7.length / 2 - 1;
       for (let i = 0; i <= last; ++i) {
         const x = linePoints[2 * i];
         const y = linePoints[2 * i + 1];
         // Ends always get handles, because they are what extending a line grabs.
         const spaced =
-            i === 0 || i === last || Math.hypot(x - lastX, y - lastY) >= HANDLE_SPACING_PX * pixel;
+            i === 0
+                || (i === last && !ring)
+                || Math.hypot(x - lastX, y - lastY) >= HANDLE_SPACING_PX * pixel;
         const handled = dragging ? kept.has(i) : spaced && inView(x, y);
         if (!dragging && handled) {
           this.handles.push(i);
@@ -1190,7 +1274,7 @@ export class FeatureLayer extends Layer {
     // The selected feature already has its highlight, and a dragged one is drawn below.
     const hoveredId =
         this.hovered !== this.selected && !dragging ? this.hovered : undefined;
-    const hoveredLine = this.visibleLines.find(l => l.feature.id === hoveredId && !l.marker);
+    const hoveredLine = this.visibleLine(hoveredId);
     const marker = this.marker;
     const grab = dragging ? undefined : this.grab;
     let needed =
@@ -1226,6 +1310,9 @@ export class FeatureLayer extends Layer {
           Z_DRAGGED,
           line.look.stipple);
     }
+    if (vertexDrag?.line.ring) {
+      this.planFills();
+    }
     if (reroute && reroutePoints) {
       const line = reroute.line;
       batch.push(
@@ -1256,7 +1343,7 @@ export class FeatureLayer extends Layer {
 
   private planMarkers(): void {
     const dragging = this.dragging?.kind === 'marker' ? this.dragging : undefined;
-    const strokes = this.visibleLines.filter(l => l.marker);
+    const strokes = this.visibleShapes.filter(l => l.marker);
     let needed = 0;
     for (const line of strokes) {
       needed += LineProgram.bytesNeeded(line.marker!.outline.points.length / 2);
@@ -1283,7 +1370,10 @@ export class FeatureLayer extends Layer {
   }
 
   private planLabels(zoom: number): void {
-    const labeled: Array<{graphemes: string[]; line?: ProjectedLine; point?: ProjectedPoint}> = [];
+    // A label either curves along a line or sits flat at a spot.
+    const labeled: Array<
+        {graphemes: string[]; line: ProjectedShape}
+        |{graphemes: string[]; line: undefined; at: Vec2; offsetPx: Vec2; anchor: TextAnchor}> = [];
     const icons: Array<{graphemes: string[]; point: ProjectedPoint}> = [];
     const circles: ProjectedPoint[] = [];
     const dragging = this.dragging?.kind === 'point' ? this.dragging : undefined;
@@ -1291,12 +1381,26 @@ export class FeatureLayer extends Layer {
     const at = (point: ProjectedPoint) =>
         point.feature.id === dragging?.point.id ? dragging.at : point.at;
     let needed = 0;
-    for (const line of this.visibleLines) {
-      const label = line.look.label;
-      if (label) {
+    for (const shape of this.visibleShapes) {
+      const label = shape.look.label;
+      if (!label) {
+        continue;
+      }
+
+      if (shape.ring) {
+        const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
+        needed += GLYPHER.bytesNeeded(graphemes);
+        labeled.push({
+          graphemes,
+          line: undefined,
+          at: shape.ring.center,
+          offsetPx: [0, 0],
+          anchor: {horizontal: 'center', vertical: 'middle'},
+        });
+      } else {
         const graphemes = toGraphemes(label);
         needed += GLYPHER.bytesNeeded(graphemes);
-        labeled.push({graphemes, line});
+        labeled.push({graphemes, line: shape});
       }
     }
     for (const point of this.visiblePoints) {
@@ -1304,7 +1408,14 @@ export class FeatureLayer extends Layer {
       if (label) {
         const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
-        labeled.push({graphemes, point});
+        labeled.push({
+          graphemes,
+          line: undefined,
+          at: at(point),
+          // Beside the icon, however big it is drawn
+          offsetPx: [LABEL_GAP_PX + this.labelReachPx(point), 0],
+          anchor: {horizontal: 'start', vertical: 'middle'},
+        });
       }
       if (point.look.icon === DEFAULT_ICON) {
         circles.push(point);
@@ -1355,19 +1466,19 @@ export class FeatureLayer extends Layer {
       drawables.push(...planned.drawables);
       offset += planned.byteSize;
     }
-    for (const {graphemes, line, point} of labeled) {
+    for (const label of labeled) {
+      const {graphemes, line} = label;
       if (!GLYPHER.measurePx(graphemes, LABEL_SCALE)) {
         this.labelsMissingGlyphs = true;
         continue;
       }
 
-      if (point) {
+      if (!line) {
         const planned =
             GLYPHER.plan(
                 graphemes,
-                at(point),
-                // Beside the icon, however big it is drawn
-                [LABEL_GAP_PX + this.labelReachPx(point), 0],
+                label.at,
+                label.offsetPx,
                 LABEL_SCALE,
                 /* angle= */ 0,
                 LABEL_FILL,
@@ -1377,13 +1488,13 @@ export class FeatureLayer extends Layer {
                 offset,
                 this.glLabels,
                 this.renderer,
-                {horizontal: 'start', vertical: 'middle'});
+                label.anchor);
         drawables.push(...planned.drawables);
         offset += planned.byteSize;
         continue;
       }
 
-      const path = labelPath(line!, zoom);
+      const path = labelPath(line, zoom);
       for (const anchor of path.anchors) {
         const planned =
             GLYPHER.planCurved(
@@ -1410,6 +1521,74 @@ export class FeatureLayer extends Layer {
       this.renderer.uploadData(this.labels, offset, this.glLabels);
     }
     this.labelDrawables = drawables;
+  }
+
+  // One drawable per polygon, because each carries its own fill color ahead of its vertices. A
+  // polygon whose vertex is being dragged fills the ring as dragged, under the other lines like
+  // every fill.
+  private planFills(): void {
+    const plan = this.fills;
+    const dragging = this.dragging;
+    const vertexDrag =
+        dragging?.kind === 'vertex' || dragging?.kind === 'insert' ? dragging : undefined;
+    const polygons = this.visiblePolygons().map(polygon => ({
+      fill: polygon.ring.fill,
+      triangles:
+          polygon.feature.id === vertexDrag?.line.feature.id
+              ? triangulateRing(vertexDrag.points)
+              : polygon.ring.triangles,
+    }));
+    let geometryBytes = 0;
+    let indexBytes = 0;
+    for (const {triangles} of polygons) {
+      geometryBytes += 4 * (1 + triangles.geometry.length);
+      indexBytes += 4 * triangles.index.length;
+    }
+    const index = plan.index!;
+    plan.buffer = growBuffer(plan.buffer, geometryBytes);
+    index.buffer = growBuffer(index.buffer, indexBytes);
+
+    const drawables: Drawable[] = [];
+    let geometryOffset = 0;
+    let indexOffset = 0;
+    for (const {fill, triangles} of polygons) {
+      if (triangles.index.length === 0) {
+        continue;
+      }
+
+      const result =
+          TriangleProgram.push(
+              triangles.geometry,
+              triangles.index,
+              fill,
+              plan.buffer,
+              geometryOffset,
+              index.buffer,
+              indexOffset);
+      drawables.push({
+        elements: {
+          count: triangles.index.length,
+          index: index.glBuffer,
+          offset: indexOffset,
+        },
+        geometry: plan.glBuffer,
+        geometryByteLength: result.geometryByteLength,
+        geometryOffset,
+        instanced: undefined,
+        program: this.renderer.triangleProgram,
+        texture: undefined,
+        vertexCount: undefined,
+        z: Z_USER_DATA_FILL,
+      });
+      geometryOffset += result.geometryByteLength;
+      indexOffset += result.indexByteLength;
+    }
+
+    if (geometryOffset > 0) {
+      this.renderer.uploadData(plan.buffer, geometryOffset, plan.glBuffer);
+      this.renderer.uploadIndices(index.buffer, indexOffset, index.glBuffer);
+    }
+    plan.drawables = drawables;
   }
 }
 
@@ -1545,8 +1724,8 @@ function nearestOnPolyline(points: Float64Array, at: Vec2):
 }
 
 // Keeps the last outline while the stroke's width and zoom are unchanged, since a new latLngE7
-// makes a new ProjectedLine.
-function outlineOf(line: ProjectedLine): ProjectedLine['marker'] {
+// makes a new ProjectedShape.
+function outlineOf(line: ProjectedShape): ProjectedShape['marker'] {
   const zoom = line.feature.data.marker_zoom;
   if (zoom === undefined) {
     return undefined;
@@ -1583,13 +1762,113 @@ function translate(points: Float64Array, by: Vec2): Float64Array {
   return moved;
 }
 
-function lineRadius(line: ProjectedLine): number {
+function lineRadius(line: ProjectedShape): number {
   return lineRadiusPx(line.look.widthPx);
 }
 
-function getLook(schema: CollectionSchema, line: EditableLine): ProjectedLine['look']|undefined {
-  const look = lineLook(schema, line.data);
+// A polygon or a line drawn as a line, unlike a marker stroke, which has no vertices to edit
+function hasEditableVertices(feature: EditableFeature|undefined): feature is EditableShape {
+  return feature?.kind === 'polygon'
+      || (feature?.kind === 'line' && getLineKind(feature.data) === 'line');
+}
+
+// Only a polygon has a fill, and so a ring.
+function projectShape(
+    shape: EditableShape, look: ProjectedShape['look'], fill: RgbaU32|undefined): ProjectedShape {
+  const projected = {
+    feature: shape,
+    latLngE7: shape.latLngE7,
+    points: projectE7Array(shape.latLngE7),
+    label: undefined,
+    marker: undefined,
+    look,
+    ring: undefined,
+  };
+  if (fill === undefined) {
+    return projected;
+  }
+
+  const points = closeRing(projected.points);
+  // triangulate.ts#ringArea is the shoelace area doubled and negated
+  const area = -ringArea(points, 0, points.length) / 2;
+  return {
+    ...projected,
+    points,
+    ring: {
+      fill,
+      triangles: triangulateRing(points),
+      area: Math.abs(area),
+      center: ringCenter(points, area),
+    },
+  };
+}
+
+function closeRing(points: Float64Array): Float64Array {
+  const closed = new Float64Array(points.length + 2);
+  closed.set(points);
+  closed[points.length] = points[0];
+  closed[points.length + 1] = points[1];
+  return closed;
+}
+
+// Fills a closed mercator ring. earcut fills what it can of a ring that crosses itself, which is
+// what a polygon shows while somebody drags it through itself.
+function triangulateRing(points: Float64Array): FillTriangles {
+  // triangulate.ts closes its rings itself, so without the repeated vertex
+  const geometry = Array.from(points.subarray(0, points.length - 2));
+  const triangles =
+      triangulateRings(geometry, ringsFrom(geometry, [0]), [], MAX_TRIANGLE_LENGTH_METERS);
+  return {geometry: Float64Array.from(triangles.geometry), index: triangles.index};
+}
+
+// The centroid of a closed ring with the given signed shoelace area, or the average of its vertices
+// when it encloses nothing. A concave ring's centroid can fall outside it, which we accept for a
+// label.
+function ringCenter(points: Float64Array, area: number): Vec2 {
+  let x = 0;
+  let y = 0;
+  if (area === 0) {
+    const count = points.length / 2 - 1;
+    for (let i = 0; i < count; ++i) {
+      x += points[2 * i];
+      y += points[2 * i + 1];
+    }
+    return [x / count, y / count];
+  }
+
+  for (let i = 2; i < points.length; i += 2) {
+    const cross = points[i - 2] * points[i + 1] - points[i] * points[i - 1];
+    x += (points[i - 2] + points[i]) * cross;
+    y += (points[i - 1] + points[i + 1]) * cross;
+  }
+  return [x / (6 * area), y / (6 * area)];
+}
+
+// Even-odd, like the fill of a ring that crosses itself
+function insideRing(points: Float64Array, at: Vec2): boolean {
+  let inside = false;
+  for (let i = 2; i < points.length; i += 2) {
+    const ax = points[i - 2];
+    const ay = points[i - 1];
+    const bx = points[i];
+    const by = points[i + 1];
+    if ((ay > at[1]) !== (by > at[1]) && at[0] < (bx - ax) * (at[1] - ay) / (by - ay) + ax) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function isPolygon(shape: ProjectedShape): shape is ProjectedPolygon {
+  return !!shape.ring;
+}
+
+function getLook(schema: CollectionSchema, shape: EditableShape):
+    (ProjectedShape['look'] & {fill: RgbaU32|undefined})|undefined {
+  const polygon = shape.kind === 'polygon' ? polygonLook(schema, shape.data) : undefined;
+  const look = shape.kind === 'line' ? lineLook(schema, shape.data) : polygon;
   return look && {
+    fill: polygon && parseColor(polygon.fill),
     label: look.label,
     stipple: toStipple(look.pattern),
     stroke: parseColor(look.stroke),
@@ -1597,7 +1876,7 @@ function getLook(schema: CollectionSchema, line: EditableLine): ProjectedLine['l
   };
 }
 
-function labelPath(line: ProjectedLine, zoom: number):
+function labelPath(line: ProjectedShape, zoom: number):
     {points: Float64Array; anchors: number[]} {
   const level = Math.floor(zoom);
   if (line.label?.zoom !== level) {

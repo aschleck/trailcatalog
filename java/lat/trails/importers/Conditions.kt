@@ -16,6 +16,7 @@ import java.util.Base64
 import java.util.TreeMap
 import java.util.UUID
 import kotlin.system.exitProcess
+import lat.trails.common.assemblePolygon
 import lat.trails.common.createBaseConnection
 import lat.trails.common.encodeCovering
 import org.apache.commons.text.StringEscapeUtils

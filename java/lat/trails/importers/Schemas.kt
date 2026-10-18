@@ -34,6 +34,7 @@ fun polygonLayer(filters: List<Map<String, Any>>, fill: String) =
         "kind" to "polygon",
         "filters" to filters,
         "fill" to constant(fill),
+        "stroke" to constant(NO_STROKE),
         "label" to NAME_LABEL,
     )
 
@@ -46,6 +47,9 @@ fun pointLayer(filters: List<Map<String, Any>>, fill: String) =
         "radius" to constant(4),
         "label" to NAME_LABEL,
     )
+
+// Imported polygons are fills, and a clear stroke draws no outline.
+private const val NO_STROKE = "#00000000"
 
 private val NAME_LABEL = mapOf("kind" to "field", "key" to "name")
 

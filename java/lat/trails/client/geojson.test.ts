@@ -59,16 +59,38 @@ const GEOJSON = JSON.stringify({
   ],
 });
 
-test('reads folders, lines, and points', () => {
+test('reads folders, lines, points, and polygons', () => {
   const features = parseGeoJson(GEOJSON);
   expect(features.map(f => `${f.kind} ${f.data.name}`)).toEqual([
     'line Day 3',
     'folder Harder',
     'line undefined',
     'point Les Houches',
+    'polygon undefined',
     'line Parts',
     'line Parts',
   ]);
+});
+
+test('reads a polygon\'s exterior ring without its closing position', () => {
+  const [polygon] = parseGeoJson(JSON.stringify({
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [[0, 0], [1, 0], [1, 1], [0, 0]],
+        [[0.5, 0.2], [0.6, 0.2], [0.6, 0.3], [0.5, 0.2]],
+      ],
+    },
+    properties: {'fill': '#00ff00', 'fill-opacity': 0.5, 'stroke': '#0000ff', 'stroke-width': 1},
+  }));
+  expect(polygon).toEqual({
+    kind: 'polygon',
+    id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    version: 0n,
+    data: {fill: '#00ff0080', stroke: '#0000ff', width_px: 1},
+    latLngE7: Int32Array.from([0, 0, 0, 10000000, 10000000, 10000000]),
+  });
 });
 
 test('reads a line', () => {

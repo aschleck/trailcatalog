@@ -25,7 +25,6 @@ import {
   addOption,
   byOption,
   channelOf,
-  EDITABLE_KINDS,
   fieldsFor,
   moveField,
   PATTERN_LABELS,
@@ -39,6 +38,7 @@ import {
   CollectionSchema,
   DEFAULT_COLOR,
   DEFAULT_ICON,
+  FIELD_KINDS,
   FieldDefinition,
   FieldKind,
   FieldRef,
@@ -126,7 +126,7 @@ function SchemaEditor(
     draft: schema,
     sourceCache: {},
     newFields:
-        Object.fromEntries(EDITABLE_KINDS.map(kind => [kind, {label: '', type: 'text'}])) as
+        Object.fromEntries(FIELD_KINDS.map(kind => [kind, {label: '', type: 'text'}])) as
             State['newFields'],
     newOptions: {},
     dragging: undefined,
@@ -147,14 +147,14 @@ function SchemaEditor(
         className={`${shown ? 'flex' : 'hidden'} ${PANEL}`}
     >
       {styling
-          ? EDITABLE_KINDS.map(kind =>
+          ? FIELD_KINDS.map(kind =>
               <Section label={KIND_LABELS[kind]}>
                 <div className={LIST}>
                   {PARTS.filter(p => p.kind === kind).map(part =>
                       <PartRow key={`${kind}.${part.part}`} draft={draft} part={part} />)}
                 </div>
               </Section>)
-          : EDITABLE_KINDS.map(kind =>
+          : FIELD_KINDS.map(kind =>
               <KindSection
                   draft={draft}
                   dropTarget={state.dropTarget?.kind === kind ? state.dropTarget : undefined}

@@ -54,6 +54,21 @@ export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
       }
       {readOnly
           ? ''
+          : <ToolButton active={tool === 'polygon'} label="Draw an area" tool="polygon">
+              <polygon
+                  fill="none"
+                  points="4,5 14,3 17,13 7,16"
+                  strokeLinejoin="round"
+                  strokeWidth="1.5"
+              />
+              <circle cx="4" cy="5" r="1.5" />
+              <circle cx="14" cy="3" r="1.5" />
+              <circle cx="17" cy="13" r="1.5" />
+              <circle cx="7" cy="16" r="1.5" />
+            </ToolButton>
+      }
+      {readOnly
+          ? ''
           : <ToolButton active={tool === 'marker'} label="Draw freehand" tool="marker">
               <path
                   d="M3 14 C5 7 8 16 11 10 S15 4 17 7"

@@ -1,0 +1,155 @@
+[[actions]]
+type = "add_column"
+table = "polygons"
+
+  # The collections.version this polygon was last written at, see lines.version.
+  [actions.column]
+  name = "version"
+  nullable = false
+  type = "BIGINT"
+  default = "0"
+
+[[actions]]
+type = "add_column"
+table = "polygons"
+
+  [actions.column]
+  name = "deleted"
+  nullable = true
+  type = "TIMESTAMPTZ"
+
+[[actions]]
+type = "add_column"
+table = "polygons"
+
+  [actions.column]
+  name = "updated"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+[[actions]]
+type = "add_column"
+table = "polygons"
+
+  # The ring as it was drawn, which editing reads back. s2_polygon is built from it on every put.
+  # Null for an imported polygon, which may have holes or several parts and so can't be edited.
+  [actions.column]
+  name = "lat_lng_degrees"
+  nullable = true
+  type = "BYTEA"
+
+[[actions]]
+type = "custom"
+
+# Clients pick polygon ids, see 3_line_versions.toml.
+start = """
+  ALTER TABLE polygons DROP CONSTRAINT polygons_pkey, ADD PRIMARY KEY (collection, id);
+"""
+
+abort = """
+  ALTER TABLE polygons DROP CONSTRAINT polygons_pkey, ADD PRIMARY KEY (id);
+"""
+
+[[actions]]
+type = "remove_index"
+index = "polygons_by_collection"
+
+
+[[actions]]
+type = "custom"
+
+# Importers' polygon layers are fills and set no stroke, which would otherwise outline them in
+# DEFAULT_COLOR. A clear stroke draws no outline. Keep in sync with Schemas.kt#polygonLayer.
+start = """
+  CREATE TABLE collection_schemas_before_strokes AS
+      SELECT id, schema FROM collections
+      WHERE EXISTS (
+          SELECT 1 FROM jsonb_array_elements(COALESCE(schema->'layers', '[]'::jsonb)) AS l
+          WHERE l->>'kind' = 'polygon' AND NOT l ? 'stroke');
+
+  UPDATE collections c SET schema = jsonb_set(
+      c.schema,
+      '{layers}',
+      (SELECT jsonb_agg(
+           CASE WHEN l->>'kind' = 'polygon' AND NOT l ? 'stroke'
+               THEN l || '{"stroke": {"kind": "constant", "value": "#00000000"}}'::jsonb
+               ELSE l
+           END
+           ORDER BY i)
+       FROM jsonb_array_elements(c.schema->'layers') WITH ORDINALITY AS t(l, i)))
+  FROM collection_schemas_before_strokes b
+  WHERE c.id = b.id;
+"""
+
+complete = """
+  DROP TABLE collection_schemas_before_strokes;
+"""
+
+abort = """
+  UPDATE collections c SET schema = b.schema
+  FROM collection_schemas_before_strokes b
+  WHERE c.id = b.id;
+
+  DROP TABLE collection_schemas_before_strokes;
+"""
+
+[[actions]]
+type = "custom"
+
+# A schema without a polygon layer draws a polygon drawn in it with nothing, so it takes
+# schema.ts#DEFAULT_COLLECTION_SCHEMA's polygon layer and whichever of its polygon fields it lacks.
+# Keep in sync with DEFAULT_COLLECTION_SCHEMA.
+start = """
+  CREATE TABLE collection_schemas_before_polygons AS
+      SELECT id, schema FROM collections
+      WHERE schema IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM jsonb_array_elements(COALESCE(schema->'layers', '[]'::jsonb)) AS l
+              WHERE l->>'kind' = 'polygon');
+
+  UPDATE collections c SET schema = c.schema || jsonb_build_object(
+      'fields',
+      COALESCE(c.schema->'fields', '[]'::jsonb) || COALESCE(
+          (SELECT jsonb_agg(d ORDER BY i)
+           FROM jsonb_array_elements('[
+               {"id": "name", "kind": "polygon", "label": "Name", "type": "text",
+                "hideLabel": true},
+               {"id": "description", "kind": "polygon", "label": "Description", "type": "text",
+                "hideLabel": true, "multiline": true},
+               {"id": "fill", "kind": "polygon", "label": "Fill", "type": "color",
+                "hideLabel": true},
+               {"id": "stroke", "kind": "polygon", "label": "Stroke", "type": "color",
+                "hideLabel": true},
+               {"id": "width_px", "kind": "polygon", "label": "Width (px)", "type": "number",
+                "hideLabel": true}
+           ]'::jsonb) WITH ORDINALITY AS t(d, i)
+           WHERE NOT EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(c.schema->'fields', '[]'::jsonb)) AS f
+               WHERE f->>'kind' = 'polygon' AND f->>'id' = d->>'id')),
+          '[]'::jsonb),
+      'layers',
+      COALESCE(c.schema->'layers', '[]'::jsonb) || '[{
+          "kind": "polygon",
+          "filters": [],
+          "fill": {"kind": "field", "key": "fill"},
+          "stroke": {"kind": "field", "key": "stroke"},
+          "width": {"kind": "field", "key": "width_px"},
+          "pattern": {"kind": "constant", "value": "solid"},
+          "label": {"kind": "field", "key": "name"}
+      }]'::jsonb)
+  FROM collection_schemas_before_polygons b
+  WHERE c.id = b.id;
+"""
+
+complete = """
+  DROP TABLE collection_schemas_before_polygons;
+"""
+
+abort = """
+  UPDATE collections c SET schema = b.schema
+  FROM collection_schemas_before_polygons b
+  WHERE c.id = b.id;
+
+  DROP TABLE collection_schemas_before_polygons;
+"""

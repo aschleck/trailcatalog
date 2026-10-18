@@ -1,23 +1,27 @@
-import { EditableLine } from './features';
+import { EditableLine, EditableShape } from './features';
 import { haversineMeters } from './measurements';
 
-// Each returns a new line with new arrays, because undo holds on to the old ones.
+// Each returns a new line with new arrays, because undo holds on to the old ones. Moving,
+// inserting, removing vertices, and reversing also take a polygon, whose ring's last vertex joins
+// back to its first, so inserting at the vertex count lands on that closing segment.
 
 /**
  * Moves one vertex, keeping its time and, until the caller reads the DEM for the new spot, its
  * elevation.
  */
-export function moveVertex(
-    line: EditableLine, index: number, latE7: number, lngE7: number): EditableLine {
-  const latLngE7 = line.latLngE7.slice();
+export function moveVertex<T extends EditableShape>(
+    shape: T, index: number, latE7: number, lngE7: number): T {
+  const latLngE7 = shape.latLngE7.slice();
   latLngE7[2 * index] = latE7;
   latLngE7[2 * index + 1] = lngE7;
   return {
-    ...line,
-    data: {...line.data},
+    ...shape,
+    data: {...shape.data},
     latLngE7,
-    elevationCentimeters: line.elevationCentimeters?.slice(),
-    timeSeconds: line.timeSeconds?.slice(),
+    ...(shape.kind === 'line' && {
+      elevationCentimeters: shape.elevationCentimeters?.slice(),
+      timeSeconds: shape.timeSeconds?.slice(),
+    }),
   };
 }
 
@@ -25,54 +29,87 @@ export function moveVertex(
  * Inserts a vertex so that it lands at index, interpolating its time from its neighbors and, until
  * the caller reads the DEM for it, its elevation.
  */
-export function insertVertex(
-    line: EditableLine, index: number, latE7: number, lngE7: number): EditableLine {
-  const count = line.latLngE7.length / 2;
+export function insertVertex<T extends EditableShape>(
+    shape: T, index: number, latE7: number, lngE7: number): T {
+  const count = shape.latLngE7.length / 2;
   const latLngE7 = new Int32Array(2 * (count + 1));
-  latLngE7.set(line.latLngE7.subarray(0, 2 * index), 0);
+  latLngE7.set(shape.latLngE7.subarray(0, 2 * index), 0);
   latLngE7[2 * index] = latE7;
   latLngE7[2 * index + 1] = lngE7;
-  latLngE7.set(line.latLngE7.subarray(2 * index), 2 * index + 2);
+  latLngE7.set(shape.latLngE7.subarray(2 * index), 2 * index + 2);
+  const inserted = {...shape, data: {...shape.data}, latLngE7};
+  if (shape.kind === 'polygon') {
+    return inserted;
+  }
 
   const before = Math.max(0, index - 1);
   const after = Math.min(count - 1, index);
   let elevationCentimeters = undefined;
-  if (line.elevationCentimeters) {
-    const source = line.elevationCentimeters;
+  if (shape.elevationCentimeters) {
+    const source = shape.elevationCentimeters;
     elevationCentimeters = new Int32Array(count + 1);
     elevationCentimeters.set(source.subarray(0, index), 0);
     elevationCentimeters[index] = Math.round((source[before] + source[after]) / 2);
     elevationCentimeters.set(source.subarray(index), index + 1);
   }
   let timeSeconds = undefined;
-  if (line.timeSeconds) {
-    const source = line.timeSeconds;
+  if (shape.timeSeconds) {
+    const source = shape.timeSeconds;
     timeSeconds = new BigInt64Array(count + 1);
     timeSeconds.set(source.subarray(0, index), 0);
     timeSeconds[index] = (source[before] + source[after]) / 2n;
     timeSeconds.set(source.subarray(index), index + 1);
   }
 
-  return {...line, data: {...line.data}, latLngE7, elevationCentimeters, timeSeconds};
+  return {...inserted, elevationCentimeters, timeSeconds};
 }
 
-/** Removes one vertex, or returns undefined when that would leave fewer than two. */
-export function removeVertex(line: EditableLine, index: number): EditableLine|undefined {
-  const count = line.latLngE7.length / 2;
-  if (count <= 2) {
+/** Returns the fewest vertices a line or a polygon can have. */
+export function minVertexCount(shape: EditableShape): number {
+  return shape.kind === 'polygon' ? 3 : 2;
+}
+
+/** Removes one vertex, or returns undefined when that would leave fewer than minVertexCount. */
+export function removeVertex<T extends EditableShape>(shape: T, index: number): T|undefined {
+  const count = shape.latLngE7.length / 2;
+  if (count <= minVertexCount(shape)) {
     return undefined;
   }
 
   const latLngE7 = new Int32Array(2 * (count - 1));
-  latLngE7.set(line.latLngE7.subarray(0, 2 * index), 0);
-  latLngE7.set(line.latLngE7.subarray(2 * index + 2), 2 * index);
+  latLngE7.set(shape.latLngE7.subarray(0, 2 * index), 0);
+  latLngE7.set(shape.latLngE7.subarray(2 * index + 2), 2 * index);
   return {
-    ...line,
-    data: {...line.data},
+    ...shape,
+    data: {...shape.data},
     latLngE7,
-    elevationCentimeters: line.elevationCentimeters && without(line.elevationCentimeters, index),
-    timeSeconds: line.timeSeconds && without(line.timeSeconds, index),
+    ...(shape.kind === 'line' && {
+      elevationCentimeters: shape.elevationCentimeters && without(shape.elevationCentimeters, index),
+      timeSeconds: shape.timeSeconds && without(shape.timeSeconds, index),
+    }),
   };
+}
+
+/**
+ * Turns a drawn path into a polygon's ring, dropping repeated vertices where routed pieces meet and
+ * any last vertex that repeats the first. Returns undefined when fewer than three distinct vertices
+ * remain.
+ */
+export function toRing(latLngE7: Int32Array): Int32Array|undefined {
+  const kept: number[] = [];
+  for (let i = 0; i < latLngE7.length; i += 2) {
+    const n = kept.length;
+    if (n === 0 || kept[n - 2] !== latLngE7[i] || kept[n - 1] !== latLngE7[i + 1]) {
+      kept.push(latLngE7[i], latLngE7[i + 1]);
+    }
+  }
+  while (
+      kept.length > 2
+          && kept[kept.length - 2] === kept[0]
+          && kept[kept.length - 1] === kept[1]) {
+    kept.length -= 2;
+  }
+  return kept.length >= 6 ? Int32Array.from(kept) : undefined;
 }
 
 function without<T extends Int32Array|BigInt64Array>(array: T, index: number): T {
@@ -112,20 +149,22 @@ export function splitLine(
   return [half(0, index + 1, line.id, '(1)'), half(index, count, secondId, '(2)')];
 }
 
-/** Reverses a line's direction. Each vertex keeps its own elevation and time. */
-export function reverseLine(line: EditableLine): EditableLine {
-  const count = line.latLngE7.length / 2;
-  const latLngE7 = new Int32Array(line.latLngE7.length);
+/** Reverses a line's or a ring's direction. Each vertex keeps its own elevation and time. */
+export function reverseLine<T extends EditableShape>(shape: T): T {
+  const count = shape.latLngE7.length / 2;
+  const latLngE7 = new Int32Array(shape.latLngE7.length);
   for (let i = 0; i < count; ++i) {
-    latLngE7[2 * i] = line.latLngE7[2 * (count - 1 - i)];
-    latLngE7[2 * i + 1] = line.latLngE7[2 * (count - 1 - i) + 1];
+    latLngE7[2 * i] = shape.latLngE7[2 * (count - 1 - i)];
+    latLngE7[2 * i + 1] = shape.latLngE7[2 * (count - 1 - i) + 1];
   }
   return {
-    ...line,
-    data: {...line.data},
+    ...shape,
+    data: {...shape.data},
     latLngE7,
-    elevationCentimeters: line.elevationCentimeters?.slice().reverse(),
-    timeSeconds: line.timeSeconds?.slice().reverse(),
+    ...(shape.kind === 'line' && {
+      elevationCentimeters: shape.elevationCentimeters?.slice().reverse(),
+      timeSeconds: shape.timeSeconds?.slice().reverse(),
+    }),
   };
 }
 

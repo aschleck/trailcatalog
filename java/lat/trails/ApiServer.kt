@@ -29,6 +29,7 @@ import java.sql.Types
 import java.util.UUID
 import kotlin.collections.ArrayList
 import java.nio.charset.StandardCharsets
+import lat.trails.common.assemblePolygon
 import lat.trails.common.createBaseConnection
 import lat.trails.common.createTrailcatalogConnection
 import lat.trails.common.encodeCovering
@@ -58,6 +59,7 @@ import lat.trails.proto.Line
 import lat.trails.proto.ListCollectionsResponse
 import lat.trails.proto.OsmElementType
 import lat.trails.proto.Point
+import lat.trails.proto.Polygon
 import lat.trails.proto.PutSchema
 import lat.trails.proto.RevokeInviteRequest
 import lat.trails.proto.RevokeInviteResponse
@@ -124,6 +126,7 @@ private const val MAX_LINES_BY_ID = 128
 
 private const val LINE_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters, time_seconds"
 private const val POINT_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters"
+private const val POLYGON_GEOMETRY_COLUMNS = "lat_lng_degrees"
 // See parseInvite.
 private const val INVITE_COLUMNS = "code, role, uses, expires"
 
@@ -347,86 +350,81 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
           }
         }
 
-    connection
-        .prepareStatement(
-            "SELECT id, data, version FROM folders WHERE collection = ? AND deleted IS NULL")
-        .apply {
-          setObject(1, id)
-        }
-        .executeQuery()
-        .use { results ->
-          while (results.next()) {
-            response.addFoldersBuilder()
-                .setId((results.getObject(1) as UUID).toString())
-                .setData(results.getString(2))
-                .setVersion(results.getLong(3))
-          }
-        }
+    fun geometry(columns: String) = if (request.omitGeometry) null else columns
+    forEachFeature(
+        connection,
+        id,
+        Table.FOLDERS,
+        geometryColumns = null,
+        add = { results ->
+          response.addFoldersBuilder()
+              .setId((results.getObject(1) as UUID).toString())
+              .setData(results.getString(2))
+              .setVersion(results.getLong(3))
+        })
 
-    connection
-        .prepareStatement(
-            "SELECT id, data, version"
-                + (if (request.omitGeometry) "" else ", $LINE_GEOMETRY_COLUMNS")
-                + " FROM lines"
-                + " WHERE collection = ? AND deleted IS NULL")
-        .apply {
-          setObject(1, id)
+    forEachFeature(
+        connection,
+        id,
+        Table.LINES,
+        geometry(LINE_GEOMETRY_COLUMNS),
+        add = { results ->
+          response.addLinesBuilder()
+              .setId((results.getObject(1) as UUID).toString())
+              .setData(results.getString(2))
+              .setVersion(results.getLong(3))
+        }) { line, results ->
+      for (e7 in DeltaLatLngE7.decode(results.getBytes(4))) {
+        line.addLatLngE7(e7)
+      }
+      results.getBytes(5)?.let { elevation ->
+        for (centimeters in DeltaInt64.decode(elevation)) {
+          line.addElevationCentimeters(centimeters.toInt())
         }
-        .executeQuery()
-        .use { results ->
-          while (results.next()) {
-            val line =
-                response.addLinesBuilder()
-                    .setId((results.getObject(1) as UUID).toString())
-                    .setData(results.getString(2))
-                    .setVersion(results.getLong(3))
-            if (request.omitGeometry) {
-              continue
-            }
-            for (e7 in DeltaLatLngE7.decode(results.getBytes(4))) {
-              line.addLatLngE7(e7)
-            }
-            results.getBytes(5)?.let { elevation ->
-              for (centimeters in DeltaInt64.decode(elevation)) {
-                line.addElevationCentimeters(centimeters.toInt())
-              }
-            }
-            results.getBytes(6)?.let { time ->
-              for (seconds in DeltaInt64.decode(time)) {
-                line.addTimeSeconds(seconds)
-              }
-            }
-          }
+      }
+      results.getBytes(6)?.let { time ->
+        for (seconds in DeltaInt64.decode(time)) {
+          line.addTimeSeconds(seconds)
         }
+      }
+    }
 
-    connection
-        .prepareStatement(
-            "SELECT id, data, version"
-                + (if (request.omitGeometry) "" else ", $POINT_GEOMETRY_COLUMNS")
-                + " FROM points"
-                + " WHERE collection = ? AND deleted IS NULL")
-        .apply {
-          setObject(1, id)
-        }
-        .executeQuery()
-        .use { results ->
-          while (results.next()) {
-            val point =
-                response.addPointsBuilder()
-                    .setId((results.getObject(1) as UUID).toString())
-                    .setData(results.getString(2))
-                    .setVersion(results.getLong(3))
-            if (request.omitGeometry) {
-              continue
-            }
-            val latLngE7 = DeltaLatLngE7.decode(results.getBytes(4))
-            point.setLatE7(latLngE7[0]).setLngE7(latLngE7[1])
-            val elevation = results.getInt(5)
-            if (!results.wasNull()) {
-              point.setElevationCentimeters(elevation)
-            }
-          }
-        }
+    forEachFeature(
+        connection,
+        id,
+        Table.POINTS,
+        geometry(POINT_GEOMETRY_COLUMNS),
+        add = { results ->
+          response.addPointsBuilder()
+              .setId((results.getObject(1) as UUID).toString())
+              .setData(results.getString(2))
+              .setVersion(results.getLong(3))
+        }) { point, results ->
+      val latLngE7 = DeltaLatLngE7.decode(results.getBytes(4))
+      point.setLatE7(latLngE7[0]).setLngE7(latLngE7[1])
+      val elevation = results.getInt(5)
+      if (!results.wasNull()) {
+        point.setElevationCentimeters(elevation)
+      }
+    }
+
+    // An imported polygon has no ring to edit, see GetCollectionResponse#polygons.
+    forEachFeature(
+        connection,
+        id,
+        Table.POLYGONS,
+        geometry(POLYGON_GEOMETRY_COLUMNS),
+        where = "lat_lng_degrees IS NOT NULL",
+        add = { results ->
+          response.addPolygonsBuilder()
+              .setId((results.getObject(1) as UUID).toString())
+              .setData(results.getString(2))
+              .setVersion(results.getLong(3))
+        }) { polygon, results ->
+      for (e7 in DeltaLatLngE7.decode(results.getBytes(4))) {
+        polygon.addLatLngE7(e7)
+      }
+    }
   }
   return response.build()
 }
@@ -927,6 +925,7 @@ private enum class Table(val sql: String) {
   FOLDERS("folders"),
   LINES("lines"),
   POINTS("points"),
+  POLYGONS("polygons"),
 }
 
 // What a write writes, which a batch may write only once
@@ -949,6 +948,7 @@ private fun prepareWrite(write: Write): PreparedWrite {
     Write.WriteCase.PUT_FOLDER -> prepareFolder(write.putFolder)
     Write.WriteCase.PUT_LINE -> prepareLine(write.putLine)
     Write.WriteCase.PUT_POINT -> preparePoint(write.putPoint)
+    Write.WriteCase.PUT_POLYGON -> preparePolygon(write.putPolygon)
     Write.WriteCase.DELETE -> prepareDelete(write.delete)
     Write.WriteCase.PUT_SCHEMA -> prepareSchema(write.putSchema)
     else -> throw BadRequestResponse("A write needs a feature")
@@ -1093,6 +1093,62 @@ private fun preparePoint(point: Point): PreparedWrite {
   }
 }
 
+private fun preparePolygon(polygon: Polygon): PreparedWrite {
+  val id = parseUuid(polygon.id)
+  if (polygon.latLngE7Count % 2 != 0) {
+    throw BadRequestResponse("Points are interleaved lat then lng")
+  }
+
+  val pointCount = polygon.latLngE7Count / 2
+  if (pointCount < 3) {
+    throw BadRequestResponse("A polygon needs three points")
+  }
+
+  val latLngE7 = IntArray(polygon.latLngE7Count) { polygon.getLatLngE7(it) }
+  val ring =
+      List(pointCount + 1) {
+        val i = it % pointCount
+        S2LatLng.fromE7(latLngE7[2 * i], latLngE7[2 * i + 1]).toPoint()
+      }
+  // The ring's vertices bound everything it encloses, so the cell holding them holds the polygon.
+  // polygonToCell has no cell to give a ring whose area snaps away to nothing.
+  val cell = polylineToCell(S2Polyline(ring))
+  val s2Polygon =
+      ByteArrayOutputStream().use {
+        assemblePolygon(listOf(listOf(ring))).encode(it)
+        it.toByteArray()
+      }
+  val geometry = DeltaLatLngE7.encode(latLngE7)
+  val data = jsonOrEmptyObject(polygon.data)
+
+  return object : PreparedWrite(FeatureKey(Table.POLYGONS, id)) {
+    override fun apply(connection: Connection, collection: UUID, version: Long) {
+      checkPutVersion(connection, Table.POLYGONS, collection, id, polygon.version)
+      connection
+          .prepareStatement(
+              "INSERT INTO polygons "
+                  + "(id, collection, cell, created, updated, data, s2_polygon, lat_lng_degrees, "
+                  + "version) "
+                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?) "
+                  + "ON CONFLICT (collection, id) DO UPDATE SET "
+                  + "cell = EXCLUDED.cell, data = EXCLUDED.data, "
+                  + "s2_polygon = EXCLUDED.s2_polygon, "
+                  + "lat_lng_degrees = EXCLUDED.lat_lng_degrees, "
+                  + "version = EXCLUDED.version, updated = NOW(), deleted = NULL")
+          .apply {
+            setObject(1, id)
+            setObject(2, collection)
+            setLong(3, cell.id())
+            setString(4, data)
+            setBytes(5, s2Polygon)
+            setBytes(6, geometry)
+            setLong(7, version)
+          }
+          .executeUpdate()
+    }
+  }
+}
+
 private fun prepareDelete(delete: Delete): PreparedWrite {
   val id = parseUuid(delete.id)
   val table =
@@ -1100,6 +1156,7 @@ private fun prepareDelete(delete: Delete): PreparedWrite {
         FeatureKind.FEATURE_KIND_FOLDER -> Table.FOLDERS
         FeatureKind.FEATURE_KIND_LINE -> Table.LINES
         FeatureKind.FEATURE_KIND_POINT -> Table.POINTS
+        FeatureKind.FEATURE_KIND_POLYGON -> Table.POLYGONS
         else -> throw BadRequestResponse("A delete needs a kind")
       }
 
@@ -1248,6 +1305,37 @@ private fun lockCollectionRow(connection: Connection, collection: UUID) {
       .close()
 }
 
+// Selects id, data, version, and then any geometry columns from the collection's undeleted rows.
+// readGeometry only runs when there are geometry columns.
+private fun <T> forEachFeature(
+    connection: Connection,
+    collection: UUID,
+    table: Table,
+    geometryColumns: String?,
+    where: String? = null,
+    add: (ResultSet) -> T,
+    readGeometry: (T, ResultSet) -> Unit = { _, _ -> }) {
+  connection
+      .prepareStatement(
+          "SELECT id, data, version"
+              + (if (geometryColumns == null) "" else ", $geometryColumns")
+              + " FROM ${table.sql}"
+              + " WHERE collection = ? AND deleted IS NULL"
+              + (if (where == null) "" else " AND $where"))
+      .apply {
+        setObject(1, collection)
+      }
+      .executeQuery()
+      .use { results ->
+        while (results.next()) {
+          val feature = add(results)
+          if (geometryColumns != null) {
+            readGeometry(feature, results)
+          }
+        }
+      }
+}
+
 private fun requireOwner(connection: Connection, collection: UUID, user: UUID) {
   val access = getCollectionAccess(connection, collection, user) ?: throw NotFoundResponse()
   if (access.role != Role.ROLE_OWNER) {
@@ -1329,7 +1417,7 @@ private fun updateCovering(connection: Connection, collection: UUID, version: Lo
               + "UNION ALL "
               + "SELECT cell FROM points WHERE collection = ? AND deleted IS NULL "
               + "UNION ALL "
-              + "SELECT cell FROM polygons WHERE collection = ?")
+              + "SELECT cell FROM polygons WHERE collection = ? AND deleted IS NULL")
       .apply {
         setObject(1, collection)
         setObject(2, collection)
@@ -1650,6 +1738,7 @@ private fun fetchTrailsLatObjects(
                 + "FROM polygons p "
                 + "WHERE "
                 + "p.collection = ? AND "
+                + "p.deleted IS NULL AND "
                 + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
                 + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
                 + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")

@@ -1,5 +1,6 @@
 import { RgbaU32 } from 'js/map/common/types';
-import { Z_USER_DATA } from 'js/map/z';
+import { Stipple } from 'js/map/rendering/line_program';
+import { Z_USER_DATA, Z_USER_DATA_FILL } from 'js/map/z';
 
 import { Data, LineStyle, PointStyle, PolygonStyle, Styler } from './collection_loader';
 import {
@@ -34,18 +35,7 @@ export class SchemaStyler implements Styler {
     if (!look) {
       return undefined;
     }
-    const fill = parseColor(look.stroke);
-    const stipple = toStipple(look.pattern);
-    return cached(this.lines, `${fill},${look.widthPx},${stipple}`, () => ({
-      filters: [],
-      minZoom: 0,
-      maxZoom: Infinity,
-      fill,
-      stroke: darken(fill),
-      radius: lineRadiusPx(look.widthPx),
-      stipple,
-      z: Z_USER_DATA,
-    }));
+    return this.stroke(parseColor(look.stroke), look.widthPx, toStipple(look.pattern));
   }
 
   point(data: Data): PointStyle|undefined {
@@ -63,13 +53,33 @@ export class SchemaStyler implements Styler {
     }));
   }
 
+  // A clear stroke, which importers give their polygons, draws no outline.
   polygon(data: Data): PolygonStyle|undefined {
     const look = polygonLook(this.schema, data);
     if (!look) {
       return undefined;
     }
     const fill = parseColor(look.fill);
-    return cached(this.polygons, String(fill), () => ({filters: [], fill, z: Z_USER_DATA}));
+    const stroke = parseColor(look.stroke);
+    const stipple = toStipple(look.pattern);
+    const outline = (stroke & 0xFF) === 0 ? undefined : this.stroke(stroke, look.widthPx, stipple);
+    return cached(
+        this.polygons,
+        `${fill},${outline ? `${stroke},${look.widthPx},${stipple}` : ''}`,
+        () => ({filters: [], fill, outline, z: Z_USER_DATA_FILL}));
+  }
+
+  private stroke(fill: RgbaU32, widthPx: number, stipple: Stipple): LineStyle {
+    return cached(this.lines, `${fill},${widthPx},${stipple}`, () => ({
+      filters: [],
+      minZoom: 0,
+      maxZoom: Infinity,
+      fill,
+      stroke: darken(fill),
+      radius: lineRadiusPx(widthPx),
+      stipple,
+      z: Z_USER_DATA,
+    }));
   }
 }
 

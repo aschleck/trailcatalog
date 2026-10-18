@@ -1,4 +1,4 @@
-package lat.trails.importers
+package lat.trails.common
 
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2Builder

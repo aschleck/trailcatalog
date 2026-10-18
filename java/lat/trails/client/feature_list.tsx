@@ -9,7 +9,15 @@ import { DangerButton, PanelButton, PanelCloseButton } from './controls';
 import { FIELD_EDITED, FIELD_ICON_CLICKED } from './events';
 import { FieldInput } from './field_input';
 import { PointMarker } from './icon_picker';
-import { formatDistance, formatHeight, measureLine, profileStats } from './measurements';
+import {
+  formatArea,
+  formatDistance,
+  formatHeight,
+  measureLine,
+  pathLengthMeters,
+  profileStats,
+  ringAreaMeters2,
+} from './measurements';
 import { LineProfile, LineProfileState } from './profile_chart';
 import {
   fieldsFor,
@@ -27,6 +35,7 @@ import {
   getLineKind,
   lineLook,
   pointLook,
+  polygonLook,
 } from './workers/collection_schema';
 
 export interface TreeItem {
@@ -307,6 +316,19 @@ export function FeatureIcon(
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth="2"
+        />
+      </svg>
+    );
+  } else if (feature.kind === 'polygon') {
+    const look = polygonLook(schema, feature.data);
+    return (
+      <svg className="h-4 shrink-0 w-4" viewBox="0 0 16 16">
+        <path
+            d="M3 4 L12 2.5 L13.5 12 L4 13.5 Z"
+            fill={look?.fill ?? DEFAULT_COLOR}
+            stroke={look?.stroke ?? DEFAULT_COLOR}
+            strokeLinejoin="round"
+            strokeWidth="1.5"
         />
       </svg>
     );
@@ -621,6 +643,15 @@ function Stats({feature, profile}: {
         {feature.elevationCentimeters !== undefined
             ? `, ${formatHeight(feature.elevationCentimeters / 100)}`
             : ''}
+      </div>
+    );
+  } else if (feature.kind === 'polygon') {
+    const ring = Array.from(feature.latLngE7, e7 => e7 / 1e7);
+    // The perimeter runs back to the first vertex.
+    const perimeter = pathLengthMeters([...ring, ring[0], ring[1]]);
+    return (
+      <div className="text-gray-700">
+        {`${formatArea(ringAreaMeters2(ring))}, ${formatDistance(perimeter)} around`}
       </div>
     );
   } else {

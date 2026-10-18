@@ -14,7 +14,13 @@ import { GetCollectionResponse, Role } from 'trails_lat/proto/data_pb';
 import { State, ViewerController } from './viewer_controller';
 import { descriptionOf } from './collection_data';
 import { requestData } from './data';
-import { EditableFeature, folderFromProto, lineFromProto, pointFromProto } from './features';
+import {
+  EditableFeature,
+  folderFromProto,
+  lineFromProto,
+  pointFromProto,
+  polygonFromProto,
+} from './features';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -23,6 +29,7 @@ import {
   LINE_DRAWN,
   MARKER_DRAWN,
   POINT_PLACED,
+  POLYGON_DRAWN,
   TOOL_REQUESTED,
 } from './events';
 import {
@@ -70,6 +77,7 @@ export function OverviewElement(
       ...(loaded?.folders ?? []).map(folderFromProto),
       ...(loaded?.lines ?? []).map(lineFromProto),
       ...(loaded?.points ?? []).map(pointFromProto),
+      ...(loaded?.polygons ?? []).map(polygonFromProto),
     ];
     const hidden = new Set(loaded?.hiddenFeatureIds);
     const schema = parseCollectionSchema(loaded?.schema ?? '');
@@ -158,6 +166,7 @@ export function OverviewElement(
               [MARKER_DRAWN, 'onMarkerDrawn'],
               [MAP_MOVED, 'onMove'],
               [POINT_PLACED, 'onPointPlaced'],
+              [POLYGON_DRAWN, 'onPolygonDrawn'],
               [TOOL_REQUESTED, 'onToolRequested'],
               [UNCLAIMED_CLICKED, 'onUnclaimedClicked'],
             ],

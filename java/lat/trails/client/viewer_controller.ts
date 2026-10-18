@@ -62,6 +62,7 @@ import {
   LineSpot,
   MARKER_DRAWN,
   POINT_PLACED,
+  POLYGON_DRAWN,
   Tool,
   TOOL_REQUESTED,
 } from './events';
@@ -77,11 +78,15 @@ import { Change, FeatureStore } from './feature_store';
 import {
   EditableFeature,
   EditableLine,
+  EditablePolygon,
+  EditableShape,
   FeatureData,
   folderFromProto,
   importableIcon,
+  isShape,
   lineFromProto,
   pointFromProto,
+  polygonFromProto,
   schemaToWrite,
   snapshot,
   toWrite,
@@ -102,7 +107,14 @@ import {
 } from './layer_tree';
 import { LayerCatalog } from './layer_catalog';
 import { LineProfiler, MeasureProfiler } from './profiles';
-import { insertVertex, joinLines, removeVertex, reverseLine, splitLine } from './line_edits';
+import {
+  insertVertex,
+  joinLines,
+  minVertexCount,
+  removeVertex,
+  reverseLine,
+  splitLine,
+} from './line_edits';
 import { LoginPopup } from './login_popup';
 import { IconPickerDialog } from './icon_picker';
 import { GradeLimitState, MeasureState } from './measure_panel';
@@ -131,13 +143,14 @@ import {
 
 // The zoom where the contours and the trails around a point come in at full detail
 const POINT_ZOOM = 14;
-// Flattens the points and line vertices of some features into lat,lng pairs in degrees.
+// Flattens the points and line and polygon vertices of some features into lat,lng pairs in
+// degrees.
 function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
   const latLngDegrees = [];
   for (const feature of features) {
     if (feature.kind === 'point') {
       latLngDegrees.push(feature.latE7 / 1e7, feature.lngE7 / 1e7);
-    } else if (feature.kind === 'line') {
+    } else if (isShape(feature)) {
       for (let i = 0; i < feature.latLngE7.length; i += 2) {
         latLngDegrees.push(feature.latLngE7[i] / 1e7, feature.latLngE7[i + 1] / 1e7);
       }
@@ -166,8 +179,8 @@ export interface State {
   features: FeatureListState;
   // The map layer object open in the dialog, when no feature is selected
   inspected: InspectedObject|undefined;
-  // How far the line or measurement under construction reaches, shown beside the pointer. In
-  // pixels from the viewer's top left.
+  // How far the line, polygon, or measurement under construction reaches, shown beside the
+  // pointer. In pixels from the viewer's top left.
   drawnLength: {x: number; y: number; meters: number}|undefined;
   // Set while the next line clicked joins the one Join with started from
   joining: boolean;
@@ -205,6 +218,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly menu: MenuService;
   private readonly featureLayer: FeatureLayer;
   private readonly lineLayer: DrawingLayer;
+  private readonly polygonLayer: DrawingLayer;
   private readonly measureLayer: DrawingLayer;
   private readonly terrainLayer: DrawingLayer;
   private readonly pointLayer: PointToolLayer;
@@ -363,6 +377,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               this.drawnLengthChanged();
             });
     this.registerDisposable(this.lineLayer);
+    this.polygonLayer =
+        new DrawingLayer(
+            'polygon',
+            locations,
+            refiner,
+            camera,
+            renderer,
+            () => {
+              this.drawnLengthChanged();
+            });
+    this.registerDisposable(this.polygonLayer);
     this.measureLayer =
         new DrawingLayer(
             'measure',
@@ -468,6 +493,18 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Selects the new line, like onPointPlaced, so that the panel is open to name it.
   onLineDrawn(e: CorgiEvent<typeof LINE_DRAWN>): void {
     this.addLine(e.detail.latLngE7);
+  }
+
+  // Selects the new polygon, like onPointPlaced, so that the panel is open to name it.
+  onPolygonDrawn(e: CorgiEvent<typeof POLYGON_DRAWN>): void {
+    const polygon: EditablePolygon = {
+      kind: 'polygon',
+      id: crypto.randomUUID(),
+      version: 0n,
+      data: {},
+      latLngE7: e.detail.latLngE7,
+    };
+    this.addFeature(polygon);
   }
 
   // Selects the new stroke, like onPointPlaced, so that the panel is open to name it.
@@ -760,7 +797,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         kind: 'menu_item',
         label: 'Reverse direction',
         action: () => {
-          this.editLine(feature.id, reverseLine);
+          this.editShape(feature.id, reverseLine);
         },
       });
       items.push({
@@ -772,16 +809,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.updateState({...this.state, joining: true});
         },
       });
-      if (spot.kind === 'vertex' && spot.handle) {
-        items.push({
-          kind: 'menu_item',
-          label: 'Delete vertex',
-          disabled: count <= 2,
-          action: () => {
-            this.editLine(feature.id, line => removeVertex(line, spot.index));
-          },
-        });
-      }
+    }
+    if (editable && isShape(feature) && spot?.kind === 'vertex' && spot.handle) {
+      items.push({
+        kind: 'menu_item',
+        label: 'Delete vertex',
+        disabled: feature.latLngE7.length / 2 <= minVertexCount(feature),
+        action: () => {
+          this.editShape(feature.id, shape => removeVertex(shape, spot.index));
+        },
+      });
     }
     if (editable) {
       items.push({
@@ -1278,10 +1315,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
-  // Deactivates before activating, because both drawing layers share the index's routing switch.
+  // Deactivates before activating, because the drawing layers share the index's routing switch.
   private setTool(tool: Tool): void {
     this.stopJoining();
     this.lineLayer.setActive(false);
+    this.polygonLayer.setActive(false);
     this.measureLayer.setActive(false);
     this.terrainLayer.setActive(false);
     this.pointLayer.setActive(tool === 'point');
@@ -1292,6 +1330,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setMapLayers(this.state.layers.nodes);
     if (tool === 'line') {
       this.lineLayer.setActive(true);
+    } else if (tool === 'polygon') {
+      this.polygonLayer.setActive(true);
     } else if (tool === 'measure') {
       this.measureLayer.setActive(true);
     } else if (tool === 'terrain') {
@@ -1643,14 +1683,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.refreshFeatureList();
   }
 
-  // Follows the pointer with the length drawn so far, which includes the segment to it.
+  // Follows the pointer with the length drawn so far, which includes the segment to it. A polygon's
+  // includes the way back to its first vertex, so it reads as the perimeter.
   private drawnLengthChanged(): void {
+    const tool = this.state.tool;
     const layer =
-        this.state.tool === 'line'
-            ? this.lineLayer
-            : this.state.tool === 'measure' || this.state.tool === 'terrain'
-                ? this.measuringLayer()
-                : undefined;
+        tool === 'line' ? this.lineLayer
+            : tool === 'polygon' ? this.polygonLayer
+            : tool === 'measure' || tool === 'terrain' ? this.measuringLayer()
+            : undefined;
     const pointer = this.pointer;
     const drawnLength =
         layer?.followsPointer() && pointer
@@ -1747,9 +1788,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
   }
 
-  private editLine(id: string, edit: (line: EditableLine) => EditableLine|undefined): void {
+  private editShape(id: string, edit: (shape: EditableShape) => EditableShape|undefined): void {
     const live = this.store.get(id);
-    const after = live?.kind === 'line' ? edit(live) : undefined;
+    const after = isShape(live) ? edit(live) : undefined;
     if (live && after) {
       this.store.apply([{id, before: snapshot(live), after}]);
     }
@@ -1895,6 +1936,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ...response.folders.map(folderFromProto),
             ...response.lines.map(lineFromProto),
             ...response.points.map(pointFromProto),
+            ...response.polygons.map(polygonFromProto),
           ];
           const schema = parseCollectionSchema(response.schema);
           this.expand(topLevelFolderIds(features, schema, this.state.features.hidden));
@@ -1903,7 +1945,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             this.fitCamera(featureLatLngDegrees(this.store.all()));
           }
           const tool = this.state.tool;
-          if (readOnly && (tool === 'point' || tool === 'line' || tool === 'marker')) {
+          const drawing =
+              tool === 'point' || tool === 'line' || tool === 'polygon' || tool === 'marker';
+          if (readOnly && drawing) {
             this.setTool('pointer');
           }
         })
@@ -2238,6 +2282,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.pointLayer,
           this.markerLayer,
           this.lineLayer,
+          this.polygonLayer,
           this.measureLayer,
           this.terrainLayer,
           this.featureLayer as Layer,
@@ -2270,7 +2315,7 @@ function toDegrees(points: Float64Array): Float64Array {
   return degrees;
 }
 
-// The point's own spot, the spot on a line nearest the click, or else the click
+// The point's own spot, the spot on a line or ring nearest the click, or else the click
 function coordinatesOf(
     feature: EditableFeature|undefined,
     spot: LineSpot|undefined,
@@ -2278,7 +2323,7 @@ function coordinatesOf(
     lngE7: number): [number, number] {
   if (feature?.kind === 'point') {
     return [feature.latE7, feature.lngE7];
-  } else if (feature?.kind === 'line' && spot?.kind === 'vertex') {
+  } else if (isShape(feature) && spot?.kind === 'vertex') {
     return [feature.latLngE7[2 * spot.index], feature.latLngE7[2 * spot.index + 1]];
   } else if (spot?.kind === 'segment') {
     return [spot.latE7, spot.lngE7];

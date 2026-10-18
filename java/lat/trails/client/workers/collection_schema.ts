@@ -11,6 +11,8 @@ import { Match, matches } from './filters';
 // Magenta because nothing on the basemap is near it, and dark enough for 3:1 over forest. See also
 // schema.ts#OPTION_COLORS.
 export const DEFAULT_COLOR = '#be0bb2';
+// DEFAULT_COLOR at 30% so the map shows through: 0.3 * 255 = 77 = 0x4d
+export const DEFAULT_POLYGON_FILL = '#be0bb24d';
 // The radius a point's circle draws at, and the size every other icon scales from
 export const DEFAULT_POINT_RADIUS_PX = 6;
 export const DEFAULT_WIDTH_PX = 3;
@@ -114,7 +116,10 @@ export const STYLE = {
     label: {label: 'Label', type: 'label', fallback: ''},
   },
   polygon: {
-    fill: {label: 'Fill', type: 'color', fallback: DEFAULT_COLOR},
+    fill: {label: 'Fill', type: 'color', fallback: DEFAULT_POLYGON_FILL},
+    stroke: {label: 'Stroke', type: 'color', fallback: DEFAULT_COLOR},
+    width: {label: 'Width', type: 'number', fallback: DEFAULT_WIDTH_PX},
+    pattern: {label: 'Pattern', type: 'pattern', fallback: 'solid'},
     label: {label: 'Label', type: 'label', fallback: ''},
   },
 } as const satisfies {[kind in FieldKind]: {[part: string]: PartSpec}};
@@ -210,6 +215,9 @@ export interface PointLook {
 export interface PolygonLook {
   fill: string;
   label: string;
+  pattern: PatternName;
+  stroke: string;
+  widthPx: number;
 }
 
 /** Returns which kind a line is styled as. A drawing carries the zoom it was drawn at. */
@@ -245,6 +253,9 @@ export function polygonLook(schema: CollectionSchema, data: LookData): PolygonLo
   return layer && {
     fill: resolve(schema, layer, 'fill', data),
     label: resolve(schema, layer, 'label', data),
+    pattern: resolve(schema, layer, 'pattern', data),
+    stroke: resolve(schema, layer, 'stroke', data),
+    widthPx: resolve(schema, layer, 'width', data),
   };
 }
 

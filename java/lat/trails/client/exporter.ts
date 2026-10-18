@@ -1,4 +1,4 @@
-import { EditableFeature, EditableLine, EditablePoint } from './features';
+import { EditableFeature, EditableLine, EditablePoint, EditablePolygon } from './features';
 import { toSimplestyleColor } from './geojson';
 import {
   channelOf,
@@ -10,7 +10,13 @@ import {
   getTitle,
   titleField,
 } from './schema';
-import { CollectionSchema, lineLook, PARTS, pointLook } from './workers/collection_schema';
+import {
+  CollectionSchema,
+  lineLook,
+  PARTS,
+  pointLook,
+  polygonLook,
+} from './workers/collection_schema';
 
 /**
  * Writes features as a GeoJSON FeatureCollection that parseGeoJson reads back, folders included.
@@ -54,7 +60,7 @@ export function toGeoJson(
           properties.markerZoom = feature.data.marker_zoom;
         }
         geometry = {type: 'LineString', coordinates: lineCoordinates(feature)};
-      } else {
+      } else if (feature.kind === 'point') {
         const look = pointLook(schema, feature.data);
         if (look) {
           // Simplestyle has no opacity for a marker.
@@ -62,6 +68,22 @@ export function toGeoJson(
           properties['marker-symbol'] = look.icon;
         }
         geometry = {type: 'Point', coordinates: pointCoordinates(feature)};
+      } else {
+        const look = polygonLook(schema, feature.data);
+        if (look) {
+          const fill = toSimplestyleColor(look.fill);
+          properties.fill = fill.color;
+          if (fill.opacity !== undefined) {
+            properties['fill-opacity'] = fill.opacity;
+          }
+          const stroke = toSimplestyleColor(look.stroke);
+          properties.stroke = stroke.color;
+          if (stroke.opacity !== undefined) {
+            properties['stroke-opacity'] = stroke.opacity;
+          }
+          properties['stroke-width'] = look.widthPx;
+        }
+        geometry = {type: 'Polygon', coordinates: [ringCoordinates(feature)]};
       }
       // A label that collides with a key written above loses, since those keys are what other tools
       // read.
@@ -74,8 +96,8 @@ export function toGeoJson(
 }
 
 /**
- * Writes points as waypoints and lines as single segment tracks. GPX has no folders, colors, or
- * icons, so those are left behind.
+ * Writes points as waypoints and lines as single segment tracks. GPX has no folders, polygons,
+ * colors, or icons, so those are left behind.
  */
 export function toGpx(
     features: EditableFeature[], schema: CollectionSchema = DEFAULT_COLLECTION_SCHEMA): string {
@@ -176,6 +198,17 @@ function lineCoordinates(line: EditableLine): number[][] {
       position.push(line.elevationCentimeters[i] / 100);
     }
     coordinates.push(position);
+  }
+  return coordinates;
+}
+
+// GeoJSON closes a ring by repeating its first position at the end.
+function ringCoordinates(polygon: EditablePolygon): number[][] {
+  const coordinates = [];
+  const count = polygon.latLngE7.length / 2;
+  for (let i = 0; i <= count; ++i) {
+    const at = i % count;
+    coordinates.push([polygon.latLngE7[2 * at + 1] / 1e7, polygon.latLngE7[2 * at] / 1e7]);
   }
   return coordinates;
 }

@@ -6,6 +6,7 @@ import com.google.common.geometry.S2Polygon
 import java.io.ByteArrayOutputStream
 import java.nio.file.Path
 import java.util.UUID
+import lat.trails.common.assemblePolygon
 import lat.trails.common.createBaseConnection
 import lat.trails.common.encodeCovering
 import mil.nga.sf.MultiPolygon

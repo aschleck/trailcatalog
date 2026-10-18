@@ -1,4 +1,4 @@
-import { ringArea, triangulateMb, Triangles } from './triangulate';
+import { MAX_TRIANGLE_LENGTH_METERS, ringArea, triangulateMb, Triangles } from './triangulate';
 
 // A z=5 tile column, in the mercator coordinates triangulateMb consumes. The horizontal boundary at
 // y = 0.375 (lat 55.78) is the seam the basemap used to tear along.
@@ -7,7 +7,6 @@ const RIGHT = -0.75;
 const SEAM = 0.375;
 const ABOVE = 0.4375;
 const BELOW = 0.3125;
-const MAX_TRIANGLE_LENGTH_METERS = 200_000;
 
 type Point = [number, number];
 

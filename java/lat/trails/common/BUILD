@@ -6,6 +6,10 @@ load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 kt_jvm_library(
     name = "common",
     srcs = glob(["*.kt"]),
+    visibility = [
+        "//java/lat/trails:internal",
+        "//java/org/trailcatalog:internal",
+    ],
     runtime_deps = [
         "@maven//:org_postgresql_postgresql",
     ],

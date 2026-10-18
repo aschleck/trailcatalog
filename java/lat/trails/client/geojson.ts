@@ -1,13 +1,21 @@
-import { EditableFeature, EditableLine, EditablePoint, FeatureData, importableIcon } from './features';
+import {
+  EditableFeature,
+  EditableLine,
+  EditablePoint,
+  EditablePolygon,
+  FeatureData,
+  importableIcon,
+} from './features';
 
 type Json = null|boolean|number|string|Json[]|{[key: string]: Json};
 type JsonObject = {[key: string]: Json};
 
 /**
- * Reads a GeoJSON FeatureCollection or Feature into folders, lines, and points.
+ * Reads a GeoJSON FeatureCollection or Feature into folders, lines, points, and polygons.
  *
  * Features get fresh ids, or else importing a file twice into one collection would reuse ids the
- * first import already saved. Polygons are dropped because nothing draws them yet.
+ * first import already saved. A polygon keeps only its exterior ring, because an editable polygon
+ * has one ring.
  */
 export function parseGeoJson(text: string): EditableFeature[] {
   const root = JSON.parse(text) as Json;
@@ -68,6 +76,20 @@ export function parseGeoJson(text: string): EditableFeature[] {
             parseLine(i === 0 ? id : crypto.randomUUID(), data, properties, part);
         if (line) {
           parsed.push(line);
+        }
+      });
+    } else if (geometry.type === 'Polygon') {
+      const polygon = parsePolygon(id, data, properties, geometry.coordinates);
+      if (polygon) {
+        parsed.push(polygon);
+      }
+    } else if (geometry.type === 'MultiPolygon' && Array.isArray(geometry.coordinates)) {
+      // Like a MultiLineString, every part but the first needs its own id.
+      geometry.coordinates.forEach((part, i) => {
+        const polygon =
+            parsePolygon(i === 0 ? id : crypto.randomUUID(), data, properties, part);
+        if (polygon) {
+          parsed.push(polygon);
         }
       });
     }
@@ -171,6 +193,45 @@ function parseLine(
     elevationCentimeters: haveElevations ? elevationCentimeters : undefined,
     timeSeconds: undefined,
   };
+}
+
+// https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.6
+function parsePolygon(
+    id: string, data: FeatureData, properties: JsonObject, coordinates: Json):
+        EditablePolygon|undefined {
+  const exterior = Array.isArray(coordinates) ? coordinates[0] : undefined;
+  // Four positions with the last repeating the first, so a triangle at least
+  if (!Array.isArray(exterior) || exterior.length < 4) {
+    return undefined;
+  }
+
+  const count = exterior.length - 1;
+  const latLngE7 = new Int32Array(2 * count);
+  for (let i = 0; i < count; ++i) {
+    const position = positionOf(exterior[i]);
+    if (!position) {
+      return undefined;
+    }
+
+    latLngE7[2 * i] = Math.round(position[1] * 1e7);
+    latLngE7[2 * i + 1] = Math.round(position[0] * 1e7);
+  }
+
+  const polygonData = {...data};
+  const fill = colorOf(properties.fill, properties['fill-opacity']);
+  if (fill !== undefined) {
+    polygonData.fill = fill;
+  }
+  const stroke = colorOf(properties.stroke, properties['stroke-opacity']);
+  if (stroke !== undefined) {
+    polygonData.stroke = stroke;
+  }
+  const width = properties['stroke-width'];
+  if (typeof width === 'number' && width > 0) {
+    polygonData.width_px = width;
+  }
+
+  return {kind: 'polygon', id, version: 0n, data: polygonData, latLngE7};
 }
 
 // https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.1

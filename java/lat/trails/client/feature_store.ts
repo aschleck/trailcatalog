@@ -1,4 +1,11 @@
-import { EditableFeature, EditableFolder, EditableLine, EditablePoint, snapshot } from './features';
+import {
+  EditableFeature,
+  EditableFolder,
+  EditableLine,
+  EditablePoint,
+  EditablePolygon,
+  snapshot,
+} from './features';
 import { SaveQueue } from './save_queue';
 import { DEFAULT_COLLECTION_SCHEMA, SavedSchema } from './schema';
 import { CollectionSchema } from './workers/collection_schema';
@@ -101,6 +108,10 @@ export class FeatureStore {
 
   points(): EditablePoint[] {
     return this.ofKind('point');
+  }
+
+  polygons(): EditablePolygon[] {
+    return this.ofKind('polygon');
   }
 
   /** Returns the features directly inside a folder, or at the root for undefined. */

@@ -1,4 +1,4 @@
-import { EditableLine } from './features';
+import { EditableLine, EditablePolygon } from './features';
 import {
   insertVertex,
   joinLines,
@@ -7,6 +7,7 @@ import {
   rerouteLine,
   reverseLine,
   splitLine,
+  toRing,
 } from './line_edits';
 
 test('moves a vertex without touching the original', () => {
@@ -142,6 +143,37 @@ test('drops samples that only one line has', () => {
   expect(joined.timeSeconds).toBeUndefined();
 });
 
+test('moves a polygon vertex without touching the original', () => {
+  const original = square();
+  const moved = moveVertex(original, 2, 15, 15);
+
+  expect(moved).toEqual({...original, latLngE7: Int32Array.from([0, 0, 0, 10, 15, 15, 10, 0])});
+  expect(Array.from(original.latLngE7)).toEqual([0, 0, 0, 10, 10, 10, 10, 0]);
+});
+
+test('inserts a polygon vertex on the closing segment', () => {
+  const inserted = insertVertex(square(), 4, 5, -1);
+
+  expect(Array.from(inserted.latLngE7)).toEqual([0, 0, 0, 10, 10, 10, 10, 0, 5, -1]);
+});
+
+test('removes a polygon vertex down to a triangle and no further', () => {
+  const triangle = removeVertex(square(), 0)!;
+
+  expect(Array.from(triangle.latLngE7)).toEqual([0, 10, 10, 10, 10, 0]);
+  expect(removeVertex(triangle, 0)).toBeUndefined();
+});
+
+test('drops repeated vertices and the one closing the ring', () => {
+  const ring = toRing(Int32Array.from([0, 0, 0, 10, 0, 10, 10, 10, 0, 0, 0, 0]))!;
+
+  expect(Array.from(ring)).toEqual([0, 0, 0, 10, 10, 10]);
+});
+
+test('refuses a ring with fewer than three distinct vertices', () => {
+  expect(toRing(Int32Array.from([0, 0, 0, 10, 0, 0]))).toBeUndefined();
+});
+
 function line(): EditableLine {
   return {
     kind: 'line',
@@ -151,5 +183,15 @@ function line(): EditableLine {
     latLngE7: Int32Array.from([0, 0, 10, 10, 20, 20]),
     elevationCentimeters: Int32Array.from([100, 200, 300]),
     timeSeconds: BigInt64Array.from([0n, 10n, 20n]),
+  };
+}
+
+function square(): EditablePolygon {
+  return {
+    kind: 'polygon',
+    id: 'square',
+    version: 0n,
+    data: {},
+    latLngE7: Int32Array.from([0, 0, 0, 10, 10, 10, 10, 0]),
   };
 }

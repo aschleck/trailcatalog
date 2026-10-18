@@ -19,6 +19,9 @@ const SCHEMA: CollectionSchema = {
     kind: 'polygon',
     filters: [{match: 'string_equals', key: 'type', value: 'park'}],
     fill: {kind: 'by_option', key: 'status', values: {open: '#00ff0080', closed: '#ff000080'}},
+    stroke: {kind: 'constant', value: '#008000'},
+    width: {kind: 'constant', value: 2},
+    pattern: {kind: 'constant', value: 'solid'},
     label: {kind: 'field', key: 'name'},
   }, {
     kind: 'point',
@@ -41,6 +44,25 @@ test('a polygon no layer matches is dropped', () => {
   const styler = new SchemaStyler(SCHEMA);
   expect(styler.polygon({type: 'park', status: 'closed'})?.fill).toBe(parseColor('#ff000080'));
   expect(styler.polygon({type: 'forest', status: 'closed'})).toBeUndefined();
+});
+
+test('a polygon outlines with its stroke unless the stroke is clear', () => {
+  const outlined = new SchemaStyler(SCHEMA).polygon({type: 'park'});
+  expect(outlined?.outline?.fill).toBe(parseColor('#008000'));
+
+  const clear: CollectionSchema = {
+    fields: [],
+    layers: [{
+      kind: 'polygon',
+      filters: [],
+      fill: {kind: 'constant', value: '#00ff0080'},
+      stroke: {kind: 'constant', value: '#00000000'},
+      width: {kind: 'constant', value: 2},
+      pattern: {kind: 'constant', value: 'solid'},
+      label: {kind: 'field', key: 'name'},
+    }],
+  };
+  expect(new SchemaStyler(clear).polygon({})?.outline).toBeUndefined();
 });
 
 test('a point takes its color and radius from its own fields', () => {

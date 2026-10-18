@@ -18,6 +18,7 @@ import {
   PARTS,
   PatternName,
   pointLook,
+  polygonLook,
   SelectOption,
   splitOptions,
   StyleLayer,
@@ -64,9 +65,6 @@ export interface SavedSchema {
   version: bigint;
 }
 
-// Only importers make polygons.
-export const EDITABLE_KINDS: FieldKind[] = ['drawing', 'line', 'point'];
-
 // Given to new options in turn, so that a color split by a select starts out telling them apart.
 // Every pair is at least 15 OKLab ΔE×100 apart, and every adjacent pair at least 8 under simulated
 // protanopia and deuteranopia, so the first few options stay distinct for colorblind readers too.
@@ -103,6 +101,7 @@ export const READS: {[type in StyleType]: FieldType[]} = {
 
 // What a collection without a schema of its own has. Its field ids are the keys geojson.ts writes
 // simplestyle into, which adoptImported moves wherever another schema reads them.
+// Keep in sync with 13_editable_polygons.toml's polygon layer.
 export const DEFAULT_COLLECTION_SCHEMA: CollectionSchema = {
   fields: [
     ...FIELD_KINDS.flatMap((kind): FieldDefinition[] => [
@@ -122,6 +121,9 @@ export const DEFAULT_COLLECTION_SCHEMA: CollectionSchema = {
     {id: 'width_px', kind: 'line', label: 'Width (px)', type: 'number', hideLabel: true},
     {id: 'icon', kind: 'point', label: 'Icon', type: 'icon', hideLabel: true},
     {id: 'fill', kind: 'point', label: 'Fill', type: 'color', hideLabel: true},
+    {id: 'fill', kind: 'polygon', label: 'Fill', type: 'color', hideLabel: true},
+    {id: 'stroke', kind: 'polygon', label: 'Stroke', type: 'color', hideLabel: true},
+    {id: 'width_px', kind: 'polygon', label: 'Width (px)', type: 'number', hideLabel: true},
   ],
   layers: [{
     kind: 'drawing',
@@ -142,6 +144,14 @@ export const DEFAULT_COLLECTION_SCHEMA: CollectionSchema = {
     fill: {kind: 'field', key: 'fill'},
     icon: {kind: 'field', key: 'icon'},
     radius: {kind: 'constant', value: DEFAULT_POINT_RADIUS_PX},
+    label: {kind: 'field', key: 'name'},
+  }, {
+    kind: 'polygon',
+    filters: [],
+    fill: {kind: 'field', key: 'fill'},
+    stroke: {kind: 'field', key: 'stroke'},
+    width: {kind: 'field', key: 'width_px'},
+    pattern: {kind: 'constant', value: 'solid'},
     label: {kind: 'field', key: 'name'},
   }],
 };
@@ -404,7 +414,9 @@ export function getTitle(schema: CollectionSchema, feature: EditableFeature): st
     return feature.data.name || undefined;
   }
   const look =
-      feature.kind === 'line' ? lineLook(schema, feature.data) : pointLook(schema, feature.data);
+      feature.kind === 'line' ? lineLook(schema, feature.data)
+          : feature.kind === 'point' ? pointLook(schema, feature.data)
+          : polygonLook(schema, feature.data);
   return look?.label || undefined;
 }
 

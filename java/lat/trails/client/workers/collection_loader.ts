@@ -14,7 +14,6 @@ import { Terrain, TERRAINS } from 'js/map/workers/path_router';
 import { CellKey } from 'js/map/workers/s2_data_fetcher';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
-import { Z_USER_DATA } from 'js/map/z';
 
 import { CollectionSchema } from './collection_schema';
 import { Match, matches } from './filters';
@@ -68,6 +67,8 @@ export interface PointStyle {
 export interface PolygonStyle {
   filters: Match[];
   fill: RgbaU32;
+  // Drawn along every ring, or not at all when undefined
+  outline: LineStyle|undefined;
   z: number;
 }
 
@@ -230,6 +231,68 @@ class Bounds {
   }
 }
 
+// Writes LineProgram shapes one after another and draws each run of them sharing a z as one
+// instanced call. Fill, stroke, radius, and stipple are baked into the vertex stride, so only z
+// splits a run.
+class InstancedRuns {
+  private z: number|undefined = undefined;
+  private start: number;
+  private instances = 0;
+  private vertexCount = 0;
+  private bounds = new Bounds();
+
+  constructor(
+      private readonly buffer: ArrayBuffer,
+      // in floats
+      private offset: number,
+      private readonly runs: LineGeometry[]) {
+    this.start = offset;
+  }
+
+  // A style without a stipple is a point.
+  push(
+      z: number,
+      style: {fill: RgbaU32; stroke: RgbaU32; radius: number; stipple?: Stipple},
+      points: ArrayLike<number>): {geometryByteLength: number; geometryOffset: number} {
+    if (z !== this.z) {
+      this.flush();
+      this.z = z;
+    }
+    const stipple = style.stipple ?? false;
+    this.bounds.add(points, stipple === 'ticks' ? 3 * style.radius : style.radius);
+    const geometryOffset = 4 * this.offset;
+    const result =
+        LineProgram.push(
+            style.fill, style.stroke, style.radius, stipple, points, this.buffer, geometryOffset);
+    this.offset += result.geometryByteLength / 4;
+    this.instances += result.instanceCount;
+    this.vertexCount = result.vertexCount;
+    return {geometryByteLength: result.geometryByteLength, geometryOffset};
+  }
+
+  /** Closes the last run and returns the float offset after everything written. */
+  done(): number {
+    this.flush();
+    return this.offset;
+  }
+
+  private flush(): void {
+    if (this.z !== undefined && this.instances > 0) {
+      this.runs.push({
+        bounds: this.bounds.done(),
+        geometryByteLength: 4 * (this.offset - this.start),
+        geometryOffset: 4 * this.start,
+        instanceCount: this.instances,
+        vertexCount: this.vertexCount,
+        z: this.z,
+      });
+    }
+    this.start = this.offset;
+    this.instances = 0;
+    this.bounds = new Bounds();
+  }
+}
+
 // Each object draws with the first rule whose filters match it.
 class RulesStyler implements Styler {
 
@@ -325,6 +388,7 @@ class CollectionLoader {
       triangles: Triangles;
     }> = [];
     let polygonGeometryFloats = 0;
+    let outlineGeometryBytes = 0;
     let indexCount = 0;
     for (let i = 0; i < polygonCount; ++i) {
       const idLsb = source.getBigInt64();
@@ -343,12 +407,18 @@ class CollectionLoader {
       const triangles = triangulateS2(polygon);
       polygonGeometryFloats += triangles.geometry.length;
       indexCount += triangles.index.length;
+      const outline = outlineOf(polygon);
+      if (style.outline) {
+        for (const ring of outline) {
+          outlineGeometryBytes += LineProgram.bytesNeeded(ring.length / 2);
+        }
+      }
 
       triangulated.push({
         id: {lsb: idLsb, msb: idMsb},
         bound: latLngBound(polygon),
         data,
-        outline: outlineOf(polygon),
+        outline,
         rawPolygon,
         style,
         triangles,
@@ -396,11 +466,13 @@ class CollectionLoader {
     }
 
     // Geometry layout: lines first, then points, then a fill float per polygon group, then polygon
-    // vertices.
+    // vertices, then polygon outlines.
     const pointGeometryBytes = styledPoints.length * LineProgram.bytesNeeded(2);
     const geometry =
         new Float32Array(
-            (lineGeometryBytes + pointGeometryBytes) / 4 + merged.length + polygonGeometryFloats);
+            (lineGeometryBytes + pointGeometryBytes + outlineGeometryBytes) / 4
+                + merged.length
+                + polygonGeometryFloats);
     const geometryUints = new Uint32Array(geometry.buffer);
     const index = new Uint32Array(indexCount);
     let geometryOffset = 0;
@@ -446,42 +518,12 @@ class CollectionLoader {
       polygonGeometries: [],
     };
 
-    // Fill, stroke, radius, and stipple are baked into the vertex stride, so every line sharing a z
-    // draws as one instanced call. styledLines is sorted by z, so a group ends when z changes.
-    let groupZ: number|undefined = undefined;
-    let groupStart = 0;
-    let groupInstances = 0;
-    let groupVertexCount = 0;
-    let groupBounds = new Bounds();
+    // styledLines is sorted by z, so each z draws as one instanced call.
+    const lineRuns = new InstancedRuns(geometry.buffer, geometryOffset, response.lineGeometries);
     let pointOffset = 0;
     for (let i = 0; i < styledLines.length; ++i) {
       const line = styledLines[i];
-      if (groupZ !== undefined && line.style.z !== groupZ) {
-        response.lineGeometries.push({
-          bounds: groupBounds.done(),
-          geometryByteLength: 4 * (geometryOffset - groupStart),
-          geometryOffset: 4 * groupStart,
-          instanceCount: groupInstances,
-          vertexCount: groupVertexCount,
-          z: groupZ,
-        });
-        groupStart = geometryOffset;
-        groupInstances = 0;
-        groupVertexCount = 0;
-        groupBounds = new Bounds();
-      }
-      groupZ = line.style.z;
-      groupBounds.add(
-          line.points, line.style.stipple === 'ticks' ? 3 * line.style.radius : line.style.radius);
-
-      const result = LineProgram.push(
-          line.style.fill,
-          line.style.stroke,
-          line.style.radius,
-          line.style.stipple,
-          line.points,
-          geometry.buffer,
-          4 * geometryOffset);
+      const result = lineRuns.push(line.style.z, line.style, line.points);
       lines.ids[2 * i + 0] = line.id.lsb;
       lines.ids[2 * i + 1] = line.id.msb;
       if (lines.data.kind === 'packed_path') {
@@ -491,77 +533,31 @@ class CollectionLoader {
         lines.data.values.push(line.data);
       }
       lines.geometryByteLengths[i] = result.geometryByteLength;
-      lines.geometryOffsets[i] = 4 * geometryOffset;
+      lines.geometryOffsets[i] = result.geometryOffset;
       lines.points.set(line.points, pointOffset);
       lines.starts[i] = pointOffset;
       lines.styleIndices[i] = styles.indexOf(line.style);
       lines.terrains[i] = TERRAINS.indexOf(terrainOf(line.data));
       pointOffset += line.points.length;
-      geometryOffset += result.geometryByteLength / 4;
-      groupInstances += result.instanceCount;
-      groupVertexCount = result.vertexCount;
     }
     lines.starts[styledLines.length] = pointOffset;
-    if (groupZ !== undefined && groupInstances > 0) {
-      response.lineGeometries.push({
-        bounds: groupBounds.done(),
-        geometryByteLength: 4 * (geometryOffset - groupStart),
-        geometryOffset: 4 * groupStart,
-        instanceCount: groupInstances,
-        vertexCount: groupVertexCount,
-        z: groupZ,
-      });
-    }
+    geometryOffset = lineRuns.done();
 
-    // Points with the same z draw in one instanced call, like the lines
-    let dotZ: number|undefined = undefined;
-    let dotStart = geometryOffset;
-    let dotInstances = 0;
-    let dotVertexCount = 0;
-    let dotBounds = new Bounds();
-    const flushDots = () => {
-      if (dotZ !== undefined && dotInstances > 0) {
-        response.pointGeometries.push({
-          bounds: dotBounds.done(),
-          geometryByteLength: 4 * (geometryOffset - dotStart),
-          geometryOffset: 4 * dotStart,
-          instanceCount: dotInstances,
-          vertexCount: dotVertexCount,
-          z: dotZ,
-        });
-      }
-      dotStart = geometryOffset;
-      dotInstances = 0;
-      dotBounds = new Bounds();
-    };
+    // styledPoints is sorted by z too.
+    const dotRuns = new InstancedRuns(geometry.buffer, geometryOffset, response.pointGeometries);
     for (const point of styledPoints) {
-      if (point.style.z !== dotZ) {
-        flushDots();
-        dotZ = point.style.z;
-      }
       const [x, y] = point.position;
-      dotBounds.add([x, y], point.style.radius);
-      const result = LineProgram.push(
-          point.style.fill,
-          point.style.stroke,
-          point.style.radius,
-          /* stipple= */ false,
-          [x, y, x, y],
-          geometry.buffer,
-          4 * geometryOffset);
+      const result = dotRuns.push(point.style.z, point.style, [x, y, x, y]);
       response.points.push({
         id: point.id,
         data: point.data,
         geometryByteLength: result.geometryByteLength,
-        geometryOffset: 4 * geometryOffset,
+        geometryOffset: result.geometryOffset,
         position: point.position,
         style: point.style,
       });
-      geometryOffset += result.geometryByteLength / 4;
-      dotInstances += result.instanceCount;
-      dotVertexCount = result.vertexCount;
     }
-    flushDots();
+    geometryOffset = dotRuns.done();
 
     for (const group of merged) {
       const geometryStart = geometryOffset;
@@ -600,9 +596,22 @@ class CollectionLoader {
         geometryOffset: 4 * geometryStart,
         indexCount: indexOffset - indexStart,
         indexOffset: 4 * indexStart,
-        z: Z_USER_DATA,
+        z: group[0].style.z,
       });
     }
+
+    // triangulated is sorted by fill z, not outline z, so a run may hold fewer outlines than it
+    // could.
+    const outlineRuns = new InstancedRuns(geometry.buffer, geometryOffset, response.lineGeometries);
+    for (const {outline, style} of triangulated) {
+      const line = style.outline;
+      if (line) {
+        for (const ring of outline) {
+          outlineRuns.push(line.z, line, ring);
+        }
+      }
+    }
+    outlineRuns.done();
 
     return {
       message: response,

@@ -5,6 +5,7 @@ import {
   Folder,
   Line,
   Point,
+  Polygon,
   WriteSchema,
 } from 'trails_lat/proto/data_pb';
 
@@ -52,7 +53,20 @@ export interface EditablePoint extends FeatureBase {
   elevationCentimeters: number|undefined;
 }
 
-export type EditableFeature = EditableFolder|EditableLine|EditablePoint;
+// One ring without its first vertex repeated at the end, see data.proto#Polygon.
+export interface EditablePolygon extends FeatureBase {
+  kind: 'polygon';
+  latLngE7: Int32Array;
+}
+
+export type EditableFeature = EditableFolder|EditableLine|EditablePoint|EditablePolygon;
+
+// The features with a vertex array, which the pointer tool edits the same way
+export type EditableShape = EditableLine|EditablePolygon;
+
+export function isShape(feature: EditableFeature|undefined): feature is EditableShape {
+  return feature?.kind === 'line' || feature?.kind === 'polygon';
+}
 
 export type SaveOp = 'delete'|'put';
 
@@ -110,6 +124,16 @@ export function pointFromProto(point: Point): EditablePoint {
   };
 }
 
+export function polygonFromProto(polygon: Polygon): EditablePolygon {
+  return {
+    kind: 'polygon',
+    id: polygon.id,
+    version: polygon.version,
+    data: parseData(polygon.data),
+    latLngE7: Int32Array.from(polygon.latLngE7),
+  };
+}
+
 export function toWrite(
     op: SaveOp, feature: EditableFeature): MessageInitShape<typeof WriteSchema> {
   if (op === 'delete') {
@@ -148,7 +172,7 @@ export function toWrite(
         },
       },
     };
-  } else {
+  } else if (feature.kind === 'point') {
     return {
       write: {
         case: 'putPoint',
@@ -158,6 +182,18 @@ export function toWrite(
           latE7: feature.latE7,
           lngE7: feature.lngE7,
           elevationCentimeters: feature.elevationCentimeters,
+          version: feature.version,
+        },
+      },
+    };
+  } else {
+    return {
+      write: {
+        case: 'putPolygon',
+        value: {
+          id: feature.id,
+          data,
+          latLngE7: Array.from(feature.latLngE7),
           version: feature.version,
         },
       },
@@ -178,6 +214,7 @@ const FEATURE_KINDS = {
   folder: FeatureKind.FOLDER,
   line: FeatureKind.LINE,
   point: FeatureKind.POINT,
+  polygon: FeatureKind.POLYGON,
 } as const;
 
 function parseData(data: string): FeatureData {
