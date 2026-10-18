@@ -223,6 +223,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly searchQuery: SearchQuery;
   // Moves with every collection opened or created, so that a slow load of an earlier one is dropped
   private collectionGeneration: number;
+  // The collection from the last args we were bound with. Every render rebinds with its element's
+  // current props, and those still name the old route after currentCollection has created and
+  // routed to a new collection, so only a change in the args counts as navigating.
+  private argsCollection: string|undefined;
   // The collection id from the URL that the store holds or is loading, so that a render with the
   // same route doesn't reload it
   private routedCollection: string|undefined;
@@ -306,6 +310,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               this.updateState({...this.state, search});
             });
     this.collectionGeneration = 0;
+    this.argsCollection = response.args.collection;
     this.routedCollection = response.args.collection;
     this.draggedFeature = undefined;
     this.dropTarget = undefined;
@@ -426,6 +431,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Opens whatever collection the URL names, including after the back and forward buttons.
   updateArgs(newArgs: Args): void {
+    if (newArgs.collection === this.argsCollection) {
+      return;
+    }
+
+    this.argsCollection = newArgs.collection;
     if (newArgs.collection === this.routedCollection) {
       return;
     }
