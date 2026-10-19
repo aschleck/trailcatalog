@@ -278,9 +278,22 @@ export class Camera {
     const horizonCap = Math.acos(Math.min(1, 1 / frame.scale));
     const fovCap = visibleCapRadius(frame.scale, widthPx / heightPx);
     const thetaT = Math.min(horizonCap, fovCap * 1.1);
+    // The center sits frame.scale - 1 from the eye, where it gets 1 / (pi * globeInverseRadius)
+    // canvas pixels per radian. A zoom z tile spreads 256 * 2^z texels over 2 * pi radians at the
+    // equator.
+    // => 256 * 2^z / (2 * pi) = 1 / (pi * globeInverseRadius)
+    // => z = log2(1 / (128 * globeInverseRadius))
     return {
       camDir: frame.zAxis,
       cosThetaT: Math.cos(thetaT),
+      distance: frame.scale,
+      centerZoom: Math.log2(1 / (128 * this.globeInverseRadius)),
+      flattenFactor: this.flattenFactor,
+      zoom: this._zoom,
+      lat: this._center.latRadians(),
+      lng: this._center.lngRadians(),
+      widthPx,
+      heightPx,
     };
   }
 
@@ -432,6 +445,19 @@ export class ScreenProjection {
 export interface SphericalCone {
   camDir: Vec3;
   cosThetaT: number;
+  // From the globe's center to the eye, in globe radii
+  distance: number;
+  // The tile zoom that puts one texel on each canvas pixel at the center of the view, for ground at
+  // the equator
+  centerZoom: number;
+  flattenFactor: number;
+  // The camera's zoom, which is the tile zoom that does the same once the map is flat
+  zoom: number;
+  // The camera's center in radians and the canvas it draws, for createProjection
+  lat: number;
+  lng: number;
+  widthPx: number;
+  heightPx: number;
 }
 
 interface SphericalFrame {
@@ -445,7 +471,7 @@ interface SphericalFrame {
 }
 
 // Everything projectBlended needs to place a point for one camera.
-interface Projection {
+export interface Projection {
   lat: number;
   lng: number;
   inverseWorldRadius: number;
@@ -456,7 +482,7 @@ interface Projection {
   heightPx: number;
 }
 
-function createProjection(
+export function createProjection(
     lat: number, lng: number, zoom: number, widthPx: number, heightPx: number): Projection {
   const globeInverseRadius = globeInverseRadiusAt(zoom, lat);
   return {
@@ -666,6 +692,40 @@ function projectBlended(V_lat: number, V_lng: number, projection: Projection): V
   const mixedW = (1 - f) * sphereClipW + f; // mercator w = 1
 
   return [mixedX / mixedW, mixedY / mixedW];
+}
+
+/**
+ * Returns where a point lands in normalized device coordinates, or undefined when the globe hides
+ * it.
+ */
+export function projectToNdc(lat: number, lng: number, projection: Projection): Vec2|undefined {
+  // The globe hides points past its horizon until it's fully flat
+  if (projection.flattenFactor < 1) {
+    const {zAxis, scale} = projection.frame;
+    const cosLat = Math.cos(lat);
+    const toward =
+        cosLat * Math.cos(lng) * zAxis[0] + Math.sin(lat) * zAxis[1]
+            + cosLat * Math.sin(lng) * zAxis[2];
+    if (toward < 1 / scale) {
+      return undefined;
+    }
+  }
+  return projectBlended(lat, lng, projection);
+}
+
+/**
+ * Returns the point under a spot in normalized device coordinates, or undefined when the spot is
+ * off the globe.
+ */
+export function unprojectNdc(
+    ndc: Vec2, projection: Projection): {lat: number; lng: number}|undefined {
+  const point = inverseProjectBlended(ndc, projection);
+  // Off the globe the solver settles on the horizon, which projects back somewhere else
+  const back = projectToNdc(point.lat, point.lng, projection);
+  if (!back || Math.abs(back[0] - ndc[0]) + Math.abs(back[1] - ndc[1]) > 1e-3) {
+    return undefined;
+  }
+  return point;
 }
 
 // Invert the blended projection: find the world point at the cursor in the

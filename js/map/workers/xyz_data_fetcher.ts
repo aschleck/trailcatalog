@@ -10,6 +10,7 @@ import { tilesIntersect } from '../common/math';
 import { Rect, TileId } from '../common/types';
 
 import { serveClients } from './client_pool';
+import { Cone, selectTilesInCone, tileInCone } from './tile_cone';
 
 // pi times the WGS84 semi-major axis of 6378137 m
 const WEB_MERCATOR_HALF_WORLD_METERS = 20037508.342789244;
@@ -19,6 +20,9 @@ export interface Initialize {
   extraZoom: number;
   minZoom: number;
   maxZoom: number;
+  // Lets the globe fetch each tile at the zoom its own spot on screen needs, for layers that can draw
+  // tiles of different zooms side by side. See selectTilesInCone.
+  perTileZoom?: boolean;
   // How many tiles may download at once, see fetch_throttler.ts#MAX_REQUESTS_IN_FLIGHT
   maxInFlight?: number;
 }
@@ -36,11 +40,9 @@ interface Viewport {
   // nearest spherical point P satisfies dot(P, camDir) >= cosThetaT are
   // fetched. In fully-flat (mercator) mode this is omitted so the lat/lng
   // rectangle alone defines visibility.
-  cone?: {
-    camDir: [number, number, number];
-    cosThetaT: number;
-  };
+  cone?: Cone;
 }
+
 
 interface UpdateViewportRequest {
   kind: 'uvr';
@@ -86,6 +88,7 @@ class XyzDataFetcher {
       private readonly extraZoom: number,
       private readonly minZoom: number,
       private readonly maxZoom: number,
+      private readonly perTileZoom: boolean,
       maxInFlight: number|undefined,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
@@ -128,93 +131,64 @@ class XyzDataFetcher {
     const viewport = request.viewport;
     this.lastViewport = viewport;
 
-    let projected = projectViewport(viewport);
-
-    const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
-    if (tz < this.minZoom) {
-      projected = {low: [1, 1], high: [-1, -1]};
-    }
-    const worldSize = Math.pow(2, tz);
-
     const used = createTileHashSet();
-    // projected goes from -1 to 1, so we divide by 2 and add 0.5 to make it 0 to 1.
-    // We also flip y because tile indices increase top-to-bottom.
-    for (let y = Math.floor(worldSize * (-projected.high[1] / 2 + 0.5));
-         y < worldSize * (-projected.low[1] / 2 + 0.5);
-         ++y) {
-      for (let x = Math.floor(worldSize * (projected.low[0] / 2 + 0.5));
-          x < worldSize * (projected.high[0] / 2 + 0.5);
-          ++x) {
-        if (y < 0 || y >= worldSize) {
-          continue;
-        }
+    for (const id of this.visibleTiles(viewport)) {
+      used.add(id);
 
-        const id = {
-          // Handle world wrap. 3 is just a number that seems large enough to force x positive.
-          x: (x + 3 * worldSize) % worldSize,
-          y,
-          zoom: tz,
-        };
-        if (!tileInCone(id, worldSize, viewport.cone)) {
-          continue;
-        }
-        used.add(id);
-
-        if (this.inFlight.has(id) || this.pending.has(id) || this.loaded.has(id)) {
-          continue;
-        }
-
-        const abort = new AbortController();
-        this.inFlight.set(id, abort);
-
-        this.throttler.fetch(this.getTileUrl(id), { mode: 'cors', signal: abort.signal })
-            .then(response => {
-              if (response.ok) {
-                return response.arrayBuffer();
-              } else {
-                throw new Error(
-                    `Failed to download tile ${id.x},${id.y} at ${id.zoom} `
-                        + `(status ${response.status}`);
-              }
-            })
-            .then(data => {
-              // setUrl was called after this download finished, so it's a tile from the old URL.
-              if (this.inFlight.get(id) !== abort) {
-                return;
-              }
-              this.pending.add(id);
-              this.postMessage({
-                kind: 'ltc',
-                id,
-                data,
-              }, [data]);
-              this.cull();
-            })
-            .catch(e => {
-              // Forget an aborted tile so panning back fetches it again. Count one we can't
-              // download as loaded, or else every sibling that lands asks for it again.
-              if (e.name !== 'AbortError') {
-                console.error(e);
-                this.loaded.add(id);
-              }
-            })
-            .finally(() => {
-              // Only clear the slot if it is still ours. An abort drops out of inFlight before it
-              // unwinds, so a second request for the same tile may hold it by now, and clearing
-              // that one reports idle while it is still running.
-              if (this.inFlight.get(id) !== abort) {
-                return;
-              }
-              this.inFlight.delete(id);
-
-              if (this.inFlight.size === 0) {
-                this.postMessage({
-                  kind: 'usc',
-                  fetching: false,
-                });
-              }
-            });
+      if (this.inFlight.has(id) || this.pending.has(id) || this.loaded.has(id)) {
+        continue;
       }
+
+      const abort = new AbortController();
+      this.inFlight.set(id, abort);
+
+      this.throttler.fetch(this.getTileUrl(id), { mode: 'cors', signal: abort.signal })
+          .then(response => {
+            if (response.ok) {
+              return response.arrayBuffer();
+            } else {
+              throw new Error(
+                  `Failed to download tile ${id.x},${id.y} at ${id.zoom} `
+                      + `(status ${response.status}`);
+            }
+          })
+          .then(data => {
+            // setUrl was called after this download finished, so it's a tile from the old URL.
+            if (this.inFlight.get(id) !== abort) {
+              return;
+            }
+            this.pending.add(id);
+            this.postMessage({
+              kind: 'ltc',
+              id,
+              data,
+            }, [data]);
+            this.cull();
+          })
+          .catch(e => {
+            // Forget an aborted tile so panning back fetches it again. Count one we can't
+            // download as loaded, or else every sibling that lands asks for it again.
+            if (e.name !== 'AbortError') {
+              console.error(e);
+              this.loaded.add(id);
+            }
+          })
+          .finally(() => {
+            // Only clear the slot if it is still ours. An abort drops out of inFlight before it
+            // unwinds, so a second request for the same tile may hold it by now, and clearing
+            // that one reports idle while it is still running.
+            if (this.inFlight.get(id) !== abort) {
+              return;
+            }
+            this.inFlight.delete(id);
+
+            if (this.inFlight.size === 0) {
+              this.postMessage({
+                kind: 'usc',
+                fetching: false,
+              });
+            }
+          });
     }
 
     for (const [id, abort] of this.inFlight) {
@@ -235,32 +209,9 @@ class XyzDataFetcher {
   }
 
   private cull(): void {
-    const viewport = checkExists(this.lastViewport);
-
-    let projected = projectViewport(viewport);
-
-    const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
-    const worldSize = Math.pow(2, tz);
-
     const used = createTileHashSet();
-    // projected goes from -1 to 1, so we divide by 2 and add 0.5 to make it 0 to 1.
-    for (let y = Math.floor(worldSize * (-projected.high[1] / 2 + 0.5));
-         y < worldSize * (-projected.low[1] / 2 + 0.5);
-         ++y) {
-      for (let x = Math.floor(worldSize * (projected.low[0] / 2 + 0.5));
-          x < worldSize * (projected.high[0] / 2 + 0.5);
-          ++x) {
-        const id = {
-          // Handle world wrap. 3 is just a number that seems large enough to force x positive.
-          x: (x + 3 * worldSize) % worldSize,
-          y,
-          zoom: tz,
-        };
-        if (!tileInCone(id, worldSize, viewport.cone)) {
-          continue;
-        }
-        used.add(id);
-      }
+    for (const id of this.visibleTiles(checkExists(this.lastViewport))) {
+      used.add(id);
     }
 
     const unload = [];
@@ -321,6 +272,44 @@ class XyzDataFetcher {
     }
   }
 
+  private visibleTiles(viewport: Viewport): TileId[] {
+    if (this.perTileZoom && viewport.cone) {
+      return selectTilesInCone(viewport.cone, this.extraZoom, this.minZoom, this.maxZoom);
+    }
+
+    const tz = clamp(Math.floor(viewport.zoom + this.extraZoom), 0, this.maxZoom);
+    if (tz < this.minZoom) {
+      return [];
+    }
+    const projected = projectViewport(viewport);
+    const worldSize = Math.pow(2, tz);
+    const tiles = [];
+    // projected goes from -1 to 1, so we divide by 2 and add 0.5 to make it 0 to 1.
+    // We also flip y because tile indices increase top-to-bottom.
+    for (let y = Math.floor(worldSize * (-projected.high[1] / 2 + 0.5));
+         y < worldSize * (-projected.low[1] / 2 + 0.5);
+         ++y) {
+      for (let x = Math.floor(worldSize * (projected.low[0] / 2 + 0.5));
+          x < worldSize * (projected.high[0] / 2 + 0.5);
+          ++x) {
+        if (y < 0 || y >= worldSize) {
+          continue;
+        }
+
+        const id = {
+          // Handle world wrap. 3 is just a number that seems large enough to force x positive.
+          x: (x + 3 * worldSize) % worldSize,
+          y,
+          zoom: tz,
+        };
+        if (tileInCone(id, worldSize, viewport.cone)) {
+          tiles.push(id);
+        }
+      }
+    }
+    return tiles;
+  }
+
   private getTileUrl(id: TileId): string {
     // ArcGIS export and WMS servers render any box you ask for instead of serving fixed tiles, so we
     // pass the tile's bounds in EPSG:3857 meters as xmin,ymin,xmax,ymax.
@@ -338,7 +327,13 @@ class XyzDataFetcher {
 serveClients<Initialize, Request, Command>((init, emit) => {
   const fetcher =
       new XyzDataFetcher(
-          init.url, init.extraZoom, init.minZoom, init.maxZoom, init.maxInFlight, emit);
+          init.url,
+          init.extraZoom,
+          init.minZoom,
+          init.maxZoom,
+          init.perTileZoom ?? false,
+          init.maxInFlight,
+          emit);
   return request => {
     if (request.kind === 'sur') {
       fetcher.setUrl(request);
@@ -377,44 +372,3 @@ function createTileHashMap<V>(): HashMap<TileId, V> {
 function createTileHashSet(): HashSet<TileId> {
   return new HashSet(id => `${id.x},${id.y},${id.zoom}`);
 }
-
-// Returns true if the tile's geographic patch intersects the camera's
-// visible cap. The cap is the set of unit-sphere points P with
-// dot(P, camDir) >= cosThetaT, so we maximize dot(P, camDir) over the patch.
-//
-// dot(P, camDir) = cos(lat) cos(camLat) cos(dLng) + sin(lat) sin(camLat).
-// cos(lat) cos(camLat) is never negative, so the dot only grows as dLng
-// shrinks and the best longitude is the patch's nearest to camLng at any
-// latitude. With dLng fixed, the dot is a sinusoid in lat peaking at
-// atan2(sin(camLat), cos(camLat) cos(dLng)), which is camLat only when dLng is
-// 0. Clamping camLat instead picks the far edge of a tile across the pole.
-function tileInCone(id: TileId, worldSize: number, cone?: Viewport['cone']): boolean {
-  if (!cone) {
-    return true;
-  }
-  const PI = Math.PI;
-  const mx0 = (id.x / worldSize) * 2 - 1;
-  const mx1 = ((id.x + 1) / worldSize) * 2 - 1;
-  // Tile y indices go top-to-bottom but mercator y goes bottom-to-top.
-  const myHigh = 1 - (id.y / worldSize) * 2;
-  const myLow = 1 - ((id.y + 1) / worldSize) * 2;
-  const lng0 = mx0 * PI;
-  const lng1 = mx1 * PI;
-  const lat0 = Math.asin(Math.tanh(myLow * PI));
-  const lat1 = Math.asin(Math.tanh(myHigh * PI));
-
-  const camLat = Math.asin(Math.max(-1, Math.min(1, cone.camDir[1])));
-  const camLng = Math.atan2(cone.camDir[2], cone.camDir[0]);
-  // in [0, 2pi), how far east of the tile's west edge the camera sits
-  const east = ((camLng - lng0) % (2 * PI) + 2 * PI) % (2 * PI);
-  const dLng = east <= lng1 - lng0 ? 0 : Math.min(east - (lng1 - lng0), 2 * PI - east);
-
-  const dot = (lat: number) =>
-      Math.cos(lat) * Math.cos(camLat) * Math.cos(dLng) + Math.sin(lat) * Math.sin(camLat);
-  const bestLat = Math.atan2(Math.sin(camLat), Math.cos(camLat) * Math.cos(dLng));
-  // The peak can sit past a pole, where the nearer edge around the circle isn't the one a clamp
-  // picks, so outside the patch we try both edges.
-  const d = lat0 <= bestLat && bestLat <= lat1 ? dot(bestLat) : Math.max(dot(lat0), dot(lat1));
-  return d >= cone.cosThetaT;
-}
-

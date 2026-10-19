@@ -56,7 +56,16 @@ export class RasterTileLayer extends Layer {
     this.fetcher =
         sharedPool<FetcherInitialize, FetcherRequest, FetcherCommand>(
             new URL('xyz_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
-            .connect({url, extraZoom, minZoom, maxZoom, maxInFlight: MAX_IN_FLIGHT});
+            // Planning draws the finest tiles last, so tiles of different zooms can sit side by
+            // side.
+            .connect({
+              url,
+              extraZoom,
+              minZoom,
+              maxZoom,
+              perTileZoom: true,
+              maxInFlight: MAX_IN_FLIGHT,
+            });
     this.fetching = false;
     this.loader =
         sharedPool<LoaderInitialize, LoaderRequest, LoaderResponse>(
