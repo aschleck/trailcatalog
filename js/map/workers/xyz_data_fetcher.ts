@@ -19,6 +19,8 @@ export interface Initialize {
   extraZoom: number;
   minZoom: number;
   maxZoom: number;
+  // How many tiles may download at once, see fetch_throttler.ts#MAX_REQUESTS_IN_FLIGHT
+  maxInFlight?: number;
 }
 
 interface TileLoadedRequest {
@@ -84,12 +86,13 @@ class XyzDataFetcher {
       private readonly extraZoom: number,
       private readonly minZoom: number,
       private readonly maxZoom: number,
+      maxInFlight: number|undefined,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
     this.inFlight = createTileHashMap();
     this.pending = createTileHashSet();
     this.loaded = createTileHashSet();
-    this.throttler = new FetchThrottler();
+    this.throttler = new FetchThrottler(maxInFlight);
     this.lastViewport = undefined;
   }
 
@@ -333,7 +336,9 @@ class XyzDataFetcher {
 }
 
 serveClients<Initialize, Request, Command>((init, emit) => {
-  const fetcher = new XyzDataFetcher(init.url, init.extraZoom, init.minZoom, init.maxZoom, emit);
+  const fetcher =
+      new XyzDataFetcher(
+          init.url, init.extraZoom, init.minZoom, init.maxZoom, init.maxInFlight, emit);
   return request => {
     if (request.kind === 'sur') {
       fetcher.setUrl(request);

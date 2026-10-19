@@ -150,6 +150,10 @@ export class SlopeLayer extends Layer {
 
   private loadTile(command: LoadTileCommand): void {
     if (command.data.byteLength === 0) {
+      this.fetcher.broadcast({
+        kind: 'tlr',
+        id: command.id,
+      });
       return;
     }
 

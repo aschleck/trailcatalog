@@ -2228,6 +2228,10 @@ export class MbtileLayer extends Layer {
     this.loader.onfailure = (request, task) => {
       if (request.kind === 'lr' && this.loading.get(request.id) === task) {
         this.loading.delete(request.id);
+        this.fetcher.broadcast({
+          kind: 'tlr',
+          id: request.id,
+        });
       }
     };
   }
@@ -2307,6 +2311,10 @@ export class MbtileLayer extends Layer {
 
   private loadRawTile(command: LoadTileCommand): void {
     if (command.data.byteLength === 0) {
+      this.fetcher.broadcast({
+        kind: 'tlr',
+        id: command.id,
+      });
       return;
     }
 

@@ -20,7 +20,7 @@ export function tileUrl(id: TileId): string {
 /** Fetches and decodes a tile into meters, or undefined when Mapterhorn has no tile there. */
 export async function fetchTerrarium(id: TileId): Promise<Float32Array|undefined> {
   const response = await fetch(tileUrl(id));
-  if (!response.ok) {
+  if (!response.ok || response.status === 204) {
     return undefined;
   }
   return decodeTerrarium(await response.blob());

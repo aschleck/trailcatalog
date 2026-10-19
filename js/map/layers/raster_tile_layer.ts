@@ -15,6 +15,7 @@ import { loaderCount, PoolClient, sharedPool } from '../workers/client_pool';
 import { Decode, Initialize as LoaderInitialize, LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 
+const MAX_IN_FLIGHT = 32;
 const NO_OFFSET: Vec2 = [0, 0];
 // A billboard curves onto the globe as a 4x4 lattice, so a z3 tile's cells are 11 degrees across
 // and visibly slide as the globe flattens. Coarser tiles are drawn as z7 pieces, whose cells are
@@ -55,7 +56,7 @@ export class RasterTileLayer extends Layer {
     this.fetcher =
         sharedPool<FetcherInitialize, FetcherRequest, FetcherCommand>(
             new URL('xyz_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
-            .connect({url, extraZoom, minZoom, maxZoom});
+            .connect({url, extraZoom, minZoom, maxZoom, maxInFlight: MAX_IN_FLIGHT});
     this.fetching = false;
     this.loader =
         sharedPool<LoaderInitialize, LoaderRequest, LoaderResponse>(
@@ -100,6 +101,10 @@ export class RasterTileLayer extends Layer {
     this.loader.onfailure = (request, task) => {
       if (request.kind === 'lr' && this.loading.get(request.id) === task) {
         this.loading.delete(request.id);
+        this.fetcher.broadcast({
+          kind: 'tlr',
+          id: request.id,
+        });
       }
     };
   }
@@ -155,8 +160,9 @@ export class RasterTileLayer extends Layer {
       const drawables = [];
       let offset = 0;
 
-      // Draw highest detail to lowest, we use the stencil buffer to avoid overdraw.
-      const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
+      // Draw lowest detail to highest because tiles share a z and the depth test passes equal
+      // depths, so the last one drawn wins.
+      const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
       for (const [id, texture] of sorted) {
         const halfWorldSize = Math.pow(2, id.zoom - 1);
         const pieces = piecesPerSide(id.zoom);
@@ -212,6 +218,10 @@ export class RasterTileLayer extends Layer {
 
   private loadTile(command: LoadTileCommand): void {
     if (command.data.byteLength === 0) {
+      this.fetcher.broadcast({
+        kind: 'tlr',
+        id: command.id,
+      });
       return;
     }
 

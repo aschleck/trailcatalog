@@ -22,9 +22,9 @@ git_override(
 bazel_dep(name = "dev_april_corgi")
 archive_override(
     module_name = "dev_april_corgi",
-    integrity = "sha256-JyO6XiNPMB6aTd9ugeI+s/zFJZ85hIpyOScvp9iuD34=",
-    strip_prefix = "corgi-2a2a8dab9db6a50bb03327e677c01a014c1c1aa2",
-    urls = ["https://github.com/aschleck/corgi/archive/2a2a8dab9db6a50bb03327e677c01a014c1c1aa2.tar.gz"],
+    integrity = "sha256-SWpXuH2qedlSUkcDHHMBhEuq8MbTbYU0mtwH/O816I8=",
+    strip_prefix = "corgi-a459ef6b2d58602ce03871b296c445539f95bb92",
+    urls = ["https://github.com/aschleck/corgi/archive/a459ef6b2d58602ce03871b296c445539f95bb92.tar.gz"],
 )
 #local_path_override(
 #    module_name = "dev_april_corgi",
