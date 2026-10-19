@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 
-# Tiles a cycle of FAA Sectional Aeronautical Charts into
-# /home/april/tiles/faa_sectional_<cycle>.pmtiles, which pmtiles serve serves at
+# Tiles a cycle of FAA Sectional Aeronautical Charts and Terminal Area Charts into
+# /home/april/tiles/faa_<product>_<cycle>.pmtiles, which pmtiles serve serves at
 # tiles.trailcatalog.org. The FAA posts each 56 day cycle about three weeks before it takes effect,
 # so this tiles the current cycle and the next one. Cycles already tiled and cycles not posted yet
-# are skipped, so this runs daily. Keep the file name in sync with
-# layer_catalog.ts#FAA_SECTIONAL_URL.
+# are skipped, so this runs daily. Keep the file names in sync with layer_catalog.ts#FAA_TILES_URL.
 #
-# With arguments, tiles the current cycle into OUT and keeps nothing else, reading the GeoTIFFs from
-# SRC instead of downloading them if it's given: faa_sectional.py OUT [SRC]
+# With arguments, tiles one product's current cycle into OUT and keeps nothing else, reading the
+# GeoTIFFs from SRC instead of downloading them if it's given:
+# faa_charts.py sectional|terminal OUT [SRC]
 
+from dataclasses import dataclass
 from datetime import date, timedelta
 import io
 import multiprocessing
@@ -37,14 +38,9 @@ CYCLE_EPOCH = date(2026, 9, 3)
 CYCLE_DAYS = 56
 # The previous cycle stays for clients whose clock is behind ours, and the next one is posted early.
 KEEP_CYCLES = 3
-# The charts are scanned at 42 m to the pixel. A z12 pixel is 38 m at the equator and smaller toward
-# the poles, so z12 already holds every scanned pixel and z13 would quadruple the tiles for nothing.
-# Keep in sync with layer_catalog.ts's maxZoom for the sectional entry.
-MAX_ZOOM = 12
 TILE_SIZE = 256
 # Half the width of Web Mercator, in meters
 WORLD = 20037508.342789244
-Z_RES = 2 * WORLD / (TILE_SIZE << MAX_ZOOM)
 # Seattle tiled to 81 MB at 75 and 113 MB as JPEG at the same quality.
 WEBP_QUALITY = 75
 # A rectangle of chart pixels that runs to the right or bottom edge
@@ -61,7 +57,7 @@ EDGE = 1 << 20
 #
 # Western Aleutian Islands East crosses the antimeridian, so it is two pieces or else its Web
 # Mercator bounds would span the world.
-PIECES = [
+SECTIONAL_PIECES = [
     ('Seattle', 'box', (-125, -117, 44.5, 49), []),
     ('Great Falls', 'box', (-117, -109, 44.5, 49), []),
     ('Billings', 'box', (-109, -101, 44.5, 49), []),
@@ -143,25 +139,103 @@ PIECES = [
         (40, 50), (6990, 50), (6990, 2515), (8950, 2515), (8950, 3850), (40, 3850)], []),
 ]
 
+# The map rectangle of each Terminal Area Chart in chart pixels, inside its neat line and above the
+# scale bars along its bottom, and cuts as for the sectionals. The flyway planning charts in the
+# same zip are left out because they chart routes rather than the ground.
+TERMINAL_MAPS = [
+    ('Anchorage', (3164, 104, 12036, 5896), []),
+    ('Atlanta', (1556, 564, 8956, 7508), []),
+    ('Baltimore-Washington', (1620, 192, 12012, 8592), []),
+    ('Boston', (1620, 324, 10512, 8736), []),
+    ('Charlotte', (1568, 528, 8952, 7376), []),
+    ('Chicago', (1552, 544, 7432, 5916), []),
+    ('Cincinnati', (1556, 312, 8948, 8596), []),
+    ('Cleveland', (1676, 572, 7568, 5948), []),
+    ('Colorado Springs', (3156, 68, 11460, 7696), []),
+    ('Dallas-Ft Worth', (1616, 136, 11872, 8588), []),
+    ('Denver', (1552, 328, 8940, 7208), []),
+    ('Detroit', (3088, 88, 10412, 6480), []),
+    ('Fairbanks', (3108, 64, 11164, 5756), []),
+    ('Houston', (1544, 504, 8968, 7928), []),
+    ('Kansas City', (1564, 736, 8944, 7296), []),
+    ('Las Vegas', (3112, 604, 10468, 5976), []),
+    ('Los Angeles', (4680, 112, 14868, 5884), []),
+    ('Memphis', (1680, 564, 9104, 7340), []),
+    # The Florida Keys
+    ('Miami', (1584, 80, 10456, 8848), [(6350, 7320, EDGE, EDGE), (7280, 6935, EDGE, EDGE)]),
+    ('Minneapolis-St Paul', (1608, 564, 7484, 5900), []),
+    ('New Orleans', (1560, 524, 8956, 5900), []),
+    ('New York', (3068, 576, 11956, 6016), []),
+    ('Orlando', (3016, 452, 11748, 7604), []),
+    ('Philadelphia', (1740, 644, 7628, 6396), []),
+    # The ground elevation key
+    ('Phoenix', (3064, 592, 10452, 7388), [(0, 1350, 3385, 2250)]),
+    ('Pittsburgh', (1628, 556, 7508, 5928), []),
+    ('Portland', (1852, 3100, 5956, 7372), []),
+    # San Juan route insets and their notes, over open water north of the islands
+    ('Puerto Rico-VI', (1496, 76, 17760, 6032), [(10340, 0, EDGE, 1480)]),
+    ('Salt Lake City', (1600, 708, 8992, 7444), []),
+    ('San Diego', (4632, 184, 12028, 5984), []),
+    ('San Francisco', (3076, 368, 10436, 6512), []),
+    ('Seattle', (1684, 556, 7580, 7476), []),
+    ('St Louis', (1564, 568, 7452, 5860), []),
+    ('Tampa', (1540, 492, 7440, 7376), []),
+]
+TERMINAL_PIECES = [
+    (chart, 'pixels', [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], cuts)
+    for chart, (x0, y0, x1, y1), cuts in TERMINAL_MAPS
+]
+
+
+@dataclass(frozen=True)
+class Product:
+    # Names the archives and the path segment in the FAA's bulk download
+    name: str
+    title: str
+    zip_name: str
+    # How the GeoTIFFs in the zip end
+    suffix: str
+    max_zoom: int
+    pieces: list
+
+    @property
+    def z_res(self) -> float:
+        return 2 * WORLD / (TILE_SIZE << self.max_zoom)
+
+
+PRODUCTS = [
+    # The charts are scanned at 42 m to the pixel. A z12 pixel is 38 m at the equator and smaller
+    # toward the poles, so z12 already holds every scanned pixel and z13 would quadruple the tiles
+    # for nothing. Keep in sync with layer_catalog.ts's maxZoom for the sectional entry.
+    Product('sectional', 'FAA Sectional Aeronautical Charts', 'Sectional', ' SEC.tif', 12,
+            SECTIONAL_PIECES),
+    # Terminal Area Charts are twice the scale, so 21 m to the pixel and z13. Keep in sync with
+    # layer_catalog.ts's maxZoom for the terminal entry.
+    Product('terminal', 'FAA Terminal Area Charts', 'Terminal', ' TAC.tif', 13, TERMINAL_PIECES),
+]
+
 
 def main():
     if len(sys.argv) > 1:
-        out = Path(sys.argv[1])
+        product = next(p for p in PRODUCTS if p.name == sys.argv[1])
+        out = Path(sys.argv[2])
         out.mkdir(parents=True, exist_ok=True)
-        tile_cycle(current_cycle(), out, Path(sys.argv[2]) if len(sys.argv) > 2 else None)
+        src = Path(sys.argv[3]) if len(sys.argv) > 3 else None
+        tile_cycle(product, current_cycle(), out, src)
         return
 
     current = current_cycle()
-    for cycle in (current, current + timedelta(days=CYCLE_DAYS)):
-        if not archive_path(TILES, cycle).exists() and is_posted(cycle):
-            tile_cycle(cycle, TILES)
+    for product in PRODUCTS:
+        for cycle in (current, current + timedelta(days=CYCLE_DAYS)):
+            if not archive_path(product, TILES, cycle).exists() and is_posted(product, cycle):
+                tile_cycle(product, cycle, TILES)
 
-    # Clears out old cycles and the partial archives of runs that died
-    archives = sorted(TILES.glob('faa_sectional_*'))
-    keep = set(sorted(p for p in archives if p.suffix == '.pmtiles')[-KEEP_CYCLES:])
-    for p in archives:
-        if p not in keep:
-            p.unlink()
+        # Clears out old cycles and the partial archives of runs that died
+        archives = sorted(TILES.glob(f'faa_{product.name}_*'))
+        keep = set(sorted(p for p in archives if p.suffix == '.pmtiles')[-KEEP_CYCLES:])
+        for p in archives:
+            if p not in keep:
+                p.unlink()
 
 
 def current_cycle() -> date:
@@ -169,16 +243,17 @@ def current_cycle() -> date:
     return CYCLE_EPOCH + timedelta(days=cycles * CYCLE_DAYS)
 
 
-def archive_path(out: Path, cycle: date) -> Path:
-    return out / f'faa_sectional_{cycle.isoformat()}.pmtiles'
+def archive_path(product: Product, out: Path, cycle: date) -> Path:
+    return out / f'faa_{product.name}_{cycle.isoformat()}.pmtiles'
 
 
-def zip_url(cycle: date) -> str:
-    return f'https://aeronav.faa.gov/visual/{cycle.strftime("%m-%d-%Y")}/All_Files/Sectional.zip'
+def zip_url(product: Product, cycle: date) -> str:
+    day = cycle.strftime('%m-%d-%Y')
+    return f'https://aeronav.faa.gov/visual/{day}/All_Files/{product.zip_name}.zip'
 
 
-def is_posted(cycle: date) -> bool:
-    request = urllib.request.Request(zip_url(cycle), method='HEAD', headers=HEADERS)
+def is_posted(product: Product, cycle: date) -> bool:
+    request = urllib.request.Request(zip_url(product, cycle), method='HEAD', headers=HEADERS)
     try:
         with urllib.request.urlopen(request):
             return True
@@ -192,25 +267,28 @@ def is_posted(cycle: date) -> bool:
 HEADERS = {'User-Agent': 'trails.lat tiler (https://trails.lat)'}
 
 
-def tile_cycle(cycle: date, out: Path, src: Path | None = None):
-    archive = archive_path(out, cycle)
-    work = Path(tempfile.mkdtemp(dir='/var/tmp', prefix='faa_sectional_'))
+def tile_cycle(product: Product, cycle: date, out: Path, src: Path | None = None):
+    archive = archive_path(product, out, cycle)
+    work = Path(tempfile.mkdtemp(dir='/var/tmp', prefix=f'faa_{product.name}_'))
     try:
         if src is None:
             src = work
-            print(f'Downloading {zip_url(cycle)}', flush=True)
-            request = urllib.request.Request(zip_url(cycle), headers=HEADERS)
-            with urllib.request.urlopen(request) as r, open(work / 'Sectional.zip', 'wb') as f:
+            url = zip_url(product, cycle)
+            print(f'Downloading {url}', flush=True)
+            download = work / 'charts.zip'
+            request = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(request) as r, open(download, 'wb') as f:
                 shutil.copyfileobj(r, f, length=1 << 20)
-            with zipfile.ZipFile(work / 'Sectional.zip') as z:
+            with zipfile.ZipFile(download) as z:
                 for name in z.namelist():
-                    if name.endswith('.tif'):
+                    if name.endswith(product.suffix):
                         z.extract(name, work)
-            (work / 'Sectional.zip').unlink()
+            download.unlink()
 
-        pieces = [warp_piece(src, work, i, *piece) for i, piece in enumerate(PIECES)]
-        mbtiles = work / 'faa_sectional.mbtiles'
-        write_tiles(pieces, mbtiles)
+        pieces = [
+            warp_piece(product, src, work, i, *piece) for i, piece in enumerate(product.pieces)]
+        mbtiles = work / 'charts.mbtiles'
+        write_tiles(product, pieces, mbtiles)
         # Converted to a temporary name and renamed, so pmtiles serve never opens a half written
         # archive
         partial = archive.with_name(archive.name + '.partial')
@@ -221,9 +299,10 @@ def tile_cycle(cycle: date, out: Path, src: Path | None = None):
 
 
 def warp_piece(
-        src_dir: Path, work: Path, i: int, chart: str, kind: str, shape, cuts) -> Path:
-    """Writes a VRT of the piece warped onto the z12 grid, transparent outside its map."""
-    src = gdal.Open(str(next(src_dir.rglob(f'{chart} SEC.tif'))))
+        product: Product, src_dir: Path, work: Path, i: int, chart: str, kind: str, shape,
+        cuts) -> Path:
+    """Writes a VRT of the piece warped onto the max zoom grid, transparent outside its map."""
+    src = gdal.Open(str(next(src_dir.rglob(f'{chart}{product.suffix}'))))
     srs = osr.SpatialReference(wkt=src.GetProjection())
     srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
     transform = src.GetGeoTransform()
@@ -254,8 +333,8 @@ def warp_piece(
         str(rgb),
         format='VRT',
         dstSRS='EPSG:3857',
-        xRes=Z_RES,
-        yRes=Z_RES,
+        xRes=product.z_res,
+        yRes=product.z_res,
         targetAlignedPixels=True,
         resampleAlg='cubic',
         cutlineWKT=cutline.ExportToWkt(),
@@ -284,8 +363,8 @@ def polygon(points) -> ogr.Geometry:
     return poly
 
 
-def write_tiles(pieces: list[Path], mbtiles: Path):
-    """Writes z12 from the pieces and each zoom out to z0 from the one under it."""
+def write_tiles(product: Product, pieces: list[Path], mbtiles: Path):
+    """Writes the max zoom from the pieces and each zoom out to z0 from the one under it."""
     db = sqlite3.connect(mbtiles)
     db.executescript("""
         CREATE TABLE metadata (name TEXT, value TEXT);
@@ -294,19 +373,19 @@ def write_tiles(pieces: list[Path], mbtiles: Path):
         CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row);
     """)
     db.executemany('INSERT INTO metadata VALUES (?, ?)', [
-        ('name', 'FAA Sectional Aeronautical Charts'),
+        ('name', product.title),
         ('format', 'webp'),
         ('type', 'baselayer'),
         ('minzoom', '0'),
-        ('maxzoom', str(MAX_ZOOM)),
+        ('maxzoom', str(product.max_zoom)),
         ('bounds', '-180,-85.0511,180,85.0511'),
         ('attribution', 'FAA Aeronautical Information Services'),
     ])
 
-    # Which pieces cover each z12 tile
+    # Which pieces cover each max zoom tile
     covering: dict[tuple[int, int], list[int]] = {}
     for i, path in enumerate(pieces):
-        x0, y0, x1, y1 = pixel_bounds(gdal.Open(str(path)))
+        x0, y0, x1, y1 = pixel_bounds(gdal.Open(str(path)), product.z_res)
         for y in range(y0 // TILE_SIZE, (y1 - 1) // TILE_SIZE + 1):
             for x in range(x0 // TILE_SIZE, (x1 - 1) // TILE_SIZE + 1):
                 covering.setdefault((x, y), []).append(i)
@@ -314,17 +393,18 @@ def write_tiles(pieces: list[Path], mbtiles: Path):
     # scanlines they share.
     keys = sorted(covering, key=lambda k: (k[1], k[0]))
     batches = [[(k, covering[k]) for k in keys[i:i + 64]] for i in range(0, len(keys), 64)]
-    print(f'Tiling {len(keys)} z{MAX_ZOOM} tiles from {len(pieces)} pieces', flush=True)
+    print(f'Tiling {len(keys)} z{product.max_zoom} tiles from {len(pieces)} pieces', flush=True)
 
-    with multiprocessing.Pool(initializer=open_pieces, initargs=(pieces,)) as pool:
+    with multiprocessing.Pool(
+            initializer=open_pieces, initargs=(pieces, product.z_res)) as pool:
         written = set()
         for batch in pool.imap_unordered(render_batch, batches):
             for (x, y), data in batch:
-                insert(db, MAX_ZOOM, x, y, data)
+                insert(db, product.max_zoom, x, y, data)
                 written.add((x, y))
         db.commit()
 
-        for z in range(MAX_ZOOM - 1, -1, -1):
+        for z in range(product.max_zoom - 1, -1, -1):
             parents = sorted({(x // 2, y // 2) for x, y in written})
             print(f'Tiling {len(parents)} z{z} tiles', flush=True)
             jobs = [(p, children(db, z + 1, p)) for p in parents]
@@ -337,11 +417,11 @@ def write_tiles(pieces: list[Path], mbtiles: Path):
     db.close()
 
 
-def pixel_bounds(ds) -> tuple[int, int, int, int]:
-    """The dataset's extent in pixels of the z12 grid, which it is aligned to."""
+def pixel_bounds(ds, z_res: float) -> tuple[int, int, int, int]:
+    """The dataset's extent in pixels of the max zoom grid, which it is aligned to."""
     ox, _, _, oy, _, _ = ds.GetGeoTransform()
-    x0 = round((ox + WORLD) / Z_RES)
-    y0 = round((WORLD - oy) / Z_RES)
+    x0 = round((ox + WORLD) / z_res)
+    y0 = round((WORLD - oy) / z_res)
     return x0, y0, x0 + ds.RasterXSize, y0 + ds.RasterYSize
 
 
@@ -369,11 +449,11 @@ def children(db: sqlite3.Connection, z: int, parent: tuple[int, int]) -> list[by
 _pieces: list[tuple[gdal.Dataset, tuple[int, int, int, int]]] = []
 
 
-def open_pieces(paths: list[Path]):
+def open_pieces(paths: list[Path], z_res: float):
     gdal.SetCacheMax(512 << 20)
     for path in paths:
         ds = gdal.Open(str(path))
-        _pieces.append((ds, pixel_bounds(ds)))
+        _pieces.append((ds, pixel_bounds(ds, z_res)))
 
 
 def render_batch(batch):

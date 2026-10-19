@@ -84,19 +84,19 @@ const OPENAIP_COPYRIGHT: Copyright = {
 };
 // The FAA asks for acknowledgement in products that use its charts.
 const FAA_COPYRIGHT: Copyright = {
-  long: 'Sectional Aeronautical Charts from FAA Aeronautical Information Services',
+  long: 'Aeronautical charts from FAA Aeronautical Information Services',
   short: 'FAA',
   url: 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/vfr/',
   publicDomain: true,
 };
-// Keep in sync with faa_sectional.py, which writes one archive per cycle named
-// faa_sectional_<cycle>.pmtiles
-const FAA_SECTIONAL_URL = 'https://tiles.trailcatalog.org/faa_sectional_';
-// Charts take effect at 0901 UTC on the first day of their cycle. See
-// faa_sectional.py#CYCLE_EPOCH.
+// Keep in sync with faa_charts.py, which writes one archive per product and cycle named
+// faa_<product>_<cycle>.pmtiles
+const FAA_TILES_URL = 'https://tiles.trailcatalog.org/faa_';
+// Charts take effect at 0901 UTC on the first day of their cycle. See faa_charts.py#CYCLE_EPOCH.
 const FAA_CYCLE_EPOCH_MS = Date.UTC(2026, 8, 3, 9, 1);
 const FAA_CYCLE_DAYS = 56;
-const FAA_SECTIONAL_ID = 'us/faa_sectional';
+type FaaProduct = 'sectional'|'terminal';
+const FAA_PRODUCTS: FaaProduct[] = ['sectional', 'terminal'];
 const SWISSTOPO_COPYRIGHT: Copyright = {
   long: 'Federal Office of Topography swisstopo',
   short: 'swisstopo',
@@ -217,8 +217,8 @@ export class LayerCatalog extends Disposable {
   private ecmwfRun: number;
   // The newest SNODAS day we know is tiled
   private snodasDay: string;
-  // The newest FAA cycle in effect that we know is tiled
-  private faaCycle: string;
+  // The newest FAA cycle in effect that we know is tiled, for each product
+  private readonly faaCycles: Record<FaaProduct, string>;
   private readonly conditionsRefresh: Timer;
 
   constructor(
@@ -233,9 +233,9 @@ export class LayerCatalog extends Disposable {
     const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
     this.ecmwfRun = Math.floor(Date.now() / cycleMs) * cycleMs;
     this.snodasDay = utcDay(0);
-    this.faaCycle = faaCycle(0);
+    this.faaCycles = {sectional: faaCycle(0), terminal: faaCycle(0)};
     this.conditionsRefresh = new Timer(CONDITIONS_REFRESH_MS, () => {
-      this.showLatestSectional();
+      this.showLatestFaaCharts();
       this.showLatestSnow();
       this.showLatestWeather();
     });
@@ -587,7 +587,19 @@ export class LayerCatalog extends Disposable {
           controls: [],
           values: {},
         },
-          this.newSectionalEntry(),
+          this.newFaaEntry(
+              'sectional',
+              'FAA Sectional',
+              /* z= */ Z_BASE_SATELLITE,
+              // See faa_charts.py#PRODUCTS
+              /* maxZoom= */ 12),
+          this.newFaaEntry(
+              'terminal',
+              'FAA Terminal Area',
+              // Drawn over the sectional it details
+              /* z= */ Z_BASE_SATELLITE + 0.1,
+              // See faa_charts.py#PRODUCTS
+              /* maxZoom= */ 13),
         ],
       }, {
         kind: 'group',
@@ -1005,7 +1017,7 @@ export class LayerCatalog extends Disposable {
 
   // Points the conditions layers at the newest tiles, and keeps checking for newer ones.
   start(): void {
-    this.showLatestSectional();
+    this.showLatestFaaCharts();
     this.showLatestSnow();
     this.showLatestWeather();
     this.conditionsRefresh.start();
@@ -1172,30 +1184,31 @@ export class LayerCatalog extends Disposable {
     };
   }
 
-  private newSectionalEntry(): LayerEntry {
-    let url = faaSectionalUrl(this.faaCycle);
+  private newFaaEntry(product: FaaProduct, name: string, z: number, maxZoom: number): LayerEntry {
+    let url = faaUrl(product, this.faaCycles[product]);
     const layer =
         new RasterTileLayer(
             [FAA_COPYRIGHT],
             url,
             /* tint= */ 0xFFFFFFFF as RgbaU32,
-            /* z= */ Z_BASE_SATELLITE,
-            /* extraZoom= */ 0,
+            z,
+            // Chart text is a few pixels tall, and at zoom 0 extra a tile pixel is stretched up to
+            // 2x, or 4x on a high density screen, which blurs it past reading.
+            /* extraZoom= */ 1,
             /* minZoom= */ 0,
-            // See faa_sectional.py#MAX_ZOOM
-            /* maxZoom= */ 12,
+            maxZoom,
             this.renderer);
     return {
       kind: 'layer',
-      id: FAA_SECTIONAL_ID,
-      name: 'FAA Sectional',
+      id: faaEntryId(product),
+      name,
       enabled: false,
       layer,
       controls: [],
       values: {},
       configure: () => {
         // setUrl drops every loaded tile, so we only call it when the URL changes.
-        const next = faaSectionalUrl(this.faaCycle);
+        const next = faaUrl(product, this.faaCycles[product]);
         if (next !== url) {
           url = next;
           layer.setUrl(next);
@@ -1244,24 +1257,26 @@ export class LayerCatalog extends Disposable {
     };
   }
 
-  // Points the sectional layer at the cycle in effect, or the one before it while ours is late.
-  // Every archive has the 0/0/0 tile, see faa_sectional.py#write_tiles.
-  private showLatestSectional(): void {
-    const tryCycle = (offset: number) => {
-      if (offset < -1) {
-        return;
-      }
-      const cycle = faaCycle(offset);
-      fetch(`${FAA_SECTIONAL_URL}${cycle}/0/0/0.webp`).then(response => {
-        if (!response.ok) {
-          tryCycle(offset - 1);
+  // Points each FAA layer at the cycle in effect, or the one before it while ours is late. Every
+  // archive has the 0/0/0 tile, see faa_charts.py#write_tiles.
+  private showLatestFaaCharts(): void {
+    for (const product of FAA_PRODUCTS) {
+      const tryCycle = (offset: number) => {
+        if (offset < -1) {
           return;
         }
-        this.faaCycle = cycle;
-        this.configureEntries(id => id === FAA_SECTIONAL_ID);
-      }, () => {});
-    };
-    tryCycle(0);
+        const cycle = faaCycle(offset);
+        fetch(`${FAA_TILES_URL}${product}_${cycle}/0/0/0.webp`).then(response => {
+          if (!response.ok) {
+            tryCycle(offset - 1);
+            return;
+          }
+          this.faaCycles[product] = cycle;
+          this.configureEntries(id => id === faaEntryId(product));
+        }, () => {});
+      };
+      tryCycle(0);
+    }
   }
 
   // Points the snow layers at the newest tiled day. We check for the 0/0/0 tile because every
@@ -1457,8 +1472,12 @@ function faaCycle(offset: number): string {
   return new Date(FAA_CYCLE_EPOCH_MS + index * cycleMs).toISOString().substring(0, 10);
 }
 
-function faaSectionalUrl(cycle: string): string {
-  return `${FAA_SECTIONAL_URL}${cycle}/\${id.zoom}/\${id.x}/\${id.y}.webp`;
+function faaEntryId(product: FaaProduct): string {
+  return `us/faa_${product}`;
+}
+
+function faaUrl(product: FaaProduct, cycle: string): string {
+  return `${FAA_TILES_URL}${product}_${cycle}/\${id.zoom}/\${id.x}/\${id.y}.webp`;
 }
 
 // Today plus offset days, as a UTC date because SNODAS days are UTC

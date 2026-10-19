@@ -304,9 +304,9 @@
     };
   };
 
-  systemd.services."trails-lat-faa-sectional" = {
+  systemd.services."trails-lat-faa-charts" = {
     enable = true;
-    # The FAA posts each 56 day cycle about three weeks early, and faa_sectional.py skips cycles it
+    # The FAA posts each 56 day cycle about three weeks early, and faa_charts.py skips cycles it
     # already tiled.
     startAt = "daily";
     restartIfChanged = false;
@@ -316,10 +316,10 @@
       (python3.withPackages (ps: with ps; [ gdal numpy pillow ]))
     ];
 
-    # faa_sectional.py runs a worker on every core, so it waits for the frontend.
+    # faa_charts.py runs a worker on every core, so it waits for the frontend.
     serviceConfig = {
       CPUSchedulingPolicy = "idle";
-      ExecStart = "/home/april/faa_sectional.py";
+      ExecStart = "/home/april/faa_charts.py";
       IOSchedulingClass = "idle";
       Nice = 19;
       Type = "oneshot";
