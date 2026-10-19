@@ -592,14 +592,14 @@ export class LayerCatalog extends Disposable {
               'FAA Sectional',
               /* z= */ Z_BASE_SATELLITE,
               // See faa_charts.py#PRODUCTS
-              /* maxZoom= */ 12),
+              /* maxZoom= */ 11),
           this.newFaaEntry(
               'terminal',
               'FAA Terminal Area',
               // Drawn over the sectional it details
               /* z= */ Z_BASE_SATELLITE + 0.1,
               // See faa_charts.py#PRODUCTS
-              /* maxZoom= */ 13),
+              /* maxZoom= */ 12),
         ],
       }, {
         kind: 'group',
@@ -1192,9 +1192,7 @@ export class LayerCatalog extends Disposable {
             url,
             /* tint= */ 0xFFFFFFFF as RgbaU32,
             z,
-            // Chart text is a few pixels tall, and at zoom 0 extra a tile pixel is stretched up to
-            // 2x, or 4x on a high density screen, which blurs it past reading.
-            /* extraZoom= */ 1,
+            /* extraZoom= */ 0,
             /* minZoom= */ 0,
             maxZoom,
             this.renderer);

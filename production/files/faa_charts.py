@@ -38,7 +38,7 @@ CYCLE_EPOCH = date(2026, 9, 3)
 CYCLE_DAYS = 56
 # The previous cycle stays for clients whose clock is behind ours, and the next one is posted early.
 KEEP_CYCLES = 3
-TILE_SIZE = 256
+TILE_SIZE = 512
 # Half the width of Web Mercator, in meters
 WORLD = 20037508.342789244
 # Seattle tiled to 81 MB at 75 and 113 MB as JPEG at the same quality.
@@ -204,14 +204,14 @@ class Product:
 
 
 PRODUCTS = [
-    # The charts are scanned at 42 m to the pixel. A z12 pixel is 38 m at the equator and smaller
-    # toward the poles, so z12 already holds every scanned pixel and z13 would quadruple the tiles
+    # The charts are scanned at 42 m to the pixel. A z11 pixel is 38 m at the equator and smaller
+    # toward the poles, so z11 already holds every scanned pixel and z12 would quadruple the tiles
     # for nothing. Keep in sync with layer_catalog.ts's maxZoom for the sectional entry.
-    Product('sectional', 'FAA Sectional Aeronautical Charts', 'Sectional', ' SEC.tif', 12,
+    Product('sectional', 'FAA Sectional Aeronautical Charts', 'Sectional', ' SEC.tif', 11,
             SECTIONAL_PIECES),
-    # Terminal Area Charts are twice the scale, so 21 m to the pixel and z13. Keep in sync with
+    # Terminal Area Charts are twice the scale, so 21 m to the pixel and z12. Keep in sync with
     # layer_catalog.ts's maxZoom for the terminal entry.
-    Product('terminal', 'FAA Terminal Area Charts', 'Terminal', ' TAC.tif', 13, TERMINAL_PIECES),
+    Product('terminal', 'FAA Terminal Area Charts', 'Terminal', ' TAC.tif', 12, TERMINAL_PIECES),
 ]
 
 
