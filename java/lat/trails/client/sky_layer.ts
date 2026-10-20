@@ -10,6 +10,7 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { Elevations } from 'js/map/workers/elevations';
+import { getApparentAltitude } from 'js/map/workers/sunlight';
 import {
   SKYLINE_AZIMUTHS,
   SKYLINE_BANDS,
@@ -70,10 +71,17 @@ const ON_SUBJECT = 0.5 * Math.PI / 180;
 const PATH_STEP_MS = 10 * 60 * 1000;
 const VISIBLE_STEP_MS = 60 * 1000;
 const VIEWSHED = 0x3B82F64D as RgbaU32;
+// Darkness from the worker scales this, so shadow is a dim slate and full sun is clear.
+const SHADOW = 0x1E293B8C as RgbaU32;
+const CIVIL_TWILIGHT = -6 * Math.PI / 180;
+// Below this a view spans hundreds of kilometers, and shadows are a few pixels.
+const MIN_SUNLIGHT_ZOOM = 8;
 // Over the collection's features but under anything being edited
 const Z_SKY = Z_USER_DATA_HIGHLIGHT + 1;
 // Under the collection's features, so its lines and points stay readable through the shading
 const Z_VIEWSHED = Z_USER_DATA_FILL - 0.5;
+// Under the viewshed so its blue reads through the shadow
+const Z_SHADOW = Z_VIEWSHED - 0.1;
 const COMPASS = [
   'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
   'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW',
@@ -128,6 +136,16 @@ export class SkyLayer extends Layer {
   // The shading for viewshedMode, which doesn't change with zoom so it is planned once it loads
   private viewshed: Drawable[];
   private viewshedTextures: WebGLTexture[];
+  private sunlight: boolean;
+  private moonlight: boolean;
+  // The shading for the view, and its texture
+  private shade: {drawable: Drawable; texture: WebGLTexture}|undefined;
+  private readonly glShade: WebGLBuffer;
+  // The view in mercator from 0 to 1 with y south, and its zoom
+  private view: {x0: number; y0: number; x1: number; y1: number; zoom: number}|undefined;
+  // Set while a shade is out, and again when something changes under it, so that only the newest
+  // view and time is shaded next
+  private shading: 'idle'|'busy'|'stale';
   private readonly glViewshed: WebGLBuffer;
   // Terrain samples in flight, including ones a moved pin will discard
   private sampling: number;
@@ -155,16 +173,26 @@ export class SkyLayer extends Layer {
     this.viewshedMode = 'none';
     this.viewshed = [];
     this.viewshedTextures = [];
+    this.sunlight = false;
+    this.moonlight = false;
+    this.shade = undefined;
+    this.view = undefined;
+    this.shading = 'idle';
     this.sampling = 0;
     this.appearing = false;
     this.interactive = true;
     this.time = Date.now();
     this.glGeometry = renderer.createDataBuffer(0);
     this.glViewshed = renderer.createDataBuffer(0);
+    this.glShade = renderer.createDataBuffer(0);
     this.registerDisposer(() => {
       renderer.deleteBuffer(this.glGeometry);
       renderer.deleteBuffer(this.glViewshed);
       this.clearViewshed();
+      renderer.deleteBuffer(this.glShade);
+      if (this.shade) {
+        renderer.deleteTexture(this.shade.texture);
+      }
     });
     // A day of each path at PATH_STEP_MS, the horizon, and the discs fit
     this.geometry = new ArrayBuffer(512 * LineProgram.bytesNeeded(2));
@@ -178,6 +206,25 @@ export class SkyLayer extends Layer {
     if (time !== this.time) {
       this.time = time;
       this.generation += 1;
+      this.loadShade();
+    }
+  }
+
+  /** Shades the view by what the sun lights at the map's time. */
+  setSunlight(sunlight: boolean): void {
+    if (sunlight !== this.sunlight) {
+      this.sunlight = sunlight;
+      this.generation += 1;
+      this.loadShade();
+    }
+  }
+
+  /** Shades the view by what the moon lights at the map's time, once the sun is down. */
+  setMoonlight(moonlight: boolean): void {
+    if (moonlight !== this.moonlight) {
+      this.moonlight = moonlight;
+      this.generation += 1;
+      this.loadShade();
     }
   }
 
@@ -207,7 +254,16 @@ export class SkyLayer extends Layer {
     this.interactive = interactive;
   }
 
-  override viewportChanged(bounds: S2LatLngRect): void {
+  override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
+    // Mercator from 0 to 1 with y south, which is what the elevation worker reads tiles in
+    const toWorld = (lat: number, lng: number): [number, number] => [
+      (lng + Math.PI) / (2 * Math.PI),
+      0.5 - Math.log(Math.tan(Math.PI / 4 + lat / 2)) / (2 * Math.PI),
+    ];
+    const [x0, y0] = toWorld(bounds.lat().hi(), bounds.lng().lo());
+    const [x1, y1] = toWorld(bounds.lat().lo(), bounds.lng().hi());
+    this.view = {x0, y0, x1, y1, zoom};
+    this.loadShade();
     if (!this.appearing) {
       return;
     }
@@ -391,6 +447,84 @@ export class SkyLayer extends Layer {
       offset += byteSize;
     }
     this.renderer.uploadData(buffer, offset, this.glViewshed);
+  }
+
+  // Mapterhorn's tiles are 512 pixels, so the DEM zoom whose pixels match the screen's is one less.
+  private loadShade(): void {
+    const view = this.view;
+    const light = this.getLight();
+    if (!light || !view || view.zoom < MIN_SUNLIGHT_ZOOM || view.x1 <= view.x0) {
+      if (this.shade) {
+        this.renderer.deleteTexture(this.shade.texture);
+        this.shade = undefined;
+        this.generation += 1;
+      }
+      return;
+    }
+    if (this.shading !== 'idle') {
+      this.shading = 'stale';
+      return;
+    }
+    this.shading = 'busy';
+    this.sampling += 1;
+    this.elevations
+        .shade({...view, zoom: Math.round(view.zoom) - 1, ...light})
+        .finally(() => {
+          this.sampling -= 1;
+          const stale = this.shading === 'stale';
+          this.shading = 'idle';
+          if (stale) {
+            this.loadShade();
+          }
+        })
+        .then(({x, y, width, height, pixels, rgba}) => {
+          if (!this.getLight()) {
+            return;
+          }
+          const texture = this.renderer.createTexture();
+          this.renderer.uploadTexture(new ImageData(rgba, pixels[0], pixels[1]), texture);
+          const buffer = new ArrayBuffer(BillboardProgram.bytesNeeded());
+          // From the worker's 0 to 1 with y south to mercator's -1 to 1 with y north
+          const {byteSize, drawable} =
+              this.renderer.billboardProgram.plan(
+                  [2 * (x + width / 2) - 1, 1 - 2 * (y + height / 2)],
+                  [0, 0],
+                  [2 * width, 2 * height],
+                  /* angle= */ 0,
+                  SHADOW,
+                  Z_SHADOW,
+                  /* atlasIndex= */ 0,
+                  /* atlasSize= */ [1, 1],
+                  buffer,
+                  /* offset= */ 0,
+                  this.glShade,
+                  texture);
+          this.renderer.uploadData(buffer, byteSize, this.glShade);
+          if (this.shade) {
+            this.renderer.deleteTexture(this.shade.texture);
+          }
+          this.shade = {drawable, texture};
+          this.generation += 1;
+        }, e => {
+          console.error(e);
+        });
+  }
+
+  // The moon once the sun is past civil twilight, which is when it is the brighter light, or else
+  // the sun. Undefined when neither is asked for at this time.
+  private getLight(): {azimuth: number; altitude: number; brightness: number}|undefined {
+    const center = this.camera.center;
+    const [lat, lng] = [center.latRadians(), center.lngRadians()];
+    const sun = getSunPosition(this.time, lat, lng);
+    if (this.moonlight && sun.altitude < CIVIL_TWILIGHT) {
+      // getMoonPosition already includes refraction.
+      const {azimuth, altitude} = getMoonPosition(this.time, lat, lng);
+      return {azimuth, altitude, brightness: getMoonPhase(this.time).illumination};
+    } else if (this.sunlight) {
+      return {azimuth: sun.azimuth, altitude: getApparentAltitude(sun.altitude), brightness: 1};
+    } else {
+      return undefined;
+    }
   }
 
   private clearViewshed(): void {
@@ -639,6 +773,9 @@ export class SkyLayer extends Layer {
 
     this.renderer.uploadData(this.geometry, offset, this.glGeometry);
     drawables.push(...this.viewshed);
+    if (this.shade) {
+      drawables.push(this.shade.drawable);
+    }
     this.drawables = drawables;
   }
 }

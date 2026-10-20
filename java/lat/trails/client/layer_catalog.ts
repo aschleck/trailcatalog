@@ -1077,17 +1077,21 @@ export class LayerCatalog extends Disposable {
           name: 'Sun and moon',
           enabled: false,
           layer: this.sky,
-          controls: [{
-            kind: 'select',
-            key: 'viewshed',
-            label: 'Viewshed',
-            options: [
-              {value: 'none', label: 'None'},
-              {value: 'pin', label: 'From pin'},
-              {value: 'subject', label: 'Of subject'},
-            ],
-          }],
-          values: {viewshed: 'none'},
+          controls: [
+            {kind: 'checkbox', key: 'sunlight', label: 'Sunlight shading'},
+            {kind: 'checkbox', key: 'moonlight', label: 'Moonlight shading'},
+            {
+              kind: 'select',
+              key: 'viewshed',
+              label: 'Viewshed',
+              options: [
+                {value: 'none', label: 'None'},
+                {value: 'pin', label: 'From pin'},
+                {value: 'subject', label: 'Of subject'},
+              ],
+            },
+          ],
+          values: {viewshed: 'none', sunlight: false, moonlight: false},
           timed: 'any',
           persisted: ['pin', 'subject'],
           configure: values => {
@@ -1095,6 +1099,8 @@ export class LayerCatalog extends Disposable {
                 typeof values.pin === 'string' ? values.pin : undefined,
                 typeof values.subject === 'string' ? values.subject : undefined);
             this.sky.setViewshed(values.viewshed as ViewshedMode);
+            this.sky.setSunlight(values.sunlight === true);
+            this.sky.setMoonlight(values.moonlight === true);
           },
           onShown: () => {
             this.sky.appear();

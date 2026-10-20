@@ -6,6 +6,8 @@ import {
   Request,
   Response,
   RouteResponse,
+  SunlightRequest,
+  SunlightResponse,
   TraceRequest,
   TraceResponse,
 } from './elevation_sampler';
@@ -19,6 +21,7 @@ export class Elevations {
   private readonly pending: Map<number, (meters: Float32Array) => void>;
   private readonly pendingRoutes: Map<number, (response: RouteResponse) => void>;
   private readonly pendingTraces: Map<number, (response: TraceResponse) => void>;
+  private readonly pendingShades: Map<number, (response: SunlightResponse) => void>;
   private requestCount: number;
 
   constructor() {
@@ -26,6 +29,7 @@ export class Elevations {
     this.pending = new Map();
     this.pendingRoutes = new Map();
     this.pendingTraces = new Map();
+    this.pendingShades = new Map();
     this.requestCount = 0;
 
     this.worker.onresponse = response => {
@@ -36,6 +40,10 @@ export class Elevations {
       } else if (response.kind === 'tr') {
         const resolve = this.pendingTraces.get(response.id);
         this.pendingTraces.delete(response.id);
+        resolve?.(response);
+      } else if (response.kind === 'lr') {
+        const resolve = this.pendingShades.get(response.id);
+        this.pendingShades.delete(response.id);
         resolve?.(response);
       } else {
         const resolve = this.pending.get(response.id);
@@ -82,6 +90,25 @@ export class Elevations {
         }
       });
       this.worker.post({kind: 'tr', id, ...request});
+    });
+  }
+
+  /**
+   * Resolves with how dark the terrain in a mercator box is under the sun, see
+   * sunlight.ts#getSunlight. Rejects if the tiles could not be fetched.
+   */
+  shade(request: Omit<SunlightRequest, 'kind'|'id'>): Promise<SunlightResponse> {
+    const id = this.requestCount;
+    this.requestCount += 1;
+    return new Promise((resolve, reject) => {
+      this.pendingShades.set(id, response => {
+        if (response.rgba.length === 0) {
+          reject(new Error('Unable to shade the terrain'));
+        } else {
+          resolve(response);
+        }
+      });
+      this.worker.post({kind: 'lr', id, ...request});
     });
   }
 

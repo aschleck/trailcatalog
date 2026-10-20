@@ -3,6 +3,7 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { Vec2 } from '../common/types';
 
 import { BASE_ZOOM, fetchTerrarium, TILE_SIZE } from './terrarium';
+import { getSunlight } from './sunlight';
 import { GradeLimits, routeOverTerrain, simplifyCells } from './terrain_router';
 import {
   drawViewshed,
@@ -19,6 +20,11 @@ import {
 
 // Each tile decodes to a megabyte of floats, and a long measurement reaches a few dozen.
 const TILE_CACHE_SIZE = 48;
+// Mont Blanc stands 3800 m over Chamonix, so this covers most of the shadows that fall on a valley.
+const SHADOW_RELIEF_METERS = 3_000;
+const MAX_SHADOW_METERS = 40_000;
+// The view and its padding toward the sun, which holds a phone's screen at its own pixels
+const MAX_SUNLIGHT_PIXELS = 2560;
 // Keep in sync with SimpleS2#EARTH_RADIUS_METERS
 const EARTH_RADIUS_METERS = 6371010;
 // A z12 cell is 13 m across in the Alps, so a million cells is a box 13 km on a side. The search
@@ -72,7 +78,26 @@ export interface TraceRequest {
   of: 'skyline'|'viewshed';
 }
 
-export type Request = InitializeRequest|RouteRequest|SampleRequest|TraceRequest;
+/** Shades the terrain in a box by the sun, see sunlight.ts#getSunlight. */
+export interface SunlightRequest {
+  kind: 'lr';
+  id: number;
+  // The box in mercator from 0 to 1, x east and y south
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  // The finest DEM zoom worth reading for the box on screen
+  zoom: number;
+  // Radians, with the altitude apparent rather than true
+  azimuth: number;
+  altitude: number;
+  // How much of the light lit ground gets, from 1 for the sun down to 0 for a new moon
+  brightness: number;
+}
+
+export type Request =
+    InitializeRequest|RouteRequest|SampleRequest|SunlightRequest|TraceRequest;
 
 export interface SampleResponse {
   kind: 'sr';
@@ -104,7 +129,21 @@ export interface TraceResponse {
   failed: boolean;
 }
 
-export type Response = RouteResponse|SampleResponse|TraceResponse;
+export interface SunlightResponse {
+  kind: 'lr';
+  id: number;
+  // The box the image covers, in mercator from 0 to 1, which is the request's snapped to pixels
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  // Clear in full sun facing it and opaque white in shadow, so a tint colors it. Empty when the
+  // tiles could not be fetched.
+  pixels: [number, number];
+  rgba: Uint8ClampedArray<ArrayBuffer>;
+}
+
+export type Response = RouteResponse|SampleResponse|SunlightResponse|TraceResponse;
 
 type Tile = Float32Array|undefined;
 
@@ -186,6 +225,95 @@ class ElevationSampler {
     this.postMessage(
         {kind: 'tr', id: request.id, groundMeters: ground, skyline, images, failed: false},
         [skyline.buffer, ...images.map(image => image.rgba.buffer)]);
+  }
+
+  async shade(request: SunlightRequest): Promise<void> {
+    const {azimuth, altitude} = request;
+    // A shadow reaches as far as the tallest terrain around can throw it, which we take to be
+    // SHADOW_RELIEF_METERS above the ground it falls on.
+    const lat = Math.atan(Math.sinh(Math.PI * (1 - (request.y0 + request.y1))));
+    const reach =
+        altitude > 0
+            ? Math.min(SHADOW_RELIEF_METERS / Math.tan(altitude), MAX_SHADOW_METERS)
+            : 0;
+    const reachWorld = reach / (2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(lat));
+    const ux = Math.sin(azimuth);
+    const uy = -Math.cos(azimuth);
+    const box = [
+      request.x0 + Math.min(ux, 0) * reachWorld,
+      request.y0 + Math.min(uy, 0) * reachWorld,
+      request.x1 + Math.max(ux, 0) * reachWorld,
+      request.y1 + Math.max(uy, 0) * reachWorld,
+    ];
+    let zoom = Math.min(request.zoom, BASE_ZOOM);
+    const span = Math.max(box[2] - box[0], box[3] - box[1]);
+    while (zoom > 0 && span * TILE_SIZE * 2 ** zoom > MAX_SUNLIGHT_PIXELS) {
+      zoom -= 1;
+    }
+
+    const world = TILE_SIZE * 2 ** zoom;
+    const [px0, py0] = [Math.floor(box[0] * world), Math.max(Math.floor(box[1] * world), 0)];
+    const [px1, py1] = [Math.ceil(box[2] * world), Math.min(Math.ceil(box[3] * world), world)];
+    const [width, height] = [px1 - px0, py1 - py0];
+    const heights = new Float32Array(width * height);
+    for (let ty = Math.floor(py0 / TILE_SIZE); ty * TILE_SIZE < py1; ++ty) {
+      for (let tx = Math.floor(px0 / TILE_SIZE); tx * TILE_SIZE < px1; ++tx) {
+        const tiles = 2 ** zoom;
+        const tile = await this.tile(zoom, ((tx % tiles) + tiles) % tiles, ty);
+        if (!tile) {
+          continue;
+        }
+        const left = Math.max(px0, tx * TILE_SIZE);
+        const right = Math.min(px1, (tx + 1) * TILE_SIZE);
+        for (let y = Math.max(py0, ty * TILE_SIZE); y < Math.min(py1, (ty + 1) * TILE_SIZE); ++y) {
+          const row = (y - ty * TILE_SIZE) * TILE_SIZE;
+          heights.set(
+              tile.subarray(row + left - tx * TILE_SIZE, row + right - tx * TILE_SIZE),
+              (y - py0) * width + left - px0);
+        }
+      }
+    }
+
+    const pixelMeters = 2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(lat) / world;
+    const darkness = getSunlight(heights, width, height, pixelMeters, azimuth, altitude);
+    // Back to the box that was asked for, now that the padding has cast its shadows
+    const [cx0, cy0] = [Math.floor(request.x0 * world) - px0, Math.floor(request.y0 * world) - py0];
+    const cx1 = Math.min(Math.ceil(request.x1 * world) - px0, width);
+    const cy1 = Math.min(Math.ceil(request.y1 * world) - py0, height);
+    const [cw, ch] = [cx1 - Math.max(cx0, 0), cy1 - Math.max(cy0, 0)];
+    const rgba = new Uint8ClampedArray(4 * cw * ch);
+    for (let y = 0; y < ch; ++y) {
+      for (let x = 0; x < cw; ++x) {
+        const lit = 1 - darkness[(y + Math.max(cy0, 0)) * width + x + Math.max(cx0, 0)];
+        const value = 255 * (1 - lit * request.brightness);
+        rgba.fill(value, 4 * (y * cw + x), 4 * (y * cw + x) + 4);
+      }
+    }
+    this.postMessage(
+        {
+          kind: 'lr',
+          id: request.id,
+          x: (px0 + Math.max(cx0, 0)) / world,
+          y: (py0 + Math.max(cy0, 0)) / world,
+          width: cw / world,
+          height: ch / world,
+          pixels: [cw, ch],
+          rgba,
+        },
+        [rgba.buffer]);
+  }
+
+  failShade(request: SunlightRequest): void {
+    this.postMessage({
+      kind: 'lr',
+      id: request.id,
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      pixels: [0, 0],
+      rgba: new Uint8ClampedArray(0),
+    });
   }
 
   failTrace(request: TraceRequest): void {
@@ -451,6 +579,11 @@ self.onmessage = e => {
     queue = queue.then(() => sampler.sample(request)).catch(e => {
       console.error(e);
       sampler.fail(request);
+    });
+  } else if (request.kind === 'lr') {
+    queue = queue.then(() => sampler.shade(request)).catch(e => {
+      console.error(e);
+      sampler.failShade(request);
     });
   } else if (request.kind === 'tr') {
     queue = queue.then(() => sampler.trace(request)).catch(e => {
