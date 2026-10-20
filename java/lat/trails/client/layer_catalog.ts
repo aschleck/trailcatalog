@@ -428,9 +428,8 @@ export class LayerCatalog extends Disposable {
             'Airports',
             AIRPORTS_COLLECTION_ID,
             OPENAIP_COPYRIGHT,
-            // AviationVectors.kt puts every point in a level 13 cell. There are about 47,000
-            // airports and almost half of them are in the US, so they wait until zoom 7.
-            {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            // About 47,000, almost half of them in the US
+            getPointStreams(/* zoom= */ 7, /* indexBottom= */ 6),
             locations),
         {
           kind: 'layer',
@@ -471,7 +470,7 @@ export class LayerCatalog extends Disposable {
             NAVAIDS_COLLECTION_ID,
             OPENAIP_COPYRIGHT,
             // About 4,900, which is as many as the European air quality stations
-            {minZoom: 4, maxZoom: undefined, indexBottom: 4, fromLevel: 13, toLevel: 13},
+            getPointStreams(/* zoom= */ 4, /* indexBottom= */ 4),
             locations),
         this.newCollectionEntry(
             'aviation/reporting_points',
@@ -479,7 +478,7 @@ export class LayerCatalog extends Disposable {
             REPORTING_POINTS_COLLECTION_ID,
             OPENAIP_COPYRIGHT,
             // About 6,000, almost all in Europe and clustered around airports
-            {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            getPointStreams(/* zoom= */ 6, /* indexBottom= */ 6),
             locations),
         {
           ...this.newCollectionEntry(
@@ -493,7 +492,7 @@ export class LayerCatalog extends Disposable {
               publicDomain: true,
             },
             // About 7,700 that report METARs, tiled like the river gauges
-            {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            getPointStreams(/* zoom= */ 6, /* indexBottom= */ 6),
             locations),
           weatherStation: {id: 'station', reports: 'reports'},
         },
@@ -520,9 +519,8 @@ export class LayerCatalog extends Disposable {
                 url: 'https://airindex.eea.europa.eu/AQI/index.html',
                 license: CC_BY_4,
               },
-              // Conditions.kt puts every station in a level 13 cell. There are about 3,500, few
-              // enough to draw all of Europe from zoom 4.
-              {minZoom: 4, maxZoom: undefined, indexBottom: 4, fromLevel: 13, toLevel: 13},
+              // About 3,500
+              getPointStreams(/* zoom= */ 4, /* indexBottom= */ 4),
               locations),
           this.newCollectionEntry(
               'europe/burnt_areas',
@@ -539,7 +537,7 @@ export class LayerCatalog extends Disposable {
               },
               // Few enough to load all of Europe at once: 1,318 areas were 7.4 MB of GeoJSON on
               // 2026-10-13.
-              {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+              [{minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined}],
               locations),
           {
             kind: 'layer',
@@ -674,7 +672,13 @@ export class LayerCatalog extends Disposable {
                 },
                 // Few enough to load the whole country at once: 79 contours were 180 kB of GeoJSON
                 // on 2026-10-03.
-                {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+                [{
+                  minZoom: 0,
+                  maxZoom: undefined,
+                  indexBottom: 4,
+                  fromLevel: 0,
+                  toLevel: undefined,
+                }],
                 locations),
             this.newCollectionEntry(
                 'us/conditions/fire_perimeters',
@@ -690,7 +694,13 @@ export class LayerCatalog extends Disposable {
                 },
                 // Few enough to load the whole country at once: 113 perimeters were 413 kB on
                 // 2026-10-03.
-                {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+                [{
+                  minZoom: 0,
+                  maxZoom: undefined,
+                  indexBottom: 4,
+                  fromLevel: 0,
+                  toLevel: undefined,
+                }],
                 locations),
             this.newArcGisExportEntry(
                 'us/conditions/radar',
@@ -716,9 +726,8 @@ export class LayerCatalog extends Disposable {
                   url: 'https://water.noaa.gov/',
                   publicDomain: true,
                 },
-                // Conditions.kt puts every gauge in a level 13 cell. There are about 11,500 gauges,
-                // too many to draw zoomed out, so they start at zoom 6.
-                {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+                // About 11,500
+                getPointStreams(/* zoom= */ 6, /* indexBottom= */ 6),
                 locations),
             this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'snow_depth'),
             this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
@@ -1242,7 +1251,7 @@ export class LayerCatalog extends Disposable {
       name: string,
       collection: string,
       copyright: Copyright,
-      stream: Stream,
+      streams: Stream[],
       locations: LocationIndex): LayerEntry {
     return {
       kind: 'layer',
@@ -1259,7 +1268,7 @@ export class LayerCatalog extends Disposable {
             {minZoom: 7, snap: 14},
             {minZoom: 10, snap: undefined},
           ],
-          [stream],
+          streams,
           locations,
           this.camera,
           this.renderer,
@@ -1636,6 +1645,17 @@ export class LayerCatalog extends Disposable {
 }
 
 // The first day of the FAA cycle in effect, offset by whole cycles
+// Streams for a collection whose importer puts every point in a level 13 cell, like
+// AviationVectors.kt and Conditions.kt. Below zoom they tile at level 3, where the whole world is
+// 384 cells, so a world view costs at most a few hundred requests. From zoom on they tile at
+// indexBottom so that a zoomed in view doesn't pull points from far offscreen.
+function getPointStreams(zoom: number, indexBottom: number): Stream[] {
+  return [
+    {minZoom: 0, maxZoom: zoom, indexBottom: 3, fromLevel: 13, toLevel: 13},
+    {minZoom: zoom, maxZoom: undefined, indexBottom, fromLevel: 13, toLevel: 13},
+  ];
+}
+
 function faaCycle(offset: number): string {
   const cycleMs = FAA_CYCLE_DAYS * 24 * HOUR_MS;
   const index = Math.floor((Date.now() - FAA_CYCLE_EPOCH_MS) / cycleMs) + offset;
