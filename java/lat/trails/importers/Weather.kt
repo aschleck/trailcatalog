@@ -3,6 +3,7 @@ package lat.trails.importers
 import com.luciad.imageio.webp.CompressionType
 import com.luciad.imageio.webp.WebPWriteParam
 import java.awt.image.BufferedImage
+import java.awt.image.DataBufferInt
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -10,6 +11,8 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
@@ -77,34 +80,44 @@ fun main(args: Array<String>) {
   val lookaheadInputs = LOOKAHEAD_LAYERS.map { it.input }.toSet()
   val history = lookaheadInputs.associateWith { HashMap<Int, FloatArray>() }
   val lookaheadKeys = lookaheadInputs.flatMap { it.inputs }.toSet()
-  for ((stream, streamSteps) in steps) {
-    val layers = WEATHER_LAYERS.filter { it.stream == stream }
-    for (step in streamSteps) {
-      val due = layers.filter { step % it.stepHours == 0 }
-      val ifs = stream == EcmwfStream.IFS
-      val wanted =
-          due.flatMap { it.inputs }.toSet() - STATIC_IFS_INPUTS +
-              if (ifs) lookaheadKeys - STATIC_IFS_INPUTS else setOf()
-      val fields = run.read(stream, step, wanted) + if (ifs) static else mapOf()
-      if (ifs) {
-        for ((input, steps) in history) {
-          if (fields.keys.containsAll(input.inputs)) {
-            steps[step] = input.compute(Inputs(fields))
-          }
-        }
-      }
-      for (layer in due) {
-        val missing = layer.inputs - fields.keys
-        if (missing.isNotEmpty()) {
-          // Losing one layer at one step is better than losing the run.
-          logger.warn("Skipping {} at step {} without {}", layer.name, step, missing)
-          continue
-        }
-        val path = output.value.resolve("${layer.name}_${step}.mbtiles")
-        writeLayer(layer.name, layer.channels, layer.compute(Inputs(fields)), pixels, path)
-      }
-      logger.info("Tiled {} step {}", stream, step)
+  val due = { stream: EcmwfStream, step: Int ->
+    WEATHER_LAYERS.filter { it.stream == stream && step % it.stepHours == 0 }
+  }
+  val reads = steps.flatMap { (stream, streamSteps) -> streamSteps.map { stream to it } }
+  val fetcher = Executors.newSingleThreadExecutor { Thread(it).apply { isDaemon = true } }
+  val fetch = { index: Int ->
+    val (stream, step) = reads[index]
+    val wanted =
+        due(stream, step).flatMap { it.inputs }.toSet() - STATIC_IFS_INPUTS +
+            if (stream == EcmwfStream.IFS) lookaheadKeys - STATIC_IFS_INPUTS else setOf()
+    fetcher.submit(Callable { run.read(stream, step, wanted) })
+  }
+  var next = fetch(0)
+  for ((index, read) in reads.withIndex()) {
+    val (stream, step) = read
+    val ifs = stream == EcmwfStream.IFS
+    val fields = next.get() + if (ifs) static else mapOf()
+    if (index + 1 < reads.size) {
+      next = fetch(index + 1)
     }
+    if (ifs) {
+      for ((input, steps) in history) {
+        if (fields.keys.containsAll(input.inputs)) {
+          steps[step] = input.compute(Inputs(fields))
+        }
+      }
+    }
+    for (layer in due(stream, step)) {
+      val missing = layer.inputs - fields.keys
+      if (missing.isNotEmpty()) {
+        // Losing one layer at one step is better than losing the run.
+        logger.warn("Skipping {} at step {} without {}", layer.name, step, missing)
+        continue
+      }
+      val path = output.value.resolve("${layer.name}_${step}.mbtiles")
+      writeLayer(layer.name, layer.channels, layer.compute(Inputs(fields)), pixels, path)
+    }
+    logger.info("Tiled {} step {}", stream, step)
   }
 
   val ifsSteps = steps.getValue(EcmwfStream.IFS)
@@ -174,15 +187,15 @@ private fun writeLayer(
     mbtiles.setMetadata("maxzoom", MAX_ZOOM.toString())
     tiles.parallelStream().forEach { tile ->
       val image = BufferedImage(TILE_SIZE, TILE_SIZE, BufferedImage.TYPE_INT_RGB)
-      for (i in 0 until TILE_SIZE * TILE_SIZE) {
-        var rgb = 0
-        var shift = 24
-        for ((c, channel) in channels.withIndex()) {
-          shift -= channel.bits
+      val rgb = (image.raster.dataBuffer as DataBufferInt).data
+      var shift = 24
+      for (c in channels.indices) {
+        val channel = channels[c]
+        shift -= channel.bits
+        for (i in rgb.indices) {
           val value = sample(values[c], tile.rows[i], tile.columns[i], channel.interpolation)
-          rgb = rgb or (channel.pack(value) shl shift)
+          rgb[i] = rgb[i] or (channel.pack(value) shl shift)
         }
-        image.setRGB(i % TILE_SIZE, i / TILE_SIZE, rgb)
       }
       mbtiles.insertTile(tile.x, tile.y, tile.z, encodeWebp(image))
     }
@@ -237,6 +250,10 @@ private fun encodeWebp(image: BufferedImage): ByteArray {
   val param = WebPWriteParam(writer.locale)
   param.compressionMode = ImageWriteParam.MODE_EXPLICIT
   param.compressionType = CompressionType.Lossless
+  // The defaults are libwebp's slowest settings, which took 185 ms a tile where these take 21 ms,
+  // for tiles only 3% smaller.
+  param.method = 2
+  param.compressionQuality = 0.5f
   val bytes = ByteArrayOutputStream()
   MemoryCacheImageOutputStream(bytes).use {
     writer.output = it
