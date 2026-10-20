@@ -1,5 +1,5 @@
 import { EditableFeature } from './features';
-import { toGeoJson, toGpx } from './exporter';
+import { filterForExport, toGeoJson, toGpx } from './exporter';
 import { parseGeoJson } from './geojson';
 import { parseGpx } from './gpx';
 import { DEFAULT_COLLECTION_SCHEMA } from './schema';
@@ -131,4 +131,31 @@ test('GeoJSON drops the opacity of a marker color', () => {
   const translucent = {...POINT, data: {...POINT.data, fill: '#00ff0080'}};
   const {features: [{properties}]} = JSON.parse(toGeoJson([translucent]));
   expect(properties['marker-color']).toBe('#00ff00');
+});
+
+test('Exporting leaves out unchecked features and everything under unchecked folders', () => {
+  const inner: EditableFeature =
+      {...FOLDER, id: 'inner', data: {name: 'Day 1', folder_id: 'folder'}};
+  const nested: EditableFeature = {...POINT, id: 'nested', data: {folder_id: 'inner'}};
+  const features = [FOLDER, inner, LINE, nested, POINT];
+  expect(filterForExport(features, new Set(['folder'])).map(f => f.id))
+      .toEqual(['point']);
+  expect(filterForExport(features, new Set(['inner'])).map(f => f.id))
+      .toEqual(['folder', 'line', 'point']);
+  expect(filterForExport(features, new Set(['nested', 'point'])).map(f => f.id))
+      .toEqual(['folder', 'line']);
+});
+
+test('Exporting drops a folder emptied by unchecking but keeps an empty one', () => {
+  const empty: EditableFeature = {...FOLDER, id: 'empty', data: {name: 'Empty'}};
+  expect(filterForExport([FOLDER, empty, LINE, POINT], new Set(['line'])).map(f => f.id))
+      .toEqual(['empty', 'point']);
+});
+
+test('Exporting treats a missing folder as the root and leaves out a cycle', () => {
+  const orphan: EditableFeature = {...POINT, id: 'orphan', data: {folder_id: 'gone'}};
+  const a: EditableFeature = {...FOLDER, id: 'a', data: {folder_id: 'b'}};
+  const b: EditableFeature = {...FOLDER, id: 'b', data: {folder_id: 'a'}};
+  expect(filterForExport([orphan, a, b], new Set()).map(f => f.id))
+      .toEqual(['orphan']);
 });

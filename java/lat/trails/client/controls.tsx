@@ -20,7 +20,7 @@ export const PANEL = 'flex-col gap-6 grow min-h-0 overflow-y-auto px-5 py-4';
 
 type ButtonProps = {
   children?: corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
-} & corgi.Properties;
+} & corgi.ButtonProperties;
 
 type LabeledButtonProps = {label: string} & ButtonProps;
 

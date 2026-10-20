@@ -11,8 +11,7 @@ export interface FileActions {
   openCollection(collection: Collection): void;
   openSettings(): void;
   importFiles(): void;
-  exportGpx(): void;
-  exportGeoJson(): void;
+  exportFiles(): void;
 }
 
 export function fileMenu(
@@ -49,7 +48,7 @@ export function fileMenu(
   }
   items.push({
     kind: 'menu_item',
-    label: 'Settings',
+    label: 'Settings…',
     disabled: !hasCollection,
     action: () => {
       actions.openSettings();
@@ -58,28 +57,18 @@ export function fileMenu(
   items.push({kind: 'divider'});
   items.push({
     kind: 'menu_item',
-    label: 'Import',
+    label: 'Import…',
     disabled: readOnly,
     action: () => {
       actions.importFiles();
     },
   });
   items.push({
-    kind: 'menu',
-    label: 'Export',
-    items: [{
-      kind: 'menu_item',
-      label: 'GPX',
-      action: () => {
-        actions.exportGpx();
-      },
-    }, {
-      kind: 'menu_item',
-      label: 'GeoJSON',
-      action: () => {
-        actions.exportGeoJson();
-      },
-    }],
+    kind: 'menu_item',
+    label: 'Export…',
+    action: () => {
+      actions.exportFiles();
+    },
   });
   return items;
 }

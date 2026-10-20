@@ -18,6 +18,54 @@ import {
   polygonLook,
 } from './workers/collection_schema';
 
+export type ExportFormat = 'geojson'|'gpx';
+
+/**
+ * Returns the features left after dropping excluded ids. A folder goes when it or a folder above it
+ * is excluded, or when nothing under it is left, but a folder that was empty to begin with stays. A
+ * folder_id naming a missing folder counts as the root.
+ */
+export function filterForExport(
+    features: EditableFeature[],
+    excluded: ReadonlySet<string>): EditableFeature[] {
+  const folders = new Set(features.filter(f => f.kind === 'folder').map(f => f.id));
+  const children = new Map<string|undefined, EditableFeature[]>();
+  for (const feature of features) {
+    // Keep in sync with FeatureStore#parentOf
+    const folder = feature.data.folder_id;
+    const parent = folder !== undefined && folders.has(folder) ? folder : undefined;
+    const siblings = children.get(parent) ?? [];
+    siblings.push(feature);
+    children.set(parent, siblings);
+  }
+
+  // Walking down from the root leaves out a cycle of folder_ids, which the sidebar can't show
+  // either.
+  const kept = new Set<string>();
+  const visit = (parent: string|undefined, dropped: boolean): {items: boolean; kept: boolean} => {
+    let items = false;
+    let anyKept = false;
+    for (const feature of children.get(parent) ?? []) {
+      const out = dropped || excluded.has(feature.id);
+      let keep = !out;
+      if (feature.kind === 'folder') {
+        const inside = visit(feature.id, out);
+        items ||= inside.items;
+        keep &&= inside.kept || !inside.items;
+      } else {
+        items = true;
+      }
+      if (keep) {
+        kept.add(feature.id);
+        anyKept = true;
+      }
+    }
+    return {items, kept: anyKept};
+  };
+  visit(undefined, false);
+  return features.filter(f => kept.has(f.id));
+}
+
 /**
  * Writes features as a GeoJSON FeatureCollection that parseGeoJson reads back, folders included.
  * Colors, widths, and icons are what the schema draws each feature with, so that other tools show

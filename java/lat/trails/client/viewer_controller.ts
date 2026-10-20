@@ -68,6 +68,7 @@ import {
   Tool,
   TOOL_REQUESTED,
 } from './events';
+import { ExportDialog } from './export_dialog';
 import { toGeoJson, toGpx } from './exporter';
 import { FeatureLayer } from './feature_layer';
 import {
@@ -1302,17 +1303,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               importFiles: () => {
                 this.importFiles();
               },
-              exportGpx: () => {
-                this.download(
-                    toGpx([...this.store.all()], this.store.schema()),
-                    'gpx',
-                    'application/gpx+xml');
-              },
-              exportGeoJson: () => {
-                this.download(
-                    toGeoJson([...this.store.all()], this.store.schema()),
-                    'geojson',
-                    'application/geo+json');
+              exportFiles: () => {
+                this.exportFiles();
               },
             });
         this.openMenu(items, trigger);
@@ -2020,6 +2012,21 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           });
     });
     input.click();
+  }
+
+  private exportFiles(): void {
+    const schema = this.store.schema();
+    this.dialog.display(ExportDialog({
+      features: [...this.store.all()],
+      schema,
+      onExport: (format, features) => {
+        if (format === 'gpx') {
+          this.download(toGpx(features, schema), 'gpx', 'application/gpx+xml');
+        } else {
+          this.download(toGeoJson(features, schema), 'geojson', 'application/geo+json');
+        }
+      },
+    })).catch(() => {});
   }
 
   private download(text: string, extension: string, type: string): void {
