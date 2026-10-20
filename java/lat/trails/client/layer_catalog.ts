@@ -942,7 +942,7 @@ export class LayerCatalog extends Disposable {
               {value: 'ndvi', label: 'Vegetation index (NDVI)'},
             ],
           },
-          {kind: 'checkbox', key: 'fill_clouds', label: 'Fill clouds'},
+          {kind: 'checkbox', key: 'fill_clouds', label: 'Fill clouds', setting: true},
           {kind: 'date', key: 'from', label: 'From'},
           {kind: 'date', key: 'to', label: 'To'},
           {kind: 'percent', key: 'cloud', label: 'Max cloud cover'},

@@ -1326,7 +1326,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const input = e.actionElement.element() as HTMLInputElement;
     let value;
     if (control.kind === 'checkbox') {
-      value = input.checked;
+      value = checkExists(e.actionElement.data('on')).string() === 'true';
     } else if (control.kind === 'date') {
       value = input.value;
     } else if (control.kind === 'percent') {

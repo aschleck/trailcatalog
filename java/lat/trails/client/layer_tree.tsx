@@ -11,6 +11,9 @@ export type LayerControl = {
   kind: 'checkbox';
   key: string;
   label: string;
+  // Set for a setting, which reads as Off and On, rather than something the map shows, which has
+  // an eye like a layer's
+  setting?: boolean;
 }|{
   // A yyyy-mm-dd day, where empty means unbounded
   kind: 'date';
@@ -311,17 +314,49 @@ function LayerControls({dimmed, entry}: {dimmed: boolean; entry: LayerEntry}) {
       {entry.controls.map(control => {
         const value = entry.values[control.key];
         const data = {id: entry.id, key: control.key};
-        if (control.kind === 'checkbox') {
+        if (control.kind === 'checkbox' && !control.setting) {
+          const visible = value === true;
           return (
-            <label className="cursor-pointer flex gap-1.5 items-center select-none">
-              <input
-                  checked={value === true}
-                  data={data}
-                  type="checkbox"
-                  unboundEvents={{change: 'layerControlChanged'}}
-              />
-              <span>{control.label}</span>
-            </label>
+            <div className="flex gap-1.5 items-center">
+              <span className={'grow ' + (visible ? 'text-gray-700' : 'text-gray-400')}>
+                {control.label}
+              </span>
+              <span
+                  ariaLabel={visible ? 'Hide' : 'Show'}
+                  className="cursor-pointer hover:text-gray-900 shrink-0 text-gray-500"
+                  data={{...data, on: String(!visible)}}
+                  title={visible ? 'Hide' : 'Show'}
+                  unboundEvents={{click: 'layerControlChanged'}}
+              >
+                <Eye visible={visible} />
+              </span>
+            </div>
+          );
+        } else if (control.kind === 'checkbox') {
+          // Off and On after the label, so that its value lines up on the right like a select's
+          return (
+            <div className="flex gap-1.5 items-center">
+              <span className="grow text-gray-700">{control.label}</span>
+              <div
+                  className="bg-gray-100 border border-gray-300 flex overflow-hidden rounded shrink-0"
+              >
+                {[false, true].map(on =>
+                    <button
+                        className={
+                          // 18 px and the border make it as tall as a select
+                          'leading-[18px] px-2 '
+                              + (on === (value === true)
+                                  ? 'bg-gray-900 text-white'
+                                  : 'hover:bg-gray-200 text-gray-700')
+                        }
+                        data={{...data, on: String(on)}}
+                        unboundEvents={{click: 'layerControlChanged'}}
+                    >
+                      {on ? 'On' : 'Off'}
+                    </button>
+                )}
+              </div>
+            </div>
           );
         } else if (control.kind === 'select') {
           return (
