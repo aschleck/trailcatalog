@@ -86,7 +86,7 @@ const OPENAIP_COPYRIGHT: Copyright = {
 const FAA_COPYRIGHT: Copyright = {
   long: 'Aeronautical charts from FAA Aeronautical Information Services',
   short: 'FAA',
-  url: 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/vfr/',
+  url: 'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/',
   publicDomain: true,
 };
 // Keep in sync with faa_charts.py, which writes one archive per product and cycle named
@@ -95,8 +95,8 @@ const FAA_TILES_URL = 'https://tiles.trailcatalog.org/faa_';
 // Charts take effect at 0901 UTC on the first day of their cycle. See faa_charts.py#CYCLE_EPOCH.
 const FAA_CYCLE_EPOCH_MS = Date.UTC(2026, 8, 3, 9, 1);
 const FAA_CYCLE_DAYS = 56;
-type FaaProduct = 'sectional'|'terminal';
-const FAA_PRODUCTS: FaaProduct[] = ['sectional', 'terminal'];
+type FaaProduct = 'sectional'|'terminal'|'enroute_low'|'enroute_high';
+const FAA_PRODUCTS: FaaProduct[] = ['sectional', 'terminal', 'enroute_low', 'enroute_high'];
 const SWISSTOPO_COPYRIGHT: Copyright = {
   long: 'Federal Office of Topography swisstopo',
   short: 'swisstopo',
@@ -233,7 +233,12 @@ export class LayerCatalog extends Disposable {
     const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
     this.ecmwfRun = Math.floor(Date.now() / cycleMs) * cycleMs;
     this.snodasDay = utcDay(0);
-    this.faaCycles = {sectional: faaCycle(0), terminal: faaCycle(0)};
+    this.faaCycles = {
+      sectional: faaCycle(0),
+      terminal: faaCycle(0),
+      enroute_low: faaCycle(0),
+      enroute_high: faaCycle(0),
+    };
     this.conditionsRefresh = new Timer(CONDITIONS_REFRESH_MS, () => {
       this.showLatestFaaCharts();
       this.showLatestSnow();
@@ -586,21 +591,39 @@ export class LayerCatalog extends Disposable {
           ),
           controls: [],
           values: {},
-        },
-          this.newFaaEntry(
-              'sectional',
-              'FAA Sectional',
-              /* z= */ Z_BASE_SATELLITE,
-              // See faa_charts.py#PRODUCTS
-              /* maxZoom= */ 11),
-          this.newFaaEntry(
-              'terminal',
-              'FAA Terminal Area',
-              // Drawn over the sectional it details
-              /* z= */ Z_BASE_SATELLITE + 0.1,
-              // See faa_charts.py#PRODUCTS
-              /* maxZoom= */ 12),
-        ],
+        }, {
+          kind: 'group',
+          id: 'us/faa',
+          name: 'FAA',
+          enabled: true,
+          children: [
+            this.newFaaEntry(
+                'enroute_high',
+                'IFR Enroute High',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 10),
+            this.newFaaEntry(
+                'enroute_low',
+                'IFR Enroute Low',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 11),
+            this.newFaaEntry(
+                'sectional',
+                'Sectional',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 11),
+            this.newFaaEntry(
+                'terminal',
+                'Terminal Area',
+                // Drawn over the sectional it details
+                /* z= */ Z_BASE_SATELLITE + 0.1,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 12),
+          ],
+        }],
       }, {
         kind: 'group',
         id: 'europe',

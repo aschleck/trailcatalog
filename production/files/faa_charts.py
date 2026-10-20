@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-# Tiles a cycle of FAA Sectional Aeronautical Charts and Terminal Area Charts into
-# /home/april/tiles/faa_<product>_<cycle>.pmtiles, which pmtiles serve serves at
-# tiles.trailcatalog.org. The FAA posts each 56 day cycle about three weeks before it takes effect,
-# so this tiles the current cycle and the next one. Cycles already tiled and cycles not posted yet
-# are skipped, so this runs daily. Keep the file names in sync with layer_catalog.ts#FAA_TILES_URL.
+# Tiles a cycle of FAA Sectional Aeronautical Charts, Terminal Area Charts, and IFR Enroute Low and
+# High Altitude Charts into /home/april/tiles/faa_<product>_<cycle>.pmtiles, which pmtiles serve
+# serves at tiles.trailcatalog.org. The FAA posts each 56 day cycle about three weeks before it
+# takes effect, so this tiles the current cycle and the next one. Cycles already tiled and cycles
+# not posted yet are skipped, so this runs daily. Keep the file names in sync with
+# layer_catalog.ts#FAA_TILES_URL.
 #
 # With arguments, tiles one product's current cycle into OUT and keeps nothing else, reading the
 # GeoTIFFs from SRC instead of downloading them if it's given:
-# faa_charts.py sectional|terminal OUT [SRC]
+# faa_charts.py sectional|terminal|enroute_low|enroute_high OUT [SRC]
 
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -45,6 +46,11 @@ WORLD = 20037508.342789244
 WEBP_QUALITY = 75
 # A rectangle of chart pixels that runs to the right or bottom edge
 EDGE = 1 << 20
+
+
+def rect(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
 
 # The part of each GeoTIFF that is map, in the order we draw them. Each is a box of meridians and
 # parallels (west, east, south, north), a ring of lng/lat corners joined by straight lines on the
@@ -182,18 +188,113 @@ TERMINAL_MAPS = [
     ('Tampa', (1540, 492, 7440, 7376), []),
 ]
 TERMINAL_PIECES = [
-    (chart, 'pixels', [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], cuts)
-    for chart, (x0, y0, x1, y1), cuts in TERMINAL_MAPS
+    (chart, 'pixels', rect(*bounds), cuts) for chart, bounds, cuts in TERMINAL_MAPS]
+
+# The enroute charts are each a rectangle of map inside a neat line, as chart pixels, with the
+# title panel and legends outside it. Charts at several scales overlap, so they're listed coarsest
+# first and the larger scale wins where they meet.
+#
+# Some insets are a larger scale than the chart they sit on and some are a smaller one charting the
+# water off its edge. Each is its own GeoTIFF, so we cut it from the chart it sits on and draw it
+# where it belongs.
+ENROUTE_LOW_PIECES = [
+    # Wilmington and Bimini, and Boston to Yarmouth
+    ('ENR_L23_WILM_INSET', 'pixels', rect(82, 105, 2852, 7576), []),
+    ('ENR_L34_BOST_INSET', 'pixels', [
+        (104, 53), (4250, 53), (3905, 1345), (2908, 1878), (104, 2025)], []),
+    # Juneau and Vancouver
+    ('ENR_AKL01', 'pixels', rect(2205, 273, 21788, 7735), [
+        (7743, 4021, 12261, EDGE), (15187, 4216, EDGE, EDGE)]),
+    # The chart layout key
+    ('ENR_AKL02W', 'pixels', rect(96, 111, 4562, 7576), [(0, 0, 1402, 4019)]),
+    ('ENR_AKL02C', 'pixels', rect(89, 106, 4537, 7576), []),
+    ('ENR_AKL02E', 'pixels', rect(89, 105, 4539, 7576), []),
+    # Right of Fairbanks above and Nome below
+    ('ENR_AKL03', 'pixels', [
+        (7485, 265), (21796, 265), (21796, 7735), (6085, 7735), (6085, 4084), (7485, 4084)], []),
+    # Right of Anchorage, which sits at another scale across a diagonal gap
+    ('ENR_AKL04', 'pixels', [
+        (10101, 269), (21792, 269), (21792, 7732), (6520, 7732), (6520, 7250), (8942, 3809),
+        (10101, 3809)], []),
+    ('ENR_L21', 'pixels', rect(2205, 265, 17796, 7736), []),
+    ('ENR_L13', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_AKL01_JNU', 'pixels', rect(85, 153, 4256, 3684), []),
+    ('ENR_L09', 'pixels', rect(2205, 265, 21794, 7736), []),
+    ('ENR_L11', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_L12', 'pixels', rect(4203, 263, 21796, 7735), []),
+    ('ENR_L14', 'pixels', rect(4205, 265, 21794, 7736), []),
+    ('ENR_L32', 'pixels', rect(4205, 265, 23796, 7736), []),
+    ('ENR_L10', 'pixels', rect(4205, 265, 21796, 7736), []),
+    ('ENR_L31', 'pixels', rect(4205, 265, 21796, 7736), []),
+    ('ENR_AKL04_ANC', 'pixels', [
+        (205, 268), (7923, 268), (7923, 3630), (6855, 3634), (4360, 7175), (4360, 7731),
+        (205, 7731)], []),
+    ('ENR_L05', 'pixels', rect(6205, 265, 21796, 7736), []),
+    ('ENR_L06N', 'pixels', rect(205, 265, 13796, 7736), []),
+    ('ENR_L06S', 'pixels', rect(205, 265, 7796, 7736), []),
+    ('ENR_L08', 'pixels', rect(2205, 265, 19796, 7736), []),
+    ('ENR_L15', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_L16', 'pixels', rect(4205, 265, 21796, 7736), []),
+    ('ENR_L17', 'pixels', rect(4205, 265, 21796, 7736), []),
+    ('ENR_L18', 'pixels', rect(4205, 265, 23796, 7736), []),
+    ('ENR_L19', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_L20', 'pixels', rect(2205, 264, 19796, 7735), []),
+    ('ENR_L22', 'pixels', rect(205, 265, 21796, 7736), []),
+    # Right of the Wilmington and Bimini inset
+    ('ENR_L23', 'pixels', rect(5185, 265, 21796, 7736), []),
+    ('ENR_L24', 'pixels', rect(4205, 265, 21796, 7736), []),
+    ('ENR_L27', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_L28', 'pixels', rect(2205, 265, 19796, 7736), []),
+    ('ENR_AKL03_FAI', 'pixels', rect(86, 105, 5196, 3754), []),
+    ('ENR_AKL03_OME', 'pixels', rect(85, 85, 3796, 3736), []),
+    ('ENR_L01', 'pixels', rect(2205, 265, 21792, 7734), []),
+    ('ENR_L02', 'pixels', rect(2206, 266, 19796, 7736), []),
+    ('ENR_L03', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_AKL01_VR', 'pixels', rect(109, 145, 6540, 3495), []),
+    ('ENR_L04', 'pixels', rect(4205, 265, 21796, 7736), []),
+    ('ENR_L07', 'pixels', rect(2204, 265, 21795, 7736), []),
+    ('ENR_L25', 'pixels', rect(2204, 265, 19795, 7736), []),
+    ('ENR_L26', 'pixels', rect(205, 262, 19796, 7736), []),
+    ('ENR_L29', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_L30', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_L33', 'pixels', rect(2206, 265, 17796, 7732), []),
+    # Left of the Boston and Yarmouth inset
+    ('ENR_L34', 'pixels', [
+        (205, 260), (21600, 260), (21700, 3120), (22340, 4250), (23798, 4633), (23798, 7731),
+        (205, 7731)], []),
+    ('ENR_L35', 'pixels', rect(2205, 265, 17794, 7731), []),
+    ('ENR_L36', 'pixels', rect(205, 265, 21796, 7732), []),
+]
+ENROUTE_HIGH_PIECES = [
+    # Seattle
+    ('ENR_AKH01', 'pixels', rect(2200, 263, 21791, 7736), [(12857, 4274, EDGE, EDGE)]),
+    ('ENR_AKH02', 'pixels', rect(2205, 265, 21796, 7736), []),
+    ('ENR_AKH01_SEA', 'pixels', rect(129, 127, 8856, 3376), []),
+    ('ENR_H01', 'pixels', rect(2205, 205, 23896, 7795), []),
+    ('ENR_H02', 'pixels', rect(2105, 205, 21896, 7796), []),
+    ('ENR_H03', 'pixels', rect(2206, 105, 23896, 7796), []),
+    # The special use airspace table
+    ('ENR_H04', 'pixels', rect(205, 104, 21895, 7735), [(0, 3054, 2364, EDGE)]),
+    ('ENR_H05', 'pixels', rect(2104, 105, 21895, 7794), []),
+    ('ENR_H06', 'pixels', rect(2106, 105, 21896, 7794), []),
+    ('ENR_H07', 'pixels', rect(2206, 105, 21896, 7736), []),
+    ('ENR_H08', 'pixels', rect(2105, 105, 21796, 7736), []),
+    ('ENR_H09', 'pixels', rect(2105, 105, 21796, 7796), []),
+    ('ENR_H10', 'pixels', rect(2105, 105, 21796, 7796), []),
+    ('ENR_H11', 'pixels', rect(4105, 205, 21796, 7796), []),
+    ('ENR_H12', 'pixels', rect(105, 105, 23896, 7796), []),
 ]
 
 
 @dataclass(frozen=True)
 class Product:
-    # Names the archives and the path segment in the FAA's bulk download
+    # Names the archives
     name: str
     title: str
-    zip_name: str
-    # How the GeoTIFFs in the zip end
+    # The FAA's download directory and the zips in it, without .zip
+    section: str
+    zip_names: list[str]
+    # How the GeoTIFFs in the zips end
     suffix: str
     max_zoom: int
     pieces: list
@@ -207,11 +308,22 @@ PRODUCTS = [
     # The charts are scanned at 42 m to the pixel. A z11 pixel is 38 m at the equator and smaller
     # toward the poles, so z11 already holds every scanned pixel and z12 would quadruple the tiles
     # for nothing. Keep in sync with layer_catalog.ts's maxZoom for the sectional entry.
-    Product('sectional', 'FAA Sectional Aeronautical Charts', 'Sectional', ' SEC.tif', 11,
-            SECTIONAL_PIECES),
+    Product('sectional', 'FAA Sectional Aeronautical Charts', 'visual', ['All_Files/Sectional'],
+            ' SEC.tif', 11, SECTIONAL_PIECES),
     # Terminal Area Charts are twice the scale, so 21 m to the pixel and z12. Keep in sync with
     # layer_catalog.ts's maxZoom for the terminal entry.
-    Product('terminal', 'FAA Terminal Area Charts', 'Terminal', ' TAC.tif', 12, TERMINAL_PIECES),
+    Product('terminal', 'FAA Terminal Area Charts', 'visual', ['All_Files/Terminal'], ' TAC.tif',
+            12, TERMINAL_PIECES),
+    # The low charts run 32 to 74 m to the pixel in the lower 48 and the insets, so z11 like the
+    # sectionals. Keep in sync with layer_catalog.ts's maxZoom for the enroute_low entry.
+    Product('enroute_low', 'FAA IFR Enroute Low Altitude Charts', 'enroute',
+            [f'enr_l{i:02d}' for i in range(1, 37)] + [f'enr_akl{i:02d}' for i in range(1, 5)],
+            '.tif', 11, ENROUTE_LOW_PIECES),
+    # The high charts are 79 to 93 m to the pixel in the lower 48, so z10. Keep in sync with
+    # layer_catalog.ts's maxZoom for the enroute_high entry.
+    Product('enroute_high', 'FAA IFR Enroute High Altitude Charts', 'enroute',
+            [f'enr_h{i:02d}' for i in range(1, 13)] + [f'enr_akh{i:02d}' for i in range(1, 3)],
+            '.tif', 10, ENROUTE_HIGH_PIECES),
 ]
 
 
@@ -247,13 +359,15 @@ def archive_path(product: Product, out: Path, cycle: date) -> Path:
     return out / f'faa_{product.name}_{cycle.isoformat()}.pmtiles'
 
 
-def zip_url(product: Product, cycle: date) -> str:
+def zip_url(product: Product, cycle: date, zip_name: str) -> str:
     day = cycle.strftime('%m-%d-%Y')
-    return f'https://aeronav.faa.gov/visual/{day}/All_Files/{product.zip_name}.zip'
+    return f'https://aeronav.faa.gov/{product.section}/{day}/{zip_name}.zip'
 
 
 def is_posted(product: Product, cycle: date) -> bool:
-    request = urllib.request.Request(zip_url(product, cycle), method='HEAD', headers=HEADERS)
+    # The FAA posts all of a cycle's zips at once.
+    url = zip_url(product, cycle, product.zip_names[0])
+    request = urllib.request.Request(url, method='HEAD', headers=HEADERS)
     try:
         with urllib.request.urlopen(request):
             return True
@@ -273,17 +387,18 @@ def tile_cycle(product: Product, cycle: date, out: Path, src: Path | None = None
     try:
         if src is None:
             src = work
-            url = zip_url(product, cycle)
-            print(f'Downloading {url}', flush=True)
-            download = work / 'charts.zip'
-            request = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(request) as r, open(download, 'wb') as f:
-                shutil.copyfileobj(r, f, length=1 << 20)
-            with zipfile.ZipFile(download) as z:
-                for name in z.namelist():
-                    if name.endswith(product.suffix):
-                        z.extract(name, work)
-            download.unlink()
+            for zip_name in product.zip_names:
+                url = zip_url(product, cycle, zip_name)
+                print(f'Downloading {url}', flush=True)
+                download = work / 'charts.zip'
+                request = urllib.request.Request(url, headers=HEADERS)
+                with urllib.request.urlopen(request) as r, open(download, 'wb') as f:
+                    shutil.copyfileobj(r, f, length=1 << 20)
+                with zipfile.ZipFile(download) as z:
+                    for name in z.namelist():
+                        if name.endswith(product.suffix):
+                            z.extract(name, work)
+                download.unlink()
 
         pieces = [
             warp_piece(product, src, work, i, *piece) for i, piece in enumerate(product.pieces)]
@@ -320,13 +435,14 @@ def warp_piece(
     for x0, y0, x1, y1 in cuts:
         x1 = min(x1, src.RasterXSize)
         y1 = min(y1, src.RasterYSize)
-        corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
         cutline = cutline.Difference(
-            polygon([gdal.ApplyGeoTransform(transform, x, y) for x, y in corners]))
+            polygon([gdal.ApplyGeoTransform(transform, x, y) for x, y in rect(x0, y0, x1, y1)]))
 
-    # The charts are paletted, so they're expanded before resampling blends neighbors.
+    # The VFR charts are paletted, so they're expanded before resampling blends neighbors. The
+    # enroute charts are already RGB.
     rgb = work / f'{i}_rgb.vrt'
-    gdal.Translate(str(rgb), src, format='VRT', rgbExpand='rgb')
+    paletted = src.GetRasterBand(1).GetColorTable() is not None
+    gdal.Translate(str(rgb), src, format='VRT', rgbExpand='rgb' if paletted else None)
     warped = work / f'{i}_3857.vrt'
     gdal.Warp(
         str(warped),
