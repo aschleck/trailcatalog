@@ -2,11 +2,15 @@ package org.trailcatalog.importers.basemap
 
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2CellId
+import com.google.common.geometry.S2Error
 import com.google.common.geometry.S2Loop
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2PolygonBuilder.Options
+import com.google.common.geometry.S2PolygonLayer
 import com.google.common.geometry.S2Projections
+import com.google.common.geometry.S2WindingOperation
+import com.google.common.geometry.S2WindingOperation.WindingRule
 import com.google.common.reflect.TypeToken
 import java.io.ByteArrayOutputStream
 import kotlin.math.PI
@@ -86,8 +90,8 @@ private val ASSEMBLE_OPTIONS =
         .build()
 
 private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
-  val outers = ArrayList<S2Loop>()
-  val inners = ArrayList<S2Loop>()
+  val outers = ArrayList<S2Polygon>()
+  val inners = ArrayList<S2Polygon>()
   expandIntoPolygon(geometry, outers, inners)
 
   // Saddle Mountains East is one BLM way tagged inner with nothing to be inner to. A relation with
@@ -104,9 +108,7 @@ private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
   //
   // Roles say which rings are holes, so gmina Bełchatów keeps the town of Bełchatów out of itself.
   val unsnapped = S2Polygon()
-  unsnapped.initToDifference(
-      S2Polygon.union(outers.map { S2Polygon(it) }),
-      S2Polygon.union(inners.map { S2Polygon(it) }))
+  unsnapped.initToDifference(S2Polygon.union(outers), S2Polygon.union(inners))
 
   val snapped = S2Polygon()
   snapped.initToSimplified(unsnapped, SNAP_RADIUS, /* snapToCellCenters= */ true)
@@ -115,8 +117,8 @@ private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
 
 private fun expandIntoPolygon(
     geometry: RelationGeometry,
-    outers: MutableList<S2Loop>,
-    inners: MutableList<S2Loop>) {
+    outers: MutableList<S2Polygon>,
+    inners: MutableList<S2Polygon>) {
   val outerBuilder = S2PolygonBuilder(ASSEMBLE_OPTIONS)
   val innerBuilder = S2PolygonBuilder(ASSEMBLE_OPTIONS)
   for (member in geometry.membersList) {
@@ -141,13 +143,13 @@ private fun expandIntoPolygon(
     for (loop in assembled) {
       // union and initToDifference run on S2BooleanOperation, which requires valid input and only
       // checks it through an assert, so a ring that crosses itself reaches
-      // CrossingProcessor#doneBoundaryPair and dies on a sourceIdMap entry that was never added. A
-      // ring we drop costs that relation its area, which beats a crash or a whole sphere polygon.
+      // CrossingProcessor#doneBoundaryPair and dies on a sourceIdMap entry that was never added.
       //
       // We check here rather than through S2PolygonBuilder's validate option because that option
       // checks a ring where assembleLoop builds it, and the options that run after it can leave a
       // ring that passed crossing itself.
       if (!loop.isValid()) {
+        into.add(untangle(loop, geometry.getRelationId()))
         continue
       }
 
@@ -160,7 +162,7 @@ private fun expandIntoPolygon(
         loop.invert()
       }
 
-      into.add(loop)
+      into.add(S2Polygon(loop))
     }
   }
 
@@ -174,4 +176,22 @@ private fun expandIntoPolygon(
       }
     }
   }
+}
+
+// The area enclosed by a ring that crosses itself, such as Bretagne's mainland ring on the Finistère
+// coast.
+//
+// The area the mapper drew is where the ring's winding number is nonzero, whichever way the ring
+// runs. No administrative boundary or protected area holds both a point and its antipode, so the
+// antipode of a vertex is outside with winding number zero.
+private fun untangle(loop: S2Loop, relationId: Long): S2Polygon {
+  val layer = S2PolygonLayer()
+  val operation = S2WindingOperation(layer, S2WindingOperation.Options())
+  operation.addLoop(loop.vertices())
+  val error = S2Error()
+  if (!operation.build(loop.vertex(0).neg(), /* refWinding= */ 0, WindingRule.NON_ZERO, error)) {
+    println("Unable to untangle a ring of ${relationId}: ${error}")
+    return S2Polygon()
+  }
+  return layer.polygon
 }

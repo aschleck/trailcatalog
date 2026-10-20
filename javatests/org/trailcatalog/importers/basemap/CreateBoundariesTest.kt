@@ -68,7 +68,7 @@ class CreateBoundariesTest {
   // that its input is valid through an assert, so union of a ring like this with anything reaches
   // doneBoundaryPair and dies on a sourceIdMap entry that was never added.
   @Test
-  fun testRingThatReallyCrossesItselfIsDropped() {
+  fun testRingThatReallyCrossesItselfKeepsItsArea() {
     val samango =
         listOf(
             longArrayOf(96814968, -80843737, 96066422, -77381301),
@@ -84,7 +84,29 @@ class CreateBoundariesTest {
 
     val polygon = boundaryOf(outer(samango), outer(square))
 
-    assertThat(polygon.area).isWithin(1e-9).of(boundaryOf(outer(square)).area)
+    // The shoelace formula over the ring's vertices gives 154 km^2, and the lobe past the crossing
+    // is too small to move that.
+    val samangoMeters2 = (polygon.area - boundaryOf(outer(square)).area) * 6371010.0 * 6371010.0
+    assertThat(samangoMeters2).isWithin(2e6).of(154.3e6)
+  }
+
+  // A square whose last side runs past the corner and back across itself, like Bretagne's mainland
+  // ring on the Finistère coast.
+  @Test
+  fun testSquareThatCrossesItselfKeepsItsArea() {
+    val ring =
+        listOf(
+            longArrayOf(0, 0, 10_000_000, 0, 10_000_000, 10_000_000, 0, 10_000_000),
+            // 2 km past the corner and back across the closing edge
+            longArrayOf(
+                0, 10_000_000, -200_000, 10_000_000, -200_000, 9_000_000, 100_000, 9_000_000,
+                100_000, 9_500_000, 0, 9_500_000, 0, 0))
+
+    val polygon = boundaryOf(outer(ring))
+
+    assertThat(polygon.area).isLessThan(2 * PI)
+    assertThat(polygon.area).isWithin(0.02 * polygon.area)
+        .of(boundaryOf(outer(squareAround(5_000_000, 5_000_000, 5_000_000))).area)
   }
 
   // Nine of the houses relation 4116274 tags inner, cut down to the corners that matter. Their
