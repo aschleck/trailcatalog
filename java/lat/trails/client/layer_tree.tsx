@@ -74,19 +74,6 @@ export interface LayerTreeState {
   expanded: ReadonlySet<string>;
 }
 
-/** Sorts every level of the tree with groups first and then by name, the way buildTree does. */
-export function sortLayerNodes(nodes: LayerNode[]): LayerNode[] {
-  return nodes
-      .map(node =>
-          node.kind === 'group' ? {...node, children: sortLayerNodes(node.children)} : node)
-      .sort((a, b) => {
-        if (a.kind !== b.kind) {
-          return a.kind === 'group' ? -1 : 1;
-        }
-        return a.name.localeCompare(b.name, undefined, {numeric: true});
-      });
-}
-
 /** Flattens the tree topmost first, with whether each layer and every group above it is on. */
 export function layerEntries(nodes: LayerNode[], shown = true):
     Array<{entry: LayerEntry; shown: boolean}> {

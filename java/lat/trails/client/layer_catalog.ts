@@ -30,7 +30,6 @@ import {
   LayerEntry,
   layerEntries,
   LayerNode,
-  sortLayerNodes,
 } from './layer_tree';
 import { PointCollectionLayer } from './point_collection_layer';
 import { readElevation, readSnodas, readWeather } from './readings';
@@ -405,182 +404,46 @@ export class LayerCatalog extends Disposable {
             this.renderer,
             'elevation');
 
-    this.nodes = sortLayerNodes([{
+    this.nodes = [{
       kind: 'group',
-      id: 'osm',
-      name: 'OpenStreetMap',
+      id: 'aviation',
+      name: 'Aviation',
       enabled: true,
-      children: [{
-        kind: 'layer',
-        id: 'osm/ways',
-        name: 'Ways',
-        // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
-        enabled: true,
-        schema: OSM_WAYS_SCHEMA,
-        layer: ways,
-        controls: WAY_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
-        values: Object.fromEntries(WAY_KINDS.map(({key}) => [key, true])),
-        configure: values => {
-          ways.setStyle(
-              osmWaysOf(WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
-        },
-      }, {
-        kind: 'layer',
-        id: 'osm/nodes',
-        name: 'Nodes',
-        enabled: true,
-        schema: OSM_NODES_SCHEMA,
-        layer: osmNodes,
-        controls: NODE_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
-        values: Object.fromEntries(NODE_KINDS.map(({key}) => [key, true])),
-        configure: values => {
-          osmNodes.setCategories(
-              NODE_KINDS.filter(({key}) => values[key]).map(({category}) => category));
-        },
-      }, {
-        kind: 'layer',
-        id: 'osm/protomaps',
-        name: 'Basemap',
-        enabled: true,
-        layer: protomaps,
-        controls: [
-          {kind: 'checkbox', key: 'boundaries', label: 'Boundaries'},
-          ...BASEMAP_LABEL_KINDS.map(({key, label}) => ({kind: 'checkbox' as const, key, label})),
-        ],
-        values: {
-          boundaries: true,
-          ...Object.fromEntries(BASEMAP_LABEL_KINDS.map(({key}) => [key, true])),
-        },
-        configure: values => {
-          protomaps.setStyle(
-              basemapOf(
-                  values.boundaries === true,
-                  new Set(
-                      BASEMAP_LABEL_KINDS
-                          .filter(({key}) => values[key])
-                          .flatMap(({layerNames}) => layerNames))));
-        },
-      }],
-    }, {
-      kind: 'group',
-      id: 'national',
-      name: 'National',
-      enabled: true,
-      // Children keep their top level ids because saved view states refer to layers by id.
-      children: [{
-        kind: 'group',
-        id: 'us',
-        name: 'United States',
-        enabled: true,
-        children: [{
-          kind: 'group',
-          id: 'us/conditions',
-          name: 'Conditions',
-          enabled: true,
-          children: [
-            this.newCollectionEntry(
-                'us/conditions/fire_perimeters',
-                'Fire perimeters',
-                FIRE_PERIMETERS_COLLECTION_ID,
-                {
-                  long:
-                      'Current interagency fire perimeters from the National Interagency Fire '
-                          + 'Center',
-                  short: 'NIFC',
-                  url: 'https://data-nifc.opendata.arcgis.com/',
-                  publicDomain: true,
-                },
-                // Few enough to load the whole country at once: 113 perimeters were 413 kB on
-                // 2026-10-03.
-                {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
-                locations),
-            this.newCollectionEntry(
-                'us/conditions/air_quality',
-                'Air quality',
-                AIR_QUALITY_COLLECTION_ID,
-                {
-                  // AirNow's guidelines ask for the agencies to be credited first.
-                  // https://docs.airnowapi.org/docs/DataUseGuidelines.pdf
-                  long:
-                      'Current air quality index contours from state, local, and tribal air '
-                          + 'quality agencies and the US EPA AirNow program, preliminary and '
-                          + 'unverified',
-                  short: 'AirNow',
-                  url: 'https://www.airnow.gov/',
-                  publicDomain: true,
-                },
-                // Few enough to load the whole country at once: 79 contours were 180 kB of GeoJSON
-                // on 2026-10-03.
-                {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
-                locations),
-            this.newArcGisExportEntry(
-                'us/conditions/radar',
-                'NOAA radar',
-                {
-                  long: 'Multi-Radar Multi-Sensor base reflectivity from NOAA',
-                  short: 'NOAA MRMS',
-                  url: 'https://radar.weather.gov/',
-                  publicDomain: true,
-                },
-                'eventdriven/rest/services/radar/radar_base_reflectivity/MapServer',
-                /* layers= */ undefined,
-                // MRMS has 1 km cells and a zoom 9 pixel is about 300 m, so more zoom adds no
-                // detail.
-                /* maxZoom= */ 9),
-            this.newCollectionEntry(
-                'us/conditions/river_gauges',
-                'River gauges',
-                RIVER_GAUGES_COLLECTION_ID,
-                {
-                  long: 'River observations from the NOAA National Water Prediction Service',
-                  short: 'NOAA NWPS',
-                  url: 'https://water.noaa.gov/',
-                  publicDomain: true,
-                },
-                // Conditions.kt puts every gauge in a level 13 cell. There are about 11,500 gauges,
-                // too many to draw zoomed out, so they start at zoom 6.
-                {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
-                locations),
-            this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'snow_depth'),
-            this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
-          ],
-        }, {
+      children: [
+        this.newCollectionEntry(
+            'aviation/airports',
+            'Airports',
+            AIRPORTS_COLLECTION_ID,
+            OPENAIP_COPYRIGHT,
+            // AviationVectors.kt puts every point in a level 13 cell. There are about 47,000
+            // airports and almost half of them are in the US, so they wait until zoom 7.
+            {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            locations),
+        {
           kind: 'layer',
-          id: 'us/public_land',
-          name: 'Public land',
+          id: 'aviation/airspace',
+          name: 'Airspace',
           enabled: false,
           layer: new CollectionLayer(
-              [{
-                long:
-                    'Protected Areas Database of the United States (PAD-US) 4.1 from the USGS Gap '
-                        + 'Analysis Project',
-                short: 'USGS PAD-US',
-                url: 'https://doi.org/10.5066/P96WBCHS',
-                publicDomain: true,
-              }],
-              '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
+              [OPENAIP_COPYRIGHT],
+              `/api/collections/${AIRSPACE_COLLECTION_ID}`,
               /* style= */ undefined,
-              // Snapping to a level whose cells are a few pixels across is invisible and saves most
-              // of the geometry, but past zoom 10 we want the real boundaries.
+              // Same snapping and tiling as the public land layer, see there for why. There are
+              // about 34,000 airspaces worldwide, packed densest over Europe.
               [
                 {minZoom: 0, snap: 11},
                 {minZoom: 7, snap: 14},
                 {minZoom: 10, snap: undefined},
               ],
               [
-                // Anything wider than a level 10 cell, so about 7 km up. That reaches the national
-                // parks, which sit at levels 6 to 9, and it is everything the coarsest snap can
-                // draw: snapping to level 11 erases whatever is smaller than a level 11 cell
-                // anyway.
-                //
-                // Tiled at level 5 rather than 4 because a tile carries its objects across its
-                // whole cell, so a coarser tiling means pulling parks hundreds of km offscreen once
-                // zoomed in. Level 5 costs 205 requests for a view of the western US instead of 68,
-                // and 2.9 MB instead of 4.5 MB at zoom 11.
                 {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
-                // Everything smaller. A level 6 cell holds up to 11k of these, which is why they
-                // wait until the viewport is small enough to be worth it.
-                {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
+                {
+                  minZoom: 7,
+                  maxZoom: undefined,
+                  indexBottom: 6,
+                  fromLevel: 11,
+                  toLevel: undefined,
+                },
               ],
               locations,
               this.camera,
@@ -588,66 +451,47 @@ export class LayerCatalog extends Disposable {
           ),
           controls: [],
           values: {},
-        }, {
-          kind: 'layer',
-          id: 'us/topo',
-          name: 'US Topo',
-          enabled: false,
-          layer: new RasterTileLayer(
-              [{
-                long:
-                    'Map services and data available from U.S. Geological Survey, National '
-                        + 'Geospatial Program',
-                short: 'USGS',
-                url: 'https://www.usgs.gov/programs/national-geospatial-program/national-map',
-                publicDomain: true,
-              }],
-              'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile'
-                  + '/${id.zoom}/${id.y}/${id.x}',
-              /* tint= */ 0xFFFFFFFF as RgbaU32,
-              /* z= */ Z_BASE_SATELLITE,
-              /* extraZoom= */ 0,
-              /* minZoom= */ 0,
-              // USGS caches tiles through zoom 15 and 404s past it.
-              /* maxZoom= */ 15,
-              this.renderer,
-          ),
-          controls: [],
-          values: {},
-        }, {
-          kind: 'group',
-          id: 'us/faa',
-          name: 'FAA',
-          enabled: true,
-          children: [
-            this.newFaaEntry(
-                'enroute_high',
-                'IFR Enroute High',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 10),
-            this.newFaaEntry(
-                'enroute_low',
-                'IFR Enroute Low',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 11),
-            this.newFaaEntry(
-                'sectional',
-                'Sectional',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 11),
-            this.newFaaEntry(
-                'terminal',
-                'Terminal Area',
-                // Drawn over the sectional it details
-                /* z= */ Z_BASE_SATELLITE + 0.1,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 12),
-          ],
-        }],
-      }, {
+        },
+        this.newCollectionEntry(
+            'aviation/navaids',
+            'Navaids',
+            NAVAIDS_COLLECTION_ID,
+            OPENAIP_COPYRIGHT,
+            // About 4,900, which is as many as the European air quality stations
+            {minZoom: 4, maxZoom: undefined, indexBottom: 4, fromLevel: 13, toLevel: 13},
+            locations),
+        this.newCollectionEntry(
+            'aviation/reporting_points',
+            'Reporting points',
+            REPORTING_POINTS_COLLECTION_ID,
+            OPENAIP_COPYRIGHT,
+            // About 6,000, almost all in Europe and clustered around airports
+            {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            locations),
+        {
+          ...this.newCollectionEntry(
+            'aviation/weather_stations',
+            'Weather stations',
+            WEATHER_STATIONS_COLLECTION_ID,
+            {
+              long: 'Weather stations from the NOAA Aviation Weather Center',
+              short: 'NOAA AWC',
+              url: 'https://aviationweather.gov/',
+              publicDomain: true,
+            },
+            // About 7,700 that report METARs, tiled like the river gauges
+            {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+            locations),
+          weatherStation: {id: 'station', reports: 'reports'},
+        },
+      ],
+    }, {
+      kind: 'group',
+      id: 'national',
+      name: 'National',
+      enabled: true,
+      // Children keep their top level ids because saved view states refer to layers by id.
+      children: [{
         kind: 'group',
         id: 'europe',
         name: 'Europe',
@@ -724,26 +568,16 @@ export class LayerCatalog extends Disposable {
         ],
       }, {
         kind: 'group',
-        id: 'ch',
-        name: 'Switzerland',
-        enabled: true,
-        children: [
-          this.newSwisstopoEntry(
-              'ch/topo', 'Swiss Topo', [SWISSTOPO_COPYRIGHT], 'ch.swisstopo.pixelkarte-farbe',
-              'jpeg', Z_BASE_SATELLITE, /* maxZoom= */ 19),
-        ],
-      }, {
-        kind: 'group',
         id: 'fr',
         name: 'France',
         enabled: true,
         children: [
           this.newIgnEntry(
-              'fr/plan_ign', 'Plan IGN', 'Plan IGN v2', 'GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2',
-              'image/png'),
-          this.newIgnEntry(
               'fr/orthophotos', 'Orthophotos', 'BD ORTHO orthophotos', 'ORTHOIMAGERY.ORTHOPHOTOS',
               'image/jpeg'),
+          this.newIgnEntry(
+              'fr/plan_ign', 'Plan IGN', 'Plan IGN v2', 'GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2',
+              'image/png'),
         ],
       }, {
         kind: 'group',
@@ -789,38 +623,162 @@ export class LayerCatalog extends Disposable {
           controls: [],
           values: {},
         }],
-      }],
-    }, {
-      kind: 'group',
-      id: 'aviation',
-      name: 'Aviation',
-      enabled: true,
-      children: [
-        {
+      }, {
+        kind: 'group',
+        id: 'ch',
+        name: 'Switzerland',
+        enabled: true,
+        children: [
+          this.newSwisstopoEntry(
+              'ch/topo', 'Swiss Topo', [SWISSTOPO_COPYRIGHT], 'ch.swisstopo.pixelkarte-farbe',
+              'jpeg', Z_BASE_SATELLITE, /* maxZoom= */ 19),
+        ],
+      }, {
+        kind: 'group',
+        id: 'us',
+        name: 'United States',
+        enabled: true,
+        children: [{
+          kind: 'group',
+          id: 'us/conditions',
+          name: 'Conditions',
+          enabled: true,
+          children: [
+            this.newCollectionEntry(
+                'us/conditions/air_quality',
+                'Air quality',
+                AIR_QUALITY_COLLECTION_ID,
+                {
+                  // AirNow's guidelines ask for the agencies to be credited first.
+                  // https://docs.airnowapi.org/docs/DataUseGuidelines.pdf
+                  long:
+                      'Current air quality index contours from state, local, and tribal air '
+                          + 'quality agencies and the US EPA AirNow program, preliminary and '
+                          + 'unverified',
+                  short: 'AirNow',
+                  url: 'https://www.airnow.gov/',
+                  publicDomain: true,
+                },
+                // Few enough to load the whole country at once: 79 contours were 180 kB of GeoJSON
+                // on 2026-10-03.
+                {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+                locations),
+            this.newCollectionEntry(
+                'us/conditions/fire_perimeters',
+                'Fire perimeters',
+                FIRE_PERIMETERS_COLLECTION_ID,
+                {
+                  long:
+                      'Current interagency fire perimeters from the National Interagency Fire '
+                          + 'Center',
+                  short: 'NIFC',
+                  url: 'https://data-nifc.opendata.arcgis.com/',
+                  publicDomain: true,
+                },
+                // Few enough to load the whole country at once: 113 perimeters were 413 kB on
+                // 2026-10-03.
+                {minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined},
+                locations),
+            this.newArcGisExportEntry(
+                'us/conditions/radar',
+                'NOAA radar',
+                {
+                  long: 'Multi-Radar Multi-Sensor base reflectivity from NOAA',
+                  short: 'NOAA MRMS',
+                  url: 'https://radar.weather.gov/',
+                  publicDomain: true,
+                },
+                'eventdriven/rest/services/radar/radar_base_reflectivity/MapServer',
+                /* layers= */ undefined,
+                // MRMS has 1 km cells and a zoom 9 pixel is about 300 m, so more zoom adds no
+                // detail.
+                /* maxZoom= */ 9),
+            this.newCollectionEntry(
+                'us/conditions/river_gauges',
+                'River gauges',
+                RIVER_GAUGES_COLLECTION_ID,
+                {
+                  long: 'River observations from the NOAA National Water Prediction Service',
+                  short: 'NOAA NWPS',
+                  url: 'https://water.noaa.gov/',
+                  publicDomain: true,
+                },
+                // Conditions.kt puts every gauge in a level 13 cell. There are about 11,500 gauges,
+                // too many to draw zoomed out, so they start at zoom 6.
+                {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
+                locations),
+            this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'snow_depth'),
+            this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
+          ],
+        }, {
+          kind: 'group',
+          id: 'us/faa',
+          name: 'FAA',
+          enabled: true,
+          children: [
+            this.newFaaEntry(
+                'enroute_high',
+                'IFR Enroute High',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 10),
+            this.newFaaEntry(
+                'enroute_low',
+                'IFR Enroute Low',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 11),
+            this.newFaaEntry(
+                'sectional',
+                'Sectional',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 11),
+            this.newFaaEntry(
+                'terminal',
+                'Terminal Area',
+                // Drawn over the sectional it details
+                /* z= */ Z_BASE_SATELLITE + 0.1,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 12),
+          ],
+        }, {
           kind: 'layer',
-          id: 'aviation/airspace',
-          name: 'Airspace',
+          id: 'us/public_land',
+          name: 'Public land',
           enabled: false,
           layer: new CollectionLayer(
-              [OPENAIP_COPYRIGHT],
-              `/api/collections/${AIRSPACE_COLLECTION_ID}`,
+              [{
+                long:
+                    'Protected Areas Database of the United States (PAD-US) 4.1 from the USGS Gap '
+                        + 'Analysis Project',
+                short: 'USGS PAD-US',
+                url: 'https://doi.org/10.5066/P96WBCHS',
+                publicDomain: true,
+              }],
+              '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
               /* style= */ undefined,
-              // Same snapping and tiling as the public land layer, see there for why. There are
-              // about 34,000 airspaces worldwide, packed densest over Europe.
+              // Snapping to a level whose cells are a few pixels across is invisible and saves most
+              // of the geometry, but past zoom 10 we want the real boundaries.
               [
                 {minZoom: 0, snap: 11},
                 {minZoom: 7, snap: 14},
                 {minZoom: 10, snap: undefined},
               ],
               [
+                // Anything wider than a level 10 cell, so about 7 km up. That reaches the national
+                // parks, which sit at levels 6 to 9, and it is everything the coarsest snap can
+                // draw: snapping to level 11 erases whatever is smaller than a level 11 cell
+                // anyway.
+                //
+                // Tiled at level 5 rather than 4 because a tile carries its objects across its
+                // whole cell, so a coarser tiling means pulling parks hundreds of km offscreen once
+                // zoomed in. Level 5 costs 205 requests for a view of the western US instead of 68,
+                // and 2.9 MB instead of 4.5 MB at zoom 11.
                 {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
-                {
-                  minZoom: 7,
-                  maxZoom: undefined,
-                  indexBottom: 6,
-                  fromLevel: 11,
-                  toLevel: undefined,
-                },
+                // Everything smaller. A level 6 cell holds up to 11k of these, which is why they
+                // wait until the viewport is small enough to be worth it.
+                {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
               ],
               locations,
               this.camera,
@@ -828,49 +786,90 @@ export class LayerCatalog extends Disposable {
           ),
           controls: [],
           values: {},
+        }, {
+          kind: 'layer',
+          id: 'us/topo',
+          name: 'US Topo',
+          enabled: false,
+          layer: new RasterTileLayer(
+              [{
+                long:
+                    'Map services and data available from U.S. Geological Survey, National '
+                        + 'Geospatial Program',
+                short: 'USGS',
+                url: 'https://www.usgs.gov/programs/national-geospatial-program/national-map',
+                publicDomain: true,
+              }],
+              'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile'
+                  + '/${id.zoom}/${id.y}/${id.x}',
+              /* tint= */ 0xFFFFFFFF as RgbaU32,
+              /* z= */ Z_BASE_SATELLITE,
+              /* extraZoom= */ 0,
+              /* minZoom= */ 0,
+              // USGS caches tiles through zoom 15 and 404s past it.
+              /* maxZoom= */ 15,
+              this.renderer,
+          ),
+          controls: [],
+          values: {},
+        }],
+      }],
+    }, {
+      kind: 'group',
+      id: 'osm',
+      name: 'OpenStreetMap',
+      enabled: true,
+      children: [{
+        kind: 'layer',
+        id: 'osm/protomaps',
+        name: 'Basemap',
+        enabled: true,
+        layer: protomaps,
+        controls: [
+          {kind: 'checkbox', key: 'boundaries', label: 'Boundaries'},
+          ...BASEMAP_LABEL_KINDS.map(({key, label}) => ({kind: 'checkbox' as const, key, label})),
+        ],
+        values: {
+          boundaries: true,
+          ...Object.fromEntries(BASEMAP_LABEL_KINDS.map(({key}) => [key, true])),
         },
-        this.newCollectionEntry(
-            'aviation/airports',
-            'Airports',
-            AIRPORTS_COLLECTION_ID,
-            OPENAIP_COPYRIGHT,
-            // AviationVectors.kt puts every point in a level 13 cell. There are about 47,000
-            // airports and almost half of them are in the US, so they wait until zoom 7.
-            {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
-            locations),
-        this.newCollectionEntry(
-            'aviation/navaids',
-            'Navaids',
-            NAVAIDS_COLLECTION_ID,
-            OPENAIP_COPYRIGHT,
-            // About 4,900, which is as many as the European air quality stations
-            {minZoom: 4, maxZoom: undefined, indexBottom: 4, fromLevel: 13, toLevel: 13},
-            locations),
-        this.newCollectionEntry(
-            'aviation/reporting_points',
-            'Reporting points',
-            REPORTING_POINTS_COLLECTION_ID,
-            OPENAIP_COPYRIGHT,
-            // About 6,000, almost all in Europe and clustered around airports
-            {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
-            locations),
-        {
-          ...this.newCollectionEntry(
-            'aviation/weather_stations',
-            'Weather stations',
-            WEATHER_STATIONS_COLLECTION_ID,
-            {
-              long: 'Weather stations from the NOAA Aviation Weather Center',
-              short: 'NOAA AWC',
-              url: 'https://aviationweather.gov/',
-              publicDomain: true,
-            },
-            // About 7,700 that report METARs, tiled like the river gauges
-            {minZoom: 6, maxZoom: undefined, indexBottom: 6, fromLevel: 13, toLevel: 13},
-            locations),
-          weatherStation: {id: 'station', reports: 'reports'},
+        configure: values => {
+          protomaps.setStyle(
+              basemapOf(
+                  values.boundaries === true,
+                  new Set(
+                      BASEMAP_LABEL_KINDS
+                          .filter(({key}) => values[key])
+                          .flatMap(({layerNames}) => layerNames))));
         },
-      ],
+      }, {
+        kind: 'layer',
+        id: 'osm/nodes',
+        name: 'Nodes',
+        enabled: true,
+        schema: OSM_NODES_SCHEMA,
+        layer: osmNodes,
+        controls: NODE_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
+        values: Object.fromEntries(NODE_KINDS.map(({key}) => [key, true])),
+        configure: values => {
+          osmNodes.setCategories(
+              NODE_KINDS.filter(({key}) => values[key]).map(({category}) => category));
+        },
+      }, {
+        kind: 'layer',
+        id: 'osm/ways',
+        name: 'Ways',
+        // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
+        enabled: true,
+        schema: OSM_WAYS_SCHEMA,
+        layer: ways,
+        controls: WAY_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
+        values: Object.fromEntries(WAY_KINDS.map(({key}) => [key, true])),
+        configure: values => {
+          ways.setStyle(
+              osmWaysOf(WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
+        },
+      }],
     }, {
       kind: 'group',
       id: 'satellite',
@@ -882,10 +881,10 @@ export class LayerCatalog extends Disposable {
         name: 'GOES',
         enabled: true,
         children: [
-          this.newGoesEntry('East', 'GeoColor', 'GeoColor'),
           this.newGoesEntry('East', 'FireTemp', 'fire temperature'),
-          this.newGoesEntry('West', 'GeoColor', 'GeoColor'),
+          this.newGoesEntry('East', 'GeoColor', 'GeoColor'),
           this.newGoesEntry('West', 'FireTemp', 'fire temperature'),
+          this.newGoesEntry('West', 'GeoColor', 'GeoColor'),
         ],
       }, {
         kind: 'layer',
@@ -933,78 +932,6 @@ export class LayerCatalog extends Disposable {
       }],
     }, {
       kind: 'group',
-      id: 'weather',
-      name: 'Weather',
-      enabled: true,
-      children: [
-        this.newWindEntry(),
-        this.newWeatherEntry('gust', 'Wind gusts'),
-        this.newWeatherEntry('pressure', 'Pressure'),
-        this.newWeatherEntry('temperature', 'Temperature'),
-        this.newWeatherEntry('dew_point', 'Dew point'),
-        this.newWeatherEntry('humidity', 'Humidity'),
-        this.newWeatherEntry('wet_bulb', 'Wet-bulb temperature'),
-        this.newSwitchedWeatherEntry(
-            'weather/rain',
-            'Rain and thunder',
-            [accumulationControl()],
-            {accumulation: 'none'},
-            values => values.accumulation === 'none'
-                ? {view: 'precipitation', name: 'Rain and thunder'}
-                : lookaheadView('rain', 'Rain', values)),
-        this.newSwitchedWeatherEntry(
-            'weather/snow',
-            'Snow',
-            [accumulationControl()],
-            {accumulation: 'none'},
-            values => values.accumulation === 'none'
-                ? {view: 'snow_depth', name: 'Snow depth'}
-                : lookaheadView('snowfall', 'Snow', values)),
-        this.newWeatherEntry('thermals', 'Thermals'),
-        this.newWeatherEntry('freezing', 'Freezing altitude'),
-        this.newWeatherEntry('waves', 'Waves'),
-        this.newSwitchedWeatherEntry(
-            'weather/clouds',
-            'Clouds',
-            [{
-              kind: 'select',
-              key: 'height',
-              label: 'Height',
-              options: CLOUD_HEIGHTS.map(({view, label}) => ({value: view, label})),
-            }],
-            {height: 'clouds'},
-            values => checkExists(CLOUD_HEIGHTS.find(({view}) => view === values.height))),
-        this.newSwitchedWeatherEntry(
-            'weather/icing',
-            'Icing',
-            [altitudeControl([850, 700, 600, 500, 400, 300].map(level => ({
-              value: String(level),
-              label: FLIGHT_LEVELS[level],
-            })))],
-            {altitude: '850'},
-            values => ({
-              view: `icing_${values.altitude}` as WeatherView,
-              name: `Icing at ${FLIGHT_LEVELS[Number(values.altitude)]}`,
-            })),
-        this.newSwitchedWeatherEntry(
-            'weather/turbulence',
-            'Clear air turbulence',
-            [altitudeControl([[400, 300], [300, 250], [250, 200], [200, 150]].map(
-                ([bottom, top]) => ({
-                  value: `${bottom}_${top}`,
-                  label: `${FLIGHT_LEVELS[bottom]} to ${FLIGHT_LEVELS[top]}`,
-                })))],
-            {altitude: '400_300'},
-            values => {
-              const [bottom, top] = String(values.altitude).split('_').map(Number);
-              return {
-                view: `turbulence_${values.altitude}` as WeatherView,
-                name: `Turbulence, ${FLIGHT_LEVELS[bottom]} to ${FLIGHT_LEVELS[top]}`,
-              };
-            }),
-      ],
-    }, {
-      kind: 'group',
       id: 'topography',
       name: 'Topography',
       enabled: true,
@@ -1014,23 +941,6 @@ export class LayerCatalog extends Disposable {
         name: 'Contours',
         enabled: true,
         layer: this.contours[getUnitSystem()],
-        controls: [],
-        values: {},
-      }, {
-        kind: 'layer',
-        id: 'topography/hillshades',
-        name: 'Hillshades',
-        enabled: true,
-        layer: new RasterTileLayer(
-            [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
-            'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
-            /* tint= */ 0xFFFFFF30 as RgbaU32,
-            /* z= */ Z_BASE_TERRAIN,
-            /* extraZoom= */ 0,
-            /* minZoom= */ 0,
-            /* maxZoom= */ 12,
-            this.renderer,
-        ),
         controls: [],
         values: {},
       }, {
@@ -1050,6 +960,23 @@ export class LayerCatalog extends Disposable {
         },
       }, {
         kind: 'layer',
+        id: 'topography/hillshades',
+        name: 'Hillshades',
+        enabled: true,
+        layer: new RasterTileLayer(
+            [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
+            'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
+            /* tint= */ 0xFFFFFF30 as RgbaU32,
+            /* z= */ Z_BASE_TERRAIN,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            /* maxZoom= */ 12,
+            this.renderer,
+        ),
+        controls: [],
+        values: {},
+      }, {
+        kind: 'layer',
         id: 'topography/slopes',
         name: 'Slope angles',
         enabled: false,
@@ -1057,7 +984,79 @@ export class LayerCatalog extends Disposable {
         controls: [],
         values: {},
       }],
-    }]);
+    }, {
+      kind: 'group',
+      id: 'weather',
+      name: 'Weather',
+      enabled: true,
+      children: [
+        this.newSwitchedWeatherEntry(
+            'weather/turbulence',
+            'Clear air turbulence',
+            [altitudeControl([[400, 300], [300, 250], [250, 200], [200, 150]].map(
+                ([bottom, top]) => ({
+                  value: `${bottom}_${top}`,
+                  label: `${FLIGHT_LEVELS[bottom]} to ${FLIGHT_LEVELS[top]}`,
+                })))],
+            {altitude: '400_300'},
+            values => {
+              const [bottom, top] = String(values.altitude).split('_').map(Number);
+              return {
+                view: `turbulence_${values.altitude}` as WeatherView,
+                name: `Turbulence, ${FLIGHT_LEVELS[bottom]} to ${FLIGHT_LEVELS[top]}`,
+              };
+            }),
+        this.newSwitchedWeatherEntry(
+            'weather/clouds',
+            'Clouds',
+            [{
+              kind: 'select',
+              key: 'height',
+              label: 'Height',
+              options: CLOUD_HEIGHTS.map(({view, label}) => ({value: view, label})),
+            }],
+            {height: 'clouds'},
+            values => checkExists(CLOUD_HEIGHTS.find(({view}) => view === values.height))),
+        this.newWeatherEntry('dew_point', 'Dew point'),
+        this.newWeatherEntry('freezing', 'Freezing altitude'),
+        this.newWeatherEntry('humidity', 'Humidity'),
+        this.newSwitchedWeatherEntry(
+            'weather/icing',
+            'Icing',
+            [altitudeControl([850, 700, 600, 500, 400, 300].map(level => ({
+              value: String(level),
+              label: FLIGHT_LEVELS[level],
+            })))],
+            {altitude: '850'},
+            values => ({
+              view: `icing_${values.altitude}` as WeatherView,
+              name: `Icing at ${FLIGHT_LEVELS[Number(values.altitude)]}`,
+            })),
+        this.newWeatherEntry('pressure', 'Pressure'),
+        this.newSwitchedWeatherEntry(
+            'weather/rain',
+            'Rain and thunder',
+            [accumulationControl()],
+            {accumulation: 'none'},
+            values => values.accumulation === 'none'
+                ? {view: 'precipitation', name: 'Rain and thunder'}
+                : lookaheadView('rain', 'Rain', values)),
+        this.newSwitchedWeatherEntry(
+            'weather/snow',
+            'Snow',
+            [accumulationControl()],
+            {accumulation: 'none'},
+            values => values.accumulation === 'none'
+                ? {view: 'snow_depth', name: 'Snow depth'}
+                : lookaheadView('snowfall', 'Snow', values)),
+        this.newWeatherEntry('temperature', 'Temperature'),
+        this.newWeatherEntry('thermals', 'Thermals'),
+        this.newWeatherEntry('waves', 'Waves'),
+        this.newWeatherEntry('wet_bulb', 'Wet-bulb temperature'),
+        this.newWindEntry(),
+        this.newWeatherEntry('gust', 'Wind gusts'),
+      ],
+    }];
     const owned =
         new Set([
           ...layerEntries(this.nodes).map(({entry}) => entry.layer),
