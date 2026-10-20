@@ -25,6 +25,8 @@ export type LayerControl = {
   key: string;
   label: string;
   options: Array<{value: string; label: string}>;
+  // Whether the choice means anything with the other values, and disabled where it doesn't
+  appliesTo?: (values: ControlValues) => boolean;
 };
 
 export type ControlValues = {[key: string]: boolean|number|string};
@@ -310,8 +312,9 @@ function LayerControls({dimmed, entry}: {dimmed: boolean; entry: LayerEntry}) {
             <label className="flex gap-1.5 items-center">
               <span className="grow text-gray-700">{control.label}</span>
               <select
-                  className="border border-gray-300 min-w-0 px-1 rounded"
+                  className="border border-gray-300 disabled:opacity-50 min-w-0 px-1 rounded"
                   data={data}
+                  disabled={control.appliesTo?.(entry.values) === false}
                   unboundEvents={{change: 'layerControlChanged'}}
               >
                 {control.options.map(option =>

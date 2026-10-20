@@ -207,7 +207,7 @@ const CLOUD_HEIGHTS: Array<{view: WeatherView; label: string; name: string}> = [
   {view: 'medium_clouds', label: 'Medium', name: 'Medium clouds'},
   {view: 'high_clouds', label: 'High', name: 'High clouds'},
 ];
-// See WeatherLayers.kt#LOOKAHEAD_LAYERS
+// See WeatherLayers.kt#LOOKAHEAD_LAYERS and #PEAK_WINDOWS
 const LOOKAHEAD_WINDOWS = [[12, '12 hours'], [24, '24 hours'], [72, '3 days'], [120, '5 days']];
 // Runs land 6 to 9 hours after they start, and past that a stale run means ecmwf.sh stopped
 // tiling. A 3 day old run still forecasts now, so we reach back that far.
@@ -1036,25 +1036,24 @@ export class LayerCatalog extends Disposable {
         this.newSwitchedWeatherEntry(
             'weather/rain',
             'Rain and thunder',
-            [accumulationControl()],
+            [lookaheadControl('accumulation', 'Accumulation')],
             {accumulation: 'none'},
             values => values.accumulation === 'none'
                 ? {view: 'precipitation', name: 'Rain and thunder'}
-                : lookaheadView('rain', 'Rain', values)),
+                : lookaheadView('rain', 'Rain', values.accumulation)),
         this.newSwitchedWeatherEntry(
             'weather/snow',
             'Snow',
-            [accumulationControl()],
+            [lookaheadControl('accumulation', 'Accumulation')],
             {accumulation: 'none'},
             values => values.accumulation === 'none'
                 ? {view: 'snow_depth', name: 'Snow depth'}
-                : lookaheadView('snowfall', 'Snow', values)),
+                : lookaheadView('snowfall', 'Snow', values.accumulation)),
         this.newWeatherEntry('temperature', 'Temperature'),
         this.newWeatherEntry('thermals', 'Thermals'),
         this.newWeatherEntry('waves', 'Waves'),
         this.newWeatherEntry('wet_bulb', 'Wet-bulb temperature'),
         this.newWindEntry(),
-        this.newWeatherEntry('gust', 'Wind gusts'),
       ],
     }];
     const owned =
@@ -1414,37 +1413,41 @@ export class LayerCatalog extends Disposable {
     };
   }
 
-  // Wind speed colors at an altitude, or the strongest wind to come there, with streamlines or
+  // Wind or gust speed colors at an altitude, or the strongest to come there, with streamlines or
   // barbs over them
   private newWindEntry(): LayerEntry {
-    const archive = (values: ControlValues) =>
-        (values.altitude === 'ground' ? 'wind' : `wind_${values.altitude}`) as EcmwfLayer;
-    const values = {altitude: 'ground', accumulation: 'none', arrows: 'streamlines'};
-    const speed =
-        this.newSwitchedWeatherEntry(
-            'weather/wind',
-            'Wind',
+    const pick = (values: ControlValues): {view: WeatherView; name: string} => {
+      const level = FLIGHT_LEVELS[Number(values.altitude)];
+      const [prefix, now, strongest] =
+          values.type === 'gusts'
+              ? ['gust', 'Wind gusts', 'Strongest gust']
+              : values.altitude === 'ground'
+                  ? ['wind', 'Wind', 'Strongest wind']
+                  : [`wind_${values.altitude}`, `Wind at ${level}`, `Strongest wind at ${level}`];
+      return values.peak === 'none'
+          ? {view: prefix as WeatherView, name: now}
+          : lookaheadView(`${prefix}_peak`, strongest, values.peak);
+    };
+    // Every wind view colors its archive's u and v, so the arrows draw the same archive.
+    const archive = (values: ControlValues) => WEATHER_VIEWS[pick(values).view].layer;
+    const values = {type: 'sustained', altitude: 'ground', peak: 'none', arrows: 'streamlines'};
+    const type: LayerControl = {
+      kind: 'select',
+      key: 'type',
+      label: 'Type',
+      options: [{value: 'sustained', label: 'Sustained'}, {value: 'gusts', label: 'Gusts'}],
+    };
+    const altitude =
+        altitudeControl(
             [
-              accumulationControl(),
-              altitudeControl([
-                {value: 'ground', label: 'Ground'},
-                ...WIND_LEVELS.map(level => ({value: String(level), label: FLIGHT_LEVELS[level]})),
-              ]),
+              {value: 'ground', label: 'Ground'},
+              ...WIND_LEVELS.map(level => ({value: String(level), label: FLIGHT_LEVELS[level]})),
             ],
-            values,
-            values => {
-              const level = FLIGHT_LEVELS[Number(values.altitude)];
-              if (values.altitude === 'ground') {
-                return values.accumulation === 'none'
-                    ? {view: 'wind', name: 'Wind'}
-                    : lookaheadView('wind_accumulation', 'Strongest gust', values);
-              } else {
-                return values.accumulation === 'none'
-                    ? {view: archive(values) as WeatherView, name: `Wind at ${level}`}
-                    : lookaheadView(
-                        `wind_${values.altitude}_accumulation`, `Strongest wind at ${level}`, values);
-              }
-            });
+            // ECMWF only forecasts gusts at 10 m.
+            values => values.type !== 'gusts');
+    const peak = lookaheadControl('peak', 'Strongest');
+    const speed =
+        this.newSwitchedWeatherEntry('weather/wind', 'Wind', [type, altitude, peak], values, pick);
     let url = ecmwfUrl(this.ecmwfRun, archive(values));
     const vectors =
         new WindVectorLayer(
@@ -1458,7 +1461,7 @@ export class LayerCatalog extends Disposable {
     return {
       ...speed,
       layer: new CompositeLayer([speed.layer, vectors]),
-      controls: [{
+      controls: [type, altitude, {
         kind: 'select',
         key: 'arrows',
         label: 'Arrows',
@@ -1467,7 +1470,7 @@ export class LayerCatalog extends Disposable {
           {value: 'streamlines', label: 'Streamlines'},
           {value: 'barbs', label: 'Barbs'},
         ],
-      }, ...speed.controls],
+      }, peak],
       configure: values => {
         speed.configure?.(values);
         const arrows = values.arrows;
@@ -1564,15 +1567,17 @@ function utcDay(offset: number): string {
 }
 
 // The step closest to now, or the last one the archive has
-function altitudeControl(options: Array<{value: string; label: string}>): LayerControl {
-  return {kind: 'select', key: 'altitude', label: 'Altitude', options};
+function altitudeControl(
+    options: Array<{value: string; label: string}>,
+    appliesTo?: (values: ControlValues) => boolean): LayerControl {
+  return {kind: 'select', key: 'altitude', label: 'Altitude', options, appliesTo};
 }
 
-function accumulationControl(): LayerControl {
+function lookaheadControl(key: string, label: string): LayerControl {
   return {
     kind: 'select',
-    key: 'accumulation',
-    label: 'Accumulation',
+    key,
+    label,
     options: [
       {value: 'none', label: 'None'},
       ...LOOKAHEAD_WINDOWS.map(([hours, label]) =>
@@ -1581,14 +1586,13 @@ function accumulationControl(): LayerControl {
   };
 }
 
-// The view of prefix over the window that accumulationControl picked, named as what over it
-function lookaheadView(prefix: string, what: string, values: ControlValues):
+function lookaheadView(prefix: string, what: string, window: ControlValues[string]):
     {view: WeatherView; name: string} {
-  const [, label] =
-      checkExists(LOOKAHEAD_WINDOWS.find(([hours]) => String(hours) === values.accumulation));
-  return {view: `${prefix}_${values.accumulation}` as WeatherView, name: `${what}, next ${label}`};
+  const [, label] = checkExists(LOOKAHEAD_WINDOWS.find(([hours]) => String(hours) === window));
+  return {view: `${prefix}_${window}` as WeatherView, name: `${what}, next ${label}`};
 }
 
+// The step nearest to at, or the last one the archive has
 function ecmwfUrl(run: number, archive: EcmwfLayer): string {
   const {lookaheadHours, stepHours}: {lookaheadHours?: number; stepHours: number} =
       ECMWF_LAYERS[archive];

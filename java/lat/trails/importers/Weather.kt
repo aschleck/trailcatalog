@@ -24,6 +24,7 @@ import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.sinh
+import kotlin.math.sqrt
 import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
@@ -78,7 +79,7 @@ fun main(args: Array<String>) {
   val pixels = tilePixels()
   val static = run.read(EcmwfStream.IFS, 0, STATIC_IFS_INPUTS)
   val lookaheadInputs = LOOKAHEAD_LAYERS.map { it.input }.toSet()
-  val history = lookaheadInputs.associateWith { HashMap<Int, FloatArray>() }
+  val history = lookaheadInputs.associateWith { HashMap<Int, List<FloatArray>>() }
   val lookaheadKeys = lookaheadInputs.flatMap { it.inputs }.toSet()
   val due = { stream: EcmwfStream, step: Int ->
     WEATHER_LAYERS.filter { it.stream == stream && step % it.stepHours == 0 }
@@ -87,9 +88,8 @@ fun main(args: Array<String>) {
   val fetcher = Executors.newSingleThreadExecutor { Thread(it).apply { isDaemon = true } }
   val fetch = { index: Int ->
     val (stream, step) = reads[index]
-    val wanted =
-        due(stream, step).flatMap { it.inputs }.toSet() - STATIC_IFS_INPUTS +
-            if (stream == EcmwfStream.IFS) lookaheadKeys - STATIC_IFS_INPUTS else setOf()
+    val lookahead = if (stream == EcmwfStream.IFS) lookaheadKeys else setOf()
+    val wanted = due(stream, step).flatMap { it.inputs }.toSet() + lookahead - STATIC_IFS_INPUTS
     fetcher.submit(Callable { run.read(stream, step, wanted) })
   }
   var next = fetch(0)
@@ -131,7 +131,7 @@ fun main(args: Array<String>) {
       if (windows.any { window -> window.any { it == null } }) {
         continue
       }
-      val values = windows.map { window -> layer.combine(window.map { it!! }) }
+      val values = windows.flatMap { window -> layer.combine(window.map { it!! }) }
       val path = output.value.resolve("${layer.name}_${step}.mbtiles")
       writeLayer(layer.name, layer.channels, values, pixels, path)
     }
@@ -189,12 +189,28 @@ private fun writeLayer(
       val image = BufferedImage(TILE_SIZE, TILE_SIZE, BufferedImage.TYPE_INT_RGB)
       val rgb = (image.raster.dataBuffer as DataBufferInt).data
       var shift = 24
-      for (c in channels.indices) {
+      var c = 0
+      while (c < channels.size) {
         val channel = channels[c]
         shift -= channel.bits
-        for (i in rgb.indices) {
-          val value = sample(values[c], tile.rows[i], tile.columns[i], channel.interpolation)
-          rgb[i] = rgb[i] or (channel.pack(value) shl shift)
+        if (channel.interpolation == Interpolation.VECTOR) {
+          val north = channels[c + 1]
+          val northShift = shift - north.bits
+          val vector = DoubleArray(2)
+          for (i in rgb.indices) {
+            sampleVector(values[c], values[c + 1], tile.rows[i], tile.columns[i], vector)
+            rgb[i] =
+                rgb[i] or (channel.pack(vector[0]) shl shift) or
+                    (north.pack(vector[1]) shl northShift)
+          }
+          shift = northShift
+          c += 2
+        } else {
+          for (i in rgb.indices) {
+            val value = sample(values[c], tile.rows[i], tile.columns[i], channel.interpolation)
+            rgb[i] = rgb[i] or (channel.pack(value) shl shift)
+          }
+          c += 1
         }
       }
       mbtiles.insertTile(tile.x, tile.y, tile.z, encodeWebp(image))
@@ -204,14 +220,12 @@ private fun writeLayer(
 
 /** Blends the four grid points around a spot, leaving out NaNs such as land in wave fields. */
 private fun sample(values: FloatArray, row: Float, column: Float, how: Interpolation): Double {
-  val r0 = floor(row).toInt().coerceIn(0, GRID_ROWS - 1)
-  val r1 = (r0 + 1).coerceAtMost(GRID_ROWS - 1)
-  val c0 = floor(column).toInt()
-  val fr = row - floor(row)
-  val fc = column - c0
   if (how == Interpolation.NEAREST) {
-    val r = if (fr < 0.5) r0 else r1
-    val c = (if (fc < 0.5) c0 else c0 + 1).mod(GRID_COLUMNS)
+    val r0 = floor(row).toInt().coerceIn(0, GRID_ROWS - 1)
+    val r1 = (r0 + 1).coerceAtMost(GRID_ROWS - 1)
+    val c0 = floor(column).toInt()
+    val r = if (row - floor(row) < 0.5) r0 else r1
+    val c = (if (column - c0 < 0.5) c0 else c0 + 1).mod(GRID_COLUMNS)
     return values[r * GRID_COLUMNS + c].toDouble()
   }
 
@@ -219,14 +233,11 @@ private fun sample(values: FloatArray, row: Float, column: Float, how: Interpola
   var sumSin = 0.0
   var sumCos = 0.0
   var weights = 0.0
-  for (corner in 0 until 4) {
-    val r = if (corner < 2) r0 else r1
-    val c = (c0 + corner % 2).mod(GRID_COLUMNS)
-    val value = values[r * GRID_COLUMNS + c]
+  forEachCorner(row, column) { i, weight ->
+    val value = values[i]
     if (value.isNaN()) {
-      continue
+      return@forEachCorner
     }
-    val weight = (if (corner < 2) 1 - fr else fr) * (if (corner % 2 == 0) 1 - fc else fc).toDouble()
     if (how == Interpolation.ANGLE) {
       sumSin += weight * sin(value * PI / 180)
       sumCos += weight * cos(value * PI / 180)
@@ -242,6 +253,51 @@ private fun sample(values: FloatArray, row: Float, column: Float, how: Interpola
     (atan2(sumSin, sumCos) * 180 / PI).mod(360.0)
   } else {
     sum / weights
+  }
+}
+
+// Blends the four vectors around a spot, with a length blended from theirs
+private fun sampleVector(
+    u: FloatArray, v: FloatArray, row: Float, column: Float, out: DoubleArray) {
+  var sumU = 0.0
+  var sumV = 0.0
+  var sumLength = 0.0
+  var weights = 0.0
+  forEachCorner(row, column) { i, weight ->
+    val cu = u[i].toDouble()
+    val cv = v[i].toDouble()
+    if (cu.isNaN() || cv.isNaN()) {
+      return@forEachCorner
+    }
+    sumU += weight * cu
+    sumV += weight * cv
+    sumLength += weight * sqrt(cu * cu + cv * cv)
+    weights += weight
+  }
+  if (weights == 0.0) {
+    out[0] = Double.NaN
+    out[1] = Double.NaN
+    return
+  }
+  val norm = sqrt(sumU * sumU + sumV * sumV)
+  // calm air has no direction to stretch
+  val stretch = if (norm > 0) sumLength / weights / norm else 0.0
+  out[0] = sumU * stretch
+  out[1] = sumV * stretch
+}
+
+// Visits the index and bilinear weight of each of the four grid points around a spot
+private inline fun forEachCorner(row: Float, column: Float, visit: (Int, Double) -> Unit) {
+  val r0 = floor(row).toInt().coerceIn(0, GRID_ROWS - 1)
+  val r1 = (r0 + 1).coerceAtMost(GRID_ROWS - 1)
+  val c0 = floor(column).toInt()
+  val fr = row - floor(row)
+  val fc = column - c0
+  for (corner in 0 until 4) {
+    val r = if (corner < 2) r0 else r1
+    val c = (c0 + corner % 2).mod(GRID_COLUMNS)
+    val weight = (if (corner < 2) 1 - fr else fr) * (if (corner % 2 == 0) 1 - fc else fc).toDouble()
+    visit(r * GRID_COLUMNS + c, weight)
   }
 }
 

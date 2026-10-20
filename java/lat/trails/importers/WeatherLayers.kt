@@ -33,6 +33,8 @@ enum class Interpolation {
   LINEAR,
   // for categories, where a blend of two codes means nothing
   NEAREST,
+  // with the next channel, the east and north halves of a vector whose length blends as LINEAR
+  VECTOR,
 }
 
 /**
@@ -87,36 +89,96 @@ class WeatherLayer(
 }
 
 /** What a lookahead layer keeps from every step, computed from that step's fields. */
-class LookaheadInput(val inputs: Set<FieldKey>, val compute: (Inputs) -> FloatArray) {
+class LookaheadInput(val inputs: Set<FieldKey>, val compute: (Inputs) -> List<FloatArray>) {
 
   companion object {
-    fun field(key: FieldKey) = LookaheadInput(setOf(key)) { it[key.param].values }
+    fun field(key: FieldKey) = LookaheadInput(setOf(key)) { listOf(it[key.param].values) }
   }
 }
 
 /**
- * What happens over the hours after each step, one channel per window. Clients only ever show the
- * step closest to now, so these let them show the coming days without fetching every step.
+ * What happens over the hours after each step. Clients only ever show the step closest to now, so
+ * these let them show the coming days without fetching every step.
  */
 class LookaheadLayer(
     val name: String,
     val input: LookaheadInput,
-    // in hours, two to an archive so each gets 12 bits
+    // in hours
     val windows: List<Int>,
-    val scale: Double,
-    // from the input at every step from the window's start through its end
-    val combine: (List<FloatArray>) -> FloatArray,
-) {
+    // every window's channels, in the order of windows
+    val channels: List<Channel>,
+    // from the input at every step from the window's start through its end, to that window's
+    // channels
+    val combine: (List<List<FloatArray>>) -> List<FloatArray>,
+)
 
+// in m/s, eastward and northward
+private val WIND_CHANNELS = listOf(Channel("u", 12, 0.1, -204.7), Channel("v", 12, 0.1, -204.7))
+
+// For wind stretched to a speed from elsewhere, a gust or a peak. Neighboring cells can peak at
+// different steps blowing different ways, and blending u and v alone shrinks the peak where they
+// disagree.
+private val STRETCHED_WIND_CHANNELS =
+    listOf(Channel("u", 12, 0.1, -204.7, Interpolation.VECTOR), WIND_CHANNELS[1])
+
+// in hours. Keep in sync with layer_catalog.ts#LOOKAHEAD_WINDOWS
+private val PEAK_WINDOWS = listOf(12, 24, 72, 120)
+
+// One 12 bit channel per window from the input's only field, so two windows fit in an archive
+private fun scalarLookahead(
+    name: String,
+    input: LookaheadInput,
+    windows: List<Int>,
+    scale: Double,
+    combine: (List<FloatArray>) -> FloatArray): LookaheadLayer {
   val channels = windows.map { Channel("next_${it}h", 12, scale, 0.0) }
+  return LookaheadLayer(name, input, windows, channels) { steps ->
+    listOf(combine(steps.map { it[0] }))
+  }
 }
 
-private fun maxOfAll(fields: List<FloatArray>): FloatArray {
-  return FloatArray(fields[0].size) { i -> fields.maxOf { it[i] } }
+// The wind at the step whose speed peaks, from an input of u, v, and speed. u and v fill all 24
+// bits, so each window gets its own archive.
+private fun peakWind(name: String, input: LookaheadInput, hours: Int, first: Int): LookaheadLayer {
+  return LookaheadLayer("${name}_${hours}", input, listOf(hours), STRETCHED_WIND_CHANNELS) {
+    windAtPeak(it, first)
+  }
 }
 
-private fun maxAfterFirst(fields: List<FloatArray>): FloatArray {
-  return FloatArray(fields[0].size) { i -> (1 until fields.size).maxOf { fields[it][i] } }
+// u and v from the step at or after first with the highest speed, stretched to that speed
+private fun windAtPeak(steps: List<List<FloatArray>>, first: Int): List<FloatArray> {
+  val best = steps[first][2].copyOf()
+  val peak = IntArray(best.size) { first }
+  for (s in first + 1 until steps.size) {
+    val speed = steps[s][2]
+    for (i in best.indices) {
+      // NaN never compares greater, so once a cell is NaN it stays NaN.
+      if (speed[i].isNaN() || speed[i] > best[i]) {
+        best[i] = speed[i]
+        peak[i] = s
+      }
+    }
+  }
+  return stretch(
+      FloatArray(best.size) { steps[peak[it]][0][it] },
+      FloatArray(best.size) { steps[peak[it]][1][it] },
+      best)
+}
+
+private fun stretch(u: FloatArray, v: FloatArray, speed: FloatArray): List<FloatArray> {
+  val su = FloatArray(u.size) { Float.NaN }
+  val sv = FloatArray(u.size) { Float.NaN }
+  for (i in u.indices) {
+    if (speed[i].isNaN()) {
+      continue
+    }
+    val norm = sqrt(u[i] * u[i] + v[i] * v[i])
+    // calm air has no direction to stretch
+    val scale = if (norm > 0) speed[i] / norm else 0f
+    su[i] = u[i] * scale
+    sv[i] = v[i] * scale
+  }
+  return listOf(su, sv)
 }
 
 // tp and sf are in meters of water since the run started.
@@ -127,7 +189,12 @@ private fun millimetersBetween(fields: List<FloatArray>): FloatArray {
 // Fields every step of IFS reads once, from step 0, because ECMWF only publishes them there
 val STATIC_IFS_INPUTS = setOf(FieldKey("z"))
 
-private val GUST = LookaheadInput.field(FieldKey("10fg"))
+// The gust has no direction, so we borrow the 10 m wind's.
+private val GUST = LookaheadInput(keys("10u", "10v", "10fg")) {
+  listOf(it["10u"].values, it["10v"].values, it["10fg"].values)
+}
+private val WIND =
+    LookaheadInput(keys("10u", "10v")) { withSpeed(it["10u"].values, it["10v"].values) }
 private val PRECIPITATION = LookaheadInput.field(FieldKey("tp"))
 private val SNOWFALL = LookaheadInput.field(FieldKey("sf"))
 
@@ -136,28 +203,27 @@ private val SNOWFALL = LookaheadInput.field(FieldKey("sf"))
 // fields cover one hour in three, so windows there can miss a gust between steps.
 val LOOKAHEAD_LAYERS = listOf(
     // in m/s
-    LookaheadLayer("peak_gust", GUST, listOf(12, 24), 0.1, ::maxAfterFirst),
-    LookaheadLayer("peak_gust_long", GUST, listOf(72, 120), 0.1, ::maxAfterFirst),
+    *PEAK_WINDOWS.map { peakWind("peak_gust", GUST, it, /* first= */ 1) }.toTypedArray(),
+    *PEAK_WINDOWS.map { peakWind("peak_wind", WIND, it, /* first= */ 0) }.toTypedArray(),
     // in mm, up to 409 in a day and 2047 in five
-    LookaheadLayer("rain", PRECIPITATION, listOf(12, 24), 0.1, ::millimetersBetween),
-    LookaheadLayer("rain_long", PRECIPITATION, listOf(72, 120), 0.5, ::millimetersBetween),
+    scalarLookahead("rain", PRECIPITATION, listOf(12, 24), 0.1, ::millimetersBetween),
+    scalarLookahead("rain_long", PRECIPITATION, listOf(72, 120), 0.5, ::millimetersBetween),
     // in mm of water
-    LookaheadLayer("snowfall", SNOWFALL, listOf(12, 24), 0.1, ::millimetersBetween),
-    LookaheadLayer("snowfall_long", SNOWFALL, listOf(72, 120), 0.5, ::millimetersBetween),
-    // in m/s. Wind aloft has no gusts, so we take the strongest sustained wind at any step, and a
-    // cell that was underground at any step stays empty.
+    scalarLookahead("snowfall", SNOWFALL, listOf(12, 24), 0.1, ::millimetersBetween),
+    scalarLookahead("snowfall_long", SNOWFALL, listOf(72, 120), 0.5, ::millimetersBetween),
+    // in m/s
     *WIND_LEVELS.flatMap { level ->
-      val speed =
+      val wind =
           LookaheadInput(windAloftKeys(level)) {
             val (u, v) = computeWindAloft(it, level)
-            FloatArray(u.size) { i -> hypot(u[i], v[i]) }
+            withSpeed(u, v)
           }
-      listOf(
-          LookaheadLayer("peak_wind_${level}", speed, listOf(12, 24), 0.1, ::maxOfAll),
-          LookaheadLayer("peak_wind_${level}_long", speed, listOf(72, 120), 0.1, ::maxOfAll),
-      )
+      PEAK_WINDOWS.map { peakWind("peak_wind_${level}", wind, it, /* first= */ 0) }
     }.toTypedArray(),
 )
+
+private fun withSpeed(u: FloatArray, v: FloatArray) =
+    listOf(u, v, FloatArray(u.size) { i -> hypot(u[i], v[i]) })
 
 private fun keys(vararg params: String) = params.map { FieldKey(it) }.toSet()
 
@@ -167,9 +233,6 @@ private fun levelKeys(params: List<String>, levels: List<Int>) =
 private inline fun map(field: Field, transform: (Float) -> Double): FloatArray {
   return FloatArray(field.values.size) { transform(field.values[it]).toFloat() }
 }
-
-// in m/s, eastward and northward
-private val WIND_CHANNELS = listOf(Channel("u", 12, 0.1, -204.7), Channel("v", 12, 0.1, -204.7))
 
 // Keep in sync with weather.ts#ECMWF_LAYERS
 val WEATHER_LAYERS = listOf(
@@ -184,15 +247,14 @@ val WEATHER_LAYERS = listOf(
           windAloftKeys(level),
           WIND_CHANNELS) { computeWindAloft(it, level) }
     }.toTypedArray(),
+    // in m/s, the strongest gust in the hour before, or the 3 hours before past step 90, blowing
+    // the way the 10 m wind does
     WeatherLayer(
-        "gust",
+        "wind_gust",
         EcmwfStream.IFS,
         3,
-        keys("10fg"),
-        listOf(
-            // in m/s, the strongest gust in the hour before, or the 3 hours before past step 90
-            Channel("gust", 12, 0.1, 0.0),
-        )) { listOf(it["10fg"].values) },
+        keys("10u", "10v", "10fg"),
+        STRETCHED_WIND_CHANNELS) { stretch(it["10u"].values, it["10v"].values, it["10fg"].values) },
     WeatherLayer(
         "pressure",
         EcmwfStream.IFS,

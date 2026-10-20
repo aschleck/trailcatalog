@@ -23,6 +23,9 @@ const WIND_CHANNELS: Channel[] = [
 // Pressure levels in hPa, see WeatherLayers.kt#WIND_LEVELS
 export const WIND_LEVELS = [925, 850, 700, 600, 500] as const;
 type WindLevel = typeof WIND_LEVELS[number];
+// in hours, see WeatherLayers.kt#PEAK_WINDOWS
+export const PEAK_WINDOWS = [12, 24, 72, 120] as const;
+type PeakWindow = typeof PEAK_WINDOWS[number];
 
 export const ECMWF_LAYERS = {
   clouds: {stepHours: 6, channels: [
@@ -34,11 +37,10 @@ export const ECMWF_LAYERS = {
   freezing: {stepHours: 3, channels: [
     {name: 'altitude', bits: 12, scale: 5, offset: 0},
   ]},
-  gust: {stepHours: 3, channels: [
-    {name: 'gust', bits: 12, scale: 0.1, offset: 0},
-  ]},
-  peak_gust: lookahead(0.1),
-  peak_gust_long: lookaheadLong(0.1),
+  ...byPeakWindow(hours => [
+    [`peak_gust_${hours}`, peakWind(hours)],
+    [`peak_wind_${hours}`, peakWind(hours)],
+  ] as const),
   rain: lookahead(0.1),
   rain_long: lookaheadLong(0.5),
   snowfall: lookahead(0.1),
@@ -74,10 +76,11 @@ export const ECMWF_LAYERS = {
     {name: 'period', bits: 7, scale: 0.25, offset: 0},
   ]},
   wind: {stepHours: 3, channels: WIND_CHANNELS},
+  // stretched to the gust's speed
+  wind_gust: {stepHours: 3, channels: WIND_CHANNELS},
   ...byWindLevel(level => [
     [`wind_${level}`, {stepHours: 3, channels: WIND_CHANNELS}],
-    [`peak_wind_${level}`, lookahead(0.1)],
-    [`peak_wind_${level}_long`, lookaheadLong(0.1)],
+    ...PEAK_WINDOWS.map(hours => [`peak_wind_${level}_${hours}`, peakWind(hours)] as const),
   ] as const),
 } satisfies Record<string, Layer>;
 
@@ -86,6 +89,16 @@ export type EcmwfLayer = keyof typeof ECMWF_LAYERS;
 export function byWindLevel<K extends string, V>(
     entries: (level: WindLevel) => ReadonlyArray<readonly [K, V]>): Record<K, V> {
   return Object.fromEntries(WIND_LEVELS.flatMap(entries)) as Record<K, V>;
+}
+
+export function byPeakWindow<K extends string, V>(
+    entries: (hours: PeakWindow) => ReadonlyArray<readonly [K, V]>): Record<K, V> {
+  return Object.fromEntries(PEAK_WINDOWS.flatMap(entries)) as Record<K, V>;
+}
+
+// The wind at the step whose speed peaks in the next hours, stretched to that speed
+function peakWind(hours: number): Layer {
+  return {stepHours: 3, lookaheadHours: hours, channels: WIND_CHANNELS};
 }
 
 function lookahead(scale: number): Layer {
@@ -164,18 +177,16 @@ const THUNDER_COLOR: Rgba = [230, 40, 200, ALPHA];
 
 export const WEATHER_VIEWS = {
   wind: windView('wind'),
+  gust: windView('wind_gust'),
   ...byWindLevel(level => [
     [`wind_${level}`, windView(`wind_${level}`)],
-    [`wind_${level}_accumulation_12`, peakWindView(`peak_wind_${level}`, 12)],
-    [`wind_${level}_accumulation_24`, peakWindView(`peak_wind_${level}`, 24)],
-    [`wind_${level}_accumulation_72`, peakWindView(`peak_wind_${level}_long`, 72)],
-    [`wind_${level}_accumulation_120`, peakWindView(`peak_wind_${level}_long`, 120)],
+    ...PEAK_WINDOWS.map(hours =>
+        [`wind_${level}_peak_${hours}`, windView(`peak_wind_${level}_${hours}`)] as const),
   ] as const),
-  gust: {layer: 'gust', color: v => ramp(SPEED_MPS, v.gust)},
-  wind_accumulation_12: {layer: 'peak_gust', color: v => ramp(SPEED_MPS, v.next_12h)},
-  wind_accumulation_24: {layer: 'peak_gust', color: v => ramp(SPEED_MPS, v.next_24h)},
-  wind_accumulation_72: {layer: 'peak_gust_long', color: v => ramp(SPEED_MPS, v.next_72h)},
-  wind_accumulation_120: {layer: 'peak_gust_long', color: v => ramp(SPEED_MPS, v.next_120h)},
+  ...byPeakWindow(hours => [
+    [`wind_peak_${hours}`, windView(`peak_wind_${hours}`)],
+    [`gust_peak_${hours}`, windView(`peak_gust_${hours}`)],
+  ] as const),
   pressure: {layer: 'pressure', color: v => ramp(PRESSURE_HPA, v.pressure)},
   temperature: {layer: 'temperature', color: v => ramp(TEMPERATURE_C, v.temperature)},
   dew_point: {layer: 'temperature', color: v => ramp(TEMPERATURE_C, v.dew_point)},
@@ -320,10 +331,6 @@ function ramp(stops: Ramp, value: number, min = -Infinity): Rgba|undefined {
 
 function windView(layer: EcmwfLayer): View {
   return {layer, color: v => ramp(SPEED_MPS, Math.hypot(v.u, v.v))};
-}
-
-function peakWindView(layer: EcmwfLayer, hours: number): View {
-  return {layer, color: v => ramp(SPEED_MPS, v[`next_${hours}h`])};
 }
 
 function icingView(level: number): View {

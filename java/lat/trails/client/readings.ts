@@ -1,5 +1,7 @@
 import {
+  byPeakWindow,
   byWindLevel,
+  PEAK_WINDOWS,
   relativeHumidity,
   SNOW_TYPES,
   thunders,
@@ -28,19 +30,16 @@ const TENTHS = new Intl.NumberFormat(undefined, {maximumFractionDigits: 1});
 const HUNDREDTHS = new Intl.NumberFormat(undefined, {maximumFractionDigits: 2});
 
 const READERS = {
-  wind: v => wind(v.u, v.v),
+  wind,
+  gust: wind,
   ...byWindLevel(level => [
-    [`wind_${level}`, (v: Values) => wind(v.u, v.v)],
-    [`wind_${level}_accumulation_12`, (v: Values) => speed(v.next_12h)],
-    [`wind_${level}_accumulation_24`, (v: Values) => speed(v.next_24h)],
-    [`wind_${level}_accumulation_72`, (v: Values) => speed(v.next_72h)],
-    [`wind_${level}_accumulation_120`, (v: Values) => speed(v.next_120h)],
+    [`wind_${level}`, wind],
+    ...PEAK_WINDOWS.map(hours => [`wind_${level}_peak_${hours}`, wind] as const),
   ] as const),
-  gust: v => speed(v.gust),
-  wind_accumulation_12: v => speed(v.next_12h),
-  wind_accumulation_24: v => speed(v.next_24h),
-  wind_accumulation_72: v => speed(v.next_72h),
-  wind_accumulation_120: v => speed(v.next_120h),
+  ...byPeakWindow(hours => [
+    [`wind_peak_${hours}`, wind],
+    [`gust_peak_${hours}`, wind],
+  ] as const),
   pressure: v => known(v.pressure, hpa => `${WHOLE.format(hpa)} hPa`),
   temperature: v => temperature(v.temperature),
   dew_point: v => temperature(v.dew_point),
@@ -110,7 +109,7 @@ function precipitation(v: Values): string {
   return thunders(v) ? `${what} with thunder` : what;
 }
 
-function wind(u: number, v: number): string {
+function wind({u, v}: Values): string {
   // u and v are where the wind blows toward, and wind is named for where it comes from.
   const from = Math.atan2(-u, -v) * 180 / Math.PI;
   return known(u, () => `${speed(Math.hypot(u, v))} from ${compass(from)}`);
