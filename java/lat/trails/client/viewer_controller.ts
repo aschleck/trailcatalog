@@ -1,5 +1,6 @@
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Future, resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
+import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_MOUSE, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
@@ -138,6 +139,7 @@ import { editMenu, fileMenu, HELP_MENU, USER_MENU, viewMenu } from './menus';
 import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
 import { SearchHit, SearchQuery, SearchState } from './search_box';
+import { STEP_MS, TimelineState } from './timeline';
 import {
   DEFAULT_COLOR,
   getLineKind,
@@ -146,6 +148,9 @@ import {
 
 // The zoom where the contours and the trails around a point come in at full detail
 const POINT_ZOOM = 14;
+const MINUTE_MS = 60 * 1000;
+const PLAY_INTERVAL_MS = 100;
+const FORECAST_PLAY_TICKS = 5;
 // Flattens the points and line and polygon vertices of some features into lat,lng pairs in
 // degrees.
 function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
@@ -195,6 +200,7 @@ export interface State {
   grades: GradeLimitState;
   search: SearchState;
   self: Future<GetCurrentUserResponse>;
+  time: TimelineState;
   tool: Tool;
 }
 
@@ -229,6 +235,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly polarCapLayer: PolarCapLayer;
   private readonly skyboxLayer: SkyboxLayer;
   private readonly catalog: LayerCatalog;
+  private readonly clock: Timer;
+  private readonly player: Timer;
+  private playTicks: number;
+  // The layer entries on the map, so that setMapLayers can tell which were just turned on
+  private shownIds: Set<string>;
   private readonly store: FeatureStore;
   private readonly elevations: Elevations;
   private readonly measureProfiler: MeasureProfiler;
@@ -444,7 +455,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.skyboxLayer = new SkyboxLayer(Z_BOTTOM, this.mapController.renderer);
     this.registerDisposable(this.skyboxLayer);
 
-    this.catalog = new LayerCatalog(locations, camera, renderer, () => this.state.layers.nodes);
+    this.shownIds = new Set();
+    this.catalog =
+        new LayerCatalog(
+            locations,
+            camera,
+            renderer,
+            () => this.state.layers.nodes,
+            () => {
+              this.updateTimeline({});
+            });
     this.registerDisposable(this.catalog);
     const nodes = this.catalog.nodes;
     this.layerDefaults = layerDefaultsOf(nodes);
@@ -453,7 +473,21 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       ...this.state,
       layers: {nodes, expanded: new Set(['osm', 'satellite', 'topography', 'us'])},
     });
+    this.updateTimeline({now: Date.now()});
     this.catalog.start();
+    this.playTicks = 0;
+    this.player = new Timer(PLAY_INTERVAL_MS, () => {
+      this.advanceTimeline();
+    });
+    this.registerDisposable(this.player);
+    this.clock = new Timer(MINUTE_MS, () => {
+      if (this.state.time.at === undefined) {
+        this.catalog.setTime(undefined);
+      }
+      this.updateTimeline({now: Date.now()});
+    });
+    this.registerDisposable(this.clock);
+    this.clock.start();
     this.setMapLayers(nodes);
 
     const collection = response.args.collection;
@@ -562,21 +596,23 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.pickGeneration += 1;
     const generation = this.pickGeneration;
     const joining = this.joining;
-    const shown =
-        layerEntries(this.state.layers.nodes).filter(({shown}) => shown).map(({entry}) => entry);
+    // Join with waits on another line, so nothing else is worth offering.
+    const shown = joining === undefined ? this.getShownEntries(this.state.layers.nodes) : [];
     const readings: Array<{name: string; value: string}> = [];
-    for (const {readout} of joining === undefined ? shown : []) {
+    for (const {readout} of shown) {
       const value = readout?.read(point);
       if (readout && value !== undefined) {
         readings.push({name: readout.name, value});
       }
     }
+    for (const entry of shown) {
+      readings.push(...entry.readings?.(point) ?? []);
+    }
     const features: Pick[] =
         this.featureLayer.featuresAt(projectS2LatLng(point))
-            // Join with waits on another line, so nothing else is worth offering.
             .filter(f => joining === undefined || (f.kind === 'line' && f.id !== joining))
             .map(feature => ({kind: 'feature', feature}));
-    const others = joining === undefined ? shown.map(entry => this.picksIn(entry, point)) : [];
+    const others = shown.map(entry => this.picksIn(entry, point));
     Promise.all(others).then(found => {
       if (generation !== this.pickGeneration) {
         return;
@@ -1167,6 +1203,46 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }, () => {});
   }
 
+  // Moves the sun and moon as the timeline drags, and leaves the weather for timeChosen because
+  // each forecast step the drag passes would fetch a new set of tiles.
+  timeScrubbed(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const at = (e.actionElement.element() as HTMLInputElement).valueAsNumber;
+    this.player.stop();
+    this.catalog.previewTime(at);
+    this.updateTimeline({at, playing: false});
+  }
+
+  timeChosen(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const at = (e.actionElement.element() as HTMLInputElement).valueAsNumber;
+    this.setTime(at);
+  }
+
+  // The input gives a local time without a zone, which Date reads as local.
+  timeTyped(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const at = new Date((e.actionElement.element() as HTMLInputElement).value).getTime();
+    if (Number.isNaN(at)) {
+      return;
+    }
+    this.setTime(at);
+  }
+
+  timeNowClicked(): void {
+    this.player.stop();
+    this.setTime(undefined, {now: Date.now(), playing: false});
+  }
+
+  timePlayClicked(): void {
+    const time = this.state.time;
+    if (time.playing) {
+      this.player.stop();
+      this.updateTimeline({playing: false});
+      return;
+    }
+    const at = time.at ?? Date.now();
+    this.updateTimeline({at: at === time.end ? time.start : at, playing: true});
+    this.player.start();
+  }
+
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
     const {center, zoom} = e.detail;
     const picked = this.picked?.camera;
@@ -1334,6 +1410,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.markerLayer.setActive(tool === 'marker');
     this.featureLayer.setInteractive(tool === 'pointer');
     this.featureLayer.setPointsDraggable(tool === 'point');
+    this.catalog.setInteractive(tool === 'pointer');
     // Refreshes the credits, because the measure layer's only count while it is active
     this.setMapLayers(this.state.layers.nodes);
     if (tool === 'line') {
@@ -2316,6 +2393,67 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setMapLayers(nodes);
   }
 
+  private setTime(at: number|undefined, changes: Partial<TimelineState> = {}): void {
+    this.catalog.setTime(at);
+    this.updateTimeline({...changes, at});
+  }
+
+  private updateTimeline(changes: Partial<TimelineState>): void {
+    const forecast = this.isForecast();
+    this.updateState({
+      ...this.state,
+      time: {
+        ...this.state.time,
+        ...changes,
+        start: this.catalog.forecastStart,
+        end: this.catalog.forecastEnd,
+      },
+    });
+    if (this.isForecast() !== forecast) {
+      this.setMapLayers(this.state.layers.nodes);
+    }
+  }
+
+  // Stops at the end of the forecast when it plays within it, because past it the weather would
+  // disappear. A time outside of the forecast plays on for the sun and moon.
+  //
+  // A forecast on the map plays a step at a time, and holds each step until its tiles load and
+  // then for a few ticks more, so every step is on screen long enough to see.
+  private advanceTimeline(): void {
+    const time = this.state.time;
+    const from = time.at ?? Date.now();
+    const forecasts = this.getShownEntries(this.state.layers.nodes).filter(e => e.nextTime);
+    if (forecasts.some(entry => entry.layer.loadingData())) {
+      this.playTicks = 0;
+      return;
+    }
+    const steps =
+        forecasts.map(entry => entry.nextTime?.(from)).filter(step => step !== undefined);
+    this.playTicks += 1;
+    if (steps.length > 0 && this.playTicks % FORECAST_PLAY_TICKS !== 0) {
+      return;
+    }
+    const at = steps.length > 0 ? Math.min(...steps) : from + STEP_MS;
+    if (from <= time.end && at > time.end && time.start <= from) {
+      this.player.stop();
+      this.setTime(time.end, {playing: false});
+      return;
+    }
+    this.setTime(at);
+  }
+
+  private isForecast(): boolean {
+    const at = this.state.time.at ?? Date.now();
+    return this.catalog.forecastStart <= at && at <= this.catalog.forecastEnd;
+  }
+
+  private getShownEntries(nodes: LayerNode[]): LayerEntry[] {
+    const forecast = this.isForecast();
+    return layerEntries(nodes)
+        .filter(({entry, shown}) => shown && (entry.timed !== 'forecast' || forecast))
+        .map(({entry}) => entry);
+  }
+
   private setMapLayers(nodes: LayerNode[]): void {
     const entries = layerEntries(nodes);
     for (const {entry, shown} of entries) {
@@ -2324,9 +2462,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         entry.layer.setIndexed(shown);
       }
     }
+    const shownEntries = this.getShownEntries(nodes);
+    for (const entry of shownEntries) {
+      if (!this.shownIds.has(entry.id)) {
+        entry.onShown?.();
+      }
+    }
+    this.shownIds = new Set(shownEntries.map(entry => entry.id));
     // The map draws by z, so this order only decides who hears events first. Nodes sit on
     // everything they share the map with and claim what lands on an icon.
-    const shown = entries.filter(({shown}) => shown).map(({entry}) => entry.layer);
+    const shown = shownEntries.map(entry => entry.layer);
     this.mapController.setLayers(
         [
           this.pointLayer,

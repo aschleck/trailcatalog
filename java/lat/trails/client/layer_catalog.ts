@@ -9,6 +9,7 @@ import { CompositeLayer } from 'js/map/layers/composite_layer';
 import { CONTOURS_FEET, CONTOURS_METERS, MbtileLayer } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SlopeLayer } from 'js/map/layers/slope_layer';
+import { StepLayer } from 'js/map/layers/step_layer';
 import { StacLayer } from 'js/map/layers/stac_layer';
 import { SwitchLayer } from 'js/map/layers/switch_layer';
 import { WindVectorLayer } from 'js/map/layers/wind_vector_layer';
@@ -20,6 +21,7 @@ import { Stream } from 'js/map/workers/s2_data_fetcher';
 import { Bands, Channel, Search } from 'js/map/workers/stac_loader';
 import { BASE_ZOOM as TERRARIUM_BASE_ZOOM, TILE_URL as TERRARIUM_TILE_URL } from 'js/map/workers/terrarium';
 import { ECMWF_LAYERS, EcmwfLayer, WEATHER_VIEWS, WeatherView, WIND_LEVELS } from 'js/map/workers/weather';
+import { WindStyle } from 'js/map/workers/wind_loader';
 import { Z_BASE_ELEVATION, Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import { getUnitSystem, UnitSystem } from 'js/units/formatters';
 
@@ -33,6 +35,7 @@ import {
 } from './layer_tree';
 import { PointCollectionLayer } from './point_collection_layer';
 import { readElevation, readSnodas, readWeather } from './readings';
+import { getSkyReadings, SkyLayer } from './sky_layer';
 import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA } from './schema';
 import {
   BASEMAP_LABEL_KINDS,
@@ -63,6 +66,7 @@ const ECMWF_MAX_STEP = 144;
 // ECMWF starts a run every 6 hours.
 const ECMWF_CYCLE_HOURS = 6;
 const HOUR_MS = 60 * 60 * 1000;
+const PREFETCH_STEPS = 2;
 // ECMWF tiles a run every 6 hours and its step closest to now moves every 3, so we check hourly.
 const CONDITIONS_REFRESH_MS = HOUR_MS;
 // NSIDC makes citing the data set a condition of using it.
@@ -237,6 +241,9 @@ export class LayerCatalog extends Disposable {
   readonly nodes: LayerNode[];
   // The start of the newest ECMWF run we know is tiled, in ms
   private ecmwfRun: number;
+  // The time the weather layers forecast for in ms, or undefined to follow the clock
+  private time: number|undefined;
+  private readonly sky: SkyLayer;
   // The newest SNODAS day we know is tiled
   private snodasDay: string;
   // The newest FAA cycle in effect that we know is tiled, for each product
@@ -248,12 +255,15 @@ export class LayerCatalog extends Disposable {
       private readonly camera: Camera,
       private readonly renderer: Renderer,
       // The tree as the viewer holds it, whose values a newer run or day reconfigures with
-      private readonly current: () => LayerNode[]) {
+      private readonly current: () => LayerNode[],
+      private readonly runChanged: () => void) {
     super();
     // We start on the current run and day, and showLatestWeather and showLatestSnow fall back to
     // older ones when those aren't tiled yet.
     const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
     this.ecmwfRun = Math.floor(Date.now() / cycleMs) * cycleMs;
+    this.time = undefined;
+    this.sky = new SkyLayer(camera, renderer);
     this.snodasDay = utcDay(0);
     this.faaCycles = {
       sectional: faaCycle(0),
@@ -1049,6 +1059,24 @@ export class LayerCatalog extends Disposable {
             values => values.accumulation === 'none'
                 ? {view: 'snow_depth', name: 'Snow depth'}
                 : lookaheadView('snowfall', 'Snow', values.accumulation)),
+        {
+          kind: 'layer',
+          id: 'weather/sun_moon',
+          name: 'Sun and moon',
+          enabled: false,
+          layer: this.sky,
+          controls: [],
+          values: {},
+          timed: 'any',
+          onShown: () => {
+            this.sky.appear();
+          },
+          // Only a click on the pin, so that the rows describe what the rays show
+          readings: point => {
+            const pin = this.sky.pinNear(point);
+            return pin ? getSkyReadings(pin, this.time ?? Date.now()) : [];
+          },
+        },
         this.newWeatherEntry('temperature', 'Temperature'),
         this.newWeatherEntry('thermals', 'Thermals'),
         this.newWeatherEntry('waves', 'Waves'),
@@ -1348,6 +1376,52 @@ export class LayerCatalog extends Disposable {
     tryDay(0);
   }
 
+  get forecastStart(): number {
+    return this.ecmwfRun;
+  }
+
+  get forecastEnd(): number {
+    return this.ecmwfRun + ECMWF_MAX_STEP * HOUR_MS;
+  }
+
+  /**
+   * Points the weather layers at the step nearest a time in ms, and the sun and moon at the time.
+   * Undefined follows the clock, so the viewer calls this again as the clock moves.
+   */
+  setTime(time: number|undefined): void {
+    this.time = time;
+    this.sky.setTime(time ?? Date.now());
+    this.configureEntries(id => id.startsWith('weather/'));
+  }
+
+  setInteractive(interactive: boolean): void {
+    this.sky.setInteractive(interactive);
+  }
+
+  /** Moves the sun and moon to a time in ms without touching the weather. */
+  previewTime(time: number): void {
+    this.sky.setTime(time);
+  }
+
+  // The step nearest the map's time and the next few, so that playing swaps to loaded tiles
+  private getWeatherSteps(archive: EcmwfLayer): {url: string; upcoming: string[]} {
+    const step = getEcmwfStep(this.ecmwfRun, this.time ?? Date.now(), archive);
+    const {stepHours} = ECMWF_LAYERS[archive];
+    const upcoming = [];
+    const last = Math.min(step + PREFETCH_STEPS * stepHours, getLastStep(archive));
+    for (let next = step + stepHours; next <= last; next += stepHours) {
+      upcoming.push(ecmwfStepUrl(this.ecmwfRun, archive, next));
+    }
+    return {url: ecmwfStepUrl(this.ecmwfRun, archive, step), upcoming};
+  }
+
+  private getNextStepTime(at: number, archive: EcmwfLayer): number|undefined {
+    const {stepHours} = ECMWF_LAYERS[archive];
+    const fromRun = (at - this.ecmwfRun) / HOUR_MS;
+    const next = Math.max(Math.floor(fromRun / stepHours) + 1, 0) * stepHours;
+    return next <= getLastStep(archive) ? this.ecmwfRun + next * HOUR_MS : undefined;
+  }
+
   private configureEntries(matches: (id: string) => boolean): void {
     for (const {entry} of layerEntries(this.current())) {
       if (matches(entry.id)) {
@@ -1368,20 +1442,23 @@ export class LayerCatalog extends Disposable {
       values: ControlValues,
       pick: (values: ControlValues) => {view: WeatherView; name: string}): LayerEntry {
     let picked = pick(values);
-    let url = '';
     const layer = new SwitchLayer(picked.view, (view: WeatherView) => {
-      url = ecmwfUrl(this.ecmwfRun, WEATHER_VIEWS[view].layer);
-      return new RasterTileLayer(
-          [ECMWF_COPYRIGHT],
+      const {url, upcoming} = this.getWeatherSteps(WEATHER_VIEWS[view].layer);
+      return new StepLayer(
           url,
-          /* tint= */ 0xFFFFFFFF as RgbaU32,
-          /* z= */ Z_OVERLAY_TERRAIN,
-          /* extraZoom= */ 0,
-          /* minZoom= */ 0,
-          // See Weather.kt#MAX_ZOOM
-          /* maxZoom= */ 3,
-          this.renderer,
-          `weather/${view}`);
+          upcoming,
+          stepUrl =>
+              new RasterTileLayer(
+                  [ECMWF_COPYRIGHT],
+                  stepUrl,
+                  /* tint= */ 0xFFFFFFFF as RgbaU32,
+                  /* z= */ Z_OVERLAY_TERRAIN,
+                  /* extraZoom= */ 0,
+                  /* minZoom= */ 0,
+                  // See Weather.kt#MAX_ZOOM
+                  /* maxZoom= */ 3,
+                  this.renderer,
+                  `weather/${view}`));
     });
     return {
       kind: 'layer',
@@ -1391,24 +1468,22 @@ export class LayerCatalog extends Disposable {
       layer,
       controls,
       values,
+      timed: 'forecast',
       readout: {
         get name() {
           return picked.name;
         },
         read: point => {
-          const packed = layer.current.packedAt(point);
+          const packed = layer.current.current.packedAt(point);
           return packed !== undefined ? readWeather(picked.view, packed) : undefined;
         },
       },
+      nextTime: at => this.getNextStepTime(at, WEATHER_VIEWS[picked.view].layer),
       configure: values => {
         picked = pick(values);
         layer.show(picked.view);
-        // setUrl drops every loaded tile, so we only call it when the URL changes.
-        const next = ecmwfUrl(this.ecmwfRun, WEATHER_VIEWS[picked.view].layer);
-        if (next !== url) {
-          url = next;
-          layer.current.setUrl(next);
-        }
+        const {url, upcoming} = this.getWeatherSteps(WEATHER_VIEWS[picked.view].layer);
+        layer.current.show(url, upcoming);
       },
     };
   }
@@ -1448,16 +1523,24 @@ export class LayerCatalog extends Disposable {
     const peak = lookaheadControl('peak', 'Strongest');
     const speed =
         this.newSwitchedWeatherEntry('weather/wind', 'Wind', [type, altitude, peak], values, pick);
-    let url = ecmwfUrl(this.ecmwfRun, archive(values));
+    let style: WindStyle|undefined = 'streamlines';
+    const {url, upcoming} = this.getWeatherSteps(archive(values));
     const vectors =
-        new WindVectorLayer(
-            [ECMWF_COPYRIGHT],
+        new StepLayer(
             url,
-            /* z= */ Z_OVERLAY_TERRAIN + 0.5,
-            // See Weather.kt#MAX_ZOOM
-            /* maxZoom= */ 3,
-            this.renderer);
-    vectors.setStyle('streamlines');
+            upcoming,
+            stepUrl => {
+              const layer =
+                  new WindVectorLayer(
+                      [ECMWF_COPYRIGHT],
+                      stepUrl,
+                      /* z= */ Z_OVERLAY_TERRAIN + 0.5,
+                      // See Weather.kt#MAX_ZOOM
+                      /* maxZoom= */ 3,
+                      this.renderer);
+              layer.setStyle(style);
+              return layer;
+            });
     return {
       ...speed,
       layer: new CompositeLayer([speed.layer, vectors]),
@@ -1474,13 +1557,12 @@ export class LayerCatalog extends Disposable {
       configure: values => {
         speed.configure?.(values);
         const arrows = values.arrows;
-        vectors.setStyle(arrows === 'streamlines' || arrows === 'barbs' ? arrows : undefined);
-        // setUrl drops every loaded tile, so we only call it when the URL changes.
-        const next = ecmwfUrl(this.ecmwfRun, archive(values));
-        if (next !== url) {
-          url = next;
-          vectors.setUrl(next);
+        style = arrows === 'streamlines' || arrows === 'barbs' ? arrows : undefined;
+        for (const layer of vectors.all) {
+          layer.setStyle(style);
         }
+        const {url, upcoming} = this.getWeatherSteps(archive(values));
+        vectors.show(url, upcoming);
       },
     };
   }
@@ -1502,6 +1584,7 @@ export class LayerCatalog extends Disposable {
         }
         this.ecmwfRun = run;
         this.configureEntries(id => id.startsWith('weather/'));
+        this.runChanged();
       }, () => {});
     };
     tryRun(newest);
@@ -1566,7 +1649,6 @@ function utcDay(offset: number): string {
   return new Date(Date.now() + offset * 24 * 60 * 60 * 1000).toISOString().substring(0, 10);
 }
 
-// The step closest to now, or the last one the archive has
 function altitudeControl(
     options: Array<{value: string; label: string}>,
     appliesTo?: (values: ControlValues) => boolean): LayerControl {
@@ -1579,7 +1661,7 @@ function lookaheadControl(key: string, label: string): LayerControl {
     key,
     label,
     options: [
-      {value: 'none', label: 'None'},
+      {value: 'none', label: 'At map time'},
       ...LOOKAHEAD_WINDOWS.map(([hours, label]) =>
           ({value: String(hours), label: `Next ${label}`})),
     ],
@@ -1593,14 +1675,18 @@ function lookaheadView(prefix: string, what: string, window: ControlValues[strin
 }
 
 // The step nearest to at, or the last one the archive has
-function ecmwfUrl(run: number, archive: EcmwfLayer): string {
+function getEcmwfStep(run: number, at: number, archive: EcmwfLayer): number {
+  const {stepHours} = ECMWF_LAYERS[archive];
+  const fromRun = (at - run) / HOUR_MS;
+  return Math.min(Math.max(Math.round(fromRun / stepHours) * stepHours, 0), getLastStep(archive));
+}
+
+// A lookahead needs the hours after its step, so it stops that much short of the run's end.
+function getLastStep(archive: EcmwfLayer): number {
   const {lookaheadHours, stepHours}: {lookaheadHours?: number; stepHours: number} =
       ECMWF_LAYERS[archive];
   const last = ECMWF_MAX_STEP - (lookaheadHours ?? 0);
-  const fromRun = (Date.now() - run) / HOUR_MS;
-  const step =
-      Math.min(Math.max(Math.round(fromRun / stepHours) * stepHours, 0), last - last % stepHours);
-  return ecmwfStepUrl(run, archive, step);
+  return last - last % stepHours;
 }
 
 function ecmwfStepUrl(run: number, archive: EcmwfLayer, step: number): string {

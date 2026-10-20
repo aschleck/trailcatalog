@@ -30,6 +30,8 @@ export class RasterTileLayer extends Layer {
   private readonly buffer: WebGLBuffer;
   private readonly fetcher: PoolClient<FetcherInitialize, FetcherRequest, FetcherCommand>;
   private fetching: boolean;
+  // Set once the fetcher has started on a viewport, because until then nothing is loading either
+  private started: boolean;
   private readonly loader: PoolClient<LoaderInitialize, LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   // Each tile's RGBA before coloring, for the decodes that pack values
@@ -67,6 +69,7 @@ export class RasterTileLayer extends Layer {
               maxInFlight: MAX_IN_FLIGHT,
             });
     this.fetching = false;
+    this.started = false;
     this.loader =
         sharedPool<LoaderInitialize, LoaderRequest, LoaderResponse>(
             new URL('raster_loader_worker.js', import.meta.url).href, loaderCount())
@@ -93,6 +96,7 @@ export class RasterTileLayer extends Layer {
         this.unloadTiles(command.ids);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+        this.started ||= command.fetching;
       } else {
         checkExhaustive(command);
       }
@@ -149,6 +153,11 @@ export class RasterTileLayer extends Layer {
       best = {zoom: id.zoom, packed: (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]};
     }
     return best?.packed;
+  }
+
+  /** Returns whether the viewport's tiles have loaded since the fetcher first started. */
+  get ready(): boolean {
+    return this.started && !this.loadingData();
   }
 
   override hasNewData(): boolean {

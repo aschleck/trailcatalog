@@ -21,6 +21,8 @@ export class WindVectorLayer extends Layer {
   private readonly buffer: WebGLBuffer;
   private readonly fetcher: PoolClient<FetcherInitialize, FetcherRequest, FetcherCommand>;
   private fetching: boolean;
+  // Set once the fetcher has started on a viewport, because until then nothing is loading either
+  private started: boolean;
   private readonly loader: PoolClient<undefined, LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private style: WindStyle|undefined;
@@ -47,6 +49,7 @@ export class WindVectorLayer extends Layer {
             new URL('xyz_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
             .connect({url, extraZoom: 0, minZoom: 0, maxZoom});
     this.fetching = false;
+    this.started = false;
     // One worker, so that a trace sees every tile
     this.loader =
         sharedPool<undefined, LoaderRequest, LoaderResponse>(
@@ -72,6 +75,7 @@ export class WindVectorLayer extends Layer {
         this.unloadTiles(command.ids);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+        this.started ||= command.fetching;
       } else {
         checkExhaustive(command);
       }
@@ -103,14 +107,6 @@ export class WindVectorLayer extends Layer {
     };
   }
 
-  /** Swaps in tiles from another URL template, such as another step's. */
-  setUrl(url: string): void {
-    this.fetcher.broadcast({
-      kind: 'sur',
-      url,
-    });
-  }
-
   /** Draws the wind in the style, or nothing and fetches nothing when undefined. */
   setStyle(style: WindStyle|undefined): void {
     if (style === this.style) {
@@ -125,6 +121,11 @@ export class WindVectorLayer extends Layer {
     } else if (this.lastViewport) {
       this.viewportChanged(...this.lastViewport);
     }
+  }
+
+  /** Returns whether the viewport's streamlines are traced, which is trivially so for no style. */
+  get ready(): boolean {
+    return !this.style || (this.started && !this.loadingData());
   }
 
   override hasNewData(): boolean {

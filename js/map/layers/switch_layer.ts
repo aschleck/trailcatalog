@@ -5,7 +5,7 @@ import { Copyright } from '../common/types';
 import { Layer } from '../layer';
 import { Planner } from '../rendering/planner';
 
-interface Viewport {
+export interface Viewport {
   bounds: S2LatLngRect;
   zoom: number;
   fetchZoom: number;

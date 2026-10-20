@@ -57,6 +57,14 @@ export interface LayerEntry {
   // Set for a layer whose pixels hold values, which a click shows under name. Read returns
   // undefined where the layer has no tile loaded.
   readout?: {name: string; read: (point: S2LatLng) => string|undefined};
+  // Set for a layer with several things to say about a click, each a row after the readouts
+  readings?: (point: S2LatLng) => Array<{name: string; value: string}>;
+  // Set for a layer that shows the map's time, so the timeline shows while it's on. A forecast only
+  // covers the times of its run, and the map leaves it out at any other time.
+  timed?: 'any'|'forecast';
+  onShown?: () => void;
+  // Set for a forecast, as the first time after at in ms that it has a step for
+  nextTime?: (at: number) => number|undefined;
 }
 
 export interface LayerGroup {

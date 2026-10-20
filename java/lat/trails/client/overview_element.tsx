@@ -40,13 +40,14 @@ import {
   Properties,
   topLevelFolderIds,
 } from './feature_list';
-import { LayerTree } from './layer_tree';
+import { layerEntries, LayerTree } from './layer_tree';
 import { formatDistance } from './measurements';
 import { MeasurePanel } from './measure_panel';
 import { parseCollectionSchema, getTitle } from './schema';
 import { SidebarElement, SidebarSection } from './sidebar_element';
 import { Menubar, MenubarItem } from './menubar';
 import { EMPTY_SEARCH, SearchBox } from './search_box';
+import { Timeline } from './timeline';
 import { Toolbar } from './toolbar';
 import { CollectionSchema } from './workers/collection_schema';
 
@@ -114,6 +115,8 @@ export function OverviewElement(
       grades: {climbPercent: 25, descentPercent: 25},
       search: EMPTY_SEARCH,
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
+      // ViewerController fills in the clock and what the forecast reaches.
+      time: {at: undefined, now: 0, start: 0, end: 0, playing: false},
       tool: 'pointer',
     };
   }
@@ -192,6 +195,11 @@ export function OverviewElement(
               ref="map"
           />
           <Toolbar readOnly={readOnly} tool={state.tool} />
+          {layerEntries(state.layers.nodes)
+                  .some(({entry, shown}) => shown && entry.timed !== undefined)
+              ? <Timeline state={state.time} />
+              : ''
+          }
           {state.joining
               ? <div className="
                     -translate-x-1/2
