@@ -1,4 +1,4 @@
-import { getElevationAngle, TerrainTracer } from './terrain_tracer';
+import { drawViewshed, getElevationAngle, TerrainTracer } from './terrain_tracer';
 
 const DEGREES = Math.PI / 180;
 const LAT = 46 * DEGREES;
@@ -63,4 +63,21 @@ test('A target taller than a wall shows over it', () => {
   tracer.trace({zoom: 13, toMeters: 3_000}, heightAt);
   const [north] = getViewshedOf(tracer, 4);
   expect(north).toEqual([[0, 3_000]]);
+});
+
+test('The image shades what the rays saw and leaves the other bands clear', () => {
+  const tracer = new TerrainTracer(LAT, LNG, EYE, 0, 64);
+  const near = {zoom: 9, toMeters: 7_000};
+  tracer.trace(near, () => 0);
+  const image = drawViewshed(LAT, LNG, tracer.getViewshed(), 0, near);
+  const alphaAt = (east: number, south: number) => {
+    const middle = (image.pixels - 1) / 2;
+    return image.rgba[4 * ((middle + south) * image.pixels + middle + east) + 3];
+  };
+  // At zoom 9 a pixel is about 106 m here, so the 5 km horizon is about 47 pixels out.
+  expect(alphaAt(0, 0)).toBe(255);
+  expect(alphaAt(40, 0)).toBe(255);
+  expect(alphaAt(56, 0)).toBe(0);
+  // Past the band, where the next band's image takes over
+  expect(alphaAt(0, 67)).toBe(0);
 });

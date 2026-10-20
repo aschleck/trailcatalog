@@ -3,14 +3,20 @@ import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { Camera, projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
+import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { Elevations } from 'js/map/workers/elevations';
-import { SKYLINE_AZIMUTHS, SKYLINE_BANDS } from 'js/map/workers/terrain_tracer';
-import { Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
+import {
+  SKYLINE_AZIMUTHS,
+  SKYLINE_BANDS,
+  VIEWSHED_BANDS,
+  ViewshedImage,
+} from 'js/map/workers/terrain_tracer';
+import { Z_USER_DATA_FILL, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { EYE_METERS, getBearing, getElevationAngle, getSkylineAt } from './skyline';
 import { SKY_PINS_MOVED } from './events';
@@ -59,13 +65,15 @@ const SUBJECT_OFFSET_PX = 160;
 const MAX_SUBJECT_OFFSET_M = 1_000;
 // See VIEWSHED_BANDS, whose z13 pixels this matches
 const SIGHTING_STEP_METERS = 7;
-const MAX_SIGHTING_STEPS = 4096;
 // Close enough to the subject's height that the sun or moon sits on it
 const ON_SUBJECT = 0.5 * Math.PI / 180;
 const PATH_STEP_MS = 10 * 60 * 1000;
 const VISIBLE_STEP_MS = 60 * 1000;
+const VIEWSHED = 0x3B82F64D as RgbaU32;
 // Over the collection's features but under anything being edited
 const Z_SKY = Z_USER_DATA_HIGHLIGHT + 1;
+// Under the collection's features, so its lines and points stay readable through the shading
+const Z_VIEWSHED = Z_USER_DATA_FILL - 0.5;
 const COMPASS = [
   'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
   'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW',
@@ -76,13 +84,20 @@ const WHOLE = new Intl.NumberFormat(undefined, {maximumFractionDigits: 0});
 
 type Position = (ms: number, latRadians: number, lngRadians: number) => SkyPosition;
 
+/**
+ * Which ground the viewshed shades: none, what the pin sees, or where a person could stand to see
+ * the subject.
+ */
+export type ViewshedMode = 'none'|'pin'|'subject';
+
 // Where the subject sits in the sky from the pin
 interface Sighting {
   azimuth: number;
   altitude: number;
   meters: number;
-  // Whether ground between the pin and the subject rises above the line to it
-  hidden: boolean;
+  // Whether ground between the pin and the subject rises above the line to it, or undefined past
+  // the viewshed's reach where we don't check
+  hidden: boolean|undefined;
 }
 
 interface Line {
@@ -109,6 +124,11 @@ export class SkyLayer extends Layer {
   private subject: S2LatLng|undefined;
   private sighting: Sighting|undefined;
   private dragging: 'pin'|'subject'|undefined;
+  private viewshedMode: ViewshedMode;
+  // The shading for viewshedMode, which doesn't change with zoom so it is planned once it loads
+  private viewshed: Drawable[];
+  private viewshedTextures: WebGLTexture[];
+  private readonly glViewshed: WebGLBuffer;
   // Terrain samples in flight, including ones a moved pin will discard
   private sampling: number;
   private appearing: boolean;
@@ -132,13 +152,19 @@ export class SkyLayer extends Layer {
     this.subject = undefined;
     this.sighting = undefined;
     this.dragging = undefined;
+    this.viewshedMode = 'none';
+    this.viewshed = [];
+    this.viewshedTextures = [];
     this.sampling = 0;
     this.appearing = false;
     this.interactive = true;
     this.time = Date.now();
     this.glGeometry = renderer.createDataBuffer(0);
+    this.glViewshed = renderer.createDataBuffer(0);
     this.registerDisposer(() => {
       renderer.deleteBuffer(this.glGeometry);
+      renderer.deleteBuffer(this.glViewshed);
+      this.clearViewshed();
     });
     // A day of each path at PATH_STEP_MS, the horizon, and the discs fit
     this.geometry = new ArrayBuffer(512 * LineProgram.bytesNeeded(2));
@@ -165,6 +191,15 @@ export class SkyLayer extends Layer {
     return this.pin && (this.isNear(this.pin, point) || this.isNear(this.subject, point))
         ? getSkyReadings(this.pin, time, this.terrain, this.sighting)
         : [];
+  }
+
+  setViewshed(mode: ViewshedMode): void {
+    if (mode !== this.viewshedMode) {
+      this.viewshedMode = mode;
+      this.clearViewshed();
+      this.generation += 1;
+      this.loadViewshed();
+    }
   }
 
   // Off for the drawing tools, so that a press on the pin places a vertex instead.
@@ -220,6 +255,9 @@ export class SkyLayer extends Layer {
       if (this.dragging === 'pin') {
         this.loadSkyline();
       }
+      if (this.dragging === this.viewshedMode) {
+        this.loadViewshed();
+      }
       this.loadSighting();
       if (this.pin && this.subject) {
         source.trigger(
@@ -268,19 +306,99 @@ export class SkyLayer extends Layer {
     if (pin || subject) {
       this.loadSighting();
     }
+    if ((pin && this.viewshedMode === 'pin') || (subject && this.viewshedMode === 'subject')) {
+      this.loadViewshed();
+    }
   }
 
   private movePin(pin: S2LatLng): void {
     this.pin = pin;
     this.terrain = undefined;
     this.sighting = undefined;
+    if (this.viewshedMode === 'pin') {
+      this.clearViewshed();
+    }
     this.generation += 1;
   }
 
   private moveSubject(subject: S2LatLng): void {
     this.subject = subject;
     this.sighting = undefined;
+    if (this.viewshedMode === 'subject') {
+      this.clearViewshed();
+    }
     this.generation += 1;
+  }
+
+  // From the pin, its eye looks at the ground. Of the subject, the subject itself looks at a
+  // person's eye, which is the same line of sight run the other way.
+  private loadViewshed(): void {
+    const mode = this.viewshedMode;
+    const source = mode === 'pin' ? this.pin : mode === 'subject' ? this.subject : undefined;
+    if (!source) {
+      return;
+    }
+    const [sourceHeight, targetHeight] = mode === 'pin' ? [EYE_METERS, 0] : [0, EYE_METERS];
+    const stillWanted = () =>
+        this.viewshedMode === mode && (mode === 'pin' ? this.pin : this.subject) === source;
+    this.sampling += 1;
+    this.elevations
+        .trace({
+          latDegrees: source.latDegrees(),
+          lngDegrees: source.lngDegrees(),
+          sourceHeight,
+          targetHeight,
+          of: 'viewshed',
+        })
+        .finally(() => {
+          this.sampling -= 1;
+        })
+        .then(({images}) => {
+          if (stillWanted()) {
+            this.planViewshed(images);
+            this.generation += 1;
+          }
+        }, e => {
+          console.error(e);
+        });
+  }
+
+  // One image per band of the trace, which the bilinear filter softens at the edges of
+  private planViewshed(images: ViewshedImage[]): void {
+    this.clearViewshed();
+    const buffer = new ArrayBuffer(BillboardProgram.bytesNeeded() * images.length);
+    let offset = 0;
+    for (const {x, y, size, pixels, rgba} of images) {
+      const texture = this.renderer.createTexture();
+      this.renderer.uploadTexture(new ImageData(rgba, pixels, pixels), texture);
+      this.viewshedTextures.push(texture);
+      // From the worker's 0 to 1 with y south to mercator's -1 to 1 with y north
+      const {byteSize, drawable} =
+          this.renderer.billboardProgram.plan(
+              [2 * (x + size / 2) - 1, 1 - 2 * (y + size / 2)],
+              [0, 0],
+              [2 * size, 2 * size],
+              /* angle= */ 0,
+              VIEWSHED,
+              Z_VIEWSHED,
+              /* atlasIndex= */ 0,
+              /* atlasSize= */ [1, 1],
+              buffer,
+              offset,
+              this.glViewshed,
+              texture);
+      this.viewshed.push(drawable);
+      offset += byteSize;
+    }
+    this.renderer.uploadData(buffer, offset, this.glViewshed);
+  }
+
+  private clearViewshed(): void {
+    for (const texture of this.viewshedTextures) {
+      this.renderer.deleteTexture(texture);
+    }
+    this.viewshedTextures = [];
+    this.viewshed = [];
   }
 
   private loadSighting(): void {
@@ -293,8 +411,10 @@ export class SkyLayer extends Layer {
     const [lat1, lng1] = [subject.latDegrees(), subject.lngDegrees()];
     const distance = haversineMeters(lat0, lng0, lat1, lng1);
     // The pin, the subject, and the ground between them a z13 pixel apart, like the viewshed
-    // steps, since only nearer terrain can hide the subject
-    const steps = Math.min(Math.ceil(distance / SIGHTING_STEP_METERS), MAX_SIGHTING_STEPS);
+    // steps, since only nearer terrain can hide the subject. Past the viewshed's reach we sample
+    // just the two ends, or else one sighting walks z13 tiles across a state.
+    const checked = distance <= VIEWSHED_BANDS[VIEWSHED_BANDS.length - 1].toMeters;
+    const steps = checked ? Math.ceil(distance / SIGHTING_STEP_METERS) : 1;
     const samples = new Float64Array(2 * (steps + 1));
     for (let i = 0; i <= steps; ++i) {
       // Straight in degrees, which is close enough to the great circle over a few kilometers
@@ -302,7 +422,7 @@ export class SkyLayer extends Layer {
       samples[2 * i + 1] = lng0 + (lng1 - lng0) * i / steps;
     }
     this.sampling += 1;
-    this.elevations.sample(samples, SKYLINE_BANDS[0].zoom)
+    this.elevations.sample(samples, SKYLINE_BANDS[0].zoom, 'sighting')
         .finally(() => {
           this.sampling -= 1;
         })
@@ -312,7 +432,7 @@ export class SkyLayer extends Layer {
           }
           const eye = meters[0] + EYE_METERS;
           const altitude = getElevationAngle(eye, meters[steps], distance);
-          let hidden = false;
+          let hidden = checked ? false : undefined;
           for (let i = 1; i < steps; ++i) {
             if (getElevationAngle(eye, meters[i], distance * i / steps) > altitude) {
               hidden = true;
@@ -327,7 +447,10 @@ export class SkyLayer extends Layer {
           };
           this.generation += 1;
         }, e => {
-          console.error(e);
+          // A later sighting replacing this one rejects it too.
+          if (this.pin === pin && this.subject === subject) {
+            console.error(e);
+          }
         });
   }
 
@@ -515,6 +638,7 @@ export class SkyLayer extends Layer {
     }
 
     this.renderer.uploadData(this.geometry, offset, this.glGeometry);
+    drawables.push(...this.viewshed);
     this.drawables = drawables;
   }
 }

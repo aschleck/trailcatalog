@@ -5,6 +5,7 @@ import { Vec2 } from '../common/types';
 import { BASE_ZOOM, fetchTerrarium, TILE_SIZE } from './terrarium';
 import { GradeLimits, routeOverTerrain, simplifyCells } from './terrain_router';
 import {
+  drawViewshed,
   getPixelMeters,
   HeightAt,
   SKYLINE_AZIMUTHS,
@@ -13,6 +14,7 @@ import {
   TraceBand,
   VIEWSHED_AZIMUTHS,
   VIEWSHED_BANDS,
+  ViewshedImage,
 } from './terrain_tracer';
 
 // Each tile decodes to a megabyte of floats, and a long measurement reaches a few dozen.
@@ -44,6 +46,8 @@ export interface SampleRequest {
   // Interleaved lat then lng, in degrees
   latLngDegrees: Float64Array;
   zoom: number;
+  // A newer request with the same key makes this one stale, so the worker stops sampling it.
+  key: string|undefined;
 }
 
 export interface RouteRequest {
@@ -74,7 +78,7 @@ export interface SampleResponse {
   kind: 'sr';
   id: number;
   // One per point, 0 where there is no data, which is what CalculateWayElevations assumes too.
-  // Empty when sampling failed.
+  // Empty when sampling failed or a newer request with the same key replaced this one.
   meters: Float32Array;
 }
 
@@ -94,9 +98,8 @@ export interface TraceResponse {
   groundMeters: number;
   // By azimuth, see TerrainTracer#skyline
   skyline: Float32Array;
-  // See TerrainTracer#getViewshed
-  stretches: Float32Array;
-  offsets: Uint32Array;
+  // One for each band of a viewshed, nearest first, and empty for a skyline
+  images: ViewshedImage[];
   // Set when tiles could not be fetched
   failed: boolean;
 }
@@ -110,17 +113,31 @@ class ElevationSampler {
 
   // By z/x/y, oldest first, so that trimming drops the tile used longest ago
   private readonly tiles: Map<string, Promise<Tile>>;
+  // The id of the newest sample request with each key
+  private readonly newest: Map<string, number>;
 
   constructor(
       private readonly postMessage: (response: Response, transfer?: Transferable[]) => void,
   ) {
     this.tiles = new Map();
+    this.newest = new Map();
+  }
+
+  /** Marks older requests with the same key as stale, before this one waits its turn. */
+  received(request: SampleRequest): void {
+    if (request.key !== undefined) {
+      this.newest.set(request.key, request.id);
+    }
   }
 
   async sample(request: SampleRequest): Promise<void> {
     const count = request.latLngDegrees.length / 2;
     const meters = new Float32Array(count);
     for (let i = 0; i < count; ++i) {
+      if (request.key !== undefined && this.newest.get(request.key) !== request.id) {
+        this.fail(request);
+        return;
+      }
       meters[i] =
           await this.sampleAt(
               request.latLngDegrees[2 * i], request.latLngDegrees[2 * i + 1], request.zoom);
@@ -156,30 +173,28 @@ class ElevationSampler {
     for (const band of bands) {
       tracer.trace(band, await loadBand(lat, lng, band));
     }
-    const {stretches, offsets} = tracer.getViewshed();
+    const images = [];
+    if (request.of === 'viewshed') {
+      const viewshed = tracer.getViewshed();
+      let from = 0;
+      for (const band of bands) {
+        images.push(drawViewshed(lat, lng, viewshed, from, band));
+        from = band.toMeters;
+      }
+    }
     const skyline = tracer.skyline;
     this.postMessage(
-        {
-          kind: 'tr',
-          id: request.id,
-          groundMeters: ground,
-          skyline,
-          stretches,
-          offsets,
-          failed: false,
-        },
-        [skyline.buffer, stretches.buffer, offsets.buffer]);
+        {kind: 'tr', id: request.id, groundMeters: ground, skyline, images, failed: false},
+        [skyline.buffer, ...images.map(image => image.rgba.buffer)]);
   }
 
   failTrace(request: TraceRequest): void {
-    const empty = new Float32Array(0);
     this.postMessage({
       kind: 'tr',
       id: request.id,
       groundMeters: 0,
-      skyline: empty,
-      stretches: empty,
-      offsets: new Uint32Array(0),
+      skyline: new Float32Array(0),
+      images: [],
       failed: true,
     });
   }
@@ -432,6 +447,7 @@ self.onmessage = e => {
       sampler.failRoute(request);
     });
   } else if (request.kind === 'sr') {
+    sampler.received(request);
     queue = queue.then(() => sampler.sample(request)).catch(e => {
       console.error(e);
       sampler.fail(request);

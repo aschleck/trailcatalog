@@ -36,7 +36,7 @@ import {
 } from './layer_tree';
 import { PointCollectionLayer } from './point_collection_layer';
 import { readElevation, readSnodas, readWeather } from './readings';
-import { SkyLayer } from './sky_layer';
+import { SkyLayer, ViewshedMode } from './sky_layer';
 import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA } from './schema';
 import {
   BASEMAP_LABEL_KINDS,
@@ -1077,14 +1077,24 @@ export class LayerCatalog extends Disposable {
           name: 'Sun and moon',
           enabled: false,
           layer: this.sky,
-          controls: [],
-          values: {},
+          controls: [{
+            kind: 'select',
+            key: 'viewshed',
+            label: 'Viewshed',
+            options: [
+              {value: 'none', label: 'None'},
+              {value: 'pin', label: 'From pin'},
+              {value: 'subject', label: 'Of subject'},
+            ],
+          }],
+          values: {viewshed: 'none'},
           timed: 'any',
           persisted: ['pin', 'subject'],
           configure: values => {
             this.sky.setPins(
                 typeof values.pin === 'string' ? values.pin : undefined,
                 typeof values.subject === 'string' ? values.subject : undefined);
+            this.sky.setViewshed(values.viewshed as ViewshedMode);
           },
           onShown: () => {
             this.sky.appear();

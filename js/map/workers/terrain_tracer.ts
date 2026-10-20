@@ -21,8 +21,9 @@ export const SKYLINE_BANDS: TraceBand[] = [
 export const VIEWSHED_BANDS: TraceBand[] = SKYLINE_BANDS.slice(0, 2);
 // Each 0.5 degrees, as wide as the sun
 export const SKYLINE_AZIMUTHS = 720;
-// Rays 31 m apart at the viewshed's 20 km edge, about two z12 pixels
-export const VIEWSHED_AZIMUTHS = 4096;
+// Rays 15 m apart at the viewshed's 20 km edge, about a z12 pixel, so that every pixel of the
+// image is near a ray
+export const VIEWSHED_AZIMUTHS = 8192;
 
 /** Meters above sea level at a lat, lng in radians, read from the band's zoom. */
 export type HeightAt = (latRadians: number, lngRadians: number) => number;
@@ -140,4 +141,70 @@ export class TerrainTracer {
     }
     return {stretches, offsets};
   }
+}
+
+/**
+ * A square of a zoom's pixels in mercator, with x and y from 0 to 1 across the world, x east and y
+ * south. Visible pixels are opaque white and the rest are clear, so a tint colors it.
+ */
+export interface ViewshedImage {
+  x: number;
+  y: number;
+  size: number;
+  pixels: number;
+  rgba: Uint8ClampedArray<ArrayBuffer>;
+}
+
+/**
+ * Draws a band of the viewshed into an image of its zoom's pixels, from the stretches
+ * TerrainTracer#getViewshed returns. Each pixel takes the ray nearest its center, and pixels
+ * outside the band stay clear so that the bands' images don't overlap.
+ */
+export function drawViewshed(
+    latRadians: number,
+    lngRadians: number,
+    {stretches, offsets}: {stretches: Float32Array; offsets: Uint32Array},
+    fromMeters: number,
+    band: TraceBand): ViewshedImage {
+  const azimuths = offsets.length - 1;
+  const world = 512 * 2 ** band.zoom;
+  const sin = Math.sin(latRadians);
+  const sx = (lngRadians + Math.PI) / (2 * Math.PI) * world;
+  const sy = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * world;
+  // A pixel more than the band for the stretch of latitude the image spans
+  const reach = Math.ceil(band.toMeters / getPixelMeters(band.zoom, latRadians) * 1.01) + 1;
+  const x0 = Math.floor(sx) - reach;
+  const y0 = Math.floor(sy) - reach;
+  const pixels = 2 * reach + 1;
+  const rgba = new Uint8ClampedArray(4 * pixels * pixels);
+  const sinLat = Math.sin(latRadians);
+  const cosLat = Math.cos(latRadians);
+  for (let j = 0; j < pixels; ++j) {
+    // Inverse mercator of the row's center
+    const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y0 + j + 0.5) / world)));
+    const sinTo = Math.sin(lat);
+    const cosTo = Math.cos(lat);
+    for (let i = 0; i < pixels; ++i) {
+      const dLng = (x0 + i + 0.5) / world * 2 * Math.PI - Math.PI - lngRadians;
+      // https://www.movable-type.co.uk/scripts/latlong.html, the haversine and the bearing
+      const h =
+          Math.sin((lat - latRadians) / 2) ** 2
+              + cosLat * cosTo * Math.sin(dLng / 2) ** 2;
+      const d = 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(h));
+      if (d < fromMeters || d > band.toMeters) {
+        continue;
+      }
+      const bearing =
+          Math.atan2(
+              Math.sin(dLng) * cosTo, cosLat * sinTo - sinLat * cosTo * Math.cos(dLng));
+      const ray = (Math.round(bearing / (2 * Math.PI) * azimuths) % azimuths + azimuths) % azimuths;
+      for (let k = offsets[ray]; k < offsets[ray + 1]; ++k) {
+        if (stretches[2 * k] <= d && d < stretches[2 * k + 1]) {
+          rgba.fill(255, 4 * (j * pixels + i), 4 * (j * pixels + i) + 4);
+          break;
+        }
+      }
+    }
+  }
+  return {x: x0 / world, y: y0 / world, size: pixels / world, pixels, rgba};
 }

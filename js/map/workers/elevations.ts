@@ -48,9 +48,10 @@ export class Elevations {
 
   /**
    * Resolves with meters for each interleaved lat, lng pair, read from tiles at zoom or the
-   * deepest zoom above it that covers the point. Rejects if the tiles could not be fetched.
+   * deepest zoom above it that covers the point. Rejects if the tiles could not be fetched, or if
+   * a later call with the same key replaced this one.
    */
-  sample(latLngDegrees: Float64Array, zoom: number): Promise<Float32Array> {
+  sample(latLngDegrees: Float64Array, zoom: number, key?: string): Promise<Float32Array> {
     const id = this.requestCount;
     this.requestCount += 1;
     return new Promise((resolve, reject) => {
@@ -61,7 +62,7 @@ export class Elevations {
           reject(new Error('Unable to sample elevations'));
         }
       });
-      this.worker.post({kind: 'sr', id, latLngDegrees, zoom});
+      this.worker.post({kind: 'sr', id, latLngDegrees, zoom, key});
     });
   }
 
