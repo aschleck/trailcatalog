@@ -35,6 +35,7 @@ import {
   GetCollectionResponse,
   GetCurrentUserResponse,
   GetOsmTagsResponse,
+  GetTimeZoneResponse,
   ListCollectionsResponse,
   Role,
   SaveResponse,
@@ -142,6 +143,14 @@ import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
 import { SearchHit, SearchQuery, SearchState } from './search_box';
 import { STEP_MS, TimelineState } from './timeline';
+import {
+  fromWallClock,
+  isKnownZone,
+  readZoneChoice,
+  setShownZone,
+  writeZoneChoice,
+  ZoneChoice,
+} from './time_zones';
 import {
   DEFAULT_COLOR,
   getLineKind,
@@ -256,6 +265,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private picked: {camera: LatLngZoom; menu: MenuHandle}|undefined;
   // Moves with every object opened or closed, so that tags arriving for an earlier one are dropped
   private inspectGeneration: number;
+  private zoneChoice: ZoneChoice;
+  // Moves with every zone lookup, so that a slow answer for where the map was is dropped
+  private zoneGeneration: number;
   private readonly searchQuery: SearchQuery;
   // Moves with every collection opened or created, so that a slow load of an earlier one is dropped
   private collectionGeneration: number;
@@ -328,6 +340,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.pickGeneration = 0;
     this.picked = undefined;
     this.inspectGeneration = 0;
+    this.zoneChoice = readZoneChoice();
+    this.zoneGeneration = 0;
     this.searchQuery =
         new SearchQuery(
             () => {
@@ -477,6 +491,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       layers: {nodes, expanded: new Set(['osm', 'satellite', 'topography', 'us'])},
     });
     this.updateTimeline({now: Date.now()});
+    this.updateZone(camera.center);
     this.catalog.start();
     this.playTicks = 0;
     this.player = new Timer(PLAY_INTERVAL_MS, () => {
@@ -1220,9 +1235,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setTime(at);
   }
 
-  // The input gives a local time without a zone, which Date reads as local.
+  // The input gives a local time without a zone, which is in the zone the timeline shows.
   timeTyped(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const at = new Date((e.actionElement.element() as HTMLInputElement).value).getTime();
+    const at =
+        fromWallClock(
+            (e.actionElement.element() as HTMLInputElement).value, this.state.time.zone);
     if (Number.isNaN(at)) {
       return;
     }
@@ -1271,6 +1288,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     url.searchParams.set('lng', center.lngDegrees().toFixed(7));
     url.searchParams.set('zoom', zoom.toFixed(3));
     this.history.silentlyReplaceUrl(url.toString());
+    this.updateZone(center);
   }
 
   // A group's row opens it and a layer's row shows it, since a group has nothing else to click for.
@@ -1387,10 +1405,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     } else if (menu === 'edit') {
       this.openMenu(editMenu(this.store), trigger);
     } else if (menu === 'view') {
-      const choose = (system: UnitSystem) => {
-        this.setUnitSystem(system);
-      };
-      this.openMenu(viewMenu(getUnitSystem(), choose), trigger);
+      this.openMenu(
+          viewMenu(
+              getUnitSystem(),
+              system => this.setUnitSystem(system),
+              this.zoneChoice,
+              zone => this.chooseZone(zone)),
+          trigger);
     } else if (menu === 'help') {
       this.openMenu(HELP_MENU, trigger);
     } else if (menu === 'user') {
@@ -2353,6 +2374,46 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       corgi.vdomCaching.enable();
     });
     this.setMapLayers(nodes);
+  }
+
+  private chooseZone(choice: ZoneChoice): void {
+    this.zoneChoice = choice;
+    writeZoneChoice(choice);
+    this.updateZone(this.mapController.camera.center);
+  }
+
+  private updateZone(center: S2LatLng): void {
+    this.zoneGeneration += 1;
+    if (this.zoneChoice === 'device') {
+      this.showZone(undefined);
+      return;
+    }
+    const generation = this.zoneGeneration;
+    // Rounded to about a kilometer so that the cache answers a map that barely moved
+    const loading: Future<GetTimeZoneResponse> =
+        requestData('lat.trails.DataService/GetTimeZone', {
+          latDegrees: Math.round(center.latDegrees() * 100) / 100,
+          lngDegrees: Math.round(center.lngDegrees() * 100) / 100,
+        });
+    loading.then(response => {
+      if (generation !== this.zoneGeneration) {
+        return;
+      }
+      this.showZone(isKnownZone(response.zone) ? response.zone : undefined);
+    }, e => {
+      console.error(e);
+    });
+  }
+
+  private showZone(zone: string|undefined): void {
+    if (zone === this.state.time.zone) {
+      return;
+    }
+    setShownZone(zone);
+    corgi.vdomCaching.disable();
+    this.updateState({...this.state, time: {...this.state.time, zone}}).then(() => {
+      corgi.vdomCaching.enable();
+    });
   }
 
   private layerNodeOf(e: CorgiEvent<typeof DOM_MOUSE>): LayerNode {

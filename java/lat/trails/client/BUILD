@@ -19,6 +19,7 @@ tc_ts_project(
         "//java/lat/trails/client/workers",
         "//java/org/trailcatalog/client/points",
         "//java/org/trailcatalog/s2",
+        "//js/cookies",
         "//js/map",
         "//js/map/layers",
         "//js/map/workers",

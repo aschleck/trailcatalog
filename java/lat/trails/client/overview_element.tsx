@@ -117,7 +117,7 @@ export function OverviewElement(
       search: EMPTY_SEARCH,
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
       // ViewerController fills in the clock and what the forecast reaches.
-      time: {at: undefined, now: 0, start: 0, end: 0, playing: false},
+      time: {at: undefined, now: 0, start: 0, end: 0, playing: false, zone: undefined},
       tool: 'pointer',
     };
   }

@@ -36,6 +36,7 @@ import {
   Schema,
   titleField,
 } from './schema';
+import { getShownZone } from './time_zones';
 import { Data } from './workers/collection_loader';
 import {
   CollectionSchema,
@@ -665,9 +666,6 @@ const CLOUD_COVERS: {[cover: string]: string} = {
 const METERS_PER_FOOT = 0.3048;
 const METERS_PER_MILE = 1609.344;
 
-const PERIOD_TIME_FORMAT =
-    new Intl.DateTimeFormat(undefined, {weekday: 'short', hour: 'numeric', minute: '2-digit'});
-
 function metarRows(metar: Metar): Array<[string, string]> {
   const rows: Array<[string, string]> = [['Observed', formatAgo(metar.observedEpochSeconds)]];
   if (metar.flightCategory) {
@@ -756,7 +754,12 @@ function describePeriod(period: TafPeriod): string {
 }
 
 function formatPeriodTime(epochSeconds: bigint): string {
-  return PERIOD_TIME_FORMAT.format(new Date(Number(epochSeconds) * 1000));
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: getShownZone(),
+  }).format(new Date(Number(epochSeconds) * 1000));
 }
 
 function formatAgo(epochSeconds: bigint): string {

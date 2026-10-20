@@ -4,6 +4,7 @@ import { UnitSystem } from 'js/units/formatters';
 import { Collection, ListCollectionsResponse } from 'trails_lat/proto/data_pb';
 
 import { FeatureStore } from './feature_store';
+import { ZoneChoice } from './time_zones';
 
 /** What the File menu's items do. */
 export interface FileActions {
@@ -94,20 +95,40 @@ export function editMenu(store: FeatureStore): MenuEntries {
   }];
 }
 
-export function viewMenu(system: UnitSystem, choose: (system: UnitSystem) => void): MenuEntries {
+export function viewMenu(
+    system: UnitSystem,
+    chooseSystem: (system: UnitSystem) => void,
+    zone: ZoneChoice,
+    chooseZone: (zone: ZoneChoice) => void): MenuEntries {
   return [{
     kind: 'checkbox_menu_item',
     label: 'Imperial',
     checked: system === 'imperial',
     action: () => {
-      choose('imperial');
+      chooseSystem('imperial');
     },
   }, {
     kind: 'checkbox_menu_item',
     label: 'Metric',
     checked: system === 'metric',
     action: () => {
-      choose('metric');
+      chooseSystem('metric');
+    },
+  }, {
+    kind: 'divider',
+  }, {
+    kind: 'checkbox_menu_item',
+    label: 'Device time zone',
+    checked: zone === 'device',
+    action: () => {
+      chooseZone('device');
+    },
+  }, {
+    kind: 'checkbox_menu_item',
+    label: 'Map time zone',
+    checked: zone === 'map',
+    action: () => {
+      chooseZone('map');
     },
   }];
 }

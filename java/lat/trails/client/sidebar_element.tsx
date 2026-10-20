@@ -1,7 +1,8 @@
-import { debugMode } from 'external/dev_april_corgi+/js/common/debug';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
+
+import { readCookie, writeCookie } from 'js/cookies/cookies';
 
 type Children = corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
 
@@ -163,11 +164,7 @@ export interface SidebarCookie {
 }
 
 export function readSidebarCookie(): SidebarCookie {
-  const raw =
-      (window.SERVER_SIDE_RENDER?.cookies() ?? window.document?.cookie)
-          ?.split('; ')
-          ?.find(c => c.startsWith(`${SIDEBAR_COOKIE}=`))
-          ?.substring(SIDEBAR_COOKIE.length + 1);
+  const raw = readCookie(SIDEBAR_COOKIE);
   if (!raw) {
     return {};
   }
@@ -182,9 +179,5 @@ export function readSidebarCookie(): SidebarCookie {
 }
 
 export function writeSidebarCookie(cookie: SidebarCookie): void {
-  const secure = debugMode() ? '' : '; Secure';
-  // a year, so that it outlives the browser session
-  document.cookie =
-      `${SIDEBAR_COOKIE}=${encodeURIComponent(JSON.stringify(cookie))}; Max-Age=31536000; `
-          + `Path=/; SameSite=Strict${secure}`;
+  writeCookie(SIDEBAR_COOKIE, encodeURIComponent(JSON.stringify(cookie)));
 }

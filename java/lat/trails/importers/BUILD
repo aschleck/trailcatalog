@@ -42,6 +42,12 @@ java_binary(
 )
 
 java_binary(
+    name = "time_zones",
+    main_class = "lat.trails.importers.TimeZonesKt",
+    runtime_deps = [":importers"],
+)
+
+java_binary(
     name = "weather",
     main_class = "lat.trails.importers.WeatherKt",
     runtime_deps = [":importers"],
@@ -138,6 +144,37 @@ oci_push(
     image = ":snodas_container",
     remote_tags = ["latest"],
     repository = "us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_snodas",
+)
+
+pkg_tar(
+    name = "time_zones_tar",
+    srcs = [":time_zones_deploy.jar"],
+    include_runfiles = True,
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "time_zones_container",
+    base = "@distroless_java_linux_amd64",
+    entrypoint = [
+        "java",
+        "-jar",
+        "time_zones_deploy.jar",
+    ],
+    tars = [":time_zones_tar"],
+)
+
+oci_load(
+    name = "time_zones_container_load",
+    image = ":time_zones_container",
+    repo_tags = ["latest"],
+)
+
+oci_push(
+    name = "time_zones_container_push",
+    image = ":time_zones_container",
+    remote_tags = ["latest"],
+    repository = "us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_time_zones",
 )
 
 pkg_tar(

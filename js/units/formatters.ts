@@ -1,17 +1,14 @@
-import { debugMode } from 'external/dev_april_corgi+/js/common/debug';
 import { maybeMemoized } from 'external/dev_april_corgi+/js/common/memoized';
 import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
+
+import { readCookie, writeCookie } from 'js/cookies/cookies';
 
 export type UnitSystem = 'imperial'|'metric';
 
 const UNIT_SYSTEM_COOKIE = 'unit_system';
 
 function calculateUnitSystem(): UnitSystem {
-  const requested =
-      (window.SERVER_SIDE_RENDER?.cookies() ?? window.document?.cookie)
-          ?.split('; ')
-          ?.find(c => c.startsWith(`${UNIT_SYSTEM_COOKIE}=`))
-          ?.split('=')[1];
+  const requested = readCookie(UNIT_SYSTEM_COOKIE);
   if (requested === 'imperial' || requested === 'metric') {
     return requested;
   }
@@ -28,15 +25,7 @@ export function getUnitSystem(): UnitSystem {
 
 export function setUnitSystem(system: UnitSystem) {
   chosenUnitSystem.value = system;
-
-  let secure;
-  if (debugMode()) {
-    secure = '';
-  } else {
-    secure =  '; Secure';
-  }
-
-  document.cookie = `${UNIT_SYSTEM_COOKIE}=${system}; Path=/; SameSite=Strict${secure}`;
+  writeCookie(UNIT_SYSTEM_COOKIE, system);
 }
 
 export function celsiusToFahrenheit(celsius: number): number {

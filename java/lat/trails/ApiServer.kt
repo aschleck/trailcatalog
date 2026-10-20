@@ -35,6 +35,7 @@ import lat.trails.common.assemblePolygon
 import lat.trails.common.createBaseConnection
 import lat.trails.common.createTrailcatalogConnection
 import lat.trails.common.encodeCovering
+import lat.trails.common.TIME_ZONES_COLLECTION_ID
 import lat.trails.proto.AcceptInviteRequest
 import lat.trails.proto.AcceptInviteResponse
 import lat.trails.proto.Collection
@@ -57,6 +58,8 @@ import lat.trails.proto.GetOsmTagsRequest
 import lat.trails.proto.GetOsmTagsResponse
 import lat.trails.proto.GetSharingRequest
 import lat.trails.proto.GetSharingResponse
+import lat.trails.proto.GetTimeZoneRequest
+import lat.trails.proto.GetTimeZoneResponse
 import lat.trails.proto.Invite
 import lat.trails.proto.Line
 import lat.trails.proto.ListCollectionsResponse
@@ -233,6 +236,8 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
       getOsmTags(GetOsmTagsRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetSharing" ->
       getSharing(ctx, GetSharingRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/GetTimeZone" ->
+      getTimeZone(GetTimeZoneRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/ListCollections" -> listCollections(ctx)
     "lat.trails.DataService/RevokeInvite" ->
       revokeInvite(ctx, RevokeInviteRequest.newBuilder().mergeJson(payload).build())
@@ -620,6 +625,39 @@ private fun getSharing(ctx: Context, request: GetSharingRequest): GetSharingResp
     requireOwner(connection, collection, user)
     return GetSharingResponse.newBuilder().setSharing(readSharing(connection, collection)).build()
   }
+}
+
+private fun getTimeZone(request: GetTimeZoneRequest): GetTimeZoneResponse {
+  val point = S2LatLng.fromDegrees(request.latDegrees, request.lngDegrees).toPoint()
+  // polygonToCell files a polygon under a cell whose neighbors, together with it, cover the
+  // polygon, so a polygon holding the point is under one of the cells next to its ancestors.
+  val cells = (0 until 6).map { S2CellId.fromFace(it) }.toMutableList()
+  val leaf = S2CellId.fromPoint(point)
+  for (level in 1..SimpleS2.HIGHEST_INDEX_LEVEL) {
+    val ancestor = leaf.parent(level)
+    cells.add(ancestor)
+    ancestor.getAllNeighbors(level, cells)
+  }
+
+  hikari.connection.use { connection ->
+    connection
+        .prepareStatement(
+            "SELECT data->>'zone', s2_polygon FROM polygons "
+                + "WHERE collection = ? AND deleted IS NULL AND cell = ANY(?)")
+        .apply {
+          setObject(1, TIME_ZONES_COLLECTION_ID)
+          setArray(2, connection.createArrayOf("bigint", cells.map { it.id() }.toTypedArray()))
+        }
+        .executeQuery()
+        .use { results ->
+          while (results.next()) {
+            if (S2Polygon.decode(ByteArrayInputStream(results.getBytes(2))).contains(point)) {
+              return GetTimeZoneResponse.newBuilder().setZone(results.getString(1)).build()
+            }
+          }
+        }
+  }
+  throw NotFoundResponse()
 }
 
 private fun setAnyoneCanView(

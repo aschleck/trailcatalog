@@ -16,6 +16,7 @@ service DataService {
   rpc GetInvite(GetInviteRequest) returns (GetInviteResponse);
   rpc GetOsmTags(GetOsmTagsRequest) returns (GetOsmTagsResponse);
   rpc GetSharing(GetSharingRequest) returns (GetSharingResponse);
+  rpc GetTimeZone(GetTimeZoneRequest) returns (GetTimeZoneResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
   rpc RevokeInvite(RevokeInviteRequest) returns (RevokeInviteResponse);
   rpc Save(SaveRequest) returns (SaveResponse);
@@ -213,6 +214,16 @@ message GetSharingRequest {
 
 message GetSharingResponse {
   Sharing sharing = 1;
+}
+
+message GetTimeZoneRequest {
+  double lat_degrees = 1;
+  double lng_degrees = 2;
+}
+
+message GetTimeZoneResponse {
+  // A tzdb id like America/Los_Angeles, or Etc/GMT+8 at sea
+  string zone = 1;
 }
 
 message ListCollectionsRequest {}

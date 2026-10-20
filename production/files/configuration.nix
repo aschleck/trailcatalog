@@ -304,6 +304,26 @@
     };
   };
 
+  systemd.services."trails-lat-time-zones" = {
+    enable = true;
+    after = [ "podman.service" ];
+    startAt = "Sun *-*-* 05:15:00";
+    restartIfChanged = false;
+
+    path = with pkgs; [
+      bash
+      crun
+      google-cloud-sdk
+      jq
+      podman
+    ];
+
+    serviceConfig = {
+      ExecStart = "/home/april/time_zones.sh";
+      Type = "oneshot";
+    };
+  };
+
   systemd.services."trails-lat-faa-charts" = {
     enable = true;
     # The FAA posts each 56 day cycle about three weeks early, and faa_charts.py skips cycles it
