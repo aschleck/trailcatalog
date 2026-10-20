@@ -76,6 +76,7 @@ fun main(args: Array<String>) {
   val static = run.read(EcmwfStream.IFS, 0, STATIC_IFS_INPUTS)
   val lookaheadInputs = LOOKAHEAD_LAYERS.map { it.input }.toSet()
   val history = lookaheadInputs.associateWith { HashMap<Int, FloatArray>() }
+  val lookaheadKeys = lookaheadInputs.flatMap { it.inputs }.toSet()
   for ((stream, streamSteps) in steps) {
     val layers = WEATHER_LAYERS.filter { it.stream == stream }
     for (step in streamSteps) {
@@ -83,11 +84,13 @@ fun main(args: Array<String>) {
       val ifs = stream == EcmwfStream.IFS
       val wanted =
           due.flatMap { it.inputs }.toSet() - STATIC_IFS_INPUTS +
-              if (ifs) lookaheadInputs else setOf()
+              if (ifs) lookaheadKeys - STATIC_IFS_INPUTS else setOf()
       val fields = run.read(stream, step, wanted) + if (ifs) static else mapOf()
       if (ifs) {
-        for ((key, steps) in history) {
-          fields[key]?.let { steps[step] = it.values }
+        for ((input, steps) in history) {
+          if (fields.keys.containsAll(input.inputs)) {
+            steps[step] = input.compute(Inputs(fields))
+          }
         }
       }
       for (layer in due) {

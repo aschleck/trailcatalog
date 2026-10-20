@@ -13,6 +13,8 @@ private val LEVELS = listOf(1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 1
 private val ICING_LEVELS = listOf(850, 700, 600, 500, 400, 300)
 // Pairs of levels, about 24,000 to 44,000 feet, where jet streams make clear air turbulence
 private val TURBULENCE_LAYERS = listOf(400 to 300, 300 to 250, 250 to 200, 200 to 150)
+// About 2,500 to 18,000 feet, where planes fly below Class A
+private val WIND_LEVELS = listOf(925, 850, 700, 600, 500)
 
 private const val EARTH_RADIUS_METERS = 6_371_008.8
 private const val GRAVITY = 9.80665
@@ -84,13 +86,21 @@ class WeatherLayer(
   }
 }
 
+/** What a lookahead layer keeps from every step, computed from that step's fields. */
+class LookaheadInput(val inputs: Set<FieldKey>, val compute: (Inputs) -> FloatArray) {
+
+  companion object {
+    fun field(key: FieldKey) = LookaheadInput(setOf(key)) { it[key.param].values }
+  }
+}
+
 /**
  * What happens over the hours after each step, one channel per window. Clients only ever show the
  * step closest to now, so these let them show the coming days without fetching every step.
  */
 class LookaheadLayer(
     val name: String,
-    val input: FieldKey,
+    val input: LookaheadInput,
     // in hours, two to an archive so each gets 12 bits
     val windows: List<Int>,
     val scale: Double,
@@ -99,6 +109,10 @@ class LookaheadLayer(
 ) {
 
   val channels = windows.map { Channel("next_${it}h", 12, scale, 0.0) }
+}
+
+private fun maxOfAll(fields: List<FloatArray>): FloatArray {
+  return FloatArray(fields[0].size) { i -> fields.maxOf { it[i] } }
 }
 
 private fun maxAfterFirst(fields: List<FloatArray>): FloatArray {
@@ -110,23 +124,40 @@ private fun millimetersBetween(fields: List<FloatArray>): FloatArray {
   return FloatArray(fields[0].size) { i -> (fields.last()[i] - fields.first()[i]) * 1000 }
 }
 
+// Fields every step of IFS reads once, from step 0, because ECMWF only publishes them there
+val STATIC_IFS_INPUTS = setOf(FieldKey("z"))
+
+private val GUST = LookaheadInput.field(FieldKey("10fg"))
+private val PRECIPITATION = LookaheadInput.field(FieldKey("tp"))
+private val SNOWFALL = LookaheadInput.field(FieldKey("sf"))
+
 // Keep in sync with weather.ts#ECMWF_LAYERS. Each gust field is the strongest in the hours before
 // its step, so the strongest in a window leaves out the gust at its start. Through step 90 those
 // fields cover one hour in three, so windows there can miss a gust between steps.
 val LOOKAHEAD_LAYERS = listOf(
     // in m/s
-    LookaheadLayer("peak_gust", FieldKey("10fg"), listOf(12, 24), 0.1, ::maxAfterFirst),
-    LookaheadLayer("peak_gust_long", FieldKey("10fg"), listOf(72, 120), 0.1, ::maxAfterFirst),
+    LookaheadLayer("peak_gust", GUST, listOf(12, 24), 0.1, ::maxAfterFirst),
+    LookaheadLayer("peak_gust_long", GUST, listOf(72, 120), 0.1, ::maxAfterFirst),
     // in mm, up to 409 in a day and 2047 in five
-    LookaheadLayer("rain", FieldKey("tp"), listOf(12, 24), 0.1, ::millimetersBetween),
-    LookaheadLayer("rain_long", FieldKey("tp"), listOf(72, 120), 0.5, ::millimetersBetween),
+    LookaheadLayer("rain", PRECIPITATION, listOf(12, 24), 0.1, ::millimetersBetween),
+    LookaheadLayer("rain_long", PRECIPITATION, listOf(72, 120), 0.5, ::millimetersBetween),
     // in mm of water
-    LookaheadLayer("snowfall", FieldKey("sf"), listOf(12, 24), 0.1, ::millimetersBetween),
-    LookaheadLayer("snowfall_long", FieldKey("sf"), listOf(72, 120), 0.5, ::millimetersBetween),
+    LookaheadLayer("snowfall", SNOWFALL, listOf(12, 24), 0.1, ::millimetersBetween),
+    LookaheadLayer("snowfall_long", SNOWFALL, listOf(72, 120), 0.5, ::millimetersBetween),
+    // in m/s. Wind aloft has no gusts, so we take the strongest sustained wind at any step, and a
+    // cell that was underground at any step stays empty.
+    *WIND_LEVELS.flatMap { level ->
+      val speed =
+          LookaheadInput(windAloftKeys(level)) {
+            val (u, v) = computeWindAloft(it, level)
+            FloatArray(u.size) { i -> hypot(u[i], v[i]) }
+          }
+      listOf(
+          LookaheadLayer("peak_wind_${level}", speed, listOf(12, 24), 0.1, ::maxOfAll),
+          LookaheadLayer("peak_wind_${level}_long", speed, listOf(72, 120), 0.1, ::maxOfAll),
+      )
+    }.toTypedArray(),
 )
-
-// Fields every step of IFS reads once, from step 0, because ECMWF only publishes them there
-val STATIC_IFS_INPUTS = setOf(FieldKey("z"))
 
 private fun keys(vararg params: String) = params.map { FieldKey(it) }.toSet()
 
@@ -137,18 +168,22 @@ private inline fun map(field: Field, transform: (Float) -> Double): FloatArray {
   return FloatArray(field.values.size) { transform(field.values[it]).toFloat() }
 }
 
+// in m/s, eastward and northward
+private val WIND_CHANNELS = listOf(Channel("u", 12, 0.1, -204.7), Channel("v", 12, 0.1, -204.7))
+
 // Keep in sync with weather.ts#ECMWF_LAYERS
 val WEATHER_LAYERS = listOf(
-    WeatherLayer(
-        "wind",
-        EcmwfStream.IFS,
-        3,
-        keys("10u", "10v"),
-        listOf(
-            // in m/s, eastward and northward
-            Channel("u", 12, 0.1, -204.7),
-            Channel("v", 12, 0.1, -204.7),
-        )) { listOf(it["10u"].values, it["10v"].values) },
+    WeatherLayer("wind", EcmwfStream.IFS, 3, keys("10u", "10v"), WIND_CHANNELS) {
+      listOf(it["10u"].values, it["10v"].values)
+    },
+    *WIND_LEVELS.map { level ->
+      WeatherLayer(
+          "wind_${level}",
+          EcmwfStream.IFS,
+          3,
+          windAloftKeys(level),
+          WIND_CHANNELS) { computeWindAloft(it, level) }
+    }.toTypedArray(),
     WeatherLayer(
         "gust",
         EcmwfStream.IFS,
@@ -368,6 +403,20 @@ private fun computeFreezingAltitude(inputs: Inputs): List<FloatArray> {
     altitudes[i] = altitude.toFloat()
   }
   return listOf(altitudes)
+}
+
+private fun windAloftKeys(level: Int) =
+    levelKeys(listOf("u", "v", "gh"), listOf(level)) + STATIC_IFS_INPUTS
+
+// Levels below the ground are extrapolated by the model, so we leave them out.
+private fun computeWindAloft(inputs: Inputs, level: Int): List<FloatArray> {
+  val ground = inputs["z"].values
+  val height = inputs["gh", level].values
+  return listOf(inputs["u", level], inputs["v", level]).map { field ->
+    FloatArray(field.values.size) {
+      if (height[it] * GRAVITY < ground[it]) Float.NaN else field.values[it]
+    }
+  }
 }
 
 // Supercooled droplets freeze onto aircraft between 0 and -20 C in saturated air, and most often

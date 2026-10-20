@@ -1,4 +1,5 @@
 import {
+  byWindLevel,
   relativeHumidity,
   SNOW_TYPES,
   thunders,
@@ -28,6 +29,13 @@ const HUNDREDTHS = new Intl.NumberFormat(undefined, {maximumFractionDigits: 2});
 
 const READERS = {
   wind: v => wind(v.u, v.v),
+  ...byWindLevel(level => [
+    [`wind_${level}`, (v: Values) => wind(v.u, v.v)],
+    [`wind_${level}_accumulation_12`, (v: Values) => speed(v.next_12h)],
+    [`wind_${level}_accumulation_24`, (v: Values) => speed(v.next_24h)],
+    [`wind_${level}_accumulation_72`, (v: Values) => speed(v.next_72h)],
+    [`wind_${level}_accumulation_120`, (v: Values) => speed(v.next_120h)],
+  ] as const),
   gust: v => speed(v.gust),
   wind_accumulation_12: v => speed(v.next_12h),
   wind_accumulation_24: v => speed(v.next_24h),

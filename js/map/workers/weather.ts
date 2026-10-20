@@ -15,6 +15,15 @@ interface Layer {
   channels: Channel[];
 }
 
+// in m/s, eastward and northward. wind_loader.ts unpacks every wind archive as wind.
+const WIND_CHANNELS: Channel[] = [
+  {name: 'u', bits: 12, scale: 0.1, offset: -204.7},
+  {name: 'v', bits: 12, scale: 0.1, offset: -204.7},
+];
+// Pressure levels in hPa, see WeatherLayers.kt#WIND_LEVELS
+export const WIND_LEVELS = [925, 850, 700, 600, 500] as const;
+type WindLevel = typeof WIND_LEVELS[number];
+
 export const ECMWF_LAYERS = {
   clouds: {stepHours: 6, channels: [
     {name: 'total', bits: 6, scale: 100 / 62, offset: 0},
@@ -64,13 +73,20 @@ export const ECMWF_LAYERS = {
     {name: 'direction', bits: 8, scale: 360 / 254, offset: 0},
     {name: 'period', bits: 7, scale: 0.25, offset: 0},
   ]},
-  wind: {stepHours: 3, channels: [
-    {name: 'u', bits: 12, scale: 0.1, offset: -204.7},
-    {name: 'v', bits: 12, scale: 0.1, offset: -204.7},
-  ]},
+  wind: {stepHours: 3, channels: WIND_CHANNELS},
+  ...byWindLevel(level => [
+    [`wind_${level}`, {stepHours: 3, channels: WIND_CHANNELS}],
+    [`peak_wind_${level}`, lookahead(0.1)],
+    [`peak_wind_${level}_long`, lookaheadLong(0.1)],
+  ] as const),
 } satisfies Record<string, Layer>;
 
 export type EcmwfLayer = keyof typeof ECMWF_LAYERS;
+
+export function byWindLevel<K extends string, V>(
+    entries: (level: WindLevel) => ReadonlyArray<readonly [K, V]>): Record<K, V> {
+  return Object.fromEntries(WIND_LEVELS.flatMap(entries)) as Record<K, V>;
+}
 
 function lookahead(scale: number): Layer {
   return {stepHours: 3, lookaheadHours: 24, channels: [
@@ -147,7 +163,14 @@ const THUNDER_MM_PER_HOUR = 1;
 const THUNDER_COLOR: Rgba = [230, 40, 200, ALPHA];
 
 export const WEATHER_VIEWS = {
-  wind: {layer: 'wind', color: v => ramp(SPEED_MPS, Math.hypot(v.u, v.v))},
+  wind: windView('wind'),
+  ...byWindLevel(level => [
+    [`wind_${level}`, windView(`wind_${level}`)],
+    [`wind_${level}_accumulation_12`, peakWindView(`peak_wind_${level}`, 12)],
+    [`wind_${level}_accumulation_24`, peakWindView(`peak_wind_${level}`, 24)],
+    [`wind_${level}_accumulation_72`, peakWindView(`peak_wind_${level}_long`, 72)],
+    [`wind_${level}_accumulation_120`, peakWindView(`peak_wind_${level}_long`, 120)],
+  ] as const),
   gust: {layer: 'gust', color: v => ramp(SPEED_MPS, v.gust)},
   wind_accumulation_12: {layer: 'peak_gust', color: v => ramp(SPEED_MPS, v.next_12h)},
   wind_accumulation_24: {layer: 'peak_gust', color: v => ramp(SPEED_MPS, v.next_24h)},
@@ -293,6 +316,14 @@ function ramp(stops: Ramp, value: number, min = -Infinity): Rgba|undefined {
     out[c] = a + (b - a) * t;
   }
   return out;
+}
+
+function windView(layer: EcmwfLayer): View {
+  return {layer, color: v => ramp(SPEED_MPS, Math.hypot(v.u, v.v))};
+}
+
+function peakWindView(layer: EcmwfLayer, hours: number): View {
+  return {layer, color: v => ramp(SPEED_MPS, v[`next_${hours}h`])};
 }
 
 function icingView(level: number): View {

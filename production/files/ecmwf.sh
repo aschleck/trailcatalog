@@ -20,6 +20,7 @@ podman run \
     --name ecmwf \
     --pull always \
     --rm \
+    --cpu-shares 64 \
     --mount type=bind,source="${work}",target=/tmp \
     --network host \
     us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_weather:latest \
