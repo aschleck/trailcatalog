@@ -44,6 +44,15 @@ test('resets what the settings leave out and keeps unchanged nodes', () => {
   expect(findLayerNode(reset, 'osm/ways')).toBe(findLayerNode(changed, 'osm/ways'));
 });
 
+test('restores persisted values that have no control', () => {
+  const defaults = layerDefaultsOf(tree());
+  const nodes =
+      applyLayerSettings(tree(), defaults, {'osm/ways': {values: {pin: '45,7', other: '1,2'}}});
+
+  expect((findLayerNode(nodes, 'osm/ways') as LayerEntry).values).toEqual({pin: '45,7'});
+  expect(diffLayerSettings(nodes, defaults)).toEqual({'osm/ways': {values: {pin: '45,7'}}});
+});
+
 function tree(): LayerNode[] {
   return [{
     kind: 'group',
@@ -69,6 +78,7 @@ function tree(): LayerNode[] {
       layer: {} as Layer,
       controls: [],
       values: {},
+      persisted: ['pin'],
     }],
   }];
 }

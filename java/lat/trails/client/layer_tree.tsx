@@ -63,6 +63,8 @@ export interface LayerEntry {
   // covers the times of its run, and the map leaves it out at any other time.
   timed?: 'any'|'forecast';
   onShown?: () => void;
+  // Keys of values without a control that still save with the view state
+  persisted?: string[];
   // Set for a forecast, as the first time after at in ms that it has a step for
   nextTime?: (at: number) => number|undefined;
 }
@@ -190,6 +192,12 @@ export function applyLayerSettings(
     }
 
     const values = {...original.values};
+    for (const key of node.persisted ?? []) {
+      const value = setting.values?.[key];
+      if (typeof value === 'string') {
+        values[key] = value;
+      }
+    }
     for (const control of node.controls) {
       const value = setting.values?.[control.key];
       // A saved choice may name an option that no longer exists.

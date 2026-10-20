@@ -66,6 +66,7 @@ import {
   MARKER_DRAWN,
   POINT_PLACED,
   POLYGON_DRAWN,
+  SKY_PINS_MOVED,
   Tool,
   TOOL_REQUESTED,
 } from './events';
@@ -98,6 +99,7 @@ import {
 import { parseImport } from './importer';
 import {
   applyLayerSettings,
+  ControlValues,
   diffLayerSettings,
   findLayerNode,
   layerDefaultsOf,
@@ -109,7 +111,7 @@ import {
   LayerTreeState,
   updateLayerNode,
 } from './layer_tree';
-import { LayerCatalog } from './layer_catalog';
+import { LayerCatalog, SKY_LAYER_ID } from './layer_catalog';
 import { LineProfiler, MeasureProfiler } from './profiles';
 import {
   insertVertex,
@@ -460,6 +462,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         new LayerCatalog(
             locations,
             camera,
+            this.elevations,
             renderer,
             () => this.state.layers.nodes,
             () => {
@@ -1243,6 +1246,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.player.start();
   }
 
+  // The layer already moved its pins, so configuring it with them changes nothing.
+  onSkyPinsMoved(e: CorgiEvent<typeof SKY_PINS_MOVED>): void {
+    const entry = checkExists(findLayerNode(this.state.layers.nodes, SKY_LAYER_ID)) as LayerEntry;
+    this.setLayerValues(entry, {...entry.values, ...e.detail});
+  }
+
   onMove(e: CorgiEvent<typeof MAP_MOVED>): void {
     const {center, zoom} = e.detail;
     const picked = this.picked?.camera;
@@ -1313,19 +1322,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       throw checkExhaustive(control);
     }
 
-    const values = {...entry.values, [key]: value};
-    this.updateState({
-      ...this.state,
-      layers: {
-        ...this.state.layers,
-        nodes: updateLayerNode(this.state.layers.nodes, entry.id, () => ({...entry, values})),
-      },
-    });
-    entry.configure?.(values);
+    this.setLayerValues(entry, {...entry.values, [key]: value});
     // The Sentinel layers credit the years they search
     this.mapController.copyrightsChanged();
-    this.layerEdits += 1;
-    this.saveViewState();
   }
 
   menubarMenuClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -2367,6 +2366,19 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       expanded.add(id);
     }
     this.updateState({...this.state, layers: {...this.state.layers, expanded}});
+  }
+
+  private setLayerValues(entry: LayerEntry, values: ControlValues): void {
+    this.updateState({
+      ...this.state,
+      layers: {
+        ...this.state.layers,
+        nodes: updateLayerNode(this.state.layers.nodes, entry.id, () => ({...entry, values})),
+      },
+    });
+    entry.configure?.(values);
+    this.layerEdits += 1;
+    this.saveViewState();
   }
 
   private setLayerEnabled(id: string, enabled: boolean): void {

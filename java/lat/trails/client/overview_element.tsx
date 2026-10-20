@@ -30,6 +30,7 @@ import {
   MARKER_DRAWN,
   POINT_PLACED,
   POLYGON_DRAWN,
+  SKY_PINS_MOVED,
   TOOL_REQUESTED,
 } from './events';
 import {
@@ -170,6 +171,7 @@ export function OverviewElement(
               [MAP_MOVED, 'onMove'],
               [POINT_PLACED, 'onPointPlaced'],
               [POLYGON_DRAWN, 'onPolygonDrawn'],
+              [SKY_PINS_MOVED, 'onSkyPinsMoved'],
               [TOOL_REQUESTED, 'onToolRequested'],
               [UNCLAIMED_CLICKED, 'onUnclaimedClicked'],
             ],

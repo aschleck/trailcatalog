@@ -14,6 +14,7 @@ import { StacLayer } from 'js/map/layers/stac_layer';
 import { SwitchLayer } from 'js/map/layers/switch_layer';
 import { WindVectorLayer } from 'js/map/layers/wind_vector_layer';
 import { Renderer } from 'js/map/rendering/renderer';
+import { Elevations } from 'js/map/workers/elevations';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { Style } from 'js/map/workers/mbtile_loader';
 import { Decode } from 'js/map/workers/raster_loader';
@@ -35,7 +36,7 @@ import {
 } from './layer_tree';
 import { PointCollectionLayer } from './point_collection_layer';
 import { readElevation, readSnodas, readWeather } from './readings';
-import { getSkyReadings, SkyLayer } from './sky_layer';
+import { SkyLayer } from './sky_layer';
 import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA } from './schema';
 import {
   BASEMAP_LABEL_KINDS,
@@ -216,6 +217,7 @@ const LOOKAHEAD_WINDOWS = [[12, '12 hours'], [24, '24 hours'], [72, '3 days'], [
 // Runs land 6 to 9 hours after they start, and past that a stale run means ecmwf.sh stopped
 // tiling. A 3 day old run still forecasts now, so we reach back that far.
 const ECMWF_LOOKBACK_CYCLES = 12;
+export const SKY_LAYER_ID = 'weather/sun_moon';
 const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
 const SNOW_WATER_ID = 'us/conditions/snow_water';
 // Keep in sync with Conditions.kt
@@ -253,6 +255,7 @@ export class LayerCatalog extends Disposable {
   constructor(
       locations: LocationIndex,
       private readonly camera: Camera,
+      elevationSampler: Elevations,
       private readonly renderer: Renderer,
       // The tree as the viewer holds it, whose values a newer run or day reconfigures with
       private readonly current: () => LayerNode[],
@@ -263,7 +266,7 @@ export class LayerCatalog extends Disposable {
     const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
     this.ecmwfRun = Math.floor(Date.now() / cycleMs) * cycleMs;
     this.time = undefined;
-    this.sky = new SkyLayer(camera, renderer);
+    this.sky = new SkyLayer(camera, elevationSampler, renderer);
     this.snodasDay = utcDay(0);
     this.faaCycles = {
       sectional: faaCycle(0),
@@ -1061,21 +1064,24 @@ export class LayerCatalog extends Disposable {
                 : lookaheadView('snowfall', 'Snow', values.accumulation)),
         {
           kind: 'layer',
-          id: 'weather/sun_moon',
+          id: SKY_LAYER_ID,
           name: 'Sun and moon',
           enabled: false,
           layer: this.sky,
           controls: [],
           values: {},
           timed: 'any',
+          persisted: ['pin', 'subject'],
+          configure: values => {
+            this.sky.setPins(
+                typeof values.pin === 'string' ? values.pin : undefined,
+                typeof values.subject === 'string' ? values.subject : undefined);
+          },
           onShown: () => {
             this.sky.appear();
           },
-          // Only a click on the pin, so that the rows describe what the rays show
-          readings: point => {
-            const pin = this.sky.pinNear(point);
-            return pin ? getSkyReadings(pin, this.time ?? Date.now()) : [];
-          },
+          // Only a click on a pin, so that the rows describe what the rays show
+          readings: point => this.sky.getReadingsNear(point, this.time ?? Date.now()),
         },
         this.newWeatherEntry('temperature', 'Temperature'),
         this.newWeatherEntry('thermals', 'Thermals'),

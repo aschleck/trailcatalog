@@ -86,6 +86,12 @@ export const POLYGON_DRAWN = declareEvent<{
   latLngE7: Int32Array;
 }>('polygon_drawn');
 
+// Pins as lat,lng degree strings, the format SkyLayer#setPins reads back
+export const SKY_PINS_MOVED = declareEvent<{
+  pin: string;
+  subject: string;
+}>('sky_pins_moved');
+
 export const TOOL_REQUESTED = declareEvent<{
   tool: Tool;
 }>('tool_requested');

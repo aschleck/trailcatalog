@@ -2,7 +2,13 @@ import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 
 import { Vec2 } from '../common/types';
 
-import { Request, Response, RouteResponse } from './elevation_sampler';
+import {
+  Request,
+  Response,
+  RouteResponse,
+  TraceRequest,
+  TraceResponse,
+} from './elevation_sampler';
 import { GradeLimits } from './terrain_router';
 
 /** Looks up elevations in a worker, which fetches and decodes the DEM tiles it needs. */
@@ -12,18 +18,24 @@ export class Elevations {
   // Resolvers for the samples in flight, by id
   private readonly pending: Map<number, (meters: Float32Array) => void>;
   private readonly pendingRoutes: Map<number, (response: RouteResponse) => void>;
+  private readonly pendingTraces: Map<number, (response: TraceResponse) => void>;
   private requestCount: number;
 
   constructor() {
     this.worker = new WorkerPool(new URL('elevation_sampler_worker.js', import.meta.url).href, 1);
     this.pending = new Map();
     this.pendingRoutes = new Map();
+    this.pendingTraces = new Map();
     this.requestCount = 0;
 
     this.worker.onresponse = response => {
       if (response.kind === 'rr') {
         const resolve = this.pendingRoutes.get(response.id);
         this.pendingRoutes.delete(response.id);
+        resolve?.(response);
+      } else if (response.kind === 'tr') {
+        const resolve = this.pendingTraces.get(response.id);
+        this.pendingTraces.delete(response.id);
         resolve?.(response);
       } else {
         const resolve = this.pending.get(response.id);
@@ -50,6 +62,25 @@ export class Elevations {
         }
       });
       this.worker.post({kind: 'sr', id, latLngDegrees, zoom});
+    });
+  }
+
+  /**
+   * Resolves with the skyline and viewshed around a point, traced a pixel at a time out from it,
+   * see TerrainTracer. Rejects if the tiles could not be fetched.
+   */
+  trace(request: Omit<TraceRequest, 'kind'|'id'>): Promise<TraceResponse> {
+    const id = this.requestCount;
+    this.requestCount += 1;
+    return new Promise((resolve, reject) => {
+      this.pendingTraces.set(id, response => {
+        if (response.failed) {
+          reject(new Error('Unable to trace the terrain'));
+        } else {
+          resolve(response);
+        }
+      });
+      this.worker.post({kind: 'tr', id, ...request});
     });
   }
 
