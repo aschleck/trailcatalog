@@ -18,17 +18,17 @@ class CreateReadableTrailIds :
   override fun act(
       input: PEntry<Long, Pair<List<Trail>, List<Boundary>>>,
       emitter: Emitter2<String, Long>) {
-    var admin2 = "none"
-    var admin4 = "none"
+    val admin2 = ArrayList<Boundary>()
+    val admin4 = ArrayList<Boundary>()
     var trail: String? = null
     for (value in input.values) {
       trail = value.first[0].name
       for (boundary in value.second) {
         if (RelationCategory.BOUNDARY_ADMINISTRATIVE_2.isParentOf(boundary.type)) {
-          admin2 = boundary.name
+          admin2.add(boundary)
         }
         if (RelationCategory.BOUNDARY_ADMINISTRATIVE_4.isParentOf(boundary.type)) {
-          admin4 = boundary.name
+          admin4.add(boundary)
         }
       }
     }
@@ -37,11 +37,17 @@ class CreateReadableTrailIds :
       return
     }
 
-    emitter.emit("${toId(admin2)}/${toId(admin4)}/${toId(trail)}", input.key)
+    emitter.emit("${toId(getName(admin2))}/${toId(getName(admin4))}/${toId(trail)}", input.key)
   }
 
   override fun estimateRatio(): Double {
     return 0.1
+  }
+
+  // Disputed territory lies in more than one country, and taking the lowest id keeps a trail's
+  // readable id from swapping between imports.
+  private fun getName(boundaries: List<Boundary>): String {
+    return boundaries.minByOrNull { it.id }?.name ?: "none"
   }
 
   private fun toId(name: String): String {

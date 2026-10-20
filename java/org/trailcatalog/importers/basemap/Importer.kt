@@ -221,23 +221,26 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   pipeline
       .zip2(boundaryIndex, points, FindPointsInBoundaries())
       .write(DumpPointsInBoundaries(epoch, hikari))
-  val trailsInBoundaries = pipeline.zip2(boundaryIndex, trails, FindTrailsInBoundaries())
+  val coveredTrailsInBoundaries = pipeline.zip2(boundaryIndex, trails, FindTrailsInBoundaries())
+  val trailsById = trails.groupBy("GroupById") { it.relationId }
+  val boundaryIdToTrailSamples =
+      pipeline
+          .join2("JoinOnTrail", trailsById, coveredTrailsInBoundaries)
+          .then(SampleTrailsForBoundaries())
   val trailIdToContainingBoundaries =
       pipeline
           .join2(
               "JoinOnBoundary",
               boundaries.groupBy("GroupById") { it.id },
-              trailsInBoundaries.invert("InvertMap"))
-          .then(GatherTrailBoundaries())
+              boundaryIdToTrailSamples)
+          .then(CountTrailSamplesInBoundaries())
+          .then(ResolveTrailBoundaries())
   pipeline
-      .join2(
-          "JoinOnTrail",
-          trails.groupBy("GroupById") { it.relationId },
-          trailIdToContainingBoundaries)
+      .join2("JoinOnTrailForIds", trailsById, trailIdToContainingBoundaries)
       .then(CreateReadableTrailIds())
       .then(DisambiguateTrailIds())
       .write(DumpReadableTrailIds(epoch, hikari))
-  trailsInBoundaries.write(DumpTrailsInBoundaries(epoch, hikari))
+  trailIdToContainingBoundaries.write(DumpTrailsInBoundaries(epoch, hikari))
 
   try {
     pipeline.execute()
