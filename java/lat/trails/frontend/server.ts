@@ -23,7 +23,7 @@ declare module 'fastify' {
 }
 
 const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
-const DEBUG = process.env.DEBUG !== 'false';
+const DEBUG = process.env.DEBUG === 'true';
 
 // Keep in sync with common/Database.kt#SCHEMA.
 const SCHEMA = 'migration_13_editable_polygons';
@@ -126,7 +126,7 @@ function page(
   </head>
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
-    <script>${process.env.DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${escapedData}</script>
+    <script>${DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${escapedData}</script>
     <script type="module" src="${STATIC_PREFIX}/client.js"></script>
     <script
         async
