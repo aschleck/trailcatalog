@@ -11,6 +11,8 @@ export function readCookie(name: string): string|undefined {
 /** Sets a cookie for the whole site, with a value the caller has already made cookie safe. */
 export function writeCookie(name: string, value: string): void {
   const secure = debugMode() ? '' : '; Secure';
-  // a year, so that it outlives the browser session
-  document.cookie = `${name}=${value}; Max-Age=31536000; Path=/; SameSite=Strict${secure}`;
+  // A year, so that it outlives the browser session. Lax rather than Strict because the server
+  // render reads these, and a Strict cookie is left off a navigation from another site, so the
+  // server and the client would render different trees.
+  document.cookie = `${name}=${value}; Max-Age=31536000; Path=/; SameSite=Lax${secure}`;
 }
