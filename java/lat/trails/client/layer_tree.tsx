@@ -317,16 +317,20 @@ function LayerControls({dimmed, entry}: {dimmed: boolean; entry: LayerEntry}) {
         if (control.kind === 'checkbox' && !control.setting) {
           const visible = value === true;
           return (
-            <div className="flex gap-1.5 items-center">
+            <div
+                className={
+                  'cursor-pointer flex gap-1.5 group hover:bg-gray-100 items-center select-none'
+                }
+                data={{...data, on: String(!visible)}}
+                title={visible ? 'Hide' : 'Show'}
+                unboundEvents={{click: 'layerControlChanged'}}
+            >
               <span className={'grow ' + (visible ? 'text-gray-700' : 'text-gray-400')}>
                 {control.label}
               </span>
               <span
                   ariaLabel={visible ? 'Hide' : 'Show'}
-                  className="cursor-pointer hover:text-gray-900 shrink-0 text-gray-500"
-                  data={{...data, on: String(!visible)}}
-                  title={visible ? 'Hide' : 'Show'}
-                  unboundEvents={{click: 'layerControlChanged'}}
+                  className="group-hover:text-gray-900 shrink-0 text-gray-500"
               >
                 <Eye visible={visible} />
               </span>
