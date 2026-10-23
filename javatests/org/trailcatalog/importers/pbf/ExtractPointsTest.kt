@@ -90,6 +90,7 @@ class ExtractPointsTest {
         WaySkeleton(
             7,
             0,
+            /* traits= */ 0,
             "Camp",
             longArrayOf(10, 11, 12, 13, 10),
             PointCategory.LODGING_CAMP_SITE.id,

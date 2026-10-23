@@ -22,7 +22,26 @@ export interface CategoryInMatch {
   value: number[];
 }
 
-export type Match = AlwaysMatch|CategoryInMatch|StringEqualsMatch;
+export interface GreaterThanMatch {
+  match: 'greater_than';
+  key: string;
+  value: number;
+}
+
+export interface LessThanMatch {
+  match: 'less_than';
+  key: string;
+  value: number;
+}
+
+export interface NumberEqualsMatch {
+  match: 'number_equals';
+  key: string;
+  value: number;
+}
+
+export type Match =
+    AlwaysMatch|CategoryInMatch|GreaterThanMatch|LessThanMatch|NumberEqualsMatch|StringEqualsMatch;
 
 export function matches(data: {[key: string]: unknown}, filters: Match[]): boolean {
   for (const filter of filters) {
@@ -49,6 +68,16 @@ function matchesOne(data: {[key: string]: unknown}, filter: Match): boolean {
         }
       }
       return false;
+    case 'greater_than': {
+      const value = data[filter.key];
+      return typeof value === 'number' && value > filter.value;
+    }
+    case 'less_than': {
+      const value = data[filter.key];
+      return typeof value === 'number' && value < filter.value;
+    }
+    case 'number_equals':
+      return data[filter.key] === filter.value;
     case 'string_equals':
       return data[filter.key] === filter.value;
     default:

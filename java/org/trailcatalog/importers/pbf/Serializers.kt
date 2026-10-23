@@ -210,6 +210,7 @@ fun registerPbfSerializers() {
       val id = from.readVarLong()
       val hash = from.readInt()
       val type = from.readVarInt()
+      val traits = from.readVarInt()
       val down = from.readFloat()
       val up = from.readFloat()
       val length = from.readFloat()
@@ -224,13 +225,14 @@ fun registerPbfSerializers() {
           } else {
             null
           }
-      return Way(id, hash, type, down, up, length, points, point)
+      return Way(id, hash, type, traits, down, up, length, points, point)
     }
 
     override fun write(v: Way, to: EncodedOutputStream) {
       to.writeVarLong(v.id)
       to.writeInt(v.hash)
       to.writeVarInt(v.type)
+      to.writeVarInt(v.traits)
       to.writeFloat(v.downMeters)
       to.writeFloat(v.upMeters)
       to.writeFloat(v.lengthMeters)
@@ -255,6 +257,7 @@ fun registerPbfSerializers() {
     override fun read(from: EncodedInputStream): WaySkeleton {
       val id = from.readVarLong()
       val type = from.readVarInt()
+      val traits = from.readVarInt()
       val nameLength = from.readVarInt()
       val nameBytes = ByteArray(nameLength)
       from.read(nameBytes)
@@ -264,12 +267,14 @@ fun registerPbfSerializers() {
       val pointType = from.readVarInt()
       val names = readNames(from)
       val notable = from.readBoolean()
-      return WaySkeleton(id, type, nameBytes.decodeToString(), nodes, pointType, names, notable)
+      return WaySkeleton(
+          id, type, traits, nameBytes.decodeToString(), nodes, pointType, names, notable)
     }
 
     override fun write(v: WaySkeleton, to: EncodedOutputStream) {
       to.writeVarLong(v.id)
       to.writeVarInt(v.type)
+      to.writeVarInt(v.traits)
       val bytes = v.name.encodeToByteArray()
       to.writeVarInt(bytes.size)
       to.write(bytes)

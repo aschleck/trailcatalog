@@ -1,0 +1,11 @@
+[[actions]]
+type = "add_column"
+table = "paths"
+
+  # The tags in PathTraits.kt packed into one int. The default is only reached by epochs imported
+  # before this column existed.
+  [actions.column]
+  name = "traits"
+  default = "0"
+  nullable = false
+  type = "INT"

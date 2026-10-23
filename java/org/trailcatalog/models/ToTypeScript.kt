@@ -30,4 +30,18 @@ export function aDescendsB(a: number, b: number): boolean {
     println("  ${c} = ${c.id},")
   }
   println("}")
+
+  println("export const PATH_TRAITS = [")
+  for (t in PathTrait.values()) {
+    println("  {key: '${t.key}', shift: ${t.shift}, mask: ${t.mask}},")
+  }
+  println("];")
+
+  println("""
+export function unpackPathTraits(traits: number, data: {[key: string]: unknown}): void {
+  for (const {key, shift, mask} of PATH_TRAITS) {
+    data[key] = (traits >> shift) & mask;
+  }
+}
+""")
 }

@@ -6,6 +6,8 @@ public record Way(
     long id,
     int hash,
     int type,
+    // See PathTrait
+    int traits,
     float downMeters,
     float upMeters,
     // Along the ground, so it includes the rise. Ways with no elevation profile carry arclength.

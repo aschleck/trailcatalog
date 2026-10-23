@@ -7,6 +7,8 @@ import java.util.List;
 public record WaySkeleton(
     long id,
     int type,
+    // See PathTrait
+    int traits,
     String name,
     long[] nodes,
     int pointType,

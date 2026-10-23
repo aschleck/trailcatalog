@@ -38,7 +38,7 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
         DeltaLatLngE7.encode(latLngE7, way.points.size, buffer)
         buffer.flip()
 
-        // id,epoch,type,cell,lat_lng_degrees,source_way
+        // id,epoch,type,cell,lat_lng_degrees,source_way,traits
         // lat_lng_degrees is DeltaLatLngE7, so readers cannot divide its length to get a
         // point count.
         csv.append(2 * way.id)
@@ -53,6 +53,8 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
         buffer.clear()
         csv.append(",")
         csv.append(way.id)
+        csv.append(",")
+        csv.append(way.traits)
         csv.append("\n")
       }
     }

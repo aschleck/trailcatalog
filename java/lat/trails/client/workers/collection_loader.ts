@@ -1,7 +1,7 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
-import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories';
+import { aDescendsB, unpackPathTraits, WayCategory } from 'java/org/trailcatalog/models/categories';
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
@@ -122,7 +122,8 @@ export interface LoadedLines extends Omit<PackedLines, 'idPrefix'> {
 }
 
 type PackedData =
-    {kind: 'packed_path'; ids: Float64Array; types: Int32Array}|{kind: 'json'; values: Data[]};
+    {kind: 'packed_path'; ids: Float64Array; types: Int32Array; traits: Int32Array}
+        |{kind: 'json'; values: Data[]};
 
 export interface Line {
   id: RawUuid;
@@ -344,10 +345,12 @@ class CollectionLoader {
 
   load(request: LoadRequest): Reply<Response> {
     const source = new LittleEndianView(request.data);
-    // We still accept version 2 because browsers cache public collection tiles forever, see
-    // ApiServer.kt#setCacheHeadersAndCheckNotModified. Version 2 is version 3 without points.
+    // We still accept versions 2 and 3 because browsers cache public collection tiles forever under
+    // their collection version, which a format change leaves alone, see
+    // ApiServer.kt#setCacheHeadersAndCheckNotModified. Version 2 is version 3 without points, and
+    // version 3 is version 4 without path traits.
     const version = source.getVarInt32();
-    if (version !== 2 && version !== 3) {
+    if (version !== 2 && version !== 3 && version !== 4) {
       throw new Error("Unhandled version");
     }
 
@@ -368,6 +371,7 @@ class CollectionLoader {
     const idWords = new Uint32Array(ids.buffer);
     const wayIds = new Float64Array(lineCount);
     const types = new Int32Array(lineCount);
+    const traits = new Int32Array(lineCount);
     const values: Data[] = [];
     const lineStyles: LineStyle[] = [];
     // in floats into this.points
@@ -377,6 +381,7 @@ class CollectionLoader {
     let floatCount = 0;
     // The stylers only read the data they are handed, so every packed path can share this one.
     const packedData = {id: 0, type: 0};
+    let packedTraits = 0;
     for (let i = 0; i < lineCount; ++i) {
       let data;
       if (kind === KIND_PACKED_PATH) {
@@ -385,6 +390,8 @@ class CollectionLoader {
         idWords[4 * kept + 1] = pathId / 0x1_0000_0000;
         packedData.id = getVarUint53(source);
         packedData.type = source.getVarInt32();
+        packedTraits = version >= 4 ? source.getVarInt32() : 0;
+        unpackPathTraits(packedTraits, packedData);
         data = packedData;
       } else {
         for (let j = 0; j < 4; ++j) {
@@ -403,6 +410,7 @@ class CollectionLoader {
       if (kind === KIND_PACKED_PATH) {
         wayIds[kept] = packedData.id;
         types[kept] = packedData.type;
+        traits[kept] = packedTraits;
       } else {
         values.push(data);
       }
@@ -535,7 +543,12 @@ class CollectionLoader {
       ids: ids.slice(0, 2 * kept),
       data:
           kind === KIND_PACKED_PATH
-              ? {kind: 'packed_path', ids: wayIds.slice(0, kept), types: types.slice(0, kept)}
+              ? {
+                kind: 'packed_path',
+                ids: wayIds.slice(0, kept),
+                types: types.slice(0, kept),
+                traits: traits.slice(0, kept),
+              }
               : {kind: 'json', values},
       geometryByteLengths: new Uint32Array(kept),
       geometryOffsets: new Uint32Array(kept),
@@ -670,7 +683,7 @@ class CollectionLoader {
         lines.styleIndices.buffer,
         lines.terrains.buffer,
         ...(lines.data.kind === 'packed_path'
-            ? [lines.data.ids.buffer, lines.data.types.buffer]
+            ? [lines.data.ids.buffer, lines.data.types.buffer, lines.data.traits.buffer]
             : []),
       ],
     };

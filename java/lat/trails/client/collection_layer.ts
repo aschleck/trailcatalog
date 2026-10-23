@@ -1,3 +1,4 @@
+import { unpackPathTraits } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
@@ -903,10 +904,13 @@ function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {
 
 // One line of a cell as a Line, for the few objects a hover or click lands on
 function lineAt(lines: LoadedLines, i: number): Line {
-  const data =
-      lines.data.kind === 'packed_path'
-          ? {id: lines.data.ids[i], type: lines.data.types[i]}
-          : lines.data.values[i];
+  let data;
+  if (lines.data.kind === 'packed_path') {
+    data = {id: lines.data.ids[i], type: lines.data.types[i]};
+    unpackPathTraits(lines.data.traits[i], data);
+  } else {
+    data = lines.data.values[i];
+  }
   return {
     id: {lsb: lines.ids[2 * i + 0], msb: lines.ids[2 * i + 1]},
     data,

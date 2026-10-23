@@ -116,10 +116,10 @@ private val TRAILCATALOG_POINTS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000
 
 // How a tile encodes its objects. Keep in sync with collection_loader.ts#load.
 //
-// Pack the trailcatalog paths into three varints instead of a UUID and a JSON blob, saving about
+// Pack the trailcatalog paths into four varints instead of a UUID and a JSON blob, saving about
 // 46 bytes a line. They are rows in a table we own, so the id fits a varint and the only attributes
-// are the source way and the category. A user collection needs the general form: its objects are
-// identified by UUID and described by the jsonb its creator wrote.
+// are the source way, the category, and the traits. A user collection needs the general form: its
+// objects are identified by UUID and described by the jsonb its creator wrote.
 //
 // Points pack the same way, and carry their name because OSM names a node on the node.
 private const val KIND_UUID_JSON = 0
@@ -1555,7 +1555,7 @@ private fun <B : Message.Builder> B.mergeJson(json: JsonNode?): B {
 private data class WireLine(val id: UUID, val data: String, val latLngDegrees: ByteArray)
 
 private data class WirePath(
-    val id: Long, val sourceWay: Long, val type: Int, val latLngDegrees: ByteArray)
+    val id: Long, val sourceWay: Long, val type: Int, val traits: Int, val latLngDegrees: ByteArray)
 
 private data class WirePoint(val id: UUID, val data: String, val latLngDegrees: ByteArray)
 
@@ -1649,7 +1649,7 @@ private fun fetchCollectionObjects(ctx: Context) {
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   DelegatingEncodedOutputStream(bytes).use {
     // version
-    it.writeVarInt(3)
+    it.writeVarInt(4)
 
     if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
       it.writeVarInt(KIND_PACKED_PATH)
@@ -1939,7 +1939,7 @@ private fun fetchTrailcatalogPaths(
     // lines
     connection
       .prepareStatement(
-        "SELECT p.id, p.type, p.lat_lng_degrees, p.source_way "
+        "SELECT p.id, p.type, p.lat_lng_degrees, p.source_way, p.traits "
                 + "FROM paths p "
                 + "WHERE "
                 + "p.epoch = ? AND "
@@ -1972,6 +1972,7 @@ private fun fetchTrailcatalogPaths(
               results.getLong(1),
               results.getLong(4),
               results.getInt(2),
+              results.getInt(5),
               results.getBytes(3)
             )
           )
@@ -1982,6 +1983,7 @@ private fun fetchTrailcatalogPaths(
           it.writeVarLong(path.id)
           it.writeVarLong(path.sourceWay)
           it.writeVarInt(path.type)
+          it.writeVarInt(path.traits)
           // DeltaLatLngE7 leads with its own point count and needs no alignment, so the geometry
           // goes to the wire in the encoding it is stored in.
           it.write(path.latLngDegrees)

@@ -39,7 +39,8 @@ class MakeWayGeometries
           null
         }
     emitter.emit(
-        way.id, Way(way.id, hash, way.type, Float.NaN, Float.NaN, Float.NaN, geometry, point))
+        way.id,
+        Way(way.id, hash, way.type, way.traits, Float.NaN, Float.NaN, Float.NaN, geometry, point))
   }
 
   override fun estimateRatio(): Double {

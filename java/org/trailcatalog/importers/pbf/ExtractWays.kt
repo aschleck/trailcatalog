@@ -7,6 +7,7 @@ import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.models.PathTrait
 import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.WayCategory
 
@@ -33,11 +34,33 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   return WaySkeleton(
       way.id,
       wayCategory(way, stringTable).id,
+      wayTraits(way, stringTable),
       tagName(kvs, stringTable) ?: "",
       refs,
       pointCategory.id,
       if (pointCategory == PointCategory.ANY) listOf() else tagNames(kvs, stringTable),
       pointCategory != PointCategory.ANY && isNotable(kvs, stringTable))
+}
+
+// Each trait's tag, to its shift and its grades
+private val PATH_TRAIT_TAGS: Map<ByteString, Pair<Int, Map<ByteString, Int>>> =
+    PathTrait.values().associate { trait ->
+      ByteString.copyFromUtf8(trait.tag) to
+          Pair(
+              trait.shift,
+              trait.grades.withIndex().associate { (i, grade) ->
+                ByteString.copyFromUtf8(grade) to i + 1
+              })
+    }
+
+fun wayTraits(way: Osmformat.Way, stringTable: StringTable): Int {
+  var traits = 0
+  for (i in 0 until way.keysCount) {
+    val (shift, grades) = PATH_TRAIT_TAGS[stringTable.getS(way.getKeys(i))] ?: continue
+    val grade = grades[stringTable.getS(way.getVals(i))] ?: continue
+    traits = traits or (grade shl shift)
+  }
+  return traits
 }
 
 /** Returns the tags of [way] as interleaved key and value string indices. */

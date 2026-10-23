@@ -47,3 +47,17 @@ kt_jvm_test(
         "@osmpbf//osmpbf:java_proto",
     ],
 )
+
+kt_jvm_test(
+    name = "extract_ways",
+    srcs = ["ExtractWaysTest.kt"],
+    test_class = "org.trailcatalog.importers.pbf.ExtractWaysTest",
+    deps = [
+        "//java/org/trailcatalog/importers/pbf",
+        "//java/org/trailcatalog/models",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_truth_truth",
+        "@maven//:org_junit_jupiter_junit_jupiter",
+        "@osmpbf//osmpbf:java_proto",
+    ],
+)
