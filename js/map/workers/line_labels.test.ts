@@ -1,4 +1,4 @@
-import { lineAnchors, maxTurnWithin, mergeLines, polylineLength, smoothLine, uphillSide } from './line_labels';
+import { lineAnchors, maxTurnWithin, mergeLines, newContour, polylineLength, smoothLine, uphillSide } from './line_labels';
 
 test('merges pieces that share endpoints in either direction', () => {
   const merged = mergeLines([
@@ -74,9 +74,9 @@ test('smoothing flattens jitter', () => {
 test('finds the side that rises from the nearest crossing contour', () => {
   // Contours run east at y = -1, 0, and 2, climbing to the north
   const contours = [
-    {height: 100, geometry: [-5, -1, 5, -1], starts: [0]},
-    {height: 200, geometry: [-5, 0, 5, 0], starts: [0]},
-    {height: 300, geometry: [-5, 2, 5, 2], starts: [0]},
+    newContour(100, [-5, -1, 5, -1], [0]),
+    newContour(200, [-5, 0, 5, 0], [0]),
+    newContour(300, [-5, 2, 5, 2], [0]),
   ];
 
   // Heading east, north is on the left

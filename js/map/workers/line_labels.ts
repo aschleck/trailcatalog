@@ -134,6 +134,25 @@ export interface Contour {
   geometry: ArrayLike<number>;
   // offsets into geometry where each part begins
   starts: ArrayLike<number>;
+  // minX, minY, maxX, maxY of each part
+  bounds: Float64Array;
+}
+
+export function newContour(
+    height: number, geometry: ArrayLike<number>, starts: ArrayLike<number>): Contour {
+  const bounds = new Float64Array(4 * starts.length);
+  for (let p = 0; p < starts.length; ++p) {
+    const end = p + 1 < starts.length ? starts[p + 1] : geometry.length;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let i = starts[p]; i + 1 < end; i += 2) {
+      minX = Math.min(minX, geometry[i + 0]);
+      minY = Math.min(minY, geometry[i + 1]);
+      maxX = Math.max(maxX, geometry[i + 0]);
+      maxY = Math.max(maxY, geometry[i + 1]);
+    }
+    bounds.set([minX, minY, maxX, maxY], 4 * p);
+  }
+  return {height, geometry, starts, bounds};
 }
 
 /**
@@ -152,8 +171,25 @@ export function uphillSide(
       continue;
     }
 
-    const {geometry, starts} = contour;
+    const {geometry, starts, bounds} = contour;
     for (let p = 0; p < starts.length; ++p) {
+      // A part whose bounds lie wholly to one side of the perpendicular has no segment it
+      // crosses. The slack covers rounding in the side test and in u below, which is a few ulps
+      // of the coordinates involved, so we never skip a part the u test would accept.
+      const minX = bounds[4 * p + 0];
+      const minY = bounds[4 * p + 1];
+      const maxX = bounds[4 * p + 2];
+      const maxY = bounds[4 * p + 3];
+      const slack =
+          64 * Number.EPSILON * (Math.abs(x) + Math.abs(y) + Math.max(-minX, -minY, maxX, maxY));
+      const s0 = (minX - x) * ny - (minY - y) * nx;
+      const s1 = (maxX - x) * ny - (minY - y) * nx;
+      const s2 = (minX - x) * ny - (maxY - y) * nx;
+      const s3 = (maxX - x) * ny - (maxY - y) * nx;
+      if (Math.min(s0, s1, s2, s3) > slack || Math.max(s0, s1, s2, s3) < -slack) {
+        continue;
+      }
+
       const end = p + 1 < starts.length ? starts[p + 1] : geometry.length;
       for (let i = starts[p]; i + 3 < end; i += 2) {
         const ax = geometry[i + 0];

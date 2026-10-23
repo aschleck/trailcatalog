@@ -1,4 +1,4 @@
-import { checkArgument, checkExhaustive, checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts';
+import { checkArgument, checkExhaustive, checkExists, checkState } from 'external/dev_april_corgi+/js/common/asserts';
 import { DefaultMap } from 'external/dev_april_corgi+/js/common/collections';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
@@ -14,6 +14,7 @@ import {
   lineAnchors,
   maxTurnWithin,
   mergeLines,
+  newContour,
   polylineLength,
   reverse,
   sampleAt,
@@ -520,11 +521,8 @@ class MbtileLoader {
           for (const line of layer.lines) {
             for (let i = 0; i < line.tags.length; i += 2) {
               if (layer.keys[line.tags[i + 0]] === style.fallback) {
-                heights.push({
-                  height: Number(layer.values[line.tags[i + 1]]),
-                  geometry: line.geometry,
-                  starts: line.starts,
-                });
+                heights.push(
+                    newContour(Number(layer.values[line.tags[i + 1]]), line.geometry, line.starts));
               }
             }
           }
@@ -948,7 +946,9 @@ function cropLine(geometry: number[], starts: number[], extent: number, loop: bo
         if (i > start && outside) {
           const lx = geometry[i - 2 + 0];
           const ly = geometry[i - 2 + 1];
-          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          checkState(intersectFiniteTile(lx, ly, px, py, extent));
+          const ix = SEGMENT_HIT[1];
+          const iy = SEGMENT_HIT[2];
           if (ix !== lastPushedX || iy !== lastPushedY) {
             cGeometry.push(ix, iy);
             lastPushedX = ix;
@@ -968,11 +968,15 @@ function cropLine(geometry: number[], starts: number[], extent: number, loop: bo
           const ly = geometry[i - 2 + 1];
 
           if (outside) {
-            const intersections =
-                intersectInfiniteTile(lx, ly, px, py, extent)
-                    .filter(([x, y]) => 0 <= x && x <= extent && 0 <= y && y <= extent);
+            const crossings = intersectInfiniteTile(lx, ly, px, py, extent);
             let started = false;
-            for (const [ix, iy] of intersections) {
+            for (let j = 0; j < crossings; ++j) {
+              const ix = TILE_CROSSINGS[3 * j + 1];
+              const iy = TILE_CROSSINGS[3 * j + 2];
+              if (!(0 <= ix && ix <= extent && 0 <= iy && iy <= extent)) {
+                continue;
+              }
+
               if (ix !== lastPushedX || iy !== lastPushedY) {
                 if (!started) {
                   cStarts.push(cGeometry.length);
@@ -985,7 +989,9 @@ function cropLine(geometry: number[], starts: number[], extent: number, loop: bo
               }
             }
           } else {
-            const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+            checkState(intersectFiniteTile(lx, ly, px, py, extent));
+            const ix = SEGMENT_HIT[1];
+            const iy = SEGMENT_HIT[2];
             if (ix !== lastPushedX || iy !== lastPushedY) {
               cGeometry.push(ix, iy);
               lastPushedX = undefined;
@@ -1009,7 +1015,9 @@ function cropLine(geometry: number[], starts: number[], extent: number, loop: bo
 
           const lx = geometry[end - 2 + 0];
           const ly = geometry[end - 2 + 1];
-          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          checkState(intersectFiniteTile(lx, ly, px, py, extent));
+          const ix = SEGMENT_HIT[1];
+          const iy = SEGMENT_HIT[2];
           if (ix !== lastPushedX || iy !== lastPushedY) {
             cGeometry.push(ix, iy);
           }
@@ -1026,11 +1034,15 @@ function cropLine(geometry: number[], starts: number[], extent: number, loop: bo
         const ly = geometry[end - 2 + 1];
 
         if (outside) {
-          const intersections =
-              intersectInfiniteTile(lx, ly, px, py, extent)
-                  .filter(([x, y]) => 0 <= x && x <= extent && 0 <= y && y <= extent);
+          const crossings = intersectInfiniteTile(lx, ly, px, py, extent);
           let started = false;
-          for (const [ix, iy] of intersections) {
+          for (let j = 0; j < crossings; ++j) {
+            const ix = TILE_CROSSINGS[3 * j + 1];
+            const iy = TILE_CROSSINGS[3 * j + 2];
+            if (!(0 <= ix && ix <= extent && 0 <= iy && iy <= extent)) {
+              continue;
+            }
+
             if (ix !== lastPushedX || iy !== lastPushedY) {
               if (!started) {
                 cStarts.push(cGeometry.length);
@@ -1043,7 +1055,9 @@ function cropLine(geometry: number[], starts: number[], extent: number, loop: bo
             }
           }
         } else {
-          const [ix, iy] = checkExists(intersectFiniteTile(lx, ly, px, py, extent));
+          checkState(intersectFiniteTile(lx, ly, px, py, extent));
+          const ix = SEGMENT_HIT[1];
+          const iy = SEGMENT_HIT[2];
           if (ix !== lastPushedX || iy !== lastPushedY) {
             cGeometry.push(ix, iy);
             lastPushedX = undefined;
@@ -1157,39 +1171,52 @@ function intersectEdge(
   }
 }
 
+// intersectSegments writes t, x, and y here, and intersectInfiniteTile its crossings, so that
+// cropLine doesn't allocate for every vertex outside the tile.
+const SEGMENT_HIT = new Float64Array(3);
+const TILE_CROSSINGS = new Float64Array(4 * 3);
+
+/** Writes the first crossing of the tile's sides into SEGMENT_HIT, returning false if none. */
 function intersectFiniteTile(
-    x1: number, y1: number, x2: number, y2: number, extent: number): Vec2|undefined {
-  const l = intersectSegments(x1, y1, x2, y2, 0, 0, 0, extent);
-  if (l) {
-    return [l[1], l[2]];
-  }
-  const t = intersectSegments(x1, y1, x2, y2, 0, extent, extent, extent);
-  if (t) {
-    return [t[1], t[2]];
-  }
-  const r = intersectSegments(x1, y1, x2, y2, extent, extent, extent, 0);
-  if (r) {
-    return [r[1], r[2]];
-  }
-  const b = intersectSegments(x1, y1, x2, y2, extent, 0, 0, 0);
-  if (b) {
-    return [b[1], b[2]];
-  }
-  return undefined;
+    x1: number, y1: number, x2: number, y2: number, extent: number): boolean {
+  return intersectSegments(x1, y1, x2, y2, 0, 0, 0, extent)
+      || intersectSegments(x1, y1, x2, y2, 0, extent, extent, extent)
+      || intersectSegments(x1, y1, x2, y2, extent, extent, extent, 0)
+      || intersectSegments(x1, y1, x2, y2, extent, 0, 0, 0);
 }
 
+/**
+ * Writes the crossings of the lines through the tile's sides into TILE_CROSSINGS as t, x, y in
+ * order of t, returning how many there are.
+ */
 function intersectInfiniteTile(
-    x1: number, y1: number, x2: number, y2: number, extent: number): Vec2[] {
+    x1: number, y1: number, x2: number, y2: number, extent: number): number {
   const huge = 1024 * extent;
 
-  const points = [
-    intersectSegments(x1, y1, x2, y2, -huge, 0, huge, 0),
-    intersectSegments(x1, y1, x2, y2, extent, -huge, extent, huge),
-    intersectSegments(x1, y1, x2, y2, huge, extent, -huge, extent),
-    intersectSegments(x1, y1, x2, y2, 0, huge, 0, -huge),
-  ];
-  // sort by t value
-  return points.filter(exists).sort((a, b) => a[0] - b[0]).map(([t, x, y]) => [x, y]);
+  let count = 0;
+  if (intersectSegments(x1, y1, x2, y2, -huge, 0, huge, 0)) {
+    count = insertCrossing(count);
+  }
+  if (intersectSegments(x1, y1, x2, y2, extent, -huge, extent, huge)) {
+    count = insertCrossing(count);
+  }
+  if (intersectSegments(x1, y1, x2, y2, huge, extent, -huge, extent)) {
+    count = insertCrossing(count);
+  }
+  if (intersectSegments(x1, y1, x2, y2, 0, huge, 0, -huge)) {
+    count = insertCrossing(count);
+  }
+  return count;
+}
+
+// Inserts SEGMENT_HIT by t, after any crossing with an equal t so those keep their side order.
+function insertCrossing(count: number): number {
+  let i = count;
+  for (; i > 0 && TILE_CROSSINGS[3 * (i - 1)] > SEGMENT_HIT[0]; --i) {
+    TILE_CROSSINGS.copyWithin(3 * i, 3 * (i - 1), 3 * i);
+  }
+  TILE_CROSSINGS.set(SEGMENT_HIT, 3 * i);
+  return count + 1;
 }
 
 function intersectSegments(
@@ -1200,25 +1227,28 @@ function intersectSegments(
     x3: number,
     y3: number,
     x4: number,
-    y4: number): [t: number, x: number, y: number]|undefined {
+    y4: number): boolean {
   const tn = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4);
   const td = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
   if (td === 0) {
-    return undefined;
+    return false;
   }
   const t = tn / td;
 
   const un = (x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3);
   const ud = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
   if (ud === 0) {
-    return undefined;
+    return false;
   }
   const u = -un / ud;
 
   if (0 <= t && t <= 1 && 0 <= u && u <= 1) {
-    return [t, x1 + t * (x2 - x1), y1 + t * (y2 - y1)];
+    SEGMENT_HIT[0] = t;
+    SEGMENT_HIT[1] = x1 + t * (x2 - x1);
+    SEGMENT_HIT[2] = y1 + t * (y2 - y1);
+    return true;
   } else {
-    return undefined;
+    return false;
   }
 }
 
