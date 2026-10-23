@@ -755,7 +755,8 @@ export class SkyLayer extends Layer {
     let offset = 0;
     for (const {fill, stroke, radius, points, dashed} of lines) {
       const result =
-          LineProgram.push(fill, stroke, radius, dashed ?? false, points, this.geometry, offset);
+          LineProgram.push(
+              fill, stroke, radius, dashed ? 'dashed' : 'solid', points, this.geometry, offset);
       drawables.push({
         elements: undefined,
         geometry: this.glGeometry,

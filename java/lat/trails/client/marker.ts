@@ -139,7 +139,7 @@ export function pushMarker(
     radii[i] = Math.max(MIN_DRAWN_RADIUS_PX, px) + extraPx;
   }
   return LineProgram.push(
-      fill, stroke, radii, /* stipple= */ false, outline.points, buffer, offset);
+      fill, stroke, radii, /* pattern= */ 'solid', outline.points, buffer, offset);
 }
 
 // Returns perfect-freehand's size for a stroke drawn widthPx wide at the default pressure of 0.5.

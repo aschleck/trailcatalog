@@ -7,13 +7,14 @@ import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { projectE7Deltas, projectS2Loop, skipE7Deltas } from 'js/map/camera';
 import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
-import { LineProgram, Stipple } from 'js/map/rendering/line_program';
+import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
 import { PackedLines } from 'js/map/workers/location_querier';
 import { Terrain, TERRAINS } from 'js/map/workers/path_router';
 import { CellKey } from 'js/map/workers/s2_data_fetcher';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
+import { Z_USER_DATA_HALO } from 'js/map/z';
 
 import { CollectionSchema } from './collection_schema';
 import { Match, matches } from './filters';
@@ -50,9 +51,11 @@ export interface LineStyle {
   minZoom: number;
   maxZoom: number;
   fill: RgbaU32;
-  stroke: RgbaU32;
+  // A wider solid line drawn under this one at Z_USER_DATA_HALO
+  halo?: {fill: RgbaU32; radius: number};
+  pattern: LinePattern;
   radius: number;
-  stipple: Stipple;
+  stroke: RgbaU32;
   z: number;
 }
 
@@ -232,7 +235,7 @@ class Bounds {
 }
 
 // Writes LineProgram shapes one after another and draws each run of them sharing a z as one
-// instanced call. Fill, stroke, radius, and stipple are baked into the vertex stride, so only z
+// instanced call. Fill, stroke, radius, and pattern are baked into the vertex stride, so only z
 // splits a run.
 class InstancedRuns {
   private z: number|undefined = undefined;
@@ -249,21 +252,21 @@ class InstancedRuns {
     this.start = offset;
   }
 
-  // A style without a stipple is a point.
+  // A style without a pattern is a point.
   push(
       z: number,
-      style: {fill: RgbaU32; stroke: RgbaU32; radius: number; stipple?: Stipple},
+      style: {fill: RgbaU32; stroke: RgbaU32; radius: number; pattern?: LinePattern},
       points: ArrayLike<number>): {geometryByteLength: number; geometryOffset: number} {
     if (z !== this.z) {
       this.flush();
       this.z = z;
     }
-    const stipple = style.stipple ?? false;
-    this.bounds.add(points, stipple === 'ticks' ? 3 * style.radius : style.radius);
+    const pattern = style.pattern ?? 'solid';
+    this.bounds.add(points, pattern === 'ticks' ? 3 * style.radius : style.radius);
     const geometryOffset = 4 * this.offset;
     const result =
         LineProgram.push(
-            style.fill, style.stroke, style.radius, stipple, points, this.buffer, geometryOffset);
+            style.fill, style.stroke, style.radius, pattern, points, this.buffer, geometryOffset);
     this.offset += result.geometryByteLength / 4;
     this.instances += result.instanceCount;
     this.vertexCount = result.vertexCount;
@@ -338,6 +341,7 @@ class CollectionLoader {
     }
 
     let lineGeometryBytes = 0;
+    let haloGeometryBytes = 0;
 
     const lineCount = source.getVarInt32();
     const styledLines: Array<{
@@ -371,6 +375,9 @@ class CollectionLoader {
       const points = projectE7Deltas(source);
 
       lineGeometryBytes += LineProgram.bytesNeeded(points.length / 2);
+      if (style.halo) {
+        haloGeometryBytes += LineProgram.bytesNeeded(points.length / 2);
+      }
 
       styledLines.push({id: {lsb: idLsb, msb: idMsb}, data, style, points});
     }
@@ -466,11 +473,11 @@ class CollectionLoader {
     }
 
     // Geometry layout: lines first, then points, then a fill float per polygon group, then polygon
-    // vertices, then polygon outlines.
+    // vertices, then polygon outlines, then line halos.
     const pointGeometryBytes = styledPoints.length * LineProgram.bytesNeeded(2);
     const geometry =
         new Float32Array(
-            (lineGeometryBytes + pointGeometryBytes + outlineGeometryBytes) / 4
+            (lineGeometryBytes + pointGeometryBytes + outlineGeometryBytes + haloGeometryBytes) / 4
                 + merged.length
                 + polygonGeometryFloats);
     const geometryUints = new Uint32Array(geometry.buffer);
@@ -611,7 +618,19 @@ class CollectionLoader {
         }
       }
     }
-    outlineRuns.done();
+    geometryOffset = outlineRuns.done();
+
+    const haloRuns = new InstancedRuns(geometry.buffer, geometryOffset, response.lineGeometries);
+    for (const {points, style} of styledLines) {
+      const halo = style.halo;
+      if (halo) {
+        haloRuns.push(
+            Z_USER_DATA_HALO,
+            {fill: halo.fill, stroke: halo.fill, radius: halo.radius, pattern: 'solid'},
+            points);
+      }
+    }
+    haloRuns.done();
 
     return {
       message: response,

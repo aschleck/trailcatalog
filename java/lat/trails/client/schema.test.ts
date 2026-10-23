@@ -62,6 +62,8 @@ const BOOKED: CollectionSchema =
 
 test('the default schema draws the keys features already carry', () => {
   expect(lineLook(DEFAULT_COLLECTION_SCHEMA, {stroke: '#ff0000', width_px: 4})).toEqual({
+    casing: '',
+    halo: '#00000000',
     label: '',
     stroke: '#ff0000',
     widthPx: 4,
@@ -292,7 +294,14 @@ test('a drawing takes its look from the drawing parts', () => {
   const drawing = line({marker_zoom: 14, stroke: '#123456', width_px: 3});
   expect(getFieldKind(drawing)).toBe('drawing');
   expect(lineLook(schema, drawing.data))
-      .toEqual({label: '', pattern: 'solid', stroke: '#123456', widthPx: 12});
+      .toEqual({
+        casing: '',
+        halo: '#00000000',
+        label: '',
+        pattern: 'solid',
+        stroke: '#123456',
+        widthPx: 12,
+      });
   expect(lineLook(schema, {width_px: 3})?.widthPx).toBe(3);
 });
 

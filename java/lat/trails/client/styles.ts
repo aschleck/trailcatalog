@@ -166,7 +166,7 @@ const PATH_LINES: LineStyle[] = [
     fill: SIDEWALK_COLOR,
     stroke: SIDEWALK_COLOR,
     radius: 0.4,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
@@ -176,7 +176,7 @@ const PATH_LINES: LineStyle[] = [
     fill: PISTE_COLOR,
     stroke: PISTE_COLOR,
     radius: 0.4,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
@@ -186,8 +186,8 @@ const PATH_LINES: LineStyle[] = [
     fill: TRAIL_COLOR,
     stroke: TRAIL_COLOR,
     radius: 0.6,
-    // Stippled because a solid hairline reads as a stream.
-    stipple: true,
+    // Dashed because a solid hairline reads as a stream.
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.3,
   },
   {
@@ -201,7 +201,7 @@ const PATH_LINES: LineStyle[] = [
     fill: SIDEWALK_COLOR,
     stroke: SIDEWALK_COLOR,
     radius: 0.4,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
@@ -211,7 +211,7 @@ const PATH_LINES: LineStyle[] = [
     fill: PISTE_COLOR,
     stroke: PISTE_COLOR,
     radius: 0.4,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
@@ -221,7 +221,7 @@ const PATH_LINES: LineStyle[] = [
     fill: TRAIL_COLOR,
     stroke: TRAIL_COLOR,
     radius: 0.6,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.3,
   },
   {
@@ -235,7 +235,7 @@ const PATH_LINES: LineStyle[] = [
     fill: SIDEWALK_COLOR,
     stroke: SIDEWALK_COLOR,
     radius: 0.5,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
@@ -245,7 +245,7 @@ const PATH_LINES: LineStyle[] = [
     fill: PISTE_COLOR,
     stroke: PISTE_COLOR,
     radius: 0.5,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
@@ -255,7 +255,7 @@ const PATH_LINES: LineStyle[] = [
     fill: TRAIL_COLOR,
     stroke: TRAIL_COLOR,
     radius: 0.6,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.3,
   },
   {
@@ -269,7 +269,7 @@ const PATH_LINES: LineStyle[] = [
     fill: SIDEWALK_COLOR,
     stroke: SIDEWALK_COLOR,
     radius: 0.8,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
@@ -279,7 +279,7 @@ const PATH_LINES: LineStyle[] = [
     fill: PISTE_COLOR,
     stroke: PISTE_COLOR,
     radius: 0.8,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.45,
   },
   {
@@ -289,7 +289,7 @@ const PATH_LINES: LineStyle[] = [
     fill: TRAIL_COLOR,
     stroke: TRAIL_COLOR,
     radius: 1.2,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.3,
   },
 ];
@@ -323,7 +323,7 @@ const AERIALWAY_LINES: LineStyle[] = [
     fill: AERIALWAY_COLOR,
     stroke: AERIALWAY_COLOR,
     radius: 0.5,
-    stipple: 'ticks',
+    pattern: 'ticks',
     z: Z_OVERLAY_TRANSPORTATION + 0.95,
   },
   {
@@ -333,7 +333,7 @@ const AERIALWAY_LINES: LineStyle[] = [
     fill: AERIALWAY_COLOR,
     stroke: AERIALWAY_COLOR,
     radius: 0.8,
-    stipple: 'ticks',
+    pattern: 'ticks',
     z: Z_OVERLAY_TRANSPORTATION + 0.95,
   },
 ];
@@ -350,7 +350,7 @@ const FERRY_LINES: LineStyle[] = [
     fill: FERRY_COLOR,
     stroke: FERRY_COLOR,
     radius: 0.6,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.5,
   },
   {
@@ -360,7 +360,7 @@ const FERRY_LINES: LineStyle[] = [
     fill: FERRY_COLOR,
     stroke: FERRY_COLOR,
     radius: 1,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.5,
   },
 ];
@@ -384,7 +384,7 @@ const TRACK_LINES: LineStyle[] = [
     fill: TRACK_COLOR,
     stroke: TRACK_COLOR,
     radius: 0.5,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.15,
   },
   {
@@ -394,7 +394,7 @@ const TRACK_LINES: LineStyle[] = [
     fill: TRACK_COLOR,
     stroke: TRACK_COLOR,
     radius: 0.6,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.15,
   },
   {
@@ -404,7 +404,7 @@ const TRACK_LINES: LineStyle[] = [
     fill: TRACK_CORE_COLOR,
     stroke: TRACK_COLOR,
     radius: 1.8,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.15,
   },
   {
@@ -414,7 +414,7 @@ const TRACK_LINES: LineStyle[] = [
     fill: TRACK_CORE_COLOR,
     stroke: TRACK_COLOR,
     radius: 2.4,
-    stipple: true,
+    pattern: 'dashed',
     z: Z_OVERLAY_TRANSPORTATION - 0.15,
   },
 ];

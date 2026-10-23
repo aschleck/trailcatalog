@@ -11,7 +11,7 @@ import {
   SPHERE_OPERATIONS,
 } from './program';
 
-// We write the stipple with 4 bytes to keep the 32bit numbers aligned.
+// We write the pattern with 4 bytes to keep the 32bit numbers aligned.
 export const VERTEX_STRIDE =
     4 * (
         2 + 2
@@ -19,14 +19,32 @@ export const VERTEX_STRIDE =
             + /* stroke= */ 1
             + /* distanceAlong= */ 1
             + /* radius= */ 1
-            + /* stipple= */ 1
+            + /* pattern= */ 1
     );
 
 /**
- * True dashes the line, ticks crosses it with a bar every so often like a lift's pylons, and
- * alternating dashes it with the fill and stroke colors instead of leaving gaps.
+ * How a line breaks up along its length. Ticks cross it with a bar every so often like a lift's
+ * pylons, alternating dashes it with the fill and stroke colors instead of leaving gaps, and dots
+ * are discs as wide as the line.
  */
-export type Stipple = boolean|'alternating'|'ticks';
+export type LinePattern =
+    'alternating'|'dashed'|'dotted'|'fine_dotted'|'short_dashed'|'solid'|'ticks';
+
+export const LINE_PATTERNS: LinePattern[] =
+    ['alternating', 'dashed', 'dotted', 'fine_dotted', 'short_dashed', 'solid', 'ticks'];
+
+// The pattern attribute: the shader's mode in bits 0 to 2, the period in pixels in bits 8 to 15,
+// and the share of each period a dash covers, out of 255, in bits 16 to 23. Zero period or share
+// is the mode's default.
+const PATTERN_CODES: {[pattern in LinePattern]: number} = {
+  solid: 0,
+  dashed: 1,
+  ticks: 2,
+  alternating: 3,
+  dotted: 4 | (9 << 8),
+  fine_dotted: 4 | (5 << 8),
+  short_dashed: 1 | (4 << 8),
+};
 
 /** Renders instanced line segments as capsules, so joins and ends come out round. */
 export class LineProgram extends Program<LineProgramData> {
@@ -45,7 +63,7 @@ export class LineProgram extends Program<LineProgramData> {
       colorStroke: RgbaU32,
       // One for every segment, or one per segment
       radius: number|ArrayLike<number>,
-      stipple: Stipple,
+      pattern: LinePattern,
       points: ArrayLike<number>,
       buffer: ArrayBuffer,
       offset: number,
@@ -77,7 +95,7 @@ export class LineProgram extends Program<LineProgramData> {
       uint32s[vertexOffset + 5] = colorStroke;
       floats[vertexOffset + 6] = distanceAlong;
       floats[vertexOffset + 7] = typeof radius === 'number' ? radius : radius[i / 2];
-      uint32s[vertexOffset + 8] = stippleToUint(stipple);
+      uint32s[vertexOffset + 8] = PATTERN_CODES[pattern];
 
       distanceAlong += Math.sqrt((xp - x) * (xp - x) + (yp - y) * (yp - y));
       vertexOffset += stride;
@@ -116,7 +134,7 @@ export class LineProgram extends Program<LineProgramData> {
       colorFill: RgbaU32,
       colorStroke: RgbaU32,
       radius: number,
-      stipple: Stipple,
+      pattern: LinePattern,
       z: number,
       points: ArrayLike<number>,
       buffer: ArrayBuffer,
@@ -124,7 +142,7 @@ export class LineProgram extends Program<LineProgramData> {
       glBuffer: WebGLBuffer,
   ): Drawable {
     const result =
-        LineProgram.push(colorFill, colorStroke, radius, stipple, points, buffer, offset);
+        LineProgram.push(colorFill, colorStroke, radius, pattern, points, buffer, offset);
 
     return {
       elements: undefined,
@@ -166,8 +184,8 @@ export class LineProgram extends Program<LineProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 1);
     gl.enableVertexAttribArray(this.program.attributes.radius);
     gl.vertexAttribDivisor(this.program.attributes.radius, 1);
-    gl.enableVertexAttribArray(this.program.attributes.stipple);
-    gl.vertexAttribDivisor(this.program.attributes.stipple, 1);
+    gl.enableVertexAttribArray(this.program.attributes.pattern);
+    gl.vertexAttribDivisor(this.program.attributes.pattern, 1);
   }
 
   protected override bindAttributes(offset: number): void {
@@ -216,7 +234,7 @@ export class LineProgram extends Program<LineProgramData> {
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 28);
     gl.vertexAttribIPointer(
-        this.program.attributes.stipple,
+        this.program.attributes.pattern,
         1,
         gl.UNSIGNED_INT,
         /* stride= */ VERTEX_STRIDE,
@@ -259,8 +277,8 @@ export class LineProgram extends Program<LineProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.distanceAlong);
     gl.vertexAttribDivisor(this.program.attributes.radius, 0);
     gl.disableVertexAttribArray(this.program.attributes.radius);
-    gl.vertexAttribDivisor(this.program.attributes.stipple, 0);
-    gl.disableVertexAttribArray(this.program.attributes.stipple);
+    gl.vertexAttribDivisor(this.program.attributes.pattern, 0);
+    gl.disableVertexAttribArray(this.program.attributes.pattern);
   }
 }
 
@@ -273,7 +291,7 @@ interface LineProgramData extends ProgramData {
     position: number;
     previous: number;
     radius: number;
-    stipple: number;
+    pattern: number;
   };
   uniforms: {
     cameraCenter: WebGLUniformLocation;
@@ -312,8 +330,9 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in highp float distanceAlong;
       // This is a radius in pixels
       in highp float radius;
-      // 0 is solid, 1 is dashed, 2 is ticked, and 3 is alternating, see Stipple
-      in uint stipple;
+      // See PATTERN_CODES. The mode is 0 for solid, 1 dashed, 2 ticked, 3 alternating, and 4
+      // dotted.
+      in uint pattern;
 
       // See https://github.com/visgl/luma.gl/issues/1764
       invariant gl_Position;
@@ -323,9 +342,13 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       out lowp float fragDistanceAlong;
       out lowp float fragRadius;
       out lowp float fragCore;
-      out lowp float fragStipple;
+      out lowp float fragOnShare;
       out lowp float fragAlternate;
       out lowp float fragTicks;
+      out lowp float fragDots;
+      out mediump float fragPeriod;
+      // Pixels per unit of fragDistanceAlong, which steps with zoom
+      out mediump float fragAlongPx;
       out lowp float fragDistanceOrtho;
       // Pixels past each end of the segment, positive only beyond that end
       out highp float fragPastStart;
@@ -342,6 +365,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       }
 
       void main() {
+        uint mode = pattern & 7u;
         vec2 center = position.x < 0.5 ? previous : next;
         vec2 direction = next - previous;
         // A zero length segment draws as a circle, which is how we draw points.
@@ -355,7 +379,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         }
         // Ticks reach three times the line's radius, so the quad has to cover them. The casing
         // reaches a quarter pixel further to fit its antialiasing.
-        highp float extent = stipple == 2u ? 3. * radius : radius;
+        highp float extent = mode == 2u ? 3. * radius : radius;
         highp float actualRadius = renderBorder ? extent + 0.25 : extent - 1.;
         // The quad runs past each end by the cap's radius. The fill stops at the core's own fill
         // radius, or else at a join its casing-colored edge would ring the line beside it. Ticks
@@ -363,7 +387,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         highp float capRadius =
             renderBorder
                 ? radius + 0.25
-                : max(0., radius - 1. - (stipple == 3u ? 1. : 0.));
+                : max(0., radius - 1. - (mode == 3u ? 1. : 0.));
         highp float endSign = 2. * position.x - 1.;
         vec2 push = perp * actualRadius * position.y + along * capRadius * endSign;
         // Only the camera subtraction needs fp64, because without it the map jitters when panning
@@ -398,17 +422,17 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
 
         fragColorFill = uint32FToVec4(colorFill);
         fragColorStroke = uint32FToVec4(colorStroke);
-        // We want to avoid stipples "dancing" as zoom changes, so we make this more of a step
+        // We want to avoid patterns "dancing" as zoom changes, so we make this more of a step
         // change.
-        // Alternating dashes run twice as long, because a dash of fill reads as a gap otherwise.
         // The dashes continue into the caps, or else a vertex inside a dash fills the gaps on either
         // side with a whole circle.
+        highp float stepped = exp2(floor(2. * log2(halfWorldSize)) / 2.);
         fragDistanceAlong =
-            exp2(floor(2. * log2(halfWorldSize)) / 2.)
+            stepped
                 * (distanceAlong
                     + position.x * length(direction)
-                    + endSign * capRadius / halfWorldSize)
-                * (stipple == 3u ? 0.5 : 1.);
+                    + endSign * capRadius / halfWorldSize);
+        fragAlongPx = halfWorldSize / stepped;
         fragDistanceOrtho = position.y * actualRadius;
         highp float span = length(direction) * halfWorldSize + 2. * capRadius;
         fragPastStart = capRadius - position.x * span;
@@ -416,9 +440,18 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
         fragCapRadius = capRadius;
         fragRadius = extent;
         fragCore = radius;
-        fragStipple = stipple == 1u ? 0.5 : stipple == 3u ? 0.65 : 1.0;
-        fragAlternate = stipple == 3u ? 1.0 : 0.0;
-        fragTicks = stipple == 2u ? 1.0 : 0.0;
+        // Alternating dashes default to twice as long, because a dash of fill reads as a gap
+        // otherwise.
+        highp float period = float((pattern >> 8) & 255u);
+        fragPeriod = period > 0. ? period : mode == 3u ? 16. : 8.;
+        highp float on = float((pattern >> 16) & 255u) / 255.;
+        fragOnShare =
+            mode == 1u || mode == 3u
+                ? (on > 0. ? on : mode == 3u ? 0.65 : 0.5)
+                : 1.0;
+        fragAlternate = mode == 3u ? 1.0 : 0.0;
+        fragTicks = mode == 2u ? 1.0 : 0.0;
+        fragDots = mode == 4u ? 1.0 : 0.0;
       }
     `;
   const fs = `#version 300 es
@@ -430,9 +463,12 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       in lowp float fragDistanceOrtho;
       in lowp float fragRadius;
       in lowp float fragCore;
-      in lowp float fragStipple;
+      in lowp float fragOnShare;
       in lowp float fragAlternate;
       in lowp float fragTicks;
+      in lowp float fragDots;
+      in mediump float fragPeriod;
+      in mediump float fragAlongPx;
       in highp float fragPastStart;
       in highp float fragPastEnd;
       in mediump float fragCapRadius;
@@ -449,23 +485,30 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
             || (past > 0. && distance > fragCapRadius)) {
           discard;
         }
+        mediump float phase = fract(fragDistanceAlong / fragPeriod);
+        // A dot is a disc as wide as the line, centered in its period. Its along distance is in real
+        // pixels, or else the zoom stepping squashes it into an ellipse.
+        if (fragDots > 0.) {
+          distance =
+              length(vec2((phase - 0.5) * fragPeriod * fragAlongPx, fragDistanceOrtho));
+        }
         mediump float a = 1. - smoothstep(0., 1., clamp(distance + 0.75 - fragRadius, 0., 1.));
         // 0 is fill, 1 is stroke. Alternating widens the stroke to 2 pixels so the dashes sit
         // inside a casing.
         mediump float m =
             smoothstep(0., 1., clamp(distance + 1. + fragAlternate - fragRadius, 0., 1.));
 
-        lowp float on = fract(fragDistanceAlong / 8.) <= fragStipple ? 1. : 0.;
+        lowp float on = phase <= fragOnShare ? 1. : 0.;
         // Alternating fills the gaps between dashes with the stroke color instead of dropping them.
         lowp vec4 color = mix(fragColorFill, fragColorStroke, max(m, fragAlternate * (1. - on)));
-        lowp float stipple = max(on, fragAlternate);
+        lowp float shown = max(on, fragAlternate);
         // Outside the line itself only the ticks draw, one every 24 pixels, as thick as the line
         // up to 2 pixels. The caps have no ticks, or else a tick near a join fans out.
         lowp float core = 1. - clamp(distance - fragCore + 0.75, 0., 1.);
         mediump float width = min(2., 2. * fragCore);
         lowp float tick = past == 0. && mod(fragDistanceAlong, 24.) < width ? 1. : 0.;
         lowp float ticked = mix(1., max(core, tick), fragTicks);
-        fragColor = stipple * ticked * vec4(color.rgb * color.a, color.a) * a;
+        fragColor = shown * ticked * vec4(color.rgb * color.a, color.a) * a;
       }
   `;
 
@@ -500,7 +543,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       previous: checkExists(gl.getAttribLocation(programId, 'previous')),
       distanceAlong: checkExists(gl.getAttribLocation(programId, 'distanceAlong')),
       radius: checkExists(gl.getAttribLocation(programId, 'radius')),
-      stipple: checkExists(gl.getAttribLocation(programId, 'stipple')),
+      pattern: checkExists(gl.getAttribLocation(programId, 'pattern')),
     },
     uniforms: {
       cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
@@ -513,15 +556,4 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };
-}
-
-// The stipple attribute's encoding
-function stippleToUint(stipple: Stipple): number {
-  if (stipple === 'alternating') {
-    return 3;
-  } else if (stipple === 'ticks') {
-    return 2;
-  } else {
-    return stipple ? 1 : 0;
-  }
 }

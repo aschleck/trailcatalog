@@ -6,6 +6,7 @@ import { CorgiEvent, DOM_EVENT } from 'external/dev_april_corgi+/js/corgi/events
 import { CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
+import { LINE_PATTERNS, LinePattern } from 'js/map/rendering/line_program';
 
 import { ColorPickerButton } from './color_picker';
 import { FIELD_EDITED, FIELD_ICON_CLICKED } from './events';
@@ -15,8 +16,6 @@ import { PATTERN_LABELS } from './schema';
 import {
   DEFAULT_COLOR,
   FieldDefinition,
-  PATTERN_NAMES,
-  PatternName,
 } from './workers/collection_schema';
 
 // Keyed by feature and field, because the raw inputs only take their value when created. A
@@ -138,8 +137,8 @@ function renderInput(
             {...bound}
             className={`${boxed} ${width('w-28')}`}
             options={[
-              ...unsetOption(field, compact, PATTERN_NAMES.includes(value as PatternName)),
-              ...PATTERN_NAMES.map(name => ({
+              ...unsetOption(field, compact, LINE_PATTERNS.includes(value as LinePattern)),
+              ...LINE_PATTERNS.map(name => ({
                 label: PATTERN_LABELS[name],
                 value: name,
                 selected: name === value,

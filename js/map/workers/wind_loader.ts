@@ -173,7 +173,7 @@ class WindLoader {
     let instanceCount = 0;
     for (const {points, radii} of lines) {
       const result =
-          LineProgram.push(FILL, STROKE, radii, /* stipple= */ false, points, geometry, offset);
+          LineProgram.push(FILL, STROKE, radii, /* pattern= */ 'solid', points, geometry, offset);
       offset += result.geometryByteLength;
       instanceCount += result.instanceCount;
     }

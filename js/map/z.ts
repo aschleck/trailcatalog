@@ -11,6 +11,8 @@ export const Z_OVERLAY_TEXT = 13;
 export const Z_USER_DATA = 100;
 // Under the user's lines and polygon outlines, so that a fill never hides one
 export const Z_USER_DATA_FILL = Z_USER_DATA - 0.5;
+// Over the fills and under the lines it surrounds, including their casings at Z_USER_DATA - 0.1
+export const Z_USER_DATA_HALO = Z_USER_DATA - 0.25;
 export const Z_USER_DATA_HIGHLIGHT = 101;
 export const Z_EDITING = 200;
 

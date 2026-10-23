@@ -12,7 +12,7 @@ import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { GLYPHER, TextAnchor, toGraphemes, wrap } from 'js/map/rendering/glypher';
-import { LineProgram, Stipple } from 'js/map/rendering/line_program';
+import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -26,7 +26,7 @@ import {
   Triangles,
   triangulateRings,
 } from 'js/map/workers/triangulate';
-import { Z_USER_DATA, Z_USER_DATA_FILL, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
+import { Z_USER_DATA, Z_USER_DATA_FILL, Z_USER_DATA_HALO, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { SNAP_RADIUS_PX, toE7Array } from './drawing_layer';
 import { FeatureStore } from './feature_store';
@@ -73,13 +73,15 @@ import {
   DEFAULT_ICON,
   DEFAULT_POINT_RADIUS_PX,
   darken,
+  getCasing,
+  getHalo,
   getLineKind,
+  haloRadiusPx,
   lineLook,
   lineRadiusPx,
   parseColor,
   pointLook,
   polygonLook,
-  toStipple,
 } from './workers/collection_schema';
 
 // How far past a feature's drawn edge a click still lands on it
@@ -144,7 +146,14 @@ interface ProjectedShape {
   // Set on a marker stroke, as of the size and zoom it was outlined at
   marker: {widthPx: number; zoom: number; outline: MarkerOutline}|undefined;
   // A polygon's outline styles like a line.
-  look: {label: string; stipple: Stipple; stroke: RgbaU32; widthPx: number};
+  look: {
+    casing: RgbaU32;
+    halo: RgbaU32|undefined;
+    label: string;
+    pattern: LinePattern;
+    stroke: RgbaU32;
+    widthPx: number;
+  };
   // Set on a polygon
   ring: ProjectedRing|undefined;
 }
@@ -1189,7 +1198,8 @@ export class FeatureLayer extends Layer {
     const selectedLine = this.selected !== dragged ? this.visibleLine(this.selected) : undefined;
     let needed = 0;
     for (const line of lines) {
-      needed += LineProgram.bytesNeeded(line.points.length / 2);
+      const copies = line.look.halo === undefined ? 1 : 2;
+      needed += copies * LineProgram.bytesNeeded(line.points.length / 2);
     }
     if (selectedLine) {
       needed += LineProgram.bytesNeeded(selectedLine.points.length / 2);
@@ -1198,19 +1208,21 @@ export class FeatureLayer extends Layer {
     this.planFills();
     const batch = new ShapeBatch(this.geometry, needed, this.renderer);
     for (const line of lines) {
-      const {stroke, stipple} = line.look;
-      batch.push(
-          stroke, darken(stroke), lineRadius(line), line.points, Z_LINE, stipple);
+      const {casing, halo, pattern, stroke, widthPx} = line.look;
+      if (halo !== undefined) {
+        batch.push(halo, halo, haloRadiusPx(widthPx), line.points, Z_USER_DATA_HALO);
+      }
+      batch.push(stroke, casing, lineRadius(line), line.points, Z_LINE, pattern);
     }
     if (selectedLine) {
-      const {stroke, stipple} = selectedLine.look;
+      const {stroke, pattern} = selectedLine.look;
       batch.push(
           stroke,
           SELECTED_CASING,
           lineRadius(selectedLine) + 2,
           selectedLine.points,
           Z_SELECTED_LINE,
-          stipple);
+          pattern);
     }
     batch.finish();
   }
@@ -1291,14 +1303,14 @@ export class FeatureLayer extends Layer {
 
     const batch = new ShapeBatch(this.overlay, needed, this.renderer);
     if (hoveredLine) {
-      const {stroke, stipple} = hoveredLine.look;
+      const {stroke, pattern} = hoveredLine.look;
       batch.push(
           stroke,
           HOVERED_CASING,
           lineRadius(hoveredLine) + 2,
           hoveredLine.points,
           Z_SELECTED_LINE,
-          stipple);
+          pattern);
     }
     if (vertexDrag) {
       const line = vertexDrag.line;
@@ -1308,7 +1320,7 @@ export class FeatureLayer extends Layer {
           lineRadius(line) + 2,
           vertexDrag.points,
           Z_DRAGGED,
-          line.look.stipple);
+          line.look.pattern);
     }
     if (vertexDrag?.line.ring) {
       this.planFills();
@@ -1321,7 +1333,7 @@ export class FeatureLayer extends Layer {
           lineRadius(line) + 2,
           reroutePoints,
           Z_DRAGGED,
-          line.look.stipple);
+          line.look.pattern);
     }
     batch.pushHandles(handles, Z_HANDLE, this.handleTexture);
     if (marker) {
@@ -1618,9 +1630,9 @@ class ShapeBatch {
       radius: number,
       points: ArrayLike<number>,
       z: number,
-      stipple: Stipple = false): void {
+      pattern: LinePattern = 'solid'): void {
     const result =
-        LineProgram.push(fill, stroke, radius, stipple, points, this.plan.buffer, this.offset);
+        LineProgram.push(fill, stroke, radius, pattern, points, this.plan.buffer, this.offset);
     this.add(result, z);
   }
 
@@ -1865,13 +1877,20 @@ function isPolygon(shape: ProjectedShape): shape is ProjectedPolygon {
 
 function getLook(schema: CollectionSchema, shape: EditableShape):
     (ProjectedShape['look'] & {fill: RgbaU32|undefined})|undefined {
+  const line = shape.kind === 'line' ? lineLook(schema, shape.data) : undefined;
   const polygon = shape.kind === 'polygon' ? polygonLook(schema, shape.data) : undefined;
-  const look = shape.kind === 'line' ? lineLook(schema, shape.data) : polygon;
-  return look && {
+  const look = line ?? polygon;
+  if (!look) {
+    return undefined;
+  }
+  const stroke = parseColor(look.stroke);
+  return {
+    casing: line ? getCasing(line) : darken(stroke),
     fill: polygon && parseColor(polygon.fill),
+    halo: line && getHalo(line),
     label: look.label,
-    stipple: toStipple(look.pattern),
-    stroke: parseColor(look.stroke),
+    pattern: look.pattern,
+    stroke,
     widthPx: look.widthPx,
   };
 }

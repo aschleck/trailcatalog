@@ -6,6 +6,7 @@ import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
+import { LINE_PATTERNS } from 'js/map/rendering/line_program';
 
 import {
   IconButton,
@@ -45,7 +46,6 @@ import {
   FieldType,
   getField,
   PARTS,
-  PATTERN_NAMES,
   splitOptions,
   splitsParts,
 } from './workers/collection_schema';
@@ -486,7 +486,7 @@ function ValueInput({iconColor, option, part, value}: {
             {...bound}
             ariaLabel={part.label}
             className={`${SELECT_BOX} shrink-0 w-32`}
-            options={PATTERN_NAMES.map(name => ({
+            options={LINE_PATTERNS.map(name => ({
               label: PATTERN_LABELS[name],
               value: name,
               selected: name === shown,

@@ -169,7 +169,7 @@ export class OverlayLayer extends Layer {
                 BOUNDARY_PALETTE.fill,
                 BOUNDARY_PALETTE.stroke,
                 /* radius= */ 3,
-                /* stipple= */ false,
+                /* pattern= */ 'solid',
                 /* z= */ 105,
                 connected,
                 buffer,

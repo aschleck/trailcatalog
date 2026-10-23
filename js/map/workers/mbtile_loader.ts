@@ -5,7 +5,7 @@ import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
 import { RgbaU32, TileId, Vec2 } from '../common/types';
 import { rgbaToUint32 } from '../common/math';
-import { LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
+import { LinePattern, LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
 import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track, wrap } from '../rendering/glypher';
 
 import {
@@ -80,7 +80,7 @@ interface LineStyle {
   fill: RgbaU32;
   stroke: RgbaU32;
   radius: number;
-  stipple: boolean;
+  pattern: LinePattern;
   z: number;
 }
 
@@ -118,7 +118,7 @@ interface PolygonStyle {
   fill: RgbaU32;
   stroke: RgbaU32;
   strokeRadius: number;
-  strokeStipple: boolean;
+  strokePattern: LinePattern;
   z: number;
 }
 
@@ -485,7 +485,7 @@ class MbtileLoader {
                 style.fill,
                 style.stroke,
                 style.radius,
-                style.stipple,
+                style.pattern,
                 line.geometry.slice(line.starts[i], line.starts[i + 1]),
                 geometry.buffer,
                 4 * geometryOffset);
@@ -676,7 +676,7 @@ class MbtileLoader {
                 style.stroke, // TODO(april): should we allow stroke fills?
                 style.stroke,
                 style.strokeRadius,
-                style.strokeStipple,
+                style.strokePattern,
                 polygon.geometry.slice(polygon.starts[i], polygon.starts[i + 1]),
                 geometry.buffer,
                 4 * geometryOffset);

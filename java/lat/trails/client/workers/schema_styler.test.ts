@@ -74,8 +74,8 @@ test('a point takes its color and radius from its own fields', () => {
 
 test('a line split by a checkbox dashes until it is checked', () => {
   const styler = new SchemaStyler(SCHEMA);
-  expect(styler.line({visited: true})?.stipple).toBe(false);
-  expect(styler.line({})?.stipple).toBe(true);
+  expect(styler.line({visited: true})?.pattern).toBe('solid');
+  expect(styler.line({})?.pattern).toBe('dashed');
   expect(styler.line({})?.radius).toBe(3);
 });
 

@@ -317,7 +317,7 @@ export class CollectionLayer extends Layer {
               point.style.fill,
               HOVER_STROKE,
               point.style.radius + HOVER_POINT_PADDING_PX,
-              /* stipple= */ false,
+              /* pattern= */ 'solid',
               [x, y, x, y],
               highlight.geometry,
               /* offset= */ 0);
@@ -351,7 +351,7 @@ export class CollectionLayer extends Layer {
               HOVER_FILL,
               HOVER_STROKE,
               Math.max(line.style.radius + HOVER_LINE_PADDING_PX, HOVER_LINE_MIN_RADIUS_PX),
-              /* stipple= */ false,
+              /* pattern= */ 'solid',
               line.points,
               highlight.geometry,
               /* offset= */ 0);
@@ -428,7 +428,7 @@ export class CollectionLayer extends Layer {
                 HOVER_STROKE,
                 HOVER_STROKE,
                 HOVER_POLYGON_OUTLINE_RADIUS_PX,
-                /* stipple= */ false,
+                /* pattern= */ 'solid',
                 ring,
                 highlight.geometry,
                 outlineOffset);
@@ -831,7 +831,7 @@ export class CollectionLayer extends Layer {
             line.style.fill,
             line.style.stroke,
             line.style.radius,
-            line.style.stipple,
+            line.style.pattern,
             line.points,
             restored,
             /* offset= */ 0);
@@ -845,7 +845,7 @@ export class CollectionLayer extends Layer {
             point.style.fill,
             point.style.stroke,
             point.style.radius,
-            /* stipple= */ false,
+            /* pattern= */ 'solid',
             [x, y, x, y],
             restored,
             /* offset= */ 0);

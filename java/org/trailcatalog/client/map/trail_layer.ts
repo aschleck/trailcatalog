@@ -10,7 +10,7 @@ import { Copyright, RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { GLYPHER, toGraphemes } from 'js/map/rendering/glypher';
-import { LineProgram, Stipple } from 'js/map/rendering/line_program';
+import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -561,7 +561,7 @@ export class TrailLayer extends Layer implements Listener {
   // The look of a path that nothing highlights. A path that a working trail shares with a broken
   // one still dashes, because the black dashes read as the working trail.
   private restingStyle(path: Path, onTrail: boolean):
-      {fill: RgbaU32; stroke: RgbaU32; radius: number; stipple: Stipple} {
+      {fill: RgbaU32; stroke: RgbaU32; radius: number; pattern: LinePattern} {
     const broken =
         (this.dataService.pathsToTrails.get(path.id) ?? []).some(t => t.lengthMeters < 0);
     if (broken) {
@@ -569,14 +569,14 @@ export class TrailLayer extends Layer implements Listener {
         fill: ERROR_PALETTE.raw.fill,
         stroke: ERROR_PALETTE.raw.stroke,
         radius: BROKEN_PATH_RADIUS_PX,
-        stipple: 'alternating',
+        pattern: 'alternating',
       };
     } else {
       return {
         fill: DEFAULT_PALETTE.fill,
         stroke: DEFAULT_PALETTE.stroke,
         radius: PATH_RADIUS_PX,
-        stipple: !onTrail,
+        pattern: onTrail ? 'solid' : 'dashed',
       };
     }
   }
@@ -682,13 +682,14 @@ export class TrailLayer extends Layer implements Listener {
     for (const [id, palette] of planned) {
       const path = this.pathToPlan(id);
       if (path) {
+        const pattern: LinePattern = this.onTrail(path) ? 'solid' : 'dashed';
         const style =
             palette
                 ? {
                   fill: palette.raw.fill,
                   stroke: palette.raw.stroke,
                   radius: RAISED_PATH_RADIUS_PX,
-                  stipple: !this.onTrail(path),
+                  pattern,
                 }
                 : this.restingStyle(path, this.onTrail(path));
         const drawable =
@@ -696,7 +697,7 @@ export class TrailLayer extends Layer implements Listener {
                 style.fill,
                 style.stroke,
                 style.radius,
-                style.stipple,
+                style.pattern,
                 palette ? Z_RAISED_PATH : Z_PATH,
                 path.line,
                 buffer,
@@ -795,7 +796,7 @@ export class TrailLayer extends Layer implements Listener {
               style.fill,
               style.stroke,
               style.radius,
-              style.stipple,
+              style.pattern,
               Z_PATH,
               path.line,
               buffer,
@@ -851,7 +852,7 @@ export class TrailLayer extends Layer implements Listener {
               style.fill,
               style.stroke,
               style.radius,
-              style.stipple,
+              style.pattern,
               Z_PATH,
               path.line,
               buffer,

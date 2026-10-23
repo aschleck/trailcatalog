@@ -636,7 +636,7 @@ export class DrawingLayer extends Layer {
             LINE_COLOR,
             LINE_COLOR,
             LINE_RADIUS_PX,
-            /* stipple= */ false,
+            /* pattern= */ 'solid',
             points,
             this.geometry,
             /* offset= */ 0);
@@ -682,7 +682,7 @@ export class DrawingLayer extends Layer {
               LINE_COLOR,
               MARKER_STROKE,
               MARKER_RADIUS_PX,
-              /* stipple= */ false,
+              /* pattern= */ 'solid',
               [marker[0], marker[1], marker[0], marker[1]],
               this.geometry,
               offset);

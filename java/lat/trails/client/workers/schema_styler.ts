@@ -1,17 +1,19 @@
 import { RgbaU32 } from 'js/map/common/types';
-import { Stipple } from 'js/map/rendering/line_program';
+import { LinePattern } from 'js/map/rendering/line_program';
 import { Z_USER_DATA, Z_USER_DATA_FILL } from 'js/map/z';
 
 import { Data, LineStyle, PointStyle, PolygonStyle, Styler } from './collection_loader';
 import {
   CollectionSchema,
   darken,
+  getCasing,
+  getHalo,
+  haloRadiusPx,
   lineLook,
   lineRadiusPx,
   parseColor,
   pointLook,
   polygonLook,
-  toStipple,
 } from './collection_schema';
 
 // Points draw as circles here, whatever their icon, ringed so that pale fills read over the
@@ -35,7 +37,13 @@ export class SchemaStyler implements Styler {
     if (!look) {
       return undefined;
     }
-    return this.stroke(parseColor(look.stroke), look.widthPx, toStipple(look.pattern));
+    const halo = getHalo(look);
+    return this.stroke(
+        parseColor(look.stroke),
+        getCasing(look),
+        look.widthPx,
+        look.pattern,
+        halo && {fill: halo, radius: haloRadiusPx(look.widthPx)});
   }
 
   point(data: Data): PointStyle|undefined {
@@ -61,23 +69,33 @@ export class SchemaStyler implements Styler {
     }
     const fill = parseColor(look.fill);
     const stroke = parseColor(look.stroke);
-    const stipple = toStipple(look.pattern);
-    const outline = (stroke & 0xFF) === 0 ? undefined : this.stroke(stroke, look.widthPx, stipple);
+    const pattern = look.pattern;
+    const outline =
+        (stroke & 0xFF) === 0
+            ? undefined
+            : this.stroke(stroke, darken(stroke), look.widthPx, pattern, undefined);
     return cached(
         this.polygons,
-        `${fill},${outline ? `${stroke},${look.widthPx},${stipple}` : ''}`,
+        `${fill},${outline ? `${stroke},${look.widthPx},${pattern}` : ''}`,
         () => ({filters: [], fill, outline, z: Z_USER_DATA_FILL}));
   }
 
-  private stroke(fill: RgbaU32, widthPx: number, stipple: Stipple): LineStyle {
-    return cached(this.lines, `${fill},${widthPx},${stipple}`, () => ({
+  private stroke(
+      fill: RgbaU32,
+      stroke: RgbaU32,
+      widthPx: number,
+      pattern: LinePattern,
+      halo: LineStyle['halo']): LineStyle {
+    const key = `${fill},${stroke},${widthPx},${pattern},${halo?.fill ?? ''}`;
+    return cached(this.lines, key, () => ({
       filters: [],
       minZoom: 0,
       maxZoom: Infinity,
       fill,
-      stroke: darken(fill),
+      halo,
+      pattern,
       radius: lineRadiusPx(widthPx),
-      stipple,
+      stroke,
       z: Z_USER_DATA,
     }));
   }

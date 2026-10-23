@@ -1,5 +1,7 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
+import { LinePattern } from 'js/map/rendering/line_program';
+
 import { EditableFeature, FeatureData } from './features';
 import {
   Channel,
@@ -16,7 +18,6 @@ import {
   isValidFieldValue,
   lineLook,
   PARTS,
-  PatternName,
   pointLook,
   polygonLook,
   SelectOption,
@@ -83,9 +84,12 @@ export const OPTION_COLORS = [
   '#c5a101',
 ];
 
-export const PATTERN_LABELS: {[name in PatternName]: string} = {
+export const PATTERN_LABELS: {[name in LinePattern]: string} = {
   alternating: 'Alternating',
   dashed: 'Dashed',
+  dotted: 'Dotted',
+  fine_dotted: 'Fine dots',
+  short_dashed: 'Short dashes',
   solid: 'Solid',
   ticks: 'Ticks',
 };
@@ -400,7 +404,7 @@ export function formatField(field: FieldDefinition, value: boolean|number|string
     case 'checkbox':
       return value ? 'Yes' : 'No';
     case 'pattern':
-      return PATTERN_LABELS[value as PatternName] ?? String(value);
+      return PATTERN_LABELS[value as LinePattern] ?? String(value);
     case 'select':
       return field.options?.find(o => o.id === value)?.label ?? String(value);
     default:
