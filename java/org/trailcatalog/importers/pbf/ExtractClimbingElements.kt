@@ -60,9 +60,13 @@ fun climbingRelation(relation: Osmformat.Relation, stringTable: StringTable): Cl
     kvs.add(relation.getKeys(i))
     kvs.add(relation.getVals(i))
   }
-  val type = climbingCategory(kvs, stringTable)
+  var type = climbingCategory(kvs, stringTable)
   if (type == RelationCategory.ANY) {
     return null
+  }
+  // CreateBoundaries makes a multipolygon's boundary, see relationCategory.
+  if (isMultipolygon(relation, stringTable)) {
+    type = RelationCategory.BOUNDARY_CLIMBING
   }
 
   val members = RelationSkeleton.newBuilder()

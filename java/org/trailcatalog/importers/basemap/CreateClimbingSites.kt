@@ -49,7 +49,9 @@ class AddClimbingWays
 /**
  * Makes a boundary for each climbing area, boulder, and crag from the convex hull of the climbing
  * elements it holds, grown by [SITE_RADIUS] so that a site holding a single point is still a
- * circle. There are few enough climbing elements worldwide to hold them all in memory.
+ * circle. A site drawn as a multipolygon has real geometry, so CreateBoundaries makes its boundary
+ * instead, see relationCategory. There are few enough climbing elements worldwide to hold them all
+ * in memory.
  */
 class CreateClimbingSites
   : PStage<Pair<PCollection<ClimbingElement>, PMap<Long, Way>>, PList<Boundary>>() {

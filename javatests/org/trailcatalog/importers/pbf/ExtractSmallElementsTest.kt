@@ -5,6 +5,7 @@ import com.google.protobuf.ByteString
 import crosby.binary.Osmformat
 import org.junit.Test
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.models.RelationCategory
 
 class ExtractSmallElementsTest {
 
@@ -33,6 +34,14 @@ class ExtractSmallElementsTest {
     assertThat(elements[0].relation).isNull()
     assertThat(elements[0].climbing).isNotNull()
     assertThat(elements[0].tags!!.type).isEqualTo(SourceType.RELATION)
+  }
+
+  @Test
+  fun testMultipolygonSiteIsARelation() {
+    val elements = extractRelation("type" to "multipolygon", "climbing" to "crag", "name" to "A")
+    assertThat(elements).hasSize(1)
+    assertThat(elements[0].relation!!.type).isEqualTo(RelationCategory.BOUNDARY_CLIMBING_CRAG.id)
+    assertThat(elements[0].climbing!!.type).isEqualTo(RelationCategory.BOUNDARY_CLIMBING.id)
   }
 
   @Test

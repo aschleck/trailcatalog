@@ -79,6 +79,7 @@ class NameCollector {
 
 fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): RelationCategory {
   var category = RelationCategory.ANY
+  var climbing: RelationCategory? = null
   for (i in 0 until relation.keysCount) {
     when (stringTable.getS(relation.getKeys(i))) {
       ADMIN_LEVEL_BS ->
@@ -91,6 +92,8 @@ fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): Re
             category
                 .coerceAtLeast(RelationCategory.BOUNDARY)
                 .coerceAtLeast(BOUNDARY_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
+      CLIMBING_BS ->
+        climbing = CLIMBING_SITE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))]
       PROTECT_CLASS_BS ->
         category =
             category
@@ -103,7 +106,21 @@ fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): Re
                 .coerceAtLeast(ROUTE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
     }
   }
+  // A climbing site drawn as a multipolygon has an area of its own like any other boundary, while
+  // CreateClimbingSites makes up the area of the rest. See also climbingRelation.
+  if (climbing != null && isMultipolygon(relation, stringTable)) {
+    category = category.coerceAtLeast(climbing)
+  }
   return category
+}
+
+fun isMultipolygon(relation: Osmformat.Relation, stringTable: StringTable): Boolean {
+  for (i in 0 until relation.keysCount) {
+    if (stringTable.getS(relation.getKeys(i)) == TYPE_BS) {
+      return stringTable.getS(relation.getVals(i)) == MULTIPOLYGON_BS
+    }
+  }
+  return false
 }
 
 // Matches a language code: a two or three letter primary subtag plus anything hanging off it. The
