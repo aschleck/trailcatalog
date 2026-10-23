@@ -42,7 +42,13 @@ function matchesOne(data: {[key: string]: unknown}, filter: Match): boolean {
       if (typeof category !== 'number') {
         return false;
       }
-      return filter.value.some(parent => aDescendsB(category, parent));
+      // A loop rather than some() because the closure allocates for every line in a cell.
+      for (const parent of filter.value) {
+        if (aDescendsB(category, parent)) {
+          return true;
+        }
+      }
+      return false;
     case 'string_equals':
       return data[filter.key] === filter.value;
     default:

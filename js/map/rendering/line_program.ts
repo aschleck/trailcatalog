@@ -46,6 +46,14 @@ const PATTERN_CODES: {[pattern in LinePattern]: number} = {
   short_dashed: 1 | (4 << 8),
 };
 
+// Callers push thousands of lines into one buffer in a row, so we keep the views of the last buffer
+// rather than allocating two per line.
+let viewedBuffer: ArrayBuffer|undefined = undefined;
+let viewedFloats = new Float32Array(0);
+// Values that may represent NaN floats (colors) cannot be written as floats due to NaN
+// canonicalization. So we have to write them as uints to the same buffer.
+let viewedUint32s = new Uint32Array(0);
+
 /** Renders instanced line segments as capsules, so joins and ends come out round. */
 export class LineProgram extends Program<LineProgramData> {
 
@@ -73,12 +81,16 @@ export class LineProgram extends Program<LineProgramData> {
     instanceCount: number;
     vertexCount: number;
   } {
-    const floats = new Float32Array(buffer, offset);
-    // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
-    // canonicalization. So we have to write them as uints to the same buffer.
-    const uint32s = new Uint32Array(buffer, offset);
+    if (buffer !== viewedBuffer) {
+      viewedBuffer = buffer;
+      viewedFloats = new Float32Array(buffer);
+      viewedUint32s = new Uint32Array(buffer);
+    }
+    const floats = viewedFloats;
+    const uint32s = viewedUint32s;
 
-    let vertexOffset = 0;
+    const start = offset / 4;
+    let vertexOffset = start;
     const stride = VERTEX_STRIDE / 4;
     let distanceAlong = 0;
     for (let i = 0; i < points.length - 2; i += 2) {
@@ -102,9 +114,9 @@ export class LineProgram extends Program<LineProgramData> {
     }
 
     return {
-      geometryByteLength: vertexOffset * 4,
+      geometryByteLength: (vertexOffset - start) * 4,
       geometryOffset: offset,
-      instanceCount: vertexOffset / stride,
+      instanceCount: (vertexOffset - start) / stride,
       vertexCount: 4,
     };
   }

@@ -851,19 +851,25 @@ function raycastUnitSphere(ndc: Vec2, frame: SphericalFrame): Vec3 {
 export function projectE7Deltas(source: LittleEndianView): Float64Array {
   const pointCount = source.getVarInt32();
   const projected = new Float64Array(2 * pointCount);
+  projectE7DeltasInto(source, pointCount, projected, 0);
+  return projected;
+}
+
+/** Projects a DeltaLatLngE7 polyline whose point count the caller already read to point at. */
+export function projectE7DeltasInto(
+    source: LittleEndianView, pointCount: number, into: Float64Array, at: number): void {
   if (pointCount <= 0) {
-    return projected;
+    return;
   }
 
   let lat = source.getInt32();
   let lng = source.getInt32();
-  projectE7Into(lat, lng, projected, 0);
+  projectE7Into(lat, lng, into, at);
   for (let i = 1; i < pointCount; ++i) {
     lat += unzigzag(source.getVarInt32());
     lng += unzigzag(source.getVarInt32());
-    projectE7Into(lat, lng, projected, i);
+    projectE7Into(lat, lng, into, at + i);
   }
-  return projected;
 }
 
 /** Steps a view past a DeltaLatLngE7 polyline. Varints have no width to multiply, so it walks. */

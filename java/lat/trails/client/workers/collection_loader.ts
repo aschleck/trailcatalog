@@ -5,7 +5,7 @@ import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
-import { projectE7Deltas, projectS2Loop, skipE7Deltas } from 'js/map/camera';
+import { projectE7Deltas, projectE7DeltasInto, projectS2Loop, skipE7Deltas } from 'js/map/camera';
 import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
@@ -316,6 +316,9 @@ class RulesStyler implements Styler {
 
 class CollectionLoader {
 
+  // Mercator points of the cell being decoded, kept between loads so that each worker grows it to
+  // its biggest cell once
+  private points = new Float64Array(1 << 18);
   private styler: Styler;
 
   constructor(styling: Styling) {
@@ -324,6 +327,19 @@ class CollectionLoader {
 
   setStyle(styling: Styling): void {
     this.styler = createStyler(styling);
+  }
+
+  private reservePoints(floatCount: number): void {
+    if (floatCount <= this.points.length) {
+      return;
+    }
+    let size = this.points.length;
+    while (size < floatCount) {
+      size *= 2;
+    }
+    const points = new Float64Array(size);
+    points.set(this.points);
+    this.points = points;
   }
 
   load(request: LoadRequest): Reply<Response> {
@@ -343,25 +359,37 @@ class CollectionLoader {
     let lineGeometryBytes = 0;
     let haloGeometryBytes = 0;
 
+    // A cell runs to a hundred thousand lines of a few points each, so we decode them straight into
+    // the parallel arrays we send rather than allocating anything per line, or else the garbage
+    // collector costs more than the decoding. They are sized for every line and trimmed after.
     const lineCount = source.getVarInt32();
-    const styledLines: Array<{
-      id: RawUuid;
-      data: Data;
-      style: LineStyle;
-      points: Float64Array;
-    }> = [];
+    const ids = new BigInt64Array(2 * lineCount);
+    // lsb low, lsb high, msb low, msb high for each line
+    const idWords = new Uint32Array(ids.buffer);
+    const wayIds = new Float64Array(lineCount);
+    const types = new Int32Array(lineCount);
+    const values: Data[] = [];
+    const lineStyles: LineStyle[] = [];
+    // in floats into this.points
+    const starts = new Uint32Array(lineCount + 1);
+    const terrains = new Uint8Array(lineCount);
+    let kept = 0;
+    let floatCount = 0;
+    // The stylers only read the data they are handed, so every packed path can share this one.
+    const packedData = {id: 0, type: 0};
     for (let i = 0; i < lineCount; ++i) {
-      let idLsb;
-      let idMsb;
       let data;
       if (kind === KIND_PACKED_PATH) {
-        idLsb = source.getVarBigInt64();
-        idMsb = 0n;
-        // Keep the way id a number the way the jsonb one was. They reach only about 1.3e9.
-        data = {id: Number(source.getVarBigInt64()), type: source.getVarInt32()};
+        const pathId = getVarUint53(source);
+        idWords[4 * kept + 0] = pathId % 0x1_0000_0000;
+        idWords[4 * kept + 1] = pathId / 0x1_0000_0000;
+        packedData.id = getVarUint53(source);
+        packedData.type = source.getVarInt32();
+        data = packedData;
       } else {
-        idLsb = source.getBigInt64();
-        idMsb = source.getBigInt64();
+        for (let j = 0; j < 4; ++j) {
+          idWords[4 * kept + j] = source.getUInt32();
+        }
         const dataByteSize = source.getVarInt32();
         data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
       }
@@ -372,17 +400,34 @@ class CollectionLoader {
         continue;
       }
 
-      const points = projectE7Deltas(source);
-
-      lineGeometryBytes += LineProgram.bytesNeeded(points.length / 2);
-      if (style.halo) {
-        haloGeometryBytes += LineProgram.bytesNeeded(points.length / 2);
+      if (kind === KIND_PACKED_PATH) {
+        wayIds[kept] = packedData.id;
+        types[kept] = packedData.type;
+      } else {
+        values.push(data);
       }
+      lineStyles.push(style);
+      terrains[kept] = TERRAINS.indexOf(terrainOf(data));
 
-      styledLines.push({id: {lsb: idLsb, msb: idMsb}, data, style, points});
+      const pointCount = source.getVarInt32();
+      this.reservePoints(floatCount + 2 * pointCount);
+      projectE7DeltasInto(source, pointCount, this.points, floatCount / 2);
+      floatCount += 2 * pointCount;
+      kept += 1;
+      starts[kept] = floatCount;
+
+      lineGeometryBytes += LineProgram.bytesNeeded(pointCount);
+      if (style.halo) {
+        haloGeometryBytes += LineProgram.bytesNeeded(pointCount);
+      }
     }
 
-    styledLines.sort((a, b) => a.style.z - b.style.z);
+    // Lines draw in z order so that each z is one instanced call.
+    const byZ = [];
+    for (let i = 0; i < kept; ++i) {
+      byZ.push(i);
+    }
+    byZ.sort((a, b) => lineStyles[a].z - lineStyles[b].z);
 
     const polygonCount = source.getVarInt32();
     const triangulated: Array<{
@@ -485,28 +530,20 @@ class CollectionLoader {
     let geometryOffset = 0;
     let indexOffset = 0;
 
-    let pointCount = 0;
-    for (const line of styledLines) {
-      pointCount += line.points.length;
-    }
-    const styles = [...new Set(styledLines.map(line => line.style))];
+    const styles = [...new Set(lineStyles)];
     const lines: LoadedLines = {
-      ids: new BigInt64Array(2 * styledLines.length),
+      ids: ids.slice(0, 2 * kept),
       data:
           kind === KIND_PACKED_PATH
-              ? {
-                kind: 'packed_path',
-                ids: new Float64Array(styledLines.length),
-                types: new Int32Array(styledLines.length),
-              }
-              : {kind: 'json', values: []},
-      geometryByteLengths: new Uint32Array(styledLines.length),
-      geometryOffsets: new Uint32Array(styledLines.length),
-      points: new Float64Array(pointCount),
-      starts: new Uint32Array(styledLines.length + 1),
-      styleIndices: new Uint16Array(styledLines.length),
+              ? {kind: 'packed_path', ids: wayIds.slice(0, kept), types: types.slice(0, kept)}
+              : {kind: 'json', values},
+      geometryByteLengths: new Uint32Array(kept),
+      geometryOffsets: new Uint32Array(kept),
+      points: this.points.slice(0, floatCount),
+      starts: starts.slice(0, kept + 1),
+      styleIndices: new Uint16Array(kept),
       styles,
-      terrains: new Uint8Array(styledLines.length),
+      terrains: terrains.slice(0, kept),
     };
 
     const response: LoadResponse = {
@@ -525,29 +562,16 @@ class CollectionLoader {
       polygonGeometries: [],
     };
 
-    // styledLines is sorted by z, so each z draws as one instanced call.
     const lineRuns = new InstancedRuns(geometry.buffer, geometryOffset, response.lineGeometries);
-    let pointOffset = 0;
-    for (let i = 0; i < styledLines.length; ++i) {
-      const line = styledLines[i];
-      const result = lineRuns.push(line.style.z, line.style, line.points);
-      lines.ids[2 * i + 0] = line.id.lsb;
-      lines.ids[2 * i + 1] = line.id.msb;
-      if (lines.data.kind === 'packed_path') {
-        lines.data.ids[i] = line.data.id as number;
-        lines.data.types[i] = line.data.type as number;
-      } else {
-        lines.data.values.push(line.data);
-      }
+    // Indexed because for-of here allocates for every line.
+    for (let k = 0; k < byZ.length; ++k) {
+      const i = byZ[k];
+      const style = lineStyles[i];
+      const result = lineRuns.push(style.z, style, lines.points.subarray(starts[i], starts[i + 1]));
       lines.geometryByteLengths[i] = result.geometryByteLength;
       lines.geometryOffsets[i] = result.geometryOffset;
-      lines.points.set(line.points, pointOffset);
-      lines.starts[i] = pointOffset;
-      lines.styleIndices[i] = styles.indexOf(line.style);
-      lines.terrains[i] = TERRAINS.indexOf(terrainOf(line.data));
-      pointOffset += line.points.length;
+      lines.styleIndices[i] = styles.indexOf(style);
     }
-    lines.starts[styledLines.length] = pointOffset;
     geometryOffset = lineRuns.done();
 
     // styledPoints is sorted by z too.
@@ -621,13 +645,14 @@ class CollectionLoader {
     geometryOffset = outlineRuns.done();
 
     const haloRuns = new InstancedRuns(geometry.buffer, geometryOffset, response.lineGeometries);
-    for (const {points, style} of styledLines) {
-      const halo = style.halo;
+    for (let k = 0; k < byZ.length; ++k) {
+      const i = byZ[k];
+      const halo = lineStyles[i].halo;
       if (halo) {
         haloRuns.push(
             Z_USER_DATA_HALO,
             {fill: halo.fill, stroke: halo.fill, radius: halo.radius, pattern: 'solid'},
-            points);
+            lines.points.subarray(starts[i], starts[i + 1]));
       }
     }
     haloRuns.done();
@@ -701,6 +726,20 @@ function terrainOf(data: Data): Terrain|undefined {
     return 'aerial';
   }
   return 'land';
+}
+
+// Path and way ids pass 2^31 but stay far below 2^53, so a double holds them exactly and we skip
+// the BigInt allocation that reading a 64 bit varint costs on every byte.
+function getVarUint53(source: LittleEndianView): number {
+  let value = 0;
+  let scale = 1;
+  let byte;
+  do {
+    byte = source.getUInt8();
+    value += (byte & 0x7f) * scale;
+    scale *= 128;
+  } while ((byte & 0x80) !== 0);
+  return value;
 }
 
 function latLngBound(polygon: S2Polygon): LatLngRect {
