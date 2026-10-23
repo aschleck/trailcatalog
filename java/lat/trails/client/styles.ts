@@ -1,10 +1,12 @@
 import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { RgbaU32 } from 'js/map/common/types';
+import { LinePattern } from 'js/map/rendering/line_program';
 import { NATURE } from 'js/map/layers/mbtile_layer';
 import { Style as MbtileStyle } from 'js/map/workers/mbtile_loader';
 import { Z_OVERLAY_TRANSPORTATION } from 'js/map/z';
 
 import { LineStyle, Style } from './workers/collection_loader';
+import { Match } from './workers/filters';
 
 type MbtileLayerStyle = MbtileStyle['layers'][number];
 type MbtileMatch = MbtileLayerStyle['lines'][number]['filters'][number];
@@ -125,6 +127,10 @@ function withoutWayLines(style: MbtileStyle): MbtileStyle {
 // 0x72B948 wood fill lands on the base.
 const TRAIL_COLOR = 0x2A6B3CFF as RgbaU32;
 
+// TRAIL_COLOR taken toward black, because dots cover fewer pixels than dashes and read paler in
+// the same color.
+const FAINT_TRAIL_COLOR = 0x173F22FF as RgbaU32;
+
 // TRAIL_COLOR lightened toward the landcover it sits on, because a city block of sidewalks has to
 // read as texture while a trail still wins.
 const SIDEWALK_COLOR = 0x74A183FF as RgbaU32;
@@ -152,147 +158,96 @@ const PISTE_COLOR = 0x9AAABBFF as RgbaU32;
 // A piste draws fainter than a trail, as thin as a sidewalk, because a ski run without a highway=*
 // on it is an open slope in summer and a resort has several times more of them than trails.
 //
+// A trail that is hard to find on the ground, by trail_visibility=bad or worse or by sac_scale of
+// alpine_hiking or harder, draws as dots the way a paper map draws a route. The dots are wider
+// than the trail's dashes because a disc as wide as a hairline antialiases away. An informal trail
+// draws in short dashes as thin as a sidewalk, so that a web of social trails doesn't outweigh the
+// trail they wander off of.
+//
 // The sidewalk rule comes first in every band because the first matching style wins and the trail
-// rule names WayCategory.PATH, which is the subtree and so takes the sidewalks too.
-const PATH_LINES: LineStyle[] = [
-  {
-    filters: [{
-      match: 'category_in',
-      key: 'type',
-      value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
-    }],
-    minZoom: 11,
-    maxZoom: 12,
-    fill: SIDEWALK_COLOR,
-    stroke: SIDEWALK_COLOR,
-    radius: 0.4,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.45,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
-    minZoom: 11,
-    maxZoom: 12,
-    fill: PISTE_COLOR,
-    stroke: PISTE_COLOR,
-    radius: 0.4,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.45,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH]}],
-    minZoom: 11,
-    maxZoom: 12,
-    fill: TRAIL_COLOR,
-    stroke: TRAIL_COLOR,
-    radius: 0.6,
-    // Dashed because a solid hairline reads as a stream.
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.3,
-  },
-  {
-    filters: [{
-      match: 'category_in',
-      key: 'type',
-      value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
-    }],
-    minZoom: 12,
-    maxZoom: 13,
-    fill: SIDEWALK_COLOR,
-    stroke: SIDEWALK_COLOR,
-    radius: 0.4,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.45,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
-    minZoom: 12,
-    maxZoom: 13,
-    fill: PISTE_COLOR,
-    stroke: PISTE_COLOR,
-    radius: 0.4,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.45,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH]}],
-    minZoom: 12,
-    maxZoom: 13,
-    fill: TRAIL_COLOR,
-    stroke: TRAIL_COLOR,
-    radius: 0.6,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.3,
-  },
-  {
-    filters: [{
-      match: 'category_in',
-      key: 'type',
-      value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
-    }],
-    minZoom: 13,
-    maxZoom: 15,
-    fill: SIDEWALK_COLOR,
-    stroke: SIDEWALK_COLOR,
-    radius: 0.5,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.45,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
-    minZoom: 13,
-    maxZoom: 15,
-    fill: PISTE_COLOR,
-    stroke: PISTE_COLOR,
-    radius: 0.5,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.45,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH]}],
-    minZoom: 13,
-    maxZoom: 15,
-    fill: TRAIL_COLOR,
-    stroke: TRAIL_COLOR,
-    radius: 0.6,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.3,
-  },
-  {
-    filters: [{
-      match: 'category_in',
-      key: 'type',
-      value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
-    }],
-    minZoom: 15,
-    maxZoom: 31,
-    fill: SIDEWALK_COLOR,
-    stroke: SIDEWALK_COLOR,
-    radius: 0.8,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.45,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
-    minZoom: 15,
-    maxZoom: 31,
-    fill: PISTE_COLOR,
-    stroke: PISTE_COLOR,
-    radius: 0.8,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.45,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.PATH]}],
-    minZoom: 15,
-    maxZoom: 31,
-    fill: TRAIL_COLOR,
-    stroke: TRAIL_COLOR,
-    radius: 1.2,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.3,
-  },
+// rules name WayCategory.PATH, which is the subtree and so takes the sidewalks too. The dotted
+// rules come before the informal one so that a faint informal trail still draws faint.
+const PATH_BANDS: Array<{
+  minZoom: number;
+  maxZoom: number;
+  minor: number;
+  trail: number;
+  dots: number;
+  dotPattern: LinePattern;
+}> = [
+  {minZoom: 11, maxZoom: 12, minor: 0.4, trail: 0.6, dots: 1, dotPattern: 'fine_dotted'},
+  {minZoom: 12, maxZoom: 13, minor: 0.4, trail: 0.6, dots: 1, dotPattern: 'fine_dotted'},
+  {minZoom: 13, maxZoom: 15, minor: 0.5, trail: 0.6, dots: 1, dotPattern: 'fine_dotted'},
+  {minZoom: 15, maxZoom: 31, minor: 0.8, trail: 1.2, dots: 1.4, dotPattern: 'dotted'},
 ];
+
+// sac_scale=alpine_hiking and trail_visibility=bad are each the fourth grade, see PathTraits.kt.
+const FAINT_TRAILS: Match[][] = [
+  [{match: 'greater_than', key: 'sac_scale', value: 3}],
+  [{match: 'greater_than', key: 'trail_visibility', value: 3}],
+];
+
+const PATH_LINES: LineStyle[] = PATH_BANDS.flatMap(band => {
+  const {minZoom, maxZoom} = band;
+  const trail: Match = {match: 'category_in', key: 'type', value: [WayCategory.PATH]};
+  return [
+    {
+      filters: [{
+        match: 'category_in',
+        key: 'type',
+        value: [WayCategory.PATH_FOOTWAY_SIDEWALK, WayCategory.PATH_FOOTWAY_CROSSING],
+      }],
+      minZoom,
+      maxZoom,
+      fill: SIDEWALK_COLOR,
+      stroke: SIDEWALK_COLOR,
+      radius: band.minor,
+      pattern: 'dashed',
+      z: Z_OVERLAY_TRANSPORTATION - 0.45,
+    },
+    {
+      filters: [{match: 'category_in', key: 'type', value: [WayCategory.PISTE]}],
+      minZoom,
+      maxZoom,
+      fill: PISTE_COLOR,
+      stroke: PISTE_COLOR,
+      radius: band.minor,
+      pattern: 'dashed',
+      z: Z_OVERLAY_TRANSPORTATION - 0.45,
+    },
+    ...FAINT_TRAILS.map((faint): LineStyle => ({
+      filters: [trail, ...faint],
+      minZoom,
+      maxZoom,
+      fill: FAINT_TRAIL_COLOR,
+      stroke: FAINT_TRAIL_COLOR,
+      radius: band.dots,
+      pattern: band.dotPattern,
+      z: Z_OVERLAY_TRANSPORTATION - 0.3,
+    })),
+    {
+      filters: [trail, {match: 'number_equals', key: 'informal', value: 1}],
+      minZoom,
+      maxZoom,
+      fill: TRAIL_COLOR,
+      stroke: TRAIL_COLOR,
+      radius: band.minor,
+      pattern: 'short_dashed',
+      z: Z_OVERLAY_TRANSPORTATION - 0.35,
+    },
+    {
+      filters: [trail],
+      minZoom,
+      maxZoom,
+      fill: TRAIL_COLOR,
+      stroke: TRAIL_COLOR,
+      radius: band.trail,
+      // Dashed because a solid hairline reads as a stream.
+      pattern: 'dashed',
+      z: Z_OVERLAY_TRANSPORTATION - 0.3,
+    },
+  ];
+});
 
 // The lifts a person rides. Drag lifts, freight, and stations draw nothing, so they neither clutter
 // the map nor route.
@@ -374,50 +329,36 @@ const FERRY_LINES: LineStyle[] = [
 // would take two line styles per way. A pale road in a dark border still reads as unpaved next to a
 // solid green trail, which is the job.
 //
+// tracktype runs from grade1, solid and usually paved, to grade5, two ruts in a meadow, so a grade1
+// track draws solid and grade4 and grade5 draw in short dashes. The rest and the untagged keep the
+// plain dash.
+//
 // The z values continue NATURE's transportation ramp downward from service, so a service road's
 // casing covers a track running into it and a track's covers a trail.
-const TRACK_LINES: LineStyle[] = [
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}],
-    minZoom: 11,
-    maxZoom: 12,
-    fill: TRACK_COLOR,
-    stroke: TRACK_COLOR,
-    radius: 0.5,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.15,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}],
-    minZoom: 12,
-    maxZoom: 13,
-    fill: TRACK_COLOR,
-    stroke: TRACK_COLOR,
-    radius: 0.6,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.15,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}],
-    minZoom: 13,
-    maxZoom: 15,
-    fill: TRACK_CORE_COLOR,
-    stroke: TRACK_COLOR,
-    radius: 1.8,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.15,
-  },
-  {
-    filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}],
-    minZoom: 15,
-    maxZoom: 31,
-    fill: TRACK_CORE_COLOR,
-    stroke: TRACK_COLOR,
-    radius: 2.4,
-    pattern: 'dashed',
-    z: Z_OVERLAY_TRANSPORTATION - 0.15,
-  },
+const TRACK_BANDS = [
+  {minZoom: 11, maxZoom: 12, fill: TRACK_COLOR, radius: 0.5},
+  {minZoom: 12, maxZoom: 13, fill: TRACK_COLOR, radius: 0.6},
+  {minZoom: 13, maxZoom: 15, fill: TRACK_CORE_COLOR, radius: 1.8},
+  {minZoom: 15, maxZoom: 31, fill: TRACK_CORE_COLOR, radius: 2.4},
 ];
+
+const TRACK_GRADES: Array<{filters: Match[]; pattern: LinePattern}> = [
+  {filters: [{match: 'number_equals', key: 'tracktype', value: 1}], pattern: 'solid'},
+  {filters: [{match: 'greater_than', key: 'tracktype', value: 3}], pattern: 'short_dashed'},
+  {filters: [], pattern: 'dashed'},
+];
+
+const TRACK_LINES: LineStyle[] = TRACK_BANDS.flatMap(({minZoom, maxZoom, fill, radius}) =>
+    TRACK_GRADES.map(({filters, pattern}) => ({
+      filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}, ...filters],
+      minZoom,
+      maxZoom,
+      fill,
+      stroke: TRACK_COLOR,
+      radius,
+      pattern,
+      z: Z_OVERLAY_TRANSPORTATION - 0.15,
+    })));
 
 // PATH_LINES first to keep the lowest z first, which is only cosmetic: it names categories no road,
 // aeroway, or waterway rule can match, so nothing depends on which one findZoomedStyle reaches.
