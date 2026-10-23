@@ -15,6 +15,8 @@ import lat.trails.proto.SearchRequest
 import lat.trails.proto.SearchResponse
 import lat.trails.proto.SearchResult
 import lat.trails.proto.SearchResultKind
+import org.trailcatalog.models.PointCategory
+import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.s2.earthMeters
 import org.trailcatalog.s2.earthMetersToAngle
 
@@ -212,13 +214,15 @@ private fun searchPoints(
             nm.score - CASE WHEN p.notable THEN $NOTABLE_BONUS ELSE 0 END
           FROM (${bestNames("point_names", 0.7)}) nm
           JOIN points p ON p.id = nm.id AND p.epoch = ?
-          WHERE true ${near ?: ""}
+          WHERE p.type <> ? ${near ?: ""}
           ORDER BY 6
           LIMIT ?
           """)
       .apply {
         var next = bindBestNames(query, epoch)
         setInt(next++, epoch)
+        // TODO(april): routes are imported for search but stay out of its results for now.
+        setInt(next++, PointCategory.CLIMBING_ROUTE.id)
         for ((low, high) in ranges ?: listOf()) {
           setLong(next++, low)
           setLong(next++, high)
@@ -302,6 +306,14 @@ private fun fillBoundaryBounds(ranked: List<Candidate>, connection: Connection, 
       }
 }
 
+// Routes aren't searchable, so a crag or climbing area would only ever say where a trail, a place,
+// or another climbing site is, and that's better said by the park or county around it.
+private val UNLISTED_WITHIN_CATEGORIES =
+    RelationCategory.entries
+        .filter { RelationCategory.BOUNDARY_CLIMBING.isParentOf(it) }
+        .map { it.id }
+        .toTypedArray()
+
 private fun fillWithin(ranked: List<Candidate>, connection: Connection, epoch: Int) {
   val tables =
       mapOf(
@@ -325,12 +337,13 @@ private fun fillWithin(ranked: List<Candidate>, connection: Connection, epoch: I
             SELECT x.$child, b.name
             FROM $name x
             JOIN boundaries b ON b.id = x.$parent AND b.epoch = x.epoch
-            WHERE x.$child = ANY(?) AND x.epoch = ?
+            WHERE x.$child = ANY(?) AND x.epoch = ? AND NOT b.type = ANY(?)
             ORDER BY x.$child, b.area_meters2
             """)
         .apply {
           setArray(1, connection.createArrayOf("BIGINT", byId.keys.toTypedArray()))
           setInt(2, epoch)
+          setArray(3, connection.createArrayOf("INTEGER", UNLISTED_WITHIN_CATEGORIES))
         }
         .executeQuery()
         .use {

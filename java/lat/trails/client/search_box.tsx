@@ -3,7 +3,7 @@ import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { CHANGED, ACTION, FOCUSED, PRESSED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
-import { PointCategory } from 'java/org/trailcatalog/models/categories';
+import { PointCategory, RelationCategory } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { SearchResponse, SearchResultKind } from 'trails_lat/proto/data_pb';
 
@@ -31,6 +31,12 @@ export interface SearchHit {
 }
 
 export const EMPTY_SEARCH: SearchState = {query: '', results: undefined, highlighted: 0};
+
+const BOUNDARY_LABELS = new Map<number, string>([
+  [RelationCategory.BOUNDARY_CLIMBING_AREA, 'Climbing area'],
+  [RelationCategory.BOUNDARY_CLIMBING_BOULDER, 'Boulder'],
+  [RelationCategory.BOUNDARY_CLIMBING_CRAG, 'Crag'],
+]);
 
 const POINT_LABELS = new Map<number, string>([
   [PointCategory.ACCESS_TRAILHEAD, 'Trailhead'],
@@ -67,7 +73,7 @@ const POINT_LABELS = new Map<number, string>([
 export function searchLabel(kind: SearchResultKind, type: number): string {
   switch (kind) {
     case SearchResultKind.BOUNDARY:
-      return 'Area';
+      return BOUNDARY_LABELS.get(type) ?? 'Area';
     case SearchResultKind.POINT:
       return POINT_LABELS.get(type) ?? 'Place';
     case SearchResultKind.TRAIL:

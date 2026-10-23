@@ -49,6 +49,7 @@ kt_jvm_library(
         "//java/org/trailcatalog:epoch_tracker",
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/flags",
+        "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-kt",
         "@com_google_geometry_s2//:s2",
         "@protobuf//java/util",
