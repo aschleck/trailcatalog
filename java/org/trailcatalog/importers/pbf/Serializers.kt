@@ -2,6 +2,7 @@ package org.trailcatalog.importers.pbf
 
 import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.Serializer
+import org.trailcatalog.importers.pipeline.collections.getSerializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
 import org.trailcatalog.common.EncodedInputStream
 import org.trailcatalog.common.EncodedOutputStream
@@ -26,6 +27,13 @@ fun writeNames(names: List<Name>, to: EncodedOutputStream) {
       writeString(language, to)
     }
     writeString(name.value, to)
+  }
+}
+
+private fun <T : Any> writeOptional(v: T?, serializer: Serializer<T>, to: EncodedOutputStream) {
+  to.writeBoolean(v != null)
+  if (v != null) {
+    serializer.write(v, to)
   }
 }
 
@@ -121,6 +129,78 @@ fun registerPbfSerializers() {
       to.write(bytes)
       writeNames(v.names, to)
       v.skeleton.writeDelimitedTo(to)
+    }
+  })
+
+  registerSerializer(
+      TypeToken.of(ClimbingElement::class.java), object : Serializer<ClimbingElement> {
+
+    override fun read(from: EncodedInputStream): ClimbingElement {
+      val id = from.readVarLong()
+      val type = from.readVarInt()
+      val name = readString(from)
+      val names = readNames(from)
+      val latLng = if (from.readBoolean()) LatLngE7(from.readInt(), from.readInt()) else null
+      val members = RelationSkeleton.parseDelimitedFrom(from)
+      return ClimbingElement(id, type, name, names, latLng, members)
+    }
+
+    override fun write(v: ClimbingElement, to: EncodedOutputStream) {
+      to.writeVarLong(v.id)
+      to.writeVarInt(v.type)
+      writeString(v.name, to)
+      writeNames(v.names, to)
+      val latLng = v.latLng
+      to.writeBoolean(latLng != null)
+      if (latLng != null) {
+        to.writeInt(latLng.lat)
+        to.writeInt(latLng.lng)
+      }
+      v.members.writeDelimitedTo(to)
+    }
+  })
+
+  registerSerializer(TypeToken.of(SourceTags::class.java), object : Serializer<SourceTags> {
+
+    override fun read(from: EncodedInputStream): SourceTags {
+      val type = SourceType.entries[from.readVarInt()]
+      val id = from.readVarLong()
+      val version = if (from.readBoolean()) from.readVarInt() else null
+      return SourceTags(type, id, version, readString(from))
+    }
+
+    override fun write(v: SourceTags, to: EncodedOutputStream) {
+      to.writeVarInt(v.type.ordinal)
+      to.writeVarLong(v.id)
+      val version = v.version
+      to.writeBoolean(version != null)
+      if (version != null) {
+        to.writeVarInt(version)
+      }
+      writeString(v.tagsJson, to)
+    }
+  })
+
+  registerSerializer(TypeToken.of(SmallElement::class.java), object : Serializer<SmallElement> {
+
+    private val tags by lazy { getSerializer(TypeToken.of(SourceTags::class.java)) }
+    private val point by lazy { getSerializer(TypeToken.of(Point::class.java)) }
+    private val relation by lazy { getSerializer(TypeToken.of(Relation::class.java)) }
+    private val climbing by lazy { getSerializer(TypeToken.of(ClimbingElement::class.java)) }
+
+    override fun read(from: EncodedInputStream): SmallElement {
+      return SmallElement(
+          if (from.readBoolean()) tags.read(from) else null,
+          if (from.readBoolean()) point.read(from) else null,
+          if (from.readBoolean()) relation.read(from) else null,
+          if (from.readBoolean()) climbing.read(from) else null)
+    }
+
+    override fun write(v: SmallElement, to: EncodedOutputStream) {
+      writeOptional(v.tags, tags, to)
+      writeOptional(v.point, point, to)
+      writeOptional(v.relation, relation, to)
+      writeOptional(v.climbing, climbing, to)
     }
   })
 

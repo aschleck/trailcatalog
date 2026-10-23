@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.google.protobuf.ByteString
 import crosby.binary.Osmformat
 import org.junit.Test
+import org.trailcatalog.models.RelationCategory
 
 class ExtractRelationsTest {
 
@@ -115,5 +116,6 @@ private fun relationWithTags(vararg tags: Pair<String, String>): Relation {
 
   val stringTable = Osmformat.StringTable.newBuilder()
   strings.forEach { stringTable.addS(ByteString.copyFromUtf8(it)) }
-  return getRelation(relation.build(), stringTable.build())
+  // The category only decides whether we keep the relation, and these tests are about its names.
+  return getRelation(relation.build(), RelationCategory.ROUTE, stringTable.build())!!
 }

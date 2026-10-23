@@ -98,6 +98,8 @@ enum class PointCategory(override val id: Int) : Category<PointCategory> {
         ACCESS_TRANSIT_FERRY_TERMINAL(ACCESS_TRANSIT.id * ENUM_SIZE + 2),
         ACCESS_TRANSIT_STATION(ACCESS_TRANSIT.id * ENUM_SIZE + 3),
         ACCESS_TRANSIT_AIRPORT(ACCESS_TRANSIT.id * ENUM_SIZE + 4),
+    CLIMBING(ANY.id * ENUM_SIZE + 10),
+      CLIMBING_ROUTE(CLIMBING.id * ENUM_SIZE + 1),
 }
 
 enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
@@ -126,6 +128,10 @@ enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
         BOUNDARY_PROTECTED_AREA_4(BOUNDARY_PROTECTED_AREA.id * ENUM_SIZE + 5),
         BOUNDARY_PROTECTED_AREA_5(BOUNDARY_PROTECTED_AREA.id * ENUM_SIZE + 6),
         BOUNDARY_PROTECTED_AREA_6(BOUNDARY_PROTECTED_AREA.id * ENUM_SIZE + 7),
+      BOUNDARY_CLIMBING(BOUNDARY.id * ENUM_SIZE + 6),
+        BOUNDARY_CLIMBING_AREA(BOUNDARY_CLIMBING.id * ENUM_SIZE + 1),
+        BOUNDARY_CLIMBING_BOULDER(BOUNDARY_CLIMBING.id * ENUM_SIZE + 2),
+        BOUNDARY_CLIMBING_CRAG(BOUNDARY_CLIMBING.id * ENUM_SIZE + 3),
   ROUTE(ANY.id * ENUM_SIZE + 2),
       TRANSPORT(ROUTE.id * ENUM_SIZE + 1),
         TRANSPORT_BUS(TRANSPORT.id * ENUM_SIZE + 1),

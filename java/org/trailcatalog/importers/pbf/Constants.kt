@@ -33,6 +33,14 @@ val POINT_AMENITY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategor
 
     .build()
 
+// climbing=route_top is left out because its route already has a point at the bottom.
+// https://wiki.openstreetmap.org/wiki/Climbing
+val POINT_CLIMBING_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("route"), PointCategory.CLIMBING_ROUTE)
+    .put(ByteString.copyFromUtf8("route_bottom"), PointCategory.CLIMBING_ROUTE)
+
+    .build()
+
 val POINT_EMERGENCY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
     .put(ByteString.copyFromUtf8("defibrillator"), PointCategory.SAFETY_DEFIBRILLATOR)
     .put(ByteString.copyFromUtf8("mountain_rescue"), PointCategory.SAFETY_MOUNTAIN_RESCUE)
@@ -123,6 +131,13 @@ val PATHS_TO_TRAILS = ImmutableMap.builder<WayCategory, RelationCategory>()
     .put(WayCategory.PATH, RelationCategory.TRAIL)
     .put(WayCategory.PATH_FOOTWAY, RelationCategory.TRAIL_FOOT)
     .put(WayCategory.PATH_BRIDLEWAY, RelationCategory.TRAIL_HORSE)
+    .build()
+
+val CLIMBING_SITE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, RelationCategory>()
+    .put(ByteString.copyFromUtf8("area"), RelationCategory.BOUNDARY_CLIMBING_AREA)
+    .put(ByteString.copyFromUtf8("boulder"), RelationCategory.BOUNDARY_CLIMBING_BOULDER)
+    .put(ByteString.copyFromUtf8("crag"), RelationCategory.BOUNDARY_CLIMBING_CRAG)
+
     .build()
 
 val ADMINISTRATIVE_LEVEL_NAMES = ImmutableMap.builder<ByteString, RelationCategory>()
@@ -361,6 +376,7 @@ val AERIALWAY_BS = ByteString.copyFromUtf8("aerialway")
 val AEROWAY_BS = ByteString.copyFromUtf8("aeroway")
 val AMENITY_BS = ByteString.copyFromUtf8("amenity")
 val BOUNDARY_BS = ByteString.copyFromUtf8("boundary")
+val CLIMBING_BS = ByteString.copyFromUtf8("climbing")
 val CONSTRUCTION_BS = ByteString.copyFromUtf8("construction")
 val EMERGENCY_BS = ByteString.copyFromUtf8("emergency")
 val FOOTWAY_BS = ByteString.copyFromUtf8("footway")
@@ -381,6 +397,7 @@ val RAILWAY_BS = ByteString.copyFromUtf8("railway")
 val ROUTE_BS = ByteString.copyFromUtf8("route")
 val SERVICE_BS = ByteString.copyFromUtf8("service")
 val SHOP_BS = ByteString.copyFromUtf8("shop")
+val SPORT_BS = ByteString.copyFromUtf8("sport")
 val TOURISM_BS = ByteString.copyFromUtf8("tourism")
 val TOWER_BS = ByteString.copyFromUtf8("tower")
 val TOWER_TYPE_BS = ByteString.copyFromUtf8("tower:type")

@@ -166,9 +166,9 @@ private fun extract(vararg tags: Pair<String, String>): Point? {
           .addPrimitivegroup(Osmformat.PrimitiveGroup.newBuilder().addNodes(node))
           .build()
   val points = ArrayList<Point>()
-  ExtractPoints().act(block, object : Emitter<Point> {
-    override fun emit(v: Point) {
-      points.add(v)
+  ExtractSmallElements().act(block, object : Emitter<SmallElement> {
+    override fun emit(v: SmallElement) {
+      v.point?.let(points::add)
     }
   })
   return points.singleOrNull()

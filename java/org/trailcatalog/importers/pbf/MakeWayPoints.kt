@@ -6,13 +6,28 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
+import org.trailcatalog.models.PointCategory
 
-/** Collapses each closed way with a point type to a point at its centroid. */
+/**
+ * Collapses each closed way with a point type to a point at its centroid, and each climbing route
+ * to a point at its bottom.
+ */
 class MakeWayPoints : PTransformer<PEntry<Long, Way>, Point>(TypeToken.of(Point::class.java)) {
 
   override fun act(input: PEntry<Long, Way>, emitter: Emitter<Point>) {
     val way = input.values[0]
     val point = way.point ?: return
+    if (point.type == PointCategory.CLIMBING_ROUTE.id) {
+      emitter.emit(
+          Point(
+              wayPointId(way.id),
+              point.type,
+              point.name.ifEmpty { null },
+              point.names,
+              point.notable,
+              way.points[0]))
+      return
+    }
 
     // The last point repeats the first, and S2Loop wants each vertex once.
     val vertices = ArrayList<S2Point>()

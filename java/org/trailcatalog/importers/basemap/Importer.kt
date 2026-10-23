@@ -13,13 +13,11 @@ import org.trailcatalog.flags.createNullableFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.pipeline.groupBy
 import org.trailcatalog.importers.pipeline.Pipeline
-import org.trailcatalog.importers.pbf.ExtractNodeTags
+import org.trailcatalog.importers.pbf.ClimbingElement
 import org.trailcatalog.importers.pbf.ExtractNodeWayPairs
 import org.trailcatalog.importers.pbf.ExtractNodes
-import org.trailcatalog.importers.pbf.ExtractPoints
 import org.trailcatalog.importers.pbf.ExtractRelationGeometriesWithWays
-import org.trailcatalog.importers.pbf.ExtractRelationTags
-import org.trailcatalog.importers.pbf.ExtractRelations
+import org.trailcatalog.importers.pbf.ExtractSmallElements
 import org.trailcatalog.importers.pbf.ExtractWayTags
 import org.trailcatalog.importers.pbf.ExtractWays
 import org.trailcatalog.importers.pbf.GatherWayNodes
@@ -29,6 +27,10 @@ import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
 import org.trailcatalog.importers.pbf.MakeWayPoints
 import org.trailcatalog.importers.pbf.PbfReader
+import org.trailcatalog.importers.pbf.PickSmallElements
+import org.trailcatalog.importers.pbf.Point
+import org.trailcatalog.importers.pbf.Relation
+import org.trailcatalog.importers.pbf.SourceTags
 import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.BoundStage
 import org.trailcatalog.importers.pipeline.PMapTransformer
@@ -124,31 +126,34 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   println("Pipeline parallelism cap: ${importerParallelism.value}")
 
   // Every pass over the PBF is its own read. The first one learns which blobs hold which kind of
-  // element, so the later ones skip what they don't want without inflating it. First, the elements
-  // that need no geometry from anything else.
-  pipeline
-      .readPbfs(pbfs, nodes = true, extract = ExtractNodeTags())
+  // element, so the later ones skip what they don't want without inflating it. First, every output
+  // small enough to keep on disk, which all share one pass, and the elements that need no geometry
+  // from anything else.
+  val small =
+      pipeline.readPbfs(
+          pbfs, nodes = true, ways = true, relations = true, extract = ExtractSmallElements())
+  small
+      .then(PickSmallElements(TypeToken.of(SourceTags::class.java)) { it.tags })
       .write(DumpSourceTags(epoch, hikari))
   pipeline
       .readPbfs(pbfs, ways = true, extract = ExtractWayTags())
       .write(DumpSourceTags(epoch, hikari))
-  pipeline
-      .readPbfs(pbfs, relations = true, extract = ExtractRelationTags())
-      .write(DumpSourceTags(epoch, hikari))
 
-  // Then get basic way geometries. Relations come first because they decide which untagged ways
-  // GroupWays keeps.
+  // Then get basic way geometries. Relations and climbing elements come first because they decide
+  // which untagged ways GroupWays keeps.
   val relations =
-      pipeline
-          .readPbfs(pbfs, relations = true, extract = ExtractRelations())
+      small
+          .then(PickSmallElements(TypeToken.of(Relation::class.java)) { it.relation })
           .groupBy("GroupRelations") { it.id }
+  val climbingElements =
+      small.then(PickSmallElements(TypeToken.of(ClimbingElement::class.java)) { it.climbing })
   val nodes =
       pipeline
           .readPbfs(pbfs, nodes = true, extract = ExtractNodes())
           .groupBy("GroupNodes") { it.id }
   val ways =
       pipeline.zip2(
-          relations.then(CollectMemberWays()),
+          pipeline.zip2(relations.then(CollectMemberWays()), climbingElements, AddClimbingWays()),
           pipeline.readPbfs(pbfs, ways = true, extract = ExtractWays()),
           GroupWays())
   val waysToPoints =
@@ -164,7 +169,7 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   val points =
       pipeline.cat(
           listOf(
-              pipeline.readPbfs(pbfs, nodes = true, extract = ExtractPoints()),
+              small.then(PickSmallElements(TypeToken.of(Point::class.java)) { it.point }),
               waysWithGeometry.then(MakeWayPoints())))
   points.write(DumpPoints(epoch, hikari))
   points.write(DumpPointNames(epoch, hikari))
@@ -206,8 +211,13 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   val relationsWithGeometry =
       pipeline.join2("JoinRelationsWithGeometry", relations, relationsGeometryById)
 
-  // Now start dumping boundaries, trails, and what contains what.
-  val boundaries = relationsWithGeometry.then(CreateBoundaries())
+  // Now start dumping boundaries, trails, and what contains what. Climbing sites are boundaries
+  // shaped by the climbing elements they hold rather than by their member ways.
+  val boundaries =
+      pipeline.cat(
+          listOf(
+              relationsWithGeometry.then(CreateBoundaries()),
+              pipeline.zip2(climbingElements, waysWithGeometry, CreateClimbingSites())))
   boundaries.write(DumpBoundaries(epoch, hikari))
   boundaries.write(DumpBoundaryNames(epoch, hikari))
   val trails = relationsWithGeometry.then(CreateTrails())

@@ -16,25 +16,15 @@ import org.trailcatalog.proto.RelationMemberFunction.OUTER
 import org.trailcatalog.proto.RelationSkeleton
 import org.trailcatalog.proto.RelationSkeletonMember
 
-class ExtractRelations : PTransformer<PrimitiveBlock, Relation>(TypeToken.of(Relation::class.java)) {
-
-  override fun act(input: PrimitiveBlock, emitter: Emitter<Relation>) {
-    for (group in input.primitivegroupList) {
-      for (relation in group.relationsList) {
-        val converted = getRelation(relation, input.stringtable)
-        if (converted.type != RelationCategory.ANY.id) {
-          emitter.emit(converted)
-        }
-      }
-    }
+/** Returns the relation with [category], or null if we don't keep it. */
+fun getRelation(
+    relation: Osmformat.Relation,
+    category: RelationCategory,
+    stringTable: StringTable): Relation? {
+  if (category == RelationCategory.ANY) {
+    return null
   }
 
-  override fun estimateRatio(): Double {
-    return 0.01
-  }
-}
-
-fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relation {
   var name: String? = null
   val names = NameCollector()
   for (i in 0 until relation.keysCount) {
@@ -48,7 +38,7 @@ fun getRelation(relation: Osmformat.Relation, stringTable: StringTable): Relatio
 
   return Relation(
       relation.id,
-      relationCategory(relation, stringTable).id,
+      category.id,
       name ?: "",
       names.toList(),
       relationToSkeleton(relation, stringTable))

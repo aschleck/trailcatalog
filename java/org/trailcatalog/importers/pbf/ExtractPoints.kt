@@ -17,6 +17,7 @@ private val SEARCHABLE_POINT_CATEGORIES =
         PointCategory.ACCESS_TRANSIT_AIRPORT,
         PointCategory.ACCESS_TRANSIT_FERRY_TERMINAL,
         PointCategory.ACCESS_TRANSIT_STATION,
+        PointCategory.CLIMBING_ROUTE,
         PointCategory.INFORMATION_RANGER_STATION,
         PointCategory.INFORMATION_VISITOR_CENTER,
         PointCategory.LODGING_CAMP_CARAVAN_SITE,
@@ -43,33 +44,29 @@ private val SEARCHABLE_POINT_CATEGORIES =
         PointCategory.WATER_TAP,
     )
 
-class ExtractPoints : PTransformer<PrimitiveBlock, Point>(TypeToken.of(Point::class.java)) {
-
-  override fun act(input: PrimitiveBlock, emitter: Emitter<Point>) {
-    forEachNode(input) { id, kvs, latLng, _ ->
-      val category = pointCategory(kvs, input.stringtable)
-      if (category != PointCategory.ANY) {
-        val names =
-            if (category in SEARCHABLE_POINT_CATEGORIES) {
-              tagNames(kvs, input.stringtable)
-            } else {
-              listOf()
-            }
-        emitter.emit(
-            Point(
-                nodePointId(id),
-                category.id,
-                tagName(kvs, input.stringtable),
-                names,
-                isNotable(kvs, input.stringtable),
-                latLng))
+/** Returns the point a node with [category] becomes, or null if it isn't one. */
+fun nodePoint(
+    id: Long,
+    category: PointCategory,
+    kvs: List<Int>,
+    latLng: LatLngE7,
+    stringTable: StringTable): Point? {
+  if (category == PointCategory.ANY) {
+    return null
+  }
+  val names =
+      if (category in SEARCHABLE_POINT_CATEGORIES) {
+        tagNames(kvs, stringTable)
+      } else {
+        listOf()
       }
-    }
-  }
-
-  override fun estimateRatio(): Double {
-    return 0.01
-  }
+  return Point(
+      nodePointId(id),
+      category.id,
+      tagName(kvs, stringTable),
+      names,
+      isNotable(kvs, stringTable),
+      latLng)
 }
 
 // Node and way ids overlap, so a point's id carries which one it came from in its low bit. Keep in
@@ -79,14 +76,19 @@ fun nodePointId(nodeId: Long): Long = 2 * nodeId
 fun wayPointId(wayId: Long): Long = 2 * wayId + 1
 
 /**
- * Returns the point category of a closed way that should also become a point, or
- * [PointCategory.ANY].
+ * Returns the point category of a closed way or a climbing route that should also become a point,
+ * or [PointCategory.ANY].
  */
 fun wayPointCategory(kvs: List<Int>, nodes: LongArray, stringTable: StringTable): PointCategory {
+  val category = pointCategory(kvs, stringTable)
+  // A route is drawn from its bottom to its top, so it needn't be closed.
+  // https://wiki.openstreetmap.org/wiki/Tag:climbing%3Droute
+  if (category == PointCategory.CLIMBING_ROUTE) {
+    return category
+  }
   if (nodes.size < 4 || nodes[0] != nodes[nodes.size - 1]) {
     return PointCategory.ANY
   }
-  val category = pointCategory(kvs, stringTable)
   return if (category in SEARCHABLE_POINT_CATEGORIES) category else PointCategory.ANY
 }
 
@@ -151,6 +153,7 @@ fun pointCategory(kvs: List<Int>, stringTable: StringTable): PointCategory {
     when (stringTable.getS(kvs[i])) {
       AEROWAY_BS -> category = category.coerceAtLeast(POINT_AEROWAY_CATEGORY_NAMES[value])
       AMENITY_BS -> category = category.coerceAtLeast(POINT_AMENITY_CATEGORY_NAMES[value])
+      CLIMBING_BS -> category = category.coerceAtLeast(POINT_CLIMBING_CATEGORY_NAMES[value])
       EMERGENCY_BS -> category = category.coerceAtLeast(POINT_EMERGENCY_CATEGORY_NAMES[value])
       HIGHWAY_BS -> category = category.coerceAtLeast(POINT_HIGHWAY_CATEGORY_NAMES[value])
       HISTORIC_BS -> category = category.coerceAtLeast(POINT_HISTORIC_CATEGORY_NAMES[value])
