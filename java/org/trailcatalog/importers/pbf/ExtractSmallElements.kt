@@ -4,6 +4,7 @@ import com.google.common.reflect.TypeToken
 import crosby.binary.Osmformat.PrimitiveBlock
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.models.RelationCategory
 
 /** The outputs of one element that are small enough to keep on disk, each null if it has none. */
 data class SmallElement(
@@ -24,28 +25,33 @@ class ExtractSmallElements
   override fun act(input: PrimitiveBlock, emitter: Emitter<SmallElement>) {
     val stringTable = input.stringtable
     forEachNode(input) { id, kvs, latLng, version ->
-      val category = pointCategory(kvs, stringTable)
-      emitIfAny(
-          emitter,
-          nodeSourceTags(id, category, kvs, version, stringTable),
-          nodePoint(id, category, kvs, latLng, stringTable),
-          null,
-          climbingNode(id, kvs, latLng, stringTable))
+      val point = nodePoint(id, pointCategory(kvs, stringTable), kvs, latLng, stringTable)
+      val climbing = climbingNode(id, kvs, latLng, stringTable)
+      if (point != null || climbing != null) {
+        emitter.emit(
+            SmallElement(nodeSourceTags(id, kvs, version, stringTable), point, null, climbing))
+      }
     }
 
     for (group in input.primitivegroupList) {
       for (way in group.waysList) {
+        // ExtractWayTags keeps their tags, since it already reads every way.
         climbingWay(way, stringTable)?.let { emitter.emit(SmallElement(null, null, null, it)) }
       }
 
+      // Some relations with a category never become a boundary or a trail, which costs a few tag
+      // rows and nothing else.
       for (relation in group.relationsList) {
         val category = relationCategory(relation, stringTable)
-        emitIfAny(
-            emitter,
-            relationSourceTags(relation, category, stringTable),
-            null,
-            getRelation(relation, category, stringTable),
-            climbingRelation(relation, stringTable))
+        val climbing = climbingRelation(relation, stringTable)
+        if (category != RelationCategory.ANY || climbing != null) {
+          emitter.emit(
+              SmallElement(
+                  relationSourceTags(relation, stringTable),
+                  null,
+                  getRelation(relation, category, stringTable),
+                  climbing))
+        }
       }
     }
   }
@@ -54,17 +60,6 @@ class ExtractSmallElements
   // => 2 * 2.3 GB / 100 GB
   override fun estimateRatio(): Double {
     return 0.05
-  }
-}
-
-private fun emitIfAny(
-    emitter: Emitter<SmallElement>,
-    tags: SourceTags?,
-    point: Point?,
-    relation: Relation?,
-    climbing: ClimbingElement?) {
-  if (tags != null || point != null || relation != null || climbing != null) {
-    emitter.emit(SmallElement(tags, point, relation, climbing))
   }
 }
 

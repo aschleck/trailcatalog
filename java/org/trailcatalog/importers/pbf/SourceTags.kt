@@ -21,30 +21,26 @@ enum class SourceType(val id: Int) {
 /** The tags of one element as a JSON object, and its version when the file carries one. */
 data class SourceTags(val type: SourceType, val id: Long, val version: Int?, val tagsJson: String)
 
-/** Returns the tags of a node with [category] if it becomes a point, or null. */
-fun nodeSourceTags(
-    id: Long,
-    category: PointCategory,
-    kvs: List<Int>,
-    version: Int?,
-    stringTable: StringTable): SourceTags? {
-  if (category == PointCategory.ANY) {
-    return null
-  }
+/** Returns the tags of a node. */
+fun nodeSourceTags(id: Long, kvs: List<Int>, version: Int?, stringTable: StringTable): SourceTags {
   val json = tagsToJson(kvs.size / 2, { kvs[2 * it] }, { kvs[2 * it + 1] }, stringTable)
   return SourceTags(SourceType.NODE, id, version, json)
 }
 
-/** Extracts the tags of the ways that become paths or points. See also DumpPaths. */
+/**
+ * Extracts the tags of the ways that become paths or points or shape climbing sites. See also
+ * DumpPaths.
+ */
 class ExtractWayTags
   : PTransformer<PrimitiveBlock, SourceTags>(TypeToken.of(SourceTags::class.java)) {
 
   override fun act(input: PrimitiveBlock, emitter: Emitter<SourceTags>) {
     for (group in input.primitivegroupList) {
       for (way in group.waysList) {
+        val kvs = wayKvs(way)
         if (wayCategory(way, input.stringtable) != WayCategory.ANY
-            || wayPointCategory(wayKvs(way), wayRefs(way), input.stringtable)
-                != PointCategory.ANY) {
+            || wayPointCategory(kvs, wayRefs(way), input.stringtable) != PointCategory.ANY
+            || climbingCategory(kvs, input.stringtable) != RelationCategory.ANY) {
           val json =
               tagsToJson(way.keysCount, way::getKeys, way::getVals, input.stringtable)
           val version = if (way.hasInfo()) way.info.version else null
@@ -55,17 +51,8 @@ class ExtractWayTags
   }
 }
 
-/**
- * Returns the tags of a relation with [category] if we keep it, or null. Some of these never become
- * a boundary or a trail, which costs a few rows and nothing else.
- */
-fun relationSourceTags(
-    relation: Osmformat.Relation,
-    category: RelationCategory,
-    stringTable: StringTable): SourceTags? {
-  if (category == RelationCategory.ANY) {
-    return null
-  }
+/** Returns the tags of a relation. */
+fun relationSourceTags(relation: Osmformat.Relation, stringTable: StringTable): SourceTags {
   val json = tagsToJson(relation.keysCount, relation::getKeys, relation::getVals, stringTable)
   val version = if (relation.hasInfo()) relation.info.version else null
   return SourceTags(SourceType.RELATION, relation.id, version, json)
