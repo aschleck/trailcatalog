@@ -75,6 +75,8 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
   </>;
 }
 
+const SOURCE_LABELS = {node: 'Node', relation: 'Relation', way: 'Way'} as const;
+
 function Content({boundaryId, state, updateState}: {
   boundaryId: string,
   state: State,
@@ -129,7 +131,7 @@ function Content({boundaryId, state, updateState}: {
         •
         <div>
           <a
-              href={`https://www.openstreetmap.org/relation/${boundary.sourceRelation}`}
+              href={`https://www.openstreetmap.org/${boundary.source.type}/${boundary.source.id}`}
               target="_blank"
           >
             <img
@@ -137,7 +139,7 @@ function Content({boundaryId, state, updateState}: {
                 className="h-4 inline-block mr-1"
                 src="/static/images/icons/osm-logo.svg"
             />
-            Relation {boundary.sourceRelation}
+            {SOURCE_LABELS[boundary.source.type]} {boundary.source.id}
           </a>
         </div>
       </aside>

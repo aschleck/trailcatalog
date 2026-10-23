@@ -11,7 +11,9 @@ interface SimpleBoundary {
 
 export function BoundaryCrumbs({boundaries}: {boundaries: SimpleBoundary[]}) {
   const crumbs =
-      [...boundaries]
+      boundaries
+          // a crag or climbing area isn't a place to file a trail or park under
+          .filter(b => !aDescendsB(b.type, RelationCategory.BOUNDARY_CLIMBING))
           .sort((a, b) => crumbRank(a.type) - crumbRank(b.type) || a.type - b.type)
           .map(b => <a href={`/boundary/${b.id}`}>{b.name}</a>)
           .flatMap(l => [

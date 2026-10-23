@@ -14,6 +14,7 @@ import org.trailcatalog.common.DeltaLatLngE7
 import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.models.ENUM_SIZE
 import org.trailcatalog.models.PointCategory
+import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.snapEpsilon
@@ -357,6 +358,13 @@ private fun parseTrailId(id: JsonNode):
 // name.
 private const val BOUNDARY_AREA_BONUS = "0.005 * GREATEST(LOG(GREATEST(b.area_meters2, 1)) - 6, 0)"
 
+// Climbing sites are for trails.lat, and a crag isn't a place to look for trails.
+private val UNSEARCHED_BOUNDARY_CATEGORIES =
+    RelationCategory.entries
+        .filter { RelationCategory.BOUNDARY_CLIMBING.isParentOf(it) }
+        .map { it.id }
+        .toTypedArray()
+
 // Scores group twice. MAX over the two branches for one name, because a whole word match drives
 // strict_word_similarity to 1 and the branch to 0, which would throw away the substring branch's
 // preference for the shorter of two names that both contain the query. Then MIN over the names one
@@ -393,7 +401,8 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
             + "    WHERE n.score < 0.8 "
             + "    GROUP BY 1, 2 "
             + "  ) nm "
-            + "  JOIN boundaries b ON b.id = nm.id AND b.epoch = ? "
+            + "  JOIN boundaries b "
+            + "    ON b.id = nm.id AND b.epoch = ? AND NOT b.type = ANY(?) "
             + "  GROUP BY 1, 2, 3, b.area_meters2 "
             + "  ORDER BY score ASC "
             + "  LIMIT ?"
@@ -408,8 +417,9 @@ private fun executeSearchBoundaries(rawQuery: String, limit: Int): Map<String, A
           setString(4, query)
           setInt(5, epochTracker.epoch)
           setInt(6, epochTracker.epoch)
-          setInt(7, limit)
-          setInt(8, epochTracker.epoch)
+          setArray(7, it.createArrayOf("INTEGER", UNSEARCHED_BOUNDARY_CATEGORIES))
+          setInt(8, limit)
+          setInt(9, epochTracker.epoch)
         }.executeQuery()
     val seen = HashSet<Long>()
     while (results.next()) {

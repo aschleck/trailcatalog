@@ -15,10 +15,20 @@ export class Boundary {
     return s2LatLngRectToTc(this.polygon.getRectBound());
   }
 
-  get sourceRelation(): bigint {
-    return this.id;
+  // Keep in sync with ExtractClimbingElements#nodeSiteId.
+  get source(): {type: 'node'|'relation'|'way'; id: bigint} {
+    if (this.id >= NODE_SITE_ID_OFFSET) {
+      return {type: 'node', id: this.id - NODE_SITE_ID_OFFSET};
+    } else if (this.id >= WAY_SITE_ID_OFFSET) {
+      return {type: 'way', id: this.id - WAY_SITE_ID_OFFSET};
+    } else {
+      return {type: 'relation', id: this.id};
+    }
   }
 }
+
+const WAY_SITE_ID_OFFSET = 1n << 40n;
+const NODE_SITE_ID_OFFSET = 2n << 40n;
 
 export class BoundarySearchResult {
   constructor(
