@@ -7,7 +7,7 @@ struct to make client-side usage easy.
 
 ```
 python svgs_to_atlas.py \
-    -r 4 \
+    -r 8 \
     ../java/org/trailcatalog/static/images/atlases/points/def.json \
     ../java/org/trailcatalog/static/images/atlases/points.png
 ```

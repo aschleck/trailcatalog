@@ -464,17 +464,21 @@ export function osmWaysOf(categories: WayCategory[]): Style {
   return {lines, points: [], polygons: OSM_WAYS.polygons};
 }
 
-// What the Nodes layer offers to show, by the top level PointCategory each group is.
-export const NODE_KINDS: ReadonlyArray<{key: string; label: string; category: PointCategory}> = [
-  {key: 'natural', label: 'Natural features', category: PointCategory.NATURAL},
-  {key: 'water', label: 'Water', category: PointCategory.WATER},
-  {key: 'lodging', label: 'Lodging', category: PointCategory.LODGING},
+// What the Nodes layer offers to show
+export const NODE_KINDS:
+    ReadonlyArray<{key: string; label: string; category: PointCategory; hidden?: boolean}> = [
+  {key: 'climbing', label: 'Climbing routes', category: PointCategory.CLIMBING},
   {key: 'facilities', label: 'Facilities', category: PointCategory.FACILITY},
-  {key: 'access', label: 'Access', category: PointCategory.ACCESS},
   {key: 'information', label: 'Information', category: PointCategory.INFORMATION},
-  {key: 'sights', label: 'Sights', category: PointCategory.SIGHT},
+  {key: 'lodging', label: 'Lodging', category: PointCategory.LODGING},
+  {key: 'natural', label: 'Natural features', category: PointCategory.NATURAL},
+  {key: 'parking', label: 'Parking', category: PointCategory.ACCESS_PARKING},
   {key: 'resupply', label: 'Resupply', category: PointCategory.RESUPPLY},
   {key: 'safety', label: 'Safety', category: PointCategory.SAFETY},
+  {key: 'sights', label: 'Sights', category: PointCategory.SIGHT},
+  {key: 'trailheads', label: 'Trailheads', category: PointCategory.ACCESS_TRAILHEAD},
+  {key: 'transit', label: 'Transit', category: PointCategory.ACCESS_TRANSIT, hidden: true},
+  {key: 'water', label: 'Water', category: PointCategory.WATER},
 ];
 
 export const NATURE_WITHOUT_DETAILED_WAYS: MbtileStyle = withoutWayLines(NATURE);

@@ -355,7 +355,7 @@ export class LayerCatalog extends Disposable {
               {minZoom: POINT_ICON_ZOOM, maxZoom: undefined, indexBottom: 11, fromLevel: 13,
                 toLevel: 13},
             ],
-            NODE_KINDS.map(({category}) => category),
+            NODE_KINDS.filter(({hidden}) => !hidden).map(({category}) => category),
             POINT_ICON_ZOOM,
             this.camera,
             this.renderer,
@@ -887,7 +887,7 @@ export class LayerCatalog extends Disposable {
         schema: OSM_NODES_SCHEMA,
         layer: osmNodes,
         controls: NODE_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
-        values: Object.fromEntries(NODE_KINDS.map(({key}) => [key, true])),
+        values: Object.fromEntries(NODE_KINDS.map(({key, hidden}) => [key, !hidden])),
         configure: values => {
           osmNodes.setCategories(
               NODE_KINDS.filter(({key}) => values[key]).map(({category}) => category));
