@@ -15,7 +15,6 @@ import { Terrain, TERRAINS } from 'js/map/workers/path_router';
 import { CellKey } from 'js/map/workers/s2_data_fetcher';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
-import { Z_USER_DATA_HALO } from 'js/map/z';
 
 import { CollectionSchema } from './collection_schema';
 import { Match, matches } from './filters';
@@ -52,8 +51,9 @@ export interface LineStyle {
   minZoom: number;
   maxZoom: number;
   fill: RgbaU32;
-  // A wider solid line drawn under this one at Z_USER_DATA_HALO
-  halo?: {fill: RgbaU32; radius: number};
+  // A wider solid line drawn under this one, at a z of its own so that it can also pass under the
+  // lines this one crosses
+  halo?: {fill: RgbaU32; radius: number; z: number};
   pattern: LinePattern;
   radius: number;
   stroke: RgbaU32;
@@ -656,7 +656,7 @@ class CollectionLoader {
       const halo = lineStyles[i].halo;
       if (halo) {
         haloRuns.push(
-            Z_USER_DATA_HALO,
+            halo.z,
             {fill: halo.fill, stroke: halo.fill, radius: halo.radius, pattern: 'solid'},
             lines.points.subarray(starts[i], starts[i + 1]));
       }

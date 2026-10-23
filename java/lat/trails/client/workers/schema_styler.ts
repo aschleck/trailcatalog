@@ -1,6 +1,6 @@
 import { RgbaU32 } from 'js/map/common/types';
 import { LinePattern } from 'js/map/rendering/line_program';
-import { Z_USER_DATA, Z_USER_DATA_FILL } from 'js/map/z';
+import { Z_USER_DATA, Z_USER_DATA_FILL, Z_USER_DATA_HALO } from 'js/map/z';
 
 import { Data, LineStyle, PointStyle, PolygonStyle, Styler } from './collection_loader';
 import {
@@ -43,7 +43,7 @@ export class SchemaStyler implements Styler {
         getCasing(look),
         look.widthPx,
         look.pattern,
-        halo && {fill: halo, radius: haloRadiusPx(look.widthPx)});
+        halo && {fill: halo, radius: haloRadiusPx(look.widthPx), z: Z_USER_DATA_HALO});
   }
 
   point(data: Data): PointStyle|undefined {
