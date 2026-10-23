@@ -8,7 +8,7 @@ import org.trailcatalog.importers.pipeline.collections.PList
 import org.trailcatalog.importers.pipeline.collections.createPList
 import java.util.concurrent.atomic.AtomicInteger
 
-abstract class PTransformer<I, O : Any>(private val type: TypeToken<out O>)
+abstract class PTransformer<I, O : Any>(val type: TypeToken<out O>)
   : PStage<PCollection<I>, PList<O>>() {
 
   abstract fun act(input: I, emitter: Emitter<O>)

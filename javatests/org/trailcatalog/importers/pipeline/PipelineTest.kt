@@ -72,4 +72,26 @@ class PipelineTest {
         "19",
     )
   }
+
+  @Test
+  fun testSourceReadByTwoStagesIsReadOnce() {
+    val test = Pipeline()
+    var reads = 0
+    val source =
+        test.read(
+            SequenceSource(
+                sequence<Int> {
+                  reads += 1
+                  yieldAll(0 until 5)
+                }))
+    val a = Debug<PCollection<Int>>()
+    val b = Debug<PCollection<Int>>()
+    source.write(a)
+    source.write(b)
+    test.execute()
+
+    assertThat(reads).isEqualTo(1)
+    assertThat(a.values).containsExactly("0", "1", "2", "3", "4")
+    assertThat(b.values).containsExactly("0", "1", "2", "3", "4")
+  }
 }

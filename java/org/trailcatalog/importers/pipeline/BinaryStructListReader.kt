@@ -12,13 +12,14 @@ import java.io.RandomAccessFile
 import java.nio.channels.FileChannel.MapMode
 
 inline fun <reified T : Any> binaryStructListReader(file: File): PSource<T> {
-  val serializer = getSerializer(TypeToken.of(T::class.java))
-  return BinaryStructListReader<T>(file, serializer)
+  val type = TypeToken.of(T::class.java)
+  return BinaryStructListReader(type, file, getSerializer(type))
 }
 
 class BinaryStructListReader<T : Any>(
+    type: TypeToken<T>,
     private val file: File,
-    private val serializer: Serializer<T>) : PSource<T>() {
+    private val serializer: Serializer<T>) : PSource<T>(type) {
 
   override fun read() = sequence {
     val shardsPath = File(file.path + ".shards")

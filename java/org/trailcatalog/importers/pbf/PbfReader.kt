@@ -52,7 +52,7 @@ class PbfReader<T : Any>(
     private val readRelations: Boolean,
     private val readWays: Boolean,
     private val extract: PTransformer<PrimitiveBlock, T>,
-) : PSource<T>() {
+) : PSource<T>(extract.type) {
 
   private val wanted =
       (if (readNodes) NODES else 0) or
