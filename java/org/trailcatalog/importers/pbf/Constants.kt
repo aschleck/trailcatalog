@@ -6,8 +6,6 @@ import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.models.WayCategory
 
-const val TRAIL_FROM_RELATION_OFFSET = 0
-const val TRAIL_FROM_WAY_OFFSET = Long.MAX_VALUE / 2
 const val NANO = .000000001
 
 val POINT_AEROWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
@@ -125,12 +123,6 @@ val POINT_TOURISM_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategor
 val POINT_WATERWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
     .put(ByteString.copyFromUtf8("waterfall"), PointCategory.NATURAL_WATERFALL)
 
-    .build()
-
-val PATHS_TO_TRAILS = ImmutableMap.builder<WayCategory, RelationCategory>()
-    .put(WayCategory.PATH, RelationCategory.TRAIL)
-    .put(WayCategory.PATH_FOOTWAY, RelationCategory.TRAIL_FOOT)
-    .put(WayCategory.PATH_BRIDLEWAY, RelationCategory.TRAIL_HORSE)
     .build()
 
 val CLIMBING_SITE_CATEGORY_NAMES = ImmutableMap.builder<ByteString, RelationCategory>()
