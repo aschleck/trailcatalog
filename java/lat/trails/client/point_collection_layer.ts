@@ -1,4 +1,4 @@
-import { OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
+import { KIND_PACKED_POINT, OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
@@ -19,9 +19,6 @@ import { Z_OVERLAY_TEXT, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { HOVER_CHANGED } from './events';
 import { Data } from './workers/collection_loader';
-
-// Keep in sync with ApiServer.kt#KIND_PACKED_POINT.
-const KIND_PACKED_POINT = 2;
 
 // The sizes trailcatalog draws its points at, see trail_layer.ts
 const ICON_SIZE_PX = [20, 20] as Vec2;

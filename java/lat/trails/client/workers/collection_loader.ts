@@ -1,7 +1,7 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
-import { OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
+import { KIND_PACKED_PATH, KIND_UUID_JSON, OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
 import { aDescendsB, unpackPathTraits, WayCategory } from 'java/org/trailcatalog/models/categories';
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
@@ -203,10 +203,6 @@ export type Response = LoadResponse;
 export type Data = {[key: string]: boolean|number|string};
 
 const TEXT_DECODER = new TextDecoder();
-
-// Keep in sync with ApiServer.kt#KIND_UUID_JSON.
-const KIND_UUID_JSON = 0;
-const KIND_PACKED_PATH = 1;
 
 // Tracks the bounding box of a group of lines so that Planner can skip the group when it's off
 // screen. The margin is how far a line can draw past its points: its radius plus a pixel for the

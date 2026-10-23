@@ -83,6 +83,9 @@ import lat.trails.proto.Sharing
 import lat.trails.proto.UpdateCollectionRequest
 import lat.trails.proto.UpdateCollectionResponse
 import lat.trails.proto.Write
+import lat.trails.wire.KIND_PACKED_PATH
+import lat.trails.wire.KIND_PACKED_POINT
+import lat.trails.wire.KIND_UUID_JSON
 import lat.trails.wire.OBJECTS_WIRE_VERSION
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
@@ -114,18 +117,6 @@ private val random = SecureRandom()
 private val ANONYMOUS_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
 private val TRAILCATALOG_POINTS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000002"
-
-// How a tile encodes its objects. Keep in sync with collection_loader.ts#load.
-//
-// Pack the trailcatalog paths into four varints instead of a UUID and a JSON blob, saving about
-// 46 bytes a line. They are rows in a table we own, so the id fits a varint and the only attributes
-// are the source way, the category, and the traits. A user collection needs the general form: its
-// objects are identified by UUID and described by the jsonb its creator wrote.
-//
-// Points pack the same way, and carry their name because OSM names a node on the node.
-private const val KIND_UUID_JSON = 0
-private const val KIND_PACKED_PATH = 1
-private const val KIND_PACKED_POINT = 2
 
 // A batch from line_refiner.ts#BATCH. 128 ids at 37 characters each is 4.7 KB, under the 8 KB
 // buffer nginx's large_client_header_buffers default holds a request line in.
