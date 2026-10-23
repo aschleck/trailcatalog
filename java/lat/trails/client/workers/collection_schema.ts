@@ -106,26 +106,26 @@ export const STYLE = {
   },
   line: {
     label: {label: 'Label', type: 'label', fallback: ''},
-    pattern: {label: 'Pattern', type: 'pattern', fallback: 'solid'},
-    stroke: {label: 'Stroke', type: 'color', fallback: DEFAULT_COLOR},
-    width: {label: 'Width', type: 'number', fallback: DEFAULT_WIDTH_PX},
     // Empty is the stroke darkened, see getCasing.
     casing: {label: 'Casing', type: 'color', fallback: ''},
     // Clear is no halo.
     halo: {label: 'Halo', type: 'color', fallback: '#00000000'},
+    pattern: {label: 'Pattern', type: 'pattern', fallback: 'solid'},
+    stroke: {label: 'Stroke', type: 'color', fallback: DEFAULT_COLOR},
+    width: {label: 'Width', type: 'number', fallback: DEFAULT_WIDTH_PX},
   },
   point: {
+    label: {label: 'Label', type: 'label', fallback: ''},
     fill: {label: 'Fill', type: 'color', fallback: DEFAULT_COLOR},
     icon: {label: 'Icon', type: 'icon', fallback: DEFAULT_ICON},
     radius: {label: 'Radius', type: 'number', fallback: DEFAULT_POINT_RADIUS_PX},
-    label: {label: 'Label', type: 'label', fallback: ''},
   },
   polygon: {
+    label: {label: 'Label', type: 'label', fallback: ''},
     fill: {label: 'Fill', type: 'color', fallback: DEFAULT_POLYGON_FILL},
+    pattern: {label: 'Pattern', type: 'pattern', fallback: 'solid'},
     stroke: {label: 'Stroke', type: 'color', fallback: DEFAULT_COLOR},
     width: {label: 'Width', type: 'number', fallback: DEFAULT_WIDTH_PX},
-    pattern: {label: 'Pattern', type: 'pattern', fallback: 'solid'},
-    label: {label: 'Label', type: 'label', fallback: ''},
   },
 } as const satisfies {[kind in FieldKind]: {[part: string]: PartSpec}};
 
