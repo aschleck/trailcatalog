@@ -41,6 +41,8 @@ export interface Initialize {
   snaps: Snap[];
   streams: Stream[];
   url: string;
+  // The object format the client parses, which goes in the URL so that browsers cache by it
+  wireVersion: number;
 }
 
 interface Viewport {
@@ -126,6 +128,7 @@ class S2DataFetcher {
       snaps: Snap[],
       streams: Stream[],
       private readonly url: string,
+      private readonly wireVersion: number,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
     this.covering = new Set();
@@ -237,7 +240,11 @@ class S2DataFetcher {
     const abort = new AbortController();
     this.inFlight.set(key, abort);
 
-    const query = [`bottom=${stream.indexBottom}`, `version=${this.collectionVersion}`];
+    const query = [
+      `bottom=${stream.indexBottom}`,
+      `version=${this.collectionVersion}`,
+      `wv=${this.wireVersion}`,
+    ];
     if (snap !== undefined) {
       query.push(`snap=${snap}`);
     }
@@ -391,7 +398,9 @@ class S2DataFetcher {
 }
 
 serveClients<Initialize, Request, Command>((init, emit) => {
-  const fetcher = new S2DataFetcher(init.covering, init.snaps, init.streams, init.url, emit);
+  const fetcher =
+      new S2DataFetcher(
+          init.covering, init.snaps, init.streams, init.url, init.wireVersion, emit);
   return request => {
     if (request.kind === 'uvr') {
       fetcher.updateViewport(request);

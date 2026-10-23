@@ -83,6 +83,7 @@ import lat.trails.proto.Sharing
 import lat.trails.proto.UpdateCollectionRequest
 import lat.trails.proto.UpdateCollectionResponse
 import lat.trails.proto.Write
+import lat.trails.wire.OBJECTS_WIRE_VERSION
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.common.DeltaInt64
@@ -1634,7 +1635,9 @@ private fun fetchCollectionObjects(ctx: Context) {
       }
   // Checked before the object queries run, or else a revalidation costs everything a miss does.
   val requestedVersion = ctx.queryParam("version")?.toLong()
-  if (setCacheHeadersAndCheckNotModified(ctx, requestedVersion, currentVersion, trailcatalog)) {
+  val requestedWireVersion = ctx.queryParam("wv")?.toInt()
+  if (setCacheHeadersAndCheckNotModified(
+      ctx, requestedVersion, requestedWireVersion, currentVersion, trailcatalog)) {
     return
   }
 
@@ -1648,8 +1651,7 @@ private fun fetchCollectionObjects(ctx: Context) {
   val levelFloor = ctx.queryParam("maxLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   DelegatingEncodedOutputStream(bytes).use {
-    // version
-    it.writeVarInt(4)
+    it.writeVarInt(OBJECTS_WIRE_VERSION)
 
     if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
       it.writeVarInt(KIND_PACKED_PATH)
@@ -2067,18 +2069,25 @@ private fun isTrailcatalogCollection(collection: String): Boolean {
 // requesting user may read it, and the owner can take that back, so it may only ever land in that
 // browser's cache.
 private fun setCacheHeadersAndCheckNotModified(
-    ctx: Context, requested: Long?, current: Long, public: Boolean): Boolean {
-  // Require the request to name the version it is about to get. A client asking for an older one
-  // still gets the current objects, and marking those immutable under the old key would pin them
-  // past the edit that replaced them.
-  if (requested != null && requested == current) {
+    ctx: Context,
+    requested: Long?,
+    requestedWire: Int?,
+    current: Long,
+    public: Boolean,
+): Boolean {
+  // Require the request to name the version and wire format it is about to get. A client asking
+  // for an older one still gets the current objects in the current format, and marking those
+  // immutable under the old key would pin them past the edit or deploy that replaced them.
+  if (requested == current && requestedWire == OBJECTS_WIRE_VERSION) {
     ctx.header(
         "Cache-Control", (if (public) "public" else "private") + ",max-age=31536000,immutable")
   } else {
     ctx.header("Cache-Control", "no-cache,private")
   }
 
-  "\"${current}\"".let { etag ->
+  // The wire version is in the etag, or else revalidating a body cached before a format change
+  // would keep it.
+  "\"${OBJECTS_WIRE_VERSION}-${current}\"".let { etag ->
     ctx.header("ETag", etag)
     val requestETag = ctx.header(Header.IF_NONE_MATCH)
     // nginx weakens etags when gzipping, so we have to also check if the user sent us a weak etag.

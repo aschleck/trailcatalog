@@ -1,3 +1,4 @@
+import { OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
@@ -81,6 +82,7 @@ export class PointCollectionLayer extends Layer {
               snaps: NO_SNAP,
               streams,
               url: url + '/objects',
+              wireVersion: OBJECTS_WIRE_VERSION,
             });
     this.registerDisposer(() => { this.fetcher.dispose(); });
     this.fetching = false;
@@ -271,9 +273,8 @@ export class PointCollectionLayer extends Layer {
 
   private loadCell(command: LoadCellCommand): void {
     const source = new LittleEndianView(command.data);
-    // Version 3 only changed the other kinds, so packed points read the same in 2 and 3.
     const version = source.getVarInt32();
-    if (version !== 2 && version !== 3) {
+    if (version !== OBJECTS_WIRE_VERSION) {
       throw new Error(`Unhandled version ${version}`);
     }
     const kind = source.getVarInt32();

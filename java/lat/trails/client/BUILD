@@ -17,6 +17,7 @@ tc_ts_project(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/node",
         "//java/lat/trails/client/workers",
+        "//java/lat/trails/wire:wire-ts",
         "//java/org/trailcatalog/client/points",
         "//java/org/trailcatalog/s2",
         "//js/cookies",

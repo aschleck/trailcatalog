@@ -1,3 +1,4 @@
+import { OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
 import { unpackPathTraits } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
@@ -130,7 +131,13 @@ export class CollectionLayer extends Layer {
     this.fetcher =
         sharedPool<FetcherInitialize, FetcherRequest, FetcherCommand>(
             new URL('s2_data_fetcher_worker.js', import.meta.url).href, /* count= */ 1)
-            .connect({covering: url + '/covering', snaps, streams, url: url + '/objects'});
+            .connect({
+              covering: url + '/covering',
+              snaps,
+              streams,
+              url: url + '/objects',
+              wireVersion: OBJECTS_WIRE_VERSION,
+            });
     this.fetching = false;
     const initial: Styling = {kind: 'rules', style: style ?? NO_STYLE};
     this.loader =

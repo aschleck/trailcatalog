@@ -1,6 +1,7 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
+import { OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
 import { aDescendsB, unpackPathTraits, WayCategory } from 'java/org/trailcatalog/models/categories';
 
 import { S2Polygon } from 'java/org/trailcatalog/s2';
@@ -345,13 +346,9 @@ class CollectionLoader {
 
   load(request: LoadRequest): Reply<Response> {
     const source = new LittleEndianView(request.data);
-    // We still accept versions 2 and 3 because browsers cache public collection tiles forever under
-    // their collection version, which a format change leaves alone, see
-    // ApiServer.kt#setCacheHeadersAndCheckNotModified. Version 2 is version 3 without points, and
-    // version 3 is version 4 without path traits.
     const version = source.getVarInt32();
-    if (version !== 2 && version !== 3 && version !== 4) {
-      throw new Error("Unhandled version");
+    if (version !== OBJECTS_WIRE_VERSION) {
+      throw new Error(`Unhandled version ${version}`);
     }
 
     const kind = source.getVarInt32();
@@ -390,7 +387,7 @@ class CollectionLoader {
         idWords[4 * kept + 1] = pathId / 0x1_0000_0000;
         packedData.id = getVarUint53(source);
         packedData.type = source.getVarInt32();
-        packedTraits = version >= 4 ? source.getVarInt32() : 0;
+        packedTraits = source.getVarInt32();
         unpackPathTraits(packedTraits, packedData);
         data = packedData;
       } else {
@@ -485,7 +482,7 @@ class CollectionLoader {
       });
     }
 
-    const dotCount = version >= 3 ? source.getVarInt32() : 0;
+    const dotCount = source.getVarInt32();
     const styledPoints: Array<{id: RawUuid; data: Data; position: Vec2; style: PointStyle}> = [];
     for (let i = 0; i < dotCount; ++i) {
       const idLsb = source.getBigInt64();
