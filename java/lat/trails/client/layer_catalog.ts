@@ -232,6 +232,8 @@ const AIRPORTS_COLLECTION_ID = 'c885dc7e-291d-4628-bc8b-7f63231b087a';
 const NAVAIDS_COLLECTION_ID = '73c9b4f8-720b-407d-a503-736dfca2490f';
 const REPORTING_POINTS_COLLECTION_ID = '44fc1319-eae1-4051-8b07-6b1ad24e8861';
 const WEATHER_STATIONS_COLLECTION_ID = '1710b392-414f-4945-b8d3-3c1e13a5436e';
+// Keep in sync with UsfsMvum.kt
+const MOTOR_VEHICLE_USE_COLLECTION_ID = '0dc37e1d-bcac-4720-9a23-1cc0683e7090';
 // Where trailcatalog starts drawing its points, see trail_layer.ts#RENDER_POINT_ZOOM_THRESHOLD
 const POINT_ICON_ZOOM = 14;
 
@@ -834,7 +836,20 @@ export class LayerCatalog extends Disposable {
           ),
           controls: [],
           values: {},
-        }],
+        },
+        this.newCollectionEntry(
+            'us/usfs_mvum',
+            'USFS MVUM',
+            MOTOR_VEHICLE_USE_COLLECTION_ID,
+            {
+              long: 'Motor Vehicle Use Maps from the USDA Forest Service',
+              short: 'USFS MVUM',
+              url: 'https://data.fs.usda.gov/geodata/edw/datasets.php',
+              publicDomain: true,
+            },
+            [{minZoom: 10, maxZoom: undefined, indexBottom: 8, fromLevel: 0, toLevel: undefined}],
+            locations),
+        ],
       }],
     }, {
       kind: 'group',

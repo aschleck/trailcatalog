@@ -115,6 +115,18 @@ bazelisk run //java/lat/trails/importers:public_access -- \
     --database_username_password="trails_lat:trails_lat"
 ```
 
+## USFS MVUM
+
+`usfs_mvum` replaces a fixed public collection with the roads and trails on the Forest Service's
+Motor Vehicle Use Maps, read from its map service. Forests revise their maps about once a year, so
+it runs by hand.
+
+```
+bazelisk run //java/lat/trails/importers:usfs_mvum -- \
+    --database_url="postgresql://localhost:5432/trails_lat" \
+    --database_username_password="trails_lat:trails_lat"
+```
+
 ## Conditions
 
 `conditions` replaces the objects of fixed public collections with NIFC's current fire perimeters,

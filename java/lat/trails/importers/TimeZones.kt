@@ -66,5 +66,5 @@ fun main(args: Array<String>) {
   executors.shutdown()
   check(polygons.isNotEmpty()) { "${ASSET} has no zones" }
 
-  replace(ReplacedCollection(TIME_ZONES_COLLECTION_ID, "Time zones", SCHEMA, polygons))
+  replace(ReplacedCollection(TIME_ZONES_COLLECTION_ID, "Time zones", SCHEMA, polygons = polygons))
 }

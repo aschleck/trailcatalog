@@ -29,6 +29,29 @@ fun field(id: String, label: String, values: Map<String, String>? = null) =
       )
     }
 
+// pattern is one of line_program.ts#LinePattern.
+// A null casing is the stroke darkened, and a null halo is none.
+fun lineLayer(
+    filters: List<Map<String, Any>>,
+    stroke: String,
+    widthPx: Double,
+    pattern: String,
+    casing: String? = null,
+    halo: String? = null,
+    labelKey: String = "name",
+): Map<String, Any> =
+    listOfNotNull(
+            "kind" to "line",
+            "filters" to filters,
+            "stroke" to constant(stroke),
+            "width" to constant(widthPx),
+            "pattern" to constant(pattern),
+            casing?.let { "casing" to constant(it) },
+            halo?.let { "halo" to constant(it) },
+            "label" to mapOf("kind" to "field", "key" to labelKey),
+        )
+        .toMap()
+
 fun polygonLayer(filters: List<Map<String, Any>>, fill: String) =
     mapOf(
         "kind" to "polygon",

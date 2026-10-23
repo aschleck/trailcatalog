@@ -260,7 +260,7 @@ private fun firePerimeters(): ReplacedCollection {
       FIRE_PERIMETERS_COLLECTION_ID,
       "WFIGS current interagency fire perimeters",
       FIRE_PERIMETERS_SCHEMA,
-      polygons)
+      polygons = polygons)
 }
 
 private fun airQuality(): ReplacedCollection {
@@ -279,7 +279,10 @@ private fun airQuality(): ReplacedCollection {
         polygonRow(AIR_QUALITY_COLLECTION_ID, null, data, feature["geometry"])
       }
   return ReplacedCollection(
-      AIR_QUALITY_COLLECTION_ID, "AirNow current air quality", AIR_QUALITY_SCHEMA, polygons)
+      AIR_QUALITY_COLLECTION_ID,
+      "AirNow current air quality",
+      AIR_QUALITY_SCHEMA,
+      polygons = polygons)
 }
 
 private fun riverGauges(): ReplacedCollection {
@@ -337,7 +340,7 @@ private fun burntAreas(): ReplacedCollection {
         polygonRow(BURNT_AREAS_COLLECTION_ID, properties.text("id"), data, feature["geometry"])
       }
   return ReplacedCollection(
-      BURNT_AREAS_COLLECTION_ID, "EFFIS burnt areas", BURNT_AREAS_SCHEMA, polygons)
+      BURNT_AREAS_COLLECTION_ID, "EFFIS burnt areas", BURNT_AREAS_SCHEMA, polygons = polygons)
 }
 
 private fun europeanAirQuality(): ReplacedCollection {

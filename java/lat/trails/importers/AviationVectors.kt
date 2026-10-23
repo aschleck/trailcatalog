@@ -360,7 +360,8 @@ private fun airspace(features: List<JsonNode>): ReplacedCollection {
     properties.text("country")?.let { data["country"] = it }
     polygonRow(AIRSPACE_COLLECTION_ID, properties.text("_id")!!, data, feature["geometry"])
   }
-  return ReplacedCollection(AIRSPACE_COLLECTION_ID, "openAIP airspace", AIRSPACE_SCHEMA, polygons)
+  return ReplacedCollection(
+      AIRSPACE_COLLECTION_ID, "openAIP airspace", AIRSPACE_SCHEMA, polygons = polygons)
 }
 
 private fun airports(features: List<JsonNode>): ReplacedCollection {

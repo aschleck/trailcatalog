@@ -48,6 +48,12 @@ java_binary(
 )
 
 java_binary(
+    name = "usfs_mvum",
+    main_class = "lat.trails.importers.UsfsMvumKt",
+    runtime_deps = [":importers"],
+)
+
+java_binary(
     name = "weather",
     main_class = "lat.trails.importers.WeatherKt",
     runtime_deps = [":importers"],

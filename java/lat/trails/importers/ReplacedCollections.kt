@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Polygon
+import com.google.common.geometry.S2Polyline
 import java.io.ByteArrayOutputStream
 import java.sql.Connection
 import java.util.Base64
@@ -22,6 +23,7 @@ import org.trailcatalog.importers.basemap.StringifyingInputStream
 import org.trailcatalog.importers.basemap.appendByteArray
 import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.polygonToCell
+import org.trailcatalog.s2.polylineToCell
 
 // Shared by the importers that rewrite a collection with a fixed id on every run
 
@@ -36,10 +38,20 @@ class ReplacedCollection(
     val name: String,
     // the JSON for collections.schema, see schema.ts#CollectionSchema
     val schema: Map<String, Any>,
-    val polygons: List<Row<S2Polygon>> = listOf(),
+    // encoded with DeltaLatLngE7
+    val lines: List<Row<ByteArray>> = listOf(),
     // encoded with DeltaLatLngE7
     val points: List<Row<ByteArray>> = listOf(),
+    val polygons: List<Row<S2Polygon>> = listOf(),
 )
+
+fun lineRow(collection: UUID, key: String, data: Map<String, String>, latLngs: List<S2LatLng>):
+    Row<ByteArray> =
+    Row(
+        stableId(collection, key),
+        data,
+        polylineToCell(S2Polyline(latLngs.map { it.toPoint() })),
+        DeltaLatLngE7.encode(latLngs.flatMap { listOf(it.lat().e7(), it.lng().e7()) }.toIntArray()))
 
 fun polygonRow(
     collection: UUID, key: String?, data: Map<String, String>, geometry: JsonNode):
@@ -90,9 +102,10 @@ private fun toS2Polygon(geometry: JsonNode): S2Polygon {
 // as what we already have.
 fun replace(collection: ReplacedCollection) {
   logger.info(
-      "Fetched {} polygons and {} points for {}",
-      collection.polygons.size,
+      "Fetched {} lines, {} points, and {} polygons for {}",
+      collection.lines.size,
       collection.points.size,
+      collection.polygons.size,
       collection.name)
   createBaseConnection().use { hikari ->
     hikari.connection.use { connection ->
@@ -127,7 +140,7 @@ fun replace(collection: ReplacedCollection) {
         return
       }
 
-      for (table in listOf("points", "polygons")) {
+      for (table in listOf("lines", "points", "polygons")) {
         connection
             .prepareStatement("DELETE FROM ${table} WHERE collection = ?")
             .apply {
@@ -140,13 +153,17 @@ fun replace(collection: ReplacedCollection) {
       // public tables directly.
       val copier = CopyManager(connection.unwrap(PgConnection::class.java))
       copier.copyIn(
-          "COPY public.polygons (id, collection, cell, data, s2_polygon) "
+          "COPY public.lines (id, collection, cell, data, lat_lng_degrees) "
               + "FROM STDIN WITH (FORMAT CSV, HEADER)",
-          toCsv(collection.id, collection.polygons, ::encodePolygon))
+          toCsv(collection.id, collection.lines) { it })
       copier.copyIn(
           "COPY public.points (id, collection, cell, data, lat_lng_degrees) "
               + "FROM STDIN WITH (FORMAT CSV, HEADER)",
           toCsv(collection.id, collection.points) { it })
+      copier.copyIn(
+          "COPY public.polygons (id, collection, cell, data, s2_polygon) "
+              + "FROM STDIN WITH (FORMAT CSV, HEADER)",
+          toCsv(collection.id, collection.polygons, ::encodePolygon))
 
       connection
           .prepareStatement(
@@ -155,7 +172,9 @@ fun replace(collection: ReplacedCollection) {
             setBytes(
                 1,
                 encodeCovering(
-                    collection.polygons.map { it.cell } + collection.points.map { it.cell }))
+                    collection.lines.map { it.cell }
+                        + collection.points.map { it.cell }
+                        + collection.polygons.map { it.cell }))
             setLong(2, version)
             setString(3, mapper.writeValueAsString(collection.schema))
             setObject(4, collection.id)
@@ -185,7 +204,13 @@ private fun unchanged(connection: Connection, collection: ReplacedCollection): B
   }
 
   val stored = ArrayList<String>()
-  for ((table, geometry) in listOf("polygons" to "s2_polygon", "points" to "lat_lng_degrees")) {
+  val tables =
+      listOf(
+          "lines" to "lat_lng_degrees",
+          "points" to "lat_lng_degrees",
+          "polygons" to "s2_polygon",
+      )
+  for ((table, geometry) in tables) {
     connection
         .prepareStatement("SELECT data, ${geometry} FROM ${table} WHERE collection = ?")
         .apply {
@@ -202,8 +227,9 @@ private fun unchanged(connection: Connection, collection: ReplacedCollection): B
         }
   }
   val fetched =
-      collection.polygons.map { rowKey(it.data, encodePolygon(it.geometry)) } +
-          collection.points.map { rowKey(it.data, it.geometry) }
+      collection.lines.map { rowKey(it.data, it.geometry) } +
+          collection.points.map { rowKey(it.data, it.geometry) } +
+          collection.polygons.map { rowKey(it.data, encodePolygon(it.geometry)) }
   return stored.sorted() == fetched.sorted()
 }
 
