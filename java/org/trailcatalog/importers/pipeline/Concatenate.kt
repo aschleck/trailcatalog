@@ -4,59 +4,47 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pipeline.collections.DisposableSupplier
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.PList
-import org.trailcatalog.importers.pipeline.collections.createPList
-import java.util.concurrent.atomic.AtomicInteger
 
+/**
+ * Reads its inputs back to back without copying them. Each invocation takes a new reader from
+ * every input, so Pipeline#cat gives the inputs one handle per dependant.
+ */
 class Concatenate<T : Any>(private val type: TypeToken<T>)
-  : PStage<List<PCollection<T>>, PCollection<T>>() {
+  : PStage<List<() -> PCollection<T>>, PCollection<T>>() {
 
   override fun act(
-      input: List<PCollection<T>>,
+      input: List<() -> PCollection<T>>,
       dependants: Int): DisposableSupplier<PCollection<T>> {
-    return if (dependants > 1) {
-      createPList(
-          type,
-          input.sumOf { it.estimatedByteSize() }) { emitter ->
-        for (source in input) {
-          while (source.hasNext()) {
-            emitter.emit(source.next())
-          }
-          source.close()
-        }
-      }
-    } else {
-      val first = input.indices.firstOrNull { i -> input[i].hasNext() } ?: input.size
-      val openCount = AtomicInteger(0)
-      DisposableSupplier({ }) {
-        if (openCount.incrementAndGet() != 1) {
-          throw RuntimeException("Concatenate oneshot can only be used once")
-        }
-
-        println("Concatenating oneshot to ${type}")
-        object : PList<T> {
-          var i = first
-
-          override fun estimatedByteSize(): Long {
-            return input.sumOf { it.estimatedByteSize() }
-          }
-
-          override fun close() {
-            input.forEach { it.close() }
-          }
-
-          override fun hasNext(): Boolean {
-            return i < input.size
-          }
-
-          override fun next(): T {
-            val result = input[i].next()
-            while (i < input.size && !input[i].hasNext()) {
-              i += 1
-            }
-            return result
-          }
-        }
-      }
+    return DisposableSupplier({ }) {
+      println("Concatenating to ${type}")
+      ConcatenatedPList(input.map { it.invoke() })
     }
+  }
+}
+
+private class ConcatenatedPList<T>(private val lists: List<PCollection<T>>) : PList<T> {
+
+  private var i = 0
+
+  override fun estimatedByteSize(): Long {
+    return lists.sumOf { it.estimatedByteSize() }
+  }
+
+  override fun close() {
+    lists.forEach { it.close() }
+  }
+
+  override fun hasNext(): Boolean {
+    while (i < lists.size && !lists[i].hasNext()) {
+      i += 1
+    }
+    return i < lists.size
+  }
+
+  override fun next(): T {
+    if (!hasNext()) {
+      throw NoSuchElementException()
+    }
+    return lists[i].next()
   }
 }

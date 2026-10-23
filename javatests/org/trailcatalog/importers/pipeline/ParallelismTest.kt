@@ -2,6 +2,7 @@ package org.trailcatalog.importers.pipeline
 
 import com.google.common.reflect.TypeToken
 import com.google.common.truth.Truth.assertThat
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Test
@@ -159,6 +160,58 @@ class ParallelismTest {
     val serial = runFanOutTransformAndCollect(items, fanOut = 5, parallelism = 1)
     val parallel = runFanOutTransformAndCollect(items, fanOut = 5, parallelism = 4)
     assertThat(parallel.sorted()).isEqualTo(serial.sorted())
+  }
+
+  // ----- Concatenate -----
+
+  private class ThreadRecordingTransform(val threads: MutableSet<String>)
+    : PTransformer<Int, Int>(TypeToken.of(Int::class.java)) {
+    override fun act(input: Int, emitter: Emitter<Int>) {
+      threads.add(Thread.currentThread().name)
+      emitter.emit(input)
+    }
+  }
+
+  @Test
+  fun catWithSeveralDependantsTransformsInputsOnWorkers() {
+    val threads = ConcurrentHashMap.newKeySet<String>()
+    val first = ArrayList<String>()
+    val second = ArrayList<String>()
+    val pipeline = Pipeline(parallelism = 4)
+    val cat =
+        pipeline.cat(
+            listOf(
+                pipeline.read(SequenceSource((0 until 5000).asSequence()))
+                    .then(ThreadRecordingTransform(threads)),
+                pipeline.read(SequenceSource((5000 until 5010).asSequence()))
+                    .then(DoubleTransform(parallelism = Int.MAX_VALUE))))
+    cat.write(ListSink(first))
+    cat.write(ListSink(second))
+    pipeline.execute()
+
+    val expected = ((0 until 5000) + (5000 until 5010).map { it * 2 }).map { it.toString() }
+    assertThat(first).containsExactlyElementsIn(expected)
+    assertThat(second).containsExactlyElementsIn(expected)
+    assertThat(threads).isNotEmpty()
+    assertThat(threads.all { it.startsWith("mmap-plist") }).isTrue()
+  }
+
+  @Test
+  fun catWithOneDependantStreamsInputs() {
+    val threads = ConcurrentHashMap.newKeySet<String>()
+    val out = ArrayList<String>()
+    val pipeline = Pipeline(parallelism = 4)
+    pipeline.cat(
+            listOf(
+                pipeline.read(SequenceSource((0 until 100).asSequence()))
+                    .then(ThreadRecordingTransform(threads)),
+                pipeline.read(SequenceSource((100 until 200).asSequence()))
+                    .then(ThreadRecordingTransform(threads))))
+        .write(ListSink(out))
+    pipeline.execute()
+
+    assertThat(out).containsExactlyElementsIn((0 until 200).map { it.toString() }).inOrder()
+    assertThat(threads).containsExactly(Thread.currentThread().name)
   }
 
   // ----- Stress -----

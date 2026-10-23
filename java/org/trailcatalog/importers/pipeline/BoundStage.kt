@@ -62,10 +62,15 @@ abstract class BoundStage<I, O>(
     if (!this.traced) {
       this.traceInputs()
       this.traced = true
+    } else {
+      this.traceAnotherHandle()
     }
   }
 
   protected open fun traceInputs() {}
+
+  /** Lets a stage that reads its inputs once per dependant claim another handle on each. */
+  protected open fun traceAnotherHandle() {}
 }
 
 inline fun <reified K : Comparable<K>, reified V : Comparable<V>> BoundStage<*, out PMap<K, V>>.invert(

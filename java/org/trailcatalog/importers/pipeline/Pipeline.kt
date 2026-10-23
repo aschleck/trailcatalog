@@ -36,12 +36,20 @@ class Pipeline(val parallelism: Int = 1) {
       return list[0]
     }
 
-    return object : BoundStage<List<PCollection<T>>, PCollection<T>>(this, Concatenate(object : TypeToken<T>() {})) {
-      override fun getInput(): List<PCollection<T>> {
-        return list.map { it.invoke() }
+    return object : BoundStage<List<() -> PCollection<T>>, PCollection<T>>(
+        this, Concatenate(object : TypeToken<T>() {})) {
+      override fun getInput(): List<() -> PCollection<T>> {
+        return list.map { stage -> { stage.invoke() } }
       }
 
       override fun traceInputs() {
+        list.forEach { it.trace() }
+      }
+
+      // Concatenate takes a fresh reader from every input for each of its dependants, so an
+      // input under a cat with several dependants sees several too and materializes itself, in
+      // parallel, rather than streaming through Concatenate's one thread.
+      override fun traceAnotherHandle() {
         list.forEach { it.trace() }
       }
     }
