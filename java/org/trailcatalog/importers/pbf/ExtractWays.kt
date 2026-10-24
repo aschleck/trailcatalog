@@ -84,6 +84,15 @@ fun wayRefs(way: Osmformat.Way): LongArray {
   return refs
 }
 
+private fun isClosed(way: Osmformat.Way): Boolean {
+  // The refs are delta coded, so the last one is the first one when the rest sum to zero.
+  var sum = 0L
+  for (i in 1 until way.refsCount) {
+    sum += way.getRefs(i)
+  }
+  return way.refsCount > 1 && sum == 0L
+}
+
 fun wayCategory(way: Osmformat.Way, stringTable: StringTable): WayCategory {
   var category = WayCategory.ANY
   // construction=*, footway=*, and service=* each name a subtype of whatever the way already is, so
@@ -95,6 +104,8 @@ fun wayCategory(way: Osmformat.Way, stringTable: StringTable): WayCategory {
   // A highway=* on a lift or a piste says there's ground to walk on, so it has to beat categories
   // that outrank it, like PISTE_DOWNHILL over PATH, whichever order the tags come in.
   var highway: WayCategory? = null
+  var landuse = false
+  var railway: WayCategory? = null
   for (i in 0 until way.keysCount) {
     when (stringTable.getS(way.getKeys(i))) {
       AERIALWAY_BS ->
@@ -147,14 +158,17 @@ fun wayCategory(way: Osmformat.Way, stringTable: StringTable): WayCategory {
             category
                 .coerceAtLeast(WayCategory.PISTE)
                 .coerceAtLeast(PISTE_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+      LANDUSE_BS ->
+        landuse = true
       RAILWAY_BS ->
-        // It seems fun to dump all rails just in case...
-        // TODO(april): but do trails really depend on railways?
-        category =
-            category
-                .coerceAtLeast(WayCategory.RAIL)
-                .coerceAtLeast(RAILWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))])
+        railway = RAILWAY_CATEGORY_NAMES[stringTable.getS(way.getVals(i))]
     }
+  }
+  // A closed way with landuse=* is the outline of railroad land, like way 883999185, and its
+  // railway=* describes the line inside it. An open one is track with a stray landuse=railway, like
+  // way 284787416.
+  if (railway != null && !(landuse && isClosed(way))) {
+    category = category.coerceAtLeast(railway)
   }
   if (highway != null
       && (WayCategory.AERIALWAY.isParentOf(category) || WayCategory.PISTE.isParentOf(category))) {

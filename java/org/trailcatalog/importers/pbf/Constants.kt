@@ -243,8 +243,15 @@ val NATURAL_WAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
 
     .build()
 
+// Only the values that are a line of track, because railway=* also tags platforms, buildings, and
+// track that is gone or only proposed.
 val RAILWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, WayCategory>()
+    .put(ByteString.copyFromUtf8("abandoned"), WayCategory.RAIL)
+    .put(ByteString.copyFromUtf8("construction"), WayCategory.RAIL)
+    .put(ByteString.copyFromUtf8("disused"), WayCategory.RAIL)
+    .put(ByteString.copyFromUtf8("miniature"), WayCategory.RAIL)
     .put(ByteString.copyFromUtf8("rail"), WayCategory.RAIL)
+
     .put(ByteString.copyFromUtf8("narrow_gauge"), WayCategory.RAIL_NARROW_GAUGE)
     .put(ByteString.copyFromUtf8("preserved"), WayCategory.RAIL_PRESERVED)
     .put(ByteString.copyFromUtf8("funicular"), WayCategory.RAIL_FUNICULAR)
@@ -375,6 +382,7 @@ val FOOTWAY_BS = ByteString.copyFromUtf8("footway")
 val HIGHWAY_BS = ByteString.copyFromUtf8("highway")
 val HISTORIC_BS = ByteString.copyFromUtf8("historic")
 val INFORMATION_BS = ByteString.copyFromUtf8("information")
+val LANDUSE_BS = ByteString.copyFromUtf8("landuse")
 val LEISURE_BS = ByteString.copyFromUtf8("leisure")
 val MAN_MADE_BS = ByteString.copyFromUtf8("man_made")
 val MOUNTAIN_PASS_BS = ByteString.copyFromUtf8("mountain_pass")
