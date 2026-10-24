@@ -7,7 +7,6 @@ js_binary(
     name = "runner",
     data = [
         ":frontend",
-        "//java/lat/trails/static",
     ],
     entry_point = "frontend.js",
     node_options = [

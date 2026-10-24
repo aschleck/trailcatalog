@@ -9,6 +9,9 @@ js_binary(
         ":frontend",
     ],
     entry_point = "frontend.js",
+    node_options = [
+        "--enable-source-maps",
+    ],
 )
 
 esbuild_binary(

@@ -20,7 +20,7 @@ pkg_tar(
 
 oci_image(
     name = "container",
-    base = "@distroless_java_linux_amd64",
+    base = "//build_defs/distroless:java",
     entrypoint = [
         "java",
         "-jar",

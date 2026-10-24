@@ -1,0 +1,27 @@
+# To pick up newer packages, change the snapshot timestamps to a newer one from
+# https://snapshot.debian.org/archive/debian/ and regenerate the lockfile with
+#
+#     bazelisk run @debian_testing//:lock
+
+version: 1
+
+sources:
+  - channel: testing main
+    url: https://snapshot.debian.org/archive/debian/20261019T203124Z/
+  - channel: testing-security main
+    url: https://snapshot.debian.org/archive/debian-security/20261019T203124Z/
+
+archs:
+  - amd64
+
+packages:
+  - base-files
+  - bash
+  - ca-certificates
+  - coreutils
+  - libstdc++6
+  - netbase
+  - nginx
+  - openjdk-21-jre-headless
+  - tzdata
+  - zlib1g

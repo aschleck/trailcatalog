@@ -68,7 +68,7 @@ pkg_tar(
 
 oci_image(
     name = "aviation_vectors_container",
-    base = "@distroless_java_linux_amd64",
+    base = "//build_defs/distroless:java",
     entrypoint = [
         "java",
         "-jar",
@@ -99,7 +99,7 @@ pkg_tar(
 
 oci_image(
     name = "conditions_container",
-    base = "@distroless_java_linux_amd64",
+    base = "//build_defs/distroless:java",
     entrypoint = [
         "java",
         "-jar",
@@ -130,7 +130,7 @@ pkg_tar(
 
 oci_image(
     name = "snodas_container",
-    base = "@distroless_java_linux_amd64",
+    base = "//build_defs/distroless:java",
     entrypoint = [
         "java",
         "-jar",
@@ -161,7 +161,7 @@ pkg_tar(
 
 oci_image(
     name = "time_zones_container",
-    base = "@distroless_java_linux_amd64",
+    base = "//build_defs/distroless:java",
     entrypoint = [
         "java",
         "-jar",
@@ -192,7 +192,7 @@ pkg_tar(
 
 oci_image(
     name = "weather_container",
-    base = "@distroless_java_linux_amd64",
+    base = "//build_defs/distroless:java",
     entrypoint = [
         "java",
         "-jar",

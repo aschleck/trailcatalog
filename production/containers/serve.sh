@@ -4,7 +4,7 @@ set -ex
 
 nginx -c '/app/nginx.conf' -e '/dev/stderr' &
 nginx_pid="$!"
-${NODEJS_DIR}/bin/node --enable-source-maps '/app/frontend.js' &
+"${RUNNER}" &
 node_pid="$!"
 java -jar '/app/api_server_deploy.jar' "$@" &
 fe_pid="$!"
