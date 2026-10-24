@@ -34,9 +34,9 @@ archive_override(
 bazel_dep(name = "elemental2", version = "1.4.0-RC1")
 archive_override(
     module_name = "elemental2",
-    integrity = "sha256-JlCse3AEkuj3C5Oc/IHBLp1OQrIh/aEs1sP3I5ha77U=",
-    strip_prefix = "elemental2-f6a02d97cd9add87ec2b62fb8e9d2ad42da3c754",
-    urls = ["https://github.com/google/elemental2/archive/f6a02d97cd9add87ec2b62fb8e9d2ad42da3c754.tar.gz"],
+    integrity = "sha256-vraBIsLOcDYUG9eBUhzDyGXBXNDvfvCUoa0OyFWWGyU=",
+    strip_prefix = "elemental2-259cac38790511d71de663e62629a658c4a2852a",
+    urls = ["https://github.com/google/elemental2/archive/259cac38790511d71de663e62629a658c4a2852a.tar.gz"],
 )
 
 bazel_dep(name = "j2cl", version = "20260402")
@@ -49,11 +49,18 @@ archive_override(
 
 bazel_dep(name = "jsinterop_base", version = "1.2.0")
 bazel_dep(name = "jsinterop_generator", version = "20260701")
+archive_override(
+    module_name = "jsinterop_generator",
+    integrity = "sha256-Syew3AHi4dprmP5o+opA0msjG3Ln6z81wTQzUlMPeD0=",
+    strip_prefix = "jsinterop-generator-16782a2c1f641fdd91be1d84e65f4ef995081b04",
+    urls = ["https://github.com/google/jsinterop-generator/archive/16782a2c1f641fdd91be1d84e65f4ef995081b04.tar.gz"],
+)
+
 bazel_dep(name = "osmpbf", version = "1.7.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "protobuf", version = "36.2")
 bazel_dep(name = "rules_cc", version = "0.2.25")
-bazel_dep(name = "rules_closure", version = "0.16.0")
+bazel_dep(name = "rules_closure", version = "0.17.0")
 bazel_dep(name = "rules_distroless", version = "0.8.0")
 bazel_dep(name = "rules_java", version = "9.9.0")
 bazel_dep(name = "rules_jvm_external", version = "7.1")
@@ -82,6 +89,7 @@ register_toolchains("@remotejdk21_macos//:all")
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(
     artifacts = [
+        "com.fasterxml.jackson.core:jackson-databind:2.22.3",
         "com.github.usefulness:webp-imageio:0.10.0",
         "com.google.guava:guava:33.7.1-jre",
         "com.google.truth:truth:1.4.5",
