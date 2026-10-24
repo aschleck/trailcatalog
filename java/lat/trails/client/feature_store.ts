@@ -44,8 +44,6 @@ export class FeatureStore {
   private readonly listeners: Array<() => void>;
   // Set for a collection shared with the user to view, where every edit would fail to save.
   private readOnly: boolean;
-  // Moves on every change so that readers can tell whether they are stale.
-  generation: number;
 
   constructor(private readonly saves: SaveQueue) {
     this.live = new Map();
@@ -55,7 +53,6 @@ export class FeatureStore {
     this.redoStack = [];
     this.listeners = [];
     this.readOnly = false;
-    this.generation = 0;
   }
 
   listen(listener: () => void): void {
@@ -262,7 +259,6 @@ export class FeatureStore {
   }
 
   private changed(): void {
-    this.generation += 1;
     for (const listener of this.listeners) {
       listener();
     }

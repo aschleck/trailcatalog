@@ -131,8 +131,6 @@ export class TrailLayer extends Layer implements Listener {
   private interactiveScratchBuffer: ArrayBuffer;
   private pinScratchBuffer: ArrayBuffer;
   private loadScratchBuffer: ArrayBuffer;
-  private generation: number;
-  private lastGeneration: number;
   private lastHoverTarget: Path|Point|Trail|undefined;
   private viewportBounds: S2LatLngRect;
 
@@ -155,7 +153,7 @@ export class TrailLayer extends Layer implements Listener {
       points: [],
     };
     this.pinBuffer = this.renderer.createDataBuffer(0);
-    this.pinLabelDebouncer = new Debouncer(10, () => { this.generation += 1; });
+    this.pinLabelDebouncer = new Debouncer(10, () => { this.redraw(); });
     this.registerDisposer(() => {
       for (const source of [this.coarsePlans, this.finePlans]) {
         for (const {buffer} of source.values()) {
@@ -190,8 +188,6 @@ export class TrailLayer extends Layer implements Listener {
       halfPinHeight,
     ];
 
-    this.generation = -1;
-    this.lastGeneration = -1;
     this.viewportBounds = S2LatLngRect.empty();
 
     this.dataService.setListener(this);
@@ -210,7 +206,7 @@ export class TrailLayer extends Layer implements Listener {
         .then(blob => createImageBitmap(blob))
         .then(bitmap => {
           renderer.uploadTexture(bitmap, this.pointsAtlas);
-          this.generation += 1;
+          this.redraw();
         });
   }
 
@@ -275,8 +271,6 @@ export class TrailLayer extends Layer implements Listener {
     const labeled = this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD;
     this.planVisiblePins(planner, labeled);
     this.pinRenderer.sweep();
-
-    this.lastGeneration = this.generation;
   }
 
   // An overview cell reaches S2 level 7, a few hundred kilometers across, so it holds orders of
@@ -423,10 +417,6 @@ export class TrailLayer extends Layer implements Listener {
 
     handle.label = {graphemes, textSize};
     return handle.label;
-  }
-
-  override hasNewData(): boolean {
-    return this.generation !== this.lastGeneration;
   }
 
   getTrail(id: bigint): Trail|undefined {
@@ -596,7 +586,7 @@ export class TrailLayer extends Layer implements Listener {
 
   setFilters(filters: Filters): void {
     this.filters = filters;
-    this.generation += 1;
+    this.redraw();
   }
 
   setHover(entity: Path|Point|Trail, state: boolean): void {
@@ -642,7 +632,7 @@ export class TrailLayer extends Layer implements Listener {
       }
     }
 
-    this.generation += 1;
+    this.redraw();
   }
 
   // Everything that draws above the cell data: whatever is highlighted, plus the pinned paths.
@@ -766,7 +756,7 @@ export class TrailLayer extends Layer implements Listener {
       this.fineBounds.insert(handle, trail.mouseBound);
     }
 
-    this.generation += 1;
+    this.redraw();
   }
 
   loadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void {
@@ -818,7 +808,7 @@ export class TrailLayer extends Layer implements Listener {
       points: [],
     });
 
-    this.generation += 1;
+    this.redraw();
   }
 
   loadFineCell(id: S2CellNumber, paths: Iterable<Path>, points: Iterable<Point>): void {
@@ -899,11 +889,11 @@ export class TrailLayer extends Layer implements Listener {
       points: pointDrawables,
     });
 
-    this.generation += 1;
+    this.redraw();
   }
 
   loadPinned(): void {
-    this.generation += 1;
+    this.redraw();
   }
 
   unloadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void {

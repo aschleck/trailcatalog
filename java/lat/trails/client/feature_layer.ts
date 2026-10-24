@@ -359,7 +359,7 @@ export class FeatureLayer extends Layer {
 
     // A dragged vertex follows the pointer rather than its snap while shift is down.
     this.shift = new ShiftKey(() => {
-      this.overlay.generation += 1;
+      this.replan(this.overlay);
     });
     this.registerDisposable(this.shift);
   }
@@ -379,8 +379,7 @@ export class FeatureLayer extends Layer {
     if (id !== this.editing) {
       this.stopEditing();
     }
-    this.geometry.generation += 1;
-    this.markers.generation += 1;
+    this.replan(this.geometry, this.markers);
   }
 
   setHovered(id: string|undefined): void {
@@ -389,14 +388,13 @@ export class FeatureLayer extends Layer {
     }
 
     this.hovered = id;
-    this.overlay.generation += 1;
-    this.markers.generation += 1;
+    this.replan(this.overlay, this.markers);
   }
 
   /** Marks a spot, which is what a line profile's pointer is over. */
   setMarker(at: Vec2|undefined): void {
     this.marker = at;
-    this.overlay.generation += 1;
+    this.replan(this.overlay);
   }
 
   setPointsDraggable(draggable: boolean): void {
@@ -439,7 +437,7 @@ export class FeatureLayer extends Layer {
     const vertex = editing && this.vertexAt(editing.points, at);
     if (vertex !== undefined) {
       this.activeVertex = vertex;
-      this.overlay.generation += 1;
+      this.replan(this.overlay);
       return true;
     }
 
@@ -474,7 +472,7 @@ export class FeatureLayer extends Layer {
             : undefined;
     if (inserting || this.inserting) {
       this.inserting = inserting;
-      this.overlay.generation += 1;
+      this.replan(this.overlay);
     }
 
     const hit = this.hitTest(at);
@@ -493,10 +491,10 @@ export class FeatureLayer extends Layer {
     const nearest = line && nearestOnPolyline(line.points, at);
     if (line && nearest) {
       this.grab = {line, at: nearest.at};
-      this.overlay.generation += 1;
+      this.replan(this.overlay);
     } else if (this.grab) {
       this.grab = undefined;
-      this.overlay.generation += 1;
+      this.replan(this.overlay);
     }
     return !!hit;
   }
@@ -505,7 +503,7 @@ export class FeatureLayer extends Layer {
     if (this.inserting || this.grab) {
       this.inserting = undefined;
       this.grab = undefined;
-      this.overlay.generation += 1;
+      this.replan(this.overlay);
     }
     if (this.hovered !== undefined) {
       this.setHovered(undefined);
@@ -594,14 +592,14 @@ export class FeatureLayer extends Layer {
       dragging.at = at;
     } else if (dragging.kind === 'marker') {
       dragging.by = [at[0] - dragging.from[0], at[1] - dragging.from[1]];
-      this.markers.generation += 1;
+      this.replan(this.markers);
     } else if (dragging.kind === 'reroute') {
       dragging.query.set(at);
     } else {
       dragging.pointer = at;
       dragging.query.set(at);
     }
-    this.overlay.generation += 1;
+    this.replan(this.overlay);
   }
 
   override dragEnd(point: S2LatLng, moved: boolean, source: EventSource): void {
@@ -616,9 +614,7 @@ export class FeatureLayer extends Layer {
     } else {
       this.setDragging(undefined);
     }
-    this.geometry.generation += 1;
-    this.overlay.generation += 1;
-    this.markers.generation += 1;
+    this.replan(this.geometry, this.overlay, this.markers);
     if (!dragging || !moved) {
       // An insert pressed and let go without moving was never a vertex.
       if (dragging?.kind === 'insert') {
@@ -668,7 +664,7 @@ export class FeatureLayer extends Layer {
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
     this.viewport = projectLatLngRect(bounds);
-    this.overlay.generation += 1;
+    this.replan(this.overlay);
   }
 
   hitTest(at: Vec2): EditableFeature|undefined {
@@ -710,13 +706,6 @@ export class FeatureLayer extends Layer {
       ...lines.map(({feature}) => feature),
       ...polygons.map(({feature}) => feature),
     ];
-  }
-
-  override hasNewData(): boolean {
-    return this.geometry.generation !== this.geometry.planned
-        || this.overlay.generation !== this.overlay.planned
-        || this.markers.generation !== this.markers.planned
-        || this.labelsMissingGlyphs;
   }
 
   override render(planner: Planner, zoom: number): void {
@@ -802,7 +791,7 @@ export class FeatureLayer extends Layer {
     this.editing = id;
     this.activeVertex = undefined;
     this.grab = undefined;
-    this.overlay.generation += 1;
+    this.replan(this.overlay);
   }
 
   private stopEditing(): void {
@@ -813,15 +802,13 @@ export class FeatureLayer extends Layer {
     this.editing = undefined;
     this.activeVertex = undefined;
     this.inserting = undefined;
-    this.overlay.generation += 1;
+    this.replan(this.overlay);
   }
 
   private startDrag(dragging: Drag): void {
     this.setDragging(dragging);
     this.grab = undefined;
-    this.geometry.generation += 1;
-    this.overlay.generation += 1;
-    this.markers.generation += 1;
+    this.replan(this.geometry, this.overlay, this.markers);
   }
 
   // Republishes when the line out of the index changes.
@@ -904,8 +891,15 @@ export class FeatureLayer extends Layer {
     }
   }
 
+  private replan(...plans: Plan[]): void {
+    for (const plan of plans) {
+      plan.generation += 1;
+    }
+    this.redraw();
+  }
+
   private redrawOverlay<T>(value: T): T {
-    this.overlay.generation += 1;
+    this.replan(this.overlay);
     return value;
   }
 
@@ -940,8 +934,7 @@ export class FeatureLayer extends Layer {
   private settle(drag: LineDrag, source: EventSource): void {
     if (this.dragging === drag) {
       this.setDragging(undefined);
-      this.geometry.generation += 1;
-      this.overlay.generation += 1;
+      this.replan(this.geometry, this.overlay);
     }
     this.applyDrag(drag, source);
   }
@@ -1136,9 +1129,7 @@ export class FeatureLayer extends Layer {
     }
 
     this.publish();
-    this.geometry.generation += 1;
-    this.overlay.generation += 1;
-    this.markers.generation += 1;
+    this.replan(this.geometry, this.overlay, this.markers);
   }
 
   // Puts visible lines and polygon rings into the index so that drawing snaps onto them and routes

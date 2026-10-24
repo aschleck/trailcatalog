@@ -2151,8 +2151,6 @@ export class MbtileLayer extends Layer {
   private readonly textBuffer: ArrayBuffer;
   private readonly textGlBuffer: WebGLBuffer;
   private readonly tiles: HashMap<TileId, LoadedTile>;
-  private generation: number;
-  private lastRenderGeneration: number;
   private readonly placer: LabelPlacer;
   // The labels in placement order, or undefined when the set changed since the last sort
   private sorted: IndexedLabel[]|undefined;
@@ -2194,8 +2192,6 @@ export class MbtileLayer extends Layer {
         this.renderer.deleteBuffer(response.glIndexBuffer);
       }
     });
-    this.generation = 0;
-    this.lastRenderGeneration = -1;
     this.placer = new LabelPlacer();
     this.sorted = undefined;
     // -1 is a sentinel: no styleZoom has been observed yet, so the first
@@ -2211,6 +2207,7 @@ export class MbtileLayer extends Layer {
         this.unloadTiles(command.ids);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+        this.redraw();
       } else {
         checkExhaustive(command);
       }
@@ -2228,16 +2225,13 @@ export class MbtileLayer extends Layer {
     this.loader.onfailure = (request, task) => {
       if (request.kind === 'lr' && this.loading.get(request.id) === task) {
         this.loading.delete(request.id);
+        this.redraw();
         this.fetcher.broadcast({
           kind: 'tlr',
           id: request.id,
         });
       }
     };
-  }
-
-  override hasNewData(): boolean {
-    return this.generation !== this.lastRenderGeneration;
   }
 
   /** Redraws every held tile with the style, without refetching. */
@@ -2274,8 +2268,6 @@ export class MbtileLayer extends Layer {
             this.sorted, projection, zoom, this.textBuffer, this.textGlBuffer, this.renderer);
     planner.add(drawables);
     this.renderer.uploadData(this.textBuffer, byteSize, this.textGlBuffer);
-
-    this.lastRenderGeneration = this.generation;
   }
 
   override viewportChanged(
@@ -2334,6 +2326,7 @@ export class MbtileLayer extends Layer {
       styleEpoch: this.styleEpoch,
       data,
     }));
+    this.redraw();
   }
 
   private loadProcessedTile(response: LoadResponse): void {
@@ -2419,7 +2412,7 @@ export class MbtileLayer extends Layer {
       drawables,
       labelKeys,
     });
-    this.generation += 1;
+    this.redraw();
 
     this.fetcher.broadcast({
       kind: 'tlr',
@@ -2461,6 +2454,6 @@ export class MbtileLayer extends Layer {
       this.rawBytes.delete(id);
       this.disposeStyledTile(id);
     }
-    this.generation += 1;
+    this.redraw();
   }
 }

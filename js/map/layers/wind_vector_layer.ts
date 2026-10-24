@@ -31,8 +31,6 @@ export class WindVectorLayer extends Layer {
   // The arguments of the last viewportChanged, so turning on a style can fetch for it
   private lastViewport: Parameters<Layer['viewportChanged']>|undefined;
   private drawable: Drawable|undefined;
-  private generation: number;
-  private planned: number;
 
   constructor(
       copyrights: Copyright[],
@@ -65,8 +63,6 @@ export class WindVectorLayer extends Layer {
     this.viewport = undefined;
     this.lastViewport = undefined;
     this.drawable = undefined;
-    this.generation = 0;
-    this.planned = 0;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'ltc') {
@@ -76,6 +72,7 @@ export class WindVectorLayer extends Layer {
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
         this.started ||= command.fetching;
+        this.redraw();
       } else {
         checkExhaustive(command);
       }
@@ -99,6 +96,7 @@ export class WindVectorLayer extends Layer {
     this.loader.onfailure = (request, task) => {
       if (request.kind === 'lr' && this.loading.get(request.id) === task) {
         this.loading.delete(request.id);
+        this.redraw();
         this.fetcher.broadcast({
           kind: 'tlr',
           id: request.id,
@@ -117,7 +115,7 @@ export class WindVectorLayer extends Layer {
       this.tracing?.cancel();
       this.tracing = undefined;
       this.drawable = undefined;
-      this.generation += 1;
+      this.redraw();
     } else if (this.lastViewport) {
       this.viewportChanged(...this.lastViewport);
     }
@@ -128,16 +126,11 @@ export class WindVectorLayer extends Layer {
     return !this.style || (this.started && !this.loadingData());
   }
 
-  override hasNewData(): boolean {
-    return this.generation !== this.planned;
-  }
-
   override loadingData(): boolean {
     return this.fetching || this.loading.size > 0 || !!this.tracing;
   }
 
   override render(planner: Planner): void {
-    this.planned = this.generation;
     if (this.drawable) {
       planner.add([this.drawable]);
     }
@@ -210,11 +203,12 @@ export class WindVectorLayer extends Layer {
       style: this.style,
       viewport: this.viewport,
     });
+    this.redraw();
   }
 
   private loadStreamlines(response: TraceResponse): void {
     this.tracing = undefined;
-    this.generation += 1;
+    this.redraw();
     if (response.instanceCount === 0) {
       this.drawable = undefined;
       return;

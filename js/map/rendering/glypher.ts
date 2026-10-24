@@ -3,6 +3,7 @@ import TinySDF from '@mapbox/tiny-sdf';
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { TFontFace, parseCss } from 'external/dev_april_corgi+/js/common/css';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
+import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
@@ -55,6 +56,7 @@ class Glypher {
   private readonly characters: Set<string>;
   private readonly fonts: Array<[start: number, end: number, font: LoadAwareFontFace]>;
   private readonly glyphs: Map<String, Glyph>;
+  private readonly listeners: Set<() => void>;
   private readonly regenerator: Debouncer;
   private readonly tinySdf: TinySDF;
   private cssFetched: boolean;
@@ -66,6 +68,7 @@ class Glypher {
     this.characters = new Set();
     this.fonts = [];
     this.glyphs = new Map();
+    this.listeners = new Set();
     this.regenerator = new Debouncer(0, () => { this.regenerate(); });
     this.cssFetched = false;
     this.generation = -1;
@@ -84,6 +87,13 @@ class Glypher {
     for (let i = 32; i < 127; ++i) {
       this.characters.add(String.fromCodePoint(i));
     }
+  }
+
+  addListener(listener: () => void): Disposable {
+    this.listeners.add(listener);
+    const listening = new Disposable();
+    listening.registerDisposer(() => { this.listeners.delete(listener); });
+    return listening;
   }
 
   /** Upper bound on bytes that {@link plan} will write for the given graphemes. */
@@ -506,6 +516,9 @@ class Glypher {
     }
 
     this.generation += 1;
+    for (const listener of this.listeners) {
+      listener();
+    }
   }
 }
 

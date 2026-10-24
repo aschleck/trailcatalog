@@ -56,13 +56,11 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
 
   private readonly layer: CellLayer;
   private readonly mapController: MapController;
-  lastChange: number;
 
   constructor(response: Response<ViewerController>) {
     super(response);
     this.layer = new CellLayer(this, response.deps.controllers.map.renderer);
     this.mapController = response.deps.controllers.map;
-    this.lastChange = Date.now();
 
     this.mapController.setLayers([
       this.layer,
@@ -355,14 +353,13 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
       selectedS2: undefined,
       selectedZxy: undefined,
     });
-    this.lastChange = Date.now();
+    this.layer.cellsChanged();
   }
 }
 
 class CellLayer extends Layer {
 
   private readonly glBuffer: WebGLBuffer;
-  private lastRenderTime: number;
   readonly s2Cells: Map<string, S2Loop>;
   readonly zxys: Map<string, [number, number, number]>;
 
@@ -372,9 +369,12 @@ class CellLayer extends Layer {
   ) {
     super(/* copyright= */ []);
     this.glBuffer = renderer.createDataBuffer(0);
-    this.lastRenderTime = -1;
     this.s2Cells = new Map<string, S2Loop>();
     this.zxys = new Map<string, [number, number, number]>();
+  }
+
+  cellsChanged(): void {
+    this.redraw();
   }
 
   override click(point: S2LatLng, px: [number, number], contextual: boolean, source: MapController):
@@ -385,10 +385,6 @@ class CellLayer extends Layer {
       this.controller.toggleCell(point, source.camera.zoom);
     }
     return true;
-  }
-
-  override hasNewData(): boolean {
-    return this.controller.lastChange > this.lastRenderTime;
   }
 
   override render(planner: Planner): void {
@@ -450,7 +446,6 @@ class CellLayer extends Layer {
 
     this.renderer.uploadData(geometry, offset, this.glBuffer, this.renderer.gl.STREAM_DRAW);
     planner.add(drawables);
-    this.lastRenderTime = Date.now();
   }
 }
 

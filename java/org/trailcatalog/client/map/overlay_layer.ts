@@ -26,8 +26,7 @@ export class OverlayLayer extends Layer {
   private readonly buffer: WebGLBuffer;
   private bearIcon: WebGLTexture|undefined;
   private blueIcon: WebGLTexture|undefined;
-  private generation: number;
-  private plan: {generation: number; drawables: Drawable[]};
+  private drawables: Drawable[];
   private lastOverlays: Overlays;
   private scratchBuffer: ArrayBuffer;
 
@@ -35,11 +34,7 @@ export class OverlayLayer extends Layer {
     super();
     this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
-    this.generation = 0;
-    this.plan = {
-      generation: -1,
-      drawables: [],
-    };
+    this.drawables = [];
     this.lastOverlays = {};
     this.scratchBuffer = new ArrayBuffer(64 * 1024);
 
@@ -182,19 +177,13 @@ export class OverlayLayer extends Layer {
     }
 
     this.renderer.uploadData(buffer, offset, this.buffer);
-    this.plan = {
-      generation: this.generation + 1,
-      drawables,
-    };
+    this.drawables = drawables;
+    this.redraw();
   }
 
   override render(planner: Planner): void {
-    planner.add(this.plan.drawables);
-    this.generation = this.plan.generation;
+    planner.add(this.drawables);
   }
 
-  override hasNewData(): boolean {
-    return this.generation !== this.plan.generation;
-  }
 }
 

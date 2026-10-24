@@ -30,7 +30,6 @@ export class SlopeLayer extends Layer {
   private readonly loading: HashSet<TileId>;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
-  private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
 
   constructor(
@@ -59,7 +58,6 @@ export class SlopeLayer extends Layer {
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
-    this.generation = 0;
     this.plan = {
       generation: -1,
       drawables: [],
@@ -72,6 +70,7 @@ export class SlopeLayer extends Layer {
         this.unloadTiles(command.ids);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+        this.redraw();
       } else {
         checkExhaustive(command);
       }
@@ -86,16 +85,12 @@ export class SlopeLayer extends Layer {
     };
   }
 
-  override hasNewData(): boolean {
-    return this.generation !== this.plan.generation;
-  }
-
   override loadingData(): boolean {
     return this.fetching || this.loading.size > 0;
   }
 
   override render(planner: Planner): void {
-    if (this.hasNewData()) {
+    if (this.generation !== this.plan.generation) {
       const buffer =
           new ArrayBuffer(Math.max(BillboardProgram.bytesNeeded() * this.tiles.size, 65536));
       const drawables = [];
@@ -178,7 +173,7 @@ export class SlopeLayer extends Layer {
       const texture = this.pool.acquire();
       this.renderer.uploadRedTexture(response.slopes, [SLOPES_SIZE, SLOPES_SIZE], texture);
       this.tiles.set(response.id, texture);
-      this.generation += 1;
+      this.redraw();
     }
 
     this.fetcher.broadcast({
@@ -198,6 +193,6 @@ export class SlopeLayer extends Layer {
       }
     }
 
-    this.generation += 1;
+    this.redraw();
   }
 }

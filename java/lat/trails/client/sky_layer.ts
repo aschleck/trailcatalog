@@ -155,7 +155,6 @@ export class SkyLayer extends Layer {
   private readonly glGeometry: WebGLBuffer;
   private geometry: ArrayBuffer;
   private drawables: Drawable[];
-  private generation: number;
   private planned: number;
   // The chart is a fixed size on screen, so a zoom replans it.
   private plannedRadius: number;
@@ -197,7 +196,6 @@ export class SkyLayer extends Layer {
     // A day of each path at PATH_STEP_MS, the horizon, and the discs fit
     this.geometry = new ArrayBuffer(512 * LineProgram.bytesNeeded(2));
     this.drawables = [];
-    this.generation = 0;
     this.planned = -1;
     this.plannedRadius = 0;
   }
@@ -205,7 +203,7 @@ export class SkyLayer extends Layer {
   setTime(time: number): void {
     if (time !== this.time) {
       this.time = time;
-      this.generation += 1;
+      this.redraw();
       this.loadShade();
     }
   }
@@ -214,7 +212,7 @@ export class SkyLayer extends Layer {
   setSunlight(sunlight: boolean): void {
     if (sunlight !== this.sunlight) {
       this.sunlight = sunlight;
-      this.generation += 1;
+      this.redraw();
       this.loadShade();
     }
   }
@@ -223,7 +221,7 @@ export class SkyLayer extends Layer {
   setMoonlight(moonlight: boolean): void {
     if (moonlight !== this.moonlight) {
       this.moonlight = moonlight;
-      this.generation += 1;
+      this.redraw();
       this.loadShade();
     }
   }
@@ -244,7 +242,7 @@ export class SkyLayer extends Layer {
     if (mode !== this.viewshedMode) {
       this.viewshedMode = mode;
       this.clearViewshed();
-      this.generation += 1;
+      this.redraw();
       this.loadViewshed();
     }
   }
@@ -337,13 +335,9 @@ export class SkyLayer extends Layer {
     return this.sampling > 0;
   }
 
-  override hasNewData(): boolean {
-    return this.generation !== this.planned
-        || this.camera.inverseWorldRadius !== this.plannedRadius;
-  }
-
   override render(planner: Planner): void {
-    if (this.hasNewData()) {
+    if (this.generation !== this.planned
+        || this.camera.inverseWorldRadius !== this.plannedRadius) {
       this.plan();
       this.planned = this.generation;
       this.plannedRadius = this.camera.inverseWorldRadius;
@@ -374,7 +368,7 @@ export class SkyLayer extends Layer {
     if (this.viewshedMode === 'pin') {
       this.clearViewshed();
     }
-    this.generation += 1;
+    this.redraw();
   }
 
   private moveSubject(subject: S2LatLng): void {
@@ -383,7 +377,7 @@ export class SkyLayer extends Layer {
     if (this.viewshedMode === 'subject') {
       this.clearViewshed();
     }
-    this.generation += 1;
+    this.redraw();
   }
 
   // From the pin, its eye looks at the ground. Of the subject, the subject itself looks at a
@@ -397,22 +391,17 @@ export class SkyLayer extends Layer {
     const [sourceHeight, targetHeight] = mode === 'pin' ? [EYE_METERS, 0] : [0, EYE_METERS];
     const stillWanted = () =>
         this.viewshedMode === mode && (mode === 'pin' ? this.pin : this.subject) === source;
-    this.sampling += 1;
-    this.elevations
-        .trace({
-          latDegrees: source.latDegrees(),
-          lngDegrees: source.lngDegrees(),
-          sourceHeight,
-          targetHeight,
-          of: 'viewshed',
-        })
-        .finally(() => {
-          this.sampling -= 1;
-        })
+    this.sample(this.elevations.trace({
+      latDegrees: source.latDegrees(),
+      lngDegrees: source.lngDegrees(),
+      sourceHeight,
+      targetHeight,
+      of: 'viewshed',
+    }))
         .then(({images}) => {
           if (stillWanted()) {
             this.planViewshed(images);
-            this.generation += 1;
+            this.redraw();
           }
         }, e => {
           console.error(e);
@@ -457,7 +446,7 @@ export class SkyLayer extends Layer {
       if (this.shade) {
         this.renderer.deleteTexture(this.shade.texture);
         this.shade = undefined;
-        this.generation += 1;
+        this.redraw();
       }
       return;
     }
@@ -466,11 +455,8 @@ export class SkyLayer extends Layer {
       return;
     }
     this.shading = 'busy';
-    this.sampling += 1;
-    this.elevations
-        .shade({...view, zoom: Math.round(view.zoom) - 1, ...light})
+    this.sample(this.elevations.shade({...view, zoom: Math.round(view.zoom) - 1, ...light}))
         .finally(() => {
-          this.sampling -= 1;
           const stale = this.shading === 'stale';
           this.shading = 'idle';
           if (stale) {
@@ -504,7 +490,7 @@ export class SkyLayer extends Layer {
             this.renderer.deleteTexture(this.shade.texture);
           }
           this.shade = {drawable, texture};
-          this.generation += 1;
+          this.redraw();
         }, e => {
           console.error(e);
         });
@@ -525,6 +511,16 @@ export class SkyLayer extends Layer {
     } else {
       return undefined;
     }
+  }
+
+  // Counts the request in sampling while it is out, so loadingData covers it.
+  private sample<T>(request: Promise<T>): Promise<T> {
+    this.sampling += 1;
+    this.redraw();
+    return request.finally(() => {
+      this.sampling -= 1;
+      this.redraw();
+    });
   }
 
   private clearViewshed(): void {
@@ -555,11 +551,7 @@ export class SkyLayer extends Layer {
       samples[2 * i] = lat0 + (lat1 - lat0) * i / steps;
       samples[2 * i + 1] = lng0 + (lng1 - lng0) * i / steps;
     }
-    this.sampling += 1;
-    this.elevations.sample(samples, SKYLINE_BANDS[0].zoom, 'sighting')
-        .finally(() => {
-          this.sampling -= 1;
-        })
+    this.sample(this.elevations.sample(samples, SKYLINE_BANDS[0].zoom, 'sighting'))
         .then(meters => {
           if (this.pin !== pin || this.subject !== subject) {
             return;
@@ -579,7 +571,7 @@ export class SkyLayer extends Layer {
             meters: distance,
             hidden,
           };
-          this.generation += 1;
+          this.redraw();
         }, e => {
           // A later sighting replacing this one rejects it too.
           if (this.pin === pin && this.subject === subject) {
@@ -593,22 +585,17 @@ export class SkyLayer extends Layer {
     if (!pin) {
       return;
     }
-    this.sampling += 1;
-    this.elevations
-        .trace({
-          latDegrees: pin.latDegrees(),
-          lngDegrees: pin.lngDegrees(),
-          sourceHeight: EYE_METERS,
-          targetHeight: 0,
-          of: 'skyline',
-        })
-        .finally(() => {
-          this.sampling -= 1;
-        })
+    this.sample(this.elevations.trace({
+      latDegrees: pin.latDegrees(),
+      lngDegrees: pin.lngDegrees(),
+      sourceHeight: EYE_METERS,
+      targetHeight: 0,
+      of: 'skyline',
+    }))
         .then(({skyline}) => {
           if (this.pin === pin) {
             this.terrain = skyline;
-            this.generation += 1;
+            this.redraw();
           }
         }, e => {
           console.error(e);

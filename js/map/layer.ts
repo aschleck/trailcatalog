@@ -8,8 +8,31 @@ import { Planner } from './rendering/planner';
 
 export abstract class Layer extends Disposable {
 
+  // Moves on every redraw, so a layer that caches its plan can tell when it is stale
+  protected generation: number;
+  private onRedraw: (() => void)|undefined;
+
   constructor(private readonly _copyrights: Copyright[]|undefined = undefined) {
     super();
+    this.generation = 0;
+    this.onRedraw = undefined;
+  }
+
+  /** Sets who hears redraw, which is the map or the layer holding this one. */
+  setOnRedraw(onRedraw: (() => void)|undefined): void {
+    this.onRedraw = onRedraw;
+  }
+
+  // The map only draws a frame when something asks for one, so a layer calls this whenever what it
+  // draws or what loadingData reports changes outside of a call from the map.
+  protected redraw(): void {
+    this.generation += 1;
+    this.onRedraw?.();
+  }
+
+  protected adopt<L extends Layer>(child: L): L {
+    child.setOnRedraw(() => { this.redraw(); });
+    return child;
   }
 
   get copyrights(): Copyright[] {
@@ -29,10 +52,6 @@ export abstract class Layer extends Disposable {
 
   // Moved is false when the press never left the click radius, and the click follows.
   dragEnd(point: S2LatLng, moved: boolean, source: EventSource): void {}
-
-  hasNewData(): boolean {
-    return false;
-  }
 
   hover(point: S2LatLng, source: EventSource): boolean {
     return false;

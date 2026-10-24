@@ -20,14 +20,12 @@ export class SwitchLayer<K extends string, L extends Layer> extends Layer {
 
   private key: K;
   private layer: L;
-  private swapped: boolean;
   private viewport: Viewport|undefined;
 
   constructor(key: K, private readonly create: (key: K) => L) {
     super();
     this.key = key;
-    this.layer = create(key);
-    this.swapped = false;
+    this.layer = this.adopt(this.create(key));
     this.viewport = undefined;
     this.registerDisposer(() => { this.layer.dispose(); });
   }
@@ -42,8 +40,8 @@ export class SwitchLayer<K extends string, L extends Layer> extends Layer {
     }
     this.layer.dispose();
     this.key = key;
-    this.layer = this.create(key);
-    this.swapped = true;
+    this.layer = this.adopt(this.create(key));
+    this.redraw();
     if (this.viewport) {
       const {bounds, zoom, fetchZoom, cone} = this.viewport;
       this.layer.viewportChanged(bounds, zoom, fetchZoom, cone);
@@ -52,12 +50,6 @@ export class SwitchLayer<K extends string, L extends Layer> extends Layer {
 
   override get copyrights(): Copyright[] {
     return this.layer.copyrights;
-  }
-
-  override hasNewData(): boolean {
-    const swapped = this.swapped;
-    this.swapped = false;
-    return this.layer.hasNewData() || swapped;
   }
 
   override loadingData(): boolean {

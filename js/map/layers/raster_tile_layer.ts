@@ -38,7 +38,6 @@ export class RasterTileLayer extends Layer {
   private readonly packed: HashMap<TileId, Uint8ClampedArray>;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
-  private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
 
   constructor(
@@ -83,7 +82,6 @@ export class RasterTileLayer extends Layer {
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
-    this.generation = 0;
     this.plan = {
       generation: -1,
       drawables: [],
@@ -97,6 +95,7 @@ export class RasterTileLayer extends Layer {
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
         this.started ||= command.fetching;
+        this.redraw();
       } else {
         checkExhaustive(command);
       }
@@ -114,6 +113,7 @@ export class RasterTileLayer extends Layer {
     this.loader.onfailure = (request, task) => {
       if (request.kind === 'lr' && this.loading.get(request.id) === task) {
         this.loading.delete(request.id);
+        this.redraw();
         this.fetcher.broadcast({
           kind: 'tlr',
           id: request.id,
@@ -160,16 +160,12 @@ export class RasterTileLayer extends Layer {
     return this.started && !this.loadingData();
   }
 
-  override hasNewData(): boolean {
-    return this.generation !== this.plan.generation;
-  }
-
   override loadingData(): boolean {
     return this.fetching || this.loading.size > 0;
   }
 
   override render(planner: Planner): void {
-    if (this.hasNewData()) {
+    if (this.generation !== this.plan.generation) {
       let instances = 0;
       for (const [id] of this.tiles) {
         instances += piecesPerSide(id.zoom) ** 2;
@@ -264,7 +260,7 @@ export class RasterTileLayer extends Layer {
     if (response.packed) {
       this.packed.set(response.id, response.packed);
     }
-    this.generation += 1;
+    this.redraw();
 
     this.fetcher.broadcast({
       kind: 'tlr',
@@ -288,7 +284,7 @@ export class RasterTileLayer extends Layer {
       }
     }
 
-    this.generation += 1;
+    this.redraw();
   }
 }
 

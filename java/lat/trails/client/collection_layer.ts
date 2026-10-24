@@ -100,14 +100,12 @@ export class CollectionLayer extends Layer {
   // dropped.
   private hoverGeneration: number;
   private indexed: boolean;
-  private generation: number;
   private readonly highlight: Highlight;
   // The object the highlight is drawing. Its geometry is blanked in the cell it was drawn from so
   // that only the highlight draws it, which leaves the highlight free to be narrower or
   // translucent.
   private lastHoverTarget: string|undefined;
   private highlighted: HeldObject|undefined;
-  private lastRenderGeneration: number;
   // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
   private styleZoom: number;
   private styleEpoch: number;
@@ -161,7 +159,6 @@ export class CollectionLayer extends Layer {
     });
     this.hoverGeneration = 0;
     this.indexed = true;
-    this.generation = 0;
     this.highlight = {
       drawables: [],
       geometry: new ArrayBuffer(/* length= */ 64 * 1024),
@@ -171,7 +168,6 @@ export class CollectionLayer extends Layer {
     };
     this.lastHoverTarget = undefined;
     this.highlighted = undefined;
-    this.lastRenderGeneration = -1;
     this.styleZoom = -1;
     this.styleEpoch = 0;
     this.styleBreaks = styleBreaks(initial);
@@ -184,6 +180,7 @@ export class CollectionLayer extends Layer {
         this.unloadCells(command);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+        this.redraw();
       } else if (command.kind === 'ssc') {
         if (command.schema) {
           const schema = parseCollectionSchema(command.schema);
@@ -215,6 +212,7 @@ export class CollectionLayer extends Layer {
       if (this.cells.get(request.key) === undefined) {
         this.cells.delete(request.key);
       }
+      this.redraw();
     };
   }
 
@@ -300,7 +298,7 @@ export class CollectionLayer extends Layer {
       return;
     }
 
-    this.lastRenderGeneration += 1;
+    this.redraw();
     this.clearHighlight();
     this.lastHoverTarget = target;
     const highlight = this.highlight;
@@ -485,14 +483,10 @@ export class CollectionLayer extends Layer {
       return;
     }
 
-    this.lastRenderGeneration += 1;
+    this.redraw();
     this.clearHighlight();
     this.lastHoverTarget = undefined;
     source.trigger(HOVER_CHANGED, {target: undefined});
-  }
-
-  override hasNewData(): boolean {
-    return this.generation !== this.lastRenderGeneration;
   }
 
   override loadingData(): boolean {
@@ -516,7 +510,6 @@ export class CollectionLayer extends Layer {
     }
 
     planner.add(this.highlight.drawables);
-    this.lastRenderGeneration = this.generation;
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
@@ -643,12 +636,14 @@ export class CollectionLayer extends Layer {
       this.release(command.key);
       this.cells.delete(command.key);
       this.rawBytes.delete(command.key);
+      this.redraw();
       return;
     }
 
     // A cell we already hold is being refined, so it keeps drawing until the finer geometry lands.
     if (!this.cells.has(command.key)) {
       this.cells.set(command.key, undefined);
+      this.redraw();
     }
 
     const tolerance = command.snap === undefined ? 0 : SimpleS2.snapEpsilon(command.snap);
@@ -750,7 +745,7 @@ export class CollectionLayer extends Layer {
       polygons: response.polygons,
       tolerance: response.tolerance,
     });
-    this.generation += 1;
+    this.redraw();
   }
 
   private unloadCells(command: UnloadCellsCommand): void {
@@ -760,7 +755,7 @@ export class CollectionLayer extends Layer {
       this.cells.delete(key);
       this.rawBytes.delete(key);
     }
-    this.generation += 1;
+    this.redraw();
   }
 
   // Throws out everything a cell owns, either because it left the viewport or because finer

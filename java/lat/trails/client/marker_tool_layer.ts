@@ -32,7 +32,6 @@ export class MarkerToolLayer extends Layer {
   private readonly glGeometry: WebGLBuffer;
   private geometry: ArrayBuffer;
   private drawables: Drawable[];
-  private generation: number;
   private planned: {generation: number; zoom: number};
 
   constructor(private readonly camera: Camera, private readonly renderer: Renderer) {
@@ -45,7 +44,6 @@ export class MarkerToolLayer extends Layer {
     });
     this.geometry = new ArrayBuffer(INITIAL_BUFFER_BYTES);
     this.drawables = [];
-    this.generation = 0;
     this.planned = {generation: -1, zoom: -1};
   }
 
@@ -71,7 +69,7 @@ export class MarkerToolLayer extends Layer {
       zoom: this.camera.zoom,
       pixel: this.camera.inverseWorldRadius,
     };
-    this.generation += 1;
+    this.redraw();
     return true;
   }
 
@@ -82,7 +80,7 @@ export class MarkerToolLayer extends Layer {
 
     const at = projectS2LatLng(point);
     this.stroke.inputs.push(at[0], at[1]);
-    this.generation += 1;
+    this.redraw();
   }
 
   override dragEnd(point: S2LatLng, moved: boolean, source: EventSource): void {
@@ -120,10 +118,6 @@ export class MarkerToolLayer extends Layer {
     return true;
   }
 
-  override hasNewData(): boolean {
-    return this.generation !== this.planned.generation;
-  }
-
   override render(planner: Planner, zoom: number): void {
     if (this.generation !== this.planned.generation || zoom !== this.planned.zoom) {
       this.plan();
@@ -135,7 +129,7 @@ export class MarkerToolLayer extends Layer {
   private clear(): void {
     if (this.stroke) {
       this.stroke = undefined;
-      this.generation += 1;
+      this.redraw();
     }
   }
 

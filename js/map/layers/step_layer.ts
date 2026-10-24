@@ -1,4 +1,5 @@
 import { S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { ScreenProjection, SphericalCone } from '../camera';
 import { Copyright } from '../common/types';
@@ -19,7 +20,6 @@ export class StepLayer<L extends Layer & {readonly ready: boolean}> extends Laye
   private wantedKey: string;
   // Every key show was last told about, whose layers stay alive
   private kept: Set<string>;
-  private swapped: boolean;
   private viewport: Viewport|undefined;
 
   constructor(
@@ -31,7 +31,6 @@ export class StepLayer<L extends Layer & {readonly ready: boolean}> extends Laye
     this.shownKey = key;
     this.wantedKey = key;
     this.kept = new Set();
-    this.swapped = false;
     this.viewport = undefined;
     this.registerDisposer(() => {
       for (const layer of this.layers.values()) {
@@ -42,7 +41,11 @@ export class StepLayer<L extends Layer & {readonly ready: boolean}> extends Laye
   }
 
   get current(): L {
-    return this.layers.get(this.shownKey)!;
+    return checkExists(this.layers.get(this.shownKey));
+  }
+
+  private get wanted(): L {
+    return checkExists(this.layers.get(this.wantedKey));
   }
 
   /** Returns every layer held, shown or loading, so a setting can reach them all. */
@@ -56,7 +59,7 @@ export class StepLayer<L extends Layer & {readonly ready: boolean}> extends Laye
     this.kept = new Set([key, ...upcoming]);
     for (const k of this.kept) {
       if (!this.layers.has(k)) {
-        const layer = this.create(k);
+        const layer = this.adopt(this.create(k));
         this.layers.set(k, layer);
         if (this.viewport) {
           const {bounds, zoom, fetchZoom, cone} = this.viewport;
@@ -71,19 +74,12 @@ export class StepLayer<L extends Layer & {readonly ready: boolean}> extends Laye
     return this.current.copyrights;
   }
 
-  // The map asks every frame, which is what notices a wanted layer finishing.
-  override hasNewData(): boolean {
-    this.swapIfReady();
-    const swapped = this.swapped;
-    this.swapped = false;
-    return this.current.hasNewData() || swapped;
-  }
-
   override loadingData(): boolean {
-    return this.current.loadingData() || this.layers.get(this.wantedKey)!.loadingData();
+    return this.current.loadingData() || this.wanted.loadingData();
   }
 
   override render(planner: Planner, zoom: number, projection: ScreenProjection): void {
+    this.swapIfReady();
     this.current.render(planner, zoom, projection);
   }
 
@@ -95,12 +91,16 @@ export class StepLayer<L extends Layer & {readonly ready: boolean}> extends Laye
     }
   }
 
+  // The wanted layer requests a render when it finishes loading, so render is where we notice it
+  // became ready. We don't swap from inside that request or else we could dispose a layer while it
+  // is still handling the response that finished it.
+  //
+  // The shown layer stays until its replacement is ready, even once show stops asking for it.
   private swapIfReady(): void {
-    if (this.wantedKey !== this.shownKey && this.layers.get(this.wantedKey)!.ready) {
+    if (this.wantedKey !== this.shownKey && this.wanted.ready) {
       this.shownKey = this.wantedKey;
-      this.swapped = true;
+      this.redraw();
     }
-    // The shown layer stays until its replacement is ready, even once show stops asking for it.
     for (const [key, layer] of this.layers) {
       if (key !== this.shownKey && !this.kept.has(key)) {
         layer.dispose();

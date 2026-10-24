@@ -54,8 +54,6 @@ export class PointCollectionLayer extends Layer {
   private buffer: ArrayBuffer;
   private readonly glBuffer: WebGLBuffer;
   private drawables: Drawable[];
-  // Bumped by anything that changes what draws, so render knows to plan again
-  private generation: number;
   private lastRenderGeneration: number;
   // Only points descending from these draw and answer the cursor
   private categories: PointCategory[];
@@ -94,7 +92,6 @@ export class PointCollectionLayer extends Layer {
       this.renderer.deleteBuffer(this.glBuffer);
     });
     this.drawables = [];
-    this.generation = 0;
     this.lastRenderGeneration = -1;
     this.categories = categories;
     this.hovered = undefined;
@@ -106,6 +103,7 @@ export class PointCollectionLayer extends Layer {
         this.unloadCells(command);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+        this.redraw();
       } else if (command.kind === 'ssc') {
         // trailcatalog points have no schema
       } else {
@@ -124,7 +122,7 @@ export class PointCollectionLayer extends Layer {
         .then(bitmap => {
           this.renderer.uploadTexture(bitmap, this.atlas);
           this.atlasLoaded = true;
-          this.generation += 1;
+          this.redraw();
         });
   }
 
@@ -134,14 +132,14 @@ export class PointCollectionLayer extends Layer {
     if (this.hovered && !this.shows(this.hovered)) {
       this.hovered = undefined;
     }
-    this.generation += 1;
+    this.redraw();
   }
 
   /** Highlights the point as if the pointer were over it, or clears the highlight. */
   highlightPoint(point: Point|undefined, source: EventSource): void {
     if (point !== this.hovered) {
       this.hovered = point;
-      this.generation += 1;
+      this.redraw();
       source.trigger(HOVER_CHANGED, {target: point});
     }
   }
@@ -158,12 +156,8 @@ export class PointCollectionLayer extends Layer {
     }
 
     this.hovered = undefined;
-    this.generation += 1;
+    this.redraw();
     source.trigger(HOVER_CHANGED, {target: undefined});
-  }
-
-  override hasNewData(): boolean {
-    return this.generation !== this.lastRenderGeneration;
   }
 
   override loadingData(): boolean {
@@ -172,7 +166,6 @@ export class PointCollectionLayer extends Layer {
 
   override render(planner: Planner, zoom: number): void {
     if (!this.atlasLoaded || zoom < this.minZoom) {
-      this.lastRenderGeneration = this.generation;
       return;
     }
 
@@ -299,7 +292,7 @@ export class PointCollectionLayer extends Layer {
       });
     }
     this.cells.set(command.key, points);
-    this.generation += 1;
+    this.redraw();
   }
 
   private unloadCells(command: UnloadCellsCommand): void {
@@ -310,6 +303,6 @@ export class PointCollectionLayer extends Layer {
       }
       this.cells.delete(key);
     }
-    this.generation += 1;
+    this.redraw();
   }
 }

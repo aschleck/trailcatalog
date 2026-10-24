@@ -106,8 +106,6 @@ export class DrawingLayer extends Layer {
   private readonly handleTexture: WebGLTexture;
   private geometry: ArrayBuffer;
   private drawables: Drawable[];
-  // Moves whenever the drawing does, and planned catches up in render.
-  private generation: number;
   private planned: number;
   private readonly cursorQuery: LatestQuery<Vertex, void>;
   // How far a route may stray from the line between its ends: half the viewport's shorter side, so
@@ -153,7 +151,6 @@ export class DrawingLayer extends Layer {
       renderer.deleteTexture(this.handleTexture);
     });
     this.drawables = [];
-    this.generation = 0;
     this.planned = -1;
     this.cursorQuery = new LatestQuery(cursor => {
       const vertices = this.drawing?.vertices;
@@ -176,7 +173,7 @@ export class DrawingLayer extends Layer {
   setMarker(at: Vec2|undefined): void {
     this.marker = at;
     // Not changed(), because the marker is not part of the drawing its listener measures
-    this.generation += 1;
+    this.redraw();
   }
 
   setActive(active: boolean): void {
@@ -389,10 +386,6 @@ export class DrawingLayer extends Layer {
     this.reach = Math.min(Math.abs(high[0] - low[0]), Math.abs(high[1] - low[1])) / 2;
   }
 
-  override hasNewData(): boolean {
-    return this.generation !== this.planned;
-  }
-
   override render(planner: Planner): void {
     if (this.generation !== this.planned) {
       this.plan();
@@ -402,7 +395,7 @@ export class DrawingLayer extends Layer {
   }
 
   private changed(): void {
-    this.generation += 1;
+    this.redraw();
     this.onChanged();
   }
 

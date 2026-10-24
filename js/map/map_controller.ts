@@ -11,6 +11,7 @@ import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 import { DPI } from './common/dpi';
 import { fitBoundInScreen } from './common/math';
 import { Copyright, LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
+import { GLYPHER } from './rendering/glypher';
 import { Planner } from './rendering/planner';
 import { Renderer } from './rendering/renderer';
 
@@ -84,8 +85,10 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
 
   private isIdle: boolean;
   private flingState: Fling|undefined;
+  private frameRequested: boolean;
+  // Whether a layer redrew since we last told listeners, which we hold until idle
+  private hasNewData: boolean;
   private screenArea: DOMRect;
-  private nextRender: RenderType;
 
   constructor(response: Response<MapController>) {
     super(response);
@@ -97,7 +100,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.lastCameraArgs = response.args.camera;
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
-      this.notifyDataChanged();
+      this.trigger(DATA_CHANGED, {});
     });
     this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       if (!this.isIdle) {
@@ -125,8 +128,12 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
 
     this.isIdle = true;
     this.flingState = undefined;
+    this.frameRequested = false;
+    this.hasNewData = false;
     this.screenArea = new DOMRect();
-    this.nextRender = RenderType.CameraChange;
+
+    // Layers plan nothing for a glyph the atlas lacks, so they need to replan once it arrives.
+    this.registerDisposable(GLYPHER.addListener(() => { this.requestFrame(); }));
 
     // The layout resizes the map without resizing the window, such as when the sidebar under it
     // opens.
@@ -143,17 +150,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     if (response.args.interactive) {
       this.registerInteractiveListeners();
     }
-
-    const raf = () => {
-      if (this.isDisposed) {
-        return;
-      }
-
-      requestAnimationFrame(raf);
-      this.advanceFling();
-      this.render();
-    };
-    requestAnimationFrame(raf);
   }
 
   // Re-export this so layers can call it
@@ -219,7 +215,16 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   }
 
   setLayers(layers: Layer[]): void {
+    for (const layer of this.layers) {
+      layer.setOnRedraw(undefined);
+    }
     this.layers = layers;
+    for (const layer of layers) {
+      layer.setOnRedraw(() => {
+        this.hasNewData = true;
+        this.requestFrame();
+      });
+    }
     this.enterIdle();
     this.copyrightsChanged();
   }
@@ -359,7 +364,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         [currPageX - this.screenArea.left, currPageY - this.screenArea.top],
         this.screenArea.width,
         this.screenArea.height);
-    this.nextRender = RenderType.CameraChange;
+    this.requestFrame();
   }
 
   fling(pageX: number, pageY: number, velocityX: number, velocityY: number): void {
@@ -373,6 +378,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       velocityY: velocityY * scale,
       lastMs: performance.now(),
     };
+    this.requestFrame();
   }
 
   private advanceFling(): void {
@@ -420,7 +426,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         [pageX - this.screenArea.left, pageY - this.screenArea.top],
         this.screenArea.width,
         this.screenArea.height);
-    this.nextRender = RenderType.CameraChange;
+    this.requestFrame();
     this.trigger(ZOOMED, {});
   }
 
@@ -440,14 +446,14 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
         this.screenArea.width,
         this.screenArea.height);
-    this.nextRender = RenderType.CameraChange;
+    this.requestFrame();
     this.wheelDebouncer.trigger();
     this.trigger(ZOOMED, {});
   }
 
   private enterIdle(): void {
     this.isIdle = true;
-    this.nextRender = RenderType.DataChange;
+    this.requestFrame();
     // No DPI here because this controls the overdraw for panning
     const bounds = this.camera.viewportBounds(this.canvas.width, this.canvas.height);
     const cone = this.camera.sphericalCone(this.canvas.width, this.canvas.height);
@@ -462,8 +468,21 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     });
   }
 
-  private notifyDataChanged(): void {
-    this.trigger(DATA_CHANGED, {});
+  private requestFrame(): void {
+    if (this.frameRequested || this.isDisposed) {
+      return;
+    }
+
+    this.frameRequested = true;
+    requestAnimationFrame(() => {
+      this.frameRequested = false;
+      if (this.isDisposed) {
+        return;
+      }
+
+      this.advanceFling();
+      this.render();
+    });
   }
 
   private render(): void {
@@ -475,34 +494,26 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       });
     }
 
-    if (this.isIdle) {
-      const hasNewData = this.layers.filter(l => l.hasNewData()).length > 0;
-      if (hasNewData) {
-        this.dataChangedDebouncer.trigger();
-        this.nextRender = RenderType.DataChange;
-      }
+    if (this.isIdle && this.hasNewData) {
+      this.hasNewData = false;
+      this.dataChangedDebouncer.trigger();
     }
 
-    if (this.nextRender !== RenderType.NoChange) {
-      this.renderer.clear();
+    this.renderer.clear();
 
-      const planner = new Planner();
-      const projection = this.camera.screenProjection(this.area[0], this.area[1]);
-      for (const layer of this.layers) {
-        layer.render(planner, this.camera.zoom, projection);
-      }
-
-      const centerPixel = this.camera.centerPixel;
-      const mvpMatrix = this.camera.sphericalMvp(this.screenArea.height, this.screenArea.width);
-      planner.render(
-        this.area,
-        this.camera.centerPixel,
-        this.camera.flattenFactor,
-        mvpMatrix,
-        this.camera.worldRadius);
-
-      this.nextRender = RenderType.NoChange;
+    const planner = new Planner();
+    const projection = this.camera.screenProjection(this.area[0], this.area[1]);
+    for (const layer of this.layers) {
+      layer.render(planner, this.camera.zoom, projection);
     }
+
+    const mvpMatrix = this.camera.sphericalMvp(this.screenArea.height, this.screenArea.width);
+    planner.render(
+      this.area,
+      this.camera.centerPixel,
+      this.camera.flattenFactor,
+      mvpMatrix,
+      this.camera.worldRadius);
   }
 
   private resize(): void {
@@ -524,15 +535,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.canvas.style.height = `${height}px`;
     this.area = [width, height];
     this.renderer.resize([width * DPI, height * DPI]);
-    this.nextRender = RenderType.CameraChange;
     this.enterIdle();
   }
-}
-
-enum RenderType {
-  NoChange = 1,
-  CameraChange = 2,
-  DataChange = 3,
 }
 
 function isLatLngRect(v: LatLngRect|LatLngZoom): v is LatLngRect {

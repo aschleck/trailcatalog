@@ -23,7 +23,6 @@ export class StacLayer extends Layer {
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
   private fetching: boolean;
-  private generation: number;
   private plan: {generation: number; drawables: Drawable[]};
   private search: Search;
 
@@ -48,7 +47,6 @@ export class StacLayer extends Layer {
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
-    this.generation = 0;
     this.plan = {
       generation: -1,
       drawables: [],
@@ -61,6 +59,7 @@ export class StacLayer extends Layer {
         this.unloadTiles(command.ids);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
+        this.redraw();
       } else {
         checkExhaustive(command);
       }
@@ -91,16 +90,12 @@ export class StacLayer extends Layer {
     return this.credit(from === to ? `${from}` : `${from}-${to}`);
   }
 
-  override hasNewData(): boolean {
-    return this.generation !== this.plan.generation;
-  }
-
   override loadingData(): boolean {
     return this.fetching;
   }
 
   override render(planner: Planner): void {
-    if (this.hasNewData()) {
+    if (this.generation !== this.plan.generation) {
       const buffer =
           new ArrayBuffer(
               Math.max(BillboardProgram.bytesNeeded() * this.tiles.size, TILE_BUFFER_BYTES));
@@ -166,7 +161,7 @@ export class StacLayer extends Layer {
       this.pool.release(replaced);
     }
     this.tiles.set(command.id, texture);
-    this.generation += 1;
+    this.redraw();
   }
 
   private unloadTiles(ids: TileId[]): void {
@@ -178,7 +173,7 @@ export class StacLayer extends Layer {
       }
     }
 
-    this.generation += 1;
+    this.redraw();
   }
 }
 

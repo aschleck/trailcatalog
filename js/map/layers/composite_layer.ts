@@ -11,16 +11,13 @@ export class CompositeLayer extends Layer {
   constructor(private readonly layers: Layer[]) {
     super();
     for (const layer of layers) {
+      this.adopt(layer);
       this.registerDisposable(layer);
     }
   }
 
   override get copyrights(): Copyright[] {
     return [...new Set(this.layers.flatMap(layer => layer.copyrights))];
-  }
-
-  override hasNewData(): boolean {
-    return this.layers.some(layer => layer.hasNewData());
   }
 
   override loadingData(): boolean {
