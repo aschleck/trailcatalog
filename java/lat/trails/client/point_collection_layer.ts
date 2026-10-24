@@ -14,7 +14,8 @@ import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { TexturePool } from 'js/map/rendering/texture_pool';
 import { PoolClient, sharedPool } from 'js/map/workers/client_pool';
-import { CellKey, Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
+import { CellKey, Stream } from 'js/map/workers/s2_streams';
 import { Z_OVERLAY_TEXT, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { HOVER_CHANGED } from './events';

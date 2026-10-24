@@ -8,32 +8,13 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 import { S2CellToken } from '../common/types';
 
 import { serveClients } from './client_pool';
+import { CellKey, cellKey, isInBand, Stream } from './s2_streams';
 
 // How hard the server may simplify geometry at a given zoom, as the S2 level whose cell diagonal is
 // about the error we accept. Undefined is full detail.
 export interface Snap {
   minZoom: number;
   snap: number|undefined;
-}
-
-// One slice of a collection. A stream carries the objects whose own cell sits in [fromLevel,
-// toLevel], which are the objects about the size of those cells, and tiles them at indexBottom.
-// Streams split the levels between them so no object is in two of them and no two tiles ever draw
-// the same object.
-export interface Stream {
-  // Half open, matching the bands in the line styles. Keep streams that overlap in level disjoint
-  // in zoom, or else both tile the same objects and each cell draws them once.
-  minZoom: number;
-  maxZoom: number|undefined;
-  indexBottom: number;
-  fromLevel: number;
-  toLevel: number|undefined;
-}
-
-export type CellKey = string & {brand: 'CellKey'};
-
-export function cellKey(stream: number, token: S2CellToken): CellKey {
-  return `${stream}/${token}` as CellKey;
 }
 
 export interface Initialize {
@@ -324,7 +305,7 @@ class S2DataFetcher {
     const viewport = this.lastViewport;
     const wanted = [];
     for (const [id, stream] of this.streams.entries()) {
-      if (stream.minZoom > zoom || (stream.maxZoom !== undefined && zoom >= stream.maxZoom)) {
+      if (!isInBand(stream, zoom)) {
         continue;
       }
 

@@ -14,7 +14,8 @@ import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { loaderCount, PoolClient, sharedPool } from 'js/map/workers/client_pool';
 import { LocationIndex } from 'js/map/workers/location_index';
-import { CellKey, Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, Stream, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
+import { CellKey, getStream, isInBand, Stream } from 'js/map/workers/s2_streams';
 import { Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { HOVER_CHANGED, LayerObject } from './events';
@@ -59,8 +60,7 @@ interface LoadedCell {
   tolerance: number;
 }
 
-// One cell's copy of an object. Zoom bands tile the same objects at different levels, so while one
-// band replaces another both cells hold it.
+// An object and the cell that draws it
 export type HeldObject =
     | {kind: 'line'; key: CellKey; value: Line}
     | {kind: 'point'; key: CellKey; value: Point}
@@ -85,16 +85,23 @@ export class CollectionLayer extends Layer {
   // time on it and we spend time cloning the answer
   private readonly loading: Map<CellKey, Task<LoaderResponse>>;
   private readonly cells: Map<CellKey, LoadedCell|undefined>;
+  // The zoom the fetcher was last sent
+  private zoom: number;
+  // Zoom bands tile the same objects at different levels, so only cells whose stream is in band at
+  // shownZoom draw and index, or else two bands draw the same object. It trails zoom so the old
+  // band keeps drawing until the new one has loaded. See settle.
+  private shownZoom: number;
+  // Cells the fetcher dropped whose band is being replaced, kept drawing until the new band loads
+  private readonly retiring: Set<CellKey>;
   // The bytes each cell arrived as, so that a styleZoom change can re-post them to the loader
   // instead of refetching. Same trade MbtileLayer makes with rawBytes.
   private readonly rawBytes: Map<CellKey, {data: ArrayBuffer; tolerance: number}>;
   // Prefixed to the cell keys this layer loads into the shared index
   private readonly producer: string;
-  // Every cell's copy of each polygon, newest last, keyed by objectKey, which is also the id the
-  // index answers queries with. A cell unloading takes only its own copy, or else the band that
-  // replaced it loses objects it still draws and indexes. Lines answer with their cell and index
-  // instead, see lineIdPrefix, because there are too many of them to key.
-  private readonly objects: Map<string, HeldObject[]>;
+  // The polygons of drawn cells keyed by objectKey, which is also the id the index answers queries
+  // with. Lines answer with their cell and index instead, see lineIdPrefix, because there are too
+  // many of them to key.
+  private readonly objects: Map<string, HeldObject>;
   private serial: number;
   // Bumped on every hover and hoverLost, so that an answer for a point the pointer has left is
   // dropped.
@@ -119,7 +126,7 @@ export class CollectionLayer extends Layer {
       // undefined to use the style from the collection's schema
       style: Style|undefined,
       snaps: Snap[],
-      streams: Stream[],
+      private readonly streams: Stream[],
       private readonly locations: LocationIndex,
       private readonly camera: Camera,
       private readonly renderer: Renderer,
@@ -144,6 +151,9 @@ export class CollectionLayer extends Layer {
             .connect({styling: initial});
     this.loading = new Map();
     this.cells = new Map();
+    this.zoom = -1;
+    this.shownZoom = -1;
+    this.retiring = new Set();
     this.rawBytes = new Map();
     this.objects = new Map();
     this.serial = 0;
@@ -180,7 +190,7 @@ export class CollectionLayer extends Layer {
         this.unloadCells(command);
       } else if (command.kind === 'usc') {
         this.fetching = command.fetching;
-        this.redraw();
+        this.settle();
       } else if (command.kind === 'ssc') {
         if (command.schema) {
           const schema = parseCollectionSchema(command.schema);
@@ -210,9 +220,9 @@ export class CollectionLayer extends Layer {
       // A cell that never drew would otherwise count as loading forever, while one being restyled
       // keeps its old geometry.
       if (this.cells.get(request.key) === undefined) {
-        this.cells.delete(request.key);
+        this.unload(request.key);
       }
-      this.redraw();
+      this.settle();
     };
   }
 
@@ -237,13 +247,9 @@ export class CollectionLayer extends Layer {
     }
 
     this.indexed = indexed;
-    for (const [key, cell] of this.cells) {
-      if (!cell) {
-        continue;
-      }
-
+    for (const [key, cell] of this.getShownCells()) {
       if (indexed) {
-        this.index(key, cell.lines, cell.serial, cell.polygons, cell.tolerance);
+        this.index(key, cell);
       } else {
         this.locations.unload([this.groupKey(key)]);
       }
@@ -254,14 +260,7 @@ export class CollectionLayer extends Layer {
   async objectsAt(point: S2LatLng): Promise<HeldObject[]> {
     const dots = this.pointsAt(point);
     const ids = await this.queryPoint(point);
-    const objects = new Map<string, HeldObject>();
-    for (const object of [...dots, ...ids.map(id => this.resolve(id))]) {
-      // Two zoom bands can both hold an object while one replaces the other.
-      if (object && !objects.has(objectKey(object.value.id))) {
-        objects.set(objectKey(object.value.id), object);
-      }
-    }
-    return [...objects.values()];
+    return [...dots, ...ids.flatMap(id => this.resolve(id) ?? [])];
   }
 
   /** Highlights the object as if the pointer were over it, or clears the highlight. */
@@ -490,29 +489,19 @@ export class CollectionLayer extends Layer {
   }
 
   override loadingData(): boolean {
-    if (this.fetching) {
-      return true;
-    }
-
-    for (const cell of this.cells.values()) {
-      if (!cell) {
-        return true;
-      }
-    }
-    return false;
+    return this.isPending() || [...this.cells.keys()].some(key => !this.isShown(key));
   }
 
   override render(planner: Planner): void {
-    for (const cell of this.cells.values()) {
-      if (cell) {
-        planner.add(cell.drawables);
-      }
+    for (const [, cell] of this.getShownCells()) {
+      planner.add(cell.drawables);
     }
 
     planner.add(this.highlight.drawables);
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
+    this.zoom = zoom;
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.broadcast({
@@ -578,8 +567,8 @@ export class CollectionLayer extends Layer {
     // converts pixels to mercator
     const radius = HOVER_RADIUS_PX * this.camera.inverseWorldRadius;
     const found: Array<{object: HeldObject; distance2: number}> = [];
-    for (const [key, cell] of this.cells) {
-      for (const point of cell?.points ?? []) {
+    for (const [key, cell] of this.getShownCells()) {
+      for (const point of cell.points) {
         const dx = point.position[0] - x;
         const dy = point.position[1] - y;
         const distance2 = dx * dx + dy * dy;
@@ -602,9 +591,7 @@ export class CollectionLayer extends Layer {
     return `${this.producer}${key}`;
   }
 
-  private index(
-      key: CellKey, lines: LoadedLines, serial: number, polygons: Polygon[], tolerance: number):
-      void {
+  private index(key: CellKey, {lines, serial, polygons, tolerance}: LoadedCell): void {
     if (!this.indexed) {
       return;
     }
@@ -632,13 +619,12 @@ export class CollectionLayer extends Layer {
   private loadRawCell(command: LoadCellCommand): void {
     // It takes 2 bytes to return a response indicating no data
     if (command.data.byteLength <= 2) {
-      this.cancel(command.key);
-      this.release(command.key);
-      this.cells.delete(command.key);
-      this.rawBytes.delete(command.key);
-      this.redraw();
+      this.unload(command.key);
+      this.settle();
       return;
     }
+
+    this.retiring.delete(command.key);
 
     // A cell we already hold is being refined, so it keeps drawing until the finer geometry lands.
     if (!this.cells.has(command.key)) {
@@ -668,13 +654,8 @@ export class CollectionLayer extends Layer {
     // highlight blanked into its buffer.
     this.release(response.key);
 
-    for (const polygon of response.polygons) {
-      this.hold(objectKey(polygon.id), {kind: 'polygon', key: response.key, value: polygon});
-    }
-
     this.serial += 1;
     const serial = this.serial;
-    this.index(response.key, response.lines, serial, response.polygons, response.tolerance);
 
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);
     const index = this.renderer.createIndexBuffer(response.index.byteLength);
@@ -735,7 +716,7 @@ export class CollectionLayer extends Layer {
       });
     }
 
-    this.cells.set(response.key, {
+    const cell = {
       glGeometryBuffer: geometry,
       glIndexBuffer: index,
       drawables,
@@ -744,18 +725,86 @@ export class CollectionLayer extends Layer {
       points: response.points,
       polygons: response.polygons,
       tolerance: response.tolerance,
-    });
-    this.redraw();
+    };
+    this.cells.set(response.key, cell);
+    if (this.isShown(response.key)) {
+      this.show(response.key, cell);
+    }
+    this.settle();
   }
 
   private unloadCells(command: UnloadCellsCommand): void {
+    // Cells that only left the viewport go right away instead of piling up while a long pan keeps
+    // the fetcher busy.
     for (const key of command.keys) {
-      this.cancel(key);
-      this.release(key);
-      this.cells.delete(key);
-      this.rawBytes.delete(key);
+      if (this.cells.get(key) && this.isLeaving(key)) {
+        this.retiring.add(key);
+      } else {
+        this.unload(key);
+      }
+    }
+    this.settle();
+  }
+
+  // Drops the retiring cells once nothing is loading, then moves shownZoom up to zoom if no drawn
+  // cell is left from the old band.
+  private settle(): void {
+    if (!this.isPending()) {
+      for (const key of this.retiring) {
+        this.unload(key);
+      }
+    }
+
+    if (![...this.cells.keys()].some(key => this.isLeaving(key))) {
+      const was = this.shownZoom;
+      this.shownZoom = this.zoom;
+      for (const [key, cell] of this.getShownCells()) {
+        if (!this.isInBandAt(key, was)) {
+          this.show(key, cell);
+        }
+      }
     }
     this.redraw();
+  }
+
+  private show(key: CellKey, cell: LoadedCell): void {
+    for (const polygon of cell.polygons) {
+      this.objects.set(objectKey(polygon.id), {kind: 'polygon', key, value: polygon});
+    }
+    this.index(key, cell);
+  }
+
+  private unload(key: CellKey): void {
+    this.cancel(key);
+    this.release(key);
+    this.cells.delete(key);
+    this.rawBytes.delete(key);
+    this.retiring.delete(key);
+  }
+
+  private isShown(key: CellKey): boolean {
+    return this.isInBandAt(key, this.shownZoom);
+  }
+
+  // Drawn, but the fetcher has moved on to a band that replaces it
+  private isLeaving(key: CellKey): boolean {
+    return this.isShown(key) && !this.isInBandAt(key, this.zoom);
+  }
+
+  private isInBandAt(key: CellKey, zoom: number): boolean {
+    return isInBand(this.streams[getStream(key)], zoom);
+  }
+
+  private *getShownCells(): Iterable<[CellKey, LoadedCell]> {
+    for (const [key, cell] of this.cells) {
+      if (cell && this.isShown(key)) {
+        yield [key, cell];
+      }
+    }
+  }
+
+  private isPending(): boolean {
+    return this.fetching || [...this.cells.values()].some(cell => !cell);
   }
 
   // Throws out everything a cell owns, either because it left the viewport or because finer
@@ -767,7 +816,9 @@ export class CollectionLayer extends Layer {
     }
 
     for (const polygon of cell.polygons) {
-      this.drop(objectKey(polygon.id), key);
+      if (this.objects.get(objectKey(polygon.id))?.key === key) {
+        this.objects.delete(objectKey(polygon.id));
+      }
     }
     this.locations.unload([this.groupKey(key)]);
 
@@ -788,7 +839,7 @@ export class CollectionLayer extends Layer {
   // The object an id from the index names, if we still hold it
   private resolve(id: string): HeldObject|undefined {
     if (!id.startsWith(this.producer)) {
-      return this.held(id);
+      return this.objects.get(id);
     }
 
     const indexAt = id.lastIndexOf('#');
@@ -799,27 +850,6 @@ export class CollectionLayer extends Layer {
       return undefined;
     }
     return {kind: 'line', key, value: lineAt(cell.lines, Number(id.substring(indexAt + 1)))};
-  }
-
-  // The newest copy, which belongs to the band the viewport is moving into
-  private held(id: string): HeldObject|undefined {
-    const copies = this.objects.get(id);
-    return copies?.[copies.length - 1];
-  }
-
-  private hold(id: string, object: HeldObject): void {
-    const copies = (this.objects.get(id) ?? []).filter(c => c.key !== object.key);
-    copies.push(object);
-    this.objects.set(id, copies);
-  }
-
-  private drop(id: string, key: CellKey): void {
-    const copies = this.objects.get(id)?.filter(c => c.key !== key) ?? [];
-    if (copies.length > 0) {
-      this.objects.set(id, copies);
-    } else {
-      this.objects.delete(id);
-    }
   }
 
   // Puts back the geometry the highlight hid, then stops drawing it.

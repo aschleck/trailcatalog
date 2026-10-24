@@ -18,7 +18,7 @@ import { Elevations } from 'js/map/workers/elevations';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { Style } from 'js/map/workers/mbtile_loader';
 import { Decode } from 'js/map/workers/raster_loader';
-import { Stream } from 'js/map/workers/s2_data_fetcher';
+import { Stream } from 'js/map/workers/s2_streams';
 import { Bands, Channel, Search } from 'js/map/workers/stac_loader';
 import { BASE_ZOOM as TERRARIUM_BASE_ZOOM, TILE_URL as TERRARIUM_TILE_URL } from 'js/map/workers/terrarium';
 import { ECMWF_LAYERS, EcmwfLayer, WEATHER_VIEWS, WeatherView, WIND_LEVELS } from 'js/map/workers/weather';

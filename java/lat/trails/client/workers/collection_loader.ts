@@ -12,7 +12,7 @@ import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
 import { PackedLines } from 'js/map/workers/location_querier';
 import { Terrain, TERRAINS } from 'js/map/workers/path_router';
-import { CellKey } from 'js/map/workers/s2_data_fetcher';
+import { CellKey } from 'js/map/workers/s2_streams';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
 
