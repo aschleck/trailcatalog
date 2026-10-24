@@ -1,3 +1,7 @@
 allowBuilds:
   '@tailwindcss/oxide': false
   fsevents: true
+
+overrides:
+  'external-editor>tmp': ^0.2.6
+  'jest-junit>uuid': ^11.1.1
