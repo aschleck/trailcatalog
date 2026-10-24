@@ -143,12 +143,13 @@ fun main(args: Array<String>) {
   hikari = createBaseConnection()
   hikariTrailcatalog = createTrailcatalogConnection()
   epochTracker = EpochTracker(hikariTrailcatalog)
+  // We trust X-User-ID without checking it, so only the frontend on this host may reach us.
   Javalin.create { config ->
     config.routes.post("/api/data", ::fetchData)
     config.routes.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
     config.routes.get("/api/collections/{id}/objects/{cell}", ::fetchCollectionObjects)
     config.routes.get("/api/collections/{id}/lines", ::fetchCollectionLines)
-  }.start(port.value)
+  }.start("127.0.0.1", port.value)
 }
 
 // Keep in sync with data.ts#WRITES
