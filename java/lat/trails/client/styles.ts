@@ -40,7 +40,8 @@ const KIND_CATEGORIES = new Map<string, WayCategory[]>([
   ['living_street', [WayCategory.ROAD_LIVING_STREET]],
   // highway=road imports as the bare ROAD category, and ROAD is the subtree of every road.
   ['road', []],
-  ['service', [WayCategory.ROAD_SERVICE]],
+  // NATURE has no class for a raceway, and a racetrack is as wide as a service road.
+  ['service', [WayCategory.ROAD_SERVICE, WayCategory.ROAD_RACEWAY]],
   ['rail', [WayCategory.RAIL]],
   ['narrow_gauge', [WayCategory.RAIL_NARROW_GAUGE]],
   ['preserved', [WayCategory.RAIL_PRESERVED]],
@@ -360,6 +361,34 @@ const TRACK_LINES: LineStyle[] = TRACK_BANDS.flatMap(({minZoom, maxZoom, fill, r
       z: Z_OVERLAY_TRANSPORTATION - 0.15,
     })));
 
+// A highway=pedestrian, which NATURE leaves to the collection. Most are plazas and pedestrian
+// malls, but parks also use it for paved trails, like way 28917735 to the Point Reyes lighthouse.
+//
+// Below zoom 13 it draws as a trail because the line is too thin to hold a core. From 13 up it
+// draws at a track's width as a white road with a trail colored casing, solid because it's paved.
+const PEDESTRIAN_CORE_COLOR = 0xFFFFFFFF as RgbaU32;
+
+const PEDESTRIAN_BANDS: Array<{
+  minZoom: number;
+  maxZoom: number;
+  fill: RgbaU32;
+  radius: number;
+  pattern: LinePattern;
+}> = [
+  {minZoom: 11, maxZoom: 13, fill: TRAIL_COLOR, radius: 0.6, pattern: 'dashed'},
+  {minZoom: 13, maxZoom: 15, fill: PEDESTRIAN_CORE_COLOR, radius: 1.8, pattern: 'solid'},
+  {minZoom: 15, maxZoom: 31, fill: PEDESTRIAN_CORE_COLOR, radius: 2.4, pattern: 'solid'},
+];
+
+// Between tracks and service roads, so a service road's casing covers a pedestrian way running into
+// it and a pedestrian way's covers a track.
+const PEDESTRIAN_LINES: LineStyle[] = PEDESTRIAN_BANDS.map(band => ({
+  filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_PEDESTRIAN]}],
+  ...band,
+  stroke: TRAIL_COLOR,
+  z: Z_OVERLAY_TRANSPORTATION - 0.1,
+}));
+
 // PATH_LINES first to keep the lowest z first, which is only cosmetic: it names categories no road,
 // aeroway, or waterway rule can match, so nothing depends on which one findZoomedStyle reaches.
 export const OSM_WAYS: Style = {
@@ -367,6 +396,7 @@ export const OSM_WAYS: Style = {
     ...PATH_LINES,
     ...wayLines(NATURE),
     ...TRACK_LINES,
+    ...PEDESTRIAN_LINES,
     ...AERIALWAY_LINES,
     ...FERRY_LINES,
   ],
