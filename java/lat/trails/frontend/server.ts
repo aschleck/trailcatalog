@@ -45,6 +45,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
     parseOptions: {
       httpOnly: true,
       path: '/',
+      sameSite: 'lax',
       secure: !DEBUG,
     },
   });
