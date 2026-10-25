@@ -122,7 +122,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       enabled: response.args.units === 'imperial',
       layer: new MbtileLayer(
           [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
-          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
+          'https://tiles.trailcatalog.org/contours_ft/${id.zoom}/${id.x}/${id.y}.mvt',
           CONTOURS_FEET,
           /* extraZoom= */ 0,
           /* minZoom= */ 9,
@@ -134,7 +134,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
       enabled: response.args.units === 'metric',
       layer: new MbtileLayer(
           [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
-          'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
+          'https://tiles.trailcatalog.org/contours_m/${id.zoom}/${id.x}/${id.y}.mvt',
           CONTOURS_METERS,
           /* extraZoom= */ 0,
           /* minZoom= */ 9,

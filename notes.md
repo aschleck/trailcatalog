@@ -63,6 +63,9 @@ java -jar ~/tile_contours_deploy.jar \
     /mnt/horse/tiles/contours/
 ```
 
+This generates a massive file with all contours. For serving, `py/split_contours.py` splits the
+contours into two files and drops dense contours at low zooms.
+
 ## Making DEM tiles
 
 <!-- doesn't work -->

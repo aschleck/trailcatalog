@@ -285,8 +285,8 @@ export class LayerCatalog extends Disposable {
     this.registerDisposable(this.conditionsRefresh);
 
     this.contours = {
-      imperial: this.newContourLayer(CONTOURS_FEET),
-      metric: this.newContourLayer(CONTOURS_METERS),
+      imperial: this.newContourLayer('imperial'),
+      metric: this.newContourLayer('metric'),
     };
 
     const ways =
@@ -1168,11 +1168,13 @@ export class LayerCatalog extends Disposable {
     this.conditionsRefresh.start();
   }
 
-  private newContourLayer(style: Readonly<Style>): MbtileLayer {
+  private newContourLayer(system: UnitSystem): MbtileLayer {
+    const archive = system === 'imperial' ? 'contours_ft' : 'contours_m';
     return new MbtileLayer(
         [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
-        'https://tiles.trailcatalog.org/contours/${id.zoom}/${id.x}/${id.y}.pbf',
-        style,
+        'https://tiles.trailcatalog.org/${archive}/${id.zoom}/${id.x}/${id.y}.mvt'
+            .replace('${archive}', archive),
+        system === 'imperial' ? CONTOURS_FEET : CONTOURS_METERS,
         /* extraZoom= */ 0,
         /* minZoom= */ 9,
         /* maxZoom= */ 14,
