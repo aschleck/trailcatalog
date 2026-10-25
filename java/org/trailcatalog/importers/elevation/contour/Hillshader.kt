@@ -20,7 +20,6 @@ import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 import kotlin.io.path.deleteIfExists
 import kotlin.math.floor
-import kotlin.math.min
 import kotlin.math.pow
 import java.awt.image.PixelGrabber
 import kotlin.io.path.exists
@@ -66,11 +65,12 @@ fun main(args: Array<String>) {
 
   val colors = File.createTempFile("colors", ".txt").toPath()
   colors.toFile().outputStream().bufferedWriter(StandardCharsets.US_ASCII).use {
+    // WebP stores alpha losslessly, which is 4x the bytes of the lossy gray, so alpha only marks
+    // nodata and the client derives the shade's alpha from the gray. Keep in sync with
+    // raster_loader.ts#alphaFromShade.
     it.write("0 0 0 0 0\n") // nodata
     for (i in 1 until 256) {
-      val v = i
-      val a = min(255, 275 - i)
-      it.write("${i} ${v} ${v} ${v} ${a}\n")
+      it.write("${i} ${i} ${i} ${i} 255\n")
     }
   }
 

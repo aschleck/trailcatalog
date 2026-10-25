@@ -84,6 +84,7 @@ export class ViewerController extends Controller<{}, Deps, HTMLElement, State> {
           /* minZoom= */ 0,
           /* maxZoom= */ 12,
           this.mapController.renderer,
+          /* decode= */ 'hillshade',
       ),
     ]);
   }

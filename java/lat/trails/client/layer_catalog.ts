@@ -1009,6 +1009,7 @@ export class LayerCatalog extends Disposable {
             /* minZoom= */ 0,
             /* maxZoom= */ 12,
             this.renderer,
+            /* decode= */ 'hillshade',
         ),
         controls: [],
         values: {},

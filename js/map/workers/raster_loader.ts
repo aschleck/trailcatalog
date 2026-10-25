@@ -6,9 +6,11 @@ import { Reply, serveClients } from './client_pool';
 import { readTerrarium, terrariumMeters } from './terrarium';
 import { colorWeather, readPacked, unpackSnodas, WeatherView } from './weather';
 
-// How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height, the
-// snow kinds color one of the values in a SNODAS tile, and the weather kinds color an ECMWF tile.
-export type Decode = 'elevation'|'image'|'snow_depth'|'snow_water'|`weather/${WeatherView}`;
+// How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height,
+// 'hillshade' fades a gray hillshade by its shade, the snow kinds color one of the values in a
+// SNODAS tile, and the weather kinds color an ECMWF tile.
+export type Decode =
+    'elevation'|'hillshade'|'image'|'snow_depth'|'snow_water'|`weather/${WeatherView}`;
 
 export interface Initialize {
   decode: Decode;
@@ -62,6 +64,10 @@ class RasterLoader {
     } else if (this.decode === 'elevation') {
       packed = await readTerrarium(blob);
       bitmap = await colorElevation(packed);
+    } else if (this.decode === 'hillshade') {
+      const pixels = await readPacked(blob);
+      alphaFromShade(pixels.data);
+      bitmap = await createImageBitmap(pixels);
     } else {
       const pixels = await readPacked(blob);
       packed = pixels.data.slice();
@@ -81,6 +87,16 @@ class RasterLoader {
       },
       transfer: packed ? [bitmap, packed.buffer] : [bitmap],
     };
+  }
+}
+
+// Lit slopes are light and fade out so that only shadows darken the map. Keep in sync with
+// Hillshader.kt#main.
+function alphaFromShade(rgba: Uint8ClampedArray): void {
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i + 3] > 0) {
+      rgba[i + 3] = 275 - rgba[i]; // clamps to 255 below a gray of 20
+    }
   }
 }
 

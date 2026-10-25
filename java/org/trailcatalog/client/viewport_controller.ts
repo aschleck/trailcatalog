@@ -115,6 +115,7 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
           /* minZoom= */ 0,
           /* maxZoom= */ 12,
           this.mapController.renderer,
+          /* decode= */ 'hillshade',
       ),
     }, {
       name: 'Contours (imperial)',

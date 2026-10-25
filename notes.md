@@ -93,6 +93,8 @@ java -jar ~/hillshader_deploy.jar \
     /mnt/horse/tiles/hillshades/
 ```
 
+This produces rgba tiles. We then convert to rgb via `py/regray_hillshades.py`.
+
 ## Public access datasets
 
 Download the "National Geodatabase" from

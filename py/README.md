@@ -24,3 +24,17 @@ curl -sLo NotoEmoji.ttf 'https://github.com/google/fonts/raw/main/ofl/notoemoji/
 nix-shell -p 'python3.withPackages(p: [p.uharfbuzz])' --run \
     'python3 trim_emojibase.py package/en NotoEmoji.ttf ../third_party/emojibase/emoji.json'
 ```
+
+## regray_hillshades.py
+
+Converts a hillshade archive with rgba channels to rgb (which is then decoded back to alpha in the
+shader).
+
+```
+cd /mnt/horse/regray
+nix-shell -p 'python3.withPackages (p: [p.pillow p.numpy])' \
+    --run 'python3 -m venv --system-site-packages venv && venv/bin/pip install pmtiles'
+nice -n 19 venv/bin/python regray_hillshades.py \
+    /home/april/tiles/hillshades.pmtiles \
+    /mnt/horse/regray/hillshades.new.pmtiles
+```
