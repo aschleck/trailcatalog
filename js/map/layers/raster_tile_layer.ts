@@ -217,6 +217,7 @@ export class RasterTileLayer extends Layer {
 
   override viewportChanged(
       bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
+    this.loader.start();
     const lat = bounds.lat();
     const lng = bounds.lng();
     this.fetcher.broadcast({

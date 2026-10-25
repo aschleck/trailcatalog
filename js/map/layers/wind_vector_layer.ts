@@ -138,6 +138,7 @@ export class WindVectorLayer extends Layer {
 
   override viewportChanged(
       bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
+    this.loader.start();
     this.lastViewport = [bounds, zoom, fetchZoom, cone];
     if (!this.style) {
       return;

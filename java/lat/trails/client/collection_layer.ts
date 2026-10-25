@@ -500,6 +500,7 @@ export class CollectionLayer extends Layer {
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
+    this.loader.start();
     this.zoom = zoom;
     const lat = bounds.lat();
     const lng = bounds.lng();

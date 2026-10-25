@@ -2,8 +2,8 @@ import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_
 import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 
 // Every layer of a kind shares one pool because each worker is its own JavaScript heap, and phones
-// run out of memory at a few hundred of them. Workers start the first time a client sends anything,
-// so a layer that is never shown costs nothing.
+// run out of memory at a few hundred of them. Workers start when a client calls start or first
+// sends anything, so a layer that is never shown costs nothing.
 
 type ToWorker<Init, Request> =
     {kind: 'connect'; client: number; init: Init}
@@ -176,15 +176,25 @@ export class PoolClient<Init, Request, Response> {
     this.attached = false;
   }
 
+  // Connects to the pool, starting its workers if they aren't running. Layers call this when shown
+  // so the worker scripts download before the fetcher's requests, which can otherwise take every
+  // connection to the origin and leave the scripts waiting behind them.
+  start(): void {
+    if (!this.attached) {
+      this.attached = true;
+      this.pool.broadcast({kind: 'connect', client: this.id, init: this.init});
+    }
+  }
+
   /** Sends to every worker in the pool, without waiting for a free one. */
   broadcast(message: Request, transfer?: Transferable[]): void {
-    this.attach();
+    this.start();
     this.pool.broadcast({kind: 'send', client: this.id, message}, transfer);
   }
 
   /** Queues work for the next free worker. Its reply completes the task. */
   post(message: Request, transfer?: Transferable[]): Task<Response> {
-    this.attach();
+    this.start();
     return this.pool.post(this.id, message, transfer ?? []);
   }
 
