@@ -2,7 +2,6 @@ import TinySDF from '@mapbox/tiny-sdf';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { TFontFace, parseCss } from 'external/dev_april_corgi+/js/common/css';
-import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 
 import { RgbaU32, Vec2 } from '../common/types';
@@ -57,7 +56,7 @@ class Glypher {
   private readonly fonts: Array<[start: number, end: number, font: LoadAwareFontFace]>;
   private readonly glyphs: Map<String, Glyph>;
   private readonly listeners: Set<() => void>;
-  private readonly regenerator: Debouncer;
+  private regenerationScheduled: boolean;
   private readonly tinySdf: TinySDF;
   private cssFetched: boolean;
   private generation: number;
@@ -69,7 +68,7 @@ class Glypher {
     this.fonts = [];
     this.glyphs = new Map();
     this.listeners = new Set();
-    this.regenerator = new Debouncer(0, () => { this.regenerate(); });
+    this.regenerationScheduled = false;
     this.cssFetched = false;
     this.generation = -1;
 
@@ -135,7 +134,7 @@ class Glypher {
     yHeight += FONT_SIZE * scale;
 
     if (regenerate) {
-      this.regenerator.trigger();
+      this.scheduleRegeneration();
       return undefined;
     }
 
@@ -181,7 +180,7 @@ class Glypher {
     yHeight -= FONT_SIZE * scale;
 
     if (regenerate) {
-      this.regenerator.trigger();
+      this.scheduleRegeneration();
       return {byteSize: 0, drawables: []};
     }
 
@@ -366,7 +365,7 @@ class Glypher {
     }
 
     if (regenerate) {
-      this.regenerator.trigger();
+      this.scheduleRegeneration();
       return false;
     }
 
@@ -428,6 +427,20 @@ class Glypher {
     return {byteSize, drawables: [drawable]};
   }
 
+  // A request never postpones one already scheduled, or else callers that retry until a glyph
+  // exists, like MbtileLayer#loadProcessedTile, take turns pushing the regeneration behind each
+  // other's retries and it never runs.
+  private scheduleRegeneration(): void {
+    if (this.regenerationScheduled) {
+      return;
+    }
+    this.regenerationScheduled = true;
+    setTimeout(() => {
+      this.regenerationScheduled = false;
+      this.regenerate();
+    });
+  }
+
   private regenerate(): void {
     if (!this.cssFetched) {
       this.cssFetched = true;
@@ -480,7 +493,7 @@ class Glypher {
               face.load()
                   .then(() => {
                     font.loaded = true;
-                    this.regenerator.trigger();
+                    this.scheduleRegeneration();
                   });
               font.requested = true;
             }
