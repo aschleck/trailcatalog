@@ -435,6 +435,31 @@ export function osmWaysOf(categories: WayCategory[]): Style {
   return {lines, points: [], polygons: OSM_WAYS.polygons};
 }
 
+/**
+ * Returns the categories some line in the style can draw within [minZoom, maxZoom), or undefined
+ * when a line there draws any category.
+ */
+export function getDrawnCategories(
+    style: Style, minZoom: number, maxZoom: number|undefined): number[]|undefined {
+  const drawn = new Set<number>();
+  for (const line of style.lines) {
+    if (line.maxZoom <= minZoom || (maxZoom !== undefined && maxZoom <= line.minZoom)) {
+      continue;
+    }
+    const filter = line.filters.find(f => f.match === 'category_in' && f.key === 'type');
+    if (!filter || filter.match !== 'category_in') {
+      return undefined;
+    }
+    for (const category of filter.value) {
+      drawn.add(category);
+    }
+  }
+  // A descendant adds nothing beside its ancestor, and leaving it out keeps the URL short
+  return [...drawn]
+      .filter(c => ![...drawn].some(other => other !== c && aDescendsB(c, other)))
+      .sort((a, b) => a - b);
+}
+
 // What the Nodes layer offers to show
 export const NODE_KINDS:
     ReadonlyArray<{key: string; label: string; category: PointCategory; hidden?: boolean}> = [

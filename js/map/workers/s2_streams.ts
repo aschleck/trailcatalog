@@ -12,6 +12,9 @@ export interface Stream {
   indexBottom: number;
   fromLevel: number;
   toLevel: number|undefined;
+  // The only categories the server sends, because the style draws nothing else in this band, or
+  // undefined for all of them
+  categories?: number[];
 }
 
 export type CellKey = string & {brand: 'CellKey'};

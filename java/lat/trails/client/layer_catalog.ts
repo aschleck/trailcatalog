@@ -41,6 +41,7 @@ import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA } from './schema';
 import {
   BASEMAP_LABEL_KINDS,
   basemapOf,
+  getDrawnCategories,
   NATURE_WITHOUT_DETAILED_WAYS,
   NODE_KINDS,
   OSM_WAYS,
@@ -310,19 +311,32 @@ export class LayerCatalog extends Disposable {
               {minZoom: 15, snap: undefined},
             ],
             [
-              // Tile at zoom - 2, which holds requests near 50 and offscreen reach near 5x at every
-              // zoom. Requests go as the viewport divided by the tile and reach goes as the tile
-              // divided by the viewport, so a fixed bottom loses at one end or the other: bottom 11
-              // costs 903 requests at zoom 10 and reaches 30x at zoom 15.
+              // Each band fetches the S2 cells of one level, and the level goes up by one every two
+              // zooms. Finer cells mean more requests, and coarser cells reach further past the
+              // screen. This schedule keeps a viewport near 50 requests that cover about 5x the
+              // screen. One level for every zoom does not work: level 11 takes 903 requests at
+              // zoom 10 and covers 30x the screen at zoom 15.
               //
-              // Only the tiling moves between bands. They all carry levels 11 and deeper, so
-              // crossing a zoom boundary can never leave a level uncovered.
+              // A cell's ways arrive in one response, which the loader decodes in one task, so a
+              // coarse cell in a dense city is one very large download and one long decode. The
+              // worst level 9 cell is central Berlin, with 221k paths in 3.7 MB, and a level 8
+              // cell covers four times the area. So the schedule starts at level 9 for zoom 10.
               //
-              // Level 9 is the coarsest safe tiling. The worst level 9 cell on the planet is
-              // central Berlin at 221k paths for 3.7 MB, against 94k at level 10 and 34k at level
-              // 11.
-              {minZoom: 10, maxZoom: 12, indexBottom: 9, fromLevel: 11, toLevel: undefined},
-              {minZoom: 12, maxZoom: 14, indexBottom: 10, fromLevel: 11, toLevel: undefined},
+              // Bands also start at zooms 11 and 13, because the style draws more from there:
+              // paths and residential streets from 11, service roads from 13. Each band asks the
+              // server only for the categories it draws, which removes 82% of the ways in a
+              // Seattle viewport at zoom 10 and 37% at zoom 12.
+              //
+              // Splitting into fine-grained bands is cheap. Zooming in already refetches every
+              // cell at each integer zoom up to 15, because the snap level changes. Only zooming
+              // out across a band boundary refetches cells that could have been reused.
+              //
+              // These streams carry the short ways, whose smallest containing cell is level 11 or
+              // finer. The streams below carry the longer ways, so every way is covered.
+              {minZoom: 10, maxZoom: 11, indexBottom: 9, fromLevel: 11, toLevel: undefined},
+              {minZoom: 11, maxZoom: 12, indexBottom: 9, fromLevel: 11, toLevel: undefined},
+              {minZoom: 12, maxZoom: 13, indexBottom: 10, fromLevel: 11, toLevel: undefined},
+              {minZoom: 13, maxZoom: 14, indexBottom: 10, fromLevel: 11, toLevel: undefined},
               {minZoom: 14, maxZoom: undefined, indexBottom: 11, fromLevel: 11, toLevel: undefined},
               // Carry the long ways separately, or a river keeps its short ways and loses the long
               // stretches of its mainstem. A way is assigned to the smallest cell containing it and
@@ -340,7 +354,12 @@ export class LayerCatalog extends Disposable {
               // draws those.
               {minZoom: 10, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: 8},
               {minZoom: 10, maxZoom: undefined, indexBottom: 7, fromLevel: 9, toLevel: 10},
-            ],
+            ].map(stream => ({
+              ...stream,
+              // From the full style rather than the kinds the Ways layer shows, so that toggling a
+              // kind restyles what is held instead of refetching
+              categories: getDrawnCategories(OSM_WAYS, stream.minZoom, stream.maxZoom),
+            })),
             locations,
             this.camera,
             this.renderer,

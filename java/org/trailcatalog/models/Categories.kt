@@ -286,7 +286,7 @@ enum class WayCategory(override val id: Int) : Category<WayCategory> {
   ;
 }
 
-private fun aDescendsB(a: Int, b: Int): Boolean {
+fun aDescendsB(a: Int, b: Int): Boolean {
   var cursor = a
   while (b < cursor) {
     cursor = (cursor - 1) / ENUM_SIZE

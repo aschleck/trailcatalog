@@ -234,6 +234,9 @@ class S2DataFetcher {
     if (stream.toLevel !== undefined) {
       query.push(`maxLevel=${stream.toLevel}`);
     }
+    if (stream.categories !== undefined) {
+      query.push(`types=${stream.categories.join(',')}`);
+    }
 
     this.throttler
         .fetch(`${this.url}/${token}?${query.join('&')}`, {mode: 'cors', signal: abort.signal})

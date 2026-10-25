@@ -98,6 +98,7 @@ import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.parseFlags
+import org.trailcatalog.models.aDescendsB
 import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.polylineToCell
 import org.trailcatalog.s2.snapEpsilon
@@ -1645,12 +1646,13 @@ private fun fetchCollectionObjects(ctx: Context) {
   // range on that bit, backwards: a coarser cell has a higher bit.
   val levelFloor = ctx.queryParam("maxLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
+  val types = ctx.queryParam("types")?.split(",")?.map { it.toInt() }
   DelegatingEncodedOutputStream(bytes).use {
     it.writeVarInt(OBJECTS_WIRE_VERSION)
 
     if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
       it.writeVarInt(KIND_PACKED_PATH)
-      fetchTrailcatalogPaths(it, cell, indexBottom, levelCeiling, levelFloor, snap)
+      fetchTrailcatalogPaths(it, cell, indexBottom, levelCeiling, levelFloor, snap, types)
     } else if (collection == TRAILCATALOG_POINTS_COLLECTIONS_ID) {
       it.writeVarInt(KIND_PACKED_POINT)
       fetchTrailcatalogPoints(it, cell, indexBottom, levelCeiling, levelFloor)
@@ -1928,6 +1930,8 @@ private fun fetchTrailcatalogPaths(
   levelCeiling: Long?,
   levelFloor: Long?,
   snap: Int?,
+  // The categories the client draws, or null for all of them
+  types: List<Int>?,
 ) {
   val epoch = epochTracker.epoch
   hikariTrailcatalog.connection.use { connection ->
@@ -1964,6 +1968,9 @@ private fun fetchTrailcatalogPaths(
       .use { results ->
         val raw = ArrayList<WirePath>()
         while (results.next()) {
+          if (types != null && types.none { aDescendsB(results.getInt(2), it) }) {
+            continue
+          }
           raw.add(
             WirePath(
               results.getLong(1),
