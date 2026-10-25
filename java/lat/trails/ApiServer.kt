@@ -30,6 +30,8 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import kotlin.collections.ArrayList
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import lat.trails.common.assemblePolygon
 import lat.trails.common.createBaseConnection
@@ -91,6 +93,7 @@ import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.common.DeltaInt64
 import org.trailcatalog.common.DeltaLatLngE7
+import org.trailcatalog.common.EncodedOutputStream
 import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
@@ -1971,16 +1974,41 @@ private fun fetchTrailcatalogPaths(
             )
           )
         }
-        val paths = simplifyPathsForSnap(raw, snap)
+        val paths = simplifyPathsForSnap(raw, snap).sortedBy { it.id }
         it.writeVarInt(paths.size)
+        // A dense cell is mostly paths of two or three points, so the id, source way, and first
+        // point are most of a path's bytes. Neighbors in id order have nearby values, so each is a
+        // zigzag delta from the path before. They are 64 bit because a longitude delta across the
+        // antimeridian reaches 3.6e9 E7.
+        //
+        // id,source_way,type,traits,point_count,first_lat,first_lng, then the DeltaLatLngE7 deltas.
+        // Keep in sync with collection_loader.ts#load.
+        var lastId = 0L
+        var lastSourceWay = 0L
+        var lastLat = 0L
+        var lastLng = 0L
         for (path in paths) {
-          it.writeVarLong(path.id)
-          it.writeVarLong(path.sourceWay)
+          it.writeVarLong(zigzag(path.id - lastId))
+          it.writeVarLong(zigzag(path.sourceWay - lastSourceWay))
           it.writeVarInt(path.type)
           it.writeVarInt(path.traits)
-          // DeltaLatLngE7 leads with its own point count and needs no alignment, so the geometry
-          // goes to the wire in the encoding it is stored in.
-          it.write(path.latLngDegrees)
+          lastId = path.id
+          lastSourceWay = path.sourceWay
+
+          val geometry = ByteBuffer.wrap(path.latLngDegrees).order(ByteOrder.LITTLE_ENDIAN)
+          val pointCount = DeltaLatLngE7.pointCount(path.latLngDegrees)
+          it.writeVarInt(pointCount)
+          if (pointCount > 0) {
+            val firstAt = EncodedOutputStream.varIntSize(pointCount)
+            val lat = geometry.getInt(firstAt).toLong()
+            val lng = geometry.getInt(firstAt + 4).toLong()
+            it.writeVarLong(zigzag(lat - lastLat))
+            it.writeVarLong(zigzag(lng - lastLng))
+            lastLat = lat
+            lastLng = lng
+            val deltasAt = firstAt + 8
+            it.write(path.latLngDegrees, deltasAt, path.latLngDegrees.size - deltasAt)
+          }
         }
       }
 
@@ -2135,6 +2163,10 @@ private fun findSharedVertices(lines: List<IntArray>): LongArray {
     }
   }
   return shared.toLongArray()
+}
+
+private fun zigzag(v: Long): Long {
+  return (v shl 1) xor (v shr 63)
 }
 
 private fun packLatLngE7(lat: Int, lng: Int): Long {

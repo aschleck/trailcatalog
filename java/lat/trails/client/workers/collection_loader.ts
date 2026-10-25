@@ -5,7 +5,7 @@ import { KIND_PACKED_PATH, KIND_UUID_JSON, OBJECTS_WIRE_VERSION } from 'java/lat
 import { aDescendsB, unpackPathTraits, WayCategory } from 'java/org/trailcatalog/models/categories';
 
 import { Bytes, S2Polygon } from 'java/org/trailcatalog/s2';
-import { projectE7Deltas, projectE7DeltasInto, projectS2Loop, skipE7Deltas } from 'js/map/camera';
+import { projectE7Deltas, projectE7DeltasAfter, projectS2Loop, skipE7Deltas, skipE7DeltasAfter } from 'js/map/camera';
 import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
@@ -374,13 +374,18 @@ class CollectionLoader {
     // The stylers only read the data they are handed, so every packed path can share this one.
     const packedData = {id: 0, type: 0};
     let packedTraits = 0;
+    // A packed path's id, source way, and first point are deltas from the previous path's. See
+    // ApiServer.kt#fetchTrailcatalogPaths.
+    let pathId = 0;
+    let firstLat = 0;
+    let firstLng = 0;
     for (let i = 0; i < lineCount; ++i) {
       let data;
       if (kind === KIND_PACKED_PATH) {
-        const pathId = getVarUint53(source);
+        pathId += unzigzag53(getVarUint53(source));
         idWords[4 * kept + 0] = pathId % 0x1_0000_0000;
         idWords[4 * kept + 1] = pathId / 0x1_0000_0000;
-        packedData.id = getVarUint53(source);
+        packedData.id += unzigzag53(getVarUint53(source));
         packedData.type = source.getVarInt32();
         packedTraits = source.getVarInt32();
         unpackPathTraits(packedTraits, packedData);
@@ -392,10 +397,21 @@ class CollectionLoader {
         const dataByteSize = source.getVarInt32();
         data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
       }
+      const pointCount = source.getVarInt32();
+      if (pointCount > 0) {
+        if (kind === KIND_PACKED_PATH) {
+          firstLat += unzigzag53(getVarUint53(source));
+          firstLng += unzigzag53(getVarUint53(source));
+        } else {
+          firstLat = source.getInt32();
+          firstLng = source.getInt32();
+        }
+      }
+
       const style = this.styler.line(data, request.styleZoom);
       if (!style) {
         // Deltas have no width to multiply past, so a line the style drops still costs a walk.
-        skipE7Deltas(source);
+        skipE7DeltasAfter(source, pointCount);
         continue;
       }
 
@@ -409,9 +425,10 @@ class CollectionLoader {
       lineStyles.push(style);
       terrains[kept] = TERRAINS.indexOf(terrainOf(data));
 
-      const pointCount = source.getVarInt32();
       this.reservePoints(floatCount + 2 * pointCount);
-      projectE7DeltasInto(source, pointCount, this.points, floatCount / 2);
+      if (pointCount > 0) {
+        projectE7DeltasAfter(source, pointCount, firstLat, firstLng, this.points, floatCount / 2);
+      }
       floatCount += 2 * pointCount;
       kept += 1;
       starts[kept] = floatCount;
@@ -746,6 +763,11 @@ function getVarUint53(source: LittleEndianView): number {
     scale *= 128;
   } while ((byte & 0x80) !== 0);
   return value;
+}
+
+// Zigzag values here reach 2^34, past what the bitwise form's 32 bit operands hold.
+function unzigzag53(v: number): number {
+  return v % 2 === 0 ? v / 2 : -(v + 1) / 2;
 }
 
 function latLngBound(polygon: S2Polygon): LatLngRect {

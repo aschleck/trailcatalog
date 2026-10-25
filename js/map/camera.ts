@@ -861,8 +861,24 @@ export function projectE7DeltasInto(
     return;
   }
 
-  let lat = source.getInt32();
-  let lng = source.getInt32();
+  const lat = source.getInt32();
+  const lng = source.getInt32();
+  projectE7DeltasAfter(source, pointCount, lat, lng, into, at);
+}
+
+/**
+ * Projects a polyline whose point count and first point the caller already read, leaving the
+ * view after its deltas.
+ */
+export function projectE7DeltasAfter(
+    source: LittleEndianView,
+    pointCount: number,
+    firstLat: number,
+    firstLng: number,
+    into: Float64Array,
+    at: number): void {
+  let lat = firstLat;
+  let lng = firstLng;
   projectE7Into(lat, lng, into, at);
   for (let i = 1; i < pointCount; ++i) {
     lat += unzigzag(source.getVarInt32());
@@ -879,6 +895,11 @@ export function skipE7Deltas(source: LittleEndianView): void {
   }
 
   source.skip(/* the first point, two fixed int32= */ 8);
+  skipE7DeltasAfter(source, pointCount);
+}
+
+/** Steps a view past the deltas of a polyline whose point count and first point were read. */
+export function skipE7DeltasAfter(source: LittleEndianView, pointCount: number): void {
   const varints = 2 * (pointCount - 1);
   for (let i = 0; i < varints; ++i) {
     source.getVarInt32();
