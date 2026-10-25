@@ -1,5 +1,4 @@
-import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { S2LatLng, S2LatLngRect, SimpleS2 } from 'java/org/trailcatalog/s2';
 import { Camera, projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
 import { RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';

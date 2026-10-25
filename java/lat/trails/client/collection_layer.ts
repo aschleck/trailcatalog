@@ -1,7 +1,6 @@
 import { OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
 import { unpackPathTraits } from 'java/org/trailcatalog/models/categories';
-import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { S2LatLng, S2LatLngRect, SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { Camera, projectS2LatLng } from 'js/map/camera';

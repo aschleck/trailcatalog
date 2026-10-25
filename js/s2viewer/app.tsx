@@ -6,8 +6,7 @@ import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
 import { formatArea } from 'js/units/formatters';
-import { S2CellId, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { S2Cell, S2CellId, S2LatLngRect, SimpleS2 } from 'java/org/trailcatalog/s2';
 import { MAP_MOVED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
@@ -102,7 +101,7 @@ function App({}: {}, state: State|undefined, updateState: (newState: State) => v
 function CellPopupS2({cell, position}: {cell: S2CellId, position: [number, number]}) {
   const area =
       formatArea(
-          SimpleS2.cellIdToCell(cell).exactArea()
+          S2Cell.fromCellId(cell).exactArea()
               * SimpleS2.EARTH_RADIUS_METERS
               * SimpleS2.EARTH_RADIUS_METERS);
   return <>

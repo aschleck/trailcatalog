@@ -4,8 +4,7 @@ import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/control
 import { merge } from 'external/dev_april_corgi+/js/corgi/deps';
 import { CorgiEvent, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
 
-import { S2Point } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { S2LatLng, S2Point } from 'java/org/trailcatalog/s2';
 import { unprojectS2LatLng } from 'js/map/camera';
 import { LatLng, Vec2 } from 'js/map/common/types';
 
@@ -167,7 +166,7 @@ export function calculateGraph(
   const latLngs: LatLngAltitude[] = [];
   let lastPoint: S2Point|undefined = undefined;
   const process = (point: S2Point, sample: number) => {
-    const ll = SimpleS2.pointToLatLng(point);
+    const ll = S2LatLng.fromPoint(point);
     latLngs.push({lat: ll.latDegrees(), lng: ll.lngDegrees(), altitude: sample});
     heights.push([length, sample]);
     min = Math.min(min, sample);

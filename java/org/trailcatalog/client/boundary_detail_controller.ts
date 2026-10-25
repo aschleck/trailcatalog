@@ -3,7 +3,7 @@ import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/control
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
 import { CorgiEvent } from 'external/dev_april_corgi+/js/corgi/events';
 
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { Bytes, S2Polygon } from 'java/org/trailcatalog/s2';
 import { LatLng, LatLngRect } from 'js/map/common/types';
 
 import { decodeBase64 } from './common/base64';
@@ -50,7 +50,8 @@ export function boundaryFromRaw(raw: DataResponses['boundary']): Boundary {
       BigInt(raw.id),
       raw.name,
       raw.type,
-      SimpleS2.decodePolygon(decodeBase64(raw.s2_polygon)));
+      S2Polygon.FAST_CODER.unsafeDecode(
+          Bytes.fromByteArray(new Uint8Array(decodeBase64(raw.s2_polygon)))));
 }
 
 export function containingBoundariesFromRaw(raw: DataResponses['boundaries_containing_boundary']): Boundary[] {

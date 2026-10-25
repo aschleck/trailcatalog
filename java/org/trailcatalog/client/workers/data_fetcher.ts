@@ -1,4 +1,4 @@
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_throttler';
 

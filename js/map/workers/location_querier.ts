@@ -1,5 +1,4 @@
-import { S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { Bytes, S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
 import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { projectS2LatLng, unprojectS2LatLng } from '../camera';
@@ -296,7 +295,8 @@ class LocationQuerier {
           lines.push({id: entry.id, distance2});
         }
       } else if (entry.kind === 'polygon') {
-        entry.polygon = entry.polygon ?? SimpleS2.decodePolygon(entry.raw);
+        entry.polygon = entry.polygon
+            ?? S2Polygon.FAST_CODER.unsafeDecode(Bytes.fromByteArray(new Uint8Array(entry.raw)));
         if (entry.polygon.containsPoint(point)) {
           polygons.push(entry.id);
         }

@@ -1,8 +1,8 @@
 import * as geotiff from 'geotiff';
 import { GeoTIFF, GeoTIFFImage } from 'geotiff';
 
-import { S2LatLng, S2LatLngRect, S2Point, S2Polygon } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { ArrayList, S2LatLng, S2LatLngRect, S2Loop, S2Point, S2Polygon }
+    from 'java/org/trailcatalog/s2';
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
@@ -684,18 +684,18 @@ class StacLoader {
     }
 
     const bound = S2LatLngRect.fromPointPair(tileLow, tileHigh);
-    const asList = SimpleS2.newArrayList<S2Point>();
+    const asList = ArrayList.create<S2Point>();
     asList.add(tileLow.toPoint());
     asList.add(S2LatLng.fromRadians(tileLow.latRadians(), tileHigh.lngRadians()).toPoint());
     asList.add(tileHigh.toPoint());
     asList.add(S2LatLng.fromRadians(tileHigh.latRadians(), tileLow.lngRadians()).toPoint());
-    const polygon = SimpleS2.pointsToPolygon(asList);
+    const polygon = S2Polygon.fromLoopArray(S2Loop.fromVertices(asList));
     const tileArea = polygon.getArea();
 
     const keys = channelAssets(this.bands);
     const sources = [];
     const fills = [];
-    let have = SimpleS2.newPolygon();
+    let have = S2Polygon.fromLoopArray();
     let haveArea = 0;
     for (const feature of this.active) {
       if (fills.length >= MAX_FILL_SOURCES) {
@@ -722,8 +722,8 @@ class StacLoader {
         continue;
       }
 
-      const overlap = SimpleS2.newPolygon();
-      const grown = SimpleS2.newPolygon();
+      const overlap = S2Polygon.fromLoopArray();
+      const grown = S2Polygon.fromLoopArray();
       overlap.initToIntersection(polygon, feature.polygon);
       grown.initToUnion(have, overlap);
       const grownArea = grown.getArea();
@@ -835,7 +835,7 @@ class StacLoader {
           S2LatLngRect.fromPointPair(
               S2LatLng.fromDegrees(feature.bbox[1], feature.bbox[0]),
               S2LatLng.fromDegrees(feature.bbox[3], feature.bbox[2]));
-      const asList = SimpleS2.newArrayList<S2Point>();
+      const asList = ArrayList.create<S2Point>();
       const coords = feature.geometry.coordinates[0];
       // The last vertex is the first
       for (let i = 0; i < coords.length - 1; ++i) {
@@ -847,7 +847,7 @@ class StacLoader {
         id: feature.id,
         bound,
         epsg: feature.properties['proj:epsg'],
-        polygon: SimpleS2.pointsToPolygon(asList),
+        polygon: S2Polygon.fromLoopArray(S2Loop.fromVertices(asList)),
         hrefs: new Map(Object.entries(feature.assets).map(([key, asset]) => [key, asset.href])),
         assets: new Map(),
       };

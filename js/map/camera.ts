@@ -1,8 +1,7 @@
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
-import { S2LatLng, S2LatLngRect, S2Loop } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { S2LatLng, S2LatLngRect, S2Loop, SimpleS2 } from 'java/org/trailcatalog/s2';
 
 import { createPerspectiveProjectionMatrix, createViewMatrix, multiply4x4 } from './common/matrix';
 import { Rect, Vec2 } from './common/types';
@@ -936,11 +935,11 @@ export function projectS2Loop(loop: S2Loop): {splits: number[]; vertices: Float3
   }
   ps.pop(); // We added the first vertex a second time, so pop it off.
   // Project everything, duplicating vertices when we cross meridian and tracking splits
-  const projected = [projectS2LatLng(SimpleS2.pointToLatLng(ps[0]))];
+  const projected = [projectS2LatLng(S2LatLng.fromPoint(ps[0]))];
   const splits = [];
   let pp = projected[0];
   for (let v = 1; v < ps.length; ++v) {
-    const next = projectS2LatLng(SimpleS2.pointToLatLng(ps[v]));
+    const next = projectS2LatLng(S2LatLng.fromPoint(ps[v]));
     if (Math.abs(next[0] - pp[0]) > 1.5) {
       if (pp[0] === -1 || pp[0] === 1) {
         splits.push(projected.length * 2);

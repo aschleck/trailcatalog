@@ -1,5 +1,4 @@
 import { S2LatLngRect, S2Polygon } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
 import { LatLngRect, Vec2 } from 'js/map/common/types';
 
 export type PixelRect = {
@@ -28,12 +27,7 @@ export function s2LatLngRectToTc(rect: S2LatLngRect): LatLngRect {
   };
 }
 
-const EMPTY_POLYGON = 
-    SimpleS2.decodePolygon(Uint8Array.from([
-      /* compressed= */ 4,
-      /* level= */ 1,
-      /* numLoops= */ 0,
-    ]).buffer);
+const EMPTY_POLYGON = S2Polygon.fromLoopArray();
 
 export function emptyS2Polygon(): S2Polygon {
   return EMPTY_POLYGON;

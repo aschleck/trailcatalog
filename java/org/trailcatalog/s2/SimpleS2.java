@@ -4,24 +4,11 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.geometry.R1Interval;
 import com.google.common.geometry.S1Angle;
 import com.google.common.geometry.S1Interval;
-import com.google.common.geometry.S2Cell;
 import com.google.common.geometry.S2CellId;
 import com.google.common.geometry.S2CellUnion;
-import com.google.common.geometry.S2LatLng;
 import com.google.common.geometry.S2LatLngRect;
-import com.google.common.geometry.S2Loop;
-import com.google.common.geometry.S2Point;
-import com.google.common.geometry.S2Polygon;
 import com.google.common.geometry.S2Projections;
 import com.google.common.geometry.S2RegionCoverer;
-import elemental2.core.ArrayBuffer;
-import elemental2.core.Uint8Array;
-import elemental2.core.JsIIterableResult;
-import elemental2.core.JsIteratorIterable;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,8 +17,6 @@ import java.util.List;
 import java.util.Set;
 import jsinterop.annotations.JsMethod;
 import jsinterop.annotations.JsType;
-import jsinterop.base.Js;
-import jsinterop.base.JsArrayLike;
 
 @JsType
 public final class SimpleS2 {
@@ -148,16 +133,6 @@ public final class SimpleS2 {
   }
 
   @JsMethod
-  public static S2Cell cellIdToCell(S2CellId id) {
-    return new S2Cell(id);
-  }
-
-  @JsMethod
-  public static int cellLevel(long id) {
-    return S2CellId.MAX_LEVEL - (Long.numberOfTrailingZeros(id) >> 1);
-  }
-
-  @JsMethod
   public static S1Angle earthMetersToAngle(double meters) {
     return S1Angle.radians(meters / EARTH_RADIUS_METERS);
   }
@@ -219,76 +194,5 @@ public final class SimpleS2 {
       }
     }
     return new ArrayList<>(all.build());
-  }
-
-  @JsMethod
-  public static S2CellUnion decodeCellUnion(Uint8Array array) {
-    try {
-      return S2CellUnion.decode(new ByteArrayInputStream(Js.uncheckedCast(array)));
-    } catch (IOException e) {
-      throw new RuntimeException("Unable to decode covering", e);
-    }
-  }
-
-  @JsMethod
-  public static S2Polygon decodePolygon(ArrayBuffer buffer) {
-    try {
-      return S2Polygon.decode(new ArrayBufferInputStream(buffer));
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  @JsMethod
-  public static ArrayBuffer encodePolygon(S2Polygon polygon) {
-    try {
-      ByteArrayOutputStream stream = new ByteArrayOutputStream();
-      polygon.encode(stream);
-      return Uint8Array.from(Js.<JsArrayLike<Double>>uncheckedCast(stream.toByteArray())).buffer;
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  @JsMethod
-  public static S2LatLng pointToLatLng(S2Point point) {
-    return new S2LatLng(point);
-  }
-
-  @JsMethod
-  public static S2Polygon pointsToPolygon(ArrayList<S2Point> points) {
-    return new S2Polygon(new S2Loop(points));
-  }
-
-  @JsMethod
-  public static <E> ArrayList<E> newArrayList() {
-    // Not sure why we can't just do `new ArrayList<E>()` in JS but the constructor isn't compiled.
-    return new ArrayList<>();
-  }
-
-  @JsMethod
-  public static S2Polygon newPolygon() {
-    return new S2Polygon();
-  }
-
-  private static class ArrayBufferInputStream extends InputStream {
-
-    // TODO(april): Is this solution better? https://stackoverflow.com/a/75393795
-
-    private final JsIteratorIterable<Double, Object, Object> values;
-
-    ArrayBufferInputStream(ArrayBuffer buffer) {
-      values = new Uint8Array(buffer).values();
-    }
-
-    @Override
-    public int read() {
-      JsIIterableResult<Double> next = values.next();
-      if (next.isDone()) {
-        return -1;
-      } else {
-        return (int) (double) next.getValue();
-      }
-    }
   }
 }

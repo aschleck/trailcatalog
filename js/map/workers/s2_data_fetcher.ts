@@ -1,5 +1,4 @@
-import { Long, S2CellId } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { Long, S2CellId, SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_throttler';

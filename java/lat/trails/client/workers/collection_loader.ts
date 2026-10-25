@@ -4,8 +4,7 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 import { KIND_PACKED_PATH, KIND_UUID_JSON, OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
 import { aDescendsB, unpackPathTraits, WayCategory } from 'java/org/trailcatalog/models/categories';
 
-import { S2Polygon } from 'java/org/trailcatalog/s2';
-import { SimpleS2 } from 'java/org/trailcatalog/s2/SimpleS2';
+import { Bytes, S2Polygon } from 'java/org/trailcatalog/s2';
 import { projectE7Deltas, projectE7DeltasInto, projectS2Loop, skipE7Deltas } from 'js/map/camera';
 import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
@@ -449,8 +448,9 @@ class CollectionLoader {
       const dataByteSize = source.getVarInt32();
       const data = JSON.parse(TEXT_DECODER.decode(source.sliceInt8(dataByteSize)));
       const polygonByteSize = source.getVarInt32();
-      const rawPolygon = source.sliceInt8(polygonByteSize).slice().buffer;
-      const polygon = SimpleS2.decodePolygon(rawPolygon);
+      const polygonBytes = source.sliceInt8(polygonByteSize).slice();
+      const rawPolygon = polygonBytes.buffer;
+      const polygon = S2Polygon.FAST_CODER.unsafeDecode(Bytes.fromByteArray(polygonBytes));
 
       const style = this.styler.polygon(data);
       if (!style) {
