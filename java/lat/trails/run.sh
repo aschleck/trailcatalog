@@ -4,7 +4,7 @@ cd ../../../
 bazelisk build \
     java/lat/trails:api_server \
     java/lat/trails/frontend:runner \
-    java/lat/trails/static
+    java/lat/trails:static
 nginx \
     -c "$(pwd)/java/lat/trails/nginx.conf" \
     -e /dev/stderr \

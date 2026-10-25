@@ -27,7 +27,7 @@ esbuild_binary(
 
 genrule(
     name = "assets",
-    srcs = ["//java/lat/trails/static"],
+    srcs = ["//java/lat/trails:static"],
     outs = ["assets.ts"],
     cmd = "$(execpath //py:static_prefix) $@ /static $(SRCS)",
     tools = ["//py:static_prefix"],
