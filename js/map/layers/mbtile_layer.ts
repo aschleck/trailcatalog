@@ -307,9 +307,9 @@ export const CONTOURS_METERS: Readonly<Style> = {
         },
         {
           filters: [{
-            match: 'greater_than',
+            match: 'number_equals',
             key: 'nth_line',
-            value: 1,
+            value: 2,
           }, {
             match: 'number_equals',
             key: 'glacier',
@@ -323,9 +323,9 @@ export const CONTOURS_METERS: Readonly<Style> = {
         },
         {
           filters: [{
-            match: 'greater_than',
+            match: 'number_equals',
             key: 'nth_line',
-            value: 1,
+            value: 2,
           }],
           fill: 0x8A6E4B50 as RgbaU32,
           stroke: 0x8A6E4B50 as RgbaU32,
