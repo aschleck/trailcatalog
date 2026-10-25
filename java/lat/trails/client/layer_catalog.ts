@@ -6,7 +6,7 @@ import { Camera } from 'js/map/camera';
 import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT } from 'js/map/common/copyrights';
 import { Copyright, RgbaU32 } from 'js/map/common/types';
 import { CompositeLayer } from 'js/map/layers/composite_layer';
-import { CONTOURS_FEET, CONTOURS_METERS, MbtileLayer } from 'js/map/layers/mbtile_layer';
+import { CONTOURS_FEET, CONTOURS_METERS, MACROSTRAT, MbtileLayer } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SlopeLayer } from 'js/map/layers/slope_layer';
 import { StepLayer } from 'js/map/layers/step_layer';
@@ -35,7 +35,7 @@ import {
   LayerNode,
 } from './layer_tree';
 import { PointCollectionLayer } from './point_collection_layer';
-import { readElevation, readSnodas, readWeather } from './readings';
+import { readElevation, readGeology, readSnodas, readWeather } from './readings';
 import { SkyLayer, ViewshedMode } from './sky_layer';
 import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA } from './schema';
 import {
@@ -425,6 +425,21 @@ export class LayerCatalog extends Disposable {
             SENTINEL_1_FIRST_YEAR,
             sentinel1Credit,
             Z_BASE_SATELLITE,
+            this.renderer);
+    const geology =
+        new MbtileLayer(
+            [{
+              long: 'Geologic maps compiled by Macrostrat from their original sources',
+              short: 'Macrostrat',
+              url: 'https://macrostrat.org/',
+              license: {name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/'},
+            }],
+            'https://tiles.macrostrat.org/carto/${id.zoom}/${id.x}/${id.y}.mvt',
+            MACROSTRAT,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            // Past 12 the tiles only overzoom the same units.
+            /* maxZoom= */ 12,
             this.renderer);
     const elevations =
         new RasterTileLayer(
@@ -1122,6 +1137,18 @@ export class LayerCatalog extends Disposable {
             const packed = elevations.packedAt(point);
             return packed !== undefined ? readElevation(packed) : undefined;
           },
+        },
+      }, {
+        kind: 'layer',
+        id: 'topography/geology',
+        name: 'Geology',
+        enabled: false,
+        layer: geology,
+        controls: [],
+        values: {},
+        readings: point => {
+          const unit = geology.featuresAt(point)[0];
+          return unit ? readGeology(unit) : [];
         },
       }, {
         kind: 'layer',

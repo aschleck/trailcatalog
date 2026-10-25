@@ -1,10 +1,10 @@
-import { S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
 import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
-import { ScreenProjection, SphericalCone } from '../camera';
+import { projectS2LatLng, ScreenProjection, SphericalCone } from '../camera';
 import { Copyright, RgbaU32, TileId } from '../common/types';
 import { Layer } from '../layer';
 import { GLYPHER } from '../rendering/glypher';
@@ -12,9 +12,9 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { loaderCount, PoolClient, sharedPool } from '../workers/client_pool';
-import { Initialize as LoaderInitialize, Label, LoadResponse, Request as LoaderRequest, Response as LoaderResponse, Style } from '../workers/mbtile_loader';
+import { Initialize as LoaderInitialize, Label, LoadResponse, QueryableFeature, Request as LoaderRequest, Response as LoaderResponse, Style, ValueType } from '../workers/mbtile_loader';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
-import { Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
+import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
 
 import { compareLabels, LabelCandidate, LabelPlacer } from './label_placer';
 import { Cap } from './polar_cap_layer';
@@ -24,6 +24,7 @@ interface LoadedTile {
   glGeometryBuffer: WebGLBuffer;
   glIndexBuffer: WebGLBuffer;
   labelKeys: string[];
+  queryable: QueryableFeature[];
 }
 
 interface IndexedLabel extends LabelCandidate {
@@ -223,6 +224,63 @@ export const CONTOURS_FEET: Readonly<Style> = {
           radius: 0.5,
           pattern: 'solid',
           z: Z_OVERLAY_TERRAIN,
+        },
+      ],
+      points: [],
+      polygons: [],
+    },
+  ],
+};
+
+// Draws Macrostrat's geologic units in the color each source map assigned them.
+// https://tiles.macrostrat.org/
+export const MACROSTRAT: Readonly<Style> = {
+  layers: [
+    {
+      layerName: 'units',
+      minZoom: 0,
+      maxZoom: 31,
+      lineTexts: [],
+      lines: [],
+      points: [],
+      polygons: [
+        {
+          filters: [],
+          fill: 0x99999980 as RgbaU32,
+          fillKey: 'color',
+          queryable: true,
+          stroke: 0x00000030 as RgbaU32,
+          strokeRadius: 0.5,
+          strokePattern: 'solid',
+          // over imagery, under contours and roads
+          z: Z_BASE_SATELLITE + 0.5,
+        },
+      ],
+    },
+    {
+      layerName: 'lines',
+      minZoom: 0,
+      maxZoom: 31,
+      lineTexts: [],
+      lines: [
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'type',
+            value: [
+              'detachment fault',
+              'fault',
+              'normal fault',
+              'reverse fault',
+              'strike-slip fault',
+              'thrust fault',
+            ],
+          }],
+          fill: 0x2B1B17D0 as RgbaU32,
+          stroke: 0x2B1B17D0 as RgbaU32,
+          radius: 0.75,
+          pattern: 'solid',
+          z: Z_BASE_SATELLITE + 0.6,
         },
       ],
       points: [],
@@ -2234,6 +2292,26 @@ export class MbtileLayer extends Layer {
     };
   }
 
+  /** Returns the properties of the queryable polygons at the point in the most detailed tile. */
+  featuresAt(point: S2LatLng): Array<Record<string, ValueType>> {
+    const [x, y] = projectS2LatLng(point);
+    let best: {zoom: number; tile: LoadedTile}|undefined = undefined;
+    for (const [id, tile] of this.tiles) {
+      if (best && best.zoom >= id.zoom) {
+        continue;
+      }
+      const tiles = 2 ** id.zoom;
+      const tx = (x + 1) / 2 * tiles - id.x;
+      const ty = (1 - y) / 2 * tiles - id.y;
+      if (0 <= tx && tx < 1 && 0 <= ty && ty < 1) {
+        best = {zoom: id.zoom, tile};
+      }
+    }
+    return (best?.tile.queryable ?? [])
+        .filter(f => containsPoint(f.geometry, f.starts, x, y))
+        .map(f => f.properties);
+  }
+
   /** Redraws every held tile with the style, without refetching. */
   setStyle(style: Style): void {
     this.styleEpoch += 1;
@@ -2412,6 +2490,7 @@ export class MbtileLayer extends Layer {
       glIndexBuffer: index,
       drawables,
       labelKeys,
+      queryable: response.queryable,
     });
     this.redraw();
 
@@ -2457,4 +2536,24 @@ export class MbtileLayer extends Layer {
     }
     this.redraw();
   }
+}
+
+// Counts crossings across every ring, so holes and the parts of a multipolygon need no special
+// casing.
+function containsPoint(geometry: number[], starts: number[], x: number, y: number): boolean {
+  let inside = false;
+  for (let r = 0; r < starts.length; ++r) {
+    const begin = starts[r];
+    const end = r < starts.length - 1 ? starts[r + 1] : geometry.length;
+    for (let i = begin, j = end - 2; i < end; j = i, i += 2) {
+      const xi = geometry[i];
+      const yi = geometry[i + 1];
+      const xj = geometry[j];
+      const yj = geometry[j + 1];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+        inside = !inside;
+      }
+    }
+  }
+  return inside;
 }

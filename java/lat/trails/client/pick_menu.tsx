@@ -48,7 +48,7 @@ export function readingItem({name, value}: {name: string; value: string}): InfoM
   return {
     kind: 'info_menu_item',
     label: name,
-    value: <span className="font-medium text-gray-900 whitespace-nowrap">{value}</span>,
+    value: <span className="font-medium inline-block max-w-xs text-end text-gray-900">{value}</span>,
   };
 }
 

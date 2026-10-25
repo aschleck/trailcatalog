@@ -117,6 +117,10 @@ interface PointStyle {
 interface PolygonStyle {
   filters: Match[];
   fill: RgbaU32;
+  // Names a #rrggbb property that replaces the rgb of fill, keeping its alpha
+  fillKey?: string;
+  // Sends the polygon back with its properties so the layer can say what is at a point
+  queryable?: boolean;
   stroke: RgbaU32;
   strokeRadius: number;
   strokePattern: LinePattern;
@@ -193,6 +197,14 @@ export interface LoadResponse {
   lines: InstanceGeometry[];
   points: InstanceGeometry[];
   polygons: ElementGeometry[];
+  queryable: QueryableFeature[];
+}
+
+export interface QueryableFeature {
+  // in world coordinates, where the world is -1 to 1
+  geometry: number[];
+  starts: number[];
+  properties: Record<string, ValueType>;
 }
 
 export interface ElementGeometry {
@@ -231,7 +243,7 @@ export interface Label {
 
 export type Response = LoadResponse;
 
-type ValueType = boolean|number|string;
+export type ValueType = boolean|number|string;
 
 interface Layer {
   name: string;
@@ -339,6 +351,9 @@ class MbtileLoader {
     const pointGroups = new DefaultMap<PointStyle, Array<T1>>(() => []);
     const polygonGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
     const polygonBoundGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
+    const fillStyles =
+        new DefaultMap<PolygonStyle, Map<string, PolygonStyle>>(() => new Map());
+    const queryable: QueryableFeature[] = [];
     for (const layer of layers) {
       const layerStyle = this.layerStyle(layer.name, request.styleZoom);
       if (!layerStyle) {
@@ -385,7 +400,14 @@ class MbtileLoader {
       for (const polygon of layer.polygons) {
         const style = findStyle(polygon.tags, layer.keys, layer.values, layerStyle.polygons);
         if (style && style.fill) {
-          polygonGroups.get(style).push(polygon);
+          polygonGroups.get(getFilledStyle(style, polygon.tags, layer, fillStyles)).push(polygon);
+          if (style.queryable) {
+            const properties: Record<string, ValueType> = {};
+            for (let i = 0; i < polygon.tags.length; i += 2) {
+              properties[layer.keys[polygon.tags[i + 0]]] = layer.values[polygon.tags[i + 1]];
+            }
+            queryable.push({geometry: polygon.geometry, starts: polygon.starts, properties});
+          }
         } else {
           // TODO(april): double counts with polygonBounds but who cares
           for (let i = 0; i < polygon.tags.length; i += 2) {
@@ -472,6 +494,7 @@ class MbtileLoader {
       lines: [],
       points: [],
       polygons: [],
+      queryable,
     };
 
     for (const [style, lines] of lineGroups) {
@@ -1293,6 +1316,37 @@ function loadValue(data: LittleEndianView): ValueType {
   }
 
   return boolean ?? number ?? string ?? 0;
+}
+
+// Returns one style per distinct color so that every polygon in a group shares a fill.
+function getFilledStyle(
+    style: PolygonStyle,
+    tags: number[],
+    layer: Layer,
+    cache: DefaultMap<PolygonStyle, Map<string, PolygonStyle>>): PolygonStyle {
+  if (!style.fillKey) {
+    return style;
+  }
+  let hex;
+  for (let i = 0; i < tags.length; i += 2) {
+    if (layer.keys[tags[i + 0]] === style.fillKey) {
+      hex = layer.values[tags[i + 1]];
+      break;
+    }
+  }
+  if (typeof hex !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    return style;
+  }
+  const byColor = cache.get(style);
+  let filled = byColor.get(hex);
+  if (!filled) {
+    filled = {
+      ...style,
+      fill: ((parseInt(hex.substring(1), 16) << 8 | (style.fill & 0xFF)) >>> 0) as RgbaU32,
+    };
+    byColor.set(hex, filled);
+  }
+  return filled;
 }
 
 function findStyle<S extends GeometryStyle>(

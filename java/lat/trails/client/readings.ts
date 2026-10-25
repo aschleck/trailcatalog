@@ -28,6 +28,9 @@ const ICING_MAX = 15;
 const WHOLE = new Intl.NumberFormat(undefined, {maximumFractionDigits: 0});
 const TENTHS = new Intl.NumberFormat(undefined, {maximumFractionDigits: 1});
 const HUNDREDTHS = new Intl.NumberFormat(undefined, {maximumFractionDigits: 2});
+// Unit ages run from thousands of years to billions, so a fixed number of decimals either drops
+// the Holocene to 0 or pads the Precambrian.
+const MILLIONS_OF_YEARS = new Intl.NumberFormat(undefined, {maximumSignificantDigits: 3});
 
 const READERS = {
   wind,
@@ -93,6 +96,40 @@ export function readSnodas(depth: boolean, packed: number): string {
 /** Describes the height of a terrarium pixel from its 24 packed bits. */
 export function readElevation(packed: number): string {
   return height(terrariumMeters(packed));
+}
+
+/** Describes a Macrostrat unit from its tile properties, one row per fact the map has. */
+export function readGeology(unit: Record<string, unknown>): Array<{name: string; value: string}> {
+  const rows: Array<{name: string; value: string}> = [];
+  const add = (name: string, value: unknown) => {
+    if (typeof value === 'string' && value) {
+      rows.push({name, value});
+    }
+  };
+  add('Unit', unit.name);
+  add('Rock', typeof unit.lith === 'string' ? getLithology(unit.lith) : undefined);
+  const top = unit.best_age_top;
+  const bottom = unit.best_age_bottom;
+  if (typeof top === 'number' && typeof bottom === 'number') {
+    const range = `${MILLIONS_OF_YEARS.format(bottom)} to ${MILLIONS_OF_YEARS.format(top)} Ma`;
+    add('Age', unit.age ? `${unit.age}, ${range}` : range);
+  } else {
+    add('Age', unit.age);
+  }
+  add('Source', unit.ref_year ? `${unit.ref_source} (${unit.ref_year})` : unit.ref_source);
+  return rows;
+}
+
+// Some compilations write lithology as `Major:{coarse alluvium}, Minor:{fine alluvium}`, which we
+// read as "coarse alluvium, minor fine alluvium".
+function getLithology(lith: string): string {
+  const parts = [...lith.matchAll(/(\w+):\{([^}]*)\}/g)];
+  if (parts.length === 0) {
+    return lith;
+  }
+  return parts
+      .map(([, label, text]) => label === 'Major' ? text : `${label.toLowerCase()} ${text}`)
+      .join(', ');
 }
 
 function precipitation(v: Values): string {
