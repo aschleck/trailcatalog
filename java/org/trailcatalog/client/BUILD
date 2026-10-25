@@ -1,15 +1,6 @@
 package(default_visibility = ["//java/org/trailcatalog:internal"])
 
-load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
-
-esbuild_binary(
-    name = "client",
-    entry_point = "app.js",
-    deps = [
-        ":css",
-        ":ts",
-    ],
-)
+load("//build_defs:ts.bzl", "tc_ts_project")
 
 tc_ts_project(
     name = "ts",

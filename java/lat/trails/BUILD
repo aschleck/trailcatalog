@@ -40,7 +40,7 @@ copy_to_directory(
     name = "static",
     srcs = glob(["static/*.svg", "static/*.webp"]) + [
         ":bundle",
-        "//java/org/trailcatalog/static:images/atlases/points.png",
+        "//java/org/trailcatalog:static/images/atlases/points.png",
         "//third_party/emojibase:emoji.json",
     ],
     replace_prefixes = {

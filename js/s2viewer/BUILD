@@ -5,12 +5,18 @@ load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 
 esbuild_binary(
-    name = "s2viewer",
-    entry_point = "app.js",
+    name = "static",
+    entry_points = {
+        "app.tsx": "s2viewer",
+        "//js/map/workers:mbtile_loader.ts": "mbtile_loader_worker",
+        "//js/map/workers:raster_loader.ts": "raster_loader_worker",
+        "//js/map/workers:xyz_data_fetcher.ts": "xyz_data_fetcher_worker",
+    },
     minify = False,
     deps = [
         ":css",
         ":ts",
+        "//js/map/workers",
     ],
 )
 
@@ -44,33 +50,4 @@ copy_to_bin(
     srcs = [
         "index.html",
     ],
-)
-
-genrule(
-    name = "static",
-    srcs = [
-        ":s2viewer.css",
-        ":s2viewer.js",
-        ":s2viewer.js.map",
-        "//js/map/workers:mbtile_loader_worker",
-        "//js/map/workers:raster_loader_worker",
-        "//js/map/workers:xyz_data_fetcher_worker",
-    ],
-    outs = [
-        "static/s2viewer.css",
-        "static/s2viewer.js",
-        "static/s2viewer.js.map",
-        "static/mbtile_loader_worker.js",
-        "static/mbtile_loader_worker.js.map",
-        "static/raster_loader_worker.js",
-        "static/raster_loader_worker.js.map",
-        "static/xyz_data_fetcher_worker.js",
-        "static/xyz_data_fetcher_worker.js.map",
-    ],
-    cmd = "\n".join([
-        "mkdir -p \"$(@D)/static\"",
-        "for i in $(SRCS); do",
-        "  cp \"$${i}\" \"$(@D)/static/$$(basename \"$${i}\")\"",
-        "done",
-    ]),
 )

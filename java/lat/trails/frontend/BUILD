@@ -8,7 +8,7 @@ js_binary(
     data = [
         ":frontend",
     ],
-    entry_point = "frontend.js",
+    entry_point = ":frontend_entry",
     node_options = [
         "--enable-source-maps",
     ],

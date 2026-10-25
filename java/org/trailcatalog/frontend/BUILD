@@ -8,7 +8,7 @@ js_binary(
     data = [
         ":frontend",
     ],
-    entry_point = "frontend.js",
+    entry_point = ":frontend_entry",
     node_options = [
         "--enable-source-maps",
     ],
@@ -27,7 +27,7 @@ esbuild_binary(
 
 genrule(
     name = "assets",
-    srcs = ["//java/org/trailcatalog/static"],
+    srcs = ["//java/org/trailcatalog:static"],
     outs = ["assets.ts"],
     cmd = "$(execpath //py:static_prefix) $@ /static $(SRCS)",
     tools = ["//py:static_prefix"],

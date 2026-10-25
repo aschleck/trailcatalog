@@ -68,7 +68,7 @@ export class MapDataService extends Service<EmptyDeps> {
 
   constructor(response: ServiceResponse<EmptyDeps>) {
     super(response);
-    this.fetcher = new Worker(new URL('data_fetcher_worker.js', import.meta.url));
+    this.fetcher = new Worker(new URL('data_fetcher_worker.js', import.meta.url), {type: 'module'});
     this.pins = new Map();
 
     this.overviewCells = new Map();
