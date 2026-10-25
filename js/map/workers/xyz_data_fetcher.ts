@@ -283,7 +283,9 @@ class XyzDataFetcher {
     }
     const projected = projectViewport(viewport);
     const worldSize = Math.pow(2, tz);
-    const tiles = [];
+    const tiles: Array<{id: TileId; distance: number}> = [];
+    const cx = worldSize * ((projected.low[0] + projected.high[0]) / 4 + 0.5);
+    const cy = worldSize * (-(projected.low[1] + projected.high[1]) / 4 + 0.5);
     // projected goes from -1 to 1, so we divide by 2 and add 0.5 to make it 0 to 1.
     // We also flip y because tile indices increase top-to-bottom.
     for (let y = Math.floor(worldSize * (-projected.high[1] / 2 + 0.5));
@@ -303,11 +305,13 @@ class XyzDataFetcher {
           zoom: tz,
         };
         if (tileInCone(id, worldSize, viewport.cone)) {
-          tiles.push(id);
+          tiles.push({id, distance: (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2});
         }
       }
     }
-    return tiles;
+    // The middle of the screen loads first
+    tiles.sort((a, b) => a.distance - b.distance);
+    return tiles.map(t => t.id);
   }
 
   private getTileUrl(id: TileId): string {

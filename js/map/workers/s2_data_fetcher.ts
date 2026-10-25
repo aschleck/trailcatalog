@@ -1,4 +1,4 @@
-import { Long, S2CellId, SimpleS2 } from 'java/org/trailcatalog/s2';
+import { Long, S2Cell, S2CellId, S2LatLng, SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_throttler';
@@ -302,7 +302,11 @@ class S2DataFetcher {
   // it belongs to whichever stream carries its level.
   private wanted(zoom: number): WantedCell[] {
     const viewport = this.lastViewport;
-    const wanted = [];
+    const center =
+        S2LatLng.fromRadians(
+            (viewport.lat[0] + viewport.lat[1]) / 2, (viewport.lng[0] + viewport.lng[1]) / 2)
+            .toPoint();
+    const wanted: Array<WantedCell & {distance: number}> = [];
     for (const [id, stream] of this.streams.entries()) {
       if (!isInBand(stream, zoom)) {
         continue;
@@ -326,9 +330,14 @@ class S2DataFetcher {
         }
 
         const token = cell.toToken() as S2CellToken;
-        wanted.push({key: cellKey(id, token), token, stream});
+        // Measure to the cell's near edge rather than its center, or else a coarse cell holding the
+        // whole screen sorts behind every fine one.
+        const distance = S2Cell.fromCellId(cell).getDistanceToPoint(center).radians();
+        wanted.push({key: cellKey(id, token), token, stream, distance});
       }
     }
+    // The middle of the screen loads first
+    wanted.sort((a, b) => a.distance - b.distance);
     return wanted;
   }
 
