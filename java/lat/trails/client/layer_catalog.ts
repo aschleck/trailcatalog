@@ -517,11 +517,100 @@ export class LayerCatalog extends Disposable {
             locations),
           weatherStation: {id: 'station', reports: 'reports'},
         },
+        {
+          kind: 'group',
+          id: 'us/faa',
+          name: 'FAA',
+          enabled: true,
+          children: [
+            this.newFaaEntry(
+                'enroute_high',
+                'IFR Enroute High',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 10),
+            this.newFaaEntry(
+                'enroute_low',
+                'IFR Enroute Low',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 11),
+            this.newFaaEntry(
+                'sectional',
+                'Sectional',
+                /* z= */ Z_BASE_SATELLITE,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 11),
+            this.newFaaEntry(
+                'terminal',
+                'Terminal Area',
+                // Drawn over the sectional it details
+                /* z= */ Z_BASE_SATELLITE + 0.1,
+                // See faa_charts.py#PRODUCTS
+                /* maxZoom= */ 12),
+          ],
+        },
       ],
     }, {
       kind: 'group',
+      id: 'osm',
+      name: 'OpenStreetMap',
+      enabled: true,
+      children: [{
+        kind: 'layer',
+        id: 'osm/protomaps',
+        name: 'Basemap',
+        enabled: true,
+        layer: protomaps,
+        controls: [
+          {kind: 'checkbox', key: 'boundaries', label: 'Boundaries'},
+          ...BASEMAP_LABEL_KINDS.map(({key, label}) => ({kind: 'checkbox' as const, key, label})),
+        ],
+        values: {
+          boundaries: true,
+          ...Object.fromEntries(BASEMAP_LABEL_KINDS.map(({key}) => [key, true])),
+        },
+        configure: values => {
+          protomaps.setStyle(
+              basemapOf(
+                  values.boundaries === true,
+                  new Set(
+                      BASEMAP_LABEL_KINDS
+                          .filter(({key}) => values[key])
+                          .flatMap(({layerNames}) => layerNames))));
+        },
+      }, {
+        kind: 'layer',
+        id: 'osm/nodes',
+        name: 'Nodes',
+        enabled: true,
+        schema: OSM_NODES_SCHEMA,
+        layer: osmNodes,
+        controls: NODE_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
+        values: Object.fromEntries(NODE_KINDS.map(({key, hidden}) => [key, !hidden])),
+        configure: values => {
+          osmNodes.setCategories(
+              NODE_KINDS.filter(({key}) => values[key]).map(({category}) => category));
+        },
+      }, {
+        kind: 'layer',
+        id: 'osm/ways',
+        name: 'Ways',
+        // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
+        enabled: true,
+        schema: OSM_WAYS_SCHEMA,
+        layer: ways,
+        controls: WAY_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
+        values: Object.fromEntries(WAY_KINDS.map(({key}) => [key, true])),
+        configure: values => {
+          ways.setStyle(
+              osmWaysOf(WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
+        },
+      }],
+    }, {
+      kind: 'group',
       id: 'national',
-      name: 'National',
+      name: 'Regional',
       enabled: true,
       // Children keep their top level ids because saved view states refer to layers by id.
       children: [{
@@ -754,38 +843,6 @@ export class LayerCatalog extends Disposable {
             this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
           ],
         }, {
-          kind: 'group',
-          id: 'us/faa',
-          name: 'FAA',
-          enabled: true,
-          children: [
-            this.newFaaEntry(
-                'enroute_high',
-                'IFR Enroute High',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 10),
-            this.newFaaEntry(
-                'enroute_low',
-                'IFR Enroute Low',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 11),
-            this.newFaaEntry(
-                'sectional',
-                'Sectional',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 11),
-            this.newFaaEntry(
-                'terminal',
-                'Terminal Area',
-                // Drawn over the sectional it details
-                /* z= */ Z_BASE_SATELLITE + 0.1,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 12),
-          ],
-        }, {
           kind: 'layer',
           id: 'us/public_land',
           name: 'Public land',
@@ -872,62 +929,6 @@ export class LayerCatalog extends Disposable {
       }],
     }, {
       kind: 'group',
-      id: 'osm',
-      name: 'OpenStreetMap',
-      enabled: true,
-      children: [{
-        kind: 'layer',
-        id: 'osm/protomaps',
-        name: 'Basemap',
-        enabled: true,
-        layer: protomaps,
-        controls: [
-          {kind: 'checkbox', key: 'boundaries', label: 'Boundaries'},
-          ...BASEMAP_LABEL_KINDS.map(({key, label}) => ({kind: 'checkbox' as const, key, label})),
-        ],
-        values: {
-          boundaries: true,
-          ...Object.fromEntries(BASEMAP_LABEL_KINDS.map(({key}) => [key, true])),
-        },
-        configure: values => {
-          protomaps.setStyle(
-              basemapOf(
-                  values.boundaries === true,
-                  new Set(
-                      BASEMAP_LABEL_KINDS
-                          .filter(({key}) => values[key])
-                          .flatMap(({layerNames}) => layerNames))));
-        },
-      }, {
-        kind: 'layer',
-        id: 'osm/nodes',
-        name: 'Nodes',
-        enabled: true,
-        schema: OSM_NODES_SCHEMA,
-        layer: osmNodes,
-        controls: NODE_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
-        values: Object.fromEntries(NODE_KINDS.map(({key, hidden}) => [key, !hidden])),
-        configure: values => {
-          osmNodes.setCategories(
-              NODE_KINDS.filter(({key}) => values[key]).map(({category}) => category));
-        },
-      }, {
-        kind: 'layer',
-        id: 'osm/ways',
-        name: 'Ways',
-        // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
-        enabled: true,
-        schema: OSM_WAYS_SCHEMA,
-        layer: ways,
-        controls: WAY_KINDS.map(({key, label}) => ({kind: 'checkbox', key, label})),
-        values: Object.fromEntries(WAY_KINDS.map(({key}) => [key, true])),
-        configure: values => {
-          ways.setStyle(
-              osmWaysOf(WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
-        },
-      }],
-    }, {
-      kind: 'group',
       id: 'satellite',
       name: 'Satellite',
       enabled: true,
@@ -988,63 +989,8 @@ export class LayerCatalog extends Disposable {
       }],
     }, {
       kind: 'group',
-      id: 'topography',
-      name: 'Topography',
-      enabled: true,
-      children: [{
-        kind: 'layer',
-        id: 'topography/contours',
-        name: 'Contours',
-        enabled: true,
-        layer: this.contours[getUnitSystem()],
-        controls: [],
-        values: {},
-      }, {
-        kind: 'layer',
-        id: 'topography/elevations',
-        name: 'Elevation colors',
-        enabled: false,
-        layer: elevations,
-        controls: [],
-        values: {},
-        readout: {
-          name: 'Elevation',
-          read: point => {
-            const packed = elevations.packedAt(point);
-            return packed !== undefined ? readElevation(packed) : undefined;
-          },
-        },
-      }, {
-        kind: 'layer',
-        id: 'topography/hillshades',
-        name: 'Hillshades',
-        enabled: true,
-        layer: new RasterTileLayer(
-            [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
-            'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
-            /* tint= */ 0xFFFFFF30 as RgbaU32,
-            /* z= */ Z_BASE_TERRAIN,
-            /* extraZoom= */ 0,
-            /* minZoom= */ 0,
-            /* maxZoom= */ 12,
-            this.renderer,
-            /* decode= */ 'hillshade',
-        ),
-        controls: [],
-        values: {},
-      }, {
-        kind: 'layer',
-        id: 'topography/slopes',
-        name: 'Slope angles',
-        enabled: false,
-        layer: new SlopeLayer([MAPTERHORN_COPYRIGHT], Z_BASE_SLOPE, this.renderer),
-        controls: [],
-        values: {},
-      }],
-    }, {
-      kind: 'group',
       id: 'weather',
-      name: 'Weather',
+      name: 'Sky',
       enabled: true,
       children: [
         this.newSwitchedWeatherEntry(
@@ -1149,6 +1095,61 @@ export class LayerCatalog extends Disposable {
         this.newWeatherEntry('wet_bulb', 'Wet-bulb temperature'),
         this.newWindEntry(),
       ],
+    }, {
+      kind: 'group',
+      id: 'topography',
+      name: 'Terrain',
+      enabled: true,
+      children: [{
+        kind: 'layer',
+        id: 'topography/contours',
+        name: 'Contours',
+        enabled: true,
+        layer: this.contours[getUnitSystem()],
+        controls: [],
+        values: {},
+      }, {
+        kind: 'layer',
+        id: 'topography/elevations',
+        name: 'Elevation colors',
+        enabled: false,
+        layer: elevations,
+        controls: [],
+        values: {},
+        readout: {
+          name: 'Elevation',
+          read: point => {
+            const packed = elevations.packedAt(point);
+            return packed !== undefined ? readElevation(packed) : undefined;
+          },
+        },
+      }, {
+        kind: 'layer',
+        id: 'topography/hillshades',
+        name: 'Hillshades',
+        enabled: true,
+        layer: new RasterTileLayer(
+            [COPERNICUS_DEM_COPYRIGHT, NASADEM_COPYRIGHT],
+            'https://tiles.trailcatalog.org/hillshades/${id.zoom}/${id.x}/${id.y}.webp',
+            /* tint= */ 0xFFFFFF30 as RgbaU32,
+            /* z= */ Z_BASE_TERRAIN,
+            /* extraZoom= */ 0,
+            /* minZoom= */ 0,
+            /* maxZoom= */ 12,
+            this.renderer,
+            /* decode= */ 'hillshade',
+        ),
+        controls: [],
+        values: {},
+      }, {
+        kind: 'layer',
+        id: 'topography/slopes',
+        name: 'Slope angles',
+        enabled: false,
+        layer: new SlopeLayer([MAPTERHORN_COPYRIGHT], Z_BASE_SLOPE, this.renderer),
+        controls: [],
+        values: {},
+      }],
     }];
     const owned =
         new Set([
