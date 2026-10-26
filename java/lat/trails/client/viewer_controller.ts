@@ -2490,13 +2490,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Stops at the end of the forecast when it plays within it, because past it the weather would
   // disappear. A time outside of the forecast plays on for the sun and moon.
   //
-  // A forecast on the map plays a step at a time, and holds each step until its tiles load and
-  // then for a few ticks more, so every step is on screen long enough to see.
+  // Each tick holds until every timed layer has loaded for the current time. A forecast on the map
+  // also plays a step at a time and holds each step for a few ticks more, so every step is on
+  // screen long enough to see.
   private advanceTimeline(): void {
     const time = this.state.time;
     const from = time.at ?? Date.now();
-    const forecasts = this.getShownEntries(this.state.layers.nodes).filter(e => e.nextTime);
-    if (forecasts.some(entry => entry.layer.loadingData())) {
+    const timed = this.getShownEntries(this.state.layers.nodes).filter(e => e.timed);
+    const forecasts = timed.filter(e => e.nextTime);
+    if (timed.some(entry => entry.layer.loadingData())) {
       this.playTicks = 0;
       return;
     }
