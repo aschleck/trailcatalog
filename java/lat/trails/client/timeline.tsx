@@ -1,9 +1,10 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
+import { PanelButton, SecondaryButton } from 'js/pika/buttons';
+import { TEXT_BOX } from 'js/pika/fields';
 import { getUnitSystem } from 'js/units/formatters';
 
-import { PanelButton, SecondaryButton, TEXT_BOX } from './controls';
 import { getShownZone, toWallClock } from './time_zones';
 
 // Fine enough to watch the sun move, while the weather picks the forecast step nearest to it

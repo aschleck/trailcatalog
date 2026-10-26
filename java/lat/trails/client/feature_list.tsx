@@ -4,6 +4,7 @@ import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
+import { DangerButton, PanelButton, PanelCloseButton } from 'js/pika/buttons';
 import { formatTemperature } from 'js/units/formatters';
 import {
   AviationConditions,
@@ -14,7 +15,6 @@ import {
 } from 'trails_lat/proto/data_pb';
 
 import { EditableFeature, EditableFolder } from './features';
-import { DangerButton, PanelButton, PanelCloseButton } from './controls';
 import { FIELD_EDITED, FIELD_ICON_CLICKED } from './events';
 import { FieldInput } from './field_input';
 import { PointMarker } from './icon_picker';

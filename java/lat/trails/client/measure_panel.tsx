@@ -1,7 +1,8 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
-import { PanelButton, PanelCloseButton, PrimaryButton } from './controls';
+import { PanelButton, PanelCloseButton, PrimaryButton } from 'js/pika/buttons';
+
 import { RouteStatus } from './drawing_layer';
 import { LineStats } from './feature_list';
 import { formatHeight, ProfileStats } from './measurements';

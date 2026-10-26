@@ -2,7 +2,8 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { VElementOrPrimitive } from 'external/dev_april_corgi+/js/corgi';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
-import { DangerButton, PanelCloseButton, SecondaryButton } from './controls';
+import { DangerButton, SecondaryButton } from 'js/pika/buttons';
+import { DIALOG, DialogHeader } from 'js/pika/dialog';
 
 export function ImportFailedDialog({files}: {files: string[]}) {
   return <>
@@ -18,12 +19,12 @@ export function ImportFailedDialog({files}: {files: string[]}) {
 
 export function ConfirmDeleteDialog({count}: {count: number}) {
   return <>
-    <div className="bg-white max-w-prose p-4 rounded text-gray-900">
+    <div className={`${DIALOG} max-w-prose`}>
       <div className="font-bold">Delete this folder?</div>
-      <p className="mt-2">
+      <p>
         {`This also deletes the ${count} ${count === 1 ? 'item' : 'items'} inside it.`}
       </p>
-      <div className="flex gap-2 justify-end mt-4">
+      <div className="flex gap-2 justify-end mt-1">
         <SecondaryButton unboundEvents={{corgi: [[ACTION, 'outsideClose']]}}>
           Cancel
         </SecondaryButton>
@@ -35,15 +36,15 @@ export function ConfirmDeleteDialog({count}: {count: number}) {
 
 export function ConfirmDeleteCollectionDialog({count, name}: {count: number; name: string}) {
   return <>
-    <div className="bg-white max-w-prose p-4 rounded text-gray-900">
+    <div className={`${DIALOG} max-w-prose`}>
       <div className="font-bold">{`Delete ${name}?`}</div>
-      <p className="mt-2">
+      <p>
         {count > 0
             ? `This deletes the ${count} ${count === 1 ? 'item' : 'items'} in it for everyone it is `
                 + 'shared with, and cannot be undone.'
             : 'This cannot be undone.'}
       </p>
-      <div className="flex gap-2 justify-end mt-4">
+      <div className="flex gap-2 justify-end mt-1">
         <SecondaryButton unboundEvents={{corgi: [[ACTION, 'outsideClose']]}}>
           Cancel
         </SecondaryButton>
@@ -70,12 +71,9 @@ function Shell({children, title}: {
   title: string;
 }) {
   return <>
-    <div className="bg-white max-w-prose p-4 rounded text-gray-900">
-      <div className="flex font-bold gap-4 items-center justify-between">
-        {title}
-        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'close']]}} />
-      </div>
-      <div className="mt-2">
+    <div className={`${DIALOG} max-w-prose`}>
+      <DialogHeader title={title} />
+      <div>
         {children ?? []}
       </div>
     </div>

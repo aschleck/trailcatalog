@@ -6,6 +6,7 @@ tc_ts_project(
     name = "map",
     deps = [
         "//java/org/trailcatalog/s2",
+        "//js/pika",
         "//js/map/common",
         "//js/map/rendering",
         "@dev_april_corgi//js/corgi",

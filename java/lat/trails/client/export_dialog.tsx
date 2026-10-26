@@ -7,14 +7,10 @@ import { Checkbox } from 'external/dev_april_corgi+/js/emu/checkbox';
 import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
-import {
-  LIST,
-  PanelCloseButton,
-  PrimaryButton,
-  SecondaryButton,
-  Section,
-  SELECT_BOX,
-} from './controls';
+import { PrimaryButton, SecondaryButton } from 'js/pika/buttons';
+import { DIALOG, DialogHeader, LIST, Section } from 'js/pika/dialog';
+import { SELECT_BOX } from 'js/pika/fields';
+
 import { ExportFormat, filterForExport } from './exporter';
 import { buildTree, Chevron, FeatureIcon, TreeItem, untitled } from './feature_list';
 import { EditableFeature } from './features';
@@ -75,22 +71,9 @@ function ExportPicker(
           args: {features, onExport, tree},
           state: [state, updateState],
         })}
-        className="
-            bg-white
-            flex
-            flex-col
-            gap-4
-            max-w-[calc(100vw-2rem)]
-            p-4
-            rounded
-            text-gray-900
-            w-[40rem]
-        "
+        className={`${DIALOG} w-[40rem]`}
     >
-      <div className="flex font-bold items-center justify-between">
-        Export
-        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}} />
-      </div>
+      <DialogHeader onClose="dismiss" title="Export" />
       <Section label="Features">
         <div className={`${LIST} max-h-[50vh] overflow-y-auto`}>
           {rows(tree, view, /* depth= */ 0)}

@@ -5,7 +5,9 @@ import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events
 import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 
-import { PanelCloseButton, TEXT_BOX } from './controls';
+import { DIALOG, DialogHeader } from 'js/pika/dialog';
+import { TEXT_BOX } from 'js/pika/fields';
+
 import { pointIcon } from './features';
 import { DEFAULT_ICON, DEFAULT_POINT_RADIUS_PX } from './workers/collection_schema';
 
@@ -150,12 +152,9 @@ function IconPicker(
           },
           state: [state, updateState],
         })}
-        className="bg-white flex flex-col gap-2 p-3 rounded shadow-lg text-gray-900 w-96"
+        className={`${DIALOG} w-96`}
     >
-      <div className="flex font-bold items-center justify-between">
-        Icon
-        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}} />
-      </div>
+      <DialogHeader onClose="dismiss" title="Icon" />
       <Input
           autofocus={true}
           className={TEXT_BOX}

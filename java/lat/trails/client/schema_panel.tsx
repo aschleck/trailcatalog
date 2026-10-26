@@ -7,17 +7,10 @@ import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 import { LINE_PATTERNS } from 'js/map/rendering/line_program';
+import { IconButton, RemoveButton, SecondaryButton } from 'js/pika/buttons';
+import { LIST, PANEL, Section } from 'js/pika/dialog';
+import { SELECT_BOX, TEXT_BOX } from 'js/pika/fields';
 
-import {
-  IconButton,
-  LIST,
-  PANEL,
-  RemoveButton,
-  SecondaryButton,
-  Section,
-  SELECT_BOX,
-  TEXT_BOX,
-} from './controls';
 import { ColorPickerButton } from './color_picker';
 import { FIELD_EDITED, FIELD_ICON_CLICKED } from './events';
 import { FieldInput } from './field_input';
@@ -95,8 +88,8 @@ const KIND_LABELS: {[kind in FieldKind]: string} = {
 const CLEARED_BY_BUTTON: FieldType[] = ['color', 'icon', 'pattern', 'select'];
 // A text box that only shows its border when it is pointed at or typed in
 const QUIET_TEXT_BOX =
-    'border border-transparent focus-within:border-blue-500 grow h-7 hover:border-gray-300 '
-        + 'min-w-0 px-2 rounded';
+    '[&_input]:outline-none border border-transparent focus-within:border-blue-500 grow h-7 '
+        + 'hover:border-gray-300 min-w-0 outline-none px-2 rounded';
 
 interface State {
   draft: CollectionSchema;

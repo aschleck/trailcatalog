@@ -1,22 +1,16 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Button } from 'external/dev_april_corgi+/js/emu/button';
 
-// Every control is 28px tall so rows of mixed controls line up.
-export const TEXT_BOX =
-    'bg-white border border-gray-300 focus-within:border-blue-500 h-7 min-w-0 px-2 rounded';
-export const SELECT_BOX = 'bg-white border border-gray-300 h-7 min-w-0 px-1 rounded';
+// 28px tall like the fields in fields.ts, so rows of mixed controls line up
 const BUTTON =
-    'border cursor-pointer flex h-7 items-center justify-center leading-5 px-3 rounded select-none';
+    'border cursor-pointer disabled:opacity-50 disabled:pointer-events-none flex h-7 items-center '
+        + 'justify-center leading-5 px-3 rounded select-none';
 const PRIMARY_BUTTON =
     `${BUTTON} active:bg-gray-700 bg-gray-900 border-gray-900 hover:bg-gray-800 text-white`;
 export const SECONDARY_BUTTON =
     `${BUTTON} active:bg-gray-100 bg-white border-gray-300 hover:bg-gray-50`;
 const DANGER_BUTTON =
     `${BUTTON} active:bg-red-900 bg-red-700 border-red-700 hover:bg-red-800 text-white`;
-// Rows in a dialog list, each giving itself padding
-export const LIST = 'border border-gray-200 divide-gray-200 divide-y rounded';
-// The scrolling body of a settings panel, which adds flex or hidden itself
-export const PANEL = 'flex-col gap-6 grow min-h-0 overflow-y-auto px-5 py-4';
 
 type ButtonProps = {
   children?: corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
@@ -91,18 +85,6 @@ export function RemoveButton(props: {label: string} & Omit<corgi.Properties, 'ch
     <IconButton {...props}>
       <path d="M2 2 L10 10 M2 10 L10 2" strokeWidth="1.5" />
     </IconButton>
-  );
-}
-
-export function Section({children, label}: {
-  children?: corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
-  label: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="font-semibold text-gray-500 text-xs tracking-wide uppercase">{label}</div>
-      {children ?? []}
-    </div>
   );
 }
 

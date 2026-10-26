@@ -1,4 +1,4 @@
-import { SECONDARY_BUTTON } from './controls';
+import { SECONDARY_BUTTON } from 'js/pika/buttons';
 
 // Renders the page that the login popup and the invite page's redirect open. The frontend serves
 // it, but it lives in client/ so that tailwind generates its classes.

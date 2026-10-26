@@ -9,17 +9,12 @@ import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 
+import { DangerButton, PanelCloseButton, PrimaryButton } from 'js/pika/buttons';
+import { DIALOG_SURFACE, PANEL, Section } from 'js/pika/dialog';
+import { TEXT_BOX } from 'js/pika/fields';
 import { Collection, Role, UpdateCollectionResponse } from 'trails_lat/proto/data_pb';
 
 import { descriptionOf } from './collection_data';
-import {
-  DangerButton,
-  PANEL,
-  PanelCloseButton,
-  PrimaryButton,
-  Section,
-  TEXT_BOX,
-} from './controls';
 import { requestData } from './data';
 import { SchemaPanel } from './schema_panel';
 import { SharingPanel } from './sharing_panel';
@@ -79,21 +74,10 @@ function Settings(
           args: {},
           state: [state, updateState],
         })}
-        className="
-            bg-white
-            flex
-            flex-col
-            h-[36rem]
-            max-h-[85vh]
-            max-w-[calc(100vw-2rem)]
-            overflow-hidden
-            rounded-lg
-            shadow-xl
-            sm:flex-row
-            text-gray-900
-            text-sm
-            w-[46rem]
-        "
+        className={
+          `${DIALOG_SURFACE} flex flex-col h-[36rem] max-h-[85vh] overflow-hidden sm:flex-row `
+              + 'w-[46rem]'
+        }
     >
       <div
           className="

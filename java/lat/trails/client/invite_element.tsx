@@ -11,6 +11,7 @@ import {
   setTitle,
 } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
+import { PrimaryButton } from 'js/pika/buttons';
 import {
   AcceptInviteResponse,
   GetCurrentUserResponse,
@@ -18,7 +19,6 @@ import {
   Role,
 } from 'trails_lat/proto/data_pb';
 
-import { PrimaryButton } from './controls';
 import { requestData } from './data';
 
 interface State {

@@ -9,6 +9,9 @@ import { Checkbox } from 'external/dev_april_corgi+/js/emu/checkbox';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
+import { RemoveButton, SecondaryButton } from 'js/pika/buttons';
+import { LIST, PANEL, Section } from 'js/pika/dialog';
+import { SELECT_BOX } from 'js/pika/fields';
 import {
   CreateInviteResponse,
   GetSharingResponse,
@@ -21,14 +24,6 @@ import {
   Sharing,
 } from 'trails_lat/proto/data_pb';
 
-import {
-  LIST,
-  PANEL,
-  RemoveButton,
-  SecondaryButton,
-  Section,
-  SELECT_BOX,
-} from './controls';
 import { requestData } from './data';
 
 const DAY_S = 24 * 60 * 60;
