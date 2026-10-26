@@ -16,6 +16,7 @@ const WRITES: string[] = [
   'lat.trails.DataService/AcceptInvite',
   'lat.trails.DataService/CreateCollection',
   'lat.trails.DataService/CreateInvite',
+  'lat.trails.DataService/DeleteAccount',
   'lat.trails.DataService/DeleteCollection',
   'lat.trails.DataService/RevokeInvite',
   'lat.trails.DataService/Save',
@@ -27,6 +28,7 @@ const WRITES: string[] = [
 
 // Read RPCs that are invalidated when a write comes through or somebody signs in
 const USER_DEPENDENT_READS: string[] = [
+  'lat.trails.DataService/GetAccount',
   'lat.trails.DataService/GetCollection',
   'lat.trails.DataService/GetInvite',
   'lat.trails.DataService/GetSharing',

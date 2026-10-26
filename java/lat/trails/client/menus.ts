@@ -147,11 +147,21 @@ export const HELP_MENU: MenuEntries = [{
   },
 }];
 
-export const USER_MENU: MenuEntries = [{
-  kind: 'menu_item',
-  label: 'Log out',
-  action: () => {
-    // Force a page refresh as part of logging out
-    window.location.href = '/logout';
-  },
-}];
+export function userMenu(openAccount: () => void): MenuEntries {
+  return [{
+    kind: 'menu_item',
+    label: 'Account…',
+    action: () => {
+      openAccount();
+    },
+  }, {
+    kind: 'divider',
+  }, {
+    kind: 'menu_item',
+    label: 'Log out',
+    action: () => {
+      // Force a page refresh as part of logging out
+      window.location.href = '/logout';
+    },
+  }];
+}

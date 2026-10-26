@@ -9,7 +9,9 @@ service DataService {
   rpc AcceptInvite(AcceptInviteRequest) returns (AcceptInviteResponse);
   rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
   rpc CreateInvite(CreateInviteRequest) returns (CreateInviteResponse);
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
   rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
   rpc GetAviationWeather(GetAviationWeatherRequest) returns (GetAviationWeatherResponse);
   rpc GetCollection(GetCollectionRequest) returns (GetCollectionResponse);
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
@@ -61,6 +63,12 @@ message CreateInviteResponse {
   Sharing sharing = 2;
 }
 
+// Deletes the caller, their logins, and every collection they own, including for anyone it is
+// shared with. Nothing is kept to restore it from.
+message DeleteAccountRequest {}
+
+message DeleteAccountResponse {}
+
 // Only the owner may delete. Everything in the collection goes with it, and nothing is kept to
 // restore it from.
 message DeleteCollectionRequest {
@@ -68,6 +76,27 @@ message DeleteCollectionRequest {
 }
 
 message DeleteCollectionResponse {}
+
+// What the caller's account holds, so they can see what DeleteAccount would take with it.
+message GetAccountRequest {}
+
+message GetAccountResponse {
+  // Empty when no login shared a verified one
+  string email = 1;
+  // The iss claim of each login, like https://accounts.google.com
+  repeated string login_issuers = 2;
+  // Newest first
+  repeated OwnedCollection owned = 3;
+  // How many collections other people have granted the caller
+  int32 granted_count = 4;
+}
+
+message OwnedCollection {
+  string id = 1;
+  string name = 2;
+  // Whether anyone else can open it, through a grant or because anyone can view it
+  bool shared = 3;
+}
 
 // Proxies the Aviation Weather Center, which doesn't allow cross origin requests
 message GetAviationWeatherRequest {

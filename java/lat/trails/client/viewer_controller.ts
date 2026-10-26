@@ -30,7 +30,9 @@ import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
   Collection,
   CreateCollectionResponse,
+  DeleteAccountResponse,
   DeleteCollectionResponse,
+  GetAccountResponse,
   GetAviationWeatherResponse,
   GetCollectionResponse,
   GetCurrentUserResponse,
@@ -43,12 +45,14 @@ import {
   OsmElementType,
 } from 'trails_lat/proto/data_pb';
 
+import { AccountDialog, ConfirmDeleteAccountDialog } from './account_dialog';
 import { CollectionLayer, HeldObject } from './collection_layer';
 import { CollectionSettingsDialog, SettingsPanel } from './collection_settings_dialog';
 import { requestData } from './data';
 import {
   ConfirmDeleteCollectionDialog,
   ConfirmDeleteDialog,
+  DeleteAccountFailedDialog,
   ImportFailedDialog,
   SaveFailedDialog,
 } from './dialogs';
@@ -138,7 +142,7 @@ import {
 import { haversineMeters, pathLengthMeters, profileSamples } from './measurements';
 import { MarkerToolLayer } from './marker_tool_layer';
 import { MENU_CLASSES } from './menubar';
-import { editMenu, fileMenu, HELP_MENU, USER_MENU, viewMenu } from './menus';
+import { editMenu, fileMenu, HELP_MENU, userMenu, viewMenu } from './menus';
 import { LineProfileState } from './profile_chart';
 import { SaveEntry, SaveQueue } from './save_queue';
 import { SearchHit, SearchQuery, SearchState } from './search_box';
@@ -1415,7 +1419,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     } else if (menu === 'help') {
       this.openMenu(HELP_MENU, trigger);
     } else if (menu === 'user') {
-      this.openMenu(USER_MENU, trigger);
+      this.openMenu(
+          userMenu(() => {
+            this.openAccount();
+          }),
+          trigger);
     }
   }
 
@@ -2033,6 +2041,34 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         .catch(e => {
           console.error(e);
           return false;
+        });
+  }
+
+  // Both dialogs reject when dismissed, so only confirming both reaches DeleteAccount.
+  private openAccount(): void {
+    const account: Future<GetAccountResponse> =
+        requestData('lat.trails.DataService/GetAccount', {});
+    Promise.all([this.state.self, account])
+        .then(([self, response]) =>
+            this.dialog.display(AccountDialog({account: response, user: checkExists(self.user)}))
+                .then(() => this.dialog.display(ConfirmDeleteAccountDialog({account: response})))
+                .then(() => this.deleteAccount(), () => {}))
+        .catch(e => {
+          console.error(e);
+        });
+  }
+
+  private deleteAccount(): Promise<void> {
+    const deleted: Future<DeleteAccountResponse> =
+        requestData('lat.trails.DataService/DeleteAccount', {});
+    return deleted.then(
+        () => {
+          // The login cookie still names the deleted user until /logout clears it.
+          window.location.href = '/logout';
+        },
+        e => {
+          console.error(e);
+          this.dialog.display(DeleteAccountFailedDialog({})).catch(() => {});
         });
   }
 

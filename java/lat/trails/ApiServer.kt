@@ -46,10 +46,12 @@ import lat.trails.proto.CreateCollectionResponse
 import lat.trails.proto.CreateInviteRequest
 import lat.trails.proto.CreateInviteResponse
 import lat.trails.proto.Delete
+import lat.trails.proto.DeleteAccountResponse
 import lat.trails.proto.DeleteCollectionRequest
 import lat.trails.proto.DeleteCollectionResponse
 import lat.trails.proto.FeatureKind
 import lat.trails.proto.Folder
+import lat.trails.proto.GetAccountResponse
 import lat.trails.proto.GetAviationWeatherRequest
 import lat.trails.proto.GetCollectionRequest
 import lat.trails.proto.GetCollectionResponse
@@ -162,6 +164,7 @@ private val WRITES =
         "lat.trails.DataService/AcceptInvite",
         "lat.trails.DataService/CreateCollection",
         "lat.trails.DataService/CreateInvite",
+        "lat.trails.DataService/DeleteAccount",
         "lat.trails.DataService/DeleteCollection",
         "lat.trails.DataService/RevokeInvite",
         "lat.trails.DataService/Save",
@@ -176,6 +179,8 @@ private val dispatcher = Executors.newVirtualThreadPerTaskExecutor()
 // Runs the keys in parallel, except that a write waits for every key before it and every key
 // after it waits for the write, so a read batched with a write still sees it.
 private fun fetchData(ctx: Context) {
+  // Shared so a batch of keys looks the user up once, see requireUser.
+  ctx.attribute(USER_IS_ACTIVE, lazy { optionalUser(ctx)?.let(::isUserActive) == true })
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyInputStream())
   val responses = ArrayList<Future<Any>>()
@@ -220,8 +225,10 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
       createCollection(ctx, CreateCollectionRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/CreateInvite" ->
       createInvite(ctx, CreateInviteRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/DeleteAccount" -> deleteAccount(ctx)
     "lat.trails.DataService/DeleteCollection" ->
       deleteCollection(ctx, DeleteCollectionRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/GetAccount" -> getAccount(ctx)
     "lat.trails.DataService/GetAviationWeather" ->
       getAviationWeather(GetAviationWeatherRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetCollection" ->
@@ -254,6 +261,116 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
       updateCollection(ctx, UpdateCollectionRequest.newBuilder().mergeJson(payload).build())
     else -> throw IllegalArgumentException("Unknown method $method")
   }
+}
+
+private fun getAccount(ctx: Context): GetAccountResponse {
+  val user = requireUser(ctx)
+  val response = GetAccountResponse.newBuilder()
+  hikari.connection.use { connection ->
+    connection
+        .prepareStatement("SELECT email FROM users WHERE id = ?")
+        .apply {
+          setObject(1, user)
+        }
+        .executeQuery()
+        .use { results ->
+          if (!results.next()) {
+            throw NotFoundResponse()
+          }
+          response.email = results.getString(1) ?: ""
+        }
+
+    connection
+        .prepareStatement("SELECT issuer FROM logins WHERE user_id = ? ORDER BY created")
+        .apply {
+          setObject(1, user)
+        }
+        .executeQuery()
+        .use { results ->
+          while (results.next()) {
+            response.addLoginIssuers(results.getString(1))
+          }
+        }
+
+    connection
+        .prepareStatement(
+            "SELECT c.id, c.name, "
+                + "EXISTS (SELECT 1 FROM collection_grants g WHERE g.collection_id = c.id) "
+                + "FROM collections c "
+                + "WHERE c.creator = ? "
+                + "ORDER BY c.created DESC")
+        .apply {
+          setObject(1, user)
+        }
+        .executeQuery()
+        .use { results ->
+          while (results.next()) {
+            response.addOwnedBuilder()
+                .setId((results.getObject(1) as UUID).toString())
+                .setName(results.getString(2))
+                .setShared(results.getBoolean(3))
+          }
+        }
+
+    connection
+        .prepareStatement("SELECT COUNT(*) FROM collection_grants WHERE grantee_id = ?")
+        .apply {
+          setObject(1, user)
+        }
+        .executeQuery()
+        .use { results ->
+          results.next()
+          response.grantedCount = results.getInt(1)
+        }
+  }
+  return response.build()
+}
+
+private fun deleteAccount(ctx: Context): DeleteAccountResponse {
+  val user = requireUser(ctx)
+  transact { connection ->
+    // Inserting a collection takes a key share lock on its creator, so a concurrent
+    // CreateCollection either commits before this and we delete its collection below, or waits for
+    // us and fails its foreign key.
+    connection
+        .prepareStatement("SELECT 1 FROM users WHERE id = ? FOR UPDATE")
+        .apply {
+          setObject(1, user)
+        }
+        .executeQuery()
+        .close()
+
+    val owned = ArrayList<UUID>()
+    connection
+        .prepareStatement("SELECT id FROM collections WHERE creator = ? ORDER BY id FOR UPDATE")
+        .apply {
+          setObject(1, user)
+        }
+        .executeQuery()
+        .use { results ->
+          while (results.next()) {
+            owned.add(results.getObject(1) as UUID)
+          }
+        }
+    for (collection in owned) {
+      deleteCollectionRows(connection, collection)
+    }
+
+    // Only owners create invites, so deleting the owned collections took all of theirs.
+    for (sql in listOf(
+        "DELETE FROM collection_grants WHERE grantee_id = ?",
+        "DELETE FROM view_states WHERE user_id = ?",
+        "DELETE FROM logins WHERE user_id = ?",
+        "DELETE FROM users WHERE id = ?")) {
+      connection
+          .prepareStatement(sql)
+          .apply {
+            setObject(1, user)
+          }
+          .executeUpdate()
+    }
+  }
+  return DeleteAccountResponse.getDefaultInstance()
 }
 
 private fun getCurrentUser(ctx: Context): GetCurrentUserResponse {
@@ -554,27 +671,31 @@ private fun deleteCollection(
     if (access.role != Role.ROLE_OWNER) {
       throw ForbiddenResponse()
     }
-
-    // The foreign keys to collections don't cascade, so everything pointing at it goes first. A
-    // save waiting on the lock finds no collection once we commit and gets a 404.
-    for (sql in listOf(
-        "DELETE FROM collection_grants WHERE collection_id = ?",
-        "DELETE FROM collection_invites WHERE collection_id = ?",
-        "DELETE FROM view_states WHERE collection_id = ?",
-        "DELETE FROM folders WHERE collection = ?",
-        "DELETE FROM lines WHERE collection = ?",
-        "DELETE FROM points WHERE collection = ?",
-        "DELETE FROM polygons WHERE collection = ?",
-        "DELETE FROM collections WHERE id = ?")) {
-      connection
-          .prepareStatement(sql)
-          .apply {
-            setObject(1, collection)
-          }
-          .executeUpdate()
-    }
+    deleteCollectionRows(connection, collection)
   }
   return DeleteCollectionResponse.getDefaultInstance()
+}
+
+// The caller holds the collection's row lock.
+private fun deleteCollectionRows(connection: Connection, collection: UUID) {
+  // The foreign keys to collections don't cascade, so everything pointing at it goes first. A save
+  // waiting on the lock finds no collection once we commit and gets a 404.
+  for (sql in listOf(
+      "DELETE FROM collection_grants WHERE collection_id = ?",
+      "DELETE FROM collection_invites WHERE collection_id = ?",
+      "DELETE FROM view_states WHERE collection_id = ?",
+      "DELETE FROM folders WHERE collection = ?",
+      "DELETE FROM lines WHERE collection = ?",
+      "DELETE FROM points WHERE collection = ?",
+      "DELETE FROM polygons WHERE collection = ?",
+      "DELETE FROM collections WHERE id = ?")) {
+    connection
+        .prepareStatement(sql)
+        .apply {
+          setObject(1, collection)
+        }
+        .executeUpdate()
+  }
 }
 
 private fun getOsmTags(request: GetOsmTagsRequest): GetOsmTagsResponse {
@@ -1518,8 +1639,31 @@ private fun parseUuid(id: String): UUID {
   }
 }
 
+private const val USER_IS_ACTIVE = "userIsActive"
+
 private fun requireUser(ctx: Context): UUID {
-  return optionalUser(ctx) ?: throw UnauthorizedResponse()
+  val user = optionalUser(ctx) ?: throw UnauthorizedResponse()
+  val requestUserIsActive = ctx.attribute<Lazy<Boolean>>(USER_IS_ACTIVE)
+  if (!(requestUserIsActive?.value ?: isUserActive(user))) {
+    throw UnauthorizedResponse()
+  }
+  return user
+}
+
+// A login cookie outlives a deleted or disabled account, so the header can name a user who no
+// longer exists.
+private fun isUserActive(user: UUID): Boolean {
+  hikari.connection.use { connection ->
+    connection
+        .prepareStatement("SELECT 1 FROM users WHERE id = ? AND enabled")
+        .apply {
+          setObject(1, user)
+        }
+        .executeQuery()
+        .use { results ->
+          return results.next()
+        }
+  }
 }
 
 // An empty header is a signed out browser, see getCurrentUser.

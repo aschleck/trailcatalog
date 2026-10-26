@@ -54,6 +54,16 @@ export function ConfirmDeleteCollectionDialog({count, name}: {count: number; nam
   </>;
 }
 
+export function DeleteAccountFailedDialog({}: {}) {
+  return <>
+    <Shell title="Deleting your account failed">
+      <p>
+        Your account was not deleted. Try again, or email april@trails.lat.
+      </p>
+    </Shell>
+  </>;
+}
+
 export function SaveFailedDialog({}: {}) {
   return <>
     <Shell title="Saving failed">
