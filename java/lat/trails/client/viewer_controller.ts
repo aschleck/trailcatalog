@@ -1,5 +1,9 @@
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
-import { Future, resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
+import {
+  Future,
+  rejectedFuture,
+  resolvedFuture,
+} from 'external/dev_april_corgi+/js/common/futures';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
@@ -59,6 +63,7 @@ import {
   Pick,
   toDegrees,
 } from './inspect';
+import { COMPACT_QUERY } from './layout';
 import { LoginDeclined, LoginService } from './login/login_service';
 import {
   FEATURE_CLICKED,
@@ -136,6 +141,7 @@ import {
 } from './ui/layer_tree';
 import { GradeLimitState, MeasureState } from './ui/measure_panel';
 import { MENU_CLASSES } from './ui/menubar';
+import { LayersSegment, MobileState, Tab } from './ui/mobile_shell';
 import { editMenu, fileMenu, HELP_MENU, userMenu, viewMenu } from './ui/menus';
 import { choiceItem, PICK_MENU_CLASSES, readingItem } from './ui/pick_menu';
 import { LineProfileState } from './ui/profile_chart';
@@ -197,6 +203,7 @@ export interface State {
   notSaved: boolean;
   // What the terrain tool routes within
   grades: GradeLimitState;
+  mobile: MobileState;
   search: SearchState;
   self: Future<GetCurrentUserResponse>;
   time: TimelineState;
@@ -306,6 +313,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         notSaved: this.state.notSaved && !self.user,
         self: resolvedFuture(self),
       });
+      if (this.state.mobile.tab === 'library') {
+        this.loadLibrary();
+      }
     }));
     this.viewStateWrites = Promise.resolve();
     this.elevations = new Elevations();
@@ -441,6 +451,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.registerListener(window, 'keydown', e => {
       this.keyPressed(e);
     });
+    const compact = matchMedia(COMPACT_QUERY);
+    const compactChanged = () => {
+      this.setCompact(compact.matches);
+    };
+    compact.addEventListener('change', compactChanged);
+    this.registerDisposer(() => {
+      compact.removeEventListener('change', compactChanged);
+    });
+    compactChanged();
     // On the root, which hears a move before the map's own listener on document does, so the
     // drawing's change sees where the pointer is now.
     this.registerListener(this.root, 'pointermove', e => {
@@ -1307,6 +1326,62 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.menubarMenu(checkExists(e.actionElement.data('menu')).string(), trigger);
   }
 
+  mobileTabClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const tab = checkExists(e.actionElement.data('tab')).string() as Tab;
+    if (tab === 'library') {
+      this.loadLibrary();
+    }
+    this.showTab(tab);
+  }
+
+  mobileLayersClicked(): void {
+    if (this.state.mobile.layersOpen) {
+      this.setLayers(false, this.state.mobile.layersSegment);
+    } else {
+      this.setLayers(true, this.state.collection ? 'collection' : 'layers');
+    }
+  }
+
+  mobileLayersClosed(): void {
+    this.setLayers(false, this.state.mobile.layersSegment);
+  }
+
+  mobileLayersSegmentClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const segment = checkExists(e.actionElement.data('segment')).string() as LayersSegment;
+    this.setLayers(true, segment);
+  }
+
+  mobileCollectionChipClicked(): void {
+    this.setLayers(true, 'collection');
+  }
+
+  mobileCollectionClosed(): void {
+    this.setLayers(false, 'layers');
+    this.history.goTo('/');
+  }
+
+  mobileToolsClicked(): void {
+    this.setToolsOpen(!this.state.mobile.toolsOpen);
+  }
+
+  mobileToolsClosed(): void {
+    this.setToolsOpen(false);
+  }
+
+  mobileToolClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.setToolsOpen(false);
+    this.setTool(checkExists(e.actionElement.data('tool')).string() as Tool);
+  }
+
+  libraryCollectionClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const id = checkExists(e.actionElement.data('collection')).string();
+    const listing = checkExists(this.state.mobile.library).value();
+    const collection =
+        checkExists([...listing.collections, ...listing.shared].find(c => c.id === id));
+    this.showTab('map');
+    this.openCollection(collection);
+  }
+
   toolClicked(e: CorgiEvent<typeof ACTION>): void {
     this.setTool(checkExists(e.actionElement.data('tool')).string() as Tool);
   }
@@ -1369,6 +1444,51 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             && tool !== 'terrain') {
       this.setTool('pointer');
     }
+  }
+
+  private setCompact(compact: boolean): void {
+    if (compact !== this.state.mobile.compact) {
+      this.updateState({...this.state, mobile: {...this.state.mobile, compact}});
+    }
+  }
+
+  private setLayers(layersOpen: boolean, layersSegment: LayersSegment): void {
+    this.updateState({...this.state, mobile: {...this.state.mobile, layersOpen, layersSegment}});
+  }
+
+  // Asks every time because the listing belongs to whoever is logged in and goes stale with every
+  // write. The request cache answers a repeat at once until a login or a write clears it.
+  private loadLibrary(): void {
+    const loading: Future<ListCollectionsResponse> =
+        requestData('lat.trails.DataService/ListCollections', {});
+    this.setLibrary(loading);
+    // We store a new settled future because vdom caching sees the same Future object as unchanged
+    // props and keeps rendering the loading page. A newer request wins over this one, or else the
+    // listing from before a login could land last.
+    loading.then(
+        response => {
+          if (this.state.mobile.library === loading) {
+            this.setLibrary(resolvedFuture(response));
+          }
+        },
+        e => {
+          console.error(e);
+          if (this.state.mobile.library === loading) {
+            this.setLibrary(rejectedFuture(e));
+          }
+        });
+  }
+
+  private setLibrary(library: Future<ListCollectionsResponse>): void {
+    this.updateState({...this.state, mobile: {...this.state.mobile, library}});
+  }
+
+  private setToolsOpen(toolsOpen: boolean): void {
+    this.updateState({...this.state, mobile: {...this.state.mobile, toolsOpen}});
+  }
+
+  private showTab(tab: Tab): void {
+    this.updateState({...this.state, mobile: {...this.state.mobile, tab}});
   }
 
   // Deactivates before activating, because the drawing layers share the index's routing switch.
@@ -1640,6 +1760,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private pickSearchHit(hit: SearchHit): void {
     this.searchQuery.close();
+    this.showTab('map');
     this.fitCamera([...hit.low, ...hit.high]);
     if (hit.result) {
       this.openSelection(hit.result, /* fit= */ false);

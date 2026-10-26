@@ -21,6 +21,8 @@ export interface SearchState {
   results: SearchHit[]|undefined;
   // Index into results that Enter picks
   highlighted: number;
+  // Set while a search is on its way, which can take seconds
+  searching: boolean;
 }
 
 /** A search result, or coordinates typed into the box. */
@@ -37,7 +39,8 @@ export interface SearchHit {
   result: {kind: SearchResultKind; id: bigint; type: number}|undefined;
 }
 
-export const EMPTY_SEARCH: SearchState = {query: '', results: undefined, highlighted: 0};
+export const EMPTY_SEARCH: SearchState =
+    {query: '', results: undefined, highlighted: 0, searching: false};
 
 const BOUNDARY_LABELS = new Map<number, string>([
   [RelationCategory.BOUNDARY_CLIMBING_AREA, 'Climbing area'],
@@ -113,22 +116,24 @@ export class SearchQuery {
   close(): void {
     clearTimeout(this.pending);
     this.generation += 1;
-    this.show({...this.current(), results: undefined, highlighted: 0});
+    this.show({...this.current(), results: undefined, highlighted: 0, searching: false});
   }
 
   private search(): void {
     const query = this.current().query.trim();
     const generation = ++this.generation;
     if (!query) {
-      this.show({...this.current(), results: undefined});
+      this.show({...this.current(), results: undefined, searching: false});
       return;
     }
 
     const coordinates = parseCoordinates(query);
     if (coordinates) {
-      this.show({...this.current(), results: [coordinates], highlighted: 0});
+      this.show({...this.current(), results: [coordinates], highlighted: 0, searching: false});
       return;
     }
+
+    this.show({...this.current(), searching: true});
 
     const {center, radiusMeters} = this.near();
     const loading: Future<SearchResponse> =
@@ -153,10 +158,13 @@ export class SearchQuery {
             high: [result.highLatDegrees, result.highLngDegrees],
             result: {kind: result.kind, id: result.id, type: result.type},
           }));
-          this.show({...this.current(), results, highlighted: 0});
+          this.show({...this.current(), results, highlighted: 0, searching: false});
         },
         e => {
           console.error(e);
+          if (generation === this.generation) {
+            this.show({...this.current(), searching: false});
+          }
         });
   }
 }
@@ -192,7 +200,7 @@ export function SearchBox({state}: {state: SearchState}) {
             ],
           }}
       />
-      {results
+      {results || state.searching
           ? <div
                 className="
                     absolute
@@ -207,27 +215,31 @@ export function SearchBox({state}: {state: SearchState}) {
                     w-full
                 "
             >
-              {results.length === 0
-                  ? <div className="px-3 py-2 text-gray-400">No results</div>
-                  : results.map((hit, i) =>
-                      <div
-                          className={
-                            'cursor-pointer px-3 py-2'
-                                + (i === state.highlighted ? ' bg-gray-700' : ' hover:bg-gray-800')
-                          }
-                          data={{index: String(i)}}
-                          // A click lands after focusout, which would close the list first.
-                          unboundEvents={{pointerdown: 'searchResultPicked'}}
-                      >
-                        <div className="truncate" translate="no">{hit.name}</div>
-                        <div className="text-gray-400 text-xs truncate">
-                          {hit.label}
-                          <span translate="no">
-                            {[hit.matched, ...hit.within].filter(s => s).map(s => ` · ${s}`)}
-                          </span>
-                        </div>
-                      </div>
-                  )
+              {!results
+                  ? <div className="px-3 py-2 text-gray-400">Searching…</div>
+                  : results.length === 0
+                      ? <div className="px-3 py-2 text-gray-400">No results</div>
+                      : results.map((hit, i) =>
+                          <div
+                              className={
+                                'cursor-pointer px-3 py-2'
+                                    + (i === state.highlighted
+                                        ? ' bg-gray-700'
+                                        : ' hover:bg-gray-800')
+                              }
+                              data={{index: String(i)}}
+                              // A click lands after focusout, which would close the list first.
+                              unboundEvents={{pointerdown: 'searchResultPicked'}}
+                          >
+                            <div className="truncate" translate="no">{hit.name}</div>
+                            <div className="text-gray-400 text-xs truncate">
+                              {hit.label}
+                              <span translate="no">
+                                {[hit.matched, ...hit.within].filter(s => s).map(s => ` · ${s}`)}
+                              </span>
+                            </div>
+                          </div>
+                      )
               }
             </div>
           : ''

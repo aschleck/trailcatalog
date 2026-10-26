@@ -14,6 +14,7 @@ import { GetCollectionResponse } from 'trails_lat/proto/data_pb';
 
 import { canEdit, descriptionOf } from './data/collection_data';
 import { requestData } from './data/data';
+import { startsCompact } from './layout';
 import {
   COLLECTION_CREATED,
   COLLECTION_LOADED,
@@ -49,6 +50,15 @@ import {
 import { layerEntries, LayerTree } from './ui/layer_tree';
 import { AreaPanel, MeasurePanel } from './ui/measure_panel';
 import { Menubar, MenubarItem } from './ui/menubar';
+import {
+  BottomSheet,
+  CollectionChip,
+  LayersSheet,
+  LibraryPage,
+  MapButtons,
+  NavigationBar,
+  SearchPage,
+} from './ui/mobile_shell';
 import { EMPTY_SEARCH, SearchBox } from './ui/search_box';
 import { SidebarElement, SidebarSection } from './ui/sidebar_element';
 import { Timeline } from './ui/timeline';
@@ -112,6 +122,14 @@ export function OverviewElement(
       },
       notSaved: false,
       grades: {climbPercent: 25, descentPercent: 25},
+      mobile: {
+        compact: startsCompact(),
+        tab: 'map',
+        layersOpen: false,
+        layersSegment: 'layers',
+        toolsOpen: false,
+        library: undefined,
+      },
       search: EMPTY_SEARCH,
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
       // ViewerController fills in the clock and what the forecast reaches.
@@ -163,6 +181,55 @@ export function OverviewElement(
     };
   }
 
+  const measure =
+      state.tool === 'measure'
+              || state.tool === 'terrain'
+              || (state.tool === 'line' && state.measure.vertexCount > 0)
+          ? <MeasurePanel
+                grades={state.grades}
+                readOnly={readOnly}
+                state={state.measure}
+                tool={state.tool}
+            />
+          : state.drawnArea
+              ? <AreaPanel ring={state.drawnArea} />
+              : undefined;
+  const details =
+      state.features.selected
+          ? <Properties
+                profile={state.lineProfile}
+                subject={{
+                  source: 'feature',
+                  feature: state.features.selected,
+                  schema: state.features.schema,
+                  editing: readOnly
+                      ? undefined
+                      : {
+                        descendants: state.features.selectedDescendants,
+                        // A folder cannot move into itself or anything under it
+                        folders: foldersOf(tree, state.features.selected.id),
+                      },
+                }}
+            />
+          : state.inspected
+              ? <Properties
+                    profile={state.lineProfile}
+                    subject={{source: 'object', object: state.inspected, savable: !readOnly}}
+                />
+              : undefined;
+  const features =
+      <FeatureTree
+          readOnly={readOnly}
+          state={state.features}
+          status={state.collectionStatus}
+          tree={tree}
+      />;
+  const layers = <LayerTree state={state.layers} />;
+  const user = state.self.finished ? state.self.value().user : undefined;
+  const {compact, tab} = state.mobile;
+
+  // The map stays first in the same parent in both layouts, or else switching between them would
+  // replace the map and the controller ViewerController holds with it.
   return <>
     <div
         js={corgi.bind({
@@ -197,26 +264,43 @@ export function OverviewElement(
           model: CollectionModel,
           state: [state, updateState],
         })}
-        className="flex flex-col h-full relative"
+        className={
+          'flex flex-col h-full relative' + (compact ? ' font-[system-ui,sans-serif]' : '')
+        }
+        // In the phone layout the map reaches under the status bar and the buttons inset themselves
+        style={compact ? '' : 'padding-top: var(--inset-top)'}
     >
       {state.fileDragged ? <FileDropOverlay /> : ''}
-      <Menubar
-          center={<SearchBox state={state.search} />}
-          notSaved={state.notSaved}
-          user={state.self.finished ? state.self.value().user : undefined}
-      >
-        <MenubarItem label="File" menu="file" onClick="menubarMenuClicked" />
-        <MenubarItem label="Edit" menu="edit" onClick="menubarMenuClicked" />
-        <MenubarItem label="View" menu="view" onClick="menubarMenuClicked" />
-        <MenubarItem label="Help" menu="help" onClick="menubarMenuClicked" />
-      </Menubar>
+      {compact
+          ? ''
+          : <Menubar
+                center={<SearchBox state={state.search} />}
+                notSaved={state.notSaved}
+                user={user}
+            >
+              <MenubarItem label="File" menu="file" onClick="menubarMenuClicked" />
+              <MenubarItem label="Edit" menu="edit" onClick="menubarMenuClicked" />
+              <MenubarItem label="View" menu="view" onClick="menubarMenuClicked" />
+              <MenubarItem label="Help" menu="help" onClick="menubarMenuClicked" />
+            </Menubar>
+      }
       <div className="flex flex-col grow min-h-0 md:flex-row relative">
         <div className="grow min-h-0 min-w-0 relative">
           <MapElement
               camera={camera}
+              compactCopyright={compact}
               ref="map"
           />
-          <Toolbar readOnly={readOnly} tool={state.tool} />
+          {compact
+              ? <MapButtons
+                    layersOpen={state.mobile.layersOpen}
+                    readOnly={readOnly}
+                    tool={state.tool}
+                    toolsOpen={state.mobile.toolsOpen}
+                    user={user}
+                />
+              : <Toolbar readOnly={readOnly} tool={state.tool} />
+          }
           {layerEntries(state.layers.nodes)
                   .some(({entry, shown}) => shown && entry.timed !== undefined)
               ? <Timeline state={state.time} />
@@ -242,80 +326,73 @@ export function OverviewElement(
                 </div>
               : ''
           }
-          {/*
-            Spans the map's height so a tall dialog scrolls, and passes clicks to the map. On a
-            narrow screen it spans the width instead and sits in the bottom part, below the
-            toolbar. z-30 puts it over the map's copyright notice, which is z-20.
-          */}
-          <div className="
-              absolute
-              bottom-2
-              flex
-              flex-col
-              gap-2
-              justify-end
-              left-2
-              md:justify-start
-              md:left-auto
-              md:top-2
-              md:w-80
-              pointer-events-none
-              right-2
-              top-[40%]
-              z-30
-          ">
-            {state.tool === 'measure'
-                    || state.tool === 'terrain'
-                    || (state.tool === 'line' && state.measure.vertexCount > 0)
-                ? <MeasurePanel
-                      grades={state.grades}
-                      readOnly={readOnly}
-                      state={state.measure}
-                      tool={state.tool}
-                  />
-                : state.drawnArea
-                    ? <AreaPanel ring={state.drawnArea} />
-                    : ''
-            }
-            {state.features.selected
-                ? <Properties
-                      profile={state.lineProfile}
-                      subject={{
-                        source: 'feature',
-                        feature: state.features.selected,
-                        schema: state.features.schema,
-                        editing: readOnly
-                            ? undefined
-                            : {
-                              descendants: state.features.selectedDescendants,
-                              // A folder cannot move into itself or anything under it
-                              folders: foldersOf(tree, state.features.selected.id),
-                            },
-                      }}
-                  />
-                : state.inspected
-                    ? <Properties
-                          profile={state.lineProfile}
-                          subject={{source: 'object', object: state.inspected, savable: !readOnly}}
-                      />
-                    : ''
-            }
-          </div>
+          {compact
+              ? <>
+                  {state.collection
+                      ? <CollectionChip name={state.collection.name || 'Untitled collection'} />
+                      : ''
+                  }
+                  {details ? <BottomSheet initial="half">{details}</BottomSheet> : ''}
+                  {measure ? <BottomSheet initial="peek">{measure}</BottomSheet> : ''}
+                  {state.mobile.layersOpen
+                      ? <LayersSheet
+                            collection={state.collection ? features : undefined}
+                            layers={layers}
+                            segment={state.mobile.layersSegment}
+                        />
+                      : ''
+                  }
+                  {tab === 'search' ? <SearchPage state={state.search} /> : ''}
+                  {tab === 'library'
+                      ? <LibraryPage library={state.mobile.library} user={user} />
+                      : ''
+                  }
+                </>
+              : <>
+                  {/*
+                    Spans the map's height so a tall dialog scrolls, and passes clicks to the map.
+                    On a narrow screen it spans the width instead and sits in the bottom part,
+                    below the toolbar. z-30 puts it over the map's copyright notice, which is z-20.
+                  */}
+                  <div className="
+                      absolute
+                      bottom-2
+                      flex
+                      flex-col
+                      gap-2
+                      justify-end
+                      left-2
+                      md:justify-start
+                      md:left-auto
+                      md:top-2
+                      md:w-80
+                      pointer-events-none
+                      right-2
+                      top-[40%]
+                      z-30
+                  ">
+                    {measure ?? ''}
+                    {details ?? ''}
+                  </div>
+                </>
+          }
         </div>
-        <SidebarElement>
-          <SidebarSection controls={readOnly ? undefined : <NewFolderButton />} label="Features">
-            <FeatureTree
-                readOnly={readOnly}
-                state={state.features}
-                status={state.collectionStatus}
-                tree={tree}
-            />
-          </SidebarSection>
-          <SidebarSection label="Layers" open={false} persist="layers">
-            <LayerTree state={state.layers} />
-          </SidebarSection>
-        </SidebarElement>
+        {compact
+            ? ''
+            : <SidebarElement>
+                <SidebarSection
+                    controls={readOnly ? undefined : <NewFolderButton />}
+                    label="Features"
+                >
+                  {features}
+                </SidebarSection>
+                <SidebarSection label="Layers" open={false} persist="layers">
+                  {layers}
+                </SidebarSection>
+              </SidebarElement>
+        }
       </div>
+      {compact ? <NavigationBar tab={tab} /> : ''}
       {state.drawnLength
           ? <div
                 className="

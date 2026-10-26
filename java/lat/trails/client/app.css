@@ -2,11 +2,34 @@
 
 @import "tailwindcss";
 
+/* Set by layout.ts#detectPlatform */
+@custom-variant ios (&:where([data-platform="ios"], [data-platform="ios"] *));
+
 @theme inline {
   --color-gray-800: #424242;
   --color-gray-900: #212121;
   --color-white-opaque-160: #ffffffa0;
   --color-white-opaque-250: #fffffffa;
+
+  /* Material 3 color roles for the phone layout */
+  --color-primary: var(--m3-primary);
+  --color-on-primary: var(--m3-on-primary);
+  --color-primary-container: var(--m3-primary-container);
+  --color-on-primary-container: var(--m3-on-primary-container);
+  --color-secondary-container: var(--m3-secondary-container);
+  --color-on-secondary-container: var(--m3-on-secondary-container);
+  --color-surface: var(--m3-surface);
+  --color-on-surface: var(--m3-on-surface);
+  --color-on-surface-variant: var(--m3-on-surface-variant);
+  --color-surface-container-low: var(--m3-surface-container-low);
+  --color-surface-container: var(--m3-surface-container);
+  --color-surface-container-high: var(--m3-surface-container-high);
+  --color-surface-container-highest: var(--m3-surface-container-highest);
+  --color-outline: var(--m3-outline);
+  --color-outline-variant: var(--m3-outline-variant);
+
+  /* https://m3.material.io/styles/motion/easing-and-duration/tokens-specs */
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
 
   --animate-slide: slide 1.75s ease-in-out infinite;
   @keyframes slide {
@@ -17,6 +40,50 @@
       left: 100%;
     }
   }
+}
+
+/* A baseline scheme from a green seed. The insets are the system bars the page draws under. */
+:root {
+  --m3-primary: #3b6939;
+  --m3-on-primary: #ffffff;
+  --m3-primary-container: #bcf0b4;
+  --m3-on-primary-container: #002204;
+  --m3-secondary-container: #d7e8cd;
+  --m3-on-secondary-container: #121f0e;
+  --m3-surface: #f8fbf1;
+  --m3-on-surface: #191d17;
+  --m3-on-surface-variant: #43483f;
+  --m3-surface-container-low: #f2f5eb;
+  --m3-surface-container: #ecefe6;
+  --m3-surface-container-high: #e7e9e0;
+  --m3-surface-container-highest: #e1e4da;
+  --m3-outline: #73796e;
+  --m3-outline-variant: #c3c8bc;
+
+  --inset-top: env(safe-area-inset-top, 0px);
+  --inset-right: env(safe-area-inset-right, 0px);
+  --inset-bottom: env(safe-area-inset-bottom, 0px);
+  --inset-left: env(safe-area-inset-left, 0px);
+}
+
+/* Apple's light system colors in the same roles, so the phone layout reads as iOS on iOS
+   https://developer.apple.com/design/human-interface-guidelines/color */
+[data-platform="ios"] {
+  --m3-primary: #3b6939;
+  --m3-on-primary: #ffffff;
+  --m3-primary-container: #ffffff;
+  --m3-on-primary-container: #3b6939;
+  --m3-secondary-container: #ffffff;
+  --m3-on-secondary-container: #000000;
+  --m3-surface: #ffffff;
+  --m3-on-surface: #000000;
+  --m3-on-surface-variant: #8a8a8e;
+  --m3-surface-container-low: #f9f9f9;
+  --m3-surface-container: #f9f9f9;
+  --m3-surface-container-high: #eeeef0;
+  --m3-surface-container-highest: #e3e3e8;
+  --m3-outline: #c6c6c8;
+  --m3-outline-variant: #e5e5ea;
 }
 
 a:not(.no-underline):hover {

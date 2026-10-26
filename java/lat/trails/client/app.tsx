@@ -2,6 +2,7 @@ import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/commo
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { InviteElement } from './invite_element';
+import { detectPlatform, setHydrating } from './layout';
 import { NotFoundElement } from './not_found_element';
 import { RouteController, State } from './route_controller';
 import { OverviewElement } from './overview_element';
@@ -45,5 +46,13 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
 }
 
 if (process.env.CORGI_FOR_BROWSER) {
-  corgi.hydrateElement(checkExists(document.getElementById('root')), <App />);
+  detectPlatform();
+  const root = checkExists(document.getElementById('root'));
+  if (root.hasChildNodes()) {
+    setHydrating(true);
+    corgi.hydrateElement(root, <App />);
+    setHydrating(false);
+  } else {
+    corgi.appendElement(root, <App />);
+  }
 }
