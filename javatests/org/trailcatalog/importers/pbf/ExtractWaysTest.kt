@@ -33,8 +33,69 @@ class ExtractWaysTest {
 
   @Test
   fun testIgnoresUnknownGrades() {
-    assertThat(traitsOf("sac_scale" to "T3", "informal" to "no", "tracktype" to "grade6"))
+    assertThat(
+            traitsOf(
+                "highway" to "path",
+                "sac_scale" to "T3",
+                "informal" to "no",
+                "tracktype" to "grade6"))
         .isEqualTo(0)
+  }
+
+  @Test
+  fun testFoldsValuesIntoGrades() {
+    val traits =
+        traitsOf(
+            "highway" to "path",
+            "bicycle" to "dismount",
+            "foot" to "permissive",
+            "mtb:scale" to "2+",
+            "dog" to "unleashed",
+            "piste:grooming" to "classic;skating")
+    assertThat(gradeOf(traits, PathTrait.BICYCLE)).isEqualTo(1)
+    assertThat(gradeOf(traits, PathTrait.FOOT)).isEqualTo(2)
+    assertThat(gradeOf(traits, PathTrait.MTB_SCALE)).isEqualTo(3)
+    assertThat(gradeOf(traits, PathTrait.DOG)).isEqualTo(3)
+    assertThat(gradeOf(traits, PathTrait.PISTE_GROOMING)).isEqualTo(2)
+  }
+
+  @Test
+  fun testFallsBackToLessSpecificTags() {
+    val traits = traitsOf("highway" to "path", "access" to "private", "foot" to "yes")
+    assertThat(gradeOf(traits, PathTrait.FOOT)).isEqualTo(2)
+    assertThat(gradeOf(traits, PathTrait.BICYCLE)).isEqualTo(1)
+    assertThat(gradeOf(traits, PathTrait.HORSE)).isEqualTo(1)
+  }
+
+  @Test
+  fun testSpecificTagWithoutGradeStopsFallback() {
+    val traits = traitsOf("highway" to "path", "oneway" to "yes", "mtb:oneway" to "no")
+    assertThat(gradeOf(traits, PathTrait.DIRECTION)).isEqualTo(0)
+    assertThat(gradeOf(traitsOf("highway" to "path", "oneway" to "-1"), PathTrait.DIRECTION))
+        .isEqualTo(2)
+  }
+
+  @Test
+  fun testOnlyPathsTracksAndPistesCarryTraits() {
+    assertThat(traitsOf("highway" to "residential", "oneway" to "yes", "access" to "no"))
+        .isEqualTo(0)
+    assertThat(
+            gradeOf(traitsOf("highway" to "track", "tracktype" to "grade1"), PathTrait.TRACKTYPE))
+        .isEqualTo(1)
+    assertThat(
+            gradeOf(
+                traitsOf("piste:type" to "downhill", "piste:difficulty" to "easy"),
+                PathTrait.PISTE_DIFFICULTY))
+        .isEqualTo(2)
+  }
+
+  @Test
+  fun testViaFerrata() {
+    val (way, stringTable) = wayOf(listOf(), "highway" to "via_ferrata", "via_ferrata_scale" to "3")
+    val category = wayCategory(way, stringTable)
+    assertThat(category).isEqualTo(WayCategory.PATH_VIA_FERRATA)
+    assertThat(gradeOf(wayTraits(way, category, stringTable), PathTrait.VIA_FERRATA_SCALE))
+        .isEqualTo(4)
   }
 
   @Test
@@ -85,7 +146,7 @@ private fun gradeOf(traits: Int, trait: PathTrait): Int {
 
 private fun traitsOf(vararg tags: Pair<String, String>): Int {
   val (way, stringTable) = wayOf(listOf(), *tags)
-  return wayTraits(way, stringTable)
+  return wayTraits(way, wayCategory(way, stringTable), stringTable)
 }
 
 private fun categoryOf(vararg tags: Pair<String, String>): WayCategory {

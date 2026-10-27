@@ -7,6 +7,7 @@ import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.models.PATH_TRAIT_CATEGORIES
 import org.trailcatalog.models.PathTrait
 import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.WayCategory
@@ -31,10 +32,11 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   val kvs = wayKvs(way)
   val refs = wayRefs(way)
   val pointCategory = wayPointCategory(kvs, refs, stringTable)
+  val category = wayCategory(way, stringTable)
   return WaySkeleton(
       way.id,
-      wayCategory(way, stringTable).id,
-      wayTraits(way, stringTable),
+      category.id,
+      wayTraits(way, category, stringTable),
       tagName(kvs, stringTable) ?: "",
       refs,
       pointCategory.id,
@@ -42,23 +44,46 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
       pointCategory != PointCategory.ANY && isNotable(kvs, stringTable))
 }
 
-// Each trait's tag, to its shift and its grades
-private val PATH_TRAIT_TAGS: Map<ByteString, Pair<Int, Map<ByteString, Int>>> =
-    PathTrait.values().associate { trait ->
-      ByteString.copyFromUtf8(trait.tag) to
-          Pair(
-              trait.shift,
-              trait.grades.withIndex().associate { (i, grade) ->
-                ByteString.copyFromUtf8(grade) to i + 1
-              })
-    }
+private class TraitTag(val trait: PathTrait, val priority: Int, val grades: Map<ByteString, Int>)
 
-fun wayTraits(way: Osmformat.Way, stringTable: StringTable): Int {
-  var traits = 0
+// Each tag a trait reads, to the traits that read it
+private val PATH_TRAIT_TAGS: Map<ByteString, List<TraitTag>> =
+    PathTrait.values()
+        .flatMap { trait ->
+          val grades =
+              trait.grades
+                  .withIndex()
+                  .flatMap { (i, values) -> values.map { ByteString.copyFromUtf8(it) to i + 1 } }
+                  .toMap()
+          trait.tags.mapIndexed { priority, tag ->
+            ByteString.copyFromUtf8(tag) to TraitTag(trait, priority, grades)
+          }
+        }
+        .groupBy({ it.first }, { it.second })
+
+fun wayTraits(way: Osmformat.Way, category: WayCategory, stringTable: StringTable): Int {
+  if (PATH_TRAIT_CATEGORIES.none { it.isParentOf(category) }) {
+    return 0
+  }
+
+  // The priority of the tag each trait's grade came from, so that the more specific tag wins
+  // whichever order the tags come in
+  val priorities = IntArray(PathTrait.values().size) { Int.MAX_VALUE }
+  val grades = IntArray(PathTrait.values().size)
   for (i in 0 until way.keysCount) {
-    val (shift, grades) = PATH_TRAIT_TAGS[stringTable.getS(way.getKeys(i))] ?: continue
-    val grade = grades[stringTable.getS(way.getVals(i))] ?: continue
-    traits = traits or (grade shl shift)
+    val tags = PATH_TRAIT_TAGS[stringTable.getS(way.getKeys(i))] ?: continue
+    for (tag in tags) {
+      val ordinal = tag.trait.ordinal
+      if (tag.priority < priorities[ordinal]) {
+        priorities[ordinal] = tag.priority
+        grades[ordinal] = tag.grades[stringTable.getS(way.getVals(i))] ?: 0
+      }
+    }
+  }
+
+  var traits = 0
+  for (trait in PathTrait.values()) {
+    traits = traits or (grades[trait.ordinal] shl trait.shift)
   }
   return traits
 }

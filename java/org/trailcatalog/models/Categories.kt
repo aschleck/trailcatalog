@@ -225,6 +225,7 @@ enum class WayCategory(override val id: Int) : Category<WayCategory> {
         PATH_STEPS(PATH.id * ENUM_SIZE + 3),
         PATH_CORRIDOR(PATH.id * ENUM_SIZE + 4),
         PATH_CYCLEWAY(PATH.id * ENUM_SIZE + 5),
+        PATH_VIA_FERRATA(PATH.id * ENUM_SIZE + 6),
 
     PISTE(ANY.id * ENUM_SIZE + 2),
       PISTE_DOWNHILL(PISTE.id * ENUM_SIZE + 1),

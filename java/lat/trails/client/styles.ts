@@ -160,10 +160,10 @@ const PISTE_COLOR = 0x9AAABBFF as RgbaU32;
 // on it is an open slope in summer and a resort has several times more of them than trails.
 //
 // A trail that is hard to find on the ground, by trail_visibility=bad or worse or by sac_scale of
-// alpine_hiking or harder, draws as dots the way a paper map draws a route. The dots are wider
-// than the trail's dashes because a disc as wide as a hairline antialiases away. An informal trail
-// draws in short dashes as thin as a sidewalk, so that a web of social trails doesn't outweigh the
-// trail they wander off of.
+// alpine_hiking or harder, and a via ferrata, draw as dots the way a paper map draws a route. The
+// dots are wider than the trail's dashes because a disc as wide as a hairline antialiases away. An
+// informal trail draws in short dashes as thin as a sidewalk, so that a web of social trails
+// doesn't outweigh the trail they wander off of.
 //
 // The sidewalk rule comes first in every band because the first matching style wins and the trail
 // rules name WayCategory.PATH, which is the subtree and so takes the sidewalks too. The dotted
@@ -186,6 +186,7 @@ const PATH_BANDS: Array<{
 const FAINT_TRAILS: Match[][] = [
   [{match: 'greater_than', key: 'sac_scale', value: 3}],
   [{match: 'greater_than', key: 'trail_visibility', value: 3}],
+  [{match: 'category_in', key: 'type', value: [WayCategory.PATH_VIA_FERRATA]}],
 ];
 
 const PATH_LINES: LineStyle[] = PATH_BANDS.flatMap(band => {
