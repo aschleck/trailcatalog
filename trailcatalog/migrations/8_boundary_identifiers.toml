@@ -1,0 +1,32 @@
+[[actions]]
+type = "create_table"
+name = "boundary_identifiers"
+primary_key = ["numeric_id", "epoch"]
+
+  [[actions.columns]]
+  name = "numeric_id"
+  nullable = false
+  type = "BIGINT"
+
+  [[actions.columns]]
+  name = "readable_id"
+  nullable = false
+  type = "TEXT"
+
+  [[actions.columns]]
+  name = "epoch"
+  nullable = false
+  type = "INT"
+
+  [actions.partition_by]
+  list = ["epoch"]
+
+[[actions]]
+type = "add_index"
+table = "boundary_identifiers"
+
+  [actions.index]
+  name = "boundary_identifiers_readable_idx"
+  columns = ["readable_id", "epoch"]
+  concurrently = false
+  unique = true

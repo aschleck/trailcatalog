@@ -6,7 +6,7 @@ import { InputController } from 'external/dev_april_corgi+/js/emu/input_controll
 import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { latLngFromBase64E7, latLngRectFromBase64E7 } from './common/data';
-import { BoundarySearchResult, TrailSearchResult } from './models/types';
+import { BoundaryLink, BoundarySearchResult, TrailSearchResult } from './models/types';
 
 import { DataResponses, fetchData } from './data';
 import * as routes from './routes';
@@ -101,6 +101,12 @@ export class SearchController extends Controller<{}, Deps, HTMLElement, State> {
   }
 }
 
+function boundaryLinkFromRaw(
+    id: string,
+    raw: DataResponses['search_boundaries']['boundaries'][string]): BoundaryLink {
+  return {id, readableId: raw.readable_id, name: raw.name, type: raw.type};
+}
+
 function searchBoundariesFromRaw(raw: DataResponses['search_boundaries']): BoundarySearchResult[] {
   return raw.results.map(
       b =>
@@ -108,7 +114,7 @@ function searchBoundariesFromRaw(raw: DataResponses['search_boundaries']): Bound
               BigInt(b.id),
               b.name,
               b.type,
-              b.boundaries.map(id => ({id, ...raw.boundaries[id]})),
+              b.boundaries.map(id => boundaryLinkFromRaw(id, raw.boundaries[id])),
           ));
 }
 
@@ -123,7 +129,7 @@ export function searchTrailsFromRaw(raw: DataResponses['search_trails']): TrailS
               t.elevation_down_meters,
               t.elevation_up_meters,
               t.length_meters,
-              t.boundaries.map(id => ({id, ...raw.boundaries[id]})),
+              t.boundaries.map(id => boundaryLinkFromRaw(id, raw.boundaries[id])),
           ));
 }
 

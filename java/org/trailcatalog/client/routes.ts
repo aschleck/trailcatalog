@@ -15,7 +15,7 @@ export interface Routes {
 }
 
 export const routes: {[k in keyof Routes]: RegExp} = {
-  'boundary_detail': /^\/boundary\/(?<id>\d+)$/,
+  'boundary_detail': /^\/boundary\/(?<id>.+)$/,
   'go_to_trail': /^\/goto\/trail\/(?<id>\d+)$/,
   'search_results': /^\/(search)?$/,
   'trail_detail': /^\/trail\/(?<trail>.+)$/,

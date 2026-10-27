@@ -71,6 +71,27 @@ class ExtractRelationsTest {
   }
 
   @Test
+  fun testEnglishNameLeadsThenName() {
+    val relation =
+        relationWithTags(
+            "alt_name" to "Moskva",
+            "official_name:en" to "City of Moscow",
+            "name" to "Москва",
+            "name:en" to "Moscow")
+
+    assertThat(relation.names.take(2))
+        .containsExactly(Name("en", "Moscow"), Name(null, "Москва"))
+        .inOrder()
+  }
+
+  @Test
+  fun testNameLeadsWithoutAnEnglishName() {
+    val relation = relationWithTags("alt_name" to "Moskva", "name" to "Москва")
+
+    assertThat(relation.names[0]).isEqualTo(Name(null, "Москва"))
+  }
+
+  @Test
   fun testCollapsesRepeatedValueOntoNoLanguage() {
     val relation = relationWithTags("name:en" to "Moscow", "name" to "Moscow")
 

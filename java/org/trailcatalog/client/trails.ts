@@ -15,6 +15,7 @@ export function containingBoundariesFromRaw(
       b =>
           new Boundary(
               BigInt(b.id),
+              b.readable_id,
               b.name,
               b.type,
               emptyS2Polygon()));

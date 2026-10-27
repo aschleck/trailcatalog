@@ -83,7 +83,7 @@ private fun containingIdsOf(trail: Trail, vararg boundaries: Boundary): List<Lon
   val counts = ArrayList<Pair<Boundary, Int>>()
   for (boundary in boundaries) {
     val sent = samples.filter { it.first == boundary.id }.map { it.second }
-    CountTrailSamplesInBoundaries().act(
+    CountSamplesInBoundaries().act(
         PEntry(boundary.id, listOf(Pair(listOf(boundary), sent))),
         object : Emitter2<Long, Pair<Boundary, Int>> {
           override fun emit(a: Long, b: Pair<Boundary, Int>) {
@@ -94,7 +94,7 @@ private fun containingIdsOf(trail: Trail, vararg boundaries: Boundary): List<Lon
   }
 
   val ids = ArrayList<Long>()
-  ResolveTrailBoundaries().act(
+  ResolveContainingBoundaries().act(
       PEntry(trail.relationId, counts),
       object : Emitter2<Long, Boundary> {
         override fun emit(a: Long, b: Boundary) {

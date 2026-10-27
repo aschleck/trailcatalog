@@ -19,7 +19,7 @@ private val trailcatalogDatabaseUrl = createFlag("unset")
 
 // Keep in sync with frontend/server.ts#SCHEMA
 const val TRAILS_LAT_SCHEMA = "migration_13_editable_polygons"
-const val TRAILCATALOG_SCHEMA = "migration_7_path_traits"
+const val TRAILCATALOG_SCHEMA = "migration_8_boundary_identifiers"
 
 fun createBaseConnection(): HikariDataSource {
   return HikariDataSource(HikariConfig().apply {

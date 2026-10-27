@@ -41,10 +41,10 @@ export function SearchResultsOverviewElement(
     let trailsInBoundaryIds;
 
     if (boundaryId) {
-      boundary = fetchData('boundary', {id: boundaryId}).then(boundaryFromRaw);
+      boundary = fetchData('boundary', {boundary_id: {numeric: boundaryId}}).then(boundaryFromRaw);
 
       trailsInBoundary =
-          fetchData('trails_in_boundary', {boundary_id: boundaryId})
+          fetchData('trails_in_boundary', {boundary_id: {numeric: boundaryId}})
               .then(trailsInBoundaryFromRaw);
       trailsInBoundaryIds = trailsInBoundary.then(raw => new Set(raw.map(t => t.id)));
     }
@@ -274,7 +274,7 @@ function SearchFilter({state}: {state: State}) {
     >
       <a
           className="flex gap-2 items-center"
-          href={`/boundary/${boundary.id}`}
+          href={`/boundary/${boundary.readableId}`}
       >
         <img
             aria-hidden="true"

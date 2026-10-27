@@ -1,21 +1,15 @@
 import { aDescendsB, RelationCategory } from 'java/org/trailcatalog/models/categories';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
-import { Boundary } from './models/types';
+import { BoundaryLink } from './models/types';
 
-interface SimpleBoundary {
-  id: bigint|string;
-  name: string;
-  type: number;
-}
-
-export function BoundaryCrumbs({boundaries}: {boundaries: SimpleBoundary[]}) {
+export function BoundaryCrumbs({boundaries}: {boundaries: BoundaryLink[]}) {
   const crumbs =
       boundaries
           // a crag or climbing area isn't a place to file a trail or park under
           .filter(b => !aDescendsB(b.type, RelationCategory.BOUNDARY_CLIMBING))
           .sort((a, b) => crumbRank(a.type) - crumbRank(b.type) || a.type - b.type)
-          .map(b => <a href={`/boundary/${b.id}`}>{b.name}</a>)
+          .map(b => <a href={`/boundary/${b.readableId}`}>{b.name}</a>)
           .flatMap(l => [
             l,
             ' › ',

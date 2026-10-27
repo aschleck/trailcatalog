@@ -70,6 +70,7 @@ private val PARTITIONED_TABLES =
     listOf(
         "boundaries",
         "boundaries_in_boundaries",
+        "boundary_identifiers",
         "boundary_names",
         "path_elevations",
         "paths",
@@ -224,13 +225,37 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   trails.write(DumpPathsInTrails(epoch, hikari))
   trails.write(DumpTrails(epoch, hikari))
   trails.write(DumpTrailNames(epoch, hikari))
+  val boundariesById = boundaries.groupBy("GroupById") { it.id }
   val boundaryIndex = boundaries.then(BuildBoundaryIndex())
-  boundaryIndex
-      .then(FindBoundariesInBoundaries())
-      .write(DumpBoundariesInBoundaries(epoch, hikari))
+  val boundariesInBoundaries = boundaryIndex.then(FindBoundariesInBoundaries())
+  boundariesInBoundaries.write(DumpBoundariesInBoundaries(epoch, hikari))
   pipeline
       .zip2(boundaryIndex, points, FindPointsInBoundaries())
       .write(DumpPointsInBoundaries(epoch, hikari))
+
+  // Readable boundary ids name the country and state that hold most of the boundary.
+  val boundaryIdToRegionIds =
+      pipeline
+          .join2(
+              "JoinOnParentForRegions",
+              boundariesById,
+              boundariesInBoundaries.invert("InvertBoundariesInBoundaries"))
+          .then(FilterRegionParents())
+  val regionIdToBoundarySamples =
+      pipeline
+          .join2("JoinOnBoundaryForRegions", boundariesById, boundaryIdToRegionIds)
+          .then(SampleBoundariesForRegions())
+  val boundaryIdToContainingRegions =
+      pipeline
+          .join2("JoinOnRegion", boundariesById, regionIdToBoundarySamples)
+          .then(CountSamplesInBoundaries())
+          .then(ResolveContainingBoundaries())
+  pipeline
+      .join2("JoinOnBoundaryForIds", boundariesById, boundaryIdToContainingRegions)
+      .then(CreateReadableBoundaryIds())
+      .then(DisambiguateReadableIds())
+      .write(DumpReadableIds("boundary_identifiers", epoch, hikari))
+
   val coveredTrailsInBoundaries = pipeline.zip2(boundaryIndex, trails, FindTrailsInBoundaries())
   val trailsById = trails.groupBy("GroupById") { it.relationId }
   val boundaryIdToTrailSamples =
@@ -239,17 +264,14 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
           .then(SampleTrailsForBoundaries())
   val trailIdToContainingBoundaries =
       pipeline
-          .join2(
-              "JoinOnBoundary",
-              boundaries.groupBy("GroupById") { it.id },
-              boundaryIdToTrailSamples)
-          .then(CountTrailSamplesInBoundaries())
-          .then(ResolveTrailBoundaries())
+          .join2("JoinOnBoundary", boundariesById, boundaryIdToTrailSamples)
+          .then(CountSamplesInBoundaries())
+          .then(ResolveContainingBoundaries())
   pipeline
       .join2("JoinOnTrailForIds", trailsById, trailIdToContainingBoundaries)
       .then(CreateReadableTrailIds())
-      .then(DisambiguateTrailIds())
-      .write(DumpReadableTrailIds(epoch, hikari))
+      .then(DisambiguateReadableIds())
+      .write(DumpReadableIds("trail_identifiers", epoch, hikari))
   trailIdToContainingBoundaries.write(DumpTrailsInBoundaries(epoch, hikari))
 
   try {

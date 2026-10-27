@@ -19,6 +19,7 @@ import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.snapEpsilon
 import java.sql.PreparedStatement
+import java.sql.ResultSet
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -110,52 +111,56 @@ private fun fetchData(ctx: Context) {
       null -> throw IllegalArgumentException("Key has no type")
       "boundary" -> {
         val data = HashMap<String, Any>()
-        val id = request.get("id").asLong()
+        val (idColumn, setId) = parseBoundaryId(request.get("boundary_id"))
         var found = false
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
-                  + "name, "
-                  + "type, "
-                  + "s2_polygon "
-                  + "FROM boundaries "
-                  + "WHERE id = ? AND epoch = ?")
+                  + "b.id, "
+                  + "bi.readable_id, "
+                  + "b.name, "
+                  + "b.type, "
+                  + "b.s2_polygon "
+                  + "FROM boundaries b "
+                  + "JOIN boundary_identifiers bi ON b.id = bi.numeric_id AND b.epoch = bi.epoch "
+                  + "WHERE ${idColumn} = ? AND b.epoch = ?")
               .apply {
-                setLong(1, id)
+                setId(this, 1)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           if (results.next()) {
             found = true
-            data["id"] = id
-            data["name"] = results.getString(1)
-            data["type"] = results.getInt(2)
-            data["s2_polygon"] = String(Base64.getEncoder().encode(results.getBytes(3)))
+            data["id"] = results.getLong(1).toString()
+            data["readable_id"] = results.getString(2)
+            data["name"] = results.getString(3)
+            data["type"] = results.getInt(4)
+            data["s2_polygon"] = String(Base64.getEncoder().encode(results.getBytes(5)))
           }
         }
         responses.add(if (found) ok(data) else err(404))
       }
       "boundaries_containing_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()
-        val id = request.get("child_id").asLong()
+        val (idColumn, setId) = parseBoundaryId(request.get("child_id"))
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
                   + "b.id, "
+                  + "pi.readable_id, "
                   + "b.name, "
                   + "b.type "
                   + "FROM boundaries_in_boundaries bib "
+                  + "JOIN boundary_identifiers bi "
+                  + "ON bib.child_id = bi.numeric_id AND bib.epoch = bi.epoch "
                   + "JOIN boundaries b ON bib.parent_id = b.id AND bib.epoch = b.epoch "
-                  + "WHERE bib.child_id = ? AND bib.epoch = ? ")
+                  + "JOIN boundary_identifiers pi ON b.id = pi.numeric_id AND b.epoch = pi.epoch "
+                  + "WHERE ${idColumn} = ? AND bib.epoch = ? ")
               .apply {
-                setLong(1, id)
+                setId(this, 1)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           while (results.next()) {
-            val boundary = HashMap<String, Any>()
-            boundary["id"] = results.getLong(1).toString()
-            boundary["name"] = results.getString(2)
-            boundary["type"] = results.getInt(3)
-            data.add(boundary)
+            data.add(boundaryLinkFromResults(results))
           }
         }
         responses.add(ok(ImmutableMap.of("boundaries", data)))
@@ -167,22 +172,20 @@ private fun fetchData(ctx: Context) {
           val results = it.prepareStatement(
               "SELECT "
                   + "b.id, "
+                  + "bi.readable_id, "
                   + "b.name, "
                   + "b.type "
                   + "FROM trails_in_boundaries tib "
                   + "JOIN trail_identifiers ti ON tib.trail_id = ti.numeric_id AND tib.epoch = ti.epoch "
                   + "JOIN boundaries b ON tib.boundary_id = b.id AND tib.epoch = b.epoch "
+                  + "JOIN boundary_identifiers bi ON b.id = bi.numeric_id AND b.epoch = bi.epoch "
                   + "WHERE ${idColumn} = ? AND tib.epoch = ?")
               .apply {
                 setId(this, 1)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           while (results.next()) {
-            val boundary = HashMap<String, Any>()
-            boundary["id"] = results.getLong(1).toString()
-            boundary["name"] = results.getString(2)
-            boundary["type"] = results.getInt(3)
-            data.add(boundary)
+            data.add(boundaryLinkFromResults(results))
           }
         }
         responses.add(ok(ImmutableMap.of("boundaries", data)))
@@ -293,23 +296,25 @@ private fun fetchData(ctx: Context) {
       }
       "trails_in_boundary" -> {
         val data = ArrayList<HashMap<String, Any>>()
-        val id = request.get("boundary_id").asLong()
+        val (idColumn, setId) = parseBoundaryId(request.get("boundary_id"))
         connectionSource.connection.use {
           val results = it.prepareStatement(
               "SELECT "
-                  + "id, "
-                  + "name, "
-                  + "type, "
-                  + "elevation_down_meters, "
-                  + "elevation_up_meters, "
-                  + "length_meters "
+                  + "t.id, "
+                  + "t.name, "
+                  + "t.type, "
+                  + "t.elevation_down_meters, "
+                  + "t.elevation_up_meters, "
+                  + "t.length_meters "
                   + "FROM trails t "
                   + "RIGHT JOIN trails_in_boundaries tib "
                   + "ON t.id = tib.trail_id AND t.epoch = tib.epoch "
-                  + "WHERE tib.boundary_id = ? AND tib.epoch = ? "
-                  + "ORDER BY length_meters DESC")
+                  + "JOIN boundary_identifiers bi "
+                  + "ON tib.boundary_id = bi.numeric_id AND tib.epoch = bi.epoch "
+                  + "WHERE ${idColumn} = ? AND tib.epoch = ? "
+                  + "ORDER BY t.length_meters DESC")
               .apply {
-                setLong(1, id)
+                setId(this, 1)
                 setInt(2, epochTracker.epoch)
               }.executeQuery()
           while (results.next()) {
@@ -332,20 +337,41 @@ private fun fetchData(ctx: Context) {
   })
 }
 
+private fun parseBoundaryId(id: JsonNode):
+    Pair<String, (statement: PreparedStatement, index: Int) -> Unit> {
+  return parseId(id, "bi")
+}
+
 private fun parseTrailId(id: JsonNode):
+    Pair<String, (statement: PreparedStatement, index: Int) -> Unit> {
+  return parseId(id, "ti")
+}
+
+// Picks the column of the identifiers table aliased as table that the id names.
+private fun parseId(id: JsonNode, table: String):
     Pair<String, (statement: PreparedStatement, index: Int) -> Unit> {
   val idColumn: String
   val setId: (statement: PreparedStatement, index: Int) -> Unit
   if (id.has("numeric")) {
-    idColumn = "ti.numeric_id"
+    idColumn = "${table}.numeric_id"
     setId = { statement, index -> statement.setLong(index, id.get("numeric").asLong()) }
   } else if (id.has("readable")) {
-    idColumn = "ti.readable_id"
+    idColumn = "${table}.readable_id"
     setId = { statement, index -> statement.setString(index, id.get("readable").asText()) }
   } else {
-    throw IllegalArgumentException("Unknown type of trail ID")
+    throw IllegalArgumentException("Unknown type of ID")
   }
   return Pair(idColumn, setId)
+}
+
+// Reads a boundary from the id, readable id, name, and type in the first four columns.
+private fun boundaryLinkFromResults(results: ResultSet): HashMap<String, Any> {
+  val boundary = HashMap<String, Any>()
+  boundary["id"] = results.getLong(1).toString()
+  boundary["readable_id"] = results.getString(2)
+  boundary["name"] = results.getString(3)
+  boundary["type"] = results.getInt(4)
+  return boundary
 }
 
 // Boundary areas run from around 1e6 square meters for a village to 1.7e14 for Russia, so eight
@@ -532,17 +558,25 @@ private fun fetchBoundaries(requiredBoundaries: HashSet<Long>): Map<String, Any>
     val results = it.prepareStatement(
         "SELECT "
             + "b.id, "
+            + "bi.readable_id, "
             + "b.name, "
             + "b.type "
             + "FROM boundaries b "
-            + "WHERE b.id = ANY (?) AND epoch = ?")
+            + "JOIN boundary_identifiers bi ON b.id = bi.numeric_id AND b.epoch = bi.epoch "
+            + "WHERE b.id = ANY (?) AND b.epoch = ?")
         .apply {
           setArray(1, it.createArrayOf("BIGINT", requiredBoundaries.toArray()))
           setInt(2, epochTracker.epoch)
         }.executeQuery()
     while (results.next()) {
       boundaries[results.getLong(1).toString()] =
-          ImmutableMap.of("name", results.getString(2), "type", results.getInt(3))
+          ImmutableMap.of(
+              "readable_id",
+              results.getString(2),
+              "name",
+              results.getString(3),
+              "type",
+              results.getInt(4))
     }
   }
   return boundaries;

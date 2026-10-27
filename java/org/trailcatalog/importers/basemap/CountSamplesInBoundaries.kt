@@ -8,17 +8,17 @@ import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import java.io.ByteArrayInputStream
 
-// How many more of each candidate trail's samples fall inside the boundary's polygon than outside.
-// FindTrailsInBoundaries tests against coverings, which reach past a border, so a trail near one is
-// reported inside the boundaries on both sides.
+// How many more of each candidate's samples fall inside the boundary's polygon than outside. The
+// candidates are trails or smaller boundaries. BoundaryIndex tests against coverings, which reach
+// past a border, so a candidate near one is reported inside the boundaries on both sides.
 //
 // Grouping by boundary is what makes this cheap. S2Polygon builds an index after a couple dozen
 // contains calls, and building it costs far more than decoding, so it only pays off when every
-// trail in the boundary shares one polygon.
-class CountTrailSamplesInBoundaries
+// candidate in the boundary shares one polygon.
+class CountSamplesInBoundaries
   : PMapTransformer<
       PEntry<Long, Pair<List<Boundary>, List<Pair<Long, List<Long>>>>>, Long, Pair<Boundary, Int>>(
-    "CountTrailSamplesInBoundaries",
+    "CountSamplesInBoundaries",
     TypeToken.of(Long::class.java),
     object : TypeToken<Pair<Boundary, Int>>() {}) {
 
@@ -32,19 +32,20 @@ class CountTrailSamplesInBoundaries
 
       val boundary = value.first[0]
       val polygon = S2Polygon.decode(ByteArrayInputStream(boundary.s2Polygon))
-      // Readers only need the id, type, and name, and the polygon is most of the bytes.
+      // Readers only need the id, type, name, and the first of names for readable ids, and the
+      // polygon is most of the bytes.
       val stripped =
           Boundary(
               boundary.id,
               boundary.type,
               boundary.cell,
               boundary.name,
-              listOf(),
+              boundary.names.take(1),
               byteArrayOf(),
               boundary.areaMeters2)
-      for ((trail, sample) in value.second) {
+      for ((candidate, sample) in value.second) {
         val inside = sample.count { polygon.contains(S2CellId(it).toPoint()) }
-        emitter.emit(trail, Pair(stripped, 2 * inside - sample.size))
+        emitter.emit(candidate, Pair(stripped, 2 * inside - sample.size))
       }
     }
   }

@@ -8,6 +8,7 @@ import com.google.common.geometry.S2Polyline
 import com.google.common.truth.Truth.assertThat
 import java.io.ByteArrayOutputStream
 import org.junit.Test
+import org.trailcatalog.importers.pbf.Name
 import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory.BOUNDARY_ADMINISTRATIVE_2
@@ -22,14 +23,14 @@ class CreateReadableTrailIdsTest {
     val ukraine = boundary(60199, BOUNDARY_ADMINISTRATIVE_2.id, "Україна", 44.0, 33.0, 46.0, 36.0)
     val russia = boundary(60189, BOUNDARY_ADMINISTRATIVE_2.id, "Россия", 44.0, 33.0, 46.0, 36.0)
 
-    assertThat(readableIdOf(trail, listOf(ukraine, russia))).isEqualTo("россия/none/col")
-    assertThat(readableIdOf(trail, listOf(russia, ukraine))).isEqualTo("россия/none/col")
+    assertThat(readableIdOf(trail, listOf(ukraine, russia))).isEqualTo("россия/col")
+    assertThat(readableIdOf(trail, listOf(russia, ukraine))).isEqualTo("россия/col")
   }
 
   @Test
-  fun testTrailInNoBoundaryIsNone() {
+  fun testTrailInNoBoundaryIsJustItsName() {
     val trail = trailThrough(S2LatLng.fromDegrees(45.0, 6.9), S2LatLng.fromDegrees(45.1, 6.95))
-    assertThat(readableIdOf(trail, listOf())).isEqualTo("none/none/col")
+    assertThat(readableIdOf(trail, listOf())).isEqualTo("col")
   }
 }
 
@@ -54,13 +55,14 @@ internal fun boundary(
     lowLat: Double,
     lowLng: Double,
     highLat: Double,
-    highLng: Double): Boundary {
+    highLng: Double,
+    names: List<Name> = listOf()): Boundary {
   val rect =
       S2LatLngRect.fromPointPair(
           S2LatLng.fromDegrees(lowLat, lowLng), S2LatLng.fromDegrees(highLat, highLng))
   val polygon = S2Polygon(S2Loop((0 until 4).map { rect.getVertex(it).toPoint() }))
   val encoded = ByteArrayOutputStream().also { polygon.encode(it) }
-  return Boundary(id, type, 0, name, listOf(), encoded.toByteArray(), 0.0)
+  return Boundary(id, type, 0, name, names, encoded.toByteArray(), 0.0)
 }
 
 private fun readableIdOf(trail: Trail, boundaries: List<Boundary>): String {

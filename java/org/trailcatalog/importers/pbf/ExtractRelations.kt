@@ -51,6 +51,8 @@ class NameCollector {
   // in an English speaking country, only becomes one row. A bare key overwrites a suffixed one so
   // that a shared value ends up with no language whichever order the tags arrive in.
   private val languagesByName = LinkedHashMap<String, String?>()
+  private var englishName: String? = null
+  private var name: String? = null
 
   fun add(key: ByteString, raw: ByteString) {
     val tagged =
@@ -69,11 +71,20 @@ class NameCollector {
       if (tagged.language == null || !languagesByName.containsKey(value)) {
         languagesByName[value] = tagged.language
       }
+      if (key == NAME_EN_BS) {
+        englishName = englishName ?: value
+      } else if (key == NAME_BS) {
+        name = name ?: value
+      }
     }
   }
 
+  // name:en and then name lead whichever order the tags arrive in, because readable ids take the
+  // first name and the site is in English.
   fun toList(): List<Name> {
-    return languagesByName.map { (value, language) -> Name(language, value) }
+    val leading = listOfNotNull(englishName, name).distinct()
+    val rest = languagesByName.keys.filter { it !in leading }
+    return (leading + rest).map { Name(languagesByName[it], it) }
   }
 }
 

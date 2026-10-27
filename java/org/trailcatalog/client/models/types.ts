@@ -3,9 +3,17 @@ import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 
 import { PixelRect, s2LatLngRectToTc } from '../common/types';
 
+export interface BoundaryLink {
+  readonly id: bigint|string;
+  readonly readableId: string;
+  readonly name: string;
+  readonly type: number;
+}
+
 export class Boundary {
   constructor(
       readonly id: bigint,
+      readonly readableId: string,
       readonly name: string,
       readonly type: number,
       readonly polygon: S2Polygon,
@@ -35,11 +43,7 @@ export class BoundarySearchResult {
       readonly id: bigint,
       readonly name: string,
       readonly type: number,
-      readonly boundaries: Array<{
-        id: string;
-        name: string;
-        type: number;
-      }>,
+      readonly boundaries: BoundaryLink[],
   ) {}
 }
 
@@ -114,11 +118,7 @@ export class TrailSearchResult {
       readonly elevationDownMeters: number,
       readonly elevationUpMeters: number,
       readonly lengthMeters: number,
-      readonly boundaries: Array<{
-        id: string;
-        name: string;
-        type: number;
-      }>,
+      readonly boundaries: BoundaryLink[],
   ) {}
 }
 

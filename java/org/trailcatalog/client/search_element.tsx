@@ -9,7 +9,7 @@ import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
 import { formatDistance } from 'js/units/formatters';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { TrailSearchResult } from './models/types';
+import { BoundaryLink, TrailSearchResult } from './models/types';
 import { SearchController, State } from './search_controller';
 
 export function SearchElement(
@@ -154,11 +154,7 @@ function SearchResults({boundaries, className, query, trails}: {
 
 function ResultItem({aside, boundaries, href, text, query}: {
   aside?: corgi.VElementOrPrimitive;
-  boundaries: Array<{
-    id: string;
-    name: string;
-    type: number;
-  }>;
+  boundaries: BoundaryLink[];
   href: string;
   text: string;
   query: string;

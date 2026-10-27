@@ -48,6 +48,7 @@ export class BoundaryDetailController extends ViewportController<Args, Deps, Sta
 export function boundaryFromRaw(raw: DataResponses['boundary']): Boundary {
   return new Boundary(
       BigInt(raw.id),
+      raw.readable_id,
       raw.name,
       raw.type,
       S2Polygon.FAST_CODER.unsafeDecode(
@@ -59,6 +60,7 @@ export function containingBoundariesFromRaw(raw: DataResponses['boundaries_conta
       b =>
           new Boundary(
               BigInt(b.id),
+              b.readable_id,
               b.name,
               b.type,
               emptyS2Polygon()));

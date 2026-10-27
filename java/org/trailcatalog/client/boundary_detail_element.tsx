@@ -25,16 +25,17 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
 }, inState: State|undefined, updateState: (newState: State) => void) {
   if (!inState || boundaryId !== inState.boundaryId) {
     inState = {
-      boundary: fetchData('boundary', {id: boundaryId}).then(boundaryFromRaw),
+      boundary:
+          fetchData('boundary', {boundary_id: {readable: boundaryId}}).then(boundaryFromRaw),
       boundaryId,
       containingBoundaries:
-          fetchData('boundaries_containing_boundary', {child_id: boundaryId})
+          fetchData('boundaries_containing_boundary', {child_id: {readable: boundaryId}})
               .then(containingBoundariesFromRaw),
       layers: [],
       selected: [],
       selectedCardPosition: [-1, -1],
 			trailsInBoundary:
-          fetchData('trails_in_boundary', {boundary_id: boundaryId})
+          fetchData('trails_in_boundary', {boundary_id: {readable: boundaryId}})
               .then(trailsInBoundaryFromRaw),
     };
   }

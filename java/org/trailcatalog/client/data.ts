@@ -101,14 +101,15 @@ function putCache(method: string, request: object, response: object): void {
   cache.push([{method, request: request as never}, response]);
 }
 
+export type BoundaryId = {numeric: string}|{readable: string};
 export type TrailId = {numeric: string}|{readable: string};
 
 interface DataRequests {
   boundary: {
-    id: string;
+    boundary_id: BoundaryId;
   };
   boundaries_containing_boundary: {
-    child_id: string;
+    child_id: BoundaryId;
   };
   boundaries_containing_trail: {
     trail_id: TrailId;
@@ -131,13 +132,14 @@ interface DataRequests {
     trail_id: TrailId;
   };
   trails_in_boundary: {
-    boundary_id: string;
+    boundary_id: BoundaryId;
   };
 }
 
 export interface DataResponses {
   boundary: {
     id: string;
+    readable_id: string;
     name: string;
     type: number;
     s2_polygon: string;
@@ -145,6 +147,7 @@ export interface DataResponses {
   boundaries_containing_boundary: {
     boundaries: Array<{
       id: string;
+      readable_id: string;
       name: string;
       type: number;
     }>;
@@ -152,6 +155,7 @@ export interface DataResponses {
   boundaries_containing_trail: {
     boundaries: Array<{
       id: string;
+      readable_id: string;
       name: string;
       type: number;
     }>;
@@ -175,6 +179,7 @@ export interface DataResponses {
     }>;
     boundaries: {
       [id: string]: {
+        readable_id: string;
         type: number;
         name: string;
       }
@@ -193,6 +198,7 @@ export interface DataResponses {
     }>;
     boundaries: {
       [id: string]: {
+        readable_id: string;
         type: number;
         name: string;
       }
