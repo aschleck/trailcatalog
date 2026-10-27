@@ -42,9 +42,6 @@ const SKYLINE_RADIUS_PX = 1.5;
 // Terrain below level drawn outside the ring, as far as from a summit you'd see it fall away
 const LOWEST_SKYLINE = -10 * Math.PI / 180;
 const SIGHT_RADIUS_PX = 1.5;
-// Past the edge of the screen, but no farther than you could see a peak on the line
-const SIGHT_LENGTH_PX = 4096;
-const SIGHT_LENGTH_M = 100_000;
 const PIN_FILL = 0x111827FF as RgbaU32;
 const CASING = 0xFFFFFFFF as RgbaU32;
 const HORIZON = 0x37415180 as RgbaU32;
@@ -681,16 +678,9 @@ export class SkyLayer extends Layer {
     const sun = getSunPosition(this.time, lat, lng);
     const moon = getMoonPosition(this.time, lat, lng);
     const lines: Line[] = [];
-    // From the pin through the disc and on across the map, to see what lines up with it
-    const reach =
-        Math.min(
-            SIGHT_LENGTH_PX * this.camera.inverseWorldRadius,
-            // Mercator x is longitude over pi, stretched by 1 / cos(latitude) north and south
-            SimpleS2.earthMetersToAngle(SIGHT_LENGTH_M).radians() / Math.PI / Math.cos(lat));
     for (const [body, fill] of [[moon, MOON], [sun, SUN]] as const) {
-      const {azimuth, altitude} = body;
-      if (altitude >= 0) {
-        const points = [x, y, x + reach * Math.sin(azimuth), y + reach * Math.cos(azimuth)];
+      if (body.altitude >= 0) {
+        const points = [x, y, ...chart(body)];
         const dashed = isHidden(terrain, body);
         lines.push({fill, stroke: CASING, radius: SIGHT_RADIUS_PX, points, dashed});
       }
