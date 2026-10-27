@@ -1,10 +1,35 @@
 import process from 'process';
+import fastifyReplyFrom from '@fastify/reply-from';
+import { FastifyInstance } from 'fastify';
 
 import { PageOptions, serve } from 'external/dev_april_corgi+/js/server/server';
 
 import { App } from '../client/app';
 
 import { STATIC_PREFIX } from './assets';
+
+const ROBOTS = `User-agent: *
+Allow: /
+
+Sitemap: https://trailcatalog.org/sitemap.xml
+`;
+
+// Crawlers only trust a sitemap for the URLs under its own directory, so it has to be served from
+// the root rather than from /api/.
+// https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap
+async function initialize(server: FastifyInstance) {
+  server.register(fastifyReplyFrom, {
+    base: 'http://127.0.0.1:7070',
+  });
+
+  server.get('/robots.txt', async (request, reply) => {
+    return reply.type('text/plain').send(ROBOTS);
+  });
+
+  server.get('/sitemap.xml', (request, reply) => {
+    reply.from('/api/sitemap.xml');
+  });
+}
 
 function page({content, escapedData, title}: PageOptions): string {
   return `
@@ -42,6 +67,7 @@ process.on('unhandledRejection', reason => {
 (async () => {
   await serve(App as any, page, {
     defaultTitle: 'Trailcatalog',
+    initialize: initialize as any,
     port: 7080,
   });
 })();

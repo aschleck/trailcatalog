@@ -40,6 +40,8 @@ tc_ts_project(
         "//java/org/trailcatalog/client:css",
     ],
     deps = [
+        "//:node_modules/@fastify/reply-from",
+        "//:node_modules/fastify",
         "//java/org/trailcatalog/client:ts",
         "@dev_april_corgi//js/corgi",
         "@dev_april_corgi//js/server",

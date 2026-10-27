@@ -18,6 +18,7 @@ import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.snapEpsilon
+import java.net.URI
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.time.Instant
@@ -78,6 +79,7 @@ fun main(args: Array<String>) {
     config.routes.get("/api/fetch-overview/{token}", ::fetchOverview)
     config.routes.get("/api/fetch-coarse/{token}", ::fetchCoarse)
     config.routes.get("/api/fetch-fine/{token}", ::fetchFine)
+    config.routes.get("/api/sitemap.xml", ::fetchSitemap)
   }.start(7070)
 }
 
@@ -384,6 +386,16 @@ private fun boundaryLinkFromResults(results: ResultSet): HashMap<String, Any> {
 // name.
 private const val BOUNDARY_AREA_BONUS = "0.005 * GREATEST(LOG(GREATEST(b.area_meters2, 1)) - 6, 0)"
 
+// Matches the boundaries search lists under National Parks, see search_element.tsx#isNationalParky.
+private val PARK_CATEGORIES =
+    RelationCategory.entries
+        .filter {
+          RelationCategory.BOUNDARY_NATIONAL_PARK.isParentOf(it)
+              || RelationCategory.BOUNDARY_PROTECTED_AREA_2.isParentOf(it)
+        }
+        .map { it.id }
+        .toTypedArray()
+
 // Climbing sites are for trails.lat, and a crag isn't a place to look for trails.
 private val UNSEARCHED_BOUNDARY_CATEGORIES =
     RelationCategory.entries
@@ -580,6 +592,58 @@ private fun fetchBoundaries(requiredBoundaries: HashSet<Long>): Map<String, Any>
     }
   }
   return boundaries;
+}
+
+// The home page, every park holding a trail, and the trails in those parks. Epoch 26102500 had 840
+// such parks and 9,363 trails, well under the 50,000 URLs one sitemap can hold.
+// https://www.sitemaps.org/protocol.html
+private fun fetchSitemap(ctx: Context) {
+  ctx.contentType("application/xml")
+  if (addETagAndCheckCached(ctx)) {
+    return
+  }
+
+  val xml = StringBuilder()
+  xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+  xml.append("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n")
+  appendSitemapUrl("/", xml)
+  connectionSource.connection.use {
+    val results = it.prepareStatement(
+        "WITH parks AS ("
+            + "  SELECT b.id FROM boundaries b "
+            + "  WHERE b.epoch = ? AND b.type = ANY(?) AND EXISTS ("
+            + "    SELECT 1 FROM trails_in_boundaries tib "
+            + "    WHERE tib.boundary_id = b.id AND tib.epoch = b.epoch)"
+            + ") "
+            + "SELECT '/boundary/' || bi.readable_id "
+            + "FROM parks p "
+            + "JOIN boundary_identifiers bi ON p.id = bi.numeric_id AND bi.epoch = ? "
+            + "UNION "
+            + "SELECT '/trail/' || ti.readable_id "
+            + "FROM trails_in_boundaries tib "
+            + "JOIN parks p ON tib.boundary_id = p.id "
+            + "JOIN trail_identifiers ti ON tib.trail_id = ti.numeric_id AND tib.epoch = ti.epoch "
+            + "WHERE tib.epoch = ? "
+            + "ORDER BY 1")
+        .apply {
+          setInt(1, epochTracker.epoch)
+          setArray(2, it.createArrayOf("INTEGER", PARK_CATEGORIES))
+          setInt(3, epochTracker.epoch)
+          setInt(4, epochTracker.epoch)
+        }.executeQuery()
+    while (results.next()) {
+      appendSitemapUrl(results.getString(1), xml)
+    }
+  }
+  xml.append("</urlset>\n")
+  ctx.result(xml.toString())
+}
+
+// Readable ids keep non-ASCII letters, and sitemaps only take ASCII URLs.
+private fun appendSitemapUrl(path: String, xml: StringBuilder) {
+  xml.append("  <url><loc>")
+  xml.append(URI("https", "trailcatalog.org", path, null).toASCIIString())
+  xml.append("</loc></url>\n")
 }
 
 private fun fetchOverview(ctx: Context) {
