@@ -2,6 +2,7 @@ import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/commo
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { BoundaryDetailElement } from './boundary_detail_element';
+import { ErrorElement } from './error_element';
 import { GoToTrailElement } from './go_to_trail_element';
 import { RouteController, State } from './route_controller';
 import { SearchResultsOverviewElement } from './search_results_overview_element';
@@ -17,7 +18,9 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
   }
 
   let route;
-  if (state.active.kind === 'boundary_detail') {
+  if (!state.active) {
+    route = <ErrorElement statusCode={404} />;
+  } else if (state.active.kind === 'boundary_detail') {
     route = <BoundaryDetailElement boundaryId={state.active.id} parameters={state.parameters} />;
   } else if (state.active.kind === 'go_to_trail') {
     route = <GoToTrailElement trailId={state.active.id} parameters={state.parameters} />;

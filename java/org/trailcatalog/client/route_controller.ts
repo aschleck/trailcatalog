@@ -1,4 +1,3 @@
-import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { DiscriminatedRoute, matchPath, ViewsService } from 'external/dev_april_corgi+/js/corgi/history/views_service';
 import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
@@ -6,7 +5,8 @@ import { currentUrl } from 'external/dev_april_corgi+/js/server/ssr_aware';
 import { Routes, routes } from './routes';
 
 export interface State {
-  active: DiscriminatedRoute<Routes>;
+  // Undefined if no route matches
+  active: DiscriminatedRoute<Routes>|undefined;
   parameters: {[key: string]: string};
 }
 
@@ -17,7 +17,7 @@ export class RouteController extends Controller<{}, Deps, HTMLDivElement, State>
   static getInitialState(): State {
     const url = currentUrl();
     return {
-      active: checkExists(matchPath<Routes>(url.pathname, routes)),
+      active: matchPath<Routes>(url.pathname, routes),
       parameters: Object.fromEntries(new URLSearchParams(url.search).entries()),
     };
   }
