@@ -303,6 +303,7 @@ private fun fetchData(ctx: Context) {
           val results = it.prepareStatement(
               "SELECT "
                   + "t.id, "
+                  + "ti.readable_id, "
                   + "t.name, "
                   + "t.type, "
                   + "t.elevation_down_meters, "
@@ -311,6 +312,8 @@ private fun fetchData(ctx: Context) {
                   + "FROM trails t "
                   + "RIGHT JOIN trails_in_boundaries tib "
                   + "ON t.id = tib.trail_id AND t.epoch = tib.epoch "
+                  + "JOIN trail_identifiers ti "
+                  + "ON tib.trail_id = ti.numeric_id AND tib.epoch = ti.epoch "
                   + "JOIN boundary_identifiers bi "
                   + "ON tib.boundary_id = bi.numeric_id AND tib.epoch = bi.epoch "
                   + "WHERE ${idColumn} = ? AND tib.epoch = ? "
@@ -322,11 +325,12 @@ private fun fetchData(ctx: Context) {
           while (results.next()) {
             val trail = HashMap<String, Any>()
             trail["id"] = results.getLong(1).toString()
-            trail["name"] = results.getString(2)
-            trail["type"] = results.getInt(3)
-            trail["elevation_down_meters"] = results.getFloat(4)
-            trail["elevation_up_meters"] = results.getFloat(5)
-            trail["length_meters"] = results.getFloat(6)
+            trail["readable_id"] = results.getString(2)
+            trail["name"] = results.getString(3)
+            trail["type"] = results.getInt(4)
+            trail["elevation_down_meters"] = results.getFloat(5)
+            trail["elevation_up_meters"] = results.getFloat(6)
+            trail["length_meters"] = results.getFloat(7)
             data.add(trail)
           }
         }
@@ -494,6 +498,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
     val results = it.prepareStatement(
         "SELECT "
             + "sr.id, "
+            + "sr.readable_id, "
             + "sr.name, "
             + "sr.bound_degrees_e7, "
             + "sr.marker_degrees_e7, "
@@ -504,6 +509,7 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "FROM ("
             + "  SELECT "
             + "    t.id as id, "
+            + "    ti.readable_id as readable_id, "
             + "    t.name as name, "
             + "    t.bound_degrees_e7, "
             + "    t.marker_degrees_e7 as marker_degrees_e7, "
@@ -526,12 +532,13 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
             + "    GROUP BY 1, 2 "
             + "  ) nm "
             + "  JOIN trails t ON t.id = nm.id AND t.epoch = ? "
-            + "  GROUP BY 1, 2, 3, 4, 5, 6, 7 "
+            + "  JOIN trail_identifiers ti ON t.id = ti.numeric_id AND t.epoch = ti.epoch "
+            + "  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8 "
             + "  ORDER BY score ASC "
             + "  LIMIT ?"
             + ") sr "
             + "LEFT JOIN trails_in_boundaries tib ON sr.id = tib.trail_id AND tib.epoch = ? "
-            + "GROUP BY 1, 2, 3, 4, 5, 6, 7, sr.score "
+            + "GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, sr.score "
             + "ORDER BY sr.score ASC")
         .apply {
           setString(1, query)
@@ -546,14 +553,15 @@ private fun executeSearchTrails(rawQuery: String, limit: Int): Map<String, Any> 
     while (results.next()) {
       val trail = HashMap<String, Any>()
       trail["id"] = results.getLong(1).toString()
-      trail["name"] = results.getString(2)
-      trail["bound"] = String(Base64.getEncoder().encode(results.getBytes(3)))
-      trail["marker"] = String(Base64.getEncoder().encode(results.getBytes(4)))
-      trail["elevation_down_meters"] = results.getFloat(5)
-      trail["elevation_up_meters"] = results.getFloat(6)
-      trail["length_meters"] = results.getFloat(7)
+      trail["readable_id"] = results.getString(2)
+      trail["name"] = results.getString(3)
+      trail["bound"] = String(Base64.getEncoder().encode(results.getBytes(4)))
+      trail["marker"] = String(Base64.getEncoder().encode(results.getBytes(5)))
+      trail["elevation_down_meters"] = results.getFloat(6)
+      trail["elevation_up_meters"] = results.getFloat(7)
+      trail["length_meters"] = results.getFloat(8)
       @Suppress("UNCHECKED_CAST")
-      val boundaries = results.getArray(8).getArray() as Array<Long>
+      val boundaries = results.getArray(9).getArray() as Array<Long>
       trail["boundaries"] = boundaries.map { it.toString() }
       requiredBoundaries.addAll(boundaries)
       data.add(trail)

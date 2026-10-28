@@ -123,6 +123,7 @@ export function searchTrailsFromRaw(raw: DataResponses['search_trails']): TrailS
       t =>
           new TrailSearchResult(
               BigInt(t.id),
+              t.readable_id,
               t.name,
               latLngRectFromBase64E7(t.bound),
               latLngFromBase64E7(t.marker),

@@ -188,6 +188,7 @@ export interface DataResponses {
   search_trails: {
     results: Array<{
       id: string;
+      readable_id: string;
       name: string;
       boundaries: string[];
       bound: string;
@@ -222,6 +223,7 @@ export interface DataResponses {
   trails_in_boundary: {
     trails: Array<{
       id: string;
+      readable_id: string;
       name: string;
       type: number;
       elevation_down_meters: number;

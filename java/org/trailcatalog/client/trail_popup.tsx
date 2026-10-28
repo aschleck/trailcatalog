@@ -5,6 +5,7 @@ import { Vec2 } from 'js/map/common/types';
 
 import { formatDistance } from 'js/units/formatters';
 import { Path, Point, Trail } from './models/types';
+import { getTrailHref } from './routes';
 
 const POINT_CATEGORY_TO_LABEL =
     new Map([
@@ -115,7 +116,7 @@ function TrailLink({trail}: {trail: Trail}) {
     <a
         className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"
         data-trail-id={trail.id}
-        href={`/goto/trail/${trail.id}`}
+        href={getTrailHref(trail)}
         unboundEvents={{
           mouseover: 'highlightTrail',
           mouseout: 'unhighlightTrail',

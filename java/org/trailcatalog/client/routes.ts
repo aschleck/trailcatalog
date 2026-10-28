@@ -45,6 +45,12 @@ export function showSearchResults({boundary, camera, query}: {
   views.goTo(`/search?${filters.join('&')}`);
 }
 
-export function showTrail(id: bigint, views: ViewsService<Routes>): void {
-  views.goTo(`/goto/trail/${id}`);
+// Trails loaded from map tiles only have numeric ids, and /goto/trail looks up the readable one.
+export function getTrailHref(trail: {id: bigint|string; readableId?: string}): string {
+  return trail.readableId ? `/trail/${trail.readableId}` : `/goto/trail/${trail.id}`;
+}
+
+export function showTrail(trail: {id: bigint; readableId?: string}, views: ViewsService<Routes>):
+    void {
+  views.goTo(getTrailHref(trail));
 }

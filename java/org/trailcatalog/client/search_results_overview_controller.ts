@@ -194,7 +194,7 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
       const now = Date.now();
       if (this.state.clickCandidate?.trail === candidate
           && now - this.state.clickCandidate.lastClick < DOUBLE_CLICK_DETECTION_MS) {
-        routes.showTrail(candidate.id, this.views);
+        routes.showTrail(candidate, this.views);
         return;
       } 
 
@@ -216,14 +216,13 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
       return;
     }
 
-    const raw = e.actionElement.data('trailId')?.string();
-    if (raw === undefined) {
-      console.error('Unable to find trail ID');
+    const href = e.actionElement.data('trailHref')?.string();
+    if (href === undefined) {
+      console.error('Unable to find trail href');
       return;
     }
 
-    const id = BigInt(raw);
-    routes.showTrail(id, this.views);
+    this.views.goTo(href);
   }
 
   override highlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {

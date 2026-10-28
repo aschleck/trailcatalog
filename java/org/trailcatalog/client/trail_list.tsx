@@ -4,12 +4,14 @@ import { formatCount, formatDistance, formatHeight } from 'js/units/formatters';
 import { BoundaryLink, Path, Point, Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
+import { getTrailHref } from './routes';
 import { TrailIssue } from './trail_issue';
 
 const TRAIL_COUNT_MAX = 100;
 
 interface SimpleTrail {
   id: bigint|string;
+  readableId?: string;
   name: string;
   elevationDownMeters: number;
   elevationUpMeters: number;
@@ -91,6 +93,7 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
               + (valid ? '' : ' text-tc-error-500')
               + (highlight ? ' bg-tc-gray-100' : '')
         }
+        data-trail-href={getTrailHref(trail)}
         data-trail-id={`${trail.id}`}
         unboundEvents={{
           click: 'viewTrail',
@@ -108,7 +111,7 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
       </td>
       <td></td>
       <td>
-        <a href={`/goto/trail/${trail.id}`}>
+        <a href={getTrailHref(trail)}>
           {trail.name}
         </a>
         {

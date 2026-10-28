@@ -16,6 +16,7 @@ import { BoundaryDetailController, boundaryFromRaw, containingBoundariesFromRaw,
 import { failedStatusCode, fetchData } from './data';
 import { ErrorElement } from './error_element';
 import { Header } from './page';
+import { getTrailHref } from './routes';
 import { setTitle } from './title';
 import { TrailPopup } from './trail_popup';
 
@@ -205,7 +206,7 @@ function TrailRow({trail}: {
   return <>
     <tr className="border">
       <td className="px-5 py-4">
-        <a href={`/goto/trail/${trail.id}`}>
+        <a href={getTrailHref(trail)}>
           {trail.name}
         </a>
       </td>

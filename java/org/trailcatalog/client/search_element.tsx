@@ -10,6 +10,7 @@ import { formatDistance } from 'js/units/formatters';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { BoundaryLink, TrailSearchResult } from './models/types';
+import { getTrailHref } from './routes';
 import { SearchController, State } from './search_controller';
 
 export function SearchElement(
@@ -116,7 +117,7 @@ function SearchResults({boundaries, className, query, trails}: {
             <ResultItem
                 aside={<TrailDistance trail={trail} />}
                 boundaries={trail.boundaries}
-                href={`/goto/trail/${trail.id}`}
+                href={getTrailHref(trail)}
                 text={trail.name}
                 query={query}
             />

@@ -112,6 +112,7 @@ export interface TrailFact {
 export class TrailSearchResult {
   constructor(
       readonly id: bigint,
+      readonly readableId: string,
       readonly name: string,
       readonly bound: LatLngRect,
       readonly marker: LatLng,
