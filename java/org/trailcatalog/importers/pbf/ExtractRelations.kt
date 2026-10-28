@@ -90,19 +90,18 @@ class NameCollector {
 
 fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): RelationCategory {
   var category = RelationCategory.ANY
+  var adminLevel: RelationCategory? = null
+  var administrative = false
   var climbing: RelationCategory? = null
   for (i in 0 until relation.keysCount) {
     when (stringTable.getS(relation.getKeys(i))) {
       ADMIN_LEVEL_BS ->
-        category =
-            category
-                .coerceAtLeast(RelationCategory.BOUNDARY_ADMINISTRATIVE)
-                .coerceAtLeast(ADMINISTRATIVE_LEVEL_NAMES[stringTable.getS(relation.getVals(i))])
-      BOUNDARY_BS ->
-        category =
-            category
-                .coerceAtLeast(RelationCategory.BOUNDARY)
-                .coerceAtLeast(BOUNDARY_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
+        adminLevel = ADMINISTRATIVE_LEVEL_NAMES[stringTable.getS(relation.getVals(i))]
+      BOUNDARY_BS -> {
+        val boundary = BOUNDARY_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))]
+        administrative = boundary == RelationCategory.BOUNDARY_ADMINISTRATIVE
+        category = category.coerceAtLeast(RelationCategory.BOUNDARY).coerceAtLeast(boundary)
+      }
       CLIMBING_BS ->
         climbing = CLIMBING_SITE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))]
       PROTECT_CLASS_BS ->
@@ -116,6 +115,11 @@ fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): Re
                 .coerceAtLeast(RelationCategory.ROUTE)
                 .coerceAtLeast(ROUTE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
     }
+  }
+  // Land area outlines, maritime zones, claims, and buildings like Paul-Löbe-Haus carry admin_level
+  // too, and reading it on them makes them countries and states that lead readable ids.
+  if (administrative) {
+    category = category.coerceAtLeast(adminLevel)
   }
   // A climbing site drawn as a multipolygon has an area of its own like any other boundary, while
   // CreateClimbingSites makes up the area of the rest. See also climbingRelation.

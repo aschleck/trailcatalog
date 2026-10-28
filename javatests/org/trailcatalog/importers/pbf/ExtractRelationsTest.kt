@@ -122,9 +122,43 @@ class ExtractRelationsTest {
     assertThat(relation.name).isEmpty()
     assertThat(relation.names).isEmpty()
   }
+
+  @Test
+  fun testAdministrativeBoundaryTakesItsLevel() {
+    assertThat(categoryOf("boundary" to "administrative", "admin_level" to "2"))
+        .isEqualTo(RelationCategory.BOUNDARY_ADMINISTRATIVE_2)
+    assertThat(categoryOf("admin_level" to "4", "boundary" to "administrative"))
+        .isEqualTo(RelationCategory.BOUNDARY_ADMINISTRATIVE_4)
+  }
+
+  @Test
+  fun testOtherBoundariesIgnoreTheirLevel() {
+    assertThat(categoryOf("boundary" to "land_area", "admin_level" to "2"))
+        .isEqualTo(RelationCategory.BOUNDARY)
+  }
+
+  @Test
+  fun testBuildingIgnoresItsLevel() {
+    assertThat(
+            categoryOf("type" to "multipolygon", "building" to "government", "admin_level" to "2"))
+        .isEqualTo(RelationCategory.ANY)
+  }
+}
+
+private fun categoryOf(vararg tags: Pair<String, String>): RelationCategory {
+  val (relation, stringTable) = buildRelation(tags)
+  return relationCategory(relation, stringTable)
 }
 
 private fun relationWithTags(vararg tags: Pair<String, String>): Relation {
+  val (relation, stringTable) = buildRelation(tags)
+  // The category only decides whether we keep the relation, and these tests are about its names.
+  return getRelation(relation, RelationCategory.ROUTE, stringTable)!!
+}
+
+private fun buildRelation(
+    tags: Array<out Pair<String, String>>
+): Pair<Osmformat.Relation, Osmformat.StringTable> {
   // Index 0 of a PBF string table is always the empty string.
   val strings = ArrayList<String>().also { it.add("") }
   val relation = Osmformat.Relation.newBuilder().setId(1)
@@ -137,6 +171,5 @@ private fun relationWithTags(vararg tags: Pair<String, String>): Relation {
 
   val stringTable = Osmformat.StringTable.newBuilder()
   strings.forEach { stringTable.addS(ByteString.copyFromUtf8(it)) }
-  // The category only decides whether we keep the relation, and these tests are about its names.
-  return getRelation(relation.build(), RelationCategory.ROUTE, stringTable.build())!!
+  return Pair(relation.build(), stringTable.build())
 }
