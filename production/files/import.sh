@@ -35,6 +35,7 @@ if [[ -z "$(find "${planet}" -mtime -60 2>/dev/null)" ]]; then
       --name 'aria2c' \
       --pull always \
       --rm \
+      --log-driver passthrough \
       --mount type=bind,source=/mnt/horse,target=/tmp \
       --network host \
       us-west1-docker.pkg.dev/trailcatalog/containers/aria2c:latest \
@@ -55,6 +56,7 @@ podman run \
     --name 'planet_update' \
     --pull always \
     --rm \
+    --log-driver passthrough \
     --cpu-shares 64 \
     --mount type=bind,source=/mnt/horse,target=/tmp \
     --network host \
@@ -70,6 +72,7 @@ podman run \
     --name=importer \
     --pull always \
     --rm \
+    --log-driver passthrough \
     --cpu-shares 64 \
     --env DATABASE_URL="postgresql://localhost/trailcatalog" \
     --env DATABASE_USERNAME_PASSWORD \

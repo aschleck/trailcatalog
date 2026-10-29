@@ -26,6 +26,7 @@ podman run \
     --name trailcatalog-frontend \
     --pull always \
     --rm \
+    --log-driver passthrough \
     --env DATABASE_URL="postgresql://localhost/trailcatalog" \
     --env DATABASE_USERNAME_PASSWORD \
     --network host \

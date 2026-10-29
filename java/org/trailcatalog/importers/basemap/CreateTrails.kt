@@ -44,7 +44,7 @@ class CreateTrails
       return
     }
     if (!flattened.continuous) {
-      logger.warn("Trail ${relation.id} does not trace as one line")
+      logger.debug("Trail ${relation.id} does not trace as one line")
     }
 
     val orderedArray = flattened.ids.toLongArray()

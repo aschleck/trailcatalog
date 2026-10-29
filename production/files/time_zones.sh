@@ -27,6 +27,7 @@ podman run \
     --name time_zones \
     --pull always \
     --rm \
+    --log-driver passthrough \
     --network host \
     us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_time_zones:latest \
     --database_username_password="${pg_user}:${pg_pwd}" \

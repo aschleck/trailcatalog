@@ -27,6 +27,7 @@ podman run \
     --name aviation_vectors \
     --pull always \
     --rm \
+    --log-driver passthrough \
     --network host \
     us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_aviation_vectors:latest \
     --database_username_password="${pg_user}:${pg_pwd}" \

@@ -20,6 +20,7 @@ podman run \
     --name ecmwf \
     --pull always \
     --rm \
+    --log-driver passthrough \
     --cpu-shares 64 \
     --mount type=bind,source="${work}",target=/tmp \
     --network host \

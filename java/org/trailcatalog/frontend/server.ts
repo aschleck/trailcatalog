@@ -70,6 +70,11 @@ process.on('unhandledRejection', reason => {
 (async () => {
   await serve(App as any, page, {
     defaultTitle: 'Trailcatalog',
+    fastifyOptions: {
+      http2: true,
+      logger: {level: 'warn'},
+      requestIdHeader: 'x-request-id',
+    },
     initialize: initialize as any,
     port: 7080,
   });

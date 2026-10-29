@@ -151,6 +151,8 @@ process.on('unhandledRejection', reason => {
     fastifyOptions: {
       bodyLimit: BODY_LIMIT_BYTES,
       http2: true,
+      logger: {level: 'warn'},
+      requestIdHeader: 'x-request-id',
     },
     // I don't get why this needs an any at all
     initialize: initialize as any,
