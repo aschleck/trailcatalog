@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S1Angle
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
+import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2Polyline
 import com.google.protobuf.Message
@@ -33,10 +34,15 @@ import kotlin.collections.ArrayList
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
+import lat.trails.common.BOUND_COLUMNS
+import lat.trails.common.UPDATE_BOUND
 import lat.trails.common.assemblePolygon
 import lat.trails.common.createBaseConnection
 import lat.trails.common.createTrailcatalogConnection
 import lat.trails.common.encodeCovering
+import lat.trails.common.getBound
+import lat.trails.common.latLngE7Bound
+import lat.trails.common.setBound
 import lat.trails.common.TIME_ZONES_COLLECTION_ID
 import lat.trails.proto.AcceptInviteRequest
 import lat.trails.proto.AcceptInviteResponse
@@ -412,7 +418,8 @@ private fun listCollections(ctx: Context): ListCollectionsResponse {
   hikari.connection.use { connection ->
     connection
         .prepareStatement(
-            "SELECT id, name, version FROM collections WHERE creator = ? ORDER BY created DESC")
+            "SELECT id, name, version, $BOUND_COLUMNS FROM collections WHERE creator = ? "
+                + "ORDER BY created DESC")
         .apply {
           setObject(1, user)
         }
@@ -424,13 +431,15 @@ private fun listCollections(ctx: Context): ListCollectionsResponse {
                     .setId((results.getObject(1) as UUID).toString())
                     .setName(results.getString(2))
                     .setVersion(results.getLong(3))
-                    .setRole(Role.ROLE_OWNER))
+                    .setRole(Role.ROLE_OWNER)
+                    .readBound(results, 4))
           }
         }
 
     connection
         .prepareStatement(
-            "SELECT c.id, c.name, c.version, g.role "
+            "SELECT c.id, c.name, c.version, g.role, "
+                + "c.low_lat_degrees, c.low_lng_degrees, c.high_lat_degrees, c.high_lng_degrees "
                 + "FROM collection_grants g "
                 + "JOIN collections c ON c.id = g.collection_id "
                 + "WHERE g.grantee_id = ? "
@@ -446,11 +455,24 @@ private fun listCollections(ctx: Context): ListCollectionsResponse {
                     .setId((results.getObject(1) as UUID).toString())
                     .setName(results.getString(2))
                     .setVersion(results.getLong(3))
-                    .setRole(parseRole(results.getString(4))))
+                    .setRole(parseRole(results.getString(4)))
+                    .readBound(results, 5))
           }
         }
   }
   return response.build()
+}
+
+private fun Collection.Builder.readBound(results: ResultSet, index: Int): Collection.Builder {
+  val bound = results.getBound(index)
+  if (!bound.isEmpty) {
+    boundBuilder
+        .setLowLatDegrees(bound.latLo().degrees())
+        .setLowLngDegrees(bound.lngLo().degrees())
+        .setHighLatDegrees(bound.latHi().degrees())
+        .setHighLngDegrees(bound.lngHi().degrees())
+  }
+  return this
 }
 
 private fun getCollection(ctx: Context, request: GetCollectionRequest): GetCollectionResponse {
@@ -597,14 +619,15 @@ private fun createCollection(
   hikari.connection.use { connection ->
     connection
         .prepareStatement(
-            "INSERT INTO collections (id, creator, name, covering, schema) "
-                + "VALUES (gen_random_uuid(), ?, ?, ?, ?::jsonb) "
+            "INSERT INTO collections (id, creator, name, covering, schema, $BOUND_COLUMNS) "
+                + "VALUES (gen_random_uuid(), ?, ?, ?, ?::jsonb, ?, ?, ?, ?) "
                 + "RETURNING id")
         .apply {
           setObject(1, creator)
           setString(2, request.name)
           setBytes(3, encodeCovering(listOf()))
           setString(4, request.schema)
+          setBound(5, S2LatLngRect.empty())
         }
         .executeQuery()
         .use { results ->
@@ -1208,6 +1231,7 @@ private fun prepareLine(line: Line): PreparedWrite {
         null
       }
   val geometry = DeltaLatLngE7.encode(latLngE7)
+  val bound = latLngE7Bound(latLngE7)
   val data = jsonOrEmptyObject(line.data)
 
   return object : PreparedWrite(FeatureKey(Table.LINES, id)) {
@@ -1217,14 +1241,14 @@ private fun prepareLine(line: Line): PreparedWrite {
           .prepareStatement(
               "INSERT INTO lines "
                   + "(id, collection, cell, created, updated, data, lat_lng_degrees, "
-                  + "elevation_centimeters, time_seconds, version) "
-                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?, ?) "
+                  + "elevation_centimeters, time_seconds, version, $BOUND_COLUMNS) "
+                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?) "
                   + "ON CONFLICT (collection, id) DO UPDATE SET "
                   + "cell = EXCLUDED.cell, data = EXCLUDED.data, "
                   + "lat_lng_degrees = EXCLUDED.lat_lng_degrees, "
                   + "elevation_centimeters = EXCLUDED.elevation_centimeters, "
                   + "time_seconds = EXCLUDED.time_seconds, version = EXCLUDED.version, "
-                  + "updated = NOW(), deleted = NULL")
+                  + "$UPDATE_BOUND, updated = NOW(), deleted = NULL")
           .apply {
             setObject(1, id)
             setObject(2, collection)
@@ -1234,6 +1258,7 @@ private fun prepareLine(line: Line): PreparedWrite {
             setBytes(6, elevation)
             setBytes(7, time)
             setLong(8, version)
+            setBound(9, bound)
           }
           .executeUpdate()
     }
@@ -1250,6 +1275,7 @@ private fun preparePoint(point: Point): PreparedWrite {
       S2CellId.fromLatLng(S2LatLng.fromE7(point.latE7, point.lngE7))
           .parent(SimpleS2.HIGHEST_INDEX_LEVEL)
   val geometry = DeltaLatLngE7.encode(intArrayOf(point.latE7, point.lngE7))
+  val bound = S2LatLngRect.fromPoint(S2LatLng.fromE7(point.latE7, point.lngE7))
   val data = jsonOrEmptyObject(point.data)
 
   return object : PreparedWrite(FeatureKey(Table.POINTS, id)) {
@@ -1259,13 +1285,13 @@ private fun preparePoint(point: Point): PreparedWrite {
           .prepareStatement(
               "INSERT INTO points "
                   + "(id, collection, cell, created, updated, data, lat_lng_degrees, "
-                  + "elevation_centimeters, version) "
-                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?) "
+                  + "elevation_centimeters, version, $BOUND_COLUMNS) "
+                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?, ?, ?, ?, ?) "
                   + "ON CONFLICT (collection, id) DO UPDATE SET "
                   + "cell = EXCLUDED.cell, data = EXCLUDED.data, "
                   + "lat_lng_degrees = EXCLUDED.lat_lng_degrees, "
                   + "elevation_centimeters = EXCLUDED.elevation_centimeters, "
-                  + "version = EXCLUDED.version, updated = NOW(), deleted = NULL")
+                  + "version = EXCLUDED.version, $UPDATE_BOUND, updated = NOW(), deleted = NULL")
           .apply {
             setObject(1, id)
             setObject(2, collection)
@@ -1278,6 +1304,7 @@ private fun preparePoint(point: Point): PreparedWrite {
               setNull(6, Types.INTEGER)
             }
             setLong(7, version)
+            setBound(8, bound)
           }
           .executeUpdate()
     }
@@ -1310,6 +1337,7 @@ private fun preparePolygon(polygon: Polygon): PreparedWrite {
         it.toByteArray()
       }
   val geometry = DeltaLatLngE7.encode(latLngE7)
+  val bound = latLngE7Bound(latLngE7)
   val data = jsonOrEmptyObject(polygon.data)
 
   return object : PreparedWrite(FeatureKey(Table.POLYGONS, id)) {
@@ -1319,13 +1347,13 @@ private fun preparePolygon(polygon: Polygon): PreparedWrite {
           .prepareStatement(
               "INSERT INTO polygons "
                   + "(id, collection, cell, created, updated, data, s2_polygon, lat_lng_degrees, "
-                  + "version) "
-                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?) "
+                  + "version, $BOUND_COLUMNS) "
+                  + "VALUES (?, ?, ?, NOW(), NOW(), ?::jsonb, ?, ?, ?, ?, ?, ?, ?) "
                   + "ON CONFLICT (collection, id) DO UPDATE SET "
                   + "cell = EXCLUDED.cell, data = EXCLUDED.data, "
                   + "s2_polygon = EXCLUDED.s2_polygon, "
                   + "lat_lng_degrees = EXCLUDED.lat_lng_degrees, "
-                  + "version = EXCLUDED.version, updated = NOW(), deleted = NULL")
+                  + "version = EXCLUDED.version, $UPDATE_BOUND, updated = NOW(), deleted = NULL")
           .apply {
             setObject(1, id)
             setObject(2, collection)
@@ -1334,6 +1362,7 @@ private fun preparePolygon(polygon: Polygon): PreparedWrite {
             setBytes(5, s2Polygon)
             setBytes(6, geometry)
             setLong(7, version)
+            setBound(8, bound)
           }
           .executeUpdate()
     }
@@ -1602,13 +1631,15 @@ private fun formatRole(role: Role): String {
 
 private fun updateCovering(connection: Connection, collection: UUID, version: Long) {
   val cells = ArrayList<S2CellId>()
+  var bound = S2LatLngRect.empty()
   connection
       .prepareStatement(
-          "SELECT cell FROM lines WHERE collection = ? AND deleted IS NULL "
+          "SELECT cell, $BOUND_COLUMNS FROM lines WHERE collection = ? AND deleted IS NULL "
               + "UNION ALL "
-              + "SELECT cell FROM points WHERE collection = ? AND deleted IS NULL "
+              + "SELECT cell, $BOUND_COLUMNS FROM points WHERE collection = ? AND deleted IS NULL "
               + "UNION ALL "
-              + "SELECT cell FROM polygons WHERE collection = ? AND deleted IS NULL")
+              + "SELECT cell, $BOUND_COLUMNS FROM polygons "
+              + "WHERE collection = ? AND deleted IS NULL")
       .apply {
         setObject(1, collection)
         setObject(2, collection)
@@ -1618,15 +1649,19 @@ private fun updateCovering(connection: Connection, collection: UUID, version: Lo
       .use { results ->
         while (results.next()) {
           cells.add(S2CellId(results.getLong(1)))
+          bound = bound.union(results.getBound(2))
         }
       }
 
   connection
-      .prepareStatement("UPDATE collections SET covering = ?, version = ? WHERE id = ?")
+      .prepareStatement(
+          "UPDATE collections SET covering = ?, version = ?, low_lat_degrees = ?, "
+              + "low_lng_degrees = ?, high_lat_degrees = ?, high_lng_degrees = ? WHERE id = ?")
       .apply {
         setBytes(1, encodeCovering(cells))
         setLong(2, version)
-        setObject(3, collection)
+        setBound(3, bound)
+        setObject(7, collection)
       }
       .executeUpdate()
 }

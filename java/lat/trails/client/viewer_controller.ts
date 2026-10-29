@@ -13,7 +13,7 @@ import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_eleme
 import { MenuHandle, MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
 import { PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
-import { S2LatLng } from 'java/org/trailcatalog/s2';
+import { R1Interval, S1Interval, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
 import { MAPTERHORN_COPYRIGHT } from 'js/map/common/copyrights';
 import { LatLngZoom, Vec2 } from 'js/map/common/types';
@@ -28,6 +28,7 @@ import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_BOTTOM } from 'js/map/z';
 import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
+  Bound,
   Collection,
   CreateCollectionResponse,
   DeleteAccountResponse,
@@ -180,6 +181,15 @@ function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
     }
   }
   return latLngDegrees;
+}
+
+// A collection's bound can span more than 180 degrees of longitude, and rebuilding it from its
+// corners would give back the other side of the world instead.
+function boundToRect(bound: Bound): S2LatLngRect {
+  const radians = Math.PI / 180;
+  return S2LatLngRect.fromIntervals(
+      new R1Interval(bound.lowLatDegrees * radians, bound.highLatDegrees * radians),
+      new S1Interval(bound.lowLngDegrees * radians, bound.highLngDegrees * radians));
 }
 
 // Something a click landed on
@@ -544,7 +554,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       collectionStatus: 'loaded',
       features: {...this.state.features, expanded: new Set()},
     });
-    if (id) {
+    if (!id) {
+      return;
+    }
+    // openCollection put the listing's collection in state, and its bound saves waiting for the
+    // load to fit.
+    const bound = this.state.collection?.id === id ? this.state.collection.bound : undefined;
+    if (newArgs.fitCollection && bound) {
+      this.fitBound(boundToRect(bound));
+      this.loadCollection(id, false);
+    } else {
       this.loadCollection(id, newArgs.fitCollection);
     }
   }
@@ -1141,20 +1160,20 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Moves the camera to show every point in a flat lat,lng array, or nowhere when it's empty.
   private fitCamera(latLngDegrees: number[]): void {
-    if (latLngDegrees.length === 0) {
+    let bound = S2LatLngRect.empty();
+    for (let i = 0; i < latLngDegrees.length; i += 2) {
+      bound = bound.addLatLng(S2LatLng.fromDegrees(latLngDegrees[i], latLngDegrees[i + 1]));
+    }
+    this.fitBound(bound);
+  }
+
+  private fitBound(bound: S2LatLngRect): void {
+    if (bound.isEmpty()) {
       return;
     }
 
-    let low = [Infinity, Infinity] as Vec2;
-    let high = [-Infinity, -Infinity] as Vec2;
-    for (let i = 0; i < latLngDegrees.length; i += 2) {
-      const lat = latLngDegrees[i];
-      const lng = latLngDegrees[i + 1];
-      low = [Math.min(low[0], lat), Math.min(low[1], lng)] as Vec2;
-      high = [Math.max(high[0], lat), Math.max(high[1], lng)] as Vec2;
-    }
-
-    if (low[0] === high[0] && low[1] === high[1]) {
+    const low = [bound.latLo().degrees(), bound.lngLo().degrees()] as Vec2;
+    if (bound.isPoint()) {
       // A lone point has no extent to fit, so we zoom in until its surroundings are readable.
       this.mapController.setCamera({
         lat: low[0],
@@ -1162,7 +1181,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         zoom: Math.max(this.mapController.camera.zoom, POINT_ZOOM),
       });
     } else {
-      // setCamera tells a rect from a center by the brand, so it has to exist at runtime.
+      // A low longitude above the high one crosses the antimeridian, which fitBoundInScreen
+      // handles. setCamera tells a rect from a center by the brand, so it has to exist at runtime.
+      const high = [bound.latHi().degrees(), bound.lngHi().degrees()] as Vec2;
       this.mapController.setCamera({low, high, brand: 'LatLngRect'});
     }
   }

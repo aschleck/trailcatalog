@@ -2,13 +2,17 @@ package lat.trails.importers
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S2LatLng
+import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Polygon
 import java.io.ByteArrayOutputStream
 import java.nio.file.Path
 import java.util.UUID
+import lat.trails.common.BOUND_COLUMNS
+import lat.trails.common.appendBound
 import lat.trails.common.assemblePolygon
 import lat.trails.common.createBaseConnection
 import lat.trails.common.encodeCovering
+import lat.trails.common.setBound
 import mil.nga.sf.MultiPolygon
 import org.apache.commons.text.StringEscapeUtils
 import org.locationtech.proj4j.CoordinateTransform
@@ -65,8 +69,9 @@ fun dumpPolygons(
       val collection =
           connection
               .prepareStatement(
-                  "INSERT INTO collections (id, creator, name, covering, schema) "
-                      + "VALUES (COALESCE(?, gen_random_uuid()), ?, ?, ?, ?::jsonb) "
+                  "INSERT INTO collections "
+                      + "(id, creator, name, covering, schema, $BOUND_COLUMNS) "
+                      + "VALUES (COALESCE(?, gen_random_uuid()), ?, ?, ?, ?::jsonb, ?, ?, ?, ?) "
                       + "RETURNING id")
               .apply {
                 setObject(1, collectionId.value?.let { UUID.fromString(it) })
@@ -74,6 +79,11 @@ fun dumpPolygons(
                 setString(3, name)
                 setBytes(4, encodeCovering(polygons.map { polygonToCell(it.second) }))
                 setString(5, mapper.writeValueAsString(schema))
+                setBound(
+                    6,
+                    polygons.fold(S2LatLngRect.empty()) { bound, (_, polygon) ->
+                      bound.union(polygon.rectBound)
+                    })
               }
               .executeQuery()
               .use {
@@ -82,7 +92,8 @@ fun dumpPolygons(
               }
 
       val stream = StringifyingInputStream(polygons.iterator()) { (data, polygon), csv ->
-        // id,collection,cell,data,s2_polygon
+        // id,collection,cell,data,s2_polygon,low_lat_degrees,low_lng_degrees,high_lat_degrees,
+        // high_lng_degrees
         csv.append(UUID.randomUUID())
         csv.append(",")
         csv.append(collection)
@@ -92,13 +103,15 @@ fun dumpPolygons(
         csv.append(StringEscapeUtils.escapeCsv(mapper.writeValueAsString(data)))
         csv.append(",")
         appendByteArray(ByteArrayOutputStream().also { polygon.encode(it) }.toByteArray(), csv)
+        csv.append(",")
+        appendBound(polygon.rectBound, csv)
         csv.append("\n")
       }
       // COPY can't write into views, and the connection's schema only has views, so we name the
       // public table directly.
       CopyManager(connection.unwrap(PgConnection::class.java))
           .copyIn(
-              "COPY public.polygons (id, collection, cell, data, s2_polygon) "
+              "COPY public.polygons (id, collection, cell, data, s2_polygon, $BOUND_COLUMNS) "
                   + "FROM STDIN WITH (FORMAT CSV, HEADER)",
               stream)
       connection.commit()

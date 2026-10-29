@@ -437,6 +437,16 @@ message Collection {
   // The caller's
   Role role = 4;
   string data = 5;
+  // Unset when the collection is empty
+  Bound bound = 6;
+}
+
+// A low longitude above the high one crosses the antimeridian.
+message Bound {
+  double low_lat_degrees = 1;
+  double low_lng_degrees = 2;
+  double high_lat_degrees = 3;
+  double high_lng_degrees = 4;
 }
 
 message Folder {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
+import com.google.common.geometry.S2LatLngRect
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2Polyline
 import java.io.ByteArrayOutputStream
@@ -11,9 +12,12 @@ import java.sql.Connection
 import java.util.Base64
 import java.util.TreeMap
 import java.util.UUID
+import lat.trails.common.BOUND_COLUMNS
+import lat.trails.common.appendBound
 import lat.trails.common.assemblePolygon
 import lat.trails.common.createBaseConnection
 import lat.trails.common.encodeCovering
+import lat.trails.common.setBound
 import org.apache.commons.text.StringEscapeUtils
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
@@ -31,7 +35,13 @@ private val logger = LoggerFactory.getLogger("ReplacedCollections")
 
 private val mapper = ObjectMapper()
 
-data class Row<G>(val id: UUID, val data: Map<String, String>, val cell: S2CellId, val geometry: G)
+data class Row<G>(
+    val id: UUID,
+    val data: Map<String, String>,
+    val cell: S2CellId,
+    val bound: S2LatLngRect,
+    val geometry: G,
+)
 
 class ReplacedCollection(
     val id: UUID,
@@ -51,6 +61,7 @@ fun lineRow(collection: UUID, key: String, data: Map<String, String>, latLngs: L
         stableId(collection, key),
         data,
         polylineToCell(S2Polyline(latLngs.map { it.toPoint() })),
+        S2LatLngRect.Builder.empty().apply { latLngs.forEach { addPoint(it) } }.build(),
         DeltaLatLngE7.encode(latLngs.flatMap { listOf(it.lat().e7(), it.lng().e7()) }.toIntArray()))
 
 fun polygonRow(
@@ -62,7 +73,7 @@ fun polygonRow(
     return null
   }
   val id = if (key != null) stableId(collection, key) else UUID.randomUUID()
-  return Row(id, data, polygonToCell(polygon), polygon)
+  return Row(id, data, polygonToCell(polygon), polygon.rectBound, polygon)
 }
 
 fun pointRow(collection: UUID, key: String, data: Map<String, String>, latLng: S2LatLng):
@@ -71,6 +82,7 @@ fun pointRow(collection: UUID, key: String, data: Map<String, String>, latLng: S
         stableId(collection, key),
         data,
         S2CellId.fromLatLng(latLng).parent(SimpleS2.HIGHEST_INDEX_LEVEL),
+        S2LatLngRect.fromPoint(latLng),
         DeltaLatLngE7.encode(intArrayOf(latLng.lat().e7(), latLng.lng().e7())))
 
 // Gives an object the same id on every run, so a client that has it selected keeps it selected
@@ -114,13 +126,15 @@ fun replace(collection: ReplacedCollection) {
       // The anonymous user owns it so that it's public, see ApiServer.kt#getCollectionAccess.
       connection
           .prepareStatement(
-              "INSERT INTO collections (id, creator, name, covering) VALUES (?, ?, ?, ?) "
+              "INSERT INTO collections (id, creator, name, covering, $BOUND_COLUMNS) "
+                  + "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
                   + "ON CONFLICT (id) DO NOTHING")
           .apply {
             setObject(1, collection.id)
             setObject(2, UUID(0, 0))
             setString(3, collection.name)
             setBytes(4, encodeCovering(listOf()))
+            setBound(5, S2LatLngRect.empty())
           }
           .executeUpdate()
       val version =
@@ -153,31 +167,30 @@ fun replace(collection: ReplacedCollection) {
       // public tables directly.
       val copier = CopyManager(connection.unwrap(PgConnection::class.java))
       copier.copyIn(
-          "COPY public.lines (id, collection, cell, data, lat_lng_degrees) "
+          "COPY public.lines (id, collection, cell, data, lat_lng_degrees, $BOUND_COLUMNS) "
               + "FROM STDIN WITH (FORMAT CSV, HEADER)",
           toCsv(collection.id, collection.lines) { it })
       copier.copyIn(
-          "COPY public.points (id, collection, cell, data, lat_lng_degrees) "
+          "COPY public.points (id, collection, cell, data, lat_lng_degrees, $BOUND_COLUMNS) "
               + "FROM STDIN WITH (FORMAT CSV, HEADER)",
           toCsv(collection.id, collection.points) { it })
       copier.copyIn(
-          "COPY public.polygons (id, collection, cell, data, s2_polygon) "
+          "COPY public.polygons (id, collection, cell, data, s2_polygon, $BOUND_COLUMNS) "
               + "FROM STDIN WITH (FORMAT CSV, HEADER)",
           toCsv(collection.id, collection.polygons, ::encodePolygon))
 
       connection
           .prepareStatement(
-              "UPDATE collections SET covering = ?, version = ?, schema = ?::jsonb WHERE id = ?")
+              "UPDATE collections SET covering = ?, version = ?, schema = ?::jsonb, "
+                  + "low_lat_degrees = ?, low_lng_degrees = ?, high_lat_degrees = ?, "
+                  + "high_lng_degrees = ? WHERE id = ?")
           .apply {
-            setBytes(
-                1,
-                encodeCovering(
-                    collection.lines.map { it.cell }
-                        + collection.points.map { it.cell }
-                        + collection.polygons.map { it.cell }))
+            val rows = collection.lines + collection.points + collection.polygons
+            setBytes(1, encodeCovering(rows.map { it.cell }))
             setLong(2, version)
             setString(3, mapper.writeValueAsString(collection.schema))
-            setObject(4, collection.id)
+            setBound(4, rows.fold(S2LatLngRect.empty()) { bound, row -> bound.union(row.bound) })
+            setObject(8, collection.id)
           }
           .executeUpdate()
 
@@ -242,7 +255,8 @@ private fun encodePolygon(polygon: S2Polygon): ByteArray =
 private fun <G> toCsv(
     collection: UUID, rows: List<Row<G>>, encode: (G) -> ByteArray): StringifyingInputStream<Row<G>> {
   return StringifyingInputStream(rows.iterator()) { row, csv ->
-    // id,collection,cell,data,geometry
+    // id,collection,cell,data,geometry,low_lat_degrees,low_lng_degrees,high_lat_degrees,
+    // high_lng_degrees
     csv.append(row.id)
     csv.append(",")
     csv.append(collection)
@@ -252,6 +266,8 @@ private fun <G> toCsv(
     csv.append(StringEscapeUtils.escapeCsv(mapper.writeValueAsString(row.data)))
     csv.append(",")
     appendByteArray(encode(row.geometry), csv)
+    csv.append(",")
+    appendBound(row.bound, csv)
     csv.append("\n")
   }
 }

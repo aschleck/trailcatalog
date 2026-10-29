@@ -1,0 +1,166 @@
+[[actions]]
+type = "add_column"
+table = "collections"
+up = "DEGREES(1)"
+
+  # The union of its features' bounds. A low longitude above the high one crosses the
+  # antimeridian. Existing rows and rows the previous schema writes start as
+  # S2LatLngRect.empty(), whose latitude runs from 1 radian down to 0 and longitude from 180 down
+  # to -180, so that a bound not yet computed unions to nothing.
+  [actions.column]
+  name = "low_lat_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "collections"
+up = "180"
+
+  [actions.column]
+  name = "low_lng_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "collections"
+up = "0"
+
+  [actions.column]
+  name = "high_lat_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "collections"
+up = "-180"
+
+  [actions.column]
+  name = "high_lng_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+up = "DEGREES(1)"
+
+  # See collections.low_lat_degrees.
+  [actions.column]
+  name = "low_lat_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+up = "180"
+
+  [actions.column]
+  name = "low_lng_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+up = "0"
+
+  [actions.column]
+  name = "high_lat_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "lines"
+up = "-180"
+
+  [actions.column]
+  name = "high_lng_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "points"
+up = "DEGREES(1)"
+
+  # See collections.low_lat_degrees.
+  [actions.column]
+  name = "low_lat_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "points"
+up = "180"
+
+  [actions.column]
+  name = "low_lng_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "points"
+up = "0"
+
+  [actions.column]
+  name = "high_lat_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "points"
+up = "-180"
+
+  [actions.column]
+  name = "high_lng_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "polygons"
+up = "DEGREES(1)"
+
+  # See collections.low_lat_degrees.
+  [actions.column]
+  name = "low_lat_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "polygons"
+up = "180"
+
+  [actions.column]
+  name = "low_lng_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "polygons"
+up = "0"
+
+  [actions.column]
+  name = "high_lat_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
+
+[[actions]]
+type = "add_column"
+table = "polygons"
+up = "-180"
+
+  [actions.column]
+  name = "high_lng_degrees"
+  nullable = false
+  type = "DOUBLE PRECISION"
