@@ -9,7 +9,7 @@ import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2PolygonBuilder
 import com.google.common.geometry.S2RegionCoverer
 import com.google.gson.stream.JsonReader
-import org.trailcatalog.importers.common.ProgressBar
+import org.trailcatalog.importers.pipeline.progress.ProgressBar
 import java.nio.file.Path
 
 class Glaciator(path: Path) {

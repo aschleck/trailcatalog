@@ -6,6 +6,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
 import org.trailcatalog.common.IORuntimeException
+import org.trailcatalog.importers.pipeline.progress.ProgressBar
 import java.lang.Exception
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -62,15 +63,14 @@ private fun downloadOnce(url: HttpUrl, to: Path) {
     }
 
     to.toFile().outputStream().use { file ->
-      val scale = 1000.0 /* b/kb */ * 1000.0 /* kb/mb */
-      ProgressBar("downloading ${url}", "mb", body.contentLength().toDouble() / scale).use { progress ->
+      ProgressBar("downloading ${url}", "bytes", body.contentLength()).use { progress ->
         val buffer = ByteArray(8 * 1024)
         body.byteStream().use { input ->
           while (true) {
             val read = input.read(buffer)
             if (read >= 0) {
               file.write(buffer, 0, read)
-              progress.incrementBy(read / scale)
+              progress.incrementBy(read)
             } else {
               break
             }

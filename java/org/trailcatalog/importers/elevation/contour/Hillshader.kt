@@ -10,7 +10,7 @@ import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.common.NotFoundException
-import org.trailcatalog.importers.common.ProgressBar
+import org.trailcatalog.importers.pipeline.progress.ProgressBar
 import org.trailcatalog.s2.SimpleS2
 import java.io.File
 import java.nio.charset.StandardCharsets

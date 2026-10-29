@@ -1,17 +1,26 @@
 package org.trailcatalog.importers.pipeline.progress
 
 import java.io.Closeable
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.LongAdder
 
-fun longProgress(context: String, fn: (progress: LongProgress) -> Unit) {
-  val progress = LongProgress()
-  ProgressBar(context, progress).use {
-    fn(progress)
+// Without a terminal \r doesn't return to the start of the line, so every redraw would pile onto
+// one line.
+private val INTERACTIVE = System.console() != null
+private const val UNATTENDED_INTERVAL_MS = 30_000
+
+fun longProgress(context: String, fn: (progress: ProgressBar) -> Unit) {
+  ProgressBar(context, "items").use {
+    fn(it)
   }
 }
 
-private class ProgressBar(private val context: String, private val progress: Progress) : Closeable {
+class ProgressBar(
+    private val action: String,
+    private val units: String,
+    limit: Number = -1) : Closeable {
 
+  private val limit = limit.toLong()
+  private val count = LongAdder()
   private val lock = Object()
   private val start = System.currentTimeMillis()
   private var active = true
@@ -19,14 +28,19 @@ private class ProgressBar(private val context: String, private val progress: Pro
   init {
     Thread {
       var running = true
+      var lastPrint = start
       while (running) {
         Thread.sleep(500)
 
         synchronized (lock) {
-          if (active) {
-            print("\r${message()}")
-          } else {
+          val now = System.currentTimeMillis()
+          if (!active) {
             running = false
+          } else if (INTERACTIVE) {
+            print("\r${message()}")
+          } else if (now - lastPrint >= UNATTENDED_INTERVAL_MS) {
+            println(message())
+            lastPrint = now
           }
         }
       }
@@ -37,12 +51,20 @@ private class ProgressBar(private val context: String, private val progress: Pro
     synchronized (lock) {
       active = false
     }
-    println("\r${message()}")
+    val finished = "Finished ${message()}"
+    println(if (INTERACTIVE) "\r${finished}" else finished)
+  }
+
+  fun increment() {
+    count.increment()
+  }
+
+  fun incrementBy(amount: Number) {
+    count.add(amount.toLong())
   }
 
   private fun message(): String {
-    val now = System.currentTimeMillis()
-    val totalMs = now - start
+    val totalMs = System.currentTimeMillis() - start
     val totalSeconds = totalMs / 1000
     val secondsPerHour = 60 * 60
     val hours = totalSeconds / secondsPerHour
@@ -56,37 +78,9 @@ private class ProgressBar(private val context: String, private val progress: Pro
       "${seconds}s"
     }
 
-    val pps = progress.progressPerSecond(totalMs / 1000.0)
-    return "${context}: ${progress.totalProgress()} (${pps}/s, ${duration})"
-  }
-}
-
-interface Progress {
-  fun totalProgress(): String
-  fun progressPerSecond(seconds: Double): String
-}
-
-class LongProgress : Progress {
-
-  private val value = AtomicLong(0)
-
-  fun increment() {
-    value.incrementAndGet()
-  }
-
-  fun incrementBy(count: Int) {
-    value.addAndGet(count.toLong())
-  }
-
-  fun incrementBy(count: Long) {
-    value.addAndGet(count)
-  }
-
-  override fun totalProgress(): String {
-    return value.get().toString()
-  }
-
-  override fun progressPerSecond(seconds: Double): String {
-    return (value.get() / seconds).toLong().toString()
+    val c = count.sum()
+    val progress = if (limit >= 0) "${c}/${limit}" else c.toString()
+    val perSecond = (c * 1000.0 / maxOf(totalMs, 1)).toLong()
+    return "${action}: ${progress} ${units} (${perSecond} ${units}/s, ${duration})"
   }
 }

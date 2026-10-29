@@ -7,6 +7,7 @@ kt_jvm_library(
     srcs = glob(["*.kt"]),
     deps = [
         "//java/org/trailcatalog/common",
+        "//java/org/trailcatalog/importers/pipeline/progress",
         "@maven//:com_google_guava_guava",
         "@maven//:com_squareup_okhttp3_okhttp_jvm",
         "@maven//:org_postgresql_postgresql",

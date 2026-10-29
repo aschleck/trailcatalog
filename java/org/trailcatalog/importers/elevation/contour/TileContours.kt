@@ -13,7 +13,7 @@ import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.importers.common.NotFoundException
-import org.trailcatalog.importers.common.ProgressBar
+import org.trailcatalog.importers.pipeline.progress.ProgressBar
 import java.nio.file.Path
 import java.util.concurrent.Executors
 import kotlin.math.asin
