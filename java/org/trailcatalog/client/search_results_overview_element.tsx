@@ -3,6 +3,7 @@ import { resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
 import { floatCoalesce } from 'external/dev_april_corgi+/js/common/math';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
+import { setCanonicalPath } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
@@ -34,6 +35,8 @@ export function SearchResultsOverviewElement(
   const query = parameters.query ?? undefined;
 
   setTitle(query);
+  // The camera, query, and boundary parameters would otherwise make every search its own page.
+  setCanonicalPath('/');
 
   if (!inState || boundaryId !== inState.boundaryId || query !== inState.searchQuery) {
     let boundary;

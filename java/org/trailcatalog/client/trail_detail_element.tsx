@@ -4,6 +4,7 @@ import { RelationCategory } from 'java/org/trailcatalog/models/categories';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FluentIcon, FluentIconName } from 'js/dino/fluent';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
+import { setCanonicalPath } from 'external/dev_april_corgi+/js/server/ssr_aware';
 import { LatLng } from 'js/map/common/types';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
@@ -53,6 +54,7 @@ export function TrailDetailElement({trailId, parameters}: {
   const state = inState;
 
   setTitle(state.trail.finished && state.trail.ok ? state.trail.value().name : undefined);
+  setCanonicalPath(`/trail/${trailId}`);
 
   const futures = [
     state.containingBoundaries,

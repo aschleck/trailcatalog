@@ -1,6 +1,7 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
+import { setCanonicalPath } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FluentIcon, FluentIconName } from 'js/dino/fluent';
@@ -44,6 +45,7 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
 
   setTitle(
       state.boundary.finished && state.boundary.ok ? state.boundary.value().name : undefined);
+  setCanonicalPath(`/boundary/${boundaryId}`);
 
   const futures = [
     state.boundary,

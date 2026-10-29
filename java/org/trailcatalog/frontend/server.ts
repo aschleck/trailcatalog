@@ -31,7 +31,9 @@ async function initialize(server: FastifyInstance) {
   });
 }
 
-function page({content, escapedData, title}: PageOptions): string {
+const ORIGIN = 'https://trailcatalog.org';
+
+function page({canonicalPath, content, escapedData, title}: PageOptions): string {
   return `
 <!DOCTYPE html>
 <html dir="ltr" lang="en" class="h-full">
@@ -39,6 +41,7 @@ function page({content, escapedData, title}: PageOptions): string {
     <meta charset="utf-8"/>
     <title>${title}</title>
     <meta name="description" content="Organizing trails from OpenStreetMap">
+    ${canonicalPath === undefined ? '' : `<link rel="canonical" href="${new URL(canonicalPath, ORIGIN).href}">`}
     <meta
         name="viewport"
         content="height=device-height, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width" />
