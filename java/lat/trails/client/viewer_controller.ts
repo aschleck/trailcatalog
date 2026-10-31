@@ -13,7 +13,7 @@ import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_eleme
 import { MenuHandle, MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
 import { PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
-import { R1Interval, S1Interval, S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
 import { MAPTERHORN_COPYRIGHT } from 'js/map/common/copyrights';
 import { LatLngZoom, Vec2 } from 'js/map/common/types';
@@ -28,7 +28,6 @@ import { LocationIndex } from 'js/map/workers/location_index';
 import { Z_BOTTOM } from 'js/map/z';
 import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
-  Bound,
   Collection,
   CreateCollectionResponse,
   DeleteAccountResponse,
@@ -162,8 +161,6 @@ import {
   pointLook,
 } from './workers/collection_schema';
 
-// The zoom where the contours and the trails around a point come in at full detail
-const POINT_ZOOM = 14;
 const MINUTE_MS = 60 * 1000;
 const PLAY_INTERVAL_MS = 100;
 const FORECAST_PLAY_TICKS = 5;
@@ -183,15 +180,6 @@ function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
   return latLngDegrees;
 }
 
-// A collection's bound can span more than 180 degrees of longitude, and rebuilding it from its
-// corners would give back the other side of the world instead.
-function boundToRect(bound: Bound): S2LatLngRect {
-  const radians = Math.PI / 180;
-  return S2LatLngRect.fromIntervals(
-      new R1Interval(bound.lowLatDegrees * radians, bound.highLatDegrees * radians),
-      new S1Interval(bound.lowLngDegrees * radians, bound.highLngDegrees * radians));
-}
-
 // Something a click landed on
 type Pick =
     {kind: 'feature'; feature: EditableFeature}
@@ -201,9 +189,6 @@ type Pick =
 export interface Args {
   // The id of the open collection or none
   collection: string|undefined;
-  // Whether to move the camera onto the collection once it loads, which a camera in the URL
-  // overrides
-  fitCollection: boolean;
 }
 
 export interface State {
@@ -525,7 +510,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const collection = response.args.collection;
     // The server render already answered with the outline's failure, and a reload is the retry.
     if (collection && this.state.collectionStatus !== 'failed') {
-      this.loadCollection(collection, response.args.fitCollection);
+      this.loadCollection(collection);
     }
   }
 
@@ -554,17 +539,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       collectionStatus: 'loaded',
       features: {...this.state.features, expanded: new Set()},
     });
-    if (!id) {
-      return;
-    }
-    // openCollection put the listing's collection in state, and its bound saves waiting for the
-    // load to fit.
-    const bound = this.state.collection?.id === id ? this.state.collection.bound : undefined;
-    if (newArgs.fitCollection && bound) {
-      this.fitBound(boundToRect(bound));
-      this.loadCollection(id, false);
-    } else {
-      this.loadCollection(id, newArgs.fitCollection);
+    if (id) {
+      this.loadCollection(id);
     }
   }
 
@@ -1164,28 +1140,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     for (let i = 0; i < latLngDegrees.length; i += 2) {
       bound = bound.addLatLng(S2LatLng.fromDegrees(latLngDegrees[i], latLngDegrees[i + 1]));
     }
-    this.fitBound(bound);
-  }
-
-  private fitBound(bound: S2LatLngRect): void {
     if (bound.isEmpty()) {
       return;
     }
 
-    const low = [bound.latLo().degrees(), bound.lngLo().degrees()] as Vec2;
-    if (bound.isPoint()) {
-      // A lone point has no extent to fit, so we zoom in until its surroundings are readable.
-      this.mapController.setCamera({
-        lat: low[0],
-        lng: low[1],
-        zoom: Math.max(this.mapController.camera.zoom, POINT_ZOOM),
-      });
-    } else {
-      // A low longitude above the high one crosses the antimeridian, which fitBoundInScreen
-      // handles. setCamera tells a rect from a center by the brand, so it has to exist at runtime.
-      const high = [bound.latHi().degrees(), bound.lngHi().degrees()] as Vec2;
-      this.mapController.setCamera({low, high, brand: 'LatLngRect'});
-    }
+    // A low longitude above the high one crosses the antimeridian, which fitBoundInScreen handles.
+    // setCamera tells a rect from a center by the brand, so it has to exist at runtime.
+    this.mapController.setCamera({
+      low: [bound.latLo().degrees(), bound.lngLo().degrees()],
+      high: [bound.latHi().degrees(), bound.lngHi().degrees()],
+      brand: 'LatLngRect',
+    });
   }
 
   deselectClicked(): void {
@@ -2015,8 +1980,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
-    this.updateState({...this.state, collection});
-    this.history.goTo(`/collection/${collection.id}`);
+    // The route's render reads the listing's bound for its camera, so the state has to land first.
+    this.updateState({...this.state, collection}).then(() => {
+      this.history.goTo(`/collection/${collection.id}`);
+    });
   }
 
   // One undo for every schema edit made while the dialog is open
@@ -2093,7 +2060,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         });
   }
 
-  private loadCollection(id: string, fit: boolean): void {
+  private loadCollection(id: string): void {
     this.collectionGeneration += 1;
     const generation = this.collectionGeneration;
     const hidden = this.state.features.hidden;
@@ -2130,9 +2097,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           const schema = parseCollectionSchema(response.schema);
           this.expand(topLevelFolderIds(features, schema, this.state.features.hidden));
           this.store.reset(features, readOnly, {schema, version: response.schemaVersion});
-          if (fit) {
-            this.fitCamera(featureLatLngDegrees(this.store.all()));
-          }
           const tool = this.state.tool;
           const drawing =
               tool === 'point' || tool === 'line' || tool === 'polygon' || tool === 'marker';
@@ -2365,7 +2329,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     // if they're currently in a read-only mode.
     const open = this.state.collection;
     if (open && this.store.isReadOnly()) {
-      this.loadCollection(open.id, /* fit= */ false);
+      this.loadCollection(open.id);
     } else {
       this.saves.flush();
     }

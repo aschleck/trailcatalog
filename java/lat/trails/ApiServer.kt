@@ -514,7 +514,8 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
         }
 
     connection
-        .prepareStatement("SELECT schema, schema_version FROM collections WHERE id = ?")
+        .prepareStatement(
+            "SELECT schema, schema_version, $BOUND_COLUMNS FROM collections WHERE id = ?")
         .apply {
           setObject(1, id)
         }
@@ -523,6 +524,7 @@ private fun getCollection(ctx: Context, request: GetCollectionRequest): GetColle
           if (results.next()) {
             response.setSchema(results.getString(1) ?: "")
             response.setSchemaVersion(results.getLong(2))
+            response.collectionBuilder.readBound(results, 3)
           }
         }
 

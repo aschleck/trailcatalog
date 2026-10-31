@@ -36,6 +36,8 @@ interface Fling {
   lastMs: number;
 }
 
+// The zoom where the contours and the trails around a point come in at full detail
+const POINT_ZOOM = 14;
 // Exponential decay so the glide eases out instead of stopping on a frame. Total travel is
 // velocity * FLING_DECAY_MS, so a hard 2 px/ms flick carries 500px, about a phone screen and a
 // half.
@@ -259,8 +261,9 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       const fitted = fitBoundInScreen(camera, this.screenArea);
       llz = {
         ...fitted,
-        // -0.2 zoom to give a little breathing room
-        zoom: fitted.zoom - 0.2,
+        // A lone point has no extent to fit, so we zoom in until its surroundings are readable.
+        // Otherwise -0.2 zoom gives a little breathing room.
+        zoom: isFinite(fitted.zoom) ? fitted.zoom - 0.2 : Math.max(this.camera.zoom, POINT_ZOOM),
       };
     } else {
       llz = camera;

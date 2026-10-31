@@ -7,6 +7,7 @@ import {
   setIndexable,
   setTitle,
 } from 'external/dev_april_corgi+/js/server/ssr_aware';
+import { LatLngRect, LatLngZoom } from 'js/map/common/types';
 import { MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 import { GetCollectionResponse, Role } from 'trails_lat/proto/data_pb';
@@ -65,7 +66,6 @@ export function OverviewElement(
   inState: State|undefined,
   updateState: (newState: State) => void,
 ) {
-  const initial = !inState;
   if (!inState) {
     // Settled on the server's later render passes, and in the browser from the data the server
     // rendered with. ViewerController loads the geometry.
@@ -142,24 +142,33 @@ export function OverviewElement(
     });
   }
 
-  // A route without a camera, like a collection just opened, keeps the map where it is until the
-  // collection loads and fits it.
-  const fitCollection = !parameters.lat || !parameters.lng;
-  let camera = undefined;
-  if (!parameters._used && (initial || !fitCollection)) {
+  // Every route change brings new parameters, so marking them hands the map one camera per route
+  // instead of undoing the user's panning on each render. Without a camera in the URL we fit the
+  // collection's bound, and the map stays where it is when there's neither.
+  const bound = state.collection?.id === collection ? state.collection?.bound : undefined;
+  let camera: LatLngRect|LatLngZoom|undefined = undefined;
+  if (!parameters._used) {
     parameters._used = "true";
-    camera = {
-      lat: floatCoalesce(parameters.lat, 46.859369),
-      lng: floatCoalesce(parameters.lng, -121.747888),
-      zoom: floatCoalesce(parameters.zoom, 12),
-    };
+    if (parameters.lat && parameters.lng) {
+      camera = {
+        lat: Number(parameters.lat),
+        lng: Number(parameters.lng),
+        zoom: floatCoalesce(parameters.zoom, 12),
+      };
+    } else if (bound) {
+      camera = {
+        low: [bound.lowLatDegrees, bound.lowLngDegrees],
+        high: [bound.highLatDegrees, bound.highLngDegrees],
+        brand: 'LatLngRect',
+      };
+    }
   }
 
   return <>
     <div
         js={corgi.bind({
           controller: ViewerController,
-          args: {collection, fitCollection},
+          args: {collection},
           events: {
             corgi: [
               [FEATURE_CLICKED, 'onFeatureClicked'],
