@@ -3,7 +3,7 @@ import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
 
-import { S2LatLng, S2Point } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2Point, SimpleS2 } from 'java/org/trailcatalog/s2';
 import { unprojectS2LatLng } from 'js/map/camera';
 import { LatLng, Vec2 } from 'js/map/common/types';
 
@@ -167,7 +167,7 @@ export function calculateGraph(
     max = Math.max(max, sample);
 
     if (lastPoint != null) {
-      length += angleToEarthMeters(lastPoint.angle(point));
+      length += lastPoint.angle(point) * SimpleS2.EARTH_RADIUS_METERS;
     }
     lastPoint = point;
   };
@@ -237,7 +237,7 @@ export function calculateGraph(
 
 function calculateSampleLocations(
     granularityMeters: number, line: Float32Array|Float64Array): S2Point[] {
-  const increment = earthMetersToAngle(granularityMeters);
+  const increment = granularityMeters / SimpleS2.EARTH_RADIUS_METERS;
   const points = [];
   let current = 0;
   let previous = unprojectS2LatLng(line[0], line[1]).toPoint();
@@ -261,13 +261,4 @@ function calculateSampleLocations(
   // Always add the last point
   points.push(previous);
   return points;
-}
-
-// TODO(april): either make S2Earth J2CL compat or move these somewhere
-function angleToEarthMeters(radians: number): number {
-  return radians * 6371010.0;
-}
-
-function earthMetersToAngle(meters: number): number {
-  return meters / 6371010.0;
 }

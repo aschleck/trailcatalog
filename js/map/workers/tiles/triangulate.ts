@@ -1,6 +1,7 @@
 import earcut from 'earcut';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { SimpleS2 } from 'java/org/trailcatalog/s2';
 
 export interface Triangles {
   geometry: ArrayLike<number>;
@@ -165,7 +166,7 @@ export function triangulateRings(
     }
   }
 
-  const maxLengthRadians = maxTriangleLengthMeters / 6371010;
+  const maxLengthRadians = maxTriangleLengthMeters / SimpleS2.EARTH_RADIUS_METERS;
   return subdivideBigTriangles(geometry, allIndices, maxLengthRadians * maxLengthRadians);
 }
 

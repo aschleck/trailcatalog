@@ -32,12 +32,16 @@ export function celsiusToFahrenheit(celsius: number): number {
   return 1.8 * celsius + 32;
 }
 
+// The international foot
+export const METERS_PER_FOOT = 0.3048;
+export const METERS_PER_MILE = 5280 * METERS_PER_FOOT;
+
 export function metersToFeet(meters: number): number {
-  return meters * 3.28084;
+  return meters / METERS_PER_FOOT;
 }
 
 export function metersToMiles(meters: number): number {
-  return meters * 0.00062137119224;
+  return meters / METERS_PER_MILE;
 }
 
 const areaFormatter = new Intl.NumberFormat(undefined, {

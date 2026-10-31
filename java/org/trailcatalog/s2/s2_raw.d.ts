@@ -9,6 +9,7 @@ export class SimpleS2 {
   static HIGHEST_OVERVIEW_INDEX_LEVEL: number;
   static HIGHEST_COARSE_INDEX_LEVEL: number;
   static HIGHEST_FINE_INDEX_LEVEL: number;
+  static HIGHEST_INDEX_LEVEL: number;
   static angleToEarthMeters(angle: S1Angle): number;
   static cover(latLo: number, latHi: number, lngLo: number, lngHi: number, deepest: number):
       ArrayList<S2CellId>;

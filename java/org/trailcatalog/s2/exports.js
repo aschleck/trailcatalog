@@ -10,6 +10,7 @@ goog.exportProperty(SimpleS2, 'EARTH_RADIUS_METERS', SimpleS2.EARTH_RADIUS_METER
 goog.exportProperty(SimpleS2, 'HIGHEST_COARSE_INDEX_LEVEL', SimpleS2.HIGHEST_COARSE_INDEX_LEVEL);
 goog.exportProperty(SimpleS2, 'HIGHEST_FINE_INDEX_LEVEL', SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
 goog.exportProperty(SimpleS2, 'HIGHEST_OVERVIEW_INDEX_LEVEL', SimpleS2.HIGHEST_OVERVIEW_INDEX_LEVEL);
+goog.exportProperty(SimpleS2, 'HIGHEST_INDEX_LEVEL', SimpleS2.HIGHEST_INDEX_LEVEL);
 goog.exportProperty(SimpleS2, 'angleToEarthMeters', SimpleS2.angleToEarthMeters);
 goog.exportProperty(SimpleS2, 'cover', SimpleS2.cover);
 goog.exportProperty(SimpleS2, 'douglasPeucker', SimpleS2.douglasPeucker);
