@@ -12,7 +12,6 @@ import { Elevations } from 'js/map/workers/elevations';
 import { getApparentAltitude } from 'js/map/workers/sunlight';
 import {
   SKYLINE_AZIMUTHS,
-  SKYLINE_BANDS,
   VIEWSHED_BANDS,
   ViewshedImage,
 } from 'js/map/workers/terrain_tracer';
@@ -60,7 +59,9 @@ const SUBJECT_RADIUS_PX = 5;
 // but no farther than a short walk so that turning the layer on zoomed out keeps them together
 const SUBJECT_OFFSET_PX = 160;
 const MAX_SUBJECT_OFFSET_M = 1_000;
-// See VIEWSHED_BANDS, whose z13 pixels this matches
+// The viewshed's z13 band, whose pixels are 7 m in the Alps. A sighting can reach the viewshed's
+// 20 km edge, and walking z15 tiles that far would fetch dozens of them.
+const SIGHTING_ZOOM = 13;
 const SIGHTING_STEP_METERS = 7;
 // Close enough to the subject's height that the sun or moon sits on it
 const ON_SUBJECT = 0.5 * Math.PI / 180;
@@ -547,7 +548,7 @@ export class SkyLayer extends Layer {
       samples[2 * i] = lat0 + (lat1 - lat0) * i / steps;
       samples[2 * i + 1] = lng0 + (lng1 - lng0) * i / steps;
     }
-    this.sample(this.elevations.sample(samples, SKYLINE_BANDS[0].zoom, 'sighting'))
+    this.sample(this.elevations.sample(samples, SIGHTING_ZOOM, 'sighting'))
         .then(meters => {
           if (this.pin !== pin || this.subject !== subject) {
             return;

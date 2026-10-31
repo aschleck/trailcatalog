@@ -2,7 +2,7 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { Vec2 } from '../common/types';
 
-import { BASE_ZOOM, fetchTerrarium, TILE_SIZE } from './terrarium';
+import { BASE_ZOOM, fetchTerrarium, MAX_ZOOM, TILE_SIZE } from './terrarium';
 import { getSunlight } from './sunlight';
 import { GradeLimits, routeOverTerrain, simplifyCells } from './terrain_router';
 import {
@@ -245,7 +245,7 @@ class ElevationSampler {
       request.x1 + Math.max(ux, 0) * reachWorld,
       request.y1 + Math.max(uy, 0) * reachWorld,
     ];
-    let zoom = Math.min(request.zoom, BASE_ZOOM);
+    let zoom = Math.min(request.zoom, MAX_ZOOM);
     const span = Math.max(box[2] - box[0], box[3] - box[1]);
     while (zoom > 0 && span * TILE_SIZE * 2 ** zoom > MAX_SUNLIGHT_PIXELS) {
       zoom -= 1;
@@ -259,7 +259,7 @@ class ElevationSampler {
     for (let ty = Math.floor(py0 / TILE_SIZE); ty * TILE_SIZE < py1; ++ty) {
       for (let tx = Math.floor(px0 / TILE_SIZE); tx * TILE_SIZE < px1; ++tx) {
         const tiles = 2 ** zoom;
-        const tile = await this.tile(zoom, ((tx % tiles) + tiles) % tiles, ty);
+        const tile = await this.tileOrAncestor(zoom, ((tx % tiles) + tiles) % tiles, ty);
         if (!tile) {
           continue;
         }
@@ -447,6 +447,22 @@ class ElevationSampler {
     return tile?.[(clampedY % TILE_SIZE) * TILE_SIZE + (wrappedX % TILE_SIZE)];
   }
 
+  // Upsamples the nearest coarser tile where Mapterhorn has none at z, because only some places
+  // are covered past BASE_ZOOM.
+  private async tileOrAncestor(z: number, x: number, y: number): Promise<Tile> {
+    const tile = await this.tile(z, x, y);
+    if (tile || z <= BASE_ZOOM) {
+      return tile;
+    }
+    for (let dz = 1; z - dz >= BASE_ZOOM; ++dz) {
+      const ancestor = await this.tile(z - dz, x >> dz, y >> dz);
+      if (ancestor) {
+        return upsample(ancestor, dz, x - ((x >> dz) << dz), y - ((y >> dz) << dz));
+      }
+    }
+    return undefined;
+  }
+
   private tile(z: number, x: number, y: number): Promise<Tile> {
     const key = `${z}/${x}/${y}`;
     const cached = this.tiles.get(key);
@@ -472,7 +488,7 @@ class ElevationSampler {
 
 /**
  * Loads the tiles a band reaches into a grid and returns a bilinear lookup over them. Where the
- * band's zoom has no tile, the lookup reads the BASE_ZOOM tile around it instead.
+ * band's zoom has no tile, the lookup reads the next coarser zoom that has one.
  */
 async function loadBand(lat: number, lng: number, band: TraceBand): Promise<HeightAt> {
   const [x, y] = toWorld(lat, lng);
@@ -481,16 +497,48 @@ async function loadBand(lat: number, lng: number, band: TraceBand): Promise<Heig
   const radius =
       (band.toMeters + getPixelMeters(band.zoom, lat))
           / (2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(lat));
-  const grid = await loadGrid(band.zoom, x - radius, y - radius, x + radius, y + radius);
-  const missing = grid.tiles.some(tile => tile === undefined);
-  const fallback =
-      band.zoom > BASE_ZOOM && missing
-          ? await loadGrid(BASE_ZOOM, x - radius, y - radius, x + radius, y + radius)
-          : undefined;
+  const grids = [await loadGrid(band.zoom, x - radius, y - radius, x + radius, y + radius)];
+  for (let z = band.zoom - 1; z >= BASE_ZOOM; --z) {
+    if (!grids[grids.length - 1].tiles.some(tile => tile === undefined)) {
+      break;
+    }
+    grids.push(await loadGrid(z, x - radius, y - radius, x + radius, y + radius));
+  }
   return (latRadians, lngRadians) => {
     const [wx, wy] = toWorld(latRadians, lngRadians);
-    return grid.bilinear(wx, wy) ?? fallback?.bilinear(wx, wy) ?? 0;
+    for (const grid of grids) {
+      const height = grid.bilinear(wx, wy);
+      if (height !== undefined) {
+        return height;
+      }
+    }
+    return 0;
   };
+}
+
+// Returns the part of a tile dz zooms coarser that covers its descendant at column x and row y
+// within it, read bilinearly between the coarse pixel centers.
+function upsample(ancestor: Float32Array, dz: number, x: number, y: number): Float32Array {
+  const scale = 2 ** dz;
+  const meters = new Float32Array(TILE_SIZE * TILE_SIZE);
+  for (let j = 0; j < TILE_SIZE; ++j) {
+    // Minus half a pixel because a pixel's value sits at its center
+    const ay = Math.min(Math.max((y * TILE_SIZE + j + 0.5) / scale - 0.5, 0), TILE_SIZE - 1);
+    const y0 = Math.floor(ay);
+    const y1 = Math.min(y0 + 1, TILE_SIZE - 1);
+    const fy = ay - y0;
+    for (let i = 0; i < TILE_SIZE; ++i) {
+      const ax = Math.min(Math.max((x * TILE_SIZE + i + 0.5) / scale - 0.5, 0), TILE_SIZE - 1);
+      const x0 = Math.floor(ax);
+      const x1 = Math.min(x0 + 1, TILE_SIZE - 1);
+      const fx = ax - x0;
+      const top = ancestor[y0 * TILE_SIZE + x0] * (1 - fx) + ancestor[y0 * TILE_SIZE + x1] * fx;
+      const bottom =
+          ancestor[y1 * TILE_SIZE + x0] * (1 - fx) + ancestor[y1 * TILE_SIZE + x1] * fx;
+      meters[j * TILE_SIZE + i] = top * (1 - fy) + bottom * fy;
+    }
+  }
+  return meters;
 }
 
 // Mercator with the world from 0 to 1, x east and y south

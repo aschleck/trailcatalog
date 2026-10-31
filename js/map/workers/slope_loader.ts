@@ -19,7 +19,8 @@ const EARTH_RADIUS_METERS = 6371010;
 interface LoadRequest {
   kind: 'lr';
   id: TileId;
-  data: ArrayBuffer;
+  // The tile as fetched, or undefined to fetch it here because it stands in for a missing finer one
+  data: ArrayBuffer|undefined;
 }
 
 export type Request = LoadRequest;
@@ -29,9 +30,11 @@ export interface LoadResponse {
   id: TileId;
   // Slope in degrees scaled from 0 to 90 into 0 to 255, SLOPES_SIZE to a side. The tile's pixels
   // sit inside a one pixel frame holding the slopes of its neighbors' nearest pixels, so the
-  // texture filters across tile edges the same way from either side. Undefined when a neighbor
-  // couldn't be fetched.
+  // texture filters across tile edges the same way from either side. Undefined when the tile or a
+  // neighbor couldn't be fetched.
   slopes: Uint8Array|undefined;
+  // Set when Mapterhorn has no tile here, so a coarser one has to stand in
+  missing: boolean;
 }
 
 export type Response = LoadResponse;
@@ -58,22 +61,31 @@ class SlopeLoader {
   async load(request: LoadRequest): Promise<void> {
     const {id} = request;
     let slopes;
+    let missing = false;
     try {
-      const meters = await decodeTerrarium(new Blob([request.data]));
-      this.remember(id, Promise.resolve(edgesOf(meters)));
+      const meters =
+          request.data
+              ? await decodeTerrarium(new Blob([request.data]))
+              : await fetchTerrarium(id);
+      if (meters) {
+        this.remember(id, Promise.resolve(edgesOf(meters)));
 
-      const neighbors = [];
-      for (let dy = -1; dy <= 1; ++dy) {
-        for (let dx = -1; dx <= 1; ++dx) {
-          neighbors.push(dx === 0 && dy === 0 ? undefined : this.neighbor(id, dx, dy));
+        const neighbors = [];
+        for (let dy = -1; dy <= 1; ++dy) {
+          for (let dx = -1; dx <= 1; ++dx) {
+            neighbors.push(dx === 0 && dy === 0 ? undefined : this.neighbor(id, dx, dy));
+          }
         }
+        slopes = computeSlopes(id, pad(meters, await Promise.all(neighbors)));
+      } else {
+        this.remember(id, Promise.resolve(undefined));
+        missing = true;
       }
-      slopes = computeSlopes(id, pad(meters, await Promise.all(neighbors)));
     } catch (e) {
       console.error(e);
       slopes = undefined;
     }
-    this.postMessage({kind: 'lr', id, slopes}, slopes ? [slopes.buffer] : []);
+    this.postMessage({kind: 'lr', id, slopes, missing}, slopes ? [slopes.buffer] : []);
   }
 
   private neighbor(id: TileId, dx: number, dy: number): Promise<Edges|undefined> {

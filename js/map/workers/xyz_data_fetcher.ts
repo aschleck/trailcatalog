@@ -25,6 +25,8 @@ export interface Initialize {
   perTileZoom?: boolean;
   // How many tiles may download at once, see fetch_throttler.ts#MAX_REQUESTS_IN_FLIGHT
   maxInFlight?: number;
+  // Posts a 404 as an empty tile, for layers that draw a coarser tile where a finer one is missing
+  missingAsEmpty?: boolean;
 }
 
 interface TileLoadedRequest {
@@ -90,6 +92,7 @@ class XyzDataFetcher {
       private readonly maxZoom: number,
       private readonly perTileZoom: boolean,
       maxInFlight: number|undefined,
+      private readonly missingAsEmpty: boolean,
       private readonly postMessage: (command: Command, transfer?: Transferable[]) => void,
   ) {
     this.inFlight = createTileHashMap();
@@ -146,6 +149,8 @@ class XyzDataFetcher {
           .then(response => {
             if (response.ok) {
               return response.arrayBuffer();
+            } else if (response.status === 404 && this.missingAsEmpty) {
+              return new ArrayBuffer(0);
             } else {
               throw new Error(
                   `Failed to download tile ${id.x},${id.y} at ${id.zoom} `
@@ -337,6 +342,7 @@ serveClients<Initialize, Request, Command>((init, emit) => {
           init.maxZoom,
           init.perTileZoom ?? false,
           init.maxInFlight,
+          init.missingAsEmpty ?? false,
           emit);
   return request => {
     if (request.kind === 'sur') {

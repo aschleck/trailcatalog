@@ -11,14 +11,15 @@ export interface TraceBand {
 }
 
 // An elevation error of e at a distance d tilts a sight line by e / d, so coarser tiles farther
-// out keep the angles as good as near ones. Each band steps a pixel at a time, which is 7, 13, and
-// 27 m at the latitude of the Alps.
+// out keep the angles as good as near ones. Each band steps a pixel at a time, which is 1.7, 7, 13,
+// and 27 m at the latitude of the Alps.
 export const SKYLINE_BANDS: TraceBand[] = [
+  {zoom: 15, toMeters: 2_000},
   {zoom: 13, toMeters: 7_000},
   {zoom: 12, toMeters: 20_000},
   {zoom: 11, toMeters: 60_000},
 ];
-export const VIEWSHED_BANDS: TraceBand[] = SKYLINE_BANDS.slice(0, 2);
+export const VIEWSHED_BANDS: TraceBand[] = SKYLINE_BANDS.slice(0, 3);
 // Each 0.5 degrees, as wide as the sun
 export const SKYLINE_AZIMUTHS = 720;
 // Rays 15 m apart at the viewshed's 20 km edge, about a z12 pixel, so that every pixel of the

@@ -7,6 +7,9 @@ export const TILE_URL = 'https://tiles.mapterhorn.com/${id.zoom}/${id.x}/${id.y}
 export const TILE_SIZE = 512;
 // Everywhere with data has z12, so a missing tile there is ocean rather than coarser coverage.
 export const BASE_ZOOM = 12;
+// Mapterhorn tiles 1 m lidar to z16 north of about 33 degrees and z17 south of it, where a
+// Mercator pixel is smaller on the ground.
+export const MAX_ZOOM = 17;
 // Terrarium packs meters as r * 256 + g + b / 256 - 32768.
 const TERRARIUM_OFFSET = 32768;
 
