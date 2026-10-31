@@ -97,6 +97,47 @@ function wayLines(style: MbtileStyle): LineStyle[] {
 }
 
 /**
+ * Leaves lake names to the Nodes layer from LANDMARK_ZOOM. Protomaps labels a natural=water area
+ * as kind water, with its water tag as kind_detail, and the importer makes a point for each named
+ * one that isn't flowing. We drop only no kind_detail and lake, which every Washington lake label
+ * we checked had a point for. Rivers, reservoirs, bays, and straits keep their basemap names.
+ */
+function withoutLakeNames(style: MbtileStyle): MbtileStyle {
+  const layers: MbtileLayerStyle[] = [];
+  for (const layer of style.layers) {
+    if (layer.layerName !== 'water'
+        || layer.points.length === 0
+        || layer.maxZoom <= LANDMARK_ZOOM) {
+      layers.push(layer);
+      continue;
+    }
+
+    if (layer.minZoom < LANDMARK_ZOOM) {
+      layers.push({...layer, maxZoom: LANDMARK_ZOOM});
+    }
+    layers.push({
+      ...layer,
+      minZoom: Math.max(layer.minZoom, LANDMARK_ZOOM),
+      points: layer.points.flatMap(point => [
+        {
+          ...point,
+          filters: [...point.filters, {match: 'string_not_in', key: 'kind', value: ['water']}],
+        },
+        {
+          ...point,
+          filters: [
+            ...point.filters,
+            {match: 'string_in', key: 'kind', value: ['water']},
+            {match: 'string_not_in', key: 'kind_detail', value: ['lake']},
+          ],
+        },
+      ]),
+    });
+  }
+  return {layers};
+}
+
+/**
  * Drops the lines wayLines took over, splitting a band that straddles FROM_ZOOM so they survive
  * underneath it.
  *
@@ -422,7 +463,7 @@ export const WAY_KINDS: ReadonlyArray<{key: string; label: string; category: Way
  * Narrows OSM_WAYS to the ways descending from the categories. The loader drops a way no line
  * styles, so the rest also leave the index and stop catching the drawing tools.
  */
-export function osmWaysOf(categories: WayCategory[]): Style {
+export function getUserVisibleOsmWays(categories: WayCategory[]): Style {
   const lines = [];
   for (const line of OSM_WAYS.lines) {
     const filters = line.filters.map(filter =>
@@ -478,7 +519,10 @@ export const NODE_KINDS:
   {key: 'water', label: 'Water', category: PointCategory.WATER},
 ];
 
-export const NATURE_WITHOUT_DETAILED_WAYS: MbtileStyle = withoutWayLines(NATURE);
+// Where summits, glaciers, and lakes get their names, as soon as the contours are labeled
+export const LANDMARK_ZOOM = 13;
+
+export const BASEMAP: MbtileStyle = withoutLakeNames(withoutWayLines(NATURE));
 
 // What the basemap layer offers to label, by the protomaps layers each one's text comes from.
 // Points in the basemap style only draw text, so dropping a layer's points and lineTexts takes
@@ -490,12 +534,13 @@ export const BASEMAP_LABEL_KINDS:
   {key: 'way_labels', label: 'Way labels', layerNames: ['roads']},
 ];
 
-/** Narrows NATURE_WITHOUT_DETAILED_WAYS to the boundaries and the labels in the protomaps layers named. */
-export function basemapOf(boundaries: boolean, labeled: ReadonlySet<string>): MbtileStyle {
+/** Narrows BASEMAP to the boundaries and the labels in the protomaps layers named. */
+export function getUserVisibleBasemap(
+    boundaries: boolean, labeled: ReadonlySet<string>): MbtileStyle {
   const unlabeled = new Set(
       BASEMAP_LABEL_KINDS.flatMap(({layerNames}) => layerNames).filter(name => !labeled.has(name)));
   const layers = [];
-  for (const layer of NATURE_WITHOUT_DETAILED_WAYS.layers) {
+  for (const layer of BASEMAP.layers) {
     if (!boundaries && layer.layerName === 'boundaries') {
       continue;
     }

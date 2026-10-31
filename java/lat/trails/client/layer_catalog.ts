@@ -56,13 +56,14 @@ import { readElevation, readGeology, readLandCover, readSnodas, readWeather } fr
 import { SkyLayer, ViewshedMode } from './sky_layer';
 import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA } from './schema';
 import {
+  BASEMAP,
   BASEMAP_LABEL_KINDS,
-  basemapOf,
   getDrawnCategories,
-  NATURE_WITHOUT_DETAILED_WAYS,
+  getUserVisibleBasemap,
+  getUserVisibleOsmWays,
+  LANDMARK_ZOOM,
   NODE_KINDS,
   OSM_WAYS,
-  osmWaysOf,
   WAY_KINDS,
 } from './styles';
 
@@ -262,8 +263,6 @@ const ECMWF_LOOKBACK_CYCLES = 12;
 export const SKY_LAYER_ID = 'weather/sun_moon';
 const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
 const SNOW_WATER_ID = 'us/conditions/snow_water';
-// Where summits, glaciers, and lakes get their names, as soon as the contours are labeled
-const LANDMARK_ZOOM = 13;
 // Where trailcatalog starts drawing its points, see trail_layer.ts#RENDER_POINT_ZOOM_THRESHOLD
 const POINT_ICON_ZOOM = 14;
 // Where the rest of the points join the landmarks, which would otherwise bury them
@@ -466,7 +465,7 @@ export class LayerCatalog extends Disposable {
         new MbtileLayer(
             [PROTOMAPS_COPYRIGHT],
             'https://api.protomaps.com/tiles/v4/${id.zoom}/${id.x}/${id.y}.mvt?key=b6ce0acec3807d5c',
-            NATURE_WITHOUT_DETAILED_WAYS,
+            BASEMAP,
             /* extraZoom= */ 0,
             /* minZoom= */ 0,
             /* maxZoom= */ 15,
@@ -639,7 +638,7 @@ export class LayerCatalog extends Disposable {
         },
         configure: values => {
           protomaps.setStyle(
-              basemapOf(
+              getUserVisibleBasemap(
                   values.boundaries === true,
                   new Set(
                       BASEMAP_LABEL_KINDS
@@ -663,7 +662,7 @@ export class LayerCatalog extends Disposable {
         kind: 'layer',
         id: 'osm/ways',
         name: 'Ways',
-        // On by default because NATURE_WITHOUT_DETAILED_WAYS hands it the ways.
+        // On by default because BASEMAP hands it the ways.
         enabled: true,
         schema: OSM_WAYS_SCHEMA,
         layer: ways,
@@ -671,7 +670,8 @@ export class LayerCatalog extends Disposable {
         values: Object.fromEntries(WAY_KINDS.map(({key}) => [key, true])),
         configure: values => {
           ways.setStyle(
-              osmWaysOf(WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
+              getUserVisibleOsmWays(
+                  WAY_KINDS.filter(({key}) => values[key]).map(({category}) => category)));
         },
       }],
     }, {

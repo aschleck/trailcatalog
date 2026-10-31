@@ -135,13 +135,21 @@ interface StringInMatch {
   value: string[];
 }
 
+// Like the other matches, a feature without the key doesn't match
+interface StringNotInMatch {
+  match: 'string_not_in';
+  key: string;
+  value: string[];
+}
+
 type Match =
     AlwaysMatch
         |GreaterThanMatch
         |LessThanMatch
         |NumberEqualsMatch
         |StringEqualsMatch
-        |StringInMatch;
+        |StringInMatch
+        |StringNotInMatch;
 
 interface LoadRequest {
   kind: 'lr';
@@ -957,6 +965,9 @@ function matches(tags: number[], keys: string[], values: ValueType[], filters: M
           break;
         case 'string_in':
           matched = filter.value.some(candidate => value === candidate);
+          break;
+        case 'string_not_in':
+          matched = !filter.value.some(candidate => value === candidate);
           break;
         default:
           checkExhaustive(filter);
