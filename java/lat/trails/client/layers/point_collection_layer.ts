@@ -69,7 +69,6 @@ const NO_SNAP: Snap[] = [{minZoom: 0, snap: undefined}];
 
 const TEXT_DECODER = new TextDecoder();
 
-/** A point a PointCollectionLayer drew from its collection. */
 /** Draws a collection of points as trailcatalog's icons with their names beside them. */
 export class PointCollectionLayer extends Layer {
 
@@ -90,7 +89,7 @@ export class PointCollectionLayer extends Layer {
   private labelsMissingGlyphs: boolean;
   // What the drawables were planned for, or undefined to plan them again
   private planned: {avoided: number[]; generation: number; zoom: number}|undefined;
-  // Only points descending from these draw and answer the cursor
+  // Only points descending from these, and the selected point, draw and answer the cursor
   private categories: PointCategory[];
   private hovered: Point|undefined;
   // The point the inspector shows, which stays drawn after its cell unloads. Hovered and selected
@@ -269,16 +268,11 @@ export class PointCollectionLayer extends Layer {
 
   // Plans every shown point's icon, with the hovered and selected ones larger and on top.
   private plan(): void {
-    const shown = [];
-    for (const points of this.cells.values()) {
-      shown.push(
-          ...points.filter(
-              point => this.shows(point) && !isArea(point) && !this.isHighlighted(point)));
-    }
+    const shown: Point[] = [];
     const raised: Point[] = [];
-    for (const point of [this.selected, this.hovered]) {
-      if (point && !isArea(point) && !raised.some(r => getId(r) === getId(point))) {
-        raised.push(point);
+    for (const point of this.shownPoints) {
+      if (!isArea(point)) {
+        (this.isHighlighted(point) ? raised : shown).push(point);
       }
     }
     const count = shown.length + raised.length;
@@ -325,15 +319,7 @@ export class PointCollectionLayer extends Layer {
     const avoided = this.avoid.boxes.map(v => v * avoidScale);
     collisions.insert(avoided);
 
-    const shown = [];
-    for (const points of this.cells.values()) {
-      shown.push(...points.filter(point => this.shows(point)));
-    }
-    // The selected point keeps its name after its cell unloads, the way it keeps its icon.
-    const selected = this.selected;
-    if (selected && this.shows(selected) && !shown.some(p => getId(p) === getId(selected))) {
-      shown.push(selected);
-    }
+    const shown = this.shownPoints;
     if (icons) {
       for (const point of shown) {
         if (!isArea(point)) {
@@ -447,22 +433,33 @@ export class PointCollectionLayer extends Layer {
     // A mercator unit is worldRadius pixels.
     const radius = HOVER_RADIUS_PX * this.camera.inverseWorldRadius;
     const found: Array<{point: Point; distance2: number}> = [];
-    for (const points of this.cells.values()) {
-      for (const candidate of points) {
-        if (!this.shows(candidate) || isArea(candidate)) {
-          continue;
-        }
-        const dx = candidate.position[0] - x;
-        const dy = candidate.position[1] - y;
-        const distance2 = dx * dx + dy * dy;
-        if (distance2 < radius * radius) {
-          found.push({point: candidate, distance2});
-        }
+    for (const candidate of this.shownPoints) {
+      if (isArea(candidate)) {
+        continue;
+      }
+      const dx = candidate.position[0] - x;
+      const dy = candidate.position[1] - y;
+      const distance2 = dx * dx + dy * dy;
+      if (distance2 < radius * radius) {
+        found.push({point: candidate, distance2});
       }
     }
     found.sort((a, b) => a.distance2 - b.distance2);
     const near = found.map(({point}) => point);
     return [...near, ...labeled.filter(point => !near.some(n => getId(n) === getId(point)))];
+  }
+
+  // The loaded points in our categories, plus the selected point
+  private get shownPoints(): Point[] {
+    const shown = [];
+    for (const points of this.cells.values()) {
+      shown.push(...points.filter(point => this.shows(point)));
+    }
+    const selected = this.selected;
+    if (selected && !shown.some(point => getId(point) === getId(selected))) {
+      shown.push(selected);
+    }
+    return shown;
   }
 
   private isHighlighted(point: Point): boolean {

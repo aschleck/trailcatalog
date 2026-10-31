@@ -3,6 +3,7 @@ import { MessageInitShape } from '@bufbuild/protobuf';
 import {
   FeatureKind,
   Folder,
+  GetCollectionResponse,
   Line,
   Point,
   Polygon,
@@ -128,7 +129,16 @@ export function snapshot<F extends EditableFeature>(feature: F): F {
   return {...feature, data: {...feature.data}};
 }
 
-export function folderFromProto(folder: Folder): EditableFolder {
+export function featuresFromProto(response: GetCollectionResponse|undefined): EditableFeature[] {
+  return [
+    ...(response?.folders ?? []).map(folderFromProto),
+    ...(response?.lines ?? []).map(lineFromProto),
+    ...(response?.points ?? []).map(pointFromProto),
+    ...(response?.polygons ?? []).map(polygonFromProto),
+  ];
+}
+
+function folderFromProto(folder: Folder): EditableFolder {
   return {
     kind: 'folder',
     id: folder.id,
@@ -137,7 +147,7 @@ export function folderFromProto(folder: Folder): EditableFolder {
   };
 }
 
-export function lineFromProto(line: Line): EditableLine {
+function lineFromProto(line: Line): EditableLine {
   return {
     kind: 'line',
     id: line.id,
@@ -152,7 +162,7 @@ export function lineFromProto(line: Line): EditableLine {
   };
 }
 
-export function pointFromProto(point: Point): EditablePoint {
+function pointFromProto(point: Point): EditablePoint {
   return {
     kind: 'point',
     id: point.id,
@@ -164,7 +174,7 @@ export function pointFromProto(point: Point): EditablePoint {
   };
 }
 
-export function polygonFromProto(polygon: Polygon): EditablePolygon {
+function polygonFromProto(polygon: Polygon): EditablePolygon {
   return {
     kind: 'polygon',
     id: polygon.id,

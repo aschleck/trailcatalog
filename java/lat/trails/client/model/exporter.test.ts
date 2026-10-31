@@ -3,7 +3,7 @@ import { filterForExport, toGeoJson, toGpx } from './exporter';
 import { EditableFeature } from './features';
 import { parseGeoJson } from './geojson';
 import { parseGpx } from './gpx';
-import { DEFAULT_COLLECTION_SCHEMA } from './schema';
+import { DEFAULT_COLLECTION_SCHEMA, withChannel } from './schema';
 
 const FOLDER: EditableFeature = {
   kind: 'folder',
@@ -95,6 +95,23 @@ test('GeoJSON writes the description field and other fields under their labels',
     'Booked': true,
     'Site': 'Lakeside',
   });
+});
+
+test('GeoJSON writes a field bound to a part it has no property for under its label', () => {
+  const schema = withChannel(
+      {
+        ...DEFAULT_COLLECTION_SCHEMA,
+        fields: [
+          ...DEFAULT_COLLECTION_SCHEMA.fields,
+          {id: 'size', kind: 'point', label: 'Size', type: 'number'},
+        ],
+      },
+      'point',
+      'radius',
+      {kind: 'field', key: 'size'});
+  const big = {...POINT, data: {...POINT.data, size: 12}};
+  const {features: [{properties}]} = JSON.parse(toGeoJson([big], schema));
+  expect(properties['Size']).toBe(12);
 });
 
 test('GPX reads back as what was written, less what GPX cannot hold', () => {

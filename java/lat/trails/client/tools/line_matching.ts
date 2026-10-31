@@ -331,19 +331,8 @@ function positionAt(param: number, fine: Float64Array): [number, number] {
 }
 
 export function nearestOn(px: number, py: number, fine: Float64Array): [number, number] {
-  let best: [number, number] = [fine[0], fine[1]];
-  let bestDistance2 = Number.POSITIVE_INFINITY;
-  for (let k = 0; k + 3 < fine.length; k += 2) {
-    const t = projectOnto(px, py, fine[k], fine[k + 1], fine[k + 2], fine[k + 3]);
-    const x = fine[k] + t * (fine[k + 2] - fine[k]);
-    const y = fine[k + 1] + t * (fine[k + 3] - fine[k + 1]);
-    const d2 = (x - px) * (x - px) + (y - py) * (y - py);
-    if (d2 < bestDistance2) {
-      best = [x, y];
-      bestDistance2 = d2;
-    }
-  }
-  return best;
+  const nearest = candidates(px, py, fine).reduce((best, c) => c.cost < best.cost ? c : best);
+  return positionAt(nearest.param, fine);
 }
 
 // How far along ab the nearest point to p is, from 0 to 1

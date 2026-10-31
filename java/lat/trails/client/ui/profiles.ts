@@ -17,35 +17,69 @@ export interface ShownSamples {
   distanceMeters: Float64Array;
 }
 
+// Holds the samples behind whichever profile is on screen.
+class DemProfiler {
+
+  protected _samples: ShownSamples|undefined;
+  // Moves with every profile asked for, so that a slow answer for an old one is dropped
+  protected generation: number;
+
+  constructor(private readonly elevations: Elevations) {
+    this._samples = undefined;
+    this.generation = 0;
+  }
+
+  get samples(): ShownSamples|undefined {
+    return this._samples;
+  }
+
+  // Calls show with path's profile from the DEM, or with failed, unless another profile was asked
+  // for since.
+  protected sampleDem(
+      path: Float64Array, show: (profile: LoadedProfile|{status: 'failed'}) => void): void {
+    this.generation += 1;
+    const generation = this.generation;
+    const {latLngDegrees, distanceMeters, zoom} = profileSamples(path);
+    this.elevations.sample(latLngDegrees, zoom)
+        .then(meters => profileOf(latLngDegrees, distanceMeters, meters))
+        .then(
+            ({samples, profile}) => {
+              if (generation === this.generation) {
+                this._samples = samples;
+                show(profile);
+              }
+            },
+            e => {
+              console.error(e);
+              if (generation === this.generation) {
+                this._samples = undefined;
+                show({status: 'failed'});
+              }
+            });
+  }
+}
+
 /** Keeps the measure and terrain tools' length and elevation profile in step with the drawing. */
-export class MeasureProfiler {
+export class MeasureProfiler extends DemProfiler {
 
   // Waits for the pointer to settle before sampling, because the measure tool redraws its cursor
   // segment on every move and each profile fetches tiles.
   private readonly debouncer: Debouncer;
-  private _samples: ShownSamples|undefined;
-  // Moves with every profile asked for, so that a slow answer for an old drawing is dropped
-  private generation: number;
   // The placed path the length and profile describe
   private measured: Float64Array|undefined;
 
   constructor(
-      private readonly elevations: Elevations,
+      elevations: Elevations,
       // The placed part of the measurement as interleaved lat then lng degrees. The segment to the
       // cursor is left out, because the numbers are about what was clicked.
       private readonly path: () => Float64Array,
       private readonly current: () => MeasureState,
       private readonly show: (measure: MeasureState) => void) {
+    super(elevations);
     this.debouncer = new Debouncer(/* delayMs= */ 150, () => {
       this.sample();
     });
-    this._samples = undefined;
-    this.generation = 0;
     this.measured = undefined;
-  }
-
-  get samples(): ShownSamples|undefined {
-    return this._samples;
   }
 
   // Updates the length now, because it is cheap, and the profile once the pointer settles. The
@@ -89,41 +123,22 @@ export class MeasureProfiler {
       return;
     }
 
-    this.generation += 1;
-    const generation = this.generation;
     if (this.current().profile?.status !== 'loaded') {
       this.show({...this.current(), profile: {status: 'loading'}});
     }
-    sampleDem(this.elevations, path).then(
-        ({samples, profile}) => {
-          if (generation !== this.generation) {
-            return;
-          }
-
-          this._samples = samples;
-          const distanceMeters = samples.distanceMeters;
-          this.show({
-            ...this.current(),
-            lengthMeters: distanceMeters[distanceMeters.length - 1],
-            profile,
-          });
-        },
-        e => {
-          console.error(e);
-          if (generation === this.generation) {
-            this._samples = undefined;
-            this.show({...this.current(), profile: {status: 'failed'}});
-          }
-        });
+    this.sampleDem(path, profile => {
+      const lengthMeters =
+          profile.status === 'loaded'
+              ? profile.distanceMeters[profile.distanceMeters.length - 1]
+              : this.current().lengthMeters;
+      this.show({...this.current(), lengthMeters, profile});
+    });
   }
 }
 
 /** Draws the elevation profile of the selected line or the inspected map object. */
-export class LineProfiler {
+export class LineProfiler extends DemProfiler {
 
-  private _samples: ShownSamples|undefined;
-  // Moves with every line profile asked for, so that a slow answer for another line is dropped
-  private generation: number;
   // The selected line's arrays as of its profile, which an edit replaces with new ones
   private source: {
     latLngE7: Int32Array;
@@ -131,16 +146,11 @@ export class LineProfiler {
   }|undefined;
 
   constructor(
-      private readonly elevations: Elevations,
+      elevations: Elevations,
       private readonly current: () => LineProfileState|undefined,
       private readonly show: (profile: LineProfileState) => void) {
-    this._samples = undefined;
-    this.generation = 0;
+    super(elevations);
     this.source = undefined;
-  }
-
-  get samples(): ShownSamples|undefined {
-    return this._samples;
   }
 
   // Drops the selected line's profile, including one still loading.
@@ -179,38 +189,15 @@ export class LineProfiler {
   // Samples the DEM, since an object from a map layer has no elevations. Selecting anything
   // forgets the profile, so an answer for an object that has closed is dropped.
   forObject(path: Float64Array): void {
-    this.generation += 1;
     this.source = undefined;
     this.show(this.sample(path));
   }
 
   private sample(path: Float64Array): LineProfileState {
-    const generation = this.generation;
     this._samples = undefined;
-    sampleDem(this.elevations, path).then(
-        ({samples, profile}) => {
-          if (generation !== this.generation) {
-            return;
-          }
-
-          this._samples = samples;
-          this.show(profile);
-        },
-        e => {
-          console.error(e);
-          if (generation === this.generation) {
-            this.show({status: 'failed'});
-          }
-        });
+    this.sampleDem(path, this.show);
     return {status: 'loading'};
   }
-}
-
-function sampleDem(elevations: Elevations, path: Float64Array):
-    Promise<{samples: ShownSamples; profile: LoadedProfile}> {
-  const samples = profileSamples(path);
-  return elevations.sample(samples.latLngDegrees, samples.zoom)
-      .then(meters => profileOf(samples.latLngDegrees, samples.distanceMeters, meters));
 }
 
 // Measures the samples' distances along the slope, so that the chart's length agrees with the

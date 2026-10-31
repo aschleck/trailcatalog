@@ -46,7 +46,7 @@ import {
 } from 'trails_lat/proto/data_pb';
 
 import { AccountDialog, ConfirmDeleteAccountDialog } from './account/account_dialog';
-import { CollectionSettingsDialog, SettingsPanel } from './account/collection_settings_dialog';
+import { CollectionSettingsDialog } from './account/collection_settings_dialog';
 import { LoginPopup } from './account/login_popup';
 import { canEdit } from './data/collection_data';
 import { requestData } from './data/data';
@@ -79,12 +79,9 @@ import {
   EditablePolygon,
   EditableShape,
   FeatureData,
-  folderFromProto,
+  featuresFromProto,
   importableIcon,
   isShape,
-  lineFromProto,
-  pointFromProto,
-  polygonFromProto,
   schemaToWrite,
   snapshot,
   toWrite,
@@ -189,7 +186,7 @@ function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
   return latLngDegrees;
 }
 
-// Join with takes route lines, not marker strokes
+// Join with and the elevation profile take route lines, not marker strokes
 function isRouteLine(feature: EditableFeature|undefined): feature is EditableLine {
   return feature?.kind === 'line' && getLineKind(feature.data) === 'line';
 }
@@ -283,10 +280,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly searchQuery: SearchQuery;
   // Moves with every collection opened or created, so that a slow load of an earlier one is dropped
   private collectionGeneration: number;
-  // The collection from the last args we were bound with. Every render rebinds with its element's
-  // current props, and those still name the old route after currentCollection has created and
-  // routed to a new collection, so only a change in the args counts as navigating.
-  private argsCollection: string|undefined;
   // The collection id from the URL that the store holds or is loading, so that a render with the
   // same route doesn't reload it
   private routedCollection: string|undefined;
@@ -367,7 +360,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               this.updateState({...this.state, search});
             });
     this.collectionGeneration = 0;
-    this.argsCollection = response.args.collection;
     this.routedCollection = response.args.collection;
     this.draggedFeature = undefined;
     this.pointer = undefined;
@@ -459,7 +451,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               const {climbPercent, descentPercent} = this.state.grades;
               return this.elevations.route(
                   from, to, {climb: climbPercent / 100, descent: descentPercent / 100});
-            });
+            },
+            () => this.store.isReadOnly());
     this.registerDisposable(this.terrainLayer);
     this.pointLayer = new PointToolLayer();
     this.registerDisposable(this.pointLayer);
@@ -529,11 +522,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Opens whatever collection the URL names, including after the back and forward buttons.
   updateArgs(newArgs: Args): void {
-    if (newArgs.collection === this.argsCollection) {
-      return;
-    }
-
-    this.argsCollection = newArgs.collection;
     if (newArgs.collection === this.routedCollection) {
       return;
     }
@@ -560,7 +548,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Selects the new line, like onPointPlaced, so that the panel is open to name it.
   onLineDrawn(e: CorgiEvent<typeof LINE_DRAWN>): void {
-    this.addLine(e.detail.latLngE7);
+    this.addLine(e.detail.latLngE7, {});
   }
 
   // Selects the new polygon, like onPointPlaced, so that the panel is open to name it.
@@ -577,16 +565,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Selects the new stroke, like onPointPlaced, so that the panel is open to name it.
   onMarkerDrawn(e: CorgiEvent<typeof MARKER_DRAWN>): void {
-    const line: EditableLine = {
-      kind: 'line',
-      id: crypto.randomUUID(),
-      version: 0n,
-      data: {marker_zoom: e.detail.zoom},
-      latLngE7: e.detail.latLngE7,
-      elevationCentimeters: undefined,
-      timeSeconds: undefined,
-    };
-    this.addFeature(line);
+    this.addLine(e.detail.latLngE7, {marker_zoom: e.detail.zoom});
   }
 
   // Selects the new point so that the panel is open to name it, and stays in the tool so that
@@ -1339,21 +1318,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       listing.then(response => {
         const items =
             fileMenu(response, this.state.collection !== undefined, this.store.isReadOnly(), {
-              newCollection: () => {
-                this.newCollection();
-              },
-              openCollection: collection => {
-                this.openCollection(collection);
-              },
-              openSettings: () => {
-                this.openSettings('overview');
-              },
-              importFiles: () => {
-                this.importFiles();
-              },
-              exportFiles: () => {
-                this.exportFiles();
-              },
+              newCollection: () => this.history.goTo('/'),
+              openCollection: collection => this.openCollection(collection),
+              openSettings: () => this.openSettings(),
+              importFiles: () => this.importFiles(),
+              exportFiles: () => this.exportFiles(),
             });
         this.openMenu(items, trigger);
       });
@@ -1381,7 +1350,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Leaves a drawing tool along with edit rights, or else it would draw what the store drops.
   private resetStore(features: EditableFeature[], readOnly: boolean, schema?: SavedSchema): void {
     this.store.reset(features, readOnly, schema);
-    this.terrainLayer.setKeepsFinished(readOnly);
     const tool = this.state.tool;
     if (readOnly && tool !== 'pointer' && tool !== 'measure' && tool !== 'terrain') {
       this.setTool('pointer');
@@ -1469,12 +1437,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Without elevations, because the profile samples the DEM along a line that has none, and
   // elevations read at the vertices alone would draw each segment as a straight slope.
-  private addLine(latLngE7: Int32Array): void {
+  private addLine(latLngE7: Int32Array, data: FeatureData): void {
     const line: EditableLine = {
       kind: 'line',
       id: crypto.randomUUID(),
       version: 0n,
-      data: {},
+      data,
       latLngE7,
       elevationCentimeters: undefined,
       timeSeconds: undefined,
@@ -1577,7 +1545,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // An inspected object's profile belongs to openObject, and a marker stroke has none because it
   // marks up the map rather than following the ground.
   private lineProfileFor(live: EditableFeature|undefined): LineProfileState|undefined {
-    if (live?.kind === 'line' && getLineKind(live.data) === 'line') {
+    if (isRouteLine(live)) {
       return this.lineProfiler.forLine(live);
     } else if (this.state.inspected?.kind === 'line') {
       return this.state.lineProfile;
@@ -1909,10 +1877,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
   }
 
-  private newCollection(): void {
-    this.history.goTo('/');
-  }
-
   // Shows the name from the listing while the rest loads.
   private openCollection(collection: Collection): void {
     if (collection.id === this.routedCollection) {
@@ -1926,7 +1890,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   // One undo for every schema edit made while the dialog is open
-  private openSettings(panel: SettingsPanel): void {
+  private openSettings(): void {
     const collection = this.state.collection;
     if (!collection) {
       return;
@@ -1936,7 +1900,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.dialog.display(CollectionSettingsDialog({
       collection,
       editable: !this.store.isReadOnly(),
-      panel,
       schema: this.store.schema(),
       onDelete: () => this.deleteCollection(collection),
       onSchemaChanged: schema => {
@@ -2031,12 +1994,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             this.setLayerSettings(
                 response.layers ? JSON.parse(response.layers) as LayerSettings : {});
           }
-          const features = [
-            ...response.folders.map(folderFromProto),
-            ...response.lines.map(lineFromProto),
-            ...response.points.map(pointFromProto),
-            ...response.polygons.map(polygonFromProto),
-          ];
+          const features = featuresFromProto(response);
           const schema = parseCollectionSchema(response.schema);
           this.expand(topLevelFolderIds(features, schema, this.state.features.hidden));
           this.resetStore(
@@ -2202,7 +2160,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Viewers get no view state, so they start from the owner's every time they open the collection.
   private saveViewState(): void {
     const collection = this.state.collection;
-    if (!canEdit(collection)) {
+    // File > Open puts the listing's collection in state before its hidden ids load.
+    if (!canEdit(collection) || this.state.collectionStatus !== 'loaded') {
       return;
     }
 

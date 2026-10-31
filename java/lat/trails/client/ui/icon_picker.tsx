@@ -80,14 +80,16 @@ export function IconPickerButton({color, icon, ...props}: {
   );
 }
 
-/** Picks an icon for a point and calls onChosen with it before closing. */
-export function IconPickerDialog(props: {
+interface Props {
   color: string;
   current: string|undefined;
   onChosen: (icon: string|undefined) => void;
   // Icons other points in the collection already have, most common first
   used: string[];
-}) {
+}
+
+/** Picks an icon for a point and calls onChosen with it before closing. */
+export function IconPickerDialog(props: Props) {
   return <IconPicker {...props} />;
 }
 
@@ -116,12 +118,7 @@ interface State {
 }
 
 function IconPicker(
-    {color, current, onChosen, used}: {
-      color: string;
-      current: string|undefined;
-      onChosen: (icon: string|undefined) => void;
-      used: string[];
-    },
+    {color, current, onChosen, used}: Props,
     inState: State|undefined,
     updateState: (newState: State) => void) {
   const state = inState ?? {catalog: undefined, query: '', tab: 0};

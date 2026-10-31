@@ -1,7 +1,7 @@
 import { OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wire';
 import { unpackPathTraits } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng, S2LatLngRect, SimpleS2 } from 'java/org/trailcatalog/s2';
-import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
+import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { Camera, projectS2LatLng } from 'js/map/camera';
 import { Copyright, RawUuid, RgbaU32 } from 'js/map/common/types';
@@ -61,7 +61,8 @@ interface LoadedCell {
   serial: number;
   points: Point[];
   polygons: Polygon[];
-  // How far the server may have moved its lines, in mercator
+  // How far the server may have moved its lines, in mercator. Not read from rawBytes because a
+  // refine replaces those before its geometry lands.
   tolerance: number;
 }
 
@@ -236,8 +237,8 @@ export class CollectionLayer extends Layer {
       }
     };
 
-    this.loader.onfailure = (request, task) => {
-      if (request.kind !== 'lr' || this.loading.get(request.key) !== task) {
+    this.loader.onfailure = request => {
+      if (request.kind !== 'lr') {
         return;
       }
       this.loading.delete(request.key);
@@ -291,58 +292,28 @@ export class CollectionLayer extends Layer {
 
   /** Draws the object as selected, or stops drawing a selection. */
   selectObject(object: HeldObject|undefined): void {
-    const runs: Array<Omit<Run, 'stroke'>> = [];
+    const runs: Run[] = [];
     if (object?.kind === 'polygon') {
       const {outline, style} = object.value;
       const fill = style.outline?.fill ?? raiseAlpha(style.fill, 0xFF);
       const radius = style.outline?.radius ?? HOVER_POLYGON_OUTLINE_RADIUS_PX;
       for (const ring of outline) {
-        runs.push({fill, radius, pattern: 'solid', points: ring});
+        runs.push({fill, stroke: SELECTED_CASING, radius, pattern: 'solid', points: ring});
       }
     } else if (object) {
-      runs.push(getRun(object));
+      runs.push({...getRun(object), stroke: SELECTED_CASING});
+    }
+    for (const run of runs) {
+      run.radius += SELECTED_PADDING_PX;
     }
 
     const selection = this.selection;
-    let needed = 0;
-    for (const run of runs) {
-      needed += LineProgram.bytesNeeded(run.points.length / 2);
-    }
-    selection.buffer = growBuffer(selection.buffer, needed);
-    // Every run is the same program, so like a polygon's hovered outline they draw as one.
-    let offset = 0;
-    let instances = 0;
-    let vertexCount = 0;
-    for (const run of runs) {
-      const result =
-          LineProgram.push(
-              run.fill,
-              SELECTED_CASING,
-              run.radius + SELECTED_PADDING_PX,
-              run.pattern,
-              run.points,
-              selection.buffer,
-              offset);
-      offset += result.geometryByteLength;
-      instances += result.instanceCount;
-      vertexCount = result.vertexCount;
-    }
-    selection.drawables = [];
-    if (instances > 0) {
-      this.renderer.uploadData(selection.buffer, offset, selection.glBuffer);
-      selection.drawables.push({
-        elements: undefined,
-        geometry: selection.glBuffer,
-        geometryByteLength: offset,
-        geometryOffset: 0,
-        instanced: {
-          count: instances,
-        },
-        program: this.renderer.lineProgram,
-        texture: undefined,
-        vertexCount,
-        z: Z_SELECTED,
-      });
+    selection.buffer = growBuffer(selection.buffer, getRunsByteLength(runs));
+    const drawable =
+        this.planRuns(runs, selection.buffer, /* offset= */ 0, selection.glBuffer, Z_SELECTED);
+    selection.drawables = drawable ? [drawable] : [];
+    if (drawable) {
+      this.renderer.uploadData(selection.buffer, drawable.geometryByteLength, selection.glBuffer);
     }
     this.redraw();
   }
@@ -409,12 +380,15 @@ export class CollectionLayer extends Layer {
       const triangles = polygon.triangles;
       // A fill color rides in front of the vertices, so the buffer holds one extra float.
       const fillByteLength = 4 * (1 + triangles.geometry.length);
-      let outlineByteLength = 0;
-      for (const ring of polygon.outline) {
-        outlineByteLength += LineProgram.bytesNeeded(ring.length / 2);
-      }
+      const outline = polygon.outline.map(ring => ({
+        fill: HOVER_STROKE,
+        stroke: HOVER_STROKE,
+        radius: HOVER_POLYGON_OUTLINE_RADIUS_PX,
+        pattern: 'solid' as const,
+        points: ring,
+      }));
       highlight.geometry =
-          growBuffer(highlight.geometry, fillByteLength + outlineByteLength);
+          growBuffer(highlight.geometry, fillByteLength + getRunsByteLength(outline));
       highlight.index = growBuffer(highlight.index, 4 * triangles.index.length);
 
       const geometryFloats = new Float32Array(highlight.geometry);
@@ -442,41 +416,14 @@ export class CollectionLayer extends Layer {
 
       // The boundary, above the fill, so the shape reads as picked out rather than just
       // brighter. An owner keeps its own color, which is the whole point of the layer.
-      //
-      // A ring only ever produces segments of its own, so laying every ring end to end and
-      // drawing the lot as one run of instances joins nothing that should not be joined. A state
-      // forest reaches a few thousand rings, and one drawable is what keeps the planner from
-      // sorting all of them every frame.
-      let outlineOffset = fillByteLength;
-      let outlineInstances = 0;
-      for (const ring of polygon.outline) {
-        const result =
-            LineProgram.push(
-                HOVER_STROKE,
-                HOVER_STROKE,
-                HOVER_POLYGON_OUTLINE_RADIUS_PX,
-                /* pattern= */ 'solid',
-                ring,
-                highlight.geometry,
-                outlineOffset);
-        outlineOffset += result.geometryByteLength;
-        outlineInstances += result.instanceCount;
-      }
-
-      if (outlineInstances > 0) {
-        const drawable = {
-          elements: undefined,
-          geometry: highlight.glGeometryBuffer,
-          geometryByteLength: outlineOffset - fillByteLength,
-          geometryOffset: fillByteLength,
-          instanced: {
-            count: outlineInstances,
-          },
-          program: this.renderer.lineProgram,
-          texture: undefined,
-          vertexCount: /* a rectangle per segment= */ 4,
-          z: Z_USER_DATA_HIGHLIGHT,
-        };
+      const drawable =
+          this.planRuns(
+              outline,
+              highlight.geometry,
+              fillByteLength,
+              highlight.glGeometryBuffer,
+              Z_USER_DATA_HIGHLIGHT);
+      if (drawable) {
         highlight.drawables.push(drawable);
       }
 
@@ -544,19 +491,18 @@ export class CollectionLayer extends Layer {
   }
 
   private restyle(): void {
-    for (const [key, {data, tolerance}] of this.rawBytes) {
-      this.load(key, data, tolerance);
+    for (const [key, {data}] of this.rawBytes) {
+      this.load(key, data);
     }
   }
 
-  private load(key: CellKey, data: ArrayBuffer, tolerance: number): void {
+  private load(key: CellKey, data: ArrayBuffer): void {
     this.loading.get(key)?.cancel();
     // No transfer list, so the worker gets a structured clone and this copy survives to restyle.
     this.loading.set(key, this.loader.post({
       kind: 'lr',
       key,
       styleZoom: this.styleZoom,
-      tolerance,
       data,
     }));
   }
@@ -645,15 +591,10 @@ export class CollectionLayer extends Layer {
 
     const tolerance = command.snap === undefined ? 0 : SimpleS2.snapEpsilon(command.snap);
     this.rawBytes.set(command.key, {data: command.data, tolerance});
-    this.load(command.key, command.data, tolerance);
+    this.load(command.key, command.data);
   }
 
   private loadProcessedCell(response: LoadResponse): void {
-    // Has this already been unloaded?
-    if (!this.cells.has(response.key)) {
-      return;
-    }
-
     this.loading.delete(response.key);
 
     // Refining a cell throws out the coarser copy of the same objects, and with it the offsets the
@@ -713,7 +654,7 @@ export class CollectionLayer extends Layer {
       serial,
       points: response.points,
       polygons: response.polygons,
-      tolerance: response.tolerance,
+      tolerance: checkExists(this.rawBytes.get(response.key)).tolerance,
     };
     this.cells.set(response.key, cell);
     if (this.isShown(response.key)) {
@@ -841,6 +782,38 @@ export class CollectionLayer extends Layer {
     return {kind: 'line', key, value: lineAt(cell.lines, Number(id.substring(indexAt + 1)))};
   }
 
+  // Lays the runs end to end in buffer from offset as one drawable, or undefined if they have no
+  // segments. A run only ever produces segments of its own, so drawing the lot as one run of
+  // instances joins nothing that should not be joined. A state forest reaches a few thousand rings,
+  // and one drawable is what keeps the planner from sorting all of them every frame.
+  private planRuns(
+      runs: Run[], buffer: ArrayBuffer, offset: number, glBuffer: WebGLBuffer, z: number,
+  ): Drawable|undefined {
+    let end = offset;
+    let instances = 0;
+    let vertexCount = 0;
+    for (const {fill, stroke, radius, pattern, points} of runs) {
+      const result = LineProgram.push(fill, stroke, radius, pattern, points, buffer, end);
+      end += result.geometryByteLength;
+      instances += result.instanceCount;
+      vertexCount = result.vertexCount;
+    }
+    if (instances === 0) {
+      return undefined;
+    }
+    return {
+      elements: undefined,
+      geometry: glBuffer,
+      geometryByteLength: end - offset,
+      geometryOffset: offset,
+      instanced: {count: instances},
+      program: this.renderer.lineProgram,
+      texture: undefined,
+      vertexCount,
+      z,
+    };
+  }
+
   // Puts back the geometry the highlight hid, then stops drawing it.
   private clearHighlight(): void {
     const object = this.highlighted;
@@ -885,6 +858,14 @@ function getRun(object: Exclude<HeldObject, {kind: 'polygon'}>): Run {
   }
   const {position: [x, y], style: {fill, stroke, radius}} = object.value;
   return {fill, stroke, radius, pattern: 'solid', points: [x, y, x, y]};
+}
+
+function getRunsByteLength(runs: Run[]): number {
+  let bytes = 0;
+  for (const run of runs) {
+    bytes += LineProgram.bytesNeeded(run.points.length / 2);
+  }
+  return bytes;
 }
 
 function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {

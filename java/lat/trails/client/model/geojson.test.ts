@@ -185,3 +185,17 @@ test('short colors expand and opaque strokes stay six digits', () => {
   expect(short.data.fill).toBe('#ff8800');
   expect(opaque.data.stroke).toBe('#123456');
 });
+
+test('reads each point of a MultiPoint as its own point', () => {
+  const [first, second] = parseGeoJson(JSON.stringify({
+    type: 'Feature',
+    geometry: {type: 'MultiPoint', coordinates: [[1, 2], [3, 4]]},
+    properties: {'name': 'Camps', 'marker-color': '#00ff00'},
+  }));
+  expect(first).toMatchObject({latE7: 20000000, lngE7: 10000000});
+  expect(second).toMatchObject({latE7: 40000000, lngE7: 30000000});
+  expect(first.data).toEqual({name: 'Camps', fill: '#00ff00'});
+  expect(second.data).toEqual(first.data);
+  expect(second.data).not.toBe(first.data);
+  expect(second.id).not.toBe(first.id);
+});

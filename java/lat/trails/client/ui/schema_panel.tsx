@@ -1,4 +1,4 @@
-import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
@@ -6,7 +6,6 @@ import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
-import { LINE_PATTERNS } from 'js/map/rendering/line_program';
 import { IconButton, RemoveButton, SecondaryButton } from 'js/pika/buttons';
 import { LIST, PANEL, Section } from 'js/pika/dialog';
 import { SELECT_BOX, TEXT_BOX } from 'js/pika/fields';
@@ -18,7 +17,6 @@ import {
   channelOf,
   fieldsFor,
   moveField,
-  PATTERN_LABELS,
   READS,
   removeField,
   removeOption,
@@ -39,9 +37,8 @@ import {
   splitOptions,
   splitsParts,
 } from '../workers/collection_schema';
-import { ColorPickerButton } from './color_picker';
 import { FieldInput } from './field_input';
-import { IconPickerButton, IconPickerDialog } from './icon_picker';
+import { IconPickerDialog } from './icon_picker';
 
 type Part = (typeof PARTS)[number];
 
@@ -378,13 +375,7 @@ function PartRow({draft, part}: {draft: CollectionSchema; key: string; part: Par
             unboundEvents={{corgi: [[CHANGED, 'sourceChanged']]}}
         />
         {channel.kind === 'constant'
-            ? <ValueInput
-                  key={`${part.kind}.${part.part}:constant`}
-                  iconColor={getIconColor(draft)}
-                  option=""
-                  part={part}
-                  value={channel.value}
-              />
+            ? <PartInput draft={draft} option="" part={part} value={channel.value} />
             : ''
         }
       </div>
@@ -393,9 +384,8 @@ function PartRow({draft, part}: {draft: CollectionSchema; key: string; part: Par
               {(split ? splitOptions(split) : []).map(option =>
                   <div className="flex gap-2 items-center">
                     <span className="grow min-w-0 text-gray-600 truncate">{option.label}</span>
-                    <ValueInput
-                        key={`${part.kind}.${part.part}:${option.id}`}
-                        iconColor={getIconColor(draft)}
+                    <PartInput
+                        draft={draft}
                         option={option.id}
                         part={part}
                         value={channel.values[option.id]}
@@ -408,79 +398,40 @@ function PartRow({draft, part}: {draft: CollectionSchema; key: string; part: Par
   );
 }
 
-// Keyed, because the raw inputs only take their value when created.
-function ValueInput({iconColor, option, part, value}: {
-  // What an icon is previewed in
-  iconColor: string;
-  key: string;
+// The input for a part's constant or for one option's value. Its data names the part and option so
+// that SchemaController#setEdited sets the value rather than a field default. Line casing's
+// fallback is empty, meaning the stroke darkened, so it reaches the swatch as empty rather than as
+// DEFAULT_COLOR.
+function PartInput({draft, option, part, value}: {
+  draft: CollectionSchema;
   // The select option the value is for, or empty for a constant
   option: string;
   part: Part;
   value: unknown;
 }) {
-  const bound = {data: {kind: part.kind, part: part.part, option}};
   const shown = value ?? part.fallback;
-  switch (part.type) {
-    case 'color':
-      return (
-        <ColorPickerButton
-            {...bound}
-            ariaLabel={part.label}
-            color={String(shown)}
-            title={part.label}
-            unboundEvents={{corgi: [[CHANGED, 'valueChanged']]}}
-        />
-      );
-    case 'icon':
-      return (
-        <IconPickerButton
-            {...bound}
-            ariaLabel={part.label}
-            color={iconColor}
-            icon={String(shown)}
-            title={part.label}
-            unboundEvents={{click: 'iconValueClicked'}}
-        />
-      );
-    case 'label':
-      return (
-        <Input
-            {...bound}
-            className={`${TEXT_BOX} shrink-0 w-32`}
-            forceValue={true}
-            placeholder="No label"
-            value={String(value ?? '')}
-            unboundEvents={{corgi: [[CHANGED, 'valueChanged']]}}
-        />
-      );
-    case 'number':
-      return (
-        <input
-            {...bound}
-            className={`${TEXT_BOX} shrink-0 w-20`}
-            min="1"
-            type="number"
-            value={String(shown)}
-            unboundEvents={{input: 'valueInput'}}
-        />
-      );
-    case 'pattern':
-      return (
-        <Select
-            {...bound}
-            ariaLabel={part.label}
-            className={`${SELECT_BOX} shrink-0 w-32`}
-            options={LINE_PATTERNS.map(name => ({
-              label: PATTERN_LABELS[name],
-              value: name,
-              selected: name === shown,
-            }))}
-            unboundEvents={{corgi: [[CHANGED, 'valueChanged']]}}
-        />
-      );
-    default:
-      throw checkExhaustive(part.type);
-  }
+  const field: FieldDefinition = {
+    id: part.part,
+    kind: part.kind,
+    label: part.label,
+    type: part.type === 'label' ? 'text' : part.type,
+  };
+  return (
+    <FieldInput
+        compact={true}
+        data={{kind: part.kind, part: part.part, option}}
+        field={field}
+        iconColor={getIconColor(draft)}
+        key={`${part.kind}.${part.part}:${option || 'constant'}`}
+        values={{[field.id]: typeof shown === 'number' ? shown : String(shown)}}
+        unboundEvents={{
+          corgi: [
+            [FIELD_EDITED, 'fieldEdited'],
+            [FIELD_ICON_CLICKED, 'fieldIconClicked'],
+          ],
+        }}
+    />
+  );
 }
 
 function sourcesFor(draft: CollectionSchema, part: Part): Source[] {
@@ -512,6 +463,14 @@ function sourceKey(channel: Channel<unknown>): string {
 function getIconColor(schema: CollectionSchema): string {
   const fill = channelOf(schema, 'point', 'fill');
   return fill.kind === 'constant' ? String(fill.value) : DEFAULT_COLOR;
+}
+
+// What a part's channel holds for option, or for a constant when option is empty
+function getValueAt(draft: CollectionSchema, part: Part, option: string): unknown {
+  const channel = channelOf(draft, part.kind, part.part);
+  return channel.kind === 'constant' ? channel.value
+      : channel.kind === 'by_option' ? channel.values[option]
+      : undefined;
 }
 
 // Options are typed per field, and two kinds can each have a field with the same id.
@@ -684,18 +643,22 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
   }
 
   fieldEdited(e: CorgiEvent<typeof FIELD_EDITED>): void {
-    this.setDefault(e.detail.field, e.detail.value);
+    this.setEdited(e.detail.field, this.getEventPartAt(e), e.detail.value);
   }
 
-  // The picker gives no icon for DEFAULT_ICON, which is what no default draws anyway.
+  // The picker gives no icon for DEFAULT_ICON, which is what no default or part value draws anyway.
   fieldIconClicked(e: CorgiEvent<typeof FIELD_ICON_CLICKED>): void {
     const field = e.detail.field;
-    const current = getField(this.state.draft, field.kind, field.id)?.default;
+    const at = this.getEventPartAt(e);
+    const current =
+        at
+            ? getValueAt(this.state.draft, at.part, at.option)
+            : getField(this.state.draft, field.kind, field.id)?.default;
     this.dialog.display(IconPickerDialog({
       color: getIconColor(this.state.draft),
       current: typeof current === 'string' ? current : undefined,
       onChosen: icon => {
-        this.setDefault(field, icon);
+        this.setEdited(field, at, icon);
       },
       used: [],
     })).catch(() => {});
@@ -721,48 +684,26 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
     this.setDraft(withChannel(draft, part.kind, part.part, channel), {sourceCache});
   }
 
-  valueInput(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const element = e.actionElement.element() as HTMLInputElement;
-    this.setValue(e, element.value);
+  // A FieldInput edits a part's value when its data names a part, and a field's default otherwise.
+  private setEdited(
+      field: FieldRef,
+      at: {part: Part; option: string}|undefined,
+      value: boolean|number|string|undefined): void {
+    if (at) {
+      this.setValueAt(at.part, at.option, value);
+    } else {
+      this.setDefault(field, value);
+    }
   }
 
-  // The picker stores its default as no icon, which a channel draws as DEFAULT_ICON anyway.
-  iconValueClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    const part = this.getEventPart(e);
-    const option = checkExists(e.actionElement.data('option')).string();
-    const channel = channelOf(this.state.draft, part.kind, part.part);
-    const current =
-        channel.kind === 'constant' ? channel.value
-            : channel.kind === 'by_option' ? channel.values[option]
-            : undefined;
-    this.dialog.display(IconPickerDialog({
-      color: getIconColor(this.state.draft),
-      current: typeof current === 'string' ? current : undefined,
-      onChosen: icon => {
-        this.setValueAt(part, option, icon ?? DEFAULT_ICON);
-      },
-      used: [],
-    })).catch(() => {});
-  }
-
-  valueChanged(e: CorgiEvent<typeof CHANGED>): void {
-    this.setValue(e, e.detail.value);
-  }
-
-  private setValue(e: CorgiEvent<typeof CHANGED>|CorgiEvent<typeof DOM_MOUSE>, raw: string):
-      void {
-    const option = checkExists(e.actionElement.data('option')).string();
-    this.setValueAt(this.getEventPart(e), option, raw);
-  }
-
-  private setValueAt(part: Part, option: string, raw: string): void {
-    let value: string|number = raw;
-    if (part.type === 'number') {
-      value = Number(raw);
-      if (!Number.isFinite(value) || value <= 0) {
-        return;
-      }
-    } else if (part.type === 'icon' && !raw.trim()) {
+  // An emptied label box is no label, and the icon picker's no icon is DEFAULT_ICON.
+  private setValueAt(part: Part, option: string, edited: boolean|number|string|undefined): void {
+    const value = edited ?? (part.type === 'icon' ? DEFAULT_ICON : '');
+    const valid =
+        part.type === 'number'
+            ? typeof value === 'number' && value > 0
+            : typeof value === 'string' && (part.type !== 'icon' || value.trim() !== '');
+    if (!valid) {
       return;
     }
 
@@ -780,7 +721,17 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
     }
   }
 
-  private getEventPart(e: CorgiEvent<typeof CHANGED>|CorgiEvent<typeof DOM_MOUSE>): Part {
+  private getEventPartAt(
+      e: CorgiEvent<typeof FIELD_EDITED>|CorgiEvent<typeof FIELD_ICON_CLICKED>):
+      {part: Part; option: string}|undefined {
+    if (!e.actionElement.data('part')) {
+      return undefined;
+    }
+    const option = checkExists(e.actionElement.data('option')).string();
+    return {part: this.getEventPart(e), option};
+  }
+
+  private getEventPart(e: {actionElement: CorgiEvent<typeof CHANGED>['actionElement']}): Part {
     const kind = checkExists(e.actionElement.data('kind')).string();
     const part = checkExists(e.actionElement.data('part')).string();
     return checkExists(PARTS.find(p => p.kind === kind && p.part === part));

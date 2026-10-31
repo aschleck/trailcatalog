@@ -403,7 +403,6 @@ class CollectionLoader {
     const response: LoadResponse = {
       kind: 'lr',
       key: request.key,
-      tolerance: request.tolerance,
       geometry: geometry.buffer,
       index: index.buffer,
       lines,

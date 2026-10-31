@@ -16,9 +16,12 @@ import {
   PUBLIC_LAND_COLLECTION_ID,
   REPORTING_POINTS_COLLECTION_ID,
   RIVER_GAUGES_COLLECTION_ID,
+  TRAILCATALOG_PATHS_COLLECTION_ID,
+  TRAILCATALOG_POINTS_COLLECTION_ID,
   WEATHER_STATIONS_COLLECTION_ID,
 } from 'java/lat/trails/wire/wire';
 import { aDescendsB, PointCategory } from 'java/org/trailcatalog/models/categories';
+import { SimpleS2 } from 'java/org/trailcatalog/s2';
 import { Camera } from 'js/map/camera';
 import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT, WORLDCOVER_COPYRIGHT } from 'js/map/common/copyrights';
 import { Copyright, RgbaU32 } from 'js/map/common/types';
@@ -68,6 +71,10 @@ import {
 } from './styles';
 
 const CC_BY_4 = {name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/'};
+const POINT_LEVELS =
+    {fromLevel: SimpleS2.HIGHEST_INDEX_LEVEL, toLevel: SimpleS2.HIGHEST_INDEX_LEVEL};
+const WHOLE_COLLECTION_STREAMS: Stream[] =
+    [{minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined}];
 // ECMWF's terms dictate the wording, the note that we modified the data, and the disclaimer.
 // https://apps.ecmwf.int/datasets/licences/general/
 const ECMWF_COPYRIGHT: Copyright = {
@@ -371,7 +378,7 @@ export class LayerCatalog extends Disposable {
     const ways =
         new CollectionLayer(
             [OSM_COPYRIGHT],
-            '/api/collections/00000000-0000-0000-0000-000000000001',
+            `/api/collections/${TRAILCATALOG_PATHS_COLLECTION_ID}`,
             OSM_WAYS,
             [
               // Snap to about a pixel at each zoom, which is level z + 6. A level L cell's half
@@ -446,14 +453,14 @@ export class LayerCatalog extends Disposable {
     const osmNodes =
         new PointCollectionLayer(
             [OSM_COPYRIGHT],
-            '/api/collections/00000000-0000-0000-0000-000000000002',
+            `/api/collections/${TRAILCATALOG_POINTS_COLLECTION_ID}`,
             [
-              // Every point sits in a level 13 cell, see DumpPoints.kt. Level 11 tiles hold a
+              // Every point sits in a SimpleS2.HIGHEST_INDEX_LEVEL cell. Level 11 tiles hold a
               // viewport at zoom 14 in a handful of requests, and level 10 one at zoom 13.
-              {minZoom: LANDMARK_ZOOM, maxZoom: undefined, indexBottom: 10, fromLevel: 13,
-                toLevel: 13, categories: LANDMARKS},
-              {minZoom: POINT_ZOOM, maxZoom: undefined, indexBottom: 11, fromLevel: 13,
-                toLevel: 13, categories: NOT_LANDMARKS},
+              {minZoom: LANDMARK_ZOOM, maxZoom: undefined, indexBottom: 10, ...POINT_LEVELS,
+                categories: LANDMARKS},
+              {minZoom: POINT_ZOOM, maxZoom: undefined, indexBottom: 11, ...POINT_LEVELS,
+                categories: NOT_LANDMARKS},
             ],
             NODE_KINDS.filter(({hidden}) => !hidden).map(({category}) => category),
             LANDMARK_ZOOM,
@@ -527,7 +534,7 @@ export class LayerCatalog extends Disposable {
               long: 'Geologic maps compiled by Macrostrat from their original sources',
               short: 'Macrostrat',
               url: 'https://macrostrat.org/',
-              license: {name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/'},
+              license: CC_BY_4,
             }],
             'https://tiles.macrostrat.org/carto/${id.zoom}/${id.x}/${id.y}.mvt',
             MACROSTRAT,
@@ -716,7 +723,7 @@ export class LayerCatalog extends Disposable {
               },
               // Few enough to load all of Europe at once: 1,318 areas were 7.4 MB of GeoJSON on
               // 2026-10-13.
-              [{minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined}],
+              WHOLE_COLLECTION_STREAMS,
               locations),
           this.newCollectionEntry(
               'europe/protected_areas',
@@ -772,8 +779,7 @@ export class LayerCatalog extends Disposable {
         enabled: true,
         children: [
           this.newSwisstopoEntry(
-              'ch/topo', 'Swiss Topo', [SWISSTOPO_COPYRIGHT], 'ch.swisstopo.pixelkarte-farbe',
-              'jpeg', Z_BASE_SATELLITE, /* maxZoom= */ 19),
+              'ch/topo', 'Swiss Topo', 'ch.swisstopo.pixelkarte-farbe', /* extension= */ 'jpeg'),
         ],
       }, {
         kind: 'group',
@@ -803,13 +809,7 @@ export class LayerCatalog extends Disposable {
                 },
                 // Few enough to load the whole country at once: 79 contours were 180 kB of GeoJSON
                 // on 2026-10-03.
-                [{
-                  minZoom: 0,
-                  maxZoom: undefined,
-                  indexBottom: 4,
-                  fromLevel: 0,
-                  toLevel: undefined,
-                }],
+                WHOLE_COLLECTION_STREAMS,
                 locations),
             this.newCollectionEntry(
                 'us/conditions/fire_perimeters',
@@ -825,13 +825,7 @@ export class LayerCatalog extends Disposable {
                 },
                 // Few enough to load the whole country at once: 113 perimeters were 413 kB on
                 // 2026-10-03.
-                [{
-                  minZoom: 0,
-                  maxZoom: undefined,
-                  indexBottom: 4,
-                  fromLevel: 0,
-                  toLevel: undefined,
-                }],
+                WHOLE_COLLECTION_STREAMS,
                 locations),
             this.newArcGisExportEntry(
                 'us/conditions/radar',
@@ -843,7 +837,6 @@ export class LayerCatalog extends Disposable {
                   publicDomain: true,
                 },
                 'eventdriven/rest/services/radar/radar_base_reflectivity/MapServer',
-                /* layers= */ undefined,
                 // MRMS has 1 km cells and a zoom 9 pixel is about 300 m, so more zoom adds no
                 // detail.
                 /* maxZoom= */ 9),
@@ -1242,25 +1235,22 @@ export class LayerCatalog extends Disposable {
   private newSwisstopoEntry(
       id: string,
       name: string,
-      copyrights: Copyright[],
       layer: string,
-      extension: string,
-      z: number,
-      maxZoom: number): LayerEntry {
+      extension: string): LayerEntry {
     return {
       kind: 'layer',
       id,
       name,
       enabled: false,
       layer: new RasterTileLayer(
-          copyrights,
+          [SWISSTOPO_COPYRIGHT],
           `https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/3857`
               + `/\${id.zoom}/\${id.x}/\${id.y}.${extension}`,
           /* tint= */ 0xFFFFFFFF as RgbaU32,
-          z,
+          Z_BASE_SATELLITE,
           /* extraZoom= */ 0,
           /* minZoom= */ 0,
-          maxZoom,
+          /* maxZoom= */ 19,
           this.renderer,
       ),
       controls: [],
@@ -1683,7 +1673,6 @@ export class LayerCatalog extends Disposable {
       name: string,
       copyright: Copyright,
       service: string,
-      layers: string|undefined,
       maxZoom: number): LayerEntry {
     const params = new URLSearchParams({
       bboxSR: '3857',
@@ -1693,9 +1682,6 @@ export class LayerCatalog extends Disposable {
       transparent: 'true',
       f: 'image',
     });
-    if (layers) {
-      params.set('layers', layers);
-    }
     return {
       kind: 'layer',
       id,
@@ -1717,14 +1703,14 @@ export class LayerCatalog extends Disposable {
   }
 }
 
-// Streams for a collection whose importer puts every point in a level 13 cell, like
-// AviationVectors.kt and Conditions.kt. Below zoom they tile at level 3, where the whole world is
-// 384 cells, so a world view costs at most a few hundred requests. From zoom on they tile at
-// indexBottom so that a zoomed in view doesn't pull points from far offscreen.
+// Streams for a collection whose importer puts every point in a SimpleS2.HIGHEST_INDEX_LEVEL
+// cell, like AviationVectors.kt and Conditions.kt. Below zoom they tile at level 3, where the whole
+// world is 384 cells, so a world view costs at most a few hundred requests. From zoom on they tile
+// at indexBottom so that a zoomed in view doesn't pull points from far offscreen.
 function getPointStreams(zoom: number, indexBottom: number): Stream[] {
   return [
-    {minZoom: 0, maxZoom: zoom, indexBottom: 3, fromLevel: 13, toLevel: 13},
-    {minZoom: zoom, maxZoom: undefined, indexBottom, fromLevel: 13, toLevel: 13},
+    {minZoom: 0, maxZoom: zoom, indexBottom: 3, ...POINT_LEVELS},
+    {minZoom: zoom, maxZoom: undefined, indexBottom, ...POINT_LEVELS},
   ];
 }
 

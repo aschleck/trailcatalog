@@ -8,11 +8,11 @@ import { ZoneChoice } from '../sky/time_zones';
 
 /** What the File menu's items do. */
 export interface FileActions {
-  newCollection(): void;
-  openCollection(collection: Collection): void;
-  openSettings(): void;
-  importFiles(): void;
-  exportFiles(): void;
+  newCollection: () => void;
+  openCollection: (collection: Collection) => void;
+  openSettings: () => void;
+  importFiles: () => void;
+  exportFiles: () => void;
 }
 
 export function fileMenu(
@@ -23,9 +23,7 @@ export function fileMenu(
   const items: MenuEntries = [{
     kind: 'menu_item',
     label: 'New',
-    action: () => {
-      actions.newCollection();
-    },
+    action: actions.newCollection,
   }];
   for (const [label, collections] of [
     ['Open', listing.collections],
@@ -51,25 +49,19 @@ export function fileMenu(
     kind: 'menu_item',
     label: 'Settings…',
     disabled: !hasCollection,
-    action: () => {
-      actions.openSettings();
-    },
+    action: actions.openSettings,
   });
   items.push({kind: 'divider'});
   items.push({
     kind: 'menu_item',
     label: 'Import…',
     disabled: readOnly,
-    action: () => {
-      actions.importFiles();
-    },
+    action: actions.importFiles,
   });
   items.push({
     kind: 'menu_item',
     label: 'Export…',
-    action: () => {
-      actions.exportFiles();
-    },
+    action: actions.exportFiles,
   });
   return items;
 }
@@ -151,9 +143,7 @@ export function userMenu(openAccount: () => void): MenuEntries {
   return [{
     kind: 'menu_item',
     label: 'Account…',
-    action: () => {
-      openAccount();
-    },
+    action: openAccount,
   }, {
     kind: 'divider',
   }, {

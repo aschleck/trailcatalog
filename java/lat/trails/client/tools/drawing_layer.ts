@@ -76,9 +76,9 @@ interface Vertex {
   // The path from just past the previous vertex up to and including this one, whose last point is
   // where the vertex sits. That is at until a route snaps it onto a line.
   trace: Traced;
-  // How a SegmentRouter answered for the segment reaching this vertex
+  // How the route reaching this vertex stands. Only a SegmentRouter answers unroutable or failed.
   routed: 'routing'|'routed'|'unroutable'|'failed'|undefined;
-  // The latest request to the SegmentRouter, so that an answer to one it replaced is dropped
+  // The latest route request, so that an answer to one it replaced is dropped
   request: number;
 }
 
@@ -90,8 +90,8 @@ interface Drawing {
   cursor: Vertex|undefined;
   // A finished measurement, which the next click replaces rather than extends
   finished: boolean;
-  // A finish waiting on the SegmentRouter, which goes through once no segment is routing, or else
-  // the line would keep them straight.
+  // A finish waiting on routes, which goes through once no segment is routing, or else the line
+  // would keep them straight.
   finishing: EventSource|undefined;
   // Set by save, which hands the drawing off as a line even when this layer keeps what it finishes,
   // and called just before it does.
@@ -102,8 +102,6 @@ interface Drawing {
 export class DrawingLayer extends Layer {
 
   private active: boolean;
-  // Set when a finished line has nowhere to be saved, so it stays up like a measurement
-  private keepsFinished: boolean;
   private drawing: Drawing|undefined;
   // A spot on the drawing to call out, like the one under the pointer on an elevation profile
   private marker: Vec2|undefined;
@@ -141,10 +139,12 @@ export class DrawingLayer extends Layer {
       // Routes placed segments in place of the index, which then neither snaps nor routes. The
       // segment to the cursor stays straight because a search can take seconds.
       private readonly router: SegmentRouter|undefined = undefined,
+      // Asked at finish, and true when a finished line has nowhere to be saved, so it stays up like
+      // a measurement
+      private readonly keepsFinished: () => boolean = () => false,
   ) {
     super(/* copyright= */ []);
     this.active = false;
-    this.keepsFinished = false;
     this.drawing = undefined;
     this.marker = undefined;
     this.glGeometry = renderer.createDataBuffer(INITIAL_BUFFER_BYTES);
@@ -180,10 +180,6 @@ export class DrawingLayer extends Layer {
     this.marker = at;
     // Not changed(), because the marker is not part of the drawing its listener measures
     this.redraw();
-  }
-
-  setKeepsFinished(keeps: boolean): void {
-    this.keepsFinished = keeps;
   }
 
   setActive(active: boolean): void {
@@ -450,13 +446,14 @@ export class DrawingLayer extends Layer {
     }
 
     const radius = SNAP_RADIUS_PX * this.camera.inverseWorldRadius;
+    const request = this.request(vertex);
     if (!previous) {
       return this.locations.querySnap(vertex.at, radius).then(snapped => {
-        if (this.isDrawn(vertex)) {
+        if (this.isLatest(vertex, request)) {
           vertex.trace = emptyTrace();
           pushPoint(vertex.trace, snapped?.point ?? vertex.at, undefined, snapped?.line);
           this.loadLines(vertex);
-          this.changed();
+          this.landed(vertex, 'routed');
         }
       });
     }
@@ -464,9 +461,7 @@ export class DrawingLayer extends Layer {
     return this.locations
         .queryRoute(previous.at, vertex.at, radius, this.reach)
         .then(route => {
-          // Answers still arrive for a cursor the pointer has left and for lines that were
-          // finished or dropped, and applying one would replan for a vertex nobody draws.
-          if (!this.isDrawn(vertex)) {
+          if (!this.isLatest(vertex, request)) {
             return;
           }
 
@@ -474,7 +469,7 @@ export class DrawingLayer extends Layer {
           // route the network could not find leaves the segment straight.
           vertex.trace = routeTrace(pointOf(previous), route);
           this.loadLines(vertex);
-          this.changed();
+          this.landed(vertex, 'routed');
         });
   }
 
@@ -484,27 +479,19 @@ export class DrawingLayer extends Layer {
       return Promise.resolve();
     }
 
-    this.routeRequests += 1;
-    const request = this.routeRequests;
-    vertex.request = request;
-    vertex.routed = 'routing';
+    const request = this.request(vertex);
     const answered = (via: Float64Array|undefined, routed: Vertex['routed']) => {
-      if (!this.isDrawn(vertex) || vertex.request !== request) {
+      if (!this.isLatest(vertex, request)) {
         return;
       }
 
       const trace = emptyTrace();
-      for (let i = 0; i < (via?.length ?? 0); i += 2) {
-        pushPoint(trace, [via![i], via![i + 1]], undefined, undefined);
+      for (let i = 0; via && i < via.length; i += 2) {
+        pushPoint(trace, [via[i], via[i + 1]], undefined, undefined);
       }
       pushPoint(trace, pointOf(vertex), undefined, undefined);
       vertex.trace = trace;
-      vertex.routed = routed;
-      this.changed();
-      const finishing = this.drawing?.finishing;
-      if (finishing && this.routeStatus().routing === 0) {
-        this.finish(finishing);
-      }
+      this.landed(vertex, routed);
     };
     return router(pointOf(previous), pointOf(vertex)).then(
         via => {
@@ -514,6 +501,34 @@ export class DrawingLayer extends Layer {
           console.error(e);
           answered(undefined, 'failed');
         });
+  }
+
+  // Numbers a new route request for a vertex. A placed vertex counts as routing until the request
+  // lands, so that finish waits for it.
+  private request(vertex: Vertex): number {
+    this.routeRequests += 1;
+    vertex.request = this.routeRequests;
+    if (this.drawing?.vertices.includes(vertex)) {
+      vertex.routed = 'routing';
+    }
+    return vertex.request;
+  }
+
+  // Answers still arrive for a cursor the pointer has left, for lines that were finished or
+  // dropped, and for requests made again since, and applying one would replan for a vertex nobody
+  // draws or undo a newer route.
+  private isLatest(vertex: Vertex, request: number): boolean {
+    return this.isDrawn(vertex) && vertex.request === request;
+  }
+
+  // Draws a vertex's new route and lets through a finish that was waiting on it.
+  private landed(vertex: Vertex, routed: Vertex['routed']): void {
+    vertex.routed = routed;
+    this.changed();
+    const finishing = this.drawing?.finishing;
+    if (finishing && this.routeStatus().routing === 0) {
+      this.finish(finishing);
+    }
   }
 
   private isDrawn(vertex: Vertex): boolean {
@@ -568,29 +583,28 @@ export class DrawingLayer extends Layer {
       return;
     }
 
-    if (!drawing.onSaved && (this.mode === 'measure' || this.keepsFinished)) {
+    if (!drawing.onSaved && (this.mode === 'measure' || this.keepsFinished())) {
       drawing.cursor = undefined;
       drawing.finished = true;
-      this.changed();
-      return;
-    } else if (this.routeStatus().routing > 0) {
-      drawing.cursor = undefined;
-      drawing.finishing = source;
       this.changed();
       return;
     }
 
     // Waits on the unsimplified lines too, or else the line saves with the simplified ones.
-    const refs = traceRefs(drawnTrace(drawing.vertices));
-    if (!this.router && !refs.every(ref => this.refiner.settled(ref))) {
+    const routing = this.routeStatus().routing > 0;
+    const refs = this.router ? [] : traceRefs(drawnTrace(drawing.vertices));
+    if (routing || !refs.every(ref => this.refiner.settled(ref))) {
       drawing.cursor = undefined;
       drawing.finishing = source;
       this.changed();
-      this.refiner.load(refs).then(() => {
-        if (this.drawing === drawing && drawing.finishing === source) {
-          this.finish(source);
-        }
-      });
+      // The last route to land finishes again, so only the lines need waiting on here.
+      if (!routing) {
+        this.refiner.load(refs).then(() => {
+          if (this.drawing === drawing && drawing.finishing === source) {
+            this.finish(source);
+          }
+        });
+      }
       return;
     }
 

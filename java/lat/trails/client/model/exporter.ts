@@ -210,7 +210,10 @@ function descriptionOf(schema: CollectionSchema, feature: EditableFeature): stri
   return typeof value === 'string' ? value : undefined;
 }
 
-// The fields not already written as the title, the description, or a color, width, or icon
+// The parts toGeoJson writes as simplestyle properties
+const WRITTEN_PARTS = new Set(['fill', 'icon', 'stroke', 'width']);
+
+// The fields not already written as the title, the description, or a part in WRITTEN_PARTS
 function otherFields(schema: CollectionSchema, feature: EditableFeature):
     Array<[string, boolean|number|string]> {
   const kind = getFieldKind(feature);
@@ -219,9 +222,9 @@ function otherFields(schema: CollectionSchema, feature: EditableFeature):
   }
 
   const written = new Set([titleField(schema, feature), descriptionField(schema, kind)?.id]);
-  for (const {part, type} of PARTS.filter(p => p.kind === kind)) {
+  for (const {part} of PARTS.filter(p => p.kind === kind && WRITTEN_PARTS.has(p.part))) {
     const channel = channelOf(schema, kind, part);
-    if (type !== 'label' && type !== 'pattern' && channel.kind === 'field') {
+    if (channel.kind === 'field') {
       written.add(channel.key);
     }
   }

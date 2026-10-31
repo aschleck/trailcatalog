@@ -26,13 +26,7 @@ import {
   SKY_PINS_MOVED,
   TOOL_REQUESTED,
 } from './model/events';
-import {
-  EditableFeature,
-  folderFromProto,
-  lineFromProto,
-  pointFromProto,
-  polygonFromProto,
-} from './model/features';
+import { EditableFeature, featuresFromProto } from './model/features';
 import { parseCollectionSchema, getTitle } from './model/schema';
 import { formatDistance } from './tools/measurements';
 import {
@@ -75,12 +69,7 @@ export function OverviewElement(
                 'lat.trails.DataService/GetCollection', {id: collection, omitGeometry: true})
             : undefined;
     const loaded = outline?.finished && outline.ok ? outline.value() : undefined;
-    const all = [
-      ...(loaded?.folders ?? []).map(folderFromProto),
-      ...(loaded?.lines ?? []).map(lineFromProto),
-      ...(loaded?.points ?? []).map(pointFromProto),
-      ...(loaded?.polygons ?? []).map(polygonFromProto),
-    ];
+    const all = featuresFromProto(loaded);
     const hidden = new Set(loaded?.hiddenFeatureIds);
     const schema = parseCollectionSchema(loaded?.schema ?? '');
     inState = {

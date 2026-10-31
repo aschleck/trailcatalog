@@ -59,43 +59,34 @@ export function parseGeoJson(text: string): EditableFeature[] {
       continue;
     }
 
-    if (geometry.type === 'Point') {
-      const point = parsePoint(id, data, properties, geometry.coordinates);
-      if (point) {
-        parsed.push(point);
-      }
-    } else if (geometry.type === 'LineString') {
-      const line = parseLine(id, data, properties, geometry.coordinates);
-      if (line) {
-        parsed.push(line);
-      }
-    } else if (geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)) {
-      // Every part but the first needs its own id, since each becomes its own line.
-      geometry.coordinates.forEach((part, i) => {
-        const line =
-            parseLine(i === 0 ? id : crypto.randomUUID(), data, properties, part);
-        if (line) {
-          parsed.push(line);
-        }
-      });
-    } else if (geometry.type === 'Polygon') {
-      const polygon = parsePolygon(id, data, properties, geometry.coordinates);
-      if (polygon) {
-        parsed.push(polygon);
-      }
-    } else if (geometry.type === 'MultiPolygon' && Array.isArray(geometry.coordinates)) {
-      // Like a MultiLineString, every part but the first needs its own id.
-      geometry.coordinates.forEach((part, i) => {
-        const polygon =
-            parsePolygon(i === 0 ? id : crypto.randomUUID(), data, properties, part);
-        if (polygon) {
-          parsed.push(polygon);
-        }
-      });
+    const type = typeof geometry.type === 'string' ? geometry.type : '';
+    const multi = type.startsWith('Multi');
+    const parse = PARSERS.get(multi ? type.slice('Multi'.length) : type);
+    const parts = multi ? geometry.coordinates : [geometry.coordinates];
+    if (!parse || !Array.isArray(parts)) {
+      continue;
     }
+    // Every part but the first needs its own id, since each becomes its own feature.
+    parts.forEach((part, i) => {
+      const read = parse(i === 0 ? id : crypto.randomUUID(), {...data}, properties, part);
+      if (read) {
+        parsed.push(read);
+      }
+    });
   }
   return parsed;
 }
+
+type Parser =
+    (id: string, data: FeatureData, properties: JsonObject, coordinates: Json) =>
+        EditableFeature|undefined;
+
+// Keyed by the single part type, which a Multi type repeats
+const PARSERS = new Map<string, Parser>([
+  ['LineString', parseLine],
+  ['Point', parsePoint],
+  ['Polygon', parsePolygon],
+]);
 
 function commonData(properties: JsonObject, ids: Map<string, string>): FeatureData {
   const data: FeatureData = {};
@@ -180,8 +171,7 @@ function parseLine(
     kind: 'line',
     id,
     version: 0n,
-    // Copied because the parts of a MultiLineString share the properties they were read from
-    data: {...data},
+    data,
     latLngE7,
     elevationCentimeters:
         haveElevations && elevationCentimeters.some(c => c !== 0)
@@ -213,14 +203,13 @@ function parsePolygon(
     latLngE7[2 * i + 1] = Math.round(position[0] * 1e7);
   }
 
-  const polygonData = {...data};
   const fill = colorOf(properties.fill, properties['fill-opacity']);
   if (fill !== undefined) {
-    polygonData.fill = fill;
+    data.fill = fill;
   }
-  readStroke(properties, polygonData);
+  readStroke(properties, data);
 
-  return {kind: 'polygon', id, version: 0n, data: polygonData, latLngE7};
+  return {kind: 'polygon', id, version: 0n, data, latLngE7};
 }
 
 function readStroke(properties: JsonObject, data: FeatureData): void {

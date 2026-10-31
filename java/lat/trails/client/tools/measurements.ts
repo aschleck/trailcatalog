@@ -4,6 +4,7 @@ import {
   formatDistance as formatUnitDistance,
   formatHeight as formatUnitHeight,
   getUnitSystem,
+  METERS_PER_MILE,
   UnitSystem,
 } from 'js/units/formatters';
 
@@ -78,8 +79,7 @@ export function ringAreaMeters2(ring: ArrayLike<number>): number {
   return Math.abs(sum) * SimpleS2.EARTH_RADIUS_METERS * SimpleS2.EARTH_RADIUS_METERS / 2;
 }
 
-// 1609.344 m to a mile, so about 2.59 km² to a square mile
-const METERS2_PER_MILE2 = 1609.344 * 1609.344;
+const METERS2_PER_MILE2 = METERS_PER_MILE * METERS_PER_MILE;
 // 640 acres to a square mile
 const METERS2_PER_ACRE = METERS2_PER_MILE2 / 640;
 
@@ -136,30 +136,22 @@ export interface ProfileSamples {
  */
 export function profileSamples(path: Float64Array): ProfileSamples {
   const count = path.length / 2;
-  const segments = [];
-  let total = 0;
-  for (let i = 1; i < count; ++i) {
-    const length =
-        haversineMeters(path[2 * i - 2], path[2 * i - 1], path[2 * i], path[2 * i + 1]);
-    segments.push(length);
-    total += length;
-  }
+  const along = cumulativeMeters(path);
+  const total = count > 0 ? along[count - 1] : 0;
 
   const spacing = Math.max(MIN_SAMPLE_SPACING_METERS, total / MAX_SAMPLES);
   const latLngs = count > 0 ? [path[0], path[1]] : [];
   const distances = count > 0 ? [0] : [];
-  let along = 0;
   for (let i = 1; i < count; ++i) {
-    const length = segments[i - 1];
+    const length = along[i] - along[i - 1];
     const steps = Math.max(1, Math.ceil(length / spacing));
     for (let step = 1; step <= steps; ++step) {
       const f = step / steps;
       latLngs.push(
           path[2 * i - 2] + (path[2 * i] - path[2 * i - 2]) * f,
           path[2 * i - 1] + (path[2 * i + 1] - path[2 * i - 1]) * f);
-      distances.push(along + length * f);
+      distances.push(along[i - 1] + length * f);
     }
-    along += length;
   }
 
   const latitude = count > 0 ? path[0] * Math.PI / 180 : 0;

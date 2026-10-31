@@ -20,7 +20,7 @@ import { SchemaPanel } from '../ui/schema_panel';
 import { CollectionSchema } from '../workers/collection_schema';
 import { SharingPanel } from './sharing_panel';
 
-export type SettingsPanel = 'overview'|'sharing'|'schema'|'style';
+type SettingsPanel = 'overview'|'sharing'|'schema'|'style';
 
 const PANEL_LABELS: {[panel in SettingsPanel]: string} = {
   overview: 'Overview',
@@ -29,15 +29,16 @@ const PANEL_LABELS: {[panel in SettingsPanel]: string} = {
   style: 'Style',
 };
 
-export function CollectionSettingsDialog(props: {
+interface Props {
   collection: Collection;
   editable: boolean;
-  panel: SettingsPanel;
   schema: CollectionSchema;
   onDelete: () => Promise<boolean>;
   onSchemaChanged: (schema: CollectionSchema) => void;
   onUpdated: (collection: Collection) => void;
-}) {
+}
+
+export function CollectionSettingsDialog(props: Props) {
   return <Settings {...props} />;
 }
 
@@ -48,15 +49,7 @@ interface State {
 // Every panel stays rendered while hidden so that switching away keeps its state, and so that
 // sharing writes still in flight finish against a live controller.
 function Settings(
-    {collection, editable, panel, schema, onDelete, onSchemaChanged, onUpdated}: {
-      collection: Collection;
-      editable: boolean;
-      panel: SettingsPanel;
-      schema: CollectionSchema;
-      onDelete: () => Promise<boolean>;
-      onSchemaChanged: (schema: CollectionSchema) => void;
-      onUpdated: (collection: Collection) => void;
-    },
+    {collection, editable, schema, onDelete, onSchemaChanged, onUpdated}: Props,
     inState: State|undefined,
     updateState: (newState: State) => void) {
   const sharing = collection.role === Role.OWNER;
@@ -65,7 +58,7 @@ function Settings(
     ...(sharing ? ['sharing' as const] : []),
     ...(editable ? ['schema' as const, 'style' as const] : []),
   ];
-  const state = inState ?? {panel: panels.includes(panel) ? panel : 'overview'};
+  const state: State = inState ?? {panel: 'overview'};
 
   return <>
     <div

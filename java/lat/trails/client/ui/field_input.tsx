@@ -59,23 +59,18 @@ function renderInput(
   const boxed = 'border border-gray-300 h-7 px-1 rounded';
   const width = (compactWidth: string) => compact ? `${compactWidth} shrink-0` : 'w-full';
   switch (field.type) {
-    case 'checkbox':
+    case 'checkbox': {
+      const input =
+          <input
+              {...bound}
+              checked={value === true || undefined}
+              type="checkbox"
+              unboundEvents={{change: 'toggled'}}
+          />;
       return compact
-          ? <label className="flex gap-1 h-7 items-center shrink-0">
-              <input
-                  {...bound}
-                  checked={value === true || undefined}
-                  type="checkbox"
-                  unboundEvents={{change: 'toggled'}}
-              />
-              {field.label}
-            </label>
-          : <input
-                {...bound}
-                checked={value === true || undefined}
-                type="checkbox"
-                unboundEvents={{change: 'toggled'}}
-            />;
+          ? <label className="flex gap-1 h-7 items-center shrink-0">{input}{field.label}</label>
+          : input;
+    }
     case 'color':
       return (
         <ColorPickerButton

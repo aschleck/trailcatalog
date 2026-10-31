@@ -5,7 +5,7 @@ import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
 import { DangerButton, PanelButton, PanelCloseButton } from 'js/pika/buttons';
-import { formatTemperature } from 'js/units/formatters';
+import { formatTemperature, METERS_PER_FOOT, METERS_PER_MILE } from 'js/units/formatters';
 import {
   AviationConditions,
   GetAviationWeatherResponse,
@@ -530,15 +530,7 @@ function objectText({data, kind, schema}: InspectedObject): ReadOnlyText {
     return featureText(schema, {kind, data});
   }
 
-  const description = schema.description ? data[schema.description] : undefined;
-  return {
-    title: getObjectTitle(schema, {kind, data}),
-    paragraphs: description !== undefined ? [String(description)] : [],
-    fields: schema.fields.flatMap(({key, label, values}): Array<[string, string]> => {
-      const value = data[key];
-      return value === undefined ? [] : [[label, values?.[String(value)] ?? String(value)]];
-    }),
-  };
+  return {title: getObjectTitle(schema, {kind, data}), paragraphs: [], fields: []};
 }
 
 function OsmTags({tags}: {tags: OsmElementState['tags']}) {
@@ -618,9 +610,6 @@ const CLOUD_COVERS: {[cover: string]: string} = {
   SCT: 'Scattered',
   SKC: 'Clear',
 };
-
-const METERS_PER_FOOT = 0.3048;
-const METERS_PER_MILE = 1609.344;
 
 function metarRows(metar: Metar): Array<[string, string]> {
   const rows: Array<[string, string]> = [['Observed', formatAgo(metar.observedEpochSeconds)]];
