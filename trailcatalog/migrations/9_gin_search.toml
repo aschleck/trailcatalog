@@ -1,0 +1,37 @@
+[[actions]]
+type = "custom"
+
+# GIN is faster than GiST and we don't use nearest neighbor so switch to it
+start = """
+  CREATE INDEX IF NOT EXISTS search_boundary_names_gin_idx
+      ON boundary_names USING gin (name public.gin_trgm_ops);
+  CREATE INDEX IF NOT EXISTS search_point_names_gin_idx
+      ON point_names USING gin (name public.gin_trgm_ops);
+  CREATE INDEX IF NOT EXISTS search_trail_names_gin_idx
+      ON trail_names USING gin (name public.gin_trgm_ops);
+
+  DROP INDEX IF EXISTS
+      search_boundaries_idx,
+      search_boundary_names_idx,
+      search_point_names_idx,
+      search_trail_names_idx,
+      search_trails_idx;
+"""
+
+abort = """
+  CREATE INDEX IF NOT EXISTS search_boundaries_idx
+      ON boundaries USING gist (epoch, name gist_trgm_ops(siglen=256));
+  CREATE INDEX IF NOT EXISTS search_boundary_names_idx
+      ON boundary_names USING gist (epoch, name gist_trgm_ops(siglen=256));
+  CREATE INDEX IF NOT EXISTS search_point_names_idx
+      ON point_names USING gist (epoch, name gist_trgm_ops(siglen=256));
+  CREATE INDEX IF NOT EXISTS search_trail_names_idx
+      ON trail_names USING gist (epoch, name gist_trgm_ops(siglen=256));
+  CREATE INDEX IF NOT EXISTS search_trails_idx
+      ON trails USING gist (epoch, name gist_trgm_ops(siglen=256));
+
+  DROP INDEX IF EXISTS
+      search_boundary_names_gin_idx,
+      search_point_names_gin_idx,
+      search_trail_names_gin_idx;
+"""
