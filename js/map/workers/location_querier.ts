@@ -5,14 +5,15 @@ import { projectS2LatLng, unprojectS2LatLng } from '../camera';
 import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
 import { LatLng, LatLngRect, RawUuid, Rect, Vec2 } from '../common/types';
 
-import { Anchor, LineKey, PathRouter, Terrain, TERRAINS } from './path_router';
+import { Anchor, LineKey, PathRouter } from './path_router';
+import { Terrain, TERRAINS } from './route_terrain';
 
 export interface IndexedLine {
   // With the producer's prefix, since queries answer with it
   id: string;
   // Mercator, matching what LineProgram renders.
   points: Float64Array;
-  // What routes along it run over, or undefined for any, see PathRouter's Terrain
+  // What routes along it run over, or undefined for any, see route_terrain.ts#Terrain
   terrain?: Terrain;
 }
 
@@ -24,7 +25,7 @@ export interface PackedLines {
   points: Float64Array;
   // Where each line starts in points, and one more for where the last one stops
   starts: Uint32Array;
-  // Indices into path_router.ts#TERRAINS
+  // Indices into route_terrain.ts#TERRAINS
   terrains: Uint8Array;
   // lsb then msb for each line, for answering with LineRefs
   ids: BigInt64Array|undefined;

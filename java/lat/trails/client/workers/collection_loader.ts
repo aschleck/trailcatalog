@@ -10,7 +10,7 @@ import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
 import { PackedLines } from 'js/map/workers/location_querier';
-import { Terrain, TERRAINS } from 'js/map/workers/path_router';
+import { Terrain, TERRAINS } from 'js/map/workers/route_terrain';
 import { CellKey } from 'js/map/workers/s2_streams';
 import { Triangles } from 'js/map/workers/triangulate';
 import { triangulateS2 } from 'js/map/workers/triangulate_s2';
@@ -407,7 +407,7 @@ class CollectionLoader {
         values.push(data);
       }
       lineStyles.push(style);
-      terrains[kept] = TERRAINS.indexOf(terrainOf(data));
+      terrains[kept] = TERRAINS.indexOf(getTerrain(data));
 
       this.reservePoints(floatCount + 2 * pointCount);
       if (pointCount > 0) {
@@ -716,19 +716,40 @@ function outlineOf(polygon: S2Polygon): Float32Array[] {
   return rings;
 }
 
-// Paths carry their way category, so waterways route as water, lifts as aerial, and the rest as
-// land. Only the lifts in RIDDEN_AERIALWAYS get here, because we drop lines OSM_WAYS doesn't style.
-// Objects without a category, like a user's own lines, are any kind.
-function terrainOf(data: Data): Terrain|undefined {
+// Trunk roads are left out because road walks between trailheads often follow them.
+const CLOSED_CATEGORIES = [
+  WayCategory.AEROWAY,
+  WayCategory.RAIL,
+  WayCategory.ROAD_BUSWAY,
+  WayCategory.ROAD_BUS_GUIDEWAY,
+  WayCategory.ROAD_CONSTRUCTION_MOTORWAY,
+  WayCategory.ROAD_MOTORWAY,
+  WayCategory.ROAD_MOTORWAY_LINK,
+  WayCategory.ROAD_RACEWAY,
+];
+
+// The grade PathTraits.kt#access gives foot=no and foot=private
+const FOOT_NO = 1;
+
+// Objects without a category, like a user's own lines, are any kind. Only the lifts in
+// RIDDEN_AERIALWAYS get here because we drop lines OSM_WAYS doesn't style. A piste that is also a
+// highway has the highway's category, see ExtractWays.kt#wayCategory, so it routes as land.
+function getTerrain(data: Data): Terrain|undefined {
   const type = data.type;
   if (typeof type !== 'number') {
     return undefined;
   }
-  if (aDescendsB(type, WayCategory.WATERWAY)) {
-    return 'water';
+  if (data.foot === FOOT_NO || CLOSED_CATEGORIES.some(closed => aDescendsB(type, closed))) {
+    return 'closed';
   }
   if (aDescendsB(type, WayCategory.AERIALWAY)) {
     return 'aerial';
+  }
+  if (aDescendsB(type, WayCategory.PISTE)) {
+    return 'snow';
+  }
+  if (aDescendsB(type, WayCategory.WATERWAY)) {
+    return 'water';
   }
   return 'land';
 }

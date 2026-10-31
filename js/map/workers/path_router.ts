@@ -4,17 +4,7 @@ import { BoundsQuadtree } from '../common/bounds_quadtree';
 import { Rect, Vec2 } from '../common/types';
 
 import { Heap } from './heap';
-
-/**
- * What kind of ground a line runs over. A route between two ends on the same kind stays on that
- * kind, so that a hike from above a waterfall to below it doesn't follow the river down it.
- * Aerial is a lift, which a route rides only from an end on it because most charge a fare.
- * Undefined is any kind, for lines like the ones a person drew, which go anywhere.
- */
-export type Terrain = 'land'|'water'|'aerial';
-
-// Terrain by a byte, for lines packed into arrays
-export const TERRAINS: ReadonlyArray<Terrain|undefined> = [undefined, 'land', 'water', 'aerial'];
+import { getAllowedTerrain, getTerrainCode, isTerrainAllowed, Terrain } from './route_terrain';
 
 /** An end of a route: a point on the network and the segment it lies on. */
 export interface Anchor {
@@ -50,15 +40,13 @@ export interface PathRoute {
   lines: Array<LineKey|undefined>;
 }
 
-// Terrain as stored per edge, one bit each so that a route can allow several
-const ANY = 0;
-const LAND = 1;
-const WATER = 2;
-const AERIAL = 4;
-const TERRAIN_CODES = {land: LAND, water: WATER, aerial: AERIAL} as const;
+// Room for a tile's vertices, so the first group in doesn't reallocate.
+const INITIAL_NODES = 1 << 16;
 
-// What a route may use when an end is on each kind. An end on a lift walks on from the station.
-const ALLOWED_FROM = {land: LAND, water: WATER, aerial: AERIAL | LAND} as const;
+// How many segments share a bound in a run tree. A whole line is too coarse because a long way's
+// bound covers every end inside it and each of those scans all of its segments, and one segment
+// apiece puts every vertex on screen in the tree.
+const RUN_SEGMENTS = 16;
 
 // The lines loaded under one group id, and the edges they become once noded. Noding waits for
 // prepare or the next route, because it walks a hash map per vertex and a group that arrives while
@@ -71,7 +59,7 @@ interface Group {
   // Whether these lines meet wherever they cross another group's, see load.
   crossings: boolean;
   edges: Int32Array|undefined;
-  // One per edge, see TERRAIN_CODES
+  // One per edge, see route_terrain.ts#getTerrainCode
   edgeTerrain: Uint8Array|undefined;
   // One per edge, the key of the line it came from
   edgeKeys: Int32Array|undefined;
@@ -114,13 +102,16 @@ interface Join {
   key: number;
 }
 
-// Room for a tile's vertices, so the first group in doesn't reallocate.
-const INITIAL_NODES = 1 << 16;
-
-// How many segments share a bound in a run tree. A whole line is too coarse because a long way's
-// bound covers every end inside it and each of those scans all of its segments, and one segment
-// apiece puts every vertex on screen in the tree.
-const RUN_SEGMENTS = 16;
+interface Adjacency {
+  offsets: Int32Array;
+  neighbors: Int32Array;
+  // The terrain of the edge to each neighbor, see route_terrain.ts#getTerrainCode
+  terrain: Uint8Array;
+  // The line of the edge to each neighbor, as an owner's base plus its key
+  lines: Int32Array;
+  // Each group with where its keys start in lines, ascending
+  owners: Array<{group: string; base: number}>;
+}
 
 /**
  * A* over the polylines a layer holds. Two polylines connect where they share a vertex, where the
@@ -235,7 +226,7 @@ export class PathRouter {
   route(from: Anchor, to: Anchor, reach: number): PathRoute|undefined {
     const adjacency = this.buildAdjacency();
     const {offsets, neighbors, terrain} = adjacency;
-    const allowed = allowedTerrain(from.terrain, to.terrain);
+    const allowed = getAllowedTerrain(from.terrain, to.terrain);
     const fromA = this.nodeAt(from.a);
     const fromB = this.nodeAt(from.b);
     const toA = this.nodeAt(to.a);
@@ -286,7 +277,7 @@ export class PathRouter {
       const end = offsets[u + 1];
       for (let i = offsets[u]; i < end; ++i) {
         const v = neighbors[i];
-        if (settled[v] || (allowed !== ANY && terrain[i] !== ANY && !(terrain[i] & allowed))) {
+        if (settled[v] || !isTerrainAllowed(terrain[i], allowed)) {
           continue;
         }
 
@@ -451,7 +442,7 @@ export class PathRouter {
     const ends = [];
     let at = 0;
     for (const {points, terrain, key} of lines) {
-      const code = terrain ? TERRAIN_CODES[terrain] : ANY;
+      const code = getTerrainCode(terrain);
       const start = at;
       let previous = -1;
       for (let i = 0; i < points.length; i += 2) {
@@ -487,6 +478,46 @@ export class PathRouter {
     group.edgeTerrain = edgeTerrain.subarray(0, at / 2);
     group.edgeKeys = edgeKeys.subarray(0, at / 2);
     group.ends = Int32Array.from(ends);
+  }
+
+  private nodeFor(px: number, py: number): number {
+    let column = this.index.get(px);
+    if (!column) {
+      column = new Map();
+      this.index.set(px, column);
+    }
+
+    const held = column.get(py);
+    if (held !== undefined) {
+      return held;
+    }
+
+    const node = this.nodeCount;
+    this.nodeCount += 1;
+    if (node === this.x.length) {
+      this.x = grow(this.x);
+      this.y = grow(this.y);
+    }
+    column.set(py, node);
+    this.x[node] = px;
+    this.y[node] = py;
+    return node;
+  }
+
+  private runBound(edges: Int32Array, start: number, end: number): Rect {
+    let lowX = Number.POSITIVE_INFINITY;
+    let lowY = Number.POSITIVE_INFINITY;
+    let highX = Number.NEGATIVE_INFINITY;
+    let highY = Number.NEGATIVE_INFINITY;
+    for (let i = start; i < end; ++i) {
+      const x = this.x[edges[i]];
+      const y = this.y[edges[i]];
+      lowX = Math.min(lowX, x);
+      lowY = Math.min(lowY, y);
+      highX = Math.max(highX, x);
+      highY = Math.max(highY, y);
+    }
+    return {low: [lowX, lowY], high: [highX, highY]};
   }
 
   // Joins a newly noded group's ends onto the nearest segment of each nearby group's runs within
@@ -644,46 +675,6 @@ export class PathRouter {
     return a === end || b === end ? undefined : {end, a, b, terrain, owner: runGroup, key};
   }
 
-  private runBound(edges: Int32Array, start: number, end: number): Rect {
-    let lowX = Number.POSITIVE_INFINITY;
-    let lowY = Number.POSITIVE_INFINITY;
-    let highX = Number.NEGATIVE_INFINITY;
-    let highY = Number.NEGATIVE_INFINITY;
-    for (let i = start; i < end; ++i) {
-      const x = this.x[edges[i]];
-      const y = this.y[edges[i]];
-      lowX = Math.min(lowX, x);
-      lowY = Math.min(lowY, y);
-      highX = Math.max(highX, x);
-      highY = Math.max(highY, y);
-    }
-    return {low: [lowX, lowY], high: [highX, highY]};
-  }
-
-  private nodeFor(px: number, py: number): number {
-    let column = this.index.get(px);
-    if (!column) {
-      column = new Map();
-      this.index.set(px, column);
-    }
-
-    const held = column.get(py);
-    if (held !== undefined) {
-      return held;
-    }
-
-    const node = this.nodeCount;
-    this.nodeCount += 1;
-    if (node === this.x.length) {
-      this.x = grow(this.x);
-      this.y = grow(this.y);
-    }
-    column.set(py, node);
-    this.x[node] = px;
-    this.y[node] = py;
-    return node;
-  }
-
   // Renumbers the nodes the surviving groups reach and drops the rest, which unloading leaves
   // behind.
   private compact(): void {
@@ -747,6 +738,12 @@ export class PathRouter {
     this.deadEdges = 0;
   }
 
+  // The node at a position, or -1 when there is none. The querier anchors onto the lines this
+  // holds, so that only happens to the ends of a zero length segment once compact has run.
+  private nodeAt(point: Vec2): number {
+    return this.index.get(point[0])?.get(point[1]) ?? -1;
+  }
+
   private joinedOnto(a: number, b: number): number[] {
     return this.joined.get(segmentKey(a, b)) ?? [];
   }
@@ -794,48 +791,6 @@ export class PathRouter {
     }
     return {via, lines};
   }
-
-  // The node at a position, or -1 when there is none. The querier anchors onto the lines this
-  // holds, so that only happens to the ends of a zero length segment once compact has run.
-  private nodeAt(point: Vec2): number {
-    return this.index.get(point[0])?.get(point[1]) ?? -1;
-  }
-}
-
-function grow(values: Float64Array): Float64Array {
-  const grown = new Float64Array(2 * values.length);
-  grown.set(values);
-  return grown;
-}
-
-function expand(rect: Rect, by: number): Rect {
-  return {
-    low: [rect.low[0] - by, rect.low[1] - by],
-    high: [rect.high[0] + by, rect.high[1] + by],
-  };
-}
-
-function intersect(a: Rect, b: Rect): boolean {
-  return a.low[0] <= b.high[0] && b.low[0] <= a.high[0]
-      && a.low[1] <= b.high[1] && b.low[1] <= a.high[1];
-}
-
-function union(a: Rect, b: Rect): Rect {
-  return {
-    low: [Math.min(a.low[0], b.low[0]), Math.min(a.low[1], b.low[1])],
-    high: [Math.max(a.high[0], b.high[0]), Math.max(a.high[1], b.high[1])],
-  };
-}
-
-interface Adjacency {
-  offsets: Int32Array;
-  neighbors: Int32Array;
-  // The terrain of the edge to each neighbor, see TERRAIN_CODES
-  terrain: Uint8Array;
-  // The line of the edge to each neighbor, as an owner's base plus its key
-  lines: Int32Array;
-  // Each group with where its keys start in lines, ascending
-  owners: Array<{group: string; base: number}>;
 }
 
 function lineKey(adjacency: Adjacency, line: number): LineKey {
@@ -853,10 +808,8 @@ function lineKey(adjacency: Adjacency, line: number): LineKey {
   return {group: owners[low].group, key: line - owners[low].base};
 }
 
-// The terrain a route between two ends may use, or ANY when it may use everything. Ends on
-// different kinds need both, and an end on a line of any kind agrees with whatever the other is on.
-function allowedTerrain(from: Terrain|undefined, to: Terrain|undefined): number {
-  return (from ? ALLOWED_FROM[from] : ANY) | (to ? ALLOWED_FROM[to] : ANY);
+function segmentKey(a: number, b: number): string {
+  return a < b ? `${a},${b}` : `${b},${a}`;
 }
 
 // Where segment ab crosses segment cd, or undefined when they meet at an end or not at all. Ends
@@ -881,10 +834,6 @@ function intersection(
   return [ax + t * rx, ay + t * ry];
 }
 
-function segmentKey(a: number, b: number): string {
-  return a < b ? `${a},${b}` : `${b},${a}`;
-}
-
 function distanceToSegment2(
     px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
@@ -902,4 +851,29 @@ function distance(ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function expand(rect: Rect, by: number): Rect {
+  return {
+    low: [rect.low[0] - by, rect.low[1] - by],
+    high: [rect.high[0] + by, rect.high[1] + by],
+  };
+}
+
+function intersect(a: Rect, b: Rect): boolean {
+  return a.low[0] <= b.high[0] && b.low[0] <= a.high[0]
+      && a.low[1] <= b.high[1] && b.low[1] <= a.high[1];
+}
+
+function union(a: Rect, b: Rect): Rect {
+  return {
+    low: [Math.min(a.low[0], b.low[0]), Math.min(a.low[1], b.low[1])],
+    high: [Math.max(a.high[0], b.high[0]), Math.max(a.high[1], b.high[1])],
+  };
+}
+
+function grow(values: Float64Array): Float64Array {
+  const grown = new Float64Array(2 * values.length);
+  grown.set(values);
+  return grown;
 }

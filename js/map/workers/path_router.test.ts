@@ -1,6 +1,7 @@
 import { Vec2 } from '../common/types';
 
-import { Anchor, LineKey, PathRouter, Terrain } from './path_router';
+import { Anchor, LineKey, PathRouter } from './path_router';
+import { Terrain } from './route_terrain';
 
 // Wider than any network here, so only the tests about reach are bounded by it.
 const REACH = 100;
@@ -282,6 +283,52 @@ test('rides a lift from an end on it and walks on from the station', () => {
           anchor([-0.5, 0], [-1, 0], [0, 0], 'land'),
           REACH);
   expect(Array.from(via ?? [])).toEqual([0, 0]);
+});
+
+test('keeps a route between two land ends off a piste', () => {
+  const router = new TestRouter();
+  load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');
+  load(router, 'piste', [Float64Array.of(0, 0, 4, 0)], /* tolerance= */ 0, false, 'snow');
+
+  const via =
+      router.route(
+          anchor([-0.5, 0], [-1, 0], [0, 0], 'land'),
+          anchor([4.5, 0], [4, 0], [5, 0], 'land'),
+          REACH);
+  expect(Array.from(via ?? [])).toEqual([0, 0, 2, 3, 4, 0]);
+});
+
+test('rides a lift between two ends on pistes', () => {
+  const router = new TestRouter();
+  load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');
+  load(router, 'lift', [Float64Array.of(0, 0, 4, 0)], /* tolerance= */ 0, false, 'aerial');
+  load(
+      router,
+      'piste',
+      [Float64Array.of(-1, 0, 0, 0), Float64Array.of(4, 0, 5, 0)],
+      /* tolerance= */ 0,
+      false,
+      'snow');
+
+  const via =
+      router.route(
+          anchor([-0.5, 0], [-1, 0], [0, 0], 'snow'),
+          anchor([4.5, 0], [4, 0], [5, 0], 'snow'),
+          REACH);
+  expect(Array.from(via ?? [])).toEqual([0, 0, 4, 0]);
+});
+
+test('keeps a route between two land ends off a motorway', () => {
+  const router = new TestRouter();
+  load(router, 'land', OVER_THE_FALLS.land, /* tolerance= */ 0, false, 'land');
+  load(router, 'motorway', [Float64Array.of(0, 0, 4, 0)], /* tolerance= */ 0, false, 'closed');
+
+  const via =
+      router.route(
+          anchor([-0.5, 0], [-1, 0], [0, 0], 'land'),
+          anchor([4.5, 0], [4, 0], [5, 0], 'land'),
+          REACH);
+  expect(Array.from(via ?? [])).toEqual([0, 0, 2, 3, 4, 0]);
 });
 
 test('treats an end on a line of any kind as agreeing with the other end', () => {
