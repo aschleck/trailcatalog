@@ -1,5 +1,5 @@
 * Use bazelisk to build. For example if you want to see if the basic map compiles try building
-  //js/s2viewer.
+  //js/s2viewer:static.
 * Use `nix-shell -p <package> --run '<command>'` when you need a tool that isn't already on PATH.
   For example: `nix-shell -p postgresql --run 'psql -h mango ...'`. `brew` is not installed.
 * Comments state the reason and stop. Name the thing that actually causes the problem. Say
