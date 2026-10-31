@@ -2,7 +2,6 @@ from argparse import ArgumentParser
 import hashlib
 import os
 
-# Keep in sync with the hashed /static/ locations in the nginx configs
 HASH_LENGTH = 12
 
 
