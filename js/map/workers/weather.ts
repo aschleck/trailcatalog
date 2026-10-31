@@ -1,90 +1,37 @@
-// Keep in sync with WeatherLayers.kt#WEATHER_LAYERS and #LOOKAHEAD_LAYERS. Each pixel's 24 RGB
-// bits hold the channels packed from the high bits down as round((value - offset) / scale), and a
-// channel's largest code means no data.
-interface Channel {
+// Each pixel's 24 RGB bits hold the channels packed from the high bits down as
+// round((value - offset) / scale), and a channel's largest code means no data. Every archive of a
+// run carries the run's formats in its metadata, see WeatherLayers.kt#formatsJson.
+export interface Channel {
   name: string;
   bits: number;
   scale: number;
   offset: number;
 }
 
-interface Layer {
+export interface EcmwfFormat {
   stepHours: number;
   // Set when each step looks this many hours ahead, so the last steps of a run have no tiles
   lookaheadHours?: number;
   channels: Channel[];
 }
 
-// in m/s, eastward and northward. wind_loader.ts unpacks every wind archive as wind.
-const WIND_CHANNELS: Channel[] = [
-  {name: 'u', bits: 12, scale: 0.1, offset: -204.7},
-  {name: 'v', bits: 12, scale: 0.1, offset: -204.7},
-];
+// The json metadata of every archive in a run, see WeatherLayers.kt#formatsJson
+export interface EcmwfRunFormat {
+  // the last forecast hour the run tiles
+  maxStep: number;
+  maxZoom: number;
+  // in pixels on a side
+  tileSize: number;
+  // by archive
+  layers: Record<string, EcmwfFormat>;
+}
+
 // Pressure levels in hPa, see WeatherLayers.kt#WIND_LEVELS
 export const WIND_LEVELS = [925, 850, 700, 600, 500] as const;
 type WindLevel = typeof WIND_LEVELS[number];
 // in hours, see WeatherLayers.kt#PEAK_WINDOWS
 export const PEAK_WINDOWS = [12, 24, 72, 120] as const;
 type PeakWindow = typeof PEAK_WINDOWS[number];
-
-export const ECMWF_LAYERS = {
-  clouds: {stepHours: 6, channels: [
-    {name: 'total', bits: 6, scale: 100 / 62, offset: 0},
-    {name: 'low', bits: 6, scale: 100 / 62, offset: 0},
-    {name: 'medium', bits: 6, scale: 100 / 62, offset: 0},
-    {name: 'high', bits: 6, scale: 100 / 62, offset: 0},
-  ]},
-  freezing: {stepHours: 3, channels: [
-    {name: 'altitude', bits: 12, scale: 5, offset: 0},
-  ]},
-  ...byPeakWindow(hours => [
-    [`peak_gust_${hours}`, peakWind(hours)],
-    [`peak_wind_${hours}`, peakWind(hours)],
-  ] as const),
-  rain: lookahead(0.1),
-  rain_long: lookaheadLong(0.5),
-  snowfall: lookahead(0.1),
-  snowfall_long: lookaheadLong(0.5),
-  icing: {stepHours: 3, channels: [850, 700, 600, 500, 400, 300].map(level =>
-    ({name: `${level}hpa`, bits: 4, scale: 1, offset: 0})),
-  },
-  precipitation: {stepHours: 3, channels: [
-    {name: 'rate', bits: 14, scale: 0.01, offset: 0},
-    {name: 'type', bits: 4, scale: 1, offset: 0},
-    {name: 'cape', bits: 6, scale: 100, offset: 0},
-  ]},
-  pressure: {stepHours: 3, channels: [
-    {name: 'pressure', bits: 12, scale: 0.1, offset: 850},
-  ]},
-  snow: {stepHours: 3, channels: [
-    {name: 'depth', bits: 12, scale: 1, offset: 0},
-  ]},
-  temperature: {stepHours: 3, channels: [
-    {name: 'temperature', bits: 12, scale: 0.05, offset: -100},
-    {name: 'dew_point', bits: 12, scale: 0.05, offset: -100},
-  ]},
-  thermals: {stepHours: 3, channels: [
-    {name: 'top', bits: 12, scale: 5, offset: 0},
-    {name: 'cloud_base', bits: 12, scale: 5, offset: 0},
-  ]},
-  turbulence: {stepHours: 3, channels: [[400, 300], [300, 250], [250, 200], [200, 150]].map(
-    ([bottom, top]) => ({name: `${bottom}_${top}hpa`, bits: 6, scale: 0.5, offset: 0})),
-  },
-  waves: {stepHours: 3, channels: [
-    {name: 'height', bits: 9, scale: 0.05, offset: 0},
-    {name: 'direction', bits: 8, scale: 360 / 254, offset: 0},
-    {name: 'period', bits: 7, scale: 0.25, offset: 0},
-  ]},
-  wind: {stepHours: 3, channels: WIND_CHANNELS},
-  // stretched to the gust's speed
-  wind_gust: {stepHours: 3, channels: WIND_CHANNELS},
-  ...byWindLevel(level => [
-    [`wind_${level}`, {stepHours: 3, channels: WIND_CHANNELS}],
-    ...PEAK_WINDOWS.map(hours => [`peak_wind_${level}_${hours}`, peakWind(hours)] as const),
-  ] as const),
-} satisfies Record<string, Layer>;
-
-export type EcmwfLayer = keyof typeof ECMWF_LAYERS;
 
 export function byWindLevel<K extends string, V>(
     entries: (level: WindLevel) => ReadonlyArray<readonly [K, V]>): Record<K, V> {
@@ -96,32 +43,14 @@ export function byPeakWindow<K extends string, V>(
   return Object.fromEntries(PEAK_WINDOWS.flatMap(entries)) as Record<K, V>;
 }
 
-// The wind at the step whose speed peaks in the next hours, stretched to that speed
-function peakWind(hours: number): Layer {
-  return {stepHours: 3, lookaheadHours: hours, channels: WIND_CHANNELS};
-}
-
-function lookahead(scale: number): Layer {
-  return {stepHours: 3, lookaheadHours: 24, channels: [
-    {name: 'next_12h', bits: 12, scale, offset: 0},
-    {name: 'next_24h', bits: 12, scale, offset: 0},
-  ]};
-}
-
-function lookaheadLong(scale: number): Layer {
-  return {stepHours: 3, lookaheadHours: 120, channels: [
-    {name: 'next_72h', bits: 12, scale, offset: 0},
-    {name: 'next_120h', bits: 12, scale, offset: 0},
-  ]};
-}
-
 /** Channel values by name, NaN where a channel has no data. */
 export type Values = Record<string, number>;
 type Rgba = [number, number, number, number];
 type Ramp = Array<[number, number]>;
 
 interface View {
-  layer: EcmwfLayer;
+  // the archive it reads
+  layer: string;
   // undefined leaves the pixel clear
   color: (values: Values) => Rgba|undefined;
 }
@@ -234,11 +163,12 @@ export const WEATHER_VIEWS = {
 export type WeatherView = keyof typeof WEATHER_VIEWS;
 
 /** Colors a tile's packed pixels in place. */
-export function colorWeather(view: WeatherView, rgba: Uint8ClampedArray): void {
-  const {color, layer}: View = WEATHER_VIEWS[view];
+export function colorWeather(
+    view: WeatherView, channels: Channel[], rgba: Uint8ClampedArray): void {
+  const {color}: View = WEATHER_VIEWS[view];
   const values: Values = {};
   for (let i = 0; i < rgba.length; i += 4) {
-    unpackPixel(layer, (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2], values);
+    unpackPixel(channels, (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2], values);
     const rgbaOut = color(values);
     if (rgbaOut) {
       rgba.set(rgbaOut, i);
@@ -249,9 +179,9 @@ export function colorWeather(view: WeatherView, rgba: Uint8ClampedArray): void {
 }
 
 /** Unpacks every channel of a pixel's 24 packed bits into values. */
-export function unpackPixel(layer: EcmwfLayer, packed: number, values: Values = {}): Values {
+export function unpackPixel(channels: Channel[], packed: number, values: Values = {}): Values {
   let shift = 24;
-  for (const channel of ECMWF_LAYERS[layer].channels as Channel[]) {
+  for (const channel of channels) {
     shift -= channel.bits;
     const noData = (1 << channel.bits) - 1;
     const code = (packed >>> shift) & noData;
@@ -262,8 +192,7 @@ export function unpackPixel(layer: EcmwfLayer, packed: number, values: Values = 
 
 /** Unpacks one channel of each of a tile's packed pixels, with NaN where there's no data. */
 export function unpackChannel(
-    layer: EcmwfLayer, name: string, rgba: Uint8ClampedArray): Float32Array {
-  const channels: Channel[] = ECMWF_LAYERS[layer].channels;
+    channels: Channel[], name: string, rgba: Uint8ClampedArray): Float32Array {
   let shift = 24;
   let channel;
   for (channel of channels) {
@@ -273,7 +202,7 @@ export function unpackChannel(
     }
   }
   if (channel?.name !== name) {
-    throw new Error(`No channel ${name} in ${layer}`);
+    throw new Error(`No channel ${name}`);
   }
   const noData = (1 << channel.bits) - 1;
   const values = new Float32Array(rgba.length / 4);
@@ -329,7 +258,7 @@ function ramp(stops: Ramp, value: number, min = -Infinity): Rgba|undefined {
   return out;
 }
 
-function windView(layer: EcmwfLayer): View {
+function windView(layer: string): View {
   return {layer, color: v => ramp(SPEED_MPS, Math.hypot(v.u, v.v))};
 }
 

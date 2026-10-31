@@ -4,12 +4,8 @@ import { RgbaU32, TileId } from '../common/types';
 import { LineProgram } from '../rendering/line_program';
 
 import { Reply, serveClients } from './client_pool';
-import { readPacked, unpackChannel } from './weather';
+import { Channel, readPacked, unpackChannel } from './weather';
 
-// Keep in sync with Weather.kt#TILE_SIZE
-const TILE_SIZE = 256;
-// Keep in sync with Weather.kt#MAX_ZOOM
-const MAX_ZOOM = 3;
 // Seeds sit one per cell of a lattice this many pixels across at the zoom level we trace for, so
 // between this and twice this at the zoom level after it.
 const STREAMLINE_SPACING_PX = 48;
@@ -36,6 +32,14 @@ const PENNANT_BASE_PX = 5;
 const BARB_RADIUS = 1.5;
 
 export type WindStyle = 'barbs'|'streamlines';
+
+// The wind archive's channels, which hold u and v, and its run's tiling
+export interface Initialize {
+  channels: Channel[];
+  maxZoom: number;
+  // in pixels on a side
+  tileSize: number;
+}
 
 export interface Viewport {
   lat: [number, number];
@@ -99,19 +103,23 @@ class WindLoader {
   private readonly decoding: Set<number>;
   private readonly tiles: Map<number, Tile>;
 
-  constructor() {
+  constructor(
+      private readonly channels: Channel[],
+      private readonly maxZoom: number,
+      private readonly tileSize: number,
+  ) {
     this.decoding = new Set();
     this.tiles = new Map();
   }
 
   async load(request: LoadRequest): Promise<Reply<Response>> {
-    const key = tileKey(request.id.zoom, request.id.x, request.id.y);
+    const key = this.getTileKey(request.id.zoom, request.id.x, request.id.y);
     this.decoding.add(key);
     const pixels = await readPacked(new Blob([request.data]));
     if (this.decoding.delete(key)) {
       this.tiles.set(key, {
-        u: unpackChannel('wind', 'u', pixels.data),
-        v: unpackChannel('wind', 'v', pixels.data),
+        u: unpackChannel(this.channels, 'u', pixels.data),
+        v: unpackChannel(this.channels, 'v', pixels.data),
       });
     }
     return {message: {kind: 'lr', id: request.id}};
@@ -119,7 +127,7 @@ class WindLoader {
 
   unload(request: UnloadRequest): void {
     for (const id of request.ids) {
-      const key = tileKey(id.zoom, id.x, id.y);
+      const key = this.getTileKey(id.zoom, id.x, id.y);
       this.decoding.delete(key);
       this.tiles.delete(key);
     }
@@ -130,10 +138,10 @@ class WindLoader {
     const level = Math.max(0, Math.floor(viewport.zoom));
     const spacingPx = style === 'barbs' ? BARB_SPACING_PX : STREAMLINE_SPACING_PX;
     // Cells divide the world evenly so the lattice lines up across the antimeridian.
-    const cells = Math.max(1, Math.round(TILE_SIZE * 2 ** level / spacingPx));
+    const cells = Math.max(1, Math.round(this.tileSize * 2 ** level / spacingPx));
     const spacing = 2 / cells;
     // Mercator units per pixel
-    const pixel = 2 / (TILE_SIZE * 2 ** viewport.zoom);
+    const pixel = 2 / (this.tileSize * 2 ** viewport.zoom);
     const zooms = this.zooms();
 
     let xLo = viewport.lng[0] / Math.PI;
@@ -311,8 +319,9 @@ class WindLoader {
 
   // Interpolates u and v at a Mercator point from the most detailed tiles that cover it.
   private sample(x: number, y: number, zooms: number[], out: [number, number]): boolean {
+    const size = this.tileSize;
     for (const zoom of zooms) {
-      const worldPx = TILE_SIZE * 2 ** zoom;
+      const worldPx = size * 2 ** zoom;
       // Pixel centers sit half a pixel in, see Weather.kt#TilePixels.
       const px = (x + 1) / 2 * worldPx - 0.5;
       const py = (1 - y) / 2 * worldPx - 0.5;
@@ -329,13 +338,12 @@ class WindLoader {
         const gx = (((x0 + dx) % worldPx) + worldPx) % worldPx;
         const gy = Math.min(Math.max(y0 + dy, 0), worldPx - 1);
         const tile =
-            this.tiles.get(
-                tileKey(zoom, Math.floor(gx / TILE_SIZE), Math.floor(gy / TILE_SIZE)));
+            this.tiles.get(this.getTileKey(zoom, Math.floor(gx / size), Math.floor(gy / size)));
         if (!tile) {
           covered = false;
           break;
         }
-        const i = (gy % TILE_SIZE) * TILE_SIZE + gx % TILE_SIZE;
+        const i = (gy % size) * size + gx % size;
         const weight = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty);
         u += weight * tile.u[i];
         v += weight * tile.v[i];
@@ -353,14 +361,14 @@ class WindLoader {
   private zooms(): number[] {
     const zooms = new Set<number>();
     for (const key of this.tiles.keys()) {
-      zooms.add(Math.floor(key / (1 << 2 * MAX_ZOOM)));
+      zooms.add(Math.floor(key / (1 << 2 * this.maxZoom)));
     }
     return [...zooms].sort((a, b) => b - a);
   }
-}
 
-function tileKey(zoom: number, x: number, y: number): number {
-  return (zoom << 2 * MAX_ZOOM) | (y << MAX_ZOOM) | x;
+  private getTileKey(zoom: number, x: number, y: number): number {
+    return (zoom << 2 * this.maxZoom) | (y << this.maxZoom) | x;
+  }
 }
 
 function latToMercatorY(lat: number): number {
@@ -390,8 +398,8 @@ function inCone(x: number, y: number, cone: Viewport['cone']): boolean {
   return dot >= cone.cosThetaT;
 }
 
-serveClients<undefined, Request, Response>(() => {
-  const loader = new WindLoader();
+serveClients<Initialize, Request, Response>(init => {
+  const loader = new WindLoader(init.channels, init.maxZoom, init.tileSize);
   return request => {
     if (request.kind === 'lr') {
       return loader.load(request);

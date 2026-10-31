@@ -10,7 +10,8 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { PoolClient, sharedPool } from '../workers/client_pool';
-import { Request as LoaderRequest, Response as LoaderResponse, TraceResponse, Viewport, WindStyle } from '../workers/wind_loader';
+import { Channel } from '../workers/weather';
+import { Initialize as LoaderInitialize, Request as LoaderRequest, Response as LoaderResponse, TraceResponse, Viewport, WindStyle } from '../workers/wind_loader';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 
 /**
@@ -23,7 +24,7 @@ export class WindVectorLayer extends Layer {
   private fetching: boolean;
   // Set once the fetcher has started on a viewport, because until then nothing is loading either
   private started: boolean;
-  private readonly loader: PoolClient<undefined, LoaderRequest, LoaderResponse>;
+  private readonly loader: PoolClient<LoaderInitialize, LoaderRequest, LoaderResponse>;
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private style: WindStyle|undefined;
   private tracing: Task<LoaderResponse>|undefined;
@@ -37,7 +38,11 @@ export class WindVectorLayer extends Layer {
       url: string,
       private readonly z: number,
       maxZoom: number,
+      // in pixels on a side
+      tileSize: number,
       private readonly renderer: Renderer,
+      // the archive's, which hold u and v
+      channels: Channel[],
   ) {
     super(copyrights);
     this.buffer = this.renderer.createDataBuffer(0);
@@ -50,9 +55,9 @@ export class WindVectorLayer extends Layer {
     this.started = false;
     // One worker, so that a trace sees every tile
     this.loader =
-        sharedPool<undefined, LoaderRequest, LoaderResponse>(
+        sharedPool<LoaderInitialize, LoaderRequest, LoaderResponse>(
             new URL('wind_loader_worker.js', import.meta.url).href, /* count= */ 1)
-            .connect(undefined);
+            .connect({channels, maxZoom, tileSize});
     this.registerDisposer(() => {
       this.fetcher.dispose();
       this.loader.dispose();

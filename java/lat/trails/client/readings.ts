@@ -1,6 +1,7 @@
 import {
   byPeakWindow,
   byWindLevel,
+  Channel,
   PEAK_WINDOWS,
   relativeHumidity,
   SNOW_TYPES,
@@ -95,8 +96,8 @@ const READERS = {
 } satisfies Record<WeatherView, (values: Values) => string>;
 
 /** Describes what a weather view shows at a pixel from the pixel's 24 packed bits. */
-export function readWeather(view: WeatherView, packed: number): string {
-  return READERS[view](unpackPixel(WEATHER_VIEWS[view].layer, packed));
+export function readWeather(view: WeatherView, channels: Channel[], packed: number): string {
+  return READERS[view](unpackPixel(channels, packed));
 }
 
 /** Describes the snow depth or water at a SNODAS pixel from its 24 packed bits. */

@@ -4,13 +4,14 @@ import { TileId } from '../common/types';
 
 import { Reply, serveClients } from './client_pool';
 import { readTerrarium, terrariumMeters } from './terrarium';
-import { colorWeather, readPacked, SNOW_DEPTH_CM, unpackSnodas, WeatherView } from './weather';
+import { Channel, colorWeather, readPacked, SNOW_DEPTH_CM, unpackSnodas, WeatherView } from './weather';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height,
 // 'hillshade' fades a gray hillshade by its shade, the snow kinds color one of the values in a
-// SNODAS tile, and the weather kinds color an ECMWF tile.
+// SNODAS tile, and a weather view colors an ECMWF tile packed in its archive's channels.
 export type Decode =
-    'elevation'|'hillshade'|'image'|'snow_depth'|'snow_water'|`weather/${WeatherView}`;
+    'elevation'|'hillshade'|'image'|'snow_depth'|'snow_water'
+        |{view: WeatherView; channels: Channel[]};
 
 export interface Initialize {
   decode: Decode;
@@ -72,7 +73,7 @@ class RasterLoader {
       if (this.decode === 'snow_depth' || this.decode === 'snow_water') {
         colorSnow(pixels.data, this.decode === 'snow_depth');
       } else {
-        colorWeather(this.decode.substring('weather/'.length) as WeatherView, pixels.data);
+        colorWeather(this.decode.view, this.decode.channels, pixels.data);
       }
       bitmap = await createImageBitmap(pixels);
     }
