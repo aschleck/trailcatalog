@@ -16,7 +16,13 @@ private val client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect
 
 /** Fetches a URL, retrying on 429s, 5xxs, and dropped connections. */
 fun fetchBytes(url: String): ByteArray {
-  return send(HttpRequest.newBuilder(URI.create(url)).build(), 200)
+  return checkStatus(send(HttpRequest.newBuilder(URI.create(url)).build()), 200)
+}
+
+/** Fetches a URL like fetchBytes, or returns null when it answers 404. */
+fun fetchBytesIfFound(url: String): ByteArray? {
+  val response = send(HttpRequest.newBuilder(URI.create(url)).build())
+  return if (response.statusCode() == 404) null else checkStatus(response, 200)
 }
 
 /** Fetches length bytes of a URL starting at offset, retrying like fetchBytes. */
@@ -25,12 +31,12 @@ fun fetchRange(url: String, offset: Long, length: Long): ByteArray {
       HttpRequest.newBuilder(URI.create(url))
           .header("Range", "bytes=${offset}-${offset + length - 1}")
           .build()
-  val bytes = send(request, 206)
+  val bytes = checkStatus(send(request), 206)
   check(bytes.size.toLong() == length) { "${url} sent ${bytes.size} bytes, not ${length}" }
   return bytes
 }
 
-private fun send(request: HttpRequest, expected: Int): ByteArray {
+private fun send(request: HttpRequest): HttpResponse<ByteArray> {
   val url = request.uri()
   var attempt = 0
   while (true) {
@@ -39,8 +45,7 @@ private fun send(request: HttpRequest, expected: Int): ByteArray {
       if (response.statusCode() == 429 || response.statusCode() >= 500) {
         throw IOException("${url} answered ${response.statusCode()}")
       }
-      check(response.statusCode() == expected) { "${url} answered ${response.statusCode()}" }
-      return response.body()
+      return response
     } catch (e: IOException) {
       attempt += 1
       if (attempt == FETCH_ATTEMPTS) {
@@ -50,4 +55,9 @@ private fun send(request: HttpRequest, expected: Int): ByteArray {
       Thread.sleep(10_000L shl (attempt - 1))
     }
   }
+}
+
+private fun checkStatus(response: HttpResponse<ByteArray>, expected: Int): ByteArray {
+  check(response.statusCode() == expected) { "${response.uri()} answered ${response.statusCode()}" }
+  return response.body()
 }

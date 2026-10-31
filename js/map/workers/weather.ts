@@ -17,6 +17,12 @@ export interface EcmwfFormat {
   channels: Channel[];
 }
 
+// The json metadata of a SNODAS day's archive, whose channels are depth in cm and water in mm, see
+// Snodas.kt
+export interface SnodasFormat {
+  channels: Channel[];
+}
+
 // The json metadata of every archive in a run, see WeatherLayers.kt#formatsJson
 export interface EcmwfRunFormat {
   // the last forecast hour the run tiles
@@ -214,14 +220,6 @@ export function unpackChannel(
 
 // Keep in sync with Snodas.kt#pack. Each pixel's 24 RGB bits hold snow depth in cm in the high 12
 // bits and snow water equivalent in mm in the low 12 bits. A depth of 4095 means no data.
-const SNODAS_NO_DATA = 4095;
-
-/** Unpacks a SNODAS pixel's 24 packed bits, or returns undefined where it has no data. */
-export function unpackSnodas(packed: number): {depthCm: number; waterMm: number}|undefined {
-  const depthCm = packed >>> 12;
-  return depthCm === SNODAS_NO_DATA ? undefined : {depthCm, waterMm: packed & 0xFFF};
-}
-
 // Decodes without color management or alpha premultiplication, because either would change the
 // pixel values and corrupt the data.
 export async function readPacked(blob: Blob): Promise<ImageData> {

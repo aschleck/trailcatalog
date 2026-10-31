@@ -34,11 +34,10 @@ import { Renderer } from 'js/map/rendering/renderer';
 import { Elevations } from 'js/map/workers/elevations';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { Style } from 'js/map/workers/mbtile_loader';
-import { Decode } from 'js/map/workers/raster_loader';
 import { Stream } from 'js/map/workers/s2_streams';
 import { Bands, Channel, Search } from 'js/map/workers/stac_loader';
 import { BASE_ZOOM as TERRARIUM_BASE_ZOOM, TILE_URL as TERRARIUM_TILE_URL } from 'js/map/workers/terrarium';
-import { EcmwfFormat, EcmwfRunFormat, PEAK_WINDOWS, WEATHER_VIEWS, WeatherView, WIND_LEVELS } from 'js/map/workers/weather';
+import { EcmwfFormat, EcmwfRunFormat, PEAK_WINDOWS, SnodasFormat, WEATHER_VIEWS, WeatherView, WIND_LEVELS } from 'js/map/workers/weather';
 import { WindStyle } from 'js/map/workers/wind_loader';
 import { Z_BASE_ELEVATION, Z_BASE_LAND_COVER, Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import { getUnitSystem, UnitSystem } from 'js/units/formatters';
@@ -278,8 +277,10 @@ export class LayerCatalog extends Disposable {
   // The time the weather layers forecast for in ms, or undefined to follow the clock
   private time: number|undefined;
   private readonly sky: SkyLayer;
-  // The newest SNODAS day we know is tiled
+  // The newest SNODAS day we know is tiled, or '' until we find one
   private snodasDay: string;
+  // How that day's archive packs its pixels
+  private snodasFormat: SnodasFormat;
   // The newest FAA cycle in effect that we know is tiled, for each product
   private readonly faaCycles: Record<FaaProduct, string>;
   private readonly conditionsRefresh: Timer;
@@ -302,7 +303,8 @@ export class LayerCatalog extends Disposable {
     this.ecmwfRunFormat = undefined;
     this.time = undefined;
     this.sky = new SkyLayer(camera, elevationSampler, renderer);
-    this.snodasDay = utcDay(0);
+    this.snodasDay = '';
+    this.snodasFormat = {channels: []};
     this.faaCycles = {
       sectional: faaCycle(0),
       terminal: faaCycle(0),
@@ -824,8 +826,8 @@ export class LayerCatalog extends Disposable {
                 // About 11,500
                 getPointStreams(/* zoom= */ 6, /* indexBottom= */ 6),
                 locations),
-            this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'snow_depth'),
-            this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
+            this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'depth'),
+            this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'water'),
           ],
         },
         this.newCollectionEntry(
@@ -1342,19 +1344,21 @@ export class LayerCatalog extends Disposable {
     };
   }
 
-  private newSnowEntry(id: string, name: string, decode: Decode): LayerEntry {
+  // A new layer for each day, because each day's archive carries its own channels
+  private newSnowEntry(id: string, name: string, snow: 'depth'|'water'): LayerEntry {
     const layer =
-        new RasterTileLayer(
-            [SNODAS_COPYRIGHT],
-            snodasUrl(this.snodasDay),
-            /* tint= */ 0xFFFFFFFF as RgbaU32,
-            /* z= */ Z_OVERLAY_TERRAIN,
-            /* extraZoom= */ 0,
-            /* minZoom= */ 0,
-            // See Snodas.kt#MAX_ZOOM
-            /* maxZoom= */ 7,
-            this.renderer,
-            decode);
+        new SwitchLayer(this.snodasDay, day =>
+            new RasterTileLayer(
+                [SNODAS_COPYRIGHT],
+                snodasUrl(day),
+                /* tint= */ 0xFFFFFFFF as RgbaU32,
+                /* z= */ Z_OVERLAY_TERRAIN,
+                /* extraZoom= */ 0,
+                /* minZoom= */ 0,
+                // See Snodas.kt#MAX_ZOOM
+                /* maxZoom= */ 7,
+                this.renderer,
+                {snow, channels: this.snodasFormat.channels}));
     return {
       kind: 'layer',
       id,
@@ -1366,12 +1370,14 @@ export class LayerCatalog extends Disposable {
       readout: {
         name: `${name} (SNODAS)`,
         read: point => {
-          const packed = layer.packedAt(point);
-          return packed !== undefined ? readSnodas(decode === 'snow_depth', packed) : undefined;
+          const packed = layer.current.packedAt(point);
+          return packed !== undefined
+              ? readSnodas(snow, this.snodasFormat.channels, packed)
+              : undefined;
         },
       },
       configure: () => {
-        layer.setUrl(snodasUrl(this.snodasDay));
+        layer.show(this.snodasDay);
       },
     };
   }
@@ -1390,15 +1396,18 @@ export class LayerCatalog extends Disposable {
     }
   }
 
-  // Points the snow layers at the newest tiled day. We check for the 0/0/0 tile because every
-  // archive has it, see Snodas.kt.
+  // Points the snow layers at the newest tiled day. Its metadata says both that the day is there
+  // and how it packs its pixels. Days tiled before the importer wrote channels draw nothing.
   private showLatestSnow(): void {
     findFirstLoaded(
         Array.from({length: SNODAS_LOOKBACK_DAYS + 1}, (_, i) => utcDay(-i)),
-        day => `${SNODAS_URL}${day}/0/0/0.png`,
-        day => {
-          this.snodasDay = day;
-          this.configureEntries(id => id === SNOW_DEPTH_ID || id === SNOW_WATER_ID);
+        day => `${SNODAS_URL}${day}/metadata`,
+        (day, response) => {
+          response.json().then((metadata: Partial<SnodasFormat>) => {
+            this.snodasDay = day;
+            this.snodasFormat = {channels: metadata.channels ?? []};
+            this.configureEntries(id => id === SNOW_DEPTH_ID || id === SNOW_WATER_ID);
+          }, () => {});
         });
   }
 

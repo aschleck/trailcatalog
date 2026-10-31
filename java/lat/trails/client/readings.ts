@@ -7,7 +7,6 @@ import {
   SNOW_TYPES,
   thunders,
   unpackPixel,
-  unpackSnodas,
   Values,
   WEATHER_VIEWS,
   WeatherView,
@@ -101,12 +100,12 @@ export function readWeather(view: WeatherView, channels: Channel[], packed: numb
 }
 
 /** Describes the snow depth or water at a SNODAS pixel from its 24 packed bits. */
-export function readSnodas(depth: boolean, packed: number): string {
-  const snow = unpackSnodas(packed);
-  if (!snow) {
+export function readSnodas(snow: 'depth'|'water', channels: Channel[], packed: number): string {
+  const value = unpackPixel(channels, packed)[snow];
+  if (value === undefined || Number.isNaN(value)) {
     return NO_DATA;
   }
-  return depth ? snowDepth(snow.depthCm) : water(snow.waterMm);
+  return snow === 'depth' ? snowDepth(value) : water(value);
 }
 
 /** Describes the height of a terrarium pixel from its 24 packed bits. */

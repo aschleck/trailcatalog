@@ -4,13 +4,14 @@ import { TileId } from '../common/types';
 
 import { Reply, serveClients } from './client_pool';
 import { readTerrarium, terrariumMeters } from './terrarium';
-import { Channel, colorWeather, readPacked, SNOW_DEPTH_CM, unpackSnodas, WeatherView } from './weather';
+import { Channel, colorWeather, readPacked, SNOW_DEPTH_CM, unpackChannel, WeatherView } from './weather';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height,
-// 'hillshade' fades a gray hillshade by its shade, the snow kinds color one of the values in a
-// SNODAS tile, and a weather view colors an ECMWF tile packed in its archive's channels.
+// 'hillshade' fades a gray hillshade by its shade, snow colors one channel of a SNODAS tile, and a
+// weather view colors an ECMWF tile. Both are packed in their archive's channels.
 export type Decode =
-    'elevation'|'hillshade'|'image'|'snow_depth'|'snow_water'
+    'elevation'|'hillshade'|'image'
+        |{snow: 'depth'|'water'; channels: Channel[]}
         |{view: WeatherView; channels: Channel[]};
 
 export interface Initialize {
@@ -70,8 +71,8 @@ class RasterLoader {
     } else {
       const pixels = await readPacked(blob);
       packed = pixels.data.slice();
-      if (this.decode === 'snow_depth' || this.decode === 'snow_water') {
-        colorSnow(pixels.data, this.decode === 'snow_depth');
+      if ('snow' in this.decode) {
+        colorSnow(pixels.data, this.decode.snow, this.decode.channels);
       } else {
         colorWeather(this.decode.view, this.decode.channels, pixels.data);
       }
@@ -99,13 +100,14 @@ function alphaFromShade(rgba: Uint8ClampedArray): void {
   }
 }
 
-function colorSnow(rgba: Uint8ClampedArray, depth: boolean): void {
-  const stops = depth ? SNOW_DEPTH_CM_STOPS : SNOW_WATER_MM_STOPS;
+function colorSnow(rgba: Uint8ClampedArray, snow: 'depth'|'water', channels: Channel[]): void {
+  const stops = snow === 'depth' ? SNOW_DEPTH_CM_STOPS : SNOW_WATER_MM_STOPS;
+  const values = unpackChannel(channels, snow, rgba);
   for (let i = 0; i < rgba.length; i += 4) {
-    const snow = unpackSnodas((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]);
-    const value = depth ? snow?.depthCm : snow?.waterMm;
+    // NaN where there's no data, which no stop is at or below
+    const value = values[i / 4];
     let band = -1;
-    while (value !== undefined && band + 1 < stops.length && stops[band + 1] <= value) {
+    while (band + 1 < stops.length && stops[band + 1] <= value) {
       band += 1;
     }
     if (band < 0) {

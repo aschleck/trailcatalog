@@ -1,5 +1,6 @@
 package lat.trails.importers
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -14,7 +15,6 @@ import javax.imageio.ImageIO
 import kotlin.math.PI
 import kotlin.math.atan
 import kotlin.math.floor
-import kotlin.math.roundToInt
 import kotlin.math.sinh
 import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.FlagSpec
@@ -44,12 +44,10 @@ private const val WATER_PRODUCT = "1034"
 private const val MAX_ZOOM = 7
 private const val TILE_SIZE = 256
 
-// See weather.ts#unpackSnodas. Each pixel's 24 RGB bits hold snow depth in cm
-// in the high 12 bits and snow water equivalent in mm in the low 12 bits. A depth of 4095 means
-// SNODAS has no data for that pixel.
-private const val NO_DATA = 4095
-private const val MAX_DEPTH_CM = 4094
-private const val MAX_WATER_MM = 4095
+// Each pixel's 24 RGB bits hold snow depth in cm in the high 12 bits and snow water equivalent in
+// mm in the low 12 bits. See weather.ts#unpackSnodas.
+private val DEPTH_CM = Channel("depth", 12, 1.0, 0.0)
+private val WATER_MM = Channel("water", 12, 1.0, 0.0)
 
 private class Grid(
     val columns: Int,
@@ -83,13 +81,23 @@ fun main(args: Array<String>) {
       "${ARCHIVE_URL}/${day.year}/${"%02d".format(day.monthValue)}_${month}" +
           "/SNODAS_${day.format(DateTimeFormatter.BASIC_ISO_DATE)}.tar"
   logger.info("Fetching {}", url)
-  val files = readTar(fetchBytes(url))
+  // Most hourly runs come before NSIDC posts the day, and snodas.sh takes the missing output to
+  // mean there is nothing to convert.
+  val tar = fetchBytesIfFound(url)
+  if (tar == null) {
+    logger.info("{} isn't posted yet", day)
+    return
+  }
+  val files = readTar(tar)
   val depth = readGrid(files, DEPTH_PRODUCT)
   val water = readGrid(files, WATER_PRODUCT)
   check(depth.columns == water.columns && depth.rows == water.rows) { "Grids differ" }
 
   MbtilesWriter(output.value).use { mbtiles ->
     mbtiles.setMetadata("name", "SNODAS ${day}")
+    // pmtiles convert merges the json row into the archive's metadata
+    val channels = listOf(DEPTH_CM, WATER_MM).map(Channel::toMap)
+    mbtiles.setMetadata("json", ObjectMapper().writeValueAsString(mapOf("channels" to channels)))
     // PNG because the pixels are data, and lossy compression would corrupt them.
     // TODO(april): write lossless WebP instead, which is 30% smaller. The encoder has natives for
     // every platform we build on, but raster_loader.ts#colorSnow and SNODAS_URL expect PNG.
@@ -124,10 +132,11 @@ fun main(args: Array<String>) {
   }
 }
 
+// Both in mm, negative where SNODAS has no data
 private fun pack(depthMm: Int, waterMm: Int): Int {
-  val depthCm = if (depthMm < 0) NO_DATA else (depthMm / 10.0).roundToInt().coerceAtMost(MAX_DEPTH_CM)
-  val water = waterMm.coerceIn(0, MAX_WATER_MM)
-  return (depthCm shl 12) or water
+  val depthCm = if (depthMm < 0) Double.NaN else depthMm / 10.0
+  val water = if (waterMm < 0) Double.NaN else waterMm.toDouble()
+  return (DEPTH_CM.pack(depthCm) shl WATER_MM.bits) or WATER_MM.pack(water)
 }
 
 private fun tileX(lng: Double, z: Int): Int = floor((lng + 180) / 360 * (1 shl z)).toInt()
