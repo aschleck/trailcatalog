@@ -18,3 +18,11 @@ test('continues a line that leaves and reenters at the same edge point', () => {
   expect(geometry).toEqual([5, 5, 0, 5, 5, 6]);
   expect(starts).toEqual([0]);
 });
+
+test('closes a ring through its first vertex on the tile edge once', () => {
+  const [geometry, starts] =
+      cropLine([0, 60, 5, 60, -5, 65, -5, 60], [0], EXTENT, /* loop= */ true);
+
+  expect(geometry).toEqual([0, 60, 5, 60, 0, 62.5, 0, 60]);
+  expect(starts).toEqual([0, 6]);
+});

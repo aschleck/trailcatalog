@@ -3,7 +3,7 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { TileId } from '../common/types';
 
 import { Reply, serveClients } from './client_pool';
-import { readTerrarium, terrariumMeters } from './terrarium';
+import { terrariumMeters } from './terrarium';
 import { Channel, colorWeather, readPacked, SNOW_DEPTH_CM, unpackChannel, WeatherView } from './weather';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height,
@@ -62,7 +62,7 @@ class RasterLoader {
     if (this.decode === 'image') {
       bitmap = await createImageBitmap(blob);
     } else if (this.decode === 'elevation') {
-      packed = await readTerrarium(blob);
+      packed = (await readPacked(blob)).data;
       bitmap = await colorElevation(packed);
     } else if (this.decode === 'hillshade') {
       const pixels = await readPacked(blob);

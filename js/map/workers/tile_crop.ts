@@ -13,15 +13,17 @@ export function cropLine(geometry: number[], starts: number[], extent: number, l
     let outside = true;
     let lastPushedX = undefined;
     let lastPushedY = undefined;
-    for (let i = start; i < end; i += 2) {
+    // A loop takes one more step to cross back to its first vertex.
+    for (let k = start; k < (loop ? end + 2 : end); k += 2) {
+      const i = k < end ? k : start;
       const px = geometry[i + 0];
       const py = geometry[i + 1];
 
       if ((px >= 0 && px < extent) && (py >= 0 && py < extent)) {
         const runStart = cGeometry.length;
-        if (i > start && outside) {
-          const lx = geometry[i - 2 + 0];
-          const ly = geometry[i - 2 + 1];
+        if (k > start && outside) {
+          const lx = geometry[k - 2 + 0];
+          const ly = geometry[k - 2 + 1];
           checkState(intersectFiniteTile(lx, ly, px, py, extent));
           const ix = SEGMENT_HIT[1];
           const iy = SEGMENT_HIT[2];
@@ -44,9 +46,9 @@ export function cropLine(geometry: number[], starts: number[], extent: number, l
         }
         outside = false;
       } else {
-        if (i > start) {
-          const lx = geometry[i - 2 + 0];
-          const ly = geometry[i - 2 + 1];
+        if (k > start) {
+          const lx = geometry[k - 2 + 0];
+          const ly = geometry[k - 2 + 1];
 
           if (outside) {
             const crossings = intersectInfiniteTile(lx, ly, px, py, extent);
@@ -82,71 +84,6 @@ export function cropLine(geometry: number[], starts: number[], extent: number, l
         }
 
         outside = true;
-      }
-    }
-
-    // Also check for intersections on the way back to the start point
-    if (loop) {
-      const px = geometry[start + 0];
-      const py = geometry[start + 1];
-
-      if ((px >= 0 && px < extent) && (py >= 0 && py < extent)) {
-        if (outside) {
-          const lx = geometry[end - 2 + 0];
-          const ly = geometry[end - 2 + 1];
-          checkState(intersectFiniteTile(lx, ly, px, py, extent));
-          const ix = SEGMENT_HIT[1];
-          const iy = SEGMENT_HIT[2];
-          const runStart = cGeometry.length;
-          if (ix !== lastPushedX || iy !== lastPushedY) {
-            cGeometry.push(ix, iy);
-          }
-          if (px !== lastPushedX || py !== lastPushedY) {
-            cGeometry.push(px, py);
-          }
-          if (cGeometry.length > runStart) {
-            cStarts.push(runStart);
-          }
-        } else {
-          if (px !== lastPushedX || py !== lastPushedY) {
-            cGeometry.push(px, py);
-          }
-        }
-      } else {
-        const lx = geometry[end - 2 + 0];
-        const ly = geometry[end - 2 + 1];
-
-        if (outside) {
-          const crossings = intersectInfiniteTile(lx, ly, px, py, extent);
-          let started = false;
-          for (let j = 0; j < crossings; ++j) {
-            const ix = TILE_CROSSINGS[3 * j + 1];
-            const iy = TILE_CROSSINGS[3 * j + 2];
-            if (!(0 <= ix && ix <= extent && 0 <= iy && iy <= extent)) {
-              continue;
-            }
-
-            if (ix !== lastPushedX || iy !== lastPushedY) {
-              if (!started) {
-                cStarts.push(cGeometry.length);
-                started = true;
-              }
-
-              cGeometry.push(ix, iy);
-              lastPushedX = ix;
-              lastPushedY = iy;
-            }
-          }
-        } else {
-          checkState(intersectFiniteTile(lx, ly, px, py, extent));
-          const ix = SEGMENT_HIT[1];
-          const iy = SEGMENT_HIT[2];
-          if (ix !== lastPushedX || iy !== lastPushedY) {
-            cGeometry.push(ix, iy);
-            lastPushedX = undefined;
-            lastPushedY = undefined;
-          }
-        }
       }
     }
   }

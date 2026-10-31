@@ -114,6 +114,12 @@ class SimpleS2Test {
     )
   }
 
+  @Test
+  fun testCoverReadsAnInvertedIntervalAsCrossingTheAntimeridian() {
+    assertThat(cover(0.6, 3.10, 0.62, 3.18 - TWO_PI))
+        .containsExactlyElementsIn(cover(0.6, 3.10, 0.62, 3.18))
+  }
+
   /** Panning a whole world east or west lands on the same place, so it must cover the same cells. */
   @Test
   fun testCoverIgnoresWholeWorldShifts() {

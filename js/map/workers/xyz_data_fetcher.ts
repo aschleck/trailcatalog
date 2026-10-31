@@ -1,7 +1,6 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
-import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_throttler';
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
@@ -210,53 +209,28 @@ class XyzDataFetcher {
     }
 
     const unload = [];
-    for (const id of this.pending) {
-      if (used.has(id)) {
-        continue;
-      }
-
-      let useful = false;
-      for (const missing of this.inFlight.keys()) {
-        if (tilesIntersect(id, missing)) {
-          useful = true;
-          break;
+    const intersectsAny = (id: TileId, others: Iterable<TileId>) => {
+      for (const other of others) {
+        if (tilesIntersect(id, other)) {
+          return true;
         }
       }
-      if (useful) {
-        continue;
+      return false;
+    };
+    for (const id of this.pending) {
+      if (!used.has(id) && !intersectsAny(id, this.inFlight.keys())) {
+        this.pending.delete(id);
+        unload.push(id);
       }
-
-      this.pending.delete(id);
-      unload.push(id);
     }
 
     for (const id of this.loaded) {
-      if (used.has(id)) {
-        continue;
+      if (!used.has(id)
+          && !intersectsAny(id, this.inFlight.keys())
+          && !intersectsAny(id, this.pending)) {
+        this.loaded.delete(id);
+        unload.push(id);
       }
-
-      let useful = false;
-      for (const missing of this.inFlight.keys()) {
-        if (tilesIntersect(id, missing)) {
-          useful = true;
-          break;
-        }
-      }
-      if (useful) {
-        continue;
-      }
-      for (const missing of this.pending) {
-        if (tilesIntersect(id, missing)) {
-          useful = true;
-          break;
-        }
-      }
-      if (useful) {
-        continue;
-      }
-
-      this.loaded.delete(id);
-      unload.push(id);
     }
 
     if (unload.length > 0) {
@@ -356,10 +330,8 @@ function projectViewport(viewport: Viewport): Rect {
   if (viewport.lng[1] - viewport.lng[0] >= 2 * Math.PI) {
     return {low: [-1, projected.low[1]], high: [1, projected.high[1]]};
   } else if (projected.low[0] > projected.high[0]) {
-    return {
-      low: [projected.high[0], projected.low[1]],
-      high: [projected.low[0], projected.high[1]],
-    };
+    // The viewport crosses the antimeridian, and visibleTiles wraps x past it
+    return {low: projected.low, high: [projected.high[0] + 2, projected.high[1]]};
   } else {
     return projected;
   }

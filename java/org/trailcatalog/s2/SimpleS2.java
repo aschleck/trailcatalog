@@ -144,10 +144,10 @@ public final class SimpleS2 {
   @JsMethod
   public static ArrayList<S2CellId> cover(
       double latLo, double latHi, double lngLo, double lngHi, int deepest) {
-    // Callers unpacking an S2LatLngRect give us lo/hi swapped once the span passes pi, because
-    // that's how fromPointPair stores it. See also trail_layer.ts#getCellsIn.
-    double lowLng = Math.min(lngLo, lngHi);
-    double highLng = Math.max(lngLo, lngHi);
+    // Callers unpacking an S2LatLngRect that crosses the antimeridian give us lo > hi, because
+    // that's how S1Interval stores it. See also trail_layer.ts#getCellsIn.
+    double lowLng = lngLo;
+    double highLng = lngHi < lngLo ? lngHi + 2 * Math.PI : lngHi;
     R1Interval lat = R1Interval.fromPointPair(latLo, latHi);
 
     // Shift the range into [-pi, pi] and split it where it runs off the end.

@@ -6,7 +6,7 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 
 import { S2CellToken } from '../common/types';
 
-import { serveClients } from './client_pool';
+import { serveClients, Viewport } from './client_pool';
 import { CellKey, cellKey, isInBand, Stream } from './s2_streams';
 
 // How hard the server may simplify geometry at a given zoom, as the S2 level whose cell diagonal is
@@ -23,12 +23,6 @@ export interface Initialize {
   url: string;
   // The object format the client parses, which goes in the URL so that browsers cache by it
   wireVersion: number;
-}
-
-interface Viewport {
-  lat: [number, number];
-  lng: [number, number];
-  zoom: number;
 }
 
 interface UpdateViewportRequest {

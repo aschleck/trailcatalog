@@ -47,13 +47,11 @@ const PAN_EDGE_END = 0.95;
 
 export class Camera {
   private _center: S2LatLng;
-  private _inverseWorldRadius: number;
   private _zoom: number;
 
   constructor(lat: number, lng: number, zoom: number) {
     this._center = S2LatLng.fromDegrees(lat, lng);
     this._zoom = isFinite(zoom) ? clamp(zoom, ZOOM_MIN, ZOOM_MAX) : ZOOM_MIN;
-    this._inverseWorldRadius = 1 / this.worldRadius;
   }
 
   get center(): S2LatLng {
@@ -69,7 +67,7 @@ export class Camera {
   }
 
   get inverseWorldRadius(): number {
-    return this._inverseWorldRadius;
+    return 1 / this.worldRadius;
   }
 
   get worldRadius(): number {
@@ -87,7 +85,6 @@ export class Camera {
   set(lat: number, lng: number, zoom: number): void {
     this._center = S2LatLng.fromDegrees(lat, lng);
     this._zoom = isFinite(zoom) ? clamp(zoom, ZOOM_MIN, ZOOM_MAX) : ZOOM_MIN;
-    this._inverseWorldRadius = 1 / this.worldRadius;
   }
 
   // Zoom around the cursor. Find the world point the cursor is currently
@@ -107,7 +104,6 @@ export class Camera {
     const grab = inverseProjectBlended(cursorNdc, old);
 
     this._zoom = nz;
-    this._inverseWorldRadius = 1 / this.worldRadius;
 
     // If the cursor was off the globe at the old state, the pin-solver can't
     // converge tightly (the target NDC has no real preimage), so the safety
@@ -279,16 +275,14 @@ export class Camera {
 
   viewportBounds(widthPx: number, heightPx: number): S2LatLngRect {
     const centerPixel = projectS2LatLng(this._center);
-    const dY = heightPx * this._inverseWorldRadius / 2;
+    const dY = heightPx * this.inverseWorldRadius / 2;
     const mercatorLowLat = mercYToLat(centerPixel[1] - dY);
     const mercatorHighLat = mercYToLat(centerPixel[1] + dY);
-    const dLng = Math.PI * widthPx * this._inverseWorldRadius / 2;
+    const dLng = Math.PI * widthPx * this.inverseWorldRadius / 2;
     const lngC = this._center.lngRadians();
 
     if (this.flattenFactor >= 1) {
-      return S2LatLngRect.fromPointPair(
-          S2LatLng.fromRadians(mercatorLowLat, lngC - dLng),
-          S2LatLng.fromRadians(mercatorHighLat, lngC + dLng));
+      return lngSpanRect(mercatorLowLat, mercatorHighLat, lngC - dLng, lngC + dLng);
     }
 
     // Spherical: raycast a handful of screen-perimeter points to find what
@@ -340,24 +334,32 @@ export class Camera {
       } else {
         minLat = -MERCATOR_MAX_LAT_RADIANS;
       }
-      // S2 takes lngC - pi and lngC + pi as the same point and fromPointPair would span nothing, so
-      // we widen to every longitude this way instead.
-      return S2LatLngRect.fromPointPair(
-          S2LatLng.fromRadians(Math.max(-MERCATOR_MAX_LAT_RADIANS, minLat), lngC),
-          S2LatLng.fromRadians(Math.min(MERCATOR_MAX_LAT_RADIANS, maxLat), lngC))
-          .expanded(S2LatLng.fromRadians(0, Math.PI));
+      return lngSpanRect(
+          Math.max(-MERCATOR_MAX_LAT_RADIANS, minLat),
+          Math.min(MERCATOR_MAX_LAT_RADIANS, maxLat),
+          lngC - Math.PI,
+          lngC + Math.PI);
     }
 
-    return S2LatLngRect.fromPointPair(
-        S2LatLng.fromRadians(
-            Math.max(
-                -MERCATOR_MAX_LAT_RADIANS, Math.min(minLat, mercatorLowLat)),
-            lngC + Math.min(minLngOff, -dLng)),
-        S2LatLng.fromRadians(
-            Math.min(
-                MERCATOR_MAX_LAT_RADIANS, Math.max(maxLat, mercatorHighLat)),
-            lngC + Math.max(maxLngOff, dLng)));
+    return lngSpanRect(
+        Math.max(-MERCATOR_MAX_LAT_RADIANS, Math.min(minLat, mercatorLowLat)),
+        Math.min(MERCATOR_MAX_LAT_RADIANS, Math.max(maxLat, mercatorHighLat)),
+        lngC + Math.min(minLngOff, -dLng),
+        lngC + Math.max(maxLngOff, dLng));
   }
+}
+
+// fromPointPair takes the shorter way around between two longitudes, so a span of pi or more would
+// come back as the strip behind the globe. lngLo - pi and lngLo + pi are also the same point to S2,
+// which is why we widen to every longitude with expanded.
+function lngSpanRect(latLo: number, latHi: number, lngLo: number, lngHi: number): S2LatLngRect {
+  if (lngHi - lngLo >= Math.PI) {
+    return S2LatLngRect.fromPointPair(
+        S2LatLng.fromRadians(latLo, lngLo), S2LatLng.fromRadians(latHi, lngLo))
+        .expanded(S2LatLng.fromRadians(0, Math.PI));
+  }
+  return S2LatLngRect.fromPointPair(
+      S2LatLng.fromRadians(latLo, lngLo), S2LatLng.fromRadians(latHi, lngHi));
 }
 
 type Vec3 = [number, number, number];
@@ -832,20 +834,12 @@ function raycastUnitSphere(ndc: Vec2, frame: SphericalFrame): Vec3 {
 export function projectE7Deltas(source: LittleEndianView): Float64Array {
   const pointCount = source.getVarInt32();
   const projected = new Float64Array(2 * pointCount);
-  projectE7DeltasInto(source, pointCount, projected, 0);
-  return projected;
-}
-
-/** Projects a DeltaLatLngE7 polyline whose point count the caller already read to point at. */
-export function projectE7DeltasInto(
-    source: LittleEndianView, pointCount: number, into: Float64Array, at: number): void {
-  if (pointCount <= 0) {
-    return;
+  if (pointCount > 0) {
+    const lat = source.getInt32();
+    const lng = source.getInt32();
+    projectE7DeltasAfter(source, pointCount, lat, lng, projected, 0);
   }
-
-  const lat = source.getInt32();
-  const lng = source.getInt32();
-  projectE7DeltasAfter(source, pointCount, lat, lng, into, at);
+  return projected;
 }
 
 /**
@@ -901,9 +895,7 @@ function projectE7Into(latE7: number, lngE7: number, into: Float64Array, index: 
 export function projectE7Array(llE7: Int32Array): Float64Array {
   const projected = new Float64Array(llE7.length);
   for (let i = 0; i < llE7.length; i += 2) {
-    projected[i] = e7ToRadians(llE7[i + 1]) / Math.PI;
-    const y = latToMercY(e7ToRadians(llE7[i]));
-    projected[i + 1] = Number.isFinite(y) ? y : 9999 * Math.sign(y);
+    projectE7Into(llE7[i], llE7[i + 1], projected, i / 2);
   }
   return projected;
 }

@@ -249,24 +249,8 @@ class ElevationSampler {
     const [px0, py0] = [Math.floor(box[0] * world), Math.max(Math.floor(box[1] * world), 0)];
     const [px1, py1] = [Math.ceil(box[2] * world), Math.min(Math.ceil(box[3] * world), world)];
     const [width, height] = [px1 - px0, py1 - py0];
-    const heights = new Float32Array(width * height);
-    for (let ty = Math.floor(py0 / TILE_SIZE); ty * TILE_SIZE < py1; ++ty) {
-      for (let tx = Math.floor(px0 / TILE_SIZE); tx * TILE_SIZE < px1; ++tx) {
-        const tiles = 2 ** zoom;
-        const tile = await this.tileOrAncestor(zoom, ((tx % tiles) + tiles) % tiles, ty);
-        if (!tile) {
-          continue;
-        }
-        const left = Math.max(px0, tx * TILE_SIZE);
-        const right = Math.min(px1, (tx + 1) * TILE_SIZE);
-        for (let y = Math.max(py0, ty * TILE_SIZE); y < Math.min(py1, (ty + 1) * TILE_SIZE); ++y) {
-          const row = (y - ty * TILE_SIZE) * TILE_SIZE;
-          heights.set(
-              tile.subarray(row + left - tx * TILE_SIZE, row + right - tx * TILE_SIZE),
-              (y - py0) * width + left - px0);
-        }
-      }
-    }
+    // NaN where there is no tile would spread through getSunlight's shadow sweep
+    const heights = await this.pixels(zoom, px0, py0, width, height, /* fill= */ 0);
 
     const pixelMeters = 2 * Math.PI * SimpleS2.EARTH_RADIUS_METERS * Math.cos(lat) / world;
     const darkness = getSunlight(heights, width, height, pixelMeters, azimuth, altitude);
@@ -347,7 +331,7 @@ class ElevationSampler {
         continue;
       }
 
-      const meters = await this.pixels(z, x0, y0, width, height);
+      const meters = await this.pixels(z, x0, y0, width, height, /* fill= */ NaN);
       const cellOf = (x: number, y: number) => Math.floor(y - y0) * width + Math.floor(x - x0);
       const cells =
           routeOverTerrain(
@@ -369,14 +353,15 @@ class ElevationSampler {
     return undefined;
   }
 
-  // Copies a box of pixels out of the tiles at z, with NaN where there is no tile.
-  private async pixels(z: number, x0: number, y0: number, width: number, height: number):
+  // Copies a box of pixels out of the tiles at z or their ancestors, with fill where there are none.
+  private async pixels(
+      z: number, x0: number, y0: number, width: number, height: number, fill: number):
       Promise<Float32Array> {
-    const meters = new Float32Array(width * height).fill(NaN);
+    const meters = new Float32Array(width * height).fill(fill);
     const tiles = Math.pow(2, z);
     for (let ty = Math.floor(y0 / TILE_SIZE); ty * TILE_SIZE < y0 + height; ++ty) {
       for (let tx = Math.floor(x0 / TILE_SIZE); tx * TILE_SIZE < x0 + width; ++tx) {
-        const tile = await this.tile(z, ((tx % tiles) + tiles) % tiles, ty);
+        const tile = await this.tileOrAncestor(z, ((tx % tiles) + tiles) % tiles, ty);
         if (!tile) {
           continue;
         }

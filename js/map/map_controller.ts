@@ -70,13 +70,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     };
   }
 
-  private area: Vec2;
   readonly camera: Camera;
   private readonly dialog: DialogService;
   private lastCameraArgs: LatLngRect|LatLngZoom|undefined;
   private readonly canvas: HTMLCanvasElement;
   private readonly dataChangedDebouncer: Debouncer;
-  private readonly idleDebouncer: Debouncer;
   private readonly wheelDebouncer: Debouncer;
   readonly renderer: Renderer;
 
@@ -95,22 +93,12 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     super(response);
 
     // We defer setting real coordinates until after we check our size below
-    this.area = [-1, -1];
     this.camera = new Camera(0, 0, -1);
     this.dialog = response.deps.services.dialog;
     this.lastCameraArgs = response.args.camera;
     this.canvas = checkExists(this.root.querySelector('canvas')) as HTMLCanvasElement;
     this.dataChangedDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.trigger(DATA_CHANGED, {});
-    });
-    this.idleDebouncer = new Debouncer(/* delayMs= */ 100, () => {
-      if (!this.isIdle) {
-        // It's okay to return here because we know that we'll get another idleDebouncer when idle()
-        // is called by the same interpreter that set us busy.
-        return;
-      }
-
-      this.idle();
     });
     this.wheelDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       // Yikes! We need to force idle so we re-render even though another pointer thing may have set
@@ -438,14 +426,8 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     } else {
       deltaPx = e.deltaY;
     }
-    this.camera.linearZoom(
-        -0.01 * deltaPx,
-        [e.pageX - this.screenArea.left, e.pageY - this.screenArea.top],
-        this.screenArea.width,
-        this.screenArea.height);
-    this.requestFrame();
+    this.zoom(2 ** (-0.01 * deltaPx), e.pageX, e.pageY);
     this.wheelDebouncer.trigger();
-    this.trigger(ZOOMED, {});
   }
 
   idle(): void {
@@ -499,14 +481,14 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.renderer.clear();
 
     const planner = new Planner();
-    const projection = this.camera.screenProjection(this.area[0], this.area[1]);
+    const projection = this.camera.screenProjection(this.screenArea.width, this.screenArea.height);
     for (const layer of this.layers) {
       layer.render(planner, this.camera.zoom, projection);
     }
 
     const mvpMatrix = this.camera.sphericalMvp(this.screenArea.height, this.screenArea.width);
     planner.render(
-      this.area,
+      [this.screenArea.width, this.screenArea.height],
       this.camera.centerPixel,
       this.camera.flattenFactor,
       mvpMatrix,
@@ -530,7 +512,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.canvas.height = height * DPI;
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
-    this.area = [width, height];
     this.renderer.resize([width * DPI, height * DPI]);
     this.idle();
   }

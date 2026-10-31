@@ -218,8 +218,6 @@ export function unpackChannel(
   return values;
 }
 
-// Keep in sync with Snodas.kt#pack. Each pixel's 24 RGB bits hold snow depth in cm in the high 12
-// bits and snow water equivalent in mm in the low 12 bits. A depth of 4095 means no data.
 // Decodes without color management or alpha premultiplication, because either would change the
 // pixel values and corrupt the data.
 export async function readPacked(blob: Blob): Promise<ImageData> {

@@ -427,10 +427,14 @@ class StacLoader {
   private async refresh(): Promise<void> {
     const request = this.lastRequest;
     const generation = this.generation;
+    const {lat, lng} = request.viewport;
+    const low = S2LatLng.fromRadians(lat[0], lng[0]);
+    // fromPointPair takes -pi and pi as the same point, so every longitude would span none.
     const viewport =
-        S2LatLngRect.fromPointPair(
-            S2LatLng.fromRadians(request.viewport.lat[0], request.viewport.lng[0]),
-            S2LatLng.fromRadians(request.viewport.lat[1], request.viewport.lng[1]));
+        lng[1] - lng[0] >= 2 * Math.PI
+            ? S2LatLngRect.fromPointPair(low, S2LatLng.fromRadians(lat[1], lng[0]))
+                .expanded(S2LatLng.fromRadians(0, Math.PI))
+            : S2LatLngRect.fromPointPair(low, S2LatLng.fromRadians(lat[1], lng[1]));
 
     if (!this.lastQuery.contains(viewport)) {
       this.setFetching(true);
@@ -448,27 +452,23 @@ class StacLoader {
       viewport: S2LatLngRect, zoom: number, generation: number): Promise<void> {
     const halfWorldSize = Math.pow(2, zoom - 1);
 
-    let projected = projectLatLngRect(viewport);
-    if (projected.low[0] > projected.high[0]) {
-      projected = {
-        low: [projected.high[0], projected.low[1]],
-        high: [projected.low[0], projected.high[1]],
-      };
-    }
+    const projected = projectLatLngRect(viewport);
+    const lowX = projected.low[0];
+    // A viewport across the antimeridian runs past x = 1 and wraps back around for its tiles
+    const highX = projected.high[0] + (lowX > projected.high[0] ? 2 : 0);
 
     // Tile x spans [x, x + 1] while tile y spans [y - 1, y], which is why the two axes round
     // differently.
-    const centerX = halfWorldSize * (projected.low[0] + projected.high[0]) / 2;
+    const centerX = halfWorldSize * (lowX + highX) / 2;
     const centerY = halfWorldSize * (projected.low[1] + projected.high[1]) / 2;
     const used = createTileHashSet();
     const wanted: WantedTile[] = [];
     for (let y = Math.ceil(halfWorldSize * projected.low[1]);
          y < halfWorldSize * projected.high[1] + 1;
          ++y) {
-      for (let x = Math.floor(halfWorldSize * projected.low[0]);
-          x < halfWorldSize * projected.high[0];
-          ++x) {
-        const id = {x: x + halfWorldSize, y: halfWorldSize - y, zoom};
+      for (let x = Math.floor(halfWorldSize * lowX); x < halfWorldSize * highX; ++x) {
+        const wrappedX = (x + 3 * halfWorldSize) % (2 * halfWorldSize) - halfWorldSize;
+        const id = {x: wrappedX + halfWorldSize, y: halfWorldSize - y, zoom};
         used.add(id);
         if (this.loaded.has(id)) {
           continue;
@@ -476,7 +476,7 @@ class StacLoader {
 
         const dX = x + 0.5 - centerX;
         const dY = y - 0.5 - centerY;
-        wanted.push({id, x, y, distance: dX * dX + dY * dY});
+        wanted.push({id, x: wrappedX, y, distance: dX * dX + dY * dY});
       }
     }
     // Nearest first, so the tiles the user is looking at land before the ones at the edge of the
@@ -1037,10 +1037,8 @@ async function drawTile(
  * Naively each of the 262144 pixels needs an inverse mercator and an llToUtm, which is about ten
  * transcendentals apiece. Nearly all of it is loop invariant: mercator takes latitude from the row
  * alone and longitude from the column alone, and in llToUtm only A = cos(lat) * (lng - lngOrigin)
- * depends on longitude, with A itself linear in the column. So each row computes the
- * latitude-dependent terms once and the inner loop is a polynomial in A.
- *
- * Keep in sync with llToUtm. A zone of LNG_LAT skips all of that for degrees.
+ * depends on longitude, with A itself linear in the column. So each row computes getUtmRow once
+ * and the inner loop is a polynomial in A. A zone of LNG_LAT skips all of that for degrees.
  */
 function paintRaster(
     out: Uint32Array,
@@ -1064,30 +1062,9 @@ function paintRaster(
     const mercY = (tileY - 1 + (TILE_SIZE - yp - 0.5) / TILE_SIZE) / halfWorldSize;
     const lat = Math.asin(Math.tanh(mercY * Math.PI));
     const latDegrees = lat * 180 / Math.PI;
-    const sinLat = Math.sin(lat);
-    const cosLat = Math.cos(lat);
-    const tanLat = Math.tan(lat);
-    const N = EARTH_RADIUS / Math.sqrt(1 - ECC_SQUARED * sinLat * sinLat);
-    const T = tanLat * tanLat;
-    const C = ECC_PRIME_SQUARED * cosLat * cosLat;
-    const M =
-        EARTH_RADIUS * (
-            M0 * lat
-                - M2 * Math.sin(2 * lat)
-                + M4 * Math.sin(4 * lat)
-                - M6 * Math.sin(6 * lat));
-
+    const {cosLat, eScale, e3, e5, nBase, nScale, n4, n6} = getUtmRow(lat);
     const aBase = cosLat * lngBase;
     const aStep = cosLat * lngStep;
-    const e3 = (1 - T + C) / 6;
-    const e5 = (5 - 18 * T + T * T + 72 * C - 58 * ECC_PRIME_SQUARED) / 120;
-    const n4 = (5 - T + 9 * C + 4 * C * C) / 24;
-    const n6 = (61 - 58 * T + T * T + 600 * C - 330 * ECC_PRIME_SQUARED) / 720;
-    // Fold the meridional arc into the row so the inner loop only handles the parts that vary
-    // with A.
-    const eScale = UTM_SCALE * N;
-    const nBase = (lat < 0 ? UTM_FALSE_NORTHING : 0) + UTM_SCALE * M;
-    const nScale = UTM_SCALE * N * tanLat;
     const row = yp * TILE_SIZE;
 
     for (let xp = 0; xp < TILE_SIZE; ++xp) {
@@ -1496,29 +1473,39 @@ function llToUtm(lat: number, lng: number, zone: number): [number, number] {
   //+3 puts origin in middle of zone
   const longitudeOrigin = ((zone - 1) * 6 - 180 + 3) / 180 * Math.PI;
 
-  const N = EARTH_RADIUS / Math.sqrt(1 - ECC_SQUARED * Math.sin(lat) * Math.sin(lat));
-  const T = Math.tan(lat) * Math.tan(lat);
-  const C = ECC_PRIME_SQUARED * Math.cos(lat) * Math.cos(lat);
-  const A = Math.cos(lat) * (lng - longitudeOrigin);
+  const {cosLat, eScale, e3, e5, nBase, nScale, n4, n6} = getUtmRow(lat);
+  const A = cosLat * (lng - longitudeOrigin);
+  const A2 = A * A;
+  return [
+    UTM_FALSE_EASTING + eScale * A * (1 + A2 * (e3 + A2 * e5)),
+    nBase + nScale * A2 * (0.5 + A2 * (n4 + A2 * n6)),
+  ];
+}
 
+// Computes the terms of llToUtm that depend only on latitude, which leave easting and northing as
+// polynomials in A = cos(lat) * (lng - lngOrigin).
+function getUtmRow(lat: number) {
+  const sinLat = Math.sin(lat);
+  const cosLat = Math.cos(lat);
+  const tanLat = Math.tan(lat);
+  const N = EARTH_RADIUS / Math.sqrt(1 - ECC_SQUARED * sinLat * sinLat);
+  const T = tanLat * tanLat;
+  const C = ECC_PRIME_SQUARED * cosLat * cosLat;
   const M =
       EARTH_RADIUS * (
           M0 * lat
               - M2 * Math.sin(2 * lat)
               + M4 * Math.sin(4 * lat)
               - M6 * Math.sin(6 * lat));
-
-  const easting =
-      UTM_FALSE_EASTING + UTM_SCALE * N * (
-          A + (1 - T + C) * A * A * A / 6
-              + (5 - 18 * T + T * T + 72 * C - 58 * ECC_PRIME_SQUARED) * A * A * A * A * A / 120);
-  const northing =
-      (lat < 0 ? UTM_FALSE_NORTHING : 0) +
-          UTM_SCALE * (
-              M + N * Math.tan(lat) * (
-                  A * A / 2
-                      + (5 - T + 9 * C + 4 * C * C) * A * A * A * A / 24
-                      + (61 - 58 * T + T * T + 600 * C - 330 * ECC_PRIME_SQUARED)
-                      * A * A * A * A * A * A / 720));
-  return [easting, northing];
+  return {
+    cosLat,
+    e3: (1 - T + C) / 6,
+    e5: (5 - 18 * T + T * T + 72 * C - 58 * ECC_PRIME_SQUARED) / 120,
+    n4: (5 - T + 9 * C + 4 * C * C) / 24,
+    n6: (61 - 58 * T + T * T + 600 * C - 330 * ECC_PRIME_SQUARED) / 720,
+    eScale: UTM_SCALE * N,
+    // Folds the meridional arc in so that only the parts that vary with A are left per pixel
+    nBase: (lat < 0 ? UTM_FALSE_NORTHING : 0) + UTM_SCALE * M,
+    nScale: UTM_SCALE * N * tanLat,
+  };
 }
