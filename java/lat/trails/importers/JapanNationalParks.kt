@@ -1,6 +1,7 @@
 package lat.trails.importers
 
 import com.google.common.geometry.S2Polygon
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import mil.nga.geopackage.GeoPackageManager
@@ -10,6 +11,8 @@ import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.parseFlags
 
 private val logger = LoggerFactory.getLogger("JapanNationalParks")
+
+private val COLLECTION_ID = UUID.fromString("4e9dde6b-0ccb-4287-adf6-c179f7a08c95")
 
 // Leaves out 区分未定, the zone of the four polygons not yet assigned one
 private val ZONES =
@@ -70,6 +73,11 @@ fun main(args: Array<String>) {
   logger.info("Converted {} zones", polygons.size)
 
   synchronized (polygons) {
-    dumpPolygons("Japanese national parks 2025", SCHEMA, polygons)
+    replace(
+        ReplacedCollection(
+            COLLECTION_ID,
+            "Japanese national parks 2025",
+            SCHEMA,
+            polygons = polygons.map { (data, polygon) -> polygonRow(data, polygon) }))
   }
 }

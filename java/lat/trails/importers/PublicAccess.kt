@@ -6,6 +6,7 @@ import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Polygon
 import com.google.common.geometry.S2RegionCoverer
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import lat.trails.common.FEATURE_COVERING_MAX_LEVEL
@@ -19,6 +20,8 @@ import org.trailcatalog.flags.parseFlags
 import org.trailcatalog.s2.polygonToCell
 
 private val logger = LoggerFactory.getLogger("PublicAccess")
+
+private val COLLECTION_ID = UUID.fromString("22b0cb56-dc1f-4546-8615-3382dc3eb44a")
 
 private data class Feature(
     val data: Map<String, String>,
@@ -165,7 +168,12 @@ fun main(args: Array<String>) {
 
   // Does this work...? Too bad I gave away Java Concurrency in Practice...
   synchronized (polygons) {
-    dumpPolygons("PAD-US 4.1", SCHEMA, deduplicate(polygons).map { it.data to it.polygon })
+    replace(
+        ReplacedCollection(
+            COLLECTION_ID,
+            "PAD-US 4.1",
+            SCHEMA,
+            polygons = deduplicate(polygons).map { polygonRow(it.data, it.polygon) }))
   }
 }
 

@@ -1,6 +1,7 @@
 package lat.trails.importers
 
 import com.google.common.geometry.S2Polygon
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import mil.nga.geopackage.GeoPackageManager
@@ -10,6 +11,8 @@ import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.parseFlags
 
 private val logger = LoggerFactory.getLogger("EuropeanDesignatedAreas")
+
+private val COLLECTION_ID = UUID.fromString("26f6d026-6b2b-47bc-b2d6-1454061b996d")
 
 // IUCN categories, which the EEA reports as notApplicable, notAssigned, or notReported otherwise
 private val IUCN_CATEGORIES = setOf("Ia", "Ib", "II", "III", "IV", "V", "VI")
@@ -105,6 +108,11 @@ fun main(args: Array<String>) {
   logger.info("Skipped {} sites without boundaries", points)
 
   synchronized (polygons) {
-    dumpPolygons("Nationally designated areas 2026", SCHEMA, polygons)
+    replace(
+        ReplacedCollection(
+            COLLECTION_ID,
+            "Nationally designated areas 2026",
+            SCHEMA,
+            polygons = polygons.map { (data, polygon) -> polygonRow(data, polygon) }))
   }
 }
