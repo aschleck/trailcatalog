@@ -43,15 +43,6 @@ import {
   splitsParts,
 } from './workers/collection_schema';
 
-export function SchemaPanel(props: {
-  schema: CollectionSchema;
-  shown: boolean;
-  styling: boolean;
-  onChanged: (schema: CollectionSchema) => void;
-}) {
-  return <SchemaEditor {...props} />;
-}
-
 type Part = (typeof PARTS)[number];
 
 // Where a part can take its value from. The key names it in the source select and in sourceCache.
@@ -106,7 +97,7 @@ interface State {
 }
 
 // Schema and style are one panel so that they edit the same draft.
-function SchemaEditor(
+export function SchemaPanel(
     {schema, shown, styling, onChanged}: {
       schema: CollectionSchema;
       shown: boolean;

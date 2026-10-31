@@ -12,7 +12,7 @@ import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controll
 import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_element';
 import { MenuHandle, MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
-import { getPointSource, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
+import { getPointSource } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
 import { MAPTERHORN_COPYRIGHT } from 'js/map/common/copyrights';
@@ -50,7 +50,6 @@ import { CollectionLayer, HeldObject } from './collection_layer';
 import { CollectionSettingsDialog, SettingsPanel } from './collection_settings_dialog';
 import { requestData } from './data';
 import {
-  ConfirmDeleteCollectionDialog,
   ConfirmDeleteDialog,
   DeleteAccountFailedDialog,
   ImportFailedDialog,
@@ -135,8 +134,10 @@ import { PointToolLayer } from './point_tool_layer';
 import {
   adoptImported,
   getFieldKind,
+  getObjectTitle,
   parseCollectionSchema,
   SavedSchema,
+  Schema,
   titleField,
   withDefaults,
 } from './schema';
@@ -694,16 +695,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
-    this.stopJoining();
     if (pick.kind === 'object') {
-      const {layer, object} = pick;
-      this.openObject(layer, object, () => {
+      const {entry, layer, object} = pick;
+      this.openObject(entry, object, () => {
         layer.selectObject(undefined);
       });
       layer.selectObject(object);
     } else if (pick.kind === 'point') {
-      const {layer, point} = pick;
-      this.openObject(layer, {kind: 'point', value: point}, () => {
+      const {entry, layer, point} = pick;
+      this.openObject(entry, {kind: 'point', value: point}, () => {
         layer.selectPoint(undefined);
       });
       layer.selectPoint(point);
@@ -716,9 +716,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     if (pick.kind === 'feature') {
       this.setHovered(on ? pick.feature.id : undefined);
     } else if (pick.kind === 'object') {
-      pick.layer.highlightObject(on ? pick.object : undefined, this.mapController);
+      pick.layer.highlightObject(on ? pick.object : undefined);
     } else if (pick.kind === 'point') {
-      pick.layer.highlightPoint(on ? pick.point : undefined, this.mapController);
+      pick.layer.highlightPoint(on ? pick.point : undefined);
     } else {
       checkExhaustive(pick);
     }
@@ -729,23 +729,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return {kind: 'feature', feature: pick.feature, schema: this.store.schema()};
     }
 
-    const data = pick.kind === 'object' ? pick.object.value.data : pick.point.data;
-    const layerSchema = pick.kind === 'object' ? pick.layer.getSchema(pick.object) : undefined;
-    const schema = pick.entry.schema ?? layerSchema;
-    // An OSM title is an element id, and the element's name is beside it in the data. An element
-    // without one is still told apart from its neighbors by its category.
-    const categories =
-        schema?.title.kind === 'osm_way'
-            ? WayCategory
-            : schema?.title.kind === 'osm_point' ? PointCategory : undefined;
-    const title =
-        schema?.title.kind === 'text'
-            ? data[schema.title.key]
-            : data.name ?? (categories && categoryName(categories, data.type));
+    const object: LayerObject =
+        pick.kind === 'object' ? pick.object : {kind: 'point', value: pick.point};
+    const schema = getPickSchema(pick.entry, object);
     return {
       kind: 'object',
-      shape: pick.kind === 'object' ? pick.object.kind : 'point',
-      title: title !== undefined ? String(title) : undefined,
+      shape: object.kind,
+      title: schema && getObjectTitle(schema, object.value.data),
       source: pick.entry.name,
     };
   }
@@ -754,7 +744,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // selects as usual.
   private clickFeature(id: string|undefined): void {
     const from = this.state.joining;
-    this.stopJoining();
     const a = from !== undefined ? this.store.get(from) : undefined;
     const b = id !== undefined ? this.store.get(id) : undefined;
     if (isRouteLine(a) && isRouteLine(b) && a.id !== b.id) {
@@ -762,8 +751,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         {id: a.id, before: snapshot(a), after: joinLines(a, b)},
         {id: b.id, before: snapshot(b), after: undefined},
       ]);
-      this.select(a.id);
-      return;
+      id = a.id;
     }
 
     this.reveal(id);
@@ -781,14 +769,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
-  private openObject(layer: Layer, object: LayerObject, unmark: () => void): void {
+  private openObject(entry: LayerEntry, object: LayerObject, unmark: () => void): void {
     this.select(undefined);
     this.inspected = {object, unmark};
     const data = object.value.data;
-    const entry =
-        layerEntries(this.state.layers.nodes).find(({entry}) => entry.layer === layer)?.entry;
-    const layerSchema = layer instanceof CollectionLayer ? layer.getSchema(object) : undefined;
-    const schema = checkExists(entry?.schema ?? layerSchema);
+    const schema = checkExists(getPickSchema(entry, object));
     const titleValue = data[schema.title.key];
     const element =
         typeof titleValue !== 'number' ? undefined
@@ -796,8 +781,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             : schema.title.kind === 'osm_way' ? {type: 'way' as const, id: titleValue}
             : undefined;
     const osm = element ? {...element, tags: 'loading' as const} : undefined;
-    const station = entry?.weatherStation ? data[entry.weatherStation.id] : undefined;
-    const reports = entry?.weatherStation ? String(data[entry.weatherStation.reports] ?? '') : '';
+    const station = entry.weatherStation ? data[entry.weatherStation.id] : undefined;
+    const reports = entry.weatherStation ? String(data[entry.weatherStation.reports] ?? '') : '';
     const weather =
         typeof station === 'string'
             ? {
@@ -816,10 +801,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           ...common,
           kind: 'line',
           lengthMeters: pathLengthMeters(path),
-          climb: undefined,
         },
       });
-      this.loadClimb(path);
+      this.lineProfiler.forObject(path);
     } else if (object.kind === 'point') {
       const ll = unprojectS2LatLng(object.value.position[0], object.value.position[1]);
       this.updateState({
@@ -854,7 +838,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   onFeatureContextMenu(e: CorgiEvent<typeof FEATURE_CONTEXT_MENU>): void {
     const {id, spot, px} = e.detail;
-    this.stopJoining();
     this.reveal(id);
     const feature = id !== undefined ? this.store.get(id) : undefined;
     const editable = feature !== undefined && !this.store.isReadOnly();
@@ -876,14 +859,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.editShape(feature.id, reverseLine);
         },
       });
-      items.push({
-        kind: 'menu_item',
-        label: 'Join with…',
-        disabled: this.store.lines().length < 2,
-        action: () => {
-          this.updateState({...this.state, joining: feature.id});
-        },
-      });
+      if (isRouteLine(feature)) {
+        items.push({
+          kind: 'menu_item',
+          label: 'Join with…',
+          disabled: !this.store.lines().some(l => isRouteLine(l) && l.id !== feature.id),
+          action: () => {
+            this.updateState({...this.state, joining: feature.id});
+          },
+        });
+      }
     }
     if (editable && isShape(feature) && spot?.kind === 'vertex' && spot.handle) {
       items.push({
@@ -1017,10 +1002,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   profileHovered(e: CorgiEvent<typeof DOM_POINTER>): void {
-    const source = checkExists(e.actionElement.data('source')).string();
-    const samples =
-        source === 'line' ? this.lineProfiler.samples : this.measureProfiler.samples;
-    if (!samples || samples.distanceMeters.length === 0) {
+    const line = checkExists(e.actionElement.data('source')).string() === 'line';
+    const samples = line ? this.lineProfiler.samples : this.measureProfiler.samples;
+    const shown = line ? this.state.lineProfile : this.state.measure.profile;
+    if (!samples || samples.distanceMeters.length === 0 || shown?.status !== 'loaded') {
       return;
     }
 
@@ -1042,25 +1027,22 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const ll =
         S2LatLng.fromDegrees(
             samples.latLngDegrees[2 * index], samples.latLngDegrees[2 * index + 1]);
-    const line = this.state.lineProfile;
-    if (source !== 'line') {
-      this.measuringLayer().setMarker(projectS2LatLng(ll));
-      this.updateState({...this.state, measure: {...this.state.measure, hovered: index}});
-    } else if (line?.status === 'loaded') {
-      this.featureLayer.setMarker(projectS2LatLng(ll));
-      this.updateState({...this.state, lineProfile: {...line, hovered: index}});
-    }
+    const hovered = {...shown, hovered: index};
+    (line ? this.featureLayer : this.measuringLayer()).setMarker(projectS2LatLng(ll));
+    this.updateState(
+        line
+            ? {...this.state, lineProfile: hovered}
+            : {...this.state, measure: {...this.state.measure, profile: hovered}});
   }
 
   profileLeft(): void {
     this.measureLayer.setMarker(undefined);
     this.terrainLayer.setMarker(undefined);
     this.featureLayer.setMarker(undefined);
-    const line = this.state.lineProfile;
     this.updateState({
       ...this.state,
-      lineProfile: line?.status === 'loaded' ? {...line, hovered: undefined} : line,
-      measure: {...this.state.measure, hovered: undefined},
+      lineProfile: withoutHover(this.state.lineProfile),
+      measure: {...this.state.measure, profile: withoutHover(this.state.measure.profile)},
     });
   }
 
@@ -1113,11 +1095,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       const ll = unprojectS2LatLng(inspected.value.position[0], inspected.value.position[1]);
       latLngDegrees.push(ll.latDegrees(), ll.lngDegrees());
     } else if (inspected?.kind === 'line') {
-      const points = inspected.value.points;
-      for (let i = 0; i < points.length; i += 2) {
-        const ll = unprojectS2LatLng(points[i], points[i + 1]);
-        latLngDegrees.push(ll.latDegrees(), ll.lngDegrees());
-      }
+      latLngDegrees.push(...toDegrees(inspected.value.points));
     }
     this.fitCamera(latLngDegrees);
   }
@@ -1188,14 +1166,22 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
+    // A folder's descendants come deepest first and then the folder itself, so each folder is
+    // empty by the time its delete lands.
     const doomed =
         feature.kind === 'folder' ? [...this.store.descendants(feature.id), feature] : [feature];
+    const count = doomed.length - 1;
+    const items = `${count} ${count === 1 ? 'item' : 'items'}`;
     const confirmed =
-        doomed.length > 1
-            ? this.dialog.display(ConfirmDeleteDialog({count: doomed.length - 1}))
+        count > 0
+            ? this.dialog.display(ConfirmDeleteDialog({
+              message: `This also deletes the ${items} inside it.`,
+              title: 'Delete this folder?',
+            }))
             : Promise.resolve();
     confirmed.then(() => {
-      this.deleteFeatures(doomed);
+      this.store.apply(doomed.map(f => ({id: f.id, before: snapshot(f), after: undefined})));
+      this.select(undefined);
     }, () => {});
   }
 
@@ -1511,11 +1497,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const parent = this.getFolderAt(this.selected);
     if (parent !== undefined) {
       feature.data.folder_id = parent;
-      this.expand([parent]);
     }
     feature.data = withDefaults(this.store.schema(), feature);
     this.store.apply([{id: feature.id, before: undefined, after: feature}]);
-    this.select(feature.id);
+    this.reveal(feature.id);
   }
 
   // Resolves undefined when the tiles could not be fetched.
@@ -1583,8 +1568,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   // Closes whatever map layer object is open, because the dialog shows one thing at a time. The
-  // profile marker goes too, because its chart leaves without a pointerleave.
+  // profile marker goes too, because its chart leaves without a pointerleave, and so does Join
+  // with, because it joins onto the line that was selected.
   private select(id: string|undefined): void {
+    this.stopJoining();
     this.selected = id;
     this.featureLayer.setSelected(id);
     this.featureLayer.setMarker(undefined);
@@ -1596,24 +1583,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.refreshFeatureList();
   }
 
-  private loadClimb(path: Float64Array): void {
-    const opened = this.inspected;
-    this.lineProfiler.forObject(
-        path,
-        () => opened === this.inspected && this.state.inspected?.kind === 'line',
-        (lineProfile, lengthMeters, climb) => {
-          const inspected = this.state.inspected;
-          if (inspected?.kind === 'line') {
-            this.updateState({
-              ...this.state,
-              inspected: {...inspected, lengthMeters, climb},
-              lineProfile,
-            });
-          }
-        });
-  }
-
-  // An inspected object's profile belongs to loadClimb, and a marker stroke has none because it
+  // An inspected object's profile belongs to openObject, and a marker stroke has none because it
   // marks up the map rather than following the ground.
   private lineProfileFor(live: EditableFeature|undefined): LineProfileState|undefined {
     if (live?.kind === 'line' && getLineKind(live.data) === 'line') {
@@ -1626,39 +1596,35 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private loadOsmTags(type: 'node'|'relation'|'way', id: number): void {
-    const opened = this.inspected;
     const loading: Future<GetOsmTagsResponse> =
-        requestData('lat.trails.DataService/GetOsmTags', {
-          type: OSM_ELEMENT_TYPES[type],
-          id: BigInt(id),
-        });
-    loading
-        .then(
-            response => response.tags,
-            e => {
-              console.error(e);
-              return 'failed' as const;
-            })
-        .then(tags => {
-          const inspected = this.state.inspected;
-          if (opened !== this.inspected || !inspected?.osm) {
-            return;
-          }
-
-          this.updateState({
-            ...this.state,
-            inspected: {...inspected, osm: {...inspected.osm, tags}},
-          });
-        });
+        requestData(
+            'lat.trails.DataService/GetOsmTags', {type: OSM_ELEMENT_TYPES[type], id: BigInt(id)});
+    this.loadInspected(loading, (inspected, response) =>
+        inspected.osm
+            ? {
+              ...inspected,
+              osm: {...inspected.osm, tags: response === 'failed' ? response : response.tags},
+            }
+            : undefined);
   }
 
   private loadAviationWeather(station: string, metar: boolean, taf: boolean): void {
-    const opened = this.inspected;
     // The cache never expires, so reopening a station would show the report it had the first
     // time. The server caches for a few minutes instead.
     invalidateCache(method => method === 'lat.trails.DataService/GetAviationWeather');
     const loading: Future<GetAviationWeatherResponse> =
         requestData('lat.trails.DataService/GetAviationWeather', {station, metar, taf});
+    this.loadInspected(loading, (inspected, report) =>
+        inspected.weather ? {...inspected, weather: {...inspected.weather, report}} : undefined);
+  }
+
+  // Applies a load's answer to the inspected object, or drops it when another record has opened
+  // since or patch has nothing to put it on.
+  private loadInspected<T>(
+      loading: Promise<T>,
+      patch: (inspected: InspectedObject, response: T|'failed') => InspectedObject|undefined):
+      void {
+    const opened = this.inspected;
     loading
         .then(
             response => response,
@@ -1666,16 +1632,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               console.error(e);
               return 'failed' as const;
             })
-        .then(report => {
+        .then(response => {
           const inspected = this.state.inspected;
-          if (opened !== this.inspected || !inspected?.weather) {
-            return;
+          const patched =
+              opened === this.inspected && inspected ? patch(inspected, response) : undefined;
+          if (patched) {
+            this.updateState({...this.state, inspected: patched});
           }
-
-          this.updateState({
-            ...this.state,
-            inspected: {...inspected, weather: {...inspected.weather, report}},
-          });
         });
   }
 
@@ -1935,15 +1898,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.addFeature(copy);
   }
 
-  // In the order given, which for a folder is its descendants deepest first and then itself, so
-  // each folder is empty by the time its delete lands.
-  private deleteFeatures(features: EditableFeature[]): void {
-    this.store.apply(features.map(f => ({id: f.id, before: snapshot(f), after: undefined})));
-    if (features.some(f => f.id === this.selected)) {
-      this.select(undefined);
-    }
-  }
-
   // Hands the list copies, because the store edits features in place and corgi skips rendering a
   // component whose props are the same objects as last time.
   private refreshFeatureList(): void {
@@ -2007,7 +1961,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private deleteCollection(collection: Collection): Promise<boolean> {
     const count = [...this.store.all()].length;
-    return this.dialog.display(ConfirmDeleteCollectionDialog({count, name: collection.name}))
+    const message =
+        count > 0
+            ? `This deletes the ${count} ${count === 1 ? 'item' : 'items'} in it for everyone `
+                + 'it is shared with, and cannot be undone.'
+            : 'This cannot be undone.';
+    return this.dialog.display(ConfirmDeleteDialog({message, title: `Delete ${collection.name}?`}))
         .then(() => {
           const deleted: Future<DeleteCollectionResponse> =
               requestData('lat.trails.DataService/DeleteCollection', {id: collection.id});
@@ -2304,9 +2263,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     // Now that the user is logged in, they may have edit rights to the open collection. So reload
     // if they're currently in a read-only mode.
-    const open = this.state.collection;
-    if (open && this.store.isReadOnly()) {
-      this.loadCollection(open.id);
+    const open = this.routedCollection;
+    if (open !== undefined && this.store.isReadOnly()) {
+      this.loadCollection(open);
     } else {
       this.saves.flush();
     }
@@ -2533,6 +2492,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       if (entry.layer instanceof CollectionLayer) {
         // A hidden layer's geometry would otherwise answer hovers and catch the line tool.
         entry.layer.setIndexed(shown);
+      } else if (entry.layer instanceof PointCollectionLayer) {
+        entry.layer.setShown(shown);
       }
     }
     const shownEntries = this.getShownEntries(nodes);
@@ -2561,15 +2522,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 }
 
-// The most specific part of a category's name, like Footway for PATH_FOOTWAY
-function categoryName(names: Record<number, string>, type: unknown): string|undefined {
-  const name = typeof type === 'number' ? names[type] : undefined;
-  if (!name) {
-    return undefined;
-  }
-  const parts = name.split('_');
-  const words = (parts.length > 1 ? parts.slice(1) : parts).join(' ').toLowerCase();
-  return words.charAt(0).toUpperCase() + words.substring(1);
+function withoutHover(profile: LineProfileState|undefined): LineProfileState|undefined {
+  return profile?.status === 'loaded' ? {...profile, hovered: undefined} : profile;
+}
+
+function getPickSchema(entry: LayerEntry, object: LayerObject): Schema|undefined {
+  return entry.schema
+      ?? (entry.layer instanceof CollectionLayer ? entry.layer.getSchema(object) : undefined);
 }
 
 // Mercator to interleaved lat then lng degrees

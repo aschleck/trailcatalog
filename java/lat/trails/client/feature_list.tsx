@@ -22,8 +22,8 @@ import {
   formatArea,
   formatDistance,
   formatHeight,
-  measureLine,
   pathLengthMeters,
+  ProfileStats,
   profileStats,
   ringAreaMeters2,
 } from './measurements';
@@ -32,6 +32,7 @@ import {
   fieldsFor,
   formatField,
   getFieldKind,
+  getObjectTitle,
   getTitle,
   Schema,
   titleField,
@@ -79,8 +80,6 @@ export type InspectedObject = {
   kind: 'line';
   // Measured along the tile's geometry, which is simplified for the zoom it loaded at
   lengthMeters: number;
-  // Undefined until the elevations load, or if they fail
-  climb: Climb|undefined;
 }|{
   kind: 'point';
   latDegrees: number;
@@ -104,11 +103,6 @@ export type Subject = {
   source: 'object';
   object: InspectedObject;
 };
-
-interface Climb {
-  upMeters: number;
-  downMeters: number;
-}
 
 export interface FeatureListState {
   // Copies of every feature in the open collection, which buildTree arranges into folders
@@ -355,16 +349,18 @@ export function Properties({profile, subject}: {
                       unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
                   />
                 : ''
-            : osm
-                ? <a
-                      className="font-bold text-blue-700 underline"
-                      href={`https://www.openstreetmap.org/${osm.type}/${osm.id}`}
-                      rel="noopener"
-                      target="_blank"
-                  >
-                    {`OpenStreetMap ${osm.type} ${osm.id}`}
-                  </a>
-                : <div className="font-bold">{title || untitled(name)}</div>
+            : <div className="font-bold">{title || untitled(name)}</div>
+        }
+        {osm
+            ? <a
+                  className="self-start text-blue-700 underline"
+                  href={`https://www.openstreetmap.org/${osm.type}/${osm.id}`}
+                  rel="noopener"
+                  target="_blank"
+              >
+                {`OpenStreetMap ${osm.type} ${osm.id}`}
+              </a>
+            : ''
         }
         {editing
             ? ''
@@ -381,10 +377,7 @@ export function Properties({profile, subject}: {
         {subject.source === 'feature'
             ? <Stats feature={subject.feature} profile={profile} />
             : subject.object.kind === 'line'
-                ? <LineStats
-                      climb={subject.object.climb}
-                      lengthMeters={subject.object.lengthMeters}
-                  />
+                ? <ProfiledStats groundMeters={subject.object.lengthMeters} profile={profile} />
                 : subject.object.kind === 'point'
                     ? <div className="text-gray-700">
                         {`${subject.object.latDegrees.toFixed(5)}, `
@@ -392,7 +385,7 @@ export function Properties({profile, subject}: {
                       </div>
                     : ''
         }
-        {profile ? <LineProfile state={profile} /> : ''}
+        {profile ? <LineProfile source="line" state={profile} /> : ''}
         {osm
             ? <OsmTags tags={osm.tags} />
             : fields.length > 0 && !editing ? <DataTable rows={fields} /> : ''
@@ -531,10 +524,9 @@ function featureText(schema: CollectionSchema, feature: EditableFeature): ReadOn
 }
 
 function objectText(schema: Schema, data: Data): ReadOnlyText {
-  const title = data[schema.title.key];
   const description = schema.description ? data[schema.description] : undefined;
   return {
-    title: title !== undefined ? String(title) : undefined,
+    title: getObjectTitle(schema, data),
     paragraphs: description !== undefined ? [String(description)] : [],
     fields: schema.fields.flatMap(({key, label, values}): Array<[string, string]> => {
       const value = data[key];
@@ -782,8 +774,6 @@ function PropertiesDialog({children, title}: {
   );
 }
 
-// A line without elevations of its own takes its length and climb from the profile sampled for
-// it, the way an object from a map layer does.
 function Stats({feature, profile}: {
   feature: EditableFeature;
   profile: LineProfileState|undefined;
@@ -791,14 +781,8 @@ function Stats({feature, profile}: {
   if (feature.kind === 'line' && getLineKind(feature.data) === 'drawing') {
     return <div className="hidden" />;
   } else if (feature.kind === 'line') {
-    const stats = measureLine(feature.latLngE7, feature.elevationCentimeters);
-    if (stats.elevation || profile?.status !== 'loaded') {
-      return <LineStats lengthMeters={stats.lengthMeters} climb={stats.elevation} />;
-    }
-    const along = profile.distanceMeters;
-    return (
-      <LineStats lengthMeters={along[along.length - 1]} climb={profileStats(profile.meters)} />
-    );
+    const path = Array.from(feature.latLngE7, e7 => e7 / 1e7);
+    return <ProfiledStats groundMeters={pathLengthMeters(path)} profile={profile} />;
   } else if (feature.kind === 'point') {
     return (
       <div className="text-gray-700">
@@ -822,7 +806,23 @@ function Stats({feature, profile}: {
   }
 }
 
-export function LineStats({climb, lengthMeters}: {climb: Climb|undefined; lengthMeters: number}) {
+// Takes the length along the slope and the climb from the profile once it loads, and the ground
+// length until then. A line with elevations of its own has its profile at once.
+function ProfiledStats({groundMeters, profile}: {
+  groundMeters: number;
+  profile: LineProfileState|undefined;
+}) {
+  if (profile?.status !== 'loaded') {
+    return <LineStats lengthMeters={groundMeters} climb={undefined} />;
+  }
+  const along = profile.distanceMeters;
+  return <LineStats lengthMeters={along[along.length - 1]} climb={profileStats(profile.meters)} />;
+}
+
+export function LineStats({climb, lengthMeters}: {
+  climb: ProfileStats|undefined;
+  lengthMeters: number;
+}) {
   return (
     <div className="text-gray-700">
       {formatDistance(lengthMeters)}

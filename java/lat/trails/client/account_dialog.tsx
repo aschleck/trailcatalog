@@ -29,7 +29,6 @@ function Account(
     state: {}|undefined,
     updateState: (newState: {}) => void) {
   const providers = account.loginIssuers.map(issuer => PROVIDER_LABELS[issuer] ?? issuer);
-  const owned = account.owned.length;
   return <>
     <div
         js={corgi.bind({

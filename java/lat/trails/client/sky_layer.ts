@@ -435,11 +435,9 @@ export class SkyLayer extends Layer {
     this.renderer.uploadData(buffer, offset, this.glViewshed);
   }
 
-  // Mapterhorn's tiles are 512 pixels, so the DEM zoom whose pixels match the screen's is one less.
   private loadShade(): void {
-    const view = this.view;
-    const light = this.getLight();
-    if (!light || !view || view.zoom < MIN_SUNLIGHT_ZOOM || view.x1 <= view.x0) {
+    const request = this.getShadeRequest();
+    if (!request) {
       if (this.shade) {
         this.renderer.deleteTexture(this.shade.texture);
         this.shade = undefined;
@@ -452,7 +450,7 @@ export class SkyLayer extends Layer {
       return;
     }
     this.shading = 'busy';
-    this.sample(this.elevations.shade({...view, zoom: Math.round(view.zoom) - 1, ...light}))
+    this.sample(this.elevations.shade(request))
         .finally(() => {
           const stale = this.shading === 'stale';
           this.shading = 'idle';
@@ -461,7 +459,8 @@ export class SkyLayer extends Layer {
           }
         })
         .then(({x, y, width, height, pixels, rgba}) => {
-          if (!this.getLight()) {
+          // The view can stop wanting shade while this is in flight.
+          if (!this.getShadeRequest()) {
             return;
           }
           const texture = this.renderer.createTexture();
@@ -491,6 +490,17 @@ export class SkyLayer extends Layer {
         }, e => {
           console.error(e);
         });
+  }
+
+  // What to ask the worker to shade, or undefined when there is no shade to show. Mapterhorn's
+  // tiles are 512 pixels, so the DEM zoom whose pixels match the screen's is one less.
+  private getShadeRequest(): Parameters<Elevations['shade']>[0]|undefined {
+    const view = this.view;
+    const light = this.getLight();
+    if (!light || !view || view.zoom < MIN_SUNLIGHT_ZOOM || view.x1 <= view.x0) {
+      return undefined;
+    }
+    return {...view, zoom: Math.round(view.zoom) - 1, ...light};
   }
 
   // The moon once the sun is past civil twilight, which is when it is the brighter light, or else
@@ -731,22 +741,20 @@ export class SkyLayer extends Layer {
     const drawables: Drawable[] = [];
     let offset = 0;
     for (const {fill, stroke, radius, points, dashed} of lines) {
-      const result =
-          LineProgram.push(
-              fill, stroke, radius, dashed ? 'dashed' : 'solid', points, this.geometry, offset);
-      drawables.push({
-        elements: undefined,
-        geometry: this.glGeometry,
-        geometryByteLength: result.geometryByteLength,
-        geometryOffset: result.geometryOffset,
-        instanced: {count: result.instanceCount},
-        program: this.renderer.lineProgram,
-        texture: undefined,
-        vertexCount: result.vertexCount,
-        // in order, so the sun's disc is on top
-        z: Z_SKY + drawables.length / 100,
-      });
-      offset += result.geometryByteLength;
+      const drawable =
+          this.renderer.lineProgram.plan(
+              fill,
+              stroke,
+              radius,
+              dashed ? 'dashed' : 'solid',
+              // in order, so the sun's disc is on top
+              Z_SKY + drawables.length / 100,
+              points,
+              this.geometry,
+              offset,
+              this.glGeometry);
+      drawables.push(drawable);
+      offset += drawable.geometryByteLength;
     }
 
     this.renderer.uploadData(this.geometry, offset, this.glGeometry);

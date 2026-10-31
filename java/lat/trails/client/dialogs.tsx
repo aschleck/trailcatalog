@@ -12,38 +12,18 @@ export function ImportFailedDialog({files}: {files: string[]}) {
       <ul className="list-disc list-inside mt-2">
         {files.map(file => <li>{file}</li>)}
       </ul>
-      <p className="mt-2">We import GPX waypoints and tracks, and GeoJSON points and lines.</p>
+      <p className="mt-2">
+        We import GPX waypoints and tracks, and GeoJSON points, lines, polygons, and folders.
+      </p>
     </Shell>
   </>;
 }
 
-export function ConfirmDeleteDialog({count}: {count: number}) {
+export function ConfirmDeleteDialog({message, title}: {message: string; title: string}) {
   return <>
     <div className={`${DIALOG} max-w-prose`}>
-      <div className="font-bold">Delete this folder?</div>
-      <p>
-        {`This also deletes the ${count} ${count === 1 ? 'item' : 'items'} inside it.`}
-      </p>
-      <div className="flex gap-2 justify-end mt-1">
-        <SecondaryButton unboundEvents={{corgi: [[ACTION, 'outsideClose']]}}>
-          Cancel
-        </SecondaryButton>
-        <DangerButton unboundEvents={{corgi: [[ACTION, 'close']]}}>Delete</DangerButton>
-      </div>
-    </div>
-  </>;
-}
-
-export function ConfirmDeleteCollectionDialog({count, name}: {count: number; name: string}) {
-  return <>
-    <div className={`${DIALOG} max-w-prose`}>
-      <div className="font-bold">{`Delete ${name}?`}</div>
-      <p>
-        {count > 0
-            ? `This deletes the ${count} ${count === 1 ? 'item' : 'items'} in it for everyone it is `
-                + 'shared with, and cannot be undone.'
-            : 'This cannot be undone.'}
-      </p>
+      <div className="font-bold">{title}</div>
+      <p>{message}</p>
       <div className="flex gap-2 justify-end mt-1">
         <SecondaryButton unboundEvents={{corgi: [[ACTION, 'outsideClose']]}}>
           Cancel

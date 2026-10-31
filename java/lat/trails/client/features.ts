@@ -83,7 +83,6 @@ export function importableIcon(icon: string|undefined): string|undefined {
   return icon && !/^[\x00-\x7F]*$/.test(icon) ? icon : undefined;
 }
 
-/** Copies a feature so that later edits to the original leave the copy alone. */
 /**
  * Maps each feature's id to its folder, or undefined for the root. A folder_id naming a missing
  * folder counts as the root, or else the feature would vanish from the list with nothing to open
@@ -124,6 +123,7 @@ export function getParents(features: Iterable<EditableFeature>): Map<string, str
   return parents;
 }
 
+/** Copies a feature so that later edits to the original leave the copy alone. */
 export function snapshot<F extends EditableFeature>(feature: F): F {
   return {...feature, data: {...feature.data}};
 }

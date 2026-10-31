@@ -5,15 +5,10 @@ import { Elevations } from 'js/map/workers/elevations';
 import { RouteStatus } from './drawing_layer';
 import { EditableLine } from './features';
 import { MeasureState } from './measure_panel';
-import {
-  cumulativeMeters,
-  pathLengthMeters,
-  profileSamples,
-  ProfileStats,
-  profileStats,
-  slopeMeters,
-} from './measurements';
+import { cumulativeMeters, pathLengthMeters, profileSamples, slopeMeters } from './measurements';
 import { LineProfileState } from './profile_chart';
+
+type LoadedProfile = Extract<LineProfileState, {status: 'loaded'}>;
 
 /** The samples behind a profile on screen, so hovering it can find the spot on the map. */
 export interface ShownSamples {
@@ -80,52 +75,44 @@ export class MeasureProfiler {
     if (vertexCount >= 2) {
       this.debouncer.trigger();
     } else {
+      this.generation += 1;
       this._samples = undefined;
-      this.show({
-        lengthMeters,
-        vertexCount,
-        profile: undefined,
-        hovered: undefined,
-        status: 'idle',
-        route,
-      });
+      this.show({lengthMeters, vertexCount, profile: undefined, route});
     }
   }
 
+  // Leaves the last profile up while the next one loads, because each placed point would
+  // otherwise blink the chart out.
   private sample(): void {
     const path = this.path();
     if (path.length < 4) {
       return;
     }
 
-    const samples = profileSamples(path);
     this.generation += 1;
     const generation = this.generation;
-    this.show({...this.current(), status: 'loading'});
-    this.elevations.sample(samples.latLngDegrees, samples.zoom).then(
-        meters => {
+    if (this.current().profile?.status !== 'loaded') {
+      this.show({...this.current(), profile: {status: 'loading'}});
+    }
+    sampleDem(this.elevations, path).then(
+        ({samples, profile}) => {
           if (generation !== this.generation) {
             return;
           }
 
-          const distanceMeters = slopeMeters(samples.distanceMeters, meters);
-          this._samples = {...samples, distanceMeters};
+          this._samples = samples;
+          const distanceMeters = samples.distanceMeters;
           this.show({
             ...this.current(),
             lengthMeters: distanceMeters[distanceMeters.length - 1],
-            profile: {
-              distanceMeters: Array.from(distanceMeters),
-              meters: Array.from(meters),
-              stats: profileStats(meters),
-            },
-            hovered: undefined,
-            status: 'idle',
+            profile,
           });
         },
         e => {
           console.error(e);
           if (generation === this.generation) {
-            this.show({...this.current(), status: 'failed'});
+            this._samples = undefined;
+            this.show({...this.current(), profile: {status: 'failed'}});
           }
         });
   }
@@ -181,34 +168,33 @@ export class LineProfiler {
     const path = Float64Array.from(live.latLngE7, e7 => e7 / 1e7);
     const own = live.elevationCentimeters;
     if (own) {
-      const meters = Array.from(own, centimeters => centimeters / 100);
-      const distanceMeters = slopeMeters(cumulativeMeters(path), meters);
-      this._samples = {latLngDegrees: path, distanceMeters};
-      return {
-        status: 'loaded',
-        distanceMeters: Array.from(distanceMeters),
-        meters,
-        hovered: undefined,
-      };
+      const {samples, profile} =
+          profileOf(path, cumulativeMeters(path), Array.from(own, cm => cm / 100));
+      this._samples = samples;
+      return profile;
     }
+    return this.sample(path);
+  }
 
+  // Samples the DEM, since an object from a map layer has no elevations. Selecting anything
+  // forgets the profile, so an answer for an object that has closed is dropped.
+  forObject(path: Float64Array): void {
+    this.generation += 1;
+    this.source = undefined;
+    this.show(this.sample(path));
+  }
+
+  private sample(path: Float64Array): LineProfileState {
     const generation = this.generation;
-    const samples = profileSamples(path);
     this._samples = undefined;
-    this.elevations.sample(samples.latLngDegrees, samples.zoom).then(
-        meters => {
+    sampleDem(this.elevations, path).then(
+        ({samples, profile}) => {
           if (generation !== this.generation) {
             return;
           }
 
-          const distanceMeters = slopeMeters(samples.distanceMeters, meters);
-          this._samples = {latLngDegrees: samples.latLngDegrees, distanceMeters};
-          this.show({
-            status: 'loaded',
-            distanceMeters: Array.from(distanceMeters),
-            meters: Array.from(meters),
-            hovered: undefined,
-          });
+          this._samples = samples;
+          this.show(profile);
         },
         e => {
           console.error(e);
@@ -218,41 +204,28 @@ export class LineProfiler {
         });
     return {status: 'loading'};
   }
+}
 
-  // Samples the DEM, since an object from a map layer has no elevations. The caller decides
-  // whether the object is still open, and loaded gets the climb along with the profile because
-  // the object's panel shows both.
-  forObject(
-      path: Float64Array,
-      isCurrent: () => boolean,
-      loaded: (profile: LineProfileState, lengthMeters: number, climb: ProfileStats) => void):
-      void {
-    const samples = profileSamples(path);
-    this._samples = undefined;
-    this.show({status: 'loading'});
-    this.elevations.sample(samples.latLngDegrees, samples.zoom).then(
-        meters => {
-          if (!isCurrent()) {
-            return;
-          }
+function sampleDem(elevations: Elevations, path: Float64Array):
+    Promise<{samples: ShownSamples; profile: LoadedProfile}> {
+  const samples = profileSamples(path);
+  return elevations.sample(samples.latLngDegrees, samples.zoom)
+      .then(meters => profileOf(samples.latLngDegrees, samples.distanceMeters, meters));
+}
 
-          const distanceMeters = slopeMeters(samples.distanceMeters, meters);
-          this._samples = {latLngDegrees: samples.latLngDegrees, distanceMeters};
-          loaded(
-              {
-                status: 'loaded',
-                distanceMeters: Array.from(distanceMeters),
-                meters: Array.from(meters),
-                hovered: undefined,
-              },
-              distanceMeters[distanceMeters.length - 1],
-              profileStats(meters));
-        },
-        e => {
-          console.error(e);
-          if (isCurrent()) {
-            this.show({status: 'failed'});
-          }
-        });
-  }
+// Measures the samples' distances along the slope, so that the chart's length agrees with the
+// climb.
+function profileOf(
+    latLngDegrees: Float64Array, groundMeters: ArrayLike<number>, meters: ArrayLike<number>):
+    {samples: ShownSamples; profile: LoadedProfile} {
+  const distanceMeters = slopeMeters(groundMeters, meters);
+  return {
+    samples: {latLngDegrees, distanceMeters},
+    profile: {
+      status: 'loaded',
+      distanceMeters: Array.from(distanceMeters),
+      meters: Array.from(meters),
+      hovered: undefined,
+    },
+  };
 }

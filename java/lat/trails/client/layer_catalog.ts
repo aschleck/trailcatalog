@@ -18,6 +18,7 @@ import {
   RIVER_GAUGES_COLLECTION_ID,
   WEATHER_STATIONS_COLLECTION_ID,
 } from 'java/lat/trails/wire/wire';
+import { aDescendsB, PointCategory } from 'java/org/trailcatalog/models/categories';
 import { Camera } from 'js/map/camera';
 import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT, WORLDCOVER_COPYRIGHT } from 'js/map/common/copyrights';
 import { Copyright, RgbaU32 } from 'js/map/common/types';
@@ -261,8 +262,26 @@ const ECMWF_LOOKBACK_CYCLES = 12;
 export const SKY_LAYER_ID = 'weather/sun_moon';
 const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
 const SNOW_WATER_ID = 'us/conditions/snow_water';
+// Where summits, glaciers, and lakes get their names, as soon as the contours are labeled
+const LANDMARK_ZOOM = 13;
 // Where trailcatalog starts drawing its points, see trail_layer.ts#RENDER_POINT_ZOOM_THRESHOLD
 const POINT_ICON_ZOOM = 14;
+// Where the rest of the points join the landmarks, which would otherwise bury them
+const POINT_ZOOM = 15;
+const LANDMARKS = [
+  PointCategory.NATURAL_GLACIER,
+  PointCategory.NATURAL_LAKE,
+  PointCategory.NATURAL_PEAK,
+  PointCategory.NATURAL_VOLCANO,
+];
+// Every category outside the landmarks, as the fewest ancestors, so its stream and the landmarks'
+// share no point
+const NOT_LANDMARKS = (() => {
+  const others = (Object.values(PointCategory) as Array<string|number>)
+      .filter((v): v is number => typeof v === 'number')
+      .filter(v => !LANDMARKS.some(s => aDescendsB(v, s) || aDescendsB(s, v)));
+  return others.filter(v => !others.some(o => o !== v && aDescendsB(v, o)));
+})();
 
 /** The map layers we offer besides a collection's own features. */
 export class LayerCatalog extends Disposable {
@@ -284,6 +303,8 @@ export class LayerCatalog extends Disposable {
   // The newest FAA cycle in effect that we know is tiled, for each product
   private readonly faaCycles: Record<FaaProduct, string>;
   private readonly conditionsRefresh: Timer;
+  // What the OSM points drew, which the basemaps' labels make way for
+  private readonly pointObstacles: LabelObstacles;
 
   constructor(
       locations: LocationIndex,
@@ -318,6 +339,7 @@ export class LayerCatalog extends Disposable {
     });
     this.registerDisposable(this.conditionsRefresh);
 
+    this.pointObstacles = new LabelObstacles();
     this.contours = {
       imperial: this.newContourLayer('imperial'),
       metric: this.newContourLayer('metric'),
@@ -404,14 +426,19 @@ export class LayerCatalog extends Disposable {
             '/api/collections/00000000-0000-0000-0000-000000000002',
             [
               // Every point sits in a level 13 cell, see DumpPoints.kt. Level 11 tiles hold a
-              // viewport at zoom 14 in a handful of requests.
-              {minZoom: POINT_ICON_ZOOM, maxZoom: undefined, indexBottom: 11, fromLevel: 13,
-                toLevel: 13},
+              // viewport at zoom 14 in a handful of requests, and level 10 one at zoom 13.
+              {minZoom: LANDMARK_ZOOM, maxZoom: undefined, indexBottom: 10, fromLevel: 13,
+                toLevel: 13, categories: LANDMARKS},
+              {minZoom: POINT_ZOOM, maxZoom: undefined, indexBottom: 11, fromLevel: 13,
+                toLevel: 13, categories: NOT_LANDMARKS},
             ],
             NODE_KINDS.filter(({hidden}) => !hidden).map(({category}) => category),
+            LANDMARK_ZOOM,
             POINT_ICON_ZOOM,
             this.camera,
             this.renderer,
+            this.labelObstacles,
+            this.pointObstacles,
         );
     const protomaps =
         new MbtileLayer(
@@ -422,7 +449,7 @@ export class LayerCatalog extends Disposable {
             /* minZoom= */ 0,
             /* maxZoom= */ 15,
             this.renderer,
-            [this.labelObstacles],
+            [this.labelObstacles, this.pointObstacles],
         );
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
@@ -1165,7 +1192,7 @@ export class LayerCatalog extends Disposable {
         /* minZoom= */ 9,
         /* maxZoom= */ 14,
         this.renderer,
-        [this.labelObstacles]);
+        [this.labelObstacles, this.pointObstacles]);
   }
 
   private newGoesEntry(satellite: 'East'|'West', product: string, label: string): LayerEntry {

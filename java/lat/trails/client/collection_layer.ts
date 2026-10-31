@@ -17,7 +17,8 @@ import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCom
 import { CellKey, getStream, isInBand, Stream } from 'js/map/workers/s2_streams';
 import { Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
-import { HOVER_CHANGED, LayerObject } from './events';
+import { LayerObject } from './events';
+import { SELECTED_CASING } from './feature_layer';
 import { parseCollectionSchema, Schema } from './schema';
 import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style, Styling } from './workers/collection_loader';
 import { CollectionSchema, FieldKind, getLineKind } from './workers/collection_schema';
@@ -40,8 +41,7 @@ const HOVER_LINE_MIN_RADIUS_PX = 4;
 const HOVER_POINT_PADDING_PX = 2;
 
 // The object the inspector shows draws again on top, wider and in a white casing, like a selected
-// feature. See feature_layer.ts#SELECTED_CASING.
-const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
+// feature.
 const SELECTED_PADDING_PX = 2;
 // Under the hover highlight, so hovering the selected object still lifts it
 const Z_SELECTED = Z_USER_DATA_HIGHLIGHT - 0.25;
@@ -181,6 +181,8 @@ export class CollectionLayer extends Layer {
           this.renderer.deleteBuffer(cell.glIndexBuffer);
         }
       }
+      this.renderer.deleteBuffer(this.highlight.glGeometryBuffer);
+      this.renderer.deleteBuffer(this.highlight.glIndexBuffer);
     });
     this.hoverGeneration = 0;
     this.indexed = true;
@@ -287,10 +289,10 @@ export class CollectionLayer extends Layer {
   }
 
   /** Highlights the object as if the pointer were over it, or clears the highlight. */
-  highlightObject(object: HeldObject|undefined, source: EventSource): void {
+  highlightObject(object: HeldObject|undefined): void {
     // A hover query in flight would otherwise replace it.
     this.hoverGeneration += 1;
-    this.retarget(object && objectKey(object.value.id), object, source);
+    this.retarget(object && objectKey(object.value.id), object);
   }
 
   /** Draws the object as selected, or stops drawing a selection. */
@@ -356,7 +358,7 @@ export class CollectionLayer extends Layer {
     const generation = this.hoverGeneration;
     const dot = this.pointsAt(point)[0];
     if (dot) {
-      this.retarget(objectKey(dot.value.id), dot, source);
+      this.retarget(objectKey(dot.value.id), dot);
       return true;
     }
     this.queryPoint(point).then(ids => {
@@ -366,14 +368,13 @@ export class CollectionLayer extends Layer {
 
       // A point can land in several nested units, so take the first one we still hold.
       const target = ids.find(id => this.resolve(id));
-      this.retarget(target, target ? this.resolve(target) : undefined, source);
+      this.retarget(target, target ? this.resolve(target) : undefined);
     });
     return false;
   }
 
   // Highlights object. target is its key in the location index.
-  private retarget(
-      target: string|undefined, object: HeldObject|undefined, source: EventSource): void {
+  private retarget(target: string|undefined, object: HeldObject|undefined): void {
     if (target === this.lastHoverTarget) {
       return;
     }
@@ -382,8 +383,6 @@ export class CollectionLayer extends Layer {
     this.clearHighlight();
     this.lastHoverTarget = target;
     const highlight = this.highlight;
-
-    source.trigger(HOVER_CHANGED, {target: object?.value});
     if (!object) {
       return;
     }
@@ -398,30 +397,19 @@ export class CollectionLayer extends Layer {
       const run = getRun(object);
       highlight.geometry =
           growBuffer(highlight.geometry, LineProgram.bytesNeeded(run.points.length / 2));
-      const result =
-          LineProgram.push(
+      highlight.drawables.push(
+          this.renderer.lineProgram.plan(
               object.kind === 'point' ? run.fill : HOVER_FILL,
               HOVER_STROKE,
               object.kind === 'point'
                   ? run.radius + HOVER_POINT_PADDING_PX
                   : Math.max(run.radius + HOVER_LINE_PADDING_PX, HOVER_LINE_MIN_RADIUS_PX),
               /* pattern= */ 'solid',
+              Z_USER_DATA_HIGHLIGHT,
               run.points,
               highlight.geometry,
-              /* offset= */ 0);
-      highlight.drawables.push({
-        elements: undefined,
-        geometry: highlight.glGeometryBuffer,
-        geometryByteLength: result.geometryByteLength,
-        geometryOffset: 0,
-        instanced: {
-          count: result.instanceCount,
-        },
-        program: this.renderer.lineProgram,
-        texture: undefined,
-        vertexCount: result.vertexCount,
-        z: Z_USER_DATA_HIGHLIGHT,
-      });
+              /* offset= */ 0,
+              highlight.glGeometryBuffer));
     } else {
       const polygon = object.value;
       const triangles = polygon.triangles;
@@ -514,7 +502,7 @@ export class CollectionLayer extends Layer {
   }
 
   override hoverLost(source: EventSource): void {
-    this.highlightObject(undefined, source);
+    this.highlightObject(undefined);
   }
 
   override loadingData(): boolean {
@@ -703,23 +691,6 @@ export class CollectionLayer extends Layer {
         z: line.z,
       };
       drawables.push(drawable);
-    }
-
-    for (const point of response.pointGeometries) {
-      drawables.push({
-        bounds: point.bounds,
-        elements: undefined,
-        geometry,
-        geometryByteLength: point.geometryByteLength,
-        geometryOffset: point.geometryOffset,
-        instanced: {
-          count: point.instanceCount,
-        },
-        program: this.renderer.lineProgram,
-        texture: undefined,
-        vertexCount: point.vertexCount,
-        z: point.z,
-      });
     }
 
     for (const polygon of response.polygonGeometries) {

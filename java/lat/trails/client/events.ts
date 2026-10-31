@@ -1,9 +1,8 @@
 import { declareEvent } from 'external/dev_april_corgi+/js/corgi/events';
-import { RawUuid } from 'js/map/common/types';
 
 import { EditableFeature } from './features';
 import { Point } from './point_collection_layer';
-import { Data, Line, Polygon } from './workers/collection_loader';
+import { Line, Polygon } from './workers/collection_loader';
 import { FieldRef } from './workers/collection_schema';
 
 /** What pointer tools are possible. */
@@ -55,13 +54,6 @@ export const FIELD_EDITED = declareEvent<{
 export const FIELD_ICON_CLICKED = declareEvent<{
   field: FieldRef;
 }>('field_icon_clicked');
-
-export const HOVER_CHANGED = declareEvent<{
-  target: {
-    id: RawUuid;
-    data: Data;
-  }|undefined;
-}>('hover_changed');
 
 export const LINE_DRAWN = declareEvent<{
   latLngE7: Int32Array;

@@ -108,8 +108,6 @@ export function OverviewElement(
         lengthMeters: 0,
         vertexCount: 0,
         profile: undefined,
-        hovered: undefined,
-        status: 'idle',
         route: undefined,
       },
       grades: {climbPercent: 25, descentPercent: 25},

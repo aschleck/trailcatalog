@@ -115,19 +115,19 @@ function Hover({label, x, y}: {label: string; x: number; y: number}) {
   );
 }
 
-/** A line dialog's profile, which has to load when the line carries no elevations of its own. */
+/** A profile that has to load when the line carries no elevations of its own. */
 export type LineProfileState =
     {status: 'loading'|'failed'}
     |{status: 'loaded'; distanceMeters: number[]; meters: number[]; hovered: number|undefined};
 
-export function LineProfile({state}: {state: LineProfileState}) {
+export function LineProfile({source, state}: {source: 'line'|'measure'; state: LineProfileState}) {
   if (state.status === 'loaded') {
     return (
       <ProfileChart
           distanceMeters={state.distanceMeters}
           hovered={state.hovered}
           meters={state.meters}
-          source="line"
+          source={source}
       />
     );
   }

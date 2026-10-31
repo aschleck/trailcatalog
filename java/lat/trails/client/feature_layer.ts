@@ -29,8 +29,9 @@ import {
 } from 'js/map/workers/triangulate';
 import { Z_USER_DATA, Z_USER_DATA_FILL, Z_USER_DATA_HALO, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
-import { SNAP_RADIUS_PX, toE7Array } from './drawing_layer';
+import { MARKER_RADIUS_PX, MARKER_STROKE, SNAP_RADIUS_PX, toE7Array } from './drawing_layer';
 import { FeatureStore } from './feature_store';
+import { getLabelBox, LabelCollisions } from './label_collisions';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -87,11 +88,8 @@ import {
 
 // How far past a feature's drawn edge a click still lands on it
 const CLICK_SLOP_PX = 3;
-const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
+export const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
 const HOVERED_CASING = 0xFFFFFF99 as RgbaU32;
-// Same as the measure tool's, see drawing_layer.ts
-const MARKER_RADIUS_PX = 6;
-const MARKER_STROKE = 0xFFFFFFFF as RgbaU32;
 // A little wider than a default line, so it shows on the line rather than in it
 const GRAB_RADIUS_PX = 5;
 const GRAB_FILL = 0xFFFFFFFF as RgbaU32;
@@ -119,7 +117,6 @@ const LABEL_ANCHORS = [0.5, 0.3, 0.7, 0.15, 0.85];
 // Added around every label, so two labels keep the same gap between them as a label keeps from
 // its icon
 const LABEL_PAD_PX = LABEL_GAP_PX / 2;
-const COLLISION_CELL_PX = 64;
 // Scratch for laying out curved labels before they are known to fit
 const CURVED_GLYPHS: Glyph[] = [];
 const CURVED_PLACEMENTS: number[] = [];
@@ -273,7 +270,6 @@ export class FeatureLayer extends Layer {
     draggedAt: Vec2|undefined;
     generation: number;
     hovered: string|undefined;
-    selected: string|undefined;
     zoom: number;
   };
   // Only the pointer tool selects, drags, and edits, or else a drawing tool's clicks would also
@@ -346,7 +342,6 @@ export class FeatureLayer extends Layer {
       draggedAt: undefined,
       generation: -1,
       hovered: undefined,
-      selected: undefined,
       zoom: -1,
     };
     this.labelsMissingGlyphs = false;
@@ -741,14 +736,12 @@ export class FeatureLayer extends Layer {
             || this.labelsPlanned.draggedAt !== draggedAt
             || this.labelsPlanned.generation !== this.geometry.generation
             || this.labelsPlanned.hovered !== this.hovered
-            || this.labelsPlanned.selected !== this.selected
             || this.labelsPlanned.zoom !== zoom) {
       this.planLabels(zoom);
       this.labelsPlanned = {
         draggedAt,
         generation: this.geometry.generation,
         hovered: this.hovered,
-        selected: this.selected,
         zoom,
       };
     }
@@ -1459,8 +1452,7 @@ export class FeatureLayer extends Layer {
     }
     batch.finish();
 
-    // Pixels per mercator unit, see mbtile_layer.ts#render.
-    const pixelsPerWorld = 256 * Math.pow(2, zoom - 1);
+    const pixelsPerWorld = worldRadiusAt(zoom);
     const drawables = [];
     let offset = 0;
     this.labelsMissingGlyphs = false;
@@ -1521,12 +1513,7 @@ export class FeatureLayer extends Layer {
         const x = label.at[0] * pixelsPerWorld + label.offsetPx[0];
         const y = label.at[1] * pixelsPerWorld + label.offsetPx[1];
         const left = label.anchor.horizontal === 'start' ? x : x - size[0] / 2;
-        const box = [
-          left - LABEL_PAD_PX,
-          y - size[1] / 2 - LABEL_PAD_PX,
-          left + size[0] + LABEL_PAD_PX,
-          y + size[1] / 2 + LABEL_PAD_PX,
-        ];
+        const box = getLabelBox(left, y, size, LABEL_PAD_PX);
         if (collisions.hits(box)) {
           continue;
         }
@@ -1968,8 +1955,7 @@ function labelPath(line: ProjectedShape, zoom: number):
   const level = Math.floor(zoom);
   if (line.label?.zoom !== level) {
     // Simplified for the integer zoom, so the path holds still while zooming within it
-    const points =
-        simplify(line.points, LABEL_PATH_TOLERANCE_PX / (256 * Math.pow(2, level - 1)));
+    const points = simplify(line.points, LABEL_PATH_TOLERANCE_PX / worldRadiusAt(level));
     line.label = {zoom: level, points, anchors: anchorVertices(points)};
   }
   return line.label;
@@ -2000,59 +1986,4 @@ function simplify(points: Float64Array, tolerance: number): Float64Array {
     }
   }
   return Float64Array.from(simplified);
-}
-
-// Boxes bucketed by cell. Unlike label_placer.ts#CollisionGrid it has no bounds, because labels
-// plan across the whole collection, which can span the world at any zoom.
-class LabelCollisions {
-
-  // Every box inserted, flattened
-  readonly boxes: number[];
-  private readonly cells: Map<string, number[]>;
-
-  constructor() {
-    this.boxes = [];
-    this.cells = new Map();
-  }
-
-  /** Returns whether any of the flattened x0,y0,x1,y1 boxes overlaps one inserted before. */
-  hits(boxes: number[]): boolean {
-    for (let i = 0; i < boxes.length; i += 4) {
-      const [x0, y0, x1, y1] = [boxes[i], boxes[i + 1], boxes[i + 2], boxes[i + 3]];
-      for (const key of cellKeys(x0, y0, x1, y1)) {
-        const cell = this.cells.get(key) ?? [];
-        for (let j = 0; j < cell.length; j += 4) {
-          if (x0 < cell[j + 2] && cell[j + 0] < x1 && y0 < cell[j + 3] && cell[j + 1] < y1) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  insert(boxes: number[]): void {
-    this.boxes.push(...boxes);
-    for (let i = 0; i < boxes.length; i += 4) {
-      const [x0, y0, x1, y1] = [boxes[i], boxes[i + 1], boxes[i + 2], boxes[i + 3]];
-      for (const key of cellKeys(x0, y0, x1, y1)) {
-        const cell = this.cells.get(key);
-        if (cell) {
-          cell.push(x0, y0, x1, y1);
-        } else {
-          this.cells.set(key, [x0, y0, x1, y1]);
-        }
-      }
-    }
-  }
-}
-
-function cellKeys(x0: number, y0: number, x1: number, y1: number): string[] {
-  const keys = [];
-  for (let y = Math.floor(y0 / COLLISION_CELL_PX); y <= Math.floor(y1 / COLLISION_CELL_PX); ++y) {
-    for (let x = Math.floor(x0 / COLLISION_CELL_PX); x <= Math.floor(x1 / COLLISION_CELL_PX); ++x) {
-      keys.push(`${x},${y}`);
-    }
-  }
-  return keys;
 }

@@ -4,6 +4,8 @@ import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
 
 import { readCookie, writeCookie } from 'js/cookies/cookies';
 
+import { Chevron } from './tree_rows';
+
 type Children = corgi.VElementOrPrimitive|corgi.VElementOrPrimitive[];
 
 interface SidebarState {
@@ -112,13 +114,7 @@ export function SidebarSection(
             })}
             className="cursor-pointer flex gap-1 grow items-center px-2 py-1 select-none"
         >
-          <svg
-              className="h-3 shrink-0 stroke-current text-gray-500 w-3"
-              fill="none"
-              viewBox="0 0 16 16"
-          >
-            <path d={state.open ? 'M3 6 L8 11 L13 6' : 'M6 3 L11 8 L6 13'} strokeWidth="2" />
-          </svg>
+          <Chevron expanded={state.open} />
           <span className="font-bold">{label}</span>
         </div>
         {controls ?? []}

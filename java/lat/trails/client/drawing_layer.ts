@@ -62,8 +62,8 @@ const INITIAL_BUFFER_BYTES = 8 * 1024;
 const LINE_COLOR = HANDLE_COLOR;
 // One pixel either side of the path, all of it casing, so the line is a plain 2 px stroke
 const LINE_RADIUS_PX = 1;
-const MARKER_RADIUS_PX = 6;
-const MARKER_STROKE = 0xFFFFFFFF as RgbaU32;
+export const MARKER_RADIUS_PX = 6;
+export const MARKER_STROKE = 0xFFFFFFFF as RgbaU32;
 
 
 // A vertex of the line under construction, with the path that reaches it from the vertex before.
@@ -632,30 +632,20 @@ export class DrawingLayer extends Layer {
                 + handleBytesNeeded(vertices.length));
     const drawables: Drawable[] = [];
     const line =
-        LineProgram.push(
+        this.renderer.lineProgram.plan(
             LINE_COLOR,
             LINE_COLOR,
             LINE_RADIUS_PX,
             /* pattern= */ 'solid',
+            Z_EDITING,
             points,
             this.geometry,
-            /* offset= */ 0);
+            /* offset= */ 0,
+            this.glGeometry);
     let offset = line.geometryByteLength;
-    if (line.instanceCount > 0) {
-      const drawable = {
-        elements: undefined,
-        geometry: this.glGeometry,
-        geometryByteLength: line.geometryByteLength,
-        geometryOffset: line.geometryOffset,
-        instanced: {
-          count: line.instanceCount,
-        },
-        program: this.renderer.lineProgram,
-        texture: undefined,
-        vertexCount: line.vertexCount,
-        z: Z_EDITING,
-      };
-      drawables.push(drawable);
+    // A single placed vertex has no segments.
+    if (offset > 0) {
+      drawables.push(line);
     }
 
     // Placed vertices are hollow squares, and the last one placed is filled.
@@ -677,27 +667,19 @@ export class DrawingLayer extends Layer {
 
     if (marker) {
       // A zero length segment, which the cap program draws as a circle
-      const result =
-          LineProgram.push(
+      const drawable =
+          this.renderer.lineProgram.plan(
               LINE_COLOR,
               MARKER_STROKE,
               MARKER_RADIUS_PX,
               /* pattern= */ 'solid',
+              Z_EDITING + 2,
               [marker[0], marker[1], marker[0], marker[1]],
               this.geometry,
-              offset);
-      drawables.push({
-        elements: undefined,
-        geometry: this.glGeometry,
-        geometryByteLength: result.geometryByteLength,
-        geometryOffset: result.geometryOffset,
-        instanced: {count: result.instanceCount},
-        program: this.renderer.lineProgram,
-        texture: undefined,
-        vertexCount: result.vertexCount,
-        z: Z_EDITING + 2,
-      });
-      offset += result.geometryByteLength;
+              offset,
+              this.glGeometry);
+      drawables.push(drawable);
+      offset += drawable.geometryByteLength;
     }
 
     if (offset > 0) {

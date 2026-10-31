@@ -35,11 +35,6 @@ const EXPIRY_OPTIONS: Array<{label: string; seconds: number|undefined}> = [
   {label: 'Forever', seconds: undefined},
 ];
 
-/** Edits who can open a collection. Every change saves as soon as it's made. */
-export function SharingPanel(props: {collectionId: string; shown: boolean}) {
-  return <SharingEditor {...props} />;
-}
-
 interface State {
   status: 'loading'|'loaded'|'unloadable';
   grants: Grant[];
@@ -55,7 +50,8 @@ interface State {
   error: string|undefined;
 }
 
-function SharingEditor(
+/** Edits who can open a collection. Every change saves as soon as it's made. */
+export function SharingPanel(
     {collectionId, shown}: {collectionId: string; shown: boolean},
     inState: State|undefined,
     updateState: (newState: State) => void) {

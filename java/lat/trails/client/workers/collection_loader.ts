@@ -97,7 +97,6 @@ export interface LoadResponse {
   lines: LoadedLines;
   lineGeometries: LineGeometry[];
   points: Point[];
-  pointGeometries: PointGeometry[];
   polygons: Polygon[];
   polygonGeometries: PolygonGeometry[];
 }
@@ -152,17 +151,6 @@ export interface Point {
   // in mercator
   position: Vec2;
   style: PointStyle;
-}
-
-// We draw a point as a zero length line, which LineProgram draws as a circle. See also
-// feature_layer.ts#ShapeBatch.push.
-export interface PointGeometry {
-  bounds: {box: Rect; margin: number};
-  geometryByteLength: number;
-  geometryOffset: number;
-  instanceCount: number;
-  vertexCount: number;
-  z: number;
 }
 
 export interface Polygon {
@@ -574,7 +562,6 @@ class CollectionLoader {
       lines,
       lineGeometries: [],
       points: [],
-      pointGeometries: [],
       polygons: [],
       polygonGeometries: [],
     };
@@ -591,8 +578,9 @@ class CollectionLoader {
     }
     geometryOffset = lineRuns.done();
 
-    // styledPoints is sorted by z too.
-    const dotRuns = new InstancedRuns(geometry.buffer, geometryOffset, response.pointGeometries);
+    // We draw a point as a zero length line, which LineProgram draws as a circle. See also
+    // feature_layer.ts#ShapeBatch.push. styledPoints is sorted by z too.
+    const dotRuns = new InstancedRuns(geometry.buffer, geometryOffset, response.lineGeometries);
     for (const point of styledPoints) {
       const [x, y] = point.position;
       const result = dotRuns.push(point.style.z, point.style, [x, y, x, y]);

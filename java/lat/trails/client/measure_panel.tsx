@@ -5,20 +5,13 @@ import { PanelButton, PanelCloseButton, PrimaryButton } from 'js/pika/buttons';
 
 import { RouteStatus } from './drawing_layer';
 import { LineStats } from './feature_list';
-import { formatHeight, ProfileStats } from './measurements';
-import { ProfileChart } from './profile_chart';
+import { formatHeight, profileStats } from './measurements';
+import { LineProfile, LineProfileState } from './profile_chart';
 
 export interface MeasureState {
   lengthMeters: number;
   vertexCount: number;
-  profile: {
-    distanceMeters: number[];
-    meters: number[];
-    stats: ProfileStats;
-  }|undefined;
-  // The profile sample under the pointer
-  hovered: number|undefined;
-  status: 'idle'|'loading'|'failed';
+  profile: LineProfileState|undefined;
   // Set while routing over terrain
   route: RouteStatus|undefined;
 }
@@ -139,28 +132,17 @@ function RouteReadout({status}: {status: RouteStatus}) {
 }
 
 function Readout({readOnly, state}: {readOnly: boolean; state: MeasureState}) {
-  const profile = state.profile;
+  const profile: LineProfileState = state.profile ?? {status: 'loading'};
+  const stats = profile.status === 'loaded' ? profileStats(profile.meters) : undefined;
   return (
     <div className="flex flex-col gap-2">
-      <LineStats lengthMeters={state.lengthMeters} climb={profile?.stats} />
-      {profile
-          ? <ProfileChart
-                distanceMeters={profile.distanceMeters}
-                hovered={state.hovered}
-                meters={profile.meters}
-                source="measure"
-            />
-          : <div
-                className="bg-gray-100 flex h-24 items-center justify-center rounded text-gray-500"
-            >
-              {state.status === 'failed' ? 'Unable to load elevations' : 'Loading elevations...'}
-            </div>
-      }
-      {profile
+      <LineStats lengthMeters={state.lengthMeters} climb={stats} />
+      <LineProfile source="measure" state={profile} />
+      {stats
           ? <div className="text-gray-700">
-              {`Min ${formatHeight(profile.stats.minMeters)}, `
-                  + `median ${formatHeight(profile.stats.medianMeters)}, `
-                  + `max ${formatHeight(profile.stats.maxMeters)}`}
+              {`Min ${formatHeight(stats.minMeters)}, `
+                  + `median ${formatHeight(stats.medianMeters)}, `
+                  + `max ${formatHeight(stats.maxMeters)}`}
             </div>
           : ''
       }

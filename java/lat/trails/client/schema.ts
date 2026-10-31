@@ -1,8 +1,10 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
+import { PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { LinePattern } from 'js/map/rendering/line_program';
 
 import { EditableFeature, FeatureData } from './features';
+import { Data } from './workers/collection_loader';
 import {
   Channel,
   CollectionSchema,
@@ -421,6 +423,32 @@ export function getTitle(schema: CollectionSchema, feature: EditableFeature): st
           : feature.kind === 'point' ? pointLook(schema, feature.data)
           : polygonLook(schema, feature.data);
   return look?.label || undefined;
+}
+
+/**
+ * Returns what titles an object from a map layer. An OpenStreetMap title key holds an element id,
+ * so the element goes by its name, or else by its category, which still tells it apart from its
+ * neighbors.
+ */
+export function getObjectTitle(schema: Schema, data: Data): string|undefined {
+  const title =
+      schema.title.kind === 'text'
+          ? data[schema.title.key]
+          : data.name
+              ?? categoryName(
+                  schema.title.kind === 'osm_way' ? WayCategory : PointCategory, data.type);
+  return title !== undefined ? String(title) : undefined;
+}
+
+// The most specific part of a category's name, like Footway for PATH_FOOTWAY
+function categoryName(names: Record<number, string>, type: unknown): string|undefined {
+  const name = typeof type === 'number' ? names[type] : undefined;
+  if (!name) {
+    return undefined;
+  }
+  const parts = name.split('_');
+  const words = (parts.length > 1 ? parts.slice(1) : parts).join(' ').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.substring(1);
 }
 
 /**
