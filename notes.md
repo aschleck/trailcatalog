@@ -120,6 +120,28 @@ bazelisk run //java/lat/trails/importers:public_access -- \
     --database_username_password="trails_lat:trails_lat"
 ```
 
+## Nationally designated areas
+
+`european_designated_areas` reads the EEA's EPSG:4326 GeoPackage. The metadata record at
+https://doi.org/10.2909/028003e7-7585-4d69-92fc-7f81e0cc2340 links a "Direct download" folder,
+which is a Nextcloud share that can also be read over WebDAV.
+
+```
+curl -L -o NatDA_2026.gpkg \
+    'https://sdi.eea.europa.eu/datashare/public.php/dav/files/sptXqwkQr5g7Bp5/eea_v_4326_100_k_natda-poly_p_2025-2026_v24_r00/NatDA_2026_v01_public_EPSG4326.gpkg'
+```
+
+It needs a 20 GB heap because every core builds polygons at once and the JVM's default of a
+quarter of RAM runs out.
+
+```
+bazelisk run //java/lat/trails/importers:european_designated_areas -- \
+    --jvm_flags=-Xmx20g \
+    --source=/path/to/NatDA_2026.gpkg \
+    --database_url="postgresql://localhost:5432/trails_lat" \
+    --database_username_password="trails_lat:trails_lat"
+```
+
 ## USFS MVUM
 
 `usfs_mvum` replaces a fixed public collection with the roads and trails on the Forest Service's
