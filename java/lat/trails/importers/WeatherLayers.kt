@@ -7,15 +7,13 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.sqrt
+import lat.trails.wire.ICING_LEVELS
+import lat.trails.wire.PEAK_WINDOWS
+import lat.trails.wire.TURBULENCE_LAYERS
+import lat.trails.wire.WIND_LEVELS
 
 // Pressure levels in hPa, bottom to top. We stop at 150 because nothing we draw lives above it.
 private val LEVELS = listOf(1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150)
-// About 5,000 to 30,000 feet
-private val ICING_LEVELS = listOf(850, 700, 600, 500, 400, 300)
-// Pairs of levels, about 24,000 to 44,000 feet, where jet streams make clear air turbulence
-private val TURBULENCE_LAYERS = listOf(400 to 300, 300 to 250, 250 to 200, 200 to 150)
-// About 2,500 to 18,000 feet, where planes fly below Class A
-private val WIND_LEVELS = listOf(925, 850, 700, 600, 500)
 
 private const val EARTH_RADIUS_METERS = 6_371_008.8
 private const val GRAVITY = 9.80665
@@ -124,9 +122,6 @@ private val WIND_CHANNELS = listOf(Channel("u", 12, 0.1, -204.7), Channel("v", 1
 // disagree.
 private val STRETCHED_WIND_CHANNELS =
     listOf(Channel("u", 12, 0.1, -204.7, Interpolation.VECTOR), WIND_CHANNELS[1])
-
-// in hours. Keep in sync with weather.ts#PEAK_WINDOWS
-private val PEAK_WINDOWS = listOf(12, 24, 72, 120)
 
 // One 12 bit channel per window from the input's only field, so two windows fit in an archive
 private fun scalarLookahead(

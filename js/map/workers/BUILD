@@ -8,6 +8,7 @@ tc_ts_project(
         "//:node_modules/@types/earcut",
         "//:node_modules/earcut",
         "//:node_modules/geotiff",
+        "//java/lat/trails/wire:wire-ts",
         "//java/org/trailcatalog/s2",
         "//js/map",
         "//js/map/common",

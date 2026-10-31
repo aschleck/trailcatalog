@@ -222,6 +222,7 @@ kt_jvm_library(
     ],
     deps = [
         "//java/lat/trails/common",
+        "//java/lat/trails/wire",
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/flags",
         "//java/org/trailcatalog/importers/basemap",

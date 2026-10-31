@@ -10,6 +10,12 @@ fun main() {
   println("export const MAX_LINES_BY_ID = ${MAX_LINES_BY_ID};")
   println("export const WRITE_METHODS = [${WRITE_METHODS.joinToString { "'$it'" }}] as const;")
 
+  println("export const WIND_LEVELS = [${WIND_LEVELS.joinToString()}] as const;")
+  println("export const PEAK_WINDOWS = [${PEAK_WINDOWS.joinToString()}] as const;")
+  println("export const ICING_LEVELS = [${ICING_LEVELS.joinToString()}] as const;")
+  val turbulence = TURBULENCE_LAYERS.joinToString { (bottom, top) -> "[${bottom}, ${top}]" }
+  println("export const TURBULENCE_LAYERS = [${turbulence}] as const;")
+
   for ((name, id) in listOf(
       "AIR_QUALITY_COLLECTION_ID" to AIR_QUALITY_COLLECTION_ID,
       "BURNT_AREAS_COLLECTION_ID" to BURNT_AREAS_COLLECTION_ID,

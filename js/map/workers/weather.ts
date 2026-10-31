@@ -1,3 +1,5 @@
+import { ICING_LEVELS, PEAK_WINDOWS, TURBULENCE_LAYERS, WIND_LEVELS } from 'java/lat/trails/wire/wire';
+
 // Each pixel's 24 RGB bits hold the channels packed from the high bits down as
 // round((value - offset) / scale), and a channel's largest code means no data. Every archive of a
 // run carries the run's formats in its metadata, see WeatherLayers.kt#formatsJson.
@@ -26,12 +28,13 @@ export interface EcmwfRunFormat {
   layers: Record<string, EcmwfFormat>;
 }
 
-// Pressure levels in hPa, see WeatherLayers.kt#WIND_LEVELS
-export const WIND_LEVELS = [925, 850, 700, 600, 500] as const;
+export { PEAK_WINDOWS, WIND_LEVELS };
+
 type WindLevel = typeof WIND_LEVELS[number];
-// in hours, see WeatherLayers.kt#PEAK_WINDOWS
-export const PEAK_WINDOWS = [12, 24, 72, 120] as const;
 type PeakWindow = typeof PEAK_WINDOWS[number];
+// Like 400_300 for [400, 300]
+type TurbulenceName<L> =
+    L extends readonly [infer B extends number, infer T extends number] ? `${B}_${T}` : never;
 
 export function byWindLevel<K extends string, V>(
     entries: (level: WindLevel) => ReadonlyArray<readonly [K, V]>): Record<K, V> {
@@ -148,16 +151,11 @@ export const WEATHER_VIEWS = {
   thermals: {layer: 'thermals', color: v => ramp(ALTITUDE_M, v.top)},
   freezing: {layer: 'freezing', color: v => ramp(ALTITUDE_M, v.altitude)},
   waves: {layer: 'waves', color: v => ramp(WAVE_HEIGHT_M, v.height)},
-  icing_850: icingView(850),
-  icing_700: icingView(700),
-  icing_600: icingView(600),
-  icing_500: icingView(500),
-  icing_400: icingView(400),
-  icing_300: icingView(300),
-  turbulence_400_300: turbulenceView('400_300'),
-  turbulence_300_250: turbulenceView('300_250'),
-  turbulence_250_200: turbulenceView('250_200'),
-  turbulence_200_150: turbulenceView('200_150'),
+  ...Object.fromEntries(ICING_LEVELS.map(level => [`icing_${level}`, icingView(level)])) as
+      Record<`icing_${typeof ICING_LEVELS[number]}`, View>,
+  ...Object.fromEntries(TURBULENCE_LAYERS.map(([bottom, top]) =>
+      [`turbulence_${bottom}_${top}`, turbulenceView(`${bottom}_${top}`)])) as
+      Record<`turbulence_${TurbulenceName<typeof TURBULENCE_LAYERS[number]>}`, View>,
 } satisfies Record<string, View>;
 
 export type WeatherView = keyof typeof WEATHER_VIEWS;
