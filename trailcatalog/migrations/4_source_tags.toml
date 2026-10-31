@@ -7,7 +7,7 @@ type = "create_table"
 name = "source_tags"
 primary_key = ["source_type", "source_id", "epoch"]
 
-  # 0 for a node, 1 for a way, 2 for a relation. Keep in sync with SourceTags.kt#SourceType.
+  # 0 for a node, 1 for a way, 2 for a relation. Keep in sync with SourceType.kt#SourceType.
   [[actions.columns]]
   name = "source_type"
   nullable = false

@@ -1,14 +1,8 @@
 package lat.trails.importers
 
-import com.google.common.geometry.S2CellId
-import com.google.common.geometry.S2CellUnion
 import com.google.common.geometry.S2Earth
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2Polygon
-import com.google.common.geometry.S2RegionCoverer
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import lat.trails.common.FEATURE_COVERING_MAX_LEVEL
 import lat.trails.wire.PUBLIC_LAND_COLLECTION_ID as COLLECTION_ID
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
@@ -17,16 +11,8 @@ import org.locationtech.proj4j.CoordinateReferenceSystem
 import org.locationtech.proj4j.CoordinateTransformFactory
 import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.parseFlags
-import org.trailcatalog.s2.polygonToCell
 
 private val logger = LoggerFactory.getLogger("PublicAccess")
-
-private data class Feature(
-    val data: Map<String, String>,
-    val cell: S2CellId,
-    val covering: S2CellUnion,
-    val polygon: S2Polygon,
-)
 
 // owner is a label and access is PAD-US's code
 private val SCHEMA =
@@ -78,7 +64,6 @@ fun main(args: Array<String>) {
             "USFS" to "USFS",
 
             // State
-            "OTHS" to "State",
             "SDC" to "State",
             "SDNR" to "State",
             "SDOL" to "State",
@@ -100,8 +85,6 @@ fun main(args: Array<String>) {
             "TRIB" to "Tribal",
         )
 
-  val executors = Executors.newFixedThreadPool(8)
-
   val factory = CRSFactory()
   val projections = HashMap<Int, CoordinateReferenceSystem>()
   projections[102039] =
@@ -112,8 +95,7 @@ fun main(args: Array<String>) {
       factory.createFromParameters(
           "WGS84", "+title=long/lat:WGS84 +proj=longlat +datum=WGS84 +units=degrees")
 
-  val polygons = ArrayList<Feature>()
-  val coverer = S2RegionCoverer.builder().setMaxLevel(FEATURE_COVERING_MAX_LEVEL).build()
+  val features = ArrayList<GeoPackageFeature>()
   for (table in listOf("PADUS4_1Combined_Proclamation_Marine_Fee_Designation_Easement")) {
     for (result in manager.getFeatureDao(table).queryForAll()) {
       if (ignoreCategory.contains(result.getValue("Category"))) {
@@ -148,31 +130,19 @@ fun main(args: Array<String>) {
           CoordinateTransformFactory().createTransform(projections[result.geometry.srsId], wgs84)
       val geometry = result.geometry.geometry
       if (geometry is MultiPolygon) {
-        executors.submit {
-          val polygon = toS2Polygon(geometry, transform)
-          val covering = coverer.getCovering(polygon)
-          synchronized (polygons) {
-            polygons.add(Feature(data, polygonToCell(polygon), covering, polygon))
-          }
-        }
+        features.add(GeoPackageFeature(data, geometry, transform))
       } else {
         logger.warn("Unexpected geometry type {}", geometry.javaClass.name)
       }
     }
   }
 
-  executors.shutdown()
-  executors.awaitTermination(1, TimeUnit.HOURS)
-
-  // Does this work...? Too bad I gave away Java Concurrency in Practice...
-  synchronized (polygons) {
-    replace(
-        ReplacedCollection(
-            COLLECTION_ID,
-            "PAD-US 4.1",
-            SCHEMA,
-            polygons = deduplicate(polygons).map { polygonRow(it.data, it.polygon) }))
-  }
+  replace(
+      ReplacedCollection(
+          COLLECTION_ID,
+          "PAD-US 4.1",
+          SCHEMA,
+          polygons = deduplicate(polygonRows(COLLECTION_ID, features))))
 }
 
 // Two records are the same piece of land if they agree on the unit's name, owner and access and
@@ -181,13 +151,13 @@ fun main(args: Array<String>) {
 // share all three fields and far above the ~4 m grid toS2Polygon snaps vertices to.
 private val DUPLICATE_CENTROID_DISTANCE = S2Earth.metersToAngle(100.0)
 
-private fun deduplicate(polygons: List<Feature>): List<Feature> {
-  val result = ArrayList<Feature>()
+private fun deduplicate(polygons: List<Row<S2Polygon>>): List<Row<S2Polygon>> {
+  val result = ArrayList<Row<S2Polygon>>()
   for ((_, group) in polygons.groupBy { it.data }) {
-    val kept = ArrayList<Feature>()
-    for (feature in group) {
-      if (kept.none { it.polygon.duplicates(feature.polygon) }) {
-        kept.add(feature)
+    val kept = ArrayList<Row<S2Polygon>>()
+    for (row in group) {
+      if (kept.none { it.geometry.duplicates(row.geometry) }) {
+        kept.add(row)
       }
     }
     result.addAll(kept)

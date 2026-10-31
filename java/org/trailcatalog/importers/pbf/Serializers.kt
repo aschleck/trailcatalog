@@ -118,8 +118,9 @@ fun registerPbfSerializers() {
       val nameBytes = ByteArray(nameLength)
       from.read(nameBytes)
       val names = readNames(from)
+      val notable = from.readBoolean()
       val skeleton = RelationSkeleton.parseDelimitedFrom(from)
-      return Relation(id, type, nameBytes.decodeToString(), names, skeleton)
+      return Relation(id, type, nameBytes.decodeToString(), names, notable, skeleton)
     }
 
     override fun write(v: Relation, to: EncodedOutputStream) {
@@ -129,6 +130,7 @@ fun registerPbfSerializers() {
       to.writeVarInt(bytes.size)
       to.write(bytes)
       writeNames(v.names, to)
+      to.writeBoolean(v.notable)
       v.skeleton.writeDelimitedTo(to)
     }
   })

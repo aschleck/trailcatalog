@@ -27,22 +27,13 @@ fun getRelation(
     return null
   }
 
-  var name: String? = null
-  val names = NameCollector()
-  for (i in 0 until relation.keysCount) {
-    val key = stringTable.getS(relation.getKeys(i))
-    val value = stringTable.getS(relation.getVals(i))
-    if (key == NAME_BS) {
-      name = value.toStringUtf8()
-    }
-    names.add(key, value)
-  }
-
+  val kvs = relationKvs(relation)
   return Relation(
       relation.id,
       category.id,
-      name ?: "",
-      names.toList(),
+      tagName(kvs, stringTable) ?: "",
+      tagNames(kvs, stringTable),
+      isNotable(kvs, stringTable),
       relationToSkeleton(relation, stringTable))
 }
 

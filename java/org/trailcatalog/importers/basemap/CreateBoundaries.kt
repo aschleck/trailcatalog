@@ -1,7 +1,6 @@
 package org.trailcatalog.importers.basemap
 
 import com.google.common.geometry.S1Angle
-import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2Error
 import com.google.common.geometry.S2Loop
 import com.google.common.geometry.S2Polygon
@@ -57,9 +56,6 @@ class CreateBoundaries
       polygon.encode(it)
     }
     val cell = polygonToCell(polygon).id()
-    if (cell == S2CellId.fromFace(0).id()) {
-      println(relation.id)
-    }
     emitter.emit(
         Boundary(
             relation.id,

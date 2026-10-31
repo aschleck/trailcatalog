@@ -66,8 +66,11 @@ fun lineRow(collection: UUID, key: String, data: Map<String, String>, latLngs: L
 
 fun polygonRow(
     collection: UUID, key: String?, data: Map<String, String>, geometry: JsonNode):
+    Row<S2Polygon>? = polygonRow(collection, key, data, toS2Polygon(geometry))
+
+/** Makes a row with a random id if key is null, or returns null if polygon is empty. */
+fun polygonRow(collection: UUID, key: String?, data: Map<String, String>, polygon: S2Polygon):
     Row<S2Polygon>? {
-  val polygon = toS2Polygon(geometry)
   if (polygon.numLoops() == 0) {
     logger.warn("Dropping {} from {} because its geometry is empty", data, collection)
     return null

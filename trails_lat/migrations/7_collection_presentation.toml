@@ -2,8 +2,8 @@
 type = "add_column"
 table = "collections"
 
-  # JSON with the colors to draw the collection's objects in and the labels for their data, see
-  # collection_layer.ts#Presentation. Null means the client decides.
+  # JSON with the colors to draw the collection's objects in and the labels for their data. Null
+  # means the client decides.
   [actions.column]
   name = "presentation"
   nullable = true

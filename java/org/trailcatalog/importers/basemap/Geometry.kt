@@ -17,8 +17,3 @@ fun latLngsToMeters(points: List<LatLngE7>): Double {
   }
   return S2Earth.radiansToMeters(radians)
 }
-
-fun S2Point.toLatLngE7(): LatLngE7 {
-  val ll = S2LatLng(this)
-  return LatLngE7((ll.latDegrees() * 10_000_000).toInt(), (ll.lngDegrees() * 10_000_000).toInt())
-}

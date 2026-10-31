@@ -37,15 +37,13 @@ class CreateRelationPoints
     if (polygon.isEmpty) {
       return
     }
-    // Relations don't carry notable, which only costs them search's small bonus for a Wikidata
-    // link.
     emitter.emit(
         Point(
             relationPointId(relation.id),
             category.id,
             relation.name.ifEmpty { null },
             relation.names,
-            /* notable= */ false,
+            relation.notable,
             LatLngE7.fromS2Point(interiorPoint(polygon))))
   }
 

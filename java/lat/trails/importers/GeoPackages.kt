@@ -8,11 +8,13 @@ import lat.trails.common.assemblePolygon
 import mil.nga.sf.MultiPolygon
 import org.locationtech.proj4j.CoordinateTransform
 import org.locationtech.proj4j.ProjCoordinate
+import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createNullableFlag
-import org.trailcatalog.s2.polygonToCell
 
 // Shared by the importers that load a GeoPackage of polygons
+
+private val logger = LoggerFactory.getLogger("GeoPackages")
 
 @FlagSpec(name = "source")
 val source = createNullableFlag(null as Path?)
@@ -33,6 +35,32 @@ fun toS2Polygon(geometry: MultiPolygon, transform: CoordinateTransform?): S2Poly
   })
 }
 
-/** Makes a row with a new id, for sources that don't give their features a stable one. */
-fun polygonRow(data: Map<String, String>, polygon: S2Polygon): Row<S2Polygon> =
-    Row(UUID.randomUUID(), data, polygonToCell(polygon), polygon.rectBound, polygon)
+class GeoPackageFeature(
+    val data: Map<String, String>,
+    val geometry: MultiPolygon,
+    val transform: CoordinateTransform? = null,
+)
+
+/**
+ * Converts the features in parallel and gives each a random id, because these sources don't give
+ * their features a stable one. Drops the ones whose geometry fails to build or comes out empty.
+ */
+fun polygonRows(collection: UUID, features: List<GeoPackageFeature>): List<Row<S2Polygon>> =
+    features
+        .parallelStream()
+        .map {
+          val polygon =
+              try {
+                toS2Polygon(it.geometry, it.transform)
+              } catch (e: Exception) {
+                logger.warn(
+                    "Dropping {} from {} because its geometry fails to build",
+                    it.data,
+                    collection,
+                    e)
+                return@map null
+              }
+          polygonRow(collection, /* key= */ null, it.data, polygon)
+        }
+        .toList()
+        .filterNotNull()

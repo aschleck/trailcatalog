@@ -197,6 +197,7 @@ private fun boundaryOf(
           BOUNDARY_ADMINISTRATIVE_10.id,
           "北石ケ町",
           listOf(),
+          /* notable= */ false,
           RelationSkeleton.getDefaultInstance())
   val boundaries = ArrayList<Boundary>()
   CreateBoundaries().act(

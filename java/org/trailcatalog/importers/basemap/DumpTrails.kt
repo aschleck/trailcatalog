@@ -2,6 +2,7 @@ package org.trailcatalog.importers.basemap
 
 import com.zaxxer.hikari.HikariDataSource
 import org.apache.commons.text.StringEscapeUtils
+import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.LatLngRectE7
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PCollection
@@ -18,7 +19,7 @@ class DumpTrails(private val epoch: Int, private val hikari: HikariDataSource)
           StringifyingInputStream(input) { trail, csv ->
             val bound = LatLngRectE7.from(trail.polyline.rectBound)
             val cell = polylineToCell(trail.polyline).id()
-            val marker = trail.polyline.interpolate(0.5).toLatLngE7()
+            val marker = LatLngE7.fromS2Point(trail.polyline.interpolate(0.5))
             val lengthMeters = if (trail.validGeometry) trail.lengthMeters else -1
 
             // id,epoch,type,cell,name,path_ids,bound_degrees_e7,marker_degrees_e7,

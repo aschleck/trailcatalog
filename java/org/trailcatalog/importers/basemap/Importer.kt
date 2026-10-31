@@ -211,7 +211,7 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
               waysWithGeometry.then(MakeWayPoints()),
               relationsWithGeometry.then(CreateRelationPoints())))
   points.write(DumpPoints(epoch, hikari))
-  points.write(DumpPointNames(epoch, hikari))
+  points.write(DumpNames("point_names", epoch, hikari, { it.id }, { it.names }))
 
   // Now start dumping boundaries, trails, and what contains what. Climbing sites are boundaries
   // shaped by the climbing elements they hold rather than by their member ways.
@@ -221,11 +221,11 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
               relationsWithGeometry.then(CreateBoundaries()),
               pipeline.zip2(climbingElements, waysWithGeometry, CreateClimbingSites())))
   boundaries.write(DumpBoundaries(epoch, hikari))
-  boundaries.write(DumpBoundaryNames(epoch, hikari))
+  boundaries.write(DumpNames("boundary_names", epoch, hikari, { it.id }, { it.names }))
   val trails = relationsWithGeometry.then(CreateTrails())
   trails.write(DumpPathsInTrails(epoch, hikari))
   trails.write(DumpTrails(epoch, hikari))
-  trails.write(DumpTrailNames(epoch, hikari))
+  trails.write(DumpNames("trail_names", epoch, hikari, { it.relationId }, { it.names }))
   val boundariesById = boundaries.groupBy("GroupById") { it.id }
   val boundaryIndex = boundaries.then(BuildBoundaryIndex())
   val boundariesInBoundaries = boundaryIndex.then(FindBoundariesInBoundaries())

@@ -1,8 +1,5 @@
 package lat.trails.importers
 
-import com.google.common.geometry.S2Polygon
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import lat.trails.wire.JAPANESE_NATIONAL_PARKS_COLLECTION_ID as COLLECTION_ID
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
@@ -46,8 +43,7 @@ fun main(args: Array<String>) {
   parseFlags(args)
 
   val geoPackage = GeoPackageManager.open(false, source.value!!.toFile())
-  val executors = Executors.newFixedThreadPool(8)
-  val polygons = ArrayList<Pair<Map<String, String>, S2Polygon>>()
+  val features = ArrayList<GeoPackageFeature>()
   for (row in geoPackage.getFeatureDao("nps").queryForAll()) {
     val data = HashMap<String, String>()
     data["name"] = "${row.getValue("NAME")}国立公園"
@@ -58,24 +54,12 @@ fun main(args: Array<String>) {
           is Polygon -> MultiPolygon(listOf(geometry))
           else -> throw IllegalStateException("Unexpected geometry ${geometry.geometryType}")
         }
-    executors.submit {
-      val polygon = toS2Polygon(multiPolygon, /* transform= */ null)
-      synchronized (polygons) {
-        polygons.add(data to polygon)
-      }
-    }
+    features.add(GeoPackageFeature(data, multiPolygon))
   }
 
-  executors.shutdown()
-  executors.awaitTermination(1, TimeUnit.HOURS)
+  val polygons = polygonRows(COLLECTION_ID, features)
   logger.info("Converted {} zones", polygons.size)
-
-  synchronized (polygons) {
-    replace(
-        ReplacedCollection(
-            COLLECTION_ID,
-            "Japanese national parks 2025",
-            SCHEMA,
-            polygons = polygons.map { (data, polygon) -> polygonRow(data, polygon) }))
-  }
+  replace(
+      ReplacedCollection(
+          COLLECTION_ID, "Japanese national parks 2025", SCHEMA, polygons = polygons))
 }

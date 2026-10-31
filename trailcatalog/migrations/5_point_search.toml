@@ -1,5 +1,5 @@
 # point_names is a search index like boundary_names and trail_names, and only carries points in a
-# searchable category. See ExtractPoints.kt#SEARCHABLE_POINT_CATEGORIES.
+# searchable category. See Categories.kt#SEARCHABLE_POINT_LABELS.
 
 [[actions]]
 type = "create_table"

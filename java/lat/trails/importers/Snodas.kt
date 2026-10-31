@@ -45,7 +45,7 @@ private const val MAX_ZOOM = 7
 private const val TILE_SIZE = 256
 
 // Each pixel's 24 RGB bits hold snow depth in cm in the high 12 bits and snow water equivalent in
-// mm in the low 12 bits. See weather.ts#unpackSnodas.
+// mm in the low 12 bits. See weather.ts#unpackChannel.
 private val DEPTH_CM = Channel("depth", 12, 1.0, 0.0)
 private val WATER_MM = Channel("water", 12, 1.0, 0.0)
 
@@ -100,7 +100,7 @@ fun main(args: Array<String>) {
     mbtiles.setMetadata("json", ObjectMapper().writeValueAsString(mapOf("channels" to channels)))
     // PNG because the pixels are data, and lossy compression would corrupt them.
     // TODO(april): write lossless WebP instead, which is 30% smaller. The encoder has natives for
-    // every platform we build on, but raster_loader.ts#colorSnow and SNODAS_URL expect PNG.
+    // every platform we build on, but layer_catalog.ts#snodasUrl expects PNG.
     mbtiles.setMetadata("format", "png")
     mbtiles.setMetadata("minzoom", "0")
     mbtiles.setMetadata("maxzoom", MAX_ZOOM.toString())

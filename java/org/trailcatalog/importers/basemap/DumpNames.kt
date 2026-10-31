@@ -2,19 +2,25 @@ package org.trailcatalog.importers.basemap
 
 import com.zaxxer.hikari.HikariDataSource
 import org.apache.commons.text.StringEscapeUtils
+import org.trailcatalog.importers.pbf.Name
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PCollection
 
-class DumpTrailNames(private val epoch: Int, private val hikari: HikariDataSource)
-  : PSink<PCollection<Trail>>() {
+class DumpNames<V : Any>(
+    private val table: String,
+    private val epoch: Int,
+    private val hikari: HikariDataSource,
+    private val getId: (V) -> Long,
+    private val getNames: (V) -> List<Name>,
+) : PSink<PCollection<V>>() {
 
-  override fun write(input: PCollection<Trail>) {
+  override fun write(input: PCollection<V>) {
     input.use {
       val stream =
-          StringifyingInputStream(input) { trail, csv ->
-            for (name in trail.names) {
+          StringifyingInputStream(input) { v, csv ->
+            for (name in getNames(v)) {
               // id,epoch,language,name
-              csv.append(trail.relationId)
+              csv.append(getId(v))
               csv.append(",")
               csv.append(epoch)
               csv.append(",")
@@ -24,7 +30,7 @@ class DumpTrailNames(private val epoch: Int, private val hikari: HikariDataSourc
               csv.append("\n")
             }
           }
-      copyStreamToPg("trail_names", stream, hikari)
+      copyStreamToPg(table, stream, hikari)
     }
   }
 }

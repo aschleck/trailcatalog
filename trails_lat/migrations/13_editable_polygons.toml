@@ -60,7 +60,7 @@ index = "polygons_by_collection"
 type = "custom"
 
 # Importers' polygon layers are fills and set no stroke, which would otherwise outline them in
-# DEFAULT_COLOR. A clear stroke draws no outline. Keep in sync with Schemas.kt#polygonLayer.
+# DEFAULT_COLOR. A clear stroke draws no outline.
 start = """
   CREATE TABLE collection_schemas_before_strokes AS
       SELECT id, schema FROM collections
@@ -99,7 +99,6 @@ type = "custom"
 
 # A schema without a polygon layer draws a polygon drawn in it with nothing, so it takes
 # schema.ts#DEFAULT_COLLECTION_SCHEMA's polygon layer and whichever of its polygon fields it lacks.
-# Keep in sync with DEFAULT_COLLECTION_SCHEMA.
 start = """
   CREATE TABLE collection_schemas_before_polygons AS
       SELECT id, schema FROM collections

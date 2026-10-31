@@ -50,11 +50,7 @@ fun climbingWay(way: Osmformat.Way, stringTable: StringTable): ClimbingElement? 
  * or null if it isn't one.
  */
 fun climbingRelation(relation: Osmformat.Relation, stringTable: StringTable): ClimbingElement? {
-  val kvs = ArrayList<Int>(2 * relation.keysCount)
-  for (i in 0 until relation.keysCount) {
-    kvs.add(relation.getKeys(i))
-    kvs.add(relation.getVals(i))
-  }
+  val kvs = relationKvs(relation)
   var type = climbingCategory(kvs, stringTable)
   if (type == RelationCategory.ANY) {
     return null

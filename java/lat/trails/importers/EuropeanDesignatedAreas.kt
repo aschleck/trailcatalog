@@ -1,8 +1,5 @@
 package lat.trails.importers
 
-import com.google.common.geometry.S2Polygon
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import lat.trails.wire.PROTECTED_AREAS_COLLECTION_ID as COLLECTION_ID
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
@@ -78,8 +75,7 @@ fun main(args: Array<String>) {
     areas[(row.getValue("natDAId") as Number).toLong()] = data
   }
 
-  val executors = Executors.newFixedThreadPool(8)
-  val polygons = ArrayList<Pair<Map<String, String>, S2Polygon>>()
+  val features = ArrayList<GeoPackageFeature>()
   var points = 0
   for (row in geoPackage.getFeatureDao("ProtectedSite").queryForAll()) {
     val data = areas[(row.getValue("natDAId") as Number).toLong()]!!
@@ -93,24 +89,14 @@ fun main(args: Array<String>) {
             continue
           }
         }
-    executors.submit {
-      val polygon = toS2Polygon(multiPolygon, /* transform= */ null)
-      synchronized (polygons) {
-        polygons.add(data to polygon)
-      }
-    }
+    features.add(GeoPackageFeature(data, multiPolygon))
   }
-
-  executors.shutdown()
-  executors.awaitTermination(1, TimeUnit.HOURS)
   logger.info("Skipped {} sites without boundaries", points)
 
-  synchronized (polygons) {
-    replace(
-        ReplacedCollection(
-            COLLECTION_ID,
-            "Nationally designated areas 2026",
-            SCHEMA,
-            polygons = polygons.map { (data, polygon) -> polygonRow(data, polygon) }))
-  }
+  replace(
+      ReplacedCollection(
+          COLLECTION_ID,
+          "Nationally designated areas 2026",
+          SCHEMA,
+          polygons = polygonRows(COLLECTION_ID, features)))
 }
