@@ -123,7 +123,6 @@ import {
   insertVertex,
   joinLines,
   minVertexCount,
-  removeVertex,
   reverseLine,
   splitLine,
 } from './line_edits';
@@ -258,6 +257,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private selected: string|undefined;
   // Kept for centering on, which needs the geometry the dialog's state leaves out
   private inspected: LayerObject|undefined;
+  // Stops the inspected object's layer drawing it as selected
+  private unmarkInspected: (() => void)|undefined;
   // Moves with every click, so that a slow query for an earlier one is dropped
   private pickGeneration: number;
   // The pick menu and the camera when it opened. The map reports a move whenever it settles, even
@@ -337,6 +338,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             });
     this.selected = undefined;
     this.inspected = undefined;
+    this.unmarkInspected = undefined;
     this.pickGeneration = 0;
     this.picked = undefined;
     this.inspectGeneration = 0;
@@ -386,9 +388,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     // One index for every layer, so that the drawing tools snap onto and route across drawn
     // lines and paths alike.
     const locations = new LocationIndex();
+    const labelObstacles = new LabelObstacles();
     // One cache, so that measuring a line just drawn doesn't fetch its lines again
     const refiner = new LineRefiner();
-    const labelObstacles = new LabelObstacles();
     const camera = this.mapController.camera;
     const renderer = this.mapController.renderer;
     // Line profiles and new vertices sample their elevations from Mapterhorn
@@ -482,9 +484,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.catalog =
         new LayerCatalog(
             locations,
+            labelObstacles,
             camera,
             this.elevations,
-            labelObstacles,
             renderer,
             () => this.state.layers.nodes,
             () => {
@@ -646,7 +648,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
       const picks = [...features, ...found.flat()];
       if (picks.length === 0) {
-        this.featureLayer.edit(undefined);
         this.clickFeature(undefined);
       } else if (picks.length === 1 && readings.length === 0) {
         this.openPick(picks[0]);
@@ -693,31 +694,33 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private openPick(pick: Pick): void {
     if (pick.kind === 'feature') {
-      this.chooseFeature(pick.feature);
+      this.clickFeature(pick.feature.id);
       return;
     }
 
-    this.featureLayer.edit(undefined);
     this.stopJoining();
     if (pick.kind === 'object') {
-      this.openObject(pick.layer, pick.object);
+      const {layer, object} = pick;
+      this.openObject(layer, object);
+      layer.selectObject(object);
+      this.unmarkInspected = () => {
+        layer.selectObject(undefined);
+      };
     } else if (pick.kind === 'point') {
-      this.openObject(pick.layer, {kind: 'point', value: pick.point});
+      const {layer, point} = pick;
+      this.openObject(layer, {kind: 'point', value: point});
+      layer.selectPoint(point);
+      this.unmarkInspected = () => {
+        layer.selectPoint(undefined);
+      };
     } else {
       checkExhaustive(pick);
     }
   }
 
-  private chooseFeature(feature: EditableFeature): void {
-    this.featureLayer.edit(feature);
-    this.clickFeature(feature.id);
-  }
-
   private highlightPick(pick: Pick, on: boolean): void {
     if (pick.kind === 'feature') {
-      const id = on ? pick.feature.id : undefined;
-      this.featureLayer.setHovered(id);
-      this.setHovered(id);
+      this.setHovered(on ? pick.feature.id : undefined);
     } else if (pick.kind === 'object') {
       pick.layer.highlightObject(on ? pick.object : undefined, this.mapController);
     } else if (pick.kind === 'point') {
@@ -895,7 +898,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         label: 'Delete vertex',
         disabled: feature.latLngE7.length / 2 <= minVertexCount(feature),
         action: () => {
-          this.editShape(feature.id, shape => removeVertex(shape, spot.index));
+          this.featureLayer.deleteVertex(spot.index, this.mapController);
         },
       });
     }
@@ -1000,13 +1003,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   featureRowEntered(e: CorgiEvent<typeof DOM_POINTER>): void {
-    const id = checkExists(e.actionElement.data('id')).string();
-    this.featureLayer.setHovered(id);
-    this.setHovered(id);
+    this.setHovered(checkExists(e.actionElement.data('id')).string());
   }
 
   featureRowLeft(): void {
-    this.featureLayer.setHovered(undefined);
     this.setHovered(undefined);
   }
 
@@ -1474,12 +1474,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
-    // Folders only go through the button, because a stray key taking a folder of dozens of
-    // features with it is too easy.
     if ((e.key === 'Delete' || e.key === 'Backspace') && this.state.tool === 'pointer') {
-      const feature = this.selected !== undefined ? this.store.get(this.selected) : undefined;
-      if (feature && feature.kind !== 'folder') {
-        this.deleteFeatures([feature]);
+      if (this.selected !== undefined) {
+        this.deleteClicked();
         e.preventDefault();
       }
       return;
@@ -1561,6 +1558,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
+    this.featureLayer.setHovered(id);
     this.updateState({
       ...this.state,
       features: {
@@ -1592,6 +1590,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.featureLayer.setSelected(id);
     this.featureLayer.setMarker(undefined);
     this.inspected = undefined;
+    this.unmarkInspected?.();
+    this.unmarkInspected = undefined;
     this.inspectGeneration += 1;
     if (this.state.inspected) {
       this.updateState({...this.state, inspected: undefined});

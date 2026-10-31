@@ -391,9 +391,7 @@ export class FeatureLayer extends Layer {
     }
 
     this.selected = id;
-    if (id !== this.editing) {
-      this.stopEditing();
-    }
+    this.syncEditing();
     this.replan(this.geometry, this.markers);
   }
 
@@ -418,9 +416,7 @@ export class FeatureLayer extends Layer {
 
   setInteractive(interactive: boolean): void {
     this.interactive = interactive;
-    if (!interactive) {
-      this.stopEditing();
-    }
+    this.syncEditing();
   }
 
   isVisible(feature: EditableFeature): boolean {
@@ -459,14 +455,13 @@ export class FeatureLayer extends Layer {
     return false;
   }
 
-  /**
-   * Shows the vertex handles of the feature when it's an editable line or a polygon, and hides any
-   * others.
-   */
-  edit(feature: EditableFeature|undefined): void {
-    if (hasEditableVertices(feature) && !this.store.isReadOnly()) {
-      if (feature.id !== this.editing) {
-        this.startEditing(feature.id);
+  // Shows the vertex handles of the selected feature when it's an editable line or a polygon and
+  // the pointer tool is out, and hides any others.
+  private syncEditing(): void {
+    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
+    if (this.interactive && hasEditableVertices(selected) && !this.store.isReadOnly()) {
+      if (selected.id !== this.editing) {
+        this.startEditing(selected.id);
       }
     } else {
       this.stopEditing();
@@ -490,9 +485,9 @@ export class FeatureLayer extends Layer {
       this.replan(this.overlay);
     }
 
+    // The viewer owns hover and sets it back on us, see viewer_controller.ts#setHovered.
     const hit = this.hitTest(at);
     if (hit?.id !== this.hovered) {
-      this.setHovered(hit?.id);
       source.trigger(FEATURE_HOVERED, {id: hit?.id});
     }
 
@@ -521,7 +516,6 @@ export class FeatureLayer extends Layer {
       this.replan(this.overlay);
     }
     if (this.hovered !== undefined) {
-      this.setHovered(undefined);
       source.trigger(FEATURE_HOVERED, {id: undefined});
     }
   }
@@ -664,17 +658,23 @@ export class FeatureLayer extends Layer {
     }
 
     if (key === 'Escape') {
-      this.stopEditing();
+      source.trigger(FEATURE_CLICKED, {id: undefined});
       return true;
     } else if ((key === 'Delete' || key === 'Backspace') && this.activeVertex !== undefined) {
-      const after = removeVertex(editing.feature, this.activeVertex);
-      if (after) {
-        this.activeVertex = undefined;
-        source.trigger(FEATURE_EDITED, {before: snapshot(editing.feature), after});
-      }
+      this.deleteVertex(this.activeVertex, source);
       return true;
     }
     return false;
+  }
+
+  /** Removes a vertex from the shape being edited, unless that would leave too few. */
+  deleteVertex(index: number, source: EventSource): void {
+    const editing = this.editingLine();
+    const after = editing && removeVertex(editing.feature, index);
+    if (editing && after) {
+      this.activeVertex = undefined;
+      source.trigger(FEATURE_EDITED, {before: snapshot(editing.feature), after});
+    }
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
@@ -1002,9 +1002,6 @@ export class FeatureLayer extends Layer {
       spot = this.spotOn(this.projected.get(hit.id)!, at);
     }
 
-    if (hit?.id !== this.editing) {
-      this.stopEditing();
-    }
     source.trigger(FEATURE_CONTEXT_MENU, {
       id: hit?.id,
       spot,
@@ -1409,15 +1406,15 @@ export class FeatureLayer extends Layer {
     for (const shape of this.visibleShapes) {
       const label = shape.look.label;
       if (!label) {
-      const feature = shape.feature;
         continue;
       }
 
+      const feature = shape.feature;
       if (shape.ring) {
-          feature,
         const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({
+          feature,
           graphemes,
           line: undefined,
           at: shape.ring.center,
@@ -1433,10 +1430,10 @@ export class FeatureLayer extends Layer {
     for (const point of this.visiblePoints) {
       const label = point.look.label;
       if (label) {
-          feature: point.feature,
         const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({
+          feature: point.feature,
           graphemes,
           line: undefined,
           at: at(point),
@@ -1467,6 +1464,9 @@ export class FeatureLayer extends Layer {
 
     // Pixels per mercator unit, see mbtile_layer.ts#render.
     const pixelsPerWorld = 256 * Math.pow(2, zoom - 1);
+    const drawables = [];
+    let offset = 0;
+    this.labelsMissingGlyphs = false;
     // We test collisions in mercator scaled to pixels rather than on screen, so panning doesn't
     // change which labels fit and only zoom replans them.
     const collisions = new LabelCollisions();
@@ -1477,9 +1477,6 @@ export class FeatureLayer extends Layer {
       const py = y * pixelsPerWorld;
       collisions.insert([px - reach, py - reach, px + reach, py + reach]);
     }
-    const drawables = [];
-    let offset = 0;
-    this.labelsMissingGlyphs = false;
     for (const {graphemes, point} of icons) {
       if (!GLYPHER.measurePx(graphemes, ICON_SCALE)) {
         this.labelsMissingGlyphs = true;
@@ -1501,6 +1498,9 @@ export class FeatureLayer extends Layer {
               this.glLabels,
               this.renderer,
               {horizontal: 'center', vertical: 'middle'});
+      drawables.push(...planned.drawables);
+      offset += planned.byteSize;
+    }
 
     // Labels that don't fit beside the ones before them are left out. The label of whatever is
     // hovered or selected goes first, then points before lines because a point's label has one
@@ -1512,15 +1512,15 @@ export class FeatureLayer extends Layer {
             + (this.labelsPlaced.has(feature.id) ? 0 : 1);
     labeled.sort((a, b) => priority(a.feature) - priority(b.feature));
     const placed = new Set<string>();
-      drawables.push(...planned.drawables);
-      offset += planned.byteSize;
-    }
     for (const label of labeled) {
       const {feature, graphemes, line} = label;
       const size = GLYPHER.measurePx(graphemes, LABEL_SCALE);
       if (!size) {
         this.labelsMissingGlyphs = true;
         continue;
+      }
+
+      if (!line) {
         const x = label.at[0] * pixelsPerWorld + label.offsetPx[0];
         const y = label.at[1] * pixelsPerWorld + label.offsetPx[1];
         const left = label.anchor.horizontal === 'start' ? x : x - size[0] / 2;
@@ -1536,9 +1536,6 @@ export class FeatureLayer extends Layer {
 
         collisions.insert(box);
         placed.add(feature.id);
-      }
-
-      if (!line) {
         const planned =
             GLYPHER.plan(
                 graphemes,
@@ -1558,6 +1555,9 @@ export class FeatureLayer extends Layer {
         offset += planned.byteSize;
         continue;
       }
+
+      const path = labelPath(line, zoom);
+      for (const anchor of path.anchors) {
         const points = path.points.subarray(2 * anchor);
         if (!GLYPHER.layOutCurved(
                 graphemes, points, pixelsPerWorld, LABEL_SCALE, CURVED_GLYPHS, CURVED_PLACEMENTS)
@@ -1578,9 +1578,6 @@ export class FeatureLayer extends Layer {
 
         collisions.insert(CURVED_BOXES);
         placed.add(feature.id);
-
-      const path = labelPath(line, zoom);
-      for (const anchor of path.anchors) {
         const planned =
             GLYPHER.planPlaced(
                 CURVED_GLYPHS,
@@ -1596,12 +1593,12 @@ export class FeatureLayer extends Layer {
                 this.renderer);
         drawables.push(...planned.drawables);
         offset += planned.byteSize;
-    this.labelsPlaced = placed;
-    this.obstacles.boxes = collisions.boxes;
-    this.obstacles.pixelsPerWorld = pixelsPerWorld;
         break;
       }
     }
+    this.labelsPlaced = placed;
+    this.obstacles.boxes = collisions.boxes;
+    this.obstacles.pixelsPerWorld = pixelsPerWorld;
 
     if (offset > 0) {
       this.renderer.uploadData(this.labels, offset, this.glLabels);
@@ -2004,6 +2001,9 @@ function simplify(points: Float64Array, tolerance: number): Float64Array {
     if (keep[i]) {
       simplified.push(points[2 * i], points[2 * i + 1]);
     }
+  }
+  return Float64Array.from(simplified);
+}
 
 // Boxes bucketed by cell. Unlike label_placer.ts#CollisionGrid it has no bounds, because labels
 // plan across the whole collection, which can span the world at any zoom.
@@ -2058,7 +2058,4 @@ function cellKeys(x0: number, y0: number, x1: number, y1: number): string[] {
     }
   }
   return keys;
-}
-  }
-  return Float64Array.from(simplified);
 }

@@ -59,6 +59,8 @@ export class PointCollectionLayer extends Layer {
   // Only points descending from these draw and answer the cursor
   private categories: PointCategory[];
   private hovered: Point|undefined;
+  // The point the inspector shows, which stays drawn after its cell unloads
+  private selected: Point|undefined;
 
   constructor(
       copyrights: Copyright[],
@@ -96,6 +98,7 @@ export class PointCollectionLayer extends Layer {
     this.lastRenderGeneration = -1;
     this.categories = categories;
     this.hovered = undefined;
+    this.selected = undefined;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'lcc') {
@@ -145,6 +148,14 @@ export class PointCollectionLayer extends Layer {
     }
   }
 
+  /** Draws the point as selected, the way a hovered one draws, or stops. */
+  selectPoint(point: Point|undefined): void {
+    if (point !== this.selected) {
+      this.selected = point;
+      this.redraw();
+    }
+  }
+
   override hover(point: S2LatLng, source: EventSource): boolean {
     const target = this.pointsAt(point)[0];
     this.highlightPoint(target, source);
@@ -190,13 +201,16 @@ export class PointCollectionLayer extends Layer {
     });
   }
 
-  // The hovered point draws again on top and larger, so it needs no hole cut where it was.
+  // The hovered and selected points draw again on top and larger, so they need no hole cut where
+  // they were.
   private plan(): void {
     const shown = [];
     for (const points of this.cells.values()) {
       shown.push(...points.filter(point => this.shows(point)));
     }
-    const count = shown.length + (this.hovered ? 1 : 0);
+    const raised =
+        [...new Set([this.selected, this.hovered])].filter((p): p is Point => p !== undefined);
+    const count = shown.length + raised.length;
     this.buffer = growBuffer(this.buffer, count * BillboardProgram.bytesNeeded());
 
     const drawables: Drawable[] = [];
@@ -222,8 +236,8 @@ export class PointCollectionLayer extends Layer {
     for (const point of shown) {
       push(point, ICON_SIZE_PX, Z_OVERLAY_TEXT + 0.5);
     }
-    if (this.hovered) {
-      push(this.hovered, HOVER_ICON_SIZE_PX, Z_USER_DATA_HIGHLIGHT);
+    for (const point of raised) {
+      push(point, HOVER_ICON_SIZE_PX, Z_USER_DATA_HIGHLIGHT);
     }
 
     this.renderer.uploadData(this.buffer, offset, this.glBuffer);

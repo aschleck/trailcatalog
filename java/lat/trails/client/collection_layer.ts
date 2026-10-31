@@ -7,7 +7,7 @@ import { Camera, projectS2LatLng } from 'js/map/camera';
 import { Copyright, RawUuid, RgbaU32 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { LineProgram } from 'js/map/rendering/line_program';
+import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -38,6 +38,13 @@ const HOVER_LINE_PADDING_PX = 1;
 const HOVER_LINE_MIN_RADIUS_PX = 4;
 // Hovered points get bigger instead of changing color, because the color shows the data.
 const HOVER_POINT_PADDING_PX = 2;
+
+// The object the inspector shows draws again on top, wider and in a white casing, like a selected
+// feature. See feature_layer.ts#SELECTED_CASING.
+const SELECTED_CASING = 0xFFFFFFFF as RgbaU32;
+const SELECTED_PADDING_PX = 2;
+// Under the hover highlight, so hovering the selected object still lifts it
+const Z_SELECTED = Z_USER_DATA_HIGHLIGHT - 0.25;
 
 const NO_STYLE: Style = {lines: [], points: [], polygons: []};
 
@@ -112,6 +119,8 @@ export class CollectionLayer extends Layer {
   // translucent.
   private lastHoverTarget: string|undefined;
   private highlighted: HeldObject|undefined;
+  // Drawn above its cell rather than in place of it, so a cell reloading under it leaves it alone
+  private readonly selection: {buffer: ArrayBuffer; drawables: Drawable[]; glBuffer: WebGLBuffer};
   // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
   private styleZoom: number;
   private styleEpoch: number;
@@ -177,6 +186,15 @@ export class CollectionLayer extends Layer {
     };
     this.lastHoverTarget = undefined;
     this.highlighted = undefined;
+    // A couple thousand vertices
+    this.selection = {
+      buffer: new ArrayBuffer(64 * 1024),
+      drawables: [],
+      glBuffer: this.renderer.createDataBuffer(64 * 1024),
+    };
+    this.registerDisposer(() => {
+      this.renderer.deleteBuffer(this.selection.glBuffer);
+    });
     this.styleZoom = -1;
     this.styleEpoch = 0;
     this.styleBreaks = styleBreaks(initial);
@@ -267,6 +285,73 @@ export class CollectionLayer extends Layer {
     // A hover query in flight would otherwise replace it.
     this.hoverGeneration += 1;
     this.retarget(object && objectKey(object.value.id), object, source);
+  }
+
+  /** Draws the object as selected, or stops drawing a selection. */
+  selectObject(object: HeldObject|undefined): void {
+    const runs: Array<{
+      fill: RgbaU32;
+      radius: number;
+      pattern: LinePattern;
+      points: ArrayLike<number>;
+    }> = [];
+    if (object?.kind === 'line') {
+      const {points, style} = object.value;
+      runs.push({fill: style.fill, radius: style.radius, pattern: style.pattern, points});
+    } else if (object?.kind === 'point') {
+      const {position: [x, y], style} = object.value;
+      runs.push({fill: style.fill, radius: style.radius, pattern: 'solid', points: [x, y, x, y]});
+    } else if (object?.kind === 'polygon') {
+      const {outline, style} = object.value;
+      const fill = style.outline?.fill ?? raiseAlpha(style.fill, 0xFF);
+      const radius = style.outline?.radius ?? HOVER_POLYGON_OUTLINE_RADIUS_PX;
+      for (const ring of outline) {
+        runs.push({fill, radius, pattern: 'solid', points: ring});
+      }
+    }
+
+    const selection = this.selection;
+    let needed = 0;
+    for (const run of runs) {
+      needed += LineProgram.bytesNeeded(run.points.length / 2);
+    }
+    selection.buffer = growBuffer(selection.buffer, needed);
+    // Every run is the same program, so like a polygon's hovered outline they draw as one.
+    let offset = 0;
+    let instances = 0;
+    let vertexCount = 0;
+    for (const run of runs) {
+      const result =
+          LineProgram.push(
+              run.fill,
+              SELECTED_CASING,
+              run.radius + SELECTED_PADDING_PX,
+              run.pattern,
+              run.points,
+              selection.buffer,
+              offset);
+      offset += result.geometryByteLength;
+      instances += result.instanceCount;
+      vertexCount = result.vertexCount;
+    }
+    selection.drawables = [];
+    if (instances > 0) {
+      this.renderer.uploadData(selection.buffer, offset, selection.glBuffer);
+      selection.drawables.push({
+        elements: undefined,
+        geometry: selection.glBuffer,
+        geometryByteLength: offset,
+        geometryOffset: 0,
+        instanced: {
+          count: instances,
+        },
+        program: this.renderer.lineProgram,
+        texture: undefined,
+        vertexCount,
+        z: Z_SELECTED,
+      });
+    }
+    this.redraw();
   }
 
   override hover(point: S2LatLng, source: EventSource): boolean {
@@ -496,6 +581,7 @@ export class CollectionLayer extends Layer {
       planner.add(cell.drawables);
     }
 
+    planner.add(this.selection.drawables);
     planner.add(this.highlight.drawables);
   }
 
