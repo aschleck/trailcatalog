@@ -138,6 +138,33 @@ class ExtractRelationsTest {
   }
 
   @Test
+  fun testNamedLakeAndGlacierMultipolygons() {
+    assertThat(categoryOf("type" to "multipolygon", "natural" to "water", "name" to "Lake Chelan"))
+        .isEqualTo(RelationCategory.NATURAL_LAKE)
+    assertThat(
+            categoryOf(
+                "name" to "Nisqually Glacier", "natural" to "glacier", "type" to "multipolygon"))
+        .isEqualTo(RelationCategory.NATURAL_GLACIER)
+    assertThat(categoryOf("type" to "multipolygon", "natural" to "water"))
+        .isEqualTo(RelationCategory.ANY)
+    assertThat(
+            categoryOf(
+                "type" to "multipolygon", "natural" to "water", "water" to "river", "name" to "Snake"))
+        .isEqualTo(RelationCategory.ANY)
+  }
+
+  @Test
+  fun testLakeThatIsAlsoABoundaryStaysABoundary() {
+    assertThat(
+            categoryOf(
+                "type" to "multipolygon",
+                "natural" to "water",
+                "boundary" to "protected_area",
+                "name" to "Reservoir"))
+        .isEqualTo(RelationCategory.BOUNDARY_PROTECTED_AREA)
+  }
+
+  @Test
   fun testBuildingIgnoresItsLevel() {
     assertThat(
             categoryOf("type" to "multipolygon", "building" to "government", "admin_level" to "2"))

@@ -16,8 +16,15 @@ export function aDescendsB(a: number, b: number): boolean {
 """)
 
   println("""
-export function getPointSource(id: bigint): {type: 'node'|'way'; id: bigint} {
+export function getPointSource(id: bigint): {type: 'node'|'relation'|'way'; id: bigint} {
+  if (id >= ${RELATION_POINT_ID_OFFSET}n) {
+    return {type: 'relation', id: id - ${RELATION_POINT_ID_OFFSET}n};
+  }
   return {type: (id & 1n) === 0n ? 'node' : 'way', id: id >> 1n};
+}
+
+export function getPathSourceWay(pathId: bigint): bigint {
+  return pathId >> 1n;
 }
 
 export function getBoundarySource(id: bigint): {type: 'node'|'relation'|'way'; id: bigint} {
@@ -42,6 +49,18 @@ export function getBoundarySource(id: bigint): {type: 'node'|'relation'|'way'; i
     println("  ${c} = ${c.id},")
   }
   println("}")
+
+  println("export const SEARCHABLE_POINT_LABELS = new Map<number, string>([")
+  for ((c, label) in SEARCHABLE_POINT_LABELS) {
+    println("  [PointCategory.${c}, '${label}'],")
+  }
+  println("]);")
+
+  println("export const NATIONAL_PARK_CATEGORIES = new Set<number>([")
+  for (c in NATIONAL_PARK_CATEGORIES) {
+    println("  RelationCategory.${c},")
+  }
+  println("]);")
 
   println("export enum WayCategory {")
   for (c in WayCategory.values()) {

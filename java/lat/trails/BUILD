@@ -88,6 +88,7 @@ kt_jvm_library(
         "//java/lat/trails/wire",
         "//trails_lat/proto:data_java_proto",
         "//java/org/trailcatalog:epoch_tracker",
+        "//java/org/trailcatalog:search_names",
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/flags",
         "//java/org/trailcatalog/models",

@@ -4,7 +4,7 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Vec2 } from 'js/map/common/types';
 
 import { formatDistance } from 'js/units/formatters';
-import { Path, Point, Trail } from './models/types';
+import { Path, Point, SOURCE_LABELS, Trail } from './models/types';
 import { getTrailHref } from './routes';
 
 const POINT_CATEGORY_TO_LABEL =
@@ -143,7 +143,7 @@ function OsmPointLink({point}: {point: Point}) {
   const label =
       point.name
           ?? POINT_CATEGORY_TO_LABEL.get(point.type)
-          ?? `${type === 'node' ? 'Node' : 'Way'} ${id}`;
+          ?? `${SOURCE_LABELS[type]} ${id}`;
   return <>
     <a
         className="block cursor-pointer no-underline p-2 hover:bg-tc-gray-100"

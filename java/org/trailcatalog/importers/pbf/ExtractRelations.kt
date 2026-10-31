@@ -10,7 +10,9 @@ import crosby.binary.Osmformat.Relation.MemberType.WAY
 import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.models.AREA_RELATION_CATEGORIES
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.proto.RelationMemberFunction
 import org.trailcatalog.proto.RelationMemberFunction.INNER
 import org.trailcatalog.proto.RelationMemberFunction.OUTER
 import org.trailcatalog.proto.RelationSkeleton
@@ -126,7 +128,23 @@ fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): Re
   if (climbing != null && isMultipolygon(relation, stringTable)) {
     category = category.coerceAtLeast(climbing)
   }
+  // Only when it's nothing else, because a lake that is also a protected area is already a
+  // boundary.
+  if (category == RelationCategory.ANY && isMultipolygon(relation, stringTable)) {
+    category =
+        AREA_RELATION_CATEGORIES[pointCategory(relationKvs(relation), stringTable)] ?: category
+  }
   return category
+}
+
+/** Returns the tags of [relation] as interleaved key and value string indices. */
+fun relationKvs(relation: Osmformat.Relation): List<Int> {
+  val kvs = ArrayList<Int>(2 * relation.keysCount)
+  for (i in 0 until relation.keysCount) {
+    kvs.add(relation.getKeys(i))
+    kvs.add(relation.getVals(i))
+  }
+  return kvs
 }
 
 fun isMultipolygon(relation: Osmformat.Relation, stringTable: StringTable): Boolean {
@@ -175,27 +193,25 @@ private val INNER_BS = ByteString.copyFromUtf8("inner")
 private val OUTER_BS = ByteString.copyFromUtf8("outer")
 private val EMPTY_BS = ByteString.copyFromUtf8("")
 
+// Do we care about north/south/east/west?
+// This implicitly drops "alternative" which seems good.
+fun memberFunction(role: ByteString): RelationMemberFunction? {
+  return when (role) {
+    BACKWARD_BS -> OUTER
+    FORWARD_BS -> OUTER
+    INNER_BS -> INNER
+    OUTER_BS -> OUTER
+    EMPTY_BS -> OUTER
+    else -> null
+  }
+}
+
 fun relationToSkeleton(relation: Osmformat.Relation, stringTable: StringTable): RelationSkeleton {
   var memberId = 0L
   val skeleton = RelationSkeleton.newBuilder()
   for (i in 0 until relation.memidsCount) {
     memberId += relation.getMemids(i)
-    // Do we care about north/south/east/west?
-    // This implicitly drops "alternative" which seems good.
-    val function =
-        when (stringTable.getS(relation.getRolesSid(i))) {
-          BACKWARD_BS -> OUTER
-          FORWARD_BS -> OUTER
-          INNER_BS -> INNER
-          OUTER_BS -> OUTER
-          EMPTY_BS -> OUTER
-          null -> OUTER
-          else -> null
-        }
-
-    if (function == null) {
-      continue
-    }
+    val function = memberFunction(stringTable.getS(relation.getRolesSid(i))) ?: continue
 
     when (relation.getTypes(i)) {
       // TODO(april): think about this more if we add trailhead information

@@ -55,7 +55,7 @@ export interface TreeItem {
 }
 
 export interface OsmElementState {
-  type: 'node'|'way';
+  type: 'node'|'relation'|'way';
   id: number;
   tags: {[key: string]: string}|'loading'|'failed';
 }

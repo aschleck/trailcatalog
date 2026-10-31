@@ -90,6 +90,9 @@ enum class PointCategory(override val id: Int) : Category<PointCategory> {
       NATURAL_MOUNTAIN_PASS(NATURAL.id * ENUM_SIZE + 5),
       NATURAL_VOLCANO(NATURAL.id * ENUM_SIZE + 6),
       NATURAL_WATERFALL(NATURAL.id * ENUM_SIZE + 7),
+      // Areas, which become a point inside them so their names can be searched and labeled
+      NATURAL_GLACIER(NATURAL.id * ENUM_SIZE + 8),
+      NATURAL_LAKE(NATURAL.id * ENUM_SIZE + 9),
     ACCESS(ANY.id * ENUM_SIZE + 9),
       ACCESS_PARKING(ACCESS.id * ENUM_SIZE + 1),
       ACCESS_TRAILHEAD(ACCESS.id * ENUM_SIZE + 2),
@@ -156,8 +159,66 @@ enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
         TRAIL_PISTE(TRAIL.id * ENUM_SIZE + 8),
         TRAIL_RUNNING(TRAIL.id * ENUM_SIZE + 9),
         TRAIL_SKIING(TRAIL.id * ENUM_SIZE + 10),
+  // Multipolygons that only become points, see CreateRelationPoints
+  NATURAL(ANY.id * ENUM_SIZE + 3),
+    NATURAL_GLACIER(NATURAL.id * ENUM_SIZE + 1),
+    NATURAL_LAKE(NATURAL.id * ENUM_SIZE + 2),
   ;
 }
+
+// The areas a named multipolygon becomes a point for, see CreateRelationPoints. Most ponds and
+// snowfields have no name, and an area is only worth a point when it has one to search and label.
+val AREA_RELATION_CATEGORIES =
+    mapOf(
+        PointCategory.NATURAL_GLACIER to RelationCategory.NATURAL_GLACIER,
+        PointCategory.NATURAL_LAKE to RelationCategory.NATURAL_LAKE,
+    )
+
+// The categories whose names are worth searching, and the only ones a way becomes a point for,
+// with what search calls them. Bus stops, convenience stores, supermarkets, fuel, and pharmacies
+// are mostly chains or street names, guide posts, parking, ruins, toilets, and camp pitches are
+// mostly numbers or descriptions, and shelters are mostly bus stops and picnic roofs.
+val SEARCHABLE_POINT_LABELS =
+    mapOf(
+        PointCategory.ACCESS_TRAILHEAD to "Trailhead",
+        PointCategory.ACCESS_TRANSIT_AIRPORT to "Airport",
+        PointCategory.ACCESS_TRANSIT_FERRY_TERMINAL to "Ferry terminal",
+        PointCategory.ACCESS_TRANSIT_STATION to "Station",
+        PointCategory.CLIMBING_ROUTE to "Climbing route",
+        PointCategory.INFORMATION_RANGER_STATION to "Ranger station",
+        PointCategory.INFORMATION_VISITOR_CENTER to "Visitor center",
+        PointCategory.LODGING_CAMP_CARAVAN_SITE to "Caravan site",
+        PointCategory.LODGING_CAMP_SITE to "Campground",
+        PointCategory.LODGING_HOSTEL to "Hostel",
+        PointCategory.LODGING_HUT_ALPINE to "Alpine hut",
+        PointCategory.LODGING_HUT_WILDERNESS to "Wilderness hut",
+        PointCategory.LODGING_ROOM_CHALET to "Chalet",
+        PointCategory.LODGING_ROOM_GUEST_HOUSE to "Guest house",
+        PointCategory.LODGING_ROOM_HOTEL to "Hotel",
+        PointCategory.LODGING_ROOM_MOTEL to "Motel",
+        PointCategory.NATURAL_CAVE_ENTRANCE to "Cave",
+        PointCategory.NATURAL_GLACIER to "Glacier",
+        PointCategory.NATURAL_HOT_SPRING to "Hot spring",
+        PointCategory.NATURAL_LAKE to "Lake",
+        PointCategory.NATURAL_MOUNTAIN_PASS to "Pass",
+        PointCategory.NATURAL_PEAK to "Peak",
+        PointCategory.NATURAL_SADDLE to "Saddle",
+        PointCategory.NATURAL_VOLCANO to "Volcano",
+        PointCategory.NATURAL_WATERFALL to "Waterfall",
+        PointCategory.SAFETY_CLINIC to "Clinic",
+        PointCategory.SAFETY_MOUNTAIN_RESCUE to "Mountain rescue",
+        PointCategory.SIGHT_OBSERVATION_TOWER to "Observation tower",
+        PointCategory.SIGHT_VIEWPOINT to "Viewpoint",
+        PointCategory.WATER_SPRING to "Spring",
+        PointCategory.WATER_TAP to "Water tap",
+    )
+
+// The boundaries trailcatalog's search lists under National Parks and its sitemap lists
+val NATIONAL_PARK_CATEGORIES =
+    RelationCategory.entries.filter {
+      RelationCategory.BOUNDARY_NATIONAL_PARK.isParentOf(it)
+          || RelationCategory.BOUNDARY_PROTECTED_AREA_2.isParentOf(it)
+    }
 
 enum class WayCategory(override val id: Int) : Category<WayCategory> {
   ANY(0),

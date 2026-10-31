@@ -62,7 +62,7 @@ fun polygonLayer(filters: List<Map<String, Any>>, fill: String) =
     )
 
 // A polygon drawn by its outline, for overlapping areas that fills would muddy. pattern is one of
-// collection_schema.ts#PatternName.
+// line_program.ts#LinePattern.
 //
 // The fill is clear but keeps the stroke's color, because hovering raises a polygon's fill alpha
 // and a clear black fill turns into a black blanket.

@@ -10,7 +10,7 @@ import { MapElement } from 'js/map/map_element';
 
 import { formatCount, formatDistance, formatHeight, getUnitSystem } from 'js/units/formatters';
 import { SELECTION_CHANGED } from './map/events';
-import { Boundary, Trail } from './models/types';
+import { Boundary, SOURCE_LABELS, Trail } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { BoundaryDetailController, boundaryFromRaw, State, trailsInBoundaryFromRaw } from './boundary_detail_controller';
@@ -65,8 +65,6 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
     </div>
   </>;
 }
-
-const SOURCE_LABELS = {node: 'Node', relation: 'Relation', way: 'Way'} as const;
 
 function Content({boundaryId, state, updateState}: {
   boundaryId: string,

@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariDataSource
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PCollection
 import org.trailcatalog.importers.pipeline.collections.PMap
+import org.trailcatalog.models.pathId
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -16,7 +17,7 @@ class DumpPathElevations(private val epoch: Int, private val hikari: HikariDataS
           StringifyingInputStream(input) { pair, csv ->
             val profile = pair.values[0]
             // id,epoch,down_meters,up_meters,height_samples_10m_meters
-            csv.append(2 * profile.id)
+            csv.append(pathId(profile.id))
             csv.append(",")
             csv.append(epoch)
             csv.append(",")

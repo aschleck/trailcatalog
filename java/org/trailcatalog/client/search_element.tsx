@@ -1,4 +1,4 @@
-import { aDescendsB, RelationCategory } from 'java/org/trailcatalog/models/categories';
+import { NATIONAL_PARK_CATEGORIES } from 'java/org/trailcatalog/models/categories';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { FlatButton } from 'js/dino/button';
 import { FluentIcon } from 'js/dino/fluent';
@@ -88,8 +88,8 @@ function SearchResults({boundaries, className, query, trails}: {
   query: string,
   trails: State['trails'],
 }) {
-  const nationalParks = boundaries.filter(b => isNationalParky(b.type));
-  const nonParks = boundaries.filter(b => !isNationalParky(b.type));
+  const nationalParks = boundaries.filter(b => NATIONAL_PARK_CATEGORIES.has(b.type));
+  const nonParks = boundaries.filter(b => !NATIONAL_PARK_CATEGORIES.has(b.type));
   return <>
     <div
         className={`
@@ -251,9 +251,4 @@ function TrailDistance({trail}: {trail: TrailSearchResult}) {
     {' '}
     <span className="font-xs text-tc-gray-400">{distance.unit}</span>
   </>;
-}
-
-function isNationalParky(type: number): boolean {
-  return aDescendsB(type, RelationCategory.BOUNDARY_NATIONAL_PARK)
-      || aDescendsB(type, RelationCategory.BOUNDARY_PROTECTED_AREA_2)
 }

@@ -15,6 +15,10 @@ import lat.trails.proto.SearchRequest
 import lat.trails.proto.SearchResponse
 import lat.trails.proto.SearchResult
 import lat.trails.proto.SearchResultKind
+import org.trailcatalog.BOUNDARY_AREA_BONUS
+import org.trailcatalog.bestNames
+import org.trailcatalog.bindBestNames
+import org.trailcatalog.sanitizeSearchQuery
 import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.s2.earthMeters
@@ -42,9 +46,6 @@ private const val NOTABLE_BONUS = 0.05
 // Below this the map is so zoomed in that every result is far, and only the name should matter.
 private const val MIN_RADIUS_METERS = 1000.0
 
-// See trailcatalog's Frontend.kt#BOUNDARY_AREA_BONUS.
-private const val BOUNDARY_AREA_BONUS = "0.005 * GREATEST(LOG(GREATEST(b.area_meters2, 1)) - 6, 0)"
-
 // Of the boundaries around a result, how many to name
 private const val WITHIN_LIMIT = 3
 
@@ -55,7 +56,7 @@ private class Candidate(
 )
 
 fun search(request: SearchRequest, connection: Connection, epoch: Int): SearchResponse {
-  val query = request.query.replace(Regex("[%_\\\\]"), "").trim()
+  val query = sanitizeSearchQuery(request.query)
   if (query.isEmpty()) {
     return SearchResponse.getDefaultInstance()
   }
@@ -79,44 +80,6 @@ fun search(request: SearchRequest, connection: Connection, epoch: Int): SearchRe
   fillBoundaryBounds(ranked, connection, epoch)
   fillWithin(ranked, connection, epoch)
   return SearchResponse.newBuilder().addAllResults(ranked.map { it.result.build() }).build()
-}
-
-// Scores group twice. MAX over the two branches for one name, because a whole word match drives
-// strict_word_similarity to 1 and the branch to 0, which would throw away the substring branch's
-// preference for the shorter of two names that both contain the query. Then DISTINCT ON keeps an
-// entity's best name, which is also the one we report it matched.
-// See also trailcatalog's Frontend.kt#executeSearchBoundaries.
-//
-// pg_trgm is installed in public, which the reshape schema we read through doesn't search.
-private fun bestNames(table: String, cutoff: Double): String {
-  return """
-      SELECT DISTINCT ON (id) id, name, score
-      FROM (
-        SELECT id, name, MAX(score) AS score
-        FROM (
-          SELECT id, name, length(name) / 1000. AS score
-          FROM $table
-          WHERE name ILIKE '%' || ? || '%' AND epoch = ?
-          UNION ALL
-          SELECT id, name, 1 - public.strict_word_similarity(?, name) AS score
-          FROM $table
-          WHERE ? OPERATOR(public.<<%) name AND epoch = ?
-        ) n
-        WHERE n.score < $cutoff
-        GROUP BY 1, 2
-      ) m
-      ORDER BY id, score
-  """
-}
-
-// Sets the parameters bestNames reads, starting at index 1, and returns the next free index.
-private fun java.sql.PreparedStatement.bindBestNames(query: String, epoch: Int): Int {
-  setString(1, query)
-  setInt(2, epoch)
-  setString(3, query)
-  setString(4, query)
-  setInt(5, epoch)
-  return 6
 }
 
 private fun searchBoundaries(query: String, connection: Connection, epoch: Int): List<Candidate> {

@@ -137,6 +137,24 @@ class ExtractPointsTest {
   }
 
   @Test
+  fun testNamedLakesAndGlaciers() {
+    assertThat(categoryOf("natural" to "water", "water" to "lake", "name" to "Lake Ann"))
+        .isEqualTo(PointCategory.NATURAL_LAKE)
+    assertThat(categoryOf("natural" to "water", "name" to "Tarn"))
+        .isEqualTo(PointCategory.NATURAL_LAKE)
+    assertThat(categoryOf("natural" to "glacier", "name" to "Emmons Glacier"))
+        .isEqualTo(PointCategory.NATURAL_GLACIER)
+    assertThat(categoryOf("natural" to "water", "water" to "lake")).isNull()
+    assertThat(categoryOf("natural" to "glacier")).isNull()
+  }
+
+  @Test
+  fun testRiverAreaIsNoLake() {
+    assertThat(categoryOf("water" to "river", "natural" to "water", "name" to "Skagit River"))
+        .isNull()
+  }
+
+  @Test
   fun testOtherCategoryKeepsOnlyItsName() {
     val point = extract("highway" to "bus_stop", "name" to "Main St", "name:es" to "Calle Main")!!
     assertThat(point.name).isEqualTo("Main St")

@@ -3,7 +3,7 @@ import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { CHANGED, ACTION, FOCUSED, PRESSED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
-import { PointCategory, RelationCategory } from 'java/org/trailcatalog/models/categories';
+import { RelationCategory, SEARCHABLE_POINT_LABELS } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { SearchResponse, SearchResultKind } from 'trails_lat/proto/data_pb';
 
@@ -38,44 +38,13 @@ const BOUNDARY_LABELS = new Map<number, string>([
   [RelationCategory.BOUNDARY_CLIMBING_CRAG, 'Crag'],
 ]);
 
-const POINT_LABELS = new Map<number, string>([
-  [PointCategory.ACCESS_TRAILHEAD, 'Trailhead'],
-  [PointCategory.ACCESS_TRANSIT_AIRPORT, 'Airport'],
-  [PointCategory.ACCESS_TRANSIT_FERRY_TERMINAL, 'Ferry terminal'],
-  [PointCategory.ACCESS_TRANSIT_STATION, 'Station'],
-  [PointCategory.INFORMATION_RANGER_STATION, 'Ranger station'],
-  [PointCategory.INFORMATION_VISITOR_CENTER, 'Visitor center'],
-  [PointCategory.LODGING_CAMP_CARAVAN_SITE, 'Caravan site'],
-  [PointCategory.LODGING_CAMP_SITE, 'Campground'],
-  [PointCategory.LODGING_HOSTEL, 'Hostel'],
-  [PointCategory.LODGING_HUT_ALPINE, 'Alpine hut'],
-  [PointCategory.LODGING_HUT_WILDERNESS, 'Wilderness hut'],
-  [PointCategory.LODGING_ROOM_CHALET, 'Chalet'],
-  [PointCategory.LODGING_ROOM_GUEST_HOUSE, 'Guest house'],
-  [PointCategory.LODGING_ROOM_HOTEL, 'Hotel'],
-  [PointCategory.LODGING_ROOM_MOTEL, 'Motel'],
-  [PointCategory.NATURAL_CAVE_ENTRANCE, 'Cave'],
-  [PointCategory.NATURAL_HOT_SPRING, 'Hot spring'],
-  [PointCategory.NATURAL_MOUNTAIN_PASS, 'Pass'],
-  [PointCategory.NATURAL_PEAK, 'Peak'],
-  [PointCategory.NATURAL_SADDLE, 'Saddle'],
-  [PointCategory.NATURAL_VOLCANO, 'Volcano'],
-  [PointCategory.NATURAL_WATERFALL, 'Waterfall'],
-  [PointCategory.SAFETY_CLINIC, 'Clinic'],
-  [PointCategory.SAFETY_MOUNTAIN_RESCUE, 'Mountain rescue'],
-  [PointCategory.SIGHT_OBSERVATION_TOWER, 'Observation tower'],
-  [PointCategory.SIGHT_VIEWPOINT, 'Viewpoint'],
-  [PointCategory.WATER_SPRING, 'Spring'],
-  [PointCategory.WATER_TAP, 'Water tap'],
-]);
-
 /** Returns what a result is, for the line under its name. */
 export function searchLabel(kind: SearchResultKind, type: number): string {
   switch (kind) {
     case SearchResultKind.BOUNDARY:
       return BOUNDARY_LABELS.get(type) ?? 'Area';
     case SearchResultKind.POINT:
-      return POINT_LABELS.get(type) ?? 'Place';
+      return SEARCHABLE_POINT_LABELS.get(type) ?? 'Place';
     case SearchResultKind.TRAIL:
       return 'Trail';
     default:

@@ -1,8 +1,10 @@
-import { getBoundarySource, getPointSource } from 'java/org/trailcatalog/models/categories';
+import { getBoundarySource, getPathSourceWay, getPointSource } from 'java/org/trailcatalog/models/categories';
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 
 import { PixelRect, s2LatLngRectToTc } from '../common/types';
+
+export const SOURCE_LABELS = {node: 'Node', relation: 'Relation', way: 'Way'} as const;
 
 export interface BoundaryLink {
   readonly id: bigint|string;
@@ -54,7 +56,7 @@ export class Path {
   ) {}
 
   get sourceWay(): bigint {
-    return this.id / 2n;
+    return getPathSourceWay(this.id);
   }
 }
 
@@ -67,7 +69,7 @@ export class Point {
       readonly mouseBound: PixelRect,
   ) {}
 
-  get source(): {type: 'node'|'way'; id: bigint} {
+  get source(): {type: 'node'|'relation'|'way'; id: bigint} {
     return getPointSource(this.id);
   }
 }

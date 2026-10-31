@@ -5,45 +5,10 @@ import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.models.AREA_RELATION_CATEGORIES
 import org.trailcatalog.models.PointCategory
+import org.trailcatalog.models.SEARCHABLE_POINT_LABELS
 import org.trailcatalog.models.nodePointId
-
-// The categories whose names are worth searching, and the only ones a way becomes a point for.
-// Bus stops, convenience stores, supermarkets, fuel, and pharmacies are mostly chains or street
-// names, guide posts, parking, ruins, toilets, and camp pitches are mostly numbers or
-// descriptions, and shelters are mostly bus stops and picnic roofs.
-private val SEARCHABLE_POINT_CATEGORIES =
-    setOf(
-        PointCategory.ACCESS_TRAILHEAD,
-        PointCategory.ACCESS_TRANSIT_AIRPORT,
-        PointCategory.ACCESS_TRANSIT_FERRY_TERMINAL,
-        PointCategory.ACCESS_TRANSIT_STATION,
-        PointCategory.CLIMBING_ROUTE,
-        PointCategory.INFORMATION_RANGER_STATION,
-        PointCategory.INFORMATION_VISITOR_CENTER,
-        PointCategory.LODGING_CAMP_CARAVAN_SITE,
-        PointCategory.LODGING_CAMP_SITE,
-        PointCategory.LODGING_HOSTEL,
-        PointCategory.LODGING_HUT_ALPINE,
-        PointCategory.LODGING_HUT_WILDERNESS,
-        PointCategory.LODGING_ROOM_CHALET,
-        PointCategory.LODGING_ROOM_GUEST_HOUSE,
-        PointCategory.LODGING_ROOM_HOTEL,
-        PointCategory.LODGING_ROOM_MOTEL,
-        PointCategory.NATURAL_CAVE_ENTRANCE,
-        PointCategory.NATURAL_HOT_SPRING,
-        PointCategory.NATURAL_MOUNTAIN_PASS,
-        PointCategory.NATURAL_PEAK,
-        PointCategory.NATURAL_SADDLE,
-        PointCategory.NATURAL_VOLCANO,
-        PointCategory.NATURAL_WATERFALL,
-        PointCategory.SAFETY_CLINIC,
-        PointCategory.SAFETY_MOUNTAIN_RESCUE,
-        PointCategory.SIGHT_OBSERVATION_TOWER,
-        PointCategory.SIGHT_VIEWPOINT,
-        PointCategory.WATER_SPRING,
-        PointCategory.WATER_TAP,
-    )
 
 /** Returns the point a node with [category] becomes, or null if it isn't one. */
 fun nodePoint(
@@ -56,7 +21,7 @@ fun nodePoint(
     return null
   }
   val names =
-      if (category in SEARCHABLE_POINT_CATEGORIES) {
+      if (category in SEARCHABLE_POINT_LABELS) {
         tagNames(kvs, stringTable)
       } else {
         listOf()
@@ -84,7 +49,7 @@ fun wayPointCategory(kvs: List<Int>, nodes: LongArray, stringTable: StringTable)
   if (nodes.size < 4 || nodes[0] != nodes[nodes.size - 1]) {
     return PointCategory.ANY
   }
-  return if (category in SEARCHABLE_POINT_CATEGORIES) category else PointCategory.ANY
+  return if (category in SEARCHABLE_POINT_LABELS) category else PointCategory.ANY
 }
 
 /**
@@ -141,6 +106,8 @@ fun forEachNode(
 
 fun pointCategory(kvs: List<Int>, stringTable: StringTable): PointCategory {
   var category = PointCategory.ANY
+  var flowing = false
+  var named = false
   var tower = false
   var observation = false
   for (i in 0 until kvs.size step 2) {
@@ -160,16 +127,23 @@ fun pointCategory(kvs: List<Int>, stringTable: StringTable): PointCategory {
       }
       MOUNTAIN_PASS_BS ->
         category = category.coerceAtLeast(POINT_MOUNTAIN_PASS_CATEGORY_NAMES[value])
+      NAME_BS -> named = true
       NATURAL_BS -> category = category.coerceAtLeast(POINT_NATURAL_CATEGORY_NAMES[value])
       RAILWAY_BS -> category = category.coerceAtLeast(POINT_RAILWAY_CATEGORY_NAMES[value])
       SHOP_BS -> category = category.coerceAtLeast(POINT_SHOP_CATEGORY_NAMES[value])
       TOURISM_BS -> category = category.coerceAtLeast(POINT_TOURISM_CATEGORY_NAMES[value])
       TOWER_TYPE_BS -> observation = value == OBSERVATION_BS
+      WATER_BS -> flowing = value in FLOWING_WATER_NAMES
       WATERWAY_BS -> category = category.coerceAtLeast(POINT_WATERWAY_CATEGORY_NAMES[value])
     }
   }
   if (tower && observation) {
     category = category.coerceAtLeast(PointCategory.SIGHT_OBSERVATION_TOWER)
+  }
+  // An unnamed area has nothing to search or label.
+  if ((flowing && category == PointCategory.NATURAL_LAKE)
+      || (!named && category in AREA_RELATION_CATEGORIES)) {
+    category = PointCategory.ANY
   }
   return category
 }

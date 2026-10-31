@@ -6,7 +6,7 @@
 
 set -exo pipefail
 
-# Keep in sync with MapterhornResolver#MAX_ZOOM.
+# Keep in sync with models/Elevation.kt#ELEVATION_MAX_ZOOM.
 max_zoom=14
 out=/mnt/horse/mapterhorn
 

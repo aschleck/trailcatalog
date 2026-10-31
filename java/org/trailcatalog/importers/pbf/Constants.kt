@@ -82,13 +82,23 @@ val POINT_MOUNTAIN_PASS_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointC
 
 val POINT_NATURAL_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
     .put(ByteString.copyFromUtf8("cave_entrance"), PointCategory.NATURAL_CAVE_ENTRANCE)
+    .put(ByteString.copyFromUtf8("glacier"), PointCategory.NATURAL_GLACIER)
     .put(ByteString.copyFromUtf8("hot_spring"), PointCategory.NATURAL_HOT_SPRING)
     .put(ByteString.copyFromUtf8("peak"), PointCategory.NATURAL_PEAK)
     .put(ByteString.copyFromUtf8("saddle"), PointCategory.NATURAL_SADDLE)
     .put(ByteString.copyFromUtf8("spring"), PointCategory.WATER_SPRING)
     .put(ByteString.copyFromUtf8("volcano"), PointCategory.NATURAL_VOLCANO)
+    // Unless its water tag is in FLOWING_WATER_NAMES
+    .put(ByteString.copyFromUtf8("water"), PointCategory.NATURAL_LAKE)
 
     .build()
+
+// The water=* values of a natural=water area that is part of a river rather than a lake
+// https://wiki.openstreetmap.org/wiki/Key:water
+val FLOWING_WATER_NAMES =
+    setOf("canal", "ditch", "drain", "lock", "river", "stream", "wastewater")
+        .map { ByteString.copyFromUtf8(it) }
+        .toSet()
 
 val POINT_RAILWAY_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
     .put(ByteString.copyFromUtf8("halt"), PointCategory.ACCESS_TRANSIT_STATION)
@@ -405,6 +415,7 @@ val TOURISM_BS = ByteString.copyFromUtf8("tourism")
 val TOWER_BS = ByteString.copyFromUtf8("tower")
 val TOWER_TYPE_BS = ByteString.copyFromUtf8("tower:type")
 val TYPE_BS = ByteString.copyFromUtf8("type")
+val WATER_BS = ByteString.copyFromUtf8("water")
 val WATERWAY_BS = ByteString.copyFromUtf8("waterway")
 val WIKIDATA_BS = ByteString.copyFromUtf8("wikidata")
 val WIKIPEDIA_BS = ByteString.copyFromUtf8("wikipedia")

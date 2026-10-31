@@ -1,13 +1,14 @@
 package org.trailcatalog.importers.basemap
 
+import com.google.protobuf.ByteString
 import de.westnordost.osmapi.OsmConnection
 import de.westnordost.osmapi.map.MapDataApi
 import de.westnordost.osmapi.map.data.Element
 import org.trailcatalog.importers.pbf.LatLngE7
+import org.trailcatalog.importers.pbf.memberFunction
 import org.trailcatalog.importers.pbf.toIntE7
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.proto.RelationMember
-import org.trailcatalog.proto.RelationMemberFunction
 import org.trailcatalog.proto.WayGeometry
 import kotlin.system.exitProcess
 
@@ -26,20 +27,10 @@ private fun fetchRelation(id: Long, map: MapDataApi): RelationGeometry {
   val relation = RelationGeometry.newBuilder().setRelationId(id)
   val source = map.getRelation(id)
   for (member in source.members) {
-    when (member.role) {
-      // Keep in sync with ExtractRelations#relationToSkeleton
-      "backward" -> "outer"
-      "forward" -> "outer"
-      "inner" -> "inner"
-      "outer" -> "outer"
-      "empty" -> "outer"
-      "" -> "outer"
-      else -> continue
-    }
-
+    val function = memberFunction(ByteString.copyFromUtf8(member.role ?: "")) ?: continue
     relation.addMembers(
       RelationMember.newBuilder()
-        .setFunction(RelationMemberFunction.OUTER)
+        .setFunction(function)
         .also {
           when (member.type) {
             Element.Type.NODE -> it.setNodeId(member.ref)
@@ -88,7 +79,7 @@ private fun test(relation: RelationGeometry) {
     println("entering repl...")
     println(
       "direct children: "
-          + children.map { it * 2 + Long.MAX_VALUE / 2 + 1 }.joinToString(", "))
+          + children.map { childRelationPathId(it) }.joinToString(", "))
 
     while (true) {
       print("r${relation.relationId}> ")

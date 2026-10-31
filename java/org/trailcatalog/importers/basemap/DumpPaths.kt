@@ -9,6 +9,7 @@ import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.PSink
 import org.trailcatalog.importers.pipeline.collections.PMap
 import org.trailcatalog.models.WayCategory
+import org.trailcatalog.models.pathId
 import org.trailcatalog.s2.boundToCell
 
 private val BYTE_BUFFER: ThreadLocal<ByteBuffer> = ThreadLocal.withInitial {
@@ -41,7 +42,7 @@ class DumpPaths(private val epoch: Int, private val hikari: HikariDataSource)
         // id,epoch,type,cell,lat_lng_degrees,source_way,traits
         // lat_lng_degrees is DeltaLatLngE7, so readers cannot divide its length to get a
         // point count.
-        csv.append(2 * way.id)
+        csv.append(pathId(way.id))
         csv.append(",")
         csv.append(epoch)
         csv.append(",")

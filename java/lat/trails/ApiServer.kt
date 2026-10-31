@@ -1804,7 +1804,7 @@ private fun fetchCollectionObjects(ctx: Context) {
       fetchTrailcatalogPaths(it, cell, indexBottom, levelCeiling, levelFloor, snap, types)
     } else if (collection == TRAILCATALOG_POINTS_COLLECTIONS_ID) {
       it.writeVarInt(KIND_PACKED_POINT)
-      fetchTrailcatalogPoints(it, cell, indexBottom, levelCeiling, levelFloor)
+      fetchTrailcatalogPoints(it, cell, indexBottom, levelCeiling, levelFloor, types)
     } else {
       it.writeVarInt(KIND_UUID_JSON)
       fetchTrailsLatObjects(it, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
@@ -2139,6 +2139,8 @@ private fun fetchTrailcatalogPoints(
   indexBottom: Int,
   levelCeiling: Long?,
   levelFloor: Long?,
+  // The categories the client draws, or null for all of them
+  types: List<Int>?,
 ) {
   val epoch = epochTracker.epoch
   hikariTrailcatalog.connection.use { connection ->
@@ -2161,6 +2163,9 @@ private fun fetchTrailcatalogPoints(
         var count = 0
         DelegatingEncodedOutputStream(points).use { out ->
           while (results.next()) {
+            if (types != null && types.none { aDescendsB(results.getInt(2), it) }) {
+              continue
+            }
             count += 1
             // id,type,name,marker
             out.writeVarLong(results.getLong(1))

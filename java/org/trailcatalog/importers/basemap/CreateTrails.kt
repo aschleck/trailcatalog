@@ -10,6 +10,8 @@ import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.models.getPathSourceWay
+import org.trailcatalog.models.pathId
 import org.trailcatalog.proto.RelationGeometry
 import org.trailcatalog.proto.WayGeometry
 
@@ -53,7 +55,7 @@ class CreateTrails
     var upMeters = 0f
     var lengthMeters = 0.0
     for (pathId in orderedArray) {
-      val way = ways[pathId / 2]
+      val way = ways[getPathSourceWay(pathId)]
       if (way == null) {
         downMeters = Float.NaN
         upMeters = Float.NaN
@@ -89,6 +91,12 @@ class CreateTrails
   }
 }
 
+// A child relation sorts among its siblings like a path, so it takes an id above every path's.
+// Long.MAX_VALUE / 2 is odd, so the offset adds 1 to leave the low bit for the orientation.
+private const val CHILD_RELATION_PATH_ID_OFFSET = Long.MAX_VALUE / 2 + 1
+
+fun childRelationPathId(relationId: Long): Long = 2 * relationId + CHILD_RELATION_PATH_ID_OFFSET
+
 /** Oriented way IDs in traversal order, and whether they trace as one continuous line. */
 class FlatWays(val ids: List<Long>, val continuous: Boolean)
 
@@ -113,8 +121,7 @@ fun flattenWays(
     if (member.hasNodeId()) {
       // who cares
     } else if (member.hasRelation()) {
-      // Note that MAX_VALUE / 2 % 10 is 3.5. So to keep this value even we just add 1.
-      val id = member.relation.relationId * 2 + Long.MAX_VALUE / 2 + 1
+      val id = childRelationPathId(member.relation.relationId)
       val child = flattenWays(member.relation, mapped, ways)
       continuous = continuous && child.continuous
       ids.add(id)
@@ -137,13 +144,13 @@ fun flattenWays(
       }
       mapped[id] = childLatLngs
     } else if (member.hasWay()) {
-      ids.add(2 * member.way.wayId)
+      ids.add(pathId(member.way.wayId))
       val raw = member.way.latLngE7List
       val latLngs = ArrayList<LatLngE7>(member.way.latLngE7Count / 2)
       for (i in 0 until member.way.latLngE7Count step 2) {
         latLngs.add(LatLngE7(raw[i], raw[i + 1]))
       }
-      mapped[2 * member.way.wayId] = latLngs
+      mapped[pathId(member.way.wayId)] = latLngs
       ways[member.way.wayId] = member.way
     }
   }
@@ -157,7 +164,7 @@ fun flattenWays(
   val oriented = orientPaths(filtered, mapped)
   val flatIds = ArrayList<Long>()
   for (childId in oriented.ids) {
-    if (childId >= Long.MAX_VALUE / 2) {
+    if (childId >= CHILD_RELATION_PATH_ID_OFFSET) {
       val childIds = childRelations[childId.and(1L.inv())]!!
       if (childId % 2 == 0L) {
         flatIds.addAll(childIds)

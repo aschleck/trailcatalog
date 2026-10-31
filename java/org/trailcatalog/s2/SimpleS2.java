@@ -145,7 +145,7 @@ public final class SimpleS2 {
   public static ArrayList<S2CellId> cover(
       double latLo, double latHi, double lngLo, double lngHi, int deepest) {
     // Callers unpacking an S2LatLngRect give us lo/hi swapped once the span passes pi, because
-    // that's how fromPointPair stores it. See also render_planner.ts#render.
+    // that's how fromPointPair stores it. See also trail_layer.ts#getCellsIn.
     double lowLng = Math.min(lngLo, lngHi);
     double highLng = Math.max(lngLo, lngHi);
     R1Interval lat = R1Interval.fromPointPair(latLo, latHi);

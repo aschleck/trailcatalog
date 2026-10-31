@@ -86,6 +86,7 @@ kt_jvm_library(
     deps = [
         ":epoch_tracker",
         ":pg_support",
+        ":search_names",
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/models",
         "//java/org/trailcatalog/s2:s2-java",
@@ -106,6 +107,11 @@ kt_jvm_library(
     deps = [
         "@maven//:com_zaxxer_HikariCP",
     ],
+)
+
+kt_jvm_library(
+    name = "search_names",
+    srcs = ["SearchNames.kt"],
 )
 
 kt_jvm_library(

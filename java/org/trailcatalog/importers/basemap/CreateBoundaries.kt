@@ -89,7 +89,7 @@ private val ASSEMBLE_OPTIONS =
         .setRobustnessRadius(SNAP_RADIUS)
         .build()
 
-private fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
+internal fun relationGeometryToPolygon(geometry: RelationGeometry): S2Polygon {
   val outers = ArrayList<S2Polygon>()
   val inners = ArrayList<S2Polygon>()
   expandIntoPolygon(geometry, outers, inners)

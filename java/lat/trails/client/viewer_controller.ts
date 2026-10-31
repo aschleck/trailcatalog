@@ -163,6 +163,11 @@ import {
 } from './workers/collection_schema';
 
 const MINUTE_MS = 60 * 1000;
+const OSM_ELEMENT_TYPES = {
+  node: OsmElementType.NODE,
+  relation: OsmElementType.RELATION,
+  way: OsmElementType.WAY,
+} as const;
 const PLAY_INTERVAL_MS = 100;
 const FORECAST_PLAY_TICKS = 5;
 // Flattens the points and line and polygon vertices of some features into lat,lng pairs in
@@ -1620,11 +1625,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     return undefined;
   }
 
-  private loadOsmTags(type: 'node'|'way', id: number): void {
+  private loadOsmTags(type: 'node'|'relation'|'way', id: number): void {
     const opened = this.inspected;
     const loading: Future<GetOsmTagsResponse> =
         requestData('lat.trails.DataService/GetOsmTags', {
-          type: type === 'node' ? OsmElementType.NODE : OsmElementType.WAY,
+          type: OSM_ELEMENT_TYPES[type],
           id: BigInt(id),
         });
     loading
@@ -2608,7 +2613,7 @@ function newCollectionName(): string {
   return `Untitled collection ${new Date().toLocaleDateString()}`;
 }
 
-function osmElementOf(pointId: number): {type: 'node'|'way'; id: number} {
+function osmElementOf(pointId: number): {type: 'node'|'relation'|'way'; id: number} {
   const {type, id} = getPointSource(BigInt(pointId));
   return {type, id: Number(id)};
 }

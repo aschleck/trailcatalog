@@ -165,15 +165,6 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
           .join2("JoinWaysForGeometry", ways, waysToPoints)
           .then(MakeWayGeometries())
 
-  // Points come from nodes and from closed ways, like a campground drawn as its outline.
-  val points =
-      pipeline.cat(
-          listOf(
-              small.then(PickSmallElements(TypeToken.of(Point::class.java)) { it.point }),
-              waysWithGeometry.then(MakeWayPoints())))
-  points.write(DumpPoints(epoch, hikari))
-  points.write(DumpPointNames(epoch, hikari))
-
   // Now, take the way geometries, filter it down to ways in likely trail relations, and calculate
   // the required elevation profiles.
   val relationsToGeometriesWithWays = relations.then(ExtractRelationGeometriesWithWays())
@@ -210,6 +201,17 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
           .then(MakeRelationGeometries())
   val relationsWithGeometry =
       pipeline.join2("JoinRelationsWithGeometry", relations, relationsGeometryById)
+
+  // Points come from nodes, from closed ways like a campground drawn as its outline, and from the
+  // glaciers and lakes drawn as multipolygons.
+  val points =
+      pipeline.cat(
+          listOf(
+              small.then(PickSmallElements(TypeToken.of(Point::class.java)) { it.point }),
+              waysWithGeometry.then(MakeWayPoints()),
+              relationsWithGeometry.then(CreateRelationPoints())))
+  points.write(DumpPoints(epoch, hikari))
+  points.write(DumpPointNames(epoch, hikari))
 
   // Now start dumping boundaries, trails, and what contains what. Climbing sites are boundaries
   // shaped by the climbing elements they hold rather than by their member ways.
