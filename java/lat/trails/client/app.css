@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Emoji&family=Source+Sans+3&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Emoji&display=swap');
 
 @import "tailwindcss";
 
@@ -7,7 +7,6 @@
   --color-gray-900: #212121;
   --color-white-opaque-160: #ffffffa0;
   --color-white-opaque-250: #fffffffa;
-  --font-sans: 'Source Sans 3', var(--font-sans);
 
   --animate-slide: slide 1.75s ease-in-out infinite;
   @keyframes slide {
