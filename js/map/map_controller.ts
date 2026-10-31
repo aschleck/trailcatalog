@@ -9,13 +9,12 @@ import { EventSpec } from 'external/dev_april_corgi+/js/corgi/events';
 import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 
 import { DPI } from './common/dpi';
-import { fitBoundInScreen } from './common/math';
 import { Copyright, LatLng, LatLngRect, LatLngZoom, Vec2 } from './common/types';
 import { GLYPHER } from './rendering/glypher';
 import { Planner } from './rendering/planner';
 import { Renderer } from './rendering/renderer';
 
-import { Camera } from './camera';
+import { Camera, projectS2LatLng, unprojectS2LatLng, worldRadiusAt } from './camera';
 import { CopyrightDialog } from './copyright_dialog';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, UNCLAIMED_CLICKED, ZOOMED } from './events';
 import { Layer } from './layer';
@@ -111,12 +110,12 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         return;
       }
 
-      this.enterIdle();
+      this.idle();
     });
     this.wheelDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       // Yikes! We need to force idle so we re-render even though another pointer thing may have set
       // us non idle.
-      this.enterIdle();
+      this.idle();
     });
     this.renderer =
         new Renderer(checkExists(this.canvas.getContext('webgl2', {
@@ -164,7 +163,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
       this.lastCameraArgs = newArgs.camera;
       this.setCamera(newArgs.camera);
     }
-    this.enterIdle();
+    this.idle();
   }
 
   private registerInteractiveListeners() {
@@ -227,7 +226,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         this.requestFrame();
       });
     }
-    this.enterIdle();
+    this.idle();
     this.copyrightsChanged();
   }
 
@@ -258,12 +257,22 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
 
     let llz;
     if (isLatLngRect(camera)) {
-      const fitted = fitBoundInScreen(camera, this.screenArea);
+      const [x0, y0] = projectS2LatLng(S2LatLng.fromDegrees(camera.low[0], camera.low[1]));
+      const [x1, y1] = projectS2LatLng(S2LatLng.fromDegrees(camera.high[0], camera.high[1]));
+      // A low longitude above the high one crosses the antimeridian.
+      const dx = x1 >= x0 ? x1 - x0 : x1 - x0 + 2;
+      const cx = x0 + dx / 2;
+      const center = unprojectS2LatLng(cx > 1 ? cx - 2 : cx, (y0 + y1) / 2);
+      const zoom =
+          Math.log2(
+              Math.min(this.screenArea.width / dx, this.screenArea.height / (y1 - y0))
+                  / worldRadiusAt(0));
       llz = {
-        ...fitted,
+        lat: center.latDegrees(),
+        lng: center.lngDegrees(),
         // A lone point has no extent to fit, so we zoom in until its surroundings are readable.
         // Otherwise -0.2 zoom gives a little breathing room.
-        zoom: isFinite(fitted.zoom) ? fitted.zoom - 0.2 : Math.max(this.camera.zoom, POINT_ZOOM),
+        zoom: isFinite(zoom) ? zoom - 0.2 : Math.max(this.camera.zoom, POINT_ZOOM),
       };
     } else {
       llz = camera;
@@ -280,30 +289,24 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   }
 
   click(pageX: number, pageY: number, contextual: boolean): void {
-    const offsetX = pageX - this.screenArea.left;
-    const offsetY = pageY - this.screenArea.top;
-    const ll = this.camera.unprojectScreen(
-        offsetX, offsetY, this.screenArea.width, this.screenArea.height);
+    const {ll, px} = this.unprojectPage(pageX, pageY);
     // On mobile we don't get hover events, so we won't have previously hovered.
     this.dispatchHover(ll);
 
     for (const layer of this.layers) {
-      if (layer.click(ll, [offsetX, offsetY], contextual, this)) {
+      if (layer.click(ll, px, contextual, this)) {
         return;
       }
     }
     if (!contextual) {
-      this.trigger(UNCLAIMED_CLICKED, {point: ll, px: [offsetX, offsetY]});
+      this.trigger(UNCLAIMED_CLICKED, {point: ll, px});
     }
   }
 
   dragStart(pageX: number, pageY: number): boolean {
-    const offsetX = pageX - this.screenArea.left;
-    const offsetY = pageY - this.screenArea.top;
-    const ll = this.camera.unprojectScreen(
-        offsetX, offsetY, this.screenArea.width, this.screenArea.height);
+    const {ll, px} = this.unprojectPage(pageX, pageY);
     for (const layer of this.layers) {
-      if (layer.dragStart(ll, [offsetX, offsetY], this)) {
+      if (layer.dragStart(ll, px, this)) {
         this.dragging = layer;
         return true;
       }
@@ -312,29 +315,24 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
   }
 
   drag(pageX: number, pageY: number): void {
-    this.dragging?.drag(this.unprojectPage(pageX, pageY), this);
+    this.dragging?.drag(this.unprojectPage(pageX, pageY).ll, this);
   }
 
   dragEnd(pageX: number, pageY: number, moved: boolean): void {
     const layer = this.dragging;
     this.dragging = undefined;
-    layer?.dragEnd(this.unprojectPage(pageX, pageY), moved, this);
+    layer?.dragEnd(this.unprojectPage(pageX, pageY).ll, moved, this);
   }
 
-  private unprojectPage(pageX: number, pageY: number): S2LatLng {
-    return this.camera.unprojectScreen(
-        pageX - this.screenArea.left,
-        pageY - this.screenArea.top,
-        this.screenArea.width,
-        this.screenArea.height);
+  private unprojectPage(pageX: number, pageY: number): {ll: S2LatLng; px: [number, number]} {
+    const px: [number, number] = [pageX - this.screenArea.left, pageY - this.screenArea.top];
+    const ll =
+        this.camera.unprojectScreen(px[0], px[1], this.screenArea.width, this.screenArea.height);
+    return {ll, px};
   }
 
   hover(pageX: number, pageY: number): void {
-    const offsetX = pageX - this.screenArea.left;
-    const offsetY = pageY - this.screenArea.top;
-    const ll = this.camera.unprojectScreen(
-        offsetX, offsetY, this.screenArea.width, this.screenArea.height);
-    this.dispatchHover(ll);
+    this.dispatchHover(this.unprojectPage(pageX, pageY).ll);
   }
 
   // The layers under the claimant hear hoverLost because a layer only clears its highlight when it
@@ -348,10 +346,6 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
         claimed = layer.hover(ll, this);
       }
     }
-  }
-
-  idle(): void {
-    this.enterIdle();
   }
 
   showCopyrights(): void {
@@ -407,7 +401,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     const speed2 = fling.velocityX * fling.velocityX + fling.velocityY * fling.velocityY;
     if (speed2 < FLING_STOP_SPEED * FLING_STOP_SPEED) {
       this.flingState = undefined;
-      this.enterIdle();
+      this.idle();
     }
   }
 
@@ -419,7 +413,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     }
 
     this.flingState = undefined;
-    this.enterIdle();
+    this.idle();
   }
 
   zoom(amount: number, pageX: number, pageY: number): void {
@@ -454,7 +448,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.trigger(ZOOMED, {});
   }
 
-  private enterIdle(): void {
+  idle(): void {
     this.isIdle = true;
     this.requestFrame();
     // No DPI here because this controls the overdraw for panning
@@ -538,7 +532,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.canvas.style.height = `${height}px`;
     this.area = [width, height];
     this.renderer.resize([width * DPI, height * DPI]);
-    this.enterIdle();
+    this.idle();
   }
 }
 

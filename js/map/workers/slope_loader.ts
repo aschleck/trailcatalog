@@ -1,20 +1,17 @@
+import { SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { TileId } from '../common/types';
 
 import { serveClients } from './client_pool';
-import { decodeTerrarium, fetchTerrarium, TILE_SIZE } from './terrarium';
+import { decodeTerrarium, fetchTerrarium, SLOPES_SIZE, TILE_SIZE } from './terrarium';
 
 // Horn's method reads a pixel past each output pixel, and the output reaches a pixel into each
 // neighbor, so we need two pixels of every neighbor's elevations.
 const DEPTH = 2;
 const PADDED_SIZE = TILE_SIZE + 2 * DEPTH;
-// Keep in sync with slope_layer.ts#SLOPES_SIZE
-const SLOPES_SIZE = TILE_SIZE + 2;
 // Each tile's edges are 16 kB, and a viewport at z11 touches around 240 z12 tiles.
 const EDGE_CACHE_SIZE = 512;
-// Keep in sync with SimpleS2#EARTH_RADIUS_METERS
-const EARTH_RADIUS_METERS = 6371010;
 
 interface LoadRequest {
   kind: 'lr';
@@ -192,7 +189,7 @@ function computeSlopes(id: TileId, padded: Float32Array): Uint8Array {
     // a pixel because a pixel's value sits at its center.
     const mercatorY = 1 - 2 * (id.y * TILE_SIZE + sy - 1 + 0.5) / world;
     const latitude = Math.atan(Math.sinh(Math.PI * mercatorY));
-    const cellMeters = 2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(latitude) / world;
+    const cellMeters = 2 * Math.PI * SimpleS2.EARTH_RADIUS_METERS * Math.cos(latitude) / world;
     const above = (sy + shift - 1) * PADDED_SIZE;
     const row = (sy + shift) * PADDED_SIZE;
     const below = (sy + shift + 1) * PADDED_SIZE;

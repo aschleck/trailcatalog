@@ -1,5 +1,5 @@
-// Keep in sync with SimpleS2#EARTH_RADIUS_METERS
-const EARTH_RADIUS_METERS = 6371010;
+import { SimpleS2 } from 'java/org/trailcatalog/s2';
+
 // See terrain_tracer.ts#REFRACTION
 const REFRACTION = 0.13;
 
@@ -35,8 +35,8 @@ export function getSunlight(
   for (let y = 0; y < height; ++y) {
     for (let x = 0; x < width; ++x) {
       const along = ((x - width / 2) * ux + (y - height / 2) * uy) * pixelMeters;
-      curved[y * width + x] =
-          heights[y * width + x] - along * along / (2 * EARTH_RADIUS_METERS) * (1 - REFRACTION);
+      const drop = along * along / (2 * SimpleS2.EARTH_RADIUS_METERS) * (1 - REFRACTION);
+      curved[y * width + x] = heights[y * width + x] - drop;
     }
   }
 

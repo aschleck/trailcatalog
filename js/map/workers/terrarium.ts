@@ -5,6 +5,8 @@ import { TileId } from '../common/types';
 // https://mapterhorn.com/attribution
 export const TILE_URL = 'https://tiles.mapterhorn.com/${id.zoom}/${id.x}/${id.y}.webp';
 export const TILE_SIZE = 512;
+// A slope texture is the tile's pixels plus a pixel of each neighbor on either side
+export const SLOPES_SIZE = TILE_SIZE + 2;
 // Everywhere with data has z12, so a missing tile there is ocean rather than coarser coverage.
 export const BASE_ZOOM = 12;
 // Mapterhorn tiles 1 m lidar to z16 north of about 33 degrees and z17 south of it, where a

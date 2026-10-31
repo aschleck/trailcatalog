@@ -1,3 +1,4 @@
+import { SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { Vec2 } from '../common/types';
@@ -25,8 +26,6 @@ const SHADOW_RELIEF_METERS = 3_000;
 const MAX_SHADOW_METERS = 40_000;
 // The view and its padding toward the sun, which holds a phone's screen at its own pixels
 const MAX_SUNLIGHT_PIXELS = 2560;
-// Keep in sync with SimpleS2#EARTH_RADIUS_METERS
-const EARTH_RADIUS_METERS = 6371010;
 // A z12 cell is 13 m across in the Alps, so a million cells is a box 13 km on a side. The search
 // holds 16 bytes a cell plus 16 per heap entry, and a longer segment drops a zoom rather than grow
 // past this.
@@ -236,7 +235,7 @@ class ElevationSampler {
         altitude > 0
             ? Math.min(SHADOW_RELIEF_METERS / Math.tan(altitude), MAX_SHADOW_METERS)
             : 0;
-    const reachWorld = reach / (2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(lat));
+    const reachWorld = reach / (2 * Math.PI * SimpleS2.EARTH_RADIUS_METERS * Math.cos(lat));
     const ux = Math.sin(azimuth);
     const uy = -Math.cos(azimuth);
     const box = [
@@ -274,7 +273,7 @@ class ElevationSampler {
       }
     }
 
-    const pixelMeters = 2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(lat) / world;
+    const pixelMeters = 2 * Math.PI * SimpleS2.EARTH_RADIUS_METERS * Math.cos(lat) / world;
     const darkness = getSunlight(heights, width, height, pixelMeters, azimuth, altitude);
     // Back to the box that was asked for, now that the padding has cast its shadows
     const [cx0, cy0] = [Math.floor(request.x0 * world) - px0, Math.floor(request.y0 * world) - py0];
@@ -338,7 +337,7 @@ class ElevationSampler {
       const tx = (to[0] + 1) / 2 * world;
       const ty = (1 - to[1]) / 2 * world;
       const latitude = Math.atan(Math.sinh(Math.PI * (from[1] + to[1]) / 2));
-      const cellMeters = 2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(latitude) / world;
+      const cellMeters = 2 * Math.PI * SimpleS2.EARTH_RADIUS_METERS * Math.cos(latitude) / world;
       const pad =
           Math.max(
               ROUTE_PADDING * Math.hypot(tx - fx, ty - fy),
@@ -496,7 +495,7 @@ async function loadBand(lat: number, lng: number, band: TraceBand): Promise<Heig
   // more covers the bilinear corners at the edge.
   const radius =
       (band.toMeters + getPixelMeters(band.zoom, lat))
-          / (2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(lat));
+          / (2 * Math.PI * SimpleS2.EARTH_RADIUS_METERS * Math.cos(lat));
   const grids = [await loadGrid(band.zoom, x - radius, y - radius, x + radius, y + radius)];
   for (let z = band.zoom - 1; z >= BASE_ZOOM; --z) {
     if (!grids[grids.length - 1].tiles.some(tile => tile === undefined)) {

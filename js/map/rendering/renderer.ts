@@ -186,6 +186,11 @@ export class Renderer extends Disposable {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.bindTexture(gl.TEXTURE_2D, null);
+    // The texture holds its own copy, and a bitmap's pixels sit outside the heap until a GC gets
+    // around to its wrapper.
+    if (source instanceof ImageBitmap) {
+      source.close();
+    }
   }
 }
 

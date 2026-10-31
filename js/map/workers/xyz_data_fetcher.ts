@@ -110,6 +110,9 @@ class XyzDataFetcher {
   }
 
   setUrl(request: SetUrlRequest): void {
+    if (request.url === this.url) {
+      return;
+    }
     this.url = request.url;
     for (const abort of this.inFlight.values()) {
       abort.abort();

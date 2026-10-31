@@ -1,5 +1,5 @@
-// Keep in sync with SimpleS2#EARTH_RADIUS_METERS
-const EARTH_RADIUS_METERS = 6371010;
+import { SimpleS2 } from 'java/org/trailcatalog/s2';
+
 // The standard coefficient of refraction: light bends with 13% of the Earth's curvature, so
 // distant terrain drops by less than the geometry alone says.
 const REFRACTION = 0.13;
@@ -35,13 +35,14 @@ export type HeightAt = (latRadians: number, lngRadians: number) => number;
  */
 export function getElevationAngle(eyeMeters: number, targetMeters: number, distanceMeters: number):
     number {
-  const drop = distanceMeters * distanceMeters / (2 * EARTH_RADIUS_METERS) * (1 - REFRACTION);
+  const drop =
+      distanceMeters * distanceMeters / (2 * SimpleS2.EARTH_RADIUS_METERS) * (1 - REFRACTION);
   return Math.atan2(targetMeters - drop - eyeMeters, distanceMeters);
 }
 
 /** Returns a pixel's width on the ground at a zoom and latitude, for 512 pixel tiles. */
 export function getPixelMeters(zoom: number, latRadians: number): number {
-  return 2 * Math.PI * EARTH_RADIUS_METERS * Math.cos(latRadians) / (512 * 2 ** zoom);
+  return 2 * Math.PI * SimpleS2.EARTH_RADIUS_METERS * Math.cos(latRadians) / (512 * 2 ** zoom);
 }
 
 /**
@@ -94,7 +95,7 @@ export class TerrainTracer {
       let previous = from;
       for (let d = from + step; d <= band.toMeters; d += step) {
         // https://www.movable-type.co.uk/scripts/latlong.html#destPoint
-        const angle = d / EARTH_RADIUS_METERS;
+        const angle = d / SimpleS2.EARTH_RADIUS_METERS;
         const sinAngle = Math.sin(angle);
         const cosAngle = Math.cos(angle);
         const sinTo = this.sinLat * cosAngle + this.cosLat * sinAngle * cosBearing;
@@ -191,7 +192,7 @@ export function drawViewshed(
       const h =
           Math.sin((lat - latRadians) / 2) ** 2
               + cosLat * cosTo * Math.sin(dLng / 2) ** 2;
-      const d = 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(h));
+      const d = 2 * SimpleS2.EARTH_RADIUS_METERS * Math.asin(Math.sqrt(h));
       if (d < fromMeters || d > band.toMeters) {
         continue;
       }

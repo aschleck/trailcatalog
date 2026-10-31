@@ -1,7 +1,7 @@
 import { BillboardProgram } from './billboard_program';
 
-// Keep in sync with slope_loader.ts#SLOPES_SIZE. The texture is the tile's 512 pixels plus a
-// pixel of each neighbor on either side, so we map the tile onto the texels inside that frame.
+// The texture is terrarium.ts#SLOPES_SIZE to a side, so we map the tile onto the texels inside its
+// frame of neighbor pixels.
 //
 // Each band is 27 to 30, 30 to 35, 35 to 40, 40 to 45, and over 45 degrees, premultiplied.
 const SLOPE_FRAGMENT_SHADER = `#version 300 es

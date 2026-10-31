@@ -268,6 +268,10 @@ class S2DataFetcher {
           throw e;
         })
         .finally(() => {
+          // An abort drops out of inFlight before it unwinds, so a newer request may hold the slot.
+          if (this.inFlight.get(key) !== abort) {
+            return;
+          }
           this.inFlight.delete(key);
 
           if (this.inFlight.size === 0) {

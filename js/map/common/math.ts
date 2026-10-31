@@ -1,31 +1,4 @@
-import { LatLngRect, LatLngZoom, RgbaU32, TileId } from './types';
-
-export function fitBoundInScreen(bound: LatLngRect, screen: DOMRect): LatLngZoom {
-  const dLL = [
-    bound.high[0] - bound.low[0],
-    bound.high[1] - bound.low[1],
-  ];
-  const center = [
-    bound.low[0] + dLL[0] / 2,
-    bound.low[1] + dLL[1] / 2,
-  ];
-
-  // Bounds on the antimeridian appear to span the entire world, so correct them.
-  if (bound.high[1] < bound.low[1]) {
-    dLL[1] += 360;
-    center[1] = (bound.low[1] + dLL[1] / 2 + 180) % 360 - 180;
-  }
-
-  // Ideal fit: screen / (256 * 2^zoom) = dLL[0] / 360
-  // => 2^zoom = screen / 256 / (dLL[0] / 360)
-  // => zoom = log(screen / 256 / (dLL[0] / 360)) / log(2)
-  const zoom =
-      Math.min(
-              Math.log(screen.width / 256 / (dLL[1] / 360)),
-              Math.log(screen.height / 256 / (dLL[0] / 180)))
-          / Math.log(2);
-  return {lat: center[0], lng: center[1], zoom};
-}
+import { RgbaU32, TileId } from './types';
 
 /**
  * Converts an rgba color in the range [0, 1] to an int.

@@ -116,23 +116,14 @@ export class Camera {
     // cursor's direction, so each zoom-in step pans the camera toward it.
     // Scales with dZ so small scrolls pan gently; skip on zoom out so pulling
     // back doesn't drag the closest point off-center.
-    if (old.flattenFactor < 1) {
-      const projected = projectBlended(grab.lat, grab.lng, old);
-      const eX = projected[0] - cursorNdc[0];
-      const eY = projected[1] - cursorNdc[1];
-      if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
-        if (dZ <= 0) {
-          return;
-        }
+    if (old.flattenFactor < 1 && missesTarget(grab.lat, grab.lng, old, cursorNdc)) {
+      if (dZ > 0) {
         const fraction = Math.min(0.5, dZ * 0.3);
-        const dLat = grab.lat - oldLat;
-        const dLng = wrapPi(grab.lng - oldLng);
-        this._center = S2LatLng.fromRadians(
-            clamp(oldLat + dLat * fraction,
-                -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
-            wrapPi(oldLng + dLng * fraction));
-        return;
+        this.setCenterRadians(
+            oldLat + (grab.lat - oldLat) * fraction,
+            oldLng + wrapPi(grab.lng - oldLng) * fraction);
       }
+      return;
     }
 
     const newC = solveCameraForPin(
@@ -140,19 +131,14 @@ export class Camera {
 
     // Safety net: if the solver fails to pin grab to cursorNdc at the new
     // zoom (e.g., silhouette shrank past cursor), zoom in place.
-    if (this.flattenFactor < 1) {
-      const next = projectBlended(
-          grab.lat, grab.lng, createProjection(newC.lat, newC.lng, nz, widthPx, heightPx));
-      const eX = next[0] - cursorNdc[0];
-      const eY = next[1] - cursorNdc[1];
-      if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
-        return;
-      }
+    if (this.flattenFactor < 1
+        && missesTarget(
+            grab.lat, grab.lng, createProjection(newC.lat, newC.lng, nz, widthPx, heightPx),
+            cursorNdc)) {
+      return;
     }
 
-    this._center = S2LatLng.fromRadians(
-        clamp(newC.lat, -MERCATOR_MAX_LAT_RADIANS, MERCATOR_MAX_LAT_RADIANS),
-        wrapPi(newC.lng));
+    this.setCenterRadians(newC.lat, newC.lng);
   }
 
   // Pan from `last` to `curr`. Find the world point under `last` (in the
@@ -184,12 +170,10 @@ export class Camera {
 
     if (spun) {
       // A solver that missed the cursor returned junk.
-      const projected = projectBlended(
+      if (missesTarget(
           grab.lat, grab.lng,
-          createProjection(newC.lat, newC.lng, this._zoom, widthPx, heightPx));
-      const eX = projected[0] - cursorCurrNdc[0];
-      const eY = projected[1] - cursorCurrNdc[1];
-      if (eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE) {
+          createProjection(newC.lat, newC.lng, this._zoom, widthPx, heightPx),
+          cursorCurrNdc)) {
         newC = spun;
       } else if (edge > 0) {
         newC = mixCameras(newC, spun, edge);
@@ -274,9 +258,6 @@ export class Camera {
     const frame = computeSphericalFrame(
         this._center.latRadians(), this._center.lngRadians(),
         this.globeInverseRadius, widthPx, heightPx);
-    const horizonCap = Math.acos(Math.min(1, 1 / frame.scale));
-    const fovCap = visibleCapRadius(frame.scale, widthPx / heightPx);
-    const thetaT = Math.min(horizonCap, fovCap * 1.1);
     // The center sits frame.scale - 1 from the eye, where it gets 1 / (pi * globeInverseRadius)
     // canvas pixels per radian. A zoom z tile spreads 256 * 2^z texels over 2 * pi radians at the
     // equator.
@@ -284,7 +265,7 @@ export class Camera {
     // => z = log2(1 / (128 * globeInverseRadius))
     return {
       camDir: frame.zAxis,
-      cosThetaT: Math.cos(thetaT),
+      cosThetaT: Math.cos(paddedCapRadius(frame)),
       distance: frame.scale,
       centerZoom: Math.log2(1 / (128 * this.globeInverseRadius)),
       flattenFactor: this.flattenFactor,
@@ -322,10 +303,7 @@ export class Camera {
     // while the FOV cone doesn't — using horizon here forces a full-lng
     // bounding rect, which the tile loop then iterates exhaustively even
     // though the cone culls almost everything.
-    const horizonCap = Math.acos(Math.min(1, 1 / frame.scale));
-    const fovCap = visibleCapRadius(frame.scale, widthPx / heightPx);
-    const thetaT = Math.min(horizonCap, fovCap * 1.1);
-    const sinThetaT = Math.sin(thetaT);
+    const sinThetaT = Math.sin(paddedCapRadius(frame));
 
     const samples: ReadonlyArray<readonly [number, number]> = [
       [-1, -1], [0, -1], [1, -1],
@@ -347,9 +325,7 @@ export class Camera {
       if (lat > maxLat) maxLat = lat;
       if (lat < minLat) minLat = lat;
 
-      let dLngFromC = lng - lngC;
-      while (dLngFromC > Math.PI) dLngFromC -= 2 * Math.PI;
-      while (dLngFromC < -Math.PI) dLngFromC += 2 * Math.PI;
+      const dLngFromC = wrapPi(lng - lngC);
       if (dLngFromC > maxLngOff) maxLngOff = dLngFromC;
       if (dLngFromC < minLngOff) minLngOff = dLngFromC;
 
@@ -423,18 +399,10 @@ export class ScreenProjection {
       return true;
     }
 
-    const lat = mercYToLat(y);
-    const lng = x * Math.PI;
-    const cosLat = Math.cos(lat);
-    const {scale, zAxis} = this.projection.frame;
-    const facing =
-        cosLat * Math.cos(lng) * zAxis[0] + Math.sin(lat) * zAxis[1]
-            + cosLat * Math.sin(lng) * zAxis[2];
-    if (facing <= 1 / scale) {
+    const ndc = projectToNdc(mercYToLat(y), x * Math.PI, this.projection);
+    if (!ndc) {
       return false;
     }
-
-    const ndc = projectBlended(lat, lng, this.projection);
     out[0] = ndc[0] * this.halfViewport[0];
     out[1] = ndc[1] * this.halfViewport[1];
     return true;
@@ -597,6 +565,12 @@ function visibleCapRadius(scale: number, aspect: number): number {
   return Math.asin(r) - Math.atan(h);
 }
 
+// The diagonal FOV cap padded a little so silhouette tiles aren't clipped, clamped to the horizon.
+function paddedCapRadius(frame: SphericalFrame): number {
+  return Math.min(
+      Math.acos(Math.min(1, 1 / frame.scale)), visibleCapRadius(frame.scale, frame.aspect) * 1.1);
+}
+
 // Build the spherical perspective MVP at the given camera lat/lng/zoom. The
 // scale factor places the camera so that a viewport-half-height covers
 // `viewportRadius` arc-length on the unit sphere; that's the worldRadius/π
@@ -691,6 +665,14 @@ function projectBlended(V_lat: number, V_lng: number, projection: Projection): V
   const mixedW = (1 - f) * sphereClipW + f; // mercator w = 1
 
   return [mixedX / mixedW, mixedY / mixedW];
+}
+
+// Whether a solver's camera puts the point farther than SOLVER_REJECT_TOLERANCE from target.
+function missesTarget(lat: number, lng: number, projection: Projection, target: Vec2): boolean {
+  const [x, y] = projectBlended(lat, lng, projection);
+  const eX = x - target[0];
+  const eY = y - target[1];
+  return eX * eX + eY * eY > SOLVER_REJECT_TOLERANCE * SOLVER_REJECT_TOLERANCE;
 }
 
 /**

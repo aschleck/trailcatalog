@@ -7,7 +7,6 @@ import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 import { projectS2LatLng, ScreenProjection, SphericalCone } from '../camera';
 import { Copyright, RgbaU32, TileId } from '../common/types';
 import { Layer } from '../layer';
-import { GLYPHER } from '../rendering/glypher';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
@@ -2415,14 +2414,6 @@ export class MbtileLayer extends Layer {
     // already gone out; discard this stale styled output.
     if (response.styleZoom !== this.styleZoom || response.styleEpoch !== this.styleEpoch) {
       return;
-    }
-
-    for (const label of response.labels) {
-      if (!GLYPHER.measurePx(label.graphemes, label.scale)) {
-        // yolo!
-        setTimeout(() => { this.loadProcessedTile(response); });
-        return;
-      }
     }
 
     this.disposeStyledTile(response.id);

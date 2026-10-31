@@ -427,9 +427,7 @@ class Glypher {
     return {byteSize, drawables: [drawable]};
   }
 
-  // A request never postpones one already scheduled, or else callers that retry until a glyph
-  // exists, like MbtileLayer#loadProcessedTile, take turns pushing the regeneration behind each
-  // other's retries and it never runs.
+  // Each label missing a glyph asks, and one regeneration covers them all.
   private scheduleRegeneration(): void {
     if (this.regenerationScheduled) {
       return;

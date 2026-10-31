@@ -12,12 +12,10 @@ import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
 import { PoolClient, sharedPool } from '../workers/client_pool';
 import { Request as LoaderRequest, Response as LoaderResponse, LoadResponse } from '../workers/slope_loader';
-import { BASE_ZOOM, MAX_ZOOM, TILE_SIZE, TILE_URL } from '../workers/terrarium';
+import { BASE_ZOOM, MAX_ZOOM, SLOPES_SIZE, TILE_URL } from '../workers/terrarium';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 
 const NO_OFFSET: Vec2 = [0, 0];
-// Keep in sync with slope_loader.ts#SLOPES_SIZE
-const SLOPES_SIZE = TILE_SIZE + 2;
 const OPAQUE = 0xFFFFFFFF as RgbaU32;
 
 // Tiles below z12 are too coarse to faithfully compute angles on. Past z12 Mapterhorn only has
