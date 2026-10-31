@@ -37,6 +37,7 @@ import {
   titleField,
 } from './schema';
 import { getShownZone } from './time_zones';
+import { TreeChildren, TreeRow } from './tree_rows';
 import { Data } from './workers/collection_loader';
 import {
   CollectionSchema,
@@ -128,10 +129,6 @@ export interface FeatureListState {
 
 export type CollectionStatus = 'failed'|'loaded'|'loading';
 
-const EYE_OUTLINE =
-    'M1.5 8 C3.5 4.5 5.5 3.5 8 3.5 C10.5 3.5 12.5 4.5 14.5 8 '
-        + 'C12.5 11.5 10.5 12.5 8 12.5 C5.5 12.5 3.5 11.5 1.5 8 Z';
-
 /** Lists the open collection's features as a tree. */
 export function FeatureTree({readOnly, state, status, tree}: {
   readOnly: boolean;
@@ -184,28 +181,6 @@ export function NewFolderButton() {
   );
 }
 
-export function Chevron({expanded}: {expanded: boolean}) {
-  return (
-    <svg className="h-3 shrink-0 stroke-current text-gray-500 w-3" fill="none" viewBox="0 0 16 16">
-      <path d={expanded ? 'M3 6 L8 11 L13 6' : 'M6 3 L11 8 L6 13'} strokeWidth="2" />
-    </svg>
-  );
-}
-
-export function Eye({visible}: {visible: boolean}) {
-  return (
-    <svg className="h-4 shrink-0 stroke-current w-4" fill="none" viewBox="0 0 16 16">
-      <path d={EYE_OUTLINE} strokeWidth="1.3" />
-      {visible
-          ? <circle cx="8" cy="8" fill="currentColor" r="2" />
-          : <path d="M2.5 13.5 L13.5 2.5" strokeWidth="1.3" />
-      }
-    </svg>
-  );
-}
-
-// A folder's children sit in a container with a guide line down its left edge, under the
-// folder's chevron, the way a tree in an outliner shows what belongs to what.
 function rows(
     items: TreeItem[], state: FeatureListState, readOnly: boolean, dimmed: boolean):
     corgi.VElementOrPrimitive[] {
@@ -233,9 +208,9 @@ function rows(
         />);
     if (feature.kind === 'folder' && expanded && item.children.length > 0) {
       rendered.push(
-          <div className="border-gray-300 border-l ml-3" key={`children:${feature.id}`}>
+          <TreeChildren key={`children:${feature.id}`}>
             {rows(item.children, state, readOnly, hidden)}
-          </div>);
+          </TreeChildren>);
     }
   }
   return rendered;
@@ -257,17 +232,15 @@ function Row(
 }) {
   const title = getTitle(schema, feature);
   return (
-    <div
+    <TreeRow
         className={
-          'cursor-pointer flex gap-1.5 h-7 items-center pl-1 pr-2 select-none '
-              + (dropTarget
-                  ? 'bg-blue-100 ring-1 ring-blue-400 ring-inset '
-                  : selected ? 'bg-blue-100 ' : hovered ? 'bg-gray-100 ' : '')
-              + (dimmed ? 'opacity-50' : '')
+          dropTarget
+              ? 'bg-blue-100 ring-1 ring-blue-400 ring-inset'
+              : selected ? 'bg-blue-100' : hovered ? 'bg-gray-100' : ''
         }
-        data={{id: feature.id}}
+        dimmed={dimmed}
         draggable={draggable}
-        unboundEvents={{
+        events={{
           click: 'featureClicked',
           dragend: 'featureDragEnded',
           dragover: 'featureDraggedOver',
@@ -276,17 +249,13 @@ function Row(
           pointerenter: 'featureRowEntered',
           pointerleave: 'featureRowLeft',
         }}
+        expanded={feature.kind === 'folder' ? expanded : undefined}
+        expandToggled="folderToggled"
+        id={feature.id}
+        key={feature.id}
+        visibilityToggled="visibilityToggled"
+        visible={visible}
     >
-      {feature.kind === 'folder'
-          ? <span
-                className="cursor-pointer flex h-4 items-center justify-center shrink-0 w-4"
-                data={{id: feature.id, role: 'toggle'}}
-                unboundEvents={{click: 'folderToggled'}}
-            >
-              <Chevron expanded={expanded} />
-            </span>
-          : <span className="shrink-0 w-4" />
-      }
       <FeatureIcon feature={feature} schema={schema} />
       <span
           className={
@@ -297,16 +266,7 @@ function Row(
       >
         {title || untitled(getFieldKind(feature))}
       </span>
-      <span
-          ariaLabel={visible ? 'Hide' : 'Show'}
-          className="cursor-pointer hover:text-gray-900 shrink-0 text-gray-500"
-          data={{id: feature.id, role: 'toggle'}}
-          title={visible ? 'Hide' : 'Show'}
-          unboundEvents={{click: 'visibilityToggled'}}
-      >
-        <Eye visible={visible} />
-      </span>
-    </div>
+    </TreeRow>
   );
 }
 

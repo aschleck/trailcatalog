@@ -12,9 +12,10 @@ import { DIALOG, DialogHeader, LIST, Section } from 'js/pika/dialog';
 import { SELECT_BOX } from 'js/pika/fields';
 
 import { ExportFormat, filterForExport } from './exporter';
-import { buildTree, Chevron, FeatureIcon, TreeItem, untitled } from './feature_list';
+import { buildTree, FeatureIcon, TreeItem, untitled } from './feature_list';
 import { EditableFeature } from './features';
 import { getFieldKind, getTitle } from './schema';
+import { Chevron } from './tree_rows';
 import { CollectionSchema } from './workers/collection_schema';
 
 const FORMATS: Array<{format: ExportFormat; label: string}> = [

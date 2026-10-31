@@ -4,8 +4,8 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { Layer } from 'js/map/layer';
 
-import { Chevron, Eye } from './feature_list';
 import { Schema } from './schema';
+import { Eye, TreeChildren, TreeRow } from './tree_rows';
 
 export type LayerControl = {
   kind: 'checkbox';
@@ -245,67 +245,32 @@ function layerRows(nodes: LayerNode[], expanded: ReadonlySet<string>, dimmed: bo
     const hidden = dimmed || !node.enabled;
     const expandable = node.kind === 'group' || node.controls.length > 0;
     rendered.push(
-        <LayerRow
-            key={node.id}
+        <TreeRow
+            className={'hover:bg-gray-100' + (node.kind === 'group' ? ' font-medium' : '')}
             dimmed={hidden}
-            expandable={expandable}
-            expanded={open}
-            node={node}
-        />);
+            events={{click: 'layerRowClicked'}}
+            expanded={expandable ? open : undefined}
+            expandToggled="layerExpandToggled"
+            id={node.id}
+            key={node.id}
+            visibilityToggled="layerVisibilityToggled"
+            visible={node.enabled}
+        >
+          <span className="grow truncate">{node.name}</span>
+        </TreeRow>);
     if (!open || !expandable) {
       continue;
     }
 
     rendered.push(
-        <div className="border-gray-300 border-l ml-3" key={`children:${node.id}`}>
+        <TreeChildren key={`children:${node.id}`}>
           {node.kind === 'group'
               ? layerRows(node.children, expanded, hidden)
               : [<LayerControls entry={node} dimmed={hidden} />]
           }
-        </div>);
+        </TreeChildren>);
   }
   return rendered;
-}
-
-function LayerRow({dimmed, expandable, expanded, node}: {
-  dimmed: boolean;
-  expandable: boolean;
-  expanded: boolean;
-  key: string;
-  node: LayerNode;
-}) {
-  return (
-    <div
-        className={
-          'cursor-pointer flex gap-1.5 h-7 hover:bg-gray-100 items-center pl-1 pr-2 select-none '
-              + (node.kind === 'group' ? 'font-medium ' : '')
-              + (dimmed ? 'opacity-50' : '')
-        }
-        data={{id: node.id}}
-        unboundEvents={{click: 'layerRowClicked'}}
-    >
-      {expandable
-          ? <span
-                className="cursor-pointer flex h-4 items-center justify-center shrink-0 w-4"
-                data={{id: node.id, role: 'toggle'}}
-                unboundEvents={{click: 'layerExpandToggled'}}
-            >
-              <Chevron expanded={expanded} />
-            </span>
-          : <span className="shrink-0 w-4" />
-      }
-      <span className="grow truncate">{node.name}</span>
-      <span
-          ariaLabel={node.enabled ? 'Hide' : 'Show'}
-          className="cursor-pointer hover:text-gray-900 shrink-0 text-gray-500"
-          data={{id: node.id, role: 'toggle'}}
-          title={node.enabled ? 'Hide' : 'Show'}
-          unboundEvents={{click: 'layerVisibilityToggled'}}
-      >
-        <Eye visible={node.enabled} />
-      </span>
-    </div>
-  );
 }
 
 function LayerControls({dimmed, entry}: {dimmed: boolean; entry: LayerEntry}) {
