@@ -17,9 +17,15 @@ interface LoadAwareFontFace extends TFontFace {
 
 export const FONT_SIZE = 28;
 const LINE_HEIGHT = 1.2;
-// TinySDF's default, which we don't override: the SDF bitmap is the ink with this much padding on
-// each side.
+// We rasterize glyphs this many times larger than FONT_SIZE because TinySDF rounds off corners and
+// thin joins at about a pixel of its own bitmap, which is two screen pixels for a label drawn at
+// FONT_SIZE / 2 on a 2x display. The constants below are in FONT_SIZE pixels and the atlas is in
+// SDF_SCALE times that.
+const SDF_SCALE = 2;
+// TinySDF's defaults: the SDF bitmap is the ink with this much padding on each side, and the
+// distance field spans this far either side of the edge.
 const SDF_BUFFER_PX = 3;
+const SDF_RADIUS_PX = 8;
 // How far above and left of its cell's center a glyph's SDF bitmap starts, which is where the
 // quads plan draws expect the ink.
 const BITMAP_INSET_PX = 16;
@@ -28,8 +34,11 @@ const BITMAP_INSET_PX = 16;
 // that big, or else wide glyphs like emoji lose their right and bottom edges.
 const ATLAS_GLYPH_SIZE = 64;
 
-const ATLAS_WIDTH = 2048;
-const ATLAS_HEIGHT = 2048;
+// 2048 / 64 => 32 cells a side, so 1024 glyphs.
+const ATLAS_WIDTH = 2048 * SDF_SCALE;
+const ATLAS_HEIGHT = 2048 * SDF_SCALE;
+const ATLAS_CELLS: Vec2 =
+    [ATLAS_WIDTH / SDF_SCALE / ATLAS_GLYPH_SIZE, ATLAS_HEIGHT / SDF_SCALE / ATLAS_GLYPH_SIZE];
 const SEGMENTER = new Intl.Segmenter();
 
 // Scratch for planCurved, which runs once per curved label per frame.
@@ -76,7 +85,9 @@ class Glypher {
       typeof window === 'undefined' || !process.env.CORGI_FOR_BROWSER
           ? undefined as unknown as TinySDF
           : new TinySDF({
-            fontSize: FONT_SIZE,
+            fontSize: FONT_SIZE * SDF_SCALE,
+            buffer: SDF_BUFFER_PX * SDF_SCALE,
+            radius: SDF_RADIUS_PX * SDF_SCALE,
             fontFamily: 'Roboto,"Noto Emoji",sans-serif',
             fontStyle: 'normal',
             fontWeight: '400',
@@ -218,7 +229,7 @@ class Glypher {
             fill,
             stroke,
             z,
-            [ATLAS_WIDTH / ATLAS_GLYPH_SIZE, ATLAS_HEIGHT / ATLAS_GLYPH_SIZE],
+            ATLAS_CELLS,
             buffer,
             offset + totalByteSize,
             glBuffer);
@@ -419,7 +430,7 @@ class Glypher {
             fill,
             stroke,
             z,
-            [ATLAS_WIDTH / ATLAS_GLYPH_SIZE, ATLAS_HEIGHT / ATLAS_GLYPH_SIZE],
+            ATLAS_CELLS,
             buffer,
             offset,
             glBuffer);
@@ -503,23 +514,23 @@ class Glypher {
       return;
     }
 
-    const size = ATLAS_GLYPH_SIZE;
+    const size = ATLAS_GLYPH_SIZE * SDF_SCALE;
     let i = 0;
     this.glyphs.clear();
     for (const character of this.characters) {
       const x = i % (ATLAS_WIDTH / size) * size;
       const y = Math.floor(i / (ATLAS_WIDTH / size)) * size;
       const g = this.tinySdf.draw(character);
-      const inset = size / 2 - BITMAP_INSET_PX;
+      const inset = size / 2 - BITMAP_INSET_PX * SDF_SCALE;
       copyIntoImage(g.data, g.width, this.atlas, x + inset, y + inset, ATLAS_WIDTH);
       this.glyphs.set(character, {
         index: i,
-        glyphAdvance: g.glyphAdvance,
-        glyphWidth: g.glyphWidth,
-        glyphHeight: g.glyphHeight,
-        glyphTop: g.glyphTop,
-        width: size,
-        height: size,
+        glyphAdvance: g.glyphAdvance / SDF_SCALE,
+        glyphWidth: g.glyphWidth / SDF_SCALE,
+        glyphHeight: g.glyphHeight / SDF_SCALE,
+        glyphTop: g.glyphTop / SDF_SCALE,
+        width: ATLAS_GLYPH_SIZE,
+        height: ATLAS_GLYPH_SIZE,
       });
 
       i += 1;
