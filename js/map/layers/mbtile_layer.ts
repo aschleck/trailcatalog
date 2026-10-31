@@ -2212,7 +2212,6 @@ export class MbtileLayer extends Layer {
   // The labels in placement order, or undefined when the set changed since the last sort
   private sorted: IndexedLabel[]|undefined;
   private styleZoom: number;
-  private styleEpoch: number;
 
   constructor(
       copyrights: Copyright[],
@@ -2257,7 +2256,6 @@ export class MbtileLayer extends Layer {
     // viewportChanged adopts whatever the camera reports without triggering
     // a re-style pass (there are no cached raw bytes to re-style anyway).
     this.styleZoom = -1;
-    this.styleEpoch = 0;
 
     this.fetcher.onresponse = command => {
       if (command.kind === 'ltc') {
@@ -2315,7 +2313,6 @@ export class MbtileLayer extends Layer {
 
   /** Redraws every held tile with the style, without refetching. */
   setStyle(style: Style): void {
-    this.styleEpoch += 1;
     this.loader.broadcast({
       kind: 'sr',
       style,
@@ -2403,19 +2400,12 @@ export class MbtileLayer extends Layer {
       kind: 'lr',
       id,
       styleZoom: this.styleZoom,
-      styleEpoch: this.styleEpoch,
       data,
     }));
     this.redraw();
   }
 
   private loadProcessedTile(response: LoadResponse): void {
-    // A new request for this tile at a different styleZoom or style has
-    // already gone out; discard this stale styled output.
-    if (response.styleZoom !== this.styleZoom || response.styleEpoch !== this.styleEpoch) {
-      return;
-    }
-
     this.disposeStyledTile(response.id);
 
     const geometry = this.renderer.createDataBuffer(response.geometry.byteLength);

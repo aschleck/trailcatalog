@@ -74,8 +74,8 @@ interface WantedCell {
 // One past S2's deepest level, so an unsnapped cell outranks every snap level.
 const FULL_DETAIL = 31;
 
-// Matches ApiServer#NO_VERSION. No collection ever has it, so a request carrying it is never held
-// past its revalidation.
+// No collection ever has this version, so a request carrying it is never held past its
+// revalidation.
 const NO_VERSION = -1;
 
 // Zoom of the viewport we start with, which is no viewport at all.

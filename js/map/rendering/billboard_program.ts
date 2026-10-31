@@ -2,7 +2,15 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData, SPHERE_OPERATIONS } from './program';
+import {
+  COLOR_OPERATIONS,
+  Drawable,
+  FP64_OPERATIONS,
+  linkProgram,
+  Program,
+  ProgramData,
+  SPHERE_OPERATIONS,
+} from './program';
 
 // A billboard is drawn as instances of a static lattice, so plan() writes only the per-instance
 // attributes: 7 floats and 5 uint32s, all 4 bytes.
@@ -44,9 +52,6 @@ export class BillboardProgram extends Program<BillboardProgramData> {
 
   constructor(gl: WebGL2RenderingContext, fs: string = TEXTURE_FRAGMENT_SHADER) {
     super(createBillboardProgram(gl, fs), gl, gl.TRIANGLES);
-    this.registerDisposer(() => {
-      gl.deleteProgram(this.program.handle);
-    });
 
     // The flat quad comes first so draw() can take it as a prefix of the same buffer.
     const vertices = [...lattice(1), ...lattice(1 / 4)];
@@ -334,8 +339,6 @@ interface BillboardProgramData extends ProgramData {
 }
 
 function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): BillboardProgramData {
-  const programId = checkExists(gl.createProgram());
-
   const vs = `#version 300 es
       // Mercator coordinates range from -1 to 1 on both x and y
       // Pixels are in screen space (eg -320px to 320px for a 640px width)
@@ -448,26 +451,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
         fragColorTint = uint32ToVec4(tint);
       }
     `;
-  const vertexId = checkExists(gl.createShader(gl.VERTEX_SHADER));
-  gl.shaderSource(vertexId, vs);
-  gl.compileShader(vertexId);
-  if (!gl.getShaderParameter(vertexId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile billboard vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
-  }
-  gl.attachShader(programId, vertexId);
-
-  const fragmentId = checkExists(gl.createShader(gl.FRAGMENT_SHADER));
-  gl.shaderSource(fragmentId, fs);
-  gl.compileShader(fragmentId);
-  if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile billboard fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
-  }
-  gl.attachShader(programId, fragmentId);
-
-  gl.linkProgram(programId);
-  if (!gl.getProgramParameter(programId, gl.LINK_STATUS)) {
-    throw new Error(`Unable to link billboard program: ${gl.getProgramInfoLog(programId)}`);
-  }
+  const programId = linkProgram(gl, vs, fs, 'billboard');
 
   return {
     handle: programId,

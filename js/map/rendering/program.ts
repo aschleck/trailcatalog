@@ -51,6 +51,7 @@ export abstract class Program<P extends ProgramData> extends Disposable {
     super();
     this.id = nextProgramId;
     nextProgramId += 1;
+    this.registerDisposer(() => { gl.deleteProgram(program.handle); });
   }
 
   render(
@@ -199,6 +200,27 @@ export abstract class Program<P extends ProgramData> extends Disposable {
   protected activate(): void {}
   protected bindAttributes(offset: number): void {}
   protected deactivate(): void {}
+}
+
+export function linkProgram(
+    gl: WebGL2RenderingContext, vs: string, fs: string, name: string): WebGLProgram {
+  const programId = checkExists(gl.createProgram());
+  const stages = [[gl.VERTEX_SHADER, vs, 'vertex'], [gl.FRAGMENT_SHADER, fs, 'fragment']] as const;
+  for (const [type, source, stage] of stages) {
+    const shader = checkExists(gl.createShader(type));
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      throw new Error(`Unable to compile ${name} ${stage} shader: ${gl.getShaderInfoLog(shader)}`);
+    }
+    gl.attachShader(programId, shader);
+  }
+
+  gl.linkProgram(programId);
+  if (!gl.getProgramParameter(programId, gl.LINK_STATUS)) {
+    throw new Error(`Unable to link ${name} program: ${gl.getProgramInfoLog(programId)}`);
+  }
+  return programId;
 }
 
 export const COLOR_OPERATIONS = `

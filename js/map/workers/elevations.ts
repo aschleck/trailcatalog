@@ -6,6 +6,7 @@ import {
   Request,
   Response,
   RouteResponse,
+  SampleResponse,
   SunlightRequest,
   SunlightResponse,
   TraceRequest,
@@ -17,39 +18,19 @@ import { GradeLimits } from './terrain_router';
 export class Elevations {
 
   private readonly worker: WorkerPool<Request, Response>;
-  // Resolvers for the samples in flight, by id
-  private readonly pending: Map<number, (meters: Float32Array) => void>;
-  private readonly pendingRoutes: Map<number, (response: RouteResponse) => void>;
-  private readonly pendingTraces: Map<number, (response: TraceResponse) => void>;
-  private readonly pendingShades: Map<number, (response: SunlightResponse) => void>;
+  // Resolvers for the requests in flight, by id
+  private readonly pending: Map<number, (response: Response) => void>;
   private requestCount: number;
 
   constructor() {
     this.worker = new WorkerPool(new URL('elevation_sampler_worker.js', import.meta.url).href, 1);
     this.pending = new Map();
-    this.pendingRoutes = new Map();
-    this.pendingTraces = new Map();
-    this.pendingShades = new Map();
     this.requestCount = 0;
 
     this.worker.onresponse = response => {
-      if (response.kind === 'rr') {
-        const resolve = this.pendingRoutes.get(response.id);
-        this.pendingRoutes.delete(response.id);
-        resolve?.(response);
-      } else if (response.kind === 'tr') {
-        const resolve = this.pendingTraces.get(response.id);
-        this.pendingTraces.delete(response.id);
-        resolve?.(response);
-      } else if (response.kind === 'lr') {
-        const resolve = this.pendingShades.get(response.id);
-        this.pendingShades.delete(response.id);
-        resolve?.(response);
-      } else {
-        const resolve = this.pending.get(response.id);
-        this.pending.delete(response.id);
-        resolve?.(response.meters);
-      }
+      const resolve = this.pending.get(response.id);
+      this.pending.delete(response.id);
+      resolve?.(response);
     };
     this.worker.broadcast({kind: 'ir'});
   }
@@ -60,18 +41,13 @@ export class Elevations {
    * a later call with the same key replaced this one.
    */
   sample(latLngDegrees: Float64Array, zoom: number, key?: string): Promise<Float32Array> {
-    const id = this.requestCount;
-    this.requestCount += 1;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, meters => {
-        if (meters.length === latLngDegrees.length / 2) {
-          resolve(meters);
-        } else {
-          reject(new Error('Unable to sample elevations'));
-        }
-      });
-      this.worker.post({kind: 'sr', id, latLngDegrees, zoom, key});
-    });
+    return this.request<SampleResponse>(id => ({kind: 'sr', id, latLngDegrees, zoom, key}))
+        .then(({meters}) => {
+          if (meters.length !== latLngDegrees.length / 2) {
+            throw new Error('Unable to sample elevations');
+          }
+          return meters;
+        });
   }
 
   /**
@@ -79,17 +55,11 @@ export class Elevations {
    * see TerrainTracer. Rejects if the tiles could not be fetched.
    */
   trace(request: Omit<TraceRequest, 'kind'|'id'>): Promise<TraceResponse> {
-    const id = this.requestCount;
-    this.requestCount += 1;
-    return new Promise((resolve, reject) => {
-      this.pendingTraces.set(id, response => {
-        if (response.failed) {
-          reject(new Error('Unable to trace the terrain'));
-        } else {
-          resolve(response);
-        }
-      });
-      this.worker.post({kind: 'tr', id, ...request});
+    return this.request<TraceResponse>(id => ({kind: 'tr', id, ...request})).then(response => {
+      if (response.failed) {
+        throw new Error('Unable to trace the terrain');
+      }
+      return response;
     });
   }
 
@@ -98,17 +68,11 @@ export class Elevations {
    * sunlight.ts#getSunlight. Rejects if the tiles could not be fetched.
    */
   shade(request: Omit<SunlightRequest, 'kind'|'id'>): Promise<SunlightResponse> {
-    const id = this.requestCount;
-    this.requestCount += 1;
-    return new Promise((resolve, reject) => {
-      this.pendingShades.set(id, response => {
-        if (response.rgba.length === 0) {
-          reject(new Error('Unable to shade the terrain'));
-        } else {
-          resolve(response);
-        }
-      });
-      this.worker.post({kind: 'lr', id, ...request});
+    return this.request<SunlightResponse>(id => ({kind: 'lr', id, ...request})).then(response => {
+      if (response.rgba.length === 0) {
+        throw new Error('Unable to shade the terrain');
+      }
+      return response;
     });
   }
 
@@ -118,17 +82,22 @@ export class Elevations {
    * fetched.
    */
   route(from: Vec2, to: Vec2, limits: GradeLimits): Promise<Float64Array|undefined> {
+    return this.request<RouteResponse>(id => ({kind: 'rr', id, from, to, limits}))
+        .then(response => {
+          if (response.failed) {
+            throw new Error('Unable to route over terrain');
+          }
+          return response.via;
+        });
+  }
+
+  private request<R extends Response>(request: (id: number) => Request): Promise<R> {
     const id = this.requestCount;
     this.requestCount += 1;
-    return new Promise((resolve, reject) => {
-      this.pendingRoutes.set(id, response => {
-        if (response.failed) {
-          reject(new Error('Unable to route over terrain'));
-        } else {
-          resolve(response.via);
-        }
-      });
-      this.worker.post({kind: 'rr', id, from, to, limits});
+    return new Promise<R>(resolve => {
+      // The id says which response this is, so the cast only restates what the caller asked for.
+      this.pending.set(id, response => { resolve(response as R); });
+      this.worker.post(request(id));
     });
   }
 }

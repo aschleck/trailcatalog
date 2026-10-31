@@ -48,7 +48,7 @@ export class Planner {
       } else if (a.program.id !== b.program.id) {
         return a.program.id - b.program.id;
       } else if (a.geometry !== b.geometry) {
-        return a.geometry < b.geometry ? -1 : 1;
+        return 0;
       } else {
         return a.geometryOffset - b.geometryOffset;
       }

@@ -201,13 +201,6 @@ export class PoolClient<Init, Request, Response> {
   dispose(): void {
     this.pool.disconnect(this, this.attached);
   }
-
-  private attach(): void {
-    if (!this.attached) {
-      this.attached = true;
-      this.pool.broadcast({kind: 'connect', client: this.id, init: this.init});
-    }
-  }
 }
 
 /**

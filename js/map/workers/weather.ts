@@ -151,8 +151,8 @@ const ACCUMULATION_MM: Ramp = [
   [1, 0xA0D8EF], [5, 0x4FA3E0], [10, 0x2A6BD1], [25, 0x3AB54A], [50, 0xF2E33A], [100, 0xF28C28],
   [200, 0xD7263D],
 ];
-// The same stops as raster_loader.ts#SNOW_COLORS so SNODAS and ECMWF snow read alike
-const SNOW_DEPTH_CM: Ramp = [
+// Light to dark, and shared with raster_loader.ts so SNODAS and ECMWF snow read alike
+export const SNOW_DEPTH_CM: Ramp = [
   [1, 0xDCEFFA], [5, 0xB5DAF2], [15, 0x85BDE6], [30, 0x5A9DD8], [60, 0x3A7BC8], [100, 0x3F55B5],
   [150, 0x5A3FA0], [200, 0x77308A], [300, 0x8E1F6E],
 ];

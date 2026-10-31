@@ -4,7 +4,7 @@ import { TileId } from '../common/types';
 
 import { Reply, serveClients } from './client_pool';
 import { readTerrarium, terrariumMeters } from './terrarium';
-import { colorWeather, readPacked, unpackSnodas, WeatherView } from './weather';
+import { colorWeather, readPacked, SNOW_DEPTH_CM, unpackSnodas, WeatherView } from './weather';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height,
 // 'hillshade' fades a gray hillshade by its shade, the snow kinds color one of the values in a
@@ -35,13 +35,11 @@ export interface LoadResponse {
 export type Response = LoadResponse;
 
 const SNOW_ALPHA = 160;
-// Light to dark. Depth and water use the same colors so a depth and its water look the same.
-const SNOW_COLORS = [
-  0xDCEFFA, 0xB5DAF2, 0x85BDE6, 0x5A9DD8, 0x3A7BC8, 0x3F55B5, 0x5A3FA0, 0x77308A, 0x8E1F6E,
-];
+// Depth and water use the same colors so a depth and its water look the same.
+const SNOW_COLORS = SNOW_DEPTH_CM.map(([, color]) => color);
 // The value where each color starts. Settled snow is about 30% water, so 1 cm of snow is about 3 mm
 // of water, and the water stops are the depth stops times 3.
-const SNOW_DEPTH_CM_STOPS = [1, 5, 15, 30, 60, 100, 150, 200, 300];
+const SNOW_DEPTH_CM_STOPS = SNOW_DEPTH_CM.map(([cm]) => cm);
 const SNOW_WATER_MM_STOPS = SNOW_DEPTH_CM_STOPS.map(cm => 3 * cm);
 
 // Green lowlands through tan and brown to white peaks, interpolated between stops

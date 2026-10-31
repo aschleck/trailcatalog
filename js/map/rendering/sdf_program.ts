@@ -6,6 +6,7 @@ import {
   COLOR_OPERATIONS,
   Drawable,
   FP64_OPERATIONS,
+  linkProgram,
   Program,
   ProgramData,
   SPHERE_OPERATIONS,
@@ -40,7 +41,6 @@ export class SdfProgram extends Program<SdfProgramData> {
     super(createSdfProgram(gl), gl, gl.TRIANGLE_STRIP);
     this.registerDisposer(() => {
       gl.deleteBuffer(this.sdfBuffer);
-      gl.deleteProgram(this.program.handle);
       gl.deleteTexture(this.atlas);
     });
 
@@ -387,8 +387,6 @@ function pushGlyph(
 }
 
 function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
-  const programId = checkExists(gl.createProgram());
-
   const vs = `#version 300 es
       // Mercator coordinates range from -1 to 1 on both x and y
       // Pixels are in screen space (eg -320px to 320px for a 640px width)
@@ -507,26 +505,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       }
   `;
 
-  const vertexId = checkExists(gl.createShader(gl.VERTEX_SHADER));
-  gl.shaderSource(vertexId, vs);
-  gl.compileShader(vertexId);
-  if (!gl.getShaderParameter(vertexId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile sdf vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
-  }
-  gl.attachShader(programId, vertexId);
-
-  const fragmentId = checkExists(gl.createShader(gl.FRAGMENT_SHADER));
-  gl.shaderSource(fragmentId, fs);
-  gl.compileShader(fragmentId);
-  if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile sdf fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
-  }
-  gl.attachShader(programId, fragmentId);
-
-  gl.linkProgram(programId);
-  if (!gl.getProgramParameter(programId, gl.LINK_STATUS)) {
-    throw new Error(`Unable to link sdf program: ${gl.getProgramInfoLog(programId)}`);
-  }
+  const programId = linkProgram(gl, vs, fs, 'sdf');
 
   return {
     handle: programId,

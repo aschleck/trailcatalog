@@ -9,7 +9,6 @@ import { RgbaU32, Vec2 } from '../common/types';
 import { Drawable } from './program';
 import { Renderer } from './renderer';
 import { FLOATS_PER_PLACEMENT, Glyph, SdfProgram } from './sdf_program';
-import { TexturePool } from './texture_pool';
 
 interface LoadAwareFontFace extends TFontFace {
   requested?: boolean;

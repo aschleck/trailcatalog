@@ -6,6 +6,7 @@ import {
   COLOR_OPERATIONS,
   Drawable,
   FP64_OPERATIONS,
+  linkProgram,
   Program,
   ProgramData,
   SPHERE_OPERATIONS,
@@ -55,9 +56,6 @@ export class TriangleProgram extends Program<TriangleProgramData> {
 
   constructor(gl: WebGL2RenderingContext) {
     super(createTriangleProgram(gl), gl, gl.TRIANGLES);
-    this.registerDisposer(() => {
-      gl.deleteProgram(this.program.handle);
-    });
   }
 
   plan(
@@ -151,8 +149,6 @@ interface TriangleProgramData extends ProgramData {
 }
 
 function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData {
-  const programId = checkExists(gl.createProgram());
-
   const vs = `#version 300 es
 
       // Mercator coordinates range from -1 to 1 on both x and y
@@ -239,26 +235,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       }
   `;
 
-  const vertexId = checkExists(gl.createShader(gl.VERTEX_SHADER));
-  gl.shaderSource(vertexId, vs);
-  gl.compileShader(vertexId);
-  if (!gl.getShaderParameter(vertexId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile triangle vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
-  }
-  gl.attachShader(programId, vertexId);
-
-  const fragmentId = checkExists(gl.createShader(gl.FRAGMENT_SHADER));
-  gl.shaderSource(fragmentId, fs);
-  gl.compileShader(fragmentId);
-  if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile triangle fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
-  }
-  gl.attachShader(programId, fragmentId);
-
-  gl.linkProgram(programId);
-  if (!gl.getProgramParameter(programId, gl.LINK_STATUS)) {
-    throw new Error(`Unable to link triangle program: ${gl.getProgramInfoLog(programId)}`);
-  }
+  const programId = linkProgram(gl, vs, fs, 'triangle');
 
   return {
     handle: programId,

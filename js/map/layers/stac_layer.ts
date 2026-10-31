@@ -131,8 +131,9 @@ export class StacLayer extends Layer {
       const drawables = [];
       let offset = 0;
 
-      // Draw highest detail to lowest, we use the stencil buffer to avoid overdraw.
-      const sorted = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
+      // Draw lowest detail to highest because tiles share a z and the depth test passes equal
+      // depths, so the last one drawn wins.
+      const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
       for (const [id, texture] of sorted) {
         const halfWorldSize = Math.pow(2, id.zoom - 1);
         const size = 1 / halfWorldSize;

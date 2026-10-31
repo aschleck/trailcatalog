@@ -2,7 +2,14 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { RgbaU32, Vec2 } from '../common/types';
 
-import { COLOR_OPERATIONS, Drawable, FP64_OPERATIONS, Program, ProgramData } from './program';
+import {
+  COLOR_OPERATIONS,
+  Drawable,
+  FP64_OPERATIONS,
+  linkProgram,
+  Program,
+  ProgramData,
+} from './program';
 
 export class SkyboxProgram extends Program<SkyboxProgramData> {
 
@@ -10,9 +17,6 @@ export class SkyboxProgram extends Program<SkyboxProgramData> {
 
   constructor(gl: WebGL2RenderingContext) {
     super(createSkyboxProgram(gl), gl, gl.TRIANGLES);
-    this.registerDisposer(() => {
-      gl.deleteProgram(this.program.handle);
-    });
 
     this.boxData = new Float32Array([
       -1, -1,
@@ -87,8 +91,6 @@ interface SkyboxProgramData extends ProgramData {
 }
 
 function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
-  const programId = checkExists(gl.createProgram());
-
   const vs = `#version 300 es
       // Mercator coordinates range from -1 to 1 on both x and y
       // Pixels are in screen space (eg -320px to 320px for a 640px width)
@@ -241,26 +243,7 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
       }
   `;
 
-  const vertexId = checkExists(gl.createShader(gl.VERTEX_SHADER));
-  gl.shaderSource(vertexId, vs);
-  gl.compileShader(vertexId);
-  if (!gl.getShaderParameter(vertexId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile skybox vertex shader: ${gl.getShaderInfoLog(vertexId)}`);
-  }
-  gl.attachShader(programId, vertexId);
-
-  const fragmentId = checkExists(gl.createShader(gl.FRAGMENT_SHADER));
-  gl.shaderSource(fragmentId, fs);
-  gl.compileShader(fragmentId);
-  if (!gl.getShaderParameter(fragmentId, gl.COMPILE_STATUS)) {
-    throw new Error(`Unable to compile skybox fragment shader: ${gl.getShaderInfoLog(fragmentId)}`);
-  }
-  gl.attachShader(programId, fragmentId);
-
-  gl.linkProgram(programId);
-  if (!gl.getProgramParameter(programId, gl.LINK_STATUS)) {
-    throw new Error(`Unable to link skybox program: ${gl.getProgramInfoLog(programId)}`);
-  }
+  const programId = linkProgram(gl, vs, fs, 'skybox');
 
   return {
     handle: programId,

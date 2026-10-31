@@ -178,8 +178,6 @@ interface LoadRequest {
   // tile fetches use a lower zoom than the viewport (commit 9af3745) but
   // the rendered layer-style detail should still match the viewport.
   styleZoom: number;
-  // Counts the layer's calls to setStyle, echoed so that a tile styled before the last one drops.
-  styleEpoch: number;
   data: ArrayBuffer;
 }
 
@@ -188,10 +186,6 @@ export type Request = LoadRequest|SetStyleRequest;
 export interface LoadResponse {
   kind: 'lr';
   id: TileId;
-  // Echoed from the request so the layer can drop results whose styleZoom
-  // has already been superseded by a viewport change.
-  styleZoom: number;
-  styleEpoch: number;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
   labels: Label[];
@@ -487,8 +481,6 @@ class MbtileLoader {
     const response: LoadResponse = {
       kind: 'lr',
       id: request.id,
-      styleZoom: request.styleZoom,
-      styleEpoch: request.styleEpoch,
       geometry: geometry.buffer,
       index: index.buffer,
       labels: [],
@@ -1034,93 +1026,37 @@ function findStyle<S extends GeometryStyle>(
 
 function matches(tags: number[], keys: string[], values: ValueType[], filters: Match[]): boolean {
   for (const filter of filters) {
-    if (filter.match === 'greater_than') {
-      let matched = false;
-      for (let i = 0; i < tags.length; i += 2) {
-        const key = keys[tags[i + 0]];
-        if (key !== filter.key) {
-          continue;
-        }
-        const value = values[tags[i + 1]] as number;
-        if (value > filter.value) {
-          matched = true;
-          break;
-        }
-      }
+    if (filter.match === 'always') {
+      continue;
+    }
 
-      if (!matched) {
-        return false;
+    let matched = false;
+    for (let i = 0; i < tags.length && !matched; i += 2) {
+      if (keys[tags[i + 0]] !== filter.key) {
+        continue;
       }
-    } else if (filter.match === 'less_than') {
-      let matched = false;
-      for (let i = 0; i < tags.length; i += 2) {
-        const key = keys[tags[i + 0]];
-        if (key !== filter.key) {
-          continue;
-        }
-        const value = values[tags[i + 1]] as number;
-        if (value < filter.value) {
-          matched = true;
+      const value = values[tags[i + 1]];
+      switch (filter.match) {
+        case 'greater_than':
+          matched = (value as number) > filter.value;
           break;
-        }
-      }
-
-      if (!matched) {
-        return false;
-      }
-    } else if (filter.match === 'number_equals') {
-      let matched = false;
-      for (let i = 0; i < tags.length; i += 2) {
-        const key = keys[tags[i + 0]];
-        if (key !== filter.key) {
-          continue;
-        }
-        const value = values[tags[i + 1]] as number;
-        if (value === filter.value) {
-          matched = true;
+        case 'less_than':
+          matched = (value as number) < filter.value;
           break;
-        }
-      }
-
-      if (!matched) {
-        return false;
-      }
-    } else if (filter.match === 'string_equals') {
-      let matched = false;
-      for (let i = 0; i < tags.length; i += 2) {
-        const key = keys[tags[i + 0]];
-        const value = values[tags[i + 1]];
-        if (key === filter.key && value === filter.value) {
-          matched = true;
+        case 'number_equals':
+        case 'string_equals':
+          matched = value === filter.value;
           break;
-        }
+        case 'string_in':
+          matched = filter.value.some(candidate => value === candidate);
+          break;
+        default:
+          checkExhaustive(filter);
       }
+    }
 
-      if (!matched) {
-        return false;
-      }
-    } else if (filter.match === 'string_in') {
-      let matched = false;
-      for (let i = 0; i < tags.length; i += 2) {
-        const key = keys[tags[i + 0]];
-        const value = values[tags[i + 1]];
-        if (key !== filter.key) {
-          continue;
-        }
-        for (const candidate of filter.value) {
-          if (value === candidate) {
-            matched = true;
-            break;
-          }
-        }
-      }
-      if (!matched) {
-        return false;
-      }
-    } else if (filter.match === 'always') {
-      // Who cares!
-    } else {
-      checkExhaustive(filter);
+    if (!matched) {
+      return false;
     }
   }
 
