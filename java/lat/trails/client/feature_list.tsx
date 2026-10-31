@@ -29,6 +29,7 @@ import {
 } from './measurements';
 import { LineProfile, LineProfileState } from './profile_chart';
 import {
+  FeatureContent,
   fieldsFor,
   formatField,
   getFieldKind,
@@ -71,7 +72,8 @@ export interface AviationWeatherState {
 
 export type InspectedObject = {
   data: Data;
-  schema: Schema;
+  // A CollectionSchema for an object from a reference collection, so it reads like a feature
+  schema: Schema|CollectionSchema;
   // Set when the schema titles the object by its OpenStreetMap node or way
   osm: OsmElementState|undefined;
   // Set for a weather station, see LayerEntry#weatherStation
@@ -333,7 +335,7 @@ export function Properties({profile, subject}: {
   const {title, paragraphs, fields} =
       subject.source === 'feature'
           ? featureText(subject.schema, subject.feature)
-          : objectText(subject.object.schema, subject.object.data);
+          : objectText(subject.object);
 
   return (
     <PropertiesDialog title={`${editing ? 'Editing' : 'Viewing'} ${name}`}>
@@ -507,7 +509,7 @@ interface ReadOnlyText {
 
 // How each field with a value reads, for a feature somebody can only view. The field the title
 // comes from is left out, since the title already shows it.
-function featureText(schema: CollectionSchema, feature: EditableFeature): ReadOnlyText {
+function featureText(schema: CollectionSchema, feature: FeatureContent): ReadOnlyText {
   const text: ReadOnlyText = {title: getTitle(schema, feature), paragraphs: [], fields: []};
   const titled = titleField(schema, feature);
   for (const field of fieldsFor(schema, getFieldKind(feature))) {
@@ -523,10 +525,14 @@ function featureText(schema: CollectionSchema, feature: EditableFeature): ReadOn
   return text;
 }
 
-function objectText(schema: Schema, data: Data): ReadOnlyText {
+function objectText({data, kind, schema}: InspectedObject): ReadOnlyText {
+  if ('layers' in schema) {
+    return featureText(schema, {kind, data});
+  }
+
   const description = schema.description ? data[schema.description] : undefined;
   return {
-    title: getObjectTitle(schema, data),
+    title: getObjectTitle(schema, {kind, data}),
     paragraphs: description !== undefined ? [String(description)] : [],
     fields: schema.fields.flatMap(({key, label, values}): Array<[string, string]> => {
       const value = data[key];

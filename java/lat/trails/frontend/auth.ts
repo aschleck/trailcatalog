@@ -11,14 +11,6 @@ const LOGIN_RENEWAL_MS = 1 * 24 * 60 * 60 * 1000;
 interface SerializedLogin {
   created: number;
   id: string;
-  issuerEndpoint: string;
-}
-
-export class ExpiredCredentialError extends Error {
-
-  constructor(readonly issuerEndpoint: string) {
-    super();
-  }
 }
 
 export class LoginEnforcer {
@@ -32,24 +24,32 @@ export class LoginEnforcer {
       return undefined;
     }
 
-    const info: SerializedLogin = JSON.parse(this.encrypter.decrypt(credential));
+    let info: SerializedLogin;
+    try {
+      info = JSON.parse(this.encrypter.decrypt(credential));
+    } catch {
+      // Decrypting throws when COOKIE_SECRET has changed since we set the cookie.
+      this.logout(reply);
+      return undefined;
+    }
+
     const now = new Date().getTime();
     if (now >= info.created + LOGIN_DURATION_MS) {
-      throw new ExpiredCredentialError(info.issuerEndpoint);
+      this.logout(reply);
+      return undefined;
     }
 
     if (now >= info.created + LOGIN_RENEWAL_MS) {
-      this.createFreshLogin(info.id, info.issuerEndpoint, reply);
+      this.createFreshLogin(info.id, reply);
     }
     return info.id;
   }
 
-  createFreshLogin(id: string, issuerEndpoint: string, reply: FastifyReply): void {
+  createFreshLogin(id: string, reply: FastifyReply): void {
     const created = new Date().getTime();
     const login: SerializedLogin = {
       created,
       id,
-      issuerEndpoint,
     };
 
     const serialized = this.encrypter.encrypt(JSON.stringify(login));

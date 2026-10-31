@@ -96,20 +96,24 @@ export function removeVertex<T extends EditableShape>(shape: T, index: number): 
  * remain.
  */
 export function toRing(latLngE7: Int32Array): Int32Array|undefined {
-  const kept: number[] = [];
+  const kept = withoutRepeats(latLngE7);
+  let end = kept.length;
+  while (end > 2 && kept[end - 2] === kept[0] && kept[end - 1] === kept[1]) {
+    end -= 2;
+  }
+  return end >= 6 ? kept.slice(0, end) : undefined;
+}
+
+// Drops each vertex that repeats the one before, like where routed pieces meet or where rounding
+// to E7 merged neighbors.
+export function withoutRepeats(latLngE7: Int32Array): Int32Array {
+  const kept = [];
   for (let i = 0; i < latLngE7.length; i += 2) {
-    const n = kept.length;
-    if (n === 0 || kept[n - 2] !== latLngE7[i] || kept[n - 1] !== latLngE7[i + 1]) {
+    if (i === 0 || latLngE7[i] !== latLngE7[i - 2] || latLngE7[i + 1] !== latLngE7[i - 1]) {
       kept.push(latLngE7[i], latLngE7[i + 1]);
     }
   }
-  while (
-      kept.length > 2
-          && kept[kept.length - 2] === kept[0]
-          && kept[kept.length - 1] === kept[1]) {
-    kept.length -= 2;
-  }
-  return kept.length >= 6 ? Int32Array.from(kept) : undefined;
+  return Int32Array.from(kept);
 }
 
 function without<T extends Int32Array|BigInt64Array>(array: T, index: number): T {
@@ -224,13 +228,7 @@ export function joinLines(a: EditableLine, b: EditableLine): EditableLine {
  * vertices remain. Samples belong to the old vertices, so the line loses them.
  */
 export function rerouteLine(line: EditableLine, latLngE7: Int32Array): EditableLine|undefined {
-  const kept = [];
-  for (let i = 0; i < latLngE7.length; i += 2) {
-    const n = kept.length;
-    if (n === 0 || kept[n - 2] !== latLngE7[i] || kept[n - 1] !== latLngE7[i + 1]) {
-      kept.push(latLngE7[i], latLngE7[i + 1]);
-    }
-  }
+  const kept = withoutRepeats(latLngE7);
   if (kept.length < 4) {
     return undefined;
   }
@@ -238,7 +236,7 @@ export function rerouteLine(line: EditableLine, latLngE7: Int32Array): EditableL
   return {
     ...line,
     data: {...line.data},
-    latLngE7: Int32Array.from(kept),
+    latLngE7: kept,
     elevationCentimeters: undefined,
     timeSeconds: undefined,
   };

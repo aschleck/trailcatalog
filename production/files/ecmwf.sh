@@ -2,7 +2,7 @@
 
 # Tiles the newest ECMWF run into /home/april/tiles/ecmwf_<run>_<layer>_<step>.pmtiles, which
 # pmtiles serve serves at tiles.trailcatalog.org. Runs we already tiled are skipped, so this can
-# run hourly. Keep the file names in sync with layer_catalog.ts#ecmwfStepUrl.
+# run hourly. Keep the file names in sync with layer_catalog.ts#ecmwfArchiveUrl.
 
 set -exo pipefail
 

@@ -10,6 +10,7 @@ import { Z_EDITING } from 'js/map/z';
 
 import { toE7Array } from './drawing_layer';
 import { MARKER_DRAWN, TOOL_REQUESTED } from './events';
+import { withoutRepeats } from './line_edits';
 import { outlineMarker, pushMarker, streamline } from './marker';
 import { DEFAULT_COLOR, DEFAULT_MARKER_WIDTH_PX, parseColor } from './workers/collection_schema';
 
@@ -174,15 +175,4 @@ export class MarkerToolLayer extends Layer {
     };
     this.drawables = [drawable];
   }
-}
-
-// Points closer together than an E7 unit round onto the same spot.
-function withoutRepeats(latLngE7: Int32Array): Int32Array {
-  const kept = [];
-  for (let i = 0; i < latLngE7.length; i += 2) {
-    if (i === 0 || latLngE7[i] !== latLngE7[i - 2] || latLngE7[i + 1] !== latLngE7[i - 1]) {
-      kept.push(latLngE7[i], latLngE7[i + 1]);
-    }
-  }
-  return Int32Array.from(kept);
 }

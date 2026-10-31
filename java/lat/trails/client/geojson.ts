@@ -114,8 +114,8 @@ function commonData(properties: JsonObject, ids: Map<string, string>): FeatureDa
   return data;
 }
 
-// Altitudes are dropped because writers pad points with zeros, and a point's elevation is cheap to
-// look up again.
+// Writers pad positions with zero altitudes, so we read an altitude of zero as none, and a line's
+// altitudes only when some are nonzero.
 function parsePoint(
     id: string, data: FeatureData, properties: JsonObject, coordinates: Json):
         EditablePoint|undefined {
@@ -140,7 +140,7 @@ function parsePoint(
     data,
     latE7: Math.round(position[1] * 1e7),
     lngE7: Math.round(position[0] * 1e7),
-    elevationCentimeters: undefined,
+    elevationCentimeters: position[2] ? Math.round(position[2] * 100) : undefined,
   };
 }
 
@@ -170,14 +170,7 @@ function parseLine(
     }
   }
 
-  const stroke = colorOf(properties.stroke, properties['stroke-opacity']);
-  if (stroke !== undefined) {
-    data.stroke = stroke;
-  }
-  const width = properties['stroke-width'];
-  if (typeof width === 'number' && width > 0) {
-    data.width_px = width;
-  }
+  readStroke(properties, data);
   const markerZoom = properties.markerZoom;
   if (typeof markerZoom === 'number') {
     data.marker_zoom = markerZoom;
@@ -190,7 +183,10 @@ function parseLine(
     // Copied because the parts of a MultiLineString share the properties they were read from
     data: {...data},
     latLngE7,
-    elevationCentimeters: haveElevations ? elevationCentimeters : undefined,
+    elevationCentimeters:
+        haveElevations && elevationCentimeters.some(c => c !== 0)
+            ? elevationCentimeters
+            : undefined,
     timeSeconds: undefined,
   };
 }
@@ -222,16 +218,20 @@ function parsePolygon(
   if (fill !== undefined) {
     polygonData.fill = fill;
   }
+  readStroke(properties, polygonData);
+
+  return {kind: 'polygon', id, version: 0n, data: polygonData, latLngE7};
+}
+
+function readStroke(properties: JsonObject, data: FeatureData): void {
   const stroke = colorOf(properties.stroke, properties['stroke-opacity']);
   if (stroke !== undefined) {
-    polygonData.stroke = stroke;
+    data.stroke = stroke;
   }
   const width = properties['stroke-width'];
   if (typeof width === 'number' && width > 0) {
-    polygonData.width_px = width;
+    data.width_px = width;
   }
-
-  return {kind: 'polygon', id, version: 0n, data: polygonData, latLngE7};
 }
 
 // https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.1

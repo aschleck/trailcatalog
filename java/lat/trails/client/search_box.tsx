@@ -1,7 +1,12 @@
-import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
-import { CHANGED, ACTION, FOCUSED, PRESSED } from 'external/dev_april_corgi+/js/emu/events';
+import {
+  ACTION,
+  CHANGED,
+  FOCUSED,
+  PRESSED,
+  UNFOCUSED,
+} from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { RelationCategory, SEARCHABLE_POINT_LABELS } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng } from 'java/org/trailcatalog/s2';
@@ -79,8 +84,9 @@ export function parseCoordinates(query: string): SearchHit|undefined {
 /** Searches for what is typed into the box once typing pauses. */
 export class SearchQuery {
 
-  // Waits for typing to pause, so that each keystroke doesn't send a search
-  private readonly debouncer: Debouncer;
+  // Waits for typing to pause, so that each keystroke doesn't send a search. close() cancels it, or
+  // else the last keystroke's search reopens the results after Enter picks one.
+  private pending: ReturnType<typeof setTimeout>|undefined;
   // Moves with every search sent or closed, so that a slow answer to an older query is dropped
   private generation: number;
 
@@ -89,18 +95,20 @@ export class SearchQuery {
       private readonly near: () => {center: S2LatLng; radiusMeters: number},
       private readonly current: () => SearchState,
       private readonly show: (search: SearchState) => void) {
-    this.debouncer = new Debouncer(/* delayMs= */ 150, () => {
-      this.search();
-    });
+    this.pending = undefined;
     this.generation = 0;
   }
 
   trigger(): void {
-    this.debouncer.trigger();
+    clearTimeout(this.pending);
+    this.pending = setTimeout(() => {
+      this.search();
+    }, /* delay= */ 150);
   }
 
   // Hides the results, including ones still on their way.
   close(): void {
+    clearTimeout(this.pending);
     this.generation += 1;
     this.show({...this.current(), results: undefined, highlighted: 0});
   }
@@ -154,7 +162,16 @@ export function SearchBox({state}: {state: SearchState}) {
   return <>
     <div className="max-w-96 relative text-sm w-full">
       <Input
-          className="bg-gray-800 px-2 py-1 rounded"
+          className="
+              [&_input]:outline-none
+              bg-gray-800
+              border
+              border-transparent
+              focus-within:border-blue-500
+              px-2
+              py-1
+              rounded
+          "
           forceValue={true}
           placeholder="Search places, trails, or coordinates"
           // The default size of 20 sets a min-content width that pushes Log in off narrow screens.
@@ -167,8 +184,8 @@ export function SearchBox({state}: {state: SearchState}) {
               [CHANGED, 'searchChanged'],
               [FOCUSED, 'searchFocused'],
               [PRESSED, 'searchKeyPressed'],
+              [UNFOCUSED, 'searchBlurred'],
             ],
-            focusout: 'searchBlurred',
           }}
       />
       {results

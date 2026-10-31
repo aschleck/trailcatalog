@@ -307,20 +307,18 @@ class Product:
 PRODUCTS = [
     # The charts are scanned at 42 m to the pixel. A z11 pixel is 38 m at the equator and smaller
     # toward the poles, so z11 already holds every scanned pixel and z12 would quadruple the tiles
-    # for nothing. Keep in sync with layer_catalog.ts's maxZoom for the sectional entry.
+    # for nothing.
     Product('sectional', 'FAA Sectional Aeronautical Charts', 'visual', ['All_Files/Sectional'],
             ' SEC.tif', 11, SECTIONAL_PIECES),
-    # Terminal Area Charts are twice the scale, so 21 m to the pixel and z12. Keep in sync with
-    # layer_catalog.ts's maxZoom for the terminal entry.
+    # Terminal Area Charts are twice the scale, so 21 m to the pixel and z12.
     Product('terminal', 'FAA Terminal Area Charts', 'visual', ['All_Files/Terminal'], ' TAC.tif',
             12, TERMINAL_PIECES),
     # The low charts run 32 to 74 m to the pixel in the lower 48 and the insets, so z11 like the
-    # sectionals. Keep in sync with layer_catalog.ts's maxZoom for the enroute_low entry.
+    # sectionals.
     Product('enroute_low', 'FAA IFR Enroute Low Altitude Charts', 'enroute',
             [f'enr_l{i:02d}' for i in range(1, 37)] + [f'enr_akl{i:02d}' for i in range(1, 5)],
             '.tif', 11, ENROUTE_LOW_PIECES),
-    # The high charts are 79 to 93 m to the pixel in the lower 48, so z10. Keep in sync with
-    # layer_catalog.ts's maxZoom for the enroute_high entry.
+    # The high charts are 79 to 93 m to the pixel in the lower 48, so z10.
     Product('enroute_high', 'FAA IFR Enroute High Altitude Charts', 'enroute',
             [f'enr_h{i:02d}' for i in range(1, 13)] + [f'enr_akh{i:02d}' for i in range(1, 3)],
             '.tif', 10, ENROUTE_HIGH_PIECES),

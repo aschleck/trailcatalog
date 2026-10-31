@@ -56,7 +56,7 @@ import {
   SaveFailedDialog,
 } from './dialogs';
 import { canEdit } from './collection_data';
-import { DrawingLayer, toE7Array } from './drawing_layer';
+import { DrawingLayer } from './drawing_layer';
 import { LineRefiner } from './line_refiner';
 import {
   FEATURE_CLICKED,
@@ -158,6 +158,7 @@ import {
   ZoneChoice,
 } from './time_zones';
 import {
+  CollectionSchema,
   DEFAULT_COLOR,
   getLineKind,
   pointLook,
@@ -731,11 +732,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     const object: LayerObject =
         pick.kind === 'object' ? pick.object : {kind: 'point', value: pick.point};
-    const schema = getPickSchema(pick.entry, object);
+    const schema = getPickSchema(pick.entry);
     return {
       kind: 'object',
       shape: object.kind,
-      title: schema && getObjectTitle(schema, object.value.data),
+      title: schema && getObjectTitle(schema, {kind: object.kind, data: object.value.data}),
       source: pick.entry.name,
     };
   }
@@ -773,12 +774,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(undefined);
     this.inspected = {object, unmark};
     const data = object.value.data;
-    const schema = checkExists(getPickSchema(entry, object));
-    const titleValue = data[schema.title.key];
+    const schema = checkExists(getPickSchema(entry));
+    const title = 'layers' in schema ? undefined : schema.title;
+    const titleValue = title && data[title.key];
     const element =
         typeof titleValue !== 'number' ? undefined
-            : schema.title.kind === 'osm_point' ? osmElementOf(titleValue)
-            : schema.title.kind === 'osm_way' ? {type: 'way' as const, id: titleValue}
+            : title?.kind === 'osm_point' ? osmElementOf(titleValue)
+            : title?.kind === 'osm_way' ? {type: 'way' as const, id: titleValue}
             : undefined;
     const osm = element ? {...element, tags: 'loading' as const} : undefined;
     const station = entry.weatherStation ? data[entry.weatherStation.id] : undefined;
@@ -919,11 +921,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   featureClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    // The chevron and the eye sit inside the row and have their own handlers.
-    if (e.detail.target instanceof Element && e.detail.target.closest('[data-role="toggle"]')) {
-      return;
-    }
-
     this.clickFeature(checkExists(e.actionElement.data('id')).string());
   }
 
@@ -1046,14 +1043,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
   }
 
+  // Switches tools only once the line lands, because switching clears a drawing still waiting on
+  // its routes.
   saveMeasurementClicked(): void {
-    const latLngE7 = toE7Array(this.measuringLayer().points());
-    if (latLngE7.length < 4) {
-      return;
-    }
-
-    this.setTool('pointer');
-    this.addLine(latLngE7);
+    this.measuringLayer().save(this.mapController, () => {
+      this.setTool('pointer');
+    });
   }
 
   visibilityToggled(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -1257,11 +1252,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // A group's row opens it and a layer's row shows it, since a group has nothing else to click for.
   layerRowClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    // The chevron and the eye sit inside the row and have their own handlers.
-    if (e.detail.target instanceof Element && e.detail.target.closest('[data-role="toggle"]')) {
-      return;
-    }
-
     const node = this.layerNodeOf(e);
     if (node.kind === 'group') {
       this.toggleLayerExpanded(node.id);
@@ -2526,9 +2516,9 @@ function withoutHover(profile: LineProfileState|undefined): LineProfileState|und
   return profile?.status === 'loaded' ? {...profile, hovered: undefined} : profile;
 }
 
-function getPickSchema(entry: LayerEntry, object: LayerObject): Schema|undefined {
+function getPickSchema(entry: LayerEntry): Schema|CollectionSchema|undefined {
   return entry.schema
-      ?? (entry.layer instanceof CollectionLayer ? entry.layer.getSchema(object) : undefined);
+      ?? (entry.layer instanceof CollectionLayer ? entry.layer.getCollectionSchema() : undefined);
 }
 
 // Mercator to interleaved lat then lng degrees

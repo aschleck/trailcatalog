@@ -7,70 +7,15 @@ import {
   UnitSystem,
 } from 'js/units/formatters';
 
-export interface LineStats {
-  lengthMeters: number;
-  // Undefined when the line has no elevations
-  elevation: {
-    upMeters: number;
-    downMeters: number;
-    minMeters: number;
-    maxMeters: number;
-  }|undefined;
-}
-
-
 /**
- * Measures a line's climb and descent past a reversal threshold, and its length along the
- * hypotenuse of each step's run and counted rise.
+ * Returns the distance to each sample along the hypotenuse of each step's run and counted rise,
+ * given the distance along the ground to each.
  *
  * Length counts only the rise that climb does, or else a recording's altitude wobble would add to
  * its length what the threshold leaves out of its climb. A rise that only passes the threshold
- * several vertices in is spread over all of them rather than steepening the last one.
+ * several samples in is spread over all of them rather than steepening the last one.
  *
  * See also CalculateWayElevations#calculateProfile.
- */
-export function measureLine(
-    latLngE7: ArrayLike<number>, elevationCentimeters: ArrayLike<number>|undefined): LineStats {
-  const count = latLngE7.length / 2;
-  let lengthMeters = 0;
-  // Ground walked since the climb last counted a rise
-  let heldMeters = 0;
-  const climb = new ClimbCounter();
-  let minMeters = Infinity;
-  let maxMeters = -Infinity;
-  for (let i = 0; i < count; ++i) {
-    const z = elevationCentimeters ? elevationCentimeters[i] / 100 : 0;
-    minMeters = Math.min(minMeters, z);
-    maxMeters = Math.max(maxMeters, z);
-    const rise = climb.add(z);
-    if (i === 0) {
-      continue;
-    }
-
-    heldMeters +=
-        haversineMeters(
-            latLngE7[2 * i - 2] / 1e7,
-            latLngE7[2 * i - 1] / 1e7,
-            latLngE7[2 * i] / 1e7,
-            latLngE7[2 * i + 1] / 1e7);
-    if (rise > 0) {
-      lengthMeters += Math.hypot(heldMeters, rise);
-      heldMeters = 0;
-    }
-  }
-
-  return {
-    lengthMeters: lengthMeters + heldMeters,
-    elevation:
-        elevationCentimeters && count > 0
-            ? {upMeters: climb.upMeters, downMeters: climb.downMeters, minMeters, maxMeters}
-            : undefined,
-  };
-}
-
-/**
- * Returns the distance to each sample along the counted rise the way measureLine measures it,
- * given the distance along the ground to each.
  */
 export function slopeMeters(groundMeters: ArrayLike<number>, meters: ArrayLike<number>):
     Float64Array {
@@ -235,7 +180,7 @@ export interface ProfileStats {
   maxMeters: number;
 }
 
-/** Sums climb and descent between samples, the way measureLine does between vertices. */
+/** Sums climb and descent between samples past the reversal threshold. */
 export function profileStats(meters: ArrayLike<number>): ProfileStats {
   const climb = new ClimbCounter();
   for (let i = 0; i < meters.length; ++i) {

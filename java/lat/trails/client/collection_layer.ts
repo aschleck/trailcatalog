@@ -17,11 +17,10 @@ import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCom
 import { CellKey, getStream, isInBand, Stream } from 'js/map/workers/s2_streams';
 import { Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
-import { LayerObject } from './events';
 import { SELECTED_CASING } from './feature_layer';
-import { parseCollectionSchema, Schema } from './schema';
+import { parseCollectionSchema } from './schema';
 import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style, Styling } from './workers/collection_loader';
-import { CollectionSchema, FieldKind, getLineKind } from './workers/collection_schema';
+import { CollectionSchema } from './workers/collection_schema';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what
 // makes it read as lifted, over pale roads and over landcover alike.
@@ -251,13 +250,8 @@ export class CollectionLayer extends Layer {
     };
   }
 
-  /** Returns what the properties dialog shows for an object, undefined until the schema loads. */
-  getSchema(object: LayerObject): Schema|undefined {
-    if (!this.collectionSchema) {
-      return undefined;
-    }
-    const kind = object.kind === 'line' ? getLineKind(object.value.data) : object.kind;
-    return buildRowSchema(this.collectionSchema, kind);
+  getCollectionSchema(): CollectionSchema|undefined {
+    return this.collectionSchema;
   }
 
   /** Redraws and reindexes every held cell with the style, without refetching. */
@@ -876,25 +870,6 @@ export class CollectionLayer extends Layer {
     this.lastHoverTarget = undefined;
     this.highlighted = undefined;
   }
-}
-
-// What the properties dialog shows for one kind: the title from the first of its labels that reads
-// a field, and each of its selects' values by their option labels
-function buildRowSchema(schema: CollectionSchema, kind: FieldKind): Schema|undefined {
-  const label =
-      schema.layers.filter(l => l.kind === kind).map(l => l.label).find(c => c.kind === 'field');
-  if (label?.kind !== 'field') {
-    return undefined;
-  }
-  return {
-    title: {kind: 'text', key: label.key},
-    description: undefined,
-    fields: schema.fields.filter(f => f.kind === kind).map(field => ({
-      key: field.id,
-      label: field.label,
-      values: field.options && Object.fromEntries(field.options.map(o => [o.id, o.label])),
-    })),
-  };
 }
 
 // The id an object goes into the index under, and the key objects holds it by.

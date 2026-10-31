@@ -13,7 +13,7 @@ import { App } from '../client/app';
 import { DEFAULT_DESCRIPTION } from '../client/overview_element';
 
 import { STATIC_PREFIX } from './assets';
-import { ExpiredCredentialError, LoginEnforcer } from './auth';
+import { LoginEnforcer } from './auth';
 import { Encrypter } from './encrypter';
 import * as oidc from './oidc';
 
@@ -28,8 +28,9 @@ const DEBUG = process.env.DEBUG === 'true';
 
 
 // A GPX point costs about 45 bytes of JSON across its lat, lng, elevation, and time, so this fits
-// saving a track of a million and a half points. Keep in sync with nginx.conf and the trails.lat
-// virtual host in production/files/configuration.nix.
+// saving a track of a million and a half points. Keep in sync with nginx.conf,
+// production/containers/trails_lat_nginx.conf, and the trails.lat virtual host in
+// production/files/configuration.nix.
 const BODY_LIMIT_BYTES = 64 * 1024 * 1024;
 
 const encrypter = new Encrypter(COOKIE_SECRET);
@@ -68,7 +69,7 @@ async function initialize(server: FastifyInstance): Promise<void> {
             'if-none-match': headers['if-none-match'],
             'pragma': headers['pragma'],
             'user-agent': headers['user-agent'],
-            'x-user-id': request.userId ?? '',
+            'x-user-id': request.userId,
           };
         },
       });
@@ -76,22 +77,8 @@ async function initialize(server: FastifyInstance): Promise<void> {
   });
 
   server.addHook('preHandler', async (request, reply) => {
-    let maybeUserId;
-    try {
-      maybeUserId = loginEnforcer.checkLogin(request, reply);
-      // TODO(april): we should check the user against the database
-    } catch (e: unknown) {
-      if (e instanceof ExpiredCredentialError) {
-        // The login route runs this hook too, so a cookie left in place redirects it to itself.
-        loginEnforcer.logout(reply);
-        reply.redirect(`/login/${e.issuerEndpoint}`);
-        return reply;
-      } else {
-        throw e;
-      }
-    }
-
-    request.userId = maybeUserId ?? '';
+    // TODO(april): we should check the user against the database
+    request.userId = loginEnforcer.checkLogin(request, reply) ?? '';
     // corgi's server side render forwards this header to the data server, and the browser never
     // gets to set it because we assign it on every request.
     request.headers['x-user-id'] = request.userId;

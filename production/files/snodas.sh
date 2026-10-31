@@ -42,8 +42,7 @@ pmtiles convert "${work}/snodas.mbtiles" "${archive}.partial"
 mv "${archive}.partial" "${archive}"
 
 # Keep the two newest days, so clients that found yesterday's keep working until their hourly
-# check finds today's. This also clears out partial archives from conversions that died. Keep in
-# sync with layer_catalog.ts#SNODAS_LOOKBACK_DAYS.
+# check finds today's. This also clears out partial archives from conversions that died.
 keep="$(find "${out}" -maxdepth 1 -name 'snodas_*.pmtiles' | sort | tail -n 2)"
 for old in "${out}"/snodas_*; do
   if ! grep -qxF "${old}" <<< "${keep}"; then

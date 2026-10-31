@@ -29,7 +29,7 @@ import {
   Traced,
   traceRefs,
 } from './line_matching';
-import { toRing } from './line_edits';
+import { toRing, withoutRepeats } from './line_edits';
 import { LineRefiner } from './line_refiner';
 import { ShiftKey } from './shift_key';
 
@@ -93,6 +93,9 @@ interface Drawing {
   // A finish waiting on the SegmentRouter, which goes through once no segment is routing, or else
   // the line would keep them straight.
   finishing: EventSource|undefined;
+  // Set by save, which hands the drawing off as a line even when this layer keeps what it finishes,
+  // and called just before it does.
+  onSaved: (() => void)|undefined;
 }
 
 /** Turns clicks into a polyline that snaps and routes along the lines in the index. */
@@ -271,6 +274,15 @@ export class DrawingLayer extends Layer {
     }
   }
 
+  /** Finishes the drawing as a line once its segments settle, even from a measurement. */
+  save(source: EventSource, onSaved: () => void): void {
+    const drawing = this.drawing;
+    if (drawing && drawing.vertices.length >= 2) {
+      drawing.onSaved = onSaved;
+      this.finish(source);
+    }
+  }
+
   clear(): void {
     if (!this.drawing) {
       return;
@@ -306,7 +318,13 @@ export class DrawingLayer extends Layer {
     const drawing =
         this.drawing && !this.drawing.finished
             ? this.drawing
-            : {vertices: [], cursor: undefined, finished: false, finishing: undefined};
+            : {
+              vertices: [],
+              cursor: undefined,
+              finished: false,
+              finishing: undefined,
+              onSaved: undefined,
+            };
     const cursor = drawing.cursor;
     const previous = drawing.vertices[drawing.vertices.length - 1];
     drawing.cursor = undefined;
@@ -546,11 +564,11 @@ export class DrawingLayer extends Layer {
 
   private finish(source: EventSource): void {
     const drawing = this.drawing;
-    if (!drawing || drawing.finished) {
+    if (!drawing || (drawing.finished && !drawing.onSaved)) {
       return;
     }
 
-    if (this.mode === 'measure' || this.keepsFinished) {
+    if (!drawing.onSaved && (this.mode === 'measure' || this.keepsFinished)) {
       drawing.cursor = undefined;
       drawing.finished = true;
       this.changed();
@@ -576,14 +594,15 @@ export class DrawingLayer extends Layer {
       return;
     }
 
-    const latLngE7 = toE7Array(this.refined(drawing.vertices).points);
+    const latLngE7 = withoutRepeats(toE7Array(this.refined(drawing.vertices).points));
     this.clear();
     if (this.mode === 'polygon') {
       const ring = toRing(latLngE7);
       if (ring) {
         source.trigger(POLYGON_DRAWN, {latLngE7: ring});
       }
-    } else if (distinctPointCount(latLngE7) >= 2) {
+    } else if (latLngE7.length >= 4) {
+      drawing.onSaved?.();
       source.trigger(LINE_DRAWN, {latLngE7});
     }
   }
@@ -732,14 +751,4 @@ function vertexAt(at: Vec2): Vertex {
 
 function same(a: Vec2|undefined, b: Vec2): boolean {
   return !!a && a[0] === b[0] && a[1] === b[1];
-}
-
-function distinctPointCount(latLngE7: Int32Array): number {
-  let count = 0;
-  for (let i = 0; i < latLngE7.length; i += 2) {
-    if (i === 0 || latLngE7[i] !== latLngE7[i - 2] || latLngE7[i + 1] !== latLngE7[i - 1]) {
-      count += 1;
-    }
-  }
-  return count;
 }

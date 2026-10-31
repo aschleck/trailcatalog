@@ -27,18 +27,16 @@ export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
       </ToolButton>
       {readOnly
           ? ''
-          : <ToolButton active={tool === 'point'} label="Add a point" tool="point">
+          : [
+            <ToolButton active={tool === 'point'} label="Add a point" tool="point">
               <path
                   d="M10 18 C10 18 4 11.5 4 7.5 A6 6 0 0 1 16 7.5 C16 11.5 10 18 10 18 Z"
                   fill="none"
                   strokeWidth="1.5"
               />
               <circle cx="10" cy="7.5" r="2" />
-            </ToolButton>
-      }
-      {readOnly
-          ? ''
-          : <ToolButton active={tool === 'line'} label="Draw a line" tool="line">
+            </ToolButton>,
+            <ToolButton active={tool === 'line'} label="Draw a line" tool="line">
               <polyline
                   fill="none"
                   points="3,15 8,6 12,11 17,4"
@@ -50,11 +48,8 @@ export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
               <circle cx="8" cy="6" r="1.5" />
               <circle cx="12" cy="11" r="1.5" />
               <circle cx="17" cy="4" r="1.5" />
-            </ToolButton>
-      }
-      {readOnly
-          ? ''
-          : <ToolButton active={tool === 'polygon'} label="Draw an area" tool="polygon">
+            </ToolButton>,
+            <ToolButton active={tool === 'polygon'} label="Draw an area" tool="polygon">
               <polygon
                   fill="none"
                   points="4,5 14,3 17,13 7,16"
@@ -65,18 +60,16 @@ export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
               <circle cx="14" cy="3" r="1.5" />
               <circle cx="17" cy="13" r="1.5" />
               <circle cx="7" cy="16" r="1.5" />
-            </ToolButton>
-      }
-      {readOnly
-          ? ''
-          : <ToolButton active={tool === 'marker'} label="Draw freehand" tool="marker">
+            </ToolButton>,
+            <ToolButton active={tool === 'marker'} label="Draw freehand" tool="marker">
               <path
                   d="M3 14 C5 7 8 16 11 10 S15 4 17 7"
                   fill="none"
                   strokeLinecap="round"
                   strokeWidth="2"
               />
-            </ToolButton>
+            </ToolButton>,
+          ]
       }
       <ToolButton active={tool === 'measure'} label="Measure" tool="measure">
         <MeasureIcon />

@@ -27,7 +27,7 @@ export function Eye({visible}: {visible: boolean}) {
 
 /**
  * Renders a row of the feature list or the layer tree: a chevron if it opens, then children, then
- * an eye. The chevron and eye are marked role toggle so the row's own click can skip them.
+ * an eye.
  */
 export function TreeRow({
   children,
@@ -70,7 +70,7 @@ export function TreeRow({
       {expanded !== undefined
           ? <span
                 className="cursor-pointer flex h-4 items-center justify-center shrink-0 w-4"
-                data={{id, role: 'toggle'}}
+                data={{id}}
                 unboundEvents={{click: expandToggled}}
             >
               <Chevron expanded={expanded} />
@@ -81,7 +81,7 @@ export function TreeRow({
       <span
           ariaLabel={visible ? 'Hide' : 'Show'}
           className="cursor-pointer hover:text-gray-900 shrink-0 text-gray-500"
-          data={{id, role: 'toggle'}}
+          data={{id}}
           title={visible ? 'Hide' : 'Show'}
           unboundEvents={{click: visibilityToggled}}
       >

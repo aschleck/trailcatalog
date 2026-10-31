@@ -283,6 +283,21 @@ const NOT_LANDMARKS = (() => {
   return others.filter(v => !others.some(o => o !== v && aDescendsB(v, o)));
 })();
 
+// The mbtiles rows that pmtiles convert copies into the metadata of every archive we tile
+interface ArchiveMetadata {
+  format: string;
+  maxzoom: string;
+}
+
+// How an archive's tiles are stored
+interface TileArchive {
+  // pmtiles serve rejects a tile URL whose extension isn't this
+  format: string;
+  maxZoom: number;
+}
+
+const NO_TILE_ARCHIVE: TileArchive = {format: '', maxZoom: 0};
+
 /** The map layers we offer besides a collection's own features. */
 export class LayerCatalog extends Disposable {
 
@@ -293,6 +308,8 @@ export class LayerCatalog extends Disposable {
   private ecmwfRun: number;
   // How that run is tiled and how each of its archives packs its pixels
   private ecmwfRunFormat: EcmwfRunFormat|undefined;
+  // How that run's archives store their tiles
+  private ecmwfArchive: TileArchive;
   // The time the weather layers forecast for in ms, or undefined to follow the clock
   private time: number|undefined;
   private readonly sky: SkyLayer;
@@ -300,8 +317,10 @@ export class LayerCatalog extends Disposable {
   private snodasDay: string;
   // How that day's archive packs its pixels
   private snodasFormat: SnodasFormat;
-  // The newest FAA cycle in effect that we know is tiled, for each product
+  private snodasArchive: TileArchive;
+  // The newest FAA cycle in effect that we know is tiled for each product, or '' until we find one
   private readonly faaCycles: Record<FaaProduct, string>;
+  private readonly faaArchives: Record<FaaProduct, TileArchive>;
   private readonly conditionsRefresh: Timer;
   // What the OSM points drew, which the basemaps' labels make way for
   private readonly pointObstacles: LabelObstacles;
@@ -322,15 +341,18 @@ export class LayerCatalog extends Disposable {
     const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
     this.ecmwfRun = Math.floor(Date.now() / cycleMs) * cycleMs;
     this.ecmwfRunFormat = undefined;
+    this.ecmwfArchive = NO_TILE_ARCHIVE;
     this.time = undefined;
     this.sky = new SkyLayer(camera, elevationSampler, renderer);
     this.snodasDay = '';
     this.snodasFormat = {channels: []};
-    this.faaCycles = {
-      sectional: faaCycle(0),
-      terminal: faaCycle(0),
-      enroute_low: faaCycle(0),
-      enroute_high: faaCycle(0),
+    this.snodasArchive = NO_TILE_ARCHIVE;
+    this.faaCycles = {sectional: '', terminal: '', enroute_low: '', enroute_high: ''};
+    this.faaArchives = {
+      sectional: NO_TILE_ARCHIVE,
+      terminal: NO_TILE_ARCHIVE,
+      enroute_low: NO_TILE_ARCHIVE,
+      enroute_high: NO_TILE_ARCHIVE,
     };
     this.conditionsRefresh = new Timer(CONDITIONS_REFRESH_MS, () => {
       this.showLatestFaaCharts();
@@ -585,31 +607,14 @@ export class LayerCatalog extends Disposable {
           name: 'FAA',
           enabled: true,
           children: [
-            this.newFaaEntry(
-                'enroute_high',
-                'IFR Enroute High',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 10),
-            this.newFaaEntry(
-                'enroute_low',
-                'IFR Enroute Low',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 11),
-            this.newFaaEntry(
-                'sectional',
-                'Sectional',
-                /* z= */ Z_BASE_SATELLITE,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 11),
+            this.newFaaEntry('enroute_high', 'IFR Enroute High', /* z= */ Z_BASE_SATELLITE),
+            this.newFaaEntry('enroute_low', 'IFR Enroute Low', /* z= */ Z_BASE_SATELLITE),
+            this.newFaaEntry('sectional', 'Sectional', /* z= */ Z_BASE_SATELLITE),
             this.newFaaEntry(
                 'terminal',
                 'Terminal Area',
                 // Drawn over the sectional it details
-                /* z= */ Z_BASE_SATELLITE + 0.1,
-                // See faa_charts.py#PRODUCTS
-                /* maxZoom= */ 12),
+                /* z= */ Z_BASE_SATELLITE + 0.1),
           ],
         },
       ],
@@ -1346,17 +1351,19 @@ export class LayerCatalog extends Disposable {
     };
   }
 
-  private newFaaEntry(product: FaaProduct, name: string, z: number, maxZoom: number): LayerEntry {
+  // A new layer for each cycle, because each cycle's archive says how its tiles are stored
+  private newFaaEntry(product: FaaProduct, name: string, z: number): LayerEntry {
     const layer =
-        new RasterTileLayer(
-            [FAA_COPYRIGHT],
-            faaUrl(product, this.faaCycles[product]),
-            /* tint= */ 0xFFFFFFFF as RgbaU32,
-            z,
-            /* extraZoom= */ 0,
-            /* minZoom= */ 0,
-            maxZoom,
-            this.renderer);
+        new SwitchLayer(this.faaCycles[product], cycle =>
+            new RasterTileLayer(
+                [FAA_COPYRIGHT],
+                faaUrl(product, cycle, this.faaArchives[product].format),
+                /* tint= */ 0xFFFFFFFF as RgbaU32,
+                z,
+                /* extraZoom= */ 0,
+                /* minZoom= */ 0,
+                this.faaArchives[product].maxZoom,
+                this.renderer));
     return {
       kind: 'layer',
       id: faaEntryId(product),
@@ -1366,24 +1373,24 @@ export class LayerCatalog extends Disposable {
       controls: [],
       values: {},
       configure: () => {
-        layer.setUrl(faaUrl(product, this.faaCycles[product]));
+        layer.show(this.faaCycles[product]);
       },
     };
   }
 
-  // A new layer for each day, because each day's archive carries its own channels
+  // A new layer for each day, because each day's archive carries its own channels and says how its
+  // tiles are stored
   private newSnowEntry(id: string, name: string, snow: 'depth'|'water'): LayerEntry {
     const layer =
         new SwitchLayer(this.snodasDay, day =>
             new RasterTileLayer(
                 [SNODAS_COPYRIGHT],
-                snodasUrl(day),
+                snodasUrl(day, this.snodasArchive.format),
                 /* tint= */ 0xFFFFFFFF as RgbaU32,
                 /* z= */ Z_OVERLAY_TERRAIN,
                 /* extraZoom= */ 0,
                 /* minZoom= */ 0,
-                // See Snodas.kt#MAX_ZOOM
-                /* maxZoom= */ 7,
+                this.snodasArchive.maxZoom,
                 this.renderer,
                 {snow, channels: this.snodasFormat.channels}));
     return {
@@ -1409,30 +1416,35 @@ export class LayerCatalog extends Disposable {
     };
   }
 
-  // Points each FAA layer at the cycle in effect, or the one before it while ours is late. Every
-  // archive has the 0/0/0 tile, see faa_charts.py#write_tiles.
+  // Points each FAA layer at the cycle in effect, or the one before it while ours is late. A
+  // cycle's metadata says both that it is tiled and how its tiles are stored.
   private showLatestFaaCharts(): void {
     for (const product of FAA_PRODUCTS) {
       findFirstLoaded(
           [faaCycle(0), faaCycle(-1)],
-          cycle => `${FAA_TILES_URL}${product}_${cycle}/0/0/0.webp`,
-          cycle => {
-            this.faaCycles[product] = cycle;
-            this.configureEntries(id => id === faaEntryId(product));
+          cycle => `${FAA_TILES_URL}${product}_${cycle}/metadata`,
+          (cycle, response) => {
+            response.json().then((metadata: ArchiveMetadata) => {
+              this.faaCycles[product] = cycle;
+              this.faaArchives[product] = getTileArchive(metadata);
+              this.configureEntries(id => id === faaEntryId(product));
+            }, () => {});
           });
     }
   }
 
-  // Points the snow layers at the newest tiled day. Its metadata says both that the day is there
-  // and how it packs its pixels. Days tiled before the importer wrote channels draw nothing.
+  // Points the snow layers at the newest tiled day. Its metadata says that the day is there, how its
+  // tiles are stored, and how it packs its pixels. Days tiled before the importer wrote channels
+  // draw nothing.
   private showLatestSnow(): void {
     findFirstLoaded(
         Array.from({length: SNODAS_LOOKBACK_DAYS + 1}, (_, i) => utcDay(-i)),
         day => `${SNODAS_URL}${day}/metadata`,
         (day, response) => {
-          response.json().then((metadata: Partial<SnodasFormat>) => {
+          response.json().then((metadata: ArchiveMetadata & Partial<SnodasFormat>) => {
             this.snodasDay = day;
             this.snodasFormat = {channels: metadata.channels ?? []};
+            this.snodasArchive = getTileArchive(metadata);
             this.configureEntries(id => id === SNOW_DEPTH_ID || id === SNOW_WATER_ID);
           }, () => {});
         });
@@ -1467,7 +1479,7 @@ export class LayerCatalog extends Disposable {
 
   // Until the newest run's metadata arrives there is no run to show, so an archive draws nothing.
   private getRunFormat(): EcmwfRunFormat {
-    return this.ecmwfRunFormat ?? {maxStep: 0, maxZoom: 0, tileSize: 256, layers: {}};
+    return this.ecmwfRunFormat ?? {maxStep: 0, tileSize: 256, layers: {}};
   }
 
   private getFormat(archive: string): EcmwfFormat {
@@ -1483,9 +1495,9 @@ export class LayerCatalog extends Disposable {
     const upcoming = [];
     const last = Math.min(step + PREFETCH_STEPS * stepHours, getLastStep(format, maxStep));
     for (let next = step + stepHours; next <= last; next += stepHours) {
-      upcoming.push(ecmwfStepUrl(this.ecmwfRun, archive, next));
+      upcoming.push(ecmwfStepUrl(this.ecmwfRun, archive, next, this.ecmwfArchive.format));
     }
-    return {url: ecmwfStepUrl(this.ecmwfRun, archive, step), upcoming};
+    return {url: ecmwfStepUrl(this.ecmwfRun, archive, step, this.ecmwfArchive.format), upcoming};
   }
 
   private getNextStepTime(at: number, archive: string): number|undefined {
@@ -1529,7 +1541,7 @@ export class LayerCatalog extends Disposable {
                   /* z= */ Z_OVERLAY_TERRAIN,
                   /* extraZoom= */ 0,
                   /* minZoom= */ 0,
-                  this.getRunFormat().maxZoom,
+                  this.ecmwfArchive.maxZoom,
                   this.renderer,
                   {view, channels: this.getFormat(WEATHER_VIEWS[view].layer).channels}));
     });
@@ -1610,7 +1622,7 @@ export class LayerCatalog extends Disposable {
                       [ECMWF_COPYRIGHT],
                       stepUrl,
                       /* z= */ Z_OVERLAY_TERRAIN + 0.5,
-                      this.getRunFormat().maxZoom,
+                      this.ecmwfArchive.maxZoom,
                       this.getRunFormat().tileSize,
                       this.renderer,
                       this.getFormat(vectorArchive).channels);
@@ -1645,7 +1657,8 @@ export class LayerCatalog extends Disposable {
   }
 
   // Points the weather layers at the newest tiled run. ecmwf.sh writes wind at step 0 last, so we
-  // take its metadata, which holds the formats of the whole run, to mean the run is there.
+  // take its metadata, which holds the formats of the whole run, to mean the run is there. Every
+  // archive in a run stores its tiles like wind does, see Weather.kt#writeLayer.
   private showLatestWeather(): void {
     const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
     const newest = Math.floor(Date.now() / cycleMs) * cycleMs;
@@ -1653,9 +1666,10 @@ export class LayerCatalog extends Disposable {
         Array.from({length: ECMWF_LOOKBACK_CYCLES + 1}, (_, i) => newest - i * cycleMs),
         run => `${ecmwfArchiveUrl(run, 'wind', 0)}/metadata`,
         (run, response) => {
-          response.json().then((metadata: {ecmwf?: EcmwfRunFormat}) => {
+          response.json().then((metadata: ArchiveMetadata & {ecmwf?: EcmwfRunFormat}) => {
             this.ecmwfRun = run;
             this.ecmwfRunFormat = metadata.ecmwf;
+            this.ecmwfArchive = getTileArchive(metadata);
             this.configureEntries(id => id.startsWith('weather/'));
             this.runChanged();
           }, () => {});
@@ -1746,6 +1760,10 @@ function findFirstLoaded<T>(
   }, () => {});
 }
 
+function getTileArchive({format, maxzoom}: ArchiveMetadata): TileArchive {
+  return {format, maxZoom: Number(maxzoom)};
+}
+
 // The first day of the FAA cycle in effect, offset by whole cycles
 function faaCycle(offset: number): string {
   const cycleMs = FAA_CYCLE_DAYS * 24 * HOUR_MS;
@@ -1757,8 +1775,8 @@ function faaEntryId(product: FaaProduct): string {
   return `us/faa_${product}`;
 }
 
-function faaUrl(product: FaaProduct, cycle: string): string {
-  return `${FAA_TILES_URL}${product}_${cycle}/\${id.zoom}/\${id.x}/\${id.y}.webp`;
+function faaUrl(product: FaaProduct, cycle: string, format: string): string {
+  return `${FAA_TILES_URL}${product}_${cycle}/\${id.zoom}/\${id.x}/\${id.y}.${format}`;
 }
 
 // Today plus offset days, as a UTC date because SNODAS days are UTC
@@ -1812,12 +1830,12 @@ function ecmwfArchiveUrl(run: number, archive: string, step: number): string {
   return `${ECMWF_URL}${name}_${archive}_${step}`;
 }
 
-function ecmwfStepUrl(run: number, archive: string, step: number): string {
-  return `${ecmwfArchiveUrl(run, archive, step)}/\${id.zoom}/\${id.x}/\${id.y}.webp`;
+function ecmwfStepUrl(run: number, archive: string, step: number, format: string): string {
+  return `${ecmwfArchiveUrl(run, archive, step)}/\${id.zoom}/\${id.x}/\${id.y}.${format}`;
 }
 
-function snodasUrl(day: string): string {
-  return `${SNODAS_URL}${day}/\${id.zoom}/\${id.x}/\${id.y}.png`;
+function snodasUrl(day: string, format: string): string {
+  return `${SNODAS_URL}${day}/\${id.zoom}/\${id.x}/\${id.y}.${format}`;
 }
 
 // The local day, because that is what a date input shows and edits

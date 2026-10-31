@@ -98,11 +98,7 @@ export function toGeoJson(
       } else if (feature.kind === 'line') {
         const look = lineLook(schema, feature.data);
         if (look) {
-          const {color, opacity} = toSimplestyleColor(look.stroke);
-          properties.stroke = color;
-          if (opacity !== undefined) {
-            properties['stroke-opacity'] = opacity;
-          }
+          setSimplestyleColor(properties, 'stroke', look.stroke);
           properties['stroke-width'] = look.widthPx;
         }
         if (feature.data.marker_zoom !== undefined) {
@@ -120,16 +116,8 @@ export function toGeoJson(
       } else {
         const look = polygonLook(schema, feature.data);
         if (look) {
-          const fill = toSimplestyleColor(look.fill);
-          properties.fill = fill.color;
-          if (fill.opacity !== undefined) {
-            properties['fill-opacity'] = fill.opacity;
-          }
-          const stroke = toSimplestyleColor(look.stroke);
-          properties.stroke = stroke.color;
-          if (stroke.opacity !== undefined) {
-            properties['stroke-opacity'] = stroke.opacity;
-          }
+          setSimplestyleColor(properties, 'fill', look.fill);
+          setSimplestyleColor(properties, 'stroke', look.stroke);
           properties['stroke-width'] = look.widthPx;
         }
         geometry = {type: 'Polygon', coordinates: [ringCoordinates(feature)]};
@@ -142,6 +130,15 @@ export function toGeoJson(
       return {type: 'Feature', id: feature.id, geometry, properties};
     }),
   });
+}
+
+function setSimplestyleColor(
+    properties: {[key: string]: boolean|number|string}, key: 'fill'|'stroke', hex: string): void {
+  const {color, opacity} = toSimplestyleColor(hex);
+  properties[key] = color;
+  if (opacity !== undefined) {
+    properties[`${key}-opacity`] = opacity;
+  }
 }
 
 /**

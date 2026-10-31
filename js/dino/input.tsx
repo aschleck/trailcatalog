@@ -21,7 +21,7 @@ export function OutlinedInput({className, ...props}: {
   return <>
     <Input
         className={
-            'border border-tc-gray-400 rounded focus-within:border-current'
+            '[&_input]:outline-none border border-tc-gray-400 rounded focus-within:border-current'
                 + (className ? ` ${className}` : '')}
         {...props}
     />

@@ -277,7 +277,7 @@ async function addProvider(
       return created.id as string;
     });
 
-    loginEnforcer.createFreshLogin(userId, name, reply);
+    loginEnforcer.createFreshLogin(userId, reply);
     if (pending.returnTo) {
       reply.redirect(pending.returnTo);
     } else {

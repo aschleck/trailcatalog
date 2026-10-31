@@ -1,6 +1,7 @@
 package lat.trails
 
 import com.google.common.geometry.S2Cap
+import com.google.common.geometry.S2Cell
 import com.google.common.geometry.S2CellId
 import com.google.common.geometry.S2LatLng
 import com.google.common.geometry.S2LatLngRect
@@ -49,9 +50,12 @@ private const val MIN_RADIUS_METERS = 1000.0
 // Of the boundaries around a result, how many to name
 private const val WITHIN_LIMIT = 3
 
+// A boundary lies somewhere in its cell and the cell's neighbors, so the distance to the nearest of
+// them is never more than the distance to the boundary. See SpatialIndex.kt#polygonToCell.
+// Measuring to the cell's center instead puts downtown Palo Alto 9 km from Palo Alto.
 private class Candidate(
     val result: SearchResult.Builder,
-    val center: S2LatLng,
+    val cells: List<S2Cell>,
     val score: Double,
 )
 
@@ -69,11 +73,12 @@ fun search(request: SearchRequest, connection: Connection, epoch: Int): SearchRe
   candidates.addAll(searchPoints(query, null, connection, epoch))
   candidates.addAll(searchPoints(query, nearRanges(center, radiusMeters), connection, epoch))
 
+  val target = center.toPoint()
   val ranked =
       candidates
           .distinctBy { it.result.kind to it.result.id }
           .sortedBy {
-            val distance = center.getDistance(it.center).earthMeters()
+            val distance = it.cells.minOf { c -> c.getDistance(target) }.toAngle().earthMeters()
             it.score + DISTANCE_WEIGHT * ln(1 + distance / radiusMeters)
           }
           .take(RESULT_LIMIT)
@@ -110,7 +115,7 @@ private fun searchBoundaries(query: String, connection: Connection, epoch: Int):
                   .setName(it.getString(2))
                   .setType(it.getInt(3))
                   .setMatchedName(matchedName(query, it.getString(2), it.getString(5)))
-          candidates.add(Candidate(result, cell.toLatLng(), it.getDouble(6)))
+          candidates.add(Candidate(result, cellAndNeighbors(cell), it.getDouble(6)))
         }
       }
   return candidates
@@ -149,7 +154,7 @@ private fun searchTrails(query: String, connection: Connection, epoch: Int): Lis
                   .setLowLngDegrees(bound.get(1) / 1e7)
                   .setHighLatDegrees(bound.get(2) / 1e7)
                   .setHighLngDegrees(bound.get(3) / 1e7)
-          candidates.add(Candidate(result, markerOf(it.getBytes(5)), it.getDouble(7)))
+          candidates.add(Candidate(result, pointCell(markerOf(it.getBytes(5))), it.getDouble(7)))
         }
       }
   return candidates
@@ -209,7 +214,7 @@ private fun searchPoints(
                   .setLowLngDegrees(marker.lngDegrees())
                   .setHighLatDegrees(marker.latDegrees())
                   .setHighLngDegrees(marker.lngDegrees())
-          candidates.add(Candidate(result, marker, it.getDouble(6)))
+          candidates.add(Candidate(result, pointCell(marker), it.getDouble(6)))
         }
       }
   return candidates
@@ -224,6 +229,16 @@ private fun nearRanges(center: S2LatLng, radiusMeters: Double): List<Pair<Long, 
   return covering.cellIds().map { it.rangeMin().id() to it.rangeMax().id() }
 }
 
+private fun cellAndNeighbors(cell: S2CellId): List<S2Cell> {
+  val cells = arrayListOf(cell)
+  cell.getAllNeighbors(cell.level(), cells)
+  return cells.map { S2Cell(it) }
+}
+
+private fun pointCell(point: S2LatLng): List<S2Cell> {
+  return listOf(S2Cell(S2CellId.fromLatLng(point)))
+}
+
 private fun markerOf(bytes: ByteArray): S2LatLng {
   // lat then lng
   val ints = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer()
@@ -236,9 +251,9 @@ private fun matchedName(query: String, name: String, matched: String): String {
   return if (matched == name || name.contains(query, ignoreCase = true)) "" else matched
 }
 
-// Boundaries rank by their cell's center, but a cell can be several times the size of the
-// boundary inside it, so the camera gets the polygon's own bound. Only the results pay to decode
-// a polygon, which for a country is megabytes.
+// Boundaries rank by their cell, but a cell can be several times the size of the boundary inside
+// it, so the camera gets the polygon's own bound. Only the results pay to decode a polygon, which
+// for a country is megabytes.
 private fun fillBoundaryBounds(ranked: List<Candidate>, connection: Connection, epoch: Int) {
   val byId =
       ranked

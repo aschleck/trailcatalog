@@ -548,7 +548,7 @@ private fun deformation(u: Field, v: Field): FloatArray {
  * extent, as the JSON a client decodes tiles with. A lookahead layer stops short of the run's end
  * by its longest window.
  */
-fun formatsJson(lookaheadStepHours: Int, maxStep: Int, maxZoom: Int, tileSize: Int): String {
+fun formatsJson(lookaheadStepHours: Int, maxStep: Int, tileSize: Int): String {
   val layers =
       WEATHER_LAYERS.associate {
         it.name to mapOf("stepHours" to it.stepHours, "channels" to it.channels.map(Channel::toMap))
@@ -558,7 +558,6 @@ fun formatsJson(lookaheadStepHours: Int, maxStep: Int, maxZoom: Int, tileSize: I
             "lookaheadHours" to it.windows.max(),
             "channels" to it.channels.map(Channel::toMap))
       }
-  val run =
-      mapOf("maxStep" to maxStep, "maxZoom" to maxZoom, "tileSize" to tileSize, "layers" to layers)
+  val run = mapOf("maxStep" to maxStep, "tileSize" to tileSize, "layers" to layers)
   return ObjectMapper().writeValueAsString(mapOf("ecmwf" to run))
 }

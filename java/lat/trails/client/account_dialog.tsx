@@ -6,12 +6,11 @@ import { ACTION, CHANGED, CLOSE } from 'external/dev_april_corgi+/js/emu/events'
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 
 import { DangerButton, PanelCloseButton, PrimaryButton, SecondaryButton } from 'js/pika/buttons';
-import { LIST, Section } from 'js/pika/dialog';
+import { DIALOG, DIALOG_SURFACE, LIST, Section } from 'js/pika/dialog';
 import { TEXT_BOX } from 'js/pika/fields';
 import { GetAccountResponse, User } from 'trails_lat/proto/data_pb';
 
 const CONFIRMATION = 'delete my account';
-const DIALOG = 'bg-white flex flex-col max-w-full p-4 rounded text-gray-900 text-sm w-[32rem]';
 
 export const PROVIDER_LABELS: {[issuer: string]: string} = {
   'https://accounts.google.com': 'Google',
@@ -20,27 +19,15 @@ export const PROVIDER_LABELS: {[issuer: string]: string} = {
 };
 
 /** Shows the caller's profile. Resolves when they ask to delete their account. */
-export function AccountDialog(props: {account: GetAccountResponse; user: User}) {
-  return <Account {...props} />;
-}
-
-function Account(
-    {account, user}: {account: GetAccountResponse; user: User},
-    state: {}|undefined,
-    updateState: (newState: {}) => void) {
+export function AccountDialog({account, user}: {account: GetAccountResponse; user: User}) {
   const providers = account.loginIssuers.map(issuer => PROVIDER_LABELS[issuer] ?? issuer);
+  // ACTION reaches DialogController because nothing here binds a controller, so close resolves
+  // and outsideClose rejects.
   return <>
-    <div
-        js={corgi.bind({
-          controller: AccountController,
-          args: {},
-          state: [state ?? {}, updateState],
-        })}
-        className={`${DIALOG} gap-6`}
-    >
+    <div className={`${DIALOG_SURFACE} flex flex-col gap-6 max-w-full p-4 w-[32rem]`}>
       <div className="flex font-bold gap-4 items-center justify-between text-base">
         Account
-        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}} />
+        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'outsideClose']]}} />
       </div>
       <Section label="Profile">
         <div className="flex gap-3 items-center">
@@ -60,30 +47,16 @@ function Account(
       </Section>
       <Section label="Danger zone">
         <div className="flex">
-          <DangerButton
-              className="shrink-0"
-              unboundEvents={{corgi: [[ACTION, 'deleteClicked']]}}
-          >
+          <DangerButton className="shrink-0" unboundEvents={{corgi: [[ACTION, 'close']]}}>
             Delete account…
           </DangerButton>
         </div>
       </Section>
       <div className="flex justify-end">
-        <PrimaryButton unboundEvents={{corgi: [[ACTION, 'dismiss']]}}>Done</PrimaryButton>
+        <PrimaryButton unboundEvents={{corgi: [[ACTION, 'outsideClose']]}}>Done</PrimaryButton>
       </div>
     </div>
   </>;
-}
-
-class AccountController extends Controller<{}, EmptyDeps, HTMLElement, {}> {
-
-  deleteClicked(): void {
-    this.trigger(CLOSE, {kind: 'resolve'});
-  }
-
-  dismiss(): void {
-    this.trigger(CLOSE, {kind: 'reject'});
-  }
 }
 
 interface ConfirmState {
@@ -110,7 +83,7 @@ function ConfirmDeleteAccount(
           args: {},
           state: [state, updateState],
         })}
-        className={`${DIALOG} gap-3`}
+        className={`${DIALOG} max-w-full w-[32rem]`}
     >
       <div className="font-bold text-base">Delete your account?</div>
       <p>This will permanently delete your account and data. It cannot be undone.</p>

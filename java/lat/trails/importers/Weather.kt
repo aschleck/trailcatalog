@@ -81,7 +81,7 @@ fun main(args: Array<String>) {
   val stepHours = ifsSteps[1] - ifsSteps[0]
   // Every archive carries the whole run's formats, so the one a client probes to find the run
   // tells it how to decode the rest.
-  val formats = formatsJson(stepHours, maxStep.value, MAX_ZOOM, TILE_SIZE)
+  val formats = formatsJson(stepHours, maxStep.value, TILE_SIZE)
   val static = run.read(EcmwfStream.IFS, 0, STATIC_IFS_INPUTS)
   val lookaheadInputs = LOOKAHEAD_LAYERS.map { it.input }.toSet()
   val history = lookaheadInputs.associateWith { HashMap<Int, List<FloatArray>>() }

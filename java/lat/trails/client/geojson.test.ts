@@ -111,6 +111,15 @@ test('drops altitudes the whole line does not carry', () => {
   expect(line.kind === 'line' && line.elevationCentimeters).toBeUndefined();
 });
 
+test('drops altitudes that are all zero', () => {
+  const [line] = parseGeoJson(JSON.stringify({
+    type: 'Feature',
+    geometry: {type: 'LineString', coordinates: [[0, 0, 0], [1, 1, 0]]},
+    properties: {},
+  }));
+  expect(line.kind === 'line' && line.elevationCentimeters).toBeUndefined();
+});
+
 test('drops a folder id that names no feature', () => {
   expect(parseGeoJson(GEOJSON)[2].data.folder_id).toBeUndefined();
 });

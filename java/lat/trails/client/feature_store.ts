@@ -1,6 +1,5 @@
 import {
   EditableFeature,
-  EditableFolder,
   EditableLine,
   EditablePoint,
   EditablePolygon,
@@ -97,10 +96,6 @@ export class FeatureStore {
 
   all(): IterableIterator<EditableFeature> {
     return this.live.values();
-  }
-
-  folders(): EditableFolder[] {
-    return this.ofKind('folder');
   }
 
   lines(): EditableLine[] {

@@ -100,7 +100,7 @@ fun main(args: Array<String>) {
     mbtiles.setMetadata("json", ObjectMapper().writeValueAsString(mapOf("channels" to channels)))
     // PNG because the pixels are data, and lossy compression would corrupt them.
     // TODO(april): write lossless WebP instead, which is 30% smaller. The encoder has natives for
-    // every platform we build on, but layer_catalog.ts#snodasUrl expects PNG.
+    // every platform we build on.
     mbtiles.setMetadata("format", "png")
     mbtiles.setMetadata("minzoom", "0")
     mbtiles.setMetadata("maxzoom", MAX_ZOOM.toString())

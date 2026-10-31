@@ -1,7 +1,6 @@
 import {
   cumulativeMeters,
   formatArea,
-  measureLine,
   profileSamples,
   profileStats,
   ringAreaMeters2,
@@ -24,18 +23,6 @@ test('formats a small area in square meters or acres', () => {
   expect(formatArea(5_180_000, 'imperial')).toBe('2 mi²');
 });
 
-test('measures a line along its hypotenuse', () => {
-  // Two segments of 0.001 degrees of latitude, about 111 m each
-  const stats = measureLine([0, 0, 10000, 0, 20000, 0], [0, 1000, 500]);
-  expect(stats.lengthMeters).toBeCloseTo(Math.hypot(111.2, 10) + Math.hypot(111.2, 5), 0);
-  expect(stats.elevation).toEqual({upMeters: 10, downMeters: 5, minMeters: 0, maxMeters: 10});
-});
-
-test('leaves a wobble below the climb threshold out of the length', () => {
-  const stats = measureLine([0, 0, 10000, 0, 20000, 0], [0, 300, 0]);
-  expect(stats.lengthMeters).toBeCloseTo(222.4, 0);
-});
-
 test('spreads a rise over the ground walked before it counted', () => {
   const along = slopeMeters([0, 100, 200, 300, 400], [0, 3, 0, 20, 20]);
   const sloped = Math.hypot(300, 20);
@@ -48,12 +35,6 @@ test('spreads a rise over the ground walked before it counted', () => {
 test('keeps a rise between samples at the same place', () => {
   const along = slopeMeters([0, 100, 100], [0, 20, 40]);
   expect(Array.from(along)).toEqual([0, Math.hypot(100, 20), Math.hypot(100, 20) + 20]);
-});
-
-test('measures the same length as it accumulates', () => {
-  const stats = measureLine([0, 0, 10000, 0, 20000, 0, 30000, 0], [0, 300, 0, 2000]);
-  // About 111 m between vertices
-  expect(stats.lengthMeters).toBeCloseTo(Math.hypot(333.6, 20), 0);
 });
 
 test('accumulates distance to each vertex', () => {

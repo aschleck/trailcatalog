@@ -28,6 +28,9 @@ import {
   StyleType,
 } from './workers/collection_schema';
 
+// What a feature's title and fields read, which an object from a reference collection has too
+export type FeatureContent = Pick<EditableFeature, 'kind'|'data'>;
+
 // What the keys of a collection's feature data mean, so that the properties dialog can show them.
 export interface Schema {
   title: {kind: 'text'; key: string}
@@ -414,7 +417,7 @@ export function formatField(field: FieldDefinition, value: boolean|number|string
 }
 
 /** Returns what titles a feature in lists and exports: its label, or a folder's name. */
-export function getTitle(schema: CollectionSchema, feature: EditableFeature): string|undefined {
+export function getTitle(schema: CollectionSchema, feature: FeatureContent): string|undefined {
   if (feature.kind === 'folder') {
     return feature.data.name || undefined;
   }
@@ -426,11 +429,18 @@ export function getTitle(schema: CollectionSchema, feature: EditableFeature): st
 }
 
 /**
- * Returns what titles an object from a map layer. An OpenStreetMap title key holds an element id,
- * so the element goes by its name, or else by its category, which still tells it apart from its
- * neighbors.
+ * Returns the title of an object from a map layer. An object from a reference collection is titled
+ * like a feature. An OpenStreetMap title key holds an element id, so the element goes by its name,
+ * or else by its category, which still tells it apart from its neighbors.
  */
-export function getObjectTitle(schema: Schema, data: Data): string|undefined {
+export function getObjectTitle(
+    schema: Schema|CollectionSchema, object: {kind: 'line'|'point'|'polygon'; data: Data}):
+        string|undefined {
+  if ('layers' in schema) {
+    return getTitle(schema, object);
+  }
+
+  const data = object.data;
   const title =
       schema.title.kind === 'text'
           ? data[schema.title.key]
@@ -455,7 +465,7 @@ function categoryName(names: Record<number, string>, type: unknown): string|unde
  * Returns the field that renaming a feature writes, which is the text field its label reads, or
  * nothing when the label is a constant or reads something other than text.
  */
-export function titleField(schema: CollectionSchema, feature: EditableFeature): string|undefined {
+export function titleField(schema: CollectionSchema, feature: FeatureContent): string|undefined {
   const kind = getFieldKind(feature);
   if (kind === 'folder') {
     return 'name';
@@ -467,7 +477,7 @@ export function titleField(schema: CollectionSchema, feature: EditableFeature): 
 }
 
 /** Returns which kind of feature's fields and style a feature takes. */
-export function getFieldKind(feature: EditableFeature): FieldKind|'folder' {
+export function getFieldKind(feature: FeatureContent): FieldKind|'folder' {
   return feature.kind === 'line' ? getLineKind(feature.data) : feature.kind;
 }
 

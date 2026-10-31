@@ -27,7 +27,6 @@ export interface SnodasFormat {
 export interface EcmwfRunFormat {
   // the last forecast hour the run tiles
   maxStep: number;
-  maxZoom: number;
   // in pixels on a side
   tileSize: number;
   // by archive
