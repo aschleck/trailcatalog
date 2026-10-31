@@ -12,6 +12,21 @@ export const COPERNICUS_DEM_COPYRIGHT: Copyright = {
   url: 'https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM',
 };
 
+// ESA asks for this wording.
+// https://esa-worldcover.org/en/data-access
+export const WORLDCOVER_COPYRIGHT: Copyright = {
+  long:
+      '© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) '
+          + 'processed by ESA WorldCover consortium',
+  short: 'ESA WorldCover',
+  url: 'https://esa-worldcover.org/',
+  provider: {
+    name: 'Microsoft Planetary Computer',
+    url: 'https://planetarycomputer.microsoft.com',
+  },
+  license: {name: 'CC BY 4.0', url: 'https://creativecommons.org/licenses/by/4.0/'},
+};
+
 // Most of Mapterhorn's sources are CC BY, which asks us to say that we changed them.
 export const MAPTERHORN_COPYRIGHT: Copyright = {
   long: `Terrain from Mapterhorn's open data sources, modified for this map`,

@@ -3,7 +3,7 @@ import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 
 import { Camera } from 'js/map/camera';
-import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT } from 'js/map/common/copyrights';
+import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT, WORLDCOVER_COPYRIGHT } from 'js/map/common/copyrights';
 import { Copyright, RgbaU32 } from 'js/map/common/types';
 import { CompositeLayer } from 'js/map/layers/composite_layer';
 import { CONTOURS_FEET, CONTOURS_METERS, MACROSTRAT, MbtileLayer } from 'js/map/layers/mbtile_layer';
@@ -23,7 +23,7 @@ import { Bands, Channel, Search } from 'js/map/workers/stac_loader';
 import { BASE_ZOOM as TERRARIUM_BASE_ZOOM, TILE_URL as TERRARIUM_TILE_URL } from 'js/map/workers/terrarium';
 import { ECMWF_LAYERS, EcmwfLayer, WEATHER_VIEWS, WeatherView, WIND_LEVELS } from 'js/map/workers/weather';
 import { WindStyle } from 'js/map/workers/wind_loader';
-import { Z_BASE_ELEVATION, Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_OVERLAY_TERRAIN } from 'js/map/z';
+import { Z_BASE_ELEVATION, Z_BASE_LAND_COVER, Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import { getUnitSystem, UnitSystem } from 'js/units/formatters';
 
 import { CollectionLayer } from './collection_layer';
@@ -35,7 +35,7 @@ import {
   LayerNode,
 } from './layer_tree';
 import { PointCollectionLayer } from './point_collection_layer';
-import { readElevation, readGeology, readSnodas, readWeather } from './readings';
+import { readElevation, readGeology, readLandCover, readSnodas, readWeather } from './readings';
 import { SkyLayer, ViewshedMode } from './sky_layer';
 import { OSM_NODES_SCHEMA, OSM_WAYS_SCHEMA } from './schema';
 import {
@@ -188,6 +188,32 @@ const SENTINEL_1_BANDS: Bands = {
     decibels('vh', undefined, -30, -5),
     decibels('vv', 'vh', 0, 15),
   ],
+};
+const WORLDCOVER_CATALOG = {
+  searchUrl: 'https://planetarycomputer.microsoft.com/api/stac/v1/search',
+  collection: 'esa-worldcover',
+  tokenUrl: 'https://planetarycomputer.microsoft.com/api/sas/v1/token/esa-worldcover',
+};
+// The 2021 map, which ESA made with a better algorithm than 2020's
+const WORLDCOVER_SEARCH: Search = {
+  from: '2021-01-01T00:00:00Z',
+  to: '2021-12-31T23:59:59Z',
+  query: {},
+};
+// Cropland, built up areas, water, wetland, and mangroves are left to the basemap, which draws
+// them already.
+// https://esa-worldcover.org/en/data-access
+const LAND_COVER_BANDS: Bands = {
+  channels: [{...byteSample('map', 0), nearest: true}],
+  classes: [
+    {value: 10, color: 0x2e7d32}, // tree cover
+    {value: 20, color: 0xb8860b}, // shrubland
+    {value: 30, color: 0xf4d35e}, // grassland
+    {value: 60, color: 0xf4d35e}, // bare or sparse vegetation
+    {value: 70, color: 0x7fc8f8}, // snow and ice
+    {value: 100, color: 0xf4d35e}, // moss and lichen
+  ],
+  values: true,
 };
 // Keep in sync with snodas.sh, which writes one archive per day named snodas_<day>.pmtiles
 const SNODAS_URL = 'https://tiles.trailcatalog.org/snodas_';
@@ -426,6 +452,16 @@ export class LayerCatalog extends Disposable {
             sentinel1Credit,
             Z_BASE_SATELLITE,
             this.renderer);
+    const landCover =
+        new StacLayer(
+            WORLDCOVER_CATALOG,
+            WORLDCOVER_SEARCH,
+            LAND_COVER_BANDS,
+            /* firstYear= */ 2021,
+            () => [WORLDCOVER_COPYRIGHT],
+            Z_BASE_LAND_COVER,
+            this.renderer,
+            /* tint= */ 0xFFFFFF73 as RgbaU32);
     const geology =
         new MbtileLayer(
             [{
@@ -1168,6 +1204,21 @@ export class LayerCatalog extends Disposable {
         ),
         controls: [],
         values: {},
+      }, {
+        kind: 'layer',
+        id: 'topography/land_cover',
+        name: 'Land cover',
+        enabled: false,
+        layer: landCover,
+        controls: [],
+        values: {},
+        readout: {
+          name: 'Land cover',
+          read: point => {
+            const value = landCover.valueAt(point);
+            return value !== undefined ? readLandCover(value) : undefined;
+          },
+        },
       }, {
         kind: 'layer',
         id: 'topography/slopes',

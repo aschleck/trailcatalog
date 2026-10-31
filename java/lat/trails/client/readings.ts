@@ -25,6 +25,21 @@ const TURBULENCE_LEVELS: Array<[number, string]> = [[12, 'Severe'], [8, 'Moderat
 // See WeatherLayers.kt#computeIcing
 const ICING_MAX = 15;
 
+// https://esa-worldcover.org/en/data-access
+const LAND_COVER_CLASSES: Record<number, string> = {
+  10: 'Trees',
+  20: 'Shrubland',
+  30: 'Grassland',
+  40: 'Cropland',
+  50: 'Built up',
+  60: 'Bare or sparse vegetation',
+  70: 'Snow and ice',
+  80: 'Water',
+  90: 'Wetland',
+  95: 'Mangroves',
+  100: 'Moss and lichen',
+};
+
 const WHOLE = new Intl.NumberFormat(undefined, {maximumFractionDigits: 0});
 const TENTHS = new Intl.NumberFormat(undefined, {maximumFractionDigits: 1});
 const HUNDREDTHS = new Intl.NumberFormat(undefined, {maximumFractionDigits: 2});
@@ -96,6 +111,11 @@ export function readSnodas(depth: boolean, packed: number): string {
 /** Describes the height of a terrarium pixel from its 24 packed bits. */
 export function readElevation(packed: number): string {
   return height(terrariumMeters(packed));
+}
+
+/** Names the WorldCover class of a pixel. */
+export function readLandCover(value: number): string {
+  return LAND_COVER_CLASSES[value] ?? NO_DATA;
 }
 
 /** Describes a Macrostrat unit from its tile properties, one row per fact the map has. */

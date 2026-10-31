@@ -1,8 +1,9 @@
-import { S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 
+import { projectS2LatLng } from '../camera';
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { BillboardProgram } from '../rendering/billboard_program';
@@ -22,6 +23,8 @@ export class StacLayer extends Layer {
   private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderCommand>;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
+  // For bands that send their values
+  private readonly values: HashMap<TileId, Uint8Array>;
   private fetching: boolean;
   private plan: {generation: number; drawables: Drawable[]};
   private search: Search;
@@ -36,6 +39,7 @@ export class StacLayer extends Layer {
       private readonly credit: (years: string) => Copyright[],
       private readonly z: number,
       private readonly renderer: Renderer,
+      private readonly tint: RgbaU32 = 0xFFFFFFFF as RgbaU32,
   ) {
     super();
 
@@ -47,6 +51,7 @@ export class StacLayer extends Layer {
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
     this.tiles = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
+    this.values = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.plan = {
       generation: -1,
       drawables: [],
@@ -84,6 +89,30 @@ export class StacLayer extends Layer {
     });
   }
 
+  /**
+   * Returns the byte of the most detailed loaded pixel under the point, for bands that send their
+   * values, or 0 where no source has data.
+   */
+  valueAt(point: S2LatLng): number|undefined {
+    const [x, y] = projectS2LatLng(point);
+    let best: {zoom: number; value: number}|undefined = undefined;
+    for (const [id, values] of this.values) {
+      if (best && best.zoom >= id.zoom) {
+        continue;
+      }
+
+      const size = Math.sqrt(values.length);
+      const tiles = 2 ** id.zoom;
+      const px = Math.floor(((x + 1) / 2 * tiles - id.x) * size);
+      const py = Math.floor(((1 - y) / 2 * tiles - id.y) * size);
+      if (px < 0 || py < 0 || px >= size || py >= size) {
+        continue;
+      }
+      best = {zoom: id.zoom, value: values[py * size + px]};
+    }
+    return best?.value;
+  }
+
   override get copyrights(): Copyright[] {
     const from = yearOf(this.search.from) ?? this.firstYear;
     const to = yearOf(this.search.to) ?? new Date().getFullYear();
@@ -116,7 +145,7 @@ export class StacLayer extends Layer {
                 NO_OFFSET,
                 [size, size],
                 /* angle= */ 0,
-                0xFFFFFFFF as RgbaU32,
+                this.tint,
                 this.z,
                 /* atlasIndex= */ 0,
                 /* atlasSize= */ [1, 1],
@@ -161,6 +190,9 @@ export class StacLayer extends Layer {
       this.pool.release(replaced);
     }
     this.tiles.set(command.id, texture);
+    if (command.values) {
+      this.values.set(command.id, command.values);
+    }
     this.redraw();
   }
 
@@ -171,6 +203,7 @@ export class StacLayer extends Layer {
         this.tiles.delete(id);
         this.pool.release(texture);
       }
+      this.values.delete(id);
     }
 
     this.redraw();

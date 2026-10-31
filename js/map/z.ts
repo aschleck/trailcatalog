@@ -4,6 +4,8 @@ export const Z_BASE_TERRAIN = 1;
 export const Z_BASE_ELEVATION = Z_BASE_TERRAIN + 0.9;
 export const Z_BASE_WATER = 2;
 export const Z_BASE_SATELLITE = 3;
+// Over satellite imagery, so that it classifies what the imagery shows
+export const Z_BASE_LAND_COVER = Z_BASE_SATELLITE + 0.5;
 export const Z_BASE_SLOPE = 4;
 export const Z_OVERLAY_TERRAIN = 10;
 export const Z_OVERLAY_TRANSPORTATION = 12;

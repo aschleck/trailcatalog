@@ -33,10 +33,15 @@ export interface Search {
  * drawn at all, while one missing the mask is drawn unmasked.
  */
 export interface Bands {
-  // Three channels are red, green, and blue. One channel is colored by the palette.
+  // Three channels are red, green, and blue. One channel is colored by the palette or the classes.
   channels: [Channel, Channel, Channel]|[Channel];
   // Stops sorted by the channel's byte, with colors as 0xRRGGBB. Bytes between stops blend.
   palette?: Array<{at: number; color: number}>;
+  // Colors for exact bytes of the channel as 0xRRGGBB, leaving every other byte unpainted
+  classes?: Array<{value: number; color: number}>;
+  // Sends the single channel's byte under every pixel along with the tile, so a click can read
+  // the class even where the classes leave it unpainted
+  values?: boolean;
   // Paints over the channels wherever this channel's byte is at least min
   highlight?: {channel: Channel; min: number; color: number};
   mask?: {
@@ -96,6 +101,8 @@ export interface LoadTileCommand {
   kind: 'ltc';
   id: TileId;
   bitmap: ImageBitmap;
+  // TILE_SIZE * TILE_SIZE bytes, row major, with 0 where no source has data
+  values: Uint8Array|undefined;
 }
 
 export interface UnloadTilesCommand {
@@ -248,6 +255,10 @@ const MAX_FILL_SOURCES = 3;
 // Planetary Computer's anonymous tokens last 45 minutes. We reopen assets this long before their
 // signature expires so that the window reads for a tile in flight don't outlive it.
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
+
+// A feature in EPSG:4326, whose rasters are addressed by degrees of longitude and latitude
+// instead of by a UTM zone's easting and northing
+const LNG_LAT = 0;
 
 // WGS84 and the UTM projection parameters. See llToUtm.
 const EARTH_RADIUS = 6378137;
@@ -583,7 +594,7 @@ class StacLoader {
 
     const epoch = this.epoch;
     try {
-      const bitmap =
+      const {bitmap, values} =
           await drawTile(
               tile.x,
               tile.y,
@@ -602,7 +613,8 @@ class StacLoader {
         kind: 'ltc',
         id: tile.id,
         bitmap,
-      }, [bitmap]);
+        values,
+      }, values ? [bitmap, values.buffer] : [bitmap]);
       return 'drawn';
     } catch (e: unknown) {
       // Reading the windows can still fail after retrying. Unmark the tile so the next viewport
@@ -965,9 +977,12 @@ async function drawTile(
         tileLow: S2LatLng,
         tileHigh: S2LatLng,
         pool: geotiff.Pool):
-    Promise<ImageBitmap> {
+    Promise<{bitmap: ImageBitmap; values: Uint8Array|undefined}> {
   const colors = {
-    palette: bands.palette ? paletteTable(bands.palette) : undefined,
+    palette:
+        bands.classes
+            ? classTable(bands.classes)
+            : bands.palette ? paletteTable(bands.palette) : undefined,
     hidden: new Uint8Array(256),
   };
   for (const c of bands.mask?.hidden ?? []) {
@@ -981,9 +996,10 @@ async function drawTile(
       await Promise.all(
           sources.map(s => readSource(s, bands, colors, tileLow, tileHigh, pool)));
   const pixels = new Uint32Array(TILE_SIZE * TILE_SIZE);
+  const values = bands.values ? new Uint8Array(TILE_SIZE * TILE_SIZE) : undefined;
   for (const read of reads) {
     if (read) {
-      paintRaster(pixels, read.painting, read.zone, tileX, tileY, halfWorldSize);
+      paintRaster(pixels, values, read.painting, read.zone, tileX, tileY, halfWorldSize);
     }
   }
 
@@ -995,7 +1011,7 @@ async function drawTile(
 
     const read = await readSource(fill, bands, colors, tileLow, tileHigh, pool);
     if (read) {
-      paintRaster(pixels, read.painting, read.zone, tileX, tileY, halfWorldSize);
+      paintRaster(pixels, values, read.painting, read.zone, tileX, tileY, halfWorldSize);
     }
   }
 
@@ -1005,6 +1021,7 @@ async function drawTile(
       if (read) {
         paintRaster(
             pixels,
+            values,
             {...read.painting, mask: undefined},
             read.zone,
             tileX,
@@ -1014,8 +1031,10 @@ async function drawTile(
     }
   }
 
-  return createImageBitmap(
-      new ImageData(new Uint8ClampedArray(pixels.buffer), TILE_SIZE, TILE_SIZE));
+  const bitmap =
+      await createImageBitmap(
+          new ImageData(new Uint8ClampedArray(pixels.buffer), TILE_SIZE, TILE_SIZE));
+  return {bitmap, values};
 }
 
 /**
@@ -1027,10 +1046,11 @@ async function drawTile(
  * depends on longitude, with A itself linear in the column. So each row computes the
  * latitude-dependent terms once and the inner loop is a polynomial in A.
  *
- * Keep in sync with llToUtm.
+ * Keep in sync with llToUtm. A zone of LNG_LAT skips all of that for degrees.
  */
 function paintRaster(
     out: Uint32Array,
+    values: Uint8Array|undefined,
     painting: Painting,
     zone: number,
     tileX: number,
@@ -1040,12 +1060,16 @@ function paintRaster(
   const lngOrigin = ((zone - 1) * 6 - 180 + 3) / 180 * Math.PI;
   const lngBase = Math.PI * (tileX + 0.5 / TILE_SIZE) / halfWorldSize - lngOrigin;
   const lngStep = Math.PI / (TILE_SIZE * halfWorldSize);
+  const lngLat = zone === LNG_LAT;
+  const lngDegreesBase = 180 * (tileX + 0.5 / TILE_SIZE) / halfWorldSize;
+  const lngDegreesStep = 180 / (TILE_SIZE * halfWorldSize);
   const {planes, palette, highlight, mask, hidden} = painting;
   const [red, green, blue] = planes;
 
   for (let yp = 0; yp < TILE_SIZE; ++yp) {
     const mercY = (tileY - 1 + (TILE_SIZE - yp - 0.5) / TILE_SIZE) / halfWorldSize;
     const lat = Math.asin(Math.tanh(mercY * Math.PI));
+    const latDegrees = lat * 180 / Math.PI;
     const sinLat = Math.sin(lat);
     const cosLat = Math.cos(lat);
     const tanLat = Math.tan(lat);
@@ -1078,10 +1102,17 @@ function paintRaster(
         continue;
       }
 
-      const A = aBase + xp * aStep;
-      const A2 = A * A;
-      const easting = UTM_FALSE_EASTING + eScale * A * (1 + A2 * (e3 + A2 * e5));
-      const northing = nBase + nScale * A2 * (0.5 + A2 * (n4 + A2 * n6));
+      let easting;
+      let northing;
+      if (lngLat) {
+        easting = lngDegreesBase + xp * lngDegreesStep;
+        northing = latDegrees;
+      } else {
+        const A = aBase + xp * aStep;
+        const A2 = A * A;
+        easting = UTM_FALSE_EASTING + eScale * A * (1 + A2 * (e3 + A2 * e5));
+        northing = nBase + nScale * A2 * (0.5 + A2 * (n4 + A2 * n6));
+      }
       if (mask && hidden[nearest(mask, 0, easting, northing)]) {
         continue;
       }
@@ -1090,8 +1121,15 @@ function paintRaster(
       const r = planeByte(red, easting, northing);
       if (r < 0) {
         continue;
-      } else if (palette) {
+      }
+      if (values) {
+        values[i] = r;
+      }
+      if (palette) {
         color = palette[r];
+        if (color === 0) {
+          continue;
+        }
       } else {
         const g = planeByte(green, easting, northing);
         const b = planeByte(blue, easting, northing);
@@ -1199,6 +1237,15 @@ function paletteTable(stops: Array<{at: number; color: number}>): Uint32Array {
   return table;
 }
 
+// Colors only the listed bytes, leaving the rest 0 so that paintRaster skips them.
+function classTable(classes: Array<{value: number; color: number}>): Uint32Array {
+  const table = new Uint32Array(256);
+  for (const {value, color} of classes) {
+    table[value] = abgrOf(color);
+  }
+  return table;
+}
+
 // 0xRRGGBB puts red highest, while the tile is little-endian RGBA and wants it lowest. The alpha
 // keeps a painted pixel from ever being 0.
 function abgrOf(rgb: number): number {
@@ -1217,20 +1264,27 @@ async function readSource(
         Promise<{painting: Painting; zone: number}|undefined> {
   // We need to project all corners because UTM isn't axis-aligned with Mercator and the
   // rotation changes depending on whether you're west or east of the meridian.
-  const zone = epsgToUtmZone(feature.epsg);
+  const zone = feature.epsg === 4326 ? LNG_LAT : epsgToUtmZone(feature.epsg);
+  const project =
+      zone === LNG_LAT
+          ? (lat: number, lng: number): [number, number] =>
+              [lng * 180 / Math.PI, lat * 180 / Math.PI]
+          : (lat: number, lng: number) => llToUtm(lat, lng, zone);
   const corners = [
-    llToUtm(tileLow.latRadians(), tileLow.lngRadians(), zone),
-    llToUtm(tileLow.latRadians(), tileHigh.lngRadians(), zone),
-    llToUtm(tileHigh.latRadians(), tileLow.lngRadians(), zone),
-    llToUtm(tileHigh.latRadians(), tileHigh.lngRadians(), zone),
+    project(tileLow.latRadians(), tileLow.lngRadians()),
+    project(tileLow.latRadians(), tileHigh.lngRadians()),
+    project(tileHigh.latRadians(), tileLow.lngRadians()),
+    project(tileHigh.latRadians(), tileHigh.lngRadians()),
   ];
+  // About a meter is 1e-5 degrees, so the slack scales down to match.
+  const slack = zone === LNG_LAT ? WINDOW_SLACK_METERS * 1e-5 : WINDOW_SLACK_METERS;
   const low: [number, number] = [
-    Math.min(corners[0][0], corners[1][0], corners[2][0], corners[3][0]) - WINDOW_SLACK_METERS,
-    Math.min(corners[0][1], corners[1][1], corners[2][1], corners[3][1]) - WINDOW_SLACK_METERS,
+    Math.min(corners[0][0], corners[1][0], corners[2][0], corners[3][0]) - slack,
+    Math.min(corners[0][1], corners[1][1], corners[2][1], corners[3][1]) - slack,
   ];
   const high: [number, number] = [
-    Math.max(corners[0][0], corners[1][0], corners[2][0], corners[3][0]) + WINDOW_SLACK_METERS,
-    Math.max(corners[0][1], corners[1][1], corners[2][1], corners[3][1]) + WINDOW_SLACK_METERS,
+    Math.max(corners[0][0], corners[1][0], corners[2][0], corners[3][0]) + slack,
+    Math.max(corners[0][1], corners[1][1], corners[2][1], corners[3][1]) + slack,
   ];
 
   const keys = channelAssets(bands);
