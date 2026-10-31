@@ -117,6 +117,17 @@ test('puts a feature whose folder is gone at the root', () => {
   expect(store.children(undefined)).toEqual([orphan]);
 });
 
+test('hangs a cycle of folders at the root', () => {
+  const {store} = setUp();
+  const a: EditableFolder = {...folderOf('a'), data: {folder_id: 'b'}};
+  const b: EditableFolder = {...folderOf('b'), data: {folder_id: 'a'}};
+  const inside = point('c', {folder_id: 'a'});
+  store.reset([a, b, inside], /* readOnly= */ false);
+
+  expect(store.children(undefined)).toEqual([a]);
+  expect(store.descendants('a')).toEqual([b, inside]);
+});
+
 test('undoes and redoes a schema edit', async () => {
   const {saved, store} = setUp();
   const after = removeField(DEFAULT_COLLECTION_SCHEMA, {kind: 'line', id: 'stroke'});

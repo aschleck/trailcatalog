@@ -19,17 +19,12 @@ export function parseGpx(text: string): EditableFeature[] {
       continue;
     }
 
-    const name = childText(waypoint, 'name');
-    const description = childText(waypoint, 'desc');
     const elevation = Number(childText(waypoint, 'ele') ?? NaN);
     points.push({
       kind: 'point',
       id: crypto.randomUUID(),
       version: 0n,
-      data: {
-        ...(name !== undefined ? {name} : {}),
-        ...(description !== undefined ? {description} : {}),
-      },
+      data: getNameAndDescription(waypoint),
       latE7: Math.round(lat * 1e7),
       lngE7: Math.round(lng * 1e7),
       elevationCentimeters: Number.isFinite(elevation) ? Math.round(elevation * 100) : undefined,
@@ -40,7 +35,6 @@ export function parseGpx(text: string): EditableFeature[] {
   // Tags are matched in any namespace because a GPX declares one and some writers put it on a
   // prefix.
   for (const track of Array.from(parsed.getElementsByTagNameNS('*', 'trk'))) {
-    const name = childText(track, 'name');
     for (const segment of Array.from(track.getElementsByTagNameNS('*', 'trkseg'))) {
       const points = Array.from(segment.getElementsByTagNameNS('*', 'trkpt'));
       if (points.length < 2) {
@@ -92,7 +86,7 @@ export function parseGpx(text: string): EditableFeature[] {
         kind: 'line',
         id: crypto.randomUUID(),
         version: 0n,
-        data: name !== undefined ? {name} : {},
+        data: getNameAndDescription(track),
         latLngE7,
         elevationCentimeters: haveElevations ? elevationCentimeters : undefined,
         timeSeconds: haveTimes ? timeSeconds : undefined,
@@ -100,6 +94,15 @@ export function parseGpx(text: string): EditableFeature[] {
     }
   }
   return [...points, ...lines];
+}
+
+function getNameAndDescription(element: Element): {name?: string; description?: string} {
+  const name = childText(element, 'name');
+  const description = childText(element, 'desc');
+  return {
+    ...(name !== undefined ? {name} : {}),
+    ...(description !== undefined ? {description} : {}),
+  };
 }
 
 function degrees(value: string|null, limit: number): number|undefined {

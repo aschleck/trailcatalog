@@ -1,11 +1,10 @@
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
+import { MAX_LINES_BY_ID } from 'java/lat/trails/wire/wire';
 import { projectE7Deltas } from 'js/map/camera';
 import { RawUuid } from 'js/map/common/types';
 import { LineRef } from 'js/map/workers/location_querier';
 
-// Keep in sync with ApiServer.kt#MAX_LINES_BY_ID.
-const BATCH = 128;
 // A batch is one primary key lookup, so a request still open after this is stuck, not slow. It
 // fails like any other, which lets a finished line save rather than wait on it forever.
 const TIMEOUT_MS = 10_000;
@@ -66,8 +65,8 @@ export class LineRefiner {
 
     for (const [url, ids] of missing) {
       const keys = [...ids.keys()];
-      for (let i = 0; i < keys.length; i += BATCH) {
-        const batch = keys.slice(i, i + BATCH);
+      for (let i = 0; i < keys.length; i += MAX_LINES_BY_ID) {
+        const batch = keys.slice(i, i + MAX_LINES_BY_ID);
         const fetched = this.fetch(url, batch, batch.map(key => ids.get(key)!));
         for (const key of batch) {
           this.inFlight.set(key, fetched);

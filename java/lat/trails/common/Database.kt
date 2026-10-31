@@ -2,6 +2,7 @@ package lat.trails.common
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import lat.trails.wire.TRAILS_LAT_SCHEMA
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 
@@ -17,8 +18,6 @@ private val trailcatalogDatabaseUsernamePassword = createFlag("unset")
 @FlagSpec("trailcatalog_database_url")
 private val trailcatalogDatabaseUrl = createFlag("unset")
 
-// Keep in sync with frontend/server.ts#SCHEMA
-const val TRAILS_LAT_SCHEMA = "migration_14_bounds"
 const val TRAILCATALOG_SCHEMA = "migration_9_gin_search"
 
 fun createBaseConnection(): HikariDataSource {

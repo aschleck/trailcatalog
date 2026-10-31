@@ -14,7 +14,7 @@ import {
   TafPeriod,
 } from 'trails_lat/proto/data_pb';
 
-import { EditableFeature, EditableFolder } from './features';
+import { EditableFeature, EditableFolder, getParents } from './features';
 import { FIELD_EDITED, FIELD_ICON_CLICKED } from './events';
 import { FieldInput } from './field_input';
 import { PointMarker } from './icon_picker';
@@ -476,13 +476,11 @@ function FieldControls({feature, folders, schema}: {
           className="border border-gray-300 grow h-7 min-w-0 rounded"
           options={[
             {label: 'No folder', value: '', selected: !feature.data.folder_id},
-            ...folders
-                .filter(({folder}) => folder.id !== feature.id)
-                .map(({folder, depth}) => ({
-                  label: `${'  '.repeat(depth)}${folder.data.name || 'Untitled folder'}`,
-                  value: folder.id,
-                  selected: folder.id === feature.data.folder_id,
-                })),
+            ...folders.map(({folder, depth}) => ({
+              label: `${'  '.repeat(depth)}${folder.data.name || 'Untitled folder'}`,
+              value: folder.id,
+              selected: folder.id === feature.data.folder_id,
+            })),
           ]}
           unboundEvents={{corgi: [[CHANGED, 'folderChanged']]}}
       />;
@@ -847,11 +845,9 @@ export function buildTree(features: Iterable<EditableFeature>, schema: Collectio
   for (const feature of features) {
     items.set(feature.id, {feature, children: []});
   }
+  const parents = getParents(features);
   for (const item of items.values()) {
-    // Keep in sync with FeatureStore#parentOf
-    const folder = item.feature.data.folder_id;
-    const parent =
-        folder !== undefined && items.get(folder)?.feature.kind === 'folder' ? folder : undefined;
+    const parent = parents.get(item.feature.id);
     const siblings = children.get(parent) ?? [];
     siblings.push(item);
     children.set(parent, siblings);

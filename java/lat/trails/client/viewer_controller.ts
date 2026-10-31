@@ -40,7 +40,6 @@ import {
   GetOsmTagsResponse,
   GetTimeZoneResponse,
   ListCollectionsResponse,
-  Role,
   SaveResponse,
   SetViewStateResponse,
   OsmElementType,
@@ -57,6 +56,7 @@ import {
   ImportFailedDialog,
   SaveFailedDialog,
 } from './dialogs';
+import { canEdit } from './collection_data';
 import { DrawingLayer, toE7Array } from './drawing_layer';
 import { LineRefiner } from './line_refiner';
 import {
@@ -136,6 +136,7 @@ import {
   adoptImported,
   getFieldKind,
   parseCollectionSchema,
+  SavedSchema,
   titleField,
   withDefaults,
 } from './schema';
@@ -200,8 +201,8 @@ export interface State {
   // How far the line, polygon, or measurement under construction reaches, shown beside the
   // pointer. In pixels from the viewer's top left.
   drawnLength: {x: number; y: number; meters: number}|undefined;
-  // Set while the next line clicked joins the one Join with started from
-  joining: boolean;
+  // The line Join with started from, which the next line clicked joins
+  joining: string|undefined;
   layers: LayerTreeState;
   // The profile of the selected feature or the inspected object, when that is a line
   lineProfile: LineProfileState|undefined;
@@ -255,17 +256,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly measureProfiler: MeasureProfiler;
   private readonly lineProfiler: LineProfiler;
   private selected: string|undefined;
-  // Kept for centering on, which needs the geometry the dialog's state leaves out
-  private inspected: LayerObject|undefined;
-  // Stops the inspected object's layer drawing it as selected
-  private unmarkInspected: (() => void)|undefined;
+  // Kept for centering on, which needs the geometry the dialog's state leaves out, along with how
+  // to stop its layer drawing it as selected. Loads for it check that it's still the same record.
+  private inspected: {object: LayerObject; unmark: () => void}|undefined;
   // Moves with every click, so that a slow query for an earlier one is dropped
   private pickGeneration: number;
   // The pick menu and the camera when it opened. The map reports a move whenever it settles, even
   // when the camera stayed put, and only a real move takes the menu away from its click.
   private picked: {camera: LatLngZoom; menu: MenuHandle}|undefined;
-  // Moves with every object opened or closed, so that tags arriving for an earlier one are dropped
-  private inspectGeneration: number;
   private zoneChoice: ZoneChoice;
   // Moves with every zone lookup, so that a slow answer for where the map was is dropped
   private zoneGeneration: number;
@@ -279,12 +277,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // The collection id from the URL that the store holds or is loading, so that a render with the
   // same route doesn't reload it
   private routedCollection: string|undefined;
-  // The feature being dragged in the list, and the folder it would drop into, where undefined is
-  // the root
+  // The feature being dragged in the list
   private draggedFeature: string|undefined;
-  private dropTarget: {folder: string|undefined}|undefined;
-  // The line Join with started from
-  private joining: string|undefined;
   // Where the pointer last was, in pixels from the viewer's top left
   private pointer: [number, number]|undefined;
   // Settles once the login popup closes and the user is fetched, so concurrent callers share it
@@ -306,7 +300,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // A failure the dialog is already up for stays quiet, or else every retry that fails for the
   // same reason stacks another one on the page.
   private warnedUnsaved: boolean;
-  lastChange: number;
 
   constructor(response: Response<ViewerController>) {
     super(response);
@@ -338,10 +331,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             });
     this.selected = undefined;
     this.inspected = undefined;
-    this.unmarkInspected = undefined;
     this.pickGeneration = 0;
     this.picked = undefined;
-    this.inspectGeneration = 0;
     this.zoneChoice = readZoneChoice();
     this.zoneGeneration = 0;
     this.searchQuery =
@@ -365,8 +356,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.argsCollection = response.args.collection;
     this.routedCollection = response.args.collection;
     this.draggedFeature = undefined;
-    this.dropTarget = undefined;
-    this.joining = undefined;
     this.pointer = undefined;
     this.store.listen(() => {
       this.refreshFeatureList();
@@ -374,7 +363,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.warnedUnsaved = false;
     this.menuTrigger = undefined;
     this.openedMenu = undefined;
-    this.lastChange = Date.now();
 
     this.loginPopup = new LoginPopup(response => {
       response.then(r => {
@@ -543,10 +531,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(undefined);
     this.setHidden([]);
     // Empties the list while the collection loads, or else the last one's rows are left to click.
-    this.store.reset([], id ? this.store.isReadOnly() : false);
+    // Nothing is editable until we know the role, which the listing carries when it opened this.
+    const collection = this.state.collection?.id === id ? this.state.collection : undefined;
+    this.resetStore([], id !== undefined && !canEdit(collection));
     this.updateState({
       ...this.state,
-      collection: this.state.collection?.id === id ? this.state.collection : undefined,
+      collection,
       collectionStatus: 'loaded',
       features: {...this.state.features, expanded: new Set()},
     });
@@ -589,19 +579,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Selects the new point so that the panel is open to name it, and stays in the tool so that
   // several can go down in a row.
   onPointPlaced(e: CorgiEvent<typeof POINT_PLACED>): void {
-    const parent = this.newFeatureParent();
     const point: EditableFeature = {
       kind: 'point',
       id: crypto.randomUUID(),
       version: 0n,
-      data: parent !== undefined ? {folder_id: parent} : {},
+      data: {},
       latE7: e.detail.latE7,
       lngE7: e.detail.lngE7,
       elevationCentimeters: undefined,
     };
-    if (parent !== undefined) {
-      this.expand([parent]);
-    }
     this.addFeature(point);
   }
 
@@ -623,7 +609,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const {point, px} = e.detail;
     this.pickGeneration += 1;
     const generation = this.pickGeneration;
-    const joining = this.joining;
+    const joining = this.state.joining;
     // Join with waits on another line, so nothing else is worth offering.
     const shown = joining === undefined ? this.getShownEntries(this.state.layers.nodes) : [];
     const readings: Array<{name: string; value: string}> = [];
@@ -701,18 +687,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.stopJoining();
     if (pick.kind === 'object') {
       const {layer, object} = pick;
-      this.openObject(layer, object);
-      layer.selectObject(object);
-      this.unmarkInspected = () => {
+      this.openObject(layer, object, () => {
         layer.selectObject(undefined);
-      };
+      });
+      layer.selectObject(object);
     } else if (pick.kind === 'point') {
       const {layer, point} = pick;
-      this.openObject(layer, {kind: 'point', value: point});
-      layer.selectPoint(point);
-      this.unmarkInspected = () => {
+      this.openObject(layer, {kind: 'point', value: point}, () => {
         layer.selectPoint(undefined);
-      };
+      });
+      layer.selectPoint(point);
     } else {
       checkExhaustive(pick);
     }
@@ -759,7 +743,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Joins the line clicked while Join with is waiting on one. Anything else cancels the join and
   // selects as usual.
   private clickFeature(id: string|undefined): void {
-    const from = this.joining;
+    const from = this.state.joining;
     this.stopJoining();
     const a = from !== undefined ? this.store.get(from) : undefined;
     const b = id !== undefined ? this.store.get(id) : undefined;
@@ -787,9 +771,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
-  private openObject(layer: Layer, object: LayerObject): void {
+  private openObject(layer: Layer, object: LayerObject, unmark: () => void): void {
     this.select(undefined);
-    this.inspected = object;
+    this.inspected = {object, unmark};
     const data = object.value.data;
     const entry =
         layerEntries(this.state.layers.nodes).find(({entry}) => entry.layer === layer)?.entry;
@@ -887,8 +871,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         label: 'Join with…',
         disabled: this.store.lines().length < 2,
         action: () => {
-          this.joining = feature.id;
-          this.updateState({...this.state, joining: true});
+          this.updateState({...this.state, joining: feature.id});
         },
       });
     }
@@ -928,10 +911,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         kind: 'menu_item',
         label: 'Delete',
         action: () => {
-          const live = this.store.get(feature.id);
-          if (live) {
-            this.deleteFeatures([live]);
-          }
+          this.deleteClicked();
         },
       });
     }
@@ -949,7 +929,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
-    this.select(checkExists(e.actionElement.data('id')).string());
+    this.clickFeature(checkExists(e.actionElement.data('id')).string());
   }
 
   featureDragStarted(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -1095,18 +1075,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   newFolderClicked(): void {
-    const parent = this.newFeatureParent();
-    const folder: EditableFeature = {
-      kind: 'folder',
-      id: crypto.randomUUID(),
-      version: 0n,
-      data: parent !== undefined ? {folder_id: parent} : {},
-    };
-    if (parent !== undefined) {
-      this.expand([parent]);
-    }
-    this.store.apply([{id: folder.id, before: undefined, after: folder}]);
-    this.select(folder.id);
+    this.addFeature({kind: 'folder', id: crypto.randomUUID(), version: 0n, data: {}});
   }
 
   nameChanged(e: CorgiEvent<typeof CHANGED>): void {
@@ -1126,7 +1095,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ? []
             : selected.kind === 'folder' ? this.store.descendants(selected.id) : [selected];
     const latLngDegrees = featureLatLngDegrees(features);
-    const inspected = this.inspected;
+    const inspected = this.inspected?.object;
     if (inspected?.kind === 'polygon') {
       const bound = inspected.value.bound;
       latLngDegrees.push(bound.low[0], bound.low[1], bound.high[0], bound.high[1]);
@@ -1153,8 +1122,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
-    // A low longitude above the high one crosses the antimeridian, which fitBoundInScreen handles.
-    // setCamera tells a rect from a center by the brand, so it has to exist at runtime.
+    // A low longitude above the high one crosses the antimeridian, which setCamera handles. It
+    // tells a rect from a center by the brand, so the brand has to exist at runtime.
     this.mapController.setCamera({
       low: [bound.latLo().degrees(), bound.lngLo().degrees()],
       high: [bound.latHi().degrees(), bound.lngHi().degrees()],
@@ -1163,7 +1132,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   deselectClicked(): void {
-    this.select(undefined);
+    this.clickFeature(undefined);
   }
 
   fieldIconClicked(e: CorgiEvent<typeof FIELD_ICON_CLICKED>): void {
@@ -1422,6 +1391,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
+  // Leaves a drawing tool along with edit rights, or else it would draw what the store drops.
+  private resetStore(features: EditableFeature[], readOnly: boolean, schema?: SavedSchema): void {
+    this.store.reset(features, readOnly, schema);
+    const tool = this.state.tool;
+    if (readOnly && tool !== 'pointer' && tool !== 'measure' && tool !== 'terrain') {
+      this.setTool('pointer');
+    }
+  }
+
   // Deactivates before activating, because the drawing layers share the index's routing switch.
   private setTool(tool: Tool): void {
     this.stopJoining();
@@ -1454,7 +1432,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Skipped while typing, so that the browser's own undo still works in text fields.
   private keyPressed(e: KeyboardEvent): void {
     // Checked before defaultPrevented, because the line being edited also takes Escape
-    if (e.key === 'Escape' && this.joining !== undefined) {
+    if (e.key === 'Escape' && this.state.joining !== undefined) {
       this.stopJoining();
       e.preventDefault();
       return;
@@ -1512,8 +1490,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.addFeature(line);
   }
 
-  // Starts a feature somebody made with its fields' defaults, and selects it.
+  // Starts a feature somebody made in the selected folder, or else beside the selected feature,
+  // with its fields' defaults, and selects it.
   private addFeature(feature: EditableFeature): void {
+    const parent = this.newFeatureParent();
+    if (parent !== undefined) {
+      feature.data.folder_id = parent;
+      this.expand([parent]);
+    }
     feature.data = withDefaults(this.store.schema(), feature);
     this.store.apply([{id: feature.id, before: undefined, after: feature}]);
     this.select(feature.id);
@@ -1547,7 +1531,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.terrainLayer.reroute();
   }
 
-  // Where a new feature goes: inside the selected folder, or else beside the selected feature.
   private newFeatureParent(): string|undefined {
     const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
     return selected?.kind === 'folder' ? selected.id : selected && this.store.parentOf(selected);
@@ -1589,10 +1572,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.selected = id;
     this.featureLayer.setSelected(id);
     this.featureLayer.setMarker(undefined);
+    this.inspected?.unmark();
     this.inspected = undefined;
-    this.unmarkInspected?.();
-    this.unmarkInspected = undefined;
-    this.inspectGeneration += 1;
     if (this.state.inspected) {
       this.updateState({...this.state, inspected: undefined});
     }
@@ -1600,10 +1581,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private loadClimb(path: Float64Array): void {
-    const generation = this.inspectGeneration;
+    const opened = this.inspected;
     this.lineProfiler.forObject(
         path,
-        () => generation === this.inspectGeneration && this.state.inspected?.kind === 'line',
+        () => opened === this.inspected && this.state.inspected?.kind === 'line',
         (lineProfile, lengthMeters, climb) => {
           const inspected = this.state.inspected;
           if (inspected?.kind === 'line') {
@@ -1629,7 +1610,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private loadOsmTags(type: 'node'|'way', id: number): void {
-    const generation = this.inspectGeneration;
+    const opened = this.inspected;
     const loading: Future<GetOsmTagsResponse> =
         requestData('lat.trails.DataService/GetOsmTags', {
           type: type === 'node' ? OsmElementType.NODE : OsmElementType.WAY,
@@ -1644,7 +1625,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             })
         .then(tags => {
           const inspected = this.state.inspected;
-          if (generation !== this.inspectGeneration || !inspected?.osm) {
+          if (opened !== this.inspected || !inspected?.osm) {
             return;
           }
 
@@ -1656,7 +1637,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private loadAviationWeather(station: string, metar: boolean, taf: boolean): void {
-    const generation = this.inspectGeneration;
+    const opened = this.inspected;
     // The cache never expires, so reopening a station would show the report it had the first
     // time. The server caches for a few minutes instead.
     invalidateCache(method => method === 'lat.trails.DataService/GetAviationWeather');
@@ -1671,7 +1652,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             })
         .then(report => {
           const inspected = this.state.inspected;
-          if (generation !== this.inspectGeneration || !inspected?.weather) {
+          if (opened !== this.inspected || !inspected?.weather) {
             return;
           }
 
@@ -1795,12 +1776,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     e.preventDefault();
     this.draggedFeature = undefined;
-    this.dropTarget = undefined;
+    this.setDropTarget(undefined);
     if (folder !== undefined) {
       this.expand([folder]);
     }
     if (this.store.parentOf(live) === folder) {
-      this.refreshFeatureList();
       return;
     }
 
@@ -1810,12 +1790,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private setDropTarget(target: {folder: string|undefined}|undefined): void {
-    if (target?.folder === this.dropTarget?.folder && !target === !this.dropTarget) {
-      return;
+    const was = this.state.features.dropTarget;
+    if (target?.folder !== was?.folder || !target !== !was) {
+      this.updateState({...this.state, features: {...this.state.features, dropTarget: target}});
     }
-
-    this.dropTarget = target;
-    this.refreshFeatureList();
   }
 
   // Follows the pointer with the length drawn so far, which includes the segment to it. A polygon's
@@ -1843,12 +1821,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private stopJoining(): void {
-    if (this.joining === undefined) {
-      return;
+    if (this.state.joining !== undefined) {
+      this.updateState({...this.state, joining: undefined});
     }
-
-    this.joining = undefined;
-    this.updateState({...this.state, joining: false});
   }
 
   // Splits at a vertex, adding one first when the spot is partway along a segment.
@@ -1973,7 +1948,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         selectedDescendants:
             selected?.kind === 'folder' ? this.store.descendants(selected.id).length : 0,
         hoveredAncestors: new Set(this.ancestorsOf(this.state.features.hovered)),
-        dropTarget: this.dropTarget,
       },
       lineProfile: this.lineProfileFor(live),
     });
@@ -2087,7 +2061,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             collection: response.collection,
             collectionStatus: 'loaded',
           });
-          const readOnly = response.collection?.role === Role.READ;
           // A toggle made since the request, like on the rows the server rendered, is newer than
           // what the response read.
           if (this.state.features.hidden === hidden) {
@@ -2105,13 +2078,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           ];
           const schema = parseCollectionSchema(response.schema);
           this.expand(topLevelFolderIds(features, schema, this.state.features.hidden));
-          this.store.reset(features, readOnly, {schema, version: response.schemaVersion});
-          const tool = this.state.tool;
-          const drawing =
-              tool === 'point' || tool === 'line' || tool === 'polygon' || tool === 'marker';
-          if (readOnly && drawing) {
-            this.setTool('pointer');
-          }
+          this.resetStore(
+              features, !canEdit(response.collection), {schema, version: response.schemaVersion});
         })
         .catch(e => {
           console.error(e);
@@ -2230,10 +2198,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.dialog.display(SaveFailedDialog({})).then(dismissed, dismissed);
   }
 
+  // The collection in the URL, even while it loads, or else a new one.
   private currentCollection(): Promise<string> {
-    const open = this.state.collection;
-    if (open) {
-      return Promise.resolve(open.id);
+    if (this.routedCollection !== undefined) {
+      return Promise.resolve(this.routedCollection);
     }
 
     return this.requireLogin()
@@ -2254,11 +2222,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           });
           this.routedCollection = collection.id;
           this.history.replaceTo(`/collection/${collection.id}`);
-          // Anything hidden or any layer changed before the collection existed had nowhere to save
-          // to.
-          if (this.state.features.hidden.size > 0 || this.layerEdits > 0) {
-            this.saveViewState();
-          }
+          this.saveViewState();
           return collection.id;
         });
   }
@@ -2277,7 +2241,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Viewers get no view state, so they start from the owner's every time they open the collection.
   private saveViewState(): void {
     const collection = this.state.collection;
-    if (!collection || (collection.role !== Role.OWNER && collection.role !== Role.WRITE)) {
+    if (!canEdit(collection)) {
       return;
     }
 
@@ -2298,34 +2262,27 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   private requireLogin(): Promise<void> {
-    if (this.login) {
-      return this.login;
-    }
-
     // Somebody already signed in whose GetCurrentUser has not landed yet gets a popup if we go by
     // finished, so wait the fetch out instead.
-    return this.state.self.then(
-        response => response.user ? Promise.resolve() : this.openLogin());
-  }
+    return this.state.self.then(response => {
+      if (response.user) {
+        return;
+      }
 
-  private openLogin(): Promise<void> {
-    if (this.login) {
+      // Callers wait on this, so it has to settle even when the user fetch fails, or else the
+      // write queue behind it never runs again.
+      this.login ??= this.loginPopup.open()
+          .then(response => {
+            this.signedIn(response);
+            if (!response.user) {
+              throw new Error('Nobody signed in');
+            }
+          })
+          .finally(() => {
+            this.login = undefined;
+          });
       return this.login;
-    }
-
-    // Callers wait on this, so it has to settle even when the user fetch fails, or else the write
-    // queue behind it never runs again.
-    this.login = this.loginPopup.open()
-        .then(response => {
-          this.signedIn(response);
-          if (!response.user) {
-            throw new Error('Nobody signed in');
-          }
-        })
-        .finally(() => {
-          this.login = undefined;
-        });
-    return this.login;
+    });
   }
 
   private signedIn(response: GetCurrentUserResponse): void {

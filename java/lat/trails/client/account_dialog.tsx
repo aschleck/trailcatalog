@@ -13,8 +13,7 @@ import { GetAccountResponse, User } from 'trails_lat/proto/data_pb';
 const CONFIRMATION = 'delete my account';
 const DIALOG = 'bg-white flex flex-col max-w-full p-4 rounded text-gray-900 text-sm w-[32rem]';
 
-// Keep in sync with oidc.ts#PROVIDERS.
-const PROVIDER_LABELS: {[issuer: string]: string} = {
+export const PROVIDER_LABELS: {[issuer: string]: string} = {
   'https://accounts.google.com': 'Google',
   'https://appleid.apple.com': 'Apple',
   'https://www.openstreetmap.org': 'OpenStreetMap',

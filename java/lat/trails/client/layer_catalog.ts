@@ -2,6 +2,22 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 
+import {
+  AIRPORTS_COLLECTION_ID,
+  AIRSPACE_COLLECTION_ID,
+  AIR_QUALITY_COLLECTION_ID,
+  BURNT_AREAS_COLLECTION_ID,
+  EUROPEAN_AIR_QUALITY_COLLECTION_ID,
+  FIRE_PERIMETERS_COLLECTION_ID,
+  JAPANESE_NATIONAL_PARKS_COLLECTION_ID,
+  MOTOR_VEHICLE_USE_COLLECTION_ID,
+  NAVAIDS_COLLECTION_ID,
+  PROTECTED_AREAS_COLLECTION_ID,
+  PUBLIC_LAND_COLLECTION_ID,
+  REPORTING_POINTS_COLLECTION_ID,
+  RIVER_GAUGES_COLLECTION_ID,
+  WEATHER_STATIONS_COLLECTION_ID,
+} from 'java/lat/trails/wire/wire';
 import { Camera } from 'js/map/camera';
 import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT, WORLDCOVER_COPYRIGHT } from 'js/map/common/copyrights';
 import { Copyright, RgbaU32 } from 'js/map/common/types';
@@ -248,20 +264,6 @@ const ECMWF_LOOKBACK_CYCLES = 12;
 export const SKY_LAYER_ID = 'weather/sun_moon';
 const SNOW_DEPTH_ID = 'us/conditions/snow_depth';
 const SNOW_WATER_ID = 'us/conditions/snow_water';
-// Keep in sync with Conditions.kt
-const AIR_QUALITY_COLLECTION_ID = '09afe7ea-ffe9-41b3-ac05-580758a5ac2f';
-const BURNT_AREAS_COLLECTION_ID = 'c0e8127d-7dd0-4eca-83e8-19a3abda8620';
-const EUROPEAN_AIR_QUALITY_COLLECTION_ID = '51787c46-2a9e-4374-b26a-50b7475608e1';
-const FIRE_PERIMETERS_COLLECTION_ID = '77ac6377-5725-40bb-bfb5-c0bbcb353617';
-const RIVER_GAUGES_COLLECTION_ID = 'b94ce6bf-753b-4886-8dde-224d5ebcfb7a';
-// Keep in sync with AviationVectors.kt
-const AIRSPACE_COLLECTION_ID = '6febd392-9760-431a-aa30-fa5b0dfcc411';
-const AIRPORTS_COLLECTION_ID = 'c885dc7e-291d-4628-bc8b-7f63231b087a';
-const NAVAIDS_COLLECTION_ID = '73c9b4f8-720b-407d-a503-736dfca2490f';
-const REPORTING_POINTS_COLLECTION_ID = '44fc1319-eae1-4051-8b07-6b1ad24e8861';
-const WEATHER_STATIONS_COLLECTION_ID = '1710b392-414f-4945-b8d3-3c1e13a5436e';
-// Keep in sync with UsfsMvum.kt
-const MOTOR_VEHICLE_USE_COLLECTION_ID = '0dc37e1d-bcac-4720-9a23-1cc0683e7090';
 // Where trailcatalog starts drawing its points, see trail_layer.ts#RENDER_POINT_ZOOM_THRESHOLD
 const POINT_ICON_ZOOM = 14;
 
@@ -507,39 +509,14 @@ export class LayerCatalog extends Disposable {
             // About 47,000, almost half of them in the US
             getPointStreams(/* zoom= */ 7, /* indexBottom= */ 6),
             locations),
-        {
-          kind: 'layer',
-          id: 'aviation/airspace',
-          name: 'Airspace',
-          enabled: false,
-          layer: new CollectionLayer(
-              [OPENAIP_COPYRIGHT],
-              `/api/collections/${AIRSPACE_COLLECTION_ID}`,
-              /* style= */ undefined,
-              // Same snapping and tiling as the public land layer, see there for why. There are
-              // about 34,000 airspaces worldwide, packed densest over Europe.
-              [
-                {minZoom: 0, snap: 11},
-                {minZoom: 7, snap: 14},
-                {minZoom: 10, snap: undefined},
-              ],
-              [
-                {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
-                {
-                  minZoom: 7,
-                  maxZoom: undefined,
-                  indexBottom: 6,
-                  fromLevel: 11,
-                  toLevel: undefined,
-                },
-              ],
-              locations,
-              this.camera,
-              this.renderer,
-          ),
-          controls: [],
-          values: {},
-        },
+        this.newCollectionEntry(
+            'aviation/airspace',
+            'Airspace',
+            AIRSPACE_COLLECTION_ID,
+            OPENAIP_COPYRIGHT,
+            // About 34,000 worldwide, packed densest over Europe
+            getPolygonStreams(),
+            locations),
         this.newCollectionEntry(
             'aviation/navaids',
             'Navaids',
@@ -704,43 +681,18 @@ export class LayerCatalog extends Disposable {
               // 2026-10-13.
               [{minZoom: 0, maxZoom: undefined, indexBottom: 4, fromLevel: 0, toLevel: undefined}],
               locations),
-          {
-            kind: 'layer',
-            id: 'europe/protected_areas',
-            name: 'Protected areas',
-            enabled: false,
-            layer: new CollectionLayer(
-                [{
-                  long: 'Nationally designated areas 2026 from the European Environment Agency',
-                  short: 'EEA',
-                  url: 'https://doi.org/10.2909/028003e7-7585-4d69-92fc-7f81e0cc2340',
-                  license: CC_BY_4,
-                }],
-                '/api/collections/26f6d026-6b2b-47bc-b2d6-1454061b996d',
-                /* style= */ undefined,
-                // Same snapping and tiling as the public land layer, see there for why
-                [
-                  {minZoom: 0, snap: 11},
-                  {minZoom: 7, snap: 14},
-                  {minZoom: 10, snap: undefined},
-                ],
-                [
-                  {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
-                  {
-                    minZoom: 7,
-                    maxZoom: undefined,
-                    indexBottom: 6,
-                    fromLevel: 11,
-                    toLevel: undefined,
-                  },
-                ],
-                locations,
-                this.camera,
-                this.renderer,
-            ),
-            controls: [],
-            values: {},
-          },
+          this.newCollectionEntry(
+              'europe/protected_areas',
+              'Protected areas',
+              PROTECTED_AREAS_COLLECTION_ID,
+              {
+                long: 'Nationally designated areas 2026 from the European Environment Agency',
+                short: 'EEA',
+                url: 'https://doi.org/10.2909/028003e7-7585-4d69-92fc-7f81e0cc2340',
+                license: CC_BY_4,
+              },
+              getPolygonStreams(),
+              locations),
         ],
       }, {
         kind: 'group',
@@ -760,45 +712,22 @@ export class LayerCatalog extends Disposable {
         id: 'jp',
         name: 'Japan',
         enabled: true,
-        children: [{
-          kind: 'layer',
-          id: 'jp/national_parks',
-          name: 'National parks',
-          enabled: false,
-          layer: new CollectionLayer(
-              [{
+        children: [
+          this.newCollectionEntry(
+              'jp/national_parks',
+              'National parks',
+              JAPANESE_NATIONAL_PARKS_COLLECTION_ID,
+              {
                 // PDL 1.0 requires saying the data was processed and by whom.
                 long:
                     'National park zones from the Biodiversity Center of Japan, Ministry of the '
                         + 'Environment, processed by trails.lat',
                 short: 'MOE',
                 url: 'https://www.biodic.go.jp/nps_nwp_nca_cz.html',
-              }],
-              '/api/collections/4e9dde6b-0ccb-4287-adf6-c179f7a08c95',
-              /* style= */ undefined,
-              // Same snapping and tiling as the public land layer, see there for why
-              [
-                {minZoom: 0, snap: 11},
-                {minZoom: 7, snap: 14},
-                {minZoom: 10, snap: undefined},
-              ],
-              [
-                {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
-                {
-                  minZoom: 7,
-                  maxZoom: undefined,
-                  indexBottom: 6,
-                  fromLevel: 11,
-                  toLevel: undefined,
-                },
-              ],
-              locations,
-              this.camera,
-              this.renderer,
-          ),
-          controls: [],
-          values: {},
-        }],
+              },
+              getPolygonStreams(),
+              locations),
+        ],
       }, {
         kind: 'group',
         id: 'ch',
@@ -897,51 +826,22 @@ export class LayerCatalog extends Disposable {
             this.newSnowEntry(SNOW_DEPTH_ID, 'Snow depth', 'snow_depth'),
             this.newSnowEntry(SNOW_WATER_ID, 'Snow water equivalent', 'snow_water'),
           ],
-        }, {
-          kind: 'layer',
-          id: 'us/public_land',
-          name: 'Public land',
-          enabled: false,
-          layer: new CollectionLayer(
-              [{
-                long:
-                    'Protected Areas Database of the United States (PAD-US) 4.1 from the USGS Gap '
-                        + 'Analysis Project',
-                short: 'USGS PAD-US',
-                url: 'https://doi.org/10.5066/P96WBCHS',
-                publicDomain: true,
-              }],
-              '/api/collections/22b0cb56-dc1f-4546-8615-3382dc3eb44a',
-              /* style= */ undefined,
-              // Snapping to a level whose cells are a few pixels across is invisible and saves most
-              // of the geometry, but past zoom 10 we want the real boundaries.
-              [
-                {minZoom: 0, snap: 11},
-                {minZoom: 7, snap: 14},
-                {minZoom: 10, snap: undefined},
-              ],
-              [
-                // Anything wider than a level 10 cell, so about 7 km up. That reaches the national
-                // parks, which sit at levels 6 to 9, and it is everything the coarsest snap can
-                // draw: snapping to level 11 erases whatever is smaller than a level 11 cell
-                // anyway.
-                //
-                // Tiled at level 5 rather than 4 because a tile carries its objects across its
-                // whole cell, so a coarser tiling means pulling parks hundreds of km offscreen once
-                // zoomed in. Level 5 costs 205 requests for a view of the western US instead of 68,
-                // and 2.9 MB instead of 4.5 MB at zoom 11.
-                {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
-                // Everything smaller. A level 6 cell holds up to 11k of these, which is why they
-                // wait until the viewport is small enough to be worth it.
-                {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
-              ],
-              locations,
-              this.camera,
-              this.renderer,
-          ),
-          controls: [],
-          values: {},
-        }, {
+        },
+        this.newCollectionEntry(
+            'us/public_land',
+            'Public land',
+            PUBLIC_LAND_COLLECTION_ID,
+            {
+              long:
+                  'Protected Areas Database of the United States (PAD-US) 4.1 from the USGS Gap '
+                      + 'Analysis Project',
+              short: 'USGS PAD-US',
+              url: 'https://doi.org/10.5066/P96WBCHS',
+              publicDomain: true,
+            },
+            getPolygonStreams(),
+            locations),
+        {
           kind: 'layer',
           id: 'us/topo',
           name: 'US Topo',
@@ -1399,7 +1299,8 @@ export class LayerCatalog extends Disposable {
           [copyright],
           `/api/collections/${collection}`,
           /* style= */ undefined,
-          // Same snapping as the public land layer, see there for why
+          // Snapping to a level whose cells are a few pixels across is invisible and saves most of
+          // the geometry, but past zoom 10 we want the real boundaries.
           [
             {minZoom: 0, snap: 11},
             {minZoom: 7, snap: 14},
@@ -1416,11 +1317,10 @@ export class LayerCatalog extends Disposable {
   }
 
   private newFaaEntry(product: FaaProduct, name: string, z: number, maxZoom: number): LayerEntry {
-    let url = faaUrl(product, this.faaCycles[product]);
     const layer =
         new RasterTileLayer(
             [FAA_COPYRIGHT],
-            url,
+            faaUrl(product, this.faaCycles[product]),
             /* tint= */ 0xFFFFFFFF as RgbaU32,
             z,
             /* extraZoom= */ 0,
@@ -1436,22 +1336,16 @@ export class LayerCatalog extends Disposable {
       controls: [],
       values: {},
       configure: () => {
-        // setUrl drops every loaded tile, so we only call it when the URL changes.
-        const next = faaUrl(product, this.faaCycles[product]);
-        if (next !== url) {
-          url = next;
-          layer.setUrl(next);
-        }
+        layer.setUrl(faaUrl(product, this.faaCycles[product]));
       },
     };
   }
 
   private newSnowEntry(id: string, name: string, decode: Decode): LayerEntry {
-    let url = snodasUrl(this.snodasDay);
     const layer =
         new RasterTileLayer(
             [SNODAS_COPYRIGHT],
-            url,
+            snodasUrl(this.snodasDay),
             /* tint= */ 0xFFFFFFFF as RgbaU32,
             /* z= */ Z_OVERLAY_TERRAIN,
             /* extraZoom= */ 0,
@@ -1476,12 +1370,7 @@ export class LayerCatalog extends Disposable {
         },
       },
       configure: () => {
-        // setUrl drops every loaded tile, so we only call it when the URL changes.
-        const next = snodasUrl(this.snodasDay);
-        if (next !== url) {
-          url = next;
-          layer.setUrl(next);
-        }
+        layer.setUrl(snodasUrl(this.snodasDay));
       },
     };
   }
@@ -1490,42 +1379,26 @@ export class LayerCatalog extends Disposable {
   // archive has the 0/0/0 tile, see faa_charts.py#write_tiles.
   private showLatestFaaCharts(): void {
     for (const product of FAA_PRODUCTS) {
-      const tryCycle = (offset: number) => {
-        if (offset < -1) {
-          return;
-        }
-        const cycle = faaCycle(offset);
-        fetch(`${FAA_TILES_URL}${product}_${cycle}/0/0/0.webp`).then(response => {
-          if (!response.ok) {
-            tryCycle(offset - 1);
-            return;
-          }
-          this.faaCycles[product] = cycle;
-          this.configureEntries(id => id === faaEntryId(product));
-        }, () => {});
-      };
-      tryCycle(0);
+      findFirstLoaded(
+          [faaCycle(0), faaCycle(-1)],
+          cycle => `${FAA_TILES_URL}${product}_${cycle}/0/0/0.webp`,
+          cycle => {
+            this.faaCycles[product] = cycle;
+            this.configureEntries(id => id === faaEntryId(product));
+          });
     }
   }
 
   // Points the snow layers at the newest tiled day. We check for the 0/0/0 tile because every
   // archive has it, see Snodas.kt.
   private showLatestSnow(): void {
-    const tryDay = (offset: number) => {
-      if (offset < -SNODAS_LOOKBACK_DAYS) {
-        return;
-      }
-      const day = utcDay(offset);
-      fetch(`${SNODAS_URL}${day}/0/0/0.png`).then(response => {
-        if (!response.ok) {
-          tryDay(offset - 1);
-          return;
-        }
-        this.snodasDay = day;
-        this.configureEntries(id => id === SNOW_DEPTH_ID || id === SNOW_WATER_ID);
-      }, () => {});
-    };
-    tryDay(0);
+    findFirstLoaded(
+        Array.from({length: SNODAS_LOOKBACK_DAYS + 1}, (_, i) => utcDay(-i)),
+        day => `${SNODAS_URL}${day}/0/0/0.png`,
+        day => {
+          this.snodasDay = day;
+          this.configureEntries(id => id === SNOW_DEPTH_ID || id === SNOW_WATER_ID);
+        });
   }
 
   get forecastStart(): number {
@@ -1724,22 +1597,14 @@ export class LayerCatalog extends Disposable {
   private showLatestWeather(): void {
     const cycleMs = ECMWF_CYCLE_HOURS * HOUR_MS;
     const newest = Math.floor(Date.now() / cycleMs) * cycleMs;
-    const tryRun = (run: number) => {
-      if (run < newest - ECMWF_LOOKBACK_CYCLES * cycleMs) {
-        return;
-      }
-      const tile = ecmwfStepUrl(run, 'wind', 0).replace('${id.zoom}/${id.x}/${id.y}', '0/0/0');
-      fetch(tile).then(response => {
-        if (!response.ok) {
-          tryRun(run - cycleMs);
-          return;
-        }
-        this.ecmwfRun = run;
-        this.configureEntries(id => id.startsWith('weather/'));
-        this.runChanged();
-      }, () => {});
-    };
-    tryRun(newest);
+    findFirstLoaded(
+        Array.from({length: ECMWF_LOOKBACK_CYCLES + 1}, (_, i) => newest - i * cycleMs),
+        run => ecmwfStepUrl(run, 'wind', 0).replace('${id.zoom}/${id.x}/${id.y}', '0/0/0'),
+        run => {
+          this.ecmwfRun = run;
+          this.configureEntries(id => id.startsWith('weather/'));
+          this.runChanged();
+        });
   }
 
   private newArcGisExportEntry(
@@ -1781,7 +1646,6 @@ export class LayerCatalog extends Disposable {
   }
 }
 
-// The first day of the FAA cycle in effect, offset by whole cycles
 // Streams for a collection whose importer puts every point in a level 13 cell, like
 // AviationVectors.kt and Conditions.kt. Below zoom they tile at level 3, where the whole world is
 // 384 cells, so a world view costs at most a few hundred requests. From zoom on they tile at
@@ -1793,6 +1657,39 @@ function getPointStreams(zoom: number, indexBottom: number): Stream[] {
   ];
 }
 
+function getPolygonStreams(): Stream[] {
+  return [
+    // Anything wider than a level 10 cell, so about 7 km up. That reaches the national parks, which
+    // sit at levels 6 to 9, and it is everything the coarsest snap can draw: snapping to level 11
+    // erases whatever is smaller than a level 11 cell anyway.
+    //
+    // Tiled at level 5 rather than 4 because a tile carries its objects across its whole cell, so a
+    // coarser tiling means pulling parks hundreds of km offscreen once zoomed in. Level 5 costs 205
+    // requests for a view of the western US instead of 68, and 2.9 MB instead of 4.5 MB at zoom 11.
+    {minZoom: 0, maxZoom: undefined, indexBottom: 5, fromLevel: 0, toLevel: 10},
+    // Everything smaller. A level 6 cell holds up to 11k of these, which is why they wait until the
+    // viewport is small enough to be worth it.
+    {minZoom: 7, maxZoom: undefined, indexBottom: 6, fromLevel: 11, toLevel: undefined},
+  ];
+}
+
+// Calls found with the first candidate whose probe URL loads, trying them in order
+function findFirstLoaded<T>(
+    candidates: T[], probe: (candidate: T) => string, found: (candidate: T) => void): void {
+  const [candidate, ...rest] = candidates;
+  if (candidate === undefined) {
+    return;
+  }
+  fetch(probe(candidate)).then(response => {
+    if (response.ok) {
+      found(candidate);
+    } else {
+      findFirstLoaded(rest, probe, found);
+    }
+  }, () => {});
+}
+
+// The first day of the FAA cycle in effect, offset by whole cycles
 function faaCycle(offset: number): string {
   const cycleMs = FAA_CYCLE_DAYS * 24 * HOUR_MS;
   const index = Math.floor((Date.now() - FAA_CYCLE_EPOCH_MS) / cycleMs) + offset;

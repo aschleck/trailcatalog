@@ -163,13 +163,7 @@ export class PointCollectionLayer extends Layer {
   }
 
   override hoverLost(source: EventSource): void {
-    if (!this.hovered) {
-      return;
-    }
-
-    this.hovered = undefined;
-    this.redraw();
-    source.trigger(HOVER_CHANGED, {target: undefined});
+    this.highlightPoint(undefined, source);
   }
 
   override loadingData(): boolean {

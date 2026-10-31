@@ -7,10 +7,9 @@ import { GetCurrentUserResponse } from 'trails_lat/proto/data_pb';
 
 import { invalidateCurrentUser, requestData } from './data';
 
-// Keep in sync with oidc.ts#FINISHED_PAGE
-const CHANNEL = 'login';
-const SIGNED_IN = 'signed-in';
-const ACKNOWLEDGED = 'acknowledged';
+export const LOGIN_CHANNEL = 'login';
+export const SIGNED_IN = 'signed-in';
+export const ACKNOWLEDGED = 'acknowledged';
 
 /** Runs /login in a popup so the page underneath keeps its state. */
 export class LoginPopup extends Disposable {
@@ -32,7 +31,7 @@ export class LoginPopup extends Disposable {
     // The popup's callback page tells us it finished over this channel rather than through
     // window.opener, because OpenStreetMap sends Cross-Origin-Opener-Policy: same-origin and that
     // severs the popup from its opener.
-    this.channel = new BroadcastChannel(CHANNEL);
+    this.channel = new BroadcastChannel(LOGIN_CHANNEL);
     this.channel.onmessage = e => {
       if (e.data !== SIGNED_IN || (!this.pending && !this.abandoned)) {
         return;

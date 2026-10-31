@@ -9,22 +9,12 @@ import {
 } from 'external/dev_april_corgi+/js/data/middleware';
 import { DataRequestor, FqMethods } from 'external/dev_april_corgi+/js/data/requestor';
 
+import { WRITE_METHODS } from 'java/lat/trails/wire/wire';
+
 import { BACKENDS } from './backends';
 
-// Write RPCs that cause cache invalidations. Keep in sync with ApiServer.kt#WRITES.
-const WRITES: string[] = [
-  'lat.trails.DataService/AcceptInvite',
-  'lat.trails.DataService/CreateCollection',
-  'lat.trails.DataService/CreateInvite',
-  'lat.trails.DataService/DeleteAccount',
-  'lat.trails.DataService/DeleteCollection',
-  'lat.trails.DataService/RevokeInvite',
-  'lat.trails.DataService/Save',
-  'lat.trails.DataService/SetAnyoneCanView',
-  'lat.trails.DataService/SetGrant',
-  'lat.trails.DataService/SetViewState',
-  'lat.trails.DataService/UpdateCollection',
-] satisfies Array<keyof FqMethods<typeof BACKENDS>>;
+const WRITES: readonly string[] =
+    WRITE_METHODS satisfies ReadonlyArray<keyof FqMethods<typeof BACKENDS>>;
 
 // Read RPCs that are invalidated when a write comes through or somebody signs in
 const USER_DEPENDENT_READS: string[] = [

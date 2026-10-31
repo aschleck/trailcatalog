@@ -8,20 +8,16 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import java.util.UUID
 import kotlin.system.exitProcess
+import lat.trails.wire.AIR_QUALITY_COLLECTION_ID
+import lat.trails.wire.BURNT_AREAS_COLLECTION_ID
+import lat.trails.wire.EUROPEAN_AIR_QUALITY_COLLECTION_ID
+import lat.trails.wire.FIRE_PERIMETERS_COLLECTION_ID
+import lat.trails.wire.RIVER_GAUGES_COLLECTION_ID
 import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.parseFlags
 
 private val logger = LoggerFactory.getLogger("Conditions")
-
-// Keep in sync with viewer_controller.ts
-private val AIR_QUALITY_COLLECTION_ID = UUID.fromString("09afe7ea-ffe9-41b3-ac05-580758a5ac2f")
-private val BURNT_AREAS_COLLECTION_ID = UUID.fromString("c0e8127d-7dd0-4eca-83e8-19a3abda8620")
-private val EUROPEAN_AIR_QUALITY_COLLECTION_ID =
-    UUID.fromString("51787c46-2a9e-4374-b26a-50b7475608e1")
-private val FIRE_PERIMETERS_COLLECTION_ID = UUID.fromString("77ac6377-5725-40bb-bfb5-c0bbcb353617")
-private val RIVER_GAUGES_COLLECTION_ID = UUID.fromString("b94ce6bf-753b-4886-8dde-224d5ebcfb7a")
 
 // https://data-nifc.opendata.arcgis.com/datasets/nifc::wfigs-current-interagency-fire-perimeters
 private const val FIRE_PERIMETERS_URL =

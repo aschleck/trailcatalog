@@ -24,6 +24,7 @@ import io.javalin.http.UnauthorizedResponse
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.sql.Connection
+import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.security.SecureRandom
 import java.sql.Types
@@ -96,7 +97,9 @@ import lat.trails.proto.Write
 import lat.trails.wire.KIND_PACKED_PATH
 import lat.trails.wire.KIND_PACKED_POINT
 import lat.trails.wire.KIND_UUID_JSON
+import lat.trails.wire.MAX_LINES_BY_ID
 import lat.trails.wire.OBJECTS_WIRE_VERSION
+import lat.trails.wire.WRITE_METHODS
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
 import org.trailcatalog.common.DeltaInt64
@@ -130,9 +133,6 @@ private val ANONYMOUS_USER_ID = UUID.fromString("00000000-0000-0000-0000-0000000
 private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
 private val TRAILCATALOG_POINTS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000002"
 
-// A batch from line_refiner.ts#BATCH. 128 ids at 37 characters each is 4.7 KB, under the 8 KB
-// buffer nginx's large_client_header_buffers default holds a request line in.
-private const val MAX_LINES_BY_ID = 128
 
 private const val LINE_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters, time_seconds"
 private const val POINT_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters"
@@ -164,22 +164,6 @@ fun main(args: Array<String>) {
   }.start("127.0.0.1", port.value)
 }
 
-// Keep in sync with data.ts#WRITES
-private val WRITES =
-    setOf(
-        "lat.trails.DataService/AcceptInvite",
-        "lat.trails.DataService/CreateCollection",
-        "lat.trails.DataService/CreateInvite",
-        "lat.trails.DataService/DeleteAccount",
-        "lat.trails.DataService/DeleteCollection",
-        "lat.trails.DataService/RevokeInvite",
-        "lat.trails.DataService/Save",
-        "lat.trails.DataService/SetAnyoneCanView",
-        "lat.trails.DataService/SetGrant",
-        "lat.trails.DataService/SetViewState",
-        "lat.trails.DataService/UpdateCollection",
-    )
-
 private val dispatcher = Executors.newVirtualThreadPerTaskExecutor()
 
 // Runs the keys in parallel, except that a write waits for every key before it and every key
@@ -194,7 +178,7 @@ private fun fetchData(ctx: Context) {
   for (key in request.get("keys").elements()) {
     val method = key.get("method").asText() ?: throw IllegalArgumentException("Key has no method")
     val payload = key.get("request")
-    val write = WRITES.contains(method)
+    val write = WRITE_METHODS.contains(method)
     val before = if (write) responses.toList() else responses.subList(0, barrier).toList()
     responses.add(
         dispatcher.submit<Any> {
@@ -381,19 +365,13 @@ private fun deleteAccount(ctx: Context): DeleteAccountResponse {
 
 private fun getCurrentUser(ctx: Context): GetCurrentUserResponse {
   val response = GetCurrentUserResponse.newBuilder()
-  // The frontend sets this header from the login cookie and always overwrites what the browser
-  // sent, so an empty one is a signed out browser.
-  val id = ctx.header("X-User-ID")
-  if (id.isNullOrEmpty()) {
-    return response.build()
-  }
-
+  val id = optionalUser(ctx) ?: return response.build()
   hikari.connection.use { connection ->
     connection
         .prepareStatement(
             "SELECT id, display_name, picture_url FROM users WHERE id = ? AND enabled")
         .apply {
-          setObject(1, UUID.fromString(id))
+          setObject(1, id)
         }
         .executeQuery()
         .use { results ->
@@ -438,8 +416,7 @@ private fun listCollections(ctx: Context): ListCollectionsResponse {
 
     connection
         .prepareStatement(
-            "SELECT c.id, c.name, c.version, g.role, "
-                + "c.low_lat_degrees, c.low_lng_degrees, c.high_lat_degrees, c.high_lng_degrees "
+            "SELECT c.id, c.name, c.version, g.role, $BOUND_COLUMNS "
                 + "FROM collection_grants g "
                 + "JOIN collections c ON c.id = g.collection_id "
                 + "WHERE g.grantee_id = ? "
@@ -692,10 +669,7 @@ private fun deleteCollection(
   val user = requireUser(ctx)
   val collection = parseUuid(request.id)
   transact { connection ->
-    val access = lockEditableCollection(connection, collection, user)
-    if (access.role != Role.ROLE_OWNER) {
-      throw ForbiddenResponse()
-    }
+    lockOwnedCollection(connection, collection, user)
     deleteCollectionRows(connection, collection)
   }
   return DeleteCollectionResponse.getDefaultInstance()
@@ -1657,8 +1631,8 @@ private fun updateCovering(connection: Connection, collection: UUID, version: Lo
 
   connection
       .prepareStatement(
-          "UPDATE collections SET covering = ?, version = ?, low_lat_degrees = ?, "
-              + "low_lng_degrees = ?, high_lat_degrees = ?, high_lng_degrees = ? WHERE id = ?")
+          "UPDATE collections SET covering = ?, version = ?, ($BOUND_COLUMNS) = (?, ?, ?, ?) "
+              + "WHERE id = ?")
       .apply {
         setBytes(1, encodeCovering(cells))
         setLong(2, version)
@@ -1703,7 +1677,8 @@ private fun isUserActive(user: UUID): Boolean {
   }
 }
 
-// An empty header is a signed out browser, see getCurrentUser.
+// The frontend sets this header from the login cookie and always overwrites what the browser sent,
+// so an empty one is a signed out browser.
 private fun optionalUser(ctx: Context): UUID? {
   val id = ctx.header("X-User-ID")
   return if (id.isNullOrEmpty()) null else UUID.fromString(id)
@@ -1756,14 +1731,7 @@ private fun fetchCollectionCovering(ctx: Context) {
       // lands.
       it.writeVarLong(epochTracker.epoch.toLong())
 
-      val covering = ByteArrayOutputStream().use {
-        DelegatingEncodedOutputStream(it).use {
-          it.writeVarInt(1)
-          it.writeVarInt(S2CellId.FACE_CELLS.size)
-          S2CellId.FACE_CELLS.forEach { id -> it.writeLong(id.id()) }
-        }
-        it.toByteArray()
-      }
+      val covering = encodeCovering(S2CellId.FACE_CELLS.toList())
       it.writeVarInt(covering.size)
       it.write(covering)
       // no schema because the client has its own style for these
@@ -1918,6 +1886,36 @@ private fun writeLinesById(
   }
 }
 
+private fun DelegatingEncodedOutputStream.writeIdAndData(id: UUID, data: String) {
+  writeLong(id.leastSignificantBits)
+  writeLong(id.mostSignificantBits)
+  val utf8 = data.toByteArray(StandardCharsets.UTF_8)
+  writeVarInt(utf8.size)
+  write(utf8)
+}
+
+private class CellFilter(
+    cell: S2CellId,
+    indexBottom: Int,
+    private val levelFloor: Long?,
+    private val levelCeiling: Long?,
+) {
+  private val single = cell.level() < indexBottom
+  private val values =
+      (if (single) listOf(cell.id()) else listOf(cell.rangeMin().id(), cell.rangeMax().id())) +
+          listOfNotNull(levelFloor, levelCeiling)
+
+  fun sql(alias: String): String {
+    return (if (single) "$alias.cell = ? " else "($alias.cell >= ? AND $alias.cell <= ?) ") +
+        (if (levelFloor != null) "AND ($alias.cell & -$alias.cell) >= ? " else "") +
+        (if (levelCeiling != null) "AND ($alias.cell & -$alias.cell) <= ? " else "")
+  }
+
+  fun bind(statement: PreparedStatement, first: Int) {
+    values.forEachIndexed { i, value -> statement.setLong(first + i, value) }
+  }
+}
+
 private fun fetchTrailsLatObjects(
   it: DelegatingEncodedOutputStream,
   cell: S2CellId,
@@ -1928,7 +1926,7 @@ private fun fetchTrailsLatObjects(
   snap: Int?,
 ) {
   hikari.connection.use { connection ->
-    val single = cell.level() < indexBottom
+    val cells = CellFilter(cell, indexBottom, levelFloor, levelCeiling)
 
     // lines
     connection
@@ -1938,25 +1936,11 @@ private fun fetchTrailsLatObjects(
                 + "WHERE "
                 + "l.collection = ? AND "
                 + "l.deleted IS NULL AND "
-                + (if (single) "l.cell = ? " else "(l.cell >= ? AND l.cell <= ?) ")
-                + (if (levelFloor != null) "AND (l.cell & -l.cell) >= ? " else "")
-                + (if (levelCeiling != null) "AND (l.cell & -l.cell) <= ? " else "")
+                + cells.sql("l")
       )
       .apply {
         setObject(1, UUID.fromString(collection))
-        if (single) {
-          setLong(2, cell.id())
-        } else {
-          setLong(2, cell.rangeMin().id())
-          setLong(3, cell.rangeMax().id())
-        }
-        var index = if (single) 3 else 4
-        if (levelFloor != null) {
-          setLong(index++, levelFloor)
-        }
-        if (levelCeiling != null) {
-          setLong(index, levelCeiling)
-        }
+        cells.bind(this, 2)
       }
       .executeQuery()
       .use { results ->
@@ -1972,12 +1956,7 @@ private fun fetchTrailsLatObjects(
         }
         it.writeVarInt(lines.size)
         for (line in lines) {
-          it.writeLong(line.id.leastSignificantBits)
-          it.writeLong(line.id.mostSignificantBits)
-          line.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
-            it.writeVarInt(utf8.size)
-            it.write(utf8)
-          }
+          it.writeIdAndData(line.id, line.data)
           // DeltaLatLngE7 leads with its own point count and needs no alignment, so the geometry
           // goes to the wire in the encoding it is stored in.
           it.write(line.latLngDegrees)
@@ -1992,25 +1971,11 @@ private fun fetchTrailsLatObjects(
                 + "WHERE "
                 + "p.collection = ? AND "
                 + "p.deleted IS NULL AND "
-                + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
-                + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
-                + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
+                + cells.sql("p")
       )
       .apply {
         setObject(1, UUID.fromString(collection))
-        if (single) {
-          setLong(2, cell.id())
-        } else {
-          setLong(2, cell.rangeMin().id())
-          setLong(3, cell.rangeMax().id())
-        }
-        var index = if (single) 3 else 4
-        if (levelFloor != null) {
-          setLong(index++, levelFloor)
-        }
-        if (levelCeiling != null) {
-          setLong(index, levelCeiling)
-        }
+        cells.bind(this, 2)
       }
       .executeQuery()
       .use { results ->
@@ -2043,12 +2008,7 @@ private fun fetchTrailsLatObjects(
         }
         it.writeVarInt(polygons.size)
         for (polygon in polygons) {
-          it.writeLong(polygon.id.leastSignificantBits)
-          it.writeLong(polygon.id.mostSignificantBits)
-          polygon.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
-            it.writeVarInt(utf8.size)
-            it.write(utf8)
-          }
+          it.writeIdAndData(polygon.id, polygon.data)
           it.writeVarInt(polygon.s2Polygon.size)
           it.write(polygon.s2Polygon)
         }
@@ -2062,25 +2022,11 @@ private fun fetchTrailsLatObjects(
                 + "WHERE "
                 + "p.collection = ? AND "
                 + "p.deleted IS NULL AND "
-                + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
-                + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
-                + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
+                + cells.sql("p")
       )
       .apply {
         setObject(1, UUID.fromString(collection))
-        if (single) {
-          setLong(2, cell.id())
-        } else {
-          setLong(2, cell.rangeMin().id())
-          setLong(3, cell.rangeMax().id())
-        }
-        var index = if (single) 3 else 4
-        if (levelFloor != null) {
-          setLong(index++, levelFloor)
-        }
-        if (levelCeiling != null) {
-          setLong(index, levelCeiling)
-        }
+        cells.bind(this, 2)
       }
       .executeQuery()
       .use { results ->
@@ -2091,12 +2037,7 @@ private fun fetchTrailsLatObjects(
         }
         it.writeVarInt(points.size)
         for (point in points) {
-          it.writeLong(point.id.leastSignificantBits)
-          it.writeLong(point.id.mostSignificantBits)
-          point.data.toByteArray(StandardCharsets.UTF_8).let { utf8 ->
-            it.writeVarInt(utf8.size)
-            it.write(utf8)
-          }
+          it.writeIdAndData(point.id, point.data)
           // already encoded with DeltaLatLngE7
           it.write(point.latLngDegrees)
         }
@@ -2116,7 +2057,7 @@ private fun fetchTrailcatalogPaths(
 ) {
   val epoch = epochTracker.epoch
   hikariTrailcatalog.connection.use { connection ->
-    val single = cell.level() < indexBottom
+    val cells = CellFilter(cell, indexBottom, levelFloor, levelCeiling)
 
     // lines
     connection
@@ -2125,25 +2066,11 @@ private fun fetchTrailcatalogPaths(
                 + "FROM paths p "
                 + "WHERE "
                 + "p.epoch = ? AND "
-                + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
-                + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
-                + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
+                + cells.sql("p")
       )
       .apply {
         setInt(1, epoch)
-        if (single) {
-          setLong(2, cell.id())
-        } else {
-          setLong(2, cell.rangeMin().id())
-          setLong(3, cell.rangeMax().id())
-        }
-        var index = if (single) 3 else 4
-        if (levelFloor != null) {
-          setLong(index++, levelFloor)
-        }
-        if (levelCeiling != null) {
-          setLong(index, levelCeiling)
-        }
+        cells.bind(this, 2)
       }
       .executeQuery()
       .use { results ->
@@ -2215,32 +2142,18 @@ private fun fetchTrailcatalogPoints(
 ) {
   val epoch = epochTracker.epoch
   hikariTrailcatalog.connection.use { connection ->
-    val single = cell.level() < indexBottom
+    val cells = CellFilter(cell, indexBottom, levelFloor, levelCeiling)
     connection
       .prepareStatement(
         "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
                 + "FROM points p "
                 + "WHERE "
                 + "p.epoch = ? AND "
-                + (if (single) "p.cell = ? " else "(p.cell >= ? AND p.cell <= ?) ")
-                + (if (levelFloor != null) "AND (p.cell & -p.cell) >= ? " else "")
-                + (if (levelCeiling != null) "AND (p.cell & -p.cell) <= ? " else "")
+                + cells.sql("p")
       )
       .apply {
         setInt(1, epoch)
-        if (single) {
-          setLong(2, cell.id())
-        } else {
-          setLong(2, cell.rangeMin().id())
-          setLong(3, cell.rangeMax().id())
-        }
-        var index = if (single) 3 else 4
-        if (levelFloor != null) {
-          setLong(index++, levelFloor)
-        }
-        if (levelCeiling != null) {
-          setLong(index, levelCeiling)
-        }
+        cells.bind(this, 2)
       }
       .executeQuery()
       .use { results ->

@@ -10,10 +10,10 @@ import {
 import { LatLngRect, LatLngZoom } from 'js/map/common/types';
 import { MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
-import { GetCollectionResponse, Role } from 'trails_lat/proto/data_pb';
+import { GetCollectionResponse } from 'trails_lat/proto/data_pb';
 
 import { State, ViewerController } from './viewer_controller';
-import { descriptionOf } from './collection_data';
+import { canEdit, descriptionOf } from './collection_data';
 import { requestData } from './data';
 import {
   EditableFeature,
@@ -102,7 +102,7 @@ export function OverviewElement(
       },
       drawnLength: undefined,
       inspected: undefined,
-      joining: false,
+      joining: undefined,
       layers: {nodes: [], expanded: new Set()},
       lineProfile: undefined,
       measure: {
@@ -122,7 +122,9 @@ export function OverviewElement(
     };
   }
   const state = inState;
-  const readOnly = state.collection?.role === Role.READ;
+  // The routed collection, which is undefined while it loads after the route changed
+  const open = state.collection?.id === collection ? state.collection : undefined;
+  const readOnly = collection !== undefined && !canEdit(open);
   const tree = buildTree(state.features.all, state.features.schema);
   setTitle(state.collection?.name ? `${state.collection.name} - trails.lat` : 'trails.lat');
   setDescription(
@@ -145,7 +147,6 @@ export function OverviewElement(
   // Every route change brings new parameters, so marking them hands the map one camera per route
   // instead of undoing the user's panning on each render. Without a camera in the URL we fit the
   // collection's bound, and the map stays where it is when there's neither.
-  const bound = state.collection?.id === collection ? state.collection?.bound : undefined;
   let camera: LatLngRect|LatLngZoom|undefined = undefined;
   if (!parameters._used) {
     parameters._used = "true";
@@ -155,7 +156,8 @@ export function OverviewElement(
         lng: Number(parameters.lng),
         zoom: floatCoalesce(parameters.zoom, 12),
       };
-    } else if (bound) {
+    } else if (open?.bound) {
+      const bound = open.bound;
       camera = {
         low: [bound.lowLatDegrees, bound.lowLngDegrees],
         high: [bound.highLatDegrees, bound.highLngDegrees],

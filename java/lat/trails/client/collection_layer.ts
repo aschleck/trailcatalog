@@ -72,6 +72,14 @@ export type HeldObject =
     | {kind: 'point'; key: CellKey; value: Point}
     | {kind: 'polygon'; key: CellKey; value: Polygon};
 
+interface Run {
+  fill: RgbaU32;
+  stroke: RgbaU32;
+  radius: number;
+  pattern: LinePattern;
+  points: ArrayLike<number>;
+}
+
 // The object the cursor is over, drawn from its own buffers so it can sit above its cell. Which
 // object that is lives in lastHoverTarget.
 interface Highlight {
@@ -289,25 +297,16 @@ export class CollectionLayer extends Layer {
 
   /** Draws the object as selected, or stops drawing a selection. */
   selectObject(object: HeldObject|undefined): void {
-    const runs: Array<{
-      fill: RgbaU32;
-      radius: number;
-      pattern: LinePattern;
-      points: ArrayLike<number>;
-    }> = [];
-    if (object?.kind === 'line') {
-      const {points, style} = object.value;
-      runs.push({fill: style.fill, radius: style.radius, pattern: style.pattern, points});
-    } else if (object?.kind === 'point') {
-      const {position: [x, y], style} = object.value;
-      runs.push({fill: style.fill, radius: style.radius, pattern: 'solid', points: [x, y, x, y]});
-    } else if (object?.kind === 'polygon') {
+    const runs: Array<Omit<Run, 'stroke'>> = [];
+    if (object?.kind === 'polygon') {
       const {outline, style} = object.value;
       const fill = style.outline?.fill ?? raiseAlpha(style.fill, 0xFF);
       const radius = style.outline?.radius ?? HOVER_POLYGON_OUTLINE_RADIUS_PX;
       for (const ring of outline) {
         runs.push({fill, radius, pattern: 'solid', points: ring});
       }
+    } else if (object) {
+      runs.push(getRun(object));
     }
 
     const selection = this.selection;
@@ -397,17 +396,19 @@ export class CollectionLayer extends Layer {
     }
     this.highlighted = object;
 
-    if (object.kind === 'point') {
-      const point = object.value;
-      const [x, y] = point.position;
-      highlight.geometry = growBuffer(highlight.geometry, LineProgram.bytesNeeded(2));
+    if (object.kind !== 'polygon') {
+      const run = getRun(object);
+      highlight.geometry =
+          growBuffer(highlight.geometry, LineProgram.bytesNeeded(run.points.length / 2));
       const result =
           LineProgram.push(
-              point.style.fill,
+              object.kind === 'point' ? run.fill : HOVER_FILL,
               HOVER_STROKE,
-              point.style.radius + HOVER_POINT_PADDING_PX,
+              object.kind === 'point'
+                  ? run.radius + HOVER_POINT_PADDING_PX
+                  : Math.max(run.radius + HOVER_LINE_PADDING_PX, HOVER_LINE_MIN_RADIUS_PX),
               /* pattern= */ 'solid',
-              [x, y, x, y],
+              run.points,
               highlight.geometry,
               /* offset= */ 0);
       highlight.drawables.push({
@@ -423,50 +424,7 @@ export class CollectionLayer extends Layer {
         vertexCount: result.vertexCount,
         z: Z_USER_DATA_HIGHLIGHT,
       });
-
-      // Hide the existing object
-      this.renderer.uploadDataSubset(
-        new ArrayBuffer(point.geometryByteLength),
-        point.geometryOffset,
-        point.geometryByteLength,
-        cell.glGeometryBuffer);
-    } else if (object.kind === 'line') {
-      const line = object.value;
-      highlight.geometry =
-          growBuffer(highlight.geometry, LineProgram.bytesNeeded(line.points.length / 2));
-
-      const result =
-          LineProgram.push(
-              HOVER_FILL,
-              HOVER_STROKE,
-              Math.max(line.style.radius + HOVER_LINE_PADDING_PX, HOVER_LINE_MIN_RADIUS_PX),
-              /* pattern= */ 'solid',
-              line.points,
-              highlight.geometry,
-              /* offset= */ 0);
-
-      const drawable = {
-        elements: undefined,
-        geometry: highlight.glGeometryBuffer,
-        geometryByteLength: result.geometryByteLength,
-        geometryOffset: 0,
-        instanced: {
-          count: result.instanceCount,
-        },
-        program: this.renderer.lineProgram,
-        texture: undefined,
-        vertexCount: result.vertexCount,
-        z: Z_USER_DATA_HIGHLIGHT,
-      };
-      highlight.drawables.push(drawable);
-
-      // Hide the existing object
-      this.renderer.uploadDataSubset(
-        new ArrayBuffer(line.geometryByteLength),
-        line.geometryOffset,
-        line.geometryByteLength,
-        cell.glGeometryBuffer);
-    } else if (object.kind === 'polygon') {
+    } else {
       const polygon = object.value;
       const triangles = polygon.triangles;
       // A fill color rides in front of the vertices, so the buffer holds one extra float.
@@ -542,34 +500,23 @@ export class CollectionLayer extends Layer {
         highlight.drawables.push(drawable);
       }
 
-      // Hide the existing object
-      this.renderer.uploadDataSubset(
-        new ArrayBuffer(polygon.geometryByteLength),
-        polygon.geometryOffset,
-        polygon.geometryByteLength,
-        cell.glGeometryBuffer);
-
       this.renderer.uploadIndices(
         highlight.index, highlight.index.byteLength, highlight.glIndexBuffer);
-    } else {
-      throw checkExhaustive(object);
     }
 
+    // Hide the existing object
+    const {geometryByteLength, geometryOffset} = object.value;
+    this.renderer.uploadDataSubset(
+      new ArrayBuffer(geometryByteLength),
+      geometryOffset,
+      geometryByteLength,
+      cell.glGeometryBuffer);
     this.renderer.uploadData(
       highlight.geometry, highlight.geometry.byteLength, highlight.glGeometryBuffer);
   }
 
   override hoverLost(source: EventSource): void {
-    // A query in flight would set the highlight back up after we clear it.
-    this.hoverGeneration += 1;
-    if (!this.lastHoverTarget) {
-      return;
-    }
-
-    this.redraw();
-    this.clearHighlight();
-    this.lastHoverTarget = undefined;
-    source.trigger(HOVER_CHANGED, {target: undefined});
+    this.highlightObject(undefined, source);
   }
 
   override loadingData(): boolean {
@@ -943,42 +890,19 @@ export class CollectionLayer extends Layer {
     const object = this.highlighted;
     const cell = object ? this.cells.get(object.key) : undefined;
     if (object && cell) {
-      if (object.kind === 'line') {
-        const line = object.value;
-        const restored = new ArrayBuffer(line.geometryByteLength);
-        LineProgram.push(
-            line.style.fill,
-            line.style.stroke,
-            line.style.radius,
-            line.style.pattern,
-            line.points,
-            restored,
-            /* offset= */ 0);
+      const {geometryByteLength, geometryOffset} = object.value;
+      if (object.kind === 'polygon') {
         this.renderer.uploadDataSubset(
-          restored, line.geometryOffset, line.geometryByteLength, cell.glGeometryBuffer);
-      } else if (object.kind === 'point') {
-        const point = object.value;
-        const [x, y] = point.position;
-        const restored = new ArrayBuffer(point.geometryByteLength);
-        LineProgram.push(
-            point.style.fill,
-            point.style.stroke,
-            point.style.radius,
-            /* pattern= */ 'solid',
-            [x, y, x, y],
-            restored,
-            /* offset= */ 0);
-        this.renderer.uploadDataSubset(
-          restored, point.geometryOffset, point.geometryByteLength, cell.glGeometryBuffer);
-      } else if (object.kind === 'polygon') {
-        const polygon = object.value;
-        this.renderer.uploadDataSubset(
-          Float32Array.from(polygon.triangles.geometry).buffer,
-          polygon.geometryOffset,
-          polygon.geometryByteLength,
+          Float32Array.from(object.value.triangles.geometry).buffer,
+          geometryOffset,
+          geometryByteLength,
           cell.glGeometryBuffer);
       } else {
-        throw checkExhaustive(object);
+        const {fill, stroke, radius, pattern, points} = getRun(object);
+        const restored = new ArrayBuffer(geometryByteLength);
+        LineProgram.push(fill, stroke, radius, pattern, points, restored, /* offset= */ 0);
+        this.renderer.uploadDataSubset(
+          restored, geometryOffset, geometryByteLength, cell.glGeometryBuffer);
       }
     }
 
@@ -1014,6 +938,16 @@ function buildRowSchema(schema: CollectionSchema, kind: FieldKind): Schema|undef
 // The id an object goes into the index under, and the key objects holds it by.
 function objectKey(id: RawUuid): string {
   return `${id.msb}-${id.lsb}`;
+}
+
+// A point draws as a zero length line, so lines and points both draw as a LineProgram run
+function getRun(object: Exclude<HeldObject, {kind: 'polygon'}>): Run {
+  if (object.kind === 'line') {
+    const {points, style: {fill, stroke, radius, pattern}} = object.value;
+    return {fill, stroke, radius, pattern, points};
+  }
+  const {position: [x, y], style: {fill, stroke, radius}} = object.value;
+  return {fill, stroke, radius, pattern: 'solid', points: [x, y, x, y]};
 }
 
 function raiseAlpha(color: RgbaU32, alpha: number): RgbaU32 {

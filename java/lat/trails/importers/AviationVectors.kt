@@ -3,19 +3,16 @@ package lat.trails.importers
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S2LatLng
-import java.util.UUID
 import kotlin.system.exitProcess
+import lat.trails.wire.AIRPORTS_COLLECTION_ID
+import lat.trails.wire.AIRSPACE_COLLECTION_ID
+import lat.trails.wire.NAVAIDS_COLLECTION_ID
+import lat.trails.wire.REPORTING_POINTS_COLLECTION_ID
+import lat.trails.wire.WEATHER_STATIONS_COLLECTION_ID
 import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.parseFlags
 
 private val logger = LoggerFactory.getLogger("AviationVectors")
-
-// Keep in sync with layer_catalog.ts
-private val AIRSPACE_COLLECTION_ID = UUID.fromString("6febd392-9760-431a-aa30-fa5b0dfcc411")
-private val AIRPORTS_COLLECTION_ID = UUID.fromString("c885dc7e-291d-4628-bc8b-7f63231b087a")
-private val NAVAIDS_COLLECTION_ID = UUID.fromString("73c9b4f8-720b-407d-a503-736dfca2490f")
-private val REPORTING_POINTS_COLLECTION_ID = UUID.fromString("44fc1319-eae1-4051-8b07-6b1ad24e8861")
-private val WEATHER_STATIONS_COLLECTION_ID = UUID.fromString("1710b392-414f-4945-b8d3-3c1e13a5436e")
 
 // openAIP regenerates every country's exports daily and only links them from this page, as signed
 // URLs that expire after a day. The page embeds its listing as a script object, which we read with

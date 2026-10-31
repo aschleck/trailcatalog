@@ -9,6 +9,7 @@ const GPX = `<?xml version="1.0" encoding="UTF-8"?>
   <rte><rtept lat="46.8100000" lon="-121.8100000" /></rte>
   <trk>
     <name>Camp Muir</name>
+    <desc>Up the snowfield</desc>
     <trkseg>
       <trkpt lat="46.8593690" lon="-121.7478880">
         <ele>1400.00</ele>
@@ -56,7 +57,7 @@ test('reads a track segment', () => {
   expect(lines).toHaveLength(2);
 
   const line = lines[0];
-  expect(line.data).toEqual({name: 'Camp Muir'});
+  expect(line.data).toEqual({name: 'Camp Muir', description: 'Up the snowfield'});
   expect(Array.from(line.latLngE7)).toEqual([
     468593690, -1217478880,
     468603690, -1217468880,

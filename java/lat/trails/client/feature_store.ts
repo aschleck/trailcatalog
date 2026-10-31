@@ -4,6 +4,7 @@ import {
   EditableLine,
   EditablePoint,
   EditablePolygon,
+  getParents,
   snapshot,
 } from './features';
 import { SaveQueue } from './save_queue';
@@ -42,6 +43,8 @@ export class FeatureStore {
   private readonly undoStack: Edit[];
   private readonly redoStack: Edit[];
   private readonly listeners: Array<() => void>;
+  // Built on first use after each change
+  private parents: Map<string, string|undefined>|undefined;
   // Set for a collection shared with the user to view, where every edit would fail to save.
   private readOnly: boolean;
 
@@ -52,6 +55,7 @@ export class FeatureStore {
     this.undoStack = [];
     this.redoStack = [];
     this.listeners = [];
+    this.parents = undefined;
     this.readOnly = false;
   }
 
@@ -134,12 +138,9 @@ export class FeatureStore {
     return descendants;
   }
 
-  // A folder_id naming a folder that is gone puts the feature at the root, or else it would
-  // vanish from the list with nothing to open to find it. Keep in sync with
-  // feature_list.tsx#buildTree.
   parentOf(feature: EditableFeature): string|undefined {
-    const parent = feature.data.folder_id;
-    return parent !== undefined && this.live.get(parent)?.kind === 'folder' ? parent : undefined;
+    this.parents ??= getParents(this.live.values());
+    return this.parents.get(feature.id);
   }
 
   get canUndo(): boolean {
@@ -259,6 +260,7 @@ export class FeatureStore {
   }
 
   private changed(): void {
+    this.parents = undefined;
     for (const listener of this.listeners) {
       listener();
     }

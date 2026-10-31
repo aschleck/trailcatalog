@@ -7,6 +7,7 @@ import postgres from 'postgres';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { PageOptions, serve } from 'external/dev_april_corgi+/js/server/server';
+import { TRAILS_LAT_SCHEMA } from 'java/lat/trails/wire/wire';
 
 import { App } from '../client/app';
 import { DEFAULT_DESCRIPTION } from '../client/overview_element';
@@ -25,8 +26,6 @@ declare module 'fastify' {
 const COOKIE_SECRET = checkExists(process.env.COOKIE_SECRET);
 const DEBUG = process.env.DEBUG === 'true';
 
-// Keep in sync with common/Database.kt#SCHEMA.
-const SCHEMA = 'migration_14_bounds';
 
 // A GPX point costs about 45 bytes of JSON across its lat, lng, elevation, and time, so this fits
 // saving a track of a million and a half points. Keep in sync with nginx.conf and the trails.lat
@@ -35,7 +34,7 @@ const BODY_LIMIT_BYTES = 64 * 1024 * 1024;
 
 const encrypter = new Encrypter(COOKIE_SECRET);
 const loginEnforcer = new LoginEnforcer(encrypter);
-const sql = postgres({connection: {search_path: SCHEMA}});
+const sql = postgres({connection: {search_path: TRAILS_LAT_SCHEMA}});
 
 async function initialize(server: FastifyInstance): Promise<void> {
   server.decorateRequest('userId', '');

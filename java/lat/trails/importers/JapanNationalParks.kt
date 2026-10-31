@@ -1,9 +1,9 @@
 package lat.trails.importers
 
 import com.google.common.geometry.S2Polygon
-import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import lat.trails.wire.JAPANESE_NATIONAL_PARKS_COLLECTION_ID as COLLECTION_ID
 import mil.nga.geopackage.GeoPackageManager
 import mil.nga.sf.MultiPolygon
 import mil.nga.sf.Polygon
@@ -11,8 +11,6 @@ import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.parseFlags
 
 private val logger = LoggerFactory.getLogger("JapanNationalParks")
-
-private val COLLECTION_ID = UUID.fromString("4e9dde6b-0ccb-4287-adf6-c179f7a08c95")
 
 // Leaves out 区分未定, the zone of the four polygons not yet assigned one
 private val ZONES =

@@ -17,7 +17,9 @@ import postgres from 'postgres';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
+import { PROVIDER_LABELS } from '../client/account_dialog';
 import { loginPage } from '../client/login_page';
+import { ACKNOWLEDGED, LOGIN_CHANNEL, SIGNED_IN } from '../client/login_popup';
 
 import { STATIC_PREFIX } from './assets';
 import { LoginEnforcer } from './auth';
@@ -39,13 +41,13 @@ const FINISHED_PAGE = `<!DOCTYPE html>
   <head><meta charset="utf-8"><title>Signed in</title></head>
   <body>
     <script>
-      const channel = new BroadcastChannel('login');
+      const channel = new BroadcastChannel('${LOGIN_CHANNEL}');
       channel.onmessage = e => {
-        if (e.data === 'acknowledged') {
+        if (e.data === '${ACKNOWLEDGED}') {
           window.close();
         }
       };
-      channel.postMessage('signed-in');
+      channel.postMessage('${SIGNED_IN}');
       // An opener answers as soon as its event loop reaches the message, so a second of silence
       // means nobody is waiting on this login.
       setTimeout(() => {
@@ -63,7 +65,6 @@ type CallbackBody = {[key: string]: string}|undefined;
 // Apple strays from OIDC: it POSTs the callback cross site, it doesn't take PKCE, it only sends the
 // user's name in that POST, and its client secret is a JWT that expires.
 interface Provider {
-  label: string;
   logo: string;
   issuer: string;
   scope: string;
@@ -78,7 +79,6 @@ interface Provider {
 // In the order the login page lists them
 const PROVIDERS: {[name in ProviderName]: Provider} = {
   apple: {
-    label: 'Apple',
     logo: 'apple_logo.svg',
     issuer: 'https://appleid.apple.com',
     scope: 'openid name email',
@@ -88,7 +88,6 @@ const PROVIDERS: {[name in ProviderName]: Provider} = {
     profile: appleProfile,
   },
   google: {
-    label: 'Google',
     logo: 'google_logo.svg',
     issuer: 'https://accounts.google.com',
     scope: 'openid email profile',
@@ -98,7 +97,6 @@ const PROVIDERS: {[name in ProviderName]: Provider} = {
     profile: oidcProfile,
   },
   osm: {
-    label: 'OpenStreetMap',
     logo: 'osm_logo.svg',
     issuer: 'https://www.openstreetmap.org',
     scope: 'openid',
@@ -162,7 +160,7 @@ export async function addProviders(
         loginPage(
             configured.map(name => ({
               href: `/login/${name}${query}`,
-              label: PROVIDERS[name].label,
+              label: PROVIDER_LABELS[PROVIDERS[name].issuer],
               logo: `/static/${PROVIDERS[name].logo}`,
             })),
             STATIC_PREFIX));
@@ -267,7 +265,7 @@ async function addProvider(
           INSERT INTO users (id, display_name, email, picture_url, enabled)
               VALUES (
                   gen_random_uuid(),
-                  ${profile.displayName ?? profile.email ?? `${provider.label} user`},
+                  ${profile.displayName ?? profile.email ?? `${PROVIDER_LABELS[provider.issuer]} user`},
                   ${profile.email ?? null},
                   ${profile.pictureUrl ?? null},
                   ${true})

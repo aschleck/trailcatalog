@@ -5,14 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S2LatLng
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.util.UUID
+import lat.trails.wire.MOTOR_VEHICLE_USE_COLLECTION_ID as COLLECTION_ID
 import org.slf4j.LoggerFactory
 import org.trailcatalog.flags.parseFlags
 
 private val logger = LoggerFactory.getLogger("UsfsMvum")
-
-// Keep in sync with layer_catalog.ts
-private val COLLECTION_ID = UUID.fromString("0dc37e1d-bcac-4720-9a23-1cc0683e7090")
 
 // The Forest Service's Motor Vehicle Use Maps, with roads in layer 1 and trails in layer 2
 // https://data.fs.usda.gov/geodata/edw/datasets.php

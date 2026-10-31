@@ -152,10 +152,11 @@ test('Exporting drops a folder emptied by unchecking but keeps an empty one', ()
       .toEqual(['empty', 'point']);
 });
 
-test('Exporting treats a missing folder as the root and leaves out a cycle', () => {
+test('Exporting treats a missing folder as the root and keeps a cycle', () => {
   const orphan: EditableFeature = {...POINT, id: 'orphan', data: {folder_id: 'gone'}};
   const a: EditableFeature = {...FOLDER, id: 'a', data: {folder_id: 'b'}};
   const b: EditableFeature = {...FOLDER, id: 'b', data: {folder_id: 'a'}};
-  expect(filterForExport([orphan, a, b], new Set()).map(f => f.id))
-      .toEqual(['orphan']);
+  const line: EditableFeature = {...LINE, data: {folder_id: 'b'}};
+  expect(filterForExport([orphan, a, b, line], new Set()).map(f => f.id))
+      .toEqual(['orphan', 'a', 'b', 'line']);
 });

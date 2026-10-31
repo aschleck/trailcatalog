@@ -46,6 +46,7 @@ tc_ts_project(
         "//:node_modules/openid-client",
         "//:node_modules/postgres",
         "//java/lat/trails/client:ts",
+        "//java/lat/trails/wire:wire-ts",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/server",
     ],

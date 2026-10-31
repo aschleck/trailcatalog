@@ -14,6 +14,7 @@ kt_jvm_library(
         "@maven//:org_postgresql_postgresql",
     ],
     deps = [
+        "//java/lat/trails/wire",
         "//java/org/trailcatalog/common",
         "//java/org/trailcatalog/flags",
         "@com_google_geometry_s2//:s2",

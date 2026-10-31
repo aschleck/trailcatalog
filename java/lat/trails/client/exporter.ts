@@ -1,4 +1,10 @@
-import { EditableFeature, EditableLine, EditablePoint, EditablePolygon } from './features';
+import {
+  EditableFeature,
+  EditableLine,
+  EditablePoint,
+  EditablePolygon,
+  getParents,
+} from './features';
 import { toSimplestyleColor } from './geojson';
 import {
   channelOf,
@@ -22,25 +28,20 @@ export type ExportFormat = 'geojson'|'gpx';
 
 /**
  * Returns the features left after dropping excluded ids. A folder goes when it or a folder above it
- * is excluded, or when nothing under it is left, but a folder that was empty to begin with stays. A
- * folder_id naming a missing folder counts as the root.
+ * is excluded, or when nothing under it is left, but a folder that was empty to begin with stays.
  */
 export function filterForExport(
     features: EditableFeature[],
     excluded: ReadonlySet<string>): EditableFeature[] {
-  const folders = new Set(features.filter(f => f.kind === 'folder').map(f => f.id));
+  const parents = getParents(features);
   const children = new Map<string|undefined, EditableFeature[]>();
   for (const feature of features) {
-    // Keep in sync with FeatureStore#parentOf
-    const folder = feature.data.folder_id;
-    const parent = folder !== undefined && folders.has(folder) ? folder : undefined;
+    const parent = parents.get(feature.id);
     const siblings = children.get(parent) ?? [];
     siblings.push(feature);
     children.set(parent, siblings);
   }
 
-  // Walking down from the root leaves out a cycle of folder_ids, which the sidebar can't show
-  // either.
   const kept = new Set<string>();
   const visit = (parent: string|undefined, dropped: boolean): {items: boolean; kept: boolean} => {
     let items = false;

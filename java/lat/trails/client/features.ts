@@ -84,6 +84,46 @@ export function importableIcon(icon: string|undefined): string|undefined {
 }
 
 /** Copies a feature so that later edits to the original leave the copy alone. */
+/**
+ * Maps each feature's id to its folder, or undefined for the root. A folder_id naming a missing
+ * folder counts as the root, or else the feature would vanish from the list with nothing to open
+ * to find it. Folders whose folder_ids form a cycle, which an import or two tabs dragging at once
+ * can make, are unreachable from the root, so we hang the first one we find at the root.
+ */
+export function getParents(features: Iterable<EditableFeature>): Map<string, string|undefined> {
+  const byId = new Map<string, EditableFeature>();
+  for (const feature of features) {
+    byId.set(feature.id, feature);
+  }
+  const children = new Map<string|undefined, EditableFeature[]>();
+  for (const feature of byId.values()) {
+    const folder = feature.data.folder_id;
+    const parent =
+        folder !== undefined && byId.get(folder)?.kind === 'folder' ? folder : undefined;
+    const siblings = children.get(parent) ?? [];
+    siblings.push(feature);
+    children.set(parent, siblings);
+  }
+
+  const parents = new Map<string, string|undefined>();
+  const visit = (parent: string|undefined) => {
+    for (const child of children.get(parent) ?? []) {
+      if (!parents.has(child.id)) {
+        parents.set(child.id, parent);
+        visit(child.id);
+      }
+    }
+  };
+  visit(undefined);
+  for (const id of byId.keys()) {
+    if (!parents.has(id)) {
+      parents.set(id, undefined);
+      visit(id);
+    }
+  }
+  return parents;
+}
+
 export function snapshot<F extends EditableFeature>(feature: F): F {
   return {...feature, data: {...feature.data}};
 }

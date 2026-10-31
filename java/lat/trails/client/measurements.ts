@@ -1,3 +1,4 @@
+import { SimpleS2 } from 'java/org/trailcatalog/s2';
 import {
   formatDistance as formatUnitDistance,
   formatHeight as formatUnitHeight,
@@ -5,9 +6,6 @@ import {
   UnitSystem,
 } from 'js/units/formatters';
 
-// Keep in sync with SimpleS2#EARTH_RADIUS_METERS. Not read from there because loading S2 here would
-// keep these out of jest, which cannot load the J2CL bundle.
-const EARTH_RADIUS_METERS = 6371010;
 
 export interface LineStats {
   lengthMeters: number;
@@ -137,7 +135,7 @@ export function ringAreaMeters2(ring: ArrayLike<number>): number {
     sum +=
         dLng * (2 + Math.sin(ring[2 * i] * toRadians) + Math.sin(ring[2 * j] * toRadians));
   }
-  return Math.abs(sum) * EARTH_RADIUS_METERS * EARTH_RADIUS_METERS / 2;
+  return Math.abs(sum) * SimpleS2.EARTH_RADIUS_METERS * SimpleS2.EARTH_RADIUS_METERS / 2;
 }
 
 // 1609.344 m to a mile, so about 2.59 km² to a square mile
@@ -181,7 +179,7 @@ const MIN_SAMPLE_SPACING_METERS = 10;
 // A few thousand samples draw a smooth profile at any panel width.
 const MAX_SAMPLES = 2000;
 // Circumference over the pixels across the world at zoom 0, 512 to a Mapterhorn tile
-const METERS_PER_PIXEL_AT_ZOOM_0 = 2 * Math.PI * EARTH_RADIUS_METERS / 512;
+const METERS_PER_PIXEL_AT_ZOOM_0 = 2 * Math.PI * SimpleS2.EARTH_RADIUS_METERS / 512;
 
 export interface ProfileSamples {
   // Interleaved lat then lng, in degrees
@@ -304,5 +302,5 @@ export function haversineMeters(lat0: number, lng0: number, lat1: number, lng1: 
   const h =
       Math.sin(dLat / 2) ** 2
           + Math.cos(lat0 * toRadians) * Math.cos(lat1 * toRadians) * Math.sin(dLng / 2) ** 2;
-  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h)));
+  return 2 * SimpleS2.EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h)));
 }

@@ -1,7 +1,11 @@
-import { Collection } from 'trails_lat/proto/data_pb';
+import { Collection, Role } from 'trails_lat/proto/data_pb';
 
 export interface CollectionData {
   description?: string;
+}
+
+export function canEdit(collection: Collection|undefined): collection is Collection {
+  return collection?.role === Role.OWNER || collection?.role === Role.WRITE;
 }
 
 export function descriptionOf(collection: Collection|undefined): string {
