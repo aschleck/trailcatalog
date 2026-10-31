@@ -1,3 +1,4 @@
+import { CLIMB_THRESHOLD_METERS, ELEVATION_MAX_ZOOM } from 'java/org/trailcatalog/models/categories';
 import { SimpleS2 } from 'java/org/trailcatalog/s2';
 import {
   formatDistance as formatUnitDistance,
@@ -5,7 +6,6 @@ import {
   getUnitSystem,
   UnitSystem,
 } from 'js/units/formatters';
-
 
 export interface LineStats {
   lengthMeters: number;
@@ -18,11 +18,6 @@ export interface LineStats {
   }|undefined;
 }
 
-// A recording drifts 3 or 4 m in altitude over a flat day and Copernicus quotes up to 4 m of
-// relative error on steep slopes, so reversals smaller than this are noise. Real climbs lose
-// nothing because only the reversal is dropped, never the climb on either side of it.
-// Keep in sync with CalculateWayElevations#CLIMB_THRESHOLD_METERS.
-const CLIMB_THRESHOLD_METERS = 5;
 
 /**
  * Measures a line's climb and descent past a reversal threshold, and its length along the
@@ -228,7 +223,7 @@ export function profileSamples(path: Float64Array): ProfileSamples {
   return {
     latLngDegrees: Float64Array.from(latLngs),
     distanceMeters: Float64Array.from(distances),
-    zoom: Math.min(14, Math.max(12, zoom)),
+    zoom: Math.min(ELEVATION_MAX_ZOOM, Math.max(12, zoom)),
   };
 }
 

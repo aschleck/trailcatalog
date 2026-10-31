@@ -79,8 +79,6 @@ interface LoadRequest {
   kind: 'lr';
   key: CellKey;
   styleZoom: number;
-  // Counts the layer's calls to setStyle, echoed so that a cell styled before the last one drops.
-  styleEpoch: number;
   // Unused here, only echoed so that the answer says what its geometry was simplified to.
   tolerance: number;
   data: ArrayBuffer;
@@ -91,8 +89,6 @@ export type Request = LoadRequest|SetStyleRequest;
 export interface LoadResponse {
   kind: 'lr';
   key: CellKey;
-  styleZoom: number;
-  styleEpoch: number;
   tolerance: number;
   geometry: ArrayBuffer;
   index: ArrayBuffer;
@@ -572,8 +568,6 @@ class CollectionLoader {
     const response: LoadResponse = {
       kind: 'lr',
       key: request.key,
-      styleZoom: request.styleZoom,
-      styleEpoch: request.styleEpoch,
       tolerance: request.tolerance,
       geometry: geometry.buffer,
       index: index.buffer,

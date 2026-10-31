@@ -38,7 +38,7 @@ import { Decode } from 'js/map/workers/raster_loader';
 import { Stream } from 'js/map/workers/s2_streams';
 import { Bands, Channel, Search } from 'js/map/workers/stac_loader';
 import { BASE_ZOOM as TERRARIUM_BASE_ZOOM, TILE_URL as TERRARIUM_TILE_URL } from 'js/map/workers/terrarium';
-import { ECMWF_LAYERS, EcmwfLayer, WEATHER_VIEWS, WeatherView, WIND_LEVELS } from 'js/map/workers/weather';
+import { ECMWF_LAYERS, EcmwfLayer, PEAK_WINDOWS, WEATHER_VIEWS, WeatherView, WIND_LEVELS } from 'js/map/workers/weather';
 import { WindStyle } from 'js/map/workers/wind_loader';
 import { Z_BASE_ELEVATION, Z_BASE_LAND_COVER, Z_BASE_SATELLITE, Z_BASE_SLOPE, Z_BASE_TERRAIN, Z_OVERLAY_TERRAIN } from 'js/map/z';
 import { getUnitSystem, UnitSystem } from 'js/units/formatters';
@@ -256,8 +256,8 @@ const CLOUD_HEIGHTS: Array<{view: WeatherView; label: string; name: string}> = [
   {view: 'medium_clouds', label: 'Medium', name: 'Medium clouds'},
   {view: 'high_clouds', label: 'High', name: 'High clouds'},
 ];
-// See WeatherLayers.kt#LOOKAHEAD_LAYERS and #PEAK_WINDOWS
-const LOOKAHEAD_WINDOWS = [[12, '12 hours'], [24, '24 hours'], [72, '3 days'], [120, '5 days']];
+const LOOKAHEAD_WINDOWS =
+    PEAK_WINDOWS.map(hours => [hours, hours < 48 ? `${hours} hours` : `${hours / 24} days`] as const);
 // Runs land 6 to 9 hours after they start, and past that a stale run means ecmwf.sh stopped
 // tiling. A 3 day old run still forecasts now, so we reach back that far.
 const ECMWF_LOOKBACK_CYCLES = 12;

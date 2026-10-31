@@ -3,7 +3,7 @@
 # Tiles a day of SNODAS into /home/april/tiles/snodas_<day>.pmtiles, which pmtiles serve serves at
 # tiles.trailcatalog.org. The day defaults to today in UTC. Days already tiled and days NSIDC hasn't
 # posted yet are skipped, so this runs hourly. Keep the file name in sync with
-# viewer_controller.ts#SNODAS_URL.
+# layer_catalog.ts#SNODAS_URL.
 
 set -exo pipefail
 
@@ -43,7 +43,7 @@ mv "${archive}.partial" "${archive}"
 
 # Keep the two newest days, so clients that found yesterday's keep working until their hourly
 # check finds today's. This also clears out partial archives from conversions that died. Keep in
-# sync with viewer_controller.ts#SNODAS_LOOKBACK_DAYS.
+# sync with layer_catalog.ts#SNODAS_LOOKBACK_DAYS.
 keep="$(find "${out}" -maxdepth 1 -name 'snodas_*.pmtiles' | sort | tail -n 2)"
 for old in "${out}"/snodas_*; do
   if ! grep -qxF "${old}" <<< "${keep}"; then

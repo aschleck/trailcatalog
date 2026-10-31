@@ -33,9 +33,8 @@ const APPLE_SECRET_LIFETIME_S = 5 * 60;
 // A login without a return path usually runs in a popup so the page underneath keeps its state.
 // window.opener can't tell us whether it did, because OpenStreetMap's Cross-Origin-Opener-Policy
 // severs it, so we ask over a BroadcastChannel and the opener acknowledges. Anyone who reached the
-// callback in a tab of their own gets no answer, so send them to the map.
-//
-// Keep in sync with login_popup.ts#LoginPopup.
+// callback in a tab of their own gets no answer, so send them to the map. See
+// login_popup.ts#LoginPopup.
 const FINISHED_PAGE = `<!DOCTYPE html>
 <html lang="en">
   <head><meta charset="utf-8"><title>Signed in</title></head>

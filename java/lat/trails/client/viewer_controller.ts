@@ -12,7 +12,7 @@ import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controll
 import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_element';
 import { MenuHandle, MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
-import { PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
+import { getPointSource, PointCategory, WayCategory } from 'java/org/trailcatalog/models/categories';
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
 import { MAPTERHORN_COPYRIGHT } from 'js/map/common/copyrights';
@@ -181,6 +181,11 @@ function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
   return latLngDegrees;
 }
 
+// Join with takes route lines, not marker strokes
+function isRouteLine(feature: EditableFeature|undefined): feature is EditableLine {
+  return feature?.kind === 'line' && getLineKind(feature.data) === 'line';
+}
+
 // Something a click landed on
 type Pick =
     {kind: 'feature'; feature: EditableFeature}
@@ -311,7 +316,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       console.error(e);
       this.warnUnsaved();
     });
-    this.store = new FeatureStore(this.saves);
+    this.store =
+        new FeatureStore(this.saves, /* readOnly= */ response.args.collection !== undefined);
     this.viewStateWrites = Promise.resolve();
     this.elevations = new Elevations();
     this.measureProfiler =
@@ -531,12 +537,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.select(undefined);
     this.setHidden([]);
     // Empties the list while the collection loads, or else the last one's rows are left to click.
-    // Nothing is editable until we know the role, which the listing carries when it opened this.
-    const collection = this.state.collection?.id === id ? this.state.collection : undefined;
-    this.resetStore([], id !== undefined && !canEdit(collection));
+    // Loading replaces the store, so nothing is editable until it lands.
+    this.resetStore([], id !== undefined);
     this.updateState({
       ...this.state,
-      collection,
+      collection: this.state.collection?.id === id ? this.state.collection : undefined,
       collectionStatus: 'loaded',
       features: {...this.state.features, expanded: new Set()},
     });
@@ -624,7 +629,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
     const features: Pick[] =
         this.featureLayer.featuresAt(projectS2LatLng(point))
-            .filter(f => joining === undefined || (f.kind === 'line' && f.id !== joining))
+            .filter(f => joining === undefined || (isRouteLine(f) && f.id !== joining))
             .map(feature => ({kind: 'feature', feature}));
     const others = shown.map(entry => this.picksIn(entry, point));
     Promise.all(others).then(found => {
@@ -747,7 +752,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.stopJoining();
     const a = from !== undefined ? this.store.get(from) : undefined;
     const b = id !== undefined ? this.store.get(id) : undefined;
-    if (a?.kind === 'line' && b?.kind === 'line' && a.id !== b.id) {
+    if (isRouteLine(a) && isRouteLine(b) && a.id !== b.id) {
       this.store.apply([
         {id: a.id, before: snapshot(a), after: joinLines(a, b)},
         {id: b.id, before: snapshot(b), after: undefined},
@@ -1174,7 +1179,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   deleteClicked(): void {
     const feature = this.selected !== undefined ? this.store.get(this.selected) : undefined;
-    if (!feature) {
+    if (!feature || this.store.isReadOnly()) {
       return;
     }
 
@@ -1394,6 +1399,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Leaves a drawing tool along with edit rights, or else it would draw what the store drops.
   private resetStore(features: EditableFeature[], readOnly: boolean, schema?: SavedSchema): void {
     this.store.reset(features, readOnly, schema);
+    this.terrainLayer.setKeepsFinished(readOnly);
     const tool = this.state.tool;
     if (readOnly && tool !== 'pointer' && tool !== 'measure' && tool !== 'terrain') {
       this.setTool('pointer');
@@ -1431,13 +1437,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Skipped while typing, so that the browser's own undo still works in text fields.
   private keyPressed(e: KeyboardEvent): void {
-    // Checked before defaultPrevented, because the line being edited also takes Escape
-    if (e.key === 'Escape' && this.state.joining !== undefined) {
-      this.stopJoining();
-      e.preventDefault();
-      return;
-    }
-
     // A map layer already handled it, like Delete removing a vertex from the line being edited
     if (e.defaultPrevented) {
       return;
@@ -1449,6 +1448,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             || target instanceof HTMLTextAreaElement
             || target instanceof HTMLSelectElement
             || (target instanceof HTMLElement && target.isContentEditable)) {
+      return;
+    }
+
+    // Menus close on keyup, so one still open at keydown is what Escape is for.
+    if (e.key === 'Escape' && this.state.tool === 'pointer' && !this.openedMenu?.isOpen) {
+      if (this.state.joining !== undefined) {
+        this.stopJoining();
+      } else {
+        this.clickFeature(undefined);
+      }
+      e.preventDefault();
       return;
     }
 
@@ -1493,7 +1503,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Starts a feature somebody made in the selected folder, or else beside the selected feature,
   // with its fields' defaults, and selects it.
   private addFeature(feature: EditableFeature): void {
-    const parent = this.newFeatureParent();
+    const parent = this.getFolderAt(this.selected);
     if (parent !== undefined) {
       feature.data.folder_id = parent;
       this.expand([parent]);
@@ -1531,9 +1541,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.terrainLayer.reroute();
   }
 
-  private newFeatureParent(): string|undefined {
-    const selected = this.selected !== undefined ? this.store.get(this.selected) : undefined;
-    return selected?.kind === 'folder' ? selected.id : selected && this.store.parentOf(selected);
+  // A folder itself, or else the folder a feature is in
+  private getFolderAt(id: string|undefined): string|undefined {
+    const feature = id !== undefined ? this.store.get(id) : undefined;
+    return feature?.kind === 'folder' ? feature.id : feature && this.store.parentOf(feature);
   }
 
   private setHovered(id: string|undefined): void {
@@ -1734,11 +1745,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // The folder a drop onto this row lands in. A row that is not a folder passes it to the folder
   // it is in, so dropping onto a sibling moves nothing.
   private dropFolderFor(e: CorgiEvent<typeof DOM_MOUSE>): string|undefined {
-    const row = this.store.get(checkExists(e.actionElement.data('id')).string());
-    if (!row) {
-      return undefined;
-    }
-    return row.kind === 'folder' ? row.id : this.store.parentOf(row);
+    return this.getFolderAt(checkExists(e.actionElement.data('id')).string());
   }
 
   // Whether the dragged feature may go into folder. A folder cannot move into itself or anything
@@ -1920,8 +1927,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     if (field !== undefined && typeof title === 'string' && title) {
       copy.data[field] = `${title} copy`;
     }
-    this.store.apply([{id: copy.id, before: undefined, after: copy}]);
-    this.select(copy.id);
+    this.addFeature(copy);
   }
 
   // In the order given, which for a folder is its descendants deepest first and then itself, so
@@ -2602,10 +2608,7 @@ function newCollectionName(): string {
   return `Untitled collection ${new Date().toLocaleDateString()}`;
 }
 
-// A point's id is twice its node's id, or twice its way's id plus one. Keep in sync with
-// ExtractPoints.kt#nodePointId.
 function osmElementOf(pointId: number): {type: 'node'|'way'; id: number} {
-  return pointId % 2 === 0
-      ? {type: 'node', id: pointId / 2}
-      : {type: 'way', id: (pointId - 1) / 2};
+  const {type, id} = getPointSource(BigInt(pointId));
+  return {type, id: Number(id)};
 }

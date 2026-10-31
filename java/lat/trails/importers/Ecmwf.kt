@@ -137,7 +137,7 @@ private fun decode(bytes: ByteArray): Field {
   val raf = InMemoryRandomAccessFile("ecmwf", bytes)
   val record = Grib2RecordScanner(raf).next()
   val gds = record.gds as Grib2Gds.LatLon
-  // Keep in sync with Field, which reads row 0 as north and column 0 as 180 degrees west
+  // Field reads row 0 as north and column 0 as 180 degrees west
   check(gds.nx == GRID_COLUMNS && gds.ny == GRID_ROWS) { "Grid is ${gds.nx}x${gds.ny}" }
   check(gds.la1 == 90f && gds.lo1 == 180f && gds.deltaLat < 0) { "Grid starts at ${gds.la1}" }
   check(record.scanMode == 0) { "Scanning mode ${record.scanMode} is unsupported" }

@@ -657,10 +657,7 @@ export class FeatureLayer extends Layer {
       return false;
     }
 
-    if (key === 'Escape') {
-      source.trigger(FEATURE_CLICKED, {id: undefined});
-      return true;
-    } else if ((key === 'Delete' || key === 'Backspace') && this.activeVertex !== undefined) {
+    if ((key === 'Delete' || key === 'Backspace') && this.activeVertex !== undefined) {
       this.deleteVertex(this.activeVertex, source);
       return true;
     }

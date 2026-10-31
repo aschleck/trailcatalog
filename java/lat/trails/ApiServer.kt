@@ -109,6 +109,7 @@ import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
 import org.trailcatalog.flags.parseFlags
+import org.trailcatalog.models.SourceType
 import org.trailcatalog.models.aDescendsB
 import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.polylineToCell
@@ -698,11 +699,10 @@ private fun deleteCollectionRows(connection: Connection, collection: UUID) {
 }
 
 private fun getOsmTags(request: GetOsmTagsRequest): GetOsmTagsResponse {
-  // Keep in sync with SourceTags.kt#SourceType.
   val type = when (request.type) {
-    OsmElementType.OSM_ELEMENT_TYPE_NODE -> 0
-    OsmElementType.OSM_ELEMENT_TYPE_WAY -> 1
-    OsmElementType.OSM_ELEMENT_TYPE_RELATION -> 2
+    OsmElementType.OSM_ELEMENT_TYPE_NODE -> SourceType.NODE.id
+    OsmElementType.OSM_ELEMENT_TYPE_WAY -> SourceType.WAY.id
+    OsmElementType.OSM_ELEMENT_TYPE_RELATION -> SourceType.RELATION.id
     else -> throw BadRequestResponse("Unknown source type ${request.type}")
   }
 

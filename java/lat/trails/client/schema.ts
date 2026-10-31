@@ -105,7 +105,6 @@ export const READS: {[type in StyleType]: FieldType[]} = {
 
 // What a collection without a schema of its own has. Its field ids are the keys geojson.ts writes
 // simplestyle into, which adoptImported moves wherever another schema reads them.
-// Keep in sync with 13_editable_polygons.toml's polygon layer.
 export const DEFAULT_COLLECTION_SCHEMA: CollectionSchema = {
   fields: [
     ...FIELD_KINDS.flatMap((kind): FieldDefinition[] => [

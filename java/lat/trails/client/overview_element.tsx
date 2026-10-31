@@ -85,10 +85,9 @@ export function OverviewElement(
     const schema = parseCollectionSchema(loaded?.schema ?? '');
     inState = {
       collection: loaded?.collection,
+      // The outline leaves out geometry, which ViewerController loads next.
       collectionStatus:
-          !collection
-              ? 'loaded'
-              : !outline?.finished ? 'loading' : outline.ok ? 'loaded' : 'failed',
+          !collection ? 'loaded' : outline?.finished && !outline.ok ? 'failed' : 'loading',
       features: {
         all,
         schema,
@@ -124,7 +123,9 @@ export function OverviewElement(
   const state = inState;
   // The routed collection, which is undefined while it loads after the route changed
   const open = state.collection?.id === collection ? state.collection : undefined;
-  const readOnly = collection !== undefined && !canEdit(open);
+  // Loading replaces the store, so nothing is editable until the collection has loaded.
+  const readOnly =
+      collection !== undefined && (state.collectionStatus !== 'loaded' || !canEdit(open));
   const tree = buildTree(state.features.all, state.features.schema);
   setTitle(state.collection?.name ? `${state.collection.name} - trails.lat` : 'trails.lat');
   setDescription(
@@ -144,26 +145,23 @@ export function OverviewElement(
     });
   }
 
-  // Every route change brings new parameters, so marking them hands the map one camera per route
-  // instead of undoing the user's panning on each render. Without a camera in the URL we fit the
-  // collection's bound, and the map stays where it is when there's neither.
+  // The URL's camera, or else the collection's bound once we know it. Panning rewrites the URL
+  // without a route change, so the camera stays equal across renders and corgi doesn't hand it to
+  // the map again.
   let camera: LatLngRect|LatLngZoom|undefined = undefined;
-  if (!parameters._used) {
-    parameters._used = "true";
-    if (parameters.lat && parameters.lng) {
-      camera = {
-        lat: Number(parameters.lat),
-        lng: Number(parameters.lng),
-        zoom: floatCoalesce(parameters.zoom, 12),
-      };
-    } else if (open?.bound) {
-      const bound = open.bound;
-      camera = {
-        low: [bound.lowLatDegrees, bound.lowLngDegrees],
-        high: [bound.highLatDegrees, bound.highLngDegrees],
-        brand: 'LatLngRect',
-      };
-    }
+  if (parameters.lat && parameters.lng) {
+    camera = {
+      lat: Number(parameters.lat),
+      lng: Number(parameters.lng),
+      zoom: floatCoalesce(parameters.zoom, 12),
+    };
+  } else if (open?.bound) {
+    const bound = open.bound;
+    camera = {
+      low: [bound.lowLatDegrees, bound.lowLngDegrees],
+      high: [bound.highLatDegrees, bound.highLngDegrees],
+      brand: 'LatLngRect',
+    };
   }
 
   return <>
@@ -258,6 +256,7 @@ export function OverviewElement(
             {state.tool === 'measure' || state.tool === 'terrain'
                 ? <MeasurePanel
                       grades={state.tool === 'terrain' ? state.grades : undefined}
+                      readOnly={readOnly}
                       state={state.measure}
                   />
                 : ''

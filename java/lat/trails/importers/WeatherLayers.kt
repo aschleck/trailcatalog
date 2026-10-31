@@ -121,7 +121,7 @@ private val WIND_CHANNELS = listOf(Channel("u", 12, 0.1, -204.7), Channel("v", 1
 private val STRETCHED_WIND_CHANNELS =
     listOf(Channel("u", 12, 0.1, -204.7, Interpolation.VECTOR), WIND_CHANNELS[1])
 
-// in hours. Keep in sync with layer_catalog.ts#LOOKAHEAD_WINDOWS
+// in hours. Keep in sync with weather.ts#PEAK_WINDOWS
 private val PEAK_WINDOWS = listOf(12, 24, 72, 120)
 
 // One 12 bit channel per window from the input's only field, so two windows fit in an archive

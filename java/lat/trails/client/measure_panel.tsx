@@ -33,8 +33,9 @@ export interface GradeLimitState {
  * Floats over the map while measuring, showing the length and elevation of what is drawn. Given
  * grades, it measures a route over terrain and lets them be changed.
  */
-export function MeasurePanel({grades, state}: {
+export function MeasurePanel({grades, readOnly, state}: {
   grades: GradeLimitState|undefined;
+  readOnly: boolean;
   state: MeasureState;
 }) {
   return (
@@ -70,7 +71,7 @@ export function MeasurePanel({grades, state}: {
           ? <p className="text-gray-600">
               Click points on the map
             </p>
-          : <Readout state={state} />
+          : <Readout readOnly={readOnly} state={state} />
       }
     </div>
   );
@@ -137,7 +138,7 @@ function RouteReadout({status}: {status: RouteStatus}) {
   return message ? <p className="text-gray-600">{message}</p> : '';
 }
 
-function Readout({state}: {state: MeasureState}) {
+function Readout({readOnly, state}: {readOnly: boolean; state: MeasureState}) {
   const profile = state.profile;
   return (
     <div className="flex flex-col gap-2">
@@ -163,12 +164,15 @@ function Readout({state}: {state: MeasureState}) {
             </div>
           : ''
       }
-      <PrimaryButton
-          className="self-start"
-          unboundEvents={{corgi: [[ACTION, 'saveMeasurementClicked']]}}
-      >
-        Save as line
-      </PrimaryButton>
+      {readOnly
+          ? ''
+          : <PrimaryButton
+                className="self-start"
+                unboundEvents={{corgi: [[ACTION, 'saveMeasurementClicked']]}}
+            >
+              Save as line
+            </PrimaryButton>
+      }
     </div>
   );
 }

@@ -34,7 +34,7 @@ gdal.UseExceptions()
 
 TILES = Path('/home/april/tiles')
 # A cycle the FAA published. Every other cycle starts a multiple of 56 days from it. Keep in sync
-# with layer_catalog.ts#FAA_CYCLE_EPOCH.
+# with layer_catalog.ts#FAA_CYCLE_EPOCH_MS.
 CYCLE_EPOCH = date(2026, 9, 3)
 CYCLE_DAYS = 56
 # The previous cycle stays for clients whose clock is behind ours, and the next one is posted early.

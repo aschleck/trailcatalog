@@ -279,6 +279,7 @@ class ColorPickerController extends Controller<Args, EmptyDeps, HTMLElement, Sta
     this.registerListener(document, 'keydown', e => {
       if (e.key === 'Escape') {
         this.close();
+        e.preventDefault();
       }
     });
 

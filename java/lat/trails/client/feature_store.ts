@@ -48,7 +48,7 @@ export class FeatureStore {
   // Set for a collection shared with the user to view, where every edit would fail to save.
   private readOnly: boolean;
 
-  constructor(private readonly saves: SaveQueue) {
+  constructor(private readonly saves: SaveQueue, readOnly: boolean) {
     this.live = new Map();
     this.removed = new Map();
     this.savedSchema = {schema: DEFAULT_COLLECTION_SCHEMA, version: 0n};
@@ -56,7 +56,7 @@ export class FeatureStore {
     this.redoStack = [];
     this.listeners = [];
     this.parents = undefined;
-    this.readOnly = false;
+    this.readOnly = readOnly;
   }
 
   listen(listener: () => void): void {

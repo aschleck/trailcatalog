@@ -131,7 +131,6 @@ export class CollectionLayer extends Layer {
   private readonly selection: {buffer: ArrayBuffer; drawables: Drawable[]; glBuffer: WebGLBuffer};
   // -1 until the first viewport arrives, so that the first cell to land forces a style pass.
   private styleZoom: number;
-  private styleEpoch: number;
   // The zooms where a line style starts or stops, since the loader's output changes only there
   private styleBreaks: number[];
   private collectionSchema: CollectionSchema|undefined;
@@ -204,7 +203,6 @@ export class CollectionLayer extends Layer {
       this.renderer.deleteBuffer(this.selection.glBuffer);
     });
     this.styleZoom = -1;
-    this.styleEpoch = 0;
     this.styleBreaks = styleBreaks(initial);
     this.collectionSchema = undefined;
 
@@ -558,7 +556,6 @@ export class CollectionLayer extends Layer {
   }
 
   private restyleWith(styling: Styling): void {
-    this.styleEpoch += 1;
     this.styleBreaks = styleBreaks(styling);
     this.loader.broadcast({kind: 'sr', styling});
     this.restyle();
@@ -577,7 +574,6 @@ export class CollectionLayer extends Layer {
       kind: 'lr',
       key,
       styleZoom: this.styleZoom,
-      styleEpoch: this.styleEpoch,
       tolerance,
       data,
     }));
@@ -676,11 +672,6 @@ export class CollectionLayer extends Layer {
       return;
     }
 
-    // A restyle at a newer zoom or with a newer style has already gone out, so nobody is looking at
-    // this answer.
-    if (response.styleZoom !== this.styleZoom || response.styleEpoch !== this.styleEpoch) {
-      return;
-    }
     this.loading.delete(response.key);
 
     // Refining a cell throws out the coarser copy of the same objects, and with it the offsets the

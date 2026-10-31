@@ -99,6 +99,8 @@ interface Drawing {
 export class DrawingLayer extends Layer {
 
   private active: boolean;
+  // Set when a finished line has nowhere to be saved, so it stays up like a measurement
+  private keepsFinished: boolean;
   private drawing: Drawing|undefined;
   // A spot on the drawing to call out, like the one under the pointer on an elevation profile
   private marker: Vec2|undefined;
@@ -139,6 +141,7 @@ export class DrawingLayer extends Layer {
   ) {
     super(/* copyright= */ []);
     this.active = false;
+    this.keepsFinished = false;
     this.drawing = undefined;
     this.marker = undefined;
     this.glGeometry = renderer.createDataBuffer(INITIAL_BUFFER_BYTES);
@@ -174,6 +177,10 @@ export class DrawingLayer extends Layer {
     this.marker = at;
     // Not changed(), because the marker is not part of the drawing its listener measures
     this.redraw();
+  }
+
+  setKeepsFinished(keeps: boolean): void {
+    this.keepsFinished = keeps;
   }
 
   setActive(active: boolean): void {
@@ -543,7 +550,7 @@ export class DrawingLayer extends Layer {
       return;
     }
 
-    if (this.mode === 'measure') {
+    if (this.mode === 'measure' || this.keepsFinished) {
       drawing.cursor = undefined;
       drawing.finished = true;
       this.changed();

@@ -44,7 +44,7 @@ private const val WATER_PRODUCT = "1034"
 private const val MAX_ZOOM = 7
 private const val TILE_SIZE = 256
 
-// Keep in sync with raster_loader.ts#decodeSnow. Each pixel's 24 RGB bits hold snow depth in cm
+// See weather.ts#unpackSnodas. Each pixel's 24 RGB bits hold snow depth in cm
 // in the high 12 bits and snow water equivalent in mm in the low 12 bits. A depth of 4095 means
 // SNODAS has no data for that pixel.
 private const val NO_DATA = 4095
@@ -92,7 +92,7 @@ fun main(args: Array<String>) {
     mbtiles.setMetadata("name", "SNODAS ${day}")
     // PNG because the pixels are data, and lossy compression would corrupt them.
     // TODO(april): write lossless WebP instead, which is 30% smaller. The encoder has natives for
-    // every platform we build on, but raster_loader.ts#decodeSnow and SNODAS_URL expect PNG.
+    // every platform we build on, but raster_loader.ts#colorSnow and SNODAS_URL expect PNG.
     mbtiles.setMetadata("format", "png")
     mbtiles.setMetadata("minzoom", "0")
     mbtiles.setMetadata("maxzoom", MAX_ZOOM.toString())

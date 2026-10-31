@@ -825,16 +825,14 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
 
   // Matched by kind and id rather than identity, because the icon picker edits after the draft may
   // have changed.
-  private editField(
-      {kind, id}: FieldRef,
-      edit: (field: FieldDefinition) => FieldDefinition,
-      also: Partial<State> = {}): void {
+  private editField({kind, id}: FieldRef, edit: (field: FieldDefinition) => FieldDefinition):
+      void {
     this.setDraft({
       ...this.state.draft,
       fields:
           this.state.draft.fields.map(field =>
               field.kind === kind && field.id === id ? edit(field) : field),
-    }, also);
+    });
   }
 
   private setDraft(draft: CollectionSchema, also: Partial<State> = {}): void {

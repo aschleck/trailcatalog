@@ -31,7 +31,7 @@ test('puts back with the version the server last stamped', async () => {
     versions.push(...entries.map(versionOf));
     return Promise.resolve(next++);
   }, unexpected);
-  const store = new FeatureStore(saves);
+  const store = new FeatureStore(saves, /* readOnly= */ false);
 
   const a = point('a', {});
   store.apply([create(a)]);
@@ -163,7 +163,7 @@ function setUp(): {saved: string[][]; store: FeatureStore} {
     saved.push(entries.map(describe));
     return Promise.resolve(1n);
   }, unexpected);
-  return {saved, store: new FeatureStore(saves)};
+  return {saved, store: new FeatureStore(saves, /* readOnly= */ false)};
 }
 
 function create(feature: EditableFeature): Change {
