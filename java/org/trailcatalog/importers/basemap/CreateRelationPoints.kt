@@ -16,8 +16,8 @@ private val POINT_CATEGORIES =
     AREA_RELATION_CATEGORIES.entries.associate { (point, relation) -> relation.id to point }
 
 /**
- * Collapses each glacier and lake multipolygon to a point inside it, the way MakeWayPoints does
- * the ones drawn as a single way.
+ * Collapses each multipolygon of an area in AREA_RELATION_CATEGORIES to a point inside it, the way
+ * MakeWayPoints does the ones drawn as a single way.
  */
 class CreateRelationPoints
   : PTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Point>(

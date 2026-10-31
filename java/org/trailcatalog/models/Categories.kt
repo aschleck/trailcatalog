@@ -93,6 +93,8 @@ enum class PointCategory(override val id: Int) : Category<PointCategory> {
       // Areas, which become a point inside them so their names can be searched and labeled
       NATURAL_GLACIER(NATURAL.id * ENUM_SIZE + 8),
       NATURAL_LAKE(NATURAL.id * ENUM_SIZE + 9),
+      NATURAL_BAY(NATURAL.id * ENUM_SIZE + 10),
+      NATURAL_STRAIT(NATURAL.id * ENUM_SIZE + 11),
     ACCESS(ANY.id * ENUM_SIZE + 9),
       ACCESS_PARKING(ACCESS.id * ENUM_SIZE + 1),
       ACCESS_TRAILHEAD(ACCESS.id * ENUM_SIZE + 2),
@@ -163,6 +165,8 @@ enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
   NATURAL(ANY.id * ENUM_SIZE + 3),
     NATURAL_GLACIER(NATURAL.id * ENUM_SIZE + 1),
     NATURAL_LAKE(NATURAL.id * ENUM_SIZE + 2),
+    NATURAL_BAY(NATURAL.id * ENUM_SIZE + 3),
+    NATURAL_STRAIT(NATURAL.id * ENUM_SIZE + 4),
   ;
 }
 
@@ -170,8 +174,10 @@ enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
 // snowfields have no name, and an area is only worth a point when it has one to search and label.
 val AREA_RELATION_CATEGORIES =
     mapOf(
+        PointCategory.NATURAL_BAY to RelationCategory.NATURAL_BAY,
         PointCategory.NATURAL_GLACIER to RelationCategory.NATURAL_GLACIER,
         PointCategory.NATURAL_LAKE to RelationCategory.NATURAL_LAKE,
+        PointCategory.NATURAL_STRAIT to RelationCategory.NATURAL_STRAIT,
     )
 
 // The categories whose names are worth searching, and the only ones a way becomes a point for,
@@ -196,6 +202,7 @@ val SEARCHABLE_POINT_LABELS =
         PointCategory.LODGING_ROOM_GUEST_HOUSE to "Guest house",
         PointCategory.LODGING_ROOM_HOTEL to "Hotel",
         PointCategory.LODGING_ROOM_MOTEL to "Motel",
+        PointCategory.NATURAL_BAY to "Bay",
         PointCategory.NATURAL_CAVE_ENTRANCE to "Cave",
         PointCategory.NATURAL_GLACIER to "Glacier",
         PointCategory.NATURAL_HOT_SPRING to "Hot spring",
@@ -203,6 +210,7 @@ val SEARCHABLE_POINT_LABELS =
         PointCategory.NATURAL_MOUNTAIN_PASS to "Pass",
         PointCategory.NATURAL_PEAK to "Peak",
         PointCategory.NATURAL_SADDLE to "Saddle",
+        PointCategory.NATURAL_STRAIT to "Strait",
         PointCategory.NATURAL_VOLCANO to "Volcano",
         PointCategory.NATURAL_WATERFALL to "Waterfall",
         PointCategory.SAFETY_CLINIC to "Clinic",

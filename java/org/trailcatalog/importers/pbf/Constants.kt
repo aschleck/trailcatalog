@@ -81,12 +81,14 @@ val POINT_MOUNTAIN_PASS_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointC
     .build()
 
 val POINT_NATURAL_CATEGORY_NAMES = ImmutableMap.builder<ByteString, PointCategory>()
+    .put(ByteString.copyFromUtf8("bay"), PointCategory.NATURAL_BAY)
     .put(ByteString.copyFromUtf8("cave_entrance"), PointCategory.NATURAL_CAVE_ENTRANCE)
     .put(ByteString.copyFromUtf8("glacier"), PointCategory.NATURAL_GLACIER)
     .put(ByteString.copyFromUtf8("hot_spring"), PointCategory.NATURAL_HOT_SPRING)
     .put(ByteString.copyFromUtf8("peak"), PointCategory.NATURAL_PEAK)
     .put(ByteString.copyFromUtf8("saddle"), PointCategory.NATURAL_SADDLE)
     .put(ByteString.copyFromUtf8("spring"), PointCategory.WATER_SPRING)
+    .put(ByteString.copyFromUtf8("strait"), PointCategory.NATURAL_STRAIT)
     .put(ByteString.copyFromUtf8("volcano"), PointCategory.NATURAL_VOLCANO)
     // Unless its water tag is in FLOWING_WATER_NAMES
     .put(ByteString.copyFromUtf8("water"), PointCategory.NATURAL_LAKE)

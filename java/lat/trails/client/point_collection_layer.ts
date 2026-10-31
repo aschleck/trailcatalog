@@ -50,15 +50,17 @@ const LABEL_PAD_PX = LABEL_GAP_PX / 2;
 const LABEL_PRIORITY = [
   [PointCategory.NATURAL_PEAK, PointCategory.NATURAL_VOLCANO],
   [PointCategory.NATURAL_GLACIER],
-  [PointCategory.NATURAL_LAKE],
+  [PointCategory.NATURAL_LAKE, PointCategory.NATURAL_BAY, PointCategory.NATURAL_STRAIT],
   [PointCategory.NATURAL_MOUNTAIN_PASS, PointCategory.NATURAL_SADDLE],
 ];
 
 // Areas, whose name sits in the middle of them with no icon. Glaciers take a deeper shade of the
-// glaciated contour labels' blue and lakes take the basemap's water names' blue.
+// glaciated contour labels' blue and open water takes the basemap's water names' blue.
 const AREA_LABEL_FILLS = new Map<number, RgbaU32>([
+  [PointCategory.NATURAL_BAY, WATER_TEXT_FILL],
   [PointCategory.NATURAL_GLACIER, 0x1F78A3FF as RgbaU32],
   [PointCategory.NATURAL_LAKE, WATER_TEXT_FILL],
+  [PointCategory.NATURAL_STRAIT, WATER_TEXT_FILL],
 ]);
 
 // The server has nothing to simplify in a point.

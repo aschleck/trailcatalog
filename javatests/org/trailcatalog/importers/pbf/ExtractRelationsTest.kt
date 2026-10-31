@@ -154,6 +154,16 @@ class ExtractRelationsTest {
   }
 
   @Test
+  fun testNamedBayAndStraitMultipolygons() {
+    assertThat(categoryOf("type" to "multipolygon", "natural" to "bay", "name" to "Elliott Bay"))
+        .isEqualTo(RelationCategory.NATURAL_BAY)
+    assertThat(categoryOf("type" to "multipolygon", "natural" to "strait", "name" to "Puget Sound"))
+        .isEqualTo(RelationCategory.NATURAL_STRAIT)
+    assertThat(categoryOf("type" to "multipolygon", "natural" to "bay"))
+        .isEqualTo(RelationCategory.ANY)
+  }
+
+  @Test
   fun testLakeThatIsAlsoABoundaryStaysABoundary() {
     assertThat(
             categoryOf(

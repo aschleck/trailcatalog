@@ -268,9 +268,11 @@ const POINT_ICON_ZOOM = 14;
 // Where the rest of the points join the landmarks, which would otherwise bury them
 const POINT_ZOOM = 15;
 const LANDMARKS = [
+  PointCategory.NATURAL_BAY,
   PointCategory.NATURAL_GLACIER,
   PointCategory.NATURAL_LAKE,
   PointCategory.NATURAL_PEAK,
+  PointCategory.NATURAL_STRAIT,
   PointCategory.NATURAL_VOLCANO,
 ];
 // Every category outside the landmarks, as the fewest ancestors, so its stream and the landmarks'

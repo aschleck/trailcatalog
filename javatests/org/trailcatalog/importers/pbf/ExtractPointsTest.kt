@@ -149,6 +149,16 @@ class ExtractPointsTest {
   }
 
   @Test
+  fun testNamedBaysAndStraits() {
+    assertThat(categoryOf("natural" to "bay", "name" to "Elliott Bay"))
+        .isEqualTo(PointCategory.NATURAL_BAY)
+    assertThat(categoryOf("natural" to "strait", "name" to "East Passage"))
+        .isEqualTo(PointCategory.NATURAL_STRAIT)
+    assertThat(categoryOf("natural" to "bay")).isNull()
+    assertThat(categoryOf("natural" to "strait")).isNull()
+  }
+
+  @Test
   fun testRiverAreaIsNoLake() {
     assertThat(categoryOf("water" to "river", "natural" to "water", "name" to "Skagit River"))
         .isNull()

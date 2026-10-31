@@ -97,12 +97,14 @@ function wayLines(style: MbtileStyle): LineStyle[] {
 }
 
 /**
- * Leaves lake names to the Nodes layer from LANDMARK_ZOOM. Protomaps labels a natural=water area
- * as kind water, with its water tag as kind_detail, and the importer makes a point for each named
- * one that isn't flowing. We drop only no kind_detail and lake, which every Washington lake label
- * we checked had a point for. Rivers, reservoirs, bays, and straits keep their basemap names.
+ * Leaves the names of lakes, bays, and straits to the Nodes layer from LANDMARK_ZOOM. Protomaps
+ * labels a natural=water area as kind water, with its water tag as kind_detail, and the importer
+ * makes a point for each named one that isn't flowing. We drop only no kind_detail and lake, which
+ * every Washington lake label we checked had a point for. Bays and straits are kinds of their own,
+ * and the importer makes a point for each named one. Rivers and reservoirs keep their basemap
+ * names.
  */
-function withoutLakeNames(style: MbtileStyle): MbtileStyle {
+function withoutLandmarkWaterNames(style: MbtileStyle): MbtileStyle {
   const layers: MbtileLayerStyle[] = [];
   for (const layer of style.layers) {
     if (layer.layerName !== 'water'
@@ -121,7 +123,10 @@ function withoutLakeNames(style: MbtileStyle): MbtileStyle {
       points: layer.points.flatMap(point => [
         {
           ...point,
-          filters: [...point.filters, {match: 'string_not_in', key: 'kind', value: ['water']}],
+          filters: [
+            ...point.filters,
+            {match: 'string_not_in', key: 'kind', value: ['bay', 'strait', 'water']},
+          ],
         },
         {
           ...point,
@@ -519,10 +524,10 @@ export const NODE_KINDS:
   {key: 'water', label: 'Water', category: PointCategory.WATER},
 ];
 
-// Where summits, glaciers, and lakes get their names, as soon as the contours are labeled
+// Where summits, glaciers, and open water get their names, as soon as the contours are labeled
 export const LANDMARK_ZOOM = 13;
 
-export const BASEMAP: MbtileStyle = withoutLakeNames(withoutWayLines(NATURE));
+export const BASEMAP: MbtileStyle = withoutLandmarkWaterNames(withoutWayLines(NATURE));
 
 // What the basemap layer offers to label, by the protomaps layers each one's text comes from.
 // Points in the basemap style only draw text, so dropping a layer's points and lineTexts takes
