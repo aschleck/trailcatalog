@@ -77,6 +77,11 @@ fun main(args: Array<String>) {
 
   Files.createDirectories(output.value)
   val pixels = tilePixels()
+  val ifsSteps = steps.getValue(EcmwfStream.IFS)
+  val stepHours = ifsSteps[1] - ifsSteps[0]
+  // Every archive carries the whole run's formats, so the one a client probes to find the run
+  // tells it how to decode the rest.
+  val formats = formatsJson(stepHours, maxStep.value, MAX_ZOOM, TILE_SIZE)
   val static = run.read(EcmwfStream.IFS, 0, STATIC_IFS_INPUTS)
   val lookaheadInputs = LOOKAHEAD_LAYERS.map { it.input }.toSet()
   val history = lookaheadInputs.associateWith { HashMap<Int, List<FloatArray>>() }
@@ -115,13 +120,11 @@ fun main(args: Array<String>) {
         continue
       }
       val path = output.value.resolve("${layer.name}_${step}.mbtiles")
-      writeLayer(layer.name, layer.channels, layer.compute(Inputs(fields)), pixels, path)
+      writeLayer(layer.name, layer.channels, layer.compute(Inputs(fields)), pixels, formats, path)
     }
     logger.info("Tiled {} step {}", stream, step)
   }
 
-  val ifsSteps = steps.getValue(EcmwfStream.IFS)
-  val stepHours = ifsSteps[1] - ifsSteps[0]
   for (layer in LOOKAHEAD_LAYERS) {
     val inputs = history.getValue(layer.input)
     for (step in ifsSteps) {
@@ -133,7 +136,7 @@ fun main(args: Array<String>) {
       }
       val values = windows.flatMap { window -> layer.combine(window.map { it!! }) }
       val path = output.value.resolve("${layer.name}_${step}.mbtiles")
-      writeLayer(layer.name, layer.channels, values, pixels, path)
+      writeLayer(layer.name, layer.channels, values, pixels, formats, path)
     }
     logger.info("Tiled {}", layer.name)
   }
@@ -177,10 +180,13 @@ private fun writeLayer(
     channels: List<Channel>,
     values: List<FloatArray>,
     tiles: List<TilePixels>,
+    // pmtiles convert merges the json row into the archive's metadata
+    formats: String,
     path: Path) {
   Files.deleteIfExists(path)
   MbtilesWriter(path).use { mbtiles ->
     mbtiles.setMetadata("name", name)
+    mbtiles.setMetadata("json", formats)
     // WebP because it's lossless, which data needs, and 30% smaller than PNG
     mbtiles.setMetadata("format", "webp")
     mbtiles.setMetadata("minzoom", "0")

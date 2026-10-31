@@ -1,5 +1,6 @@
 package lat.trails.importers
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -57,6 +58,9 @@ class Channel(
     }
     return Math.round((value - offset) / scale).toInt().coerceIn(0, noData - 1)
   }
+
+  /** Returns the fields a client unpacks the channel with, see weather.ts#Channel. */
+  fun toMap() = mapOf("name" to name, "bits" to bits, "scale" to scale, "offset" to offset)
 }
 
 /** The fields a layer reads at one step. */
@@ -198,7 +202,7 @@ private val WIND =
 private val PRECIPITATION = LookaheadInput.field(FieldKey("tp"))
 private val SNOWFALL = LookaheadInput.field(FieldKey("sf"))
 
-// Keep in sync with weather.ts#ECMWF_LAYERS. Each gust field is the strongest in the hours before
+// Each gust field is the strongest in the hours before
 // its step, so the strongest in a window leaves out the gust at its start. Through step 90 those
 // fields cover one hour in three, so windows there can miss a gust between steps.
 val LOOKAHEAD_LAYERS = listOf(
@@ -234,7 +238,6 @@ private inline fun map(field: Field, transform: (Float) -> Double): FloatArray {
   return FloatArray(field.values.size) { transform(field.values[it]).toFloat() }
 }
 
-// Keep in sync with weather.ts#ECMWF_LAYERS
 val WEATHER_LAYERS = listOf(
     WeatherLayer("wind", EcmwfStream.IFS, 3, keys("10u", "10v"), WIND_CHANNELS) {
       listOf(it["10u"].values, it["10v"].values)
@@ -543,4 +546,24 @@ private fun deformation(u: Field, v: Field): FloatArray {
     }
   }
   return out
+}
+
+/**
+ * Returns how every layer of a run packs its pixels, keyed by layer name, along with the run's
+ * extent, as the JSON a client decodes tiles with. A lookahead layer stops short of the run's end
+ * by its longest window.
+ */
+fun formatsJson(lookaheadStepHours: Int, maxStep: Int, maxZoom: Int, tileSize: Int): String {
+  val layers =
+      WEATHER_LAYERS.associate {
+        it.name to mapOf("stepHours" to it.stepHours, "channels" to it.channels.map(Channel::toMap))
+      } + LOOKAHEAD_LAYERS.associate {
+        it.name to mapOf(
+            "stepHours" to lookaheadStepHours,
+            "lookaheadHours" to it.windows.max(),
+            "channels" to it.channels.map(Channel::toMap))
+      }
+  val run =
+      mapOf("maxStep" to maxStep, "maxZoom" to maxZoom, "tileSize" to tileSize, "layers" to layers)
+  return ObjectMapper().writeValueAsString(mapOf("ecmwf" to run))
 }
