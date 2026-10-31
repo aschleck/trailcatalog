@@ -10,11 +10,13 @@ import {
 import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { GLYPHER, TextAnchor, toGraphemes, wrap } from 'js/map/rendering/glypher';
+import { glyphBoxes, LabelObstacles } from 'js/map/layers/label_placer';
+import { GLYPHER, TextAnchor, toGraphemes, turnsTooSharply, wrap } from 'js/map/rendering/glypher';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
+import { Glyph } from 'js/map/rendering/sdf_program';
 import { TriangleProgram } from 'js/map/rendering/triangle_program';
 import { LocationIndex } from 'js/map/workers/location_index';
 import { LineRef, Route } from 'js/map/workers/location_querier';
@@ -114,6 +116,14 @@ const ICON_RADIUS_PX = 10;
 const LABEL_PATH_TOLERANCE_PX = 4;
 // Where along a line to try starting its label, as fractions of its length, best first
 const LABEL_ANCHORS = [0.5, 0.3, 0.7, 0.15, 0.85];
+// Added around every label, so two labels keep the same gap between them as a label keeps from
+// its icon
+const LABEL_PAD_PX = LABEL_GAP_PX / 2;
+const COLLISION_CELL_PX = 64;
+// Scratch for laying out curved labels before they are known to fit
+const CURVED_GLYPHS: Glyph[] = [];
+const CURVED_PLACEMENTS: number[] = [];
+const CURVED_BOXES: number[] = [];
 
 // A GPS track has a vertex every few meters, which at most zooms is several per pixel, so a vertex
 // only gets a handle once it is this far from the last one that did.
@@ -293,6 +303,8 @@ export class FeatureLayer extends Layer {
   // Glypher builds its atlas asynchronously and plans nothing for a grapheme it lacks, so labels
   // planned before the atlas holds them have to be planned again once it does.
   private labelsMissingGlyphs: boolean;
+  // The ids of the features whose labels the last plan placed
+  private labelsPlaced: ReadonlySet<string>;
 
   constructor(
       copyrights: Copyright[],
@@ -303,6 +315,8 @@ export class FeatureLayer extends Layer {
       private readonly refiner: LineRefiner,
       private readonly camera: Camera,
       private readonly renderer: Renderer,
+      // Where our icons and labels are, so that the basemap's labels make way for them
+      private readonly obstacles: LabelObstacles,
   ) {
     super(copyrights);
     this.producer = locations.producer();
@@ -336,6 +350,7 @@ export class FeatureLayer extends Layer {
       zoom: -1,
     };
     this.labelsMissingGlyphs = false;
+    this.labelsPlaced = new Set();
     this.interactive = true;
     this.pointsDraggable = false;
     this.editing = undefined;
@@ -349,6 +364,7 @@ export class FeatureLayer extends Layer {
     this.registerDisposer(() => {
       renderer.deleteBuffer(this.glLabels);
       renderer.deleteTexture(this.handleTexture);
+      this.obstacles.boxes = [];
       this.locations.unload([...this.published.keys()].map(id => this.key(id)));
     });
 
@@ -1374,8 +1390,15 @@ export class FeatureLayer extends Layer {
   private planLabels(zoom: number): void {
     // A label either curves along a line or sits flat at a spot.
     const labeled: Array<
-        {graphemes: string[]; line: ProjectedShape}
-        |{graphemes: string[]; line: undefined; at: Vec2; offsetPx: Vec2; anchor: TextAnchor}> = [];
+        {feature: EditableFeature; graphemes: string[]; line: ProjectedShape}
+        |{
+          feature: EditableFeature;
+          graphemes: string[];
+          line: undefined;
+          at: Vec2;
+          offsetPx: Vec2;
+          anchor: TextAnchor;
+        }> = [];
     const icons: Array<{graphemes: string[]; point: ProjectedPoint}> = [];
     const circles: ProjectedPoint[] = [];
     const dragging = this.dragging?.kind === 'point' ? this.dragging : undefined;
@@ -1386,10 +1409,12 @@ export class FeatureLayer extends Layer {
     for (const shape of this.visibleShapes) {
       const label = shape.look.label;
       if (!label) {
+      const feature = shape.feature;
         continue;
       }
 
       if (shape.ring) {
+          feature,
         const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({
@@ -1402,12 +1427,13 @@ export class FeatureLayer extends Layer {
       } else {
         const graphemes = toGraphemes(label);
         needed += GLYPHER.bytesNeeded(graphemes);
-        labeled.push({graphemes, line: shape});
+        labeled.push({feature, graphemes, line: shape});
       }
     }
     for (const point of this.visiblePoints) {
       const label = point.look.label;
       if (label) {
+          feature: point.feature,
         const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({
@@ -1441,6 +1467,16 @@ export class FeatureLayer extends Layer {
 
     // Pixels per mercator unit, see mbtile_layer.ts#render.
     const pixelsPerWorld = 256 * Math.pow(2, zoom - 1);
+    // We test collisions in mercator scaled to pixels rather than on screen, so panning doesn't
+    // change which labels fit and only zoom replans them.
+    const collisions = new LabelCollisions();
+    for (const point of this.visiblePoints) {
+      const [x, y] = at(point);
+      const reach = this.labelReachPx(point);
+      const px = x * pixelsPerWorld;
+      const py = y * pixelsPerWorld;
+      collisions.insert([px - reach, py - reach, px + reach, py + reach]);
+    }
     const drawables = [];
     let offset = 0;
     this.labelsMissingGlyphs = false;
@@ -1465,14 +1501,41 @@ export class FeatureLayer extends Layer {
               this.glLabels,
               this.renderer,
               {horizontal: 'center', vertical: 'middle'});
+
+    // Labels that don't fit beside the ones before them are left out. The label of whatever is
+    // hovered or selected goes first, then points before lines because a point's label has one
+    // spot and a line's has several to try. A label placed last time goes before its equals, so
+    // zooming doesn't swap between neighbors every frame.
+    const priority = (feature: EditableFeature) =>
+        (this.isHighlighted(feature) ? 0 : 4)
+            + (feature.kind === 'point' ? 0 : 2)
+            + (this.labelsPlaced.has(feature.id) ? 0 : 1);
+    labeled.sort((a, b) => priority(a.feature) - priority(b.feature));
+    const placed = new Set<string>();
       drawables.push(...planned.drawables);
       offset += planned.byteSize;
     }
     for (const label of labeled) {
-      const {graphemes, line} = label;
-      if (!GLYPHER.measurePx(graphemes, LABEL_SCALE)) {
+      const {feature, graphemes, line} = label;
+      const size = GLYPHER.measurePx(graphemes, LABEL_SCALE);
+      if (!size) {
         this.labelsMissingGlyphs = true;
         continue;
+        const x = label.at[0] * pixelsPerWorld + label.offsetPx[0];
+        const y = label.at[1] * pixelsPerWorld + label.offsetPx[1];
+        const left = label.anchor.horizontal === 'start' ? x : x - size[0] / 2;
+        const box = [
+          left - LABEL_PAD_PX,
+          y - size[1] / 2 - LABEL_PAD_PX,
+          left + size[0] + LABEL_PAD_PX,
+          y + size[1] / 2 + LABEL_PAD_PX,
+        ];
+        if (collisions.hits(box)) {
+          continue;
+        }
+
+        collisions.insert(box);
+        placed.add(feature.id);
       }
 
       if (!line) {
@@ -1495,14 +1558,34 @@ export class FeatureLayer extends Layer {
         offset += planned.byteSize;
         continue;
       }
+        const points = path.points.subarray(2 * anchor);
+        if (!GLYPHER.layOutCurved(
+                graphemes, points, pixelsPerWorld, LABEL_SCALE, CURVED_GLYPHS, CURVED_PLACEMENTS)
+            || turnsTooSharply(CURVED_PLACEMENTS)) {
+          continue;
+        }
+
+        glyphBoxes(
+            [points[0] * pixelsPerWorld, points[1] * pixelsPerWorld],
+            CURVED_GLYPHS,
+            CURVED_PLACEMENTS,
+            LABEL_SCALE,
+            LABEL_PAD_PX,
+            CURVED_BOXES);
+        if (collisions.hits(CURVED_BOXES)) {
+          continue;
+        }
+
+        collisions.insert(CURVED_BOXES);
+        placed.add(feature.id);
 
       const path = labelPath(line, zoom);
       for (const anchor of path.anchors) {
         const planned =
-            GLYPHER.planCurved(
-                graphemes,
-                path.points.subarray(2 * anchor),
-                pixelsPerWorld,
+            GLYPHER.planPlaced(
+                CURVED_GLYPHS,
+                [points[0], points[1]],
+                CURVED_PLACEMENTS,
                 LABEL_SCALE,
                 LABEL_FILL,
                 LABEL_STROKE,
@@ -1511,11 +1594,12 @@ export class FeatureLayer extends Layer {
                 offset,
                 this.glLabels,
                 this.renderer);
-        if (planned.drawables.length > 0) {
-          drawables.push(...planned.drawables);
-          offset += planned.byteSize;
-          break;
-        }
+        drawables.push(...planned.drawables);
+        offset += planned.byteSize;
+    this.labelsPlaced = placed;
+    this.obstacles.boxes = collisions.boxes;
+    this.obstacles.pixelsPerWorld = pixelsPerWorld;
+        break;
       }
     }
 
@@ -1920,6 +2004,61 @@ function simplify(points: Float64Array, tolerance: number): Float64Array {
     if (keep[i]) {
       simplified.push(points[2 * i], points[2 * i + 1]);
     }
+
+// Boxes bucketed by cell. Unlike label_placer.ts#CollisionGrid it has no bounds, because labels
+// plan across the whole collection, which can span the world at any zoom.
+class LabelCollisions {
+
+  // Every box inserted, flattened
+  readonly boxes: number[];
+  private readonly cells: Map<string, number[]>;
+
+  constructor() {
+    this.boxes = [];
+    this.cells = new Map();
+  }
+
+  /** Returns whether any of the flattened x0,y0,x1,y1 boxes overlaps one inserted before. */
+  hits(boxes: number[]): boolean {
+    for (let i = 0; i < boxes.length; i += 4) {
+      const [x0, y0, x1, y1] = [boxes[i], boxes[i + 1], boxes[i + 2], boxes[i + 3]];
+      for (const key of cellKeys(x0, y0, x1, y1)) {
+        const cell = this.cells.get(key) ?? [];
+        for (let j = 0; j < cell.length; j += 4) {
+          if (x0 < cell[j + 2] && cell[j + 0] < x1 && y0 < cell[j + 3] && cell[j + 1] < y1) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  insert(boxes: number[]): void {
+    this.boxes.push(...boxes);
+    for (let i = 0; i < boxes.length; i += 4) {
+      const [x0, y0, x1, y1] = [boxes[i], boxes[i + 1], boxes[i + 2], boxes[i + 3]];
+      for (const key of cellKeys(x0, y0, x1, y1)) {
+        const cell = this.cells.get(key);
+        if (cell) {
+          cell.push(x0, y0, x1, y1);
+        } else {
+          this.cells.set(key, [x0, y0, x1, y1]);
+        }
+      }
+    }
+  }
+}
+
+function cellKeys(x0: number, y0: number, x1: number, y1: number): string[] {
+  const keys = [];
+  for (let y = Math.floor(y0 / COLLISION_CELL_PX); y <= Math.floor(y1 / COLLISION_CELL_PX); ++y) {
+    for (let x = Math.floor(x0 / COLLISION_CELL_PX); x <= Math.floor(x1 / COLLISION_CELL_PX); ++x) {
+      keys.push(`${x},${y}`);
+    }
+  }
+  return keys;
+}
   }
   return Float64Array.from(simplified);
 }

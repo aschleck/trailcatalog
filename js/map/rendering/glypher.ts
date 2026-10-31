@@ -608,7 +608,7 @@ function layOutAlong(
 // leg pointing at its own head.
 export const MAX_GLYPH_TURN = Math.PI / 4;
 
-function turnsTooSharply(placements: number[]): boolean {
+export function turnsTooSharply(placements: number[]): boolean {
   for (let i = 2 * FLOATS_PER_PLACEMENT - 1; i < placements.length; i += FLOATS_PER_PLACEMENT) {
     let turn = placements[i] - placements[i - FLOATS_PER_PLACEMENT];
     if (turn > Math.PI) {

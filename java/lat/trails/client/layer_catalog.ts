@@ -6,6 +6,7 @@ import { Camera } from 'js/map/camera';
 import { COPERNICUS_DEM_COPYRIGHT, MAPTERHORN_COPYRIGHT, NASADEM_COPYRIGHT, OSM_COPYRIGHT, PROTOMAPS_COPYRIGHT, WORLDCOVER_COPYRIGHT } from 'js/map/common/copyrights';
 import { Copyright, RgbaU32 } from 'js/map/common/types';
 import { CompositeLayer } from 'js/map/layers/composite_layer';
+import { LabelObstacles } from 'js/map/layers/label_placer';
 import { CONTOURS_FEET, CONTOURS_METERS, MACROSTRAT, MbtileLayer } from 'js/map/layers/mbtile_layer';
 import { RasterTileLayer } from 'js/map/layers/raster_tile_layer';
 import { SlopeLayer } from 'js/map/layers/slope_layer';
@@ -283,6 +284,8 @@ export class LayerCatalog extends Disposable {
 
   constructor(
       locations: LocationIndex,
+      // What the open collection drew, which the basemaps' labels make way for
+      private readonly labelObstacles: LabelObstacles,
       private readonly camera: Camera,
       elevationSampler: Elevations,
       private readonly renderer: Renderer,
@@ -414,6 +417,7 @@ export class LayerCatalog extends Disposable {
             /* minZoom= */ 0,
             /* maxZoom= */ 15,
             this.renderer,
+            this.labelObstacles,
         );
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
@@ -1257,7 +1261,8 @@ export class LayerCatalog extends Disposable {
         /* extraZoom= */ 0,
         /* minZoom= */ 9,
         /* maxZoom= */ 14,
-        this.renderer);
+        this.renderer,
+        this.labelObstacles);
   }
 
   private newGoesEntry(satellite: 'East'|'West', product: string, label: string): LayerEntry {

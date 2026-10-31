@@ -21,6 +21,46 @@ export interface LabelCandidate extends Label {
   text: string;
 }
 
+/**
+ * Boxes another layer has drawn, which LabelPlacer keeps labels out of. They are in mercator scaled
+ * by pixelsPerWorld, so a pan doesn't move them and the layer only updates them on zoom.
+ */
+export class LabelObstacles {
+
+  // Flattened x0,y0,x1,y1
+  boxes: number[];
+  pixelsPerWorld: number;
+
+  constructor() {
+    this.boxes = [];
+    this.pixelsPerWorld = 1;
+  }
+}
+
+/**
+ * Fills boxes with an x0,y0,x1,y1 square around each glyph that GLYPHER#layOutCurved placed, in
+ * pixels from head. Each square is as tall as the font and centered half an advance on from its
+ * glyph's pen along its own angle. It ignores the rotation, which costs a little space on steep
+ * text.
+ */
+export function glyphBoxes(
+    head: Vec2,
+    glyphs: Glyph[],
+    placements: ArrayLike<number>,
+    scale: number,
+    padPx: number,
+    boxes: number[]): void {
+  boxes.length = 0;
+  const half = FONT_SIZE * scale / 2 + padPx;
+  for (let i = 0; i < glyphs.length; ++i) {
+    const advance = glyphs[i].glyphAdvance * scale / 2;
+    const angle = placements[FLOATS_PER_PLACEMENT * i + 2];
+    const x = head[0] + placements[FLOATS_PER_PLACEMENT * i + 0] + advance * Math.cos(angle);
+    const y = head[1] + placements[FLOATS_PER_PLACEMENT * i + 1] + advance * Math.sin(angle);
+    boxes.push(x - half, y - half, x + half, y + half);
+  }
+}
+
 /** Boxes in screen pixels, bucketed into a grid so a query only tests the boxes near it. */
 export class CollisionGrid {
 
@@ -118,16 +158,19 @@ export class LabelPlacer {
   private readonly grid: CollisionGrid;
   private readonly placements: number[];
   private readonly point: [number, number];
+  // Scratch for glyphBoxes
+  private readonly boxes: number[];
   // Screen pixels of the placed labels, by their text
   private readonly repeats: Map<string, number[]>;
   // The keys of the labels the last call placed
   private placed: Set<string>;
 
-  constructor() {
+  constructor(private readonly obstacles?: LabelObstacles) {
     this.glyphs = [];
     this.grid = new CollisionGrid();
     this.placements = [];
     this.point = [0, 0];
+    this.boxes = [];
     this.repeats = new Map();
     this.placed = new Set();
   }
@@ -144,6 +187,10 @@ export class LabelPlacer {
     const halfHeight = projection.heightPx / 2 + MARGIN_PX;
     this.grid.reset(-halfWidth, -halfHeight, halfWidth, halfHeight);
     this.repeats.clear();
+    // They go in before any label, so every label makes way for them.
+    if (this.obstacles) {
+      this.addObstacles(this.obstacles, projection, halfWidth, halfHeight);
+    }
 
     // Pixels per mercator unit, the same scale the programs get as halfWorldSize. Glyph advances
     // are in pixels and label paths are in mercator, so curved layout needs the live conversion.
@@ -181,6 +228,28 @@ export class LabelPlacer {
     }
     this.placed = placed;
     return out;
+  }
+
+  private addObstacles(
+      obstacles: LabelObstacles,
+      projection: ScreenProjection,
+      halfWidth: number,
+      halfHeight: number): void {
+    const {boxes, pixelsPerWorld} = obstacles;
+    const point = this.point;
+    for (let i = 0; i < boxes.length; i += 4) {
+      const halfX = (boxes[i + 2] - boxes[i + 0]) / 2;
+      const halfY = (boxes[i + 3] - boxes[i + 1]) / 2;
+      const x = (boxes[i + 0] + halfX) / pixelsPerWorld;
+      const y = (boxes[i + 1] + halfY) / pixelsPerWorld;
+      // Off screen they would only crowd the grid's edge cells.
+      if (!projection.project(x, y, point)
+          || Math.abs(point[0]) > halfWidth + halfX
+          || Math.abs(point[1]) > halfHeight + halfY) {
+        continue;
+      }
+      this.grid.insert(point[0] - halfX, point[1] - halfY, point[0] + halfX, point[1] + halfY);
+    }
   }
 
   private tryPlace(
@@ -258,25 +327,16 @@ export class LabelPlacer {
     if (!projection.project(path[0], path[1], head)) {
       return undefined;
     }
-    const [hx, hy] = head;
 
-    // Each glyph gets a square as tall as the font, centered half an advance on from its pen
-    // along its own angle. It ignores the rotation, which costs a little space on steep text.
-    const half = FONT_SIZE * label.scale / 2 + (label.padPx ?? PAD_PX);
-    for (let pass = 0; pass < 2; ++pass) {
-      for (let i = 0; i < glyphs.length; ++i) {
-        const advance = glyphs[i].glyphAdvance * label.scale / 2;
-        const angle = placements[FLOATS_PER_PLACEMENT * i + 2];
-        const cx = hx + placements[FLOATS_PER_PLACEMENT * i + 0] + advance * Math.cos(angle);
-        const cy = hy + placements[FLOATS_PER_PLACEMENT * i + 1] + advance * Math.sin(angle);
-        if (pass === 0) {
-          if (this.grid.hits(cx - half, cy - half, cx + half, cy + half)) {
-            return undefined;
-          }
-        } else {
-          this.grid.insert(cx - half, cy - half, cx + half, cy + half);
-        }
+    const boxes = this.boxes;
+    glyphBoxes(head, glyphs, placements, label.scale, label.padPx ?? PAD_PX, boxes);
+    for (let i = 0; i < boxes.length; i += 4) {
+      if (this.grid.hits(boxes[i], boxes[i + 1], boxes[i + 2], boxes[i + 3])) {
+        return undefined;
       }
+    }
+    for (let i = 0; i < boxes.length; i += 4) {
+      this.grid.insert(boxes[i], boxes[i + 1], boxes[i + 2], boxes[i + 3]);
     }
 
     return GLYPHER.planPlaced(

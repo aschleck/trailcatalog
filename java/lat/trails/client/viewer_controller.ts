@@ -19,6 +19,7 @@ import { MAPTERHORN_COPYRIGHT } from 'js/map/common/copyrights';
 import { LatLngZoom, Vec2 } from 'js/map/common/types';
 import { MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
 import { Layer } from 'js/map/layer';
+import { LabelObstacles } from 'js/map/layers/label_placer';
 import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
 import { ANTARCTIC_CAP, ARCTIC_CAP } from 'js/map/layers/mbtile_layer';
@@ -387,12 +388,19 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const locations = new LocationIndex();
     // One cache, so that measuring a line just drawn doesn't fetch its lines again
     const refiner = new LineRefiner();
+    const labelObstacles = new LabelObstacles();
     const camera = this.mapController.camera;
     const renderer = this.mapController.renderer;
     // Line profiles and new vertices sample their elevations from Mapterhorn
     this.featureLayer =
         new FeatureLayer(
-            [MAPTERHORN_COPYRIGHT], this.store, locations, refiner, camera, renderer);
+            [MAPTERHORN_COPYRIGHT],
+            this.store,
+            locations,
+            refiner,
+            camera,
+            renderer,
+            labelObstacles);
     this.registerDisposable(this.featureLayer);
     this.featureLayer.setHidden(this.state.features.hidden);
     this.lineLayer =
@@ -476,6 +484,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             locations,
             camera,
             this.elevations,
+            labelObstacles,
             renderer,
             () => this.state.layers.nodes,
             () => {

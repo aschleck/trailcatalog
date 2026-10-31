@@ -16,7 +16,7 @@ import { Initialize as LoaderInitialize, Label, LoadResponse, QueryableFeature, 
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
 
-import { compareLabels, LabelCandidate, LabelPlacer } from './label_placer';
+import { compareLabels, LabelCandidate, LabelObstacles, LabelPlacer } from './label_placer';
 import { Cap } from './polar_cap_layer';
 
 interface LoadedTile {
@@ -2223,6 +2223,8 @@ export class MbtileLayer extends Layer {
       minZoom: number,
       maxZoom: number,
       private readonly renderer: Renderer,
+      // What another layer drew, which our labels keep out of
+      obstacles?: LabelObstacles,
   ) {
     super(copyrights);
     this.fetcher =
@@ -2250,7 +2252,7 @@ export class MbtileLayer extends Layer {
         this.renderer.deleteBuffer(response.glIndexBuffer);
       }
     });
-    this.placer = new LabelPlacer();
+    this.placer = new LabelPlacer(obstacles);
     this.sorted = undefined;
     // -1 is a sentinel: no styleZoom has been observed yet, so the first
     // viewportChanged adopts whatever the camera reports without triggering
