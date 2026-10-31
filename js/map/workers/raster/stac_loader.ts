@@ -8,10 +8,10 @@ import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collection
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
-import { projectLatLngRect, unprojectS2LatLng } from '../camera';
-import { TileId } from '../common/types';
+import { projectLatLngRect, unprojectS2LatLng } from '../../camera';
+import { TileId } from '../../common/types';
 
-import { serveClients, Viewport } from './client_pool';
+import { serveClients, Viewport } from '../client_pool';
 
 export interface Catalog {
   // A STAC API search endpoint, like https://earth-search.aws.element84.com/v1/search

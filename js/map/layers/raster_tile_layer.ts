@@ -13,8 +13,8 @@ import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
 import { forgetFailedTiles, loaderCount, PoolClient, sharedPool, toViewport } from '../workers/client_pool';
-import { Decode, Initialize as LoaderInitialize, LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
-import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
+import { Decode, Initialize as LoaderInitialize, LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster/raster_loader';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/tiles/xyz_data_fetcher';
 
 const MAX_IN_FLIGHT = 32;
 const NO_OFFSET: Vec2 = [0, 0];

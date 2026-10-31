@@ -8,13 +8,13 @@ import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
-import { Elevations } from 'js/map/workers/elevations';
-import { getApparentAltitude } from 'js/map/workers/sunlight';
+import { Elevations } from 'js/map/workers/elevation/elevations';
+import { getApparentAltitude } from 'js/map/workers/elevation/sunlight';
 import {
   SKYLINE_AZIMUTHS,
   VIEWSHED_BANDS,
   ViewshedImage,
-} from 'js/map/workers/terrain_tracer';
+} from 'js/map/workers/elevation/terrain_tracer';
 import { Z_USER_DATA_FILL, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { EYE_METERS, getBearing, getElevationAngle, getSkylineAt } from './skyline';

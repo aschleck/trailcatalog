@@ -10,9 +10,9 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { forgetFailedTiles, PoolClient, sharedPool, toViewport, Viewport } from '../workers/client_pool';
-import { Channel } from '../workers/weather';
-import { Initialize as LoaderInitialize, Request as LoaderRequest, Response as LoaderResponse, TraceResponse, WindStyle } from '../workers/wind_loader';
-import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
+import { Channel } from '../workers/raster/packed';
+import { Initialize as LoaderInitialize, Request as LoaderRequest, Response as LoaderResponse, TraceResponse, WindStyle } from '../workers/raster/wind_loader';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/tiles/xyz_data_fetcher';
 
 /**
  * Draws ECMWF wind tiles as streamlines whose length is the speed, or as station model barbs.

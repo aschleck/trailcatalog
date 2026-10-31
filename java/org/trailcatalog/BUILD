@@ -57,15 +57,17 @@ esbuild_binary(
     entry_points = {
         "//java/org/trailcatalog/client:app.tsx": "client",
         "//java/org/trailcatalog/client/workers:data_fetcher.ts": "data_fetcher_worker",
-        "//js/map/workers:mbtile_loader.ts": "mbtile_loader_worker",
-        "//js/map/workers:raster_loader.ts": "raster_loader_worker",
-        "//js/map/workers:xyz_data_fetcher.ts": "xyz_data_fetcher_worker",
+        "//js/map/workers/tiles:mbtile_loader.ts": "mbtile_loader_worker",
+        "//js/map/workers/raster:raster_loader.ts": "raster_loader_worker",
+        "//js/map/workers/tiles:xyz_data_fetcher.ts": "xyz_data_fetcher_worker",
     },
     deps = [
         "//java/org/trailcatalog/client:css",
         "//java/org/trailcatalog/client:ts",
         "//java/org/trailcatalog/client/workers:ts",
         "//js/map/workers",
+        "//js/map/workers/raster",
+        "//js/map/workers/tiles",
     ],
 )
 

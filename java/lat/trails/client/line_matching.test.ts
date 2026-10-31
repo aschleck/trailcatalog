@@ -1,5 +1,5 @@
 import { Vec2 } from 'js/map/common/types';
-import { LineRef, Route } from 'js/map/workers/location_querier';
+import { LineRef, Route } from 'js/map/workers/routing/location_querier';
 
 import {
   appendRoute,

@@ -1,4 +1,4 @@
-import { Vec2 } from '../common/types';
+import { Vec2 } from '../../common/types';
 
 import { Anchor, LineKey, PathRouter } from './path_router';
 import { Terrain } from './route_terrain';

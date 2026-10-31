@@ -2,7 +2,7 @@ import { aDescendsB, PointCategory, WayCategory } from 'java/org/trailcatalog/mo
 import { RgbaU32 } from 'js/map/common/types';
 import { LinePattern } from 'js/map/rendering/line_program';
 import { NATURE } from 'js/map/layers/mbtile_layer';
-import { Style as MbtileStyle } from 'js/map/workers/mbtile_loader';
+import { Style as MbtileStyle } from 'js/map/workers/tiles/mbtile_loader';
 import { Z_OVERLAY_TRANSPORTATION } from 'js/map/z';
 
 import { LineStyle, Style } from './workers/collection_loader';

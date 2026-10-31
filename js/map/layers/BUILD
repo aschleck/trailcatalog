@@ -9,6 +9,8 @@ tc_ts_project(
         "//js/map/common",
         "//js/map/rendering",
         "//js/map/workers",
+        "//js/map/workers/raster",
+        "//js/map/workers/tiles",
         "@dev_april_corgi//js/server:client",
     ],
 )

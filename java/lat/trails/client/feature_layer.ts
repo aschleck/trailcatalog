@@ -18,15 +18,15 @@ import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { Glyph } from 'js/map/rendering/sdf_program';
 import { TriangleProgram } from 'js/map/rendering/triangle_program';
-import { LocationIndex } from 'js/map/workers/location_index';
-import { LineRef, Route } from 'js/map/workers/location_querier';
+import { LocationIndex } from 'js/map/workers/routing/location_index';
+import { LineRef, Route } from 'js/map/workers/routing/location_querier';
 import {
   MAX_TRIANGLE_LENGTH_METERS,
   ringArea,
   ringsFrom,
   Triangles,
   triangulateRings,
-} from 'js/map/workers/triangulate';
+} from 'js/map/workers/tiles/triangulate';
 import { Z_USER_DATA, Z_USER_DATA_FILL, Z_USER_DATA_HALO, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { MARKER_RADIUS_PX, MARKER_STROKE, SNAP_RADIUS_PX, toE7Array } from './drawing_layer';

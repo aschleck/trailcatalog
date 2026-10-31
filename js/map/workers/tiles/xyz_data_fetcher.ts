@@ -4,12 +4,12 @@ import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collection
 import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_throttler';
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
-import { projectLatLngRect } from '../camera';
-import { tilesIntersect } from '../common/math';
-import { Rect, TileId } from '../common/types';
+import { projectLatLngRect } from '../../camera';
+import { tilesIntersect } from '../../common/math';
+import { Rect, TileId } from '../../common/types';
 
-import { serveClients, Viewport } from './client_pool';
-import { selectTilesInCone, tileInCone } from './tile_cone';
+import { serveClients, Viewport } from '../client_pool';
+import { selectTilesInCone, tileInCone } from '../tile_cone';
 
 // pi times the WGS84 semi-major axis of 6378137 m
 const WEB_MERCATOR_HALF_WORLD_METERS = 20037508.342789244;

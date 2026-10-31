@@ -1,6 +1,6 @@
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 
-import { Elevations } from 'js/map/workers/elevations';
+import { Elevations } from 'js/map/workers/elevation/elevations';
 
 import { RouteStatus } from './drawing_layer';
 import { EditableLine } from './features';

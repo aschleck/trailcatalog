@@ -1,6 +1,6 @@
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 
-import { Vec2 } from '../common/types';
+import { Vec2 } from '../../common/types';
 
 import {
   Request,

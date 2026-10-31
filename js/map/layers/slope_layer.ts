@@ -11,9 +11,9 @@ import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
 import { PoolClient, sharedPool, toViewport } from '../workers/client_pool';
-import { Request as LoaderRequest, Response as LoaderResponse, LoadResponse } from '../workers/slope_loader';
-import { BASE_ZOOM, MAX_ZOOM, SLOPES_SIZE, TILE_URL } from '../workers/terrarium';
-import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
+import { Request as LoaderRequest, Response as LoaderResponse, LoadResponse } from '../workers/raster/slope_loader';
+import { BASE_ZOOM, MAX_ZOOM, SLOPES_SIZE, TILE_URL } from '../workers/raster/terrarium';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/tiles/xyz_data_fetcher';
 
 const NO_OFFSET: Vec2 = [0, 0];
 const OPAQUE = 0xFFFFFFFF as RgbaU32;

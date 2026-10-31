@@ -12,9 +12,9 @@ import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
 import { loaderCount, PoolClient, sharedPool } from 'js/map/workers/client_pool';
-import { LocationIndex } from 'js/map/workers/location_index';
-import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, UnloadCellsCommand } from 'js/map/workers/s2_data_fetcher';
-import { CellKey, getStream, isInBand, Stream } from 'js/map/workers/s2_streams';
+import { LocationIndex } from 'js/map/workers/routing/location_index';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, UnloadCellsCommand } from 'js/map/workers/s2/s2_data_fetcher';
+import { CellKey, getStream, isInBand, Stream } from 'js/map/workers/s2/s2_streams';
 import { Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { SELECTED_CASING } from './feature_layer';

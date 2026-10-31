@@ -3,7 +3,7 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 import { MAX_LINES_BY_ID } from 'java/lat/trails/wire/wire';
 import { projectE7Deltas } from 'js/map/camera';
 import { RawUuid } from 'js/map/common/types';
-import { LineRef } from 'js/map/workers/location_querier';
+import { LineRef } from 'js/map/workers/routing/location_querier';
 
 // A batch is one primary key lookup, so a request still open after this is stuck, not slow. It
 // fails like any other, which lets a finished line save rather than wait on it forever.

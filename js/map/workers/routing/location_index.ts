@@ -1,7 +1,7 @@
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 import { WorkerPool } from 'external/dev_april_corgi+/js/common/worker_pool';
 
-import { LatLng, Vec2 } from '../common/types';
+import { LatLng, Vec2 } from '../../common/types';
 
 import {
   IndexedLine,

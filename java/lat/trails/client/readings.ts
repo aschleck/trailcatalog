@@ -1,18 +1,16 @@
+import { Channel, unpackPixel, Values } from 'js/map/workers/raster/packed';
+import { terrariumMeters } from 'js/map/workers/raster/terrarium';
 import {
   byPeakWindow,
   byWindLevel,
-  Channel,
   PEAK_WINDOWS,
   relativeHumidity,
   SNOW_TYPES,
   thunders,
-  unpackPixel,
-  Values,
   WEATHER_VIEWS,
   WeatherView,
   wetBulb,
-} from 'js/map/workers/weather';
-import { terrariumMeters } from 'js/map/workers/terrarium';
+} from 'js/map/workers/raster/weather';
 import { formatHeight, formatTemperature, shouldUseImperial } from 'js/units/formatters';
 
 const NO_DATA = 'No data';

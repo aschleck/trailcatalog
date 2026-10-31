@@ -1,10 +1,11 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
-import { TileId } from '../common/types';
+import { TileId } from '../../common/types';
 
-import { Reply, serveClients } from './client_pool';
+import { Reply, serveClients } from '../client_pool';
+import { Channel, readPacked, unpackChannel } from './packed';
 import { terrariumMeters } from './terrarium';
-import { Channel, colorWeather, readPacked, SNOW_DEPTH_CM, unpackChannel, WeatherView } from './weather';
+import { colorWeather, SNOW_DEPTH_CM, WeatherView } from './weather';
 
 // How to draw a tile. 'image' draws it as is, 'elevation' colors a terrarium tile by height,
 // 'hillshade' fades a gray hillshade by its shade, snow colors one channel of a SNODAS tile, and a

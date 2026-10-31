@@ -1,6 +1,6 @@
-import { SKYLINE_AZIMUTHS } from 'js/map/workers/terrain_tracer';
+import { SKYLINE_AZIMUTHS } from 'js/map/workers/elevation/terrain_tracer';
 
-export { getElevationAngle } from 'js/map/workers/terrain_tracer';
+export { getElevationAngle } from 'js/map/workers/elevation/terrain_tracer';
 
 /** The eye above the ground the pin stands on. */
 export const EYE_METERS = 1.7;

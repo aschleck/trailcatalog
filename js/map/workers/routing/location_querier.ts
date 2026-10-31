@@ -1,9 +1,9 @@
 import { Bytes, S2LatLng, S2Polygon } from 'java/org/trailcatalog/s2';
 import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
-import { projectS2LatLng, unprojectS2LatLng } from '../camera';
-import { WorldBoundsQuadtree } from '../common/bounds_quadtree';
-import { LatLng, LatLngRect, RawUuid, Rect, Vec2 } from '../common/types';
+import { projectS2LatLng, unprojectS2LatLng } from '../../camera';
+import { WorldBoundsQuadtree } from '../../common/bounds_quadtree';
+import { LatLng, LatLngRect, RawUuid, Rect, Vec2 } from '../../common/types';
 
 import { Anchor, LineKey, PathRouter } from './path_router';
 import { Terrain, TERRAINS } from './route_terrain';

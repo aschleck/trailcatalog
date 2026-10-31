@@ -12,8 +12,8 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { forgetFailedTiles, loaderCount, PoolClient, sharedPool, toViewport } from '../workers/client_pool';
-import { Initialize as LoaderInitialize, Label, LoadResponse, QueryableFeature, Request as LoaderRequest, Response as LoaderResponse, Style, ValueType } from '../workers/mbtile_loader';
-import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
+import { Initialize as LoaderInitialize, Label, LoadResponse, QueryableFeature, Request as LoaderRequest, Response as LoaderResponse, Style, ValueType } from '../workers/tiles/mbtile_loader';
+import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/tiles/xyz_data_fetcher';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
 
 import { compareLabels, LabelCandidate, LabelObstacles, LabelPlacer } from './label_placer';

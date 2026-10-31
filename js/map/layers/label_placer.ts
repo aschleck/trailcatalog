@@ -4,7 +4,7 @@ import { FONT_SIZE, GLYPHER } from '../rendering/glypher';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { FLOATS_PER_PLACEMENT, Glyph } from '../rendering/sdf_program';
-import { Label } from '../workers/mbtile_loader';
+import { Label } from '../workers/tiles/mbtile_loader';
 
 // Labels this far past the edge of the screen still place, so a label slides in rather than
 // appearing once its anchor crosses the edge and knocking out whatever had been there.

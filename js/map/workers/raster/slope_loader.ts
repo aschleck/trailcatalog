@@ -1,9 +1,9 @@
 import { SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
-import { TileId } from '../common/types';
+import { TileId } from '../../common/types';
 
-import { serveClients } from './client_pool';
+import { serveClients } from '../client_pool';
 import { decodeTerrarium, fetchTerrarium, SLOPES_SIZE, TILE_SIZE } from './terrarium';
 
 // Horn's method reads a pixel past each output pixel, and the output reaches a pixel into each

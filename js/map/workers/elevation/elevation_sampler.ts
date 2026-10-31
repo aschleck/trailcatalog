@@ -1,9 +1,9 @@
 import { SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
-import { Vec2 } from '../common/types';
+import { Vec2 } from '../../common/types';
 
-import { BASE_ZOOM, fetchTerrarium, MAX_ZOOM, TILE_SIZE } from './terrarium';
+import { BASE_ZOOM, fetchTerrarium, MAX_ZOOM, TILE_SIZE } from '../raster/terrarium';
 import { getSunlight } from './sunlight';
 import { GradeLimits, routeOverTerrain, simplifyCells } from './terrain_router';
 import {

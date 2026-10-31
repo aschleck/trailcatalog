@@ -1,9 +1,9 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
-import { BoundsQuadtree } from '../common/bounds_quadtree';
-import { Rect, Vec2 } from '../common/types';
+import { BoundsQuadtree } from '../../common/bounds_quadtree';
+import { Rect, Vec2 } from '../../common/types';
 
-import { Heap } from './heap';
+import { Heap } from '../heap';
 import { getAllowedTerrain, getTerrainCode, isTerrainAllowed, Terrain } from './route_terrain';
 
 /** An end of a route: a point on the network and the segment it lies on. */

@@ -1,4 +1,4 @@
-import { SKYLINE_AZIMUTHS } from 'js/map/workers/terrain_tracer';
+import { SKYLINE_AZIMUTHS } from 'js/map/workers/elevation/terrain_tracer';
 
 import { getBearing, getSkylineAt } from './skyline';
 

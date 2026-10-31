@@ -8,15 +8,17 @@ esbuild_binary(
     name = "static",
     entry_points = {
         "app.tsx": "s2viewer",
-        "//js/map/workers:mbtile_loader.ts": "mbtile_loader_worker",
-        "//js/map/workers:raster_loader.ts": "raster_loader_worker",
-        "//js/map/workers:xyz_data_fetcher.ts": "xyz_data_fetcher_worker",
+        "//js/map/workers/tiles:mbtile_loader.ts": "mbtile_loader_worker",
+        "//js/map/workers/raster:raster_loader.ts": "raster_loader_worker",
+        "//js/map/workers/tiles:xyz_data_fetcher.ts": "xyz_data_fetcher_worker",
     },
     minify = False,
     deps = [
         ":css",
         ":ts",
         "//js/map/workers",
+        "//js/map/workers/raster",
+        "//js/map/workers/tiles",
     ],
 )
 

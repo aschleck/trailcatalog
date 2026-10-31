@@ -12,7 +12,7 @@ import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
 import { PoolClient, sharedPool, toViewport } from '../workers/client_pool';
-import { Bands, Catalog, Command as LoaderCommand, Initialize as LoaderInitialize, LoadTileCommand, Request as LoaderRequest, Search } from '../workers/stac_loader';
+import { Bands, Catalog, Command as LoaderCommand, Initialize as LoaderInitialize, LoadTileCommand, Request as LoaderRequest, Search } from '../workers/raster/stac_loader';
 
 const NO_OFFSET: Vec2 = [0, 0];
 // A viewport holds well under 64 billboards, so the buffer never grows in practice.

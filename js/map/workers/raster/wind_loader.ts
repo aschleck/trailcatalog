@@ -1,10 +1,10 @@
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 
-import { RgbaU32, TileId } from '../common/types';
-import { LineProgram } from '../rendering/line_program';
+import { RgbaU32, TileId } from '../../common/types';
+import { LineProgram } from '../../rendering/line_program';
 
-import { Reply, serveClients, Viewport } from './client_pool';
-import { Channel, readPacked, unpackChannel } from './weather';
+import { Reply, serveClients, Viewport } from '../client_pool';
+import { Channel, readPacked, unpackChannel } from './packed';
 
 // Seeds sit one per cell of a lattice this many pixels across at the zoom level we trace for, so
 // between this and twice this at the zoom level after it.

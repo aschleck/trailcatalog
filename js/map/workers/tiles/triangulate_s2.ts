@@ -2,7 +2,7 @@
 // stays free of the J2CL geometry bundle, which only loads once esbuild has bundled it.
 import { S2Loop, S2Polygon } from 'java/org/trailcatalog/s2';
 
-import { projectS2Loop } from '../camera';
+import { projectS2Loop } from '../../camera';
 
 import { ringsFrom, Triangles, triangulateRings } from './triangulate';
 

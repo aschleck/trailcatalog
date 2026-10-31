@@ -12,7 +12,7 @@ kt_jvm_library(
 tc_ts_project(
     name = "wire-ts",
     srcs = [":to_ts"],
-    visibility = ["//java/lat/trails:internal", "//js/map/workers:__pkg__"],
+    visibility = ["//java/lat/trails:internal", "//js/map/workers/raster:__pkg__"],
 )
 
 genrule(

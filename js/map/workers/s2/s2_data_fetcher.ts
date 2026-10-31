@@ -4,9 +4,9 @@ import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
 import { FetchThrottler } from 'external/dev_april_corgi+/js/common/fetch_throttler';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 
-import { S2CellToken } from '../common/types';
+import { S2CellToken } from '../../common/types';
 
-import { serveClients, Viewport } from './client_pool';
+import { serveClients, Viewport } from '../client_pool';
 import { CellKey, cellKey, isInBand, Stream } from './s2_streams';
 
 // How hard the server may simplify geometry at a given zoom, as the S2 level whose cell diagonal is

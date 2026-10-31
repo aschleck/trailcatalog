@@ -3,10 +3,12 @@ import { DefaultMap } from 'external/dev_april_corgi+/js/common/collections';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
-import { RgbaU32, TileId, Vec2 } from '../common/types';
-import { LinePattern, LineProgram } from '../rendering/line_program';
-import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track, wrap } from '../rendering/glypher';
+import { RgbaU32, TileId, Vec2 } from '../../common/types';
+import { LinePattern, LineProgram } from '../../rendering/line_program';
+import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track, wrap } from '../../rendering/glypher';
 
+import { Reply, serveClients } from '../client_pool';
+import { cropLine, cropPolygon } from '../tile_crop';
 import {
   clipAround,
   Contour,
@@ -20,10 +22,8 @@ import {
   smoothLine,
   uphillSide,
 } from './line_labels';
-import { Reply, serveClients } from './client_pool';
 import { GeometryType } from './mbtile_types';
 import { MAX_TRIANGLE_LENGTH_METERS, Triangles, triangulateMb } from './triangulate';
-import { cropLine, cropPolygon } from './tile_crop';
 
 export interface Initialize {
   style: Style;

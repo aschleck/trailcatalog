@@ -9,11 +9,11 @@ import { projectE7Deltas, projectE7DeltasAfter, projectS2Loop, skipE7Deltas, ski
 import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
-import { PackedLines } from 'js/map/workers/location_querier';
-import { Terrain, TERRAINS } from 'js/map/workers/route_terrain';
-import { CellKey } from 'js/map/workers/s2_streams';
-import { Triangles } from 'js/map/workers/triangulate';
-import { triangulateS2 } from 'js/map/workers/triangulate_s2';
+import { PackedLines } from 'js/map/workers/routing/location_querier';
+import { Terrain, TERRAINS } from 'js/map/workers/routing/route_terrain';
+import { CellKey } from 'js/map/workers/s2/s2_streams';
+import { Triangles } from 'js/map/workers/tiles/triangulate';
+import { triangulateS2 } from 'js/map/workers/tiles/triangulate_s2';
 
 import { CollectionSchema } from './collection_schema';
 import { Match, matches } from './filters';

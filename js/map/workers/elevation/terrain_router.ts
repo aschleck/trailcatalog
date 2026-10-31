@@ -1,4 +1,4 @@
-import { Heap } from './heap';
+import { Heap } from '../heap';
 
 /** Elevations on a square grid, row major. */
 export interface ElevationGrid {

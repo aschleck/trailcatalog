@@ -1,5 +1,5 @@
 import { Vec2 } from 'js/map/common/types';
-import { LineRef, Route } from 'js/map/workers/location_querier';
+import { LineRef, Route } from 'js/map/workers/routing/location_querier';
 
 // A polyline along with what it ran along, kept per point so that two traces join by
 // concatenating them.

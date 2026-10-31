@@ -1,6 +1,6 @@
-import { TileId } from '../common/types';
+import { TileId } from '../../common/types';
 
-import { readPacked } from './weather';
+import { readPacked } from './packed';
 
 // Mapterhorn serves terrarium encoded WebP tiles, 512 pixels to a side, at z12 everywhere it has
 // land and deeper where a finer source covers the area.

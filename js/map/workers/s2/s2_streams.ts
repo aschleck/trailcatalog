@@ -1,4 +1,4 @@
-import { S2CellToken } from '../common/types';
+import { S2CellToken } from '../../common/types';
 
 // One slice of a collection. A stream carries the objects whose own cell sits in [fromLevel,
 // toLevel], which are the objects about the size of those cells, and tiles them at indexBottom.

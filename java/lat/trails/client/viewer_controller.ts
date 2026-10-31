@@ -24,8 +24,8 @@ import { SkyboxLayer } from 'js/map/layers/skybox_layer';
 import { MapController } from 'js/map/map_controller';
 import { ANTARCTIC_CAP, ARCTIC_CAP } from 'js/map/layers/mbtile_layer';
 import { PolarCapLayer } from 'js/map/layers/polar_cap_layer';
-import { Elevations } from 'js/map/workers/elevations';
-import { LocationIndex } from 'js/map/workers/location_index';
+import { Elevations } from 'js/map/workers/elevation/elevations';
+import { LocationIndex } from 'js/map/workers/routing/location_index';
 import { Z_BOTTOM } from 'js/map/z';
 import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {

@@ -7,7 +7,7 @@ import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
-import { LocationIndex } from 'js/map/workers/location_index';
+import { LocationIndex } from 'js/map/workers/routing/location_index';
 import { Z_EDITING } from 'js/map/z';
 
 import { LINE_DRAWN, POLYGON_DRAWN, TOOL_REQUESTED } from './events';
