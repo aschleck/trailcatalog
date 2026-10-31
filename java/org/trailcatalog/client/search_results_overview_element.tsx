@@ -8,7 +8,7 @@ import { setCanonicalPath } from 'external/dev_april_corgi+/js/server/ssr_aware'
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { Checkbox } from 'js/dino/checkbox';
 import { FluentIcon } from 'js/dino/fluent';
-import { LatLngRect, Vec2 } from 'js/map/common/types';
+import { LatLngRect } from 'js/map/common/types';
 import { CLICKED, DATA_CHANGED, MAP_MOVED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 
@@ -18,7 +18,7 @@ import { Trail, TrailSearchResult } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
-import { failedStatusCode, fetchData } from './data';
+import { fetchData, getLoadStatus } from './data';
 import { ErrorElement } from './error_element';
 import { Header } from './page';
 import { searchTrailsFromRaw } from './search_controller';
@@ -88,31 +88,17 @@ export function SearchResultsOverviewElement(
     state.searchTrails ?? resolvedFuture(undefined),
     state.searchTrailsIds ?? resolvedFuture(undefined),
   ];
-  const failedCode = failedStatusCode(futures);
-  let ready;
-  if (failedCode === undefined && futures.some(f => !f.finished)) {
-    // A rejection has to re-render too, or else the page sits on Loading forever and Node exits
-    // on the unhandled rejection.
-    const rerender = () => {
-      updateState(state);
-    };
-    Promise.all(futures).then(rerender, rerender);
-    ready = false;
-  } else {
-    ready = true;
-  }
+  const status = getLoadStatus(futures, () => { updateState(state); });
 
   return <>
-      {failedCode !== undefined
-          ? <ErrorElement statusCode={failedCode} />
-          : ready
-              ? <Content
-                  boundaryId={boundaryId}
-                  query={query}
-                  parameters={parameters}
-                  state={state}
-                  updateState={updateState} />
-              : 'Loading...'
+      {status === 'ready'
+          ? <Content
+              boundaryId={boundaryId}
+              query={query}
+              parameters={parameters}
+              state={state}
+              updateState={updateState} />
+          : status === 'loading' ? 'Loading...' : <ErrorElement statusCode={status} />
       }
   </>;
 }
@@ -133,33 +119,18 @@ function Content({
   const filter = state.filterInBoundary ? state.trailsInBoundaryFilter : state.trailsFilter;
 
   let filteredTrails: Array<Trail|TrailSearchResult> = [];
-  let bound;
+  let bound: LatLngRect|undefined;
   if (query) {
     if (state.searchTrails) {
       filteredTrails = state.searchTrails.value().filter(t => filter(t.id));
-
-      let lowLat = 90;
-      let lowLng = 180;
-      let highLat = -90;
-      let highLng = -180;
-      for (const trail of filteredTrails) {
-        if (trail.bound.low[0] < lowLat) {
-          lowLat = trail.bound.low[0];
-        }
-        if (trail.bound.high[0] > highLat) {
-          highLat = trail.bound.high[0];
-        }
-        if (trail.bound.low[1] < lowLng) {
-          lowLng = trail.bound.low[1];
-        }
-        if (trail.bound.high[1] > highLng) {
-          highLng = trail.bound.high[1];
-        }
+      if (filteredTrails.length > 0) {
+        const bounds = filteredTrails.map(t => t.bound);
+        bound = {
+          low: [Math.min(...bounds.map(b => b.low[0])), Math.min(...bounds.map(b => b.low[1]))],
+          high: [Math.max(...bounds.map(b => b.high[0])), Math.max(...bounds.map(b => b.high[1]))],
+          brand: 'LatLngRect',
+        };
       }
-      bound = {
-        low: [lowLat, lowLng] as Vec2,
-        high: [highLat, highLng] as Vec2,
-      } as LatLngRect;
     }
   } else if (boundaryId) {
     if (state.boundary && state.trailsInBoundary) {
@@ -174,17 +145,15 @@ function Content({
     filteredTrails = state.nearbyTrails;
   }
 
-  let camera = undefined;
-  if (bound) {
-    camera = bound;
-  } else if (!parameters._used) {
-    parameters._used = "true";
-    camera = {
-      lat: floatCoalesce(parameters.lat, 46.859369),
-      lng: floatCoalesce(parameters.lng, -121.747888),
-      zoom: floatCoalesce(parameters.zoom, 12),
-    };
-  }
+  // A URL camera is where the viewer last left the map, so it wins over fitting the results.
+  const camera =
+      parameters.lat !== undefined && parameters.lng !== undefined
+          ? {
+            lat: Number(parameters.lat),
+            lng: Number(parameters.lng),
+            zoom: floatCoalesce(parameters.zoom, 12),
+          }
+          : bound;
 
   let trailDetails;
   if (state.selected.length > 0) {

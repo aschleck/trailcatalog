@@ -9,14 +9,8 @@ import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.models.SourceType
 import org.trailcatalog.models.WayCategory
-
-// Keep in sync with the source_type comment in trailcatalog/migrations/4_source_tags.toml.
-enum class SourceType(val id: Int) {
-  NODE(0),
-  WAY(1),
-  RELATION(2),
-}
 
 /** The tags of one element as a JSON object, and its version when the file carries one. */
 data class SourceTags(val type: SourceType, val id: Long, val version: Int?, val tagsJson: String)

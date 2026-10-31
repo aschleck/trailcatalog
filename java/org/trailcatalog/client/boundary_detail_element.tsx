@@ -13,12 +13,13 @@ import { SELECTION_CHANGED } from './map/events';
 import { Boundary, Trail } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { BoundaryDetailController, boundaryFromRaw, containingBoundariesFromRaw, State, trailsInBoundaryFromRaw } from './boundary_detail_controller';
-import { failedStatusCode, fetchData } from './data';
+import { BoundaryDetailController, boundaryFromRaw, State, trailsInBoundaryFromRaw } from './boundary_detail_controller';
+import { fetchData, getLoadStatus } from './data';
 import { ErrorElement } from './error_element';
 import { Header } from './page';
 import { getTrailHref } from './routes';
 import { setTitle } from './title';
+import { containingBoundariesFromRaw } from './trails';
 import { TrailPopup } from './trail_popup';
 
 export function BoundaryDetailElement({boundaryId, parameters}: {
@@ -52,28 +53,14 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
     state.containingBoundaries,
     state.trailsInBoundary,
   ];
-  const failedCode = failedStatusCode(futures);
-  let ready;
-  if (failedCode === undefined && futures.some(f => !f.finished)) {
-    // A rejection has to re-render too, or else the page sits on Loading forever and Node exits
-    // on the unhandled rejection.
-    const rerender = () => {
-      updateState(state);
-    };
-    Promise.all(futures).then(rerender, rerender);
-    ready = false;
-  } else {
-    ready = true;
-  }
+  const status = getLoadStatus(futures, () => { updateState(state); });
 
   return <>
     <div className="flex flex-col h-full items-center">
       <Header />
-      {failedCode !== undefined
-        ? <ErrorElement statusCode={failedCode} />
-        : ready
-          ? <Content boundaryId={boundaryId} state={state} updateState={updateState} />
-          : 'Loading...'
+      {status === 'ready'
+        ? <Content boundaryId={boundaryId} state={state} updateState={updateState} />
+        : status === 'loading' ? 'Loading...' : <ErrorElement statusCode={status} />
       }
     </div>
   </>;

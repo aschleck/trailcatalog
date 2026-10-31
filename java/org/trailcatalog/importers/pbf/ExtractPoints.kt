@@ -6,6 +6,7 @@ import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.models.PointCategory
+import org.trailcatalog.models.nodePointId
 
 // The categories whose names are worth searching, and the only ones a way becomes a point for.
 // Bus stops, convenience stores, supermarkets, fuel, and pharmacies are mostly chains or street
@@ -68,12 +69,6 @@ fun nodePoint(
       isNotable(kvs, stringTable),
       latLng)
 }
-
-// Node and way ids overlap, so a point's id carries which one it came from in its low bit. Keep in
-// sync with types.ts#Point and viewer_controller.ts#osmElementOf.
-fun nodePointId(nodeId: Long): Long = 2 * nodeId
-
-fun wayPointId(wayId: Long): Long = 2 * wayId + 1
 
 /**
  * Returns the point category of a closed way or a climbing route that should also become a point,

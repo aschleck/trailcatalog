@@ -1,7 +1,6 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
-import { merge } from 'external/dev_april_corgi+/js/corgi/deps';
 import { CorgiEvent, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
 
 import { S2LatLng, S2Point } from 'java/org/trailcatalog/s2';
@@ -13,7 +12,6 @@ import { Boundary, ElevationProfile, Path, Trail, TrailFact } from './models/typ
 
 import { fetchData } from './data';
 import * as routes from './routes';
-import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 import { Args, State as VState, ViewportController } from './viewport_controller';
 
 const ELEVATION_GRAPH_RESOLUTION_WIDTH = 400;
@@ -52,11 +50,7 @@ type Deps = typeof TrailDetailController.deps;
 export class TrailDetailController extends ViewportController<Args, Deps, State> {
 
   static deps() {
-    return merge(ViewportController.deps(), {
-      services: {
-        data: MapDataService,
-      },
-    });
+    return ViewportController.deps();
   }
 
   constructor(response: Response<TrailDetailController>) {
@@ -66,7 +60,7 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     const trail = this.state.trail.value();
     history.silentlyReplaceUrl(`/trail/${trail.readableId}`);
 
-    const data = response.deps.services.data;
+    const data = response.deps.services.mapData;
     const reference = data.addPin({trail: trail.id});
     this.registerDisposable(reference);
     reference.trail.then(_ => {

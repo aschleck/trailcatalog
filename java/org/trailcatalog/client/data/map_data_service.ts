@@ -6,7 +6,7 @@ import { Future, asFuture } from 'external/dev_april_corgi+/js/common/futures';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
 import { Service, ServiceResponse } from 'external/dev_april_corgi+/js/corgi/service';
-import { projectE7Deltas, skipE7Deltas } from 'js/map/camera';
+import { projectE7Deltas } from 'js/map/camera';
 import { LatLng, LatLngRect } from 'js/map/common/types';
 
 import { degreesE7ToLatLng, projectLatLng, reinterpretBigInt } from '../common/math';
@@ -21,7 +21,6 @@ export interface Listener {
   loadPinned(): void;
   unloadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void;
   unloadFineCell(id: S2CellNumber, paths: Iterable<Path>, points: Iterable<Point>): void;
-  unloadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void;
 }
 
 const DATA_ZOOM_THRESHOLD = 4;
@@ -37,6 +36,18 @@ export class PinReference extends Disposable {
   }
 }
 
+// The server groups a coarse response by each path's cell, capped at level 10, because rendering
+// looks plans up by the cells in view down to that level.
+interface CoarseGroup {
+  id: S2CellNumber;
+  paths: Path[];
+}
+
+interface FineCell {
+  paths: Path[];
+  points: Point[];
+}
+
 interface PinnedTrail {
   paths: Path[];
   references: PinReference[];
@@ -49,18 +60,20 @@ export class MapDataService extends Service<EmptyDeps> {
   private readonly pins: Map<bigint, PinnedTrail>;
   private listener: Listener|undefined;
 
-  // A note on the different ArrayBuffers:
+  // A note on the different cells:
   // * overview cells basically only contain trails and go up to cell level 5
   // * coarse cells contain paths attached to trails, and go up to cell level 10
   // * fine cells contain all paths, and go up to cell level 10
   //
   // So when rendering, we always render overview cells. Above a certain zoom we render EITHER
   // coarse or fine.
-  readonly overviewCells: Map<S2CellNumber, ArrayBuffer|false>;
-  readonly coarseCells: Map<S2CellNumber, ArrayBuffer|false>;
-  readonly fineCells: Map<S2CellNumber, ArrayBuffer|false>;
-  readonly coarsePaths: Map<bigint, Path>;
-  readonly finePaths: Map<bigint, Path>;
+  //
+  // Each is keyed by the cell the fetcher requested, because that is the cell it unloads.
+  private readonly overviewCells: Map<S2CellNumber, Trail[]>;
+  private readonly coarseCells: Map<S2CellNumber, CoarseGroup[]>;
+  private readonly fineCells: Map<S2CellNumber, FineCell>;
+  private readonly coarsePaths: Map<bigint, Path>;
+  private readonly finePaths: Map<bigint, Path>;
   readonly pinnedPaths: Map<bigint, Path>;
   readonly pathsToTrails: IdentitySetMultiMap<bigint, Trail>;
   readonly points: Map<bigint, Point>;
@@ -97,8 +110,6 @@ export class MapDataService extends Service<EmptyDeps> {
             this.unloadCoarseCell(cell);
           } else if (command.index === 'fine') {
             this.unloadFineCell(cell);
-          } else if (command.index === 'overview') {
-            this.unloadOverviewCell(cell);
           } else {
             checkExhaustive(command.index);
           }
@@ -112,91 +123,15 @@ export class MapDataService extends Service<EmptyDeps> {
   setListener(listener: Listener): void {
     this.listener = listener;
 
-    for (const [id, buffer] of this.overviewCells) {
-      if (!buffer) {
-        continue;
-      }
-
-      const data = new LittleEndianView(buffer);
-
-      const trailCount = data.getVarInt32();
-      const trails = [];
-      for (let i = 0; i < trailCount; ++i) {
-        const id = data.getVarBigInt64();
-        const nameLength = data.getVarInt32();
-        data.skip(nameLength);
-        data.getVarInt32();
-        const pathCount = data.getVarInt32();
-        data.align(8);
-        data.skip(8 * pathCount);
-        data.skip(5 * 4);
-        const trail = this.trails.get(id);
-        if (trail) {
-          trails.push(trail);
-        }
-      }
-
+    for (const [id, trails] of this.overviewCells) {
       listener.loadOverviewCell(id, trails);
     }
-
-    for (const [id, buffer] of this.coarseCells) {
-      if (!buffer) {
-        continue;
-      }
-
-      // Coarse buffers are grouped: a single buffer holds multiple cells and is
-      // stored in coarseCells under each group's id. Reparse the groups and
-      // replay only the one matching this entry's id (others have their own
-      // entries, and a partially unloaded buffer may no longer contain all).
-      const data = new LittleEndianView(buffer);
-      const groupCount = data.getVarInt32();
-      for (let group = 0; group < groupCount; ++group) {
-        const groupId = reinterpretBigInt(data.getBigInt64()) as S2CellNumber;
-        const pathCount = data.getVarInt32();
-        const paths = [];
-        for (let i = 0; i < pathCount; ++i) {
-          const id = data.getVarBigInt64();
-          data.getVarInt32();
-          skipE7Deltas(data);
-          const path = this.coarsePaths.get(id);
-          if (path) {
-            paths.push(path);
-          }
-        }
-        if (groupId === id) {
-          listener.loadCoarseCell(id, paths);
-        }
+    for (const groups of this.coarseCells.values()) {
+      for (const {id, paths} of groups) {
+        listener.loadCoarseCell(id, paths);
       }
     }
-
-    for (const [id, buffer] of this.fineCells) {
-      if (!buffer) {
-        continue;
-      }
-      const data = new LittleEndianView(buffer);
-      const pathCount = data.getVarInt32();
-      const paths = [];
-      for (let i = 0; i < pathCount; ++i) {
-        const id = data.getVarBigInt64();
-        data.getVarInt32();
-        skipE7Deltas(data);
-        const path = this.finePaths.get(id);
-        if (path) {
-          paths.push(path);
-        }
-      }
-      const pointCount = data.getVarInt32();
-      const points = [];
-      for (let i = 0; i < pointCount; ++i) {
-        const id = data.getVarBigInt64();
-        data.getVarInt32();
-        const nameLength = data.getVarInt32();
-        data.skip(nameLength + 2 * 4);
-        const point = this.points.get(id);
-        if (point) {
-          points.push(point);
-        }
-      }
+    for (const [id, {paths, points}] of this.fineCells) {
       listener.loadFineCell(id, paths, points);
     }
 
@@ -277,12 +212,6 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   private loadOverviewCell(id: S2CellNumber, buffer: ArrayBuffer): void {
-    // Check if the server wrote us a 1 byte response with 0 trails and paths.
-    if (buffer.byteLength <= 8) {
-      this.overviewCells.set(id, false);
-      return;
-    }
-
     const data = new LittleEndianView(buffer);
 
     const trailCount = data.getVarInt32();
@@ -323,18 +252,27 @@ export class MapDataService extends Service<EmptyDeps> {
       trails.push(trail);
     }
 
-    this.overviewCells.set(id, buffer);
+    this.overviewCells.set(id, trails);
     this.listener?.loadOverviewCell(id, trails);
   }
 
   private loadCoarseCell(id: S2CellNumber, buffer: ArrayBuffer): void {
-    // Check if the server wrote us a short response with 0 trails and paths.
-    if (buffer.byteLength <= 8) {
-      this.coarseCells.set(id, false);
-      return;
-    }
+    // A refetch at a finer snap carries the same path ids, so the old copy has to go first.
+    this.unloadCoarseCell(id);
 
-    this.loadRegularCoarse(buffer);
+    const data = new LittleEndianView(buffer);
+    const groupCount = data.getVarInt32();
+    const groups = [];
+    for (let group = 0; group < groupCount; ++group) {
+      const groupId = reinterpretBigInt(data.getBigInt64()) as S2CellNumber;
+      const paths = readPaths(data);
+      for (const path of paths) {
+        this.coarsePaths.set(path.id, path);
+      }
+      groups.push({id: groupId, paths});
+      this.listener?.loadCoarseCell(groupId, paths);
+    }
+    this.coarseCells.set(id, groups);
   }
 
   private loadPinnedTrail(trail: bigint, buffer: ArrayBuffer): void {
@@ -354,27 +292,7 @@ export class MapDataService extends Service<EmptyDeps> {
     // The other exception is that we will resolve pinned promises so we can pass bounds. Ew.
 
     const data = new LittleEndianView(buffer);
-    const pathCount = data.getVarInt32();
-    pin.paths.length = 0;
-    for (let i = 0; i < pathCount; ++i) {
-      const id = data.getVarBigInt64();
-      const type = data.getVarInt32();
-      const points = projectE7Deltas(data);
-      // A rect per path because we hit test against it and the quadtrees delete by its identity.
-      const bound = {
-        low: [1, 1],
-        high: [-1, -1],
-      };
-      for (let j = 0; j < points.length; j += 2) {
-        const x = points[j + 0];
-        const y = points[j + 1];
-        bound.low[0] = Math.min(bound.low[0], x);
-        bound.low[1] = Math.min(bound.low[1], y);
-        bound.high[0] = Math.max(bound.high[0], x);
-        bound.high[1] = Math.max(bound.high[1], y);
-      }
-      pin.paths.push(new Path(id, type, bound as unknown as PixelRect, points));
-    }
+    pin.paths = readPaths(data);
     this.repackPinnedPaths();
 
     const trailCount = data.getVarInt32();
@@ -436,77 +354,14 @@ export class MapDataService extends Service<EmptyDeps> {
     }
   }
 
-  private loadRegularCoarse(buffer: ArrayBuffer): void {
-    const data = new LittleEndianView(buffer);
-
-    const groupCount = data.getVarInt32();
-    for (let group = 0; group < groupCount; ++group) {
-      const id = reinterpretBigInt(data.getBigInt64()) as S2CellNumber;
-
-      const pathCount = data.getVarInt32();
-      const paths = [];
-      for (let i = 0; i < pathCount; ++i) {
-        const id = data.getVarBigInt64();
-        const type = data.getVarInt32();
-        const points = projectE7Deltas(data);
-        const bound = {
-          low: [1, 1],
-          high: [-1, -1],
-        };
-        for (let i = 0; i < points.length; i += 2) {
-          const x = points[i + 0];
-          const y = points[i + 1];
-          bound.low[0] = Math.min(bound.low[0], x);
-          bound.low[1] = Math.min(bound.low[1], y);
-          bound.high[0] = Math.max(bound.high[0], x);
-          bound.high[1] = Math.max(bound.high[1], y);
-        }
-        const built = new Path(id, type, bound as unknown as PixelRect, points);
-        this.coarsePaths.set(id, built);
-        paths.push(built);
-      }
-
-      this.coarseCells.set(id, buffer);
-      this.listener?.loadCoarseCell(id, paths);
-    }
-  }
-
   private loadFineCell(id: S2CellNumber, buffer: ArrayBuffer): void {
-    // Drop the coarser copy first. Zooming in refetches a cell at a finer snap, and the new parse
-    // reuses the same path ids.
-    if (this.fineCells.has(id)) {
-      this.unloadFineCell(id);
-    }
-
-    // Check if the server wrote us a 1 byte response with 0 trails and paths.
-    if (buffer.byteLength <= 8) {
-      this.fineCells.set(id, false);
-      return;
-    }
+    // A refetch at a finer snap carries the same path ids, so the old copy has to go first.
+    this.unloadFineCell(id);
 
     const data = new LittleEndianView(buffer);
-
-    const pathCount = data.getVarInt32();
-    const paths = [];
-    for (let i = 0; i < pathCount; ++i) {
-      const id = data.getVarBigInt64();
-      const type = data.getVarInt32();
-      const points = projectE7Deltas(data);
-      const bound = {
-        low: [1, 1],
-        high: [-1, -1],
-      };
-      for (let i = 0; i < points.length; i += 2) {
-        const x = points[i + 0];
-        const y = points[i + 1];
-        bound.low[0] = Math.min(bound.low[0], x);
-        bound.low[1] = Math.min(bound.low[1], y);
-        bound.high[0] = Math.max(bound.high[0], x);
-        bound.high[1] = Math.max(bound.high[1], y);
-      }
-      const built = new Path(id, type, bound as unknown as PixelRect, points);
-      this.finePaths.set(id, built);
-      paths.push(built);
+    const paths = readPaths(data);
+    for (const path of paths) {
+      this.finePaths.set(path.id, path);
     }
 
     const pointCount = data.getVarInt32();
@@ -532,115 +387,60 @@ export class MapDataService extends Service<EmptyDeps> {
       points.push(built);
     }
 
-    this.fineCells.set(id, buffer);
+    this.fineCells.set(id, {paths, points});
     this.listener?.loadFineCell(id, paths, points);
   }
 
   private unloadCoarseCell(id: S2CellNumber): void {
-    const buffer = this.coarseCells.get(id);
+    for (const group of this.coarseCells.get(id) ?? []) {
+      for (const path of group.paths) {
+        this.coarsePaths.delete(path.id);
+      }
+      this.listener?.unloadCoarseCell(group.id, group.paths);
+    }
     this.coarseCells.delete(id);
-
-    if (!buffer) {
-      return;
-    }
-
-    const data = new LittleEndianView(buffer);
-
-    // Coarse buffers hold multiple groups; only unload the one matching id.
-    const groupCount = data.getVarInt32();
-    for (let group = 0; group < groupCount; ++group) {
-      const groupId = reinterpretBigInt(data.getBigInt64()) as S2CellNumber;
-      const pathCount = data.getVarInt32();
-      const paths = [];
-      for (let i = 0; i < pathCount; ++i) {
-        const pathId = data.getVarBigInt64();
-        data.getVarInt32();
-        skipE7Deltas(data);
-        const entity = this.coarsePaths.get(pathId);
-        if (entity) {
-          this.coarsePaths.delete(pathId);
-          paths.push(entity);
-        }
-      }
-      if (groupId === id) {
-        this.listener?.unloadCoarseCell(id, paths);
-      }
-    }
   }
 
   private unloadFineCell(id: S2CellNumber): void {
-    const buffer = this.fineCells.get(id);
+    const cell = this.fineCells.get(id);
+    if (!cell) {
+      return;
+    }
+
+    for (const path of cell.paths) {
+      this.finePaths.delete(path.id);
+    }
+    for (const point of cell.points) {
+      this.points.delete(point.id);
+    }
     this.fineCells.delete(id);
-
-    if (!buffer) {
-      return;
-    }
-
-    const data = new LittleEndianView(buffer);
-
-    const pathCount = data.getVarInt32();
-    const paths = [];
-    for (let i = 0; i < pathCount; ++i) {
-      const id = data.getVarBigInt64();
-      data.getVarInt32();
-      skipE7Deltas(data);
-      const entity = this.finePaths.get(id);
-      if (entity) {
-        this.finePaths.delete(id);
-        paths.push(entity);
-      }
-    }
-
-    const pointCount = data.getVarInt32();
-    const points = [];
-    for (let i = 0; i < pointCount; ++i) {
-      const id = data.getVarBigInt64();
-      data.getVarInt32();
-      const nameLength = data.getVarInt32();
-      data.skip(nameLength + 2 * 4);
-      const point = this.points.get(id);
-      if (point) {
-        this.points.delete(id);
-        points.push(point);
-      }
-    }
-
-    this.listener?.unloadFineCell(id, paths, points);
+    this.listener?.unloadFineCell(id, cell.paths, cell.points);
   }
+}
 
-  private unloadOverviewCell(id: S2CellNumber): void {
-    const buffer = this.overviewCells.get(id);
-    this.overviewCells.delete(id);
-
-    if (!buffer) {
-      return;
+// A rect per path because we hit test against it and the quadtrees delete by its identity.
+function readPaths(data: LittleEndianView): Path[] {
+  const count = data.getVarInt32();
+  const paths = [];
+  for (let i = 0; i < count; ++i) {
+    const id = data.getVarBigInt64();
+    const type = data.getVarInt32();
+    const points = projectE7Deltas(data);
+    const bound = {
+      low: [1, 1],
+      high: [-1, -1],
+    };
+    for (let j = 0; j < points.length; j += 2) {
+      const x = points[j + 0];
+      const y = points[j + 1];
+      bound.low[0] = Math.min(bound.low[0], x);
+      bound.low[1] = Math.min(bound.low[1], y);
+      bound.high[0] = Math.max(bound.high[0], x);
+      bound.high[1] = Math.max(bound.high[1], y);
     }
-
-    const data = new LittleEndianView(buffer);
-
-    const trailCount = data.getVarInt32();
-    const trails = [];
-    for (let i = 0; i < trailCount; ++i) {
-      const id = data.getVarBigInt64();
-      const nameLength = data.getVarInt32();
-      data.skip(nameLength);
-      data.getVarInt32();
-      const pathCount = data.getVarInt32();
-      data.align(8);
-      data.skip(8 * pathCount + 2 * 4 + 2 * 4 + 4);
-
-      const entity = this.trails.get(id);
-      if (entity) {
-        for (const path of entity.paths) {
-          this.pathsToTrails.delete(path, entity);
-        }
-        this.trails.delete(id);
-        trails.push(entity);
-      }
-    }
-
-    this.listener?.unloadOverviewCell(id, trails);
+    paths.push(new Path(id, type, bound as unknown as PixelRect, points));
   }
+  return paths;
 }
 
 function constructTrail(

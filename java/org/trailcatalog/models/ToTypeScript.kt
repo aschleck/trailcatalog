@@ -2,6 +2,8 @@ package org.trailcatalog.models
 
 fun main() {
   println("export const ENUM_SIZE = ${ENUM_SIZE};")
+  println("export const CLIMB_THRESHOLD_METERS = ${CLIMB_THRESHOLD_METERS};")
+  println("export const ELEVATION_MAX_ZOOM = ${ELEVATION_MAX_ZOOM};")
 
   println("""
 export function aDescendsB(a: number, b: number): boolean {
@@ -10,6 +12,22 @@ export function aDescendsB(a: number, b: number): boolean {
     cursor = Math.floor((cursor - 1) / ENUM_SIZE);
   }
   return b === cursor;
+}
+""")
+
+  println("""
+export function getPointSource(id: bigint): {type: 'node'|'way'; id: bigint} {
+  return {type: (id & 1n) === 0n ? 'node' : 'way', id: id >> 1n};
+}
+
+export function getBoundarySource(id: bigint): {type: 'node'|'relation'|'way'; id: bigint} {
+  if (id >= ${NODE_SITE_ID_OFFSET}n) {
+    return {type: 'node', id: id - ${NODE_SITE_ID_OFFSET}n};
+  } else if (id >= ${WAY_SITE_ID_OFFSET}n) {
+    return {type: 'way', id: id - ${WAY_SITE_ID_OFFSET}n};
+  } else {
+    return {type: 'relation', id};
+  }
 }
 """)
 

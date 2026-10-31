@@ -33,17 +33,24 @@ export class DataRequestError extends Error {
 }
 
 /**
- * Returns the status code of the first of the given futures that failed, or undefined if none
- * have. A failure that isn't a DataRequestError counts as a 500.
+ * Returns the status code of the first of the given futures that failed, 'loading' while any are
+ * pending, or 'ready'. A failure that isn't a DataRequestError counts as a 500.
  */
-export function failedStatusCode(futures: Array<Future<unknown>>): number|undefined {
+export function getLoadStatus(futures: Array<Future<unknown>>, rerender: () => void):
+    number|'loading'|'ready' {
   for (const future of futures) {
     if (future.finished && !future.ok) {
       const error = future.error();
       return error instanceof DataRequestError ? error.code : 500;
     }
   }
-  return undefined;
+  if (futures.every(f => f.finished)) {
+    return 'ready';
+  }
+  // A rejection has to re-render too, or else the page sits on Loading forever and Node exits on
+  // the unhandled rejection.
+  Promise.all(futures).then(rerender, rerender);
+  return 'loading';
 }
 
 function fetchDataBatchUnsafe(

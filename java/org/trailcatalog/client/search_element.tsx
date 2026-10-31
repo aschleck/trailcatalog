@@ -110,7 +110,7 @@ function SearchResults({boundaries, className, query, trails}: {
           icon="/static/images/icons/trail.svg"
           label="Trails"
           limit={{
-            allHref: `/search?query=${query}`,
+            allHref: `/search?query=${encodeURIComponent(query)}`,
             count: 5,
           }}
           results={trails.map(trail => <>

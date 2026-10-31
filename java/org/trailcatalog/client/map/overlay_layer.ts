@@ -7,7 +7,6 @@ import { LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
-import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { BOUNDARY_PALETTE } from './colors';
 
@@ -23,67 +22,75 @@ const NO_OFFSET: Vec2 = [0, 0];
 export class OverlayLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
-  private bearIcon: WebGLTexture|undefined;
-  private blueIcon: WebGLTexture|undefined;
+  private readonly bearIcon: WebGLTexture;
+  private readonly blueIcon: WebGLTexture;
+  private readonly loadedIcons: Set<WebGLTexture>;
   private drawables: Drawable[];
-  private lastOverlays: Overlays;
+  private overlays: Overlays;
   private scratchBuffer: ArrayBuffer;
 
   constructor(overlays: Overlays, private readonly renderer: Renderer) {
     super();
     this.buffer = this.renderer.createDataBuffer(0);
-    this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
+    this.bearIcon = this.renderer.createTexture();
+    this.blueIcon = this.renderer.createTexture();
+    this.registerDisposer(() => {
+      this.renderer.deleteBuffer(this.buffer);
+      this.renderer.deleteTexture(this.bearIcon);
+      this.renderer.deleteTexture(this.blueIcon);
+    });
+    this.loadedIcons = new Set();
     this.drawables = [];
-    this.lastOverlays = {};
+    this.overlays = overlays;
     this.scratchBuffer = new ArrayBuffer(64 * 1024);
 
-    fetch(new URL("images/icons/bear-face.png", import.meta.url))
-        .then(response => {
-          if (response.ok) {
-            return response.blob()
-                .then(blob => createImageBitmap(blob))
-                .then(bitmap => {
-                  const pool = new TexturePool(renderer);
-                  this.bearIcon = pool.acquire();
-                  renderer.uploadTexture(bitmap, this.bearIcon);
-                });
-          } else {
-            return undefined;
-          }
-        });
-
-    fetch(new URL("images/icons/blue-dot.png", import.meta.url))
-        .then(response => {
-          if (response.ok) {
-            return response.blob()
-                .then(blob => createImageBitmap(blob))
-                .then(bitmap => {
-                  const pool = new TexturePool(renderer);
-                  this.blueIcon = pool.acquire();
-                  renderer.uploadTexture(bitmap, this.blueIcon);
-                });
-          } else {
-            return undefined;
-          }
-        });
-
-    this.setOverlay(overlays);
+    this.loadIcon('images/icons/bear-face.png', this.bearIcon);
+    this.loadIcon('images/icons/blue-dot.png', this.blueIcon);
+    this.plan();
   }
 
   setOverlay(overlays: Overlays) {
-    if (overlays.bear === this.lastOverlays.bear
-        && overlays.blueDot === this.lastOverlays.blueDot
-        && overlays.polygon === this.lastOverlays.polygon) {
+    if (overlays.bear === this.overlays.bear
+        && overlays.blueDot === this.overlays.blueDot
+        && overlays.polygon === this.overlays.polygon) {
       return;
     }
-    this.lastOverlays = overlays;
+    this.overlays = overlays;
+    this.plan();
+  }
 
+  private loadIcon(path: string, texture: WebGLTexture): void {
+    fetch(new URL(path, import.meta.url))
+        .then(response => {
+          if (response.ok) {
+            return response.blob();
+          } else {
+            throw new Error(`Unable to fetch ${path}`);
+          }
+        })
+        .then(blob => createImageBitmap(blob))
+        .then(bitmap => {
+          if (this.isDisposed) {
+            bitmap.close();
+            return;
+          }
+          this.renderer.uploadTexture(bitmap, texture);
+          this.loadedIcons.add(texture);
+          this.plan();
+        });
+  }
+
+  private plan(): void {
+    const overlays = this.overlays;
+    const bear = overlays.bear && this.loadedIcons.has(this.bearIcon) ? overlays.bear : undefined;
+    const blueDot =
+        overlays.blueDot && this.loadedIcons.has(this.blueIcon) ? overlays.blueDot : undefined;
     const projectedLoops: Array<{splits: number[]; vertices: Float32Array}> = [];
     let bufferSize = 0;
-    if (overlays.bear && this.bearIcon) {
+    if (bear) {
       bufferSize += BillboardProgram.bytesNeeded();
     }
-    if (overlays.blueDot && this.blueIcon) {
+    if (blueDot) {
       bufferSize += BillboardProgram.bytesNeeded();
     }
     if (overlays.polygon) {
@@ -108,9 +115,8 @@ export class OverlayLayer extends Layer {
     const drawables = [];
     let offset = 0;
 
-    // TODO(april): need to have listeners for icon loads or else this can get lost
-    if (overlays.bear && this.bearIcon) {
-      const center = projectS2LatLng(S2LatLng.fromDegrees(overlays.bear[0], overlays.bear[1]));
+    if (bear) {
+      const center = projectS2LatLng(S2LatLng.fromDegrees(bear[0], bear[1]));
       const {byteSize, drawable} =
           this.renderer.billboardProgram.plan(
               center,
@@ -129,10 +135,8 @@ export class OverlayLayer extends Layer {
       offset += byteSize;
     }
 
-    // TODO(april): need to have listeners for icon loads or else this can get lost
-    if (overlays.blueDot && this.blueIcon) {
-      const center =
-          projectS2LatLng(S2LatLng.fromDegrees(overlays.blueDot[0], overlays.blueDot[1]));
+    if (blueDot) {
+      const center = projectS2LatLng(S2LatLng.fromDegrees(blueDot[0], blueDot[1]));
       const {byteSize, drawable} =
           this.renderer.billboardProgram.plan(
               center,

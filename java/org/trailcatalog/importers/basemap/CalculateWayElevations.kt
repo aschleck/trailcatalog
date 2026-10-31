@@ -12,13 +12,8 @@ import org.trailcatalog.importers.pbf.Way
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
+import org.trailcatalog.models.CLIMB_THRESHOLD_METERS
 import org.trailcatalog.s2.earthMetersToAngle
-
-// A recording drifts 3 or 4 m in altitude over a flat day and Copernicus quotes up to 4 m of
-// relative error on steep slopes, so reversals smaller than this are noise. Real climbs lose
-// nothing because only the reversal is dropped, never the climb on either side of it.
-// Keep in sync with measurements.ts#CLIMB_THRESHOLD_METERS.
-private const val CLIMB_THRESHOLD_METERS = 5.0
 
 class CalculateWayElevations
     : PTransformer<PEntry<S2CellId, Way>, Profile>(TypeToken.of(Profile::class.java)) {

@@ -55,11 +55,8 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     return ViewportController.deps();
   }
 
-  private searchQuery: string|undefined;
-
   constructor(response: Response<SearchResultsOverviewController>) {
     super(response);
-    this.searchQuery = response.args.query;
 
     // We do this here to
     // a) avoid making filter functions every time the TSX re-renders
@@ -98,10 +95,10 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
   }
 
   clearBoundary(): void {
-    if (this.searchQuery) {
+    if (this.state.searchQuery) {
       routes.showSearchResults({
         camera: this.mapController.cameraLlz,
-        query: this.searchQuery,
+        query: this.state.searchQuery,
       }, this.views);
     } else {
       routes.showOverview({camera: this.mapController.cameraLlz}, this.views);

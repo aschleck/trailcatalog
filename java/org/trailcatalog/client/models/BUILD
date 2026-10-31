@@ -6,6 +6,7 @@ tc_ts_project(
     name = "models",
     deps = [
         "//java/org/trailcatalog/client/common",
+        "//java/org/trailcatalog/models:models-ts",
         "//js/map/common",
     ],
 )

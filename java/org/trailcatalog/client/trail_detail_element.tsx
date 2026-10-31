@@ -15,7 +15,7 @@ import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
-import { failedStatusCode, fetchData } from './data';
+import { fetchData, getLoadStatus } from './data';
 import { ErrorElement } from './error_element';
 import { Header } from './page';
 import { setTitle } from './title';
@@ -63,29 +63,15 @@ export function TrailDetailElement({trailId, parameters}: {
     state.tags,
     state.trail,
   ];
-  const failedCode = failedStatusCode(futures);
-  let ready;
-  if (failedCode === undefined && futures.some(f => !f.finished)) {
-    // A rejection has to re-render too, or else the page sits on Loading forever and Node exits
-    // on the unhandled rejection.
-    const rerender = () => {
-      updateState(state);
-    };
-    Promise.all(futures).then(rerender, rerender);
-    ready = false;
-  } else {
-    ready = true;
-  }
+  const status = getLoadStatus(futures, () => { updateState(state); });
 
   return <>
     <div className="flex flex-col h-full">
       <Header />
 
-      {failedCode !== undefined
-          ? <ErrorElement statusCode={failedCode} />
-          : ready
-              ? <Content trailId={trailId} state={state} updateState={updateState} />
-              : 'Loading...'
+      {status === 'ready'
+          ? <Content trailId={trailId} state={state} updateState={updateState} />
+          : status === 'loading' ? 'Loading...' : <ErrorElement statusCode={status} />
       }
     </div>
   </>;

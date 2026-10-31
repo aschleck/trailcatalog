@@ -7,6 +7,7 @@ import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.PointCategory
+import org.trailcatalog.models.wayPointId
 
 /**
  * Collapses each closed way with a point type to a point at its centroid, and each climbing route

@@ -6,6 +6,7 @@ import com.zaxxer.hikari.HikariDataSource
 import crosby.binary.Osmformat.PrimitiveBlock
 import org.postgresql.copy.CopyManager
 import org.postgresql.jdbc.PgConnection
+import org.trailcatalog.chooseEpoch
 import org.trailcatalog.createConnectionSource
 import org.trailcatalog.flags.FlagSpec
 import org.trailcatalog.flags.createFlag
@@ -48,8 +49,6 @@ import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
 import java.sql.Connection
-import java.time.LocalDateTime
-import java.time.ZoneOffset
 import java.util.concurrent.ConcurrentLinkedQueue
 
 @FlagSpec(name = "elevation_profile")
@@ -501,22 +500,4 @@ private class ClaimingIterator<V>(private val shared: Iterator<V>) : Iterator<V>
     }
     return batch.removeFirst()
   }
-}
-
-/**
- * Returns the date the import's data is from as YYMMDD, followed by two digits counting the
- * imports already made of that date. Keep in sync with Frontend.kt#epochDate.
- */
-private fun chooseEpoch(activeEpochs: Set<Int>): Int {
-  val now = LocalDateTime.now(ZoneOffset.UTC)
-  if (now.hour < 1 && now.minute < 15) {
-    throw RuntimeException("Don't do this")
-  }
-  // TODO(april): roll back month
-  val date = (now.year % 100) * 10000 + now.month.value * 100 + (now.dayOfMonth - 1)
-  val first = date * 100
-  val sameDate = activeEpochs.filter { it in first until first + 100 }
-  val next = if (sameDate.isEmpty()) first else sameDate.max() + 1
-  // Finishing drops every epoch but the new one, so it has to sort after the live one too.
-  return maxOf(next, (activeEpochs.maxOrNull() ?: 0) + 1)
 }

@@ -47,6 +47,7 @@ kt_jvm_library(
     srcs = glob(["*.kt"]),
     deps = [
         ":basemap_java",
+        "//java/org/trailcatalog:epoch_tracker",
         "//java/org/trailcatalog:pg_support",
         "//java/org/trailcatalog/flags",
         "//java/org/trailcatalog/importers/common",

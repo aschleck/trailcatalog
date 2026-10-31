@@ -51,7 +51,7 @@ export interface LoadCellOverviewCommand {
 
 // Which index the cells belong to. A coarse cell and a fine cell can carry the same id, so
 // without this the client can't tell which of the two to unload.
-export type CellIndex = 'coarse'|'fine'|'overview';
+export type CellIndex = 'coarse'|'fine';
 
 export interface UnloadCellsCommand {
   type: 'ucc';

@@ -6,6 +6,7 @@ import org.trailcatalog.importers.pipeline.collections.getSerializer
 import org.trailcatalog.importers.pipeline.collections.registerSerializer
 import org.trailcatalog.common.EncodedInputStream
 import org.trailcatalog.common.EncodedOutputStream
+import org.trailcatalog.models.SourceType
 import org.trailcatalog.proto.RelationSkeleton
 
 fun readNames(from: EncodedInputStream): List<Name> {

@@ -4,7 +4,8 @@ import { redirectTo } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { Trail } from './models/types';
 
-import { fetchData } from './data';
+import { fetchData, getLoadStatus } from './data';
+import { ErrorElement } from './error_element';
 import { trailFromRaw } from './trails';
 
 interface State {
@@ -22,19 +23,18 @@ export function GoToTrailElement({trailId, parameters}: {
   }
   const state = inState;
 
-  if (state.trail.finished) {
-    const trail = state.trail.value();
-    redirectTo(`/trail/${trail.readableId}`);
-    return <>
-      <a href={`/trail/${trail.readableId}`}>
-        Click here if you are not automatically redirected
-      </a>
-    </>;
-  } else {
-    state.trail.then(() => {
-      updateState(state);
-    });
-
+  const status = getLoadStatus([state.trail], () => { updateState(state); });
+  if (status === 'loading') {
     return <>Redirecting...</>;
+  } else if (status !== 'ready') {
+    return <ErrorElement statusCode={status} />;
   }
+
+  const trail = state.trail.value();
+  redirectTo(`/trail/${trail.readableId}`);
+  return <>
+    <a href={`/trail/${trail.readableId}`}>
+      Click here if you are not automatically redirected
+    </a>
+  </>;
 }

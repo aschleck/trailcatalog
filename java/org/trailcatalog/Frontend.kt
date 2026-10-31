@@ -15,6 +15,7 @@ import org.trailcatalog.common.simplifyLatLngE7
 import org.trailcatalog.models.ENUM_SIZE
 import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.models.SourceType
 import org.trailcatalog.models.WayCategory
 import org.trailcatalog.s2.SimpleS2
 import org.trailcatalog.s2.snapEpsilon
@@ -22,7 +23,6 @@ import java.net.URI
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Base64
 import java.util.Stack
@@ -32,9 +32,9 @@ private val connectionSource = createConnectionSource()
 private val epochTracker = EpochTracker(connectionSource)
 private val startTime = Instant.now().getEpochSecond() % 10000 // make it shorter
 
-// The categories with an icon, so that the points trails.lat imports for trip planning stay out of
-// trailcatalog instead of drawing as generic dots. Keep in sync with
-// static/images/atlases/points/def.json.
+// The categories of trailcatalog's own icons, cells 1 through 21 of points_atlas.ts, plus the camp
+// pitch and picnic site that share the camp site and picnic table icons. The cells after those are
+// for the points trails.lat imports for trip planning, which trailcatalog doesn't show.
 private val SHOWN_POINT_CATEGORIES =
     listOf(
         PointCategory.ACCESS_PARKING,
@@ -60,14 +60,6 @@ private val SHOWN_POINT_CATEGORIES =
         PointCategory.SIGHT_VIEWPOINT,
         PointCategory.WATER_DRINKING,
     ).map { it.id }.toTypedArray()
-
-/**
- * Returns the YYMMDD an epoch was imported from. Epochs carry two more digits counting imports of
- * the same date, except the six digit ones from before that. See Importer.kt#chooseEpoch.
- */
-private fun epochDate(epoch: Int): Int {
-  return if (epoch >= 1_000_000) epoch / 100 else epoch
-}
 
 private fun ok(value: Any): Map<String, Any> = mapOf("kind" to "result", "value" to value)
 private fun err(code: Int): Map<String, Any> = mapOf("kind" to "error", "code" to code)
@@ -193,11 +185,7 @@ private fun fetchData(ctx: Context) {
         responses.add(ok(ImmutableMap.of("boundaries", data)))
       }
       "epoch" -> {
-        val epochDate = epochDate(epochTracker.epoch)
-        val year = epochDate / 100_00
-        val month = epochDate / 100 - year * 100
-        val day = epochDate - year * 100_00 - month * 100 + 1
-        val date = LocalDate.of(2000 + year, month, day).atStartOfDay(ZoneId.systemDefault());
+        val date = epochDate(epochTracker.epoch).atStartOfDay(ZoneId.systemDefault())
         responses.add(ok(ImmutableMap.of("timestampS", date.toEpochSecond())))
       };
       "path_profiles_in_trail" -> {
@@ -279,16 +267,16 @@ private fun fetchData(ctx: Context) {
         val (idColumn, setId) = parseTrailId(request.get("trail_id"))
         var tags: JsonNode = mapper.createObjectNode()
         connectionSource.connection.use {
-          // Keep source_type in sync with SourceTags.kt#SourceType.
           val results = it.prepareStatement(
               "SELECT st.tags::text "
                   + "FROM source_tags st "
                   + "JOIN trail_identifiers ti "
                   + "ON st.source_id = ti.numeric_id AND st.epoch = ti.epoch "
-                  + "WHERE ${idColumn} = ? AND st.source_type = 2 AND st.epoch = ?")
+                  + "WHERE ${idColumn} = ? AND st.source_type = ? AND st.epoch = ?")
               .apply {
                 setId(this, 1)
-                setInt(2, epochTracker.epoch)
+                setShort(2, SourceType.RELATION.id.toShort())
+                setInt(3, epochTracker.epoch)
               }.executeQuery()
           if (results.next()) {
             tags = mapper.readTree(results.getString(1))
@@ -695,39 +683,20 @@ private fun fetchCoarse(ctx: Context) {
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
 
   val paths = HashMap<S2CellId, ArrayList<WirePath>>()
+  val (min, max) = cellRange(cell, SimpleS2.HIGHEST_COARSE_INDEX_LEVEL)
   connectionSource.connection.use {
-    val query = if (cell.level() >= SimpleS2.HIGHEST_COARSE_INDEX_LEVEL) {
-      it.prepareStatement(
-          // Analysis shows that the union is faster than OR'ing the cell queries
-          "SELECT p.id, p.cell, p.type, p.lat_lng_degrees "
-              + "FROM paths p "
-              + "JOIN paths_in_trails pit "
-              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
-              + "WHERE "
-              + "(p.cell >= ? AND p.cell <= ?) "
-              + "AND p.epoch = ? "
-      ).apply {
-        val min = cell.rangeMin()
-        val max = cell.rangeMax()
-        setLong(1, min.id())
-        setLong(2, max.id())
-        setInt(3, epochTracker.epoch)
-      }
-    } else {
-      it.prepareStatement(
-          "SELECT p.id, p.cell, p.type, p.lat_lng_degrees "
-              + "FROM paths p "
-              + "JOIN paths_in_trails pit "
-              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
-              + "WHERE "
-              + "p.cell = ? "
-              + "AND p.epoch = ? "
-      ).apply {
-        setLong(1, cell.id())
-        setInt(2, epochTracker.epoch)
-      }
-    }
-    val results = query.executeQuery()
+    val results = it.prepareStatement(
+        "SELECT p.id, p.cell, p.type, p.lat_lng_degrees "
+            + "FROM paths p "
+            + "JOIN paths_in_trails pit "
+            + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
+            + "WHERE p.cell BETWEEN ? AND ? "
+            + "AND p.epoch = ? "
+    ).apply {
+      setLong(1, min)
+      setLong(2, max)
+      setInt(3, epochTracker.epoch)
+    }.executeQuery()
     while (results.next()) {
       val id = results.getLong(1)
       val raw = S2CellId(results.getLong(2))
@@ -765,62 +734,32 @@ private fun fetchFine(ctx: Context) {
   val cell = S2CellId.fromToken(ctx.pathParam("token"))
 
   val paths = ArrayList<WirePath>()
+  val (min, max) = cellRange(cell, SimpleS2.HIGHEST_FINE_INDEX_LEVEL)
   connectionSource.connection.use {
-    val query = if (cell.level() >= SimpleS2.HIGHEST_FINE_INDEX_LEVEL) {
-      it.prepareStatement(
-          "SELECT p.id, p.type, p.lat_lng_degrees "
-              + "FROM paths p "
-              + "LEFT JOIN paths_in_trails pit "
-              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
-              + "WHERE "
-              + "(p.cell >= ? AND p.cell <= ?) "
-              + "AND p.epoch = ? "
-              + "AND ("
-              + "  pit.path_id IS NOT NULL "
-              + "  OR public.enumADescendsB(p.type, ?, ?) "
-              + "  OR public.enumADescendsB(p.type, ?, ?) "
-              + "  OR public.enumADescendsB(p.type, ?, ?) "
-              + ") "
-      ).apply {
-        val min = cell.rangeMin()
-        val max = cell.rangeMax()
-        setLong(1, min.id())
-        setLong(2, max.id())
-        setInt(3, epochTracker.epoch)
-        setInt(4, WayCategory.PATH.id)
-        setInt(5, ENUM_SIZE)
-        setInt(6, WayCategory.PISTE.id)
-        setInt(7, ENUM_SIZE)
-        setInt(8, WayCategory.ROAD_TRACK.id)
-        setInt(9, ENUM_SIZE)
-      }
-    } else {
-      it.prepareStatement(
-          "SELECT p.id, p.type, p.lat_lng_degrees "
-              + "FROM paths p "
-              + "LEFT JOIN paths_in_trails pit "
-              + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
-              + "WHERE "
-              + "p.cell = ? "
-              + "AND p.epoch = ? "
-              + "AND ("
-              + "  pit.path_id IS NOT NULL "
-              + "  OR public.enumADescendsB(p.type, ?, ?) "
-              + "  OR public.enumADescendsB(p.type, ?, ?) "
-              + "  OR public.enumADescendsB(p.type, ?, ?) "
-              + ") "
-      ).apply {
-        setLong(1, cell.id())
-        setInt(2, epochTracker.epoch)
-        setInt(3, WayCategory.PATH.id)
-        setInt(4, ENUM_SIZE)
-        setInt(5, WayCategory.PISTE.id)
-        setInt(6, ENUM_SIZE)
-        setInt(7, WayCategory.ROAD_TRACK.id)
-        setInt(8, ENUM_SIZE)
-      }
-    }
-    val results = query.executeQuery()
+    val results = it.prepareStatement(
+        "SELECT p.id, p.type, p.lat_lng_degrees "
+            + "FROM paths p "
+            + "LEFT JOIN paths_in_trails pit "
+            + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
+            + "WHERE p.cell BETWEEN ? AND ? "
+            + "AND p.epoch = ? "
+            + "AND ("
+            + "  pit.path_id IS NOT NULL "
+            + "  OR public.enumADescendsB(p.type, ?, ?) "
+            + "  OR public.enumADescendsB(p.type, ?, ?) "
+            + "  OR public.enumADescendsB(p.type, ?, ?) "
+            + ") "
+    ).apply {
+      setLong(1, min)
+      setLong(2, max)
+      setInt(3, epochTracker.epoch)
+      setInt(4, WayCategory.PATH.id)
+      setInt(5, ENUM_SIZE)
+      setInt(6, WayCategory.PISTE.id)
+      setInt(7, ENUM_SIZE)
+      setInt(8, WayCategory.ROAD_TRACK.id)
+      setInt(9, ENUM_SIZE)
+    }.executeQuery()
     while (results.next()) {
       val id = results.getLong(1)
       paths.add(
@@ -834,37 +773,18 @@ private fun fetchFine(ctx: Context) {
 
   val points = ArrayList<WirePoint>()
   connectionSource.connection.use {
-    val query = if (cell.level() >= SimpleS2.HIGHEST_FINE_INDEX_LEVEL) {
-      it.prepareStatement(
-          "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
-              + "FROM points p "
-              + "WHERE "
-              + "(p.cell >= ? AND p.cell <= ?) "
-              + "AND p.epoch = ? "
-              + "AND p.type = ANY(?) "
-      ).apply {
-        val min = cell.rangeMin()
-        val max = cell.rangeMax()
-        setLong(1, min.id())
-        setLong(2, max.id())
-        setInt(3, epochTracker.epoch)
-        setArray(4, it.createArrayOf("INTEGER", SHOWN_POINT_CATEGORIES))
-      }
-    } else {
-      it.prepareStatement(
-          "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
-              + "FROM points p "
-              + "WHERE "
-              + "p.cell = ? "
-              + "AND p.epoch = ? "
-              + "AND p.type = ANY(?) "
-      ).apply {
-        setLong(1, cell.id())
-        setInt(2, epochTracker.epoch)
-        setArray(3, it.createArrayOf("INTEGER", SHOWN_POINT_CATEGORIES))
-      }
-    }
-    val results = query.executeQuery()
+    val results = it.prepareStatement(
+        "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
+            + "FROM points p "
+            + "WHERE p.cell BETWEEN ? AND ? "
+            + "AND p.epoch = ? "
+            + "AND p.type = ANY(?) "
+    ).apply {
+      setLong(1, min)
+      setLong(2, max)
+      setInt(3, epochTracker.epoch)
+      setArray(4, it.createArrayOf("INTEGER", SHOWN_POINT_CATEGORIES))
+    }.executeQuery()
     while (results.next()) {
       points.add(
           WirePoint(
@@ -896,20 +816,7 @@ private fun fetchDataPacked(ctx: Context) {
 
   val trail = connectionSource.connection.use {
     val results = it.prepareStatement(
-        "SELECT "
-            + "id, "
-            + "name, "
-            + "type, "
-            + "path_ids, "
-            + "bound_degrees_e7, "
-            + "marker_degrees_e7, "
-            + "elevation_down_meters, "
-            + "elevation_up_meters, "
-            + "length_meters "
-            + "FROM trails t "
-            + "WHERE "
-            + "t.id = ? "
-            + "AND t.epoch = ? ").apply {
+        "SELECT ${WIRE_TRAIL_COLUMNS} FROM trails t WHERE t.id = ? AND t.epoch = ?").apply {
       setLong(1, trailId)
       setInt(2, epochTracker.epoch)
     }.executeQuery()
@@ -919,17 +826,7 @@ private fun fetchDataPacked(ctx: Context) {
       return@fetchDataPacked
     }
 
-    WireTrail(
-        id = results.getLong(1),
-        name = results.getString(2),
-        type = results.getInt(3),
-        pathIds = results.getBytes(4),
-        bound = results.getBytes(5),
-        marker = results.getBytes(6),
-        elevationDownMeters = results.getFloat(7),
-        elevationUpMeters = results.getFloat(8),
-        lengthMeters = results.getFloat(9),
-    )
+    readWireTrail(results)
   }
 
   val paths = ArrayList<WirePath>()
@@ -1019,68 +916,49 @@ private fun writeDetailTrails(
 
 private fun fetchTrails(cell: S2CellId, bottom: Int): List<WireTrail> {
   val trails = ArrayList<WireTrail>()
+  val (min, max) = cellRange(cell, bottom)
   connectionSource.connection.use {
-    val query = if (cell.level() >= bottom) {
-      it.prepareStatement(
-          "SELECT "
-              + "id, "
-              + "name, "
-              + "type, "
-              + "path_ids, "
-              + "bound_degrees_e7, "
-              + "marker_degrees_e7, "
-              + "elevation_down_meters, "
-              + "elevation_up_meters, "
-              + "length_meters "
-              + "FROM trails t "
-              + "WHERE "
-              + "(cell >= ? AND cell <= ?) "
-              + "AND t.epoch = ? "
-      ).apply {
-        val min = cell.rangeMin()
-        val max = cell.rangeMax()
-        setLong(1, min.id())
-        setLong(2, max.id())
-        setInt(3, epochTracker.epoch)
-      }
-    } else {
-      it.prepareStatement(
-          "SELECT "
-              + "id, "
-              + "name, "
-              + "type, "
-              + "path_ids, "
-              + "bound_degrees_e7, "
-              + "marker_degrees_e7, "
-              + "elevation_down_meters, "
-              + "elevation_up_meters, "
-              + "length_meters "
-              + "FROM trails t "
-              + "WHERE "
-              + "t.cell = ? "
-              + "AND t.epoch = ?"
-      ).apply {
-        setLong(1, cell.id())
-        setInt(2, epochTracker.epoch)
-      }
-    }
-    val results = query.executeQuery()
+    val results = it.prepareStatement(
+        "SELECT ${WIRE_TRAIL_COLUMNS} FROM trails t WHERE t.cell BETWEEN ? AND ? AND t.epoch = ?"
+    ).apply {
+      setLong(1, min)
+      setLong(2, max)
+      setInt(3, epochTracker.epoch)
+    }.executeQuery()
     while (results.next()) {
-      trails.add(
-          WireTrail(
-              id = results.getLong(1),
-              name = results.getString(2),
-              type = results.getInt(3),
-              pathIds = results.getBytes(4),
-              bound = results.getBytes(5),
-              marker = results.getBytes(6),
-              elevationDownMeters = results.getFloat(7),
-              elevationUpMeters = results.getFloat(8),
-              lengthMeters = results.getFloat(9),
-          ))
+      trails.add(readWireTrail(results))
     }
   }
   return trails
+}
+
+// The columns readWireTrail reads, in order.
+private const val WIRE_TRAIL_COLUMNS =
+    "t.id, t.name, t.type, t.path_ids, t.bound_degrees_e7, t.marker_degrees_e7, " +
+        "t.elevation_down_meters, t.elevation_up_meters, t.length_meters"
+
+private fun readWireTrail(results: ResultSet): WireTrail {
+  return WireTrail(
+      id = results.getLong(1),
+      name = results.getString(2),
+      type = results.getInt(3),
+      pathIds = results.getBytes(4),
+      bound = results.getBytes(5),
+      marker = results.getBytes(6),
+      elevationDownMeters = results.getFloat(7),
+      elevationUpMeters = results.getFloat(8),
+      lengthMeters = results.getFloat(9),
+  )
+}
+
+// A cell at or below the index's deepest level answers for everything under it, and a cell above it
+// only for what sits in that exact cell, because the client requests each ancestor separately.
+private fun cellRange(cell: S2CellId, bottom: Int): Pair<Long, Long> {
+  return if (cell.level() >= bottom) {
+    Pair(cell.rangeMin().id(), cell.rangeMax().id())
+  } else {
+    Pair(cell.id(), cell.id())
+  }
 }
 
 private fun addETagAndCheckCached(ctx: Context): Boolean {

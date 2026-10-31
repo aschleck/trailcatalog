@@ -14,6 +14,7 @@ kt_jvm_library(
         "//java/org/trailcatalog/importers/common",
         "//java/org/trailcatalog/importers/elevation/pmtiles",
         "//java/org/trailcatalog/importers/elevation/tiff",
+        "//java/org/trailcatalog/models",
         "@com_google_geometry_s2//:s2",
         "@maven//:com_google_guava_guava",
         "@maven//:com_squareup_okhttp3_okhttp_jvm",

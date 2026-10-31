@@ -6,6 +6,7 @@ import crosby.binary.Osmformat
 import org.junit.Test
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.models.SourceType
 
 class ExtractSmallElementsTest {
 

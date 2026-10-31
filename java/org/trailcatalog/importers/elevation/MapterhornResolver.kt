@@ -8,6 +8,7 @@ import org.trailcatalog.importers.elevation.pmtiles.COMPRESSION_NONE
 import org.trailcatalog.importers.elevation.pmtiles.PmtilesReader
 import org.trailcatalog.importers.elevation.pmtiles.TILE_TYPE_PNG
 import org.trailcatalog.importers.elevation.pmtiles.TILE_TYPE_WEBP
+import org.trailcatalog.models.ELEVATION_MAX_ZOOM
 import java.io.ByteArrayInputStream
 import java.nio.file.Path
 import javax.imageio.ImageIO
@@ -25,12 +26,6 @@ private const val TILE_SIZE = 512
 private const val PLANET_ARCHIVE = "planet.pmtiles"
 private val REGIONAL_ARCHIVE = Regex("""(\d+)-(\d+)-(\d+)\.pmtiles""")
 
-// On Four Mile Trail and Upper Yosemite Fall, z14 gives the same climb as z16 once reversals under
-// CLIMB_THRESHOLD_METERS are dropped, and z13 through z14 of every regional archive is 755 GB
-// against 9.6 TB for all of it.
-// Keep in sync with measurements.ts#profileSamples.
-private const val MAX_ZOOM = 14
-
 // Terrarium packs meters as r * 256 + g + b / 256 - 32768, so a pixel resolves to 1/256 of a meter.
 private const val TERRARIUM_OFFSET = 32768f
 
@@ -42,7 +37,7 @@ private const val TILE_CACHE_SIZE = 1024L
 
 /**
  * Samples elevations out of a directory of mapterhorn PMTiles archives, at the finest zoom up to
- * MAX_ZOOM that covers each point. Queries are thread safe.
+ * ELEVATION_MAX_ZOOM that covers each point. Queries are thread safe.
  */
 class MapterhornResolver(directory: Path) : DemResolver {
 
@@ -88,7 +83,7 @@ class MapterhornResolver(directory: Path) : DemResolver {
     // A regional archive can leave holes, so each zoom falls back to the next coarser one.
     val region = regionAt(x, y)
     if (region != null) {
-      for (z in minOf(MAX_ZOOM, region.maxZoom) downTo maxOf(planet.maxZoom + 1, region.minZoom)) {
+      for (z in minOf(ELEVATION_MAX_ZOOM, region.maxZoom) downTo maxOf(planet.maxZoom + 1, region.minZoom)) {
         val corners = corners(x, y, z)
         val tl = pixel(z, corners.lx, corners.ly) ?: continue
         val tr = pixel(z, corners.lx + 1, corners.ly) ?: continue

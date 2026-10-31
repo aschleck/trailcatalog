@@ -7,7 +7,7 @@ import { Bytes, S2Polygon } from 'java/org/trailcatalog/s2';
 import { LatLng, LatLngRect } from 'js/map/common/types';
 
 import { decodeBase64 } from './common/base64';
-import { emptyPixelRect, emptyS2Polygon } from './common/types';
+import { emptyPixelRect } from './common/types';
 import { Boundary, Trail } from './models/types';
 
 import { DataResponses, fetchData } from './data';
@@ -53,17 +53,6 @@ export function boundaryFromRaw(raw: DataResponses['boundary']): Boundary {
       raw.type,
       S2Polygon.FAST_CODER.unsafeDecode(
           Bytes.fromByteArray(new Uint8Array(decodeBase64(raw.s2_polygon)))));
-}
-
-export function containingBoundariesFromRaw(raw: DataResponses['boundaries_containing_boundary']): Boundary[] {
-  return raw.boundaries.map(
-      b =>
-          new Boundary(
-              BigInt(b.id),
-              b.readable_id,
-              b.name,
-              b.type,
-              emptyS2Polygon()));
 }
 
 export function trailsInBoundaryFromRaw(raw: DataResponses['trails_in_boundary']): Trail[] {

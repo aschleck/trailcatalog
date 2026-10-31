@@ -5,16 +5,11 @@ import crosby.binary.Osmformat.Relation.MemberType.NODE
 import crosby.binary.Osmformat.Relation.MemberType.RELATION
 import crosby.binary.Osmformat.Relation.MemberType.WAY
 import crosby.binary.Osmformat.StringTable
+import org.trailcatalog.models.NODE_SITE_ID_OFFSET
 import org.trailcatalog.models.RelationCategory
+import org.trailcatalog.models.WAY_SITE_ID_OFFSET
 import org.trailcatalog.proto.RelationSkeleton
 import org.trailcatalog.proto.RelationSkeletonMember
-
-// Node and way ids overlap relation ids, and a site drawn as a relation keeps the relation's id
-// like every other boundary, so sites drawn as nodes or ways move into ranges that no OSM id
-// reaches. OSM ids are below 2^35, and the offsets keep every id below 2^53 so that JavaScript
-// numbers hold it exactly. Keep in sync with types.ts#Boundary.
-private const val WAY_SITE_ID_OFFSET = 1L shl 40
-private const val NODE_SITE_ID_OFFSET = 2L shl 40
 
 fun nodeSiteId(nodeId: Long): Long = NODE_SITE_ID_OFFSET + nodeId
 

@@ -1,3 +1,4 @@
+import { getBoundarySource, getPointSource } from 'java/org/trailcatalog/models/categories';
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 
@@ -23,20 +24,10 @@ export class Boundary {
     return s2LatLngRectToTc(this.polygon.getRectBound());
   }
 
-  // Keep in sync with ExtractClimbingElements#nodeSiteId.
   get source(): {type: 'node'|'relation'|'way'; id: bigint} {
-    if (this.id >= NODE_SITE_ID_OFFSET) {
-      return {type: 'node', id: this.id - NODE_SITE_ID_OFFSET};
-    } else if (this.id >= WAY_SITE_ID_OFFSET) {
-      return {type: 'way', id: this.id - WAY_SITE_ID_OFFSET};
-    } else {
-      return {type: 'relation', id: this.id};
-    }
+    return getBoundarySource(this.id);
   }
 }
-
-const WAY_SITE_ID_OFFSET = 1n << 40n;
-const NODE_SITE_ID_OFFSET = 2n << 40n;
 
 export class BoundarySearchResult {
   constructor(
@@ -76,9 +67,8 @@ export class Point {
       readonly mouseBound: PixelRect,
   ) {}
 
-  // Keep in sync with ExtractPoints.kt#nodePointId.
   get source(): {type: 'node'|'way'; id: bigint} {
-    return {type: (this.id & 1n) === 0n ? 'node' : 'way', id: this.id >> 1n};
+    return getPointSource(this.id);
   }
 }
 

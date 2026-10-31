@@ -2,7 +2,7 @@ import { aDescendsB, WayCategory } from 'java/org/trailcatalog/models/categories
 import { S2LatLng, S2LatLngRect, SimpleS2 } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
-import { Camera, projectLatLngRect, projectS2LatLng } from 'js/map/camera';
+import { Camera, projectLatLngRect, projectS2LatLng, ScreenProjection } from 'js/map/camera';
 import { WorldBoundsQuadtree } from 'js/map/common/bounds_quadtree';
 import { DPI } from 'js/map/common/dpi';
 import { Copyright, RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
@@ -13,7 +13,6 @@ import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
-import { TexturePool } from 'js/map/rendering/texture_pool';
 
 import { formatDistance } from 'js/units/formatters';
 import { reinterpretLong } from '../common/math';
@@ -89,11 +88,7 @@ interface CellPlan {
 const RENDER_POINT_ZOOM_THRESHOLD = 14;
 const RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD = 12;
 
-const UNLABELED_PIN_REGULAR = {
-  textSize: [0, 0] as const,
-  fillColor: DEFAULT_HEX_PALETTE.fill,
-  strokeColor: '#ffffffff',
-};
+const NO_TEXT = [0, 0] as Vec2;
 
 // 35px is a larger than the full height of a trail marker (full not half
 // because they are not centered vertically.)
@@ -131,7 +126,6 @@ export class TrailLayer extends Layer implements Listener {
   private pinScratchBuffer: ArrayBuffer;
   private loadScratchBuffer: ArrayBuffer;
   private lastHoverTarget: Path|Point|Trail|undefined;
-  private viewportBounds: S2LatLngRect;
 
   constructor(
       copyrights: Copyright[],
@@ -162,13 +156,13 @@ export class TrailLayer extends Layer implements Listener {
 
       this.renderer.deleteBuffer(this.pinBuffer);
       this.renderer.deleteBuffer(this.interactivePlan.buffer);
+      this.renderer.deleteTexture(this.pointsAtlas);
     });
     this.active = new Map();
     this.hovering = new Map();
     this.pinRenderer = new PinRenderer(renderer);
     this.registerDisposable(this.pinRenderer);
-    // Why don't we need to dispose?
-    this.pointsAtlas = new TexturePool(renderer).acquire();
+    this.pointsAtlas = renderer.createTexture();
     this.queryClosestBuffer = [];
     this.queryVisibleBuffer = [];
     this.plannedEntities = new Map();
@@ -187,7 +181,6 @@ export class TrailLayer extends Layer implements Listener {
       halfPinHeight,
     ];
 
-    this.viewportBounds = S2LatLngRect.empty();
 
     this.dataService.setListener(this);
     this.registerDisposer(() => {
@@ -204,6 +197,10 @@ export class TrailLayer extends Layer implements Listener {
         })
         .then(blob => createImageBitmap(blob))
         .then(bitmap => {
+          if (this.isDisposed) {
+            bitmap.close();
+            return;
+          }
           renderer.uploadTexture(bitmap, this.pointsAtlas);
           this.redraw();
         });
@@ -232,14 +229,17 @@ export class TrailLayer extends Layer implements Listener {
     return true;
   }
 
-  override render(planner: Planner): void {
+  override render(planner: Planner, zoom: number, projection: ScreenProjection): void {
     this.pinRenderer.mark();
     this.planInteractive();
+    // The camera's own bounds rather than the last viewportChanged, which only comes once the map
+    // settles, or else a fast zoom in covers and labels the far wider view it started from.
+    const viewport = this.camera.viewportBounds(projection.widthPx, projection.heightPx);
 
     const detailPlans = [];
     if (this.showDetail(this.camera.zoom)) {
       const useFine = this.showFine(this.camera.zoom);
-      const cells = this.cellsInView(SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
+      const cells = getCellsIn(viewport, SimpleS2.HIGHEST_FINE_INDEX_LEVEL);
       for (const cell of cells) {
         const fine = useFine ? this.finePlans.get(cell) : undefined;
         if (fine) {
@@ -268,7 +268,7 @@ export class TrailLayer extends Layer implements Listener {
     planner.add(this.interactivePlan.points);
 
     const labeled = this.camera.zoom >= RENDER_TRAIL_DETAIL_ZOOM_THRESHOLD;
-    this.planVisiblePins(planner, labeled);
+    this.planVisiblePins(planner, labeled, viewport);
     this.pinRenderer.sweep();
   }
 
@@ -281,10 +281,10 @@ export class TrailLayer extends Layer implements Listener {
   // Culling pays for itself twice: each labeled pin needs its own z so that it covers the labels
   // behind it, and Planner sorts on z ahead of program, so every pin submitted costs a billboard to
   // sdf program switch whether or not it is on screen.
-  private planVisiblePins(planner: Planner, labeled: boolean): void {
+  private planVisiblePins(planner: Planner, labeled: boolean, bounds: S2LatLngRect): void {
     const handles = this.queryVisibleBuffer;
     handles.length = 0;
-    const viewport = projectLatLngRect(this.viewportBounds);
+    const viewport = projectLatLngRect(bounds);
     const padX = (viewport.high[0] - viewport.low[0]) * PIN_QUERY_PADDING;
     const padY = (viewport.high[1] - viewport.low[1]) * PIN_QUERY_PADDING;
     // Only loadOverviewCell inserts into overviewBounds, so everything this returns is a trail.
@@ -292,6 +292,14 @@ export class TrailLayer extends Layer implements Listener {
       low: [viewport.low[0] - padX, viewport.low[1] - padY] as Vec2,
       high: [viewport.high[0] + padX, viewport.high[1] + padY] as Vec2,
     }, handles);
+    const filter = this.filters.trail;
+    let kept = 0;
+    for (const handle of handles) {
+      if (!filter || filter(handle.entity.id)) {
+        handles[kept++] = handle;
+      }
+    }
+    handles.length = kept;
     // Ordered by trail so that the z ladder below is a property of the trails on screen and not of
     // the order the quadtree walked them, or else which pin covers which label changes as you pan.
     handles.sort((a, b) => a.entity.id < b.entity.id ? -1 : 1);
@@ -331,46 +339,27 @@ export class TrailLayer extends Layer implements Listener {
       const special = this.hovering.get(entity.id) ?? this.active.get(entity.id);
       const z = special ? Z_RAISED_TRAIL_MARKER : Z_TRAIL_MARKER;
 
-      if (!labeled) {
-        const {byteSize, drawable} =
-            this.pinRenderer.planPin(
-                special ? {
-                  textSize: [0, 0] as const,
-                  fillColor: special.hex.fill,
-                  strokeColor: special.hex.stroke,
-                } : UNLABELED_PIN_REGULAR,
-                entity.markerPx,
-                z,
-                buffer,
-                offset,
-                this.pinBuffer);
-        pins.push(drawable);
-        offset += byteSize;
-      } else {
-        const label = handle.label;
-        if (!label) {
-          continue;
-        }
+      const label = labeled ? handle.label : undefined;
+      if (labeled && !label) {
+        continue;
+      }
 
-        const pinPlan =
-            this.pinRenderer.planPin(
-                special ? {
-                  textSize: label.textSize,
-                  fillColor: special.hex.fill,
-                  strokeColor: special.hex.stroke,
-                } : {
-                  textSize: label.textSize,
-                  fillColor: DEFAULT_HEX_PALETTE.fill,
-                  strokeColor: '#ffffffff',
-                },
-                entity.markerPx,
-                z + zEpsilon,
-                buffer,
-                offset,
-                this.pinBuffer);
-        pins.push(pinPlan.drawable);
-        offset += pinPlan.byteSize;
+      const pinPlan =
+          this.pinRenderer.planPin(
+              {
+                textSize: label?.textSize ?? NO_TEXT,
+                fillColor: special?.hex.fill ?? DEFAULT_HEX_PALETTE.fill,
+                strokeColor: special?.hex.stroke ?? '#ffffffff',
+              },
+              entity.markerPx,
+              z + zEpsilon,
+              buffer,
+              offset,
+              this.pinBuffer);
+      pins.push(pinPlan.drawable);
+      offset += pinPlan.byteSize;
 
+      if (label) {
         const {byteSize, drawables} =
             GLYPHER.plan(
                 label.graphemes,
@@ -592,18 +581,6 @@ export class TrailLayer extends Layer implements Listener {
     this.setColor(entity, this.hovering, state, HOVER_PALETTE);
   }
 
-  private cellsInView(deepest: number): Set<S2CellNumber> {
-    const bounds = this.viewportBounds;
-    const cellsInArrayList =
-        SimpleS2.cover(
-            bounds.lat().lo(), bounds.lat().hi(), bounds.lng().lo(), bounds.lng().hi(), deepest);
-    const cells = [];
-    for (let i = 0; i < cellsInArrayList.size(); ++i) {
-      cells.push(reinterpretLong(cellsInArrayList.getAtIndex(i).id()) as S2CellNumber);
-    }
-    return new Set(cells);
-  }
-
   private setColor(
       entity: Path|Point|Trail,
       set: Map<bigint, LinePalette>,
@@ -732,7 +709,6 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
-    this.viewportBounds = bounds;
     this.dataService.updateViewport({
       lat: [bounds.lat().lo(), bounds.lat().hi()],
       lng: [bounds.lng().lo(), bounds.lng().hi()],
@@ -759,62 +735,22 @@ export class TrailLayer extends Layer implements Listener {
   }
 
   loadCoarseCell(id: S2CellNumber, paths: Iterable<Path>): void {
-    let bufferSize = 0;
-    for (const path of paths) {
-      const onTrail = this.dataService.pathsToTrails.has(path.id);
-      if (onTrail || isPath(path.type)) {
-        bufferSize += LineProgram.bytesNeeded(path.line.length / 2);
-      }
-    }
-
-    this.loadScratchBuffer = growBuffer(this.loadScratchBuffer, bufferSize);
-    const buffer = this.loadScratchBuffer;
-    const drawables = [];
-    const glBuffer = this.renderer.createDataBuffer(0);
-    let offset = 0;
-
-    for (const path of paths) {
-      const onTrail = this.dataService.pathsToTrails.has(path.id);
-      if (!onTrail && !isPath(path.type)) {
-        continue;
-      }
-
-      const style = this.restingStyle(path, onTrail);
-      const drawable =
-          this.renderer.lineProgram.plan(
-              style.fill,
-              style.stroke,
-              style.radius,
-              style.pattern,
-              Z_PATH,
-              path.line,
-              buffer,
-              offset,
-              glBuffer);
-      drawables.push(drawable);
-      offset += drawable.geometryByteLength;
-
-      this.coarseBounds.insert({
-        entity: path,
-        line: path.line,
-      }, path.bound);
-    }
-
-    this.renderer.uploadData(buffer, offset, glBuffer);
-    this.coarsePlans.set(id, {
-      buffer: glBuffer,
-      paths: drawables,
-      points: [],
-    });
-
+    this.coarsePlans.set(id, this.planCell(paths, [], this.coarseBounds));
     this.redraw();
   }
 
   loadFineCell(id: S2CellNumber, paths: Iterable<Path>, points: Iterable<Point>): void {
+    this.finePlans.set(id, this.planCell(paths, points, this.fineBounds));
+    this.redraw();
+  }
+
+  private planCell(
+      paths: Iterable<Path>,
+      points: Iterable<Point>,
+      bounds: WorldBoundsQuadtree<Handle>): CellPlan {
     let bufferSize = 0;
     for (const path of paths) {
-      const onTrail = this.dataService.pathsToTrails.has(path.id);
-      if (onTrail || isPath(path.type)) {
+      if (this.drawsAsTrail(path)) {
         bufferSize += LineProgram.bytesNeeded(path.line.length / 2);
       }
     }
@@ -824,18 +760,19 @@ export class TrailLayer extends Layer implements Listener {
 
     this.loadScratchBuffer = growBuffer(this.loadScratchBuffer, bufferSize);
     const buffer = this.loadScratchBuffer;
-    const pathDrawables = [];
-    const pointDrawables = [];
-    const glBuffer = this.renderer.createDataBuffer(0);
+    const plan: CellPlan = {
+      buffer: this.renderer.createDataBuffer(0),
+      paths: [],
+      points: [],
+    };
     let offset = 0;
 
     for (const path of paths) {
-      const onTrail = this.dataService.pathsToTrails.has(path.id);
-      if (!onTrail && !isPath(path.type)) {
+      if (!this.drawsAsTrail(path)) {
         continue;
       }
 
-      const style = this.restingStyle(path, onTrail);
+      const style = this.restingStyle(path, this.onTrail(path));
       const drawable =
           this.renderer.lineProgram.plan(
               style.fill,
@@ -846,11 +783,11 @@ export class TrailLayer extends Layer implements Listener {
               path.line,
               buffer,
               offset,
-              glBuffer);
-      pathDrawables.push(drawable);
+              plan.buffer);
+      plan.paths.push(drawable);
       offset += drawable.geometryByteLength;
 
-      this.fineBounds.insert({
+      bounds.insert({
         entity: path,
         line: path.line,
       }, path.bound);
@@ -870,25 +807,19 @@ export class TrailLayer extends Layer implements Listener {
               POINTS_ATLAS_SIZE,
               buffer,
               offset,
-              glBuffer,
+              plan.buffer,
               this.pointsAtlas);
-      pointDrawables.push(drawable);
+      plan.points.push(drawable);
       offset += byteSize;
 
-      this.fineBounds.insert({
+      bounds.insert({
         entity: point,
         markerPx: point.markerPx,
       }, point.mouseBound);
     }
 
-    this.renderer.uploadData(buffer, offset, glBuffer);
-    this.finePlans.set(id, {
-      buffer: glBuffer,
-      paths: pathDrawables,
-      points: pointDrawables,
-    });
-
-    this.redraw();
+    this.renderer.uploadData(buffer, offset, plan.buffer);
+    return plan;
   }
 
   loadPinned(): void {
@@ -919,14 +850,6 @@ export class TrailLayer extends Layer implements Listener {
     }
     for (const point of points) {
       this.fineBounds.delete(point.mouseBound);
-    }
-  }
-
-  unloadOverviewCell(id: S2CellNumber, trails: Iterable<Trail>): void {
-    for (const trail of trails) {
-      this.overviewBounds.delete(trail.mouseBound);
-      this.coarseBounds.delete(trail.mouseBound);
-      this.fineBounds.delete(trail.mouseBound);
     }
   }
 
@@ -995,3 +918,13 @@ function isPath(type: number): boolean {
     || aDescendsB(type, WayCategory.ROAD_TRACK);
 }
 
+function getCellsIn(bounds: S2LatLngRect, deepest: number): Set<S2CellNumber> {
+  const cells =
+      SimpleS2.cover(
+          bounds.lat().lo(), bounds.lat().hi(), bounds.lng().lo(), bounds.lng().hi(), deepest);
+  const ids = new Set<S2CellNumber>();
+  for (let i = 0; i < cells.size(); ++i) {
+    ids.add(reinterpretLong(cells.getAtIndex(i).id()) as S2CellNumber);
+  }
+  return ids;
+}
