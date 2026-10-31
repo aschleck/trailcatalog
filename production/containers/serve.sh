@@ -2,7 +2,7 @@
 
 set -ex
 
-nginx -c '/app/nginx.conf' -e '/dev/stderr' &
+nginx -c '/app/nginx.conf' -e stderr &
 nginx_pid="$!"
 "${RUNNER}" &
 node_pid="$!"
