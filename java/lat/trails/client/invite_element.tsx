@@ -19,7 +19,7 @@ import {
   Role,
 } from 'trails_lat/proto/data_pb';
 
-import { requestData } from './data';
+import { requestData } from './data/data';
 
 interface State {
   invite: Future<GetInviteResponse>;

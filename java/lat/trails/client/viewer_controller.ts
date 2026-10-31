@@ -45,19 +45,15 @@ import {
   OsmElementType,
 } from 'trails_lat/proto/data_pb';
 
-import { AccountDialog, ConfirmDeleteAccountDialog } from './account_dialog';
-import { CollectionLayer, HeldObject } from './collection_layer';
-import { CollectionSettingsDialog, SettingsPanel } from './collection_settings_dialog';
-import { requestData } from './data';
-import {
-  ConfirmDeleteDialog,
-  DeleteAccountFailedDialog,
-  ImportFailedDialog,
-  SaveFailedDialog,
-} from './dialogs';
-import { canEdit } from './collection_data';
-import { DrawingLayer } from './drawing_layer';
-import { LineRefiner } from './line_refiner';
+import { AccountDialog, ConfirmDeleteAccountDialog } from './account/account_dialog';
+import { CollectionSettingsDialog, SettingsPanel } from './account/collection_settings_dialog';
+import { LoginPopup } from './account/login_popup';
+import { canEdit } from './data/collection_data';
+import { requestData } from './data/data';
+import { CollectionLayer, HeldObject } from './layers/collection_layer';
+import { FeatureLayer } from './layers/feature_layer';
+import { LayerCatalog, SKY_LAYER_ID } from './layers/layer_catalog';
+import { PointCollectionLayer } from './layers/point_collection_layer';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -74,17 +70,9 @@ import {
   SKY_PINS_MOVED,
   Tool,
   TOOL_REQUESTED,
-} from './events';
-import { ExportDialog } from './export_dialog';
-import { toGeoJson, toGpx } from './exporter';
-import { FeatureLayer } from './feature_layer';
-import {
-  CollectionStatus,
-  FeatureListState,
-  InspectedObject,
-  topLevelFolderIds,
-} from './feature_list';
-import { Change, FeatureStore } from './feature_store';
+} from './model/events';
+import { toGeoJson, toGpx } from './model/exporter';
+import { Change, FeatureStore } from './model/feature_store';
 import {
   EditableFeature,
   EditableLine,
@@ -100,8 +88,54 @@ import {
   schemaToWrite,
   snapshot,
   toWrite,
-} from './features';
-import { parseImport } from './importer';
+} from './model/features';
+import { parseImport } from './model/importer';
+import { Point } from './model/points';
+import { SaveEntry, SaveQueue } from './model/save_queue';
+import {
+  adoptImported,
+  getFieldKind,
+  getObjectTitle,
+  parseCollectionSchema,
+  SavedSchema,
+  Schema,
+  titleField,
+  withDefaults,
+} from './model/schema';
+import {
+  fromWallClock,
+  isKnownZone,
+  readZoneChoice,
+  setShownZone,
+  writeZoneChoice,
+  ZoneChoice,
+} from './sky/time_zones';
+import { DrawingLayer } from './tools/drawing_layer';
+import {
+  insertVertex,
+  joinLines,
+  minVertexCount,
+  reverseLine,
+  splitLine,
+} from './tools/line_edits';
+import { LineRefiner } from './tools/line_refiner';
+import { MarkerToolLayer } from './tools/marker_tool_layer';
+import { haversineMeters, pathLengthMeters, profileSamples } from './tools/measurements';
+import { PointToolLayer } from './tools/point_tool_layer';
+import {
+  ConfirmDeleteDialog,
+  DeleteAccountFailedDialog,
+  ImportFailedDialog,
+  SaveFailedDialog,
+} from './ui/dialogs';
+import { ExportDialog } from './ui/export_dialog';
+import {
+  CollectionStatus,
+  FeatureListState,
+  InspectedObject,
+  topLevelFolderIds,
+} from './ui/feature_list';
+import { IconPickerDialog } from './ui/icon_picker';
 import {
   applyLayerSettings,
   ControlValues,
@@ -115,49 +149,15 @@ import {
   LayerSettings,
   LayerTreeState,
   updateLayerNode,
-} from './layer_tree';
-import { LayerCatalog, SKY_LAYER_ID } from './layer_catalog';
-import { LineProfiler, MeasureProfiler } from './profiles';
-import {
-  insertVertex,
-  joinLines,
-  minVertexCount,
-  reverseLine,
-  splitLine,
-} from './line_edits';
-import { LoginPopup } from './login_popup';
-import { IconPickerDialog } from './icon_picker';
-import { GradeLimitState, MeasureState } from './measure_panel';
-import { Choice, choiceItem, PICK_MENU_CLASSES, readingItem } from './pick_menu';
-import { PointCollectionLayer } from './point_collection_layer';
-import { Point } from './points';
-import { PointToolLayer } from './point_tool_layer';
-import {
-  adoptImported,
-  getFieldKind,
-  getObjectTitle,
-  parseCollectionSchema,
-  SavedSchema,
-  Schema,
-  titleField,
-  withDefaults,
-} from './schema';
-import { haversineMeters, pathLengthMeters, profileSamples } from './measurements';
-import { MarkerToolLayer } from './marker_tool_layer';
-import { MENU_CLASSES } from './menubar';
-import { editMenu, fileMenu, HELP_MENU, userMenu, viewMenu } from './menus';
-import { LineProfileState } from './profile_chart';
-import { SaveEntry, SaveQueue } from './save_queue';
-import { SearchHit, SearchQuery, SearchState } from './search_box';
-import { STEP_MS, TimelineState } from './timeline';
-import {
-  fromWallClock,
-  isKnownZone,
-  readZoneChoice,
-  setShownZone,
-  writeZoneChoice,
-  ZoneChoice,
-} from './time_zones';
+} from './ui/layer_tree';
+import { GradeLimitState, MeasureState } from './ui/measure_panel';
+import { MENU_CLASSES } from './ui/menubar';
+import { editMenu, fileMenu, HELP_MENU, userMenu, viewMenu } from './ui/menus';
+import { Choice, choiceItem, PICK_MENU_CLASSES, readingItem } from './ui/pick_menu';
+import { LineProfileState } from './ui/profile_chart';
+import { LineProfiler, MeasureProfiler } from './ui/profiles';
+import { SearchHit, SearchQuery, SearchState } from './ui/search_box';
+import { STEP_MS, TimelineState } from './ui/timeline';
 import {
   CollectionSchema,
   DEFAULT_COLOR,

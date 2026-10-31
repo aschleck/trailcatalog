@@ -12,16 +12,8 @@ import { MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
 import { GetCollectionResponse } from 'trails_lat/proto/data_pb';
 
-import { State, ViewerController } from './viewer_controller';
-import { canEdit, descriptionOf } from './collection_data';
-import { requestData } from './data';
-import {
-  EditableFeature,
-  folderFromProto,
-  lineFromProto,
-  pointFromProto,
-  polygonFromProto,
-} from './features';
+import { canEdit, descriptionOf } from './data/collection_data';
+import { requestData } from './data/data';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -33,7 +25,16 @@ import {
   POLYGON_DRAWN,
   SKY_PINS_MOVED,
   TOOL_REQUESTED,
-} from './events';
+} from './model/events';
+import {
+  EditableFeature,
+  folderFromProto,
+  lineFromProto,
+  pointFromProto,
+  polygonFromProto,
+} from './model/features';
+import { parseCollectionSchema, getTitle } from './model/schema';
+import { formatDistance } from './tools/measurements';
 import {
   buildTree,
   FeatureTree,
@@ -41,16 +42,15 @@ import {
   NewFolderButton,
   Properties,
   topLevelFolderIds,
-} from './feature_list';
-import { layerEntries, LayerTree } from './layer_tree';
-import { formatDistance } from './measurements';
-import { MeasurePanel } from './measure_panel';
-import { parseCollectionSchema, getTitle } from './schema';
-import { SidebarElement, SidebarSection } from './sidebar_element';
-import { Menubar, MenubarItem } from './menubar';
-import { EMPTY_SEARCH, SearchBox } from './search_box';
-import { Timeline } from './timeline';
-import { Toolbar } from './toolbar';
+} from './ui/feature_list';
+import { layerEntries, LayerTree } from './ui/layer_tree';
+import { MeasurePanel } from './ui/measure_panel';
+import { Menubar, MenubarItem } from './ui/menubar';
+import { EMPTY_SEARCH, SearchBox } from './ui/search_box';
+import { SidebarElement, SidebarSection } from './ui/sidebar_element';
+import { Timeline } from './ui/timeline';
+import { Toolbar } from './ui/toolbar';
+import { State, ViewerController } from './viewer_controller';
 import { CollectionSchema } from './workers/collection_schema';
 
 export const DEFAULT_DESCRIPTION = 'Mapping software for backcountry trip planning';
