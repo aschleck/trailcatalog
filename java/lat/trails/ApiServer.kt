@@ -1,5 +1,7 @@
 package lat.trails
 
+import com.fasterxml.jackson.core.JsonProcessingException
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.common.geometry.S1Angle
@@ -99,6 +101,8 @@ import lat.trails.wire.KIND_PACKED_POINT
 import lat.trails.wire.KIND_UUID_JSON
 import lat.trails.wire.MAX_LINES_BY_ID
 import lat.trails.wire.OBJECTS_WIRE_VERSION
+import lat.trails.wire.TRAILCATALOG_PATHS_COLLECTION_ID
+import lat.trails.wire.TRAILCATALOG_POINTS_COLLECTION_ID
 import lat.trails.wire.WRITE_METHODS
 import org.trailcatalog.common.AlignableByteArrayOutputStream
 import org.trailcatalog.common.DelegatingEncodedOutputStream
@@ -128,11 +132,11 @@ private lateinit var hikari: HikariDataSource
 private lateinit var hikariTrailcatalog: HikariDataSource
 
 private val logger = LoggerFactory.getLogger("ApiServer")
+// Fails on trailing tokens or else jsonOrEmptyObject passes data that the jsonb cast rejects.
+private val mapper = ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
 private val random = SecureRandom()
 
 private val ANONYMOUS_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000")
-private val TRAILCATALOG_PATHS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000001"
-private val TRAILCATALOG_POINTS_COLLECTIONS_ID = "00000000-0000-0000-0000-000000000002"
 
 
 private const val LINE_GEOMETRY_COLUMNS = "lat_lng_degrees, elevation_centimeters, time_seconds"
@@ -172,7 +176,6 @@ private val dispatcher = Executors.newVirtualThreadPerTaskExecutor()
 private fun fetchData(ctx: Context) {
   // Shared so a batch of keys looks the user up once, see requireUser.
   ctx.attribute(USER_IS_ACTIVE, lazy { optionalUser(ctx)?.let(::isUserActive) == true })
-  val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyInputStream())
   val responses = ArrayList<Future<Any>>()
   var barrier = 0
@@ -184,7 +187,7 @@ private fun fetchData(ctx: Context) {
     responses.add(
         dispatcher.submit<Any> {
           before.forEach { it.get() }
-          dispatchKey(ctx, mapper, method, payload)
+          dispatchKey(ctx, method, payload)
         })
     if (write) {
       barrier = responses.size
@@ -196,7 +199,7 @@ private fun fetchData(ctx: Context) {
 
 // Failed per key, because the server side render fails the whole page when the batch does.
 private fun dispatchKey(
-    ctx: Context, mapper: ObjectMapper, method: String, payload: JsonNode?): Any {
+    ctx: Context, method: String, payload: JsonNode?): Any {
   val value = try {
     dispatch(ctx, method, payload)
   } catch (e: HttpResponseException) {
@@ -594,6 +597,7 @@ private fun createCollection(
   if (request.schema.isEmpty()) {
     throw BadRequestResponse("A collection needs a schema")
   }
+  val schema = jsonOrEmptyObject(request.schema)
 
   val response = CreateCollectionResponse.newBuilder()
   hikari.connection.use { connection ->
@@ -606,7 +610,7 @@ private fun createCollection(
           setObject(1, creator)
           setString(2, request.name)
           setBytes(3, encodeCovering(listOf()))
-          setString(4, request.schema)
+          setString(4, schema)
           setBound(5, S2LatLngRect.empty())
         }
         .executeQuery()
@@ -630,10 +634,7 @@ private fun updateCollection(
   if (name?.isEmpty() == true) {
     throw BadRequestResponse("A collection needs a name")
   }
-  val data = request.data.ifEmpty { "{}" }
-  if (!ObjectMapper().readTree(data).isObject) {
-    throw BadRequestResponse("Collection data must be an object")
-  }
+  val data = jsonOrEmptyObject(request.data)
 
   return transact { connection ->
     val access = lockEditableCollection(connection, collection, user)
@@ -727,7 +728,7 @@ private fun getOsmTags(request: GetOsmTagsRequest): GetOsmTagsResponse {
           if (!results.wasNull()) {
             response.setVersion(version)
           }
-          for ((key, value) in ObjectMapper().readTree(results.getString(2)).fields()) {
+          for ((key, value) in mapper.readTree(results.getString(2)).fields()) {
             response.putTags(key, value.asText())
           }
           return response.build()
@@ -1470,9 +1471,21 @@ private fun folderHasChildren(connection: Connection, collection: UUID, folder: 
       }
 }
 
-// jsonb rejects an empty string.
+// jsonb rejects an empty string, and every viewer reads data and schemas as objects.
 private fun jsonOrEmptyObject(data: String): String {
-  return data.ifEmpty { "{}" }
+  if (data.isEmpty()) {
+    return "{}"
+  }
+  val parsed =
+      try {
+        mapper.readTree(data)
+      } catch (e: JsonProcessingException) {
+        null
+      }
+  if (parsed?.isObject != true) {
+    throw BadRequestResponse("Data must be a JSON object")
+  }
+  return data
 }
 
 // Holds the collection row until the transaction ends so we can go back and update covering after a
@@ -1719,7 +1732,7 @@ private fun fetchCollectionCovering(ctx: Context) {
   // Everything it points at is immutable, see setCacheHeadersAndCheckNotModified.
   ctx.header("Cache-Control", "no-cache,private")
 
-  val collection = ctx.pathParam("id")
+  val collection = parseUuid(ctx.pathParam("id"))
   val bytes = AlignableByteArrayOutputStream()
   DelegatingEncodedOutputStream(bytes).use {
     // version
@@ -1738,8 +1751,7 @@ private fun fetchCollectionCovering(ctx: Context) {
       it.writeVarInt(0)
     } else {
       hikari.connection.use { connection ->
-        val id = parseUuid(collection)
-        if (getCollectionAccess(connection, id, optionalUser(ctx)) == null) {
+        if (getCollectionAccess(connection, collection, optionalUser(ctx)) == null) {
           ctx.status(HttpStatus.NOT_FOUND)
           return@fetchCollectionCovering
         }
@@ -1747,7 +1759,7 @@ private fun fetchCollectionCovering(ctx: Context) {
         connection
           .prepareStatement("SELECT covering, version, schema FROM collections WHERE id = ?")
           .apply {
-            setObject(1, id)
+            setObject(1, collection)
           }
           .executeQuery()
           .use { results ->
@@ -1767,7 +1779,7 @@ private fun fetchCollectionCovering(ctx: Context) {
 }
 
 private fun fetchCollectionObjects(ctx: Context) {
-  val collection = ctx.pathParam("id")
+  val collection = parseUuid(ctx.pathParam("id"))
   val trailcatalog = isTrailcatalogCollection(collection)
   // The object queries trust that this checked access, because they filter on nothing else.
   val currentVersion =
@@ -1775,7 +1787,7 @@ private fun fetchCollectionObjects(ctx: Context) {
         epochTracker.epoch.toLong()
       } else {
         hikari.connection.use { connection ->
-          getCollectionAccess(connection, parseUuid(collection), optionalUser(ctx))?.version
+          getCollectionAccess(connection, collection, optionalUser(ctx))?.version
         } ?: throw NotFoundResponse()
       }
   // Checked before the object queries run, or else a revalidation costs everything a miss does.
@@ -1795,19 +1807,22 @@ private fun fetchCollectionObjects(ctx: Context) {
   // range on that bit, backwards: a coarser cell has a higher bit.
   val levelFloor = ctx.queryParam("maxLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
+  val cells = CellFilter(cell, indexBottom, levelFloor, levelCeiling)
   val types = ctx.queryParam("types")?.split(",")?.map { it.toInt() }
   DelegatingEncodedOutputStream(bytes).use {
     it.writeVarInt(OBJECTS_WIRE_VERSION)
 
-    if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
+    // The fetchers take the epoch the cache headers named, or else an immutable tile could hold
+    // another epoch's rows.
+    if (collection == TRAILCATALOG_PATHS_COLLECTION_ID) {
       it.writeVarInt(KIND_PACKED_PATH)
-      fetchTrailcatalogPaths(it, cell, indexBottom, levelCeiling, levelFloor, snap, types)
-    } else if (collection == TRAILCATALOG_POINTS_COLLECTIONS_ID) {
+      fetchTrailcatalogPaths(it, cells, currentVersion.toInt(), snap, types)
+    } else if (collection == TRAILCATALOG_POINTS_COLLECTION_ID) {
       it.writeVarInt(KIND_PACKED_POINT)
-      fetchTrailcatalogPoints(it, cell, indexBottom, levelCeiling, levelFloor, types)
+      fetchTrailcatalogPoints(it, cells, currentVersion.toInt(), types)
     } else {
       it.writeVarInt(KIND_UUID_JSON)
-      fetchTrailsLatObjects(it, cell, collection, indexBottom, levelCeiling, levelFloor, snap)
+      fetchTrailsLatObjects(it, cells, collection, snap)
     }
   }
 
@@ -1818,7 +1833,7 @@ private fun fetchCollectionObjects(ctx: Context) {
 // the simplified copies they routed along. Paths are named by a UUID whose lsb is the path id,
 // which is the RawUuid the objects endpoint gives them.
 private fun fetchCollectionLines(ctx: Context) {
-  val collection = ctx.pathParam("id")
+  val collection = parseUuid(ctx.pathParam("id"))
   val ids = (ctx.queryParam("ids") ?: "").split(",").filter { it.isNotEmpty() }.map(::parseUuid)
   if (ids.size > MAX_LINES_BY_ID) {
     throw BadRequestResponse("Too many ids")
@@ -1826,13 +1841,12 @@ private fun fetchCollectionLines(ctx: Context) {
 
   val bytes = AlignableByteArrayOutputStream()
   DelegatingEncodedOutputStream(bytes).use {
-    if (collection == TRAILCATALOG_PATHS_COLLECTIONS_ID) {
+    if (collection == TRAILCATALOG_PATHS_COLLECTION_ID) {
       fetchTrailcatalogPathsById(it, ids)
     } else {
       hikari.connection.use { connection ->
         // The query below trusts this, because it filters on nothing else.
-        getCollectionAccess(connection, parseUuid(collection), optionalUser(ctx))
-            ?: throw NotFoundResponse()
+        getCollectionAccess(connection, collection, optionalUser(ctx)) ?: throw NotFoundResponse()
         connection
           .prepareStatement(
             "SELECT id, lat_lng_degrees "
@@ -1840,7 +1854,7 @@ private fun fetchCollectionLines(ctx: Context) {
                     + "WHERE collection = ? AND deleted IS NULL AND id = ANY (?)"
           )
           .apply {
-            setObject(1, UUID.fromString(collection))
+            setObject(1, collection)
             setArray(2, connection.createArrayOf("UUID", ids.toTypedArray()))
           }
           .executeQuery()
@@ -1918,16 +1932,11 @@ private class CellFilter(
 
 private fun fetchTrailsLatObjects(
   it: DelegatingEncodedOutputStream,
-  cell: S2CellId,
-  collection: String,
-  indexBottom: Int,
-  levelCeiling: Long?,
-  levelFloor: Long?,
+  cells: CellFilter,
+  collection: UUID,
   snap: Int?,
 ) {
   hikari.connection.use { connection ->
-    val cells = CellFilter(cell, indexBottom, levelFloor, levelCeiling)
-
     // lines
     connection
       .prepareStatement(
@@ -1939,7 +1948,7 @@ private fun fetchTrailsLatObjects(
                 + cells.sql("l")
       )
       .apply {
-        setObject(1, UUID.fromString(collection))
+        setObject(1, collection)
         cells.bind(this, 2)
       }
       .executeQuery()
@@ -1974,7 +1983,7 @@ private fun fetchTrailsLatObjects(
                 + cells.sql("p")
       )
       .apply {
-        setObject(1, UUID.fromString(collection))
+        setObject(1, collection)
         cells.bind(this, 2)
       }
       .executeQuery()
@@ -2025,7 +2034,7 @@ private fun fetchTrailsLatObjects(
                 + cells.sql("p")
       )
       .apply {
-        setObject(1, UUID.fromString(collection))
+        setObject(1, collection)
         cells.bind(this, 2)
       }
       .executeQuery()
@@ -2047,18 +2056,13 @@ private fun fetchTrailsLatObjects(
 
 private fun fetchTrailcatalogPaths(
   it: DelegatingEncodedOutputStream,
-  cell: S2CellId,
-  indexBottom: Int,
-  levelCeiling: Long?,
-  levelFloor: Long?,
+  cells: CellFilter,
+  epoch: Int,
   snap: Int?,
   // The categories the client draws, or null for all of them
   types: List<Int>?,
 ) {
-  val epoch = epochTracker.epoch
   hikariTrailcatalog.connection.use { connection ->
-    val cells = CellFilter(cell, indexBottom, levelFloor, levelCeiling)
-
     // lines
     connection
       .prepareStatement(
@@ -2135,16 +2139,12 @@ private fun fetchTrailcatalogPaths(
 
 private fun fetchTrailcatalogPoints(
   it: DelegatingEncodedOutputStream,
-  cell: S2CellId,
-  indexBottom: Int,
-  levelCeiling: Long?,
-  levelFloor: Long?,
+  cells: CellFilter,
+  epoch: Int,
   // The categories the client draws, or null for all of them
   types: List<Int>?,
 ) {
-  val epoch = epochTracker.epoch
   hikariTrailcatalog.connection.use { connection ->
-    val cells = CellFilter(cell, indexBottom, levelFloor, levelCeiling)
     connection
       .prepareStatement(
         "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
@@ -2183,9 +2183,9 @@ private fun fetchTrailcatalogPoints(
   }
 }
 
-private fun isTrailcatalogCollection(collection: String): Boolean {
-  return collection == TRAILCATALOG_PATHS_COLLECTIONS_ID
-      || collection == TRAILCATALOG_POINTS_COLLECTIONS_ID
+private fun isTrailcatalogCollection(collection: UUID): Boolean {
+  return collection == TRAILCATALOG_PATHS_COLLECTION_ID
+      || collection == TRAILCATALOG_POINTS_COLLECTION_ID
 }
 
 // Lets the browser and the CDN hold a tile until the collection version changes, because the object

@@ -45,7 +45,7 @@ private const val MAX_ZOOM = 7
 private const val TILE_SIZE = 256
 
 // Each pixel's 24 RGB bits hold snow depth in cm in the high 12 bits and snow water equivalent in
-// mm in the low 12 bits. See weather.ts#unpackChannel.
+// mm in the low 12 bits. See packed.ts#unpackChannel.
 private val DEPTH_CM = Channel("depth", 12, 1.0, 0.0)
 private val WATER_MM = Channel("water", 12, 1.0, 0.0)
 

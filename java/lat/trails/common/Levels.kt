@@ -1,4 +1,3 @@
 package lat.trails.common
 
-const val COLLECTION_COVERING_MAX_LEVEL = 7 // TRAILS_LAT_S2_INDEX_LEVEL?
-const val FEATURE_COVERING_MAX_LEVEL = 14
+const val COLLECTION_COVERING_MAX_LEVEL = 7
