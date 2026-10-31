@@ -58,6 +58,7 @@ podman run \
     --pull always \
     --rm \
     --log-driver passthrough \
+    --cgroups split \
     --env COOKIE_SECRET="${cookie_secret}" \
     --env LOGIN_PROVIDERS="${login_providers}" \
     --env PGHOST='127.0.0.1' \

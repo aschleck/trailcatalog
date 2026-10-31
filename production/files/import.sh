@@ -36,6 +36,7 @@ if [[ -z "$(find "${planet}" -mtime -60 2>/dev/null)" ]]; then
       --pull always \
       --rm \
       --log-driver passthrough \
+      --cgroups split \
       --mount type=bind,source=/mnt/horse,target=/tmp \
       --network host \
       us-west1-docker.pkg.dev/trailcatalog/containers/aria2c:latest \
@@ -57,6 +58,7 @@ podman run \
     --pull always \
     --rm \
     --log-driver passthrough \
+    --cgroups split \
     --cpu-shares 64 \
     --mount type=bind,source=/mnt/horse,target=/tmp \
     --network host \
@@ -73,6 +75,7 @@ podman run \
     --pull always \
     --rm \
     --log-driver passthrough \
+    --cgroups split \
     --cpu-shares 64 \
     --env DATABASE_URL="postgresql://localhost/trailcatalog" \
     --env DATABASE_USERNAME_PASSWORD \

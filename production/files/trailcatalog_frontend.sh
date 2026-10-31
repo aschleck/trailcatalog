@@ -27,6 +27,7 @@ podman run \
     --pull always \
     --rm \
     --log-driver passthrough \
+    --cgroups split \
     --env DATABASE_URL="postgresql://localhost/trailcatalog" \
     --env DATABASE_USERNAME_PASSWORD \
     --network host \
