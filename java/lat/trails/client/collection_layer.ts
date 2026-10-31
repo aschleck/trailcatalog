@@ -19,7 +19,7 @@ import { Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { SELECTED_CASING } from './feature_layer';
 import { parseCollectionSchema } from './schema';
-import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style, Styling } from './workers/collection_loader';
+import { Initialize as LoaderInitialize, Line, LoadedLines, LoadResponse, Point, Request as LoaderRequest, Response as LoaderResponse, Polygon, Style, Styling } from './workers/collection_types';
 import { CollectionSchema } from './workers/collection_schema';
 
 // White against a black casing, the way trailcatalog draws a hovered trail. The casing is what

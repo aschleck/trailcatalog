@@ -40,7 +40,7 @@ import {
 } from './schema';
 import { getShownZone } from './time_zones';
 import { TreeChildren, TreeRow } from './tree_rows';
-import { Data } from './workers/collection_loader';
+import { Data } from './workers/collection_types';
 import {
   CollectionSchema,
   DEFAULT_COLOR,

@@ -1,8 +1,8 @@
 import { declareEvent } from 'external/dev_april_corgi+/js/corgi/events';
 
 import { EditableFeature } from './features';
-import { Point } from './point_collection_layer';
-import { Line, Polygon } from './workers/collection_loader';
+import { Point } from './points';
+import { Line, Polygon } from './workers/collection_types';
 import { FieldRef } from './workers/collection_schema';
 
 /** What pointer tools are possible. */

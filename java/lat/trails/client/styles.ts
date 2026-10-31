@@ -5,7 +5,7 @@ import { NATURE } from 'js/map/layers/mbtile_layer';
 import { Style as MbtileStyle } from 'js/map/workers/tiles/mbtile_loader';
 import { Z_OVERLAY_TRANSPORTATION } from 'js/map/z';
 
-import { LineStyle, Style } from './workers/collection_loader';
+import { LineStyle, Style } from './workers/collection_types';
 import { Match } from './workers/filters';
 
 type MbtileLayerStyle = MbtileStyle['layers'][number];

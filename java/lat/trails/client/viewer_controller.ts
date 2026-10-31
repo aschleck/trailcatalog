@@ -129,7 +129,8 @@ import { LoginPopup } from './login_popup';
 import { IconPickerDialog } from './icon_picker';
 import { GradeLimitState, MeasureState } from './measure_panel';
 import { Choice, choiceItem, PICK_MENU_CLASSES, readingItem } from './pick_menu';
-import { Point, PointCollectionLayer } from './point_collection_layer';
+import { PointCollectionLayer } from './point_collection_layer';
+import { Point } from './points';
 import { PointToolLayer } from './point_tool_layer';
 import {
   adoptImported,

@@ -4,7 +4,7 @@ import { PointCategory, WayCategory } from 'java/org/trailcatalog/models/categor
 import { LinePattern } from 'js/map/rendering/line_program';
 
 import { EditableFeature, FeatureData } from './features';
-import { Data } from './workers/collection_loader';
+import { Data } from './workers/collection_types';
 import {
   Channel,
   CollectionSchema,

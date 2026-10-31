@@ -2,7 +2,7 @@ import { RgbaU32 } from 'js/map/common/types';
 import { LinePattern } from 'js/map/rendering/line_program';
 import { Z_USER_DATA, Z_USER_DATA_FILL, Z_USER_DATA_HALO } from 'js/map/z';
 
-import { Data, LineStyle, PointStyle, PolygonStyle, Styler } from './collection_loader';
+import { Data, LineStyle, PointStyle, PolygonStyle, Styler } from './collection_types';
 import {
   CollectionSchema,
   darken,

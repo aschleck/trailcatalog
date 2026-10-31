@@ -5,7 +5,7 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 import { POINTS_ATLAS_SIZE, pointsAtlasIndex } from 'java/org/trailcatalog/client/points/points_atlas';
 import { aDescendsB, PointCategory } from 'java/org/trailcatalog/models/categories';
 import { Camera, projectS2LatLng, worldRadiusAt } from 'js/map/camera';
-import { Copyright, RawUuid, RgbaU32, Vec2 } from 'js/map/common/types';
+import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { LabelObstacles } from 'js/map/layers/label_placer';
 import { WATER_TEXT_FILL } from 'js/map/layers/mbtile_layer';
@@ -21,7 +21,8 @@ import { CellKey, Stream } from 'js/map/workers/s2/s2_streams';
 import { Z_OVERLAY_TEXT, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
 
 import { getLabelBox, LabelCollisions } from './label_collisions';
-import { Data } from './workers/collection_loader';
+import { Point } from './points';
+import { Data } from './workers/collection_types';
 
 // The sizes trailcatalog draws its points at, see trail_layer.ts
 const ICON_SIZE_PX = [20, 20] as Vec2;
@@ -69,14 +70,6 @@ const NO_SNAP: Snap[] = [{minZoom: 0, snap: undefined}];
 const TEXT_DECODER = new TextDecoder();
 
 /** A point a PointCollectionLayer drew from its collection. */
-export interface Point {
-  id: RawUuid;
-  // The OSM node id and PointCategory, plus the name when the node has one
-  data: Data;
-  // Mercator
-  position: Vec2;
-}
-
 /** Draws a collection of points as trailcatalog's icons with their names beside them. */
 export class PointCollectionLayer extends Layer {
 
