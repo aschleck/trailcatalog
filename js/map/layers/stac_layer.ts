@@ -1,9 +1,9 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
-import { QueuedWorkerPool, Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 
 import { projectS2LatLng } from '../camera';
+import { finestTileAt } from '../common/math';
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { BillboardProgram } from '../rendering/billboard_program';
@@ -11,7 +11,8 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-import { Bands, Catalog, Command as LoaderCommand, LoadTileCommand, Request as LoaderRequest, Search } from '../workers/stac_loader';
+import { PoolClient, sharedPool, toViewport } from '../workers/client_pool';
+import { Bands, Catalog, Command as LoaderCommand, Initialize as LoaderInitialize, LoadTileCommand, Request as LoaderRequest, Search } from '../workers/stac_loader';
 
 const NO_OFFSET: Vec2 = [0, 0];
 // A viewport holds well under 64 billboards, so the buffer never grows in practice.
@@ -20,7 +21,9 @@ const TILE_BUFFER_BYTES = 65536;
 export class StacLayer extends Layer {
 
   private readonly buffer: WebGLBuffer;
-  private readonly loader: QueuedWorkerPool<LoaderRequest, LoaderCommand>;
+  // Connected on the first viewport, because the catalog sets the search on hidden layers too and
+  // that would otherwise start the worker
+  private loader: PoolClient<LoaderInitialize, LoaderRequest, LoaderCommand>|undefined;
   private readonly pool: TexturePool;
   private readonly tiles: HashMap<TileId, WebGLTexture>;
   // For bands that send their values
@@ -28,9 +31,10 @@ export class StacLayer extends Layer {
   private fetching: boolean;
   private plan: {generation: number; drawables: Drawable[]};
   private search: Search;
+  private bands: Bands;
 
   constructor(
-      catalog: Catalog,
+      private readonly catalog: Catalog,
       search: Search,
       bands: Bands,
       // The year the imagery starts, for crediting a search with no start
@@ -44,9 +48,11 @@ export class StacLayer extends Layer {
     super();
 
     this.buffer = this.renderer.createDataBuffer(TILE_BUFFER_BYTES);
-    this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
-    this.loader =
-        new QueuedWorkerPool(new URL('stac_loader_worker.js', import.meta.url).href, 1);
+    this.registerDisposer(() => {
+      this.renderer.deleteBuffer(this.buffer);
+      this.loader?.dispose();
+    });
+    this.loader = undefined;
     this.fetching = false;
     this.pool = new TexturePool(this.renderer);
     this.registerDisposable(this.pool);
@@ -56,33 +62,15 @@ export class StacLayer extends Layer {
       generation: -1,
       drawables: [],
     };
-
-    this.loader.onresponse = command => {
-      if (command.kind === 'ltc') {
-        this.loadTile(command);
-      } else if (command.kind === 'utc') {
-        this.unloadTiles(command.ids);
-      } else if (command.kind === 'usc') {
-        this.fetching = command.fetching;
-        this.redraw();
-      } else {
-        checkExhaustive(command);
-      }
-    };
-
     this.search = search;
-    this.loader.broadcast({
-      kind: 'ir',
-      catalog,
-      search,
-      bands,
-    });
+    this.bands = bands;
   }
 
   /** Replaces the imagery on screen with what the search finds, drawn with the bands. */
   setSearch(search: Search, bands: Bands): void {
     this.search = search;
-    this.loader.broadcast({
+    this.bands = bands;
+    this.loader?.broadcast({
       kind: 'usr',
       search,
       bands,
@@ -95,22 +83,13 @@ export class StacLayer extends Layer {
    */
   valueAt(point: S2LatLng): number|undefined {
     const [x, y] = projectS2LatLng(point);
-    let best: {zoom: number; value: number}|undefined = undefined;
-    for (const [id, values] of this.values) {
-      if (best && best.zoom >= id.zoom) {
-        continue;
-      }
-
-      const size = Math.sqrt(values.length);
-      const tiles = 2 ** id.zoom;
-      const px = Math.floor(((x + 1) / 2 * tiles - id.x) * size);
-      const py = Math.floor(((1 - y) / 2 * tiles - id.y) * size);
-      if (px < 0 || py < 0 || px >= size || py >= size) {
-        continue;
-      }
-      best = {zoom: id.zoom, value: values[py * size + px]};
+    const tile = finestTileAt(this.values, x, y);
+    if (!tile) {
+      return undefined;
     }
-    return best?.value;
+
+    const size = Math.sqrt(tile.value.length);
+    return tile.value[Math.floor(tile.v * size) * size + Math.floor(tile.u * size)];
   }
 
   override get copyrights(): Copyright[] {
@@ -169,16 +148,25 @@ export class StacLayer extends Layer {
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
-    const lat = bounds.lat();
-    const lng = bounds.lng();
-    this.loader.broadcast({
-      kind: 'uvr',
-      viewport: {
-        lat: [lat.lo(), lat.hi()],
-        lng: [lng.lo(), lng.hi()],
-        zoom: fetchZoom,
-      },
-    });
+    if (!this.loader) {
+      this.loader =
+          sharedPool<LoaderInitialize, LoaderRequest, LoaderCommand>(
+              new URL('stac_loader_worker.js', import.meta.url).href, /* count= */ 1)
+              .connect({catalog: this.catalog, search: this.search, bands: this.bands});
+      this.loader.onresponse = command => {
+        if (command.kind === 'ltc') {
+          this.loadTile(command);
+        } else if (command.kind === 'utc') {
+          this.unloadTiles(command.ids);
+        } else if (command.kind === 'usc') {
+          this.fetching = command.fetching;
+          this.redraw();
+        } else {
+          checkExhaustive(command);
+        }
+      };
+    }
+    this.loader.broadcast({kind: 'uvr', viewport: toViewport(bounds, fetchZoom)});
   }
 
   private loadTile(command: LoadTileCommand): void {

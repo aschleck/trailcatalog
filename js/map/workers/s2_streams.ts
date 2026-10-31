@@ -6,7 +6,7 @@ import { S2CellToken } from '../common/types';
 // the same object.
 export interface Stream {
   // Half open, matching the bands in the line styles. Keep streams that overlap in level disjoint
-  // in zoom, or else both tile the same objects and each cell draws them once.
+  // in zoom or in categories, or else both tile the same objects and each cell draws them once.
   minZoom: number;
   maxZoom: number|undefined;
   indexBottom: number;

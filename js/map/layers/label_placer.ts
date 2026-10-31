@@ -165,7 +165,7 @@ export class LabelPlacer {
   // The keys of the labels the last call placed
   private placed: Set<string>;
 
-  constructor(private readonly obstacles?: LabelObstacles) {
+  constructor(private readonly obstacles: ReadonlyArray<LabelObstacles>) {
     this.glyphs = [];
     this.grid = new CollisionGrid();
     this.placements = [];
@@ -188,8 +188,8 @@ export class LabelPlacer {
     this.grid.reset(-halfWidth, -halfHeight, halfWidth, halfHeight);
     this.repeats.clear();
     // They go in before any label, so every label makes way for them.
-    if (this.obstacles) {
-      this.addObstacles(this.obstacles, projection, halfWidth, halfHeight);
+    for (const obstacles of this.obstacles) {
+      this.addObstacles(obstacles, projection, halfWidth, halfHeight);
     }
 
     // Pixels per mercator unit, the same scale the programs get as halfWorldSize. Glyph advances

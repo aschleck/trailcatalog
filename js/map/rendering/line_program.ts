@@ -13,7 +13,7 @@ import {
 } from './program';
 
 // We write the pattern with 4 bytes to keep the 32bit numbers aligned.
-export const VERTEX_STRIDE =
+const VERTEX_STRIDE =
     4 * (
         2 + 2
             + /* fill= */ 1

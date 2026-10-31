@@ -7,10 +7,6 @@ import { LatLng, LatLngRect, RawUuid, Rect, Vec2 } from '../common/types';
 
 import { Anchor, LineKey, PathRouter, Terrain, TERRAINS } from './path_router';
 
-interface InitializeRequest {
-  kind: 'ir';
-}
-
 export interface IndexedLine {
   // With the producer's prefix, since queries answer with it
   id: string;
@@ -102,8 +98,7 @@ interface RoutingRequest {
 }
 
 export type Request =
-    InitializeRequest
-    |LoadRequest
+    LoadRequest
     |UnloadRequest
     |QueryPointRequest
     |QueryRouteRequest
@@ -401,37 +396,24 @@ class LocationQuerier {
   }
 }
 
-function start(ir: InitializeRequest) {
-  const querier = new LocationQuerier((self as any).postMessage.bind(self));
-  self.onmessage = e => {
-    const request = e.data as Request;
-    if (request.kind === 'ir') {
-      throw new Error('Already initialized');
-    } else if (request.kind === 'lr') {
-      querier.load(request);
-    } else if (request.kind === 'qpr') {
-      querier.queryPoint(request);
-    } else if (request.kind === 'qrr') {
-      querier.queryRoute(request);
-    } else if (request.kind === 'qsr') {
-      querier.querySnap(request);
-    } else if (request.kind === 'rr') {
-      querier.setRouting(request);
-    } else if (request.kind === 'ur') {
-      querier.unload(request);
-    } else {
-      checkExhaustive(request);
-    }
-  };
-}
-
+const querier = new LocationQuerier((self as any).postMessage.bind(self));
 self.onmessage = e => {
   const request = e.data as Request;
-  if (request.kind !== 'ir') {
-    throw new Error('Expected an initialization request');
+  if (request.kind === 'lr') {
+    querier.load(request);
+  } else if (request.kind === 'qpr') {
+    querier.queryPoint(request);
+  } else if (request.kind === 'qrr') {
+    querier.queryRoute(request);
+  } else if (request.kind === 'qsr') {
+    querier.querySnap(request);
+  } else if (request.kind === 'rr') {
+    querier.setRouting(request);
+  } else if (request.kind === 'ur') {
+    querier.unload(request);
+  } else {
+    checkExhaustive(request);
   }
-
-  start(request);
 };
 
 function unpack(lines: IndexedLine[]|PackedLines): IndexedLine[] {

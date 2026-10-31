@@ -4,8 +4,7 @@ import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_end
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
 import { RgbaU32, TileId, Vec2 } from '../common/types';
-import { rgbaToUint32 } from '../common/math';
-import { LinePattern, LineProgram, VERTEX_STRIDE as LINE_VERTEX_STRIDE } from '../rendering/line_program';
+import { LinePattern, LineProgram } from '../rendering/line_program';
 import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track, wrap } from '../rendering/glypher';
 
 import {
@@ -48,32 +47,6 @@ interface LayerStyle {
   points: PointStyle[];
   polygons: PolygonStyle[];
 }
-
-// https://medialab.github.io/iwanthue/
-const RANDOM_COLORS_RGB = [
-  [109,188,123],
-  [186,83,185],
-  [81,195,95],
-  [113,102,217],
-  [145,186,53],
-  [110,112,187],
-  [202,165,58],
-  [93,157,214],
-  [207,73,51],
-  [77,193,180],
-  [214,68,117],
-  [73,138,50],
-  [215,141,201],
-  [55,131,93],
-  [159,74,115],
-  [176,174,98],
-  [212,119,111],
-  [112,113,41],
-  [226,137,58],
-  [163,104,52],
-];
-
-const RANDOM_COLORS_UINT32 = RANDOM_COLORS_RGB.map(([r,g,b]) => rgbaToUint32(r,g,b,1));
 
 type GeometryStyle = LineStyle|LineTextStyle|PointStyle|PolygonStyle;
 
@@ -345,20 +318,16 @@ class MbtileLoader {
     const lineTextGroups = new DefaultMap<LineTextStyle, Array<T1>>(() => []);
     const pointGroups = new DefaultMap<PointStyle, Array<T1>>(() => []);
     const polygonGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
-    const polygonBoundGroups = new DefaultMap<PolygonStyle, Feature[]>(() => []);
+    const boundStyles = new Map<PolygonStyle, LineStyle>();
     const fillStyles =
         new DefaultMap<PolygonStyle, Map<string, PolygonStyle>>(() => new Map());
     const queryable: QueryableFeature[] = [];
     for (const layer of layers) {
       const layerStyle = this.layerStyle(layer.name, request.styleZoom);
       if (!layerStyle) {
-        //console.log(`skipped layer ${layer.name}`);
         continue;
       }
 
-      const lineUnstyled = new Set<unknown>();
-      const pointUnstyled = new Set<unknown>();
-      const polygonUnstyled = new Set<unknown>();
       for (const line of layer.lines) {
         const style = findStyle(line.tags, layer.keys, layer.values, layerStyle.lineTexts);
         if (style) {
@@ -370,12 +339,6 @@ class MbtileLoader {
         const style = findStyle(line.tags, layer.keys, layer.values, layerStyle.lines);
         if (style) {
           lineGroups.get(style).push(line);
-        } else {
-          for (let i = 0; i < line.tags.length; i += 2) {
-            if (layer.keys[line.tags[i + 0]] === 'kind') {
-              lineUnstyled.add(layer.values[line.tags[i + 1]]);
-            }
-          }
         }
       }
 
@@ -383,12 +346,6 @@ class MbtileLoader {
         const style = findStyle(point.tags, layer.keys, layer.values, layerStyle.points);
         if (style) {
           pointGroups.get(style).push({...point, layer, layerStyle});
-        } else {
-          for (let i = 0; i < point.tags.length; i += 2) {
-            if (layer.keys[point.tags[i + 0]] === 'kind') {
-              pointUnstyled.add(layer.values[point.tags[i + 1]]);
-            }
-          }
         }
       }
 
@@ -403,42 +360,15 @@ class MbtileLoader {
             }
             queryable.push({geometry: polygon.geometry, starts: polygon.starts, properties});
           }
-        } else {
-          // TODO(april): double counts with polygonBounds but who cares
-          for (let i = 0; i < polygon.tags.length; i += 2) {
-            if (layer.keys[polygon.tags[i + 0]] === 'kind') {
-              polygonUnstyled.add(layer.values[polygon.tags[i + 1]]);
-            }
-          }
         }
       }
 
       for (const polygon of layer.polygonBounds) {
         const style = findStyle(polygon.tags, layer.keys, layer.values, layerStyle.polygons);
         if (style && style.stroke && style.strokeRadius) {
-          polygonBoundGroups.get(style).push(polygon);
-        } else {
-          // TODO(april): double counts with polygons but who cares
-          for (let i = 0; i < polygon.tags.length; i += 2) {
-            if (layer.keys[polygon.tags[i + 0]] === 'kind') {
-              polygonUnstyled.add(layer.values[polygon.tags[i + 1]]);
-            }
-          }
+          lineGroups.get(getBoundStyle(style, boundStyles)).push(polygon);
         }
       }
-
-      //if (lineUnstyled.size > 0) {
-      //  console.log(`${layer.name} lines`);
-      //  console.log(lineUnstyled);
-      //}
-      //if (pointUnstyled.size > 0) {
-      //  console.log(`${layer.name} points`);
-      //  console.log(pointUnstyled);
-      //}
-      //if (polygonUnstyled.size > 0) {
-      //  console.log(`${layer.name} polygons`);
-      //  console.log(polygonUnstyled);
-      //}
     }
 
     const triangulated = new Map<PolygonStyle, Triangles[]>();
@@ -446,7 +376,10 @@ class MbtileLoader {
     let indexCount = 0;
     for (const lines of lineGroups.values()) {
       for (const line of lines) {
-        geometryCount += LINE_VERTEX_STRIDE / 4 * (line.geometry.length - 2) / 2;
+        for (let i = 0; i < line.starts.length; ++i) {
+          const end = i + 1 < line.starts.length ? line.starts[i + 1] : line.geometry.length;
+          geometryCount += LineProgram.bytesNeeded((end - line.starts[i]) / 2) / 4;
+        }
       }
     }
     for (const [style, polygons] of polygonGroups) {
@@ -459,17 +392,6 @@ class MbtileLoader {
         triangless.push(triangles);
       }
       triangulated.set(style, triangless);
-    }
-    for (const [style, polygons] of polygonBoundGroups) {
-      const triangless = [];
-      for (const polygon of polygons) {
-        for (let i = 0; i < polygon.starts.length; ++i) {
-          const start = polygon.starts[i];
-          const end =
-              i < polygon.starts.length - 1 ? polygon.starts[i + 1] : polygon.geometry.length;
-          geometryCount += LINE_VERTEX_STRIDE / 4 * (end - start - 2) / 2;
-        }
-      }
     }
 
     const geometry = new Float32Array(triangulated.size + geometryCount);
@@ -495,15 +417,15 @@ class MbtileLoader {
       let instanceCount = 0;
       let vertexCount = 0;
       for (const line of lines) {
-        line.starts.push(line.geometry.length);
-        for (let i = 0; i < line.starts.length - 1; i++) {
+        for (let i = 0; i < line.starts.length; ++i) {
+          const end = i + 1 < line.starts.length ? line.starts[i + 1] : line.geometry.length;
           const result =
               LineProgram.push(
                 style.fill,
                 style.stroke,
                 style.radius,
                 style.pattern,
-                line.geometry.slice(line.starts[i], line.starts[i + 1]),
+                line.geometry.slice(line.starts[i], end),
                 geometry.buffer,
                 4 * geometryOffset);
           geometryOffset += result.geometryByteLength / 4;
@@ -677,44 +599,11 @@ class MbtileLoader {
       }
     }
 
-    for (const [style, polygons] of polygonBoundGroups) {
-      const geometryStart = geometryOffset;
-      const indexStart = indexOffset;
-      let instanceCount = 0;
-      let vertexCount = 0;
-      for (const polygon of polygons) {
-        polygon.starts.push(polygon.geometry.length);
-        for (let i = 0; i < polygon.starts.length; ++i) {
-          const result =
-              LineProgram.push(
-                style.stroke, // TODO(april): should we allow stroke fills?
-                style.stroke,
-                style.strokeRadius,
-                style.strokePattern,
-                polygon.geometry.slice(polygon.starts[i], polygon.starts[i + 1]),
-                geometry.buffer,
-                4 * geometryOffset);
-          geometryOffset += result.geometryByteLength / 4;
-          instanceCount += result.instanceCount;
-          vertexCount = result.vertexCount;
-        }
-      }
-
-      response.lines.push({
-        geometryByteLength: 4 * (geometryOffset - geometryStart),
-        geometryOffset: 4 * geometryStart,
-        instanceCount,
-        vertexCount,
-        z: style.z,
-      });
-    }
-
     for (const [style, triangless] of triangulated) {
       const geometryStart = geometryOffset;
       const indexStart = indexOffset;
 
       geometryUints[geometryOffset] = style.fill;
-      // geometryUints[geometryOffset] = RANDOM_COLORS_UINT32[Math.floor(Math.random() * RANDOM_COLORS_UINT32.length)];
       geometryOffset += 1;
 
       for (const triangles of triangless) {
@@ -980,6 +869,25 @@ function loadValue(data: LittleEndianView): ValueType {
   }
 
   return boolean ?? number ?? string ?? 0;
+}
+
+// Returns the line style that draws the polygon's outline, one per polygon style so that every
+// outline of a style shares a group.
+function getBoundStyle(style: PolygonStyle, cache: Map<PolygonStyle, LineStyle>): LineStyle {
+  let bound = cache.get(style);
+  if (!bound) {
+    bound = {
+      filters: style.filters,
+      // TODO(april): should we allow stroke fills?
+      fill: style.stroke,
+      stroke: style.stroke,
+      radius: style.strokeRadius,
+      pattern: style.strokePattern,
+      z: style.z,
+    };
+    cache.set(style, bound);
+  }
+  return bound;
 }
 
 // Returns one style per distinct color so that every polygon in a group shares a fill.

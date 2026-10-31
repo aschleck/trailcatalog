@@ -4,6 +4,7 @@ import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 
 import { projectS2LatLng, SphericalCone } from '../camera';
+import { finestTileAt } from '../common/math';
 import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
 import { Layer } from '../layer';
 import { BillboardProgram } from '../rendering/billboard_program';
@@ -11,7 +12,7 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-import { loaderCount, PoolClient, sharedPool } from '../workers/client_pool';
+import { forgetFailedTiles, loaderCount, PoolClient, sharedPool, toViewport } from '../workers/client_pool';
 import { Decode, Initialize as LoaderInitialize, LoadResponse, Request as LoaderRequest, Response as LoaderResponse } from '../workers/raster_loader';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 
@@ -109,17 +110,7 @@ export class RasterTileLayer extends Layer {
       }
     };
 
-    // A tile whose load failed would otherwise count as loading forever
-    this.loader.onfailure = (request, task) => {
-      if (request.kind === 'lr' && this.loading.get(request.id) === task) {
-        this.loading.delete(request.id);
-        this.redraw();
-        this.fetcher.broadcast({
-          kind: 'tlr',
-          id: request.id,
-        });
-      }
-    };
+    this.loader.onfailure = forgetFailedTiles(this.loading, this.fetcher, () => { this.redraw(); });
   }
 
   /** Swaps in tiles from another URL template, such as another day's. */
@@ -136,23 +127,15 @@ export class RasterTileLayer extends Layer {
    */
   packedAt(point: S2LatLng): number|undefined {
     const [x, y] = projectS2LatLng(point);
-    let best: {zoom: number; packed: number}|undefined = undefined;
-    for (const [id, rgba] of this.packed) {
-      if (best && best.zoom >= id.zoom) {
-        continue;
-      }
-
-      const size = Math.sqrt(rgba.length / 4);
-      const tiles = 2 ** id.zoom;
-      const px = Math.floor(((x + 1) / 2 * tiles - id.x) * size);
-      const py = Math.floor(((1 - y) / 2 * tiles - id.y) * size);
-      if (px < 0 || py < 0 || px >= size || py >= size) {
-        continue;
-      }
-      const i = 4 * (py * size + px);
-      best = {zoom: id.zoom, packed: (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]};
+    const tile = finestTileAt(this.packed, x, y);
+    if (!tile) {
+      return undefined;
     }
-    return best?.packed;
+
+    const rgba = tile.value;
+    const size = Math.sqrt(rgba.length / 4);
+    const i = 4 * (Math.floor(tile.v * size) * size + Math.floor(tile.u * size));
+    return (rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2];
   }
 
   /** Returns whether the viewport's tiles have loaded since the fetcher first started. */
@@ -218,17 +201,7 @@ export class RasterTileLayer extends Layer {
   override viewportChanged(
       bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     this.loader.start();
-    const lat = bounds.lat();
-    const lng = bounds.lng();
-    this.fetcher.broadcast({
-      kind: 'uvr',
-      viewport: {
-        lat: [lat.lo(), lat.hi()],
-        lng: [lng.lo(), lng.hi()],
-        zoom: fetchZoom,
-        cone,
-      },
-    });
+    this.fetcher.broadcast({kind: 'uvr', viewport: toViewport(bounds, fetchZoom, cone)});
   }
 
   private loadTile(command: LoadTileCommand): void {

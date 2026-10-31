@@ -15,6 +15,28 @@ export function rgbaU32ToHex(color: RgbaU32): string {
   return `#${r}${g}${b}${a}`;
 }
 
+/**
+ * Returns the most detailed tile under the mercator point, with where the point falls in it as
+ * fractions of the tile across from its west edge and down from its north edge.
+ */
+export function finestTileAt<V>(tiles: Iterable<[TileId, V]>, x: number, y: number):
+    {id: TileId; value: V; u: number; v: number}|undefined {
+  let best: {id: TileId; value: V; u: number; v: number}|undefined = undefined;
+  for (const [id, value] of tiles) {
+    if (best && best.id.zoom >= id.zoom) {
+      continue;
+    }
+
+    const size = 2 ** id.zoom;
+    const u = (x + 1) / 2 * size - id.x;
+    const v = (1 - y) / 2 * size - id.y;
+    if (0 <= u && u < 1 && 0 <= v && v < 1) {
+      best = {id, value, u, v};
+    }
+  }
+  return best;
+}
+
 export function tilesIntersect(a: TileId, b: TileId): boolean {
   // This function works for tiles in normal (0-2^zoom) coordinates.
   if (a.zoom > b.zoom) {

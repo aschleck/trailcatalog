@@ -1,5 +1,10 @@
+import { S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkArgument, checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
+
+import { SphericalCone } from '../camera';
+import { TileId } from '../common/types';
 
 // Every layer of a kind shares one pool because each worker is its own JavaScript heap, and phones
 // run out of memory at a few hundred of them. Workers start when a client calls start or first
@@ -237,6 +242,37 @@ export function serveClients<Init, Request, Response>(
           });
     } else {
       checkExhaustive(data);
+    }
+  };
+}
+
+// The view a tile worker fetches for, with lat and lng in radians
+export interface Viewport {
+  lat: [number, number];
+  lng: [number, number];
+  zoom: number;
+  // Limits the tiles to the globe's visible cap, or undefined when the map is flat and the box
+  // alone is what's visible
+  cone?: SphericalCone;
+}
+
+export function toViewport(bounds: S2LatLngRect, zoom: number, cone?: SphericalCone): Viewport {
+  const lat = bounds.lat();
+  const lng = bounds.lng();
+  return {lat: [lat.lo(), lat.hi()], lng: [lng.lo(), lng.hi()], zoom, cone};
+}
+
+// Makes the onfailure for a loader of fetched tiles, because a tile whose load failed would
+// otherwise count as loading forever.
+export function forgetFailedTiles<Response>(
+    loading: HashMap<TileId, Task<Response>>,
+    fetcher: {broadcast(message: {kind: 'tlr'; id: TileId}): void},
+    redraw: () => void): (request: {kind: string; id?: TileId}, task: Task<Response>) => void {
+  return (request, task) => {
+    if (request.kind === 'lr' && request.id && loading.get(request.id) === task) {
+      loading.delete(request.id);
+      redraw();
+      fetcher.broadcast({kind: 'tlr', id: request.id});
     }
   };
 }

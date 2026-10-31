@@ -10,7 +10,7 @@ import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
-import { PoolClient, sharedPool } from '../workers/client_pool';
+import { PoolClient, sharedPool, toViewport } from '../workers/client_pool';
 import { Request as LoaderRequest, Response as LoaderResponse, LoadResponse } from '../workers/slope_loader';
 import { BASE_ZOOM, MAX_ZOOM, SLOPES_SIZE, TILE_URL } from '../workers/terrarium';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
@@ -159,17 +159,7 @@ export class SlopeLayer extends Layer {
   override viewportChanged(
       bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     this.loader.start();
-    const lat = bounds.lat();
-    const lng = bounds.lng();
-    this.fetcher.broadcast({
-      kind: 'uvr',
-      viewport: {
-        lat: [lat.lo(), lat.hi()],
-        lng: [lng.lo(), lng.hi()],
-        zoom: fetchZoom,
-        cone,
-      },
-    });
+    this.fetcher.broadcast({kind: 'uvr', viewport: toViewport(bounds, fetchZoom, cone)});
   }
 
   private loadTile(command: LoadTileCommand): void {

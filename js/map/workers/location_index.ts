@@ -42,7 +42,6 @@ export class LocationIndex {
       this.pending.delete(response.generation);
       resolve?.(response);
     };
-    this.worker.broadcast({kind: 'ir'});
   }
 
   /**

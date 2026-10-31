@@ -9,8 +9,8 @@ import { projectLatLngRect } from '../camera';
 import { tilesIntersect } from '../common/math';
 import { Rect, TileId } from '../common/types';
 
-import { serveClients } from './client_pool';
-import { Cone, selectTilesInCone, tileInCone } from './tile_cone';
+import { serveClients, Viewport } from './client_pool';
+import { selectTilesInCone, tileInCone } from './tile_cone';
 
 // pi times the WGS84 semi-major axis of 6378137 m
 const WEB_MERCATOR_HALF_WORLD_METERS = 20037508.342789244;
@@ -33,18 +33,6 @@ interface TileLoadedRequest {
   kind: 'tlr';
   id: TileId;
 }
-
-interface Viewport {
-  lat: [number, number];
-  lng: [number, number];
-  zoom: number;
-  // Optional spherical visibility cone. When present, only tiles whose
-  // nearest spherical point P satisfies dot(P, camDir) >= cosThetaT are
-  // fetched. In fully-flat (mercator) mode this is omitted so the lat/lng
-  // rectangle alone defines visibility.
-  cone?: Cone;
-}
-
 
 interface UpdateViewportRequest {
   kind: 'uvr';
@@ -106,6 +94,7 @@ class XyzDataFetcher {
     if (this.pending.has(request.id)) {
       this.pending.delete(request.id);
       this.loaded.add(request.id);
+      this.cull();
     }
   }
 
@@ -206,8 +195,6 @@ class XyzDataFetcher {
       }
     }
 
-    // For reasons I don't care to understand, when the user zooms all the way out and then all the
-    // way in we don't unload the low zoom tiles. This seems to help, albeit late.
     this.cull();
 
     this.postMessage({

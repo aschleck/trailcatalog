@@ -422,7 +422,7 @@ export class LayerCatalog extends Disposable {
             /* minZoom= */ 0,
             /* maxZoom= */ 15,
             this.renderer,
-            this.labelObstacles,
+            [this.labelObstacles],
         );
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
@@ -1165,7 +1165,7 @@ export class LayerCatalog extends Disposable {
         /* minZoom= */ 9,
         /* maxZoom= */ 14,
         this.renderer,
-        this.labelObstacles);
+        [this.labelObstacles]);
   }
 
   private newGoesEntry(satellite: 'East'|'West', product: string, label: string): LayerEntry {

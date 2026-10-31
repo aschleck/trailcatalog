@@ -32,7 +32,6 @@ export class Elevations {
       this.pending.delete(response.id);
       resolve?.(response);
     };
-    this.worker.broadcast({kind: 'ir'});
   }
 
   /**

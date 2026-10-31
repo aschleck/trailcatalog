@@ -9,9 +9,9 @@ import { Layer } from '../layer';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
-import { PoolClient, sharedPool } from '../workers/client_pool';
+import { forgetFailedTiles, PoolClient, sharedPool, toViewport, Viewport } from '../workers/client_pool';
 import { Channel } from '../workers/weather';
-import { Initialize as LoaderInitialize, Request as LoaderRequest, Response as LoaderResponse, TraceResponse, Viewport, WindStyle } from '../workers/wind_loader';
+import { Initialize as LoaderInitialize, Request as LoaderRequest, Response as LoaderResponse, TraceResponse, WindStyle } from '../workers/wind_loader';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 
 /**
@@ -98,16 +98,7 @@ export class WindVectorLayer extends Layer {
       }
     };
 
-    this.loader.onfailure = (request, task) => {
-      if (request.kind === 'lr' && this.loading.get(request.id) === task) {
-        this.loading.delete(request.id);
-        this.redraw();
-        this.fetcher.broadcast({
-          kind: 'tlr',
-          id: request.id,
-        });
-      }
-    };
+    this.loader.onfailure = forgetFailedTiles(this.loading, this.fetcher, () => { this.redraw(); });
   }
 
   /** Draws the wind in the style, or nothing and fetches nothing when undefined. */
@@ -148,23 +139,8 @@ export class WindVectorLayer extends Layer {
     if (!this.style) {
       return;
     }
-    const lat = bounds.lat();
-    const lng = bounds.lng();
-    this.fetcher.broadcast({
-      kind: 'uvr',
-      viewport: {
-        lat: [lat.lo(), lat.hi()],
-        lng: [lng.lo(), lng.hi()],
-        zoom: fetchZoom,
-        cone,
-      },
-    });
-    this.viewport = {
-      lat: [lat.lo(), lat.hi()],
-      lng: [lng.lo(), lng.hi()],
-      zoom,
-      cone,
-    };
+    this.fetcher.broadcast({kind: 'uvr', viewport: toViewport(bounds, fetchZoom, cone)});
+    this.viewport = toViewport(bounds, zoom, cone);
     this.trace();
   }
 

@@ -1,15 +1,15 @@
 import { S2LatLng } from 'java/org/trailcatalog/s2';
 
-import { Camera, projectS2LatLng } from '../camera';
+import { Camera, projectS2LatLng, SphericalCone } from '../camera';
 import { TileId } from '../common/types';
 
-import { Cone, selectTilesInCone } from './tile_cone';
+import { selectTilesInCone } from './tile_cone';
 
 // A laptop's map canvas at DPI 2
 const WIDTH = 2700;
 const HEIGHT = 2000;
 
-function coneAt(lat: number, lng: number, zoom: number): Cone {
+function coneAt(lat: number, lng: number, zoom: number): SphericalCone {
   const cone = new Camera(lat, lng, zoom).sphericalCone(WIDTH, HEIGHT);
   if (!cone) {
     throw new Error(`zoom ${zoom} is flat`);

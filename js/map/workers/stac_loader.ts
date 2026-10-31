@@ -11,6 +11,8 @@ import { clamp } from 'external/dev_april_corgi+/js/common/math';
 import { projectLatLngRect, unprojectS2LatLng } from '../camera';
 import { TileId } from '../common/types';
 
+import { serveClients, Viewport } from './client_pool';
+
 export interface Catalog {
   // A STAC API search endpoint, like https://earth-search.aws.element84.com/v1/search
   searchUrl: string;
@@ -71,8 +73,7 @@ export interface Channel {
   bias: number;
 }
 
-interface InitializeRequest {
-  kind: 'ir';
+export interface Initialize {
   catalog: Catalog;
   search: Search;
   bands: Bands;
@@ -84,18 +85,12 @@ interface UpdateSearchRequest {
   bands: Bands;
 }
 
-interface Viewport {
-  lat: [number, number];
-  lng: [number, number];
-  zoom: number;
-}
-
 interface UpdateViewportRequest {
   kind: 'uvr';
   viewport: Viewport;
 }
 
-export type Request = InitializeRequest|UpdateSearchRequest|UpdateViewportRequest;
+export type Request = UpdateSearchRequest|UpdateViewportRequest;
 
 export interface LoadTileCommand {
   kind: 'ltc';
@@ -282,6 +277,10 @@ const M4 =
         + 45 * ECC_SQUARED * ECC_SQUARED * ECC_SQUARED / 1024;
 const M6 = 35 * ECC_SQUARED * ECC_SQUARED * ECC_SQUARED / 3072;
 
+// Shared by every client's loader and created on the first tile, because it starts a decoder worker
+// per core.
+let geotiffPool: geotiff.Pool|undefined;
+
 class StacLoader {
 
   // Every feature the current query returned, newest first, because sourcesFor prefers the newest
@@ -289,7 +288,6 @@ class StacLoader {
   private readonly active: Feature[];
   // Keyed by STAC id so a requery reuses the features it already opened COGs for.
   private readonly features: Map<string, Feature>;
-  private readonly geotiffPool: geotiff.Pool;
   private readonly loaded: HashSet<TileId>;
   private readonly refreshDebouncer: Debouncer;
   // Tiles drawn from sources that didn't cover them, so a later page of results can put them back
@@ -321,7 +319,6 @@ class StacLoader {
   ) {
     this.active = [];
     this.features = new Map();
-    this.geotiffPool = new geotiff.Pool();
     this.loaded = createTileHashSet();
     this.provisional = createTileHashSet();
     this.refreshDebouncer = new Debouncer(/* delayMs= */ 100, () => {
@@ -604,7 +601,7 @@ class StacLoader {
               bands,
               tileLow,
               tileHigh,
-              this.geotiffPool);
+              getGeotiffPool());
       if (epoch !== this.epoch) {
         bitmap.close();
         return 'drawn';
@@ -888,25 +885,22 @@ class StacLoader {
   }
 }
 
-function start(ir: InitializeRequest) {
-  const fetcher =
-      new StacLoader(
-          ir.catalog,
-          ir.search,
-          ir.bands,
-          (self as any).postMessage.bind(self));
-  self.onmessage = e => {
-    const request = e.data as Request;
-    if (request.kind === 'ir') {
-      throw new Error('Already initialized');
-    } else if (request.kind === 'usr') {
-      fetcher.updateSearch(request.search, request.bands);
+serveClients<Initialize, Request, Command>((init, emit) => {
+  const loader = new StacLoader(init.catalog, init.search, init.bands, emit);
+  return request => {
+    if (request.kind === 'usr') {
+      loader.updateSearch(request.search, request.bands);
     } else if (request.kind === 'uvr') {
-      fetcher.updateViewport(request);
+      loader.updateViewport(request);
     } else {
       checkExhaustive(request);
     }
   };
+});
+
+function getGeotiffPool(): geotiff.Pool {
+  geotiffPool ??= new geotiff.Pool();
+  return geotiffPool;
 }
 
 function fetchFeatures(url: string): Promise<StacFeatureCollection> {
@@ -1528,12 +1522,3 @@ function llToUtm(lat: number, lng: number, zone: number): [number, number] {
                       * A * A * A * A * A * A / 720));
   return [easting, northing];
 }
-
-self.onmessage = e => {
-  const request = e.data as Request;
-  if (request.kind !== 'ir') {
-    throw new Error('Expected an initialization request');
-  }
-
-  start(request);
-};

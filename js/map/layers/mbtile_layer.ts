@@ -5,12 +5,13 @@ import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 import { getLanguage } from 'external/dev_april_corgi+/js/server/ssr_aware';
 
 import { projectS2LatLng, ScreenProjection, SphericalCone } from '../camera';
+import { finestTileAt } from '../common/math';
 import { Copyright, RgbaU32, TileId } from '../common/types';
 import { Layer } from '../layer';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
-import { loaderCount, PoolClient, sharedPool } from '../workers/client_pool';
+import { forgetFailedTiles, loaderCount, PoolClient, sharedPool, toViewport } from '../workers/client_pool';
 import { Initialize as LoaderInitialize, Label, LoadResponse, QueryableFeature, Request as LoaderRequest, Response as LoaderResponse, Style, ValueType } from '../workers/mbtile_loader';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/xyz_data_fetcher';
 import { Z_BASE_SATELLITE, Z_BASE_TERRAIN, Z_BASE_WATER, Z_OVERLAY_TERRAIN, Z_OVERLAY_TEXT, Z_OVERLAY_TRANSPORTATION } from '../z';
@@ -47,8 +48,12 @@ function labelKey(label: Label): string {
 
 const PREFERRED_LANGUAGE = getLanguage().split('-')[0];
 
-const ICE_FILL = 0xFFFFFF80 as RgbaU32;
+// Blue enough to stand off the cream base
+const ICE_FILL = 0xE6F2F8E0 as RgbaU32;
 const WATER_FILL = 0x7FC2E0FF as RgbaU32;
+export const WATER_TEXT_FILL = 0x2F72A8FF as RgbaU32;
+const WATER_TEXT_STROKE = 0xE4EEF3FF as RgbaU32;
+const WATER_TEXT_SCALE = 0.44;
 
 // What PolarCapLayer draws past the tiles' reach, as the basemap would: the Arctic Ocean and the
 // Antarctic ice sheet
@@ -2102,18 +2107,18 @@ export const NATURE: Readonly<Style> = {
         filters: [],
         preferred: `name:${PREFERRED_LANGUAGE}`,
         fallback: 'name',
-        fill: 0x1288E6FF as RgbaU32,
-        stroke: 0xD0DCE5FF as RgbaU32,
-        scale: 0.5,
+        fill: WATER_TEXT_FILL,
+        stroke: WATER_TEXT_STROKE,
+        scale: WATER_TEXT_SCALE,
         z: Z_OVERLAY_TEXT,
       }],
       lines: [],
       points: [
         {
           filters: [],
-          textFill: 0x1288E6FF as RgbaU32,
-          textStroke: 0xD0DCE5FF as RgbaU32,
-          textScale: 0.5,
+          textFill: WATER_TEXT_FILL,
+          textStroke: WATER_TEXT_STROKE,
+          textScale: WATER_TEXT_SCALE,
           z: Z_OVERLAY_TEXT,
         },
       ],
@@ -2132,11 +2137,25 @@ export const NATURE: Readonly<Style> = {
             value: [
               'canal',
               'river',
-              'stream',
             ],
           }],
           fill: 0x7FC2E0FF as RgbaU32,
           stroke: 0x7FC2E0FF as RgbaU32,
+          radius: 0.5,
+          pattern: 'solid',
+          z: Z_BASE_WATER,
+        },
+        // Streams are drawn at half alpha below zoom 12 because in mountains they cover the relief.
+        {
+          filters: [{
+            match: 'string_in',
+            key: 'kind',
+            value: [
+              'stream',
+            ],
+          }],
+          fill: 0x7FC2E080 as RgbaU32,
+          stroke: 0x7FC2E080 as RgbaU32,
           radius: 0.5,
           pattern: 'solid',
           z: Z_BASE_WATER,
@@ -2161,9 +2180,9 @@ export const NATURE: Readonly<Style> = {
         }],
         preferred: `name:${PREFERRED_LANGUAGE}`,
         fallback: 'name',
-        fill: 0x1288E6FF as RgbaU32,
-        stroke: 0xD0DCE5FF as RgbaU32,
-        scale: 0.5,
+        fill: WATER_TEXT_FILL,
+        stroke: WATER_TEXT_STROKE,
+        scale: WATER_TEXT_SCALE,
         z: Z_OVERLAY_TEXT,
       }],
       lines: [
@@ -2221,8 +2240,8 @@ export class MbtileLayer extends Layer {
       minZoom: number,
       maxZoom: number,
       private readonly renderer: Renderer,
-      // What another layer drew, which our labels keep out of
-      obstacles?: LabelObstacles,
+      // What other layers drew, which our labels keep out of
+      obstacles: ReadonlyArray<LabelObstacles> = [],
   ) {
     super(copyrights);
     this.fetcher =
@@ -2278,35 +2297,13 @@ export class MbtileLayer extends Layer {
       }
     };
 
-    // A tile whose load failed would otherwise count as loading forever
-    this.loader.onfailure = (request, task) => {
-      if (request.kind === 'lr' && this.loading.get(request.id) === task) {
-        this.loading.delete(request.id);
-        this.redraw();
-        this.fetcher.broadcast({
-          kind: 'tlr',
-          id: request.id,
-        });
-      }
-    };
+    this.loader.onfailure = forgetFailedTiles(this.loading, this.fetcher, () => { this.redraw(); });
   }
 
   /** Returns the properties of the queryable polygons at the point in the most detailed tile. */
   featuresAt(point: S2LatLng): Array<Record<string, ValueType>> {
     const [x, y] = projectS2LatLng(point);
-    let best: {zoom: number; tile: LoadedTile}|undefined = undefined;
-    for (const [id, tile] of this.tiles) {
-      if (best && best.zoom >= id.zoom) {
-        continue;
-      }
-      const tiles = 2 ** id.zoom;
-      const tx = (x + 1) / 2 * tiles - id.x;
-      const ty = (1 - y) / 2 * tiles - id.y;
-      if (0 <= tx && tx < 1 && 0 <= ty && ty < 1) {
-        best = {zoom: id.zoom, tile};
-      }
-    }
-    return (best?.tile.queryable ?? [])
+    return (finestTileAt(this.tiles, x, y)?.value.queryable ?? [])
         .filter(f => containsPoint(f.geometry, f.starts, x, y))
         .map(f => f.properties);
   }
@@ -2325,13 +2322,13 @@ export class MbtileLayer extends Layer {
   }
 
   override render(planner: Planner, zoom: number, projection: ScreenProjection): void {
-    // TODO(april): this results in bad behavior like low zoom tiles drawing over what should be
-    // background at high zoom. We need to drop the depth buffer and just be careful about overdraw
-    // with xyz tiles. Sad.
+    // Draw lowest detail to highest because tiles share a z and the depth test passes equal
+    // depths, so the last one drawn wins.
     //
-    // Orrrr we could add a tile wide quad at the start of every tile...? But then we need the
-    // stencil buffer not depth.
-    const tiles = [...this.tiles].sort((a, b) => b[0].zoom - a[0].zoom);
+    // TODO(april): a coarse tile still draws its features where the finer tile over it has only
+    // background. A tile wide quad at the start of every tile would cover them, but it needs the
+    // stencil buffer rather than depth.
+    const tiles = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
     for (const [, response] of tiles) {
       planner.add(response.drawables);
     }
@@ -2349,17 +2346,7 @@ export class MbtileLayer extends Layer {
   override viewportChanged(
       bounds: S2LatLngRect, zoom: number, fetchZoom: number, cone?: SphericalCone): void {
     this.loader.start();
-    const lat = bounds.lat();
-    const lng = bounds.lng();
-    this.fetcher.broadcast({
-      kind: 'uvr',
-      viewport: {
-        lat: [lat.lo(), lat.hi()],
-        lng: [lng.lo(), lng.hi()],
-        zoom: fetchZoom,
-        cone,
-      },
-    });
+    this.fetcher.broadcast({kind: 'uvr', viewport: toViewport(bounds, fetchZoom, cone)});
 
     // Floor of viewport zoom is a stable bucket: layerStyle.minZoom/maxZoom
     // boundaries are all integers, so styles only need to refresh when this

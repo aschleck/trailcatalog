@@ -41,10 +41,6 @@ const MIN_ROUTE_PADDING_METERS = 300;
 // the router's headings leave along any other angle.
 const SIMPLIFY_TOLERANCE = 0.5;
 
-interface InitializeRequest {
-  kind: 'ir';
-}
-
 export interface SampleRequest {
   kind: 'sr';
   id: number;
@@ -95,8 +91,7 @@ export interface SunlightRequest {
   brightness: number;
 }
 
-export type Request =
-    InitializeRequest|RouteRequest|SampleRequest|SunlightRequest|TraceRequest;
+export type Request = RouteRequest|SampleRequest|SunlightRequest|TraceRequest;
 
 export interface SampleResponse {
   kind: 'sr';
@@ -614,9 +609,7 @@ let queue = Promise.resolve();
 const sampler = new ElevationSampler((self as any).postMessage.bind(self));
 self.onmessage = e => {
   const request = e.data as Request;
-  if (request.kind === 'ir') {
-    // nothing to set up
-  } else if (request.kind === 'rr') {
+  if (request.kind === 'rr') {
     queue = queue.then(() => sampler.route(request)).catch(e => {
       console.error(e);
       sampler.failRoute(request);

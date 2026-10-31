@@ -1,21 +1,5 @@
-import { createProjection, Projection, projectToNdc, unprojectNdc } from '../camera';
+import { createProjection, Projection, projectToNdc, SphericalCone, unprojectNdc } from '../camera';
 import { TileId } from '../common/types';
-
-type Vec3 = [number, number, number];
-
-// See camera.ts#SphericalCone
-export interface Cone {
-  camDir: Vec3;
-  cosThetaT: number;
-  distance: number;
-  centerZoom: number;
-  flattenFactor: number;
-  zoom: number;
-  lat: number;
-  lng: number;
-  widthPx: number;
-  heightPx: number;
-}
 
 // Off screen tiles only show while the globe turns, so a quarter screen past each edge comes two
 // zooms coarser and the rest of the cap three.
@@ -31,7 +15,8 @@ const TILE_SAMPLES = 5;
  * on a texel where it comes nearest the camera.
  */
 export function selectTilesInCone(
-    cone: Cone, extraZoom: number, minZoom: number, maxZoom: number, cull = true): TileId[] {
+    cone: SphericalCone, extraZoom: number, minZoom: number, maxZoom: number, cull = true):
+    TileId[] {
   const projection =
       createProjection(cone.lat, cone.lng, cone.zoom, cone.widthPx, cone.heightPx);
   const ground = groundUnderScreen(projection);
@@ -123,7 +108,7 @@ function screenReach(
 }
 
 /** Returns true if the tile's geographic patch intersects the camera's visible cap. */
-export function tileInCone(id: TileId, worldSize: number, cone?: Cone): boolean {
+export function tileInCone(id: TileId, worldSize: number, cone?: SphericalCone): boolean {
   return !cone || nearestInCone(id, worldSize, cone).dot >= cone.cosThetaT;
 }
 
@@ -137,7 +122,8 @@ export function tileInCone(id: TileId, worldSize: number, cone?: Cone): boolean 
 // latitude. With dLng fixed, the dot is a sinusoid in lat peaking at
 // atan2(sin(camLat), cos(camLat) cos(dLng)), which is camLat only when dLng is
 // 0. Clamping camLat instead picks the far edge of a tile across the pole.
-function nearestInCone(id: TileId, worldSize: number, cone: Cone): {dot: number; lat: number} {
+function nearestInCone(id: TileId, worldSize: number, cone: SphericalCone):
+    {dot: number; lat: number} {
   const PI = Math.PI;
   const mx0 = (id.x / worldSize) * 2 - 1;
   const mx1 = ((id.x + 1) / worldSize) * 2 - 1;
