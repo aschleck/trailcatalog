@@ -8,10 +8,10 @@ import { Camera, projectS2LatLng, worldRadiusAt } from 'js/map/camera';
 import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { LabelObstacles } from 'js/map/layers/label_placer';
-import { WATER_TEXT_FILL } from 'js/map/layers/mbtile_layer';
+import { CITY_LABEL, NEIGHBOURHOOD_LABEL, PARK_LABEL, PointStyle, SUBURB_LABEL, TOWN_LABEL, VILLAGE_LABEL, WATER_TEXT_FILL } from 'js/map/layers/mbtile_layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { GLYPHER, toGraphemes, wrap } from 'js/map/rendering/glypher';
+import { GLYPHER, toGraphemes, track, wrap } from 'js/map/rendering/glypher';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -35,33 +35,75 @@ const INITIAL_BUFFER_BYTES = 65536;
 // About 450 names of a dozen glyphs at SdfProgram's 48 bytes per glyph
 const INITIAL_LABEL_BYTES = 262144;
 
-// A darker shade of the contours' brown, so a name reads as part of the terrain
-const LABEL_FILL = 0x4F3F2CFF as RgbaU32;
-const LABEL_STROKE = 0xF4F0E8FF as RgbaU32;
-// FONT_SIZE is 28, so names are about 12px.
-const LABEL_SCALE = 0.42;
-const HIGHLIGHTED_LABEL_SCALE = 0.5;
-const LABEL_LINE_GRAPHEMES = 12;
+interface Look {
+  fill: RgbaU32;
+  stroke: RgbaU32;
+  scale: number;
+  lineGraphemes: number;
+  // Sets the name in spaced capitals, see glypher#track
+  caps: boolean;
+}
+
+// A darker shade of the contours' brown, so a name reads as part of the terrain. FONT_SIZE is 28,
+// so names are about 12px.
+const LABEL_LOOK: Look = {
+  fill: 0x4F3F2CFF as RgbaU32,
+  stroke: 0xF4F0E8FF as RgbaU32,
+  scale: 0.42,
+  lineGraphemes: 12,
+  caps: false,
+};
+const HIGHLIGHTED_LABEL_GROWTH = 1.2;
 const LABEL_GAP_PX = 4;
 // Added around every label and icon, so neighbors keep LABEL_GAP_PX between them
 const LABEL_PAD_PX = LABEL_GAP_PX / 2;
 
-// Placed first, because a hiker steers by summits, then by the ice and water below them, then by
-// the gaps between them
+// The basemap's country and state names, which it styles inline
+const COUNTRY_LOOK: Look = {
+  fill: 0x000000FF as RgbaU32,
+  stroke: 0xEFEFEFFF as RgbaU32,
+  scale: 0.55,
+  lineGraphemes: 8,
+  caps: false,
+};
+const STATE_LOOK: Look = {...COUNTRY_LOOK, scale: 0.5};
+
+// Placed first, because the big places say where on the map you are at any zoom. Then a hiker
+// steers by summits, then by the ice and water below them, the parks around them, and the gaps
+// between them. The small places only fill in what's left.
 const LABEL_PRIORITY = [
+  [
+    PointCategory.PLACE_COUNTRY,
+    PointCategory.PLACE_STATE,
+    PointCategory.PLACE_CITY,
+    PointCategory.PLACE_TOWN,
+  ],
   [PointCategory.NATURAL_PEAK, PointCategory.NATURAL_VOLCANO],
   [PointCategory.NATURAL_GLACIER],
   [PointCategory.NATURAL_LAKE, PointCategory.NATURAL_BAY, PointCategory.NATURAL_STRAIT],
+  [PointCategory.PARK],
   [PointCategory.NATURAL_MOUNTAIN_PASS, PointCategory.NATURAL_SADDLE],
+  [PointCategory.PLACE_VILLAGE, PointCategory.PLACE_SUBURB, PointCategory.PLACE_NEIGHBOURHOOD],
 ];
 
-// Areas, whose name sits in the middle of them with no icon. Glaciers take a deeper shade of the
-// glaciated contour labels' blue and open water takes the basemap's water names' blue.
-const AREA_LABEL_FILLS = new Map<number, RgbaU32>([
-  [PointCategory.NATURAL_BAY, WATER_TEXT_FILL],
-  [PointCategory.NATURAL_GLACIER, 0x1F78A3FF as RgbaU32],
-  [PointCategory.NATURAL_LAKE, WATER_TEXT_FILL],
-  [PointCategory.NATURAL_STRAIT, WATER_TEXT_FILL],
+// Areas and places, whose name sits on them with no icon. Glaciers take a deeper shade of the
+// glaciated contour labels' blue and open water takes the basemap's water names' blue. Places and
+// parks look the way the basemap drew them.
+const AREA_LOOKS = new Map<number, Look>([
+  [PointCategory.NATURAL_BAY, {...LABEL_LOOK, fill: WATER_TEXT_FILL}],
+  [PointCategory.NATURAL_GLACIER, {...LABEL_LOOK, fill: 0x1F78A3FF as RgbaU32}],
+  [PointCategory.NATURAL_LAKE, {...LABEL_LOOK, fill: WATER_TEXT_FILL}],
+  [PointCategory.NATURAL_STRAIT, {...LABEL_LOOK, fill: WATER_TEXT_FILL}],
+  [PointCategory.PARK_NATIONAL_PARK, getLook(PARK_LABEL)],
+  [PointCategory.PARK_NATURE_RESERVE, getLook(PARK_LABEL)],
+  [PointCategory.PARK_PROTECTED_AREA, getLook(PARK_LABEL)],
+  [PointCategory.PLACE_COUNTRY, COUNTRY_LOOK],
+  [PointCategory.PLACE_STATE, STATE_LOOK],
+  [PointCategory.PLACE_CITY, getLook(CITY_LABEL)],
+  [PointCategory.PLACE_TOWN, getLook(TOWN_LABEL)],
+  [PointCategory.PLACE_VILLAGE, getLook(VILLAGE_LABEL)],
+  [PointCategory.PLACE_SUBURB, getLook(SUBURB_LABEL)],
+  [PointCategory.PLACE_NEIGHBOURHOOD, getLook(NEIGHBOURHOOD_LABEL)],
 ]);
 
 // The server has nothing to simplify in a point.
@@ -101,7 +143,6 @@ export class PointCollectionLayer extends Layer {
       url: string,
       streams: Stream[],
       categories: PointCategory[],
-      private readonly labelZoom: number,
       private readonly iconZoom: number,
       private readonly camera: Camera,
       private readonly renderer: Renderer,
@@ -226,14 +267,6 @@ export class PointCollectionLayer extends Layer {
   }
 
   override render(planner: Planner, zoom: number): void {
-    if (zoom < this.labelZoom) {
-      if (this.planned) {
-        this.planned = undefined;
-        this.obstacles.boxes = [];
-      }
-      return;
-    }
-
     // Labels are placed in mercator scaled to pixels, so a pan doesn't replan them. FeatureLayer
     // assigns avoid a new array of boxes whenever it replans its labels, which isn't only on zoom.
     const icons = zoom >= this.iconZoom;
@@ -331,23 +364,41 @@ export class PointCollectionLayer extends Layer {
       }
     }
 
-    // A highlighted name goes first, then names by tier, and a name placed last time goes before
-    // its equals so zooming doesn't swap neighbors every frame. Every unhighlighted score is under
-    // 2 * (LABEL_PRIORITY.length + 1).
-    const priority = (point: Point) => {
+    // A highlighted name goes first, then names by tier and by rank within it, and a name placed
+    // last time goes before its equals so zooming doesn't swap neighbors every frame.
+    const getPriority = (point: Point) => {
       const type = point.data.type as number;
       const tier = LABEL_PRIORITY.findIndex(c => c.some(category => aDescendsB(type, category)));
-      return (this.isHighlighted(point) ? 0 : 2 * (LABEL_PRIORITY.length + 1))
-          + 2 * (tier < 0 ? LABEL_PRIORITY.length : tier)
-          + (this.labelBoxes.has(getId(point)) ? 0 : 1);
+      return [
+        this.isHighlighted(point) ? 0 : 1,
+        tier < 0 ? LABEL_PRIORITY.length : tier,
+        (point.data.rank as number|undefined) ?? Number.POSITIVE_INFINITY,
+        this.labelBoxes.has(getId(point)) ? 0 : 1,
+        getId(point),
+      ];
     };
-    const named = shown.filter(point => point.data.name);
-    named.sort((a, b) => priority(a) - priority(b) || getId(a) - getId(b));
+    const named =
+        shown
+            .filter(point => point.data.name)
+            .map(point => ({point, priority: getPriority(point)}));
+    named.sort((a, b) => {
+      for (let i = 0; i < a.priority.length; ++i) {
+        if (a.priority[i] !== b.priority[i]) {
+          return a.priority[i] - b.priority[i];
+        }
+      }
+      return 0;
+    });
 
-    const labels = named.map(point => ({
-      point,
-      graphemes: wrap(toGraphemes(point.data.name as string), LABEL_LINE_GRAPHEMES),
-    }));
+    const labels = named.map(({point}) => {
+      const look = getPointLook(point);
+      const wrapped = wrap(toGraphemes(point.data.name as string), look.lineGraphemes);
+      return {
+        point,
+        look,
+        graphemes: look.caps ? track(wrapped.map(g => g.toLocaleUpperCase())) : wrapped,
+      };
+    });
     this.labels =
         growBuffer(
             this.labels,
@@ -357,9 +408,9 @@ export class PointCollectionLayer extends Layer {
     const boxes = new Map<number, {point: Point; box: number[]}>();
     let offset = 0;
     this.labelsMissingGlyphs = false;
-    for (const {point, graphemes} of labels) {
+    for (const {point, look, graphemes} of labels) {
       const highlighted = this.isHighlighted(point);
-      const scale = highlighted ? HIGHLIGHTED_LABEL_SCALE : LABEL_SCALE;
+      const scale = highlighted ? look.scale * HIGHLIGHTED_LABEL_GROWTH : look.scale;
       const size = GLYPHER.measurePx(graphemes, scale);
       if (!size) {
         this.labelsMissingGlyphs = true;
@@ -385,8 +436,8 @@ export class PointCollectionLayer extends Layer {
               [left - x, 0],
               scale,
               /* angle= */ 0,
-              AREA_LABEL_FILLS.get(point.data.type as number) ?? LABEL_FILL,
-              LABEL_STROKE,
+              look.fill,
+              look.stroke,
               Z_OVERLAY_TEXT + 0.5,
               this.labels,
               offset,
@@ -413,10 +464,6 @@ export class PointCollectionLayer extends Layer {
    * ones whose label is under it.
    */
   pointsAt(point: S2LatLng): Point[] {
-    if (this.camera.zoom < this.labelZoom) {
-      return [];
-    }
-
     const [x, y] = projectS2LatLng(point);
     const labeled = [];
     const px = x * this.obstacles.pixelsPerWorld;
@@ -485,15 +532,20 @@ export class PointCollectionLayer extends Layer {
     const points = [];
     const count = source.getVarInt32();
     for (let i = 0; i < count; ++i) {
-      // id,type,name,marker
+      // id,type,name,marker,rank
       const id = source.getVarBigInt64();
       const type = source.getVarInt32();
       const name = TEXT_DECODER.decode(source.sliceInt8(source.getVarInt32()));
       const latE7 = source.getInt32();
       const lngE7 = source.getInt32();
+      // one more than the rank, or 0 for unranked
+      const rankPlusOne = source.getVarInt32();
       const data: Data = {id: Number(id), type};
       if (name) {
         data.name = name;
+      }
+      if (rankPlusOne > 0) {
+        data.rank = rankPlusOne - 1;
       }
       points.push({
         id: {lsb: id, msb: 0n},
@@ -522,5 +574,19 @@ function getId(point: Point): number {
 }
 
 function isArea(point: Point): boolean {
-  return AREA_LABEL_FILLS.has(point.data.type as number);
+  return AREA_LOOKS.has(point.data.type as number);
+}
+
+function getPointLook(point: Point): Look {
+  return AREA_LOOKS.get(point.data.type as number) ?? LABEL_LOOK;
+}
+
+function getLook(style: PointStyle): Look {
+  return {
+    fill: style.textFill,
+    stroke: style.textStroke,
+    scale: style.textScale,
+    lineGraphemes: style.wrapGraphemes ?? 8,
+    caps: style.caps ?? false,
+  };
 }

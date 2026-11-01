@@ -460,7 +460,7 @@ export const CONTOURS_METERS: Readonly<Style> = {
   ],
 };
 
-type PointStyle = Style['layers'][number]['points'][number];
+export type PointStyle = Style['layers'][number]['points'][number];
 
 // Place names get smaller and lighter with the place, so a city reads as more than its
 // neighborhoods at a glance. Neighborhoods are gray spaced capitals, a different kind of name
@@ -479,7 +479,7 @@ const MAJOR_CITY_LABEL: PointStyle = {
   z: Z_OVERLAY_TEXT + 0.3,
 };
 
-const CITY_LABEL: PointStyle = {
+export const CITY_LABEL: PointStyle = {
   filters: [{match: 'string_in', key: 'kind_detail', value: ['city']}],
   textFill: 0x2B2B2BFF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
@@ -487,7 +487,7 @@ const CITY_LABEL: PointStyle = {
   z: Z_OVERLAY_TEXT + 0.28,
 };
 
-const TOWN_LABEL: PointStyle = {
+export const TOWN_LABEL: PointStyle = {
   filters: [{match: 'string_in', key: 'kind_detail', value: ['town']}],
   textFill: 0x3D3D3DFF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
@@ -495,7 +495,7 @@ const TOWN_LABEL: PointStyle = {
   z: Z_OVERLAY_TEXT + 0.25,
 };
 
-const VILLAGE_LABEL: PointStyle = {
+export const VILLAGE_LABEL: PointStyle = {
   filters: [{match: 'string_in', key: 'kind_detail', value: ['village']}],
   textFill: 0x505050FF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
@@ -505,7 +505,7 @@ const VILLAGE_LABEL: PointStyle = {
 
 // Under water and park names, which say more about where a trail goes. Protomaps files the big
 // named parts of a city, like Noe Valley, as quarters.
-const SUBURB_LABEL: PointStyle = {
+export const SUBURB_LABEL: PointStyle = {
   filters: [{match: 'string_in', key: 'kind_detail', value: ['quarter', 'suburb']}],
   textFill: 0x6E6A64FF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,
@@ -514,7 +514,7 @@ const SUBURB_LABEL: PointStyle = {
   z: Z_OVERLAY_TEXT + 0.06,
 };
 
-const NEIGHBOURHOOD_LABEL: PointStyle = {
+export const NEIGHBOURHOOD_LABEL: PointStyle = {
   ...SUBURB_LABEL,
   filters: [{match: 'string_in', key: 'kind_detail', value: ['neighbourhood']}],
   textScale: 0.34,
@@ -538,7 +538,7 @@ function rankedUnder(style: PointStyle, zoom: number): PointStyle {
 const PARKS = ['national_park', 'nature_reserve', 'protected_area'];
 
 // Quieter than the place names, so a park reads as a region and not as a town.
-const PARK_LABEL: PointStyle = {
+export const PARK_LABEL: PointStyle = {
   filters: [{match: 'string_in', key: 'kind', value: PARKS}],
   textFill: 0x3F7A4AFF as RgbaU32,
   textStroke: 0xEFEFEFFF as RgbaU32,

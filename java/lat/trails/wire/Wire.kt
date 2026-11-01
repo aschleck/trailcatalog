@@ -1,7 +1,7 @@
 package lat.trails.wire
 
 // The format of a collection tile, see ApiServer.kt#fetchCollectionObjects.
-const val OBJECTS_WIRE_VERSION = 5
+const val OBJECTS_WIRE_VERSION = 6
 
 // How a tile encodes its objects.
 //
@@ -10,7 +10,8 @@ const val OBJECTS_WIRE_VERSION = 5
 // are the source way, the category, and the traits. A user collection needs the general form: its
 // objects are identified by UUID and described by the jsonb its creator wrote.
 //
-// Points pack the same way, and carry their name because OSM names a node on the node.
+// Points pack the same way, and carry their name because OSM names a node on the node, and their
+// rank because it orders their labels.
 const val KIND_UUID_JSON = 0
 const val KIND_PACKED_PATH = 1
 const val KIND_PACKED_POINT = 2

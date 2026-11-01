@@ -97,29 +97,27 @@ function wayLines(style: MbtileStyle): LineStyle[] {
 }
 
 /**
- * Leaves the names of lakes, bays, and straits to the Nodes layer from LANDMARK_ZOOM. Protomaps
- * labels a natural=water area as kind water, with its water tag as kind_detail, and the importer
- * makes a point for each named one that isn't flowing. We drop only no kind_detail and lake, which
- * every Washington lake label we checked had a point for. Bays and straits are kinds of their own,
- * and the importer makes a point for each named one. Rivers and reservoirs keep their basemap
- * names.
+ * Leaves the names of places, parks, lakes, bays, and straits to the Nodes layer, which draws them
+ * from our ranked points. Protomaps labels a natural=water area as kind water, with its water tag
+ * as kind_detail, and the importer makes a point for each named one that isn't flowing. We drop
+ * only no kind_detail and lake, which every Washington lake label we checked had a point for. Bays
+ * and straits are kinds of their own, and the importer makes a point for each named one. Oceans,
+ * seas, rivers, and reservoirs keep their basemap names.
  */
-function withoutLandmarkWaterNames(style: MbtileStyle): MbtileStyle {
+function withoutPointLabels(style: MbtileStyle): MbtileStyle {
   const layers: MbtileLayerStyle[] = [];
   for (const layer of style.layers) {
-    if (layer.layerName !== 'water'
-        || layer.points.length === 0
-        || layer.maxZoom <= LANDMARK_ZOOM) {
+    if (layer.layerName === 'places' || layer.layerName === 'pois') {
+      layers.push({...layer, points: []});
+      continue;
+    }
+    if (layer.layerName !== 'water' || layer.points.length === 0) {
       layers.push(layer);
       continue;
     }
 
-    if (layer.minZoom < LANDMARK_ZOOM) {
-      layers.push({...layer, maxZoom: LANDMARK_ZOOM});
-    }
     layers.push({
       ...layer,
-      minZoom: Math.max(layer.minZoom, LANDMARK_ZOOM),
       points: layer.points.flatMap(point => [
         {
           ...point,
@@ -516,6 +514,8 @@ export const NODE_KINDS:
   {key: 'lodging', label: 'Lodging', category: PointCategory.LODGING},
   {key: 'natural', label: 'Natural features', category: PointCategory.NATURAL},
   {key: 'parking', label: 'Parking', category: PointCategory.ACCESS_PARKING},
+  {key: 'parks', label: 'Parks', category: PointCategory.PARK},
+  {key: 'places', label: 'Places', category: PointCategory.PLACE},
   {key: 'resupply', label: 'Resupply', category: PointCategory.RESUPPLY},
   {key: 'safety', label: 'Safety', category: PointCategory.SAFETY},
   {key: 'sights', label: 'Sights', category: PointCategory.SIGHT},
@@ -524,17 +524,13 @@ export const NODE_KINDS:
   {key: 'water', label: 'Water', category: PointCategory.WATER},
 ];
 
-// Where summits, glaciers, and open water get their names, as soon as the contours are labeled
-export const LANDMARK_ZOOM = 13;
-
-export const BASEMAP: MbtileStyle = withoutLandmarkWaterNames(withoutWayLines(NATURE));
+export const BASEMAP: MbtileStyle = withoutPointLabels(withoutWayLines(NATURE));
 
 // What the basemap layer offers to label, by the protomaps layers each one's text comes from.
 // Points in the basemap style only draw text, so dropping a layer's points and lineTexts takes
 // all of its labels.
 export const BASEMAP_LABEL_KINDS:
     ReadonlyArray<{key: string; label: string; layerNames: string[]}> = [
-  {key: 'place_labels', label: 'Place labels', layerNames: ['places', 'pois']},
   {key: 'water_labels', label: 'Water labels', layerNames: ['water']},
   {key: 'way_labels', label: 'Way labels', layerNames: ['roads']},
 ];

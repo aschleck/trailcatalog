@@ -64,7 +64,6 @@ import {
   getDrawnCategories,
   getUserVisibleBasemap,
   getUserVisibleOsmWays,
-  LANDMARK_ZOOM,
   NODE_KINDS,
   OSM_WAYS,
   WAY_KINDS,
@@ -274,6 +273,8 @@ const SNOW_WATER_ID = 'us/conditions/snow_water';
 const POINT_ICON_ZOOM = 14;
 // Where the rest of the points join the landmarks, which would otherwise bury them
 const POINT_ZOOM = 15;
+// Where every landmark loads, rather than only the ones ranked to show by the zoom
+const LANDMARK_ZOOM = 13;
 const LANDMARKS = [
   PointCategory.NATURAL_BAY,
   PointCategory.NATURAL_GLACIER,
@@ -281,13 +282,14 @@ const LANDMARKS = [
   PointCategory.NATURAL_PEAK,
   PointCategory.NATURAL_STRAIT,
   PointCategory.NATURAL_VOLCANO,
+  PointCategory.PARK,
+  PointCategory.PLACE,
 ];
 // Every category outside the landmarks, as the fewest ancestors, so its stream and the landmarks'
-// share no point. Parks are left out because NODE_KINDS has no kind that draws them.
+// share no point
 const NOT_LANDMARKS = (() => {
   const others = (Object.values(PointCategory) as Array<string|number>)
       .filter((v): v is number => typeof v === 'number')
-      .filter(v => !aDescendsB(v, PointCategory.PARK))
       .filter(v => !LANDMARKS.some(s => aDescendsB(v, s) || aDescendsB(s, v)));
   return others.filter(v => !others.some(o => o !== v && aDescendsB(v, o)));
 })();
@@ -456,15 +458,25 @@ export class LayerCatalog extends Disposable {
             [OSM_COPYRIGHT],
             `/api/collections/${TRAILCATALOG_POINTS_COLLECTION_ID}`,
             [
-              // Every point sits in a SimpleS2.HIGHEST_INDEX_LEVEL cell. Level 11 tiles hold a
-              // viewport at zoom 14 in a handful of requests, and level 10 one at zoom 13.
+              // Below LANDMARK_ZOOM each zoom asks only for the landmarks ranked to show by then,
+              // so a continent is its countries and states rather than every lake in it. Every
+              // point sits in a SimpleS2.HIGHEST_INDEX_LEVEL cell. Level 11 tiles hold a viewport
+              // at zoom 14 in a handful of requests, and level 10 one at zoom 13, so each zoom
+              // tiles three levels above itself.
+              ...Array.from({length: LANDMARK_ZOOM}, (_, zoom) => ({
+                minZoom: zoom,
+                maxZoom: zoom + 1,
+                indexBottom: Math.max(0, zoom - 3),
+                ...POINT_LEVELS,
+                categories: LANDMARKS,
+                maxRank: zoom,
+              })),
               {minZoom: LANDMARK_ZOOM, maxZoom: undefined, indexBottom: 10, ...POINT_LEVELS,
                 categories: LANDMARKS},
               {minZoom: POINT_ZOOM, maxZoom: undefined, indexBottom: 11, ...POINT_LEVELS,
                 categories: NOT_LANDMARKS},
             ],
             NODE_KINDS.filter(({hidden}) => !hidden).map(({category}) => category),
-            LANDMARK_ZOOM,
             POINT_ICON_ZOOM,
             this.camera,
             this.renderer,

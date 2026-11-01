@@ -15,6 +15,8 @@ export interface Stream {
   // The only categories the server sends, because the style draws nothing else in this band, or
   // undefined for all of them
   categories?: number[];
+  // The largest rank the server sends, leaving out unranked objects, or undefined for all of them
+  maxRank?: number;
 }
 
 export type CellKey = string & {brand: 'CellKey'};

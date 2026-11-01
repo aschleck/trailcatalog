@@ -1985,6 +1985,7 @@ private fun fetchCollectionObjects(ctx: Context) {
   val levelCeiling = ctx.queryParam("minLevel")?.toInt()?.let { 1L shl (2 * (30 - it)) }
   val cells = CellFilter(cell, indexBottom, levelFloor, levelCeiling)
   val types = ctx.queryParam("types")?.split(",")?.map { it.toInt() }
+  val maxRank = ctx.queryParam("maxRank")?.toInt()
   DelegatingEncodedOutputStream(bytes).use {
     it.writeVarInt(OBJECTS_WIRE_VERSION)
 
@@ -1995,7 +1996,7 @@ private fun fetchCollectionObjects(ctx: Context) {
       fetchTrailcatalogPaths(it, cells, currentVersion.toInt(), snap, types)
     } else if (collection == TRAILCATALOG_POINTS_COLLECTION_ID) {
       it.writeVarInt(KIND_PACKED_POINT)
-      fetchTrailcatalogPoints(it, cells, currentVersion.toInt(), types)
+      fetchTrailcatalogPoints(it, cells, currentVersion.toInt(), types, maxRank)
     } else {
       it.writeVarInt(KIND_UUID_JSON)
       fetchTrailsLatObjects(it, cells, collection, snap)
@@ -2319,19 +2320,26 @@ private fun fetchTrailcatalogPoints(
   epoch: Int,
   // The categories the client draws, or null for all of them
   types: List<Int>?,
+  // The largest rank to send, leaving out the unranked points, or null for every point
+  maxRank: Int?,
 ) {
   hikariTrailcatalog.connection.use { connection ->
     connection
       .prepareStatement(
-        "SELECT p.id, p.type, p.name, p.marker_degrees_e7 "
+        "SELECT p.id, p.type, p.name, p.marker_degrees_e7, p.rank "
                 + "FROM points p "
                 + "WHERE "
                 + "p.epoch = ? AND "
+                + (if (maxRank != null) "p.rank <= ? AND " else "")
                 + cells.sql("p")
       )
       .apply {
-        setInt(1, epoch)
-        cells.bind(this, 2)
+        var next = 1
+        setInt(next++, epoch)
+        if (maxRank != null) {
+          setInt(next++, maxRank)
+        }
+        cells.bind(this, next)
       }
       .executeQuery()
       .use { results ->
@@ -2343,7 +2351,7 @@ private fun fetchTrailcatalogPoints(
               continue
             }
             count += 1
-            // id,type,name,marker
+            // id,type,name,marker,rank
             out.writeVarLong(results.getLong(1))
             out.writeVarInt(results.getInt(2))
             val name = (results.getString(3) ?: "").toByteArray(Charsets.UTF_8)
@@ -2351,6 +2359,9 @@ private fun fetchTrailcatalogPoints(
             out.write(name)
             // Stored as the little endian lat then lng E7 pair the client reads.
             out.write(results.getBytes(4))
+            // One more than the rank, so that 0 can stand for an unranked point
+            val rank = results.getInt(5)
+            out.writeVarInt(if (results.wasNull()) 0 else rank + 1)
           }
         }
         it.writeVarInt(count)
