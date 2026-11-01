@@ -153,6 +153,7 @@ import { LineProfileState } from './ui/profile_chart';
 import { LineProfiler, MeasureProfiler } from './ui/profiles';
 import { SearchHit, SearchQuery, SearchState } from './ui/search_box';
 import { STEP_MS, TimelineState } from './ui/timeline';
+import { ToastService } from './ui/toasts';
 import {
   CollectionSchema,
   DEFAULT_COLOR,
@@ -236,6 +237,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         dialog: DialogService,
         history: HistoryService,
         menu: MenuService,
+        toast: ToastService,
       },
     };
   }
@@ -244,6 +246,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly dialog: DialogService;
   private readonly history: HistoryService;
   private readonly menu: MenuService;
+  private readonly toast: ToastService;
   private readonly featureLayer: FeatureLayer;
   private readonly lineLayer: DrawingLayer;
   private readonly polygonLayer: DrawingLayer;
@@ -313,6 +316,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.dialog = response.deps.services.dialog;
     this.history = response.deps.services.history;
     this.menu = response.deps.services.menu;
+    this.toast = response.deps.services.toast;
     this.saves = new SaveQueue(entries => this.save(entries), e => {
       console.error(e);
       this.warnUnsaved();
@@ -1909,16 +1913,18 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
+    let current = collection;
     const mergeKey = `settings:${crypto.randomUUID()}`;
     this.dialog.display(CollectionSettingsDialog({
       collection,
       editable: !this.store.isReadOnly(),
       schema: this.store.schema(),
-      onDelete: () => this.deleteCollection(collection),
+      onDelete: () => this.deleteCollection(current),
       onSchemaChanged: schema => {
         this.store.setSchema(schema, mergeKey);
       },
       onUpdated: updated => {
+        current = updated;
         if (this.state.collection?.id === updated.id) {
           this.updateState({...this.state, collection: updated});
         }
@@ -1945,10 +1951,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           if (response && this.state.collection?.id === collection.id) {
             this.history.replaceTo('/');
           }
+          if (response) {
+            this.toast.show(`Deleted ${collection.name}`);
+          }
           return !!response;
         })
         .catch(e => {
           console.error(e);
+          this.toast.show(`Deleting ${collection.name} failed`);
           return false;
         });
   }
@@ -2041,18 +2051,38 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const stale = () => generation !== this.collectionGeneration;
     const queue = [...files];
     const results: Array<{changes: Change[]; failed?: string}> = [];
+    let imported = 0;
+    const describe = (verb: string, count: number) =>
+        files.length === 1
+            ? `${verb} ${files[0].name}`
+            : `${verb} ${count} of ${files.length} files`;
+    const progress = this.toast.start(describe('Importing', 0), /* fraction= */ 0);
     const importNext = async (): Promise<void> => {
       for (let file = queue.shift(); file && !stale(); file = queue.shift()) {
-        results.push(await this.importOne(file, dropped));
+        const result = await this.importOne(file, dropped);
+        results.push(result);
+        if (!result.failed) {
+          imported += 1;
+        }
+        progress.update(describe('Imported', imported), results.length / files.length);
       }
     };
     Promise.all(Array.from({length: UPLOADS_IN_FLIGHT}, importNext)).then(() => {
       // Another collection was opened meanwhile, and these changes belong to the one before.
       if (stale()) {
+        progress.dismiss();
         return;
       }
       this.store.apply(results.flatMap(r => r.changes));
       const failed = results.flatMap(r => r.failed ? [r.failed] : []);
+      if (imported === 0) {
+        progress.dismiss();
+      } else if (failed.length > 0) {
+        progress.finish(describe('Imported', imported));
+      } else {
+        progress.finish(
+            files.length === 1 ? describe('Imported', 1) : `Imported ${imported} files`);
+      }
       if (failed.length > 0) {
         this.dialog.display(ImportFailedDialog({files: failed})).catch(() => {});
       }
@@ -2209,6 +2239,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.routedCollection = collection.id;
           this.history.replaceTo(`/collection/${collection.id}`);
           this.saveViewState();
+          this.toast.show('Created a new collection');
           return collection.id;
         })
         .finally(() => {
