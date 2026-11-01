@@ -18,7 +18,7 @@ private val trailcatalogDatabaseUsernamePassword = createFlag("unset")
 @FlagSpec("trailcatalog_database_url")
 private val trailcatalogDatabaseUrl = createFlag("unset")
 
-const val TRAILCATALOG_SCHEMA = "migration_9_gin_search"
+const val TRAILCATALOG_SCHEMA = "migration_10_point_rank"
 
 fun createBaseConnection(): HikariDataSource {
   return HikariDataSource(HikariConfig().apply {

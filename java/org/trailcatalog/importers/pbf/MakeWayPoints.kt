@@ -19,20 +19,27 @@ class MakeWayPoints : PTransformer<PEntry<Long, Way>, Point>(TypeToken.of(Point:
   override fun act(input: PEntry<Long, Way>, emitter: Emitter<Point>) {
     val way = input.values[0]
     val point = way.point ?: return
-    val at =
-        if (point.type == PointCategory.CLIMBING_ROUTE.id) {
-          way.points[0]
-        } else {
-          // The last point repeats the first, and S2Loop wants each vertex once.
-          val vertices = ArrayList<S2Point>()
-          for (i in 0 until way.points.size - 1) {
-            vertices.add(way.points[i].toS2LatLng().toPoint())
-          }
-          val loop = S2Loop(vertices)
-          // A clockwise way would otherwise be the loop around the rest of the planet.
-          loop.normalize()
-          LatLngE7.fromS2Point(interiorPoint(S2Polygon(loop)))
-        }
+    if (point.type == PointCategory.CLIMBING_ROUTE.id) {
+      emit(way, point, /* rank= */ null, way.points[0], emitter)
+      return
+    }
+
+    // The last point repeats the first, and S2Loop wants each vertex once.
+    val vertices = ArrayList<S2Point>()
+    for (i in 0 until way.points.size - 1) {
+      vertices.add(way.points[i].toS2LatLng().toPoint())
+    }
+    val loop = S2Loop(vertices)
+    // A clockwise way would otherwise be the loop around the rest of the planet.
+    loop.normalize()
+    val polygon = S2Polygon(loop)
+    val at = interiorPoint(polygon)
+    val rank = if (isRankedArea(point.type)) getAreaRank(polygon, at) else null
+    emit(way, point, rank, LatLngE7.fromS2Point(at), emitter)
+  }
+
+  private fun emit(
+      way: Way, point: WayPoint, rank: Int?, at: LatLngE7, emitter: Emitter<Point>) {
     emitter.emit(
         Point(
             wayPointId(way.id),
@@ -40,6 +47,7 @@ class MakeWayPoints : PTransformer<PEntry<Long, Way>, Point>(TypeToken.of(Point:
             point.name.ifEmpty { null },
             point.names,
             point.notable,
+            rank,
             at))
   }
 

@@ -1,0 +1,22 @@
+[[actions]]
+type = "add_column"
+table = "points"
+
+  # How prominent the point is, which the map and search rank by. Lower is more prominent, and it
+  # roughly follows the zoom from which the point is worth labeling. NULL for points we don't rank,
+  # including every epoch imported before this column existed.
+  [actions.column]
+  name = "rank"
+  nullable = true
+  type = "SMALLINT"
+
+# The map asks for the ranked points under a rank across a large area, which would otherwise scan
+# every point in it.
+[[actions]]
+type = "add_index"
+table = "points"
+
+  [actions.index]
+  name = "points_by_rank_cell_epoch_idx"
+  columns = ["rank", "cell", "epoch"]
+  concurrently = false

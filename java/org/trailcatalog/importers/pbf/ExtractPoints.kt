@@ -32,6 +32,7 @@ fun nodePoint(
       tagName(kvs, stringTable),
       names,
       isNotable(kvs, stringTable),
+      /* rank= */ null,
       latLng)
 }
 

@@ -89,10 +89,17 @@ fun registerPbfSerializers() {
       }.decodeToString()
       val names = readNames(from)
       val notable = from.readBoolean()
+      val rank = if (from.readBoolean()) from.readVarInt() else null
       val lat = from.readInt()
       val lng = from.readInt()
       return Point(
-          id, type, if (name.length == 0) null else name, names, notable, LatLngE7(lat, lng))
+          id,
+          type,
+          if (name.length == 0) null else name,
+          names,
+          notable,
+          rank,
+          LatLngE7(lat, lng))
     }
 
     override fun write(v: Point, to: EncodedOutputStream) {
@@ -104,6 +111,8 @@ fun registerPbfSerializers() {
       }
       writeNames(v.names, to)
       to.writeBoolean(v.notable)
+      to.writeBoolean(v.rank != null)
+      v.rank?.let { to.writeVarInt(it) }
       to.writeInt(v.latLng.lat)
       to.writeInt(v.latLng.lng)
     }

@@ -28,7 +28,7 @@ class DumpPoints(private val epoch: Int, private val hikari: HikariDataSource)
                 .put(point.latLng.lng)
             buffer.limit(4 * markerAsInts.position()) // ? can we do this better?
 
-            // id,epoch,type,cell,name,marker_degrees_e7,notable
+            // id,epoch,type,cell,name,marker_degrees_e7,notable,rank
             csv.append(point.id)
             csv.append(",")
             csv.append(epoch)
@@ -47,6 +47,8 @@ class DumpPoints(private val epoch: Int, private val hikari: HikariDataSource)
             buffer.clear()
             csv.append(",")
             csv.append(if (point.notable) "t" else "f")
+            csv.append(",")
+            csv.append(point.rank ?: "NULL")
             csv.append("\n")
           }
       copyStreamToPg("points", stream, hikari)

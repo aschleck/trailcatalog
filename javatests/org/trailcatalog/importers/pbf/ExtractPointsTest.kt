@@ -80,43 +80,36 @@ class ExtractPointsTest {
   @Test
   fun testClosedWayBecomesPointAtCentroid() {
     // Clockwise, so the loop only encloses the square once it's normalized.
-    val corners =
-        listOf(
-            Node(10, LatLngE7(1_0000000, 1_0000000)),
-            Node(11, LatLngE7(0, 1_0000000)),
-            Node(12, LatLngE7(0, 0)),
-            Node(13, LatLngE7(1_0000000, 0)))
-    val way =
-        WaySkeleton(
-            7,
-            0,
-            /* traits= */ 0,
+    val point =
+        makeWayPoint(
+            PointCategory.LODGING_CAMP_SITE,
             "Camp",
-            longArrayOf(10, 11, 12, 13, 10),
-            PointCategory.LODGING_CAMP_SITE.id,
-            listOf(Name(null, "Camp")),
-            /* notable= */ false)
-    // MakeWayGeometries is what hands the way's point fields on to MakeWayPoints.
-    val geometries = ArrayList<Way>()
-    MakeWayGeometries().act(
-        PEntry(7L, listOf(Pair(listOf(way), corners))),
-        object : Emitter2<Long, Way> {
-          override fun emit(a: Long, b: Way) {
-            geometries.add(b)
-          }
-        })
-    val points = ArrayList<Point>()
-    MakeWayPoints().act(PEntry(7L, geometries), object : Emitter<Point> {
-      override fun emit(v: Point) {
-        points.add(v)
-      }
-    })
+            LatLngE7(1_0000000, 1_0000000),
+            LatLngE7(0, 1_0000000),
+            LatLngE7(0, 0),
+            LatLngE7(1_0000000, 0))
 
-    val point = points.single()
     assertThat(point.id).isEqualTo(15L)
     assertThat(point.name).isEqualTo("Camp")
     assertThat(point.latLng.lat.toDouble()).isWithin(1000.0).of(5000000.0)
     assertThat(point.latLng.lng.toDouble()).isWithin(1000.0).of(5000000.0)
+    assertThat(point.rank).isNull()
+  }
+
+  @Test
+  fun testLakeWayRanksByArea() {
+    // About 1.1 km by 0.75 km at Seattle's latitude, so 911 m on a side as a square. A pixel is
+    // 105.5 km / 2^z there, so it spans 32 pixels from 2^z = 3706, or z = 11.86.
+    val point =
+        makeWayPoint(
+            PointCategory.NATURAL_LAKE,
+            "Green Lake",
+            LatLngE7(47_6000000, -122_3000000),
+            LatLngE7(47_6100000, -122_3000000),
+            LatLngE7(47_6100000, -122_3100000),
+            LatLngE7(47_6000000, -122_3100000))
+
+    assertThat(point.rank).isEqualTo(12)
   }
 
   @Test
@@ -201,4 +194,34 @@ private fun extract(vararg tags: Pair<String, String>): Point? {
     }
   })
   return points.singleOrNull()
+}
+
+private fun makeWayPoint(category: PointCategory, name: String, vararg corners: LatLngE7): Point {
+  val nodes = corners.mapIndexed { i, latLng -> Node(10L + i, latLng) }
+  val way =
+      WaySkeleton(
+          7,
+          0,
+          /* traits= */ 0,
+          name,
+          (nodes.map { it.id } + nodes[0].id).toLongArray(),
+          category.id,
+          listOf(Name(null, name)),
+          /* notable= */ false)
+  // MakeWayGeometries is what hands the way's point fields on to MakeWayPoints.
+  val geometries = ArrayList<Way>()
+  MakeWayGeometries().act(
+      PEntry(7L, listOf(Pair(listOf(way), nodes))),
+      object : Emitter2<Long, Way> {
+        override fun emit(a: Long, b: Way) {
+          geometries.add(b)
+        }
+      })
+  val points = ArrayList<Point>()
+  MakeWayPoints().act(PEntry(7L, geometries), object : Emitter<Point> {
+    override fun emit(v: Point) {
+      points.add(v)
+    }
+  })
+  return points.single()
 }

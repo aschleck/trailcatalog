@@ -4,6 +4,7 @@ import com.google.common.reflect.TypeToken
 import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.Point
 import org.trailcatalog.importers.pbf.Relation
+import org.trailcatalog.importers.pbf.getAreaRank
 import org.trailcatalog.importers.pbf.interiorPoint
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
@@ -37,6 +38,7 @@ class CreateRelationPoints
     if (polygon.isEmpty) {
       return
     }
+    val at = interiorPoint(polygon)
     emitter.emit(
         Point(
             relationPointId(relation.id),
@@ -44,7 +46,8 @@ class CreateRelationPoints
             relation.name.ifEmpty { null },
             relation.names,
             relation.notable,
-            LatLngE7.fromS2Point(interiorPoint(polygon))))
+            getAreaRank(polygon, at),
+            LatLngE7.fromS2Point(at)))
   }
 
   // Glaciers and lakes are a small share of the relations we keep.
