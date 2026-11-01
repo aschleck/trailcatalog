@@ -283,10 +283,11 @@ const LANDMARKS = [
   PointCategory.NATURAL_VOLCANO,
 ];
 // Every category outside the landmarks, as the fewest ancestors, so its stream and the landmarks'
-// share no point
+// share no point. Parks are left out because NODE_KINDS has no kind that draws them.
 const NOT_LANDMARKS = (() => {
   const others = (Object.values(PointCategory) as Array<string|number>)
       .filter((v): v is number => typeof v === 'number')
+      .filter(v => !aDescendsB(v, PointCategory.PARK))
       .filter(v => !LANDMARKS.some(s => aDescendsB(v, s) || aDescendsB(s, v)));
   return others.filter(v => !others.some(o => o !== v && aDescendsB(v, o)));
 })();

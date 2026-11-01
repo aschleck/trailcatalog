@@ -30,8 +30,8 @@ export function getPathSourceWay(pathId: bigint): bigint {
 export function getBoundarySource(id: bigint): {type: 'node'|'relation'|'way'; id: bigint} {
   if (id >= ${NODE_SITE_ID_OFFSET}n) {
     return {type: 'node', id: id - ${NODE_SITE_ID_OFFSET}n};
-  } else if (id >= ${WAY_SITE_ID_OFFSET}n) {
-    return {type: 'way', id: id - ${WAY_SITE_ID_OFFSET}n};
+  } else if (id >= ${WAY_BOUNDARY_ID_OFFSET}n) {
+    return {type: 'way', id: id - ${WAY_BOUNDARY_ID_OFFSET}n};
   } else {
     return {type: 'relation', id};
   }

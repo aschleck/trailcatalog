@@ -233,7 +233,12 @@ fun registerPbfSerializers() {
       }
       val point =
           if (from.readBoolean()) {
-            WayPoint(from.readVarInt(), readString(from), readNames(from), from.readBoolean())
+            WayPoint(
+                from.readVarInt(),
+                readString(from),
+                readNames(from),
+                from.readBoolean(),
+                from.readVarInt())
           } else {
             null
           }
@@ -260,6 +265,7 @@ fun registerPbfSerializers() {
         writeString(point.name, to)
         writeNames(point.names, to)
         to.writeBoolean(point.notable)
+        to.writeVarInt(point.boundaryType)
       }
     }
   })
@@ -279,8 +285,17 @@ fun registerPbfSerializers() {
       val pointType = from.readVarInt()
       val names = readNames(from)
       val notable = from.readBoolean()
+      val boundaryType = from.readVarInt()
       return WaySkeleton(
-          id, type, traits, nameBytes.decodeToString(), nodes, pointType, names, notable)
+          id,
+          type,
+          traits,
+          nameBytes.decodeToString(),
+          nodes,
+          pointType,
+          names,
+          notable,
+          boundaryType)
     }
 
     override fun write(v: WaySkeleton, to: EncodedOutputStream) {
@@ -295,6 +310,7 @@ fun registerPbfSerializers() {
       to.writeVarInt(v.pointType)
       writeNames(v.names, to)
       to.writeBoolean(v.notable)
+      to.writeVarInt(v.boundaryType)
     }
   })
 }

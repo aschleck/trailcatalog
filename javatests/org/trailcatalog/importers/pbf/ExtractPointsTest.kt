@@ -4,10 +4,12 @@ import com.google.common.truth.Truth.assertThat
 import com.google.protobuf.ByteString
 import crosby.binary.Osmformat
 import org.junit.Test
+import org.trailcatalog.importers.basemap.MakeWayPoints
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.Emitter2
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.PointCategory
+import org.trailcatalog.models.RelationCategory
 
 class ExtractPointsTest {
 
@@ -79,7 +81,7 @@ class ExtractPointsTest {
 
   @Test
   fun testClosedWayBecomesPointAtCentroid() {
-    // Clockwise, so the loop only encloses the square once it's normalized.
+    // Clockwise, so the ring only encloses the square once it's turned around.
     val point =
         makeWayPoint(
             PointCategory.LODGING_CAMP_SITE,
@@ -158,6 +160,40 @@ class ExtractPointsTest {
   }
 
   @Test
+  fun testClosedNamedParkWayIsABoundary() {
+    val ring = longArrayOf(1, 2, 3, 1)
+    assertThat(parkOf(ring, "leisure" to "nature_reserve", "name" to "Cougar Mountain"))
+        .isEqualTo(RelationCategory.BOUNDARY_NATURE_RESERVE)
+    assertThat(parkOf(ring, "boundary" to "protected_area", "protect_class" to "5", "name" to "X"))
+        .isEqualTo(RelationCategory.BOUNDARY_PROTECTED_AREA_5)
+    assertThat(parkOf(ring, "leisure" to "nature_reserve")).isEqualTo(RelationCategory.ANY)
+    assertThat(parkOf(longArrayOf(1, 2, 3, 4), "leisure" to "nature_reserve", "name" to "X"))
+        .isEqualTo(RelationCategory.ANY)
+    assertThat(parkOf(ring, "leisure" to "nature_reserve", "climbing" to "crag", "name" to "X"))
+        .isEqualTo(RelationCategory.ANY)
+    assertThat(parkOf(ring, "leisure" to "nature_reserve", "sport" to "climbing", "name" to "X"))
+        .isEqualTo(RelationCategory.BOUNDARY_NATURE_RESERVE)
+    assertThat(parkOf(ring, "boundary" to "administrative", "name" to "X"))
+        .isEqualTo(RelationCategory.ANY)
+  }
+
+  @Test
+  fun testParkWayPointIsRankedAndUnsearched() {
+    val point =
+        makeWayPoint(
+            PointCategory.PARK_NATURE_RESERVE,
+            "Green Lake Park",
+            LatLngE7(47_6000000, -122_3000000),
+            LatLngE7(47_6100000, -122_3000000),
+            LatLngE7(47_6100000, -122_3100000),
+            LatLngE7(47_6000000, -122_3100000))
+
+    assertThat(point.name).isEqualTo("Green Lake Park")
+    assertThat(point.names).isEmpty()
+    assertThat(point.rank).isEqualTo(12)
+  }
+
+  @Test
   fun testOtherCategoryKeepsOnlyItsName() {
     val point = extract("highway" to "bus_stop", "name" to "Main St", "name:es" to "Calle Main")!!
     assertThat(point.name).isEqualTo("Main St")
@@ -196,6 +232,15 @@ private fun extract(vararg tags: Pair<String, String>): Point? {
   return points.singleOrNull()
 }
 
+private fun parkOf(nodes: LongArray, vararg tags: Pair<String, String>): RelationCategory {
+  val strings = listOf("") + tags.flatMap { listOf(it.first, it.second) }
+  val stringTable =
+      Osmformat.StringTable.newBuilder()
+          .addAllS(strings.map { ByteString.copyFromUtf8(it) })
+          .build()
+  return wayParkCategory(tags.indices.flatMap { listOf(1 + 2 * it, 2 + 2 * it) }, nodes, stringTable)
+}
+
 private fun makeWayPoint(category: PointCategory, name: String, vararg corners: LatLngE7): Point {
   val nodes = corners.mapIndexed { i, latLng -> Node(10L + i, latLng) }
   val way =
@@ -207,7 +252,8 @@ private fun makeWayPoint(category: PointCategory, name: String, vararg corners: 
           (nodes.map { it.id } + nodes[0].id).toLongArray(),
           category.id,
           listOf(Name(null, name)),
-          /* notable= */ false)
+          /* notable= */ false,
+          /* boundaryType= */ RelationCategory.ANY.id)
   // MakeWayGeometries is what hands the way's point fields on to MakeWayPoints.
   val geometries = ArrayList<Way>()
   MakeWayGeometries().act(

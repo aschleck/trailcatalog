@@ -7,7 +7,7 @@ import org.junit.Test
 import org.trailcatalog.importers.pbf.ClimbingElement
 import org.trailcatalog.importers.pbf.LatLngE7
 import org.trailcatalog.importers.pbf.nodeSiteId
-import org.trailcatalog.importers.pbf.waySiteId
+import org.trailcatalog.importers.pbf.wayBoundaryId
 import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.proto.RelationSkeleton
 import org.trailcatalog.proto.RelationSkeletonMember
@@ -45,7 +45,7 @@ class CreateClimbingSitesTest {
   @Test
   fun testAreaHoldsItsCragsAndWays() {
     val cragA = relation(10, RelationCategory.BOUNDARY_CLIMBING_CRAG, "A", nodeMembers(1))
-    val cragB = crag(waySiteId(5), null)
+    val cragB = crag(wayBoundaryId(5), null)
     val area =
         relation(
             20,
@@ -61,7 +61,7 @@ class CreateClimbingSitesTest {
             elementsOf(
                 route(nodeSiteId(1), LatLngE7(475000000, -1207000000)), cragA, cragB, area),
             mapOf(
-                waySiteId(5) to
+                wayBoundaryId(5) to
                     listOf(LatLngE7(475010000, -1207000000), LatLngE7(475010000, -1206990000))))
 
     assertThat(sites.map { it.name }).containsExactly("A", "Crag", "Area")

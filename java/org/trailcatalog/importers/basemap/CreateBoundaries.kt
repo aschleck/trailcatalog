@@ -13,13 +13,19 @@ import com.google.common.geometry.S2WindingOperation.WindingRule
 import com.google.common.reflect.TypeToken
 import java.io.ByteArrayOutputStream
 import kotlin.math.PI
+import org.trailcatalog.importers.pbf.Name
 import org.trailcatalog.importers.pbf.Relation
+import org.trailcatalog.importers.pbf.Way
+import org.trailcatalog.importers.pbf.wayBoundaryId
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.RelationCategory.BOUNDARY
 import org.trailcatalog.proto.RelationGeometry
+import org.trailcatalog.proto.RelationMember
 import org.trailcatalog.proto.RelationMemberFunction.INNER
+import org.trailcatalog.proto.RelationMemberFunction.OUTER
+import org.trailcatalog.proto.WayGeometry
 import org.trailcatalog.s2.earthSteradiansToMeters2
 import org.trailcatalog.s2.polygonToCell
 
@@ -40,32 +46,48 @@ class CreateBoundaries
     if (relation.type == BOUNDARY.id) {
       return
     }
-    if (relation.name.isNullOrBlank()) {
-      return
-    }
     if (!BOUNDARY.isParentOf(relation.type)) {
       return
     }
 
-    val polygon = try {
+    makeBoundary(relation.id, relation.type, relation.name, relation.names) {
+      try {
         relationGeometryToPolygon(geometries[0])
-    } catch (e: NullPointerException) {
-        throw RuntimeException("Error creating the boundary for ${relation.id} - ${relation.name}", e)
-    }
-    val encoded = ByteArrayOutputStream().also {
-      polygon.encode(it)
-    }
-    val cell = polygonToCell(polygon).id()
-    emitter.emit(
-        Boundary(
-            relation.id,
-            relation.type,
-            cell,
-            relation.name,
-            relation.names,
-            encoded.toByteArray(),
-            earthSteradiansToMeters2(polygon.area)))
+      } catch (e: NullPointerException) {
+        throw RuntimeException(
+            "Error creating the boundary for ${relation.id} - ${relation.name}", e)
+      }
+    }?.let(emitter::emit)
   }
+}
+
+/** Returns the boundary [polygon] builds, or null without building it if [name] is blank. */
+fun makeBoundary(
+    id: Long, type: Int, name: String?, names: List<Name>, polygon: () -> S2Polygon): Boundary? {
+  if (name.isNullOrBlank()) {
+    return null
+  }
+  val built = polygon()
+  val encoded = ByteArrayOutputStream().also { built.encode(it) }
+  return Boundary(
+      id,
+      type,
+      polygonToCell(built).id(),
+      name,
+      names,
+      encoded.toByteArray(),
+      earthSteradiansToMeters2(built.area))
+}
+
+/** Returns the area a closed way encloses, by the rule relationGeometryToPolygon applies. */
+internal fun closedWayToPolygon(way: Way): S2Polygon {
+  val geometry = WayGeometry.newBuilder().setWayId(way.id)
+  way.points.forEach { geometry.addLatLngE7(it.lat).addLatLngE7(it.lng) }
+  return relationGeometryToPolygon(
+      RelationGeometry.newBuilder()
+          .setRelationId(wayBoundaryId(way.id))
+          .addMembers(RelationMember.newBuilder().setFunction(OUTER).setWay(geometry))
+          .build())
 }
 
 // Half the level 21 cell diagonal, so a vertex snapped to a cell center moves by at most this.

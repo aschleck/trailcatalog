@@ -7,6 +7,7 @@ import crosby.binary.Osmformat.PrimitiveBlock
 import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
+import org.trailcatalog.models.PARK_POINT_CATEGORIES
 import org.trailcatalog.models.PATH_TRAIT_CATEGORIES
 import org.trailcatalog.models.PathTrait
 import org.trailcatalog.models.PointCategory
@@ -31,7 +32,8 @@ class ExtractWays
 private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
   val kvs = wayKvs(way)
   val refs = wayRefs(way)
-  val pointCategory = wayPointCategory(kvs, refs, stringTable)
+  val park = wayParkCategory(kvs, refs, stringTable)
+  val pointCategory = PARK_POINT_CATEGORIES[park] ?: wayPointCategory(kvs, refs, stringTable)
   val category = wayCategory(way, stringTable)
   return WaySkeleton(
       way.id,
@@ -41,7 +43,8 @@ private fun getWay(way: Osmformat.Way, stringTable: StringTable): WaySkeleton {
       refs,
       pointCategory.id,
       if (pointCategory == PointCategory.ANY) listOf() else tagNames(kvs, stringTable),
-      pointCategory != PointCategory.ANY && isNotable(kvs, stringTable))
+      pointCategory != PointCategory.ANY && isNotable(kvs, stringTable),
+      park.id)
 }
 
 private class TraitTag(val trait: PathTrait, val priority: Int, val grades: Map<ByteString, Int>)

@@ -34,7 +34,7 @@ class MakeWayGeometries
     }
     val point =
         if (way.pointType != PointCategory.ANY.id) {
-          WayPoint(way.pointType, way.name, way.names, way.notable)
+          WayPoint(way.pointType, way.name, way.names, way.notable, way.boundaryType)
         } else {
           null
         }

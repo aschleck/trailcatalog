@@ -9,6 +9,7 @@ import kotlin.math.cos
 import kotlin.math.log2
 import kotlin.math.sqrt
 import org.trailcatalog.models.AREA_RELATION_CATEGORIES
+import org.trailcatalog.models.PARK_POINT_CATEGORIES
 
 private const val LABEL_SIDE_PX = 32.0
 
@@ -18,12 +19,8 @@ private const val WORLD_PX_AT_ZOOM_0 = 256.0
 // The map styles end at zoom 31
 private const val DEEPEST_ZOOM = 31.0
 
-private val AREA_TYPES = AREA_RELATION_CATEGORIES.keys.map { it.id }.toSet()
-
-/** Returns whether points of [type] stand for an area that getAreaRank ranks. */
-fun isRankedArea(type: Int): Boolean {
-  return type in AREA_TYPES
-}
+val AREA_TYPES =
+    (AREA_RELATION_CATEGORIES.keys + PARK_POINT_CATEGORIES.values).map { it.id }.toSet()
 
 /**
  * Returns the rank of an area, as the zoom from which a square with [polygon]'s area spans

@@ -1,9 +1,13 @@
-package org.trailcatalog.importers.pbf
+package org.trailcatalog.importers.basemap
 
-import com.google.common.geometry.S2Loop
-import com.google.common.geometry.S2Point
-import com.google.common.geometry.S2Polygon
 import com.google.common.reflect.TypeToken
+import org.trailcatalog.importers.pbf.AREA_TYPES
+import org.trailcatalog.importers.pbf.LatLngE7
+import org.trailcatalog.importers.pbf.Point
+import org.trailcatalog.importers.pbf.Way
+import org.trailcatalog.importers.pbf.WayPoint
+import org.trailcatalog.importers.pbf.getAreaRank
+import org.trailcatalog.importers.pbf.interiorPoint
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
@@ -24,17 +28,12 @@ class MakeWayPoints : PTransformer<PEntry<Long, Way>, Point>(TypeToken.of(Point:
       return
     }
 
-    // The last point repeats the first, and S2Loop wants each vertex once.
-    val vertices = ArrayList<S2Point>()
-    for (i in 0 until way.points.size - 1) {
-      vertices.add(way.points[i].toS2LatLng().toPoint())
+    val polygon = closedWayToPolygon(way)
+    if (polygon.isEmpty) {
+      return
     }
-    val loop = S2Loop(vertices)
-    // A clockwise way would otherwise be the loop around the rest of the planet.
-    loop.normalize()
-    val polygon = S2Polygon(loop)
     val at = interiorPoint(polygon)
-    val rank = if (isRankedArea(point.type)) getAreaRank(polygon, at) else null
+    val rank = if (point.type in AREA_TYPES) getAreaRank(polygon, at) else null
     emit(way, point, rank, LatLngE7.fromS2Point(at), emitter)
   }
 
@@ -45,7 +44,8 @@ class MakeWayPoints : PTransformer<PEntry<Long, Way>, Point>(TypeToken.of(Point:
             wayPointId(way.id),
             point.type,
             point.name.ifEmpty { null },
-            point.names,
+            // See PARK_POINT_CATEGORIES
+            if (PointCategory.PARK.isParentOf(point.type)) listOf() else point.names,
             point.notable,
             rank,
             at))

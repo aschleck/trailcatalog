@@ -10,15 +10,18 @@ import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.importers.pipeline.collections.PEntry
 import org.trailcatalog.models.AREA_RELATION_CATEGORIES
+import org.trailcatalog.models.PARK_POINT_CATEGORIES
+import org.trailcatalog.models.PointCategory
 import org.trailcatalog.models.relationPointId
 import org.trailcatalog.proto.RelationGeometry
 
 private val POINT_CATEGORIES =
-    AREA_RELATION_CATEGORIES.entries.associate { (point, relation) -> relation.id to point }
+    AREA_RELATION_CATEGORIES.entries.associate { (point, relation) -> relation.id to point } +
+        PARK_POINT_CATEGORIES.entries.associate { (relation, point) -> relation.id to point }
 
 /**
- * Collapses each multipolygon of an area in AREA_RELATION_CATEGORIES to a point inside it, the way
- * MakeWayPoints does the ones drawn as a single way.
+ * Collapses each multipolygon of an area in AREA_RELATION_CATEGORIES and each park boundary to a
+ * point inside it, the way MakeWayPoints does the ones drawn as a single way.
  */
 class CreateRelationPoints
   : PTransformer<PEntry<Long, Pair<List<Relation>, List<RelationGeometry>>>, Point>(
@@ -33,6 +36,11 @@ class CreateRelationPoints
     }
     val relation = relations[0]
     val category = POINT_CATEGORIES[relation.type] ?: return
+    val park = PointCategory.PARK.isParentOf(category)
+    // makeBoundary drops the nameless ones
+    if (park && relation.name.isBlank()) {
+      return
+    }
 
     val polygon = relationGeometryToPolygon(geometries[0])
     if (polygon.isEmpty) {
@@ -44,13 +52,14 @@ class CreateRelationPoints
             relationPointId(relation.id),
             category.id,
             relation.name.ifEmpty { null },
-            relation.names,
+            // See PARK_POINT_CATEGORIES
+            if (park) listOf() else relation.names,
             relation.notable,
             getAreaRank(polygon, at),
             LatLngE7.fromS2Point(at)))
   }
 
-  // Glaciers and lakes are a small share of the relations we keep.
+  // Glaciers, lakes, and parks are a small share of the relations we keep.
   override fun estimateRatio(): Double {
     return 0.1
   }

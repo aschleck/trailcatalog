@@ -10,11 +10,11 @@ const val RELATION_POINT_ID_OFFSET = 1L shl 40
 
 fun relationPointId(relationId: Long): Long = RELATION_POINT_ID_OFFSET + relationId
 
-// Node and way ids overlap relation ids, and a site drawn as a relation keeps the relation's id
-// like every other boundary, so sites drawn as nodes or ways move into ranges that no OSM id
-// reaches. OSM ids are below 2^35, and the offsets keep every id below 2^53 so that JavaScript
+// Node and way ids overlap relation ids, and a boundary drawn as a relation keeps the relation's
+// id, so climbing sites drawn as nodes and the boundaries drawn as ways move into ranges that no OSM
+// id reaches. OSM ids are below 2^35, and the offsets keep every id below 2^53 so that JavaScript
 // numbers hold it exactly.
-const val WAY_SITE_ID_OFFSET = 1L shl 40
+const val WAY_BOUNDARY_ID_OFFSET = 1L shl 40
 const val NODE_SITE_ID_OFFSET = 2L shl 40
 
 // A trail lists its paths with the low bit set on the ones it runs backward, so a path's own id

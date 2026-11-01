@@ -105,6 +105,11 @@ enum class PointCategory(override val id: Int) : Category<PointCategory> {
         ACCESS_TRANSIT_AIRPORT(ACCESS_TRANSIT.id * ENUM_SIZE + 4),
     CLIMBING(ANY.id * ENUM_SIZE + 10),
       CLIMBING_ROUTE(CLIMBING.id * ENUM_SIZE + 1),
+    // Where a park's name goes, see PARK_POINT_CATEGORIES
+    PARK(ANY.id * ENUM_SIZE + 11),
+      PARK_NATIONAL_PARK(PARK.id * ENUM_SIZE + 1),
+      PARK_NATURE_RESERVE(PARK.id * ENUM_SIZE + 2),
+      PARK_PROTECTED_AREA(PARK.id * ENUM_SIZE + 3),
 }
 
 enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
@@ -137,6 +142,7 @@ enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
         BOUNDARY_CLIMBING_AREA(BOUNDARY_CLIMBING.id * ENUM_SIZE + 1),
         BOUNDARY_CLIMBING_BOULDER(BOUNDARY_CLIMBING.id * ENUM_SIZE + 2),
         BOUNDARY_CLIMBING_CRAG(BOUNDARY_CLIMBING.id * ENUM_SIZE + 3),
+      BOUNDARY_NATURE_RESERVE(BOUNDARY.id * ENUM_SIZE + 7),
   ROUTE(ANY.id * ENUM_SIZE + 2),
       TRANSPORT(ROUTE.id * ENUM_SIZE + 1),
         TRANSPORT_BUS(TRANSPORT.id * ENUM_SIZE + 1),
@@ -179,6 +185,23 @@ val AREA_RELATION_CATEGORIES =
         PointCategory.NATURAL_LAKE to RelationCategory.NATURAL_LAKE,
         PointCategory.NATURAL_STRAIT to RelationCategory.NATURAL_STRAIT,
     )
+
+// The point each park boundary also becomes, so the map can label it and rank it by area like a
+// lake. The point carries no names, because search already finds the boundary.
+val PARK_POINT_CATEGORIES: Map<RelationCategory, PointCategory> =
+    RelationCategory.entries
+        .mapNotNull {
+          when {
+            RelationCategory.BOUNDARY_NATIONAL_PARK.isParentOf(it) ->
+              it to PointCategory.PARK_NATIONAL_PARK
+            RelationCategory.BOUNDARY_NATURE_RESERVE.isParentOf(it) ->
+              it to PointCategory.PARK_NATURE_RESERVE
+            RelationCategory.BOUNDARY_PROTECTED_AREA.isParentOf(it) ->
+              it to PointCategory.PARK_PROTECTED_AREA
+            else -> null
+          }
+        }
+        .toMap()
 
 // The categories whose names are worth searching, and the only ones a way becomes a point for,
 // with what search calls them. Bus stops, convenience stores, supermarkets, fuel, and pharmacies

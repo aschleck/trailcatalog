@@ -7,18 +7,18 @@ import crosby.binary.Osmformat.Relation.MemberType.WAY
 import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.models.NODE_SITE_ID_OFFSET
 import org.trailcatalog.models.RelationCategory
-import org.trailcatalog.models.WAY_SITE_ID_OFFSET
+import org.trailcatalog.models.WAY_BOUNDARY_ID_OFFSET
 import org.trailcatalog.proto.RelationSkeleton
 import org.trailcatalog.proto.RelationSkeletonMember
 
 fun nodeSiteId(nodeId: Long): Long = NODE_SITE_ID_OFFSET + nodeId
 
-fun waySiteId(wayId: Long): Long = WAY_SITE_ID_OFFSET + wayId
+fun wayBoundaryId(wayId: Long): Long = WAY_BOUNDARY_ID_OFFSET + wayId
 
-/** Returns the way a site id names, or null if it names a node or relation. */
-fun siteWayId(siteId: Long): Long? =
-    if (siteId in WAY_SITE_ID_OFFSET until NODE_SITE_ID_OFFSET) {
-      siteId - WAY_SITE_ID_OFFSET
+/** Returns the way a boundary id names, or null if it names a node or relation. */
+fun boundaryWayId(boundaryId: Long): Long? =
+    if (boundaryId in WAY_BOUNDARY_ID_OFFSET until NODE_SITE_ID_OFFSET) {
+      boundaryId - WAY_BOUNDARY_ID_OFFSET
     } else {
       null
     }
@@ -42,7 +42,7 @@ fun climbingWay(way: Osmformat.Way, stringTable: StringTable): ClimbingElement? 
   if (type == RelationCategory.ANY) {
     return null
   }
-  return element(waySiteId(way.id), type, kvs, stringTable, null, EMPTY_MEMBERS)
+  return element(wayBoundaryId(way.id), type, kvs, stringTable, null, EMPTY_MEMBERS)
 }
 
 /**

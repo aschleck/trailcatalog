@@ -26,7 +26,6 @@ import org.trailcatalog.importers.pbf.ExtractWayRelationPairs
 import org.trailcatalog.importers.pbf.GatherRelationWays
 import org.trailcatalog.importers.pbf.MakeRelationGeometries
 import org.trailcatalog.importers.pbf.MakeWayGeometries
-import org.trailcatalog.importers.pbf.MakeWayPoints
 import org.trailcatalog.importers.pbf.PbfReader
 import org.trailcatalog.importers.pbf.PickSmallElements
 import org.trailcatalog.importers.pbf.Point
@@ -203,7 +202,7 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
       pipeline.join2("JoinRelationsWithGeometry", relations, relationsGeometryById)
 
   // Points come from nodes, from closed ways like a campground drawn as its outline, and from the
-  // glaciers and lakes drawn as multipolygons.
+  // glaciers, lakes, and parks drawn as multipolygons.
   val points =
       pipeline.cat(
           listOf(
@@ -214,11 +213,13 @@ private fun processPbfs(pbfs: List<Path>, hikari: HikariDataSource) {
   points.write(DumpNames("point_names", epoch, hikari, { it.id }, { it.names }))
 
   // Now start dumping boundaries, trails, and what contains what. Climbing sites are boundaries
-  // shaped by the climbing elements they hold rather than by their member ways.
+  // shaped by the climbing elements they hold rather than by their member ways, and parks can be
+  // drawn as a single closed way.
   val boundaries =
       pipeline.cat(
           listOf(
               relationsWithGeometry.then(CreateBoundaries()),
+              waysWithGeometry.then(MakeWayBoundaries()),
               pipeline.zip2(climbingElements, waysWithGeometry, CreateClimbingSites())))
   boundaries.write(DumpBoundaries(epoch, hikari))
   boundaries.write(DumpNames("boundary_names", epoch, hikari, { it.id }, { it.names }))

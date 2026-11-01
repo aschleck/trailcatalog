@@ -21,6 +21,7 @@ kt_jvm_test(
     srcs = ["ExtractPointsTest.kt"],
     test_class = "org.trailcatalog.importers.pbf.ExtractPointsTest",
     deps = [
+        "//java/org/trailcatalog/importers/basemap",
         "//java/org/trailcatalog/importers/pbf",
         "//java/org/trailcatalog/importers/pbf:pbf_java",
         "//java/org/trailcatalog/importers/pipeline",

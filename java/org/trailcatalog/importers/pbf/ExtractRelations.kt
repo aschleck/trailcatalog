@@ -81,38 +81,56 @@ class NameCollector {
   }
 }
 
-fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): RelationCategory {
+/** Returns the boundary an element's tags make it, or [RelationCategory.ANY]. */
+fun boundaryCategory(kvs: List<Int>, stringTable: StringTable): RelationCategory {
   var category = RelationCategory.ANY
   var adminLevel: RelationCategory? = null
   var administrative = false
-  var climbing: RelationCategory? = null
-  for (i in 0 until relation.keysCount) {
-    when (stringTable.getS(relation.getKeys(i))) {
-      ADMIN_LEVEL_BS ->
-        adminLevel = ADMINISTRATIVE_LEVEL_NAMES[stringTable.getS(relation.getVals(i))]
+  var natureReserve = false
+  for (i in 0 until kvs.size step 2) {
+    val value = stringTable.getS(kvs[i + 1])
+    when (stringTable.getS(kvs[i])) {
+      ADMIN_LEVEL_BS -> adminLevel = ADMINISTRATIVE_LEVEL_NAMES[value]
       BOUNDARY_BS -> {
-        val boundary = BOUNDARY_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))]
+        val boundary = BOUNDARY_CATEGORY_NAMES[value]
         administrative = boundary == RelationCategory.BOUNDARY_ADMINISTRATIVE
         category = category.coerceAtLeast(RelationCategory.BOUNDARY).coerceAtLeast(boundary)
       }
-      CLIMBING_BS ->
-        climbing = CLIMBING_SITE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))]
+      LEISURE_BS -> natureReserve = value == NATURE_RESERVE_BS
       PROTECT_CLASS_BS ->
         category =
             category
                 .coerceAtLeast(RelationCategory.BOUNDARY_PROTECTED_AREA)
-                .coerceAtLeast(PROTECT_CLASS_NAMES[stringTable.getS(relation.getVals(i))])
-      ROUTE_BS ->
-        category =
-            category
-                .coerceAtLeast(RelationCategory.ROUTE)
-                .coerceAtLeast(ROUTE_CATEGORY_NAMES[stringTable.getS(relation.getVals(i))])
+                .coerceAtLeast(PROTECT_CLASS_NAMES[value])
     }
   }
   // Land area outlines, maritime zones, claims, and buildings like Paul-Löbe-Haus carry admin_level
   // too, and reading it on them makes them countries and states that lead readable ids.
   if (administrative) {
     category = category.coerceAtLeast(adminLevel)
+  }
+  // Only when it's nothing else, because many protected areas and national parks are also tagged
+  // leisure=nature_reserve.
+  if (category == RelationCategory.ANY && natureReserve) {
+    category = RelationCategory.BOUNDARY_NATURE_RESERVE
+  }
+  return category
+}
+
+fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): RelationCategory {
+  val kvs = relationKvs(relation)
+  var category = boundaryCategory(kvs, stringTable)
+  var climbing: RelationCategory? = null
+  for (i in 0 until kvs.size step 2) {
+    val value = stringTable.getS(kvs[i + 1])
+    when (stringTable.getS(kvs[i])) {
+      CLIMBING_BS -> climbing = CLIMBING_SITE_CATEGORY_NAMES[value]
+      ROUTE_BS ->
+        category =
+            category
+                .coerceAtLeast(RelationCategory.ROUTE)
+                .coerceAtLeast(ROUTE_CATEGORY_NAMES[value])
+    }
   }
   // A climbing site drawn as a multipolygon has an area of its own like any other boundary, while
   // CreateClimbingSites makes up the area of the rest. See also climbingRelation.
@@ -122,8 +140,7 @@ fun relationCategory(relation: Osmformat.Relation, stringTable: StringTable): Re
   // Only when it's nothing else, because a lake that is also a protected area is already a
   // boundary.
   if (category == RelationCategory.ANY && isMultipolygon(relation, stringTable)) {
-    category =
-        AREA_RELATION_CATEGORIES[pointCategory(relationKvs(relation), stringTable)] ?: category
+    category = AREA_RELATION_CATEGORIES[pointCategory(kvs, stringTable)] ?: category
   }
   return category
 }

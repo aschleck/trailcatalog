@@ -6,7 +6,9 @@ import crosby.binary.Osmformat.StringTable
 import org.trailcatalog.importers.pipeline.PTransformer
 import org.trailcatalog.importers.pipeline.collections.Emitter
 import org.trailcatalog.models.AREA_RELATION_CATEGORIES
+import org.trailcatalog.models.PARK_POINT_CATEGORIES
 import org.trailcatalog.models.PointCategory
+import org.trailcatalog.models.RelationCategory
 import org.trailcatalog.models.SEARCHABLE_POINT_LABELS
 import org.trailcatalog.models.nodePointId
 
@@ -47,10 +49,29 @@ fun wayPointCategory(kvs: List<Int>, nodes: LongArray, stringTable: StringTable)
   if (category == PointCategory.CLIMBING_ROUTE) {
     return category
   }
-  if (nodes.size < 4 || nodes[0] != nodes[nodes.size - 1]) {
+  if (!isRing(nodes)) {
     return PointCategory.ANY
   }
   return if (category in SEARCHABLE_POINT_LABELS) category else PointCategory.ANY
+}
+
+/**
+ * Returns the park a closed way is a boundary of, or [RelationCategory.ANY]. A way that is also a
+ * climbing site stays only a site, because CreateClimbingSites gives it the same boundary id.
+ */
+fun wayParkCategory(kvs: List<Int>, nodes: LongArray, stringTable: StringTable): RelationCategory {
+  // makeBoundary drops nameless boundaries too.
+  if (!isRing(nodes)
+      || tagName(kvs, stringTable).isNullOrBlank()
+      || climbingCategory(kvs, stringTable) in CLIMBING_SITE_CATEGORY_NAMES.values) {
+    return RelationCategory.ANY
+  }
+  val category = boundaryCategory(kvs, stringTable)
+  return if (category in PARK_POINT_CATEGORIES) category else RelationCategory.ANY
+}
+
+private fun isRing(nodes: LongArray): Boolean {
+  return nodes.size >= 4 && nodes[0] == nodes[nodes.size - 1]
 }
 
 /**

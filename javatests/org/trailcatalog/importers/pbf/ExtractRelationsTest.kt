@@ -175,6 +175,30 @@ class ExtractRelationsTest {
   }
 
   @Test
+  fun testNatureReserveIsABoundaryUnlessItIsAnotherOne() {
+    assertThat(
+            categoryOf(
+                "type" to "multipolygon",
+                "leisure" to "nature_reserve",
+                "name" to "Cougar Mountain Regional Wildland Park"))
+        .isEqualTo(RelationCategory.BOUNDARY_NATURE_RESERVE)
+    assertThat(
+            categoryOf(
+                "type" to "boundary",
+                "boundary" to "national_park",
+                "leisure" to "nature_reserve",
+                "name" to "Olympic National Park"))
+        .isEqualTo(RelationCategory.BOUNDARY_NATIONAL_PARK)
+    assertThat(
+            categoryOf(
+                "type" to "multipolygon",
+                "natural" to "water",
+                "leisure" to "nature_reserve",
+                "name" to "Gazzam Lake"))
+        .isEqualTo(RelationCategory.BOUNDARY_NATURE_RESERVE)
+  }
+
+  @Test
   fun testBuildingIgnoresItsLevel() {
     assertThat(
             categoryOf("type" to "multipolygon", "building" to "government", "admin_level" to "2"))
