@@ -34,8 +34,26 @@ fun nodePoint(
       tagName(kvs, stringTable),
       names,
       isNotable(kvs, stringTable),
-      /* rank= */ null,
+      getNodeRank(category, tagMagnitude(category, kvs, stringTable), latLng),
       latLng)
+}
+
+// A place's population or a peak's prominence, see getNodeRank. Both are free text, and most values
+// that aren't a plain number are a number with thousands separators.
+private fun tagMagnitude(
+    category: PointCategory, kvs: List<Int>, stringTable: StringTable): Double? {
+  val key =
+      when (category) {
+        PointCategory.NATURAL_PEAK, PointCategory.NATURAL_VOLCANO -> PROMINENCE_BS
+        else -> if (PointCategory.PLACE.isParentOf(category)) POPULATION_BS else return null
+      }
+  for (i in 0 until kvs.size step 2) {
+    if (stringTable.getS(kvs[i]) == key) {
+      return stringTable.getS(kvs[i + 1]).toStringUtf8().filter { it != ',' && it != ' ' }
+          .toDoubleOrNull()
+    }
+  }
+  return null
 }
 
 /**
@@ -151,6 +169,7 @@ fun pointCategory(kvs: List<Int>, stringTable: StringTable): PointCategory {
         category = category.coerceAtLeast(POINT_MOUNTAIN_PASS_CATEGORY_NAMES[value])
       NAME_BS -> named = true
       NATURAL_BS -> category = category.coerceAtLeast(POINT_NATURAL_CATEGORY_NAMES[value])
+      PLACE_BS -> category = category.coerceAtLeast(POINT_PLACE_CATEGORY_NAMES[value])
       RAILWAY_BS -> category = category.coerceAtLeast(POINT_RAILWAY_CATEGORY_NAMES[value])
       SHOP_BS -> category = category.coerceAtLeast(POINT_SHOP_CATEGORY_NAMES[value])
       TOURISM_BS -> category = category.coerceAtLeast(POINT_TOURISM_CATEGORY_NAMES[value])
@@ -162,9 +181,10 @@ fun pointCategory(kvs: List<Int>, stringTable: StringTable): PointCategory {
   if (tower && observation) {
     category = category.coerceAtLeast(PointCategory.SIGHT_OBSERVATION_TOWER)
   }
-  // An unnamed area has nothing to search or label.
+  // An unnamed area or place has nothing to search or label.
   if ((flowing && category == PointCategory.NATURAL_LAKE)
-      || (!named && category in AREA_RELATION_CATEGORIES)) {
+      || (!named
+          && (category in AREA_RELATION_CATEGORIES || PointCategory.PLACE.isParentOf(category)))) {
     category = PointCategory.ANY
   }
   return category

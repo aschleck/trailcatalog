@@ -151,6 +151,8 @@ class ExtractPointsTest {
         .isEqualTo(PointCategory.NATURAL_STRAIT)
     assertThat(categoryOf("natural" to "bay")).isNull()
     assertThat(categoryOf("natural" to "strait")).isNull()
+    assertThat(extract("natural" to "bay", "name" to "Elliott Bay")!!.rank).isEqualTo(10)
+    assertThat(extract("natural" to "water", "name" to "Tarn")!!.rank).isNull()
   }
 
   @Test
@@ -191,6 +193,54 @@ class ExtractPointsTest {
     assertThat(point.name).isEqualTo("Green Lake Park")
     assertThat(point.names).isEmpty()
     assertThat(point.rank).isEqualTo(12)
+  }
+
+  @Test
+  fun testNamedPlaces() {
+    assertThat(categoryOf("place" to "city", "name" to "Seattle"))
+        .isEqualTo(PointCategory.PLACE_CITY)
+    assertThat(categoryOf("place" to "province", "name" to "British Columbia"))
+        .isEqualTo(PointCategory.PLACE_STATE)
+    assertThat(categoryOf("place" to "quarter", "name" to "Noe Valley"))
+        .isEqualTo(PointCategory.PLACE_SUBURB)
+    assertThat(categoryOf("place" to "town")).isNull()
+    assertThat(categoryOf("place" to "locality", "name" to "Monte Cristo")).isNull()
+  }
+
+  @Test
+  fun testPlaceRanksByPopulationUnderItsKind() {
+    // Seattle as a square of 750,000 people at 1,000 a square kilometer is 27.4 km on a side. A
+    // pixel at its latitude is 105.5 km / 2^z, so it spans 32 pixels from 2^z = 123, or z = 6.95.
+    assertThat(
+            getNodeRank(PointCategory.PLACE_CITY, 750_000.0, LatLngE7(47_6000000, -122_3000000)))
+        .isEqualTo(7)
+    assertThat(getNodeRank(PointCategory.PLACE_CITY, null, LatLngE7(47_6000000, -122_3000000)))
+        .isEqualTo(9)
+    // A neighbourhood of 20 people would rank 15 by population, and its kind lifts it to 14.
+    assertThat(
+            getNodeRank(
+                PointCategory.PLACE_NEIGHBOURHOOD, 20.0, LatLngE7(47_6000000, -122_3000000)))
+        .isEqualTo(14)
+    assertThat(
+            extract("place" to "town", "name" to "Kent", "population" to "136,588")!!.rank)
+        .isEqualTo(getNodeRank(PointCategory.PLACE_TOWN, 136_588.0, LatLngE7(0, 0)))
+    assertThat(extract("place" to "village", "name" to "Index")!!.rank).isEqualTo(13)
+  }
+
+  @Test
+  fun testPeakRanksByProminence() {
+    // Rainier as a square 10 times its 4,026 m prominence is 40.3 km on a side. A pixel at its
+    // latitude is 107 km / 2^z, so it spans 32 pixels from 2^z = 85, or z = 6.41.
+    assertThat(
+            extract(
+                "natural" to "volcano",
+                "name" to "Mount Rainier",
+                "prominence" to "4026")!!.rank)
+        .isEqualTo(getNodeRank(PointCategory.NATURAL_VOLCANO, 4026.0, LatLngE7(0, 0)))
+    assertThat(
+            getNodeRank(PointCategory.NATURAL_VOLCANO, 4026.0, LatLngE7(46_8528000, -121_7604000)))
+        .isEqualTo(7)
+    assertThat(extract("natural" to "peak", "name" to "Si")!!.rank).isEqualTo(13)
   }
 
   @Test

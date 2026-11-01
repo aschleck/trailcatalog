@@ -110,6 +110,14 @@ enum class PointCategory(override val id: Int) : Category<PointCategory> {
       PARK_NATIONAL_PARK(PARK.id * ENUM_SIZE + 1),
       PARK_NATURE_RESERVE(PARK.id * ENUM_SIZE + 2),
       PARK_PROTECTED_AREA(PARK.id * ENUM_SIZE + 3),
+    PLACE(ANY.id * ENUM_SIZE + 12),
+      PLACE_COUNTRY(PLACE.id * ENUM_SIZE + 1),
+      PLACE_STATE(PLACE.id * ENUM_SIZE + 2),
+      PLACE_CITY(PLACE.id * ENUM_SIZE + 3),
+      PLACE_TOWN(PLACE.id * ENUM_SIZE + 4),
+      PLACE_VILLAGE(PLACE.id * ENUM_SIZE + 5),
+      PLACE_SUBURB(PLACE.id * ENUM_SIZE + 6),
+      PLACE_NEIGHBOURHOOD(PLACE.id * ENUM_SIZE + 7),
 }
 
 enum class RelationCategory(override val id: Int) : Category<RelationCategory> {
