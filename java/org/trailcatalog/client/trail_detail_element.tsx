@@ -8,6 +8,7 @@ import { setCanonicalPath } from 'external/dev_april_corgi+/js/server/ssr_aware'
 import { LatLng } from 'js/map/common/types';
 import { CLICKED, ZOOMED } from 'js/map/events';
 import { MapElement } from 'js/map/map_element';
+import { CommonsImageCarousel } from 'js/wikimedia/commons_images';
 
 import { formatDistance, formatHeight, formatTemperature, getUnitSystem, shouldUseImperial } from 'js/units/formatters';
 import { formatCount, metersToFeet, metersToMiles } from 'js/units/formatters';
@@ -205,6 +206,7 @@ function TrailSidebar({state}: {state: State}) {
         </div>
         <BoundaryCrumbs boundaries={containingBoundaries} />
       </aside>
+      <CommonsImageCarousel className="mt-4" key={String(trail.id)} tags={tags} />
       <div
           className="
               border-t
