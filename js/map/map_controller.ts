@@ -312,6 +312,11 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     layer?.dragEnd(this.unprojectPage(pageX, pageY).ll, moved, this);
   }
 
+  /** Returns the map position under an event, or undefined when it landed on something else. */
+  getLatLngUnder(e: MouseEvent): S2LatLng|undefined {
+    return e.target === this.canvas ? this.unprojectPage(e.pageX, e.pageY).ll : undefined;
+  }
+
   private unprojectPage(pageX: number, pageY: number): {ll: S2LatLng; px: [number, number]} {
     const px: [number, number] = [pageX - this.screenArea.left, pageY - this.screenArea.top];
     const ll =

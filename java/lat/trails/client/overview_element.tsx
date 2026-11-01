@@ -172,12 +172,16 @@ export function OverviewElement(
               [TOOL_REQUESTED, 'onToolRequested'],
               [UNCLAIMED_CLICKED, 'onUnclaimedClicked'],
             ],
+            dragleave: 'filesDragLeft',
+            dragover: 'filesDraggedOver',
+            drop: 'filesDropped',
             render: 'wakeup',
           },
           state: [state, updateState],
         })}
         className="flex flex-col h-full relative"
     >
+      {state.fileDragged ? <FileDropOverlay /> : ''}
       <Menubar
           center={<SearchBox state={state.search} />}
           user={state.self.finished ? state.self.value().user : undefined}
@@ -187,15 +191,7 @@ export function OverviewElement(
         <MenubarItem label="View" menu="view" onClick="menubarMenuClicked" />
         <MenubarItem label="Help" menu="help" onClick="menubarMenuClicked" />
       </Menubar>
-      <div
-          className="flex flex-col grow min-h-0 md:flex-row relative"
-          unboundEvents={{
-            dragleave: 'filesDragLeft',
-            dragover: 'filesDraggedOver',
-            drop: 'filesDropped',
-          }}
-      >
-        {state.fileDragged ? <FileDropOverlay /> : ''}
+      <div className="flex flex-col grow min-h-0 md:flex-row relative">
         <div className="grow min-h-0 min-w-0 relative">
           <MapElement
               camera={camera}

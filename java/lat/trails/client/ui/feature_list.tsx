@@ -49,6 +49,7 @@ import {
   CollectionSchema,
   DEFAULT_COLOR,
   FieldDefinition,
+  getDrawnFields,
   getLineKind,
   lineLook,
   pointLook,
@@ -523,9 +524,11 @@ interface ReadOnlyText {
 function featureText(schema: CollectionSchema, feature: FeatureContent): ReadOnlyText {
   const text: ReadOnlyText = {title: getTitle(schema, feature), paragraphs: [], fields: []};
   const titled = titleField(schema, feature);
-  for (const field of fieldsFor(schema, getFieldKind(feature))) {
+  const kind = getFieldKind(feature);
+  const drawn = kind === 'folder' ? new Set() : getDrawnFields(schema, kind, feature.data);
+  for (const field of fieldsFor(schema, kind)) {
     const value = feature.data[field.id];
-    if (value === undefined || field.id === titled) {
+    if (value === undefined || field.id === titled || drawn.has(field.id)) {
       continue;
     } else if (field.type === 'text' && field.multiline) {
       text.paragraphs.push(String(value));

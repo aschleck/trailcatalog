@@ -907,17 +907,20 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
+  // Corgi stops a DOM event at the first handler, so the feature tree passes file drags on to the
+  // viewer's handlers or else files dropped on it never import.
   featureDraggedOver(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    this.dragOver(e.detail as DragEvent, this.dropFolderFor(e));
+    this.dragOver(e, this.dropFolderFor(e));
   }
 
   featureTreeDraggedOver(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    this.dragOver(e.detail as DragEvent, undefined);
+    this.dragOver(e, undefined);
   }
 
   // Clears the target once the drag leaves the tree. Moving between rows leaves one row for
   // another inside it, which keeps the target.
   featureTreeDragLeft(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.filesDragLeft(e);
     const related = e.detail.relatedTarget;
     if (!(related instanceof Node) || !e.actionElement.element().contains(related)) {
       this.setDropTarget(undefined);
@@ -925,18 +928,18 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   featureDropped(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    this.drop(e.detail as DragEvent, this.dropFolderFor(e));
+    this.drop(e, this.dropFolderFor(e));
   }
 
   featureTreeDropped(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    this.drop(e.detail as DragEvent, undefined);
+    this.drop(e, undefined);
   }
 
-  // Covers the sidebar too, so a drop that misses the map by a few pixels still imports instead of
-  // opening the file in the tab.
+  // Covers the whole viewer, so a drop anywhere imports instead of opening the file in the tab. A
+  // photo dropped off the map goes in the middle of the map.
   filesDraggedOver(e: CorgiEvent<typeof DOM_MOUSE>): void {
     const transfer = (e.detail as DragEvent).dataTransfer;
-    if (transfer?.types.includes('Files') && !this.store.isReadOnly()) {
+    if (transfer && isFileDrag(e) && !this.store.isReadOnly()) {
       e.detail.preventDefault();
       transfer.dropEffect = 'copy';
       this.setFileDragged(true);
@@ -946,7 +949,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Moving between the viewer's children leaves one for another inside it, which keeps the drag.
   filesDragLeft(e: CorgiEvent<typeof DOM_MOUSE>): void {
     const related = e.detail.relatedTarget;
-    if (!(related instanceof Node) || !e.actionElement.element().contains(related)) {
+    if (!(related instanceof Node) || !this.root.contains(related)) {
       this.setFileDragged(false);
     }
   }
@@ -954,11 +957,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   filesDropped(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.setFileDragged(false);
     const transfer = (e.detail as DragEvent).dataTransfer;
-    if (!transfer?.types.includes('Files') || this.store.isReadOnly()) {
+    if (!transfer || !isFileDrag(e) || this.store.isReadOnly()) {
       return;
     }
     e.detail.preventDefault();
-    this.importFiles(Array.from(transfer.files));
+    this.importFiles(
+        Array.from(transfer.files), this.mapController.getLatLngUnder(e.detail as DragEvent));
   }
 
   featureDragEnded(): void {
@@ -1682,27 +1686,36 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Marks folder as the target when the drop is allowed. The browser only drops where dragover
   // called preventDefault.
-  private dragOver(e: DragEvent, folder: string|undefined): void {
+  private dragOver(e: CorgiEvent<typeof DOM_MOUSE>, folder: string|undefined): void {
+    if (isFileDrag(e)) {
+      this.filesDraggedOver(e);
+      return;
+    }
     if (!this.canDropInto(folder)) {
       this.setDropTarget(undefined);
       return;
     }
 
-    e.preventDefault();
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'move';
+    const drag = e.detail as DragEvent;
+    drag.preventDefault();
+    if (drag.dataTransfer) {
+      drag.dataTransfer.dropEffect = 'move';
     }
     this.setDropTarget({folder});
   }
 
-  private drop(e: DragEvent, folder: string|undefined): void {
+  private drop(e: CorgiEvent<typeof DOM_MOUSE>, folder: string|undefined): void {
+    if (isFileDrag(e)) {
+      this.filesDropped(e);
+      return;
+    }
     const dragged = this.draggedFeature;
     const live = dragged !== undefined ? this.store.get(dragged) : undefined;
     if (!live || !this.canDropInto(folder)) {
       return;
     }
 
-    e.preventDefault();
+    e.detail.preventDefault();
     this.draggedFeature = undefined;
     this.setDropTarget(undefined);
     if (folder !== undefined) {
@@ -2023,14 +2036,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Applies everything as one edit, so that a single undo takes back everything it added. Photos
   // upload UPLOADS_IN_FLIGHT at a time so that one person's drop leaves the API server's other
   // encodes to everybody else.
-  private importFiles(files: File[]): void {
+  private importFiles(files: File[], dropped?: S2LatLng): void {
     const generation = this.collectionGeneration;
     const stale = () => generation !== this.collectionGeneration;
     const queue = [...files];
     const results: Array<{changes: Change[]; failed?: string}> = [];
     const importNext = async (): Promise<void> => {
       for (let file = queue.shift(); file && !stale(); file = queue.shift()) {
-        results.push(await this.importOne(file));
+        results.push(await this.importOne(file, dropped));
       }
     };
     Promise.all(Array.from({length: UPLOADS_IN_FLIGHT}, importNext)).then(() => {
@@ -2072,9 +2085,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Reports the file's name when it yielded nothing, so that importing several files names every
   // one that failed in a single dialog.
-  private importOne(file: File): Promise<{changes: Change[]; failed?: string}> {
+  private importOne(file: File, dropped: S2LatLng|undefined):
+      Promise<{changes: Change[]; failed?: string}> {
     const changes =
-        file.type.startsWith('image/') ? this.importImage(file) : this.importFeatures(file);
+        file.type.startsWith('image/')
+            ? this.importImage(file, dropped)
+            : this.importFeatures(file);
     return changes.then(
         changes => changes.length > 0 ? {changes} : {changes, failed: file.name},
         e => {
@@ -2110,8 +2126,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
   }
 
-  // Makes a point that shows the photo, where it was geotagged or else in the middle of the map.
-  private importImage(file: File): Promise<Change[]> {
+  // Makes a point that shows the photo where it was geotagged, or else where it was dropped on the
+  // map, or else in the middle of the map.
+  private importImage(file: File, dropped: S2LatLng|undefined): Promise<Change[]> {
     const field = this.getImageIconField();
     if (field === undefined) {
       return Promise.reject(new Error('Points have no icon field to show a photo in'));
@@ -2122,7 +2139,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           const at =
               location
                   ? S2LatLng.fromDegrees(location.latDegrees, location.lngDegrees)
-                  : this.mapController.camera.center;
+                  : dropped ?? this.mapController.camera.center;
           const point: EditableFeature = {
             kind: 'point',
             id: crypto.randomUUID(),
@@ -2581,3 +2598,6 @@ function osmElementOf(pointId: number): {type: 'node'|'relation'|'way'; id: numb
   return {type, id: Number(id)};
 }
 
+function isFileDrag(e: CorgiEvent<typeof DOM_MOUSE>): boolean {
+  return !!(e.detail as DragEvent).dataTransfer?.types.includes('Files');
+}

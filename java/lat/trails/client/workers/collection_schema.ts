@@ -269,6 +269,23 @@ export function polygonLook(schema: CollectionSchema, data: LookData): PolygonLo
   };
 }
 
+/**
+ * Returns the fields that a feature's color, icon, size, or pattern reads directly, which the map
+ * already shows.
+ */
+export function getDrawnFields(schema: CollectionSchema, kind: FieldKind, data: LookData):
+    Set<string> {
+  const layer = getLayer(schema, kind, data) as {[part: string]: unknown}|undefined;
+  const drawn = new Set<string>();
+  for (const [part, {type}] of Object.entries(STYLE[kind] as {[part: string]: PartSpec})) {
+    const channel = layer?.[part] as Channel<unknown>|undefined;
+    if (type !== 'label' && channel?.kind === 'field') {
+      drawn.add(channel.key);
+    }
+  }
+  return drawn;
+}
+
 const VALID: {[type in StyleType]: (value: unknown) => boolean} = {
   color: isHexColor,
   icon: value => typeof value === 'string' && value !== '',
