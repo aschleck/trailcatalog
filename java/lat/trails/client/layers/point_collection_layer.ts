@@ -4,14 +4,14 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { POINTS_ATLAS_SIZE, pointsAtlasIndex } from 'java/org/trailcatalog/client/points/points_atlas';
 import { aDescendsB, PointCategory } from 'java/org/trailcatalog/models/categories';
-import { Camera, projectS2LatLng, worldRadiusAt } from 'js/map/camera';
+import { Camera, projectS2LatLng, ScreenProjection, worldRadiusAt } from 'js/map/camera';
 import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { LabelObstacles } from 'js/map/layers/label_placer';
 import { CITY_LABEL, NEIGHBOURHOOD_LABEL, PARK_LABEL, PointStyle, SUBURB_LABEL, TOWN_LABEL, VILLAGE_LABEL, WATER_TEXT_FILL } from 'js/map/layers/mbtile_layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { GLYPHER, toGraphemes, track, wrap } from 'js/map/rendering/glypher';
+import { getHaloPx, GLYPHER, toGraphemes, track, wrap } from 'js/map/rendering/glypher';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -69,8 +69,9 @@ const COUNTRY_LOOK: Look = {
 const STATE_LOOK: Look = {...COUNTRY_LOOK, scale: 0.5};
 
 // Placed first, because the big places say where on the map you are at any zoom. Then a hiker
-// steers by summits, then by the ice and water below them, the parks around them, and the gaps
-// between them. The small places only fill in what's left.
+// steers by summits, then by the ice below them, the water and parks around them, and the gaps
+// between them. The small places only fill in what's left. Water and parks share a tier so that
+// rank decides between a park and the pond inside it.
 const LABEL_PRIORITY = [
   [
     PointCategory.PLACE_COUNTRY,
@@ -80,8 +81,12 @@ const LABEL_PRIORITY = [
   ],
   [PointCategory.NATURAL_PEAK, PointCategory.NATURAL_VOLCANO],
   [PointCategory.NATURAL_GLACIER],
-  [PointCategory.NATURAL_LAKE, PointCategory.NATURAL_BAY, PointCategory.NATURAL_STRAIT],
-  [PointCategory.PARK],
+  [
+    PointCategory.NATURAL_LAKE,
+    PointCategory.NATURAL_BAY,
+    PointCategory.NATURAL_STRAIT,
+    PointCategory.PARK,
+  ],
   [PointCategory.NATURAL_MOUNTAIN_PASS, PointCategory.NATURAL_SADDLE],
   [PointCategory.PLACE_VILLAGE, PointCategory.PLACE_SUBURB, PointCategory.PLACE_NEIGHBOURHOOD],
 ];
@@ -130,7 +135,8 @@ export class PointCollectionLayer extends Layer {
   private labelBoxes: Map<number, {point: Point; box: number[]}>;
   private labelsMissingGlyphs: boolean;
   // What the drawables were planned for, or undefined to plan them again
-  private planned: {avoided: number[]; generation: number; zoom: number}|undefined;
+  private planned:
+      {avoided: number[]; center: Vec2|undefined; generation: number; zoom: number}|undefined;
   // Only points descending from these, and the selected point, draw and answer the cursor
   private categories: PointCategory[];
   private hovered: Point|undefined;
@@ -266,19 +272,24 @@ export class PointCollectionLayer extends Layer {
     return this.fetching;
   }
 
-  override render(planner: Planner, zoom: number): void {
-    // Labels are placed in mercator scaled to pixels, so a pan doesn't replan them. FeatureLayer
-    // assigns avoid a new array of boxes whenever it replans its labels, which isn't only on zoom.
+  override render(planner: Planner, zoom: number, projection: ScreenProjection): void {
+    // Labels are placed in mercator scaled to pixels, so a pan doesn't replan them once the map is
+    // flat. On the globe how much of the mercator plane a label covers depends on where it sits in
+    // the view, see getScreenScale. FeatureLayer assigns avoid a new array of boxes whenever it
+    // replans its labels, which isn't only on zoom.
     const icons = zoom >= this.iconZoom;
+    const center = this.camera.flattenFactor < 1 ? this.camera.centerPixel : undefined;
     if (this.labelsMissingGlyphs
         || this.planned?.generation !== this.generation
         || this.planned.zoom !== zoom
-        || this.planned.avoided !== this.avoid.boxes) {
+        || this.planned.avoided !== this.avoid.boxes
+        || this.planned.center?.[0] !== center?.[0]
+        || this.planned.center?.[1] !== center?.[1]) {
       if (icons) {
         this.plan();
       }
-      this.planLabels(zoom);
-      this.planned = {avoided: this.avoid.boxes, generation: this.generation, zoom};
+      this.planLabels(zoom, projection);
+      this.planned = {avoided: this.avoid.boxes, center, generation: this.generation, zoom};
     }
     planner.add(this.labelDrawables);
     if (icons && this.atlasLoaded) {
@@ -344,7 +355,7 @@ export class PointCollectionLayer extends Layer {
 
   // Places each shown point's name where it clears the open collection, the icons, and the names
   // placed before it. Under iconZoom there are no icons, so a name sits on its point.
-  private planLabels(zoom: number): void {
+  private planLabels(zoom: number, projection: ScreenProjection): void {
     const pixelsPerWorld = worldRadiusAt(zoom);
     const icons = zoom >= this.iconZoom;
     const collisions = new LabelCollisions();
@@ -417,12 +428,22 @@ export class PointCollectionLayer extends Layer {
         continue;
       }
 
+      const screenScale = getScreenScale(point.position, pixelsPerWorld, projection);
+      if (!screenScale) {
+        continue;
+      }
       const x = point.position[0] * pixelsPerWorld;
       const y = point.position[1] * pixelsPerWorld;
       const iconPx = highlighted ? HOVER_ICON_SIZE_PX[0] : ICON_SIZE_PX[0];
-      const left =
-          icons && !isArea(point) ? x + iconPx / 2 + LABEL_GAP_PX : x - size[0] / 2;
-      const box = getLabelBox(left, y, size, LABEL_PAD_PX);
+      const beside = icons && !isArea(point);
+      const left = beside ? x + iconPx / 2 + LABEL_GAP_PX : x - size[0] / screenScale[0] / 2;
+      // The box measures the ink, and the halo around it would otherwise eat the gap.
+      const box = getLabelBox(left, y, size, LABEL_PAD_PX + getHaloPx(scale), screenScale);
+      // The padding of a name and its own icon together is wider than LABEL_GAP_PX, so the box
+      // starts where the icon's ends or else every name beside an icon collides with it.
+      if (beside) {
+        box[0] = Math.max(box[0], x + ICON_SIZE_PX[0] / 2 + LABEL_PAD_PX);
+      }
       // A highlighted name is never dropped, or else one that grew on hover could collide, lose
       // the hover, shrink back, and flicker.
       if (!highlighted && collisions.hits(box)) {
@@ -433,7 +454,7 @@ export class PointCollectionLayer extends Layer {
           GLYPHER.plan(
               graphemes,
               point.position,
-              [left - x, 0],
+              beside ? [left - x, 0] : [0, 0],
               scale,
               /* angle= */ 0,
               look.fill,
@@ -443,7 +464,7 @@ export class PointCollectionLayer extends Layer {
               offset,
               this.glLabels,
               this.renderer,
-              {horizontal: 'start', vertical: 'middle'});
+              {horizontal: beside ? 'start' : 'center', vertical: 'middle'});
       collisions.insert(box);
       boxes.set(getId(point), {point, box});
       drawables.push(...planned.drawables);
@@ -580,6 +601,28 @@ function getId(point: Point): number {
 
 function isArea(point: Point): boolean {
   return AREA_LOOKS.has(point.data.type as number);
+}
+
+const SCREEN_AT: [number, number] = [0, 0];
+const SCREEN_STEP: [number, number] = [0, 0];
+
+/**
+ * Returns how many screen pixels a pixel of mercator at the zoom covers at the position, across and
+ * down, or undefined where the globe hides it. Both are 1 once the map is flat.
+ */
+function getScreenScale(
+    position: Vec2, pixelsPerWorld: number, projection: ScreenProjection): Vec2|undefined {
+  const step = 1 / pixelsPerWorld;
+  if (!projection.project(position[0], position[1], SCREEN_AT)
+      || !projection.project(position[0] + step, position[1], SCREEN_STEP)) {
+    return undefined;
+  }
+  const across = Math.hypot(SCREEN_STEP[0] - SCREEN_AT[0], SCREEN_STEP[1] - SCREEN_AT[1]);
+  if (!projection.project(position[0], position[1] + step, SCREEN_STEP)) {
+    return undefined;
+  }
+  const down = Math.hypot(SCREEN_STEP[0] - SCREEN_AT[0], SCREEN_STEP[1] - SCREEN_AT[1]);
+  return [across, down];
 }
 
 function getPointLook(point: Point): Look {

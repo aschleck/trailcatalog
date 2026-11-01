@@ -8,7 +8,7 @@ import { RgbaU32, Vec2 } from '../common/types';
 
 import { Drawable } from './program';
 import { Renderer } from './renderer';
-import { FLOATS_PER_PLACEMENT, Glyph, SdfProgram } from './sdf_program';
+import { FLOATS_PER_PLACEMENT, Glyph, HALO_EDGE, INK_EDGE, SdfProgram } from './sdf_program';
 
 interface LoadAwareFontFace extends TFontFace {
   requested?: boolean;
@@ -675,6 +675,12 @@ export function wrap(graphemes: string[], lineGraphemes: number): string[] {
     }
   }
   return wrapped;
+}
+
+/** Returns how far a label's halo reaches past its ink, in pixels, at the scale. */
+export function getHaloPx(scale: number): number {
+  // TinySDF's value falls by 1 every SDF_RADIUS_PX FONT_SIZE pixels away from the glyph.
+  return (INK_EDGE - HALO_EDGE) * SDF_RADIUS_PX * scale;
 }
 
 /** Puts a hair space between the graphemes of each line, which letter-spaces the text. */

@@ -12,6 +12,11 @@ import {
   SPHERE_OPERATIONS,
 } from './program';
 
+// The distance field values the halo and then the ink are drawn out to. See also
+// glypher.ts#getHaloPx.
+export const HALO_EDGE = 0.35;
+export const INK_EDGE = 0.75;
+
 export interface Glyph {
   index: number;
   glyphAdvance: number;
@@ -294,9 +299,9 @@ export class SdfProgram extends Program<SdfProgramData> {
     const gl = this.gl;
     this.bindAttributes(drawable.geometryOffset);
 
-    gl.uniform1f(this.program.uniforms.halo, 0.35);
+    gl.uniform1f(this.program.uniforms.halo, HALO_EDGE);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
-    gl.uniform1f(this.program.uniforms.halo, 0.75);
+    gl.uniform1f(this.program.uniforms.halo, INK_EDGE);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, drawable.vertexCount, drawable.instanced.count);
   }
 

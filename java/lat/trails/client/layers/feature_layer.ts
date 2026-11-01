@@ -12,7 +12,7 @@ import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { glyphBoxes, LabelObstacles } from 'js/map/layers/label_placer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
-import { GLYPHER, TextAnchor, toGraphemes, turnsTooSharply, wrap } from 'js/map/rendering/glypher';
+import { getHaloPx, GLYPHER, TextAnchor, toGraphemes, turnsTooSharply, wrap } from 'js/map/rendering/glypher';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
@@ -1565,7 +1565,8 @@ export class FeatureLayer extends Layer {
         const x = label.at[0] * pixelsPerWorld + label.offsetPx[0];
         const y = label.at[1] * pixelsPerWorld + label.offsetPx[1];
         const left = label.anchor.horizontal === 'start' ? x : x - size[0] / 2;
-        const box = getLabelBox(left, y, size, LABEL_PAD_PX);
+        // The box measures the ink, and the halo around it would otherwise eat the gap.
+        const box = getLabelBox(left, y, size, LABEL_PAD_PX + getHaloPx(LABEL_SCALE));
         if (collisions.hits(box)) {
           continue;
         }

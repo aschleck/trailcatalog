@@ -47,9 +47,18 @@ export class LabelCollisions {
   }
 }
 
-/** Returns the x0,y0,x1,y1 box of a label that starts at left and is centered on y, plus pad. */
-export function getLabelBox(left: number, y: number, size: Vec2, pad: number): number[] {
-  return [left - pad, y - size[1] / 2 - pad, left + size[0] + pad, y + size[1] / 2 + pad];
+/**
+ * Returns the x0,y0,x1,y1 box of a label that starts at left and is centered on y, plus pad. The
+ * size and pad are in screen pixels, and each pixel spans 1 / screenScale of the box's units.
+ */
+export function getLabelBox(
+    left: number, y: number, size: Vec2, pad: number, [sx, sy]: Vec2 = [1, 1]): number[] {
+  return [
+    left - pad / sx,
+    y - (size[1] / 2 + pad) / sy,
+    left + (size[0] + pad) / sx,
+    y + (size[1] / 2 + pad) / sy,
+  ];
 }
 
 function cellKeys(x0: number, y0: number, x1: number, y1: number): string[] {
