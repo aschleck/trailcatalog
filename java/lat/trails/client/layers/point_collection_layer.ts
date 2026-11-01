@@ -496,11 +496,16 @@ export class PointCollectionLayer extends Layer {
     return [...near, ...labeled.filter(point => !near.some(n => getId(n) === getId(point)))];
   }
 
-  // The loaded points in our categories, plus the selected point
+  // The loaded points in our categories that rank to show at this zoom, plus the selected point.
+  // The streams under LANDMARK_ZOOM already leave out the rest, but the ones above it send every
+  // rank.
   private get shownPoints(): Point[] {
+    const zoom = this.camera.zoom;
     const shown = [];
     for (const points of this.cells.values()) {
-      shown.push(...points.filter(point => this.shows(point)));
+      shown.push(
+          ...points.filter(point =>
+              this.shows(point) && ((point.data.rank as number|undefined) ?? 0) <= zoom));
     }
     const selected = this.selected;
     if (selected && !shown.some(point => getId(point) === getId(selected))) {
