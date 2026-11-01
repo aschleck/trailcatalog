@@ -13,6 +13,7 @@ import {
   getParents,
 } from './features';
 import { toSimplestyleColor } from './geojson';
+import { getIconImageId } from './images';
 import {
   channelOf,
   DEFAULT_COLLECTION_SCHEMA,
@@ -110,7 +111,10 @@ export function toGeoJson(
         if (look) {
           // Simplestyle has no opacity for a marker.
           properties['marker-color'] = toSimplestyleColor(look.fill).color;
-          properties['marker-symbol'] = look.icon;
+          // An image icon only works inside trails.lat, so other tools would just see an id.
+          if (getIconImageId(look.icon) === undefined) {
+            properties['marker-symbol'] = look.icon;
+          }
         }
         geometry = {type: 'Point', coordinates: pointCoordinates(feature)};
       } else {

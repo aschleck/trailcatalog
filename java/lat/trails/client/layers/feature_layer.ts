@@ -11,6 +11,7 @@ import { Copyright, RgbaU32, Vec2 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { glyphBoxes, LabelObstacles } from 'js/map/layers/label_placer';
+import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { GLYPHER, TextAnchor, toGraphemes, turnsTooSharply, wrap } from 'js/map/rendering/glypher';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
@@ -46,6 +47,7 @@ import {
   pointIcon,
   snapshot,
 } from '../model/features';
+import { getIconImageId } from '../model/images';
 import { MARKER_RADIUS_PX, MARKER_STROKE, SNAP_RADIUS_PX, toE7Array } from '../tools/drawing_layer';
 import {
   createHandleTexture,
@@ -69,6 +71,7 @@ import {
 import { LineRefiner } from '../tools/line_refiner';
 import { MarkerOutline, outlineMarker, pushMarker } from '../tools/marker';
 import { ShiftKey } from '../tools/shift_key';
+import { IMAGE_ATLAS_SIZE, ImageIcons } from './image_icons';
 import {
   CollectionSchema,
   DEFAULT_ICON,
@@ -109,6 +112,10 @@ const HIGHLIGHTED_ICON_SCALE = 0.8;
 // Wide enough to ring an icon at the default radius, and how far from its center a click still
 // lands on it
 const ICON_RADIUS_PX = 10;
+// A photo needs more room than an emoji before anybody can tell what it shows.
+const IMAGE_RADIUS_PX = 16;
+// How much of the disc under a photo shows around it, white edge included
+const IMAGE_RING_PX = 3;
 // Tracks recorded by GPS wiggle every few meters, and Glypher refuses to bend text around turns
 // that sharp, so a label follows the line simplified to about this many pixels.
 const LABEL_PATH_TOLERANCE_PX = 4;
@@ -129,6 +136,8 @@ const HANDLE_SPACING_PX = 12;
 const Z_LINE = Z_USER_DATA;
 const Z_SELECTED_LINE = Z_USER_DATA_HIGHLIGHT;
 const Z_LABEL = Z_USER_DATA_HIGHLIGHT + 2;
+// Over the disc in the point's fill that rings it
+const Z_IMAGE = Z_LABEL + 0.5;
 const Z_DRAGGED = Z_USER_DATA_HIGHLIGHT + 3;
 const Z_HANDLE = Z_USER_DATA_HIGHLIGHT + 4;
 
@@ -261,6 +270,7 @@ export class FeatureLayer extends Layer {
   private markersZoom: number;
   private readonly glLabels: WebGLBuffer;
   private readonly handleTexture: WebGLTexture;
+  private readonly images: ImageIcons;
   // Points drawn as circles, which replan with the icons
   private readonly circles: Plan;
   private labels: ArrayBuffer;
@@ -296,9 +306,10 @@ export class FeatureLayer extends Layer {
   private viewport: {low: Vec2; high: Vec2};
   // The spot a line profile's pointer is over, in mercator
   private marker: Vec2|undefined;
-  // Glypher builds its atlas asynchronously and plans nothing for a grapheme it lacks, so labels
-  // planned before the atlas holds them have to be planned again once it does.
-  private labelsMissingGlyphs: boolean;
+  // Glypher builds its atlas asynchronously and plans nothing for a grapheme it lacks, and
+  // ImageIcons loads images asynchronously, so labels planned before either has what they need have
+  // to be planned again once it does.
+  private labelsIncomplete: boolean;
   // The ids of the features whose labels the last plan placed
   private labelsPlaced: ReadonlySet<string>;
 
@@ -336,6 +347,10 @@ export class FeatureLayer extends Layer {
     this.circles = this.createPlan(16 * 1024);
     this.glLabels = renderer.createDataBuffer(16 * 1024);
     this.handleTexture = createHandleTexture(renderer);
+    this.images = new ImageIcons(renderer, () => {
+      this.labelsIncomplete = true;
+      this.redraw();
+    });
     this.labels = new ArrayBuffer(16 * 1024);
     this.labelDrawables = [];
     this.labelsPlanned = {
@@ -344,7 +359,7 @@ export class FeatureLayer extends Layer {
       hovered: undefined,
       zoom: -1,
     };
-    this.labelsMissingGlyphs = false;
+    this.labelsIncomplete = false;
     this.labelsPlaced = new Set();
     this.interactive = true;
     this.pointsDraggable = false;
@@ -359,6 +374,7 @@ export class FeatureLayer extends Layer {
     this.registerDisposer(() => {
       renderer.deleteBuffer(this.glLabels);
       renderer.deleteTexture(this.handleTexture);
+      this.images.dispose();
       this.obstacles.boxes = [];
       this.locations.unload([...this.published.keys()].map(id => this.key(id)));
     });
@@ -732,7 +748,7 @@ export class FeatureLayer extends Layer {
     // Curved labels are laid out in pixels along mercator paths, so they follow the zoom.
     const draggedAt = this.dragging?.kind === 'point' ? this.dragging.at : undefined;
     if (
-        this.labelsMissingGlyphs
+        this.labelsIncomplete
             || this.labelsPlanned.draggedAt !== draggedAt
             || this.labelsPlanned.generation !== this.geometry.generation
             || this.labelsPlanned.hovered !== this.hovered
@@ -770,12 +786,12 @@ export class FeatureLayer extends Layer {
     return ICON_SCALE * this.radiusPx(point) / DEFAULT_POINT_RADIUS_PX;
   }
 
-  // How far a point's label sits from its center, past the edge of its circle or icon
-  private labelReachPx(point: ProjectedPoint): number {
+  // How far a point's label sits from its center, past the edge of its circle, icon, or image
+  private labelReachPx(point: ProjectedPoint, drawn: 'circle'|'icon'|'image'): number {
     const radius = this.radiusPx(point);
-    return point.look.icon === DEFAULT_ICON
+    return drawn === 'circle'
         ? radius
-        : ICON_RADIUS_PX * radius / DEFAULT_POINT_RADIUS_PX;
+        : (drawn === 'image' ? IMAGE_RADIUS_PX : ICON_RADIUS_PX) * radius / DEFAULT_POINT_RADIUS_PX;
   }
 
   private editingLine(): ProjectedShape|undefined {
@@ -1029,11 +1045,12 @@ export class FeatureLayer extends Layer {
 
   private pointsAt(at: Vec2): ProjectedPoint[] {
     const inverse = this.camera.inverseWorldRadius;
-    return this.visiblePoints.filter(
-        point =>
-            Math.hypot(point.at[0] - at[0], point.at[1] - at[1])
-                <= (ICON_RADIUS_PX * point.look.radiusPx / DEFAULT_POINT_RADIUS_PX + CLICK_SLOP_PX)
-                    * inverse);
+    return this.visiblePoints.filter(point => {
+      const drawn = getIconImageId(point.look.icon) !== undefined ? 'image' : 'icon';
+      const reach = this.labelReachPx(point, drawn);
+      return Math.hypot(point.at[0] - at[0], point.at[1] - at[1])
+          <= (reach + CLICK_SLOP_PX) * inverse;
+    });
   }
 
   // The nearest vertex handle under at, if any.
@@ -1387,7 +1404,14 @@ export class FeatureLayer extends Layer {
           anchor: TextAnchor;
         }> = [];
     const icons: Array<{graphemes: string[]; point: ProjectedPoint}> = [];
+    const images: Array<{cell: number; point: ProjectedPoint; reach: number}> = [];
     const circles: ProjectedPoint[] = [];
+    this.images.startPlan();
+    this.labelsIncomplete = false;
+    // We test collisions in mercator scaled to pixels rather than on screen, so panning doesn't
+    // change which labels fit and only zoom replans them.
+    const pixelsPerWorld = worldRadiusAt(zoom);
+    const collisions = new LabelCollisions();
     const dragging = this.dragging?.kind === 'point' ? this.dragging : undefined;
     // A dragged point's icon and label follow the pointer.
     const at = (point: ProjectedPoint) =>
@@ -1418,6 +1442,19 @@ export class FeatureLayer extends Layer {
       }
     }
     for (const point of this.visiblePoints) {
+      const image = getIconImageId(point.look.icon);
+      const cell = image !== undefined ? this.images.getCell(image) : undefined;
+      // An image that is still loading, or that failed to load, draws as the default circle.
+      const drawn =
+          cell !== undefined ? 'image'
+              : point.look.icon === DEFAULT_ICON || image !== undefined ? 'circle'
+              : 'icon';
+      const reach = this.labelReachPx(point, drawn);
+      const [x, y] = at(point);
+      const px = x * pixelsPerWorld;
+      const py = y * pixelsPerWorld;
+      collisions.insert([px - reach, py - reach, px + reach, py + reach]);
+
       const label = point.look.label;
       if (label) {
         const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
@@ -1426,13 +1463,16 @@ export class FeatureLayer extends Layer {
           feature: point.feature,
           graphemes,
           line: undefined,
-          at: at(point),
+          at: [x, y],
           // Beside the icon, however big it is drawn
-          offsetPx: [LABEL_GAP_PX + this.labelReachPx(point), 0],
+          offsetPx: [LABEL_GAP_PX + reach, 0],
           anchor: {horizontal: 'start', vertical: 'middle'},
         });
       }
-      if (point.look.icon === DEFAULT_ICON) {
+      if (cell !== undefined) {
+        needed += BillboardProgram.bytesNeeded();
+        images.push({cell, point, reach});
+      } else if (drawn === 'circle') {
         circles.push(point);
       } else {
         const graphemes = toGraphemes(point.look.icon);
@@ -1442,33 +1482,45 @@ export class FeatureLayer extends Layer {
     }
     this.labels = growBuffer(this.labels, needed);
 
-    // A zero length segment, which LineProgram draws as a circle, ringed like the icons
-    const batch =
-        new ShapeBatch(this.circles, LineProgram.bytesNeeded(2) * circles.length, this.renderer);
+    // A zero length segment, which LineProgram draws as a circle, ringed like the icons. A photo
+    // sits on one as big as itself, so the point's fill rings it.
+    const discs = circles.length + images.length;
+    const batch = new ShapeBatch(this.circles, LineProgram.bytesNeeded(2) * discs, this.renderer);
     for (const point of circles) {
       const [x, y] = at(point);
       batch.push(
           point.look.fill, LABEL_STROKE, this.radiusPx(point), [x, y, x, y], Z_LABEL);
     }
+    for (const {point, reach} of images) {
+      const [x, y] = at(point);
+      batch.push(point.look.fill, LABEL_STROKE, reach, [x, y, x, y], Z_LABEL);
+    }
     batch.finish();
 
-    const pixelsPerWorld = worldRadiusAt(zoom);
     const drawables = [];
     let offset = 0;
-    this.labelsMissingGlyphs = false;
-    // We test collisions in mercator scaled to pixels rather than on screen, so panning doesn't
-    // change which labels fit and only zoom replans them.
-    const collisions = new LabelCollisions();
-    for (const point of this.visiblePoints) {
-      const [x, y] = at(point);
-      const reach = this.labelReachPx(point);
-      const px = x * pixelsPerWorld;
-      const py = y * pixelsPerWorld;
-      collisions.insert([px - reach, py - reach, px + reach, py + reach]);
+    for (const {cell, point, reach} of images) {
+      const diameterPx = 2 * (reach - IMAGE_RING_PX);
+      const planned =
+          this.renderer.billboardProgram.plan(
+              at(point),
+              /* offsetPx= */ [0, 0],
+              [diameterPx, diameterPx],
+              /* angle= */ 0,
+              /* tint= */ 0xFFFFFFFF as RgbaU32,
+              Z_IMAGE,
+              cell,
+              IMAGE_ATLAS_SIZE,
+              this.labels,
+              offset,
+              this.glLabels,
+              this.images.texture);
+      drawables.push(planned.drawable);
+      offset += planned.byteSize;
     }
     for (const {graphemes, point} of icons) {
       if (!GLYPHER.measurePx(graphemes, ICON_SCALE)) {
-        this.labelsMissingGlyphs = true;
+        this.labelsIncomplete = true;
         continue;
       }
 
@@ -1505,7 +1557,7 @@ export class FeatureLayer extends Layer {
       const {feature, graphemes, line} = label;
       const size = GLYPHER.measurePx(graphemes, LABEL_SCALE);
       if (!size) {
-        this.labelsMissingGlyphs = true;
+        this.labelsIncomplete = true;
         continue;
       }
 

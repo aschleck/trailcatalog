@@ -67,9 +67,13 @@ podman run \
     --env PGPASSWORD="${pg_pwd}" \
     --env PGUSER="${pg_user}" \
     --network host \
+    --volume /home/april/trails_lat_images:/images \
+    --volume /run/trails-lat-image-encoder:/run/image-encoder \
     us-west1-docker.pkg.dev/trailcatalog/containers/lat_trails_frontend:latest \
     /app/serve.sh \
     --database_username_password="${pg_user}:${pg_pwd}" \
     --database_url "postgresql://127.0.0.1/trails_lat" \
+    --image_directory /images \
+    --image_encoder_socket /run/image-encoder/encoder.sock \
     --trailcatalog_database_username_password="trailcatalog:${tc_pwd}" \
     --trailcatalog_database_url "postgresql://127.0.0.1/trailcatalog"

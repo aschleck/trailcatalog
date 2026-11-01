@@ -10,6 +10,10 @@ fun main() {
   println("export const MAX_LINES_BY_ID = ${MAX_LINES_BY_ID};")
   println("export const WRITE_METHODS = [${WRITE_METHODS.joinToString { "'$it'" }}] as const;")
 
+  val sizes = IMAGE_SIZES.joinToString { (name, px) -> "['${name}', ${px}]" }
+  println("export const IMAGE_SIZES = [${sizes}] as const;")
+  println("export const MAX_ORIGINAL_SIZE_BYTES = ${MAX_ORIGINAL_SIZE_BYTES};")
+
   println("export const WIND_LEVELS = [${WIND_LEVELS.joinToString()}] as const;")
   println("export const PEAK_WINDOWS = [${PEAK_WINDOWS.joinToString()}] as const;")
   println("export const ICING_LEVELS = [${ICING_LEVELS.joinToString()}] as const;")

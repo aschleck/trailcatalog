@@ -23,6 +23,7 @@ tc_ts_project(
         "//js/map/workers/routing",
         "//js/pika",
         "//js/units",
+        "//js/wikimedia",
         "//trails_lat/proto:data_ts_proto",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/corgi",

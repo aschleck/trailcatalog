@@ -95,11 +95,12 @@ interface State {
 
 // Schema and style are one panel so that they edit the same draft.
 export function SchemaPanel(
-    {schema, shown, styling, onChanged}: {
+    {schema, shown, styling, onChanged, uploadIcon}: {
       schema: CollectionSchema;
       shown: boolean;
       styling: boolean;
       onChanged: (schema: CollectionSchema) => void;
+      uploadIcon: (file: File) => Promise<string>;
     },
     inState: State|undefined,
     updateState: (newState: State) => void) {
@@ -119,7 +120,7 @@ export function SchemaPanel(
     <div
         js={corgi.bind({
           controller: SchemaController,
-          args: {onChanged},
+          args: {onChanged, uploadIcon},
           events: {
             render: 'wakeup',
           },
@@ -480,6 +481,7 @@ function optionDraftKey(field: FieldDefinition): string {
 
 interface Args {
   onChanged: (schema: CollectionSchema) => void;
+  uploadIcon: (file: File) => Promise<string>;
 }
 
 type Deps = typeof SchemaController.deps;
@@ -496,11 +498,13 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
 
   private readonly dialog: DialogService;
   private readonly onChanged: (schema: CollectionSchema) => void;
+  private readonly uploadIcon: (file: File) => Promise<string>;
 
   constructor(response: Response<SchemaController>) {
     super(response);
     this.dialog = response.deps.services.dialog;
     this.onChanged = response.args.onChanged;
+    this.uploadIcon = response.args.uploadIcon;
   }
 
   newLabelChanged(e: CorgiEvent<typeof CHANGED>): void {
@@ -660,6 +664,7 @@ class SchemaController extends Controller<Args, Deps, HTMLElement, State> {
       onChosen: icon => {
         this.setEdited(field, at, icon);
       },
+      upload: this.uploadIcon,
       used: [],
     })).catch(() => {});
   }

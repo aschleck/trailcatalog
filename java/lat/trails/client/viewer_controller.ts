@@ -5,7 +5,6 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_MOUSE, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
 import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
-import { invalidateCache } from 'external/dev_april_corgi+/js/data/caching';
 import { DialogService } from 'external/dev_april_corgi+/js/emu/dialog';
 import { ACTION, CHANGED, PRESSED } from 'external/dev_april_corgi+/js/emu/events';
 import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controller';
@@ -34,15 +33,12 @@ import {
   DeleteAccountResponse,
   DeleteCollectionResponse,
   GetAccountResponse,
-  GetAviationWeatherResponse,
   GetCollectionResponse,
   GetCurrentUserResponse,
-  GetOsmTagsResponse,
   GetTimeZoneResponse,
   ListCollectionsResponse,
   SaveResponse,
   SetViewStateResponse,
-  OsmElementType,
 } from 'trails_lat/proto/data_pb';
 
 import { AccountDialog, ConfirmDeleteAccountDialog } from './account/account_dialog';
@@ -80,17 +76,19 @@ import {
   EditableShape,
   FeatureData,
   featuresFromProto,
-  importableIcon,
   isShape,
+  pointIcon,
   schemaToWrite,
   snapshot,
   toWrite,
 } from './model/features';
+import { getImageIcon, uploadImage } from './model/images';
 import { parseImport } from './model/importer';
 import { Point } from './model/points';
 import { SaveEntry, SaveQueue } from './model/save_queue';
 import {
   adoptImported,
+  channelOf,
   getFieldKind,
   getObjectTitle,
   parseCollectionSchema,
@@ -158,18 +156,16 @@ import { STEP_MS, TimelineState } from './ui/timeline';
 import {
   CollectionSchema,
   DEFAULT_COLOR,
+  DEFAULT_ICON,
+  getField,
   getLineKind,
   pointLook,
 } from './workers/collection_schema';
 
 const MINUTE_MS = 60 * 1000;
-const OSM_ELEMENT_TYPES = {
-  node: OsmElementType.NODE,
-  relation: OsmElementType.RELATION,
-  way: OsmElementType.WAY,
-} as const;
 const PLAY_INTERVAL_MS = 100;
 const FORECAST_PLAY_TICKS = 5;
+const UPLOADS_IN_FLIGHT = 2;
 // Flattens the points and line and polygon vertices of some features into lat,lng pairs in
 // degrees.
 function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
@@ -206,6 +202,8 @@ export interface State {
   collection: Collection|undefined;
   collectionStatus: CollectionStatus;
   features: FeatureListState;
+  // Set while files the collection can import are dragged over the viewer
+  fileDragged: boolean;
   // The map layer object open in the dialog, when no feature is selected
   inspected: InspectedObject|undefined;
   // How far the line, polygon, or measurement under construction reaches, shown beside the
@@ -289,6 +287,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private pointer: [number, number]|undefined;
   // Settles once the login popup closes and the user is fetched, so concurrent callers share it
   private login: Promise<void>|undefined;
+  // Settles once a new collection is created, so concurrent saves and uploads share one
+  private creatingCollection: Promise<string>|undefined;
   private readonly loginPopup: LoginPopup;
   private readonly saves: SaveQueue;
   // What the layer tree starts as, which saved layer settings are relative to
@@ -757,12 +757,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const schema = checkExists(getPickSchema(entry));
     const title = 'layers' in schema ? undefined : schema.title;
     const titleValue = title && data[title.key];
-    const element =
+    const osm =
         typeof titleValue !== 'number' ? undefined
             : title?.kind === 'osm_point' ? osmElementOf(titleValue)
             : title?.kind === 'osm_way' ? {type: 'way' as const, id: titleValue}
             : undefined;
-    const osm = element ? {...element, tags: 'loading' as const} : undefined;
     const station = entry.weatherStation ? data[entry.weatherStation.id] : undefined;
     const reports = entry.weatherStation ? String(data[entry.weatherStation.reports] ?? '') : '';
     const weather =
@@ -771,7 +770,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               station,
               metar: reports.includes('METAR'),
               taf: reports.includes('TAF'),
-              report: 'loading' as const,
             }
             : undefined;
     const common = {data, schema, osm, weather};
@@ -799,12 +797,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       });
     } else {
       this.updateState({...this.state, inspected: {...common, kind: 'polygon'}});
-    }
-    if (osm) {
-      this.loadOsmTags(osm.type, osm.id);
-    }
-    if (weather) {
-      this.loadAviationWeather(weather.station, weather.metar, weather.taf);
     }
   }
 
@@ -938,6 +930,35 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   featureTreeDropped(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.drop(e.detail as DragEvent, undefined);
+  }
+
+  // Covers the sidebar too, so a drop that misses the map by a few pixels still imports instead of
+  // opening the file in the tab.
+  filesDraggedOver(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const transfer = (e.detail as DragEvent).dataTransfer;
+    if (transfer?.types.includes('Files') && !this.store.isReadOnly()) {
+      e.detail.preventDefault();
+      transfer.dropEffect = 'copy';
+      this.setFileDragged(true);
+    }
+  }
+
+  // Moving between the viewer's children leaves one for another inside it, which keeps the drag.
+  filesDragLeft(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    const related = e.detail.relatedTarget;
+    if (!(related instanceof Node) || !e.actionElement.element().contains(related)) {
+      this.setFileDragged(false);
+    }
+  }
+
+  filesDropped(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.setFileDragged(false);
+    const transfer = (e.detail as DragEvent).dataTransfer;
+    if (!transfer?.types.includes('Files') || this.store.isReadOnly()) {
+      return;
+    }
+    e.detail.preventDefault();
+    this.importFiles(Array.from(transfer.files));
   }
 
   featureDragEnded(): void {
@@ -1108,8 +1129,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const counts = new Map<string, number>();
     for (const feature of this.store.all()) {
       const value = feature.data[id];
-      const icon = typeof value === 'string' ? importableIcon(value) : undefined;
-      if (icon) {
+      const icon = typeof value === 'string' ? pointIcon(value) : DEFAULT_ICON;
+      if (icon !== DEFAULT_ICON) {
         counts.set(icon, (counts.get(icon) ?? 0) + 1);
       }
     }
@@ -1121,8 +1142,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       color: fill ?? DEFAULT_COLOR,
       current: typeof current === 'string' ? current : undefined,
       onChosen: icon => {
-        this.editField(id, icon);
+        // An upload can finish after somebody closed the picker and selected something else.
+        if (this.selected === selected.id) {
+          this.editField(id, icon);
+        }
       },
+      upload: file => this.uploadIcon(file),
       used: [...counts].sort((a, b) => b[1] - a[1]).map(([icon]) => icon),
     })).catch(() => {});
   }
@@ -1321,7 +1346,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               newCollection: () => this.history.goTo('/'),
               openCollection: collection => this.openCollection(collection),
               openSettings: () => this.openSettings(),
-              importFiles: () => this.importFiles(),
+              importFiles: () => this.pickImportFiles(),
               exportFiles: () => this.exportFiles(),
             });
         this.openMenu(items, trigger);
@@ -1450,6 +1475,22 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.addFeature(line);
   }
 
+  // Returns the field that points take their icon from, if it's a field of type icon. Only then
+  // can a photo become a point's icon.
+  private getImageIconField(): string|undefined {
+    const schema = this.store.schema();
+    const channel = channelOf(schema, 'point', 'icon');
+    return channel.kind === 'field' && getField(schema, 'point', channel.key)?.type === 'icon'
+        ? channel.key
+        : undefined;
+  }
+
+  private uploadIcon(file: File): Promise<string> {
+    return this.currentCollection()
+        .then(collection => uploadImage(collection, file))
+        .then(({id}) => getImageIcon(id));
+  }
+
   // Starts a feature somebody made in the selected folder, or else beside the selected feature,
   // with its fields' defaults, and selects it.
   private addFeature(feature: EditableFeature): void {
@@ -1552,53 +1593,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
     this.lineProfiler.forget();
     return undefined;
-  }
-
-  private loadOsmTags(type: 'node'|'relation'|'way', id: number): void {
-    const loading: Future<GetOsmTagsResponse> =
-        requestData(
-            'lat.trails.DataService/GetOsmTags', {type: OSM_ELEMENT_TYPES[type], id: BigInt(id)});
-    this.loadInspected(loading, (inspected, response) =>
-        inspected.osm
-            ? {
-              ...inspected,
-              osm: {...inspected.osm, tags: response === 'failed' ? response : response.tags},
-            }
-            : undefined);
-  }
-
-  private loadAviationWeather(station: string, metar: boolean, taf: boolean): void {
-    // The cache never expires, so reopening a station would show the report it had the first
-    // time. The server caches for a few minutes instead.
-    invalidateCache(method => method === 'lat.trails.DataService/GetAviationWeather');
-    const loading: Future<GetAviationWeatherResponse> =
-        requestData('lat.trails.DataService/GetAviationWeather', {station, metar, taf});
-    this.loadInspected(loading, (inspected, report) =>
-        inspected.weather ? {...inspected, weather: {...inspected.weather, report}} : undefined);
-  }
-
-  // Applies a load's answer to the inspected object, or drops it when another record has opened
-  // since or patch has nothing to put it on.
-  private loadInspected<T>(
-      loading: Promise<T>,
-      patch: (inspected: InspectedObject, response: T|'failed') => InspectedObject|undefined):
-      void {
-    const opened = this.inspected;
-    loading
-        .then(
-            response => response,
-            e => {
-              console.error(e);
-              return 'failed' as const;
-            })
-        .then(response => {
-          const inspected = this.state.inspected;
-          const patched =
-              opened === this.inspected && inspected ? patch(inspected, response) : undefined;
-          if (patched) {
-            this.updateState({...this.state, inspected: patched});
-          }
-        });
   }
 
   searchChanged(e: CorgiEvent<typeof CHANGED>): void {
@@ -1721,6 +1715,12 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const before = snapshot(live);
     const after = {...snapshot(live), data: stripUndefined({...live.data, folder_id: folder})};
     this.store.apply([{id: live.id, before, after}]);
+  }
+
+  private setFileDragged(fileDragged: boolean): void {
+    if (this.state.fileDragged !== fileDragged) {
+      this.updateState({...this.state, fileDragged});
+    }
   }
 
   private setDropTarget(target: {folder: string|undefined}|undefined): void {
@@ -1910,6 +1910,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.updateState({...this.state, collection: updated});
         }
       },
+      uploadIcon: file => this.uploadIcon(file),
     })).catch(() => {});
   }
 
@@ -2008,24 +2009,41 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         });
   }
 
-  private importFiles(): void {
+  private pickImportFiles(): void {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.geojson,.gpx,.json,application/geo+json,application/gpx+xml';
+    input.accept = '.geojson,.gpx,.json,application/geo+json,application/gpx+xml,image/*';
     input.multiple = true;
     input.addEventListener('change', () => {
-      const files = Array.from(input.files ?? []);
-      Promise.all(files.map(file => this.importOne(file)))
-          .then(results => {
-            // One edit for the whole pick, so that a single undo takes back everything it added.
-            this.store.apply(results.flatMap(r => r.changes));
-            const failed = results.flatMap(r => r.failed ? [r.failed] : []);
-            if (failed.length > 0) {
-              this.dialog.display(ImportFailedDialog({files: failed})).catch(() => {});
-            }
-          });
+      this.importFiles(Array.from(input.files ?? []));
     });
     input.click();
+  }
+
+  // Applies everything as one edit, so that a single undo takes back everything it added. Photos
+  // upload UPLOADS_IN_FLIGHT at a time so that one person's drop leaves the API server's other
+  // encodes to everybody else.
+  private importFiles(files: File[]): void {
+    const generation = this.collectionGeneration;
+    const stale = () => generation !== this.collectionGeneration;
+    const queue = [...files];
+    const results: Array<{changes: Change[]; failed?: string}> = [];
+    const importNext = async (): Promise<void> => {
+      for (let file = queue.shift(); file && !stale(); file = queue.shift()) {
+        results.push(await this.importOne(file));
+      }
+    };
+    Promise.all(Array.from({length: UPLOADS_IN_FLIGHT}, importNext)).then(() => {
+      // Another collection was opened meanwhile, and these changes belong to the one before.
+      if (stale()) {
+        return;
+      }
+      this.store.apply(results.flatMap(r => r.changes));
+      const failed = results.flatMap(r => r.failed ? [r.failed] : []);
+      if (failed.length > 0) {
+        this.dialog.display(ImportFailedDialog({files: failed})).catch(() => {});
+      }
+    });
   }
 
   private exportFiles(): void {
@@ -2052,38 +2070,70 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     URL.revokeObjectURL(url);
   }
 
-  // Wraps the file's features in a folder named after it, so that importing a pile of files does
-  // not bury the collection's root. Reports the file's name when it yielded nothing, so that
-  // picking several files names every one that failed in a single dialog.
+  // Reports the file's name when it yielded nothing, so that importing several files names every
+  // one that failed in a single dialog.
   private importOne(file: File): Promise<{changes: Change[]; failed?: string}> {
-    return file.text()
-        .then(text => {
-          const features = parseImport(text);
-          // A GPX carrying only routes parses and still leaves nothing to draw, which looks the
-          // same to somebody who picked a file and watched the map not change.
-          if (features.length === 0) {
-            return {changes: [], failed: file.name};
-          }
-
-          const folder: EditableFeature = {
-            kind: 'folder',
-            id: crypto.randomUUID(),
-            version: 0n,
-            data: {name: file.name.replace(/\.[^.]*$/, '')},
-          };
-          const schema = this.store.schema();
-          for (const feature of features) {
-            feature.data.folder_id ??= folder.id;
-            adoptImported(schema, feature);
-            feature.data = withDefaults(schema, feature);
-          }
-          return {
-            changes: [folder, ...features].map(f => ({id: f.id, before: undefined, after: f})),
-          };
-        })
-        .catch(e => {
+    const changes =
+        file.type.startsWith('image/') ? this.importImage(file) : this.importFeatures(file);
+    return changes.then(
+        changes => changes.length > 0 ? {changes} : {changes, failed: file.name},
+        e => {
           console.error(e);
           return {changes: [], failed: file.name};
+        });
+  }
+
+  // Wraps the file's features in a folder named after it, so that importing a pile of files does
+  // not bury the collection's root.
+  private importFeatures(file: File): Promise<Change[]> {
+    return file.text().then(text => {
+      const features = parseImport(text);
+      // A GPX carrying only routes parses and still leaves nothing to draw, which looks the same
+      // to somebody who picked a file and watched the map not change.
+      if (features.length === 0) {
+        return [];
+      }
+
+      const folder: EditableFeature = {
+        kind: 'folder',
+        id: crypto.randomUUID(),
+        version: 0n,
+        data: {name: file.name.replace(/\.[^.]*$/, '')},
+      };
+      const schema = this.store.schema();
+      for (const feature of features) {
+        feature.data.folder_id ??= folder.id;
+        adoptImported(schema, feature);
+        feature.data = withDefaults(schema, feature);
+      }
+      return [folder, ...features].map(f => ({id: f.id, before: undefined, after: f}));
+    });
+  }
+
+  // Makes a point that shows the photo, where it was geotagged or else in the middle of the map.
+  private importImage(file: File): Promise<Change[]> {
+    const field = this.getImageIconField();
+    if (field === undefined) {
+      return Promise.reject(new Error('Points have no icon field to show a photo in'));
+    }
+    return this.currentCollection()
+        .then(collection => uploadImage(collection, file))
+        .then(({id, location}) => {
+          const at =
+              location
+                  ? S2LatLng.fromDegrees(location.latDegrees, location.lngDegrees)
+                  : this.mapController.camera.center;
+          const point: EditableFeature = {
+            kind: 'point',
+            id: crypto.randomUUID(),
+            version: 0n,
+            data: {[field]: getImageIcon(id)},
+            latE7: Math.round(at.latDegrees() * 1e7),
+            lngE7: Math.round(at.lngDegrees() * 1e7),
+            elevationCentimeters: undefined,
+          };
+          point.data = withDefaults(this.store.schema(), point);
+          return [{id: point.id, before: undefined, after: point}];
         });
   }
 
@@ -2123,7 +2173,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return Promise.resolve(this.routedCollection);
     }
 
-    return this.requireLogin()
+    this.creatingCollection ??= this.requireLogin()
         .then(() => {
           const created: Future<CreateCollectionResponse> =
               requestData(
@@ -2143,7 +2193,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           this.history.replaceTo(`/collection/${collection.id}`);
           this.saveViewState();
           return collection.id;
+        })
+        .finally(() => {
+          this.creatingCollection = undefined;
         });
+    return this.creatingCollection;
   }
 
   private setHidden(ids: Iterable<string>): void {
@@ -2526,3 +2580,4 @@ function osmElementOf(pointId: number): {type: 'node'|'relation'|'way'; id: numb
   const {type, id} = getPointSource(BigInt(pointId));
   return {type, id: Number(id)};
 }
+

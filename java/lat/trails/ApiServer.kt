@@ -16,6 +16,7 @@ import com.zaxxer.hikari.HikariDataSource
 import io.javalin.Javalin
 import io.javalin.http.BadRequestResponse
 import io.javalin.http.ConflictResponse
+import io.javalin.http.ContentTooLargeResponse
 import io.javalin.http.Context
 import io.javalin.http.ForbiddenResponse
 import io.javalin.http.Header
@@ -36,7 +37,10 @@ import java.util.concurrent.Future
 import kotlin.collections.ArrayList
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import lat.trails.common.BOUND_COLUMNS
 import lat.trails.common.UPDATE_BOUND
 import lat.trails.common.assemblePolygon
@@ -96,9 +100,11 @@ import lat.trails.proto.Sharing
 import lat.trails.proto.UpdateCollectionRequest
 import lat.trails.proto.UpdateCollectionResponse
 import lat.trails.proto.Write
+import lat.trails.wire.IMAGE_SIZES
 import lat.trails.wire.KIND_PACKED_PATH
 import lat.trails.wire.KIND_PACKED_POINT
 import lat.trails.wire.KIND_UUID_JSON
+import lat.trails.wire.MAX_ORIGINAL_SIZE_BYTES
 import lat.trails.wire.MAX_LINES_BY_ID
 import lat.trails.wire.OBJECTS_WIRE_VERSION
 import lat.trails.wire.TRAILCATALOG_PATHS_COLLECTION_ID
@@ -127,9 +133,17 @@ import kotlin.use
 @FlagSpec("port")
 private val port = createFlag(7051)
 
+@FlagSpec("image_directory")
+private val imageDirectory = createFlag("")
+
+@FlagSpec("image_encoder_socket")
+private val imageEncoderSocket = createFlag("")
+
 private lateinit var epochTracker: EpochTracker
 private lateinit var hikari: HikariDataSource
 private lateinit var hikariTrailcatalog: HikariDataSource
+private lateinit var imageEncoder: ImageEncoder
+private lateinit var localImages: LocalImages
 
 private val logger = LoggerFactory.getLogger("ApiServer")
 // Fails on trailing tokens or else jsonOrEmptyObject passes data that the jsonb cast rejects.
@@ -160,12 +174,20 @@ fun main(args: Array<String>) {
   hikari = createBaseConnection()
   hikariTrailcatalog = createTrailcatalogConnection()
   epochTracker = EpochTracker(hikariTrailcatalog)
+  if (imageDirectory.value.isEmpty() || imageEncoderSocket.value.isEmpty()) {
+    throw IllegalArgumentException("--image_directory and --image_encoder_socket are required")
+  }
+  imageEncoder = ImageEncoder(Path.of(imageEncoderSocket.value))
+  localImages = LocalImages(Path.of(imageDirectory.value))
+  Thread.ofVirtual().start(::purgeImagesForever)
   // We trust X-User-ID without checking it, so only the frontend on this host may reach us.
   Javalin.create { config ->
     config.routes.post("/api/data", ::fetchData)
     config.routes.get("/api/collections/{id}/covering", ::fetchCollectionCovering)
     config.routes.get("/api/collections/{id}/objects/{cell}", ::fetchCollectionObjects)
     config.routes.get("/api/collections/{id}/lines", ::fetchCollectionLines)
+    config.routes.post("/api/collections/{id}/images", ::uploadImage)
+    config.routes.get("/api/images/{id}/{size}", ::fetchImage)
   }.start("127.0.0.1", port.value)
 }
 
@@ -350,8 +372,12 @@ private fun deleteAccount(ctx: Context): DeleteAccountResponse {
       deleteCollectionRows(connection, collection)
     }
 
-    // Only owners create invites, so deleting the owned collections took all of theirs.
+    // Only owners create invites, so deleting the owned collections took all of theirs. What they
+    // uploaded into other people's collections goes too, and a feature there that shows one of
+    // those images falls back to the default icon.
     for (sql in listOf(
+        "WITH deleted AS (DELETE FROM images WHERE uploader_id = ? RETURNING id) "
+            + "INSERT INTO image_deletions (image_id) SELECT id FROM deleted",
         "DELETE FROM collection_grants WHERE grantee_id = ?",
         "DELETE FROM view_states WHERE user_id = ?",
         "DELETE FROM logins WHERE user_id = ?",
@@ -685,6 +711,8 @@ private fun deleteCollectionRows(connection: Connection, collection: UUID) {
       "DELETE FROM collection_grants WHERE collection_id = ?",
       "DELETE FROM collection_invites WHERE collection_id = ?",
       "DELETE FROM view_states WHERE collection_id = ?",
+      "WITH deleted AS (DELETE FROM images WHERE collection_id = ? RETURNING id) "
+          + "INSERT INTO image_deletions (image_id) SELECT id FROM deleted",
       "DELETE FROM folders WHERE collection = ?",
       "DELETE FROM lines WHERE collection = ?",
       "DELETE FROM points WHERE collection = ?",
@@ -847,10 +875,7 @@ private fun setViewState(ctx: Context, request: SetViewStateRequest): SetViewSta
   val collection = parseUuid(request.collectionId)
   val hidden = request.hiddenFeatureIdsList.map { parseUuid(it) }.distinct()
   hikari.connection.use { connection ->
-    val access = getCollectionAccess(connection, collection, user) ?: throw NotFoundResponse()
-    if (!canEdit(access.role)) {
-      throw ForbiddenResponse()
-    }
+    requireEditor(connection, collection, user)
 
     connection
         .prepareStatement(
@@ -1492,11 +1517,7 @@ private fun jsonOrEmptyObject(data: String): String {
 // geometry change, and so that concurrent saves to one collection apply one after the other.
 private fun lockEditableCollection(connection: Connection, collection: UUID, user: UUID): Access {
   lockCollectionRow(connection, collection)
-  val access = getCollectionAccess(connection, collection, user) ?: throw NotFoundResponse()
-  if (!canEdit(access.role)) {
-    throw ForbiddenResponse()
-  }
-  return access
+  return requireEditor(connection, collection, user)
 }
 
 private fun lockOwnedCollection(connection: Connection, collection: UUID, user: UUID) {
@@ -1550,6 +1571,14 @@ private fun requireOwner(connection: Connection, collection: UUID, user: UUID) {
   if (access.role != Role.ROLE_OWNER) {
     throw ForbiddenResponse()
   }
+}
+
+private fun requireEditor(connection: Connection, collection: UUID, user: UUID): Access {
+  val access = getCollectionAccess(connection, collection, user) ?: throw NotFoundResponse()
+  if (!canEdit(access.role)) {
+    throw ForbiddenResponse()
+  }
+  return access
 }
 
 private fun canEdit(role: Role): Boolean {
@@ -1716,6 +1745,153 @@ private fun <B : Message.Builder> B.mergeJson(json: JsonNode?): B {
     JSON_PARSER.merge(json.toString(), this)
   }
   return this
+}
+
+// We insert the row before writing the files so that every file has a row, and deleting the row
+// queues the files' deletion. Nobody can name the image until we answer, so no reader finds the
+// row before its files exist.
+private fun uploadImage(ctx: Context) {
+  val user = requireUser(ctx)
+  val collection = parseUuid(ctx.pathParam("id"))
+  if (ctx.contentLength() !in 1..MAX_ORIGINAL_SIZE_BYTES) {
+    throw ContentTooLargeResponse()
+  }
+
+  // We check access before encoding, so someone who can't edit the collection can't make us spend
+  // time encoding.
+  hikari.connection.use { connection ->
+    requireEditor(connection, collection, user)
+  }
+  val encoded = imageEncoder.encode(ctx.bodyInputStream())
+
+  val id = UUID.randomUUID()
+  val name = toImageName(ctx.queryParam("name"))
+  transact { connection ->
+    // We lock the collection so that a DeleteCollection running at the same time either sees this
+    // row and deletes it, or runs first and leaves us no collection to insert into.
+    lockEditableCollection(connection, collection, user)
+    connection
+        .prepareStatement(
+            "INSERT INTO images (id, collection_id, uploader_id, name, exif) "
+                + "VALUES (?, ?, ?, ?, ?::jsonb)")
+        .apply {
+          setObject(1, id)
+          setObject(2, collection)
+          setObject(3, user)
+          setString(4, name)
+          setString(5, encoded.exif.toString())
+        }
+        .executeUpdate()
+  }
+  for ((i, size) in IMAGE_SIZES.withIndex()) {
+    localImages.write(id, size.first, encoded.sizes[i])
+  }
+  ctx.json(
+      buildMap {
+        put("id", id.toString())
+        encoded.location?.let { put("location", it) }
+      })
+}
+
+private fun fetchImage(ctx: Context) {
+  val image = parseUuid(ctx.pathParam("id"))
+  val size = ctx.pathParam("size")
+  if (IMAGE_SIZES.none { it.first == size }) {
+    throw NotFoundResponse()
+  }
+
+  val name = hikari.connection.use { connection ->
+    val (collection, name) =
+        connection
+            .prepareStatement("SELECT collection_id, name FROM images WHERE id = ?")
+            .apply {
+              setObject(1, image)
+            }
+            .executeQuery()
+            .use { results ->
+              if (!results.next()) {
+                throw NotFoundResponse()
+              }
+              results.getObject(1) as UUID to results.getString(2)
+            }
+    // A viewer who can't read the image's collection gets the same 404 as for a missing image.
+    getCollectionAccess(connection, collection, optionalUser(ctx)) ?: throw NotFoundResponse()
+    name
+  }
+
+  // Cacheable forever, because an image's files never change. Replacing an image uploads a new
+  // one with a new id.
+  ctx.header("Cache-Control", "private,max-age=31536000,immutable")
+  ctx.header("X-Content-Type-Options", "nosniff")
+  // The encoder could have been taken over and answered with something other than an image.
+  ctx.header("Content-Security-Policy", "sandbox; default-src 'none'")
+  ctx.contentType("image/webp")
+  // https://www.rfc-editor.org/rfc/rfc6266#section-4.3
+  val encodedName =
+      URLEncoder.encode(name, StandardCharsets.UTF_8).replace("+", "%20").replace("*", "%2A")
+  ctx.header("Content-Disposition", "inline; filename*=UTF-8''${encodedName}")
+  ctx.result(Files.newInputStream(localImages.path(image, size)))
+}
+
+// Swaps the original's extension for .webp, because the encoder re-encodes every upload as WebP.
+// Browsers send only a base name, so dropping path separators and control characters is enough to
+// keep it a file name.
+private fun toImageName(original: String?): String {
+  val stem =
+      (original ?: "")
+          .substringBeforeLast('.')
+          .filterNot { it.isISOControl() || it == '/' || it == '\\' }
+          .trim()
+          .take(200)
+  return "${stem.ifEmpty { "image" }}.webp"
+}
+
+private const val PURGE_BATCH_SIZE = 100
+private const val PURGE_INTERVAL_MS = 60 * 1000L
+
+private fun purgeImagesForever() {
+  while (true) {
+    val purged =
+        try {
+          purgeImages()
+        } catch (e: Exception) {
+          logger.error("Purging images failed", e)
+          0
+        }
+    if (purged < PURGE_BATCH_SIZE) {
+      Thread.sleep(PURGE_INTERVAL_MS)
+    }
+  }
+}
+
+// We delete the files before the queue rows. If something fails partway, the rows are still there
+// and the next pass tries again.
+private fun purgeImages(): Int {
+  return transact { connection ->
+    val ids = ArrayList<UUID>()
+    connection
+        .prepareStatement(
+            "SELECT image_id FROM image_deletions LIMIT ? FOR UPDATE SKIP LOCKED")
+        .apply {
+          setInt(1, PURGE_BATCH_SIZE)
+        }
+        .executeQuery()
+        .use { results ->
+          while (results.next()) {
+            ids.add(results.getObject(1) as UUID)
+          }
+        }
+    for (id in ids) {
+      localImages.delete(id)
+    }
+    connection
+        .prepareStatement("DELETE FROM image_deletions WHERE image_id = ANY (?)")
+        .apply {
+          setArray(1, connection.createArrayOf("UUID", ids.toTypedArray()))
+        }
+        .executeUpdate()
+    ids.size
+  }
 }
 
 private data class WireLine(val id: UUID, val data: String, val latLngDegrees: ByteArray)

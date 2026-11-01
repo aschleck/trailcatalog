@@ -7,13 +7,12 @@ import { DIALOG, DialogHeader } from 'js/pika/dialog';
 
 export function ImportFailedDialog({files}: {files: string[]}) {
   return <>
-    <Shell title="Nothing imported">
-      <p>We found nothing to import in:</p>
+    <Shell title="Import failed">
       <ul className="list-disc list-inside mt-2">
         {files.map(file => <li>{file}</li>)}
       </ul>
       <p className="mt-2">
-        We import GPX waypoints and tracks, and GeoJSON points, lines, polygons, and folders.
+        Only the following file types are supported: images, GPX, and GeoJSON
       </p>
     </Shell>
   </>;

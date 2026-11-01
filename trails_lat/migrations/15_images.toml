@@ -1,0 +1,76 @@
+[[actions]]
+type = "create_table"
+name = "images"
+primary_key = ["id"]
+
+  [[actions.columns]]
+  name = "id"
+  nullable = false
+  type = "UUID"
+
+  # Whoever can read this collection can see the image, wherever an image:<id> icon names it.
+  [[actions.columns]]
+  name = "collection_id"
+  nullable = false
+  type = "UUID"
+
+  [[actions.columns]]
+  name = "uploader_id"
+  nullable = false
+  type = "UUID"
+
+  # The uploaded file's name, with the extension of the WebP we store instead
+  [[actions.columns]]
+  name = "name"
+  nullable = false
+  type = "TEXT"
+
+  # The EXIF fields the encoder copied into the display WebP, by exiftool's tag names
+  [[actions.columns]]
+  name = "exif"
+  nullable = false
+  type = "JSONB"
+
+  [[actions.columns]]
+  name = "created"
+  nullable = false
+  type = "TIMESTAMPTZ"
+  default = "NOW()"
+
+  [[actions.foreign_keys]]
+  columns = ["collection_id"]
+  referenced_table = "collections"
+  referenced_columns = ["id"]
+
+  [[actions.foreign_keys]]
+  columns = ["uploader_id"]
+  referenced_table = "users"
+  referenced_columns = ["id"]
+
+[[actions]]
+type = "add_index"
+table = "images"
+
+  [actions.index]
+  name = "images_by_collection_id"
+  columns = ["collection_id"]
+
+[[actions]]
+type = "add_index"
+table = "images"
+
+  # Enables account deletion to find the user's images quickly
+  [actions.index]
+  name = "images_by_uploader_id"
+  columns = ["uploader_id"]
+
+[[actions]]
+type = "create_table"
+name = "image_deletions"
+primary_key = ["image_id"]
+
+  # No foreign key because the images row is deleted in the same transaction that queues this.
+  [[actions.columns]]
+  name = "image_id"
+  nullable = false
+  type = "UUID"

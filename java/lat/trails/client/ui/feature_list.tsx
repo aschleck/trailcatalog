@@ -1,4 +1,8 @@
+import { Future } from 'external/dev_april_corgi+/js/common/futures';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { EmptyDeps } from 'external/dev_april_corgi+/js/corgi/deps';
+import { invalidateCache } from 'external/dev_april_corgi+/js/data/caching';
 import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
@@ -6,16 +10,21 @@ import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
 import { DangerButton, PanelButton, PanelCloseButton } from 'js/pika/buttons';
 import { formatTemperature, METERS_PER_FOOT, METERS_PER_MILE } from 'js/units/formatters';
+import { CommonsImageCarousel } from 'js/wikimedia/commons_images';
 import {
   AviationConditions,
   GetAviationWeatherResponse,
+  GetOsmTagsResponse,
   Metar,
+  OsmElementType,
   Taf,
   TafPeriod,
 } from 'trails_lat/proto/data_pb';
 
+import { requestData } from '../data/data';
 import { FIELD_EDITED, FIELD_ICON_CLICKED } from '../model/events';
 import { EditableFeature, EditableFolder, getParents } from '../model/features';
+import { getIconImageId, getImageUrl } from '../model/images';
 import {
   FeatureContent,
   fieldsFor,
@@ -56,18 +65,16 @@ export interface TreeItem {
   children: TreeItem[];
 }
 
-export interface OsmElementState {
+export interface OsmElement {
   type: 'node'|'relation'|'way';
   id: number;
-  tags: {[key: string]: string}|'loading'|'failed';
 }
 
-export interface AviationWeatherState {
+export interface WeatherStation {
   station: string;
   // Whether the station publishes each
   metar: boolean;
   taf: boolean;
-  report: GetAviationWeatherResponse|'loading'|'failed';
 }
 
 export type InspectedObject = {
@@ -75,9 +82,9 @@ export type InspectedObject = {
   // A CollectionSchema for an object from a reference collection, so it reads like a feature
   schema: Schema|CollectionSchema;
   // Set when the schema titles the object by its OpenStreetMap node or way
-  osm: OsmElementState|undefined;
+  osm: OsmElement|undefined;
   // Set for a weather station, see LayerEntry#weatherStation
-  weather: AviationWeatherState|undefined;
+  weather: WeatherStation|undefined;
 } & ({
   kind: 'line';
   // Measured along the tile's geometry, which is simplified for the zoom it loaded at
@@ -364,6 +371,7 @@ export function Properties({profile, subject}: {
               </a>
             : ''
         }
+        {subject.source === 'feature' ? <PointPhoto subject={subject} /> : ''}
         {editing
             ? ''
             : paragraphs.map(text => <div className="whitespace-pre-wrap">{text}</div>)
@@ -389,11 +397,14 @@ export function Properties({profile, subject}: {
         }
         {profile ? <LineProfile source="line" state={profile} /> : ''}
         {osm
-            ? <OsmTags tags={osm.tags} />
+            ? <OsmTags element={osm} key={`${osm.type}/${osm.id}`} />
             : fields.length > 0 && !editing ? <DataTable rows={fields} /> : ''
         }
         {subject.source === 'object' && subject.object.weather
-            ? <AviationWeather state={subject.object.weather} />
+            ? <AviationWeather
+                  key={subject.object.weather.station}
+                  station={subject.object.weather}
+              />
             : ''
         }
         {editing
@@ -533,30 +544,137 @@ function objectText({data, kind, schema}: InspectedObject): ReadOnlyText {
   return {title: getObjectTitle(schema, {kind, data}), paragraphs: [], fields: []};
 }
 
-function OsmTags({tags}: {tags: OsmElementState['tags']}) {
-  return tags === 'loading'
-      ? <div className="text-gray-500">Loading tags</div>
-      : tags === 'failed'
-          ? <div className="text-gray-500">Failed to load tags</div>
-          : <DataTable rows={Object.entries(tags).sort(([a], [b]) => a.localeCompare(b))} />;
+// The photo a point shows as its icon, at the size it was uploaded for
+function PointPhoto({subject}: {subject: Subject & {source: 'feature'}}) {
+  const {feature, schema} = subject;
+  const image =
+      feature.kind === 'point' ? getIconImageId(pointLook(schema, feature.data)?.icon) : undefined;
+  if (image === undefined) {
+    return <></>;
+  }
+  const url = getImageUrl(image, 'display');
+  return (
+    <a href={url} rel="noopener" target="_blank">
+      <img alt="" className="bg-gray-100 max-h-80 object-contain rounded w-full" src={url} />
+    </a>
+  );
 }
 
-function AviationWeather({state}: {state: AviationWeatherState}) {
-  const report = state.report;
-  if (report === 'loading' || report === 'failed') {
-    return (
-      <div className="text-gray-500">
-        {report === 'loading' ? 'Loading weather' : 'Failed to load weather'}
-      </div>
-    );
-  }
+const OSM_ELEMENT_TYPES = {
+  node: OsmElementType.NODE,
+  relation: OsmElementType.RELATION,
+  way: OsmElementType.WAY,
+} as const;
 
+type Loaded<T> = T|'loading'|'failed';
+
+interface OsmTagsState {
+  tags: Loaded<{[key: string]: string}>;
+}
+
+// Keyed by element, because it loads only when created.
+function OsmTags(
+    {element, ...props}: {element: OsmElement; key: string} & corgi.Properties,
+    state: OsmTagsState|undefined,
+    updateState: (newState: OsmTagsState) => void) {
+  const tags = state?.tags ?? 'loading';
   return (
-    <div className="flex flex-col gap-2">
-      {state.metar ? <MetarSection metar={report.metar} /> : ''}
-      {state.taf ? <TafSection taf={report.taf} /> : ''}
+    <div
+        js={corgi.bind({
+          controller: OsmTagsController,
+          args: {element},
+          state: [state ?? {tags}, updateState],
+        })}
+        className="contents"
+        {...props}
+    >
+      {typeof tags === 'object'
+          ? <CommonsImageCarousel key={`${element.type}/${element.id}`} tags={tags} />
+          : ''
+      }
+      {tags === 'loading'
+          ? <div className="text-gray-500">Loading tags</div>
+          : tags === 'failed'
+              ? <div className="text-gray-500">Failed to load tags</div>
+              : <DataTable rows={Object.entries(tags).sort(([a], [b]) => a.localeCompare(b))} />
+      }
     </div>
   );
+}
+
+class OsmTagsController
+    extends Controller<{element: OsmElement}, EmptyDeps, HTMLElement, OsmTagsState> {
+
+  constructor(response: Response<OsmTagsController>) {
+    super(response);
+    const {type, id} = response.args.element;
+    const loading: Future<GetOsmTagsResponse> =
+        requestData(
+            'lat.trails.DataService/GetOsmTags', {type: OSM_ELEMENT_TYPES[type], id: BigInt(id)});
+    orFailed(loading).then(response => {
+      this.updateState({tags: response === 'failed' ? response : response.tags});
+    });
+  }
+}
+
+interface AviationWeatherState {
+  report: Loaded<GetAviationWeatherResponse>;
+}
+
+// Keyed by station, because it loads only when created.
+function AviationWeather(
+    {station, ...props}: {key: string; station: WeatherStation} & corgi.Properties,
+    state: AviationWeatherState|undefined,
+    updateState: (newState: AviationWeatherState) => void) {
+  const report = state?.report ?? 'loading';
+  return (
+    <div
+        js={corgi.bind({
+          controller: AviationWeatherController,
+          args: {station},
+          state: [state ?? {report}, updateState],
+        })}
+        className="flex flex-col gap-2"
+        {...props}
+    >
+      {report === 'loading' || report === 'failed'
+          ? <div className="text-gray-500">
+              {report === 'loading' ? 'Loading weather' : 'Failed to load weather'}
+            </div>
+          : [
+            station.metar ? <MetarSection metar={report.metar} /> : '',
+            station.taf ? <TafSection taf={report.taf} /> : '',
+          ]
+      }
+    </div>
+  );
+}
+
+class AviationWeatherController
+    extends Controller<{station: WeatherStation}, EmptyDeps, HTMLElement, AviationWeatherState> {
+
+  constructor(response: Response<AviationWeatherController>) {
+    super(response);
+    const {station, metar, taf} = response.args.station;
+    // The cache never expires, so reopening a station would show the report it had the first
+    // time. The server caches for a few minutes instead.
+    invalidateCache(method => method === 'lat.trails.DataService/GetAviationWeather');
+    const loading: Future<GetAviationWeatherResponse> =
+        requestData('lat.trails.DataService/GetAviationWeather', {station, metar, taf});
+    orFailed(loading).then(report => {
+      this.updateState({report});
+    });
+  }
+}
+
+// Logs the failure, because the dialog only says that it failed.
+function orFailed<T>(loading: Promise<T>): Promise<T|'failed'> {
+  return loading.then(
+      response => response,
+      e => {
+        console.error(e);
+        return 'failed' as const;
+      });
 }
 
 function MetarSection({metar}: {metar: Metar|undefined}) {

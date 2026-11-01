@@ -11,6 +11,7 @@ import {
 } from 'trails_lat/proto/data_pb';
 
 import { DEFAULT_ICON } from '../workers/collection_schema';
+import { getIconImageId } from './images';
 import { SavedSchema } from './schema';
 
 // The jsonb every feature carries. Colors are #rrggbb.
@@ -72,10 +73,13 @@ export function isShape(feature: EditableFeature|undefined): feature is Editable
 export type SaveOp = 'delete'|'put';
 
 /**
- * Returns the glyph a point is drawn as. Plain ASCII is a symbol name from whatever tool wrote the
- * file, like "point", rather than something to draw, so it gets the default too.
+ * Returns the glyph or image icon a point is drawn as. Plain ASCII is a symbol name from whatever
+ * tool wrote the file, like "point", rather than something to draw, so it gets the default too.
  */
 export function pointIcon(icon: string|undefined): string {
+  if (icon && getIconImageId(icon) !== undefined) {
+    return icon;
+  }
   return importableIcon(icon) ?? DEFAULT_ICON;
 }
 

@@ -54,6 +54,11 @@ async function initialize(server: FastifyInstance): Promise<void> {
     base: 'http://127.0.0.1:7051',
   });
 
+  // Image uploads are the original file, which we stream to the API server unparsed.
+  server.addContentTypeParser('application/octet-stream', (request, payload, done) => {
+    done(null, payload);
+  });
+
   server.route({
     url: '/api/*',
     method: ['GET', 'HEAD', 'POST'],
@@ -65,6 +70,8 @@ async function initialize(server: FastifyInstance): Promise<void> {
             'accept-encoding': headers['accept-encoding'],
             'accept-language': headers['accept-language'],
             'cache-control': headers['cache-control'],
+            // the API server refuses an upload without it
+            'content-length': headers['content-length'],
             'if-modified-since': headers['if-modified-since'],
             'if-none-match': headers['if-none-match'],
             'pragma': headers['pragma'],

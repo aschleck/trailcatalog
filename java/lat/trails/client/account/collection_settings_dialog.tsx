@@ -36,6 +36,8 @@ interface Props {
   onDelete: () => Promise<boolean>;
   onSchemaChanged: (schema: CollectionSchema) => void;
   onUpdated: (collection: Collection) => void;
+  // Uploads a photo and returns the icon value that shows it
+  uploadIcon: (file: File) => Promise<string>;
 }
 
 export function CollectionSettingsDialog(props: Props) {
@@ -49,7 +51,7 @@ interface State {
 // Every panel stays rendered while hidden so that switching away keeps its state, and so that
 // sharing writes still in flight finish against a live controller.
 function Settings(
-    {collection, editable, schema, onDelete, onSchemaChanged, onUpdated}: Props,
+    {collection, editable, schema, onDelete, onSchemaChanged, onUpdated, uploadIcon}: Props,
     inState: State|undefined,
     updateState: (newState: State) => void) {
   const sharing = collection.role === Role.OWNER;
@@ -128,6 +130,7 @@ function Settings(
                   shown={state.panel === 'schema' || state.panel === 'style'}
                   styling={state.panel === 'style'}
                   onChanged={onSchemaChanged}
+                  uploadIcon={uploadIcon}
               />
             : ''
         }

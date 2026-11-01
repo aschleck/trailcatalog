@@ -89,6 +89,7 @@ export function OverviewElement(
         dropTarget: undefined,
       },
       drawnLength: undefined,
+      fileDragged: false,
       inspected: undefined,
       joining: undefined,
       layers: {nodes: [], expanded: new Set()},
@@ -186,7 +187,15 @@ export function OverviewElement(
         <MenubarItem label="View" menu="view" onClick="menubarMenuClicked" />
         <MenubarItem label="Help" menu="help" onClick="menubarMenuClicked" />
       </Menubar>
-      <div className="flex flex-col grow min-h-0 md:flex-row">
+      <div
+          className="flex flex-col grow min-h-0 md:flex-row relative"
+          unboundEvents={{
+            dragleave: 'filesDragLeft',
+            dragover: 'filesDraggedOver',
+            drop: 'filesDropped',
+          }}
+      >
+        {state.fileDragged ? <FileDropOverlay /> : ''}
         <div className="grow min-h-0 min-w-0 relative">
           <MapElement
               camera={camera}
@@ -332,4 +341,27 @@ function describe(
     separator = ', ';
   }
   return description;
+}
+
+// Lets the drop land on whatever is under it, so the viewer's own drop handler still runs.
+function FileDropOverlay() {
+  return (
+    <div className="
+        absolute
+        bg-blue-500/10
+        border-2
+        border-blue-500
+        border-dashed
+        flex
+        inset-0
+        items-center
+        justify-center
+        pointer-events-none
+        z-50
+    ">
+      <div className="bg-white px-4 py-2 rounded shadow-lg text-gray-900">
+        Drop photos, GPX, or GeoJSON to import
+      </div>
+    </div>
+  );
 }

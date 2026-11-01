@@ -1,7 +1,7 @@
 package lat.trails.wire
 
 // The schema the latest migration made, which every connection reads through
-const val TRAILS_LAT_SCHEMA = "migration_14_bounds"
+const val TRAILS_LAT_SCHEMA = "migration_15_images"
 
 // The most line ids one lines request carries. 128 ids at 37 characters each is 4.7 KB, under the
 // 8 KB buffer nginx's large_client_header_buffers default holds a request line in.

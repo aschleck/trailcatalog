@@ -7,6 +7,7 @@ tc_ts_project(
     deps = [
         "//:node_modules/@bufbuild/protobuf",
         "//java/lat/trails/client/workers",
+        "//java/lat/trails/wire:wire-ts",
         "//java/org/trailcatalog/models:models-ts",
         "//js/map/common",
         "//js/map/rendering",

@@ -276,6 +276,74 @@ in
     };
   };
 
+  # app in the containers is uid 1000.
+  systemd.tmpfiles.rules = [
+    "d /home/april/trails_lat_images 0700 1000 1000 -"
+    "d /run/trails-lat-image-encoder 0700 1000 1000 -"
+  ];
+
+  # Re-encodes uploaded images, see /home/april/trails_lat_image_encoder.sh. trails-lat-frontend
+  # mounts the socket's directory and is the only thing that can connect.
+  systemd.sockets."trails-lat-image-encoder" = {
+    wantedBy = [ "sockets.target" ];
+    socketConfig = {
+      ListenStream = "/run/trails-lat-image-encoder/encoder.sock";
+      Accept = true;
+      SocketUser = "1000";
+      SocketMode = "0600";
+      # Images.kt runs at most 7 at a time, so more than this is something else connecting.
+      MaxConnections = 14;
+    };
+  };
+
+  # Every original is hostile, so each connection gets its own process with no network, no
+  # capabilities, no writable disk outside its private /tmp, and nothing of /home but the script.
+  systemd.services."trails-lat-image-encoder@" = {
+    path = with pkgs; [
+      bash
+      coreutils
+      exiftool
+      vips
+    ];
+
+    serviceConfig = {
+      ExecStart = "/home/april/trails_lat_image_encoder.sh";
+      StandardInput = "socket";
+      StandardOutput = "socket";
+      StandardError = "journal";
+
+      DynamicUser = true;
+      ProtectHome = "tmpfs";
+      BindReadOnlyPaths = [ "/home/april/trails_lat_image_encoder.sh" ];
+      PrivateNetwork = true;
+      PrivateDevices = true;
+      PrivateUsers = true;
+      RestrictAddressFamilies = "none";
+      RestrictNamespaces = true;
+      CapabilityBoundingSet = "";
+      LockPersonality = true;
+      ProtectClock = true;
+      ProtectControlGroups = true;
+      ProtectHostname = true;
+      ProtectKernelLogs = true;
+      ProtectKernelModules = true;
+      ProtectKernelTunables = true;
+      ProtectProc = "invisible";
+      ProcSubset = "pid";
+      SystemCallArchitectures = "native";
+      SystemCallFilter = [ "@system-service" ];
+
+      # A 100 MP RGB image takes 300 MB, and the HEIF loader decodes the whole image at full size
+      # before shrinking it.
+      MemoryMax = "1G";
+      MemorySwapMax = 0;
+      TasksMax = 16;
+      # A 48 MP HEIC takes about 4 seconds.
+      RuntimeMaxSec = 30;
+      Environment = [ "VIPS_CONCURRENCY=1" ];
+    };
+  };
+
   systemd.services."trailcatalog-frontend" = {
     enable = true;
     after = [ "podman.service" ];
