@@ -18,7 +18,11 @@ export const HALO_EDGE = 0.35;
 export const INK_EDGE = 0.75;
 
 export interface Glyph {
-  index: number;
+  // the glyph's cell in the atlas, in atlas pixels
+  atlasX: number;
+  atlasY: number;
+  atlasWidth: number;
+  atlasHeight: number;
   glyphAdvance: number;
   glyphWidth: number;
   glyphHeight: number;
@@ -27,14 +31,17 @@ export interface Glyph {
   height: number;
 }
 
-const FLOATS_PER_GLYPH = 12;
+/** The size of the glyph atlas texture in pixels. */
+export const SDF_ATLAS_SIZE: Vec2 = [4096, 4096];
+
+const FLOATS_PER_GLYPH = 13;
 
 /** Floats {@link SdfProgram.planPlaced} reads per glyph: an x,y offset in pixels and an angle. */
 export const FLOATS_PER_PLACEMENT = 3;
 
 export class SdfProgram extends Program<SdfProgramData> {
 
-  /** Bytes that {@link plan} will write into the supplied buffer. */
+  /** Bytes that {@link planPlaced} will write into the supplied buffer. */
   static bytesNeeded(glyphCount: number): number {
     return glyphCount * FLOATS_PER_GLYPH * 4;
   }
@@ -64,64 +71,6 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.bindBuffer(gl.COPY_WRITE_BUFFER, null);
   }
 
-  plan(
-      glyphs: Glyph[],
-      center: Vec2,
-      offsetPx: Vec2,
-      scale: number,
-      angle: number,
-      fill: RgbaU32,
-      stroke: RgbaU32,
-      z: number,
-      atlasSize: Vec2,
-      buffer: ArrayBuffer,
-      offset: number,
-      glBuffer: WebGLBuffer,
-  ): {byteSize: number; drawable: Drawable;} {
-    const floats = new Float32Array(buffer, offset);
-    const uint32s = new Uint32Array(buffer, offset);
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-
-    let width = 0;
-    for (const glyph of glyphs) {
-      width += glyph.glyphAdvance * scale;
-    }
-    let xOffset = offsetPx[0] - width / 2 * cos;
-    let yOffset = offsetPx[1] - width / 2 * sin;
-
-    let count = 0;
-    for (const glyph of glyphs) {
-      const charXOffset = xOffset - glyph.glyphTop * scale * sin;
-      const charYOffset = yOffset + glyph.glyphTop * scale * cos;
-
-      count =
-          pushGlyph(
-              floats,
-              uint32s,
-              count,
-              glyph,
-              center[0],
-              center[1],
-              charXOffset,
-              charYOffset,
-              angle,
-              scale,
-              fill,
-              stroke,
-              atlasSize);
-
-      const xAdvance = glyph.glyphAdvance * scale;
-      xOffset += cos * xAdvance;
-      yOffset += sin * xAdvance;
-    }
-
-    return {
-      byteSize: count * 4,
-      drawable: this.drawableFor(glyphs.length, count, z, glBuffer, offset),
-    };
-  }
-
   /**
    * Writes glyphs that share a center but each carry their own offset and rotation, for text that
    * follows a curve rather than a single baseline. Everything past the center is in pixels
@@ -137,7 +86,6 @@ export class SdfProgram extends Program<SdfProgramData> {
       fill: RgbaU32,
       stroke: RgbaU32,
       z: number,
-      atlasSize: Vec2,
       buffer: ArrayBuffer,
       offset: number,
       glBuffer: WebGLBuffer,
@@ -160,8 +108,7 @@ export class SdfProgram extends Program<SdfProgramData> {
               placements[FLOATS_PER_PLACEMENT * i + 2],
               scale,
               fill,
-              stroke,
-              atlasSize);
+              stroke);
     }
 
     return {
@@ -224,10 +171,8 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.size, 1);
     gl.enableVertexAttribArray(this.program.attributes.angle);
     gl.vertexAttribDivisor(this.program.attributes.angle, 1);
-    gl.enableVertexAttribArray(this.program.attributes.atlasIndex);
-    gl.vertexAttribDivisor(this.program.attributes.atlasIndex, 1);
-    gl.enableVertexAttribArray(this.program.attributes.atlasSize);
-    gl.vertexAttribDivisor(this.program.attributes.atlasSize, 1);
+    gl.enableVertexAttribArray(this.program.attributes.atlasRect);
+    gl.vertexAttribDivisor(this.program.attributes.atlasRect, 1);
     gl.enableVertexAttribArray(this.program.attributes.fill);
     gl.vertexAttribDivisor(this.program.attributes.fill, 1);
     gl.enableVertexAttribArray(this.program.attributes.stroke);
@@ -242,53 +187,47 @@ export class SdfProgram extends Program<SdfProgramData> {
         2,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 48,
+        /* stride= */ 52,
         /* offset= */ offset + 0);
     gl.vertexAttribPointer(
         this.program.attributes.offsetPx,
         2,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 48,
+        /* stride= */ 52,
         /* offset= */ offset + 8);
     gl.vertexAttribPointer(
         this.program.attributes.size,
         2,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 48,
+        /* stride= */ 52,
         /* offset= */ offset + 16);
     gl.vertexAttribPointer(
         this.program.attributes.angle,
         1,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 48,
+        /* stride= */ 52,
         /* offset= */ offset + 24);
     gl.vertexAttribIPointer(
-        this.program.attributes.atlasIndex,
-        1,
+        this.program.attributes.atlasRect,
+        4,
         gl.UNSIGNED_INT,
-        /* stride= */ 48,
+        /* stride= */ 52,
         /* offset= */ offset + 28);
-    gl.vertexAttribIPointer(
-        this.program.attributes.atlasSize,
-        2,
-        gl.UNSIGNED_INT,
-        /* stride= */ 48,
-        /* offset= */ offset + 32);
     gl.vertexAttribIPointer(
         this.program.attributes.fill,
         1,
         gl.UNSIGNED_INT,
-        /* stride= */ 48,
-        /* offset= */ offset + 40);
+        /* stride= */ 52,
+        /* offset= */ offset + 44);
     gl.vertexAttribIPointer(
         this.program.attributes.stroke,
         1,
         gl.UNSIGNED_INT,
-        /* stride= */ 48,
-        /* offset= */ offset + 44);
+        /* stride= */ 52,
+        /* offset= */ offset + 48);
   }
 
   protected draw(drawable: Drawable): void {
@@ -319,10 +258,8 @@ export class SdfProgram extends Program<SdfProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.size, 0);
     gl.disableVertexAttribArray(this.program.attributes.angle);
     gl.vertexAttribDivisor(this.program.attributes.angle, 0);
-    gl.disableVertexAttribArray(this.program.attributes.atlasIndex);
-    gl.vertexAttribDivisor(this.program.attributes.atlasIndex, 0);
-    gl.disableVertexAttribArray(this.program.attributes.atlasSize);
-    gl.vertexAttribDivisor(this.program.attributes.atlasSize, 0);
+    gl.disableVertexAttribArray(this.program.attributes.atlasRect);
+    gl.vertexAttribDivisor(this.program.attributes.atlasRect, 0);
     gl.disableVertexAttribArray(this.program.attributes.fill);
     gl.vertexAttribDivisor(this.program.attributes.fill, 0);
     gl.disableVertexAttribArray(this.program.attributes.stroke);
@@ -339,8 +276,7 @@ interface SdfProgramData extends ProgramData {
     offsetPx: number;
     size: number;
     angle: number;
-    atlasIndex: number;
-    atlasSize: number;
+    atlasRect: number;
     fill: number;
     stroke: number;
   };
@@ -370,23 +306,24 @@ function pushGlyph(
     angle: number,
     scale: number,
     fill: RgbaU32,
-    stroke: RgbaU32,
-    atlasSize: Vec2): number {
+    stroke: RgbaU32): number {
+  // A cell wider than it is tall still starts its ink where a square one does, so we center the
+  // quad past the pen along the baseline.
+  const shift = (glyph.width - glyph.height) / 2 * scale;
   floats.set([
     /* center= */ centerX, centerY,
-    /* offsetPx= */ offsetX, offsetY,
+    /* offsetPx= */ offsetX + Math.cos(angle) * shift, offsetY + Math.sin(angle) * shift,
     /* size= */ glyph.width * scale, glyph.height * scale,
     /* angle= */ angle,
   ], count);
   count += 7;
 
   uint32s.set([
-    /* atlasIndex= */ glyph.index,
-    /* atlasSize= */ atlasSize[0], atlasSize[1],
+    /* atlasRect= */ glyph.atlasX, glyph.atlasY, glyph.atlasWidth, glyph.atlasHeight,
     /* fill= */ fill,
     /* stroke= */ stroke,
   ], count);
-  count += 5;
+  count += 6;
 
   return count;
 }
@@ -410,8 +347,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       in highp vec2 offsetPx; // pixels
       in highp vec2 size; // pixels
       in highp float angle; // Radians
-      in uint atlasIndex;
-      in uvec2 atlasSize;
+      in uvec4 atlasRect; // pixels
       in uint fill;
       in uint stroke;
 
@@ -483,11 +419,9 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         }
 
-        uvec2 atlasXy = uvec2(
-            atlasIndex % atlasSize.x, atlasIndex / atlasSize.x);
-        vec2 scale = 1. / vec2(atlasSize);
-        vec2 translate = vec2(atlasXy) * scale;
-        fragColorPosition = translate + scale * colorPosition;
+        fragColorPosition =
+            (vec2(atlasRect.xy) + vec2(atlasRect.zw) * colorPosition)
+                / vec2(${SDF_ATLAS_SIZE[0]}., ${SDF_ATLAS_SIZE[1]}.);
         fragColorFill = uint32ToVec4(halo < 0.6 ? stroke : fill);
       }
     `;
@@ -521,8 +455,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       offsetPx: gl.getAttribLocation(programId, 'offsetPx'),
       size: gl.getAttribLocation(programId, 'size'),
       angle: gl.getAttribLocation(programId, 'angle'),
-      atlasIndex: gl.getAttribLocation(programId, 'atlasIndex'),
-      atlasSize: gl.getAttribLocation(programId, 'atlasSize'),
+      atlasRect: gl.getAttribLocation(programId, 'atlasRect'),
       fill: gl.getAttribLocation(programId, 'fill'),
       stroke: gl.getAttribLocation(programId, 'stroke'),
     },

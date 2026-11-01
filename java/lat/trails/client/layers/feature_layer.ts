@@ -12,7 +12,8 @@ import { EventSource, Layer } from 'js/map/layer';
 import { growBuffer } from 'js/map/rendering/buffers';
 import { glyphBoxes, LabelObstacles } from 'js/map/layers/label_placer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
-import { getHaloPx, GLYPHER, TextAnchor, toGraphemes, turnsTooSharply, wrap } from 'js/map/rendering/glypher';
+import { getHaloPx, GLYPHER, TextAnchor, toGraphemes, turnsTooSharply } from 'js/map/rendering/glypher';
+import { segmentLabel } from 'js/map/rendering/label_text';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
@@ -279,6 +280,7 @@ export class FeatureLayer extends Layer {
   private labelsPlanned: {
     draggedAt: Vec2|undefined;
     generation: number;
+    glyphs: number;
     hovered: string|undefined;
     zoom: number;
   };
@@ -356,6 +358,7 @@ export class FeatureLayer extends Layer {
     this.labelsPlanned = {
       draggedAt: undefined,
       generation: -1,
+      glyphs: -1,
       hovered: undefined,
       zoom: -1,
     };
@@ -751,12 +754,14 @@ export class FeatureLayer extends Layer {
         this.labelsIncomplete
             || this.labelsPlanned.draggedAt !== draggedAt
             || this.labelsPlanned.generation !== this.geometry.generation
+            || this.labelsPlanned.glyphs !== GLYPHER.placementGeneration
             || this.labelsPlanned.hovered !== this.hovered
             || this.labelsPlanned.zoom !== zoom) {
       this.planLabels(zoom);
       this.labelsPlanned = {
         draggedAt,
         generation: this.geometry.generation,
+        glyphs: GLYPHER.placementGeneration,
         hovered: this.hovered,
         zoom,
       };
@@ -1425,7 +1430,7 @@ export class FeatureLayer extends Layer {
 
       const feature = shape.feature;
       if (shape.ring) {
-        const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
+        const graphemes = segmentLabel(label, LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({
           feature,
@@ -1436,7 +1441,7 @@ export class FeatureLayer extends Layer {
           anchor: {horizontal: 'center', vertical: 'middle'},
         });
       } else {
-        const graphemes = toGraphemes(label);
+        const graphemes = segmentLabel(label);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({feature, graphemes, line: shape});
       }
@@ -1457,7 +1462,7 @@ export class FeatureLayer extends Layer {
 
       const label = point.look.label;
       if (label) {
-        const graphemes = wrap(toGraphemes(label), LABEL_LINE_GRAPHEMES);
+        const graphemes = segmentLabel(label, LABEL_LINE_GRAPHEMES);
         needed += GLYPHER.bytesNeeded(graphemes);
         labeled.push({
           feature: point.feature,
@@ -1539,6 +1544,9 @@ export class FeatureLayer extends Layer {
               this.glLabels,
               this.renderer,
               {horizontal: 'center', vertical: 'middle'});
+      if (planned.drawables.length === 0) {
+        this.labelsIncomplete = true;
+      }
       drawables.push(...planned.drawables);
       offset += planned.byteSize;
     }
@@ -1588,6 +1596,10 @@ export class FeatureLayer extends Layer {
                 this.glLabels,
                 this.renderer,
                 label.anchor);
+        // A label measures before its glyphs are in the atlas, and draws nothing until they are.
+        if (planned.drawables.length === 0) {
+          this.labelsIncomplete = true;
+        }
         drawables.push(...planned.drawables);
         offset += planned.byteSize;
         continue;
@@ -1628,6 +1640,10 @@ export class FeatureLayer extends Layer {
                 offset,
                 this.glLabels,
                 this.renderer);
+        // A label measures before its glyphs are in the atlas, and draws nothing until they are.
+        if (planned.drawables.length === 0) {
+          this.labelsIncomplete = true;
+        }
         drawables.push(...planned.drawables);
         offset += planned.byteSize;
         break;

@@ -8,12 +8,52 @@ import { RgbaU32, Vec2 } from '../common/types';
 
 import { Drawable } from './program';
 import { Renderer } from './renderer';
-import { FLOATS_PER_PLACEMENT, Glyph, HALO_EDGE, INK_EDGE, SdfProgram } from './sdf_program';
+import { FLOATS_PER_PLACEMENT, Glyph, HALO_EDGE, INK_EDGE, SDF_ATLAS_SIZE, SdfProgram } from './sdf_program';
 
 interface LoadAwareFontFace extends TFontFace {
   requested?: boolean;
   loaded?: boolean;
 }
+
+// The fields of TinySDF that draw reads, which drawUnit grows past the one em they are sized for.
+interface TinySdfInternals {
+  buffer: number;
+  ctx: CanvasRenderingContext2D|OffscreenCanvasRenderingContext2D;
+  f: Float64Array;
+  gridInner: Float64Array;
+  gridOuter: Float64Array;
+  maxGlyphDim: number;
+  size: number;
+  v: Uint16Array;
+  z: Float64Array;
+}
+
+// Fonts in the order the canvas tries them. A code point is drawn in the first family whose
+// unicode-range has it, and the Noto Sans scripts all cover Latin and the emoji blocks, so Roboto
+// and Noto Emoji come first.
+const FONT_FAMILIES = [
+  'Roboto',
+  'Noto Emoji',
+  'Noto Sans Arabic',
+  'Noto Sans Armenian',
+  'Noto Sans Bengali',
+  'Noto Sans Devanagari',
+  'Noto Sans Ethiopic',
+  'Noto Sans Georgian',
+  'Noto Sans Gujarati',
+  'Noto Sans Gurmukhi',
+  'Noto Sans Hebrew',
+  'Noto Sans Kannada',
+  'Noto Sans Khmer',
+  'Noto Sans Lao',
+  'Noto Sans Malayalam',
+  'Noto Sans Myanmar',
+  'Noto Sans Sinhala',
+  'Noto Sans Tamil',
+  'Noto Sans Telugu',
+  'Noto Sans Thai',
+];
+const FONT_FAMILY = FONT_FAMILIES.map(family => `"${family}"`).join(',') + ',sans-serif';
 
 export const FONT_SIZE = 28;
 const LINE_HEIGHT = 1.2;
@@ -29,21 +69,34 @@ const SDF_RADIUS_PX = 8;
 // How far above and left of its cell's center a glyph's SDF bitmap starts, which is where the
 // quads plan draws expect the ink.
 const BITMAP_INSET_PX = 16;
-// TinySDF clamps ink to FONT_SIZE + 3 * SDF_BUFFER_PX, so its widest bitmap reaches
-// FONT_SIZE + 5 * SDF_BUFFER_PX - BITMAP_INSET_PX = 27px past the center and needs half a cell
-// that big, or else wide glyphs like emoji lose their right and bottom edges.
+// A unit gets a cell as wide as its bitmap needs, in a row of cells this tall. A bitmap starts
+// BITMAP_INSET_PX above the center, so a row holds ATLAS_GLYPH_SIZE / 2 + BITMAP_INSET_PX = 48px of
+// it, which is 42px of ink between the padding.
 const ATLAS_GLYPH_SIZE = 64;
 
-// 2048 / 64 => 32 cells a side, so 1024 glyphs.
-const ATLAS_WIDTH = 2048 * SDF_SCALE;
-const ATLAS_HEIGHT = 2048 * SDF_SCALE;
-const ATLAS_CELLS: Vec2 =
-    [ATLAS_WIDTH / SDF_SCALE / ATLAS_GLYPH_SIZE, ATLAS_HEIGHT / SDF_SCALE / ATLAS_GLYPH_SIZE];
+// 2048 / 64 => 32 rows of cells, and 32 single graphemes to a row.
+const [ATLAS_WIDTH, ATLAS_HEIGHT] = SDF_ATLAS_SIZE;
 const SEGMENTER = new Intl.Segmenter();
 
-// Scratch for planCurved, which runs once per curved label per frame.
+const ATLAS_ROW_HEIGHT = ATLAS_GLYPH_SIZE * SDF_SCALE;
+// Where in its cell a bitmap starts, across and down, in atlas pixels
+const ATLAS_INSET = ATLAS_ROW_HEIGHT / 2 - BITMAP_INSET_PX * SDF_SCALE;
+
+// Every Glyph the glypher hands out is one of these, so planPlaced can find out whether the glyphs
+// layOutCurved measured have been drawn into the atlas yet.
+interface AtlasGlyph extends Glyph {
+  text: string;
+  placed: boolean;
+  // the generation that last drew the glyph, which eviction keeps
+  drawnIn: number;
+  // Set when even an evicted atlas has no room, so labels skip the glyph instead of asking for it
+  // every frame. The next eviction clears it.
+  unplaceable: boolean;
+}
+
+// Scratch for plan and planCurved, which run once per label per frame.
 const PLACEMENTS: number[] = [];
-const CURVED_GLYPHS: Glyph[] = [];
+const PLACED_GLYPHS: Glyph[] = [];
 // Scratch for layOutAlong, the ends of the chord under one glyph.
 const PEN_START: [number, number] = [0, 0];
 const PEN_END: [number, number] = [0, 0];
@@ -60,42 +113,72 @@ class Glypher {
 
   private readonly atlas: Uint8Array;
   private readonly atlasUploads: WeakMap<Renderer, number>;
-  private readonly characters: Set<string>;
-  private readonly fonts: Array<[start: number, end: number, font: LoadAwareFontFace]>;
-  private readonly glyphs: Map<String, Glyph>;
+  // Units a label needs the size of, and units a label is ready to draw
+  private readonly unmeasured: Set<string>;
+  private readonly wanted: Set<string>;
+  // Where the next cell goes in the atlas, in atlas pixels
+  private cursorX: number;
+  private cursorY: number;
+  private readonly fonts:
+      Array<[start: number, end: number, font: LoadAwareFontFace, priority: number]>;
+  private readonly glyphs: Map<string, AtlasGlyph>;
   private readonly listeners: Set<() => void>;
   private regenerationScheduled: boolean;
   private readonly tinySdf: TinySDF;
   private cssFetched: boolean;
+  private overflowed: boolean;
   private generation: number;
+  // Bumps when the atlas's pixels change, which is less often than generation
+  private atlasVersion: number;
+  private evictions: number;
+  // How much ink tinySdf can draw across and down, which drawUnit grows
+  private sdfWidth: number;
+  private sdfHeight: number;
 
   constructor() {
     this.atlas = new Uint8Array(ATLAS_WIDTH * ATLAS_HEIGHT);
     this.atlasUploads = new WeakMap();
-    this.characters = new Set();
+    this.unmeasured = new Set();
+    this.wanted = new Set();
+    this.cursorX = 0;
+    this.cursorY = 0;
     this.fonts = [];
     this.glyphs = new Map();
     this.listeners = new Set();
     this.regenerationScheduled = false;
     this.cssFetched = false;
+    this.overflowed = false;
     this.generation = -1;
+    this.atlasVersion = -1;
+    this.evictions = 0;
+    this.sdfWidth = 0;
+    this.sdfHeight = 0;
 
     // Avoid both ssr and web workers.
     this.tinySdf =
-      typeof window === 'undefined' || !process.env.CORGI_FOR_BROWSER
-          ? undefined as unknown as TinySDF
-          : new TinySDF({
-            fontSize: FONT_SIZE * SDF_SCALE,
-            buffer: SDF_BUFFER_PX * SDF_SCALE,
-            radius: SDF_RADIUS_PX * SDF_SCALE,
-            fontFamily: 'Roboto,"Noto Emoji",sans-serif',
-            fontStyle: 'normal',
-            fontWeight: '400',
-          });
+        typeof window === 'undefined' || !process.env.CORGI_FOR_BROWSER
+            ? undefined as unknown as TinySDF
+            : new TinySDF({
+              fontSize: FONT_SIZE * SDF_SCALE,
+              buffer: SDF_BUFFER_PX * SDF_SCALE,
+              radius: SDF_RADIUS_PX * SDF_SCALE,
+              fontFamily: FONT_FAMILY,
+              fontStyle: 'normal',
+              fontWeight: '400',
+            });
 
     for (let i = 32; i < 127; ++i) {
-      this.characters.add(String.fromCodePoint(i));
+      this.unmeasured.add(String.fromCodePoint(i));
+      this.wanted.add(String.fromCodePoint(i));
     }
+  }
+
+  /**
+   * Changes whenever glyphs move in the atlas, after which anything planned earlier draws the wrong
+   * cells and has to be planned again.
+   */
+  get placementGeneration(): number {
+    return this.evictions;
   }
 
   addListener(listener: () => void): Disposable {
@@ -117,7 +200,7 @@ class Glypher {
   }
 
   measurePx(graphemes: string[], scale: number): Vec2|undefined {
-    let regenerate = false;
+    let measured = true;
     let lineWidth = 0;
     let yHeight = 0;
     let xWidth = 0;
@@ -129,26 +212,16 @@ class Glypher {
         continue;
       }
 
-      const glyph = this.glyphs.get(character);
+      const glyph = this.getGlyph(character);
       if (glyph) {
         lineWidth += glyph.glyphAdvance * scale;
       } else {
-        this.characters.add(character);
-        regenerate = true;
-
-        // Make something reasonable up
-        lineWidth += FONT_SIZE * 0.6 * scale;
+        measured = false;
       }
     }
     xWidth = Math.max(lineWidth, xWidth);
     yHeight += FONT_SIZE * scale;
-
-    if (regenerate) {
-      this.scheduleRegeneration();
-      return undefined;
-    }
-
-    return [xWidth, yHeight];
+    return measured ? [xWidth, yHeight] : undefined;
   }
 
   /**
@@ -172,7 +245,9 @@ class Glypher {
       glBuffer: WebGLBuffer,
       renderer: Renderer,
       anchor?: TextAnchor): {byteSize: number; drawables: Drawable[];} {
-    let regenerate = false;
+    const glyphs = PLACED_GLYPHS;
+    glyphs.length = 0;
+    let measured = true;
     let yHeight = 0;
     for (const character of graphemes) {
       if (character === '\n') {
@@ -180,72 +255,68 @@ class Glypher {
         continue;
       }
 
-      const glyph = this.glyphs.get(character);
-      if (!glyph) {
-        this.characters.add(character);
-        regenerate = true;
+      const glyph = this.getGlyph(character);
+      if (glyph) {
+        this.markDrawn(glyph);
+        glyphs.push(glyph);
+      } else {
+        measured = false;
       }
+    }
+    if (!measured) {
+      return {byteSize: 0, drawables: []};
     }
     // TODO(april): no idea why this is negative...
     yHeight -= FONT_SIZE * scale;
 
-    if (regenerate) {
-      this.scheduleRegeneration();
-      return {byteSize: 0, drawables: []};
-    }
-
-    if (this.atlasUploads.get(renderer) !== this.generation) {
-      renderer.uploadAlphaTexture(
-          this.atlas, [ATLAS_WIDTH, ATLAS_HEIGHT], renderer.sdfProgram.atlas);
-      this.atlasUploads.set(renderer, this.generation);
-    }
-
-    const drawables = [];
-    const pending = [];
-    let totalByteSize = 0;
+    PLACEMENTS.length = 0;
     let yOffset = yHeight / 2;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const dy = anchor ? this.anchorShift(graphemes, scale, yOffset, anchor, LINE_SHIFTS) : 0;
     let line = 0;
+    let lineStart = 0;
+    let first = 0;
     for (let i = 0; i <= graphemes.length; ++i) {
-      const character = graphemes[i];
-      if (i < graphemes.length && character !== '\n') {
-        pending.push(checkExists(this.glyphs.get(character)));
+      if (i < graphemes.length && graphemes[i] !== '\n') {
         continue;
       }
 
-      if (pending.length > 0) {
-        const dx = anchor ? LINE_SHIFTS[line] : 0;
-        const {byteSize, drawable} = renderer.sdfProgram.plan(
-            pending,
-            center,
-            [
-              offsetPx[0] + dx * cos - (dy + yOffset) * sin,
-              offsetPx[1] + dx * sin + (dy + yOffset) * cos,
-            ],
-            scale,
-            angle,
-            fill,
-            stroke,
-            z,
-            ATLAS_CELLS,
-            buffer,
-            offset + totalByteSize,
-            glBuffer);
-        drawables.push(drawable);
-        totalByteSize += byteSize;
+      const dx = anchor ? LINE_SHIFTS[line] : 0;
+      const last = first + i - lineStart;
+      let width = 0;
+      for (let j = first; j < last; ++j) {
+        width += glyphs[j].glyphAdvance * scale;
+      }
+      let x = offsetPx[0] + dx * cos - (dy + yOffset) * sin - width / 2 * cos;
+      let y = offsetPx[1] + dx * sin + (dy + yOffset) * cos - width / 2 * sin;
+      for (let j = first; j < last; ++j) {
+        const glyph = glyphs[j];
+        PLACEMENTS.push(
+            x - glyph.glyphTop * scale * sin, y + glyph.glyphTop * scale * cos, angle);
+        const advance = glyph.glyphAdvance * scale;
+        x += cos * advance;
+        y += sin * advance;
       }
 
-      pending.length = 0;
+      first = last;
+      lineStart = i + 1;
       yOffset -= FONT_SIZE * scale * LINE_HEIGHT;
       line += 1;
     }
 
-    return {
-      byteSize: totalByteSize,
-      drawables,
-    };
+    return this.planPlaced(
+        glyphs,
+        center,
+        PLACEMENTS,
+        scale,
+        fill,
+        stroke,
+        z,
+        buffer,
+        offset,
+        glBuffer,
+        renderer);
   }
 
   // How far to move text from where plan puts it without an anchor so its ink meets the anchor,
@@ -321,12 +392,12 @@ class Glypher {
       offset: number,
       glBuffer: WebGLBuffer,
       renderer: Renderer): {byteSize: number; drawables: Drawable[];} {
-    if (!this.layOutCurved(graphemes, path, pixelsPerWorld, scale, CURVED_GLYPHS, PLACEMENTS)
+    if (!this.layOutCurved(graphemes, path, pixelsPerWorld, scale, PLACED_GLYPHS, PLACEMENTS)
         || turnsTooSharply(PLACEMENTS)) {
       return {byteSize: 0, drawables: []};
     }
     return this.planPlaced(
-        CURVED_GLYPHS,
+        PLACED_GLYPHS,
         // The glyphs hang off the head of the path, so that is the label's anchor.
         [path[0], path[1]],
         PLACEMENTS,
@@ -357,25 +428,22 @@ class Glypher {
       placements: number[],
       keepDirection: boolean = false): boolean {
     glyphs.length = 0;
-    let regenerate = false;
+    let measured = true;
     let widthPx = 0;
     for (const character of graphemes) {
       if (character === '\n') {
         continue;
       }
 
-      const glyph = this.glyphs.get(character);
+      const glyph = this.getGlyph(character);
       if (glyph) {
         glyphs.push(glyph);
         widthPx += glyph.glyphAdvance * scale;
       } else {
-        this.characters.add(character);
-        regenerate = true;
+        measured = false;
       }
     }
-
-    if (regenerate) {
-      this.scheduleRegeneration();
+    if (!measured) {
       return false;
     }
 
@@ -415,10 +483,18 @@ class Glypher {
       offset: number,
       glBuffer: WebGLBuffer,
       renderer: Renderer): {byteSize: number; drawables: Drawable[];} {
-    if (this.atlasUploads.get(renderer) !== this.generation) {
+    let ready = true;
+    for (const glyph of glyphs) {
+      ready = this.markDrawn(glyph as AtlasGlyph) && ready;
+    }
+    if (!ready) {
+      return {byteSize: 0, drawables: []};
+    }
+
+    if (this.atlasUploads.get(renderer) !== this.atlasVersion) {
       renderer.uploadAlphaTexture(
           this.atlas, [ATLAS_WIDTH, ATLAS_HEIGHT], renderer.sdfProgram.atlas);
-      this.atlasUploads.set(renderer, this.generation);
+      this.atlasUploads.set(renderer, this.atlasVersion);
     }
 
     const {byteSize, drawable} =
@@ -430,11 +506,35 @@ class Glypher {
             fill,
             stroke,
             z,
-            ATLAS_CELLS,
             buffer,
             offset,
             glBuffer);
     return {byteSize, drawables: [drawable]};
+  }
+
+  // Gets a unit's metrics, or asks for them and returns undefined if it hasn't been measured.
+  private getGlyph(text: string): AtlasGlyph|undefined {
+    const glyph = this.glyphs.get(text);
+    if (!glyph) {
+      this.unmeasured.add(text);
+      this.scheduleRegeneration();
+    }
+    return glyph;
+  }
+
+  // Records that a label is drawing glyph and returns whether it is in the atlas, asking for it if
+  // not. Every unit of a label is marked even when an earlier one is missing, so eviction keeps the
+  // rest of a label that is waiting on one word.
+  private markDrawn(glyph: AtlasGlyph): boolean {
+    glyph.drawnIn = this.generation;
+    if (glyph.placed) {
+      return true;
+    }
+    if (!glyph.unplaceable) {
+      this.wanted.add(glyph.text);
+      this.scheduleRegeneration();
+    }
+    return false;
   }
 
   // Each label missing a glyph asks, and one regeneration covers them all.
@@ -452,12 +552,14 @@ class Glypher {
   private regenerate(): void {
     if (!this.cssFetched) {
       this.cssFetched = true;
-      fetch('https://fonts.googleapis.com/css2?family=Noto+Emoji&family=Roboto')
+      const families = FONT_FAMILIES.map(f => `family=${f.replace(/ /g, '+')}`).join('&');
+      fetch(`https://fonts.googleapis.com/css2?${families}`)
           .then(response => response.text())
           .then(text => {
             for (const face of parseCss(text)) {
+              const priority = FONT_FAMILIES.indexOf(face.family);
               for (const [start, end] of face.ranges) {
-                this.fonts.push([start, end, face]);
+                this.fonts.push([start, end, face, priority]);
               }
             }
             this.fonts.sort((a, b) => a[0] - b[0]);
@@ -474,8 +576,8 @@ class Glypher {
     }
 
     let missing = false;
-    for (const character of this.characters) {
-      for (const code of Array.from(character)) {
+    for (const unit of this.unmeasured) {
+      for (const code of Array.from(unit)) {
         const codepoint = code.codePointAt(0) ?? 0;
         if (codepoint === 0x200D) {
           // Zero width joiner
@@ -485,26 +587,18 @@ class Glypher {
           continue;
         }
 
-        for (const [start, end, font] of this.fonts) {
-          if (codepoint >= end) {
-            continue;
-          }
-          if (codepoint < start) {
-            break;
-          }
-
-          if (!font.loaded) {
-            missing = true;
-            if (!font.requested) {
-              const face = new FontFace(font.family, font.src);
-              document.fonts.add(face);
-              face.load()
-                  .then(() => {
-                    font.loaded = true;
-                    this.scheduleRegeneration();
-                  });
-              font.requested = true;
-            }
+        const font = this.getFont(codepoint);
+        if (font && !font.loaded) {
+          missing = true;
+          if (!font.requested) {
+            const face = new FontFace(font.family, font.src);
+            document.fonts.add(face);
+            face.load()
+                .then(() => {
+                  font.loaded = true;
+                  this.scheduleRegeneration();
+                });
+            font.requested = true;
           }
         }
       }
@@ -514,32 +608,191 @@ class Glypher {
       return;
     }
 
-    const size = ATLAS_GLYPH_SIZE * SDF_SCALE;
-    let i = 0;
-    this.glyphs.clear();
-    for (const character of this.characters) {
-      const x = i % (ATLAS_WIDTH / size) * size;
-      const y = Math.floor(i / (ATLAS_WIDTH / size)) * size;
-      const g = this.tinySdf.draw(character);
-      const inset = size / 2 - BITMAP_INSET_PX * SDF_SCALE;
-      copyIntoImage(g.data, g.width, this.atlas, x + inset, y + inset, ATLAS_WIDTH);
-      this.glyphs.set(character, {
-        index: i,
-        glyphAdvance: g.glyphAdvance / SDF_SCALE,
-        glyphWidth: g.glyphWidth / SDF_SCALE,
-        glyphHeight: g.glyphHeight / SDF_SCALE,
-        glyphTop: g.glyphTop / SDF_SCALE,
-        width: ATLAS_GLYPH_SIZE,
-        height: ATLAS_GLYPH_SIZE,
-      });
-
-      i += 1;
+    for (const unit of this.unmeasured) {
+      this.glyphs.set(unit, this.measure(unit));
     }
+    this.unmeasured.clear();
 
+    let drew = false;
+    let evicted = false;
+    for (const unit of this.wanted) {
+      const glyph = checkExists(this.glyphs.get(unit));
+      if (glyph.placed || glyph.unplaceable) {
+        continue;
+      }
+      if (!this.place(glyph)) {
+        if (!evicted) {
+          this.evict();
+          evicted = true;
+        }
+        if (!this.place(glyph)) {
+          glyph.unplaceable = true;
+          if (!this.overflowed) {
+            console.warn('Glyph atlas is full, so some labels will be missing');
+            this.overflowed = true;
+          }
+          continue;
+        }
+      }
+      drew = true;
+    }
+    this.wanted.clear();
+
+    if (drew || evicted) {
+      this.atlasVersion += 1;
+    }
     this.generation += 1;
     for (const listener of this.listeners) {
       listener();
     }
+  }
+
+  // Gets a unit's metrics without drawing it, so a label can be measured and placed before it costs
+  // any atlas space. Keep in sync with TinySDF#draw, which computes the same metrics as it draws.
+  private measure(text: string): AtlasGlyph {
+    const sdf = this.tinySdf as unknown as TinySdfInternals;
+    const metrics = sdf.ctx.measureText(text);
+    const glyphTop = Math.ceil(metrics.actualBoundingBoxAscent);
+    const glyphLeft = Math.floor(-metrics.actualBoundingBoxLeft);
+    const glyphWidth = Math.max(0, Math.ceil(metrics.actualBoundingBoxRight) - glyphLeft);
+    // place copies the ink no further down than this, see the TODO there.
+    const glyphHeight =
+        Math.max(
+            0,
+            Math.min(
+                ATLAS_ROW_HEIGHT - ATLAS_INSET - sdf.buffer,
+                glyphTop + Math.ceil(metrics.actualBoundingBoxDescent)));
+    const bitmapWidth = glyphWidth + 2 * sdf.buffer;
+    // An even width keeps the cell a whole number of FONT_SIZE pixels.
+    const cellWidth = Math.max(ATLAS_ROW_HEIGHT, 2 * Math.ceil((ATLAS_INSET + bitmapWidth) / 2));
+    return {
+      atlasX: 0,
+      atlasY: 0,
+      atlasWidth: cellWidth,
+      atlasHeight: ATLAS_ROW_HEIGHT,
+      glyphAdvance: metrics.width / SDF_SCALE,
+      glyphWidth: glyphWidth / SDF_SCALE,
+      glyphHeight: glyphHeight / SDF_SCALE,
+      glyphTop: glyphTop / SDF_SCALE,
+      width: cellWidth / SDF_SCALE,
+      height: ATLAS_GLYPH_SIZE,
+      text,
+      placed: false,
+      drawnIn: -1,
+      unplaceable: false,
+    };
+  }
+
+  // Draws glyph into the next free cell, or returns false if the atlas has no room left. Cells fill
+  // rows left to right.
+  private place(glyph: AtlasGlyph): boolean {
+    if (this.cursorX + glyph.atlasWidth > ATLAS_WIDTH) {
+      this.cursorX = 0;
+      this.cursorY += ATLAS_ROW_HEIGHT;
+    }
+    if (this.cursorY + ATLAS_ROW_HEIGHT > ATLAS_HEIGHT) {
+      return false;
+    }
+
+    const g = this.drawUnit(glyph.text);
+    // TODO(april): units taller than a row lose the bottom of their halo, but taller rows would
+    // cost atlas capacity for every glyph.
+    copyIntoImage(
+        g.data,
+        g.width,
+        Math.min(g.height, ATLAS_ROW_HEIGHT - ATLAS_INSET),
+        this.atlas,
+        this.cursorX + ATLAS_INSET,
+        this.cursorY + ATLAS_INSET,
+        ATLAS_WIDTH);
+    glyph.atlasX = this.cursorX;
+    glyph.atlasY = this.cursorY;
+    glyph.placed = true;
+    this.cursorX += glyph.atlasWidth;
+    return true;
+  }
+
+  // Empties the atlas and draws back only the glyphs drawn since the last regeneration, which is
+  // what is on screen.
+  private evict(): void {
+    this.evictions += 1;
+    this.atlas.fill(0);
+    this.cursorX = 0;
+    this.cursorY = 0;
+    const kept = [];
+    for (const glyph of this.glyphs.values()) {
+      glyph.unplaceable = false;
+      if (glyph.placed && glyph.drawnIn === this.generation) {
+        kept.push(glyph);
+      }
+      glyph.placed = false;
+    }
+    // What was on screen can outgrow even an empty atlas, and asking for the rest every frame would
+    // evict every frame.
+    for (const glyph of kept) {
+      if (!this.place(glyph)) {
+        glyph.unplaceable = true;
+      }
+    }
+  }
+
+  // The face the canvas will draw codepoint with, which is in the first family whose
+  // unicode-range has it.
+  private getFont(codepoint: number): LoadAwareFontFace|undefined {
+    let best;
+    let bestPriority = Infinity;
+    for (const [start, end, font, priority] of this.fonts) {
+      if (codepoint >= end) {
+        continue;
+      }
+      if (codepoint < start) {
+        break;
+      }
+      if (priority < bestPriority) {
+        best = font;
+        bestPriority = priority;
+      }
+    }
+    return best;
+  }
+
+  // Draws a unit, first growing tinySdf's canvas and scratch grids if its ink is bigger than any
+  // before it, because TinySDF sizes them for one em and clamps ink to that. TinySDF's output
+  // depends only on the ink, so growing leaves smaller units drawn the same. Resizing a canvas
+  // resets its context, so we restore what TinySDF set.
+  private drawUnit(text: string): ReturnType<TinySDF['draw']> {
+    const sdf = this.tinySdf as unknown as TinySdfInternals;
+    const metrics = sdf.ctx.measureText(text);
+    // at least TinySDF's glyphWidth and glyphHeight, which ceil each side separately
+    const inkWidth =
+        Math.ceil(metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight) + 1;
+    const inkHeight =
+        Math.ceil(metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) + 1;
+    if (inkWidth > this.sdfWidth || inkHeight > this.sdfHeight) {
+      // Half again so a run of slightly longer words doesn't regrow every time.
+      this.sdfWidth = Math.max(this.sdfWidth, Math.ceil(inkWidth * 1.5));
+      this.sdfHeight = Math.max(this.sdfHeight, Math.ceil(inkHeight * 1.5));
+      const width = this.sdfWidth + 2 * sdf.buffer;
+      const height = this.sdfHeight + 2 * sdf.buffer;
+
+      const ctx = sdf.ctx;
+      const font = ctx.font;
+      ctx.canvas.width = width;
+      ctx.canvas.height = height;
+      ctx.font = font;
+      ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'black';
+
+      sdf.maxGlyphDim = Math.max(this.sdfWidth, this.sdfHeight);
+      sdf.gridOuter = new Float64Array(width * height);
+      sdf.gridInner = new Float64Array(width * height);
+      const gridLength = Math.max(width, height);
+      sdf.f = new Float64Array(gridLength);
+      sdf.z = new Float64Array(gridLength + 1);
+      sdf.v = new Uint16Array(gridLength);
+    }
+    return this.tinySdf.draw(text);
   }
 }
 
@@ -642,39 +895,18 @@ function distance(path: ArrayLike<number>, from: number, to: number): number {
 function copyIntoImage(
     data: Uint8ClampedArray,
     swidth: number,
+    rows: number,
     image: Uint8Array,
     dx: number,
     dy: number,
     dwidth: number): void {
-  let i = 0;
-  while (i < data.length) {
-    for (let x = 0; x < swidth; ++x) {
-      image[dy * dwidth + dx + x] = data[i];
-      i += 1;
-    }
-    dy += 1;
+  for (let y = 0; y < rows; ++y) {
+    image.set(data.subarray(y * swidth, (y + 1) * swidth), (dy + y) * dwidth + dx);
   }
 }
 
 export function toGraphemes(text: string): string[] {
   return Array.from(SEGMENTER.segment(text), s => s.segment);
-}
-
-/**
- * Breaks lines at the first space once a line has run past lineGraphemes, so no word is split.
- */
-export function wrap(graphemes: string[], lineGraphemes: number): string[] {
-  const wrapped = [];
-  let lastWrap = 0;
-  for (let i = 0; i < graphemes.length; ++i) {
-    if (i - lastWrap > lineGraphemes && graphemes[i] === ' ') {
-      wrapped.push('\n');
-      lastWrap = i;
-    } else {
-      wrapped.push(graphemes[i]);
-    }
-  }
-  return wrapped;
 }
 
 /** Returns how far a label's halo reaches past its ink, in pixels, at the scale. */

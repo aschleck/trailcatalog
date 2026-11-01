@@ -5,7 +5,8 @@ import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
 import { RgbaU32, TileId, Vec2 } from '../../common/types';
 import { LinePattern, LineProgram } from '../../rendering/line_program';
-import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track, wrap } from '../../rendering/glypher';
+import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track } from '../../rendering/glypher';
+import { segmentLabel } from '../../rendering/label_text';
 
 import { Reply, serveClients } from '../client_pool';
 import { cropLine, cropPolygon } from '../tile_crop';
@@ -83,7 +84,7 @@ interface PointStyle {
   textScale: number;
   // Sets the name in spaced capitals, see glypher#track
   caps?: boolean;
-  // Wraps the name after the first space past this many graphemes, 8 if unset
+  // Wraps the name after the first space past this many characters, 8 if unset
   wrapGraphemes?: number;
   z: number;
 }
@@ -502,10 +503,10 @@ class MbtileLoader {
       }
 
       for (const [text, parts] of byText) {
-        const graphemes = toGraphemes(text);
+        const units = segmentLabel(text);
         // Glyph metrics live in the atlas, which a worker has no fonts to build, so guess the
         // width from Roboto's average advance of a little over half an em.
-        const width = graphemes.length * FONT_SIZE * 0.6 * style.scale / pixelsPerWorld;
+        const width = toGraphemes(text).length * FONT_SIZE * 0.6 * style.scale / pixelsPerWorld;
         // A glyph advance is at most about an em, and it only shrinks against the line as the
         // viewport zooms past styleZoom.
         const em = FONT_SIZE * style.scale / pixelsPerWorld;
@@ -562,7 +563,7 @@ class MbtileLoader {
               padPx: style.padPx,
               // Line labels render rotated along the line direction. Wrapping turns them into
               // a tilted multi-line block which looks wrong; keep them single-line.
-              graphemes,
+              graphemes: units,
               fill: style.fill,
               stroke: style.stroke,
               scale: style.scale,
@@ -589,7 +590,7 @@ class MbtileLoader {
 
         const text = textPreferred ?? textFallback;
         if (text) {
-          const wrapped = wrap(toGraphemes(text), style.wrapGraphemes ?? 8);
+          const wrapped = segmentLabel(text, style.wrapGraphemes ?? 8);
           response.labels.push({
             angle: 0,
             center: point.geometry as unknown as Vec2,

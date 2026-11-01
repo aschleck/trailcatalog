@@ -11,7 +11,8 @@ import { LabelObstacles } from 'js/map/layers/label_placer';
 import { CITY_LABEL, NEIGHBOURHOOD_LABEL, PARK_LABEL, PointStyle, SUBURB_LABEL, TOWN_LABEL, VILLAGE_LABEL, WATER_TEXT_FILL } from 'js/map/layers/mbtile_layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
 import { growBuffer } from 'js/map/rendering/buffers';
-import { getHaloPx, GLYPHER, toGraphemes, track, wrap } from 'js/map/rendering/glypher';
+import { getHaloPx, GLYPHER, track } from 'js/map/rendering/glypher';
+import { segmentLabel } from 'js/map/rendering/label_text';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
@@ -133,10 +134,17 @@ export class PointCollectionLayer extends Layer {
   // Each placed label's box by point id, in mercator scaled by pixelsPerWorld, so a click on a name
   // finds it and the next plan places it before its equals
   private labelBoxes: Map<number, {point: Point; box: number[]}>;
-  private labelsMissingGlyphs: boolean;
+  // Each name's graphemes as drawn, because labels replan on every zoom
+  private readonly segmented: WeakMap<Point, string[]>;
   // What the drawables were planned for, or undefined to plan them again
   private planned:
-      {avoided: number[]; center: Vec2|undefined; generation: number; zoom: number}|undefined;
+      {
+        avoided: number[];
+        center: Vec2|undefined;
+        generation: number;
+        glyphs: number;
+        zoom: number;
+      }|undefined;
   // Only points descending from these, and the selected point, draw and answer the cursor
   private categories: PointCategory[];
   private hovered: Point|undefined;
@@ -188,7 +196,7 @@ export class PointCollectionLayer extends Layer {
     });
     this.labelDrawables = [];
     this.labelBoxes = new Map();
-    this.labelsMissingGlyphs = false;
+    this.segmented = new WeakMap();
     this.planned = undefined;
     this.categories = categories;
     this.hovered = undefined;
@@ -279,8 +287,8 @@ export class PointCollectionLayer extends Layer {
     // replans its labels, which isn't only on zoom.
     const icons = zoom >= this.iconZoom;
     const center = this.camera.flattenFactor < 1 ? this.camera.centerPixel : undefined;
-    if (this.labelsMissingGlyphs
-        || this.planned?.generation !== this.generation
+    if (this.planned?.generation !== this.generation
+        || this.planned.glyphs !== GLYPHER.placementGeneration
         || this.planned.zoom !== zoom
         || this.planned.avoided !== this.avoid.boxes
         || this.planned.center?.[0] !== center?.[0]
@@ -288,8 +296,13 @@ export class PointCollectionLayer extends Layer {
       if (icons) {
         this.plan();
       }
-      this.planLabels(zoom, projection);
-      this.planned = {avoided: this.avoid.boxes, center, generation: this.generation, zoom};
+      this.planned = this.planLabels(zoom, projection) ? {
+        avoided: this.avoid.boxes,
+        center,
+        generation: this.generation,
+        glyphs: GLYPHER.placementGeneration,
+        zoom,
+      } : undefined;
     }
     planner.add(this.labelDrawables);
     if (icons && this.atlasLoaded) {
@@ -354,8 +367,9 @@ export class PointCollectionLayer extends Layer {
   }
 
   // Places each shown point's name where it clears the open collection, the icons, and the names
-  // placed before it. Under iconZoom there are no icons, so a name sits on its point.
-  private planLabels(zoom: number, projection: ScreenProjection): void {
+  // placed before it. Under iconZoom there are no icons, so a name sits on its point. Returns false
+  // when a name's glyphs are not in the atlas yet.
+  private planLabels(zoom: number, projection: ScreenProjection): boolean {
     const pixelsPerWorld = worldRadiusAt(zoom);
     const icons = zoom >= this.iconZoom;
     const collisions = new LabelCollisions();
@@ -403,12 +417,13 @@ export class PointCollectionLayer extends Layer {
 
     const labels = named.map(({point}) => {
       const look = getPointLook(point);
-      const wrapped = wrap(toGraphemes(point.data.name as string), look.lineGraphemes);
-      return {
-        point,
-        look,
-        graphemes: look.caps ? track(wrapped.map(g => g.toLocaleUpperCase())) : wrapped,
-      };
+      let graphemes = this.segmented.get(point);
+      if (!graphemes) {
+        const wrapped = segmentLabel(point.data.name as string, look.lineGraphemes);
+        graphemes = look.caps ? track(wrapped.map(g => g.toLocaleUpperCase())) : wrapped;
+        this.segmented.set(point, graphemes);
+      }
+      return {point, look, graphemes};
     });
     this.labels =
         growBuffer(
@@ -418,13 +433,13 @@ export class PointCollectionLayer extends Layer {
     const drawables = [];
     const boxes = new Map<number, {point: Point; box: number[]}>();
     let offset = 0;
-    this.labelsMissingGlyphs = false;
+    let complete = true;
     for (const {point, look, graphemes} of labels) {
       const highlighted = this.isHighlighted(point);
       const scale = highlighted ? look.scale * HIGHLIGHTED_LABEL_GROWTH : look.scale;
       const size = GLYPHER.measurePx(graphemes, scale);
       if (!size) {
-        this.labelsMissingGlyphs = true;
+        complete = false;
         continue;
       }
 
@@ -465,6 +480,10 @@ export class PointCollectionLayer extends Layer {
               this.glLabels,
               this.renderer,
               {horizontal: beside ? 'start' : 'center', vertical: 'middle'});
+      // A label measures before its glyphs are in the atlas, and draws nothing until they are.
+      if (planned.drawables.length === 0) {
+        complete = false;
+      }
       collisions.insert(box);
       boxes.set(getId(point), {point, box});
       drawables.push(...planned.drawables);
@@ -478,6 +497,7 @@ export class PointCollectionLayer extends Layer {
     this.labelBoxes = boxes;
     this.obstacles.boxes = collisions.boxes.slice(avoided.length);
     this.obstacles.pixelsPerWorld = pixelsPerWorld;
+    return complete;
   }
 
   /**

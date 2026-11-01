@@ -27,6 +27,7 @@
     "@fastify/reply-from": "^12.7.1",
     "@fastify/request-context": "^6.2.1",
     "@mapbox/tiny-sdf": "^2.3.0",
+    "bidi-js": "^1.1.0",
     "earcut": "^2.2.4",
     "fastify": "^5.12.7",
     "geotiff": "https://github.com/aschleck/geotiff.js/archive/32c24abbdacaf563ccc23391dafffd3d7f276c67.tar.gz",

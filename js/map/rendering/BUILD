@@ -7,6 +7,7 @@ tc_ts_project(
     deps = [
         "//:node_modules/@mapbox/tiny-sdf",
         "//:node_modules/@types/node",
+        "//:node_modules/bidi-js",
         "//js/map/common",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/server:client",
