@@ -204,7 +204,7 @@ function TrailSidebar({state}: {state: State}) {
         <div className="text-black" unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
           <OutlinedButton dense={true} icon="Map" label="Browse map" />
         </div>
-        <BoundaryCrumbs boundaries={containingBoundaries} />
+        <BoundaryCrumbs boundaries={containingBoundaries} name={trail.name} />
       </aside>
       <CommonsImageCarousel className="mt-4" key={String(trail.id)} tags={tags} />
       <div

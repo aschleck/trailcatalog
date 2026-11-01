@@ -117,7 +117,7 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
         {
           trail.boundaries
               ? <div className="text-sm text-tc-gray-400">
-                <BoundaryCrumbs boundaries={trail.boundaries} />
+                <BoundaryCrumbs boundaries={trail.boundaries} name={trail.name} />
               </div>
               : ''
         }

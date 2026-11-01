@@ -116,7 +116,7 @@ function Content({boundaryId, state, updateState}: {
         <div className="text-black" unboundEvents={{corgi: [[ACTION, 'browseMap']]}}>
           <OutlinedButton dense={true} icon="Map" label="Browse map" />
         </div>
-        <BoundaryCrumbs boundaries={containingBoundaries} />
+        <BoundaryCrumbs boundaries={containingBoundaries} name={boundary.name} />
         •
         <div>
           <a

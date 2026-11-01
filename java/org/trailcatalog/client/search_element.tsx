@@ -169,7 +169,7 @@ function ResultItem({aside, boundaries, href, text, query}: {
           </a>
         </div>
         <div className="font-normal text-sm text-tc-gray-400">
-          <BoundaryCrumbs boundaries={boundaries} />
+          <BoundaryCrumbs boundaries={boundaries} name={text} />
         </div>
       </div>
       <div className="basis-1/4 text-end">

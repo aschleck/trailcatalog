@@ -3,11 +3,13 @@ import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { BoundaryLink } from './models/types';
 
-export function BoundaryCrumbs({boundaries}: {boundaries: BoundaryLink[]}) {
+export function BoundaryCrumbs({boundaries, name}: {boundaries: BoundaryLink[]; name: string}) {
   const crumbs =
       boundaries
           // a crag or climbing area isn't a place to file a trail or park under
           .filter(b => !aDescendsB(b.type, RelationCategory.BOUNDARY_CLIMBING))
+          // a park drawn around the trail it's named for, like Bellingham's Railroad Trail
+          .filter(b => b.name !== name)
           .sort((a, b) => crumbRank(a.type) - crumbRank(b.type) || a.type - b.type)
           .map(b => <a href={`/boundary/${b.readableId}`}>{b.name}</a>)
           .flatMap(l => [
