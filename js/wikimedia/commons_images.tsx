@@ -86,6 +86,9 @@ export function CommonsImageCarousel(
         js={corgi.bind({
           controller: CommonsImagesController,
           args: {tags},
+          // The controller loads the images when it's constructed, and corgi only constructs one
+          // for an event.
+          events: {render: 'wakeup'},
           state: [images, updateState],
         })}
         className={`${shown?.length === 0 ? 'hidden' : ''} ${className ?? ''}`}

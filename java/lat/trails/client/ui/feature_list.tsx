@@ -586,6 +586,9 @@ function OsmTags(
         js={corgi.bind({
           controller: OsmTagsController,
           args: {element},
+          // The controller loads the tags when it's constructed, and corgi only constructs one
+          // for an event.
+          events: {render: 'wakeup'},
           state: [state ?? {tags}, updateState],
         })}
         className="contents"
@@ -635,6 +638,8 @@ function AviationWeather(
         js={corgi.bind({
           controller: AviationWeatherController,
           args: {station},
+          // See OsmTags
+          events: {render: 'wakeup'},
           state: [state ?? {report}, updateState],
         })}
         className="flex flex-col gap-2"
