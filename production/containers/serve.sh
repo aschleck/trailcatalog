@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 nginx -c '/app/nginx.conf' -e stderr &
 nginx_pid="$!"
