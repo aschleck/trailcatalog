@@ -1,6 +1,10 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
+import { getUnitSystem } from 'js/units/formatters';
+
+import { getShownZone } from '../sky/time_zones';
 import { formatDistance, formatHeight } from '../tools/measurements';
+import { getClock } from './timeline';
 
 // In SVG units, which the chart scales to its container's width
 const CHART_WIDTH = 300;
@@ -118,17 +122,30 @@ function Hover({label, x, y}: {label: string; x: number; y: number}) {
 /** A profile that has to load when the line carries no elevations of its own. */
 export type LineProfileState =
     {status: 'loading'|'failed'}
-    |{status: 'loaded'; distanceMeters: number[]; meters: number[]; hovered: number|undefined};
+    |{
+      status: 'loaded';
+      distanceMeters: number[];
+      meters: number[];
+      // From the first sample to each sample
+      upMeters: number[];
+      downMeters: number[];
+      // Set only when the samples are a track's own points, since DEM samples fall between them
+      epochSeconds: number[]|undefined;
+      hovered: number|undefined;
+    };
 
 export function LineProfile({source, state}: {source: 'line'|'measure'; state: LineProfileState}) {
   if (state.status === 'loaded') {
     return (
-      <ProfileChart
-          distanceMeters={state.distanceMeters}
-          hovered={state.hovered}
-          meters={state.meters}
-          source={source}
-      />
+      <div className="flex flex-col gap-1">
+        <ProfileChart
+            distanceMeters={state.distanceMeters}
+            hovered={state.hovered}
+            meters={state.meters}
+            source={source}
+        />
+        <HoverReadout state={state} />
+      </div>
     );
   }
 
@@ -137,4 +154,51 @@ export function LineProfile({source, state}: {source: 'line'|'measure'; state: L
       {state.status === 'failed' ? 'Unable to load elevations' : 'Loading elevations...'}
     </div>
   );
+}
+
+// Keeps its height while nothing is hovered so that the panel doesn't jump as the pointer crosses
+// the chart.
+function HoverReadout({state}: {state: Extract<LineProfileState, {status: 'loaded'}>}) {
+  const i = state.hovered;
+  const times = state.epochSeconds;
+  const rows = [];
+  if (i !== undefined) {
+    rows.push(
+        `${formatDistance(state.distanceMeters[i])}, `
+            + `${formatHeight(state.upMeters[i])} up, `
+            + `${formatHeight(state.downMeters[i])} down`);
+    if (times) {
+      const at = getClock().format(new Date(times[i] * 1000));
+      rows.push(`${at}, ${formatDuration(times[i] - times[0])} elapsed`);
+    }
+  }
+  return (
+    <div className={`${times ? 'h-10' : 'h-5'} leading-5 text-gray-700 text-sm`}>
+      {rows.map(row => <div>{row}</div>)}
+    </div>
+  );
+}
+
+export function formatDuration(seconds: number): string {
+  const minutes = Math.round(Math.max(0, seconds) / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours === 0) {
+    return `${minutes} min`;
+  } else if (hours < 24) {
+    return `${hours} h ${minutes % 60} min`;
+  } else {
+    return `${Math.floor(hours / 24)} d ${hours % 24} h`;
+  }
+}
+
+export function formatTimeSpan(startSeconds: number, endSeconds: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hourCycle: getUnitSystem() === 'metric' ? 'h23' : 'h12',
+    timeZone: getShownZone(),
+  }).formatRange(new Date(startSeconds * 1000), new Date(endSeconds * 1000));
 }

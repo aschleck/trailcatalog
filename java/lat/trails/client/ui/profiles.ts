@@ -4,7 +4,13 @@ import { Elevations } from 'js/map/workers/elevation/elevations';
 
 import { EditableLine } from '../model/features';
 import { RouteStatus } from '../tools/drawing_layer';
-import { cumulativeMeters, pathLengthMeters, profileSamples, slopeMeters } from '../tools/measurements';
+import {
+  cumulativeClimb,
+  cumulativeMeters,
+  pathLengthMeters,
+  profileSamples,
+  slopeMeters,
+} from '../tools/measurements';
 import { MeasureState } from './measure_panel';
 import { LineProfileState } from './profile_chart';
 
@@ -178,8 +184,13 @@ export class LineProfiler extends DemProfiler {
     const path = Float64Array.from(live.latLngE7, e7 => e7 / 1e7);
     const own = live.elevationCentimeters;
     if (own) {
+      // The samples are the line's own vertices, so its times line up with them.
       const {samples, profile} =
-          profileOf(path, cumulativeMeters(path), Array.from(own, cm => cm / 100));
+          profileOf(
+              path,
+              cumulativeMeters(path),
+              Array.from(own, cm => cm / 100),
+              live.timeSeconds && Array.from(live.timeSeconds, Number));
       this._samples = samples;
       return profile;
     }
@@ -203,15 +214,22 @@ export class LineProfiler extends DemProfiler {
 // Measures the samples' distances along the slope, so that the chart's length agrees with the
 // climb.
 function profileOf(
-    latLngDegrees: Float64Array, groundMeters: ArrayLike<number>, meters: ArrayLike<number>):
+    latLngDegrees: Float64Array,
+    groundMeters: ArrayLike<number>,
+    meters: ArrayLike<number>,
+    epochSeconds?: number[]):
     {samples: ShownSamples; profile: LoadedProfile} {
   const distanceMeters = slopeMeters(groundMeters, meters);
+  const {upMeters, downMeters} = cumulativeClimb(meters);
   return {
     samples: {latLngDegrees, distanceMeters},
     profile: {
       status: 'loaded',
       distanceMeters: Array.from(distanceMeters),
       meters: Array.from(meters),
+      upMeters,
+      downMeters,
+      epochSeconds,
       hovered: undefined,
     },
   };

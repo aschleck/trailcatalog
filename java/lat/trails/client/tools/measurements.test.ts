@@ -1,4 +1,5 @@
 import {
+  cumulativeClimb,
   cumulativeMeters,
   formatArea,
   profileSamples,
@@ -98,4 +99,11 @@ test('reports a noisy descent as the descent alone', () => {
   const stats = profileStats(meters);
   expect(stats.upMeters).toBe(0);
   expect(stats.downMeters).toBeCloseTo(20, 5);
+});
+
+test('accumulates climb and descent up to each sample', () => {
+  expect(cumulativeClimb([100, 120, 110, 150, 140])).toEqual({
+    upMeters: [0, 20, 20, 60, 60],
+    downMeters: [0, 0, 10, 10, 20],
+  });
 });

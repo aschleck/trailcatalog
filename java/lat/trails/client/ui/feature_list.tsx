@@ -58,7 +58,7 @@ import {
 import { Data } from '../workers/collection_types';
 import { FieldInput } from './field_input';
 import { PointMarker } from './icon_picker';
-import { LineProfile, LineProfileState } from './profile_chart';
+import { formatDuration, formatTimeSpan, LineProfile, LineProfileState } from './profile_chart';
 import { TreeChildren, TreeRow } from './tree_rows';
 
 export interface TreeItem {
@@ -903,7 +903,21 @@ function Stats({feature, profile}: {
     return <div className="hidden" />;
   } else if (feature.kind === 'line') {
     const path = Array.from(feature.latLngE7, e7 => e7 / 1e7);
-    return <ProfiledStats groundMeters={pathLengthMeters(path)} profile={profile} />;
+    const times = feature.timeSeconds;
+    const stats = <ProfiledStats groundMeters={pathLengthMeters(path)} profile={profile} />;
+    if (!times || times.length < 2) {
+      return stats;
+    }
+    const start = Number(times[0]);
+    const end = Number(times[times.length - 1]);
+    return (
+      <div className="flex flex-col gap-2">
+        {stats}
+        <div className="text-gray-700">
+          {`${formatTimeSpan(start, end)}, ${formatDuration(end - start)}`}
+        </div>
+      </div>
+    );
   } else if (feature.kind === 'point') {
     return (
       <div className="text-gray-700">

@@ -188,6 +188,20 @@ export function profileStats(meters: ArrayLike<number>): ProfileStats {
   };
 }
 
+// Counts like profileStats, so the last sample's climb and descent are the line's totals.
+export function cumulativeClimb(meters: ArrayLike<number>):
+    {upMeters: number[]; downMeters: number[]} {
+  const climb = new ClimbCounter();
+  const upMeters = [];
+  const downMeters = [];
+  for (let i = 0; i < meters.length; ++i) {
+    climb.add(meters[i]);
+    upMeters.push(climb.upMeters);
+    downMeters.push(climb.downMeters);
+  }
+  return {upMeters, downMeters};
+}
+
 // Follows the running peak or valley and only turns around once the elevation has come back
 // CLIMB_THRESHOLD_METERS from it, so a peak counts in full and a wobble counts not at all.
 // Keep in sync with CalculateWayElevations#ClimbCounter.
