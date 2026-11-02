@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package lat.trails;
+
+option java_multiple_files = true;
+option java_package = "lat.trails.proto";
+
+message UploadImageResponse {
+  // Unset when the photo has no UTC offset, because its clock time alone could be off by a day.
+  optional int64 captured_epoch_seconds = 1;
+  string id = 2;
+  // From the photo's GPS tags
+  optional Location location = 3;
+
+  message Location {
+    double lat_degrees = 1;
+    double lng_degrees = 2;
+  }
+}

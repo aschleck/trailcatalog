@@ -54,6 +54,30 @@ class ImagesTest {
     assertThat(getLocation(exif)).isNull()
   }
 
+  @Test
+  fun testCapturedSecondsAppliesOffset() {
+    val exif =
+        parse(""""DateTimeOriginal": "2026:10:31 09:08:31", "OffsetTimeOriginal": "-07:00"""")
+
+    // 2026-10-31T16:08:31Z
+    assertThat(getCapturedSeconds(exif)).isEqualTo(1793462911L)
+  }
+
+  @Test
+  fun testNoCapturedSecondsWithoutOffset() {
+    val exif = parse(""""DateTimeOriginal": "2026:10:31 16:08:31"""")
+
+    assertThat(getCapturedSeconds(exif)).isNull()
+  }
+
+  @Test
+  fun testNoCapturedSecondsForUnsetClock() {
+    val exif =
+        parse(""""DateTimeOriginal": "0000:00:00 00:00:00", "OffsetTimeOriginal": "+00:00"""")
+
+    assertThat(getCapturedSeconds(exif)).isNull()
+  }
+
   private fun parse(fields: String) =
       parseExif("""[{"SourceFile": "display.webp", $fields}]""".toByteArray())
 }

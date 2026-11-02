@@ -12,6 +12,7 @@ tc_ts_project(
         "//js/map/common",
         "//js/map/rendering",
         "//trails_lat/proto:data_ts_proto",
+        "//trails_lat/proto:images_ts_proto",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/corgi",
     ],

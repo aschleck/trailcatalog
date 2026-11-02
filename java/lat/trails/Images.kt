@@ -14,6 +14,10 @@ import java.nio.channels.Channels
 import java.nio.channels.SocketChannel
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.DateTimeException
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -65,6 +69,8 @@ class EncodedImage(
     // exiftool's tag names to their values, all of them text or numbers
     val exif: ObjectNode,
     val location: ImageLocation?,
+    // epoch seconds
+    val capturedSeconds: Long?,
 )
 
 data class ImageLocation(val latDegrees: Double, val lngDegrees: Double)
@@ -117,7 +123,7 @@ class ImageEncoder(private val socket: Path) {
           }
         }
     val exif = parseExif(parts.last())
-    return EncodedImage(parts.dropLast(1), exif, getLocation(exif))
+    return EncodedImage(parts.dropLast(1), exif, getLocation(exif), getCapturedSeconds(exif))
   }
 }
 
@@ -179,6 +185,23 @@ fun getLocation(exif: ObjectNode): ImageLocation? {
   val lat = getCoordinate(exif, "GPSLatitude", "N", "S", 90.0)
   val lng = getCoordinate(exif, "GPSLongitude", "E", "W", 180.0)
   return if (lat != null && lng != null) ImageLocation(lat, lng) else null
+}
+
+private val EXIF_DATE_TIME = DateTimeFormatter.ofPattern("uuuu:MM:dd HH:mm:ss")
+
+/**
+ * Returns when the photo was taken, or null if it has no offset. DateTimeOriginal is wall-clock
+ * time in an unknown zone, so without OffsetTimeOriginal it could be off by up to 26 hours.
+ */
+fun getCapturedSeconds(exif: ObjectNode): Long? {
+  val dateTime = exif.get("DateTimeOriginal")?.takeIf { it.isTextual }?.asText() ?: return null
+  val offset = exif.get("OffsetTimeOriginal")?.takeIf { it.isTextual }?.asText() ?: return null
+  return try {
+    LocalDateTime.parse(dateTime, EXIF_DATE_TIME).toEpochSecond(ZoneOffset.of(offset))
+  } catch (e: DateTimeException) {
+    // Cameras with an unset clock write 0000:00:00 00:00:00.
+    null
+  }
 }
 
 // exiftool's -n prints a coordinate's magnitude and leaves its hemisphere in the Ref tag.

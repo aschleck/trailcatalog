@@ -17,6 +17,7 @@ import io.javalin.Javalin
 import io.javalin.http.BadRequestResponse
 import io.javalin.http.ConflictResponse
 import io.javalin.http.ContentTooLargeResponse
+import io.javalin.http.ContentType
 import io.javalin.http.Context
 import io.javalin.http.ForbiddenResponse
 import io.javalin.http.Header
@@ -99,6 +100,7 @@ import lat.trails.proto.SetViewStateResponse
 import lat.trails.proto.Sharing
 import lat.trails.proto.UpdateCollectionRequest
 import lat.trails.proto.UpdateCollectionResponse
+import lat.trails.proto.UploadImageResponse
 import lat.trails.proto.Write
 import lat.trails.wire.IMAGE_SIZES
 import lat.trails.wire.KIND_PACKED_PATH
@@ -1786,11 +1788,15 @@ private fun uploadImage(ctx: Context) {
   for ((i, size) in IMAGE_SIZES.withIndex()) {
     localImages.write(id, size.first, encoded.sizes[i])
   }
-  ctx.json(
-      buildMap {
-        put("id", id.toString())
-        encoded.location?.let { put("location", it) }
-      })
+  val response = UploadImageResponse.newBuilder().setId(id.toString())
+  encoded.capturedSeconds?.let { response.setCapturedEpochSeconds(it) }
+  encoded.location?.let {
+    response.setLocation(
+        UploadImageResponse.Location.newBuilder()
+            .setLatDegrees(it.latDegrees)
+            .setLngDegrees(it.lngDegrees))
+  }
+  ctx.contentType(ContentType.APPLICATION_JSON).result(JSON_PRINTER.print(response))
 }
 
 private fun fetchImage(ctx: Context) {

@@ -1,4 +1,7 @@
+import { fromJson } from '@bufbuild/protobuf';
+
 import { IMAGE_SIZES, MAX_ORIGINAL_SIZE_BYTES } from 'java/lat/trails/wire/wire';
+import { UploadImageResponse, UploadImageResponseSchema } from 'trails_lat/proto/images_pb';
 
 export type ImageSize = typeof IMAGE_SIZES[number][0];
 
@@ -23,15 +26,8 @@ export function getImageUrl(id: string, size: ImageSize): string {
   return `/api/images/${id}/${size}`;
 }
 
-// Keep in sync with ApiServer.kt#uploadImage
-export interface UploadedImage {
-  id: string;
-  // where the photo's GPS tags say it was taken
-  location?: {latDegrees: number; lngDegrees: number};
-}
-
 /** Uploads a photo as it is, which the server re-encodes at each of IMAGE_SIZES. */
-export async function uploadImage(collection: string, file: File): Promise<UploadedImage> {
+export async function uploadImage(collection: string, file: File): Promise<UploadImageResponse> {
   if (file.size > MAX_ORIGINAL_SIZE_BYTES) {
     throw new Error(`Image is ${file.size} bytes, over ${MAX_ORIGINAL_SIZE_BYTES}`);
   }
@@ -44,5 +40,5 @@ export async function uploadImage(collection: string, file: File): Promise<Uploa
   if (!response.ok) {
     throw new Error(`Uploading an image failed with ${response.status}`);
   }
-  return await response.json() as UploadedImage;
+  return fromJson(UploadImageResponseSchema, await response.json());
 }

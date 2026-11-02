@@ -86,6 +86,7 @@ import { getImageIcon, uploadImage } from './model/images';
 import { parseImport } from './model/importer';
 import { Point } from './model/points';
 import { SaveEntry, SaveQueue } from './model/save_queue';
+import { getPositionAt } from './model/tracks';
 import {
   adoptImported,
   channelOf,
@@ -2049,7 +2050,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private importFiles(files: File[], dropped?: S2LatLng): void {
     const generation = this.collectionGeneration;
     const stale = () => generation !== this.collectionGeneration;
-    const queue = [...files];
     const results: Array<{changes: Change[]; failed?: string}> = [];
     let imported = 0;
     const describe = (verb: string, count: number) =>
@@ -2057,17 +2057,28 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ? `${verb} ${files[0].name}`
             : `${verb} ${count} of ${files.length} files`;
     const progress = this.toast.start(describe('Importing', 0), /* fraction= */ 0);
-    const importNext = async (): Promise<void> => {
-      for (let file = queue.shift(); file && !stale(); file = queue.shift()) {
-        const result = await this.importOne(file, dropped);
-        results.push(result);
-        if (!result.failed) {
-          imported += 1;
+    const importAll = (queue: File[], tracks: EditableLine[]) => {
+      const importNext = async (): Promise<void> => {
+        for (let file = queue.shift(); file && !stale(); file = queue.shift()) {
+          const result = await this.importOne(file, dropped, tracks);
+          results.push(result);
+          if (!result.failed) {
+            imported += 1;
+          }
+          progress.update(describe('Imported', imported), results.length / files.length);
         }
-        progress.update(describe('Imported', imported), results.length / files.length);
-      }
+      };
+      return Promise.all(Array.from({length: UPLOADS_IN_FLIGHT}, importNext));
     };
-    Promise.all(Array.from({length: UPLOADS_IN_FLIGHT}, importNext)).then(() => {
+    // Tracks import first so that photos dropped alongside them can be placed along them.
+    const isImage = (file: File) => file.type.startsWith('image/');
+    importAll(files.filter(f => !isImage(f)), []).then(() => {
+      const tracks = [
+        ...this.store.lines(),
+        ...results.flatMap(r => r.changes.flatMap(c => c.after?.kind === 'line' ? [c.after] : [])),
+      ];
+      return importAll(files.filter(isImage), tracks);
+    }).then(() => {
       // Another collection was opened meanwhile, and these changes belong to the one before.
       if (stale()) {
         progress.dismiss();
@@ -2115,11 +2126,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Reports the file's name when it yielded nothing, so that importing several files names every
   // one that failed in a single dialog.
-  private importOne(file: File, dropped: S2LatLng|undefined):
+  private importOne(file: File, dropped: S2LatLng|undefined, tracks: EditableLine[]):
       Promise<{changes: Change[]; failed?: string}> {
     const changes =
         file.type.startsWith('image/')
-            ? this.importImage(file, dropped)
+            ? this.importImage(file, dropped, tracks)
             : this.importFeatures(file);
     return changes.then(
         changes => changes.length > 0 ? {changes} : {changes, failed: file.name},
@@ -2156,16 +2167,21 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
   }
 
-  // Makes a point that shows the photo where it was geotagged, or else where it was dropped on the
-  // map, or else in the middle of the map.
-  private importImage(file: File, dropped: S2LatLng|undefined): Promise<Change[]> {
+  // Makes a point that shows the photo where it was geotagged, or else where a track was when the
+  // photo was taken, or else where it was dropped on the map, or else in the middle of the map.
+  private importImage(file: File, dropped: S2LatLng|undefined, tracks: EditableLine[]):
+      Promise<Change[]> {
     const field = this.getImageIconField();
     if (field === undefined) {
       return Promise.reject(new Error('Points have no icon field to show a photo in'));
     }
     return this.currentCollection()
         .then(collection => uploadImage(collection, file))
-        .then(({id, location}) => {
+        .then(({capturedEpochSeconds, id, location}) => {
+          const tracked =
+              location === undefined && capturedEpochSeconds !== undefined
+                  ? getPositionAt(tracks, Number(capturedEpochSeconds))
+                  : undefined;
           const at =
               location
                   ? S2LatLng.fromDegrees(location.latDegrees, location.lngDegrees)
@@ -2175,9 +2191,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             id: crypto.randomUUID(),
             version: 0n,
             data: {[field]: getImageIcon(id)},
-            latE7: Math.round(at.latDegrees() * 1e7),
-            lngE7: Math.round(at.lngDegrees() * 1e7),
-            elevationCentimeters: undefined,
+            latE7: tracked?.latE7 ?? Math.round(at.latDegrees() * 1e7),
+            lngE7: tracked?.lngE7 ?? Math.round(at.lngDegrees() * 1e7),
+            elevationCentimeters: tracked?.elevationCentimeters,
           };
           point.data = withDefaults(this.store.schema(), point);
           return [{id: point.id, before: undefined, after: point}];

@@ -22,3 +22,22 @@ ts_proto_library(
     proto = ":data_proto",
     proto_srcs = ["data.proto"],
 )
+
+proto_library(
+    name = "images_proto",
+    srcs = ["images.proto"],
+)
+
+java_proto_library(
+    name = "images_java_proto",
+    deps = [":images_proto"],
+)
+
+ts_proto_library(
+    name = "images_ts_proto",
+    copy_files = False,
+    gen_connect_es = False,
+    node_modules = "//:node_modules",
+    proto = ":images_proto",
+    proto_srcs = ["images.proto"],
+)
