@@ -22,9 +22,9 @@ git_override(
 bazel_dep(name = "dev_april_corgi")
 archive_override(
     module_name = "dev_april_corgi",
-    integrity = "sha256-gmZ75JBVOhiHeWZ8VGzBpVEcIJnJDqEYIqIuMoUH5bE=",
-    strip_prefix = "corgi-d9ffb0c2ccdfa81fc558fd501cfad2be98877933",
-    urls = ["https://github.com/aschleck/corgi/archive/d9ffb0c2ccdfa81fc558fd501cfad2be98877933.tar.gz"],
+    integrity = "sha256-X3INVAywq7Dz02clL1RWB5Mh8uMyT77aKk74Du/HX5I=",
+    strip_prefix = "corgi-c8cedd6529c6257c7a2dc118b20a15820a75da78",
+    urls = ["https://github.com/aschleck/corgi/archive/c8cedd6529c6257c7a2dc118b20a15820a75da78.tar.gz"],
 )
 #local_path_override(
 #    module_name = "dev_april_corgi",
@@ -181,7 +181,7 @@ use_repo(npm, "npm")
 
 rules_ts_ext = use_extension(
     "@aspect_rules_ts//ts:extensions.bzl",
-    "ext",
+    "typescript",
     dev_dependency = True,
 )
 rules_ts_ext.deps(version_from = "//:package.json")
