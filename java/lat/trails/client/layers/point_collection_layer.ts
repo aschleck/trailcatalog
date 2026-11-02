@@ -2,6 +2,7 @@ import { KIND_PACKED_POINT, OBJECTS_WIRE_VERSION } from 'java/lat/trails/wire/wi
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
+import { clamp } from 'external/dev_april_corgi+/js/common/math';
 import { POINTS_ATLAS_SIZE, pointsAtlasIndex } from 'java/org/trailcatalog/client/points/points_atlas';
 import { aDescendsB, PointCategory } from 'java/org/trailcatalog/models/categories';
 import { Camera, projectS2LatLng, ScreenProjection, worldRadiusAt } from 'js/map/camera';
@@ -633,12 +634,17 @@ const SCREEN_STEP: [number, number] = [0, 0];
 function getScreenScale(
     position: Vec2, pixelsPerWorld: number, projection: ScreenProjection): Vec2|undefined {
   const step = 1 / pixelsPerWorld;
-  if (!projection.project(position[0], position[1], SCREEN_AT)
-      || !projection.project(position[0] + step, position[1], SCREEN_STEP)) {
+  // A mercator pixel covers almost no screen toward a pole and none at it, so a label box there
+  // spans millions of collision cells or infinitely many. We measure no further out than the edge
+  // of the mercator world, where a box is at most 1 / cos(85.05 degrees) = 11.6 times its screen
+  // size.
+  const y = clamp(position[1], -1, 1);
+  if (!projection.project(position[0], y, SCREEN_AT)
+      || !projection.project(position[0] + step, y, SCREEN_STEP)) {
     return undefined;
   }
   const across = Math.hypot(SCREEN_STEP[0] - SCREEN_AT[0], SCREEN_STEP[1] - SCREEN_AT[1]);
-  if (!projection.project(position[0], position[1] + step, SCREEN_STEP)) {
+  if (!projection.project(position[0], y + step, SCREEN_STEP)) {
     return undefined;
   }
   const down = Math.hypot(SCREEN_STEP[0] - SCREEN_AT[0], SCREEN_STEP[1] - SCREEN_AT[1]);
