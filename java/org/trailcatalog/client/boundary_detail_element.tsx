@@ -10,15 +10,15 @@ import { MapElement } from 'js/map/map_element';
 
 import { formatCount, formatDistance, formatHeight, getUnitSystem } from 'js/units/formatters';
 import { SELECTION_CHANGED } from './map/events';
-import { Boundary, SOURCE_LABELS, Trail } from './models/types';
+import { Boundary, getTrailTypeLabel, SOURCE_LABELS, Trail } from './models/types';
 
 import { BoundaryCrumbs } from './boundary_crumbs';
 import { BoundaryDetailController, boundaryFromRaw, State, trailsInBoundaryFromRaw } from './boundary_detail_controller';
 import { fetchData, getLoadStatus } from './data';
 import { ErrorElement } from './error_element';
+import { setDescription, setTitle } from './head';
 import { Header } from './page';
 import { getTrailHref } from './routes';
-import { setTitle } from './title';
 import { containingBoundariesFromRaw } from './trails';
 import { TrailPopup } from './trail_popup';
 
@@ -46,6 +46,11 @@ export function BoundaryDetailElement({boundaryId, parameters}: {
 
   setTitle(
       state.boundary.finished && state.boundary.ok ? state.boundary.value().name : undefined);
+  setDescription(
+      state.boundary.finished && state.boundary.ok
+          && state.trailsInBoundary.finished && state.trailsInBoundary.ok
+          ? describeBoundary(state.boundary.value(), state.trailsInBoundary.value())
+          : undefined);
   setCanonicalPath(`/boundary/${boundaryId}`);
 
   const futures = [
@@ -181,6 +186,46 @@ function Content({boundaryId, state, updateState}: {
       </table>
     </div>
   </>;
+}
+
+// Names the longest trails because trails_in_boundary sorts by length.
+function describeBoundary(boundary: Boundary, trails: Trail[]): string|undefined {
+  let which;
+  if (trails.length === 0) {
+    return undefined;
+  } else if (trails.length === 1) {
+    which = describeTrailFully(trails[0]);
+  } else if (trails.length === 2) {
+    which = `${describeTrailFully(trails[0])} and ${describeTrailFully(trails[1])}`;
+  } else {
+    const rest = trails.length - 2;
+    which =
+        `${describeTrailBriefly(trails[0])}, ${describeTrailBriefly(trails[1])}, and `
+            + `${formatCount(rest)} more ${rest === 1 ? 'trail' : 'trails'}`;
+  }
+  return `${which} in ${boundary.name}`;
+}
+
+function describeTrailBriefly(trail: Trail): string {
+  if (trail.lengthMeters < 0) {
+    return trail.name;
+  }
+  const distance = formatDistance(trail.lengthMeters);
+  return `${trail.name} (${distance.value} ${distance.unit})`;
+}
+
+function describeTrailFully(trail: Trail): string {
+  const facts = [];
+  const label = getTrailTypeLabel(trail.type).toLowerCase();
+  if (label !== 'trail') {
+    facts.push(label);
+  }
+  if (trail.lengthMeters >= 0) {
+    const distance = formatDistance(trail.lengthMeters);
+    const ascent = formatHeight(trail.elevationUpMeters);
+    facts.push(`${distance.value} ${distance.unit}`, `${ascent.value} ${ascent.unit} up`);
+  }
+  return facts.length > 0 ? `${trail.name} (${facts.join(', ')})` : trail.name;
 }
 
 function TrailRow({trail}: {

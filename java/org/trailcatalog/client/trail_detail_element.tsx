@@ -1,6 +1,5 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
-import { RelationCategory } from 'java/org/trailcatalog/models/categories';
 import { FlatButton, OutlinedButton } from 'js/dino/button';
 import { FluentIcon, FluentIconName } from 'js/dino/fluent';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
@@ -14,12 +13,13 @@ import { formatDistance, formatHeight, formatTemperature, getUnitSystem, shouldU
 import { formatCount, metersToFeet, metersToMiles } from 'js/units/formatters';
 import { formatWeatherCode } from './common/weather';
 import { SELECTION_CHANGED } from './map/events';
+import { Boundary, getTrailTypeLabel, Trail } from './models/types';
 
-import { BoundaryCrumbs } from './boundary_crumbs';
+import { BoundaryCrumbs, getMostSpecificCrumb } from './boundary_crumbs';
 import { fetchData, getLoadStatus } from './data';
 import { ErrorElement } from './error_element';
+import { setDescription, setTitle } from './head';
 import { Header } from './page';
-import { setTitle } from './title';
 import { TrailDetailController, State } from './trail_detail_controller';
 import { TrailIssue } from './trail_issue';
 import { TrailPopup } from './trail_popup';
@@ -55,6 +55,11 @@ export function TrailDetailElement({trailId, parameters}: {
   const state = inState;
 
   setTitle(state.trail.finished && state.trail.ok ? state.trail.value().name : undefined);
+  setDescription(
+      state.trail.finished && state.trail.ok
+          && state.containingBoundaries.finished && state.containingBoundaries.ok
+          ? describeTrail(state.trail.value(), state.containingBoundaries.value())
+          : undefined);
   setCanonicalPath(`/trail/${trailId}`);
 
   const futures = [
@@ -184,13 +189,6 @@ function TrailSidebar({state}: {state: State}) {
     };
   }
 
-  let isOneWay;
-  if (trail.paths.length === 1) {
-    isOneWay = true;
-  } else {
-    isOneWay = (trail.paths[0] & ~1n) !== (trail.paths[trail.paths.length - 1] & ~1n);
-  }
-
   const tags = state.tags.value();
 
   return <>
@@ -229,7 +227,7 @@ function TrailSidebar({state}: {state: State}) {
                 </div>
               </FactRow>
         }
-        <FactRow label={isOneWay ? "One-way distance" : "Round-trip distance"}>
+        <FactRow label={isOneWay(trail) ? "One-way distance" : "Round-trip distance"}>
           {valid
               ? <>
                   <FluentIcon name="DataLine" className="mr-2" />
@@ -239,7 +237,7 @@ function TrailSidebar({state}: {state: State}) {
           }
         </FactRow>
         <FactRow label="Trail type">
-          {trailTypeLabel(trail.type)}
+          {getTrailTypeLabel(trail.type)}
         </FactRow>
         <FactPairRow
             label="Ascent & descent"
@@ -358,30 +356,27 @@ function Unknown() {
   </>;
 }
 
-function trailTypeLabel(type: number): string {
-  switch (type) {
-    case RelationCategory.TRAIL_BICYCLE:
-      return 'Bicycle';
-    case RelationCategory.TRAIL_CANOE:
-      return 'Canoe';
-    case RelationCategory.TRAIL_FOOT:
-      return 'Foot';
-    case RelationCategory.TRAIL_HIKING:
-      return 'Hiking';
-    case RelationCategory.TRAIL_HORSE:
-      return 'Horse';
-    case RelationCategory.TRAIL_INLINE_SKATES:
-      return 'Inline skating';
-    case RelationCategory.TRAIL_MTB:
-      return 'Mountain biking';
-    case RelationCategory.TRAIL_PISTE:
-      return 'Piste';
-    case RelationCategory.TRAIL_RUNNING:
-      return 'Running';
-    case RelationCategory.TRAIL_SKIING:
-      return 'Skiing';
-    default:
-      return 'Trail';
+function describeTrail(trail: Trail, containingBoundaries: Boundary[]): string {
+  const label = getTrailTypeLabel(trail.type).toLowerCase();
+  const kind = label === 'trail' ? label : `${label} trail`;
+  const place = getMostSpecificCrumb(containingBoundaries, trail.name);
+  const where = place ? ` in ${place.name}` : '';
+  if (trail.lengthMeters < 0) {
+    const article = /^[aeiou]/.test(kind) ? 'An' : 'A';
+    return `${article} ${kind}${where}`;
+  }
+  const distance = formatDistance(trail.lengthMeters);
+  const ascent = formatHeight(trail.elevationUpMeters);
+  const direction = isOneWay(trail) ? 'one-way' : 'round-trip';
+  return `${distance.value} ${distance.unit} ${direction} ${kind}${where} with ${ascent.value} `
+      + `${ascent.unit} of ascent.`;
+}
+
+function isOneWay(trail: Trail): boolean {
+  if (trail.paths.length === 1) {
+    return true;
+  } else {
+    return (trail.paths[0] & ~1n) !== (trail.paths[trail.paths.length - 1] & ~1n);
   }
 }
 

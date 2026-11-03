@@ -5,6 +5,7 @@ import { FastifyInstance } from 'fastify';
 import { PageOptions, serve } from 'external/dev_april_corgi+/js/server/server';
 
 import { App } from '../client/app';
+import { DEFAULT_DESCRIPTION } from '../client/head';
 
 import { STATIC_PREFIX } from './assets';
 
@@ -33,14 +34,14 @@ async function initialize(server: FastifyInstance) {
 
 const ORIGIN = 'https://trailcatalog.org';
 
-function page({canonicalPath, content, escapedData, title}: PageOptions): string {
+function page({canonicalPath, content, description, escapedData, title}: PageOptions): string {
   return `
 <!DOCTYPE html>
 <html dir="ltr" lang="en" class="h-full">
   <head>
     <meta charset="utf-8"/>
     <title>${title}</title>
-    <meta name="description" content="Organizing trails from OpenStreetMap">
+    <meta name="description" content="${description ?? DEFAULT_DESCRIPTION}">
     ${canonicalPath === undefined ? '' : `<link rel="canonical" href="${new URL(canonicalPath, ORIGIN).href}">`}
     <meta
         name="viewport"

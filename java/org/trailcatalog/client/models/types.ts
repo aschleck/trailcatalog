@@ -1,4 +1,9 @@
-import { getBoundarySource, getPathSourceWay, getPointSource } from 'java/org/trailcatalog/models/categories';
+import {
+  getBoundarySource,
+  getPathSourceWay,
+  getPointSource,
+  RelationCategory,
+} from 'java/org/trailcatalog/models/categories';
 import { S2Polygon } from 'java/org/trailcatalog/s2';
 import { LatLng, LatLngRect, Vec2 } from 'js/map/common/types';
 
@@ -115,3 +120,29 @@ export class TrailSearchResult {
   ) {}
 }
 
+export function getTrailTypeLabel(type: number): string {
+  switch (type) {
+    case RelationCategory.TRAIL_BICYCLE:
+      return 'Bicycle';
+    case RelationCategory.TRAIL_CANOE:
+      return 'Canoe';
+    case RelationCategory.TRAIL_FOOT:
+      return 'Foot';
+    case RelationCategory.TRAIL_HIKING:
+      return 'Hiking';
+    case RelationCategory.TRAIL_HORSE:
+      return 'Horse';
+    case RelationCategory.TRAIL_INLINE_SKATES:
+      return 'Inline skating';
+    case RelationCategory.TRAIL_MTB:
+      return 'Mountain biking';
+    case RelationCategory.TRAIL_PISTE:
+      return 'Piste';
+    case RelationCategory.TRAIL_RUNNING:
+      return 'Running';
+    case RelationCategory.TRAIL_SKIING:
+      return 'Skiing';
+    default:
+      return 'Trail';
+  }
+}

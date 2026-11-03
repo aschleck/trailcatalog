@@ -20,10 +20,10 @@ import { BoundaryCrumbs } from './boundary_crumbs';
 import { boundaryFromRaw, trailsInBoundaryFromRaw } from './boundary_detail_controller';
 import { fetchData, getLoadStatus } from './data';
 import { ErrorElement } from './error_element';
+import { setDescription, setTitle } from './head';
 import { Header } from './page';
 import { searchTrailsFromRaw } from './search_controller';
 import { LIMIT, SearchResultsOverviewController, State } from './search_results_overview_controller';
-import { setTitle } from './title';
 import { TrailSidebar } from './trail_list';
 import { TrailPopup } from './trail_popup';
 
@@ -35,6 +35,7 @@ export function SearchResultsOverviewElement(
   const query = parameters.query ?? undefined;
 
   setTitle(query);
+  setDescription(undefined);
   // The camera, query, and boundary parameters would otherwise make every search its own page.
   setCanonicalPath('/');
 

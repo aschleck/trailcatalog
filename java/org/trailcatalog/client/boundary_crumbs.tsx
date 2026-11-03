@@ -5,12 +5,7 @@ import { BoundaryLink } from './models/types';
 
 export function BoundaryCrumbs({boundaries, name}: {boundaries: BoundaryLink[]; name: string}) {
   const crumbs =
-      boundaries
-          // a crag or climbing area isn't a place to file a trail or park under
-          .filter(b => !aDescendsB(b.type, RelationCategory.BOUNDARY_CLIMBING))
-          // a park drawn around the trail it's named for, like Bellingham's Railroad Trail
-          .filter(b => b.name !== name)
-          .sort((a, b) => crumbRank(a.type) - crumbRank(b.type) || a.type - b.type)
+      getCrumbBoundaries(boundaries, name)
           .map(b => <a href={`/boundary/${b.readableId}`}>{b.name}</a>)
           .flatMap(l => [
             l,
@@ -18,6 +13,21 @@ export function BoundaryCrumbs({boundaries, name}: {boundaries: BoundaryLink[]; 
           ]);
   crumbs.pop();
   return <>{crumbs}</>;
+}
+
+export function getMostSpecificCrumb(
+    boundaries: BoundaryLink[], name: string): BoundaryLink|undefined {
+  return getCrumbBoundaries(boundaries, name).at(-1);
+}
+
+// Orders the boundaries from the most general to the most specific.
+function getCrumbBoundaries(boundaries: BoundaryLink[], name: string): BoundaryLink[] {
+  return boundaries
+      // a crag or climbing area isn't a place to file a trail or park under
+      .filter(b => !aDescendsB(b.type, RelationCategory.BOUNDARY_CLIMBING))
+      // a park drawn around the trail it's named for, like Bellingham's Railroad Trail
+      .filter(b => b.name !== name)
+      .sort((a, b) => crumbRank(a.type) - crumbRank(b.type) || a.type - b.type);
 }
 
 // Category ids count depth in the category tree, not geographic nesting. Administrative levels do
