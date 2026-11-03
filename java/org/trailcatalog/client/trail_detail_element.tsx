@@ -304,7 +304,7 @@ function TrailSidebar({state}: {state: State}) {
             ? <FactRow label="Website">
                 <a className="underline" href={tags['website']} target="_blank">
                   <FluentIcon name="Globe" className="mr-1 text-tc-highlight-3" />
-                  Website
+                  {new URL(tags['website']).hostname}
                 </a>
               </FactRow>
             : <></>
