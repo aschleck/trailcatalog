@@ -1,6 +1,7 @@
 package org.trailcatalog
 
 import com.zaxxer.hikari.HikariDataSource
+import java.sql.SQLException
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -12,15 +13,21 @@ public class EpochTracker(private val hikari: HikariDataSource) {
   init {
     Thread {
       while (true) {
-        hikari.connection.use {
-          it.prepareStatement("SELECT epoch FROM active_epoch ORDER BY epoch DESC LIMIT 1").use {
-            val results = it.executeQuery()
-            if (results.next()) {
-              epoch = results.getInt(1)
-            } else {
-              println("Unable to find an epoch")
+        // An exception escaping would end this thread, and then an import deleting the epoch we
+        // last read would leave every query finding nothing.
+        try {
+          hikari.connection.use {
+            it.prepareStatement("SELECT epoch FROM active_epoch ORDER BY epoch DESC LIMIT 1").use {
+              val results = it.executeQuery()
+              if (results.next()) {
+                epoch = results.getInt(1)
+              } else {
+                println("Unable to find an epoch")
+              }
             }
           }
+        } catch (e: SQLException) {
+          println("Unable to read the epoch: ${e}")
         }
 
         Thread.sleep(10_000)
