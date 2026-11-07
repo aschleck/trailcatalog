@@ -104,6 +104,16 @@ in
     defaults.email = "trailcatalog@exclusivelyducks.com";
   };
 
+  # The trails.lat privacy policy promises we keep request logs for 30 days, and MaxRetentionSec
+  # only deletes whole archived files, so we rotate daily. The logs are in their own namespace so
+  # `journalctl -u nginx` doesn't find them, use `journalctl --namespace=nginx`.
+  systemd.services.nginx.serviceConfig.LogNamespace = "nginx";
+  environment.etc."systemd/journald@nginx.conf".text = ''
+    [Journal]
+    MaxRetentionSec=30day
+    MaxFileSec=1day
+  '';
+
   services.nginx = {
     enable = true;
     recommendedProxySettings = true;
