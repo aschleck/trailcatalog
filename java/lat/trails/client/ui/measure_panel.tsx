@@ -1,10 +1,18 @@
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
+import { VElementOrPrimitive } from 'external/dev_april_corgi+/js/corgi';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { PanelButton, PanelCloseButton, PrimaryButton } from 'js/pika/buttons';
 
 import { RouteStatus } from '../tools/drawing_layer';
-import { formatHeight, profileStats } from '../tools/measurements';
+import {
+  formatArea,
+  formatDistance,
+  formatHeight,
+  pathLengthMeters,
+  profileStats,
+  ringAreaMeters2,
+} from '../tools/measurements';
 import { LineStats } from './feature_list';
 import { LineProfile, LineProfileState } from './profile_chart';
 
@@ -23,13 +31,63 @@ export interface GradeLimitState {
 }
 
 /**
- * Floats over the map while measuring, showing the length and elevation of what is drawn. Given
- * grades, it measures a route over terrain and lets them be changed.
+ * Floats over the map while drawing a line, measuring, or routing over terrain, showing the length
+ * and elevation of what is drawn.
  */
-export function MeasurePanel({grades, readOnly, state}: {
-  grades: GradeLimitState|undefined;
+export function MeasurePanel({grades, readOnly, state, tool}: {
+  grades: GradeLimitState;
   readOnly: boolean;
   state: MeasureState;
+  tool: 'line'|'measure'|'terrain';
+}) {
+  const icon =
+      tool === 'line' ? <LineIcon /> : tool === 'terrain' ? <TerrainIcon /> : <MeasureIcon />;
+  return (
+    <ToolPanel
+        icon={icon}
+        title={tool === 'line' ? 'Draw a line' : tool === 'terrain' ? 'Route off trail' : 'Measure'}
+    >
+      {tool === 'terrain' ? <GradeLimits grades={grades} /> : ''}
+      {state.route ? <RouteReadout status={state.route} /> : ''}
+      {state.vertexCount < 2
+          ? <ClickHint />
+          : <Readout readOnly={readOnly} state={state} tool={tool} />
+      }
+    </ToolPanel>
+  );
+}
+
+/** Floats over the map while drawing an area, showing how much it encloses so far. */
+export function AreaPanel({ring}: {
+  // The placed vertices and the paths between them as interleaved lat then lng degrees
+  ring: Float64Array;
+}) {
+  // The perimeter runs back to the first vertex.
+  const perimeter = pathLengthMeters([...ring, ring[0], ring[1]]);
+  return (
+    <ToolPanel icon={<AreaIcon />} title="Draw an area">
+      {ring.length < 6
+          ? <ClickHint />
+          : <div className="flex flex-col gap-2">
+              <div className="text-gray-700">
+                {`${formatArea(ringAreaMeters2(ring))}, ${formatDistance(perimeter)} perimeter`}
+              </div>
+              <PrimaryButton
+                  className="self-start"
+                  unboundEvents={{corgi: [[ACTION, 'finishDrawingClicked']]}}
+              >
+                Finish area
+              </PrimaryButton>
+            </div>
+      }
+    </ToolPanel>
+  );
+}
+
+function ToolPanel({children, icon, title}: {
+  children?: VElementOrPrimitive|VElementOrPrimitive[];
+  icon: VElementOrPrimitive;
+  title: string;
 }) {
   return (
     <div className="
@@ -46,28 +104,51 @@ export function MeasurePanel({grades, readOnly, state}: {
         text-sm
     ">
       <div className="flex gap-2 items-center">
-        <svg className="h-5 stroke-current w-5" viewBox="0 0 20 20">
-          {grades ? <TerrainIcon /> : <MeasureIcon />}
+        <svg className="fill-current h-5 stroke-current w-5" viewBox="0 0 20 20">
+          {icon}
         </svg>
-        <span className="font-bold grow">{grades ? 'Route off trail' : 'Measure'}</span>
+        <span className="font-bold grow">{title}</span>
         <PanelButton
             label="Undo last point"
-            unboundEvents={{corgi: [[ACTION, 'measureUndoClicked']]}}
+            unboundEvents={{corgi: [[ACTION, 'undoPointClicked']]}}
         >
           <path d="M7 4 L3 8 L7 12 M3 8 H12 A4 4 0 0 1 12 16 H9" strokeWidth="1.5" />
         </PanelButton>
-        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'measureClosed']]}} />
+        <PanelCloseButton unboundEvents={{corgi: [[ACTION, 'toolPanelClosed']]}} />
       </div>
-      {grades ? <GradeLimits grades={grades} /> : ''}
-      {state.route ? <RouteReadout status={state.route} /> : ''}
-      {state.vertexCount < 2
-          ? <p className="text-gray-600">
-              Click points on the map
-            </p>
-          : <Readout readOnly={readOnly} state={state} />
-      }
+      {children ?? []}
     </div>
   );
+}
+
+function ClickHint() {
+  return <p className="text-gray-600">Click points on the map</p>;
+}
+
+export function LineIcon() {
+  return <>
+    <polyline
+        fill="none"
+        points="3,15 8,6 12,11 17,4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+    />
+    <circle cx="3" cy="15" r="1.5" />
+    <circle cx="8" cy="6" r="1.5" />
+    <circle cx="12" cy="11" r="1.5" />
+    <circle cx="17" cy="4" r="1.5" />
+  </>;
+}
+
+export function AreaIcon() {
+  return <>
+    <polygon fill="none" points="4,5 14,3 17,13 7,16" strokeLinejoin="round" strokeWidth="1.5" />
+    <circle cx="4" cy="5" r="1.5" />
+    <circle cx="14" cy="3" r="1.5" />
+    <circle cx="17" cy="13" r="1.5" />
+    <circle cx="7" cy="16" r="1.5" />
+  </>;
 }
 
 export function MeasureIcon() {
@@ -131,7 +212,11 @@ function RouteReadout({status}: {status: RouteStatus}) {
   return message ? <p className="text-gray-600">{message}</p> : '';
 }
 
-function Readout({readOnly, state}: {readOnly: boolean; state: MeasureState}) {
+function Readout({readOnly, state, tool}: {
+  readOnly: boolean;
+  state: MeasureState;
+  tool: 'line'|'measure'|'terrain';
+}) {
   const profile: LineProfileState = state.profile ?? {status: 'loading'};
   const stats = profile.status === 'loaded' ? profileStats(profile.meters) : undefined;
   return (
@@ -146,14 +231,21 @@ function Readout({readOnly, state}: {readOnly: boolean; state: MeasureState}) {
             </div>
           : ''
       }
-      {readOnly
-          ? ''
-          : <PrimaryButton
+      {tool === 'line'
+          ? <PrimaryButton
                 className="self-start"
-                unboundEvents={{corgi: [[ACTION, 'saveMeasurementClicked']]}}
+                unboundEvents={{corgi: [[ACTION, 'finishDrawingClicked']]}}
             >
-              Save as line
+              Finish line
             </PrimaryButton>
+          : readOnly
+              ? ''
+              : <PrimaryButton
+                    className="self-start"
+                    unboundEvents={{corgi: [[ACTION, 'saveMeasurementClicked']]}}
+                >
+                  Save as line
+                </PrimaryButton>
       }
     </div>
   );

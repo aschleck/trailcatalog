@@ -221,6 +221,8 @@ export interface State {
   fileDragged: boolean;
   // The map layer object open in the dialog, when no feature is selected
   inspected: InspectedObject|undefined;
+  // The placed part of the area under construction, as interleaved lat then lng degrees
+  drawnArea: Float64Array|undefined;
   // How far the line, polygon, or measurement under construction reaches, shown beside the
   // pointer. In pixels from the viewer's top left.
   drawnLength: {x: number; y: number; meters: number}|undefined;
@@ -426,8 +428,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             camera,
             renderer,
             () => {
+              this.measureChanged();
               this.drawnLengthChanged();
-            });
+            },
+            [MAPTERHORN_COPYRIGHT]);
     this.registerDisposable(this.lineLayer);
     this.polygonLayer =
         new DrawingLayer(
@@ -437,6 +441,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             camera,
             renderer,
             () => {
+              this.drawnAreaChanged();
               this.drawnLengthChanged();
             });
     this.registerDisposable(this.polygonLayer);
@@ -1018,12 +1023,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setHovered(undefined);
   }
 
-  measureClosed(): void {
+  toolPanelClosed(): void {
     this.setTool('pointer');
   }
 
-  measureUndoClicked(): void {
-    this.measuringLayer().popVertex();
+  // Keeps the tool, like finishing on the last vertex does.
+  finishDrawingClicked(): void {
+    this.drawingLayer()?.save(this.mapController, () => {});
+  }
+
+  undoPointClicked(): void {
+    this.drawingLayer()?.popVertex();
   }
 
   maxClimbChanged(e: CorgiEvent<typeof DOM_MOUSE>): void {
@@ -1069,6 +1079,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   profileLeft(): void {
+    this.lineLayer.setMarker(undefined);
     this.measureLayer.setMarker(undefined);
     this.terrainLayer.setMarker(undefined);
     this.featureLayer.setMarker(undefined);
@@ -1419,7 +1430,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.featureLayer.setInteractive(tool === 'pointer');
     this.featureLayer.setPointsDraggable(tool === 'point');
     this.catalog.setInteractive(tool === 'pointer');
-    // Refreshes the credits, because the measure layer's only count while it is active
+    // Refreshes the credits, because the drawing layers' only count while they are active
     this.setMapLayers(this.state.layers.nodes);
     if (tool === 'line') {
       this.lineLayer.setActive(true);
@@ -1541,9 +1552,33 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         this.state.tool === 'terrain' ? this.terrainLayer.routeStatus() : undefined);
   }
 
-  // The measure and terrain tools share the panel and its state, and only one is active at a time.
+  // The line, measure, and terrain tools share the panel and its state, and only one is active at a
+  // time.
   private measuringLayer(): DrawingLayer {
-    return this.state.tool === 'terrain' ? this.terrainLayer : this.measureLayer;
+    const tool = this.state.tool;
+    return tool === 'line' ? this.lineLayer
+        : tool === 'terrain' ? this.terrainLayer
+        : this.measureLayer;
+  }
+
+  private drawingLayer(): DrawingLayer|undefined {
+    const tool = this.state.tool;
+    return tool === 'polygon' ? this.polygonLayer
+        : tool === 'line' || tool === 'measure' || tool === 'terrain' ? this.measuringLayer()
+        : undefined;
+  }
+
+  // Compares before updating, because every pointer move changes the layer without moving a vertex.
+  private drawnAreaChanged(): void {
+    const drawing = this.polygonLayer.placedPoints();
+    const ring = drawing.length > 0 ? toDegrees(drawing) : undefined;
+    const shown = this.state.drawnArea;
+    if (
+        ring?.length === shown?.length
+            && (!ring || !shown || ring.every((v, i) => v === shown[i]))) {
+      return;
+    }
+    this.updateState({...this.state, drawnArea: ring});
   }
 
   // Ignores what isn't a positive number, like an emptied field.
@@ -1874,12 +1909,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Follows the pointer with the length drawn so far, which includes the segment to it. A polygon's
   // includes the way back to its first vertex, so it reads as the perimeter.
   private drawnLengthChanged(): void {
-    const tool = this.state.tool;
-    const layer =
-        tool === 'line' ? this.lineLayer
-            : tool === 'polygon' ? this.polygonLayer
-            : tool === 'measure' || tool === 'terrain' ? this.measuringLayer()
-            : undefined;
+    const layer = this.drawingLayer();
     const pointer = this.pointer;
     const drawnLength =
         layer?.followsPointer() && pointer

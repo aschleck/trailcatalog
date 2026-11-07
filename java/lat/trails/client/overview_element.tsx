@@ -38,7 +38,7 @@ import {
   topLevelFolderIds,
 } from './ui/feature_list';
 import { layerEntries, LayerTree } from './ui/layer_tree';
-import { MeasurePanel } from './ui/measure_panel';
+import { AreaPanel, MeasurePanel } from './ui/measure_panel';
 import { Menubar, MenubarItem } from './ui/menubar';
 import { EMPTY_SEARCH, SearchBox } from './ui/search_box';
 import { SidebarElement, SidebarSection } from './ui/sidebar_element';
@@ -88,6 +88,7 @@ export function OverviewElement(
         expanded: new Set(topLevelFolderIds(all, schema, hidden)),
         dropTarget: undefined,
       },
+      drawnArea: undefined,
       drawnLength: undefined,
       fileDragged: false,
       inspected: undefined,
@@ -245,13 +246,18 @@ export function OverviewElement(
               top-[40%]
               z-30
           ">
-            {state.tool === 'measure' || state.tool === 'terrain'
+            {state.tool === 'measure'
+                    || state.tool === 'terrain'
+                    || (state.tool === 'line' && state.measure.vertexCount > 0)
                 ? <MeasurePanel
-                      grades={state.tool === 'terrain' ? state.grades : undefined}
+                      grades={state.grades}
                       readOnly={readOnly}
                       state={state.measure}
+                      tool={state.tool}
                   />
-                : ''
+                : state.drawnArea
+                    ? <AreaPanel ring={state.drawnArea} />
+                    : ''
             }
             {state.features.selected
                 ? <Properties

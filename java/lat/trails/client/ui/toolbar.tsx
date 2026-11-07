@@ -4,7 +4,7 @@ import { Button } from 'external/dev_april_corgi+/js/emu/button';
 import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 
 import { Tool } from '../model/events';
-import { MeasureIcon, TerrainIcon } from './measure_panel';
+import { AreaIcon, LineIcon, MeasureIcon, TerrainIcon } from './measure_panel';
 
 export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
   // Icons are inlined because Fabric doesn't have a polyline icon as far as I can tell
@@ -37,29 +37,10 @@ export function Toolbar({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
               <circle cx="10" cy="7.5" r="2" />
             </ToolButton>,
             <ToolButton active={tool === 'line'} label="Draw a line" tool="line">
-              <polyline
-                  fill="none"
-                  points="3,15 8,6 12,11 17,4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-              />
-              <circle cx="3" cy="15" r="1.5" />
-              <circle cx="8" cy="6" r="1.5" />
-              <circle cx="12" cy="11" r="1.5" />
-              <circle cx="17" cy="4" r="1.5" />
+              <LineIcon />
             </ToolButton>,
             <ToolButton active={tool === 'polygon'} label="Draw an area" tool="polygon">
-              <polygon
-                  fill="none"
-                  points="4,5 14,3 17,13 7,16"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-              />
-              <circle cx="4" cy="5" r="1.5" />
-              <circle cx="14" cy="3" r="1.5" />
-              <circle cx="17" cy="13" r="1.5" />
-              <circle cx="7" cy="16" r="1.5" />
+              <AreaIcon />
             </ToolButton>,
             <ToolButton active={tool === 'marker'} label="Draw freehand" tool="marker">
               <path
