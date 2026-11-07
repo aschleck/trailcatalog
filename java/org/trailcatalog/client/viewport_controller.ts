@@ -266,8 +266,27 @@ export class ViewportController<A extends Args, D extends Deps, S extends State>
     }
   }
 
-  highlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {}
-  unhighlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {}
+  highlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.setTrailHighlighted(e, true);
+  }
+
+  unhighlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {
+    this.setTrailHighlighted(e, false);
+  }
+
+  protected setTrailHighlighted(
+      e: CorgiEvent<typeof DOM_MOUSE>, selected: boolean): Trail|undefined {
+    const id = e.actionElement.data('trailId')?.string();
+    if (!id) {
+      return undefined;
+    }
+    const trail = this.getTrail(BigInt(id));
+    if (!trail) {
+      return undefined;
+    }
+    this.setHover(trail, selected);
+    return trail;
+  }
 }
 
 function isTrail(e: Path|Point|Trail): e is Trail {

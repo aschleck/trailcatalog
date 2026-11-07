@@ -222,28 +222,16 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
     this.views.goTo(href);
   }
 
-  override highlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    this.setTrailHighlighted(e, true);
-  }
-
-  override unhighlightTrail(e: CorgiEvent<typeof DOM_MOUSE>): void {
-    this.setTrailHighlighted(e, false);
-  }
-
-  private setTrailHighlighted(e: CorgiEvent<typeof DOM_MOUSE>, selected: boolean): void {
-    const id = e.actionElement.data('trailId')?.string();
-    if (!id) {
-      return;
+  protected override setTrailHighlighted(
+      e: CorgiEvent<typeof DOM_MOUSE>, selected: boolean): Trail|undefined {
+    const trail = super.setTrailHighlighted(e, selected);
+    if (trail) {
+      this.updateState({
+        ...this.state,
+        hovering: selected ? trail : undefined,
+      });
     }
-    const trail = this.getTrail(BigInt(id));
-    if (!trail) {
-      return;
-    }
-    this.setHover(trail, selected);
-    this.updateState({
-      ...this.state,
-      hovering: selected ? trail : undefined,
-    });
+    return trail;
   }
 }
 
