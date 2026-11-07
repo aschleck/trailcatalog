@@ -1,7 +1,6 @@
 package(default_visibility = ["//visibility:private"])
 
 load("//build_defs:ts.bzl", "esbuild_binary", "tc_ts_project")
-load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 
 esbuild_binary(
@@ -37,7 +36,7 @@ tc_ts_project(
 pkg_files(
     name = "s2_pkg",
     srcs = [
-        ":copy",
+        ":index",
         ":static",
     ],
     prefix = "s2",
@@ -47,9 +46,21 @@ pkg_files(
     ],
 )
 
-copy_to_bin(
-    name = "copy",
+genrule(
+    name = "prefix",
+    srcs = [":static"],
+    outs = ["static_prefix.ts"],
+    cmd = "$(execpath //py:static_prefix) $@ /static $(SRCS)",
+    tools = ["//py:static_prefix"],
+)
+
+genrule(
+    name = "index",
     srcs = [
-        "index.html",
+        "index.template.html",
+        ":prefix",
     ],
+    outs = ["index.html"],
+    cmd = "prefix=$$(cut -d \"'\" -f2 $(location :prefix)) && " +
+          "sed \"s#STATIC_PREFIX#$$prefix#g\" $(location index.template.html) > $@",
 )

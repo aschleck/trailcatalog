@@ -10,6 +10,7 @@ py_binary(
     visibility = [
         "//java/lat/trails/frontend:__pkg__",
         "//java/org/trailcatalog/frontend:__pkg__",
+        "//js/s2viewer:__pkg__",
     ],
 )
 
