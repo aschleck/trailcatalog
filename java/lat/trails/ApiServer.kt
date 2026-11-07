@@ -74,6 +74,7 @@ import lat.trails.proto.GetInviteRequest
 import lat.trails.proto.GetInviteResponse
 import lat.trails.proto.GetOsmTagsRequest
 import lat.trails.proto.GetOsmTagsResponse
+import lat.trails.proto.GetShapeRequest
 import lat.trails.proto.GetSharingRequest
 import lat.trails.proto.GetSharingResponse
 import lat.trails.proto.GetTimeZoneRequest
@@ -256,6 +257,10 @@ private fun dispatch(ctx: Context, method: String, payload: JsonNode?): Message 
       getInvite(ctx, GetInviteRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetOsmTags" ->
       getOsmTags(GetOsmTagsRequest.newBuilder().mergeJson(payload).build())
+    "lat.trails.DataService/GetShape" ->
+      hikariTrailcatalog.connection.use {
+        getShape(GetShapeRequest.newBuilder().mergeJson(payload).build(), it, epochTracker.epoch)
+      }
     "lat.trails.DataService/GetSharing" ->
       getSharing(ctx, GetSharingRequest.newBuilder().mergeJson(payload).build())
     "lat.trails.DataService/GetTimeZone" ->

@@ -1,5 +1,6 @@
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Future, resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
+import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
@@ -11,9 +12,14 @@ import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controll
 import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_element';
 import { MenuHandle, MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
-import { getPointSource } from 'java/org/trailcatalog/models/categories';
-import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { projectS2LatLng, unprojectS2LatLng } from 'js/map/camera';
+import { getBoundarySource, getPointSource } from 'java/org/trailcatalog/models/categories';
+import { Bytes, S2LatLng, S2LatLngRect, S2Polygon } from 'java/org/trailcatalog/s2';
+import {
+  projectE7Deltas,
+  projectS2LatLng,
+  projectS2PolygonOutline,
+  unprojectS2LatLng,
+} from 'js/map/camera';
 import { MAPTERHORN_COPYRIGHT } from 'js/map/common/copyrights';
 import { LatLngZoom, Vec2 } from 'js/map/common/types';
 import { MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
@@ -35,9 +41,11 @@ import {
   GetAccountResponse,
   GetCollectionResponse,
   GetCurrentUserResponse,
+  GetShapeResponse,
   GetTimeZoneResponse,
   ListCollectionsResponse,
   SaveResponse,
+  SearchResultKind,
   SetViewStateResponse,
 } from 'trails_lat/proto/data_pb';
 
@@ -50,6 +58,7 @@ import { CollectionLayer, HeldObject } from './layers/collection_layer';
 import { FeatureLayer } from './layers/feature_layer';
 import { LayerCatalog, SKY_LAYER_ID } from './layers/layer_catalog';
 import { PointCollectionLayer } from './layers/point_collection_layer';
+import { ShapeLayer } from './layers/shape_layer';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -92,6 +101,8 @@ import {
   channelOf,
   getFieldKind,
   getObjectTitle,
+  OSM_NODES_SCHEMA,
+  OSM_WAYS_SCHEMA,
   parseCollectionSchema,
   SavedSchema,
   Schema,
@@ -163,6 +174,7 @@ import {
   getLineKind,
   pointLook,
 } from './workers/collection_schema';
+import { Data } from './workers/collection_types';
 
 const MINUTE_MS = 60 * 1000;
 const PLAY_INTERVAL_MS = 100;
@@ -254,6 +266,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private readonly measureLayer: DrawingLayer;
   private readonly terrainLayer: DrawingLayer;
   private readonly pointLayer: PointToolLayer;
+  private readonly shapeLayer: ShapeLayer;
   private readonly markerLayer: MarkerToolLayer;
   private readonly polarCapLayer: PolarCapLayer;
   private readonly skyboxLayer: SkyboxLayer;
@@ -270,8 +283,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private selected: string|undefined;
   // Kept for centering on, which needs the geometry the dialog's state leaves out, along with how
   // to stop its layer drawing it as selected. Loads for it check that it's still the same record.
-  private inspected: {object: LayerObject; unmark: () => void}|undefined;
-  // Moves with every click, so that a slow query for an earlier one is dropped
+  private inspected: {latLngDegrees: () => number[]; unmark: () => void}|undefined;
+  // Moves with every click and search pick, so that a slow query for an earlier one is dropped
   private pickGeneration: number;
   // The pick menu and the camera when it opened. The map reports a move whenever it settles, even
   // when the camera stayed put, and only a real move takes the menu away from its click.
@@ -463,6 +476,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.registerDisposable(this.pointLayer);
     this.markerLayer = new MarkerToolLayer(camera, renderer);
     this.registerDisposable(this.markerLayer);
+    this.shapeLayer = new ShapeLayer(camera, renderer);
+    this.registerDisposable(this.shapeLayer);
 
     this.registerListener(window, 'keydown', e => {
       this.keyPressed(e);
@@ -522,6 +537,16 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     // The server render already answered with the outline's failure, and a reload is the retry.
     if (collection && this.state.collectionStatus !== 'failed') {
       this.loadCollection(collection);
+    }
+
+    const parameters = new URL(window.location.href).searchParams;
+    for (const [name, kind] of SELECTION_PARAMETERS) {
+      const id = parameters.get(name);
+      if (id && /^\d+$/.test(id)) {
+        // A collection has its own bound to show, and the URL's camera already says where to look.
+        this.openSelection({kind, id: BigInt(id)}, !collection && !parameters.has('lat'));
+        break;
+      }
     }
   }
 
@@ -757,7 +782,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   private openObject(entry: LayerEntry, object: LayerObject, unmark: () => void): void {
     this.select(undefined);
-    this.inspected = {object, unmark};
+    this.inspected = {latLngDegrees: () => getObjectLatLngDegrees(object), unmark};
     const data = object.value.data;
     const schema = checkExists(getPickSchema(entry));
     const title = 'layers' in schema ? undefined : schema.title;
@@ -1092,16 +1117,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             ? []
             : selected.kind === 'folder' ? this.store.descendants(selected.id) : [selected];
     const latLngDegrees = featureLatLngDegrees(features);
-    const inspected = this.inspected?.object;
-    if (inspected?.kind === 'polygon') {
-      const bound = inspected.value.bound;
-      latLngDegrees.push(bound.low[0], bound.low[1], bound.high[0], bound.high[1]);
-    } else if (inspected?.kind === 'point') {
-      const ll = unprojectS2LatLng(inspected.value.position[0], inspected.value.position[1]);
-      latLngDegrees.push(ll.latDegrees(), ll.lngDegrees());
-    } else if (inspected?.kind === 'line') {
-      latLngDegrees.push(...toDegrees(inspected.value.points));
-    }
+    latLngDegrees.push(...(this.inspected?.latLngDegrees() ?? []));
     this.fitCamera(latLngDegrees);
   }
 
@@ -1651,6 +1667,112 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private pickSearchHit(hit: SearchHit): void {
     this.searchQuery.close();
     this.fitCamera([...hit.low, ...hit.high]);
+    if (hit.result) {
+      this.openSelection(hit.result, /* fit= */ false);
+    } else {
+      this.pickGeneration += 1;
+    }
+  }
+
+  // Selects a search result the way clicking it on the map would, and names it in the URL.
+  private openSelection(result: {kind: SearchResultKind; id: bigint}, fit: boolean): void {
+    this.pickGeneration += 1;
+    const generation = this.pickGeneration;
+    const loading: Future<GetShapeResponse> =
+        requestData('lat.trails.DataService/GetShape', {kind: result.kind, id: result.id});
+    loading.then(
+        response => {
+          if (generation === this.pickGeneration) {
+            this.openShape(result, response, fit);
+          }
+        },
+        e => {
+          console.error(e);
+        });
+  }
+
+  private openShape(
+      result: {kind: SearchResultKind; id: bigint},
+      response: GetShapeResponse,
+      fit: boolean): void {
+    const bound = response.bound;
+    const corners =
+        bound
+            ? [bound.lowLatDegrees, bound.lowLngDegrees, bound.highLatDegrees, bound.highLngDegrees]
+            : [];
+    if (fit) {
+      this.fitCamera(corners);
+    }
+    this.select(undefined);
+    this.inspected = {
+      latLngDegrees: () => corners,
+      unmark: () => {
+        this.shapeLayer.setShape(undefined);
+        this.setSelectionParameter(undefined);
+      },
+    };
+    this.setSelectionParameter(result);
+
+    const source =
+        result.kind === SearchResultKind.TRAIL ? {type: 'relation' as const, id: result.id}
+            : result.kind === SearchResultKind.POINT ? getPointSource(result.id)
+            : getBoundarySource(result.id);
+    const data: Data = {type: response.type};
+    // A point can lack a name tag, and then the dialog names its category instead.
+    if (response.name) {
+      data.name = response.name;
+    }
+    const common = {
+      data,
+      schema: result.kind === SearchResultKind.POINT ? OSM_NODES_SCHEMA : OSM_WAYS_SCHEMA,
+      osm: {type: source.type, id: Number(source.id)},
+      weather: undefined,
+    };
+    const geometry = response.shape;
+    if (geometry.case === 'polylines') {
+      const runs = geometry.value.runs.map(bytes => {
+        const end = bytes.byteOffset + bytes.byteLength;
+        return projectE7Deltas(new LittleEndianView(bytes.buffer, bytes.byteOffset, end));
+      });
+      this.shapeLayer.setShape({kind: 'lines', runs});
+      const path = new Float64Array(runs.reduce((sum, run) => sum + run.length, /* initial= */ 0));
+      let lengthMeters = 0;
+      let at = 0;
+      for (const run of runs) {
+        path.set(run, at);
+        at += run.length;
+        lengthMeters += pathLengthMeters(toDegrees(run));
+      }
+      this.updateState({...this.state, inspected: {...common, kind: 'line', lengthMeters}});
+      // Across a break between runs the profile runs straight from one to the next.
+      this.lineProfiler.forObject(toDegrees(path));
+    } else if (geometry.case === 's2Polygon') {
+      const polygon = S2Polygon.FAST_CODER.unsafeDecode(Bytes.fromByteArray(geometry.value));
+      this.shapeLayer.setShape({kind: 'outline', runs: projectS2PolygonOutline(polygon)});
+      this.updateState({...this.state, inspected: {...common, kind: 'polygon'}});
+    } else if (geometry.case === 'point') {
+      const {latDegrees, lngDegrees} = geometry.value;
+      this.shapeLayer.setShape({
+        kind: 'point',
+        position: projectS2LatLng(S2LatLng.fromDegrees(latDegrees, lngDegrees)),
+      });
+      this.updateState({
+        ...this.state,
+        inspected: {...common, kind: 'point', latDegrees, lngDegrees},
+      });
+    }
+  }
+
+  private setSelectionParameter(result: {kind: SearchResultKind; id: bigint}|undefined): void {
+    const url = new URL(window.location.href);
+    for (const [name, kind] of SELECTION_PARAMETERS) {
+      if (kind === result?.kind) {
+        url.searchParams.set(name, String(result.id));
+      } else {
+        url.searchParams.delete(name);
+      }
+    }
+    this.history.silentlyReplaceUrl(url.toString());
   }
 
   // Merged per field, so that dragging across the color picker is one undo
@@ -2578,6 +2700,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         [
           this.pointLayer,
           this.markerLayer,
+          this.shapeLayer,
           this.lineLayer,
           this.polygonLayer,
           this.measureLayer,
@@ -2597,6 +2720,18 @@ function withoutHover(profile: LineProfileState|undefined): LineProfileState|und
 function getPickSchema(entry: LayerEntry): Schema|CollectionSchema|undefined {
   return entry.schema
       ?? (entry.layer instanceof CollectionLayer ? entry.layer.getCollectionSchema() : undefined);
+}
+
+function getObjectLatLngDegrees(object: LayerObject): number[] {
+  if (object.kind === 'polygon') {
+    const bound = object.value.bound;
+    return [bound.low[0], bound.low[1], bound.high[0], bound.high[1]];
+  } else if (object.kind === 'point') {
+    const ll = unprojectS2LatLng(object.value.position[0], object.value.position[1]);
+    return [ll.latDegrees(), ll.lngDegrees()];
+  } else {
+    return [...toDegrees(object.value.points)];
+  }
 }
 
 // Mercator to interleaved lat then lng degrees
@@ -2635,6 +2770,14 @@ function stripUndefined(data: FeatureData): FeatureData {
   }
   return stripped;
 }
+
+// The URL parameter that names a selected search result by its SearchResult id, like
+// ?trail=4111743
+const SELECTION_PARAMETERS = [
+  ['boundary', SearchResultKind.BOUNDARY],
+  ['point', SearchResultKind.POINT],
+  ['trail', SearchResultKind.TRAIL],
+] as const;
 
 function newCollectionName(): string {
   return `Untitled collection ${new Date().toLocaleDateString()}`;

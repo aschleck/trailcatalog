@@ -1,7 +1,7 @@
 import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { clamp } from 'external/dev_april_corgi+/js/common/math';
 
-import { S2LatLng, S2LatLngRect, S2Loop, SimpleS2 } from 'java/org/trailcatalog/s2';
+import { S2LatLng, S2LatLngRect, S2Loop, S2Polygon, SimpleS2 } from 'java/org/trailcatalog/s2';
 
 import { createPerspectiveProjectionMatrix, createViewMatrix, multiply4x4 } from './common/matrix';
 import { Rect, Vec2 } from './common/types';
@@ -908,6 +908,26 @@ function e7ToRadians(degrees: number): number {
 export function projectS2LatLng(ll: S2LatLng): Vec2 {
   const y = latToMercY(ll.latRadians());
   return [ll.lngRadians() / Math.PI, Number.isFinite(y) ? y : 9999 * Math.sign(y)];
+}
+
+// projectS2Loop drops the repeated first vertex and splits a loop that crosses the antimeridian,
+// so each piece has to be closed again or the outline is missing its last edge.
+export function projectS2PolygonOutline(polygon: S2Polygon): Float32Array[] {
+  const loops = polygon.getLoops();
+  const rings: Float32Array[] = [];
+  for (let i = 0; i < loops.size(); ++i) {
+    const {splits, vertices} = projectS2Loop(loops.getAtIndex(i));
+    let start = 0;
+    for (const split of splits) {
+      const ring = new Float32Array(split - start + 2);
+      ring.set(vertices.subarray(start, split));
+      ring[split - start + 0] = vertices[start + 0];
+      ring[split - start + 1] = vertices[start + 1];
+      rings.push(ring);
+      start = split;
+    }
+  }
+  return rings;
 }
 
 export function projectS2Loop(loop: S2Loop): {splits: number[]; vertices: Float32Array;} {

@@ -5,7 +5,13 @@ import { KIND_PACKED_PATH, KIND_UUID_JSON, OBJECTS_WIRE_VERSION } from 'java/lat
 import { aDescendsB, unpackPathTraits, WayCategory } from 'java/org/trailcatalog/models/categories';
 
 import { Bytes, S2Polygon } from 'java/org/trailcatalog/s2';
-import { projectE7Deltas, projectE7DeltasAfter, projectS2Loop, skipE7Deltas, skipE7DeltasAfter } from 'js/map/camera';
+import {
+  projectE7Deltas,
+  projectE7DeltasAfter,
+  projectS2PolygonOutline,
+  skipE7Deltas,
+  skipE7DeltasAfter,
+} from 'js/map/camera';
 import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
@@ -308,7 +314,7 @@ class CollectionLoader {
       const triangles = triangulateS2(polygon);
       polygonGeometryFloats += triangles.geometry.length;
       indexCount += triangles.index.length;
-      const outline = outlineOf(polygon);
+      const outline = projectS2PolygonOutline(polygon);
       if (style.outline) {
         for (const ring of outline) {
           outlineGeometryBytes += LineProgram.bytesNeeded(ring.length / 2);
@@ -541,26 +547,6 @@ serveClients<Initialize, Request, Response>(init => {
     }
   };
 });
-
-// projectS2Loop drops the repeated first vertex and splits a loop that crosses the antimeridian,
-// so each piece has to be closed again or the outline is missing its last edge.
-function outlineOf(polygon: S2Polygon): Float32Array[] {
-  const loops = polygon.getLoops();
-  const rings: Float32Array[] = [];
-  for (let i = 0; i < loops.size(); ++i) {
-    const {splits, vertices} = projectS2Loop(loops.getAtIndex(i));
-    let start = 0;
-    for (const split of splits) {
-      const ring = new Float32Array(split - start + 2);
-      ring.set(vertices.subarray(start, split));
-      ring[split - start + 0] = vertices[start + 0];
-      ring[split - start + 1] = vertices[start + 1];
-      rings.push(ring);
-      start = split;
-    }
-  }
-  return rings;
-}
 
 // Trunk roads are left out because road walks between trailheads often follow them.
 const CLOSED_CATEGORIES = [

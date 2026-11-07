@@ -17,6 +17,7 @@ service DataService {
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
   rpc GetInvite(GetInviteRequest) returns (GetInviteResponse);
   rpc GetOsmTags(GetOsmTagsRequest) returns (GetOsmTagsResponse);
+  rpc GetShape(GetShapeRequest) returns (GetShapeResponse);
   rpc GetSharing(GetSharingRequest) returns (GetSharingResponse);
   rpc GetTimeZone(GetTimeZoneRequest) returns (GetTimeZoneResponse);
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
@@ -235,6 +236,36 @@ enum OsmElementType {
   OSM_ELEMENT_TYPE_NODE = 1;
   OSM_ELEMENT_TYPE_WAY = 2;
   OSM_ELEMENT_TYPE_RELATION = 3;
+}
+
+// The whole geometry of a search result, which no map layer holds at every zoom
+message GetShapeRequest {
+  SearchResultKind kind = 1;
+  int64 id = 2;
+}
+
+message GetShapeResponse {
+  string name = 1;
+  // A RelationCategory for a boundary or a trail and a PointCategory for a point
+  int32 type = 2;
+  oneof shape {
+    Polylines polylines = 3;
+    // As boundaries.s2_polygon stores it
+    bytes s2_polygon = 4;
+    LatLng point = 6;
+  }
+  // Where to move the camera when the URL didn't say
+  Bound bound = 5;
+}
+
+message LatLng {
+  double lat_degrees = 1;
+  double lng_degrees = 2;
+}
+
+message Polylines {
+  // DeltaLatLngE7 each. A trail whose ways don't meet end to end breaks into several runs.
+  repeated bytes runs = 1;
 }
 
 message GetSharingRequest {

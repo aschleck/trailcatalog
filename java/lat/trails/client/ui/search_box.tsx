@@ -33,6 +33,8 @@ export interface SearchHit {
   within: string[];
   low: [number, number];
   high: [number, number];
+  // Unset for coordinates
+  result: {kind: SearchResultKind; id: bigint; type: number}|undefined;
 }
 
 export const EMPTY_SEARCH: SearchState = {query: '', results: undefined, highlighted: 0};
@@ -78,6 +80,7 @@ export function parseCoordinates(query: string): SearchHit|undefined {
     within: [],
     low: [lat, lng],
     high: [lat, lng],
+    result: undefined,
   };
 }
 
@@ -148,6 +151,7 @@ export class SearchQuery {
             within: result.within,
             low: [result.lowLatDegrees, result.lowLngDegrees],
             high: [result.highLatDegrees, result.highLngDegrees],
+            result: {kind: result.kind, id: result.id, type: result.type},
           }));
           this.show({...this.current(), results, highlighted: 0});
         },
