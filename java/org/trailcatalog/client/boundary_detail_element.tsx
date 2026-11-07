@@ -163,14 +163,21 @@ function Content({boundaryId, state, updateState}: {
         </div>
         {trailDetails ?? <></>}
       </div>
-      <div className="mb-4 mt-8">
+      <div className="my-4">
+        Don't see a trail you want to hike? Map your own route at
+        {' '}
+        <a className="underline" href={`https://trails.lat/?boundary=${boundary.id}`}>
+          trails.lat
+        </a>
+      </div>
+      <div className="my-4">
         <span className="font-bold text-3xl">
           {formatCount(trailsInBoundary.length)}
         </span>
         {' '}
         trails
       </div>
-      <table className="border rounded table-auto w-full">
+      <table className="border rounded table-auto my-4 w-full">
         <thead className="font-medium text-tc-gray-400 text-xs">
           <tr className="border">
             <th className="pb-2 pt-4 px-5">Name</th>
