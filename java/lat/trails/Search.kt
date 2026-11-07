@@ -160,6 +160,15 @@ private fun searchTrails(query: String, connection: Connection, epoch: Int): Lis
   return candidates
 }
 
+private val UNSEARCHED_POINT_CATEGORIES =
+    arrayOf(
+      // There can be many trailheads for a large trail like Wonderland Trail, and it's better to
+      // just show the trail rather than the trailhead
+      PointCategory.ACCESS_TRAILHEAD.id,
+      // Likely low quality or profane names so I'm scared to import these
+      PointCategory.CLIMBING_ROUTE.id,
+    )
+
 /** Searches every point, or only those whose cells fall in [ranges] when it's set. */
 private fun searchPoints(
     query: String,
@@ -182,15 +191,14 @@ private fun searchPoints(
             nm.score - CASE WHEN p.notable THEN $NOTABLE_BONUS ELSE 0 END
           FROM (${bestNames("point_names", 0.7)}) nm
           JOIN points p ON p.id = nm.id AND p.epoch = ?
-          WHERE p.type <> ? ${near ?: ""}
+          WHERE NOT p.type = ANY(?) ${near ?: ""}
           ORDER BY 6
           LIMIT ?
           """)
       .apply {
         var next = bindBestNames(query, epoch)
         setInt(next++, epoch)
-        // TODO(april): routes are imported for search but stay out of its results for now.
-        setInt(next++, PointCategory.CLIMBING_ROUTE.id)
+        setArray(next++, connection.createArrayOf("INTEGER", UNSEARCHED_POINT_CATEGORIES))
         for ((low, high) in ranges ?: listOf()) {
           setLong(next++, low)
           setLong(next++, high)
