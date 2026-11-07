@@ -51,6 +51,7 @@ import {
 
 import { AccountDialog, ConfirmDeleteAccountDialog } from './account/account_dialog';
 import { CollectionSettingsDialog } from './account/collection_settings_dialog';
+import { LoginReason } from './account/login_page';
 import { LoginPopup } from './account/login_popup';
 import { canEdit } from './data/collection_data';
 import { requestData } from './data/data';
@@ -2358,7 +2359,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return Promise.resolve(this.routedCollection);
     }
 
-    this.creatingCollection ??= this.requireLogin()
+    this.creatingCollection ??= this.requireLogin('save')
         .then(() => {
           const created: Future<CreateCollectionResponse> =
               requestData(
@@ -2421,7 +2422,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         });
   }
 
-  private requireLogin(): Promise<void> {
+  private requireLogin(reason?: LoginReason): Promise<void> {
     // Somebody already signed in whose GetCurrentUser has not landed yet gets a popup if we go by
     // finished, so wait the fetch out instead.
     return this.state.self.then(response => {
@@ -2431,7 +2432,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
       // Callers wait on this, so it has to settle even when the user fetch fails, or else the
       // write queue behind it never runs again.
-      this.login ??= this.loginPopup.open()
+      this.login ??= this.loginPopup.open(reason)
           .then(response => {
             this.signedIn(response);
             if (!response.user) {

@@ -18,7 +18,7 @@ import postgres from 'postgres';
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { PROVIDER_LABELS } from '../client/account/account_dialog';
-import { loginPage } from '../client/account/login_page';
+import { isLoginReason, loginPage } from '../client/account/login_page';
 import { ACKNOWLEDGED, LOGIN_CHANNEL, SIGNED_IN } from '../client/account/login_popup';
 
 import { STATIC_PREFIX } from './assets';
@@ -155,6 +155,7 @@ export async function addProviders(
   fastify.get('/login', async (request, reply) => {
     const returnTo = returnPath(request);
     const query = returnTo ? `?return=${encodeURIComponent(returnTo)}` : '';
+    const reason = (request.query as {reason?: string}).reason;
     reply.type('text/html').send(
         loginPage(
             configured.map(name => ({
@@ -162,6 +163,7 @@ export async function addProviders(
               label: PROVIDER_LABELS[PROVIDERS[name].issuer],
               logo: `/static/${PROVIDERS[name].logo}`,
             })),
+            isLoginReason(reason) ? reason : undefined,
             STATIC_PREFIX));
   });
 }
