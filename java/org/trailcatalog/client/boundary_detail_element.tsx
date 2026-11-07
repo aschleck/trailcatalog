@@ -113,7 +113,7 @@ function Content({boundaryId, state, updateState}: {
         className="h-full max-w-6xl px-4 my-8 w-full"
     >
       <header className="flex gap-2 items-center">
-        <span className="font-bold font-sans text-3xl">
+        <span className="font-bold font-sans text-3xl" translate="no">
           {boundary.name}
         </span>
       </header>
@@ -245,7 +245,7 @@ function TrailRow({trail}: {
   return <>
     <tr className="border">
       <td className="px-5 py-4">
-        <a href={getTrailHref(trail)}>
+        <a href={getTrailHref(trail)} translate="no">
           {trail.name}
         </a>
       </td>

@@ -359,7 +359,17 @@ export function Properties({profile, subject}: {
                       unboundEvents={{corgi: [[CHANGED, 'nameChanged']]}}
                   />
                 : ''
-            : <div className="font-bold">{title || untitled(name)}</div>
+            : <div
+                  className="font-bold"
+                  // An object without a name tag is titled by its English category instead.
+                  translate={
+                      title && (subject.source === 'feature' || subject.object.data.name)
+                          ? 'no'
+                          : undefined
+                  }
+              >
+                {title || untitled(name)}
+              </div>
         }
         {osm
             ? <a

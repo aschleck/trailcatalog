@@ -219,9 +219,12 @@ export function SearchBox({state}: {state: SearchState}) {
                           // A click lands after focusout, which would close the list first.
                           unboundEvents={{pointerdown: 'searchResultPicked'}}
                       >
-                        <div className="truncate">{hit.name}</div>
+                        <div className="truncate" translate="no">{hit.name}</div>
                         <div className="text-gray-400 text-xs truncate">
-                          {[hit.label, hit.matched, ...hit.within].filter(s => s).join(' · ')}
+                          {hit.label}
+                          <span translate="no">
+                            {[hit.matched, ...hit.within].filter(s => s).map(s => ` · ${s}`)}
+                          </span>
                         </div>
                       </div>
                   )

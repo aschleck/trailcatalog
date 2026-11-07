@@ -111,7 +111,7 @@ export function TrailListItem({ highlight, trail }: { highlight: boolean, trail:
       </td>
       <td></td>
       <td>
-        <a href={getTrailHref(trail)}>
+        <a href={getTrailHref(trail)} translate="no">
           {trail.name}
         </a>
         {

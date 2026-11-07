@@ -6,7 +6,7 @@ import { BoundaryLink } from './models/types';
 export function BoundaryCrumbs({boundaries, name}: {boundaries: BoundaryLink[]; name: string}) {
   const crumbs =
       getCrumbBoundaries(boundaries, name)
-          .map(b => <a href={`/boundary/${b.readableId}`}>{b.name}</a>)
+          .map(b => <a href={`/boundary/${b.readableId}`} translate="no">{b.name}</a>)
           .flatMap(l => [
             l,
             ' › ',

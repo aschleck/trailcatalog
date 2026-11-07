@@ -122,7 +122,7 @@ function TrailLink({trail}: {trail: Trail}) {
           mouseout: 'unhighlightTrail',
         }}
     >
-      <header className="font-bold font-lg grow">
+      <header className="font-bold font-lg grow" translate="no">
         {trail.name}
       </header>
       <section>
@@ -150,7 +150,7 @@ function OsmPointLink({point}: {point: Point}) {
         href={`https://www.openstreetmap.org/${type}/${id}`}
         target="_blank"
     >
-      <header className="font-bold font-lg grow">
+      <header className="font-bold font-lg grow" translate={point.name ? 'no' : undefined}>
         {label}
       </header>
     </a>

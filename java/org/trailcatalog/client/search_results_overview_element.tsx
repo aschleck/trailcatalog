@@ -248,6 +248,7 @@ function SearchFilter({state}: {state: State}) {
       <a
           className="flex gap-2 items-center"
           href={`/boundary/${boundary.readableId}`}
+          translate="no"
       >
         <img
             aria-hidden="true"

@@ -164,7 +164,7 @@ function ResultItem({aside, boundaries, href, text, query}: {
     <div className="flex">
       <div className="basis-3/4">
         <div>
-          <a href={href}>
+          <a href={href} translate="no">
             <HighlightText haystack={text} needle={query} />
           </a>
         </div>
