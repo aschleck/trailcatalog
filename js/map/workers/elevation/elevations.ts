@@ -41,12 +41,7 @@ export class Elevations {
    */
   sample(latLngDegrees: Float64Array, zoom: number, key?: string): Promise<Float32Array> {
     return this.request<SampleResponse>(id => ({kind: 'sr', id, latLngDegrees, zoom, key}))
-        .then(({meters}) => {
-          if (meters.length !== latLngDegrees.length / 2) {
-            throw new Error('Unable to sample elevations');
-          }
-          return meters;
-        });
+        .then(({meters}) => meters);
   }
 
   /**
@@ -54,12 +49,7 @@ export class Elevations {
    * see TerrainTracer. Rejects if the tiles could not be fetched.
    */
   trace(request: Omit<TraceRequest, 'kind'|'id'>): Promise<TraceResponse> {
-    return this.request<TraceResponse>(id => ({kind: 'tr', id, ...request})).then(response => {
-      if (response.failed) {
-        throw new Error('Unable to trace the terrain');
-      }
-      return response;
-    });
+    return this.request<TraceResponse>(id => ({kind: 'tr', id, ...request}));
   }
 
   /**
@@ -67,12 +57,7 @@ export class Elevations {
    * sunlight.ts#getSunlight. Rejects if the tiles could not be fetched.
    */
   shade(request: Omit<SunlightRequest, 'kind'|'id'>): Promise<SunlightResponse> {
-    return this.request<SunlightResponse>(id => ({kind: 'lr', id, ...request})).then(response => {
-      if (response.rgba.length === 0) {
-        throw new Error('Unable to shade the terrain');
-      }
-      return response;
-    });
+    return this.request<SunlightResponse>(id => ({kind: 'lr', id, ...request}));
   }
 
   /**
@@ -82,20 +67,21 @@ export class Elevations {
    */
   route(from: Vec2, to: Vec2, limits: GradeLimits): Promise<Float64Array|undefined> {
     return this.request<RouteResponse>(id => ({kind: 'rr', id, from, to, limits}))
-        .then(response => {
-          if (response.failed) {
-            throw new Error('Unable to route over terrain');
-          }
-          return response.via;
-        });
+        .then(({via}) => via);
   }
 
   private request<R extends Response>(request: (id: number) => Request): Promise<R> {
     const id = this.requestCount;
     this.requestCount += 1;
-    return new Promise<R>(resolve => {
+    return new Promise<R>((resolve, reject) => {
       // The id says which response this is, so the cast only restates what the caller asked for.
-      this.pending.set(id, response => { resolve(response as R); });
+      this.pending.set(id, response => {
+        if (response.kind === 'error') {
+          reject(new Error(`Elevation request ${id} failed`));
+        } else {
+          resolve(response as R);
+        }
+      });
       this.worker.post(request(id));
     });
   }

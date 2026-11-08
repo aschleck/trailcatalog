@@ -97,7 +97,6 @@ export interface SampleResponse {
   kind: 'sr';
   id: number;
   // One per point, 0 where there is no data, which is what CalculateWayElevations assumes too.
-  // Empty when sampling failed or a newer request with the same key replaced this one.
   meters: Float32Array;
 }
 
@@ -107,8 +106,6 @@ export interface RouteResponse {
   // The way from from to to in mercator, excluding both, or undefined when no way keeps within
   // the limits.
   via: Float64Array|undefined;
-  // Set when tiles could not be fetched, so that no route means nothing about the terrain
-  failed: boolean;
 }
 
 export interface TraceResponse {
@@ -119,8 +116,6 @@ export interface TraceResponse {
   skyline: Float32Array;
   // One for each band of a viewshed, nearest first, and empty for a skyline
   images: ViewshedImage[];
-  // Set when tiles could not be fetched
-  failed: boolean;
 }
 
 export interface SunlightResponse {
@@ -131,13 +126,20 @@ export interface SunlightResponse {
   y: number;
   width: number;
   height: number;
-  // Clear in full sun facing it and opaque white in shadow, so a tint colors it. Empty when the
-  // tiles could not be fetched.
+  // Clear in full sun facing it and opaque white in shadow, so a tint colors it.
   pixels: [number, number];
   rgba: Uint8ClampedArray<ArrayBuffer>;
 }
 
-export type Response = RouteResponse|SampleResponse|SunlightResponse|TraceResponse;
+// Sent when tiles could not be fetched, or when a newer sample request with the same key replaced
+// this one
+export interface ErrorResponse {
+  kind: 'error';
+  id: number;
+}
+
+export type Response =
+    ErrorResponse|RouteResponse|SampleResponse|SunlightResponse|TraceResponse;
 
 type Tile = Float32Array|undefined;
 
@@ -168,7 +170,7 @@ class ElevationSampler {
     const meters = new Float32Array(count);
     for (let i = 0; i < count; ++i) {
       if (request.key !== undefined && this.newest.get(request.key) !== request.id) {
-        this.fail(request);
+        this.postMessage({kind: 'error', id: request.id});
         return;
       }
       meters[i] =
@@ -178,17 +180,9 @@ class ElevationSampler {
     this.postMessage({kind: 'sr', id: request.id, meters}, [meters.buffer]);
   }
 
-  fail(request: SampleRequest): void {
-    this.postMessage({kind: 'sr', id: request.id, meters: new Float32Array(0)});
-  }
-
   async route(request: RouteRequest): Promise<void> {
     const via = await this.routeVia(request);
-    this.postMessage({kind: 'rr', id: request.id, via, failed: false}, via ? [via.buffer] : []);
-  }
-
-  failRoute(request: RouteRequest): void {
-    this.postMessage({kind: 'rr', id: request.id, via: undefined, failed: true});
+    this.postMessage({kind: 'rr', id: request.id, via}, via ? [via.buffer] : []);
   }
 
   async trace(request: TraceRequest): Promise<void> {
@@ -217,7 +211,7 @@ class ElevationSampler {
     }
     const skyline = tracer.skyline;
     this.postMessage(
-        {kind: 'tr', id: request.id, groundMeters: ground, skyline, images, failed: false},
+        {kind: 'tr', id: request.id, groundMeters: ground, skyline, images},
         [skyline.buffer, ...images.map(image => image.rgba.buffer)]);
   }
 
@@ -279,30 +273,6 @@ class ElevationSampler {
           rgba,
         },
         [rgba.buffer]);
-  }
-
-  failShade(request: SunlightRequest): void {
-    this.postMessage({
-      kind: 'lr',
-      id: request.id,
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
-      pixels: [0, 0],
-      rgba: new Uint8ClampedArray(0),
-    });
-  }
-
-  failTrace(request: TraceRequest): void {
-    this.postMessage({
-      kind: 'tr',
-      id: request.id,
-      groundMeters: 0,
-      skyline: new Float32Array(0),
-      images: [],
-      failed: true,
-    });
   }
 
   // Searches the pixels of the deepest zoom that fits the box around the ends in MAX_ROUTE_CELLS.
@@ -591,31 +561,27 @@ class TileGrid {
 
 // Answers requests one at a time, in order, so that tiles a request loads are cached for the next.
 let queue = Promise.resolve();
-const sampler = new ElevationSampler((self as any).postMessage.bind(self));
+const post = (self as any).postMessage.bind(self);
+const sampler = new ElevationSampler(post);
 self.onmessage = e => {
   const request = e.data as Request;
-  if (request.kind === 'rr') {
-    queue = queue.then(() => sampler.route(request)).catch(e => {
-      console.error(e);
-      sampler.failRoute(request);
-    });
-  } else if (request.kind === 'sr') {
+  if (request.kind === 'sr') {
     sampler.received(request);
-    queue = queue.then(() => sampler.sample(request)).catch(e => {
-      console.error(e);
-      sampler.fail(request);
-    });
-  } else if (request.kind === 'lr') {
-    queue = queue.then(() => sampler.shade(request)).catch(e => {
-      console.error(e);
-      sampler.failShade(request);
-    });
-  } else if (request.kind === 'tr') {
-    queue = queue.then(() => sampler.trace(request)).catch(e => {
-      console.error(e);
-      sampler.failTrace(request);
-    });
-  } else {
-    checkExhaustive(request);
   }
+  queue = queue.then(() => {
+    if (request.kind === 'rr') {
+      return sampler.route(request);
+    } else if (request.kind === 'sr') {
+      return sampler.sample(request);
+    } else if (request.kind === 'lr') {
+      return sampler.shade(request);
+    } else if (request.kind === 'tr') {
+      return sampler.trace(request);
+    } else {
+      throw checkExhaustive(request);
+    }
+  }).catch(e => {
+    console.error(e);
+    post({kind: 'error', id: request.id});
+  });
 };
