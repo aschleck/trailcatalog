@@ -42,7 +42,6 @@ export function SearchResultsOverviewElement(
   if (!inState || boundaryId !== inState.boundaryId || query !== inState.searchQuery) {
     let boundary;
     let trailsInBoundary;
-    let trailsInBoundaryIds;
 
     if (boundaryId) {
       boundary = fetchData('boundary', {boundary_id: {numeric: boundaryId}}).then(boundaryFromRaw);
@@ -50,15 +49,17 @@ export function SearchResultsOverviewElement(
       trailsInBoundary =
           fetchData('trails_in_boundary', {boundary_id: {numeric: boundaryId}})
               .then(trailsInBoundaryFromRaw);
-      trailsInBoundaryIds = trailsInBoundary.then(raw => new Set(raw.map(t => t.id)));
     }
+    const trailsInBoundaryIds = trailsInBoundary?.then(raw => new Set(raw.map(t => t.id)));
 
-    let searchTrails;
-    let searchTrailsIds;
-    if (query) {
-      searchTrails = fetchData('search_trails', {query, limit: LIMIT}).then(searchTrailsFromRaw);
-      searchTrailsIds = searchTrails.then(raw => new Set(raw.map(t => t.id)));
-    }
+    const searchTrails =
+        query
+            ? fetchData('search_trails', {query, limit: LIMIT}).then(searchTrailsFromRaw)
+            : undefined;
+    const searchTrailsIds = searchTrails?.then(raw => new Set(raw.map(t => t.id)));
+    const trailsFilter = (id: bigint) => !searchTrailsIds || searchTrailsIds.value().has(id);
+    const trailsInBoundaryFilter = (id: bigint) =>
+        trailsFilter(id) && (!trailsInBoundaryIds || trailsInBoundaryIds.value().has(id));
 
     inState = {
       blueDot: undefined,
@@ -70,9 +71,9 @@ export function SearchResultsOverviewElement(
       searchQuery: query,
       searchTrails,
       searchTrailsIds,
-      trailsFilter: () => true,
+      trailsFilter,
       trailsInBoundary,
-      trailsInBoundaryFilter: () => true,
+      trailsInBoundaryFilter,
       trailsInBoundaryIds,
       hovering: undefined,
       nearbyTrails: [],

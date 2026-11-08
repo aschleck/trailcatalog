@@ -1,6 +1,6 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Future } from 'external/dev_april_corgi+/js/common/futures';
-import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { Controller } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_MOUSE } from 'external/dev_april_corgi+/js/corgi/events';
 
 import { SimpleS2 } from 'java/org/trailcatalog/s2';
@@ -53,38 +53,6 @@ export class SearchResultsOverviewController extends ViewportController<Args, De
 
   static deps() {
     return ViewportController.deps();
-  }
-
-  constructor(response: Response<SearchResultsOverviewController>) {
-    super(response);
-
-    // We do this here to
-    // a) avoid making filter functions every time the TSX re-renders
-    // b) capture this controller's this reference, because the state reference isn't stable
-    this.updateState({
-      ...this.state,
-      trailsFilter: (id: bigint) => {
-        const searchTrailsIds = this.state.searchTrailsIds;
-        if (searchTrailsIds && !searchTrailsIds.value().has(id)) {
-          return false;
-        }
-
-        return true;
-      },
-      trailsInBoundaryFilter: (id: bigint) => {
-        const searchTrailsIds = this.state.searchTrailsIds;
-        if (searchTrailsIds && !searchTrailsIds.value().has(id)) {
-          return false;
-        }
-
-        const trailsInBoundaryIds = this.state.trailsInBoundaryIds;
-        if (trailsInBoundaryIds) {
-          return trailsInBoundaryIds.value().has(id);
-        }
-
-        return true;
-      },
-    });
   }
 
   centerBoundary(): void {
