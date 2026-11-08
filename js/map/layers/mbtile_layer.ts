@@ -606,7 +606,7 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'landuse',
       minZoom: 11,
-      maxZoom: 12,
+      maxZoom: 31,
       lineTexts: [],
       lines: [],
       points: [],
@@ -666,30 +666,6 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'landuse',
-      minZoom: 12,
-      maxZoom: 13,
-      lineTexts: [],
-      lines: [],
-      points: [],
-      polygons: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'kind',
-            value: [
-              'aerodrome',
-            ],
-          }],
-          fill: 0xE7E9EEFF as RgbaU32,
-          stroke: 0 as RgbaU32,
-          strokeRadius: 0,
-          strokePattern: 'solid',
-          z: Z_BASE_TERRAIN + 0.6,
-        },
-      ],
-    },
-    {
       layerName: 'roads',
       minZoom: 13,
       maxZoom: 14,
@@ -726,30 +702,6 @@ export const NATURE: Readonly<Style> = {
       ],
       points: [],
       polygons: [],
-    },
-    {
-      layerName: 'landuse',
-      minZoom: 13,
-      maxZoom: 14,
-      lineTexts: [],
-      lines: [],
-      points: [],
-      polygons: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'kind',
-            value: [
-              'aerodrome',
-            ],
-          }],
-          fill: 0xE7E9EEFF as RgbaU32,
-          stroke: 0 as RgbaU32,
-          strokeRadius: 0,
-          strokePattern: 'solid',
-          z: Z_BASE_TERRAIN + 0.6,
-        },
-      ],
     },
     {
       layerName: 'roads',
@@ -790,30 +742,6 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'landuse',
-      minZoom: 14,
-      maxZoom: 15,
-      lineTexts: [],
-      lines: [],
-      points: [],
-      polygons: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'kind',
-            value: [
-              'aerodrome',
-            ],
-          }],
-          fill: 0xE7E9EEFF as RgbaU32,
-          stroke: 0 as RgbaU32,
-          strokeRadius: 0,
-          strokePattern: 'solid',
-          z: Z_BASE_TERRAIN + 0.6,
-        },
-      ],
-    },
-    {
       layerName: 'roads',
       minZoom: 15,
       maxZoom: 31,
@@ -852,33 +780,9 @@ export const NATURE: Readonly<Style> = {
       polygons: [],
     },
     {
-      layerName: 'landuse',
-      minZoom: 15,
-      maxZoom: 31,
-      lineTexts: [],
-      lines: [],
-      points: [],
-      polygons: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'kind',
-            value: [
-              'aerodrome',
-            ],
-          }],
-          fill: 0xE7E9EEFF as RgbaU32,
-          stroke: 0 as RgbaU32,
-          strokeRadius: 0,
-          strokePattern: 'solid',
-          z: Z_BASE_TERRAIN + 0.6,
-        },
-      ],
-    },
-    {
       layerName: 'boundaries',
       minZoom: 0,
-      maxZoom: 3,
+      maxZoom: 31,
       lineTexts: [],
       lines: [
         {
@@ -905,19 +809,6 @@ export const NATURE: Readonly<Style> = {
       maxZoom: 31,
       lineTexts: [],
       lines: [
-        {
-          // Country borders (repeated so they keep drawing at state-visible zooms).
-          filters: [{
-            match: 'less_than',
-            key: 'kind_detail',
-            value: 3,
-          }],
-          fill: 0x55407099 as RgbaU32,
-          stroke: 0x55407055 as RgbaU32,
-          radius: 0.6,
-          pattern: 'solid',
-          z: Z_OVERLAY_TERRAIN + 0.9,
-        },
         {
           // State / province borders.
           filters: [{
@@ -1940,7 +1831,7 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'roads',
       minZoom: 10,
-      maxZoom: 13,
+      maxZoom: 31,
       lineTexts: [
         {
           filters: [{
@@ -1968,26 +1859,8 @@ export const NATURE: Readonly<Style> = {
     {
       layerName: 'roads',
       minZoom: 13,
-      maxZoom: 16,
+      maxZoom: 31,
       lineTexts: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'kind_detail',
-            value: [
-              'motorway',
-              'motorway_link',
-              'trunk',
-              'trunk_link',
-            ],
-          }],
-          preferred: 'shield_text',
-          fallback: 'name',
-          fill: 0x655F57FF as RgbaU32,
-          stroke: 0xFFFFFFDD as RgbaU32,
-          scale: 0.5,
-          z: Z_OVERLAY_TEXT - 0.05,
-        },
         {
           filters: [{
             match: 'string_in',
@@ -2018,44 +1891,6 @@ export const NATURE: Readonly<Style> = {
       minZoom: 16,
       maxZoom: 31,
       lineTexts: [
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'kind_detail',
-            value: [
-              'motorway',
-              'motorway_link',
-              'trunk',
-              'trunk_link',
-            ],
-          }],
-          preferred: 'shield_text',
-          fallback: 'name',
-          fill: 0x655F57FF as RgbaU32,
-          stroke: 0xFFFFFFDD as RgbaU32,
-          scale: 0.5,
-          z: Z_OVERLAY_TEXT - 0.05,
-        },
-        {
-          filters: [{
-            match: 'string_in',
-            key: 'kind_detail',
-            value: [
-              'primary',
-              'primary_link',
-              'secondary',
-              'secondary_link',
-              'tertiary',
-              'tertiary_link',
-            ],
-          }],
-          preferred: `name:${PREFERRED_LANGUAGE}`,
-          fallback: 'name',
-          fill: 0x736D64FF as RgbaU32,
-          stroke: 0xFFFFFFDD as RgbaU32,
-          scale: 0.48,
-          z: Z_OVERLAY_TEXT - 0.06,
-        },
         {
           filters: [{
             match: 'string_in',
