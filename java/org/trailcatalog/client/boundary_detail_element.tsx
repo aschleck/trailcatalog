@@ -20,6 +20,7 @@ import { setDescription, setTitle } from './head';
 import { Header } from './page';
 import { getTrailHref } from './routes';
 import { containingBoundariesFromRaw } from './trails';
+import { TrailIssue } from './trail_issue';
 import { TrailPopup } from './trail_popup';
 
 export function BoundaryDetailElement({boundaryId, parameters}: {
@@ -249,9 +250,17 @@ function TrailRow({trail}: {
           {trail.name}
         </a>
       </td>
-      <td className="px-5 py-4"><TrailNumericCrumb {...distance} /></td>
-      <td className="px-5 py-4"><TrailNumericCrumb {...elevationUp} /></td>
-      <td className="px-5 py-4"><TrailNumericCrumb {...elevationDown} /></td>
+      {
+        trail.lengthMeters >= 0
+            ? <>
+                <td className="px-5 py-4"><TrailNumericCrumb {...distance} /></td>
+                <td className="px-5 py-4"><TrailNumericCrumb {...elevationUp} /></td>
+                <td className="px-5 py-4"><TrailNumericCrumb {...elevationDown} /></td>
+              </>
+            : <td className="px-5 py-4 relative" colspan="3">
+                <TrailIssue position="left-5 pt-3 top-1/2" sourceRelation={trail.sourceRelation} />
+              </td>
+      }
       <td className="px-5 py-4">
         <a
             href={`https://www.openstreetmap.org/relation/${trail.sourceRelation}`}
