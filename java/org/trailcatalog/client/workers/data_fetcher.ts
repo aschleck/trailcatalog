@@ -106,10 +106,9 @@ class DataFetcher {
   }
 
   fetchTrail(request: FetchTrailRequest): void {
-    const abort = new AbortController();
     this.throttler.fetch(`/api/data-packed`, {
       method: 'POST',
-      signal: abort.signal,
+      signal: new AbortController().signal,
       body: JSON.stringify({
         precise: true,
         trail_id: request.trail,

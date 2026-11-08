@@ -88,7 +88,7 @@ export class Trail {
       readonly type: number,
       readonly mouseBound: PixelRect,
       readonly paths: bigint[],
-      public bound: LatLngRect,
+      readonly bound: LatLngRect,
       readonly marker: LatLng,
       readonly markerPx: Vec2,
       readonly elevationDownMeters: number,

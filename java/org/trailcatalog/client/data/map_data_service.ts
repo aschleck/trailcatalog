@@ -1,4 +1,3 @@
-import * as arrays from 'external/dev_april_corgi+/js/common/arrays';
 import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { IdentitySetMultiMap } from 'external/dev_april_corgi+/js/common/collections';
 import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
@@ -30,8 +29,8 @@ const TEXT_DECODER = new TextDecoder();
 export class PinReference extends Disposable {
 
   constructor(
-      readonly trail: Future<Trail>,
-      readonly resolve: (trail: Trail) => void) {
+      readonly loaded: Future<void>,
+      readonly resolve: () => void) {
     super();
   }
 }
@@ -51,7 +50,7 @@ interface FineCell {
 interface PinnedTrail {
   paths: Path[];
   references: PinReference[];
-  trail: Trail|undefined;
+  loaded: boolean;
 }
 
 export class MapDataService extends Service<EmptyDeps> {
@@ -141,8 +140,8 @@ export class MapDataService extends Service<EmptyDeps> {
   }
 
   addPin({trail}: {trail: bigint}): PinReference {
-    let resolve: (trail: Trail) => void = () => {};
-    const loaded = asFuture(new Promise<Trail>(r => { resolve = r; }));
+    let resolve: () => void = () => {};
+    const loaded = asFuture(new Promise<void>(r => { resolve = r; }));
     const reference = new PinReference(loaded, resolve);
     reference.registerDisposer(() => {
       const pin = this.pins.get(trail);
@@ -163,14 +162,14 @@ export class MapDataService extends Service<EmptyDeps> {
     const existing = this.pins.get(trail);
     if (existing) {
       existing.references.push(reference);
-      if (existing.trail) {
-        resolve(existing.trail);
+      if (existing.loaded) {
+        resolve();
       }
     } else {
       this.pins.set(trail, {
         paths: [],
         references: [reference],
-        trail: undefined,
+        loaded: false,
       });
       this.fetcher.postMessage({
         kind: 'ftr',
@@ -281,64 +280,14 @@ export class MapDataService extends Service<EmptyDeps> {
       return;
     }
 
-    // Interesting choice: we don't load the pin cells. The complication we're avoiding is the case
-    // where we have the cell containing a path/trail and that path/trail in the pin cell at the
-    // same time. Determining how to unload data in the paths/trails map is complicated. So we take
-    // the paths and skip the trails, which costs us the path to trail mapping: a click on a pinned
-    // path resolves to its trail only where an overview cell has already claimed the path.
-    //
-    // The exception is that we do fill in existing data.
-    //
-    // The other exception is that we will resolve pinned promises so we can pass bounds. Ew.
-
-    const data = new LittleEndianView(buffer);
-    pin.paths = readPaths(data);
+    // We don't load the pin cells because a path would then sit in both a pin and a cell, and
+    // unloading the paths map gets complicated. That costs us the path to trail mapping: a click on
+    // a pinned path resolves to its trail only where an overview cell has already claimed the path.
+    pin.paths = readPaths(new LittleEndianView(buffer));
+    pin.loaded = true;
     this.repackPinnedPaths();
-
-    const trailCount = data.getVarInt32();
-    for (let i = 0; i < trailCount; ++i) {
-      const id = data.getVarBigInt64();
-      const nameLength = data.getVarInt32();
-      const name = TEXT_DECODER.decode(data.sliceInt8(nameLength));
-      const type = data.getVarInt32();
-      const pathCount = data.getVarInt32();
-      data.align(8);
-      const paths = [...data.sliceBigInt64(pathCount)];
-      const boundLow = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-      const boundHigh = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-      const bound = {low: boundLow, high: boundHigh, brand: 'LatLngRect'} as const;
-      const marker = degreesE7ToLatLng(data.getInt32(), data.getInt32());
-      const elevationDownMeters = data.getFloat32();
-      const elevationUpMeters = data.getFloat32();
-      const lengthMeters = data.getFloat32();
-      const existing = this.trails.get(id);
-      let trail;
-      if (existing) {
-        if (existing.paths.length === 0) {
-          arrays.pushInto(existing.paths, paths);
-        }
-        existing.bound = bound;
-        trail = existing;
-      } else {
-        trail =
-            constructTrail(
-                id,
-                name,
-                type,
-                paths,
-                bound,
-                marker,
-                elevationDownMeters,
-                elevationUpMeters,
-                lengthMeters);
-      }
-
-      // This is *crazy* we just assume the server only gives us one trail back despite the format
-      // allowing multiple trails.
-      pin.trail = trail;
-      for (const reference of pin.references) {
-        reference.resolve(trail);
-      }
+    for (const reference of pin.references) {
+      reference.resolve();
     }
 
     this.listener?.loadPinned();

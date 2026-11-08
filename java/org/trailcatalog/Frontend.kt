@@ -87,7 +87,6 @@ private data class WireTrail(
   val name: String,
   val type: Int,
   val pathIds: ByteArray,
-  val bound: ByteArray,
   val marker: ByteArray,
   val elevationDownMeters: Float,
   val elevationUpMeters: Float,
@@ -738,24 +737,21 @@ private fun fetchFine(ctx: Context) {
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
   writeDetailPaths(paths, output, snapFor(ctx, null))
-  writeDetailPoints(points, bytes, output)
+  writeDetailPoints(points, output)
   ctx.result(bytes.toByteArray())
 }
 
 private fun fetchDataPacked(ctx: Context) {
   ctx.contentType("application/octet-stream")
-  if (addETagAndCheckCached(ctx)) {
-    return
-  }
 
   val mapper = ObjectMapper()
   val request = mapper.readTree(ctx.bodyInputStream())
   val precise = request.get("precise").asBoolean()
   val trailId = request.get("trail_id").asLong()
 
-  val trail = connectionSource.connection.use {
+  connectionSource.connection.use {
     val results = it.prepareStatement(
-        "SELECT ${WIRE_TRAIL_COLUMNS} FROM trails t WHERE t.id = ? AND t.epoch = ?").apply {
+        "SELECT 1 FROM trails t WHERE t.id = ? AND t.epoch = ?").apply {
       setLong(1, trailId)
       setInt(2, epochTracker.epoch)
     }.executeQuery()
@@ -764,8 +760,6 @@ private fun fetchDataPacked(ctx: Context) {
       ctx.status(HttpStatus.NOT_FOUND)
       return@fetchDataPacked
     }
-
-    readWireTrail(results)
   }
 
   val paths = ArrayList<WirePath>()
@@ -796,7 +790,6 @@ private fun fetchDataPacked(ctx: Context) {
   val bytes = AlignableByteArrayOutputStream()
   val output = DelegatingEncodedOutputStream(bytes)
   writeDetailPaths(paths, output, if (precise) null else SIMPLIFICATION_EPSILON)
-  writeDetailTrails(listOf(trail), bytes, output)
   ctx.result(bytes.toByteArray())
 }
 
@@ -816,7 +809,6 @@ private fun writeDetailPaths(
 
 private fun writeDetailPoints(
     points: List<WirePoint>,
-    bytes: AlignableByteArrayOutputStream,
     output: DelegatingEncodedOutputStream) {
   output.writeVarInt(points.size)
   for (point in points) {
@@ -827,29 +819,6 @@ private fun writeDetailPoints(
       output.write(it)
     }
     output.write(point.marker)
-  }
-}
-
-private fun writeDetailTrails(
-    trails: List<WireTrail>,
-    bytes: AlignableByteArrayOutputStream,
-    output: DelegatingEncodedOutputStream) {
-  output.writeVarInt(trails.size)
-  for (trail in trails) {
-    output.writeVarLong(trail.id)
-    val asUtf8 = trail.name.toByteArray(Charsets.UTF_8)
-    output.writeVarInt(asUtf8.size)
-    output.write(asUtf8)
-    output.writeVarInt(trail.type)
-    output.writeVarInt(trail.pathIds.size / 8)
-    output.flush()
-    bytes.align(8)
-    output.write(trail.pathIds)
-    output.write(trail.bound)
-    output.write(trail.marker)
-    output.writeFloat(trail.elevationDownMeters)
-    output.writeFloat(trail.elevationUpMeters)
-    output.writeFloat(trail.lengthMeters)
   }
 }
 
@@ -873,7 +842,7 @@ private fun fetchTrails(cell: S2CellId, bottom: Int): List<WireTrail> {
 
 // The columns readWireTrail reads, in order.
 private const val WIRE_TRAIL_COLUMNS =
-    "t.id, t.name, t.type, t.path_ids, t.bound_degrees_e7, t.marker_degrees_e7, " +
+    "t.id, t.name, t.type, t.path_ids, t.marker_degrees_e7, " +
         "t.elevation_down_meters, t.elevation_up_meters, t.length_meters"
 
 private fun readWireTrail(results: ResultSet): WireTrail {
@@ -882,11 +851,10 @@ private fun readWireTrail(results: ResultSet): WireTrail {
       name = results.getString(2),
       type = results.getInt(3),
       pathIds = results.getBytes(4),
-      bound = results.getBytes(5),
-      marker = results.getBytes(6),
-      elevationDownMeters = results.getFloat(7),
-      elevationUpMeters = results.getFloat(8),
-      lengthMeters = results.getFloat(9),
+      marker = results.getBytes(5),
+      elevationDownMeters = results.getFloat(6),
+      elevationUpMeters = results.getFloat(7),
+      lengthMeters = results.getFloat(8),
   )
 }
 

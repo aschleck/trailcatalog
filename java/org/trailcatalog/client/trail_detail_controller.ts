@@ -63,7 +63,7 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     const data = response.deps.services.mapData;
     const reference = data.addPin({trail: trail.id});
     this.registerDisposable(reference);
-    reference.trail.then(_ => {
+    reference.loaded.then(() => {
       this.updateState({
         ...this.state,
         elevation:
