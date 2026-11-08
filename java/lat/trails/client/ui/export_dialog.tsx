@@ -115,10 +115,11 @@ interface View {
 
 function rows(items: TreeItem[], view: View, depth: number): corgi.VElementOrPrimitive[] {
   const rendered = [];
-  for (const {feature, children} of items) {
+  for (const item of items) {
+    const {feature, children} = item;
     const folder = feature.kind === 'folder';
-    const inside = getItemsInside(children);
-    const ids = getToggledIds(feature, inside);
+    const inside = getItemsInside([item]);
+    const ids = inside.map(f => f.id);
     const unchecked = ids.filter(id => view.excluded.has(id)).length;
     const checked = unchecked === 0;
     // GPX has no polygons
@@ -154,7 +155,7 @@ function rows(items: TreeItem[], view: View, depth: number): corgi.VElementOrPri
           </Checkbox>
           {folder
               ? <span className="shrink-0 text-gray-500 text-xs">
-                  {String(inside.length)}
+                  {String(inside.filter(f => f.kind !== 'folder').length)}
                 </span>
               : ''
           }
@@ -167,20 +168,14 @@ function rows(items: TreeItem[], view: View, depth: number): corgi.VElementOrPri
   return rendered;
 }
 
-function getItemsInside(items: TreeItem[]): string[] {
-  const ids = [];
+// The leaves under items, and each folder with no leaves under it, which is what a checkbox toggles
+function getItemsInside(items: TreeItem[]): EditableFeature[] {
+  const inside = [];
   for (const {feature, children} of items) {
-    if (feature.kind === 'folder') {
-      ids.push(...getItemsInside(children));
-    } else {
-      ids.push(feature.id);
-    }
+    const below = feature.kind === 'folder' ? getItemsInside(children) : [];
+    inside.push(...(below.some(f => f.kind !== 'folder') ? below : [feature]));
   }
-  return ids;
-}
-
-function getToggledIds(feature: EditableFeature, inside: string[]): string[] {
-  return inside.length > 0 ? inside : [feature.id];
+  return inside;
 }
 
 interface Args {
@@ -223,9 +218,8 @@ class ExportController extends Controller<Args, EmptyDeps, HTMLElement, State> {
   }
 
   featureToggled(e: CorgiEvent<typeof ACTION>): void {
-    const {feature, children} =
-        checkExists(this.items.get(checkExists(e.actionElement.data('id')).string()));
-    const ids = getToggledIds(feature, getItemsInside(children));
+    const item = checkExists(this.items.get(checkExists(e.actionElement.data('id')).string()));
+    const ids = getItemsInside([item]).map(f => f.id);
     const excluded = new Set(this.state.excluded);
     const allChecked = ids.every(i => !excluded.has(i));
     for (const i of ids) {
