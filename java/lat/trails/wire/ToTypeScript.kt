@@ -17,6 +17,7 @@ fun main() {
   println("export const WIND_LEVELS = [${WIND_LEVELS.joinToString()}] as const;")
   println("export const PEAK_WINDOWS = [${PEAK_WINDOWS.joinToString()}] as const;")
   println("export const ICING_LEVELS = [${ICING_LEVELS.joinToString()}] as const;")
+  println("export const ICING_MAX = ${ICING_MAX};")
   val turbulence = TURBULENCE_LAYERS.joinToString { (bottom, top) -> "[${bottom}, ${top}]" }
   println("export const TURBULENCE_LAYERS = [${turbulence}] as const;")
 

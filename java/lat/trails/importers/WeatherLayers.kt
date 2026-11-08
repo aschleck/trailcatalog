@@ -8,6 +8,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.sqrt
 import lat.trails.wire.ICING_LEVELS
+import lat.trails.wire.ICING_MAX
 import lat.trails.wire.PEAK_WINDOWS
 import lat.trails.wire.TURBULENCE_LAYERS
 import lat.trails.wire.WIND_LEVELS
@@ -350,7 +351,7 @@ val WEATHER_LAYERS = listOf(
         3,
         levelKeys(listOf("t", "r"), ICING_LEVELS),
         ICING_LEVELS.map {
-          // from 0 for none to 15 for the worst
+          // from 0 for none to ICING_MAX for the worst
           Channel("${it}hpa", 4, 1.0, 0.0)
         },
         ::computeIcing),
@@ -489,7 +490,7 @@ private fun computeIcing(inputs: Inputs): List<FloatArray> {
       val celsius = kelvins[it] - FREEZING_KELVIN
       val wetness = ((humidities[it] - 70.0) / 30.0).coerceIn(0.0, 1.0)
       val coldness = if (celsius > 0) 0.0 else max(0.0, 1 - abs(celsius + 8) / 12)
-      (15 * wetness * coldness).toFloat()
+      (ICING_MAX * wetness * coldness).toFloat()
     }
   }
 }

@@ -1,3 +1,4 @@
+import { ICING_MAX } from 'java/lat/trails/wire/wire';
 import { Channel, unpackPixel, Values } from 'js/map/workers/raster/packed';
 import { terrariumMeters } from 'js/map/workers/raster/terrarium';
 import {
@@ -18,10 +19,8 @@ const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const KMH_PER_MPS = 3.6;
 const MPH_PER_MPS = 2.236936;
 const MM_PER_INCH = 25.4;
-// Ellrod's index in 10^-7 s^-2, see WeatherLayers.kt#TURBULENCE_LAYERS
+// Ellrod's index in 10^-7 s^-2, see WeatherLayers.kt#computeTurbulence
 const TURBULENCE_LEVELS: Array<[number, string]> = [[12, 'Severe'], [8, 'Moderate'], [4, 'Light']];
-// See WeatherLayers.kt#computeIcing
-const ICING_MAX = 15;
 
 // https://esa-worldcover.org/en/data-access
 const LAND_COVER_CLASSES: Record<number, string> = {
