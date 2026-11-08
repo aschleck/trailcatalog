@@ -9,6 +9,7 @@ tc_ts_project(
         "//java/lat/trails/client/account",
         "//java/lat/trails/client/data",
         "//java/lat/trails/client/layers",
+        "//java/lat/trails/client/login",
         "//java/lat/trails/client/model",
         "//java/lat/trails/client/sky",
         "//java/lat/trails/client/tools",

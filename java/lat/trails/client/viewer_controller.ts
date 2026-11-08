@@ -1,6 +1,5 @@
 import { checkExhaustive, checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { Future, resolvedFuture } from 'external/dev_april_corgi+/js/common/futures';
-import { LittleEndianView } from 'external/dev_april_corgi+/js/common/little_endian_view';
 import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
@@ -12,14 +11,8 @@ import { MenuEntries } from 'external/dev_april_corgi+/js/emu/menu/menu_controll
 import { MenuClassNames } from 'external/dev_april_corgi+/js/emu/menu/menu_element';
 import { MenuHandle, MenuService } from 'external/dev_april_corgi+/js/emu/menu/menu_service';
 
-import { getBoundarySource, getPointSource } from 'java/org/trailcatalog/models/categories';
-import { Bytes, S2LatLng, S2LatLngRect, S2Polygon } from 'java/org/trailcatalog/s2';
-import {
-  projectE7Deltas,
-  projectS2LatLng,
-  projectS2PolygonOutline,
-  unprojectS2LatLng,
-} from 'js/map/camera';
+import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
+import { projectS2LatLng } from 'js/map/camera';
 import { MAPTERHORN_COPYRIGHT } from 'js/map/common/copyrights';
 import { LatLngZoom, Vec2 } from 'js/map/common/types';
 import { MAP_MOVED, UNCLAIMED_CLICKED } from 'js/map/events';
@@ -35,7 +28,6 @@ import { Z_BOTTOM } from 'js/map/z';
 import { getUnitSystem, setUnitSystem, UnitSystem } from 'js/units/formatters';
 import {
   Collection,
-  CreateCollectionResponse,
   DeleteAccountResponse,
   DeleteCollectionResponse,
   GetAccountResponse,
@@ -44,22 +36,30 @@ import {
   GetShapeResponse,
   GetTimeZoneResponse,
   ListCollectionsResponse,
-  SaveResponse,
   SearchResultKind,
   SetViewStateResponse,
 } from 'trails_lat/proto/data_pb';
 
 import { AccountDialog, ConfirmDeleteAccountDialog } from './account/account_dialog';
 import { CollectionSettingsDialog } from './account/collection_settings_dialog';
-import { LoginReason } from './account/login_page';
-import { LoginPopup } from './account/login_popup';
 import { canEdit } from './data/collection_data';
 import { requestData } from './data/data';
-import { CollectionLayer, HeldObject } from './layers/collection_layer';
+import { CollectionLayer } from './layers/collection_layer';
 import { FeatureLayer } from './layers/feature_layer';
 import { LayerCatalog, SKY_LAYER_ID } from './layers/layer_catalog';
 import { PointCollectionLayer } from './layers/point_collection_layer';
 import { ShapeLayer } from './layers/shape_layer';
+import {
+  getChoice,
+  getObjectLatLngDegrees,
+  getPicksIn,
+  Inspection,
+  inspectObject,
+  inspectShape,
+  Pick,
+  toDegrees,
+} from './inspect';
+import { LoginService } from './login/login_service';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -77,7 +77,7 @@ import {
   Tool,
   TOOL_REQUESTED,
 } from './model/events';
-import { toGeoJson, toGpx } from './model/exporter';
+import { CollectionModel } from './model/collection_model';
 import { Change, FeatureStore } from './model/feature_store';
 import {
   EditableFeature,
@@ -85,31 +85,13 @@ import {
   EditablePolygon,
   EditableShape,
   FeatureData,
-  featuresFromProto,
   isShape,
   pointIcon,
-  schemaToWrite,
   snapshot,
-  toWrite,
 } from './model/features';
 import { getImageIcon, uploadImage } from './model/images';
-import { parseImport } from './model/importer';
-import { Point } from './model/points';
-import { SaveEntry, SaveQueue } from './model/save_queue';
-import { getPositionAt } from './model/tracks';
-import {
-  adoptImported,
-  channelOf,
-  getFieldKind,
-  getObjectTitle,
-  OSM_NODES_SCHEMA,
-  OSM_WAYS_SCHEMA,
-  parseCollectionSchema,
-  SavedSchema,
-  Schema,
-  titleField,
-  withDefaults,
-} from './model/schema';
+import { exportFiles, importFiles, pickImportFiles, Transfer } from './transfer';
+import { titleField, withDefaults } from './model/schema';
 import {
   fromWallClock,
   isKnownZone,
@@ -130,13 +112,7 @@ import { LineRefiner } from './tools/line_refiner';
 import { MarkerToolLayer } from './tools/marker_tool_layer';
 import { haversineMeters, pathLengthMeters, profileSamples } from './tools/measurements';
 import { PointToolLayer } from './tools/point_tool_layer';
-import {
-  ConfirmDeleteDialog,
-  DeleteAccountFailedDialog,
-  ImportFailedDialog,
-  SaveFailedDialog,
-} from './ui/dialogs';
-import { ExportDialog } from './ui/export_dialog';
+import { ConfirmDeleteDialog, DeleteAccountFailedDialog, SaveFailedDialog } from './ui/dialogs';
 import {
   CollectionStatus,
   FeatureListState,
@@ -161,26 +137,17 @@ import {
 import { GradeLimitState, MeasureState } from './ui/measure_panel';
 import { MENU_CLASSES } from './ui/menubar';
 import { editMenu, fileMenu, HELP_MENU, userMenu, viewMenu } from './ui/menus';
-import { Choice, choiceItem, PICK_MENU_CLASSES, readingItem } from './ui/pick_menu';
+import { choiceItem, PICK_MENU_CLASSES, readingItem } from './ui/pick_menu';
 import { LineProfileState } from './ui/profile_chart';
 import { LineProfiler, MeasureProfiler } from './ui/profiles';
 import { SearchHit, SearchQuery, SearchState } from './ui/search_box';
 import { STEP_MS, TimelineState } from './ui/timeline';
 import { ToastService } from './ui/toasts';
-import {
-  CollectionSchema,
-  DEFAULT_COLOR,
-  DEFAULT_ICON,
-  getField,
-  getLineKind,
-  pointLook,
-} from './workers/collection_schema';
-import { Data } from './workers/collection_types';
+import { DEFAULT_COLOR, DEFAULT_ICON, getLineKind, pointLook } from './workers/collection_schema';
 
 const MINUTE_MS = 60 * 1000;
 const PLAY_INTERVAL_MS = 100;
 const FORECAST_PLAY_TICKS = 5;
-const UPLOADS_IN_FLIGHT = 2;
 // Flattens the points and line and polygon vertices of some features into lat,lng pairs in
 // degrees.
 function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
@@ -201,12 +168,6 @@ function featureLatLngDegrees(features: Iterable<EditableFeature>): number[] {
 function isRouteLine(feature: EditableFeature|undefined): feature is EditableLine {
   return feature?.kind === 'line' && getLineKind(feature.data) === 'line';
 }
-
-// Something a click landed on
-type Pick =
-    {kind: 'feature'; feature: EditableFeature}
-    |{kind: 'object'; entry: LayerEntry; layer: CollectionLayer; object: HeldObject}
-    |{kind: 'point'; entry: LayerEntry; layer: PointCollectionLayer; point: Point};
 
 export interface Args {
   // The id of the open collection or none
@@ -249,9 +210,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       controllers: {
         map: MapController,
       },
+      models: {
+        collection: CollectionModel,
+      },
       services: {
         dialog: DialogService,
         history: HistoryService,
+        login: LoginService,
         menu: MenuService,
         toast: ToastService,
       },
@@ -287,7 +252,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Kept for centering on, which needs the geometry the dialog's state leaves out, along with how
   // to stop its layer drawing it as selected. Loads for it check that it's still the same record.
   private inspected: {latLngDegrees: () => number[]; unmark: () => void}|undefined;
-  // Moves with every click and search pick, so that a slow query for an earlier one is dropped
+  // Moves with every click, search pick, and selection, so that a slow query for an earlier one is
+  // dropped
   private pickGeneration: number;
   // The pick menu and the camera when it opened. The map reports a move whenever it settles, even
   // when the camera stayed put, and only a real move takes the menu away from its click.
@@ -296,21 +262,15 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   // Moves with every zone lookup, so that a slow answer for where the map was is dropped
   private zoneGeneration: number;
   private readonly searchQuery: SearchQuery;
-  // Moves with every collection opened or created, so that a slow load of an earlier one is dropped
-  private collectionGeneration: number;
-  // The collection id from the URL that the store holds or is loading, so that a render with the
-  // same route doesn't reload it
-  private routedCollection: string|undefined;
+  private readonly collection: CollectionModel;
+  // The hidden features and layer edits when the open collection started loading, so that a toggle
+  // made while it loaded isn't undone by what the response read
+  private loadStart: {hidden: ReadonlySet<string>; layerEdits: number}|undefined;
   // The feature being dragged in the list
   private draggedFeature: string|undefined;
   // Where the pointer last was, in pixels from the viewer's top left
   private pointer: [number, number]|undefined;
-  // Settles once the login popup closes and the user is fetched, so concurrent callers share it
-  private login: Promise<void>|undefined;
-  // Settles once a new collection is created, so concurrent saves and uploads share one
-  private creatingCollection: Promise<string>|undefined;
-  private readonly loginPopup: LoginPopup;
-  private readonly saves: SaveQueue;
+  private readonly login: LoginService;
   // What the layer tree starts as, which saved layer settings are relative to
   private readonly layerDefaults: Map<string, LayerSetting>;
   // Moves with every layer toggle or control change, so that a collection's saved layers don't
@@ -334,12 +294,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.history = response.deps.services.history;
     this.menu = response.deps.services.menu;
     this.toast = response.deps.services.toast;
-    this.saves = new SaveQueue(entries => this.save(entries), e => {
-      console.error(e);
-      this.warnUnsaved();
-    });
-    this.store =
-        new FeatureStore(this.saves, /* readOnly= */ response.args.collection !== undefined);
+    this.login = response.deps.services.login;
+    this.collection = response.deps.models.collection;
+    this.loadStart = undefined;
+    this.store = this.collection.store;
+    this.registerDisposer(this.login.listen(self => {
+      this.updateState({...this.state, self: resolvedFuture(self)});
+    }));
     this.viewStateWrites = Promise.resolve();
     this.elevations = new Elevations();
     this.measureProfiler =
@@ -380,25 +341,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             search => {
               this.updateState({...this.state, search});
             });
-    this.collectionGeneration = 0;
-    this.routedCollection = response.args.collection;
     this.draggedFeature = undefined;
     this.pointer = undefined;
-    this.store.listen(() => {
-      this.refreshFeatureList();
-    });
     this.warnedUnsaved = false;
     this.menuTrigger = undefined;
     this.openedMenu = undefined;
-
-    this.loginPopup = new LoginPopup(response => {
-      response.then(r => {
-        this.signedIn(r);
-      }, e => {
-        console.error(e);
-      });
-    });
-    this.registerDisposable(this.loginPopup);
 
     // One index for every layer, so that the drawing tools snap onto and route across drawn
     // lines and paths alike.
@@ -541,9 +488,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
     const collection = response.args.collection;
     // The server render already answered with the outline's failure, and a reload is the retry.
-    if (collection && this.state.collectionStatus !== 'failed') {
-      this.loadCollection(collection);
-    }
+    this.collection.start(collection, /* load= */ this.state.collectionStatus !== 'failed');
 
     const parameters = new URL(window.location.href).searchParams;
     for (const [name, kind] of SELECTION_PARAMETERS) {
@@ -558,28 +503,78 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Opens whatever collection the URL names, including after the back and forward buttons.
   updateArgs(newArgs: Args): void {
-    if (newArgs.collection === this.routedCollection) {
+    if (newArgs.collection === this.collection.getId()) {
       return;
     }
 
     const id = newArgs.collection;
-    this.routedCollection = id;
-    this.collectionGeneration += 1;
-    this.saves.clear();
     this.select(undefined);
     this.setHidden([]);
-    // Empties the list while the collection loads, or else the last one's rows are left to click.
-    // Loading replaces the store, so nothing is editable until it lands.
-    this.resetStore([], id !== undefined);
+    // Before opening, because the load's broadcasts land inline once the controller exists
     this.updateState({
       ...this.state,
       collection: this.state.collection?.id === id ? this.state.collection : undefined,
       collectionStatus: 'loaded',
       features: {...this.state.features, expanded: new Set()},
     });
-    if (id) {
-      this.loadCollection(id);
+    this.collection.open(id);
+    this.leaveDrawingToolIfReadOnly();
+  }
+
+  onFeaturesChanged(): void {
+    this.featureLayer.refresh();
+    this.refreshFeatureList();
+  }
+
+  onCollectionCreated(e: CustomEvent<{collection: Collection}>): void {
+    const collection = e.detail.collection;
+    this.updateState({...this.state, collection});
+    this.history.replaceTo(`/collection/${collection.id}`);
+    this.saveViewState();
+    this.toast.show('Created a new collection');
+  }
+
+  onCollectionLoading(): void {
+    this.loadStart = {hidden: this.state.features.hidden, layerEdits: this.layerEdits};
+    this.updateState({...this.state, collectionStatus: 'loading'});
+  }
+
+  onCollectionLoaded(e: CustomEvent<{response: GetCollectionResponse|undefined}>): void {
+    const response = e.detail.response;
+    if (!response) {
+      this.loadStart = undefined;
+      this.updateState({...this.state, collectionStatus: 'failed'});
+      return;
     }
+
+    this.updateState({
+      ...this.state,
+      collection: response.collection,
+      collectionStatus: 'loaded',
+    });
+    if (this.state.features.hidden === this.loadStart?.hidden) {
+      this.setHidden(response.hiddenFeatureIds);
+    }
+    if (this.layerEdits === this.loadStart?.layerEdits) {
+      this.setLayerSettings(response.layers ? JSON.parse(response.layers) as LayerSettings : {});
+    }
+    this.loadStart = undefined;
+    this.expand(
+        topLevelFolderIds(this.store.all(), this.store.schema(), this.state.features.hidden));
+    this.leaveDrawingToolIfReadOnly();
+  }
+
+  // Dismissing the dialog arms it again, so a later failure is not silent.
+  onSaveFailed(): void {
+    if (this.warnedUnsaved) {
+      return;
+    }
+
+    this.warnedUnsaved = true;
+    const dismissed = () => {
+      this.warnedUnsaved = false;
+    };
+    this.dialog.display(SaveFailedDialog({})).then(dismissed, dismissed);
   }
 
   // Selects the new line, like onPointPlaced, so that the panel is open to name it.
@@ -654,7 +649,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         this.featureLayer.featuresAt(projectS2LatLng(point))
             .filter(f => joining === undefined || (isRouteLine(f) && f.id !== joining))
             .map(feature => ({kind: 'feature', feature}));
-    const others = shown.map(entry => this.picksIn(entry, point));
+    const others = shown.map(entry => getPicksIn(entry, point));
     Promise.all(others).then(found => {
       if (generation !== this.pickGeneration) {
         return;
@@ -675,7 +670,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
       const items: MenuEntries = choices.map(pick =>
           choiceItem(
-              this.choiceOf(pick),
+              getChoice(pick, this.store.schema()),
               () => {
                 this.openPick(pick);
               },
@@ -691,19 +686,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         menu: this.openContextMenu(items, px, PICK_MENU_CLASSES),
       };
     });
-  }
-
-  private picksIn(entry: LayerEntry, point: S2LatLng): Promise<Pick[]> {
-    const layer = entry.layer;
-    if (layer instanceof CollectionLayer) {
-      return layer.objectsAt(point).then(objects =>
-          objects.map(object => ({kind: 'object', entry, layer, object})));
-    } else if (layer instanceof PointCollectionLayer) {
-      return Promise.resolve(
-          layer.pointsAt(point).map(value => ({kind: 'point', entry, layer, point: value})));
-    } else {
-      return Promise.resolve([]);
-    }
   }
 
   private openPick(pick: Pick): void {
@@ -741,22 +723,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
-  private choiceOf(pick: Pick): Choice {
-    if (pick.kind === 'feature') {
-      return {kind: 'feature', feature: pick.feature, schema: this.store.schema()};
-    }
-
-    const object: LayerObject =
-        pick.kind === 'object' ? pick.object : {kind: 'point', value: pick.point};
-    const schema = getPickSchema(pick.entry);
-    return {
-      kind: 'object',
-      shape: object.kind,
-      title: schema && getObjectTitle(schema, {kind: object.kind, data: object.value.data}),
-      source: pick.entry.name,
-    };
-  }
-
   // Joins the line clicked while Join with is waiting on one. Anything else cancels the join and
   // selects as usual.
   private clickFeature(id: string|undefined): void {
@@ -776,7 +742,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Opens the folders above what the map selected and scrolls to it, so that the list shows it.
   private reveal(id: string|undefined): void {
-    this.expand(this.ancestorsOf(id));
+    this.expand(this.store.getAncestors(id));
     this.select(id);
     if (id !== undefined) {
       // After the render that puts the row in the list
@@ -789,50 +755,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   private openObject(entry: LayerEntry, object: LayerObject, unmark: () => void): void {
     this.select(undefined);
     this.inspected = {latLngDegrees: () => getObjectLatLngDegrees(object), unmark};
-    const data = object.value.data;
-    const schema = checkExists(getPickSchema(entry));
-    const title = 'layers' in schema ? undefined : schema.title;
-    const titleValue = title && data[title.key];
-    const osm =
-        typeof titleValue !== 'number' ? undefined
-            : title?.kind === 'osm_point' ? osmElementOf(titleValue)
-            : title?.kind === 'osm_way' ? {type: 'way' as const, id: titleValue}
-            : undefined;
-    const station = entry.weatherStation ? data[entry.weatherStation.id] : undefined;
-    const reports = entry.weatherStation ? String(data[entry.weatherStation.reports] ?? '') : '';
-    const weather =
-        typeof station === 'string'
-            ? {
-              station,
-              metar: reports.includes('METAR'),
-              taf: reports.includes('TAF'),
-            }
-            : undefined;
-    const common = {data, schema, osm, weather};
-    if (object.kind === 'line') {
-      const path = toDegrees(object.value.points);
-      this.updateState({
-        ...this.state,
-        inspected: {
-          ...common,
-          kind: 'line',
-          lengthMeters: pathLengthMeters(path),
-        },
-      });
+    this.showInspection(inspectObject(entry, object));
+  }
+
+  private showInspection({inspected, path}: Inspection): void {
+    this.updateState({...this.state, inspected});
+    if (path) {
       this.lineProfiler.forObject(path);
-    } else if (object.kind === 'point') {
-      const ll = unprojectS2LatLng(object.value.position[0], object.value.position[1]);
-      this.updateState({
-        ...this.state,
-        inspected: {
-          ...common,
-          kind: 'point',
-          latDegrees: ll.latDegrees(),
-          lngDegrees: ll.lngDegrees(),
-        },
-      });
-    } else {
-      this.updateState({...this.state, inspected: {...common, kind: 'polygon'}});
     }
   }
 
@@ -997,8 +926,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
     e.detail.preventDefault();
-    this.importFiles(
-        Array.from(transfer.files), this.mapController.getLatLngUnder(e.detail as DragEvent));
+    const dropped = this.mapController.getLatLngUnder(e.detail as DragEvent);
+    importFiles(this.getTransfer(), Array.from(transfer.files), dropped);
   }
 
   featureDragEnded(): void {
@@ -1197,6 +1126,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.editSelectedData(data => ({...data, folder_id: folder || undefined}));
   }
 
+  // Selects the copy, like addFeature, which also shows that it landed.
+  onFeatureSaved(e: CustomEvent<{id: string}>): void {
+    this.reveal(e.detail.id);
+  }
+
   deleteClicked(): void {
     const feature = this.selected !== undefined ? this.store.get(this.selected) : undefined;
     if (!feature || this.store.isReadOnly()) {
@@ -1364,7 +1298,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   loginClicked(): void {
-    this.requireLogin().catch(e => {
+    this.login.requireLogin().catch(e => {
       console.error(e);
     });
   }
@@ -1383,8 +1317,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
               newCollection: () => this.history.goTo('/'),
               openCollection: collection => this.openCollection(collection),
               openSettings: () => this.openSettings(),
-              importFiles: () => this.pickImportFiles(),
-              exportFiles: () => this.exportFiles(),
+              importFiles: () => pickImportFiles(this.getTransfer()),
+              exportFiles: () => exportFiles(this.getTransfer(), this.state.collection?.name),
             });
         this.openMenu(items, trigger);
       });
@@ -1409,11 +1343,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
   }
 
-  // Leaves a drawing tool along with edit rights, or else it would draw what the store drops.
-  private resetStore(features: EditableFeature[], readOnly: boolean, schema?: SavedSchema): void {
-    this.store.reset(features, readOnly, schema);
+  // A drawing tool would draw what the store drops.
+  private leaveDrawingToolIfReadOnly(): void {
     const tool = this.state.tool;
-    if (readOnly && tool !== 'pointer' && tool !== 'measure' && tool !== 'terrain') {
+    if (
+        this.store.isReadOnly()
+            && tool !== 'pointer'
+            && tool !== 'measure'
+            && tool !== 'terrain') {
       this.setTool('pointer');
     }
   }
@@ -1454,9 +1391,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return;
     }
 
+    // A dialog's button has focus outside the root, and the edit would land behind the dialog.
     const target = e.target;
     if (
-        target instanceof HTMLInputElement
+        (target instanceof Node && target !== document.body && !this.root.contains(target))
+            || target instanceof HTMLInputElement
             || target instanceof HTMLTextAreaElement
             || target instanceof HTMLSelectElement
             || (target instanceof HTMLElement && target.isContentEditable)) {
@@ -1512,18 +1451,13 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.addFeature(line);
   }
 
-  // Returns the field that points take their icon from, if it's a field of type icon. Only then
-  // can a photo become a point's icon.
-  private getImageIconField(): string|undefined {
-    const schema = this.store.schema();
-    const channel = channelOf(schema, 'point', 'icon');
-    return channel.kind === 'field' && getField(schema, 'point', channel.key)?.type === 'icon'
-        ? channel.key
-        : undefined;
+  private getTransfer(): Transfer {
+    const {collection, dialog, toast} = this;
+    return {collection, dialog, toast, center: () => this.mapController.camera.center};
   }
 
   private uploadIcon(file: File): Promise<string> {
-    return this.currentCollection()
+    return this.collection.current()
         .then(collection => uploadImage(collection, file))
         .then(({id}) => getImageIcon(id));
   }
@@ -1609,29 +1543,17 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       features: {
         ...this.state.features,
         hovered: id,
-        hoveredAncestors: new Set(this.ancestorsOf(id)),
+        hoveredAncestors: new Set(this.store.getAncestors(id)),
       },
     });
   }
 
-  private ancestorsOf(id: string|undefined): string[] {
-    const ancestors = [];
-    let at = id !== undefined ? this.store.get(id) : undefined;
-    while (at) {
-      const parent = this.store.parentOf(at);
-      if (parent === undefined) {
-        break;
-      }
-      ancestors.push(parent);
-      at = this.store.get(parent);
-    }
-    return ancestors;
-  }
 
   // Closes whatever map layer object is open, because the dialog shows one thing at a time. The
   // profile marker goes too, because its chart leaves without a pointerleave, and so does Join
   // with, because it joins onto the line that was selected.
   private select(id: string|undefined): void {
+    this.pickGeneration += 1;
     this.stopJoining();
     this.selected = id;
     this.featureLayer.setSelected(id);
@@ -1748,54 +1670,10 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       },
     };
     this.setSelectionParameter(result);
-
-    const source =
-        result.kind === SearchResultKind.TRAIL ? {type: 'relation' as const, id: result.id}
-            : result.kind === SearchResultKind.POINT ? getPointSource(result.id)
-            : getBoundarySource(result.id);
-    const data: Data = {type: response.type};
-    // A point can lack a name tag, and then the dialog names its category instead.
-    if (response.name) {
-      data.name = response.name;
-    }
-    const common = {
-      data,
-      schema: result.kind === SearchResultKind.POINT ? OSM_NODES_SCHEMA : OSM_WAYS_SCHEMA,
-      osm: {type: source.type, id: Number(source.id)},
-      weather: undefined,
-    };
-    const geometry = response.shape;
-    if (geometry.case === 'polylines') {
-      const runs = geometry.value.runs.map(bytes => {
-        const end = bytes.byteOffset + bytes.byteLength;
-        return projectE7Deltas(new LittleEndianView(bytes.buffer, bytes.byteOffset, end));
-      });
-      this.shapeLayer.setShape({kind: 'lines', runs});
-      const path = new Float64Array(runs.reduce((sum, run) => sum + run.length, /* initial= */ 0));
-      let lengthMeters = 0;
-      let at = 0;
-      for (const run of runs) {
-        path.set(run, at);
-        at += run.length;
-        lengthMeters += pathLengthMeters(toDegrees(run));
-      }
-      this.updateState({...this.state, inspected: {...common, kind: 'line', lengthMeters}});
-      // Across a break between runs the profile runs straight from one to the next.
-      this.lineProfiler.forObject(toDegrees(path));
-    } else if (geometry.case === 's2Polygon') {
-      const polygon = S2Polygon.FAST_CODER.unsafeDecode(Bytes.fromByteArray(geometry.value));
-      this.shapeLayer.setShape({kind: 'outline', runs: projectS2PolygonOutline(polygon)});
-      this.updateState({...this.state, inspected: {...common, kind: 'polygon'}});
-    } else if (geometry.case === 'point') {
-      const {latDegrees, lngDegrees} = geometry.value;
-      this.shapeLayer.setShape({
-        kind: 'point',
-        position: projectS2LatLng(S2LatLng.fromDegrees(latDegrees, lngDegrees)),
-      });
-      this.updateState({
-        ...this.state,
-        inspected: {...common, kind: 'point', latDegrees, lngDegrees},
-      });
+    const inspection = inspectShape(result, response);
+    if (inspection) {
+      this.shapeLayer.setShape(inspection.shape);
+      this.showInspection(inspection);
     }
   }
 
@@ -1844,7 +1722,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       return false;
     }
     return folder === undefined
-        || (folder !== dragged && !this.ancestorsOf(folder).includes(dragged));
+        || (folder !== dragged && !this.store.getAncestors(folder).includes(dragged));
   }
 
   // Marks folder as the target when the drop is allowed. The browser only drops where dragover
@@ -2025,7 +1903,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     if (field !== undefined && typeof title === 'string' && title) {
       copy.data[field] = `${title} copy`;
     }
-    this.addFeature(copy);
+    // Not addFeature, whose defaults would refill the fields the user cleared
+    this.store.apply([{id: copy.id, before: undefined, after: copy}]);
+    this.reveal(copy.id);
   }
 
   // Hands the list copies, because the store edits features in place and corgi skips rendering a
@@ -2042,7 +1922,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         selected,
         selectedDescendants:
             selected?.kind === 'folder' ? this.store.descendants(selected.id).length : 0,
-        hoveredAncestors: new Set(this.ancestorsOf(this.state.features.hovered)),
+        hoveredAncestors: new Set(this.store.getAncestors(this.state.features.hovered)),
       },
       lineProfile: this.lineProfileFor(live),
     });
@@ -2050,7 +1930,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   // Shows the name from the listing while the rest loads.
   private openCollection(collection: Collection): void {
-    if (collection.id === this.routedCollection) {
+    if (collection.id === this.collection.getId()) {
       return;
     }
 
@@ -2060,7 +1940,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     });
   }
 
-  // One undo for every schema edit made while the dialog is open
   private openSettings(): void {
     const collection = this.state.collection;
     if (!collection) {
@@ -2068,6 +1947,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     }
 
     let current = collection;
+    // One undo for every schema edit made while the dialog is open
     const mergeKey = `settings:${crypto.randomUUID()}`;
     this.dialog.display(CollectionSettingsDialog({
       collection,
@@ -2101,11 +1981,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
           return deleted;
         }, () => undefined)
         .then(response => {
-          // Replaced rather than pushed so that back doesn't land on the deleted collection.
-          if (response && this.state.collection?.id === collection.id) {
-            this.history.replaceTo('/');
-          }
           if (response) {
+            // Replaced rather than pushed so that back doesn't land on the deleted collection
+            this.history.replaceTo('/');
             this.toast.show(`Deleted ${collection.name}`);
           }
           return !!response;
@@ -2117,304 +1995,35 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         });
   }
 
-  // Both dialogs reject when dismissed, so only confirming both reaches DeleteAccount.
+  // Shows the account, and deletes it once both dialogs are confirmed.
   private openAccount(): void {
     const account: Future<GetAccountResponse> =
         requestData('lat.trails.DataService/GetAccount', {});
     Promise.all([this.state.self, account])
         .then(([self, response]) =>
+            // Both dialogs reject when dismissed
             this.dialog.display(AccountDialog({account: response, user: checkExists(self.user)}))
                 .then(() => this.dialog.display(ConfirmDeleteAccountDialog({account: response})))
-                .then(() => this.deleteAccount(), () => {}))
+                .then(() => {
+                  const deleted: Future<DeleteAccountResponse> =
+                      requestData('lat.trails.DataService/DeleteAccount', {});
+                  return deleted;
+                })
+                .then(
+                    () => {
+                      // The login cookie still names the deleted user until /logout clears it.
+                      window.location.href = '/logout';
+                    },
+                    e => {
+                      // A dismissed dialog rejects with nothing
+                      if (e) {
+                        console.error(e);
+                        this.dialog.display(DeleteAccountFailedDialog({})).catch(() => {});
+                      }
+                    }))
         .catch(e => {
           console.error(e);
         });
-  }
-
-  private deleteAccount(): Promise<void> {
-    const deleted: Future<DeleteAccountResponse> =
-        requestData('lat.trails.DataService/DeleteAccount', {});
-    return deleted.then(
-        () => {
-          // The login cookie still names the deleted user until /logout clears it.
-          window.location.href = '/logout';
-        },
-        e => {
-          console.error(e);
-          this.dialog.display(DeleteAccountFailedDialog({})).catch(() => {});
-        });
-  }
-
-  private loadCollection(id: string): void {
-    this.collectionGeneration += 1;
-    const generation = this.collectionGeneration;
-    const hidden = this.state.features.hidden;
-    const layerEdits = this.layerEdits;
-    this.updateState({...this.state, collectionStatus: 'loading'});
-    const loading: Future<GetCollectionResponse> =
-        requestData('lat.trails.DataService/GetCollection', {id});
-    loading
-        .then(response => {
-          if (generation !== this.collectionGeneration) {
-            return;
-          }
-          this.updateState({
-            ...this.state,
-            collection: response.collection,
-            collectionStatus: 'loaded',
-          });
-          // A toggle made since the request, like on the rows the server rendered, is newer than
-          // what the response read.
-          if (this.state.features.hidden === hidden) {
-            this.setHidden(response.hiddenFeatureIds);
-          }
-          if (this.layerEdits === layerEdits) {
-            this.setLayerSettings(
-                response.layers ? JSON.parse(response.layers) as LayerSettings : {});
-          }
-          const features = featuresFromProto(response);
-          const schema = parseCollectionSchema(response.schema);
-          this.expand(topLevelFolderIds(features, schema, this.state.features.hidden));
-          this.resetStore(
-              features, !canEdit(response.collection), {schema, version: response.schemaVersion});
-        })
-        .catch(e => {
-          console.error(e);
-          if (generation === this.collectionGeneration) {
-            this.updateState({...this.state, collectionStatus: 'failed'});
-          }
-        });
-  }
-
-  private pickImportFiles(): void {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.geojson,.gpx,.json,application/geo+json,application/gpx+xml,image/*';
-    input.multiple = true;
-    input.addEventListener('change', () => {
-      this.importFiles(Array.from(input.files ?? []));
-    });
-    input.click();
-  }
-
-  // Applies everything as one edit, so that a single undo takes back everything it added. Photos
-  // upload UPLOADS_IN_FLIGHT at a time so that one person's drop leaves the API server's other
-  // encodes to everybody else.
-  private importFiles(files: File[], dropped?: S2LatLng): void {
-    const generation = this.collectionGeneration;
-    const stale = () => generation !== this.collectionGeneration;
-    const results: Array<{changes: Change[]; failed?: string}> = [];
-    let imported = 0;
-    const describe = (verb: string, count: number) =>
-        files.length === 1
-            ? `${verb} ${files[0].name}`
-            : `${verb} ${count} of ${files.length} files`;
-    const progress = this.toast.start(describe('Importing', 0), /* fraction= */ 0);
-    const importAll = (queue: File[], tracks: EditableLine[]) => {
-      const importNext = async (): Promise<void> => {
-        for (let file = queue.shift(); file && !stale(); file = queue.shift()) {
-          const result = await this.importOne(file, dropped, tracks);
-          results.push(result);
-          if (!result.failed) {
-            imported += 1;
-          }
-          progress.update(describe('Imported', imported), results.length / files.length);
-        }
-      };
-      return Promise.all(Array.from({length: UPLOADS_IN_FLIGHT}, importNext));
-    };
-    // Tracks import first so that photos dropped alongside them can be placed along them.
-    const isImage = (file: File) => file.type.startsWith('image/');
-    importAll(files.filter(f => !isImage(f)), []).then(() => {
-      const tracks = [
-        ...this.store.lines(),
-        ...results.flatMap(r => r.changes.flatMap(c => c.after?.kind === 'line' ? [c.after] : [])),
-      ];
-      return importAll(files.filter(isImage), tracks);
-    }).then(() => {
-      // Another collection was opened meanwhile, and these changes belong to the one before.
-      if (stale()) {
-        progress.dismiss();
-        return;
-      }
-      this.store.apply(results.flatMap(r => r.changes));
-      const failed = results.flatMap(r => r.failed ? [r.failed] : []);
-      if (imported === 0) {
-        progress.dismiss();
-      } else if (failed.length > 0) {
-        progress.finish(describe('Imported', imported));
-      } else {
-        progress.finish(
-            files.length === 1 ? describe('Imported', 1) : `Imported ${imported} files`);
-      }
-      if (failed.length > 0) {
-        this.dialog.display(ImportFailedDialog({files: failed})).catch(() => {});
-      }
-    });
-  }
-
-  private exportFiles(): void {
-    const schema = this.store.schema();
-    this.dialog.display(ExportDialog({
-      features: [...this.store.all()],
-      schema,
-      onExport: (format, features) => {
-        if (format === 'gpx') {
-          this.download(toGpx(features, schema), 'gpx', 'application/gpx+xml');
-        } else {
-          this.download(toGeoJson(features, schema), 'geojson', 'application/geo+json');
-        }
-      },
-    })).catch(() => {});
-  }
-
-  private download(text: string, extension: string, type: string): void {
-    const url = URL.createObjectURL(new Blob([text], {type}));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${this.state.collection?.name || 'trails'}.${extension}`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // Reports the file's name when it yielded nothing, so that importing several files names every
-  // one that failed in a single dialog.
-  private importOne(file: File, dropped: S2LatLng|undefined, tracks: EditableLine[]):
-      Promise<{changes: Change[]; failed?: string}> {
-    const changes =
-        file.type.startsWith('image/')
-            ? this.importImage(file, dropped, tracks)
-            : this.importFeatures(file);
-    return changes.then(
-        changes => changes.length > 0 ? {changes} : {changes, failed: file.name},
-        e => {
-          console.error(e);
-          return {changes: [], failed: file.name};
-        });
-  }
-
-  // Wraps the file's features in a folder named after it, so that importing a pile of files does
-  // not bury the collection's root.
-  private importFeatures(file: File): Promise<Change[]> {
-    return file.text().then(text => {
-      const features = parseImport(text);
-      // A GPX carrying only routes parses and still leaves nothing to draw, which looks the same
-      // to somebody who picked a file and watched the map not change.
-      if (features.length === 0) {
-        return [];
-      }
-
-      const folder: EditableFeature = {
-        kind: 'folder',
-        id: crypto.randomUUID(),
-        version: 0n,
-        data: {name: file.name.replace(/\.[^.]*$/, '')},
-      };
-      const schema = this.store.schema();
-      for (const feature of features) {
-        feature.data.folder_id ??= folder.id;
-        adoptImported(schema, feature);
-        feature.data = withDefaults(schema, feature);
-      }
-      return [folder, ...features].map(f => ({id: f.id, before: undefined, after: f}));
-    });
-  }
-
-  // Makes a point that shows the photo where it was geotagged, or else where a track was when the
-  // photo was taken, or else where it was dropped on the map, or else in the middle of the map.
-  private importImage(file: File, dropped: S2LatLng|undefined, tracks: EditableLine[]):
-      Promise<Change[]> {
-    const field = this.getImageIconField();
-    if (field === undefined) {
-      return Promise.reject(new Error('Points have no icon field to show a photo in'));
-    }
-    return this.currentCollection()
-        .then(collection => uploadImage(collection, file))
-        .then(({capturedEpochSeconds, id, location}) => {
-          const tracked =
-              location === undefined && capturedEpochSeconds !== undefined
-                  ? getPositionAt(tracks, Number(capturedEpochSeconds))
-                  : undefined;
-          const at =
-              location
-                  ? S2LatLng.fromDegrees(location.latDegrees, location.lngDegrees)
-                  : dropped ?? this.mapController.camera.center;
-          const point: EditableFeature = {
-            kind: 'point',
-            id: crypto.randomUUID(),
-            version: 0n,
-            data: {[field]: getImageIcon(id)},
-            latE7: tracked?.latE7 ?? Math.round(at.latDegrees() * 1e7),
-            lngE7: tracked?.lngE7 ?? Math.round(at.lngDegrees() * 1e7),
-            elevationCentimeters: tracked?.elevationCentimeters,
-          };
-          point.data = withDefaults(this.store.schema(), point);
-          return [{id: point.id, before: undefined, after: point}];
-        });
-  }
-
-  private save(entries: SaveEntry[]): Promise<bigint> {
-    return this.currentCollection()
-        .then(collectionId => {
-          const saved: Future<SaveResponse> =
-              requestData('lat.trails.DataService/Save', {
-                collectionId,
-                writes:
-                    entries.map(e =>
-                        e.kind === 'schema'
-                            ? schemaToWrite(e.schema)
-                            : toWrite(e.op, e.feature)),
-              });
-          return saved;
-        })
-        .then(response => response.version);
-  }
-
-  // Dismissing the dialog arms it again, so a later failure is not silent.
-  private warnUnsaved(): void {
-    if (this.warnedUnsaved) {
-      return;
-    }
-
-    this.warnedUnsaved = true;
-    const dismissed = () => {
-      this.warnedUnsaved = false;
-    };
-    this.dialog.display(SaveFailedDialog({})).then(dismissed, dismissed);
-  }
-
-  // The collection in the URL, even while it loads, or else a new one.
-  private currentCollection(): Promise<string> {
-    if (this.routedCollection !== undefined) {
-      return Promise.resolve(this.routedCollection);
-    }
-
-    this.creatingCollection ??= this.requireLogin('save')
-        .then(() => {
-          const created: Future<CreateCollectionResponse> =
-              requestData(
-                  'lat.trails.DataService/CreateCollection', {
-                    name: newCollectionName(),
-                    schema: JSON.stringify(this.store.schema()),
-                  });
-          return created;
-        })
-        .then(response => {
-          const collection = checkExists(response.collection);
-          this.updateState({
-            ...this.state,
-            collection,
-          });
-          this.routedCollection = collection.id;
-          this.history.replaceTo(`/collection/${collection.id}`);
-          this.saveViewState();
-          this.toast.show('Created a new collection');
-          return collection.id;
-        })
-        .finally(() => {
-          this.creatingCollection = undefined;
-        });
-    return this.creatingCollection;
   }
 
   private setHidden(ids: Iterable<string>): void {
@@ -2450,46 +2059,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
         .then(() => {}, e => {
           console.error(e);
         });
-  }
-
-  private requireLogin(reason?: LoginReason): Promise<void> {
-    // Somebody already signed in whose GetCurrentUser has not landed yet gets a popup if we go by
-    // finished, so wait the fetch out instead.
-    return this.state.self.then(response => {
-      if (response.user) {
-        return;
-      }
-
-      // Callers wait on this, so it has to settle even when the user fetch fails, or else the
-      // write queue behind it never runs again.
-      this.login ??= this.loginPopup.open(reason)
-          .then(response => {
-            this.signedIn(response);
-            if (!response.user) {
-              throw new Error('Nobody signed in');
-            }
-          })
-          .finally(() => {
-            this.login = undefined;
-          });
-      return this.login;
-    });
-  }
-
-  private signedIn(response: GetCurrentUserResponse): void {
-    this.updateState({...this.state, self: resolvedFuture(response)});
-    if (!response.user) {
-      return;
-    }
-
-    // Now that the user is logged in, they may have edit rights to the open collection. So reload
-    // if they're currently in a read-only mode.
-    const open = this.routedCollection;
-    if (open !== undefined && this.store.isReadOnly()) {
-      this.loadCollection(open);
-    } else {
-      this.saves.flush();
-    }
   }
 
   // Closes whatever menu is open and makes trigger's the one to open. Answers false when trigger's
@@ -2720,7 +2289,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const shownEntries = this.getShownEntries(nodes);
     for (const entry of shownEntries) {
       if (!this.shownIds.has(entry.id)) {
-        entry.onShown?.();
+        entry.onShown?.(this.mapController);
       }
     }
     this.shownIds = new Set(shownEntries.map(entry => entry.id));
@@ -2746,34 +2315,6 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
 function withoutHover(profile: LineProfileState|undefined): LineProfileState|undefined {
   return profile?.status === 'loaded' ? {...profile, hovered: undefined} : profile;
-}
-
-function getPickSchema(entry: LayerEntry): Schema|CollectionSchema|undefined {
-  return entry.schema
-      ?? (entry.layer instanceof CollectionLayer ? entry.layer.getCollectionSchema() : undefined);
-}
-
-function getObjectLatLngDegrees(object: LayerObject): number[] {
-  if (object.kind === 'polygon') {
-    const bound = object.value.bound;
-    return [bound.low[0], bound.low[1], bound.high[0], bound.high[1]];
-  } else if (object.kind === 'point') {
-    const ll = unprojectS2LatLng(object.value.position[0], object.value.position[1]);
-    return [ll.latDegrees(), ll.lngDegrees()];
-  } else {
-    return [...toDegrees(object.value.points)];
-  }
-}
-
-// Mercator to interleaved lat then lng degrees
-function toDegrees(points: Float64Array): Float64Array {
-  const degrees = new Float64Array(points.length);
-  for (let i = 0; i < points.length; i += 2) {
-    const ll = unprojectS2LatLng(points[i], points[i + 1]);
-    degrees[i] = ll.latDegrees();
-    degrees[i + 1] = ll.lngDegrees();
-  }
-  return degrees;
 }
 
 // The point's own spot, the spot on a line or ring nearest the click, or else the click
@@ -2809,15 +2350,6 @@ const SELECTION_PARAMETERS = [
   ['point', SearchResultKind.POINT],
   ['trail', SearchResultKind.TRAIL],
 ] as const;
-
-function newCollectionName(): string {
-  return `Untitled collection ${new Date().toLocaleDateString()}`;
-}
-
-function osmElementOf(pointId: number): {type: 'node'|'relation'|'way'; id: number} {
-  const {type, id} = getPointSource(BigInt(pointId));
-  return {type, id: Number(id)};
-}
 
 function isFileDrag(e: CorgiEvent<typeof DOM_MOUSE>): boolean {
   return !!(e.detail as DragEvent).dataTransfer?.types.includes('Files');

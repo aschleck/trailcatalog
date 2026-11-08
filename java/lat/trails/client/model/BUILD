@@ -6,6 +6,8 @@ tc_ts_project(
     name = "model",
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//java/lat/trails/client/data",
+        "//java/lat/trails/client/login",
         "//java/lat/trails/client/workers",
         "//java/lat/trails/wire:wire-ts",
         "//java/org/trailcatalog/models:models-ts",

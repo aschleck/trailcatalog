@@ -5,15 +5,8 @@ import { ACTION } from 'external/dev_april_corgi+/js/emu/events';
 import { PanelButton, PanelCloseButton, PrimaryButton } from 'js/pika/buttons';
 
 import { RouteStatus } from '../tools/drawing_layer';
-import {
-  formatArea,
-  formatDistance,
-  formatHeight,
-  pathLengthMeters,
-  profileStats,
-  ringAreaMeters2,
-} from '../tools/measurements';
-import { LineStats } from './feature_list';
+import { formatHeight, profileStats } from '../tools/measurements';
+import { AreaStats, ProfiledStats } from './feature_list';
 import { LineProfile, LineProfileState } from './profile_chart';
 
 export interface MeasureState {
@@ -62,16 +55,12 @@ export function AreaPanel({ring}: {
   // The placed vertices and the paths between them as interleaved lat then lng degrees
   ring: Float64Array;
 }) {
-  // The perimeter runs back to the first vertex.
-  const perimeter = pathLengthMeters([...ring, ring[0], ring[1]]);
   return (
     <ToolPanel icon={<AreaIcon />} title="Draw an area">
       {ring.length < 6
           ? <ClickHint />
           : <div className="flex flex-col gap-2">
-              <div className="text-gray-700">
-                {`${formatArea(ringAreaMeters2(ring))}, ${formatDistance(perimeter)} perimeter`}
-              </div>
+              <AreaStats ring={ring} />
               <PrimaryButton
                   className="self-start"
                   unboundEvents={{corgi: [[ACTION, 'finishDrawingClicked']]}}
@@ -221,7 +210,7 @@ function Readout({readOnly, state, tool}: {
   const stats = profile.status === 'loaded' ? profileStats(profile.meters) : undefined;
   return (
     <div className="flex flex-col gap-2">
-      <LineStats lengthMeters={state.lengthMeters} climb={stats} />
+      <ProfiledStats groundMeters={state.lengthMeters} profile={state.profile} />
       <LineProfile source="measure" state={profile} />
       {stats
           ? <div className="text-gray-700">

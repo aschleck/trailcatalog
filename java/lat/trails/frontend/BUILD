@@ -47,6 +47,7 @@ tc_ts_project(
         "//:node_modules/postgres",
         "//java/lat/trails/client:ts",
         "//java/lat/trails/client/account",
+        "//java/lat/trails/client/login",
         "//java/lat/trails/wire:wire-ts",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/server",

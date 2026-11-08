@@ -39,6 +39,9 @@ export const FEATURE_EDITED = declareEvent<{
   vertex?: number;
 }>('feature_edited');
 
+// A copy of a map layer's object landed in the collection, and id is the feature to select
+export const FEATURE_SAVED = declareEvent<{id: string}>('feature_saved');
+
 export const FEATURE_HOVERED = declareEvent<{
   // Undefined when the pointer left every feature
   id: string|undefined;

@@ -146,7 +146,8 @@ export class SkyLayer extends Layer {
   private readonly glViewshed: WebGLBuffer;
   // Terrain samples in flight, including ones a moved pin will discard
   private sampling: number;
-  private appearing: boolean;
+  // Who hears where the pins appear, set until the next viewport places them
+  private appearing: EventSource|undefined;
   private interactive: boolean;
   private time: number;
   private readonly glGeometry: WebGLBuffer;
@@ -175,7 +176,7 @@ export class SkyLayer extends Layer {
     this.view = undefined;
     this.shading = 'idle';
     this.sampling = 0;
-    this.appearing = false;
+    this.appearing = undefined;
     this.interactive = true;
     this.time = Date.now();
     this.glGeometry = renderer.createDataBuffer(0);
@@ -224,8 +225,8 @@ export class SkyLayer extends Layer {
   }
 
   /** Puts the pin at the center of the screen on the next viewport, unless it is already on it. */
-  appear(): void {
-    this.appearing = true;
+  appear(source: EventSource): void {
+    this.appearing = source;
   }
 
   /** Describes the sky at the pin for the click menu, if a point is near the pin or the subject. */
@@ -259,10 +260,11 @@ export class SkyLayer extends Layer {
     const [x1, y1] = toWorld(bounds.lat().lo(), bounds.lng().hi());
     this.view = {x0, y0, x1, y1, zoom};
     this.loadShade();
-    if (!this.appearing) {
+    const source = this.appearing;
+    if (!source) {
       return;
     }
-    this.appearing = false;
+    this.appearing = undefined;
     const onScreen = (point: S2LatLng|undefined) =>
         point !== undefined && bounds.contains(S2LatLngRect.fromPoint(point));
     const pin = onScreen(this.pin) ? undefined : this.camera.center;
@@ -279,6 +281,7 @@ export class SkyLayer extends Layer {
                             / Math.cos((pin ?? this.pin!).latRadians())),
                 y);
     this.place(pin, subject);
+    this.reportPins(source);
   }
 
   // The subject sits on top, so it wins a press on both.
@@ -310,12 +313,17 @@ export class SkyLayer extends Layer {
         this.loadViewshed();
       }
       this.loadSighting();
-      if (this.pin && this.subject) {
-        source.trigger(
-            SKY_PINS_MOVED, {pin: formatPin(this.pin), subject: formatPin(this.subject)});
-      }
+      this.reportPins(source);
     }
     this.dragging = undefined;
+  }
+
+  // The saved values configure the layer again on every clock tick, so they follow the pins.
+  private reportPins(source: EventSource): void {
+    if (this.pin && this.subject) {
+      source.trigger(
+          SKY_PINS_MOVED, {pin: formatPin(this.pin), subject: formatPin(this.subject)});
+    }
   }
 
   /**

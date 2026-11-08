@@ -1081,8 +1081,8 @@ export class LayerCatalog extends Disposable {
             this.sky.setSunlight(values.sunlight === true);
             this.sky.setMoonlight(values.moonlight === true);
           },
-          onShown: () => {
-            this.sky.appear();
+          onShown: source => {
+            this.sky.appear(source);
           },
           // Only a click on a pin, so that the rows describe what the rays show
           readings: point => this.sky.getReadingsNear(point, this.time ?? Date.now()),

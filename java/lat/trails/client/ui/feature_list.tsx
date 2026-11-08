@@ -8,7 +8,7 @@ import { ACTION, CHANGED } from 'external/dev_april_corgi+/js/emu/events';
 import { Input } from 'external/dev_april_corgi+/js/emu/input';
 import { Select } from 'external/dev_april_corgi+/js/emu/select';
 
-import { DangerButton, PanelButton, PanelCloseButton } from 'js/pika/buttons';
+import { DangerButton, PanelButton, PanelCloseButton, PrimaryButton } from 'js/pika/buttons';
 import { formatTemperature, METERS_PER_FOOT, METERS_PER_MILE } from 'js/units/formatters';
 import { CommonsImageCarousel } from 'js/wikimedia/commons_images';
 import {
@@ -59,16 +59,12 @@ import { Data } from '../workers/collection_types';
 import { FieldInput } from './field_input';
 import { PointMarker } from './icon_picker';
 import { formatDuration, formatTimeSpan, LineProfile, LineProfileState } from './profile_chart';
+import { SaveToCollectionController } from './save_to_collection';
 import { TreeChildren, TreeRow } from './tree_rows';
 
 export interface TreeItem {
   feature: EditableFeature;
   children: TreeItem[];
-}
-
-export interface OsmElement {
-  type: 'node'|'relation'|'way';
-  id: number;
 }
 
 export interface WeatherStation {
@@ -78,8 +74,22 @@ export interface WeatherStation {
   taf: boolean;
 }
 
+// An inspected object's points, line runs, or polygon exterior rings, each as interleaved lat then
+// lng E7. A polygon's holes are dropped because an editable polygon has one ring.
+export interface InspectedGeometry {
+  kind: 'line'|'point'|'polygon';
+  parts: Int32Array[];
+}
+
+export interface OsmElement {
+  type: 'node'|'relation'|'way';
+  id: number;
+}
+
 export type InspectedObject = {
   data: Data;
+  // Built when asked for, because the geometry can be a whole relation's
+  geometry: () => InspectedGeometry;
   // A CollectionSchema for an object from a reference collection, so it reads like a feature
   schema: Schema|CollectionSchema;
   // Set when the schema titles the object by its OpenStreetMap node or way
@@ -112,6 +122,8 @@ export type Subject = {
 }|{
   source: 'object';
   object: InspectedObject;
+  // False when the open collection is read only
+  savable: boolean;
 };
 
 export interface FeatureListState {
@@ -407,6 +419,19 @@ export function Properties({profile, subject}: {
                     : ''
         }
         {profile ? <LineProfile source="line" state={profile} /> : ''}
+        {osm && subject.source === 'object' && subject.savable
+            ? <div
+                  className="self-start"
+                  js={corgi.bind({
+                    controller: SaveToCollectionController,
+                    args: {object: subject.object},
+                    events: {corgi: [[ACTION, 'clicked']]},
+                  })}
+              >
+                <PrimaryButton>Save to collection</PrimaryButton>
+              </div>
+            : ''
+        }
         {osm
             ? <OsmTags element={osm} key={`${osm.type}/${osm.id}`} />
             : fields.length > 0 && !editing ? <DataTable rows={fields} /> : ''
@@ -938,22 +963,25 @@ function Stats({feature, profile}: {
       </div>
     );
   } else if (feature.kind === 'polygon') {
-    const ring = Array.from(feature.latLngE7, e7 => e7 / 1e7);
-    // The perimeter runs back to the first vertex.
-    const perimeter = pathLengthMeters([...ring, ring[0], ring[1]]);
-    return (
-      <div className="text-gray-700">
-        {`${formatArea(ringAreaMeters2(ring))}, ${formatDistance(perimeter)} around`}
-      </div>
-    );
+    return <AreaStats ring={Array.from(feature.latLngE7, e7 => e7 / 1e7)} />;
   } else {
     return <div className="hidden" />;
   }
 }
 
+export function AreaStats({ring}: {ring: number[]|Float64Array}) {
+  // The perimeter runs back to the first vertex.
+  const perimeter = pathLengthMeters([...ring, ring[0], ring[1]]);
+  return (
+    <div className="text-gray-700">
+      {`${formatArea(ringAreaMeters2(ring))}, ${formatDistance(perimeter)} around`}
+    </div>
+  );
+}
+
 // Takes the length along the slope and the climb from the profile once it loads, and the ground
 // length until then. A line with elevations of its own has its profile at once.
-function ProfiledStats({groundMeters, profile}: {
+export function ProfiledStats({groundMeters, profile}: {
   groundMeters: number;
   profile: LineProfileState|undefined;
 }) {
@@ -964,7 +992,7 @@ function ProfiledStats({groundMeters, profile}: {
   return <LineStats lengthMeters={along[along.length - 1]} climb={profileStats(profile.meters)} />;
 }
 
-export function LineStats({climb, lengthMeters}: {
+function LineStats({climb, lengthMeters}: {
   climb: ProfileStats|undefined;
   lengthMeters: number;
 }) {

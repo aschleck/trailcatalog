@@ -382,10 +382,6 @@ export class FeatureLayer extends Layer {
       this.locations.unload([...this.published.keys()].map(id => this.key(id)));
     });
 
-    store.listen(() => {
-      this.refresh();
-    });
-
     // A dragged vertex follows the pointer rather than its snap while shift is down.
     this.shift = new ShiftKey(() => {
       this.replan(this.overlay);
@@ -434,16 +430,7 @@ export class FeatureLayer extends Layer {
   }
 
   isVisible(feature: EditableFeature): boolean {
-    let at: EditableFeature|undefined = feature;
-    while (at) {
-      if (this.hidden.has(at.id)) {
-        return false;
-      }
-
-      const parent = this.store.parentOf(at);
-      at = parent !== undefined ? this.store.get(parent) : undefined;
-    }
-    return true;
+    return [feature.id, ...this.store.getAncestors(feature.id)].every(id => !this.hidden.has(id));
   }
 
   override click(
@@ -791,12 +778,21 @@ export class FeatureLayer extends Layer {
     return ICON_SCALE * this.radiusPx(point) / DEFAULT_POINT_RADIUS_PX;
   }
 
+  // What a point draws as: its image's cell in the atlas, the default circle, or its icon. An image
+  // that is still loading, or that failed to load, draws as the circle.
+  private getDrawn(point: ProjectedPoint): number|'circle'|'icon' {
+    const image = getIconImageId(point.look.icon);
+    return image !== undefined
+        ? this.images.getCell(image) ?? 'circle'
+        : point.look.icon === DEFAULT_ICON ? 'circle' : 'icon';
+  }
+
   // How far a point's label sits from its center, past the edge of its circle, icon, or image
-  private labelReachPx(point: ProjectedPoint, drawn: 'circle'|'icon'|'image'): number {
+  private labelReachPx(point: ProjectedPoint, drawn: number|'circle'|'icon'): number {
     const radius = this.radiusPx(point);
     return drawn === 'circle'
         ? radius
-        : (drawn === 'image' ? IMAGE_RADIUS_PX : ICON_RADIUS_PX) * radius / DEFAULT_POINT_RADIUS_PX;
+        : (drawn === 'icon' ? ICON_RADIUS_PX : IMAGE_RADIUS_PX) * radius / DEFAULT_POINT_RADIUS_PX;
   }
 
   private editingLine(): ProjectedShape|undefined {
@@ -1051,8 +1047,7 @@ export class FeatureLayer extends Layer {
   private pointsAt(at: Vec2): ProjectedPoint[] {
     const inverse = this.camera.inverseWorldRadius;
     return this.visiblePoints.filter(point => {
-      const drawn = getIconImageId(point.look.icon) !== undefined ? 'image' : 'icon';
-      const reach = this.labelReachPx(point, drawn);
+      const reach = this.labelReachPx(point, this.getDrawn(point));
       return Math.hypot(point.at[0] - at[0], point.at[1] - at[1])
           <= (reach + CLICK_SLOP_PX) * inverse;
     });
@@ -1100,7 +1095,7 @@ export class FeatureLayer extends Layer {
     };
   }
 
-  private refresh(): void {
+  refresh(): void {
     const schema = this.store.schema();
     const live = new Set<string>();
     this.visibleShapes = [];
@@ -1447,13 +1442,7 @@ export class FeatureLayer extends Layer {
       }
     }
     for (const point of this.visiblePoints) {
-      const image = getIconImageId(point.look.icon);
-      const cell = image !== undefined ? this.images.getCell(image) : undefined;
-      // An image that is still loading, or that failed to load, draws as the default circle.
-      const drawn =
-          cell !== undefined ? 'image'
-              : point.look.icon === DEFAULT_ICON || image !== undefined ? 'circle'
-              : 'icon';
+      const drawn = this.getDrawn(point);
       const reach = this.labelReachPx(point, drawn);
       const [x, y] = at(point);
       const px = x * pixelsPerWorld;
@@ -1474,9 +1463,9 @@ export class FeatureLayer extends Layer {
           anchor: {horizontal: 'start', vertical: 'middle'},
         });
       }
-      if (cell !== undefined) {
+      if (typeof drawn === 'number') {
         needed += BillboardProgram.bytesNeeded();
-        images.push({cell, point, reach});
+        images.push({cell: drawn, point, reach});
       } else if (drawn === 'circle') {
         circles.push(point);
       } else {

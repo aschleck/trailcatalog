@@ -133,11 +133,7 @@ export class MeasureProfiler extends DemProfiler {
       this.show({...this.current(), profile: {status: 'loading'}});
     }
     this.sampleDem(path, profile => {
-      const lengthMeters =
-          profile.status === 'loaded'
-              ? profile.distanceMeters[profile.distanceMeters.length - 1]
-              : this.current().lengthMeters;
-      this.show({...this.current(), lengthMeters, profile});
+      this.show({...this.current(), profile});
     });
   }
 }

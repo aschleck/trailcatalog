@@ -2,7 +2,7 @@ import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import * as corgi from 'external/dev_april_corgi+/js/corgi';
 
 import { S2LatLng } from 'java/org/trailcatalog/s2';
-import { Layer } from 'js/map/layer';
+import { EventSource, Layer } from 'js/map/layer';
 
 import { Schema } from '../model/schema';
 import { Eye, TreeChildren, TreeRow } from './tree_rows';
@@ -65,7 +65,7 @@ export interface LayerEntry {
   // Set for a layer that shows the map's time, so the timeline shows while it's on. A forecast only
   // covers the times of its run, and the map leaves it out at any other time.
   timed?: 'any'|'forecast';
-  onShown?: () => void;
+  onShown?: (source: EventSource) => void;
   // Keys of values without a control that still save with the view state
   persisted?: string[];
   // Set for a forecast, as the first time after at in ms that it has a step for

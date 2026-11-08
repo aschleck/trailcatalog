@@ -41,25 +41,22 @@ export class FeatureStore {
   private savedSchema: SavedSchema;
   private readonly undoStack: Edit[];
   private readonly redoStack: Edit[];
-  private readonly listeners: Array<() => void>;
   // Built on first use after each change
   private parents: Map<string, string|undefined>|undefined;
   // Set for a collection shared with the user to view, where every edit would fail to save.
   private readOnly: boolean;
 
-  constructor(private readonly saves: SaveQueue, readOnly: boolean) {
+  constructor(
+      private readonly saves: SaveQueue,
+      private readonly onChange: () => void,
+      readOnly: boolean) {
     this.live = new Map();
     this.removed = new Map();
     this.savedSchema = {schema: DEFAULT_COLLECTION_SCHEMA, version: 0n};
     this.undoStack = [];
     this.redoStack = [];
-    this.listeners = [];
     this.parents = undefined;
     this.readOnly = readOnly;
-  }
-
-  listen(listener: () => void): void {
-    this.listeners.push(listener);
   }
 
   /**
@@ -136,6 +133,18 @@ export class FeatureStore {
   parentOf(feature: EditableFeature): string|undefined {
     this.parents ??= getParents(this.live.values());
     return this.parents.get(feature.id);
+  }
+
+  /** Returns the ids of the folders around a feature, innermost first. */
+  getAncestors(id: string|undefined): string[] {
+    this.parents ??= getParents(this.live.values());
+    const ancestors = [];
+    let parent = id !== undefined ? this.parents.get(id) : undefined;
+    while (parent !== undefined) {
+      ancestors.push(parent);
+      parent = this.parents.get(parent);
+    }
+    return ancestors;
   }
 
   get canUndo(): boolean {
@@ -256,8 +265,6 @@ export class FeatureStore {
 
   private changed(): void {
     this.parents = undefined;
-    for (const listener of this.listeners) {
-      listener();
-    }
+    this.onChange();
   }
 }

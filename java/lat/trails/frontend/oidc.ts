@@ -18,8 +18,8 @@ import postgres from 'postgres';
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
 import { PROVIDER_LABELS } from '../client/account/account_dialog';
-import { isLoginReason, loginPage } from '../client/account/login_page';
-import { ACKNOWLEDGED, LOGIN_CHANNEL, SIGNED_IN } from '../client/account/login_popup';
+import { isLoginReason, loginPage } from '../client/login/login_page';
+import { ACKNOWLEDGED, LOGIN_CHANNEL, SIGNED_IN } from '../client/login/login_popup';
 
 import { STATIC_PREFIX } from './assets';
 import { LoginEnforcer } from './auth';

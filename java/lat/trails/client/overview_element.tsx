@@ -15,10 +15,19 @@ import { GetCollectionResponse } from 'trails_lat/proto/data_pb';
 import { canEdit, descriptionOf } from './data/collection_data';
 import { requestData } from './data/data';
 import {
+  COLLECTION_CREATED,
+  COLLECTION_LOADED,
+  COLLECTION_LOADING,
+  CollectionModel,
+  FEATURES_CHANGED,
+  SAVE_FAILED,
+} from './model/collection_model';
+import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
   FEATURE_EDITED,
   FEATURE_HOVERED,
+  FEATURE_SAVED,
   LINE_DRAWN,
   MARKER_DRAWN,
   POINT_PLACED,
@@ -160,15 +169,21 @@ export function OverviewElement(
           args: {collection},
           events: {
             corgi: [
+              [COLLECTION_CREATED, 'onCollectionCreated'],
+              [COLLECTION_LOADED, 'onCollectionLoaded'],
+              [COLLECTION_LOADING, 'onCollectionLoading'],
               [FEATURE_CLICKED, 'onFeatureClicked'],
               [FEATURE_CONTEXT_MENU, 'onFeatureContextMenu'],
               [FEATURE_EDITED, 'onFeatureEdited'],
               [FEATURE_HOVERED, 'onFeatureHovered'],
+              [FEATURE_SAVED, 'onFeatureSaved'],
+              [FEATURES_CHANGED, 'onFeaturesChanged'],
               [LINE_DRAWN, 'onLineDrawn'],
               [MARKER_DRAWN, 'onMarkerDrawn'],
               [MAP_MOVED, 'onMove'],
               [POINT_PLACED, 'onPointPlaced'],
               [POLYGON_DRAWN, 'onPolygonDrawn'],
+              [SAVE_FAILED, 'onSaveFailed'],
               [SKY_PINS_MOVED, 'onSkyPinsMoved'],
               [TOOL_REQUESTED, 'onToolRequested'],
               [UNCLAIMED_CLICKED, 'onUnclaimedClicked'],
@@ -178,6 +193,7 @@ export function OverviewElement(
             drop: 'filesDropped',
             render: 'wakeup',
           },
+          model: CollectionModel,
           state: [state, updateState],
         })}
         className="flex flex-col h-full relative"
@@ -278,7 +294,7 @@ export function OverviewElement(
                 : state.inspected
                     ? <Properties
                           profile={state.lineProfile}
-                          subject={{source: 'object', object: state.inspected}}
+                          subject={{source: 'object', object: state.inspected, savable: !readOnly}}
                       />
                     : ''
             }
