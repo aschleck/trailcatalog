@@ -168,25 +168,22 @@ function withoutWayLines(style: MbtileStyle): MbtileStyle {
   return {layers};
 }
 
-// Dark enough to read against landcover, which composites to about 0xBFD9A8 where the 40% alpha
-// 0x72B948 wood fill lands on the base.
-const TRAIL_COLOR = 0x2A6B3CFF as RgbaU32;
+// A rust red, opposite the landcover's green so a trail stands off the forest, and browner than the
+// #c10231 red and #dc6322 orange in schema.ts#OPTION_COLORS so it doesn't read as a drawn line.
+const TRAIL_COLOR = 0xB0381CFF as RgbaU32;
 
 // TRAIL_COLOR taken toward black, because dots cover fewer pixels than dashes and read paler in
 // the same color.
-const FAINT_TRAIL_COLOR = 0x173F22FF as RgbaU32;
+const FAINT_TRAIL_COLOR = 0x7A2410FF as RgbaU32;
 
 // TRAIL_COLOR lightened toward the landcover it sits on, because a city block of sidewalks has to
 // read as texture while a trail still wins.
-const SIDEWALK_COLOR = 0x74A183FF as RgbaU32;
+const SIDEWALK_COLOR = 0xC08A70FF as RgbaU32;
 
 // NATURE's service casing 0xBCB4A5 pushed toward yellow to say unpaved, and taken most of the way
-// to black because it only ever gets the one device pixel at the edge of the line to say it.
-const TRACK_COLOR = 0x4A3A1EFF as RgbaU32;
-
-// The core inside a track's border. NATURE's service fill 0xF6F5F2 warmed toward TRACK_COLOR, so
-// the core still says dirt.
-const TRACK_CORE_COLOR = 0xEFE9DEFF as RgbaU32;
+// to black so a track stands off the contours, which are the same hue at a fraction of the alpha.
+// It stops short of black so a track doesn't outweigh the thinner trails.
+const TRACK_COLOR = 0x5E4A2CFF as RgbaU32;
 
 // A slate blue, so that a run reads as snow rather than as a trail, lighter than SIDEWALK_COLOR so
 // it sits under both.
@@ -222,7 +219,7 @@ const PATH_BANDS: Array<{
 }> = [
   {minZoom: 11, maxZoom: 12, minor: 0.4, trail: 0.6, dots: 1, dotPattern: 'fine_dotted'},
   {minZoom: 12, maxZoom: 13, minor: 0.4, trail: 0.6, dots: 1, dotPattern: 'fine_dotted'},
-  {minZoom: 13, maxZoom: 15, minor: 0.5, trail: 0.6, dots: 1, dotPattern: 'fine_dotted'},
+  {minZoom: 13, maxZoom: 15, minor: 0.5, trail: 0.8, dots: 1, dotPattern: 'fine_dotted'},
   {minZoom: 15, maxZoom: 31, minor: 0.8, trail: 1.2, dots: 1.4, dotPattern: 'dotted'},
 ];
 
@@ -369,37 +366,34 @@ const FERRY_LINES: LineStyle[] = [
 // The tracks, which NATURE leaves to the collection, in NATURE's transportation bands so the widths
 // ramp with the roads.
 //
-// A track draws TRACK_CORE_COLOR inside TRACK_COLOR once the band is wide enough to hold a core,
-// which is past radius 1. The casing pixel is also where the shader fades the line's alpha out, so
-// the border stays a soft hairline no matter how wide the track gets, and a paper map's double dash
-// would take two line styles per way. A pale road in a dark border still reads as unpaved next to a
-// solid green trail, which is the job.
+// A track is one flat dark color with no pale core. A core is about the color of the fields, and
+// the casing pixel around it is where the shader fades the line's alpha out, so across a field a
+// cored track reads as two faint lines next to the contours.
 //
-// tracktype runs from grade1, solid and usually paved, to grade5, two ruts in a meadow, so a grade1
-// track draws solid and grade4 and grade5 draw in short dashes. The rest and the untagged keep the
-// plain dash.
+// tracktype runs from grade1, solid and usually paved, to grade5, two ruts in a meadow, so grade4
+// and grade5 draw in short dashes. The rest and the untagged keep the plain dash, grade1 included,
+// because a solid line this dark reads as more road than the paved roads beside it.
 //
 // The z values continue NATURE's transportation ramp downward from service, so a service road's
 // casing covers a track running into it and a track's covers a trail.
 const TRACK_BANDS = [
-  {minZoom: 11, maxZoom: 12, fill: TRACK_COLOR, radius: 0.5},
-  {minZoom: 12, maxZoom: 13, fill: TRACK_COLOR, radius: 0.6},
-  {minZoom: 13, maxZoom: 15, fill: TRACK_CORE_COLOR, radius: 1.8},
-  {minZoom: 15, maxZoom: 31, fill: TRACK_CORE_COLOR, radius: 2.4},
+  {minZoom: 11, maxZoom: 12, radius: 0.5},
+  {minZoom: 12, maxZoom: 13, radius: 0.6},
+  {minZoom: 13, maxZoom: 15, radius: 0.9},
+  {minZoom: 15, maxZoom: 31, radius: 1.2},
 ];
 
 const TRACK_GRADES: Array<{filters: Match[]; pattern: LinePattern}> = [
-  {filters: [{match: 'number_equals', key: 'tracktype', value: 1}], pattern: 'solid'},
   {filters: [{match: 'greater_than', key: 'tracktype', value: 3}], pattern: 'short_dashed'},
   {filters: [], pattern: 'dashed'},
 ];
 
-const TRACK_LINES: LineStyle[] = TRACK_BANDS.flatMap(({minZoom, maxZoom, fill, radius}) =>
+const TRACK_LINES: LineStyle[] = TRACK_BANDS.flatMap(({minZoom, maxZoom, radius}) =>
     TRACK_GRADES.map(({filters, pattern}) => ({
       filters: [{match: 'category_in', key: 'type', value: [WayCategory.ROAD_TRACK]}, ...filters],
       minZoom,
       maxZoom,
-      fill,
+      fill: TRACK_COLOR,
       stroke: TRACK_COLOR,
       radius,
       pattern,
@@ -410,7 +404,7 @@ const TRACK_LINES: LineStyle[] = TRACK_BANDS.flatMap(({minZoom, maxZoom, fill, r
 // malls, but parks also use it for paved trails, like way 28917735 to the Point Reyes lighthouse.
 //
 // Below zoom 13 it draws as a trail because the line is too thin to hold a core. From 13 up it
-// draws at a track's width as a white road with a trail colored casing, solid because it's paved.
+// draws as a white road with a trail colored casing, solid because it's paved.
 const PEDESTRIAN_CORE_COLOR = 0xFFFFFFFF as RgbaU32;
 
 const PEDESTRIAN_BANDS: Array<{
