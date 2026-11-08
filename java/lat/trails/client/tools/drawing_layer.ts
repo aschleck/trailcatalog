@@ -387,7 +387,7 @@ export class DrawingLayer extends Layer {
       return true;
     }
 
-    if (!drawing || drawing.finished || drawing.finishing) {
+    if (!drawing) {
       return false;
     }
 
@@ -609,13 +609,19 @@ export class DrawingLayer extends Layer {
     }
 
     const latLngE7 = withoutRepeats(toE7Array(this.refined(drawing.vertices).points));
+    const ring = this.mode === 'polygon' ? toRing(latLngE7) : undefined;
+    // Too few distinct vertices keeps the drawing open, so the person can add more.
+    if (this.mode === 'polygon' ? !ring : latLngE7.length < 4) {
+      drawing.finishing = undefined;
+      drawing.onSaved = undefined;
+      this.changed();
+      return;
+    }
+
     this.clear();
-    if (this.mode === 'polygon') {
-      const ring = toRing(latLngE7);
-      if (ring) {
-        source.trigger(POLYGON_DRAWN, {latLngE7: ring});
-      }
-    } else if (latLngE7.length >= 4) {
+    if (ring) {
+      source.trigger(POLYGON_DRAWN, {latLngE7: ring});
+    } else {
       drawing.onSaved?.();
       source.trigger(LINE_DRAWN, {latLngE7});
     }
