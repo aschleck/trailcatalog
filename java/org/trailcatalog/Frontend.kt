@@ -626,10 +626,11 @@ private fun fetchCoarse(ctx: Context) {
     val results = it.prepareStatement(
         "SELECT p.id, p.cell, p.type, p.lat_lng_degrees "
             + "FROM paths p "
-            + "JOIN paths_in_trails pit "
-            + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
             + "WHERE p.cell BETWEEN ? AND ? "
             + "AND p.epoch = ? "
+            + "AND EXISTS ("
+            + "  SELECT 1 FROM paths_in_trails pit "
+            + "  WHERE pit.path_id = p.id AND pit.epoch = p.epoch) "
     ).apply {
       setLong(1, min)
       setLong(2, max)
@@ -677,12 +678,12 @@ private fun fetchFine(ctx: Context) {
     val results = it.prepareStatement(
         "SELECT p.id, p.type, p.lat_lng_degrees "
             + "FROM paths p "
-            + "LEFT JOIN paths_in_trails pit "
-            + "ON p.id = pit.path_id AND p.epoch = pit.epoch "
             + "WHERE p.cell BETWEEN ? AND ? "
             + "AND p.epoch = ? "
             + "AND ("
-            + "  pit.path_id IS NOT NULL "
+            + "  EXISTS ("
+            + "    SELECT 1 FROM paths_in_trails pit "
+            + "    WHERE pit.path_id = p.id AND pit.epoch = p.epoch) "
             + "  OR public.enumADescendsB(p.type, ?, ?) "
             + "  OR public.enumADescendsB(p.type, ?, ?) "
             + "  OR public.enumADescendsB(p.type, ?, ?) "
