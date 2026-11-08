@@ -31,3 +31,27 @@ test('misses a bound the circle stops short of', () => {
   qt.queryCircle([0.2, 0.23], 0.02, results);
   expect(results).toEqual([]);
 });
+
+test('collapses after deleting below the split threshold', () => {
+  const qt = new WorldBoundsQuadtree<number>();
+  const bounds: Rect[] = [];
+  for (let i = 0; i < 150; ++i) {
+    const x = 0.1 + i * 0.005;
+    const bound = {low: [x, 0.5], high: [x + 0.001, 0.501]} as Rect;
+    bounds.push(bound);
+    qt.insert(i, bound);
+  }
+  const root = (qt as any).root;
+  expect(root.children).toBeDefined();
+  expect(root.valueCount).toBe(150);
+
+  for (let i = 0; i < 100; ++i) {
+    expect(qt.delete(bounds[i])).toBe(true);
+  }
+  expect(root.valueCount).toBe(50);
+  expect(root.children).toBeUndefined();
+
+  const results: number[] = [];
+  qt.queryRect({low: [0, 0], high: [1, 1]} as Rect, results);
+  expect(results.sort((a, b) => a - b)).toEqual([...Array(50).keys()].map(i => i + 100));
+});

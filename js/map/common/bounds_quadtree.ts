@@ -170,6 +170,8 @@ function insert<V>(
     node.values = [];
     node.bounds = [];
     node.boundRefs = [];
+    // The re-inserts below pass through this node and count every value again.
+    node.valueCount -= oldValues.length + 1;
     for (let i = 0; i < oldValues.length; ++i) {
       const j = i * 4;
       insert(
