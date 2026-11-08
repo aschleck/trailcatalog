@@ -17,7 +17,7 @@ import { segmentLabel } from 'js/map/rendering/label_text';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
-import { PoolClient, sharedPool } from 'js/map/workers/client_pool';
+import { PoolClient, sharedPool, toViewport } from 'js/map/workers/client_pool';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, UnloadCellsCommand } from 'js/map/workers/s2/s2_data_fetcher';
 import { CellKey, Stream } from 'js/map/workers/s2/s2_streams';
 import { Z_OVERLAY_TEXT, Z_USER_DATA_HIGHLIGHT } from 'js/map/z';
@@ -312,16 +312,7 @@ export class PointCollectionLayer extends Layer {
   }
 
   override viewportChanged(bounds: S2LatLngRect, zoom: number): void {
-    const lat = bounds.lat();
-    const lng = bounds.lng();
-    this.fetcher.broadcast({
-      kind: 'uvr',
-      viewport: {
-        lat: [lat.lo(), lat.hi()],
-        lng: [lng.lo(), lng.hi()],
-        zoom,
-      },
-    });
+    this.fetcher.broadcast({kind: 'uvr', viewport: toViewport(bounds, zoom)});
   }
 
   // Plans every shown point's icon, with the hovered and selected ones larger and on top.

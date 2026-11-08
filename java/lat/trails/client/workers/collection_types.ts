@@ -143,12 +143,10 @@ export interface Polygon {
   // For the location querier, which indexes objects by bound and only decodes what a query hits.
   bound: LatLngRect;
   data: Data;
+  // where the polygon's triangles are in the cell's geometry buffer, so hovering can hide and
+  // restore them
   geometryByteLength: number;
-  // relative the start of the polygon geometry
   geometryOffset: number;
-  indexCount: number;
-  // relative the start of the polygon indices
-  indexOffset: number;
   raw: ArrayBuffer;
   triangles: Triangles;
   // Closed mercator rings of the boundary, so a hover can outline it without the main thread

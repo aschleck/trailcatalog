@@ -11,7 +11,7 @@ import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
-import { loaderCount, PoolClient, sharedPool } from 'js/map/workers/client_pool';
+import { loaderCount, PoolClient, sharedPool, toViewport } from 'js/map/workers/client_pool';
 import { LocationIndex } from 'js/map/workers/routing/location_index';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, UnloadCellsCommand } from 'js/map/workers/s2/s2_data_fetcher';
 import { CellKey, getStream, isInBand, Stream } from 'js/map/workers/s2/s2_streams';
@@ -66,11 +66,11 @@ interface LoadedCell {
   tolerance: number;
 }
 
-// An object and the cell that draws it
+// An object, the cell that draws it, and the serial of the load its offsets point into
 export type HeldObject =
-    | {kind: 'line'; key: CellKey; value: Line}
-    | {kind: 'point'; key: CellKey; value: Point}
-    | {kind: 'polygon'; key: CellKey; value: Polygon};
+    | {kind: 'line'; key: CellKey; serial: number; value: Line}
+    | {kind: 'point'; key: CellKey; serial: number; value: Point}
+    | {kind: 'polygon'; key: CellKey; serial: number; value: Polygon};
 
 interface Run {
   fill: RgbaU32;
@@ -353,7 +353,7 @@ export class CollectionLayer extends Layer {
     }
 
     const cell = this.cells.get(object.key);
-    if (!cell) {
+    if (cell?.serial !== object.serial) {
       return;
     }
     this.highlighted = object;
@@ -462,16 +462,7 @@ export class CollectionLayer extends Layer {
   override viewportChanged(bounds: S2LatLngRect, zoom: number, fetchZoom: number): void {
     this.loader.start();
     this.zoom = zoom;
-    const lat = bounds.lat();
-    const lng = bounds.lng();
-    this.fetcher.broadcast({
-      kind: 'uvr',
-      viewport: {
-        lat: [lat.lo(), lat.hi()],
-        lng: [lng.lo(), lng.hi()],
-        zoom,
-      },
-    });
+    this.fetcher.broadcast({kind: 'uvr', viewport: toViewport(bounds, zoom)});
 
     // Style bands break on integers, so the floor is the only thing a restyle has to watch, and
     // only when it crosses a break.
@@ -512,25 +503,22 @@ export class CollectionLayer extends Layer {
     this.loading.delete(key);
   }
 
-  // Finds the points within HOVER_RADIUS_PX, closest first. We search points here because they
-  // aren't in the location index, since the router would try to route along anything in it.
+  // Finds the points within HOVER_RADIUS_PX or their own radius, closest first. We search points
+  // here because they aren't in the location index, since the router would try to route along
+  // anything in it.
   private pointsAt(at: S2LatLng): HeldObject[] {
-    // the layer is hidden, see setIndexed
-    if (!this.indexed) {
-      return [];
-    }
-
     const [x, y] = projectS2LatLng(at);
-    // converts pixels to mercator
-    const radius = HOVER_RADIUS_PX * this.camera.inverseWorldRadius;
     const found: Array<{object: HeldObject; distance2: number}> = [];
     for (const [key, cell] of this.getShownCells()) {
       for (const point of cell.points) {
+        // converts pixels to mercator
+        const radius =
+            Math.max(HOVER_RADIUS_PX, point.style.radius) * this.camera.inverseWorldRadius;
         const dx = point.position[0] - x;
         const dy = point.position[1] - y;
         const distance2 = dx * dx + dy * dy;
         if (distance2 < radius * radius) {
-          found.push({object: {kind: 'point', key, value: point}, distance2});
+          found.push({object: {kind: 'point', key, serial: cell.serial, value: point}, distance2});
         }
       }
     }
@@ -699,7 +687,8 @@ export class CollectionLayer extends Layer {
 
   private show(key: CellKey, cell: LoadedCell): void {
     for (const polygon of cell.polygons) {
-      this.objects.set(objectKey(polygon.id), {kind: 'polygon', key, value: polygon});
+      this.objects.set(
+          objectKey(polygon.id), {kind: 'polygon', key, serial: cell.serial, value: polygon});
     }
     this.index(key, cell);
   }
@@ -779,7 +768,8 @@ export class CollectionLayer extends Layer {
     if (!cell || cell.serial !== Number(id.substring(serialAt + 1, indexAt))) {
       return undefined;
     }
-    return {kind: 'line', key, value: lineAt(cell.lines, Number(id.substring(indexAt + 1)))};
+    const value = lineAt(cell.lines, Number(id.substring(indexAt + 1)));
+    return {kind: 'line', key, serial: cell.serial, value};
   }
 
   // Lays the runs end to end in buffer from offset as one drawable, or undefined if they have no

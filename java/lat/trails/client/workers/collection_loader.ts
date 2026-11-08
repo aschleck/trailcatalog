@@ -467,8 +467,6 @@ class CollectionLoader {
           data,
           geometryByteLength: 4 * triangles.geometry.length,
           geometryOffset: 4 * geometryOffset,
-          indexCount: triangles.index.length,
-          indexOffset,
           outline,
           raw: rawPolygon,
           style,
