@@ -261,7 +261,7 @@ const ECC_SQUARED = 0.00669438;
 const ECC_PRIME_SQUARED = ECC_SQUARED / (1 - ECC_SQUARED);
 const UTM_SCALE = 0.9996;
 const UTM_FALSE_EASTING = 500000;
-const UTM_FALSE_NORTHING = 10000000; // southern hemisphere only
+const UTM_FALSE_NORTHING = 10000000; // southern hemisphere zones only
 // Meridional arc series coefficients, so the eccentricity powers aren't recomputed per row.
 const M0 =
     1
@@ -288,11 +288,11 @@ class StacLoader {
   private readonly active: Feature[];
   // Keyed by STAC id so a requery reuses the features it already opened COGs for.
   private readonly features: Map<string, Feature>;
-  private readonly loaded: HashSet<TileId>;
+  // Every tile the main thread may hold a texture for. A provisional tile was drawn from sources
+  // that didn't cover it, and becomes stale when a later page of results might fill it in. Stale
+  // tiles get redrawn but still count for unloading.
+  private readonly loaded: HashMap<TileId, 'covered'|'provisional'|'stale'>;
   private readonly refreshDebouncer: Debouncer;
-  // Tiles drawn from sources that didn't cover them, so a later page of results can put them back
-  // in the queue.
-  private readonly provisional: HashSet<TileId>;
   // Resolved sources for tiles we couldn't draw yet, so waiting on a COG to open doesn't mean
   // redoing the polygon work for every tile on screen.
   private readonly tileSources: HashMap<TileId, TileSources>;
@@ -319,8 +319,7 @@ class StacLoader {
   ) {
     this.active = [];
     this.features = new Map();
-    this.loaded = createTileHashSet();
-    this.provisional = createTileHashSet();
+    this.loaded = new HashMap(id => `${id.x},${id.y},${id.zoom}`);
     this.refreshDebouncer = new Debouncer(/* delayMs= */ 100, () => {
       this.startRefresh();
     });
@@ -352,11 +351,10 @@ class StacLoader {
     this.epoch += 1;
     this.lastQuery = S2LatLngRect.empty();
     this.tileSources.clear();
-    this.provisional.clear();
     if (this.loaded.size > 0) {
       this.postMessage({
         kind: 'utc',
-        ids: [...this.loaded],
+        ids: [...this.loaded.keys()],
       });
       this.loaded.clear();
     }
@@ -470,7 +468,8 @@ class StacLoader {
         const wrappedX = (x + 3 * halfWorldSize) % (2 * halfWorldSize) - halfWorldSize;
         const id = {x: wrappedX + halfWorldSize, y: halfWorldSize - y, zoom};
         used.add(id);
-        if (this.loaded.has(id)) {
+        const state = this.loaded.get(id);
+        if (state === 'covered' || state === 'provisional') {
           continue;
         }
 
@@ -523,7 +522,7 @@ class StacLoader {
     }
 
     const unload = [];
-    for (const id of this.loaded) {
+    for (const id of this.loaded.keys()) {
       if (used.has(id)) {
         continue;
       }
@@ -581,13 +580,8 @@ class StacLoader {
       return 'stuck';
     }
 
-    this.loaded.add(tile.id);
+    this.loaded.set(tile.id, covered ? 'covered' : 'provisional');
     this.tileSources.delete(tile.id);
-    if (covered) {
-      this.provisional.delete(tile.id);
-    } else {
-      this.provisional.add(tile.id);
-    }
 
     const epoch = this.epoch;
     try {
@@ -614,9 +608,9 @@ class StacLoader {
       }, values ? [bitmap, values.buffer] : [bitmap]);
       return 'drawn';
     } catch (e: unknown) {
-      // Reading the windows can still fail after retrying. Unmark the tile so the next viewport
-      // change picks it up again.
-      this.loaded.delete(tile.id);
+      // Reading the windows can still fail after retrying. Marking the tile stale lets the next
+      // viewport change pick it up again while still unloading whatever texture it had before.
+      this.loaded.set(tile.id, 'stale');
       console.error(e);
       return 'stuck';
     }
@@ -876,12 +870,13 @@ class StacLoader {
     // A newer feature can be a better source for a tile we already resolved.
     this.tileSources.clear();
 
-    // Give up the tiles this page might fill in. Without this they keep the holes the earlier
-    // pages left, because tileViewport skips anything already loaded.
-    for (const id of this.provisional) {
-      this.loaded.delete(id);
+    // Give up the tiles this page might fill in, or else they keep the holes the earlier pages
+    // left because tileViewport skips them.
+    for (const [id, state] of this.loaded) {
+      if (state === 'provisional') {
+        this.loaded.set(id, 'stale');
+      }
     }
-    this.provisional.clear();
   }
 }
 
@@ -946,16 +941,17 @@ function createTileHashSet(): HashSet<TileId> {
   return new HashSet(id => `${id.x},${id.y},${id.zoom}`);
 }
 
-function epsgToUtmZone(epsg: number): number {
-  // It seems weird that we don't care about north vs south. YouTim (below) seems sketchy.
+// EPSG 326xx is a northern hemisphere UTM zone and 327xx is a southern one, whose northings carry
+// UTM_FALSE_NORTHING even for pixels north of the equator.
+function getUtmZone(epsg: number): {zone: number; south: boolean} {
   if (epsg < 32601) {
     throw new Error("Not a UTM zone");
   } else if (epsg < 32661) {
-    return epsg - 32600;
+    return {zone: epsg - 32600, south: false};
   } else if (epsg < 32701) {
     throw new Error("Not a UTM zone");
   } else if (epsg < 32761) {
-    return epsg - 32700;
+    return {zone: epsg - 32700, south: true};
   } else {
     throw new Error("Not a UTM zone");
   }
@@ -993,7 +989,8 @@ async function drawTile(
   const values = bands.values ? new Uint8Array(TILE_SIZE * TILE_SIZE) : undefined;
   for (const read of reads) {
     if (read) {
-      paintRaster(pixels, values, read.painting, read.zone, tileX, tileY, halfWorldSize);
+      paintRaster(
+          pixels, values, read.painting, read.zone, read.south, tileX, tileY, halfWorldSize);
     }
   }
 
@@ -1005,7 +1002,8 @@ async function drawTile(
 
     const read = await readSource(fill, bands, colors, tileLow, tileHigh, pool);
     if (read) {
-      paintRaster(pixels, values, read.painting, read.zone, tileX, tileY, halfWorldSize);
+      paintRaster(
+          pixels, values, read.painting, read.zone, read.south, tileX, tileY, halfWorldSize);
     }
   }
 
@@ -1018,6 +1016,7 @@ async function drawTile(
             values,
             {...read.painting, mask: undefined},
             read.zone,
+            read.south,
             tileX,
             tileY,
             halfWorldSize);
@@ -1045,6 +1044,7 @@ function paintRaster(
     values: Uint8Array|undefined,
     painting: Painting,
     zone: number,
+    south: boolean,
     tileX: number,
     tileY: number,
     halfWorldSize: number): void {
@@ -1062,7 +1062,7 @@ function paintRaster(
     const mercY = (tileY - 1 + (TILE_SIZE - yp - 0.5) / TILE_SIZE) / halfWorldSize;
     const lat = Math.asin(Math.tanh(mercY * Math.PI));
     const latDegrees = lat * 180 / Math.PI;
-    const {cosLat, eScale, e3, e5, nBase, nScale, n4, n6} = getUtmRow(lat);
+    const {cosLat, eScale, e3, e5, nBase, nScale, n4, n6} = getUtmRow(lat, south);
     const aBase = cosLat * lngBase;
     const aStep = cosLat * lngStep;
     const row = yp * TILE_SIZE;
@@ -1232,15 +1232,16 @@ async function readSource(
     tileLow: S2LatLng,
     tileHigh: S2LatLng,
     pool: geotiff.Pool):
-        Promise<{painting: Painting; zone: number}|undefined> {
+        Promise<{painting: Painting; zone: number; south: boolean}|undefined> {
   // We need to project all corners because UTM isn't axis-aligned with Mercator and the
   // rotation changes depending on whether you're west or east of the meridian.
-  const zone = feature.epsg === 4326 ? LNG_LAT : epsgToUtmZone(feature.epsg);
+  const {zone, south} =
+      feature.epsg === 4326 ? {zone: LNG_LAT, south: false} : getUtmZone(feature.epsg);
   const project =
       zone === LNG_LAT
           ? (lat: number, lng: number): [number, number] =>
               [lng * 180 / Math.PI, lat * 180 / Math.PI]
-          : (lat: number, lng: number) => llToUtm(lat, lng, zone);
+          : (lat: number, lng: number) => llToUtm(lat, lng, zone, south);
   const corners = [
     project(tileLow.latRadians(), tileLow.lngRadians()),
     project(tileLow.latRadians(), tileHigh.lngRadians()),
@@ -1295,6 +1296,7 @@ async function readSource(
   return {
     painting: {planes, palette: colors.palette, highlight, mask, hidden: colors.hidden},
     zone,
+    south,
   };
 }
 
@@ -1446,7 +1448,7 @@ async function readOverviews(source: GeoTIFF): Promise<GeoTIFFImage[]> {
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-function llToUtm(lat: number, lng: number, zone: number): [number, number] {
+function llToUtm(lat: number, lng: number, zone: number, south: boolean): [number, number] {
   // Technically we need to do this but I don't care. Don't feel like converting all of these
   // numbers to radians.
   //
@@ -1473,7 +1475,7 @@ function llToUtm(lat: number, lng: number, zone: number): [number, number] {
   //+3 puts origin in middle of zone
   const longitudeOrigin = ((zone - 1) * 6 - 180 + 3) / 180 * Math.PI;
 
-  const {cosLat, eScale, e3, e5, nBase, nScale, n4, n6} = getUtmRow(lat);
+  const {cosLat, eScale, e3, e5, nBase, nScale, n4, n6} = getUtmRow(lat, south);
   const A = cosLat * (lng - longitudeOrigin);
   const A2 = A * A;
   return [
@@ -1484,7 +1486,7 @@ function llToUtm(lat: number, lng: number, zone: number): [number, number] {
 
 // Computes the terms of llToUtm that depend only on latitude, which leave easting and northing as
 // polynomials in A = cos(lat) * (lng - lngOrigin).
-function getUtmRow(lat: number) {
+function getUtmRow(lat: number, south: boolean) {
   const sinLat = Math.sin(lat);
   const cosLat = Math.cos(lat);
   const tanLat = Math.tan(lat);
@@ -1505,7 +1507,7 @@ function getUtmRow(lat: number) {
     n6: (61 - 58 * T + T * T + 600 * C - 330 * ECC_PRIME_SQUARED) / 720,
     eScale: UTM_SCALE * N,
     // Folds the meridional arc in so that only the parts that vary with A are left per pixel
-    nBase: (lat < 0 ? UTM_FALSE_NORTHING : 0) + UTM_SCALE * M,
+    nBase: (south ? UTM_FALSE_NORTHING : 0) + UTM_SCALE * M,
     nScale: UTM_SCALE * N * tanLat,
   };
 }
