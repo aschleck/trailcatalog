@@ -17,7 +17,6 @@ export class SkyboxLayer extends Layer {
     this.registerDisposer(() => { this.renderer.deleteBuffer(this.buffer); });
 
     const buffer = new ArrayBuffer(48 * 2 * 4);
-    const drawables = [];
     this.drawable =
         this.renderer.skyboxProgram.plan(
             buffer,

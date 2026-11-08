@@ -8,6 +8,7 @@ import { DPI } from 'js/map/common/dpi';
 import { Copyright, RgbaU32, Vec2, Vec4 } from 'js/map/common/types';
 import { EventSource, Layer } from 'js/map/layer';
 import { BillboardProgram } from 'js/map/rendering/billboard_program';
+import { growBuffer } from 'js/map/rendering/buffers';
 import { GLYPHER, toGraphemes } from 'js/map/rendering/glypher';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
@@ -875,14 +876,6 @@ export class TrailLayer extends Layer implements Listener {
   private showFine(zoom: number): boolean {
     return zoom >= FINE_ZOOM_THRESHOLD;
   }
-}
-
-function growBuffer(buffer: ArrayBuffer, needed: number): ArrayBuffer {
-  if (needed <= buffer.byteLength) {
-    return buffer;
-  }
-  const capacity = Math.pow(2, Math.ceil(Math.log2(needed)) + 1);
-  return new ArrayBuffer(capacity);
 }
 
 function distanceCheckLine(point: Vec2, line: Float32Array|Float64Array): number {

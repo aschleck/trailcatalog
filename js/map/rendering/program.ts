@@ -72,9 +72,9 @@ export abstract class Program<P extends ProgramData> extends Disposable {
     gl.uniformMatrix4fv(this.program.uniforms.sphericalMvp, false, sphericalMvp);
 
     this.activate();
-    let lastGeometry = undefined;
-    let lastIndex = undefined;
-    let lastTexture = undefined;
+    let lastGeometry: WebGLBuffer|undefined = undefined;
+    let lastIndex: WebGLBuffer|undefined = undefined;
+    let lastTexture: WebGLTexture|undefined = undefined;
     let lastZ = 9999; // random large number
     const cxh = Math.fround(centerPixel[0]);
     const cyh = Math.fround(centerPixel[1]);
@@ -82,35 +82,10 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         this.program.uniforms.cameraCenter, cxh, centerPixel[0] - cxh, cyh, centerPixel[1] - cyh);
 
     let drawStart = drawables[0];
-    let drawStartIndex = 0;
     let pendingGeometryByteLength = drawStart.geometryByteLength;
     let pendingInstanceCount = drawStart.instanced?.count ?? 0;
     let pendingVertexCount = drawStart.vertexCount ?? 0;
-    for (let i = 1; i < drawables.length; ++i) {
-      const drawable = drawables[i];
-
-      if (
-          drawStart.elements === undefined
-              && drawable.elements === undefined
-              && (drawStart.instanced === undefined) === (drawable.instanced === undefined)
-              && drawStart.geometry === drawable.geometry
-              && drawStart.texture === drawable.texture
-              && drawStart.z === drawable.z
-              && drawStart.geometryOffset + pendingGeometryByteLength === drawable.geometryOffset
-              // Instances share one set of vertices, so merging only works when both runs draw the
-              // same shape.
-              && (drawStart.instanced === undefined
-                  || drawStart.vertexCount === drawable.vertexCount)
-      ) {
-        pendingGeometryByteLength += drawable.geometryByteLength;
-        if (drawable.instanced) {
-          pendingInstanceCount += drawable.instanced.count;
-        } else {
-          pendingVertexCount += drawable.vertexCount ?? 0;
-        }
-        continue;
-      }
-
+    const flush = () => {
       if (lastGeometry !== drawStart.geometry) {
         gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
         lastGeometry = drawStart.geometry;
@@ -140,43 +115,40 @@ export abstract class Program<P extends ProgramData> extends Disposable {
         vertexCount: pendingVertexCount,
         z: drawStart.z,
       });
+    };
 
+    for (let i = 1; i < drawables.length; ++i) {
+      const drawable = drawables[i];
+
+      if (
+          drawStart.elements === undefined
+              && drawable.elements === undefined
+              && (drawStart.instanced === undefined) === (drawable.instanced === undefined)
+              && drawStart.geometry === drawable.geometry
+              && drawStart.texture === drawable.texture
+              && drawStart.z === drawable.z
+              && drawStart.geometryOffset + pendingGeometryByteLength === drawable.geometryOffset
+              // Instances share one set of vertices, so merging only works when both runs draw the
+              // same shape.
+              && (drawStart.instanced === undefined
+                  || drawStart.vertexCount === drawable.vertexCount)
+      ) {
+        pendingGeometryByteLength += drawable.geometryByteLength;
+        if (drawable.instanced) {
+          pendingInstanceCount += drawable.instanced.count;
+        } else {
+          pendingVertexCount += drawable.vertexCount ?? 0;
+        }
+        continue;
+      }
+
+      flush();
       drawStart = drawable;
-      drawStartIndex = i;
       pendingGeometryByteLength = drawStart.geometryByteLength;
       pendingInstanceCount = drawStart.instanced?.count ?? 0;
       pendingVertexCount = drawStart.vertexCount ?? 0;
     }
-
-    if (lastGeometry !== drawStart.geometry) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, drawStart.geometry);
-      lastGeometry = drawStart.geometry;
-    }
-    const thisIndex = drawStart.elements?.index;
-    if (lastIndex !== thisIndex && thisIndex) {
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, thisIndex);
-      lastIndex = thisIndex;
-    }
-    if (lastTexture !== drawStart.texture && drawStart.texture) {
-      gl.bindTexture(gl.TEXTURE_2D, drawStart.texture);
-      lastTexture = drawStart.texture;
-    }
-    if (lastZ !== drawStart.z) {
-      gl.uniform1f(this.program.uniforms.z, drawStart.z / 1000);
-      lastZ = drawStart.z;
-    }
-
-    this.draw({
-      elements: drawStart.elements,
-      geometry: drawStart.geometry,
-      geometryByteLength: pendingGeometryByteLength,
-      geometryOffset: drawStart.geometryOffset,
-      instanced: drawStart.instanced ? {count: pendingInstanceCount} : undefined,
-      program: drawStart.program,
-      texture: drawStart.texture,
-      vertexCount: pendingVertexCount,
-      z: drawStart.z,
-    });
+    flush();
 
     this.deactivate();
   }
@@ -221,6 +193,19 @@ export function linkProgram(
     throw new Error(`Unable to link ${name} program: ${gl.getProgramInfoLog(programId)}`);
   }
   return programId;
+}
+
+export function getStandardUniforms(
+    gl: WebGL2RenderingContext, programId: WebGLProgram): ProgramData['uniforms'] {
+  const get = (name: string) => checkExists(gl.getUniformLocation(programId, name));
+  return {
+    cameraCenter: get('cameraCenter'),
+    flattenFactor: get('flattenFactor'),
+    halfWorldSize: get('halfWorldSize'),
+    inverseHalfViewportSize: get('inverseHalfViewportSize'),
+    sphericalMvp: get('sphericalMvp'),
+    z: get('z'),
+  };
 }
 
 export const COLOR_OPERATIONS = `

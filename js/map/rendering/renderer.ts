@@ -51,11 +51,11 @@ export class Renderer extends Disposable {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
 
-  createDataBuffer(byteSize: number, usage?: number): WebGLBuffer {
+  createDataBuffer(byteSize: number): WebGLBuffer {
     const gl = this.gl;
     const buffer = checkExists(gl.createBuffer());
     gl.bindBuffer(gl.COPY_WRITE_BUFFER, buffer);
-    gl.bufferData(gl.COPY_WRITE_BUFFER, byteSize, usage ?? gl.STREAM_DRAW);
+    gl.bufferData(gl.COPY_WRITE_BUFFER, byteSize, gl.STREAM_DRAW);
     gl.bindBuffer(gl.COPY_WRITE_BUFFER, null);
     return buffer;
   }
@@ -150,23 +150,6 @@ export class Renderer extends Disposable {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.generateMipmap(gl.TEXTURE_2D);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-  }
-
-  uploadDataTexture(source: HTMLCanvasElement|ImageBitmap|ImageData, target: WebGLTexture): void {
-    const gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, target);
-    gl.texImage2D(
-        gl.TEXTURE_2D,
-        /* level= */ 0,
-        gl.RGBA,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        source);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 

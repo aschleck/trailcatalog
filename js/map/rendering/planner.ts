@@ -54,35 +54,24 @@ export class Planner {
       }
     });
 
-    let drawStart = this.drawables[0];
-    let drawStartIndex = 0;
     const inverseArea = [1 / area[0], 1 / area[1]] as Vec2;
     // Gather sequential drawables that share the same program and draw them all at once
-    for (let i = 1; i < this.drawables.length; ++i) {
-      const drawable = this.drawables[i];
-      if (drawStart.program === drawable.program) {
+    let drawStartIndex = 0;
+    for (let i = 1; i <= this.drawables.length; ++i) {
+      const program = this.drawables[drawStartIndex].program;
+      if (i < this.drawables.length && program === this.drawables[i].program) {
         continue;
       }
 
-      drawStart.program.render(
+      program.render(
           this.drawables.slice(drawStartIndex, i),
           centerPixel,
           flattenFactor,
           inverseArea,
           mvpMatrix,
           worldRadius);
-      drawStart = drawable;
       drawStartIndex = i;
     }
-
-    // The last batch didn't actually draw, so draw it
-    drawStart.program.render(
-        this.drawables.slice(drawStartIndex, this.drawables.length),
-        centerPixel,
-        flattenFactor,
-        inverseArea,
-        mvpMatrix,
-        worldRadius);
   }
 }
 

@@ -94,7 +94,7 @@ interface AtlasGlyph extends Glyph {
   unplaceable: boolean;
 }
 
-// Scratch for plan and planCurved, which run once per label per frame.
+// Scratch for plan, which runs once per label per frame.
 const PLACEMENTS: number[] = [];
 const PLACED_GLYPHS: Glyph[] = [];
 // Scratch for layOutAlong, the ends of the chord under one glyph.
@@ -373,51 +373,18 @@ class Glypher {
   }
 
   /**
-   * Lays glyphs out along a mercator polyline, stepping one glyph advance at a time and rotating
-   * each glyph to the segment it lands on. Draws nothing if the text is longer than the path,
-   * because a label that runs off the end of its road reads as belonging to a different one.
+   * Fills glyphs and placements with text laid along a mercator polyline, stepping one glyph
+   * advance at a time and rotating each glyph to the segment it lands on. Returns false when the
+   * text is longer than the path, because a label that runs off the end of its road reads as
+   * belonging to a different one. Placements are pixel offsets from the head of the path, with y
+   * up.
    *
    * pixelsPerWorld converts glyph advances, which are in pixels, into the mercator units the path
    * is in, so this has to run at render time against the live zoom.
-   */
-  planCurved(
-      graphemes: string[],
-      path: ArrayLike<number>,
-      pixelsPerWorld: number,
-      scale: number,
-      fill: RgbaU32,
-      stroke: RgbaU32,
-      z: number,
-      buffer: ArrayBuffer,
-      offset: number,
-      glBuffer: WebGLBuffer,
-      renderer: Renderer): {byteSize: number; drawables: Drawable[];} {
-    if (!this.layOutCurved(graphemes, path, pixelsPerWorld, scale, PLACED_GLYPHS, PLACEMENTS)
-        || turnsTooSharply(PLACEMENTS)) {
-      return {byteSize: 0, drawables: []};
-    }
-    return this.planPlaced(
-        PLACED_GLYPHS,
-        // The glyphs hang off the head of the path, so that is the label's anchor.
-        [path[0], path[1]],
-        PLACEMENTS,
-        scale,
-        fill,
-        stroke,
-        z,
-        buffer,
-        offset,
-        glBuffer,
-        renderer);
-  }
-
-  /**
-   * Fills glyphs and placements with text laid along path, see planCurved, and returns false when
-   * the text doesn't fit it. Placements are pixel offsets from the head of the path, with y up.
    *
-   * Unlike planCurved this allows any bend, because whether a glyph lands across a sharp vertex
-   * changes with every step of zoom and the label would flicker. Callers that place the same label
-   * across zooms check the bend once against MAX_GLYPH_TURN instead.
+   * This allows any bend, because whether a glyph lands across a sharp vertex changes with every
+   * step of zoom and the label would flicker. Callers that place the same label across zooms check
+   * the bend once against MAX_GLYPH_TURN, or per frame with turnsTooSharply.
    */
   layOutCurved(
       graphemes: string[],

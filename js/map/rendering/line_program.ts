@@ -6,6 +6,7 @@ import {
   COLOR_OPERATIONS,
   Drawable,
   FP64_OPERATIONS,
+  getStandardUniforms,
   linkProgram,
   Program,
   ProgramData,
@@ -306,14 +307,8 @@ interface LineProgramData extends ProgramData {
     radius: number;
     pattern: number;
   };
-  uniforms: {
-    cameraCenter: WebGLUniformLocation;
-    flattenFactor: WebGLUniformLocation;
-    halfWorldSize: WebGLUniformLocation;
-    inverseHalfViewportSize: WebGLUniformLocation;
+  uniforms: ProgramData['uniforms'] & {
     renderBorder: WebGLUniformLocation;
-    sphericalMvp: WebGLUniformLocation;
-    z: WebGLUniformLocation;
   };
 }
 
@@ -538,14 +533,8 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       pattern: checkExists(gl.getAttribLocation(programId, 'pattern')),
     },
     uniforms: {
-      cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
-      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
-      halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
-      inverseHalfViewportSize:
-        checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
+      ...getStandardUniforms(gl, programId),
       renderBorder: checkExists(gl.getUniformLocation(programId, 'renderBorder')),
-      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
-      z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };
 }

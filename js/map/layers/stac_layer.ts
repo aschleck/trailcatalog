@@ -4,19 +4,15 @@ import { HashMap } from 'external/dev_april_corgi+/js/common/collections';
 
 import { projectS2LatLng } from '../camera';
 import { finestTileAt } from '../common/math';
-import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
+import { Copyright, RgbaU32, TileId } from '../common/types';
 import { Layer } from '../layer';
-import { BillboardProgram } from '../rendering/billboard_program';
+import { TileSquare } from '../rendering/billboard_program';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
 import { TexturePool } from '../rendering/texture_pool';
 import { PoolClient, sharedPool, toViewport } from '../workers/client_pool';
 import { Bands, Catalog, Command as LoaderCommand, Initialize as LoaderInitialize, LoadTileCommand, Request as LoaderRequest, Search } from '../workers/raster/stac_loader';
-
-const NO_OFFSET: Vec2 = [0, 0];
-// A viewport holds well under 64 billboards, so the buffer never grows in practice.
-const TILE_BUFFER_BYTES = 65536;
 
 export class StacLayer extends Layer {
 
@@ -47,7 +43,7 @@ export class StacLayer extends Layer {
   ) {
     super();
 
-    this.buffer = this.renderer.createDataBuffer(TILE_BUFFER_BYTES);
+    this.buffer = this.renderer.createDataBuffer(0);
     this.registerDisposer(() => {
       this.renderer.deleteBuffer(this.buffer);
       this.loader?.dispose();
@@ -104,43 +100,28 @@ export class StacLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.generation !== this.plan.generation) {
-      const buffer =
-          new ArrayBuffer(
-              Math.max(BillboardProgram.bytesNeeded() * this.tiles.size, TILE_BUFFER_BYTES));
-      const drawables = [];
-      let offset = 0;
-
+      const squares: TileSquare[] = [];
       // Draw lowest detail to highest because tiles share a z and the depth test passes equal
       // depths, so the last one drawn wins.
       const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
       for (const [id, texture] of sorted) {
         const halfWorldSize = Math.pow(2, id.zoom - 1);
-        const size = 1 / halfWorldSize;
-        const {byteSize, drawable} =
-            this.renderer.billboardProgram.plan(
-                [
-                  (id.x + 0.5 - halfWorldSize) / halfWorldSize,
-                  (halfWorldSize - (id.y + 0.5)) / halfWorldSize,
-                ],
-                NO_OFFSET,
-                [size, size],
-                /* angle= */ 0,
-                this.tint,
-                this.z,
-                /* atlasIndex= */ 0,
-                /* atlasSize= */ [1, 1],
-                buffer,
-                offset,
-                this.buffer,
-                texture);
-        drawables.push(drawable);
-        offset += byteSize;
+        squares.push({
+          center: [
+            (id.x + 0.5 - halfWorldSize) / halfWorldSize,
+            (halfWorldSize - (id.y + 0.5)) / halfWorldSize,
+          ],
+          size: 1 / halfWorldSize,
+          atlasIndex: 0,
+          atlasSize: 1,
+          texture,
+        });
       }
 
-      this.renderer.uploadData(buffer, offset, this.buffer);
       this.plan = {
         generation: this.generation,
-        drawables,
+        drawables: this.renderer.billboardProgram.planSquares(
+            squares, this.tint, this.z, this.buffer, this.renderer),
       };
     }
 

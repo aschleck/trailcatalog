@@ -6,6 +6,7 @@ import {
   COLOR_OPERATIONS,
   Drawable,
   FP64_OPERATIONS,
+  getStandardUniforms,
   linkProgram,
   Program,
   ProgramData,
@@ -137,15 +138,6 @@ interface TriangleProgramData extends ProgramData {
     fillColor: number;
     position: number;
   };
-
-  uniforms: {
-    cameraCenter: WebGLUniformLocation;
-    flattenFactor: WebGLUniformLocation;
-    halfWorldSize: WebGLUniformLocation;
-    inverseHalfViewportSize: WebGLUniformLocation;
-    sphericalMvp: WebGLUniformLocation;
-    z: WebGLUniformLocation;
-  };
 }
 
 function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData {
@@ -243,14 +235,6 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
       fillColor: gl.getAttribLocation(programId, 'fillColor'),
       position: gl.getAttribLocation(programId, 'position'),
     },
-    uniforms: {
-      cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
-      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
-      halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
-      inverseHalfViewportSize:
-        checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
-      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
-      z: checkExists(gl.getUniformLocation(programId, 'z')),
-    },
+    uniforms: getStandardUniforms(gl, programId),
   };
 }

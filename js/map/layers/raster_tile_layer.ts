@@ -5,9 +5,9 @@ import { Task } from 'external/dev_april_corgi+/js/common/queued_worker_pool';
 
 import { projectS2LatLng, SphericalCone } from '../camera';
 import { finestTileAt } from '../common/math';
-import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
+import { Copyright, RgbaU32, TileId } from '../common/types';
 import { Layer } from '../layer';
-import { BillboardProgram } from '../rendering/billboard_program';
+import { TileSquare } from '../rendering/billboard_program';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
@@ -17,7 +17,6 @@ import { Decode, Initialize as LoaderInitialize, LoadResponse, Request as Loader
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/tiles/xyz_data_fetcher';
 
 const MAX_IN_FLIGHT = 32;
-const NO_OFFSET: Vec2 = [0, 0];
 // A billboard curves onto the globe as a 4x4 lattice, so a z3 tile's cells are 11 degrees across
 // and visibly slide as the globe flattens. Coarser tiles are drawn as z7 pieces, whose cells are
 // 0.7 degrees.
@@ -149,14 +148,7 @@ export class RasterTileLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.generation !== this.plan.generation) {
-      let instances = 0;
-      for (const [id] of this.tiles) {
-        instances += piecesPerSide(id.zoom) ** 2;
-      }
-      const buffer = new ArrayBuffer(Math.max(BillboardProgram.bytesNeeded() * instances, 65536));
-      const drawables = [];
-      let offset = 0;
-
+      const squares: TileSquare[] = [];
       // Draw lowest detail to highest because tiles share a z and the depth test passes equal
       // depths, so the last one drawn wins.
       const sorted = [...this.tiles].sort((a, b) => a[0].zoom - b[0].zoom);
@@ -168,30 +160,21 @@ export class RasterTileLayer extends Layer {
         const top = (halfWorldSize - id.y) / halfWorldSize;
         for (let y = 0; y < pieces; ++y) {
           for (let x = 0; x < pieces; ++x) {
-            const {byteSize, drawable} =
-                this.renderer.billboardProgram.plan(
-                    [left + size * (x + 0.5), top - size * (y + 0.5)],
-                    NO_OFFSET,
-                    [size, size],
-                    /* angle= */ 0,
-                    this.tint,
-                    this.z,
-                    /* atlasIndex= */ y * pieces + x,
-                    /* atlasSize= */ [pieces, pieces],
-                    buffer,
-                    offset,
-                    this.buffer,
-                    texture);
-            drawables.push(drawable);
-            offset += byteSize;
+            squares.push({
+              center: [left + size * (x + 0.5), top - size * (y + 0.5)],
+              size,
+              atlasIndex: y * pieces + x,
+              atlasSize: pieces,
+              texture,
+            });
           }
         }
       }
 
-      this.renderer.uploadData(buffer, offset, this.buffer);
       this.plan = {
         generation: this.generation,
-        drawables,
+        drawables: this.renderer.billboardProgram.planSquares(
+            squares, this.tint, this.z, this.buffer, this.renderer),
       };
     }
 

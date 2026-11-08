@@ -6,11 +6,24 @@ import {
   COLOR_OPERATIONS,
   Drawable,
   FP64_OPERATIONS,
+  getStandardUniforms,
   linkProgram,
   Program,
   ProgramData,
   SPHERE_OPERATIONS,
 } from './program';
+import { Renderer } from './renderer';
+
+// A square of the world, sampling one cell of an atlasSize x atlasSize atlas.
+export interface TileSquare {
+  center: Vec2;
+  size: number;
+  atlasIndex: number;
+  atlasSize: number;
+  texture: WebGLTexture;
+}
+
+const NO_OFFSET: Vec2 = [0, 0];
 
 // A billboard is drawn as instances of a static lattice, so plan() writes only the per-instance
 // attributes: 7 floats and 5 uint32s, all 4 bytes.
@@ -112,6 +125,38 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         z,
       },
     };
+  }
+
+  /** Plans the squares in draw order and uploads them to glBuffer. */
+  planSquares(
+      squares: TileSquare[],
+      tint: RgbaU32,
+      z: number,
+      glBuffer: WebGLBuffer,
+      renderer: Renderer,
+  ): Drawable[] {
+    const buffer = new ArrayBuffer(INSTANCE_STRIDE * squares.length);
+    const drawables = [];
+    let offset = 0;
+    for (const {center, size, atlasIndex, atlasSize, texture} of squares) {
+      const {byteSize, drawable} = this.plan(
+          center,
+          NO_OFFSET,
+          [size, size],
+          /* angle= */ 0,
+          tint,
+          z,
+          atlasIndex,
+          [atlasSize, atlasSize],
+          buffer,
+          offset,
+          glBuffer,
+          texture);
+      drawables.push(drawable);
+      offset += byteSize;
+    }
+    renderer.uploadData(buffer, offset, glBuffer);
+    return drawables;
   }
 
   override render(
@@ -327,14 +372,8 @@ interface BillboardProgramData extends ProgramData {
     sizeIsPixels: number;
   };
 
-  uniforms: {
-    cameraCenter: WebGLUniformLocation;
+  uniforms: ProgramData['uniforms'] & {
     color: WebGLUniformLocation;
-    flattenFactor: WebGLUniformLocation;
-    halfWorldSize: WebGLUniformLocation;
-    inverseHalfViewportSize: WebGLUniformLocation;
-    sphericalMvp: WebGLUniformLocation;
-    z: WebGLUniformLocation;
   };
 }
 
@@ -468,13 +507,8 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
       sizeIsPixels: gl.getAttribLocation(programId, 'sizeIsPixels'),
     },
     uniforms: {
-      cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
+      ...getStandardUniforms(gl, programId),
       color: checkExists(gl.getUniformLocation(programId, 'color')),
-      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
-      halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
-      inverseHalfViewportSize: checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
-      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
-      z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };
 }

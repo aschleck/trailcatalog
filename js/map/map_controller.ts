@@ -1,5 +1,5 @@
 import { S2LatLng, S2LatLngRect } from 'java/org/trailcatalog/s2';
-import { checkExists, exists } from 'external/dev_april_corgi+/js/common/asserts';
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashSet } from 'external/dev_april_corgi+/js/common/collections';
 import { approxEqual } from 'external/dev_april_corgi+/js/common/comparisons';
 import { Debouncer } from 'external/dev_april_corgi+/js/common/debouncer';
@@ -223,7 +223,7 @@ export class MapController extends Controller<Args, Deps, HTMLDivElement, State>
     this.updateState({
       ...this.state,
       // TODO(april): deduplicate
-      copyrights: this.layers.flatMap(l => l.copyrights).filter(exists),
+      copyrights: this.layers.flatMap(l => l.copyrights),
     });
   }
 

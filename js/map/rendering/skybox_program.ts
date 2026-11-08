@@ -6,6 +6,7 @@ import {
   COLOR_OPERATIONS,
   Drawable,
   FP64_OPERATIONS,
+  getStandardUniforms,
   linkProgram,
   Program,
   ProgramData,
@@ -79,14 +80,6 @@ export class SkyboxProgram extends Program<SkyboxProgramData> {
 interface SkyboxProgramData extends ProgramData {
   attributes: {
     position: number;
-  };
-  uniforms: {
-    cameraCenter: WebGLUniformLocation;
-    flattenFactor: WebGLUniformLocation;
-    halfWorldSize: WebGLUniformLocation;
-    inverseHalfViewportSize: WebGLUniformLocation;
-    sphericalMvp: WebGLUniformLocation;
-    z: WebGLUniformLocation;
   };
 }
 
@@ -250,13 +243,6 @@ function createSkyboxProgram(gl: WebGL2RenderingContext): SkyboxProgramData {
     attributes: {
       position: gl.getAttribLocation(programId, 'position'),
     },
-    uniforms: {
-      cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
-      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
-      halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
-      inverseHalfViewportSize: checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
-      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
-      z: checkExists(gl.getUniformLocation(programId, 'z')),
-    },
+    uniforms: getStandardUniforms(gl, programId),
   };
 }

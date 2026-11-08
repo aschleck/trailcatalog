@@ -6,6 +6,7 @@ import {
   COLOR_OPERATIONS,
   Drawable,
   FP64_OPERATIONS,
+  getStandardUniforms,
   linkProgram,
   Program,
   ProgramData,
@@ -281,15 +282,9 @@ interface SdfProgramData extends ProgramData {
     stroke: number;
   };
 
-  uniforms: {
-    cameraCenter: WebGLUniformLocation;
+  uniforms: ProgramData['uniforms'] & {
     color: WebGLUniformLocation;
-    flattenFactor: WebGLUniformLocation;
-    halfWorldSize: WebGLUniformLocation;
     halo: WebGLUniformLocation;
-    inverseHalfViewportSize: WebGLUniformLocation;
-    sphericalMvp: WebGLUniformLocation;
-    z: WebGLUniformLocation;
   };
 }
 
@@ -460,14 +455,9 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       stroke: gl.getAttribLocation(programId, 'stroke'),
     },
     uniforms: {
-      cameraCenter: checkExists(gl.getUniformLocation(programId, 'cameraCenter')),
+      ...getStandardUniforms(gl, programId),
       color: checkExists(gl.getUniformLocation(programId, 'color')),
-      flattenFactor: checkExists(gl.getUniformLocation(programId, 'flattenFactor')),
-      halfWorldSize: checkExists(gl.getUniformLocation(programId, 'halfWorldSize')),
-      inverseHalfViewportSize: checkExists(gl.getUniformLocation(programId, 'inverseHalfViewportSize')),
       halo: checkExists(gl.getUniformLocation(programId, 'halo')),
-      sphericalMvp: checkExists(gl.getUniformLocation(programId, 'sphericalMvp')),
-      z: checkExists(gl.getUniformLocation(programId, 'z')),
     },
   };
 }

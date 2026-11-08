@@ -9,7 +9,7 @@ import { Layer } from '../layer';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
-import { forgetFailedTiles, PoolClient, sharedPool, toViewport, Viewport } from '../workers/client_pool';
+import { forgetFailedTiles, PoolClient, sharedPool, toViewport } from '../workers/client_pool';
 import { Channel } from '../workers/raster/packed';
 import { Initialize as LoaderInitialize, Request as LoaderRequest, Response as LoaderResponse, TraceResponse, WindStyle } from '../workers/raster/wind_loader';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/tiles/xyz_data_fetcher';
@@ -28,8 +28,7 @@ export class WindVectorLayer extends Layer {
   private readonly loading: HashMap<TileId, Task<LoaderResponse>>;
   private style: WindStyle|undefined;
   private tracing: Task<LoaderResponse>|undefined;
-  private viewport: Viewport|undefined;
-  // The arguments of the last viewportChanged, so turning on a style can fetch for it
+  // The arguments of the last viewportChanged, so turning on a style can fetch and trace for it
   private lastViewport: Parameters<Layer['viewportChanged']>|undefined;
   private drawable: Drawable|undefined;
 
@@ -65,7 +64,6 @@ export class WindVectorLayer extends Layer {
     this.loading = new HashMap(id => `${id.zoom},${id.x},${id.y}`);
     this.style = undefined;
     this.tracing = undefined;
-    this.viewport = undefined;
     this.lastViewport = undefined;
     this.drawable = undefined;
 
@@ -140,7 +138,6 @@ export class WindVectorLayer extends Layer {
       return;
     }
     this.fetcher.broadcast({kind: 'uvr', viewport: toViewport(bounds, fetchZoom, cone)});
-    this.viewport = toViewport(bounds, zoom, cone);
     this.trace();
   }
 
@@ -176,14 +173,15 @@ export class WindVectorLayer extends Layer {
   // Retraces for the newest viewport and tiles. Tasks run in order, so a trace posted after a
   // tile's load sees it.
   private trace(): void {
-    if (!this.style || !this.viewport) {
+    if (!this.style || !this.lastViewport) {
       return;
     }
+    const [bounds, zoom, , cone] = this.lastViewport;
     this.tracing?.cancel();
     this.tracing = this.loader.post({
       kind: 'tr',
       style: this.style,
-      viewport: this.viewport,
+      viewport: toViewport(bounds, zoom, cone),
     });
     this.redraw();
   }

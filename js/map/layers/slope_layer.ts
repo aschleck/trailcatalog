@@ -3,9 +3,9 @@ import { checkExhaustive } from 'external/dev_april_corgi+/js/common/asserts';
 import { HashMap, HashSet } from 'external/dev_april_corgi+/js/common/collections';
 
 import { SphericalCone } from '../camera';
-import { Copyright, RgbaU32, TileId, Vec2 } from '../common/types';
+import { Copyright, RgbaU32, TileId } from '../common/types';
 import { Layer } from '../layer';
-import { BillboardProgram } from '../rendering/billboard_program';
+import { TileSquare } from '../rendering/billboard_program';
 import { Planner } from '../rendering/planner';
 import { Drawable } from '../rendering/program';
 import { Renderer } from '../rendering/renderer';
@@ -15,7 +15,6 @@ import { Request as LoaderRequest, Response as LoaderResponse, LoadResponse } fr
 import { BASE_ZOOM, MAX_ZOOM, SLOPES_SIZE, TILE_URL } from '../workers/raster/terrarium';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadTileCommand, Request as FetcherRequest } from '../workers/tiles/xyz_data_fetcher';
 
-const NO_OFFSET: Vec2 = [0, 0];
 const OPAQUE = 0xFFFFFFFF as RgbaU32;
 
 // Tiles below z12 are too coarse to faithfully compute angles on. Past z12 Mapterhorn only has
@@ -108,11 +107,9 @@ export class SlopeLayer extends Layer {
 
   override render(planner: Planner): void {
     if (this.generation !== this.plan.generation) {
-      const buffer =
-          new ArrayBuffer(Math.max(BillboardProgram.bytesNeeded() * this.shown.size, 65536));
-      const drawables = [];
-      let offset = 0;
+      const squares: TileSquare[] = [];
       // Draw lowest detail to highest because tiles share a z and the depth test passes equal
+      // depths, so the last one drawn wins.
       const sorted = [...this.shown].sort((a, b) => a[0].zoom - b[0].zoom);
       for (const [id, source] of sorted) {
         const texture = this.tiles.get(source);
@@ -121,35 +118,26 @@ export class SlopeLayer extends Layer {
         }
 
         const halfWorldSize = Math.pow(2, id.zoom - 1);
-        const size = 1 / halfWorldSize;
-        const centerX = (id.x + 0.5 - halfWorldSize) / halfWorldSize;
-        const centerY = (halfWorldSize - (id.y + 0.5)) / halfWorldSize;
         // A tile drawing from an ancestor shows the square of it that the tile covers.
         const across = Math.pow(2, id.zoom - source.zoom);
         const column = id.x - source.x * across;
         const row = id.y - source.y * across;
-        const {byteSize, drawable} =
-            this.renderer.slopeProgram.plan(
-                [centerX, centerY],
-                NO_OFFSET,
-                [size, size],
-                /* angle= */ 0,
-                OPAQUE,
-                this.z,
-                /* atlasIndex= */ row * across + column,
-                /* atlasSize= */ [across, across],
-                buffer,
-                offset,
-                this.buffer,
-                texture);
-        drawables.push(drawable);
-        offset += byteSize;
+        squares.push({
+          center: [
+            (id.x + 0.5 - halfWorldSize) / halfWorldSize,
+            (halfWorldSize - (id.y + 0.5)) / halfWorldSize,
+          ],
+          size: 1 / halfWorldSize,
+          atlasIndex: row * across + column,
+          atlasSize: across,
+          texture,
+        });
       }
 
-      this.renderer.uploadData(buffer, offset, this.buffer);
       this.plan = {
         generation: this.generation,
-        drawables,
+        drawables: this.renderer.slopeProgram.planSquares(
+            squares, OPAQUE, this.z, this.buffer, this.renderer),
       };
     }
 
