@@ -5,6 +5,7 @@ import { RgbaU32, Vec2 } from '../common/types';
 import {
   COLOR_OPERATIONS,
   Drawable,
+  encodeLow,
   FP64_OPERATIONS,
   getStandardUniforms,
   linkProgram,
@@ -13,15 +14,41 @@ import {
   SPHERE_OPERATIONS,
 } from './program';
 
-const VERTEX_STRIDE =
-    4 * (
-        /* position= */ 2
-    );
+// A fill color comes first, then the vertices, each a float32 x,y and their int16 lows.
+const FILL_BYTES = 4;
+const VERTEX_STRIDE = 4 * 2 + 2 * 2;
 
 export class TriangleProgram extends Program<TriangleProgramData> {
 
+  /** Bytes that {@link push} will write for a fill of the given vertex count. */
+  static bytesNeeded(vertexCount: number): number {
+    return FILL_BYTES + vertexCount * VERTEX_STRIDE;
+  }
+
+  /** Writes a fill color that the vertices pushed after it, up to the drawable's end, share. */
+  static pushFill(fill: RgbaU32, buffer: ArrayBuffer, offset: number): number {
+    new Uint32Array(buffer, offset, 1)[0] = fill;
+    return FILL_BYTES;
+  }
+
+  /** Writes mercator x,y pairs as vertices and returns the bytes written. */
+  static pushVertices(geometry: ArrayLike<number>, buffer: ArrayBuffer, offset: number): number {
+    const count = geometry.length / 2;
+    const floats = new Float32Array(buffer, offset, count * VERTEX_STRIDE / 4);
+    const int16s = new Int16Array(buffer, offset, count * VERTEX_STRIDE / 2);
+    for (let i = 0; i < count; ++i) {
+      const x = geometry[2 * i + 0];
+      const y = geometry[2 * i + 1];
+      floats[3 * i + 0] = x;
+      floats[3 * i + 1] = y;
+      int16s[6 * i + 4] = encodeLow(x);
+      int16s[6 * i + 5] = encodeLow(y);
+    }
+    return count * VERTEX_STRIDE;
+  }
+
   static push(
-      geometry: Float32Array|Float64Array,
+      geometry: ArrayLike<number>,
       index: ArrayLike<number>,
       fill: RgbaU32,
       geometryBuffer: ArrayBuffer,
@@ -35,23 +62,19 @@ export class TriangleProgram extends Program<TriangleProgramData> {
     indexOffset: number;
     elementCount: number,
   } {
-    const indices = new Uint32Array(indexBuffer, indexOffset);
+    const indices = new Uint32Array(indexBuffer, indexOffset, index.length);
     indices.set(index, 0);
 
-    const floats = new Float32Array(geometryBuffer, geometryOffset);
-    // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
-    // canonicalization. So we have to write them as uints to the same buffer.
-    const uint32s = new Uint32Array(geometryBuffer, geometryOffset);
-
-    uint32s[0] = fill;
-    floats.set(geometry, 1);
+    const fillBytes = TriangleProgram.pushFill(fill, geometryBuffer, geometryOffset);
+    const vertexBytes =
+        TriangleProgram.pushVertices(geometry, geometryBuffer, geometryOffset + fillBytes);
 
     return {
-      geometryByteLength: 4 + geometry.byteLength,
+      geometryByteLength: fillBytes + vertexBytes,
       geometryOffset,
       indexByteLength: index.length * 4,
       indexOffset,
-      elementCount: indices.length,
+      elementCount: index.length,
     };
   }
 
@@ -60,7 +83,7 @@ export class TriangleProgram extends Program<TriangleProgramData> {
   }
 
   plan(
-      geometry: Float32Array|Float64Array,
+      geometry: ArrayLike<number>,
       index: ArrayLike<number>,
       fill: RgbaU32,
       z: number,
@@ -104,6 +127,7 @@ export class TriangleProgram extends Program<TriangleProgramData> {
     gl.enableVertexAttribArray(this.program.attributes.fillColor);
     gl.vertexAttribDivisor(this.program.attributes.fillColor, 1);
     gl.enableVertexAttribArray(this.program.attributes.position);
+    gl.enableVertexAttribArray(this.program.attributes.positionLow);
   }
 
   protected bindAttributes(offset: number): void {
@@ -121,7 +145,14 @@ export class TriangleProgram extends Program<TriangleProgramData> {
         gl.FLOAT,
         /* normalize= */ false,
         /* stride= */ VERTEX_STRIDE,
-        /* offset= */ offset + 4);
+        /* offset= */ offset + FILL_BYTES);
+    gl.vertexAttribPointer(
+        this.program.attributes.positionLow,
+        2,
+        gl.SHORT,
+        /* normalize= */ true,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + FILL_BYTES + 8);
   }
 
   protected deactivate(): void {
@@ -130,6 +161,7 @@ export class TriangleProgram extends Program<TriangleProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.fillColor, 0);
     gl.disableVertexAttribArray(this.program.attributes.fillColor);
     gl.disableVertexAttribArray(this.program.attributes.position);
+    gl.disableVertexAttribArray(this.program.attributes.positionLow);
   }
 }
 
@@ -137,6 +169,7 @@ interface TriangleProgramData extends ProgramData {
   attributes: {
     fillColor: number;
     position: number;
+    positionLow: number;
   };
 }
 
@@ -155,6 +188,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
 
       in uint fillColor;
       in highp vec2 position; // Mercator
+      in highp vec2 positionLow; // see program.ts#encodeLow
 
       // See https://github.com/visgl/luma.gl/issues/1764
       invariant gl_Position;
@@ -168,7 +202,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
 
       void main() {
         // Calculate the Mercator projection
-        vec4 relativeCenter = sub_fp64(split(position), cameraCenter);
+        vec4 relativeCenter = sub_fp64(withLow(position, positionLow), cameraCenter);
         if (relativeCenter.x + relativeCenter.y > 1.) {
           relativeCenter.x -= 2.;
         } else if (relativeCenter.x + relativeCenter.y < -1.) {
@@ -234,6 +268,7 @@ function createTriangleProgram(gl: WebGL2RenderingContext): TriangleProgramData 
     attributes: {
       fillColor: gl.getAttribLocation(programId, 'fillColor'),
       position: gl.getAttribLocation(programId, 'position'),
+      positionLow: gl.getAttribLocation(programId, 'positionLow'),
     },
     uniforms: getStandardUniforms(gl, programId),
   };

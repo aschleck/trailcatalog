@@ -14,6 +14,7 @@ import {
 } from 'js/map/camera';
 import { LatLngRect, RawUuid, Rect, RgbaU32, Vec2 } from 'js/map/common/types';
 import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
+import { TriangleProgram } from 'js/map/rendering/triangle_program';
 import { Reply, serveClients } from 'js/map/workers/client_pool';
 import { Terrain, TERRAINS } from 'js/map/workers/routing/route_terrain';
 import { Triangles } from 'js/map/workers/tiles/triangulate';
@@ -293,7 +294,6 @@ class CollectionLoader {
       style: PolygonStyle;
       triangles: Triangles;
     }> = [];
-    let polygonGeometryFloats = 0;
     let outlineGeometryBytes = 0;
     let indexCount = 0;
     for (let i = 0; i < polygonCount; ++i) {
@@ -312,7 +312,6 @@ class CollectionLoader {
       }
 
       const triangles = triangulateS2(polygon);
-      polygonGeometryFloats += triangles.geometry.length;
       indexCount += triangles.index.length;
       const outline = projectS2PolygonOutline(polygon);
       if (style.outline) {
@@ -372,15 +371,24 @@ class CollectionLoader {
       merged.push(triangulated.slice(last, triangulated.length));
     }
 
-    // Geometry layout: lines first, then points, then a fill float per polygon group, then polygon
-    // vertices, then polygon outlines, then line halos.
+    // Geometry layout: lines first, then points, then each polygon group's fill and vertices, then
+    // polygon outlines, then line halos.
     const pointGeometryBytes = styledPoints.length * LineProgram.bytesNeeded(2);
+    let polygonGeometryBytes = 0;
+    for (const group of merged) {
+      let vertices = 0;
+      for (const {triangles} of group) {
+        vertices += triangles.geometry.length / 2;
+      }
+      polygonGeometryBytes += TriangleProgram.bytesNeeded(vertices);
+    }
     const geometry =
         new Float32Array(
-            (lineGeometryBytes + pointGeometryBytes + outlineGeometryBytes + haloGeometryBytes) / 4
-                + merged.length
-                + polygonGeometryFloats);
-    const geometryUints = new Uint32Array(geometry.buffer);
+            (lineGeometryBytes
+                + pointGeometryBytes
+                + polygonGeometryBytes
+                + outlineGeometryBytes
+                + haloGeometryBytes) / 4);
     const index = new Uint32Array(indexCount);
     let geometryOffset = 0;
     let indexOffset = 0;
@@ -451,21 +459,23 @@ class CollectionLoader {
       const geometryStart = geometryOffset;
       const indexStart = indexOffset;
 
-      geometryUints[geometryOffset] = group[0].style.fill;
-      geometryOffset += 1;
+      geometryOffset +=
+          TriangleProgram.pushFill(group[0].style.fill, geometry.buffer, 4 * geometryOffset) / 4;
 
+      let vertices = 0;
       for (const polygon of group) {
         const {data, outline, rawPolygon, style, triangles} = polygon;
-        geometry.set(triangles.geometry, geometryOffset);
+        const bytes =
+            TriangleProgram.pushVertices(triangles.geometry, geometry.buffer, 4 * geometryOffset);
         for (let i = 0; i < triangles.index.length; ++i) {
-          index[indexOffset + i] = triangles.index[i] + (geometryOffset - geometryStart - 1) / 2;
+          index[indexOffset + i] = triangles.index[i] + vertices;
         }
 
         response.polygons.push({
           id: polygon.id,
           bound: polygon.bound,
           data,
-          geometryByteLength: 4 * triangles.geometry.length,
+          geometryByteLength: bytes,
           geometryOffset: 4 * geometryOffset,
           outline,
           raw: rawPolygon,
@@ -473,7 +483,8 @@ class CollectionLoader {
           triangles,
         });
 
-        geometryOffset += triangles.geometry.length;
+        geometryOffset += bytes / 4;
+        vertices += triangles.geometry.length / 2;
         indexOffset += triangles.index.length;
       }
 

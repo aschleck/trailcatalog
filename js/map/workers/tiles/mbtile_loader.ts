@@ -7,6 +7,7 @@ import { RgbaU32, TileId, Vec2 } from '../../common/types';
 import { LinePattern, LineProgram } from '../../rendering/line_program';
 import { FONT_SIZE, MAX_GLYPH_TURN, toGraphemes, track } from '../../rendering/glypher';
 import { segmentLabel } from '../../rendering/label_text';
+import { TriangleProgram } from '../../rendering/triangle_program';
 
 import { Reply, serveClients } from '../client_pool';
 import { cropLine, cropPolygon } from '../tile_crop';
@@ -393,18 +394,19 @@ class MbtileLoader {
     }
     for (const [style, polygons] of polygonGroups) {
       const triangless = [];
+      let vertices = 0;
       for (const polygon of polygons) {
         const triangles =
           triangulateMb(polygon.geometry, polygon.starts, MAX_TRIANGLE_LENGTH_METERS);
-        geometryCount += triangles.geometry.length;
+        vertices += triangles.geometry.length / 2;
         indexCount += triangles.index.length;
         triangless.push(triangles);
       }
+      geometryCount += TriangleProgram.bytesNeeded(vertices) / 4;
       triangulated.set(style, triangless);
     }
 
-    const geometry = new Float32Array(triangulated.size + geometryCount);
-    const geometryUints = new Uint32Array(geometry.buffer);
+    const geometry = new Float32Array(geometryCount);
     const index = new Uint32Array(indexCount);
     let geometryOffset = 0;
     let indexOffset = 0;
@@ -612,15 +614,18 @@ class MbtileLoader {
       const geometryStart = geometryOffset;
       const indexStart = indexOffset;
 
-      geometryUints[geometryOffset] = style.fill;
-      geometryOffset += 1;
+      geometryOffset +=
+          TriangleProgram.pushFill(style.fill, geometry.buffer, 4 * geometryOffset) / 4;
 
+      let vertices = 0;
       for (const triangles of triangless) {
-        geometry.set(triangles.geometry, geometryOffset);
+        geometryOffset +=
+            TriangleProgram.pushVertices(triangles.geometry, geometry.buffer, 4 * geometryOffset)
+                / 4;
         for (let i = 0; i < triangles.index.length; ++i) {
-          index[indexOffset + i] = triangles.index[i] + (geometryOffset - geometryStart - 1) / 2;
+          index[indexOffset + i] = triangles.index[i] + vertices;
         }
-        geometryOffset += triangles.geometry.length;
+        vertices += triangles.geometry.length / 2;
         indexOffset += triangles.index.length;
       }
 

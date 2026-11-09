@@ -11,6 +11,7 @@ import { LinePattern, LineProgram } from 'js/map/rendering/line_program';
 import { Planner } from 'js/map/rendering/planner';
 import { Drawable } from 'js/map/rendering/program';
 import { Renderer } from 'js/map/rendering/renderer';
+import { TriangleProgram } from 'js/map/rendering/triangle_program';
 import { loaderCount, PoolClient, sharedPool, toViewport } from 'js/map/workers/client_pool';
 import { LocationIndex } from 'js/map/workers/routing/location_index';
 import { Command as FetcherCommand, Initialize as FetcherInitialize, LoadCellCommand, Request as FetcherRequest, Snap, UnloadCellsCommand } from 'js/map/workers/s2/s2_data_fetcher';
@@ -378,8 +379,7 @@ export class CollectionLayer extends Layer {
     } else {
       const polygon = object.value;
       const triangles = polygon.triangles;
-      // A fill color rides in front of the vertices, so the buffer holds one extra float.
-      const fillByteLength = 4 * (1 + triangles.geometry.length);
+      const fillByteLength = TriangleProgram.bytesNeeded(triangles.geometry.length / 2);
       const outline = polygon.outline.map(ring => ({
         fill: HOVER_STROKE,
         stroke: HOVER_STROKE,
@@ -391,12 +391,14 @@ export class CollectionLayer extends Layer {
           growBuffer(highlight.geometry, fillByteLength + getRunsByteLength(outline));
       highlight.index = growBuffer(highlight.index, 4 * triangles.index.length);
 
-      const geometryFloats = new Float32Array(highlight.geometry);
-      const geometryUints = new Uint32Array(highlight.geometry);
-      geometryUints[0] = raiseAlpha(polygon.style.fill, HOVER_POLYGON_ALPHA);
-      geometryFloats.set(triangles.geometry, /* offset= */ 1);
-      const index = new Uint32Array(highlight.index);
-      index.set(triangles.index);
+      TriangleProgram.push(
+          triangles.geometry,
+          triangles.index,
+          raiseAlpha(polygon.style.fill, HOVER_POLYGON_ALPHA),
+          highlight.geometry,
+          /* geometryOffset= */ 0,
+          highlight.index,
+          /* indexOffset= */ 0);
 
       highlight.drawables.push({
         elements: {
@@ -811,11 +813,10 @@ export class CollectionLayer extends Layer {
     if (object && cell) {
       const {geometryByteLength, geometryOffset} = object.value;
       if (object.kind === 'polygon') {
+        const restored = new ArrayBuffer(geometryByteLength);
+        TriangleProgram.pushVertices(object.value.triangles.geometry, restored, /* offset= */ 0);
         this.renderer.uploadDataSubset(
-          Float32Array.from(object.value.triangles.geometry).buffer,
-          geometryOffset,
-          geometryByteLength,
-          cell.glGeometryBuffer);
+          restored, geometryOffset, geometryByteLength, cell.glGeometryBuffer);
       } else {
         const {fill, stroke, radius, pattern, points} = getRun(object);
         const restored = new ArrayBuffer(geometryByteLength);

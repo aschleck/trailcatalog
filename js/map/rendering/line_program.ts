@@ -5,6 +5,7 @@ import { RgbaU32 } from '../common/types';
 import {
   COLOR_OPERATIONS,
   Drawable,
+  encodeLow,
   FP64_OPERATIONS,
   getStandardUniforms,
   linkProgram,
@@ -17,6 +18,7 @@ import {
 const VERTEX_STRIDE =
     4 * (
         2 + 2
+            + /* lows= */ 2
             + /* fill= */ 1
             + /* stroke= */ 1
             + /* distanceAlong= */ 1
@@ -55,6 +57,7 @@ let viewedFloats = new Float32Array(0);
 // Values that may represent NaN floats (colors) cannot be written as floats due to NaN
 // canonicalization. So we have to write them as uints to the same buffer.
 let viewedUint32s = new Uint32Array(0);
+let viewedInt16s = new Int16Array(0);
 
 /** Renders instanced line segments as capsules, so joins and ends come out round. */
 export class LineProgram extends Program<LineProgramData> {
@@ -87,9 +90,11 @@ export class LineProgram extends Program<LineProgramData> {
       viewedBuffer = buffer;
       viewedFloats = new Float32Array(buffer);
       viewedUint32s = new Uint32Array(buffer);
+      viewedInt16s = new Int16Array(buffer);
     }
     const floats = viewedFloats;
     const uint32s = viewedUint32s;
+    const int16s = viewedInt16s;
 
     const start = offset / 4;
     let vertexOffset = start;
@@ -104,12 +109,17 @@ export class LineProgram extends Program<LineProgramData> {
       floats[vertexOffset + 1] = y;
       floats[vertexOffset + 2] = xp;
       floats[vertexOffset + 3] = yp;
+      const lows = 2 * (vertexOffset + 4);
+      int16s[lows + 0] = encodeLow(x);
+      int16s[lows + 1] = encodeLow(y);
+      int16s[lows + 2] = encodeLow(xp);
+      int16s[lows + 3] = encodeLow(yp);
 
-      uint32s[vertexOffset + 4] = colorFill;
-      uint32s[vertexOffset + 5] = colorStroke;
-      floats[vertexOffset + 6] = distanceAlong;
-      floats[vertexOffset + 7] = typeof radius === 'number' ? radius : radius[i / 2];
-      uint32s[vertexOffset + 8] = PATTERN_CODES[pattern];
+      uint32s[vertexOffset + 6] = colorFill;
+      uint32s[vertexOffset + 7] = colorStroke;
+      floats[vertexOffset + 8] = distanceAlong;
+      floats[vertexOffset + 9] = typeof radius === 'number' ? radius : radius[i / 2];
+      uint32s[vertexOffset + 10] = PATTERN_CODES[pattern];
 
       distanceAlong += Math.sqrt((xp - x) * (xp - x) + (yp - y) * (yp - y));
       vertexOffset += stride;
@@ -194,6 +204,8 @@ export class LineProgram extends Program<LineProgramData> {
     gl.vertexAttribDivisor(this.program.attributes.previous, 1);
     gl.enableVertexAttribArray(this.program.attributes.next);
     gl.vertexAttribDivisor(this.program.attributes.next, 1);
+    gl.enableVertexAttribArray(this.program.attributes.lows);
+    gl.vertexAttribDivisor(this.program.attributes.lows, 1);
     gl.enableVertexAttribArray(this.program.attributes.distanceAlong);
     gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 1);
     gl.enableVertexAttribArray(this.program.attributes.radius);
@@ -220,39 +232,46 @@ export class LineProgram extends Program<LineProgramData> {
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 8);
     gl.vertexAttribPointer(
-        this.program.attributes.colorFill,
-        1,
-        gl.FLOAT,
-        /* normalize= */ false,
+        this.program.attributes.lows,
+        4,
+        gl.SHORT,
+        /* normalize= */ true,
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 16);
     gl.vertexAttribPointer(
-        this.program.attributes.colorStroke,
-        1,
-        gl.FLOAT,
-        /* normalize= */ false,
-        /* stride= */ VERTEX_STRIDE,
-        /* offset= */ offset + 20);
-    gl.vertexAttribPointer(
-        this.program.attributes.distanceAlong,
+        this.program.attributes.colorFill,
         1,
         gl.FLOAT,
         /* normalize= */ false,
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 24);
     gl.vertexAttribPointer(
-        this.program.attributes.radius,
+        this.program.attributes.colorStroke,
         1,
         gl.FLOAT,
         /* normalize= */ false,
         /* stride= */ VERTEX_STRIDE,
         /* offset= */ offset + 28);
+    gl.vertexAttribPointer(
+        this.program.attributes.distanceAlong,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 32);
+    gl.vertexAttribPointer(
+        this.program.attributes.radius,
+        1,
+        gl.FLOAT,
+        /* normalize= */ false,
+        /* stride= */ VERTEX_STRIDE,
+        /* offset= */ offset + 36);
     gl.vertexAttribIPointer(
         this.program.attributes.pattern,
         1,
         gl.UNSIGNED_INT,
         /* stride= */ VERTEX_STRIDE,
-        /* offset= */ offset + 32);
+        /* offset= */ offset + 40);
   }
 
   protected draw(drawable: Drawable): void {
@@ -287,6 +306,8 @@ export class LineProgram extends Program<LineProgramData> {
     gl.disableVertexAttribArray(this.program.attributes.previous);
     gl.vertexAttribDivisor(this.program.attributes.next, 0);
     gl.disableVertexAttribArray(this.program.attributes.next);
+    gl.vertexAttribDivisor(this.program.attributes.lows, 0);
+    gl.disableVertexAttribArray(this.program.attributes.lows);
     gl.vertexAttribDivisor(this.program.attributes.distanceAlong, 0);
     gl.disableVertexAttribArray(this.program.attributes.distanceAlong);
     gl.vertexAttribDivisor(this.program.attributes.radius, 0);
@@ -301,6 +322,7 @@ interface LineProgramData extends ProgramData {
     colorFill: number;
     colorStroke: number;
     distanceAlong: number;
+    lows: number;
     next: number;
     position: number;
     previous: number;
@@ -329,6 +351,8 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       // These are Mercator coordinates ranging from -1 to 1 on both x and y
       in highp vec2 previous;
       in highp vec2 next;
+      // What float32 dropped from previous.xy and next.xy, see program.ts#encodeLow
+      in highp vec4 lows;
 
       in highp float colorFill;
       in highp float colorStroke;
@@ -373,11 +397,14 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
       void main() {
         uint mode = pattern & 7u;
         vec2 center = position.x < 0.5 ? previous : next;
-        vec2 direction = next - previous;
+        vec2 centerLow = position.x < 0.5 ? lows.xy : lows.zw;
+        // Nearby float32 values subtract exactly, so adding the lows' difference is what makes a
+        // short segment point the right way at high zoom.
+        vec2 direction = (next - previous) + (lows.zw - lows.xy) * exp2(-24.);
         // A zero length segment draws as a circle, which is how we draw points.
         vec2 along = direction == vec2(0.) ? vec2(1., 0.) : normalize(direction);
         vec2 perp = perpendicular(along);
-        vec4 location = sub_fp64(split(center), cameraCenter);
+        vec4 location = sub_fp64(withLow(center, centerLow), cameraCenter);
         if (location.x + location.y > 1.) {
           location.x -= 2.;
         } else if (location.x + location.y < -1.) {
@@ -525,6 +552,7 @@ function createLineProgram(gl: WebGL2RenderingContext): LineProgramData {
     attributes: {
       colorFill: checkExists(gl.getAttribLocation(programId, 'colorFill')),
       colorStroke: checkExists(gl.getAttribLocation(programId, 'colorStroke')),
+      lows: checkExists(gl.getAttribLocation(programId, 'lows')),
       next: checkExists(gl.getAttribLocation(programId, 'next')),
       position: checkExists(gl.getAttribLocation(programId, 'position')),
       previous: checkExists(gl.getAttribLocation(programId, 'previous')),

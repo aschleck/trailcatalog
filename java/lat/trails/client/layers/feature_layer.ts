@@ -178,7 +178,7 @@ type ProjectedPolygon = ProjectedShape & {ring: ProjectedRing};
 
 interface ProjectedRing {
   fill: RgbaU32;
-  triangles: FillTriangles;
+  triangles: Triangles;
   // In mercator, for sorting nested polygons smallest first
   area: number;
   // Where the label goes, in mercator
@@ -239,9 +239,6 @@ interface Plan {
   generation: number;
   planned: number;
 }
-
-// Converted once, because TriangleProgram reads a typed array
-type FillTriangles = Triangles & {geometry: Float64Array};
 
 /** Draws the open collection's features. */
 export class FeatureLayer extends Layer {
@@ -1666,7 +1663,7 @@ export class FeatureLayer extends Layer {
     let geometryBytes = 0;
     let indexBytes = 0;
     for (const {triangles} of polygons) {
-      geometryBytes += 4 * (1 + triangles.geometry.length);
+      geometryBytes += TriangleProgram.bytesNeeded(triangles.geometry.length / 2);
       indexBytes += 4 * triangles.index.length;
     }
     const index = plan.index!;
@@ -1938,12 +1935,10 @@ function closeRing(points: Float64Array): Float64Array {
 
 // Fills a closed mercator ring. earcut fills what it can of a ring that crosses itself, which is
 // what a polygon shows while somebody drags it through itself.
-function triangulateRing(points: Float64Array): FillTriangles {
+function triangulateRing(points: Float64Array): Triangles {
   // triangulate.ts closes its rings itself, so without the repeated vertex
   const geometry = Array.from(points.subarray(0, points.length - 2));
-  const triangles =
-      triangulateRings(geometry, ringsFrom(geometry, [0]), [], MAX_TRIANGLE_LENGTH_METERS);
-  return {geometry: Float64Array.from(triangles.geometry), index: triangles.index};
+  return triangulateRings(geometry, ringsFrom(geometry, [0]), [], MAX_TRIANGLE_LENGTH_METERS);
 }
 
 // The centroid of a closed ring with the given signed shoelace area, or the average of its vertices

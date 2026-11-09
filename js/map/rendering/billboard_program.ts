@@ -5,6 +5,7 @@ import { RgbaU32, Vec2 } from '../common/types';
 import {
   COLOR_OPERATIONS,
   Drawable,
+  encodeLow,
   FP64_OPERATIONS,
   getStandardUniforms,
   linkProgram,
@@ -26,8 +27,8 @@ export interface TileSquare {
 const NO_OFFSET: Vec2 = [0, 0];
 
 // A billboard is drawn as instances of a static lattice, so plan() writes only the per-instance
-// attributes: 7 floats and 5 uint32s, all 4 bytes.
-const INSTANCE_STRIDE = 4 * (7 + 5);
+// attributes: 7 floats, 5 uint32s, and the center's two int16 lows.
+const INSTANCE_STRIDE = 4 * (7 + 5) + 2 * 2;
 
 // Vertices for the whole billboard as one quad, which is exact once flattenFactor reaches 1
 // because the mercator branch is affine in position.
@@ -197,6 +198,7 @@ export class BillboardProgram extends Program<BillboardProgramData> {
 
     for (const attribute of [
       this.program.attributes.center,
+      this.program.attributes.centerLow,
       this.program.attributes.offsetPx,
       this.program.attributes.size,
       this.program.attributes.angle,
@@ -265,6 +267,13 @@ export class BillboardProgram extends Program<BillboardProgramData> {
         gl.UNSIGNED_INT,
         /* stride= */ INSTANCE_STRIDE,
         /* offset= */ offset + 44);
+    gl.vertexAttribPointer(
+        this.program.attributes.centerLow,
+        2,
+        gl.SHORT,
+        /* normalize= */ true,
+        /* stride= */ INSTANCE_STRIDE,
+        /* offset= */ offset + 48);
   }
 
   protected override draw(drawable: Drawable): void {
@@ -291,6 +300,7 @@ export class BillboardProgram extends Program<BillboardProgramData> {
 
     for (const attribute of [
       this.program.attributes.center,
+      this.program.attributes.centerLow,
       this.program.attributes.offsetPx,
       this.program.attributes.size,
       this.program.attributes.angle,
@@ -356,6 +366,9 @@ function pushInstance(
   uint32s[9] = atlasSizeY;
   uint32s[10] = tint;
   uint32s[11] = sizeIsPixels;
+  const int16s = new Int16Array(buffer, offset + 48, 2);
+  int16s[0] = encodeLow(centerX);
+  int16s[1] = encodeLow(centerY);
 }
 
 interface BillboardProgramData extends ProgramData {
@@ -363,6 +376,7 @@ interface BillboardProgramData extends ProgramData {
     position: number;
     colorPosition: number;
     center: number;
+    centerLow: number;
     offsetPx: number;
     size: number;
     angle: number;
@@ -392,6 +406,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
       in highp vec2 position;
       in mediump vec2 colorPosition;
       in highp vec2 center; // Mercator
+      in highp vec2 centerLow; // see program.ts#encodeLow
       in highp vec2 offsetPx; // pixels
       in highp vec2 size; // Mercator or pixels
       in highp float angle; // Radians
@@ -415,7 +430,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
       const float PI = 3.141592653589793;
 
       void main() {
-        vec4 relativeCenter = sub_fp64(split(center), cameraCenter);
+        vec4 relativeCenter = sub_fp64(withLow(center, centerLow), cameraCenter);
         if (relativeCenter.x + relativeCenter.y > 1.) {
           relativeCenter.x -= 2.;
         } else if (relativeCenter.x + relativeCenter.y < -1.) {
@@ -498,6 +513,7 @@ function createBillboardProgram(gl: WebGL2RenderingContext, fs: string): Billboa
       position: gl.getAttribLocation(programId, 'position'),
       colorPosition: gl.getAttribLocation(programId, 'colorPosition'),
       center: gl.getAttribLocation(programId, 'center'),
+      centerLow: gl.getAttribLocation(programId, 'centerLow'),
       offsetPx: gl.getAttribLocation(programId, 'offsetPx'),
       size: gl.getAttribLocation(programId, 'size'),
       angle: gl.getAttribLocation(programId, 'angle'),

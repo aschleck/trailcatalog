@@ -47,8 +47,7 @@ export class PolarCapLayer extends Layer {
         }
       }
 
-      const geometry = new Float32Array(vertices);
-      const geometryBuffer = new ArrayBuffer(4 + geometry.byteLength);
+      const geometryBuffer = new ArrayBuffer(TriangleProgram.bytesNeeded(vertices.length / 2));
       const indexBuffer = new ArrayBuffer(4 * indices.length);
       const glGeometry = renderer.createDataBuffer(geometryBuffer.byteLength);
       const glIndex = renderer.createIndexBuffer(indexBuffer.byteLength);
@@ -59,7 +58,7 @@ export class PolarCapLayer extends Layer {
 
       this.drawables.push(
           renderer.triangleProgram.plan(
-              geometry,
+              vertices,
               indices,
               cap.fill,
               cap.z,

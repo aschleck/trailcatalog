@@ -5,6 +5,7 @@ import { RgbaU32, Vec2 } from '../common/types';
 import {
   COLOR_OPERATIONS,
   Drawable,
+  encodeLow,
   FP64_OPERATIONS,
   getStandardUniforms,
   linkProgram,
@@ -35,7 +36,9 @@ export interface Glyph {
 /** The size of the glyph atlas texture in pixels. */
 export const SDF_ATLAS_SIZE: Vec2 = [4096, 4096];
 
-const FLOATS_PER_GLYPH = 13;
+// 7 floats, 6 uint32s, and the center's two int16 lows
+const FLOATS_PER_GLYPH = 14;
+const GLYPH_STRIDE = 4 * FLOATS_PER_GLYPH;
 
 /** Floats {@link SdfProgram.planPlaced} reads per glyph: an x,y offset in pixels and an angle. */
 export const FLOATS_PER_PLACEMENT = 3;
@@ -44,7 +47,7 @@ export class SdfProgram extends Program<SdfProgramData> {
 
   /** Bytes that {@link planPlaced} will write into the supplied buffer. */
   static bytesNeeded(glyphCount: number): number {
-    return glyphCount * FLOATS_PER_GLYPH * 4;
+    return glyphCount * GLYPH_STRIDE;
   }
 
   readonly atlas: WebGLTexture;
@@ -93,6 +96,7 @@ export class SdfProgram extends Program<SdfProgramData> {
   ): {byteSize: number; drawable: Drawable;} {
     const floats = new Float32Array(buffer, offset);
     const uint32s = new Uint32Array(buffer, offset);
+    const int16s = new Int16Array(buffer, offset);
 
     let count = 0;
     for (let i = 0; i < glyphs.length; ++i) {
@@ -100,6 +104,7 @@ export class SdfProgram extends Program<SdfProgramData> {
           pushGlyph(
               floats,
               uint32s,
+              int16s,
               count,
               glyphs[i],
               center[0],
@@ -166,6 +171,8 @@ export class SdfProgram extends Program<SdfProgramData> {
 
     gl.enableVertexAttribArray(this.program.attributes.center);
     gl.vertexAttribDivisor(this.program.attributes.center, 1);
+    gl.enableVertexAttribArray(this.program.attributes.centerLow);
+    gl.vertexAttribDivisor(this.program.attributes.centerLow, 1);
     gl.enableVertexAttribArray(this.program.attributes.offsetPx);
     gl.vertexAttribDivisor(this.program.attributes.offsetPx, 1);
     gl.enableVertexAttribArray(this.program.attributes.size);
@@ -188,47 +195,54 @@ export class SdfProgram extends Program<SdfProgramData> {
         2,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 52,
+        /* stride= */ GLYPH_STRIDE,
         /* offset= */ offset + 0);
     gl.vertexAttribPointer(
         this.program.attributes.offsetPx,
         2,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 52,
+        /* stride= */ GLYPH_STRIDE,
         /* offset= */ offset + 8);
     gl.vertexAttribPointer(
         this.program.attributes.size,
         2,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 52,
+        /* stride= */ GLYPH_STRIDE,
         /* offset= */ offset + 16);
     gl.vertexAttribPointer(
         this.program.attributes.angle,
         1,
         gl.FLOAT,
         /* normalize= */ false,
-        /* stride= */ 52,
+        /* stride= */ GLYPH_STRIDE,
         /* offset= */ offset + 24);
     gl.vertexAttribIPointer(
         this.program.attributes.atlasRect,
         4,
         gl.UNSIGNED_INT,
-        /* stride= */ 52,
+        /* stride= */ GLYPH_STRIDE,
         /* offset= */ offset + 28);
     gl.vertexAttribIPointer(
         this.program.attributes.fill,
         1,
         gl.UNSIGNED_INT,
-        /* stride= */ 52,
+        /* stride= */ GLYPH_STRIDE,
         /* offset= */ offset + 44);
     gl.vertexAttribIPointer(
         this.program.attributes.stroke,
         1,
         gl.UNSIGNED_INT,
-        /* stride= */ 52,
+        /* stride= */ GLYPH_STRIDE,
         /* offset= */ offset + 48);
+    gl.vertexAttribPointer(
+        this.program.attributes.centerLow,
+        2,
+        gl.SHORT,
+        /* normalize= */ true,
+        /* stride= */ GLYPH_STRIDE,
+        /* offset= */ offset + 52);
   }
 
   protected draw(drawable: Drawable): void {
@@ -253,6 +267,8 @@ export class SdfProgram extends Program<SdfProgramData> {
 
     gl.disableVertexAttribArray(this.program.attributes.center);
     gl.vertexAttribDivisor(this.program.attributes.center, 0);
+    gl.disableVertexAttribArray(this.program.attributes.centerLow);
+    gl.vertexAttribDivisor(this.program.attributes.centerLow, 0);
     gl.disableVertexAttribArray(this.program.attributes.offsetPx);
     gl.vertexAttribDivisor(this.program.attributes.offsetPx, 0);
     gl.disableVertexAttribArray(this.program.attributes.size);
@@ -274,6 +290,7 @@ interface SdfProgramData extends ProgramData {
     position: number;
     colorPosition: number;
     center: number;
+    centerLow: number;
     offsetPx: number;
     size: number;
     angle: number;
@@ -292,6 +309,7 @@ interface SdfProgramData extends ProgramData {
 function pushGlyph(
     floats: Float32Array,
     uint32s: Uint32Array,
+    int16s: Int16Array,
     count: number,
     glyph: Glyph,
     centerX: number,
@@ -320,6 +338,10 @@ function pushGlyph(
   ], count);
   count += 6;
 
+  int16s[2 * count + 0] = encodeLow(centerX);
+  int16s[2 * count + 1] = encodeLow(centerY);
+  count += 1;
+
   return count;
 }
 
@@ -339,6 +361,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       in highp vec2 position;
       in mediump vec2 colorPosition;
       in highp vec2 center; // Mercator
+      in highp vec2 centerLow; // see program.ts#encodeLow
       in highp vec2 offsetPx; // pixels
       in highp vec2 size; // pixels
       in highp float angle; // Radians
@@ -357,7 +380,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       ${SPHERE_OPERATIONS}
 
       void main() {
-        vec4 relativeCenter = sub_fp64(split(center), cameraCenter);
+        vec4 relativeCenter = sub_fp64(withLow(center, centerLow), cameraCenter);
         if (relativeCenter.x + relativeCenter.y > 1.) {
           relativeCenter.x -= 2.;
         } else if (relativeCenter.x + relativeCenter.y < -1.) {
@@ -447,6 +470,7 @@ function createSdfProgram(gl: WebGL2RenderingContext): SdfProgramData {
       position: gl.getAttribLocation(programId, 'position'),
       colorPosition: gl.getAttribLocation(programId, 'colorPosition'),
       center: gl.getAttribLocation(programId, 'center'),
+      centerLow: gl.getAttribLocation(programId, 'centerLow'),
       offsetPx: gl.getAttribLocation(programId, 'offsetPx'),
       size: gl.getAttribLocation(programId, 'size'),
       angle: gl.getAttribLocation(programId, 'angle'),

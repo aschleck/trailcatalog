@@ -267,6 +267,19 @@ export const SPHERE_OPERATIONS = `
     }
 `;
 
+// A float32 vertex snaps to as coarse as a 32 pixel grid at zoom 22, so each mercator coordinate
+// also carries what rounding to float32 dropped. That remainder is at most half a float32 step,
+// which is 2^-24 for coordinates under 2, so we scale it up by 2^24 and store it as a normalized
+// short.
+// => 2^-15 * 2^-24 = 2^-39 mercator, or 2^-10 pixels at zoom 22
+// See FP64_OPERATIONS#withLow.
+const LOW_SCALE = Math.pow(2, 24) * 32767;
+
+/** Returns what float32 drops from a mercator coordinate, as a short for a normalized attribute. */
+export function encodeLow(v: number): number {
+  return Math.round((v - Math.fround(v)) * LOW_SCALE);
+}
+
 /**
  * Functions from luma.gl
  * https://github.com/visgl/luma.gl/blob/a999dc6d38169cb15120935cbeab55384140f1a5/modules/shadertools/src/modules-webgl1/math/fp64/fp64-arithmetic-glsl.ts
@@ -441,5 +454,10 @@ vec4 sub_fp64(vec4 a, vec4 b) {
 
 vec4 sum_fp64(vec4 a, vec4 b) {
   return vec4(sum_fp64(a.xy, b.xy), sum_fp64(a.zw, b.zw));
+}
+
+// Joins a float32 mercator position with its normalized encodeLow shorts.
+vec4 withLow(vec2 high, vec2 low) {
+  return vec4(high.x, low.x * exp2(-24.), high.y, low.y * exp2(-24.));
 }
 `;

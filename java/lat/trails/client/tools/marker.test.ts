@@ -65,10 +65,10 @@ test('scales radii to the zoom they are drawn at', () => {
   const result =
       pushMarker(BLACK, BLACK, outline, /* extraPx= */ 2, /* worldRadius= */ 1000, buffer, 0);
   expect(result.instanceCount).toBe(2);
-  // radius is the eighth float of each instance, see line_program.ts#push
+  // radius is the tenth float of each instance, see line_program.ts#push
   const floats = new Float32Array(buffer);
-  expect(floats[7]).toBeCloseTo(2 + 2);
-  expect(floats[9 + 7]).toBeCloseTo(4 + 2);
+  expect(floats[9]).toBeCloseTo(2 + 2);
+  expect(floats[11 + 9]).toBeCloseTo(4 + 2);
 });
 
 test('never draws thinner than a pixel', () => {
@@ -79,5 +79,5 @@ test('never draws thinner than a pixel', () => {
   };
   const buffer = new ArrayBuffer(1024);
   pushMarker(BLACK, BLACK, outline, /* extraPx= */ 0, /* worldRadius= */ 1000, buffer, 0);
-  expect(new Float32Array(buffer)[7]).toBe(1);
+  expect(new Float32Array(buffer)[9]).toBe(1);
 });
