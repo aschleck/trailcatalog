@@ -59,7 +59,7 @@ import {
   Pick,
   toDegrees,
 } from './inspect';
-import { LoginService } from './login/login_service';
+import { LoginDeclined, LoginService } from './login/login_service';
 import {
   FEATURE_CLICKED,
   FEATURE_CONTEXT_MENU,
@@ -77,7 +77,7 @@ import {
   Tool,
   TOOL_REQUESTED,
 } from './model/events';
-import { CollectionModel } from './model/collection_model';
+import { CollectionModel, SAVE_FAILED } from './model/collection_model';
 import { Change, FeatureStore } from './model/feature_store';
 import {
   EditableFeature,
@@ -193,6 +193,8 @@ export interface State {
   // The profile of the selected feature or the inspected object, when that is a line
   lineProfile: LineProfileState|undefined;
   measure: MeasureState;
+  // Set while edits wait on somebody who declined to log in
+  notSaved: boolean;
   // What the terrain tool routes within
   grades: GradeLimitState;
   search: SearchState;
@@ -299,7 +301,11 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.loadStart = undefined;
     this.store = this.collection.store;
     this.registerDisposer(this.login.listen(self => {
-      this.updateState({...this.state, self: resolvedFuture(self)});
+      this.updateState({
+        ...this.state,
+        notSaved: this.state.notSaved && !self.user,
+        self: resolvedFuture(self),
+      });
     }));
     this.viewStateWrites = Promise.resolve();
     this.elevations = new Elevations();
@@ -536,7 +542,8 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   onCollectionLoading(): void {
     this.loadStart = {hidden: this.state.features.hidden, layerEdits: this.layerEdits};
-    this.updateState({...this.state, collectionStatus: 'loading'});
+    // Opening a collection drops the unsaved edits.
+    this.updateState({...this.state, collectionStatus: 'loading', notSaved: false});
   }
 
   onCollectionLoaded(e: CustomEvent<{response: GetCollectionResponse|undefined}>): void {
@@ -565,7 +572,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
   }
 
   // Dismissing the dialog arms it again, so a later failure is not silent.
-  onSaveFailed(): void {
+  onSaveFailed(e: CorgiEvent<typeof SAVE_FAILED>): void {
+    if (e.detail.loggedOut) {
+      if (!this.state.notSaved) {
+        this.updateState({...this.state, notSaved: true});
+      }
+      return;
+    }
+
     if (this.warnedUnsaved) {
       return;
     }
@@ -1299,7 +1313,9 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
 
   loginClicked(): void {
     this.login.requireLogin().catch(e => {
-      console.error(e);
+      if (!(e instanceof LoginDeclined)) {
+        console.error(e);
+      }
     });
   }
 
@@ -1972,7 +1988,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     const message =
         count > 0
             ? `This deletes the ${count} ${count === 1 ? 'item' : 'items'} in it for everyone `
-                + 'it is shared with, and cannot be undone.'
+                + 'it is shared with.'
             : 'This cannot be undone.';
     return this.dialog.display(ConfirmDeleteDialog({message, title: `Delete ${collection.name}?`}))
         .then(() => {

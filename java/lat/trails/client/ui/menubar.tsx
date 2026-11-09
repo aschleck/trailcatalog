@@ -25,9 +25,10 @@ export const MENU_CLASSES: MenuClassNames = {
 //
 // The sides grow equally from zero so center sits in the middle of the bar, not in the middle of
 // whatever the menus leave over.
-export function Menubar({center, children, user}: {
+export function Menubar({center, children, notSaved, user}: {
   center?: VElementOrPrimitive;
   children?: VElementOrPrimitive|VElementOrPrimitive[];
+  notSaved: boolean;
   user: User|undefined;
 }) {
   return <>
@@ -44,7 +45,21 @@ export function Menubar({center, children, user}: {
           ? <div className="flex flex-1 justify-center min-w-0 px-1 sm:px-2">{center}</div>
           : ''
       }
-      <div className="flex flex-1 justify-end">
+      <div className="flex flex-1 gap-1 items-center justify-end">
+        {notSaved
+            ? <div className="flex gap-1.5 items-center px-2 py-1 shrink-0 text-amber-300">
+              <svg
+                  className="h-3 stroke-current w-3"
+                  fill="none"
+                  viewBox="0 0 12 12"
+              >
+                <circle cx="6" cy="6" r="4.5" strokeWidth="1.5" />
+                <path d="M6 3.5 V6.5 M6 8.25 V8.5" strokeWidth="1.5" />
+              </svg>
+              Not saved
+            </div>
+            : ''
+        }
         {user
             ? <div
                   className="

@@ -10,17 +10,13 @@ import { DIALOG, DIALOG_SURFACE, LIST, Section } from 'js/pika/dialog';
 import { TEXT_BOX } from 'js/pika/fields';
 import { GetAccountResponse, User } from 'trails_lat/proto/data_pb';
 
-const CONFIRMATION = 'delete my account';
+import { getProviderLabel } from '../login/providers';
 
-export const PROVIDER_LABELS: {[issuer: string]: string} = {
-  'https://accounts.google.com': 'Google',
-  'https://appleid.apple.com': 'Apple',
-  'https://www.openstreetmap.org': 'OpenStreetMap',
-};
+const CONFIRMATION = 'delete my account';
 
 /** Shows the caller's profile. Resolves when they ask to delete their account. */
 export function AccountDialog({account, user}: {account: GetAccountResponse; user: User}) {
-  const providers = account.loginIssuers.map(issuer => PROVIDER_LABELS[issuer] ?? issuer);
+  const providers = account.loginIssuers.map(getProviderLabel);
   // ACTION reaches DialogController because nothing here binds a controller, so close resolves
   // and outsideClose rejects.
   return <>

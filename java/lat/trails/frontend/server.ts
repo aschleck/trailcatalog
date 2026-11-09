@@ -120,7 +120,11 @@ function page(
   </head>
   <body class="h-full">
     <div id="root" class="h-full">${content}</div>
-    <script>${DEBUG ? 'window._DEBUG=true;' : ''}window.INITIAL_DATA=${escapedData}</script>
+    <script>
+      ${DEBUG ? 'window._DEBUG=true;' : ''}
+      window.LOGIN_PROVIDERS=${JSON.stringify(oidc.CONFIGURED_PROVIDERS)};
+      window.INITIAL_DATA=${escapedData};
+    </script>
     <script type="module" src="${STATIC_PREFIX}/client.js"></script>
     <script
         async

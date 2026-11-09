@@ -12,7 +12,7 @@ import {
 
 import { canEdit } from '../data/collection_data';
 import { requestData } from '../data/data';
-import { LoginService } from '../login/login_service';
+import { LoginDeclined, LoginService } from '../login/login_service';
 import { FeatureStore } from './feature_store';
 import { featuresFromProto, schemaToWrite, toWrite } from './features';
 import { SaveEntry, SaveQueue } from './save_queue';
@@ -24,7 +24,8 @@ export const COLLECTION_LOADED =
     declareEvent<{response: GetCollectionResponse|undefined}>('collectionLoaded');
 export const COLLECTION_LOADING = declareEvent<{}>('collectionLoading');
 export const FEATURES_CHANGED = declareEvent<{}>('featuresChanged');
-export const SAVE_FAILED = declareEvent<{}>('saveFailed');
+// loggedOut is set when the saves wait on somebody who declined to log in
+export const SAVE_FAILED = declareEvent<{loggedOut: boolean}>('saveFailed');
 
 type Deps = typeof CollectionModel.deps;
 
@@ -51,6 +52,9 @@ export class CollectionModel extends Model<Deps> {
   private generation: number;
   // Settles once a new collection is created, so concurrent saves and uploads share one
   private creating: Promise<string>|undefined;
+  // Set when somebody declines to log in, so that saves wait for them to log in from the menubar
+  // or else every edit asks again
+  private declined: boolean;
 
   constructor(response: ModelResponse<Deps>) {
     super(response);
@@ -59,8 +63,11 @@ export class CollectionModel extends Model<Deps> {
         new SaveQueue(
             entries => this.save(entries),
             error => {
-              console.error(error);
-              this.broadcast(SAVE_FAILED, {});
+              const loggedOut = error instanceof LoginDeclined;
+              if (!loggedOut) {
+                console.error(error);
+              }
+              this.broadcast(SAVE_FAILED, {loggedOut});
             });
     // Read only until start, which knows whether a collection is loading into it
     this.store =
@@ -73,9 +80,15 @@ export class CollectionModel extends Model<Deps> {
     this.id = undefined;
     this.generation = 0;
     this.creating = undefined;
+    this.declined = false;
     this.registerDisposer(this.login.listen(response => {
       this.signedIn(response);
     }));
+    this.registerListener(window, 'beforeunload', e => {
+      if (this.saves.hasUnsaved()) {
+        e.preventDefault();
+      }
+    });
   }
 
   getGeneration(): number {
@@ -103,6 +116,7 @@ export class CollectionModel extends Model<Deps> {
   open(id: string|undefined): void {
     this.id = id;
     this.generation += 1;
+    this.declined = false;
     this.saves.clear();
     this.store.reset([], /* readOnly= */ id !== undefined);
     if (id !== undefined) {
@@ -117,6 +131,12 @@ export class CollectionModel extends Model<Deps> {
     }
 
     this.creating ??= this.login.requireLogin('save')
+        .catch(e => {
+          if (e instanceof LoginDeclined) {
+            this.declined = true;
+          }
+          throw e;
+        })
         .then(() => {
           const created: Future<CreateCollectionResponse> =
               requestData(
@@ -165,6 +185,10 @@ export class CollectionModel extends Model<Deps> {
 
   // Resolves with the version the server stamped onto the batch
   private save(entries: SaveEntry[]): Promise<bigint> {
+    if (this.declined && this.id === undefined) {
+      return Promise.reject(new LoginDeclined());
+    }
+
     return this.current()
         .then(collectionId => {
           const saved: Future<SaveResponse> =
@@ -188,6 +212,7 @@ export class CollectionModel extends Model<Deps> {
       return;
     }
 
+    this.declined = false;
     if (this.id !== undefined && this.store.isReadOnly()) {
       this.load(this.id);
     } else {

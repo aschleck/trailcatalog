@@ -6,13 +6,13 @@ import { Timer } from 'external/dev_april_corgi+/js/common/timer';
 import { GetCurrentUserResponse } from 'trails_lat/proto/data_pb';
 
 import { invalidateCurrentUser, requestData } from '../data/data';
-import { LoginReason } from './login_page';
+import { ProviderName } from './providers';
 
 export const LOGIN_CHANNEL = 'login';
 export const SIGNED_IN = 'signed-in';
 export const ACKNOWLEDGED = 'acknowledged';
 
-/** Runs /login in a popup so the page underneath keeps its state. */
+/** Runs a provider's login in a popup so the page underneath keeps its state. */
 export class LoginPopup extends Disposable {
 
   private readonly channel: BroadcastChannel;
@@ -65,11 +65,10 @@ export class LoginPopup extends Disposable {
 
   // Answers who is signed in once the popup finishes, which is nobody when they gave up. Callers
   // dedupe their own logins so that whatever they do after one runs once.
-  open(reason?: LoginReason): Promise<GetCurrentUserResponse> {
+  open(provider: ProviderName): Promise<GetCurrentUserResponse> {
     checkState(!this.pending, 'A login is already open');
 
-    const url = reason ? `/login?reason=${reason}` : '/login';
-    const popup = window.open(url, 'login', 'height=700,popup,width=500');
+    const popup = window.open(`/login/${provider}`, 'login', 'height=700,popup,width=500');
     if (!popup) {
       return Promise.reject(new Error('Unable to open the login window'));
     }

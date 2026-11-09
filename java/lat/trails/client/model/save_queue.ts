@@ -52,13 +52,18 @@ export class SaveQueue {
     this.writes = this.writes.then(() => this.saveUnsaved());
   }
 
+  // Entries stay unsaved until the batch carrying them lands, so this includes saves in flight.
+  hasUnsaved(): boolean {
+    return this.unsaved.size > 0;
+  }
+
   /** Forgets the unsaved features, for when the collection they belong to closes. */
   clear(): void {
     this.unsaved.clear();
   }
 
   // A failed batch stays queued for the next flush rather than retrying here, because whatever
-  // failed it usually fails the retry too, and a login popup somebody closed would open again.
+  // failed it usually fails the retry too, and a login dialog somebody closed would open again.
   private saveUnsaved(): Promise<void> {
     if (this.unsaved.size === 0) {
       return Promise.resolve();

@@ -10,5 +10,6 @@ tc_ts_project(
         "//trails_lat/proto:data_ts_proto",
         "@dev_april_corgi//js/common",
         "@dev_april_corgi//js/corgi",
+        "@dev_april_corgi//js/emu",
     ],
 )

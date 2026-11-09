@@ -17,9 +17,9 @@ import postgres from 'postgres';
 
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
 
-import { PROVIDER_LABELS } from '../client/account/account_dialog';
-import { isLoginReason, loginPage } from '../client/login/login_page';
+import { loginPage } from '../client/login/login_page';
 import { ACKNOWLEDGED, LOGIN_CHANNEL, SIGNED_IN } from '../client/login/login_popup';
+import { PROVIDER_IDENTITIES, ProviderName } from '../client/login/providers';
 
 import { STATIC_PREFIX } from './assets';
 import { LoginEnforcer } from './auth';
@@ -57,15 +57,11 @@ const FINISHED_PAGE = `<!DOCTYPE html>
 </html>
 `;
 
-type ProviderName = 'apple'|'google'|'osm';
-
 type CallbackBody = {[key: string]: string}|undefined;
 
 // Apple strays from OIDC: it POSTs the callback cross site, it doesn't take PKCE, it only sends the
 // user's name in that POST, and its client secret is a JWT that expires.
 interface Provider {
-  logo: string;
-  issuer: string;
   scope: string;
   // Calls back with a cross site POST, so the pending login cookie has to be SameSite=None and the
   // callback route has to parse a form
@@ -75,11 +71,8 @@ interface Provider {
   profile(claims: IDToken, body: CallbackBody): Profile;
 }
 
-// In the order the login page lists them
 const PROVIDERS: {[name in ProviderName]: Provider} = {
   apple: {
-    logo: 'apple_logo.svg',
-    issuer: 'https://appleid.apple.com',
     scope: 'openid name email',
     formPost: true,
     pkce: false,
@@ -87,8 +80,6 @@ const PROVIDERS: {[name in ProviderName]: Provider} = {
     profile: appleProfile,
   },
   google: {
-    logo: 'google_logo.svg',
-    issuer: 'https://accounts.google.com',
     scope: 'openid email profile',
     formPost: false,
     pkce: true,
@@ -96,8 +87,6 @@ const PROVIDERS: {[name in ProviderName]: Provider} = {
     profile: oidcProfile,
   },
   osm: {
-    logo: 'osm_logo.svg',
-    issuer: 'https://www.openstreetmap.org',
     scope: 'openid',
     formPost: false,
     pkce: true,
@@ -141,43 +130,45 @@ interface PendingLogin {
   returnTo: string|undefined;
 }
 
+const CONFIG: LoginConfig = JSON.parse(checkExists(process.env.LOGIN_PROVIDERS));
+
+// In the order the login dialog and page list them
+export const CONFIGURED_PROVIDERS =
+    (Object.keys(PROVIDER_IDENTITIES) as ProviderName[]).filter(name => CONFIG[name]);
+
 export async function addProviders(
     fastify: FastifyInstance,
     encrypter: Encrypter,
     loginEnforcer: LoginEnforcer,
     sql: postgres.Sql): Promise<void> {
-  const config: LoginConfig = JSON.parse(checkExists(process.env.LOGIN_PROVIDERS));
-  const configured = (Object.keys(PROVIDERS) as ProviderName[]).filter(name => config[name]);
-  for (const name of configured) {
-    await addProvider(name, config, fastify, encrypter, loginEnforcer, sql);
+  for (const name of CONFIGURED_PROVIDERS) {
+    await addProvider(name, fastify, encrypter, loginEnforcer, sql);
   }
 
   fastify.get('/login', async (request, reply) => {
     const returnTo = returnPath(request);
     const query = returnTo ? `?return=${encodeURIComponent(returnTo)}` : '';
-    const reason = (request.query as {reason?: string}).reason;
     reply.type('text/html').send(
         loginPage(
-            configured.map(name => ({
+            CONFIGURED_PROVIDERS.map(name => ({
               href: `/login/${name}${query}`,
-              label: PROVIDER_LABELS[PROVIDERS[name].issuer],
-              logo: `/static/${PROVIDERS[name].logo}`,
+              label: PROVIDER_IDENTITIES[name].label,
+              logo: `/static/${PROVIDER_IDENTITIES[name].logo}`,
             })),
-            isLoginReason(reason) ? reason : undefined,
             STATIC_PREFIX));
   });
 }
 
 async function addProvider(
     name: ProviderName,
-    config: LoginConfig,
     fastify: FastifyInstance,
     encrypter: Encrypter,
     loginEnforcer: LoginEnforcer,
     sql: postgres.Sql): Promise<void> {
   const provider = PROVIDERS[name];
-  const clientId = checkExists(config[name]).client_id;
-  const server = (await discovery(new URL(provider.issuer), clientId)).serverMetadata();
+  const identity = PROVIDER_IDENTITIES[name];
+  const clientId = checkExists(CONFIG[name]).client_id;
+  const server = (await discovery(new URL(identity.issuer), clientId)).serverMetadata();
   // Per request because Apple's client secret expires. openid-client's ClientSecretBasic
   // form-encodes the client ID and secret, and Google rejects that as invalid_client, so every
   // provider gets client_secret_post.
@@ -186,7 +177,7 @@ async function addProvider(
           server,
           clientId,
           /* metadata= */ undefined,
-          ClientSecretPost(provider.clientSecret(config)));
+          ClientSecretPost(provider.clientSecret(CONFIG)));
 
   const getCallbackUrl = (request: FastifyRequest) => {
     const protocol = request.headers['x-forwarded-proto'] ?? request.protocol;
@@ -266,7 +257,7 @@ async function addProvider(
           INSERT INTO users (id, display_name, email, picture_url, enabled)
               VALUES (
                   gen_random_uuid(),
-                  ${profile.displayName ?? profile.email ?? `${PROVIDER_LABELS[provider.issuer]} user`},
+                  ${profile.displayName ?? profile.email ?? `${identity.label} user`},
                   ${profile.email ?? null},
                   ${profile.pictureUrl ?? null},
                   ${true})

@@ -110,6 +110,7 @@ export function OverviewElement(
         profile: undefined,
         route: undefined,
       },
+      notSaved: false,
       grades: {climbPercent: 25, descentPercent: 25},
       search: EMPTY_SEARCH,
       self: requestData('lat.trails.DataService/GetCurrentUser', {}),
@@ -201,6 +202,7 @@ export function OverviewElement(
       {state.fileDragged ? <FileDropOverlay /> : ''}
       <Menubar
           center={<SearchBox state={state.search} />}
+          notSaved={state.notSaved}
           user={state.self.finished ? state.self.value().user : undefined}
       >
         <MenubarItem label="File" menu="file" onClick="menubarMenuClicked" />

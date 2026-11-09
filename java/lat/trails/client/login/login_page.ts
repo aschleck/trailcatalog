@@ -1,21 +1,9 @@
 import { SECONDARY_BUTTON } from 'js/pika/buttons';
 
-/** Why someone is asked to log in, which /login takes as its reason parameter. */
-export type LoginReason = 'save';
-
-const HEADINGS: Record<LoginReason, string> = {
-  save: 'Log in to trails.lat to save',
-};
-
-export function isLoginReason(value: unknown): value is LoginReason {
-  return typeof value === 'string' && Object.hasOwn(HEADINGS, value);
-}
-
-// Renders the page that the login popup and the invite page's redirect open. The frontend serves
-// it, but it lives in client/ so that tailwind generates its classes.
+// Renders the page that the invite page's redirect opens. The frontend serves it, but it lives in
+// client/ so that tailwind generates its classes.
 export function loginPage(
     providers: Array<{href: string; label: string; logo: string}>,
-    reason: LoginReason|undefined,
     staticPrefix: string): string {
   const buttons =
       providers.map(({href, label, logo}) => `
@@ -37,7 +25,7 @@ export function loginPage(
   </head>
   <body class="bg-white flex flex-col gap-3 h-full items-center px-4 py-12 text-gray-900">
     <img alt="" class="h-16" src="/static/cat_moon_dark.webp" />
-    <div class="font-bold mb-3 text-lg">${reason ? HEADINGS[reason] : 'Log in to trails.lat'}</div>
+    <div class="font-bold mb-3 text-lg">Log in to trails.lat</div>
     ${buttons.join('')}
   </body>
 </html>
