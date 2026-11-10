@@ -113,13 +113,23 @@ function NavigationItem({active, icon, label, tab}: {
 }
 
 /** The buttons floating over the map's top right corner. */
-export function MapButtons({layersOpen, readOnly, tool, toolsOpen, user}: {
+export function MapButtons({canRedo, canUndo, layersOpen, readOnly, tool, toolsOpen, user}: {
+  canRedo: boolean;
+  canUndo: boolean;
   layersOpen: boolean;
   readOnly: boolean;
   tool: Tool;
   toolsOpen: boolean;
   user: User|undefined;
 }) {
+  // The drawing tools' sheets undo their own points, which this would confuse with undoing edits.
+  const history =
+      !readOnly
+          && (canUndo || canRedo)
+          && tool !== 'line'
+          && tool !== 'polygon'
+          && tool !== 'measure'
+          && tool !== 'terrain';
   return <>
     {toolsOpen
         ? <div className="absolute inset-0 z-20" unboundEvents={{click: 'mobileToolsClosed'}} />
@@ -136,7 +146,7 @@ export function MapButtons({layersOpen, readOnly, tool, toolsOpen, user}: {
                   : <Icon className="size-7" name="account_circle" />
               }
             </MapButton>
-          : <MapButton label="Log in" onClick="loginClicked">
+          : <MapButton data={{menu: 'guest'}} label="Account" onClick="menubarMenuClicked">
               <Icon className="size-7" name="account_circle" />
             </MapButton>
       }
@@ -158,6 +168,17 @@ export function MapButtons({layersOpen, readOnly, tool, toolsOpen, user}: {
         </MapButton>
         {toolsOpen ? <ToolsMenu readOnly={readOnly} tool={tool} /> : ''}
       </div>
+      {history
+          ? <>
+              <MapButton disabled={!canUndo} label="Undo" onClick="undoEditClicked">
+                <Icon name="undo" />
+              </MapButton>
+              <MapButton disabled={!canRedo} label="Redo" onClick="redoEditClicked">
+                <Icon name="redo" />
+              </MapButton>
+            </>
+          : ''
+      }
     </div>
   </>;
 }
@@ -189,10 +210,11 @@ function ToolsMenu({readOnly, tool}: {readOnly: boolean; tool: Tool}) {
   </>;
 }
 
-function MapButton({active, children, data, label, onClick}: {
+function MapButton({active, children, data, disabled, label, onClick}: {
   active?: boolean;
   children?: Children;
   data?: {[key: string]: string};
+  disabled?: boolean;
   label: string;
   onClick: string;
 }) {
@@ -202,6 +224,7 @@ function MapButton({active, children, data, label, onClick}: {
         className={
           'flex ios:backdrop-blur-xl ios:rounded-xl! ios:size-11! items-center justify-center '
               + 'rounded-full select-none shadow-md size-12 '
+              + (disabled ? 'opacity-40 ' : '')
               + (active
                   ? 'bg-primary-container ios:bg-primary! ios:text-on-primary! '
                       + 'text-on-primary-container'
@@ -209,6 +232,7 @@ function MapButton({active, children, data, label, onClick}: {
                       + 'text-on-surface-variant')
         }
         data={data ?? {}}
+        disabled={disabled ?? false}
         title={label}
         unboundEvents={{click: onClick}}
     >
@@ -445,6 +469,14 @@ export function CollectionChip({name}: {name: string}) {
     >
       <Icon className="shrink-0 size-5 text-on-surface-variant" name="bookmarks" />
       <span className="font-medium px-2 text-sm truncate">{name}</span>
+      <button
+          ariaLabel="Collection options"
+          className="flex items-center justify-center rounded-full shrink-0 size-10"
+          data={{menu: 'collection'}}
+          unboundEvents={{click: 'menubarMenuClicked'}}
+      >
+        <Icon className="size-5 text-on-surface-variant" name="more_vert" />
+      </button>
       <button
           ariaLabel="Close collection"
           className="flex items-center justify-center rounded-full shrink-0 size-10"

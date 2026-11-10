@@ -122,6 +122,7 @@ export function OverviewElement(
       },
       notSaved: false,
       grades: {climbPercent: 25, descentPercent: 25},
+      history: {canUndo: false, canRedo: false},
       mobile: {
         compact: startsCompact(),
         tab: 'map',
@@ -293,6 +294,8 @@ export function OverviewElement(
           />
           {compact
               ? <MapButtons
+                    canRedo={state.history.canRedo}
+                    canUndo={state.history.canUndo}
                     layersOpen={state.mobile.layersOpen}
                     readOnly={readOnly}
                     tool={state.tool}
@@ -322,7 +325,9 @@ export function OverviewElement(
                     top-2
                     z-10
                 ">
-                  Click another line to join it, or press Escape to cancel
+                  {compact
+                      ? 'Tap another line to join it, or the map to cancel'
+                      : 'Click another line to join it, or press Escape to cancel'}
                 </div>
               : ''
           }

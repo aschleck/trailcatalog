@@ -45,25 +45,31 @@ export function fileMenu(
       items.push({kind: 'menu_item', label, disabled: true, action: () => {}});
     }
   }
-  items.push({
+  return [...items, ...collectionMenu(hasCollection, readOnly, actions)];
+}
+
+/** The File menu's items about the open collection, which the phone layout's chip offers. */
+export function collectionMenu(
+    hasCollection: boolean,
+    readOnly: boolean,
+    actions: Pick<FileActions, 'openSettings'|'importFiles'|'exportFiles'>): MenuEntries {
+  return [{
     kind: 'menu_item',
     label: 'Settings…',
     disabled: !hasCollection,
     action: actions.openSettings,
-  });
-  items.push({kind: 'divider'});
-  items.push({
+  }, {
+    kind: 'divider',
+  }, {
     kind: 'menu_item',
     label: 'Import…',
     disabled: readOnly,
     action: actions.importFiles,
-  });
-  items.push({
+  }, {
     kind: 'menu_item',
     label: 'Export…',
     action: actions.exportFiles,
-  });
-  return items;
+  }];
 }
 
 export function editMenu(store: FeatureStore): MenuEntries {
@@ -139,14 +145,15 @@ export const HELP_MENU: MenuEntries = [{
   },
 }];
 
-export function userMenu(openAccount: () => void): MenuEntries {
+// The phone layout has no View menu, so it passes viewMenu's items to show here instead.
+export function userMenu(openAccount: () => void, view: MenuEntries = []): MenuEntries {
   return [{
     kind: 'menu_item',
     label: 'Account…',
     action: openAccount,
   }, {
     kind: 'divider',
-  }, {
+  }, ...withDivider(view), {
     kind: 'menu_item',
     label: 'Log out',
     action: () => {
@@ -154,4 +161,19 @@ export function userMenu(openAccount: () => void): MenuEntries {
       window.location.href = '/logout';
     },
   }];
+}
+
+/** The phone layout's account menu for somebody logged out. */
+export function guestMenu(logIn: () => void, view: MenuEntries): MenuEntries {
+  return [{
+    kind: 'menu_item',
+    label: 'Log in',
+    action: logIn,
+  }, {
+    kind: 'divider',
+  }, ...view];
+}
+
+function withDivider(entries: MenuEntries): MenuEntries {
+  return entries.length > 0 ? [...entries, {kind: 'divider'}] : [];
 }

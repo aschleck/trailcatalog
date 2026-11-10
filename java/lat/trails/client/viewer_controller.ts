@@ -142,7 +142,15 @@ import {
 import { GradeLimitState, MeasureState } from './ui/measure_panel';
 import { MENU_CLASSES } from './ui/menubar';
 import { LayersSegment, MobileState, Tab } from './ui/mobile_shell';
-import { editMenu, fileMenu, HELP_MENU, userMenu, viewMenu } from './ui/menus';
+import {
+  collectionMenu,
+  editMenu,
+  fileMenu,
+  guestMenu,
+  HELP_MENU,
+  userMenu,
+  viewMenu,
+} from './ui/menus';
 import { choiceItem, PICK_MENU_CLASSES, readingItem } from './ui/pick_menu';
 import { LineProfileState } from './ui/profile_chart';
 import { LineProfiler, MeasureProfiler } from './ui/profiles';
@@ -203,6 +211,7 @@ export interface State {
   notSaved: boolean;
   // What the terrain tool routes within
   grades: GradeLimitState;
+  history: {canUndo: boolean; canRedo: boolean};
   mobile: MobileState;
   search: SearchState;
   self: Future<GetCurrentUserResponse>;
@@ -1368,6 +1377,14 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
     this.setToolsOpen(false);
   }
 
+  undoEditClicked(): void {
+    this.store.undo();
+  }
+
+  redoEditClicked(): void {
+    this.store.redo();
+  }
+
   mobileToolClicked(e: CorgiEvent<typeof DOM_MOUSE>): void {
     this.setToolsOpen(false);
     this.setTool(checkExists(e.actionElement.data('tool')).string() as Tool);
@@ -1415,23 +1432,43 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
       });
     } else if (menu === 'edit') {
       this.openMenu(editMenu(this.store), trigger);
-    } else if (menu === 'view') {
+    } else if (menu === 'collection') {
       this.openMenu(
-          viewMenu(
-              getUnitSystem(),
-              system => this.setUnitSystem(system),
-              this.zoneChoice,
-              zone => this.chooseZone(zone)),
+          collectionMenu(this.state.collection !== undefined, this.store.isReadOnly(), {
+            openSettings: () => this.openSettings(),
+            importFiles: () => pickImportFiles(this.getTransfer()),
+            exportFiles: () => exportFiles(this.getTransfer(), this.state.collection?.name),
+          }),
           trigger);
+    } else if (menu === 'view') {
+      this.openMenu(this.getViewMenu(), trigger);
     } else if (menu === 'help') {
       this.openMenu(HELP_MENU, trigger);
     } else if (menu === 'user') {
       this.openMenu(
-          userMenu(() => {
-            this.openAccount();
-          }),
+          userMenu(
+              () => {
+                this.openAccount();
+              },
+              this.state.mobile.compact ? this.getViewMenu() : []),
+          trigger);
+    } else if (menu === 'guest') {
+      this.openMenu(
+          guestMenu(
+              () => {
+                this.loginClicked();
+              },
+              this.getViewMenu()),
           trigger);
     }
+  }
+
+  private getViewMenu(): MenuEntries {
+    return viewMenu(
+        getUnitSystem(),
+        system => this.setUnitSystem(system),
+        this.zoneChoice,
+        zone => this.chooseZone(zone));
   }
 
   // A drawing tool would draw what the store drops.
@@ -2061,6 +2098,7 @@ export class ViewerController extends Controller<Args, Deps, HTMLElement, State>
             selected?.kind === 'folder' ? this.store.descendants(selected.id).length : 0,
         hoveredAncestors: new Set(this.store.getAncestors(this.state.features.hovered)),
       },
+      history: {canUndo: this.store.canUndo, canRedo: this.store.canRedo},
       lineProfile: this.lineProfileFor(live),
     });
   }
