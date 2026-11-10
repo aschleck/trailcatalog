@@ -30,9 +30,24 @@ async function initialize(server: FastifyInstance) {
   server.get('/sitemap.xml', (request, reply) => {
     reply.from('/api/sitemap.xml');
   });
+
+  server.get('/.well-known/security.txt', async (request, reply) => {
+    return reply.type('text/plain; charset=utf-8').send(securityTxt());
+  });
 }
 
 const ORIGIN = 'https://trailcatalog.org';
+
+// https://www.rfc-editor.org/rfc/rfc9116
+function securityTxt(): string {
+  const expires = new Date();
+  expires.setUTCMonth(expires.getUTCMonth() + 6);
+  return `Contact: mailto:april@trails.lat
+Expires: ${expires.toISOString()}
+Preferred-Languages: en
+Canonical: ${ORIGIN}/.well-known/security.txt
+`;
+}
 
 function page({canonicalPath, content, description, escapedData, title}: PageOptions): string {
   return `

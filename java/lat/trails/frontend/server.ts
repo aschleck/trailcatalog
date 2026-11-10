@@ -16,6 +16,7 @@ import { STATIC_PREFIX } from './assets';
 import { LoginEnforcer } from './auth';
 import { Encrypter } from './encrypter';
 import * as oidc from './oidc';
+import { privacyHtml, securityTxt } from './policies';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -94,6 +95,14 @@ async function initialize(server: FastifyInstance): Promise<void> {
   server.get('/logout', async (request, reply) => {
     loginEnforcer.logout(reply);
     reply.redirect('/');
+  });
+
+  server.get('/privacy', async (request, reply) => {
+    return reply.type('text/html').send(privacyHtml());
+  });
+
+  server.get('/.well-known/security.txt', async (request, reply) => {
+    return reply.type('text/plain; charset=utf-8').send(securityTxt());
   });
 
   await oidc.addProviders(server, encrypter, loginEnforcer, sql);

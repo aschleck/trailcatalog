@@ -143,6 +143,14 @@ export const HELP_MENU: MenuEntries = [{
   action: () => {
     window.open('https://github.com/aschleck/trailcatalog/issues', '_blank', 'noopener');
   },
+}, {
+  kind: 'divider',
+}, {
+  kind: 'menu_item',
+  label: 'Privacy policy',
+  action: () => {
+    window.open('/privacy', '_blank', 'noopener');
+  },
 }];
 
 // The phone layout has no View menu, so it passes viewMenu's items to show here instead.
