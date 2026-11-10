@@ -23,11 +23,22 @@ export function App(props: {}, state: State|undefined, updateState: (newState: S
   } else if (state.active.kind === 'boundary_detail') {
     route = <BoundaryDetailElement boundaryId={state.active.id} parameters={state.parameters} />;
   } else if (state.active.kind === 'go_to_trail') {
-    route = <GoToTrailElement trailId={state.active.id} parameters={state.parameters} />;
+    // The server redirects so that crawlers and shared links get the readable URL.
+    route =
+        process.env.CORGI_FOR_BROWSER
+            ? <TrailDetailElement
+                  trailId={{numeric: state.active.id}}
+                  parameters={state.parameters}
+              />
+            : <GoToTrailElement trailId={state.active.id} parameters={state.parameters} />;
   } else if (state.active.kind === 'search_results') {
     route = <SearchResultsOverviewElement parameters={state.parameters} />;
   } else if (state.active.kind === 'trail_detail') {
-    route = <TrailDetailElement trailId={state.active.trail} parameters={state.parameters} />;
+    route =
+        <TrailDetailElement
+            trailId={{readable: state.active.trail}}
+            parameters={state.parameters}
+        />;
   } else {
     checkExhaustive(state.active);
   }

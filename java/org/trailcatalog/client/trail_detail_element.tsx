@@ -16,14 +16,20 @@ import { SELECTION_CHANGED } from './map/events';
 import { Boundary, getTrailTypeLabel, Trail } from './models/types';
 
 import { BoundaryCrumbs, getMostSpecificCrumb } from './boundary_crumbs';
-import { fetchData, getLoadStatus } from './data';
+import { getLoadStatus, TrailId } from './data';
 import { ErrorElement } from './error_element';
 import { setDescription, setTitle } from './head';
 import { Header } from './page';
-import { TrailDetailController, State } from './trail_detail_controller';
+import {
+  getTrailFutures,
+  isSameTrailId,
+  isTrailLoaded,
+  loadTrail,
+  State,
+  TrailDetailController,
+} from './trail_detail_controller';
 import { TrailIssue } from './trail_issue';
 import { TrailPopup } from './trail_popup';
-import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
 
 // The graph holds its height before the elevation loads, or else the map shrinks under the camera
 // when it arrives.
@@ -31,25 +37,16 @@ const ELEVATION_GRAPH_CLASSES = 'border-t border-tc-gray-200 h-48 shrink-0';
 const FACT_CELL_CLASSES = 'border-b border-tc-gray-200 flex items-center min-h-12 px-4 py-2';
 
 export function TrailDetailElement({trailId, parameters}: {
-  trailId: string;
+  trailId: TrailId;
   parameters: {[key: string]: string};
 }, inState: State|undefined, updateState: (newState: State) => void) {
-  if (!inState || trailId !== inState.trailId) {
-    const wrapped = {readable: trailId};
+  // Once the trail is shown, TrailDetailController loads the next one in place.
+  if (!inState || (!isSameTrailId(trailId, inState.trailId) && !isTrailLoaded(inState))) {
     inState = {
-      containingBoundaries:
-          fetchData('boundaries_containing_trail', {trail_id: wrapped})
-              .then(containingBoundariesFromRaw),
-      epochDate: fetchData('epoch', {}).then(raw => new Date(raw.timestampS * 1000)),
+      ...loadTrail(trailId),
       layers: [],
-      pathProfiles:
-          fetchData('path_profiles_in_trail', {trail_id: wrapped})
-              .then(pathProfilesInTrailFromRaw),
       selected: [],
       selectedCardPosition: [-1, -1],
-      tags: fetchData('trail_tags', {trail_id: wrapped}).then(raw => raw.tags),
-      trail: fetchData('trail', {trail_id: wrapped}).then(trailFromRaw),
-      trailId,
     };
   }
   const state = inState;
@@ -60,16 +57,13 @@ export function TrailDetailElement({trailId, parameters}: {
           && state.containingBoundaries.finished && state.containingBoundaries.ok
           ? describeTrail(state.trail.value(), state.containingBoundaries.value())
           : undefined);
-  setCanonicalPath(`/trail/${trailId}`);
+  if ('readable' in trailId) {
+    setCanonicalPath(`/trail/${trailId.readable}`);
+  } else if (state.trail.finished && state.trail.ok) {
+    setCanonicalPath(`/trail/${state.trail.value().readableId}`);
+  }
 
-  const futures = [
-    state.containingBoundaries,
-    state.epochDate,
-    state.pathProfiles,
-    state.tags,
-    state.trail,
-  ];
-  const status = getLoadStatus(futures, () => { updateState(state); });
+  const status = getLoadStatus(getTrailFutures(state), () => { updateState(state); });
 
   return <>
     <div className="flex flex-col h-full">
@@ -84,7 +78,7 @@ export function TrailDetailElement({trailId, parameters}: {
 }
 
 function Content({trailId, state, updateState}: {
-  trailId: string,
+  trailId: TrailId,
   state: State,
   updateState: (newState: State) => void,
 }) {
@@ -111,12 +105,12 @@ function Content({trailId, state, updateState}: {
     <div
         js={corgi.bind({
           controller: TrailDetailController,
-          key: JSON.stringify(trailId),
           args: {
             active: {trails: [trail]},
             overlays: {
               bear,
             },
+            trailId,
             units: getUnitSystem(),
           },
           events: {

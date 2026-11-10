@@ -1,18 +1,22 @@
 import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+import { Disposable } from 'external/dev_april_corgi+/js/common/disposable';
 import { Future } from 'external/dev_april_corgi+/js/common/futures';
-import { Controller, Response } from 'external/dev_april_corgi+/js/corgi/controller';
+import { Response } from 'external/dev_april_corgi+/js/corgi/controller';
 import { CorgiEvent, DOM_POINTER } from 'external/dev_april_corgi+/js/corgi/events';
+import { HistoryService } from 'external/dev_april_corgi+/js/corgi/history/history_service';
 
 import { S2LatLng, S2Point, SimpleS2 } from 'java/org/trailcatalog/s2';
 import { unprojectS2LatLng } from 'js/map/camera';
-import { LatLng, Vec2 } from 'js/map/common/types';
+import { Vec2 } from 'js/map/common/types';
 
 import { MapDataService } from './data/map_data_service';
-import { Boundary, ElevationProfile, Path, Trail, TrailFact } from './models/types';
+import { ACTIVE_PALETTE, ERROR_PALETTE } from './map/colors';
+import { Boundary, ElevationProfile, Trail } from './models/types';
 
-import { fetchData } from './data';
+import { fetchData, TrailId } from './data';
 import * as routes from './routes';
-import { Args, State as VState, ViewportController } from './viewport_controller';
+import { containingBoundariesFromRaw, pathProfilesInTrailFromRaw, trailFromRaw } from './trails';
+import { Args as VArgs, State as VState, ViewportController } from './viewport_controller';
 
 const ELEVATION_GRAPH_RESOLUTION_WIDTH = 400;
 
@@ -22,8 +26,20 @@ interface LatLngAltitude {
   altitude: number;
 };
 
-export interface State extends VState {
+export interface Args extends VArgs {
+  trailId: TrailId;
+}
+
+export interface TrailData {
   containingBoundaries: Future<Boundary[]>;
+  epochDate: Future<Date>;
+  pathProfiles: Future<Map<bigint, ElevationProfile>>;
+  tags: Future<{[key: string]: string}>;
+  trail: Future<Trail>;
+  trailId: TrailId;
+}
+
+export interface State extends TrailData, VState {
   elevation?: {
     cursor?: LatLngAltitude;
     cursorFraction?: number;
@@ -34,11 +50,6 @@ export interface State extends VState {
     points: LatLngAltitude[];
     resolution: Vec2;
   },
-  epochDate: Future<Date>;
-  pathProfiles: Future<Map<bigint, ElevationProfile>>;
-  tags: Future<{[key: string]: string}>;
-  trail: Future<Trail>;
-  trailId: string;
   weather?: {
     temperatureCelsius: number;
     weatherCode: number;
@@ -53,24 +64,78 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
     return ViewportController.deps();
   }
 
+  private readonly data: MapDataService;
+  private readonly navigation: HistoryService;
+  private next: TrailData|undefined;
+  private readonly shown: Disposable;
+
   constructor(response: Response<TrailDetailController>) {
     super(response);
+    this.data = response.deps.services.mapData;
+    this.navigation = response.deps.services.history;
+    this.next = undefined;
+    this.shown = new Disposable();
+    this.registerDisposable(this.shown);
+    this.showTrail();
+  }
 
-    const history = response.deps.services.history;
-    const trail = this.state.trail.value();
-    history.silentlyReplaceUrl(`/trail/${trail.readableId}`);
+  // The map lives as long as this controller, so we load the next trail here and keep showing the
+  // current one until it arrives, or else the map and its tiles would be torn down and rebuilt.
+  override updateArgs(newArgs: Args): void {
+    super.updateArgs(newArgs);
 
-    const data = response.deps.services.mapData;
-    const reference = data.addPin({trail: trail.id});
-    this.registerDisposable(reference);
-    reference.loaded.then(() => {
+    const trailId = newArgs.trailId;
+    if (isSameTrailId(trailId, this.state.trailId)) {
+      this.next = undefined;
+      return;
+    }
+    if (this.next && isSameTrailId(trailId, this.next.trailId)) {
+      return;
+    }
+
+    const next = loadTrail(trailId);
+    this.next = next;
+    this.updateState({
+      ...this.state,
+      selected: [],
+    });
+    const swap = () => {
+      if (this.next !== next) {
+        return;
+      }
+      this.next = undefined;
+      this.shown.dispose();
+      this.setActive(this.state.trail.value(), false, ACTIVE_PALETTE);
       this.updateState({
         ...this.state,
-        elevation:
-            calculateGraph(
-                data,
-                this.state.pathProfiles.value(),
-                this.state.trail.value()),
+        ...next,
+        elevation: undefined,
+        weather: undefined,
+      });
+      // A failed load renders the error page, which disposes us.
+      if (isTrailLoaded(next)) {
+        const trail = next.trail.value();
+        this.setActive(trail, true, trail.lengthMeters >= 0 ? ACTIVE_PALETTE : ERROR_PALETTE);
+        this.showTrail();
+      }
+    };
+    Promise.all(getTrailFutures(next)).then(swap, swap);
+  }
+
+  private showTrail(): void {
+    const loaded = this.state.trail;
+    const trail = loaded.value();
+    this.navigation.silentlyReplaceUrl(`/trail/${trail.readableId}`);
+
+    const reference = this.data.addPin({trail: trail.id});
+    this.shown.registerDisposable(reference);
+    reference.loaded.then(() => {
+      if (this.state.trail !== loaded) {
+        return;
+      }
+      this.updateState({
+        ...this.state,
+        elevation: calculateGraph(this.data, this.state.pathProfiles.value(), trail),
       });
     });
 
@@ -82,6 +147,9 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
             + '&current_weather=true')
         .then(response => response.json())
         .then(response => {
+          if (this.state.trail !== loaded) {
+            return;
+          }
           this.updateState({
             ...this.state,
             weather: {
@@ -139,6 +207,34 @@ export class TrailDetailController extends ViewportController<Args, Deps, State>
   zoomToFit(): void {
     this.mapController?.setCamera(this.state.trail.value().bound);
   }
+}
+
+export function loadTrail(trailId: TrailId): TrailData {
+  return {
+    containingBoundaries:
+        fetchData('boundaries_containing_trail', {trail_id: trailId})
+            .then(containingBoundariesFromRaw),
+    epochDate: fetchData('epoch', {}).then(raw => new Date(raw.timestampS * 1000)),
+    pathProfiles:
+        fetchData('path_profiles_in_trail', {trail_id: trailId}).then(pathProfilesInTrailFromRaw),
+    tags: fetchData('trail_tags', {trail_id: trailId}).then(raw => raw.tags),
+    trail: fetchData('trail', {trail_id: trailId}).then(trailFromRaw),
+    trailId,
+  };
+}
+
+export function getTrailFutures(data: TrailData): Array<Future<unknown>> {
+  return [data.containingBoundaries, data.epochDate, data.pathProfiles, data.tags, data.trail];
+}
+
+export function isTrailLoaded(data: TrailData): boolean {
+  return getTrailFutures(data).every(f => f.finished && f.ok);
+}
+
+export function isSameTrailId(a: TrailId, b: TrailId): boolean {
+  return 'numeric' in a
+      ? 'numeric' in b && a.numeric === b.numeric
+      : 'readable' in b && a.readable === b.readable;
 }
 
 export function calculateGraph(
