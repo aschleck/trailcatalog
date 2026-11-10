@@ -1,3 +1,5 @@
+import { checkExists } from 'external/dev_april_corgi+/js/common/asserts';
+
 import { Vec2 } from './common/types';
 
 interface PointerListener {
@@ -38,6 +40,9 @@ const FLING_STALE_MS = 50;
 // At 150 px/s the glide is under 40px with map_controller.ts#FLING_DECAY_MS, which isn't worth
 // animating.
 const FLING_MIN_SPEED = 0.15; // in px/ms
+// Android's ViewConfiguration.getLongPressTimeout() and getScaledTouchSlop() at 1x
+const LONG_PRESS_MS = 400;
+const LONG_PRESS_SLOP_PX = 8;
 
 export class PointerInterpreter {
 
@@ -47,6 +52,10 @@ export class PointerInterpreter {
   private dragging: boolean;
   // Recent single-pointer positions inside FLING_WINDOW_MS, oldest first.
   private readonly samples: Sample[];
+  // Fires the contextual click of a touch held in place, since touch has no right button
+  private longPress: {start: SimplePointerEvent; timer: ReturnType<typeof setTimeout>}|undefined;
+  // Set once a long press has fired, so the rest of that press neither pans nor clicks
+  private held: boolean;
 
   // If the user is panning or zooming, we want to trigger an idle call when they stop.
   private needIdle: boolean;
@@ -56,11 +65,14 @@ export class PointerInterpreter {
     this.maybeClickStart = undefined;
     this.dragging = false;
     this.samples = [];
+    this.longPress = undefined;
+    this.held = false;
     this.needIdle = false;
   }
 
   pointerDown(e: PointerEvent): void {
     e.preventDefault();
+    this.cancelLongPress();
     this.pointers.set(e.pointerId, {
       pageX: e.pageX,
       pageY: e.pageY,
@@ -79,6 +91,14 @@ export class PointerInterpreter {
         pointerId: e.pointerId,
       };
       this.dragging = e.button === 0 && this.listener.dragStart(e.pageX, e.pageY);
+      if (e.pointerType !== 'mouse') {
+        this.longPress = {
+          start: {pageX: e.pageX, pageY: e.pageY, pointerId: e.pointerId},
+          timer: setTimeout(() => {
+            this.longPressed();
+          }, LONG_PRESS_MS),
+        };
+      }
     } else {
       this.maybeClickStart = undefined;
       // A second finger turns a drag into a pinch, so the drag ends where the first finger was.
@@ -96,6 +116,15 @@ export class PointerInterpreter {
     }
 
     e.preventDefault();
+
+    if (this.held) {
+      return;
+    }
+
+    const press = this.longPress?.start;
+    if (press && distance2(press, e) > LONG_PRESS_SLOP_PX * LONG_PRESS_SLOP_PX) {
+      this.cancelLongPress();
+    }
 
     if (this.dragging) {
       this.listener.drag(e.pageX, e.pageY);
@@ -156,6 +185,16 @@ export class PointerInterpreter {
 
     e.preventDefault();
     this.pointers.delete(e.pointerId);
+    this.cancelLongPress();
+
+    if (this.held) {
+      this.held = this.pointers.size > 0;
+      this.samples.length = 0;
+      if (!this.held) {
+        swallowNextClick();
+      }
+      return;
+    }
 
     if (this.pointers.size === 0) {
       this.endDrag(e.pageX, e.pageY);
@@ -187,6 +226,8 @@ export class PointerInterpreter {
     }
 
     this.pointers.delete(e.pointerId);
+    this.cancelLongPress();
+    this.held = this.held && this.pointers.size > 0;
     this.maybeClickStart = undefined;
     this.samples.length = 0;
     this.endDrag(e.pageX, e.pageY);
@@ -197,13 +238,36 @@ export class PointerInterpreter {
     }
   }
 
-  private endDrag(pageX: number, pageY: number): void {
+  // Ends a claimed drag without moving it, so that a held vertex opens the menu instead of being
+  // dragged after it.
+  private longPressed(): void {
+    const start = checkExists(this.longPress).start;
+    this.longPress = undefined;
+    // Unmoved even if the finger crept within the slop, or else the layer would keep the creep
+    this.endDrag(start.pageX, start.pageY, /* moved= */ false);
+    this.maybeClickStart = undefined;
+    this.held = true;
+    if (this.needIdle) {
+      this.needIdle = false;
+      this.listener.idle();
+    }
+    this.listener.click(start.pageX, start.pageY, /* contextual= */ true);
+  }
+
+  private cancelLongPress(): void {
+    if (this.longPress) {
+      clearTimeout(this.longPress.timer);
+      this.longPress = undefined;
+    }
+  }
+
+  private endDrag(pageX: number, pageY: number, moved: boolean = !this.maybeClickStart): void {
     if (!this.dragging) {
       return;
     }
 
     this.dragging = false;
-    this.listener.dragEnd(pageX, pageY, /* moved= */ !this.maybeClickStart);
+    this.listener.dragEnd(pageX, pageY, moved);
   }
 
   private sample(e: PointerEvent): void {
@@ -238,6 +302,22 @@ export class PointerInterpreter {
 
     return [vX, vY];
   }
+}
+
+// A held touch still clicks where it lifts, which lands outside the menu it opened and closes it.
+// Some browsers send no click after a long press, so the next press disarms this instead.
+function swallowNextClick(): void {
+  const swallow = (e: Event) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    disarm();
+  };
+  const disarm = () => {
+    document.removeEventListener('click', swallow, true);
+    document.removeEventListener('pointerdown', disarm, true);
+  };
+  document.addEventListener('click', swallow, true);
+  document.addEventListener('pointerdown', disarm, true);
 }
 
 function distance2(a: SimplePointerEvent, b: SimplePointerEvent): number {
